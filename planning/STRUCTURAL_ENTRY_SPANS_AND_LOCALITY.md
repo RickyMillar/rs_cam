@@ -13,15 +13,15 @@ place.
 | Phase | Status | Hash | Date |
 |---|---|---|---|
 | D0. Prevalence research — kinematics histogram on real fixtures | ✅ done | `bb06611` | 2026-05-10 |
-| D1. Operation generator survey — who emits Entry spans, who doesn't | ⏳ proposed | — | — |
-| D2. LUT calibration audit — slot vs partial engagement bound | ⏳ proposed | — | — |
+| D1. Operation generator survey — who emits Entry spans, who doesn't | ✅ done | (research only) | 2026-05-10 |
+| D2. LUT calibration audit — slot vs partial engagement bound | ✅ done — **mismatch found** | (research only) | 2026-05-10 |
 | D3. Decision point — stopgap revert vs roll-forward | ✅ Path A (revert) | `8e2a7fc` | 2026-05-10 |
 | D4. Adaptive3d entry-emitter Entry spans (plunge/helix/ramp) | 🚫 blocked on D3 | — | — |
 | D5. Other operation generators — Entry span coverage | 🚫 blocked on D4 | — | — |
 | D6. Span-aware locality classifier | 🚫 blocked on D4 | — | — |
 | D7. Span-aware C1 filter (replaces kinematics filter) | 🚫 blocked on D6 | — | — |
 | D8. Cross-fixture re-validation | 🚫 blocked on D7 | — | — |
-| D9. Stretch — terrain-aware gate semantics | ⏳ stretch | — | — |
+| D9. **Engagement-aware LUT comparison** (was: stretch — terrain-aware) | ⏳ **promoted — see D2** | — | — |
 
 Legend: ⏳ pending · 🟡 in-progress · ✅ done · 🚫 blocked · ⏭️ skipped
 
@@ -695,4 +695,140 @@ Validation:
   writing.
 - Wanaka MCP smoke deferred to next session — will confirm TP 1 ↔
   `NoSafeImprovement` regression as predicted by D0.
+
+### 2026-05-10 — Wanaka MCP smoke (post-revert)
+
+Confirmed regression as predicted. TP 1 (Back Rough,
+feed=4000/stepover=2.2/DOC=3.0):
+
+| Stage | Verdict | Triggering reading | Locality |
+|---|---|---|---|
+| baseline | chipload Exceeds High | 0.0707 mm/tooth (vs max 0.055) | helix entry |
+| refined #1 (DOC↑→4.83, feed↓→2592) | chipload Exceeds Low + deflection Exceeds | median 0.0258 (-19% below min); 237 µm (+18% over) | — |
+| refined #2 (DOC↑→4.83, feed↓→2592, stepover unchanged) | chipload Exceeds Low + deflection Exceeds | similar | helix entry |
+| refined #3 (DOC↑→4.83, feed↓→2592, stepover↓→2.0) | chipload Exceeds Low + deflection Exceeds | similar | helix entry |
+
+**Outcome:** `NoSafeImprovement`. Narrative headline:
+"Tried 3 candidates; closest-to-safe still hit: chipload 0.0258
+mm/tooth (-19% below LUT min 0.0320); deflection 237 µm (+18% over the
+200 µm threshold)." Suggestions: raise feed > 3376 mm/min OR cap DOC ≤
+3.88 mm.
+
+The verdict is now an honest reflection of the gate's chipload bound.
+Revert verified.
+
+### 2026-05-10 — D1 operation-generator survey
+
+Surveyed 23 operations. Result table (compressed):
+
+| Group | Count | Detail |
+|---|---|---|
+| Generator-side native Entry strategies + emits Entry spans | 0 | — |
+| Generator-side native Entry strategies + emits **no** Entry spans | **1** | **Adaptive3D** (`adaptive3d/path.rs:794-874` — `EntryStyle3d::{Plunge, Helix, Ramp}` dispatched but no `Span::new(_, _, SpanKind::Entry)` call) |
+| Dressup-only Entry (default `entry_style = Ramp` in Finish/SemiFinish role) | ~13 | Waterline, Scallop, VCarve, Trace, Chamfer, Inlay, Pencil, RampFinish, SpiralFinish, RadialFinish, HorizontalFinish, SteepShallow + most Finish ops. Entry spans emitted by `dressup::apply_entry` in the post-generation dressup layer |
+| Dressup conditionally available (Roughing role default `entry_style = None`) | ~6 | Pocket, Adaptive (2D), Profile, Face, Zigzag, Rest. User can opt-in via dressup panel; no native generator entry |
+| Entry strategies stripped by `normalize_for_op` | 2 | DropCutter (geometrically incompatible), ProjectCurve (multi-ring, ramp would diagonal) |
+| No Entry concept (every move IS an entry) | 2 | Drill, AlignmentPinDrill — DrillCycle variants only; needs separate gate model |
+
+**Implications for D4–D5 scoping:**
+
+- **D4 is the only structural Entry-span work needed for the gate-trip
+  problem.** Wrap `emit_peck_plunge` / `emit_helix` / `emit_ramp` in
+  `adaptive3d/path.rs:795-876` with `Span::new(_, _, SpanKind::Entry)`.
+  ~50 LOC + tests.
+- **D5 collapses to a quick audit.** Most other ops already have
+  Entry spans via the dressup path. The audit is "verify
+  `dressup::apply_entry` actually attaches a `SpanKind::Entry` span"
+  and write a regression test. Drill/PinDrill stay outside the
+  Entry-span model — D6's classifier will recognize `OperationType::Drill`
+  and route differently (or D7 will skip the gate filter for those
+  ops entirely).
+- **D5 effort revises down from 1-2d to ~½d.** The fanout the original
+  plan budgeted for doesn't exist.
+
+### 2026-05-10 — D2 LUT calibration audit — **MISMATCH FOUND**
+
+The simulator computes `effective_chip_thickness_mm` as the
+**arc-average mean chip thickness over the actual engagement arc the
+dexel saw** (`crates/rs_cam_core/src/dexel_stock/simulation.rs:478-508`,
+`crates/rs_cam_core/src/tool/mod.rs:106-147` — `mean = (2·feed/arc) ×
+(1 − cos(arc/2))`). At slot engagement (`arc = π`), mean ≈ 0.637 ×
+feed. At half engagement (`arc = π/2`), mean ≈ 0.373 × feed.
+
+The wanaka-tripping LUT row
+(`crates/rs_cam_core/data/vendor_lut/observations/amana_flat_end.json:194-222`,
+HardMaple Pocket Roughing, 6 mm flat end, `chipload_max_mm = 0.055`) is
+sourced from Amana's *Spektra Spiral Plunge 2/3 Flute Chart v24*. The
+chart explicitly carries:
+
+```
+ae_min_mm: 1.0,
+ae_max_mm: 2.2,
+ae_rule: "17% to 37%D"
+```
+
+So the LUT max is **authored at ~17-37% radial engagement**, not slot.
+For comparison, the ball-nose `coverage_notes` in
+`source_manifest.json` are the only LUT row explicitly calibrated for
+slot/peripheral cutting.
+
+**The gap:** the simulator's slot-engagement mean reading and the
+LUT's partial-engagement-mean cap are **not on a common engagement
+basis**. Wanaka's 0.0707 mm reading at `arc ≈ π` vs LUT cap 0.055 at
+~27% radial (arc ≈ 1.10 rad, mean ≈ 0.477 × feed) over-penalizes by
+the ratio `0.637 / 0.477 ≈ 1.34×`.
+
+If the cap were slot-equivalent: `0.055 × 1.34 ≈ 0.073 mm` — and the
+0.0707 reading **would pass**.
+
+**Calibration test asymmetry:**
+`crates/rs_cam_core/tests/chipload_formula_calibration.rs` builds a
+half-engagement reference (`arc = π/2`) with wanaka feed (0.0875
+mm/tooth), asserts the closed-form arc-average ≈ 0.0326 mm passes the
+LUT cap. The test only exercises the half-engagement case the LUT was
+authored against. There is no test exercising the `arc = π` case the
+actual D0 measurement hit — so the asymmetry was invisible.
+
+**Outcome: LUT-vs-formula mismatch.** Falls into the plan's "LUT is
+partial-calibrated" outcome.
+
+### Re-scoping the plan after D1 + D2
+
+D2's finding **changes the priority order**. Even with D4–D7 perfectly
+land, wanaka TP 1 still trips on a real terrain-following slot sample
+that the LUT doesn't cover at slot engagement. The Entry-span work
+fixes "configured entry transients shouldn't trip the gate"; the
+calibration mismatch fixes "slot terrain samples shouldn't trip a
+partial-engagement bound." Both are real bugs; D2 is the one wanaka
+hits.
+
+Recommended sequencing:
+1. **D9 (now top-priority).** Engagement-aware LUT comparison. Two
+   options from D2's report:
+   - (a) Re-cast the LUT cap to slot-equivalent at compare-time, using
+     the row's own `ae_min_mm`/`ae_max_mm` to derive the nominal arc.
+   - (b) Re-cast the simulator's mean reading to LUT-equivalent
+     (inverse of (a)).
+   Either fixes wanaka without touching the structural-spans plan.
+2. **D4 (Adaptive3D Entry spans).** Still needed for honest gate
+   semantics — even after D9 lands, configured entry transients
+   shouldn't drive the trip. Effort ~½d, narrow.
+3. **D5 (other ops audit + Drill/PinDrill carve-out).** Smaller than
+   originally scoped — most ops already have Entry spans via
+   dressup. Effort ~½d.
+4. **D6 + D7 (span-aware classifier + filter).** As planned. With D9
+   in place these become "remove the misleading 'helix entry'/'plunge
+   entry' labels from terrain samples and stop using kinematics
+   anywhere", not "rescue wanaka".
+5. **D8 (cross-fixture validation).** As planned.
+
+Net effort estimate revises from ~3-4d ("C1 filter is correct") to:
+- D9 alone (~1-2d) restores wanaka-class fixtures to honest verdicts
+- D4–D8 (~1.5-2d combined, smaller than before) finishes the
+  structural cleanup
+
+Worth a separate decision: do D9 first as its own commit-train, or
+bundle with D4? Recommend **D9 first** — it's the lever that
+materially changes user-visible verdicts, while D4–D7 are
+correctness-cleanup that doesn't move the needle on wanaka.
 
