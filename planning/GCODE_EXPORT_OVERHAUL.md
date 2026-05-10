@@ -333,24 +333,15 @@ Six-step Export Wizard modal in `crates/rs_cam_viz/src/ui/export_wizard.rs`, bac
 
 ### Phase 6 — Power-user features (partial)
 
-Two items shipped; the rest stay on the backlog until demand pulls them in.
+Three items shipped; the rest stay on the backlog until demand pulls them in.
 
 **Shipped:**
 
 - **#1 Wire wizard overrides into the emitter — DONE.** `WizardOverlay` (in `gcode/wizard_overlay.rs`) packs WCS / units / safe-Z / spindle-warmup overrides; `emit_program_with_overlay` applies them to a per-export `Cow<PostDefinition>` (WCS+units) and a `Cow<Program>` (warmup-dwell injection after preamble). Viz `overlay_for(session, gui)` builds it from `session.wizard()` and routes through `export_*_with_overlay_checked`. Shipped TOMLs templated `G21` → `{units_word}` so the units override is non-cosmetic; substitution is byte-identical for default mm. Tests: 7 unit (overlay semantics) + 5 emitter golden-diff + 2 wizard_e2e round-trip. Captured-fixture baseline unchanged.
 - **#4 Dry-run mode — DONE.** `WizardState.dry_run: bool` resolves to `WizardOverlay.dry_run_safe_z = Some(safe_z_override.unwrap_or(gui.post.safe_z))`. `apply_to_program` clamps every `Linear`/`LinearModal`/`ArcCw`/`ArcCcw` Z to the safe-Z value; `Rapid` and `SafeZRetract` are left intact so entry/exit kinematics survive. Step 3 carries the toggle; Step 6 surfaces an amber "Dry-run: ON" row in the summary. Tests: 3 unit (clamp scope, no-op, composition with warmup) + 1 wizard_e2e (asserts every cutting line carries Z=safe-Z; rapids at Z=5.0 untouched).
+- **#9 Setup-pause messages — DONE.** Re-scoped 2026-05-10 from "emit raw probe gcode" to "let the sender own probe macros, we just provide the pause point and a clear message" — g-Sender / UGS / CNCjs already have well-tuned Z-probe / XYZ-corner / home macros that duplicating in our post would own poorly. `SetupData.pause_message: Option<String>` (with serde-skip-if-none for back-compat) plumbs through both project-file loaders (core save.rs + viz io/project.rs) and the viz `Setup` runtime struct. `GcodeSetupPhase.pause_message: Option<&str>` carries it into `build_multi_setup`, which uses the override verbatim or falls back to `Setup change: <label>`. Wizard Step 4.5 (between tool-change and preview, `STEP_COUNT` bumped to 7) exposes a per-setup picker with 5 presets ("Default", "Re-zero (manual)", "Run Z Probe macro", "Run XYZ Corner Probe macro", "Home then re-zero") plus a free-form custom field; single-setup projects show a stub. `AppEvent::WizardSetSetupPauseMessage { setup_id, message }` mutates `setups_mut().pause_message`. Tests: 1 round-trip in core (asserts default `None` produces zero TOML output), 1 unit in `program_builder` (asserts `Some` overrides the `ProgramPause` message), 1 wizard_e2e (asserts override text replaces `Setup change: Bottom` in emitted multi-setup gcode). Captured-fixture corpus unchanged; gcode_validator_baseline still 98 findings / 64 captures.
 
 **Backlog (priority-ordered by perceived value):**
-
-- **#9 Setup-pause messages (operator-runs-macro pattern).** Today the gcode between setups is `M5` → `(Setup change: Bottom)` → `M0` → `M3`. Operator must remember what to do on Resume (re-zero? probe? home?) and the comment carries no hint. Re-scoped 2026-05-10 from "emit raw probe gcode" to "let the sender own probe macros, we just provide the pause point and a clear message." g-Sender / UGS / CNCjs already have well-tuned Z-probe / XYZ-corner / home macros — duplicating them in our post would own probe params that already live in (and are better tuned in) the sender.
-
-  - `SetupData.pause_message: Option<String>` — optional override for the M0 comment line. `None` keeps current `Setup change: <label>` text (byte-identical default).
-  - `build_multi_setup` consumes the override when emitting the `ProgramPause { message }` statement before `M0`.
-  - Wizard Step 4.5 ("Setup pauses") between tool-change and preview: per-setup picker with presets — "Flip and re-zero (manual)", "Run Z Probe macro", "Run XYZ Corner Probe macro", "Home then re-zero", "Custom…" — plus a free-form text field. Single-setup projects show a stub message and skip the picker. Choice persists on `SetupData` via TOML round-trip with serde default `None` for back-compat.
-
-  Out of scope (deliberately): `ProbeConfig` on `MachineProfile`, `supports_homing` on `PostDefinition`, raw G38.2 / G10 L20 / $H emission. The sender owns those primitives.
-
-  Scope: ~3 commits (data + round-trip / emitter wire-through / wizard step + e2e). Re-spec'd 2026-05-10.
 
 - **Editable preamble/postamble templates.** Per-project override of the post's templates, with variable substitution.
 - **Per-tool pre/post g-code.** Move from `ToolpathConfig.pre_gcode/post_gcode` to `Tool.pre_gcode/post_gcode` (with per-toolpath override). Tool-change routines travel with the tool.
