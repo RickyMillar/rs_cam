@@ -99,7 +99,7 @@ pub(super) fn embedded_lut() -> &'static VendorLut {
 
 use super::verdict::{
     ChipBounds, ChipBoundsSource, ChipSide, ChiploadMetric, ChiploadStatistic, ChiploadVerdict,
-    Confidence, SampleEvidence, UnmodeledReason,
+    Confidence, EntrySpike, SampleEvidence, UnmodeledReason,
 };
 
 /// Fraction of the commanded operation feed below which a sample is
@@ -366,6 +366,17 @@ pub fn evaluate(
     // Per-sample chip thicknesses for the per-toolpath median used by
     // the burn-risk verdict. See `Burn-risk verdict semantics` above.
     let mut burn_samples: Vec<(f64, usize)> = Vec::new();
+    // D7 — span-aware steady-state filter. Samples whose span_path
+    // contains a `SpanKind::Entry` ancestor (configured plunge / helix /
+    // ramp entries laid down by D4 / D5) are kept out of the
+    // steady-state trip set and surfaced separately as `entry_spikes`
+    // on the `Within` arm. Replaces the C1 kinematics filter reverted
+    // in D3 (commit `8e2a7fc`).
+    let span_lookup = spans.map(SpanLookup::new);
+    // Worst Entry-ancestry over-max sample (largest cl_normalized > max).
+    let mut entry_high: Option<(f64, usize)> = None;
+    // Worst Entry-ancestry under-min sample (smallest cl_normalized < min).
+    let mut entry_low: Option<(f64, usize)> = None;
 
     // D9 — engagement-aware normalization. Vendor LUT chip-load bounds
     // are authored at a specific engagement arc (Amana flat-endmill
@@ -411,6 +422,21 @@ pub fn evaluate(
             _ => cl,
         };
         valid_count += 1;
+        // D7 split: Entry-ancestry samples bypass the trip decision
+        // (they're transient and run at non-commanded feeds) but are
+        // still tracked for the `entry_spikes` advisory.
+        if !super::locality::is_steady_state_for_gate(s, span_lookup.as_ref()) {
+            if cl_normalized > max && entry_high.is_none_or(|(prev, _)| cl_normalized > prev) {
+                entry_high = Some((cl_normalized, i));
+            }
+            if let Some(min_value) = min
+                && cl_normalized < min_value
+                && entry_low.is_none_or(|(prev, _)| cl_normalized < prev)
+            {
+                entry_low = Some((cl_normalized, i));
+            }
+            continue;
+        }
         burn_samples.push((cl_normalized, i));
         // Layer 1 tolerance band: a single sample 1-2% over `max` (e.g.
         // wanaka TP4 5/2026 transient at 1.05% over) shouldn't flip the
@@ -470,7 +496,6 @@ pub fn evaluate(
 
     // 6. Build verdict. Above-max takes priority over below-min: breakage is more
     // catastrophic than burn risk and we want it surfaced.
-    let span_lookup = spans.map(SpanLookup::new);
     let locality_for = |idx: usize| -> Option<String> {
         trace
             .samples
@@ -530,13 +555,34 @@ pub fn evaluate(
         },
         bounds,
     };
+    // D7 — entry-spike advisories. Each side reports the worst Entry-
+    // ancestry sample whose normalized chip-thickness landed outside
+    // the LUT envelope. The trip itself fired on steady-state samples
+    // only (or didn't fire — this is the `Within` arm); these spikes
+    // exist purely so the operator sees that an entry transient
+    // touched the bound without flipping the verdict.
+    let mut entry_spikes: Vec<EntrySpike> = Vec::new();
+    if let Some((observed, idx)) = entry_high {
+        entry_spikes.push(EntrySpike {
+            observed,
+            bound: max,
+            locality: locality_for(idx).unwrap_or_else(|| "entry".to_owned()),
+            side: Some(ChipSide::High),
+        });
+    }
+    if let (Some((observed, idx)), Some(min_value)) = (entry_low, min) {
+        entry_spikes.push(EntrySpike {
+            observed,
+            bound: min_value,
+            locality: locality_for(idx).unwrap_or_else(|| "entry".to_owned()),
+            side: Some(ChipSide::Low),
+        });
+    }
     ChiploadVerdict::Within {
         approach_to_min,
         approach_to_max,
         confidence: chipload_confidence,
-        // C1+C2 reverted 2026-05-10 (D3 Path A); D7 will repopulate
-        // from span-aware entry detection.
-        entry_spikes: Vec::new(),
+        entry_spikes,
     }
 }
 
