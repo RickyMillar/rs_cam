@@ -1559,6 +1559,56 @@ mod tests {
         );
     }
 
+    /// D5 — drill / pin-drill operations: every move is a plunge with
+    /// no XY arc engagement, so the chip-geometry model returns no
+    /// `effective_chip_thickness_mm` for any sample. The gate must
+    /// route to `Unmodeled(ArcEngagementNotCaptured)` rather than
+    /// silently falling through with zero valid samples — that's the
+    /// "drill is a different gate model" carve-out.
+    ///
+    /// This locks in the implicit carve-out so D7's span-aware filter
+    /// stays a no-op for drill ops without needing OperationType
+    /// recognition.
+    #[test]
+    fn drill_like_no_arc_samples_route_to_unmodeled() {
+        // engagement above the air-cut threshold (`>= 0.02`) so the
+        // sample passes the steady-state filter and reaches the
+        // chip-geometry path. arc=None mirrors a real plunge move
+        // where the simulator can't compute an engagement arc.
+        let mut s0 = sample(0, 0, 0.5, 0.5);
+        s0.feed_rate_mm_min = 1500.0;
+        s0.cut_kinematics = crate::simulation_cut::CutKinematics::Plunge;
+        s0.arc_engagement_radians = None;
+        s0.effective_chip_thickness_mm = None;
+        let mut s1 = sample(0, 1, 0.5, 0.5);
+        s1.feed_rate_mm_min = 1500.0;
+        s1.cut_kinematics = crate::simulation_cut::CutKinematics::Plunge;
+        s1.arc_engagement_radians = None;
+        s1.effective_chip_thickness_mm = None;
+        let t = trace(vec![s0, s1]);
+        let v = evaluate(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            LutOperationFamily::Pocket,
+            LutPassRole::Roughing,
+            1500.0,
+            OperationType::Drill,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        match v {
+            ChiploadVerdict::Unmodeled {
+                reason: UnmodeledReason::ArcEngagementNotCaptured,
+            } => {}
+            other => panic!(
+                "drill-like all-plunge no-arc samples must route to Unmodeled(ArcEngagementNotCaptured), got {other:?}"
+            ),
+        }
+    }
+
     /// G17 C1+C2 reverted 2026-05-10 (D3 Path A): Plunge samples no
     /// longer skip the trip. A Plunge sample over LUT max trips
     /// Exceeds — the same as Linear/Helix. (Real adaptive3d Plunge
