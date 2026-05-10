@@ -26,7 +26,9 @@ use crate::machine::MachineProfile;
 use crate::material::Material;
 use crate::simulation_cut::SimulationCutTrace;
 use crate::tool::{MillingCutter, ToolDefinition};
+use crate::toolpath_spans::Span;
 
+use super::locality::SpanLookup;
 use super::verdict::{Confidence, PowerVerdict, SampleEvidence, UnmodeledReason};
 
 /// Worst-case anisotropy multiplier on Kc. See module-level doc.
@@ -38,6 +40,7 @@ pub fn evaluate(
     material: &Material,
     machine: &MachineProfile,
     sim_trace: Option<&SimulationCutTrace>,
+    spans: Option<&[Span]>,
     tolerance: &super::ToleranceBands,
 ) -> PowerVerdict {
     let Some(trace) = sim_trace else {
@@ -136,12 +139,13 @@ pub fn evaluate(
         )
     };
 
+    let span_lookup = spans.map(SpanLookup::new);
     let evidence = match peak_idx {
         Some(idx) => SampleEvidence::at(idx).with_locality(
             trace
                 .samples
                 .get(idx)
-                .and_then(super::locality::classify_sample_locality),
+                .and_then(|s| super::locality::classify_sample_locality(s, span_lookup.as_ref())),
         ),
         None => SampleEvidence::empty(),
     };
@@ -276,6 +280,7 @@ mod tests {
             },
             &shapeoko_makita(),
             None,
+            None,
             &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
@@ -299,6 +304,7 @@ mod tests {
             },
             &shapeoko_makita(),
             Some(&trace),
+            None,
             &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
@@ -327,6 +333,7 @@ mod tests {
             },
             &shapeoko_makita(),
             Some(&trace),
+            None,
             &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
@@ -361,6 +368,7 @@ mod tests {
             },
             &shapeoko_makita(),
             Some(&trace),
+            None,
             &crate::tool_load::ToleranceBands::default(),
         );
         match v {
@@ -393,6 +401,7 @@ mod tests {
             },
             &shapeoko_makita(),
             Some(&trace),
+            None,
             &crate::tool_load::ToleranceBands::default(),
         );
         match v {
@@ -419,6 +428,7 @@ mod tests {
             },
             &shapeoko_makita(),
             Some(&trace),
+            None,
             &crate::tool_load::ToleranceBands::default(),
         );
         match v {
@@ -449,6 +459,7 @@ mod tests {
             },
             &shapeoko_makita(),
             Some(&trace),
+            None,
             &bands,
         );
         assert!(

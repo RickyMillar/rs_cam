@@ -355,6 +355,14 @@ pub(crate) fn evaluate_candidate(
         ))?;
     let trace = sim_result.cut_trace.as_deref();
 
+    // Span lookup for D6/D7: each candidate just regenerated the
+    // toolpath at index `toolpath_index`, so the cached compute result's
+    // `annotated.spans` are fresh. None when generation hasn't produced
+    // a result yet (callers downstream degrade to engagement-only
+    // locality labels).
+    let spans: Option<&[crate::toolpath_spans::Span]> = session_ref
+        .get_result(toolpath_index)
+        .map(|r| r.annotated.spans.as_slice());
     let load_ctx = ToolpathLoadContext {
         toolpath_id: ctx.toolpath_id,
         tool: &ctx.tool,
@@ -363,6 +371,7 @@ pub(crate) fn evaluate_candidate(
         pass_role: ctx.lut_pass_role,
         operation_feed_rate_mm_min: candidate_op.feed_rate(),
         operation_kind: ctx.operation_kind,
+        spans,
     };
     let policy_tolerance = tolerance_bands_from_policy(search_policy());
     let verdict = evaluate_toolpath(
