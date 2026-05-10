@@ -14,7 +14,7 @@
 //! 5. Preview + validator findings inline.
 //! 6. Save with summary.
 
-use rs_cam_core::gcode::{PostDefinition, PostFormat, Units, WcsCode};
+use rs_cam_core::gcode::{CoolantMode, PostDefinition, PostFormat, Units, WcsCode};
 use rs_cam_core::session::OutputLayout;
 
 use super::AppEvent;
@@ -52,6 +52,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                 0 => step_post(ui, state, events),
                 1 => step_output_layout(ui, state, events),
                 2 => step_coord_units(ui, state, events),
+                3 => step_tool_change(ui, state, events),
                 _ => placeholder(ui, state.wizard_active_step),
             }
             ui.add_space(8.0);
@@ -413,6 +414,160 @@ fn step_coord_units(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
         }
     } else if toggle.changed() && prev_override.is_some() {
         events.push(AppEvent::WizardSetSafeZOverride(None));
+    }
+}
+
+// ── Step 4 — Tool change & spindle ───────────────────────────────────
+
+fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
+    ui.heading("Tool change & spindle");
+    ui.add_space(4.0);
+
+    let session = &state.session;
+    let enabled_tcs: Vec<&rs_cam_core::session::ToolpathConfig> = session
+        .toolpath_configs()
+        .iter()
+        .filter(|tc| tc.enabled)
+        .collect();
+
+    if enabled_tcs.is_empty() {
+        ui.colored_label(
+            egui::Color32::from_rgb(220, 140, 0),
+            "⚠ No enabled toolpaths — export will fail at the next step.",
+        );
+        return;
+    }
+
+    // ── Tool summary (read-only) ──
+    ui.label(
+        egui::RichText::new("Tools used (edit pre/post snippets in the toolpath inspector):")
+            .small(),
+    );
+    ui.add_space(4.0);
+    let mut by_tool: std::collections::BTreeMap<usize, Vec<&rs_cam_core::session::ToolpathConfig>> =
+        std::collections::BTreeMap::new();
+    for tc in &enabled_tcs {
+        by_tool.entry(tc.tool_id).or_default().push(*tc);
+    }
+    egui::Grid::new("wizard_step_tool_summary")
+        .num_columns(4)
+        .spacing([12.0, 4.0])
+        .striped(true)
+        .show(ui, |ui| {
+            ui.label(egui::RichText::new("Tool").strong());
+            ui.label(egui::RichText::new("Toolpaths").strong());
+            ui.label(egui::RichText::new("Pre").strong());
+            ui.label(egui::RichText::new("Post").strong());
+            ui.end_row();
+            for (tool_id, tcs) in &by_tool {
+                let tool_name = session
+                    .tools()
+                    .iter()
+                    .find(|t| t.id.0 == *tool_id)
+                    .map_or_else(|| format!("tool {tool_id}"), |t| t.name.clone());
+                ui.label(tool_name);
+                ui.label(format!("{}", tcs.len()));
+                let any_pre = tcs.iter().any(|tc| tc.pre_gcode.is_some());
+                let any_post = tcs.iter().any(|tc| tc.post_gcode.is_some());
+                ui.label(if any_pre { "✓" } else { "—" });
+                ui.label(if any_post { "✓" } else { "—" });
+                ui.end_row();
+            }
+        });
+    if by_tool.len() > 1 {
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new(format!(
+                "{} tool change{} required during export.",
+                by_tool.len() - 1,
+                if by_tool.len() == 2 { "" } else { "s" },
+            ))
+            .small()
+            .italics(),
+        );
+    }
+
+    ui.add_space(12.0);
+
+    // ── Spindle warmup ──
+    ui.heading("Spindle warmup");
+    ui.add_space(4.0);
+    let wiz = state.session.wizard();
+    let mut warmup = wiz.spindle_warmup_secs;
+    let resp = ui.add(
+        egui::DragValue::new(&mut warmup)
+            .speed(1.0)
+            .suffix(" s")
+            .range(0..=120),
+    );
+    ui.label(
+        egui::RichText::new(
+            "Dwell after spindle-on before the first cutting move. Zero = no extra dwell \
+             beyond the post's preamble.",
+        )
+        .small()
+        .italics(),
+    );
+    if resp.changed() && warmup != wiz.spindle_warmup_secs {
+        events.push(AppEvent::WizardSetSpindleWarmup(warmup));
+    }
+
+    ui.add_space(12.0);
+
+    // ── Coolant summary ──
+    ui.heading("Coolant");
+    ui.add_space(4.0);
+    let mut counts = [0usize; 4];
+    for tc in &enabled_tcs {
+        let idx = coolant_idx(tc.coolant);
+        // SAFETY: coolant_idx returns 0..=3, counts is len 4.
+        #[allow(clippy::indexing_slicing)]
+        {
+            counts[idx] += 1;
+        }
+    }
+    egui::Grid::new("wizard_step_coolant_summary")
+        .num_columns(2)
+        .spacing([12.0, 4.0])
+        .show(ui, |ui| {
+            for (idx, &count) in counts.iter().enumerate() {
+                if count == 0 {
+                    continue;
+                }
+                ui.label(coolant_label(coolant_from_idx(idx)));
+                ui.label(format!("{count} toolpath(s)"));
+                ui.end_row();
+            }
+        });
+    ui.label(
+        egui::RichText::new("Coolant is per-toolpath; edit in the toolpath inspector.")
+            .small()
+            .italics(),
+    );
+}
+
+fn coolant_idx(c: CoolantMode) -> usize {
+    match c {
+        CoolantMode::Off => 0,
+        CoolantMode::Mist => 1,
+        CoolantMode::Flood => 2,
+        CoolantMode::Both => 3,
+    }
+}
+fn coolant_from_idx(i: usize) -> CoolantMode {
+    match i {
+        1 => CoolantMode::Mist,
+        2 => CoolantMode::Flood,
+        3 => CoolantMode::Both,
+        _ => CoolantMode::Off,
+    }
+}
+fn coolant_label(c: CoolantMode) -> &'static str {
+    match c {
+        CoolantMode::Off => "Off",
+        CoolantMode::Mist => "Mist (M7)",
+        CoolantMode::Flood => "Flood (M8)",
+        CoolantMode::Both => "Mist + Flood (M7+M8)",
     }
 }
 

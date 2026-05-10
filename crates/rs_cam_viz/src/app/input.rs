@@ -198,6 +198,11 @@ impl RsCamApp {
                     s.session.wizard_mut().safe_z_override = safe_z;
                     s.gui.mark_edited();
                 }
+                AppEvent::WizardSetSpindleWarmup(secs) => {
+                    let s = self.controller.state_mut();
+                    s.session.wizard_mut().spindle_warmup_secs = secs;
+                    s.gui.mark_edited();
+                }
                 AppEvent::WizardSetOutputLayout(layout) => {
                     let s = self.controller.state_mut();
                     s.session.wizard_mut().output_layout = layout;
