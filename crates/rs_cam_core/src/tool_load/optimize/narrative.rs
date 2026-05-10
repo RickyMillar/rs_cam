@@ -87,6 +87,14 @@ pub struct LimitingGate {
     /// band (G16 §11.4 layer 1). False otherwise — including all
     /// `Exceeds` cases.
     pub band_admitted: bool,
+    /// G17 A3 — short operator-facing locality label for the
+    /// triggering sample: "slot section", "heavy engagement",
+    /// "plunge entry", "helix entry". `None` for steady-state
+    /// samples or when arc engagement was not captured. Sourced from
+    /// `SampleEvidence.locality`, populated by per-gate evaluators
+    /// via [`crate::tool_load::locality::classify_sample_locality`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locality: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -237,11 +245,13 @@ fn limiting_gates_from_exceeds(verdict: &ToolpathLoadVerdict) -> Vec<LimitingGat
             bound,
             overshoot_fraction: signed_overshoot(triggering.observed_mm_per_tooth, bound),
             band_admitted: false,
+            locality: triggering.evidence.locality.clone(),
         });
     }
     if let PowerVerdict::Exceeds {
         peak_kw,
         available_kw,
+        evidence,
         ..
     } = &verdict.power
     {
@@ -252,10 +262,14 @@ fn limiting_gates_from_exceeds(verdict: &ToolpathLoadVerdict) -> Vec<LimitingGat
             bound: *available_kw,
             overshoot_fraction: signed_overshoot(*peak_kw, *available_kw),
             band_admitted: false,
+            locality: evidence.locality.clone(),
         });
     }
     if let DeflectionVerdict::Exceeds {
-        peak_mm, bounds, ..
+        peak_mm,
+        bounds,
+        evidence,
+        ..
     } = &verdict.deflection
     {
         out.push(LimitingGate {
@@ -265,6 +279,7 @@ fn limiting_gates_from_exceeds(verdict: &ToolpathLoadVerdict) -> Vec<LimitingGat
             bound: bounds.exceeds_mm,
             overshoot_fraction: signed_overshoot(*peak_mm, bounds.exceeds_mm),
             band_admitted: false,
+            locality: evidence.locality.clone(),
         });
     }
     out
@@ -292,6 +307,7 @@ fn limiting_gates_from_band_admit(verdict: &ToolpathLoadVerdict) -> Vec<Limiting
                 approach_to_max.bounds.max_mm_per_tooth,
             ),
             band_admitted: true,
+            locality: approach_to_max.evidence.locality.clone(),
         });
     }
     if let ChiploadVerdict::Within {
@@ -308,6 +324,7 @@ fn limiting_gates_from_band_admit(verdict: &ToolpathLoadVerdict) -> Vec<Limiting
             bound: strict_min,
             overshoot_fraction: signed_overshoot(metric.observed_mm_per_tooth, strict_min),
             band_admitted: true,
+            locality: metric.evidence.locality.clone(),
         });
     }
     out

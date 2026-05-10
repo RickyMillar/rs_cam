@@ -21,6 +21,7 @@
 
 pub mod chipload;
 pub mod deflection;
+pub mod locality;
 pub mod optimize;
 pub mod power;
 pub mod verdict;

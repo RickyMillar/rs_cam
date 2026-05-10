@@ -582,13 +582,14 @@ fn format_envelope_summary(env: &SearchEnvelopeReached) -> Option<String> {
     }
 }
 
-/// G17 A2 — compact per-gate reading. "chipload 0.071 (+28%)" for
-/// breakage-side, "chipload 0.025 (-21%)" for burn-side, "deflection
-/// 237 µm (+19%)" for deflection, etc. Used in the per-row "what
-/// stopped this candidate" badge.
+/// G17 A2 + A3 — compact per-gate reading with optional locality
+/// suffix. "chipload 0.0707 (+29%) — slot section" for the wanaka
+/// TP 1 case. The locality suffix tells the operator *where* in the
+/// cut the limit was hit; sourced from
+/// `tool_load::locality::classify_sample_locality`.
 fn format_limiting_gate(g: &LimitingGate) -> String {
     let pct = g.overshoot_fraction * 100.0;
-    match g.gate {
+    let core = match g.gate {
         GateKind::Chipload => match g.side {
             Some(ChipSide::High) => format!("chipload {:.4} ({pct:+.0}%)", g.observed),
             Some(ChipSide::Low) => format!("chipload {:.4} ({pct:+.0}%)", g.observed),
@@ -596,6 +597,10 @@ fn format_limiting_gate(g: &LimitingGate) -> String {
         },
         GateKind::Power => format!("power {:.2} kW ({pct:+.0}%)", g.observed),
         GateKind::Deflection => format!("defl {:.0} µm ({pct:+.0}%)", g.observed * 1000.0),
+    };
+    match &g.locality {
+        Some(loc) => format!("{core} — {loc}"),
+        None => core,
     }
 }
 
@@ -701,6 +706,7 @@ mod tests {
             bound: 0.055,
             overshoot_fraction: (0.0707 - 0.055) / 0.055,
             band_admitted: false,
+            locality: None,
         };
         let s = format_limiting_gate(&g);
         // Wanaka TP 1 case: 0.0707 mm/tooth, 28% over LUT max.
@@ -713,6 +719,28 @@ mod tests {
     }
 
     #[test]
+    fn format_limiting_gate_appends_locality_suffix() {
+        // G17 A3: locality is rendered as " — <label>" after the
+        // reading. Wanaka TP 1 case: chipload peak in a full-slot
+        // engagement region.
+        let g = LimitingGate {
+            gate: GateKind::Chipload,
+            side: Some(ChipSide::High),
+            observed: 0.0707,
+            bound: 0.055,
+            overshoot_fraction: (0.0707 - 0.055) / 0.055,
+            band_admitted: false,
+            locality: Some("slot section".to_owned()),
+        };
+        let s = format_limiting_gate(&g);
+        assert!(s.contains("chipload"));
+        assert!(
+            s.ends_with("— slot section"),
+            "locality suffix should append: {s}",
+        );
+    }
+
+    #[test]
     fn format_limiting_gate_deflection_uses_microns() {
         let g = LimitingGate {
             gate: GateKind::Deflection,
@@ -721,6 +749,7 @@ mod tests {
             bound: 0.200,
             overshoot_fraction: (0.237 - 0.200) / 0.200,
             band_admitted: false,
+            locality: None,
         };
         let s = format_limiting_gate(&g);
         // Wanaka refined #1 case: 237 µm peak.
