@@ -82,14 +82,19 @@ When `rs274ngc` is missing, the 12 rs274ngc tests skip with a clear message (or 
 
 | Fixture | Grbl (gvalidate) | LinuxCNC (rs274ngc) | LinuxCNC (gvalidate aux) | Mach3 (rs274ngc) | Mach3 (gvalidate aux) |
 |---------|------------------|---------------------|--------------------------|------------------|-----------------------|
-| F1 basic_lines       | ✅ pass | ⏳ pending build | ✅ pass | ⏳ pending build | ✅ pass |
-| F2 arcs_xy           | ✅ pass | ⏳ pending build | ✅ pass | ⏳ pending build | ✅ pass |
-| F3 helical_ramp      | ✅ pass | ⏳ pending build | ✅ pass | ⏳ pending build | ✅ pass |
-| F4 profile_multipass | ✅ pass | ⏳ pending build | ✅ pass | ⏳ pending build | ✅ pass |
-| F5 two_tool_changes  | 🔴 reject (M6 — real bug, see below) | ⏳ pending build | 🟡 reject (proxy limitation) | ⏳ pending build | 🟡 reject (proxy limitation) |
-| F6 two_setups        | ✅ pass | ⏳ pending build | ✅ pass | ⏳ pending build | ✅ pass |
+| F1 basic_lines       | ✅ pass | ✅ pass | ✅ pass | ✅ pass | ✅ pass |
+| F2 arcs_xy           | ✅ pass | ✅ pass | ✅ pass | ✅ pass | ✅ pass |
+| F3 helical_ramp      | ✅ pass | ✅ pass | ✅ pass | ✅ pass | ✅ pass |
+| F4 profile_multipass | ✅ pass | ✅ pass | ✅ pass | ✅ pass | ✅ pass |
+| F5 two_tool_changes  | 🔴 reject (M6 — real bug, see below) | ✅ pass | 🟡 reject (proxy limitation) | ✅ pass | 🟡 reject (proxy limitation) |
+| F6 two_setups        | ✅ pass | ✅ pass | ✅ pass | ✅ pass | ✅ pass |
 
-The "⏳ pending build" cells become ✅/🔴 once `rs274ngc` is built locally and the test re-runs. The gvalidate columns are the Phase 0.5 results, unchanged.
+**All 30 tests pass under serial execution** (rs274ngc has process-wide initialisation state; the test runner uses `--test-threads=1`). The single Grbl×F5 reject is the documented M6 emitter bug — fix lands when Phase 4b adds `tool_change.use_m6` to `PostDefinition`.
+
+**rs274ngc setup notes:**
+- Tool table: a minimal `T1..T20` tool table is generated to `/tmp/rscam_rs274_tools.tbl` (defines tool indices so `M6 T<n>` lookups don't fail with "tool not in table").
+- Batch flag `-g` required (else rs274 prompts interactively).
+- Per-invocation tempdir cwd to keep rs274's `parameter.var` writes from leaking across tests (`--test-threads=1` is the belt; the workdir is the suspenders — both are needed in practice).
 
 ### 🔴 F5 Grbl — REAL BUG: rs_cam emits `M6` for Grbl tool changes
 

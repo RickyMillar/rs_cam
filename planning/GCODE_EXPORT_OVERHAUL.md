@@ -1,6 +1,6 @@
 # G-Code Export Overhaul — Roadmap
 
-**Status:** Phase 0, 0.5, 1, 2, and 3 complete. Phase 4 (broaden corpus + grblHAL + CI emulator gate) is next.
+**Status:** Phase 0, 0.5, 1, 2, 3, and 4a complete. Phase 4b (corpus broadening + grblHAL post + new `PostDefinition` fields) is next.
 **Owner:** TBD
 **Last updated:** 2026-05-10
 **Worktree:** `/home/ricky/personal_repos/rs_cam-gcode-overhaul/` on branch `gcode-overhaul` (branched from `master` @ fe27805). All implementation work for this overhaul lives there; the main checkout stays on `master` for unrelated work and the other agent's optimizer changes.
@@ -258,7 +258,28 @@ Net diff: ~325 lines of trait + impls deleted from `gcode/mod.rs`; ~470 lines ad
 
 ---
 
-### Phase 4 — Broaden corpus & lock in emulator-validation CI gate
+### Phase 4a — Emulator-validation CI gate — **DONE**
+
+Three validators surveyed; two wired into the test harness:
+
+- **`gvalidate` (grbl-sim):** working, primary Grbl 1.1 parser; auxiliary syntax-check for LinuxCNC + Mach3 captures. Built once at `reference/validators/grbl/grbl/sim/gvalidate.exe`.
+- **`rs274ngc` (LinuxCNC):** built from source under `reference/validators/linuxcnc/` (Ubuntu 24.04 has no apt package). Authoritative LinuxCNC + Mach3 (proxy) gate. Needs `--test-threads=1` (process-wide init state) and a generated tool table at `/tmp/rscam_rs274_tools.tbl`.
+- **`grblHAL_validator` (grblHAL/Simulator):** built but unusable — `protocol_main_loop()` doesn't exit on EOF. Documented upstream bug; deferred to Phase 4b once upstream lands a fix. gvalidate covers grblHAL needs (grblHAL is a strict superset of Grbl 1.1).
+
+Test harness (`crates/rs_cam_core/tests/gcode_emulator_validation.rs`) grew from 18 to 30 tests:
+- 6 Grbl × gvalidate
+- 6 LinuxCNC × rs274ngc + 6 LinuxCNC × gvalidate (auxiliary)
+- 6 Mach3 × rs274ngc + 6 Mach3 × gvalidate (auxiliary)
+
+CI gate via `CI_REQUIRE_VALIDATORS` env var: unset/0 → skip-on-missing; `1`/`true` → require all; csv (e.g. `gvalidate,rs274ngc`) → stage enforcement. GitHub Action job `gcode-emulator-gate` builds gvalidate, runs the test under `CI_REQUIRE_VALIDATORS=gvalidate` (rs274ngc CI build deferred to 4b — needs the LinuxCNC source build in the CI image).
+
+**Per-fixture matrix:** see `planning/gcode_gap_report.md`. All 30 tests green, with one documented Grbl×F5 reject (M6 emitter bug — fix lands in 4b).
+
+**Validator install steps:** see `planning/post_reference_notes.md` "Validator install".
+
+---
+
+### Phase 4b — Broaden corpus, grblHAL post, new PostDefinition fields
 **Earn the safety claim through controller-parser passes, not Fusion bytes.**
 
 - Grow the fixture corpus from 6 to 15-20 (add edge cases as they emerge: full-circle, single-axis-only-feed, ramp-into-arc, extremely small arcs, depth-step boundaries, etc.). Same `Toolpath`-based fixture style as Phase 0.
@@ -328,7 +349,8 @@ Add as needed (Centroid, Masso, Buildbotics, Mach4, Smoothieware) on user reques
 | 1 | Validator (5 priority rules) | No | <1 day (done) |
 | 2 | `Program` IR refactor | No (byte-identical) | 2–3 days (done) |
 | 3 | Data-driven post (TOML) | No (byte-identical) | 3–4 days (done) |
-| 4 | Broaden corpus + grblHAL + CI emulator gate | Maybe (intentional fixes) | 3–5 days |
+| 4a | CI emulator gate (gvalidate + rs274ngc) | No | <1 day (done) |
+| 4b | Broaden corpus + grblHAL post + new PostDefinition fields | Maybe (intentional fixes) | 3–4 days |
 | 5 | Wizard UX | No (additive) | 3–4 days |
 | 6 | Power features (incl. CAMotics motion-sim option) | Per-feature | Open-ended |
 
