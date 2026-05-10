@@ -289,12 +289,24 @@ pub struct RapidCollision {
 /// Check for rapid (G0) moves that pass through remaining stock material.
 ///
 /// Samples points along each rapid move and queries the dexel Z-grid to
-/// determine whether material exists at that height. This correctly
-/// handles material already removed by prior operations.
+/// determine whether material exists at that height. The grid passed in
+/// is a *snapshot* — it is not updated as the toolpath progresses, so
+/// the carve-outs below cover the in-toolpath patterns where the dexel
+/// snapshot disagrees with the column's actual cleared depth.
 ///
-/// Purely vertical retracts (same XY, Z going up) are skipped: the tool
-/// retracts from a just-machined column where no stock remains above it
-/// within the same toolpath.
+/// **Vertical retracts (same XY, Z going up).** After a cutting move the
+/// tool retracts from already-machined material — no stock can be present
+/// at that dexel column above the move's end Z.
+///
+/// **F3 — same-XY descent re-entry to a just-cut column.** When a
+/// preceding feed move ended at the same XY at a Z below the rapid's
+/// end Z, the rapid is descending back into a column the immediately-
+/// previous cut already cleared above its end Z. The dexel snapshot
+/// still shows full stock there (it's frozen at toolpath-start), but
+/// physically that column is air down to at least the prior feed's end
+/// Z. Catches the drill peck `feed-down → rapid-up → rapid-down-to-just-
+/// above-floor` pattern (every peck after the first emitted a false
+/// positive) and the milling lift-and-dive variant.
 pub fn check_rapid_collisions_against_stock(
     toolpath: &Toolpath,
     z_grid: &crate::dexel::DexelGrid,
@@ -321,6 +333,41 @@ pub fn check_rapid_collisions_against_stock(
         let xy_dist_sq = dx * dx + dy * dy;
         if dz > 0.0 && xy_dist_sq < 0.01 {
             continue;
+        }
+
+        // F3 carve-out: pure-Z descent to a column the previous feed
+        // already cleared above this rapid's end. Walk back through
+        // pure-Z moves to find the most recent feed at this XY; if it
+        // ended at a Z below `end.z`, the column is cleared down to at
+        // least `end.z` and this rapid can't physically hit anything.
+        if dz < 0.0 && xy_dist_sq < 0.01 {
+            let mut k = i;
+            let cleared_above = loop {
+                if k == 0 {
+                    break None;
+                }
+                k -= 1;
+                let m = &toolpath.moves[k];
+                let dxk = m.target.x - end.x;
+                let dyk = m.target.y - end.y;
+                if dxk * dxk + dyk * dyk >= 0.01 {
+                    // Different XY — peck-cycle re-entry doesn't apply.
+                    break None;
+                }
+                if !matches!(m.move_type, MoveType::Rapid) {
+                    // First non-rapid encountered at this XY column.
+                    // If it ended at or below `end.z`, the column is
+                    // cleared down to (at least) the rapid's end —
+                    // the descent passes through air the dexel snapshot
+                    // doesn't know about.
+                    break Some(m.target.z);
+                }
+            };
+            if let Some(prior_feed_end_z) = cleared_above
+                && prior_feed_end_z <= end.z
+            {
+                continue;
+            }
         }
 
         let dist = (dx * dx + dy * dy + dz * dz).sqrt();
@@ -734,6 +781,74 @@ mod tests {
             collisions.is_empty(),
             "Finish raster after roughing should have zero collisions, got {}",
             collisions.len()
+        );
+    }
+
+    /// F3 — drill peck cycle pattern: feed-down to peck N, rapid-up to
+    /// retract_z, rapid-back-down to peck N + small clearance. The
+    /// dexel snapshot is frozen at toolpath start (full stock at the
+    /// hole's XY column), but physically the previous peck cleared the
+    /// column down to peck N's depth, so the rapid-back-down passes
+    /// through air — no collision. Pre-F3 this fired one false positive
+    /// per peck after the first.
+    #[test]
+    fn drill_peck_reentry_rapid_does_not_collide() {
+        let stock = crate::geo::BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(100.0, 100.0, 20.0),
+        };
+        let grid = grid_from_bbox(&stock);
+        let mut tp = Toolpath::new();
+        let (x, y) = (50.0, 50.0);
+        let retract_z = 22.0;
+        // Get into position above hole.
+        tp.rapid_to(P3::new(x, y, retract_z));
+        // Peck 1: feed down 3mm.
+        tp.feed_to(P3::new(x, y, 17.0), 300.0);
+        // Retract up — vertical retract, already covered by the
+        // dz>0 carve-out.
+        tp.rapid_to(P3::new(x, y, retract_z));
+        // Re-entry rapid down to just-above peck 1's floor.
+        // PRE-F3 this fired a false positive.
+        tp.rapid_to(P3::new(x, y, 17.5));
+        // Peck 2: feed down to 14mm.
+        tp.feed_to(P3::new(x, y, 14.0), 300.0);
+        // Retract again.
+        tp.rapid_to(P3::new(x, y, retract_z));
+        // Re-entry rapid down to just-above peck 2's floor.
+        tp.rapid_to(P3::new(x, y, 14.5));
+
+        let collisions = check_rapid_collisions_against_stock(&tp, &grid);
+        assert!(
+            collisions.is_empty(),
+            "Drill peck re-entry rapids should not flag as collisions; \
+             got {} collisions at moves {:?}",
+            collisions.len(),
+            collisions.iter().map(|c| c.move_index).collect::<Vec<_>>(),
+        );
+    }
+
+    /// F3 — the carve-out must not weaken the existing
+    /// "rapid-down through uncleared stock" detection. A pure-Z descent
+    /// to a column where NO prior feed has cleared (e.g. the very first
+    /// rapid down to a position) should still flag.
+    #[test]
+    fn rapid_descent_to_uncleared_column_still_collides() {
+        let stock = crate::geo::BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(100.0, 100.0, 20.0),
+        };
+        let grid = grid_from_bbox(&stock);
+        let mut tp = Toolpath::new();
+        // Rapid down to Z=10 inside stock — no prior feed at this XY.
+        tp.rapid_to(P3::new(50.0, 50.0, 30.0));
+        tp.rapid_to(P3::new(50.0, 50.0, 10.0));
+
+        let collisions = check_rapid_collisions_against_stock(&tp, &grid);
+        assert_eq!(
+            collisions.len(),
+            1,
+            "Pure-Z rapid down to uncleared stock must still collide",
         );
     }
 }
