@@ -49,9 +49,10 @@ fn write_capture(fixture: &str, dialect: &str, gcode: &str) {
     println!("wrote {}", path.display());
 }
 
-fn dialects() -> [(&'static str, &'static PostDefinition); 3] {
+fn dialects() -> [(&'static str, &'static PostDefinition); 4] {
     [
         ("grbl", post::grbl()),
+        ("grblhal", post::grblhal()),
         ("linuxcnc", post::linuxcnc()),
         ("mach3", post::mach3()),
     ]

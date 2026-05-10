@@ -1,6 +1,11 @@
 //! Phase 1 validator baseline: runs `gcode_validator::validate` on each
-//! of the 18 captured fixtures and asserts the finding count + kinds
-//! match what we expect from `planning/gcode_gap_report.md`.
+//! captured fixture and asserts the finding count + kinds match what we
+//! expect from `planning/gcode_gap_report.md`.
+//!
+//! Phase 4b broadened the dialect set from 3 to 4 (added grblHAL); the
+//! grblHAL captures of the existing F1–F6 fixtures have zero findings
+//! (post emits G54 + supports M6 + M30 program end), so the total stays
+//! at 37 findings across 24 captures.
 //!
 //! The goal of subsequent phases is to drive each of these counts to
 //! zero. This test acts as the regression suite: when Phase 2/3 fixes
@@ -46,6 +51,7 @@ fn read_capture(fixture: &str, dialect: &str) -> String {
 fn dialect_to_post(dialect: &str) -> PostFormat {
     match dialect {
         "grbl" => PostFormat::Grbl,
+        "grblhal" => PostFormat::GrblHal,
         "linuxcnc" => PostFormat::LinuxCnc,
         "mach3" => PostFormat::Mach3,
         other => panic!("unknown dialect: {other}"),
@@ -105,6 +111,15 @@ const BASELINE: &[Expected] = &[
         dialect: "grbl",
         findings: &[(FindingKind::MissingWcs, 1)],
     },
+
+    // ── grblHAL: emits G54 + supports M6 + M30 program end →
+    //    zero findings across the existing F1–F6 corpus.
+    Expected { fixture: "f1_basic_lines",       dialect: "grblhal", findings: &[] },
+    Expected { fixture: "f2_arcs_xy",           dialect: "grblhal", findings: &[] },
+    Expected { fixture: "f3_helical_ramp",      dialect: "grblhal", findings: &[] },
+    Expected { fixture: "f4_profile_multipass", dialect: "grblhal", findings: &[] },
+    Expected { fixture: "f5_two_tool_changes",  dialect: "grblhal", findings: &[] },
+    Expected { fixture: "f6_two_setups",        dialect: "grblhal", findings: &[] },
 
     // ── LinuxCNC: missing G91.1, missing % (×2 leading + trailing),
     //    M2 instead of M30. G54 IS emitted by the LinuxCNC post so
@@ -255,7 +270,10 @@ fn baseline_findings_match_expected() {
         );
     }
 
-    println!("\nTotal findings across 18 captures: {total_findings}");
+    println!(
+        "\nTotal findings across {} captures: {total_findings}",
+        BASELINE.len()
+    );
 
     assert!(
         failures.is_empty(),

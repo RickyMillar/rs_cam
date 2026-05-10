@@ -514,6 +514,49 @@ fn validate_f6_mach3_rs274() {
     assert_rs274_accepts("f6_two_setups", "mach3");
 }
 
+// ── grblHAL: gvalidate as syntax check (grblHAL is a strict superset of
+// Grbl 1.1 — anything gvalidate accepts is grblHAL-valid; grblHAL-
+// specific syntax such as $TC, M62/M63 isn't covered here, but no
+// shipped fixture uses those features today). M6 is supported on
+// grblHAL so F5 should pass once we surface a `use_m6 = true` field
+// on PostDefinition; until then F5 grblhal also rejects via the same
+// proxy limitation as LinuxCNC/Mach3.
+#[test]
+#[ignore = "phase 4b emulator validation"]
+fn validate_f1_grblhal() {
+    assert_gvalidate_accepts("f1_basic_lines", "grblhal");
+}
+#[test]
+#[ignore = "phase 4b emulator validation"]
+fn validate_f2_grblhal() {
+    assert_gvalidate_accepts("f2_arcs_xy", "grblhal");
+}
+#[test]
+#[ignore = "phase 4b emulator validation"]
+fn validate_f3_grblhal() {
+    assert_gvalidate_accepts("f3_helical_ramp", "grblhal");
+}
+#[test]
+#[ignore = "phase 4b emulator validation"]
+fn validate_f4_grblhal() {
+    assert_gvalidate_accepts("f4_profile_multipass", "grblhal");
+}
+#[test]
+#[ignore = "phase 4b emulator validation"]
+fn validate_f5_grblhal() {
+    assert_gvalidate_rejects(
+        "f5_two_tool_changes",
+        "grblhal",
+        20,
+        "gvalidate (Grbl 1.1 parser) rejects M6 — valid in grblHAL; needs working grblHAL_validator (deferred — upstream EOF-hang)",
+    );
+}
+#[test]
+#[ignore = "phase 4b emulator validation"]
+fn validate_f6_grblhal() {
+    assert_gvalidate_accepts("f6_two_setups", "grblhal");
+}
+
 // gvalidate cross-check on Mach3 captures (auxiliary, syntax-only).
 #[test]
 #[ignore = "phase 4a emulator validation"]
