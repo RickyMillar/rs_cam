@@ -765,6 +765,12 @@ pub(super) fn segments_to_toolpath(
 ) -> (Toolpath, Vec<Adaptive3dRuntimeAnnotation>) {
     let mut tp = Toolpath::new();
     let mut annotations = Vec::new();
+    // D4 — running pass index for `PassEntry` annotations. Increments
+    // once per `Adaptive3dSegment::Rapid` / `RapidWithFloor` (each is
+    // an entry into a new pass). Used as the operator-facing pass
+    // ordinal in narrate / semantic output and as the structural
+    // Entry span's label.
+    let mut pass_counter: usize = 0;
 
     // Lift the tool to safe_z above its current XY before any
     // traverse-then-plunge sequence. Without this, a Rapid segment
@@ -783,6 +789,16 @@ pub(super) fn segments_to_toolpath(
         }
     };
 
+    // D4 — operator-facing label of the configured entry style. Used
+    // both as the `style_label` field on the emitted `PassEntry`
+    // annotation and downstream in `compute::spans` / `compute::annotate`
+    // to label the resulting `SpanKind::Entry` / semantic `Entry`.
+    let entry_style_label: &'static str = match params.entry_style {
+        EntryStyle3d::Plunge => "plunge entry",
+        EntryStyle3d::Helix { .. } => "helix entry",
+        EntryStyle3d::Ramp { .. } => "ramp entry",
+    };
+
     for segment in segments {
         match segment {
             Adaptive3dSegment::Marker(event) => {
@@ -791,96 +807,132 @@ pub(super) fn segments_to_toolpath(
                     event: event.clone(),
                 });
             }
-            Adaptive3dSegment::Rapid(entry) => match params.entry_style {
-                EntryStyle3d::Plunge => {
-                    lift_to_safe_z(&mut tp, params.safe_z);
-                    tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
-                    emit_peck_plunge(&mut tp, entry, params.safe_z, params);
+            Adaptive3dSegment::Rapid(entry) => {
+                let entry_start = tp.moves.len();
+                match params.entry_style {
+                    EntryStyle3d::Plunge => {
+                        lift_to_safe_z(&mut tp, params.safe_z);
+                        tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                        emit_peck_plunge(&mut tp, entry, params.safe_z, params);
+                    }
+                    EntryStyle3d::Helix { radius, pitch } => {
+                        lift_to_safe_z(&mut tp, params.safe_z);
+                        tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                        let helix_start = P3::new(entry.x, entry.y, params.safe_z);
+                        crate::dressup::emit_helix(
+                            &mut tp,
+                            &helix_start,
+                            entry,
+                            radius,
+                            pitch,
+                            params.plunge_rate,
+                        );
+                    }
+                    EntryStyle3d::Ramp { max_angle_deg } => {
+                        lift_to_safe_z(&mut tp, params.safe_z);
+                        tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                        let ramp_start = P3::new(entry.x, entry.y, params.safe_z);
+                        crate::dressup::emit_ramp(
+                            &mut tp,
+                            &ramp_start,
+                            entry,
+                            (1.0, 0.0),
+                            max_angle_deg,
+                            params.plunge_rate,
+                        );
+                    }
+                };
+                let entry_end = tp.moves.len();
+                if entry_end > entry_start {
+                    annotations.push(Adaptive3dRuntimeAnnotation {
+                        move_index: entry_start,
+                        event: Adaptive3dRuntimeEvent::PassEntry {
+                            pass_index: pass_counter,
+                            entry_x: entry.x,
+                            entry_y: entry.y,
+                            entry_z: entry.z,
+                            entry_end_move_idx: entry_end,
+                            style_label: entry_style_label,
+                        },
+                    });
+                    pass_counter += 1;
                 }
-                EntryStyle3d::Helix { radius, pitch } => {
-                    lift_to_safe_z(&mut tp, params.safe_z);
-                    tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
-                    let helix_start = P3::new(entry.x, entry.y, params.safe_z);
-                    crate::dressup::emit_helix(
-                        &mut tp,
-                        &helix_start,
-                        entry,
-                        radius,
-                        pitch,
-                        params.plunge_rate,
-                    );
-                }
-                EntryStyle3d::Ramp { max_angle_deg } => {
-                    lift_to_safe_z(&mut tp, params.safe_z);
-                    tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
-                    let ramp_start = P3::new(entry.x, entry.y, params.safe_z);
-                    crate::dressup::emit_ramp(
-                        &mut tp,
-                        &ramp_start,
-                        entry,
-                        (1.0, 0.0),
-                        max_angle_deg,
-                        params.plunge_rate,
-                    );
-                }
-            },
+            }
             Adaptive3dSegment::RapidWithFloor {
                 entry,
                 rapid_floor_z,
-            } => match params.entry_style {
-                EntryStyle3d::Plunge => {
-                    // Skip the peck-feed through cleared air. The clearing
-                    // function sampled stock_top at this XY and tells us
-                    // there's nothing solid down to `rapid_floor_z` —
-                    // rapid through it, then peck only the remaining
-                    // fresh-material descent.
-                    //
-                    // Buffer above the sampled stock_top in case the dexel
-                    // sample under-reports by a fraction of a cell height
-                    // (sub-mm safety margin keeps the plunge from biting
-                    // material at rapid speed if the sample was slightly
-                    // off).
-                    const RAPID_DESCENT_BUFFER_MM: f64 = 0.5;
-                    lift_to_safe_z(&mut tp, params.safe_z);
-                    tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
-                    let descent_floor = (*rapid_floor_z + RAPID_DESCENT_BUFFER_MM)
-                        .min(params.safe_z)
-                        .max(entry.z);
-                    if descent_floor < params.safe_z - 1e-6 {
-                        tp.rapid_to(P3::new(entry.x, entry.y, descent_floor));
+            } => {
+                let entry_start = tp.moves.len();
+                match params.entry_style {
+                    EntryStyle3d::Plunge => {
+                        // Skip the peck-feed through cleared air. The clearing
+                        // function sampled stock_top at this XY and tells us
+                        // there's nothing solid down to `rapid_floor_z` —
+                        // rapid through it, then peck only the remaining
+                        // fresh-material descent.
+                        //
+                        // Buffer above the sampled stock_top in case the dexel
+                        // sample under-reports by a fraction of a cell height
+                        // (sub-mm safety margin keeps the plunge from biting
+                        // material at rapid speed if the sample was slightly
+                        // off).
+                        const RAPID_DESCENT_BUFFER_MM: f64 = 0.5;
+                        lift_to_safe_z(&mut tp, params.safe_z);
+                        tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                        let descent_floor = (*rapid_floor_z + RAPID_DESCENT_BUFFER_MM)
+                            .min(params.safe_z)
+                            .max(entry.z);
+                        if descent_floor < params.safe_z - 1e-6 {
+                            tp.rapid_to(P3::new(entry.x, entry.y, descent_floor));
+                        }
+                        emit_peck_plunge(&mut tp, entry, descent_floor, params);
                     }
-                    emit_peck_plunge(&mut tp, entry, descent_floor, params);
+                    // Helix and Ramp entries already self-pace their descent;
+                    // the rapid-floor optimisation doesn't apply (the helix /
+                    // ramp's whole point is to descend at a controlled rate).
+                    EntryStyle3d::Helix { radius, pitch } => {
+                        lift_to_safe_z(&mut tp, params.safe_z);
+                        tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                        let helix_start = P3::new(entry.x, entry.y, params.safe_z);
+                        crate::dressup::emit_helix(
+                            &mut tp,
+                            &helix_start,
+                            entry,
+                            radius,
+                            pitch,
+                            params.plunge_rate,
+                        );
+                    }
+                    EntryStyle3d::Ramp { max_angle_deg } => {
+                        lift_to_safe_z(&mut tp, params.safe_z);
+                        tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                        let ramp_start = P3::new(entry.x, entry.y, params.safe_z);
+                        crate::dressup::emit_ramp(
+                            &mut tp,
+                            &ramp_start,
+                            entry,
+                            (1.0, 0.0),
+                            max_angle_deg,
+                            params.plunge_rate,
+                        );
+                    }
+                };
+                let entry_end = tp.moves.len();
+                if entry_end > entry_start {
+                    annotations.push(Adaptive3dRuntimeAnnotation {
+                        move_index: entry_start,
+                        event: Adaptive3dRuntimeEvent::PassEntry {
+                            pass_index: pass_counter,
+                            entry_x: entry.x,
+                            entry_y: entry.y,
+                            entry_z: entry.z,
+                            entry_end_move_idx: entry_end,
+                            style_label: entry_style_label,
+                        },
+                    });
+                    pass_counter += 1;
                 }
-                // Helix and Ramp entries already self-pace their descent;
-                // the rapid-floor optimisation doesn't apply (the helix /
-                // ramp's whole point is to descend at a controlled rate).
-                EntryStyle3d::Helix { radius, pitch } => {
-                    lift_to_safe_z(&mut tp, params.safe_z);
-                    tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
-                    let helix_start = P3::new(entry.x, entry.y, params.safe_z);
-                    crate::dressup::emit_helix(
-                        &mut tp,
-                        &helix_start,
-                        entry,
-                        radius,
-                        pitch,
-                        params.plunge_rate,
-                    );
-                }
-                EntryStyle3d::Ramp { max_angle_deg } => {
-                    lift_to_safe_z(&mut tp, params.safe_z);
-                    tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
-                    let ramp_start = P3::new(entry.x, entry.y, params.safe_z);
-                    crate::dressup::emit_ramp(
-                        &mut tp,
-                        &ramp_start,
-                        entry,
-                        (1.0, 0.0),
-                        max_angle_deg,
-                        params.plunge_rate,
-                    );
-                }
-            },
+            }
             Adaptive3dSegment::Link(target) => {
                 tp.feed_to(*target, params.feed_rate);
             }
