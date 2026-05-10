@@ -282,31 +282,18 @@ fn draw_signal_spine(
         .and_then(|id| chipload_envelopes.get(&id.0))
         .map(|range| (range.start, range.end));
 
-    let mut hotspots: Vec<HotspotMarker> = trace
-        .hotspots
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, hs)| {
-            // Filter hotspot markers to the focused toolpath (if any) — same
-            // rule as the per-TP graph filtering, so dots line up with the
-            // visible track.
-            if let Some(focus) = focused_id
-                && focus.0 != hs.toolpath_id
-            {
-                return None;
-            }
-            let global_move = sim
-                .global_move_for_local(
-                    crate::state::toolpath::ToolpathId(hs.toolpath_id),
-                    hs.move_start,
-                )
-                .unwrap_or(hs.move_start);
-            Some(HotspotMarker {
-                index: idx,
-                global_move,
-            })
-        })
-        .collect();
+    // F6.1 — timeline point markers are reserved for Critical/Risky gate
+    // trips only. The per-`(toolpath_id, semantic_item_id)` aggregator
+    // dots that used to render here (one per `trace.hotspots` entry, ~850
+    // on wanaka TP 1) were reporting buckets, not problem flags, and
+    // drowned the real signal in a sea of orange. The diagnostics-panel
+    // table is the home for the per-bucket data; the timeline is the
+    // safety channel.
+    //
+    // See planning/OPTIMIZER_UX_DIALIN_FIXES.md F6 for the broader
+    // reframe (graph panels with bands instead of dots for continuous
+    // data) — this is just the dot-removal slice.
+    let mut hotspots: Vec<HotspotMarker> = Vec::new();
 
     // Add tool-load gate markers — one dot per Exceeds verdict at the
     // gate's actual worst-sample move. Reuses the timeline's already-
@@ -765,9 +752,9 @@ fn draw_signal_track(
                 if !hotspot_pts.is_empty() {
                     plot_ui.points(
                         egui_plot::Points::new(PlotPoints::from(hotspot_pts))
-                            .color(egui::Color32::from_rgb(255, 145, 70))
+                            .color(super::theme::ERROR)
                             .radius(4.0)
-                            .name("hotspots"),
+                            .name("gate trips"),
                     );
                 }
             }
