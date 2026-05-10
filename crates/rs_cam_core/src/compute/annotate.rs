@@ -293,17 +293,25 @@ pub(super) fn annotate_adaptive3d(
                 entry_x,
                 entry_y,
                 entry_z,
+                entry_end_move_idx,
+                style_label,
             } => {
                 let parent = level_ctx.as_ref().unwrap_or(op_context);
                 let scope = parent.start_item(
                     ToolpathSemanticKind::Entry,
-                    format!("Pass {} entry", pass_index + 1),
+                    format!("Pass {} {}", pass_index + 1, style_label),
                 );
                 scope.set_param("pass_index", *pass_index);
                 scope.set_param("entry_x", *entry_x);
                 scope.set_param("entry_y", *entry_y);
                 scope.set_param("entry_z", *entry_z);
-                scope.bind_to_toolpath(toolpath, ann.move_index, end);
+                scope.set_param("style", *style_label);
+                // D4 — entry sequence runs from the event's emit
+                // index (entry_start) to its captured end index. Use
+                // the explicit end so the semantic scope matches the
+                // structural span built in `compute::spans`.
+                scope.bind_to_toolpath(toolpath, ann.move_index, *entry_end_move_idx);
+                let _ = end;
                 scope.finish();
             }
             Adaptive3dRuntimeEvent::PassPreflightSkip { pass_index } => {

@@ -17,6 +17,7 @@
 
 use rs_cam_core::session::{ProjectSession, SimulationOptions};
 use rs_cam_core::simulation_cut::{CutKinematics, SimulationCutSample};
+use rs_cam_core::toolpath_spans::SpanKind;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
@@ -95,6 +96,30 @@ fn kinematics_histogram_wanaka() {
             tp_index, tp_id, tp_name, op_label
         );
         println!("  total moves: {}", toolpath.moves.len());
+        // D4 — count Entry spans, sanity-check coverage.
+        let annotated = &tp_result.annotated;
+        let entry_spans: Vec<_> = annotated
+            .spans
+            .iter()
+            .filter(|s| s.kind == SpanKind::Entry)
+            .collect();
+        let entry_move_count: usize = entry_spans.iter().map(|s| s.end_move - s.start_move).sum();
+        println!(
+            "  Entry spans: {}  ({} moves total, {} labels)",
+            entry_spans.len(),
+            entry_move_count,
+            entry_spans
+                .iter()
+                .map(|s| s.label.as_ref())
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+        );
+        if let Some(first) = entry_spans.first() {
+            println!(
+                "  First entry: range {}..{}, label '{}'",
+                first.start_move, first.end_move, first.label
+            );
+        }
         println!("==================================================================");
 
         report_for_toolpath(tp_id, &samples, &toolpath.moves);

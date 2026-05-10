@@ -199,6 +199,17 @@ pub enum Adaptive3dRuntimeEvent {
         entry_x: f64,
         entry_y: f64,
         entry_z: f64,
+        /// D4 — exclusive end move index of the entry sequence
+        /// (peck/helix/ramp). The event is emitted at
+        /// `move_index = entry_start`. Span construction in
+        /// `compute::spans::spans_from_adaptive3d_annotations` reads
+        /// this to delimit the `SpanKind::Entry` span.
+        entry_end_move_idx: usize,
+        /// Operator-facing label of the configured entry style at
+        /// emission time. One of `"plunge entry"`, `"helix entry"`,
+        /// `"ramp entry"`. Stored as `&'static str` to keep the enum
+        /// variant small.
+        style_label: &'static str,
     },
     PassPreflightSkip {
         pass_index: usize,
@@ -255,8 +266,12 @@ impl Adaptive3dRuntimeEvent {
                 entry_x,
                 entry_y,
                 entry_z,
+                style_label,
+                ..
             } => {
-                format!("Pass {pass_index} — entry at ({entry_x:.1}, {entry_y:.1}) Z {entry_z:.1}")
+                format!(
+                    "Pass {pass_index} — {style_label} at ({entry_x:.1}, {entry_y:.1}) Z {entry_z:.1}"
+                )
             }
             Self::PassPreflightSkip { pass_index } => {
                 format!("Pass {pass_index} — preflight skip (no viable direction)")
