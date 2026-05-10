@@ -179,9 +179,11 @@ pub fn build_multi_setup(setups: &[GcodeSetupPhase<'_>], safe_z: f64) -> Program
                 program.push(Statement::Raw("M9\n".to_owned()));
             }
             program.push(Statement::SafeZRetract { z: safe_z });
-            program.push(Statement::ProgramPause {
-                message: format!("Setup change: {}", setup.setup_label),
-            });
+            let pause_text = setup.pause_message.map_or_else(
+                || format!("Setup change: {}", setup.setup_label),
+                |msg| msg.to_owned(),
+            );
+            program.push(Statement::ProgramPause { message: pause_text });
 
             let next_rpm = setup
                 .phases
@@ -447,6 +449,7 @@ mod tests {
                         coolant: CoolantMode::Off,
                         controller_compensation: None,
                     }],
+                    pause_message: None,
                 },
                 GcodeSetupPhase {
                     setup_label: "Bottom",
@@ -460,6 +463,7 @@ mod tests {
                         coolant: CoolantMode::Flood,
                         controller_compensation: None,
                     }],
+                    pause_message: None,
                 },
             ]
         };
@@ -475,5 +479,69 @@ mod tests {
         let multi_a = build_multi_setup(&make_setups(), 15.0);
         let multi_b = build_multi_setup(&make_setups(), 15.0);
         assert_eq!(multi_a, multi_b, "build_multi_setup is nondeterministic");
+    }
+
+    /// `pause_message: None` falls back to the default
+    /// `Setup change: <label>` text, and `Some("…")` overrides it verbatim.
+    /// Verified by inspecting the `ProgramPause` statement directly so this
+    /// is independent of any post's comment-rendering quirks.
+    #[test]
+    fn build_multi_setup_pause_message_override() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 5.0));
+        tp.feed_to(P3::new(10.0, 0.0, -1.0), 600.0);
+
+        let make_phases = |label: &'static str| {
+            vec![GcodePhase {
+                toolpath: &tp,
+                spindle_rpm: 18_000,
+                label,
+                pre_gcode: None,
+                post_gcode: None,
+                tool_number: Some(1),
+                coolant: CoolantMode::Off,
+                controller_compensation: None,
+            }]
+        };
+
+        // Default: pause_message=None → "Setup change: Bottom"
+        let setups_default = vec![
+            GcodeSetupPhase {
+                setup_label: "Top",
+                phases: make_phases("top"),
+                pause_message: None,
+            },
+            GcodeSetupPhase {
+                setup_label: "Bottom",
+                phases: make_phases("bottom"),
+                pause_message: None,
+            },
+        ];
+        let prog_default = build_multi_setup(&setups_default, 15.0);
+        let pause_default = prog_default.statements.iter().find_map(|s| match s {
+            Statement::ProgramPause { message } => Some(message.as_str()),
+            _ => None,
+        });
+        assert_eq!(pause_default, Some("Setup change: Bottom"));
+
+        // Override: pause_message wins.
+        let setups_override = vec![
+            GcodeSetupPhase {
+                setup_label: "Top",
+                phases: make_phases("top"),
+                pause_message: None,
+            },
+            GcodeSetupPhase {
+                setup_label: "Bottom",
+                phases: make_phases("bottom"),
+                pause_message: Some("Run Z Probe macro then Resume"),
+            },
+        ];
+        let prog_override = build_multi_setup(&setups_override, 15.0);
+        let pause_override = prog_override.statements.iter().find_map(|s| match s {
+            Statement::ProgramPause { message } => Some(message.as_str()),
+            _ => None,
+        });
+        assert_eq!(pause_override, Some("Run Z Probe macro then Resume"));
     }
 }

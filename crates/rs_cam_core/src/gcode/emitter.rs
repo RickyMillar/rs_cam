@@ -449,6 +449,7 @@ M3 S{spindle_rpm}
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
                 }],
+                pause_message: None,
             },
             GcodeSetupPhase {
                 setup_label: "S2",
@@ -462,6 +463,7 @@ M3 S{spindle_rpm}
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
                 }],
+                pause_message: None,
             },
         ];
 

@@ -391,6 +391,10 @@ fn controller_comp_for_project_toolpath(
 pub struct GcodeSetupPhase<'a> {
     pub setup_label: &'a str,
     pub phases: Vec<GcodePhase<'a>>,
+    /// Optional override for the M0 pause message emitted between this setup
+    /// and the previous one (i.e. shown by g-Sender / UGS / CNCjs as the
+    /// pause prompt). `None` falls back to `Setup change: <setup_label>`.
+    pub pause_message: Option<&'a str>,
 }
 
 /// Emit checked G-code for multiple setups with M0 pauses between them.
@@ -598,6 +602,7 @@ mod tests {
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
                 }],
+                pause_message: None,
             },
             GcodeSetupPhase {
                 setup_label: "Bottom",
@@ -611,6 +616,7 @@ mod tests {
                     coolant: CoolantMode::Flood,
                     controller_compensation: None,
                 }],
+                pause_message: None,
             },
         ];
 
@@ -859,6 +865,7 @@ mod tests {
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
                 }],
+                pause_message: None,
             },
             GcodeSetupPhase {
                 setup_label: "Bottom",
@@ -872,6 +879,7 @@ mod tests {
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
                 }],
+                pause_message: None,
             },
         ];
 
@@ -941,6 +949,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             }],
+            pause_message: None,
         }];
 
         let gcode = emit_gcode_multi_setup(&setups, post::grbl(), 15.0);
