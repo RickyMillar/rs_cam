@@ -59,6 +59,98 @@ fn clamp_feed(output: &mut String, post: &PostDefinition, requested: f64) -> f64
     requested
 }
 
+/// True if an arc with incremental centre `(i, j)` should be emitted
+/// as a chord instead of `G2`/`G3`. Radius computed from the IJK
+/// offset since I/J are start-relative.
+fn should_linearize_arc(post: &PostDefinition, i: f64, j: f64) -> bool {
+    if !post.arc_linearize.enabled {
+        return false;
+    }
+    let r = (i * i + j * j).sqrt();
+    r < post.arc_linearize.threshold_mm
+}
+
+/// Scan a single line of `Statement::Raw` text and return `Some(n)` if
+/// it issues an M-code listed in `post.unsupported_mcodes`.
+fn unsupported_mcode_in_line(line: &str, denylist: &[u32]) -> Option<u32> {
+    if denylist.is_empty() {
+        return None;
+    }
+    for token in line.split_whitespace() {
+        if let Some(rest) = token.strip_prefix('M').or_else(|| token.strip_prefix('m'))
+            && let Ok(n) = rest.parse::<u32>()
+            && denylist.contains(&n)
+        {
+            return Some(n);
+        }
+    }
+    None
+}
+
+/// True if the line issues a cutter-comp word (G40/G41/G42).
+fn line_uses_cutter_comp(line: &str) -> bool {
+    for token in line.split_whitespace() {
+        let upper = token.to_ascii_uppercase();
+        if upper == "G40" || upper == "G41" || upper == "G42" {
+            return true;
+        }
+        // Tool-comp variant `G41 D<n>` shows up as one token "G41" so
+        // the simple equality above catches it. `G41.1`/`G42.1` (dynamic
+        // comp) would also reject here — that's the correct behaviour
+        // for a post that says supports_cutter_comp = false.
+        if upper.starts_with("G41.") || upper.starts_with("G42.") {
+            return true;
+        }
+    }
+    false
+}
+
+/// Filter a `Statement::Raw` text against the post's denylists. Each
+/// line containing an unsupported M-code or (when comp is unsupported)
+/// a cutter-comp word is replaced by a warning comment.
+fn filter_raw(text: &str, post: &PostDefinition) -> String {
+    let needs_mcode_filter = !post.unsupported_mcodes.is_empty();
+    let needs_comp_filter = !post.supports_cutter_comp;
+    if !needs_mcode_filter && !needs_comp_filter {
+        return text.to_owned();
+    }
+    let trailing_nl = text.ends_with('\n');
+    let body = text.strip_suffix('\n').unwrap_or(text);
+    let mut out = String::with_capacity(text.len());
+    for (idx, line) in body.split('\n').enumerate() {
+        if idx > 0 {
+            out.push('\n');
+        }
+        if needs_mcode_filter
+            && let Some(n) = unsupported_mcode_in_line(line, &post.unsupported_mcodes)
+        {
+            // render_comment includes a trailing newline; strip it so the
+            // outer split('\n') reassembly stays consistent.
+            let comment = post.render_comment(&format!(
+                "WARNING: M{n} unsupported on {}; dropped: {}",
+                post.name,
+                line.trim()
+            ));
+            out.push_str(comment.trim_end_matches('\n'));
+            continue;
+        }
+        if needs_comp_filter && line_uses_cutter_comp(line) {
+            let comment = post.render_comment(&format!(
+                "WARNING: cutter compensation unsupported on {}; dropped: {}",
+                post.name,
+                line.trim()
+            ));
+            out.push_str(comment.trim_end_matches('\n'));
+            continue;
+        }
+        out.push_str(line);
+    }
+    if trailing_nl {
+        out.push('\n');
+    }
+    out
+}
+
 fn emit_statement(output: &mut String, statement: &Statement, post: &PostDefinition) {
     let xyz = post.decimals.xyz;
     let feed_dp = post.decimals.feed;
@@ -78,7 +170,7 @@ fn emit_statement(output: &mut String, statement: &Statement, post: &PostDefinit
             output.push_str(&post.render_program_pause(message));
         }
         Statement::Comment(ref text) => output.push_str(&post.render_comment(text)),
-        Statement::Raw(ref text) => output.push_str(text),
+        Statement::Raw(ref text) => output.push_str(&filter_raw(text, post)),
         Statement::Rapid { x, y, z } => {
             let _ = writeln!(output, "G0 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$}");
         }
@@ -94,17 +186,33 @@ fn emit_statement(output: &mut String, statement: &Statement, post: &PostDefinit
         }
         Statement::ArcCw { x, y, z, i, j, feed } => {
             let feed = clamp_feed(output, post, feed);
-            let _ = writeln!(
-                output,
-                "G2 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} I{i:.ijk$} J{j:.ijk$} F{feed:.feed_dp$}"
-            );
+            if should_linearize_arc(post, i, j) {
+                // Sub-threshold arc — emit as a chord. Some controllers
+                // (Grbl 1.1, rs274ngc) reject sub-mm arcs outright.
+                let _ = writeln!(
+                    output,
+                    "G1 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} F{feed:.feed_dp$}"
+                );
+            } else {
+                let _ = writeln!(
+                    output,
+                    "G2 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} I{i:.ijk$} J{j:.ijk$} F{feed:.feed_dp$}"
+                );
+            }
         }
         Statement::ArcCcw { x, y, z, i, j, feed } => {
             let feed = clamp_feed(output, post, feed);
-            let _ = writeln!(
-                output,
-                "G3 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} I{i:.ijk$} J{j:.ijk$} F{feed:.feed_dp$}"
-            );
+            if should_linearize_arc(post, i, j) {
+                let _ = writeln!(
+                    output,
+                    "G1 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} F{feed:.feed_dp$}"
+                );
+            } else {
+                let _ = writeln!(
+                    output,
+                    "G3 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} I{i:.ijk$} J{j:.ijk$} F{feed:.feed_dp$}"
+                );
+            }
         }
         Statement::SafeZRetract { z } => {
             let _ = writeln!(output, "G0 Z{z:.xyz$}");
