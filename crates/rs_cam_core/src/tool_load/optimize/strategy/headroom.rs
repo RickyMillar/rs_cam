@@ -225,6 +225,7 @@ mod tests {
                 },
             },
             confidence: Confidence::Validated,
+            entry_spikes: Vec::new(),
         }
     }
 
@@ -235,6 +236,7 @@ mod tests {
             available_kw: 0.71,
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
+            entry_spike: None,
         }
     }
 
@@ -248,6 +250,7 @@ mod tests {
             },
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
+            entry_spike: None,
         }
     }
 

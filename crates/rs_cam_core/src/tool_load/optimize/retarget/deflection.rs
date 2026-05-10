@@ -319,6 +319,7 @@ mod tests {
             },
             evidence: crate::tool_load::verdict::SampleEvidence::empty(),
             confidence: Confidence::Validated,
+            entry_spike: None,
         };
         assert!(r.target(&within, &space, &view, &ctx).is_none());
 

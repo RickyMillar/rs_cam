@@ -40,12 +40,53 @@ use std::sync::OnceLock;
 
 use crate::compute::catalog::OperationType;
 use crate::feeds::ToolGeometryHint;
-use crate::feeds::vendor_lookup::{LookupQuery, find_best_row};
+use crate::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_row};
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily, VendorLut};
 use crate::feeds::vendor_normalize::material_to_lut;
 use crate::material::Material;
 use crate::simulation_cut::SimulationCutTrace;
 use crate::tool::{MillingCutter, ToolDefinition};
+use crate::toolpath_spans::Span;
+
+use super::locality::SpanLookup;
+
+/// D9 — `mean_chip / feed_per_tooth` for a flat endmill at the given
+/// engagement arc. Mirrors `flat_chip_geometry_for_radius`'s mean-chip
+/// formula in `crate::tool::flat_chip_geometry_for_radius`. Used to
+/// renormalize the per-sample chip-thickness reading to the LUT row's
+/// calibrated engagement before comparison.
+///
+/// At slot (`arc = π`): factor ≈ 0.637.
+/// At half engagement (`arc = π/2`): factor ≈ 0.373.
+/// At ~27 % radial (`arc ≈ 1.085`, the wanaka LUT row's nominal): ≈ 0.233.
+fn mean_chip_factor(arc_rad: f64) -> f64 {
+    let arc = arc_rad.clamp(1e-9, std::f64::consts::PI);
+    let h_max = if arc >= std::f64::consts::PI {
+        1.0
+    } else {
+        arc.sin().abs()
+    };
+    (2.0 * h_max / arc) * (1.0 - (arc * 0.5).cos())
+}
+
+/// D9 — derive the engagement arc (radians) the LUT row was authored
+/// against, from its calibrated radial-engagement window
+/// (`ae_min_mm`/`ae_max_mm`) and calibrated diameter. Returns `None`
+/// when either field is missing — caller falls back to direct
+/// (un-normalized) comparison.
+///
+/// For a flat endmill of diameter `D` with radial engagement `ae`,
+/// `engagement_arc = acos(1 − 2·ae/D)`, bounded by `[0, π]`.
+fn lut_nominal_arc_rad(row: &LookupResult) -> Option<f64> {
+    let ae_min = row.ae_min_mm?;
+    let ae_max = row.ae_max_mm?;
+    if row.row_diameter_mm <= 0.0 {
+        return None;
+    }
+    let ae_mid = (ae_min + ae_max) * 0.5;
+    let ratio = (1.0 - 2.0 * ae_mid / row.row_diameter_mm).clamp(-1.0, 1.0);
+    Some(ratio.acos())
+}
 
 /// Process-wide cache of the embedded Amana vendor LUT. The LUT is built
 /// from `include_str!` data, so building it parses 5 JSON files; we do
@@ -190,19 +231,19 @@ pub(crate) fn steady_state_samples_for_toolpath<'a>(
 ///
 /// `operation_kind` is the toolpath's `OperationType`. For most kinds
 /// the (operation_family, pass_role) tuple from the operation spec is
-/// what gets passed to the LUT lookup. `OperationType::ProjectCurve`
-/// is a special case: ProjectCurve isn't a vendor LUT family in its
-/// own right but is geometrically a 3D contour-trace operation, so
-/// for ball/tapered-ball tools we route it to (Parallel, Finish) and
-/// for flat tools to (Contour, Finish). V-bit and bull-nose
-/// project_curve toolpaths leave the lookup unrouted and return
-/// `Unmodeled(NoVendorData)` (Item D of the tool-load fidelity plan).
+/// what gets passed to the LUT lookup. Two kinds get rerouted by
+/// `routed_lookup_family`: `ProjectCurve` (ball/tapered-ball → Parallel,
+/// flat → Contour; v-bit / bull-nose return `Unmodeled(NoVendorData)`
+/// — Item D of the tool-load fidelity plan) and `Adaptive3d`
+/// (Adaptive → Pocket so the LUT envelope reflects pocket-style
+/// clearing instead of 2D adaptive HSM — design doc §1.3, §10).
 #[allow(clippy::too_many_arguments)]
 pub fn evaluate(
     toolpath_id: usize,
     tool: &ToolDefinition,
     material: &Material,
     sim_trace: Option<&SimulationCutTrace>,
+    spans: Option<&[Span]>,
     operation_family: LutOperationFamily,
     pass_role: LutPassRole,
     operation_feed_rate_mm_min: f64,
@@ -326,6 +367,21 @@ pub fn evaluate(
     // the burn-risk verdict. See `Burn-risk verdict semantics` above.
     let mut burn_samples: Vec<(f64, usize)> = Vec::new();
 
+    // D9 — engagement-aware normalization. Vendor LUT chip-load bounds
+    // are authored at a specific engagement arc (Amana flat-endmill
+    // roughing rows: ~17–37 % radial, arc ≈ 1.0–1.5 rad). Each sample's
+    // `effective_chip_thickness_mm` is the arc-average mean chip the
+    // dexel saw at *its* engagement arc, which can differ wildly (slot
+    // engagement on terrain produces mean ≈ 0.637 × feed; LUT-nominal
+    // ≈ 0.233 × feed). To compare on a common basis, scale each sample
+    // to the LUT-nominal-arc-equivalent mean before comparing the cap.
+    // When the LUT row lacks `ae_min_mm`/`ae_max_mm` (or a sample lacks
+    // arc data), the normalization is skipped — the comparison falls
+    // back to the raw mean. See planning/STRUCTURAL_ENTRY_SPANS_AND_LOCALITY.md
+    // D2 for the calibration audit that motivated this.
+    let arc_lut_nominal = lut_nominal_arc_rad(&result);
+    let lut_factor = arc_lut_nominal.map(mean_chip_factor);
+
     for (i, s) in steady_samples {
         // Samples whose chip-thickness model didn't produce a value (e.g.
         // axial_doc = 0 transients on a 3D toolpath, or arc not captured)
@@ -340,21 +396,35 @@ pub fn evaluate(
             }
             continue;
         };
+        // Normalize this sample to the LUT row's nominal engagement
+        // arc. If either side lacks the data, fall back to the raw
+        // mean (preserves prior behaviour for rows missing ae bounds).
+        let cl_normalized = match (s.arc_engagement_radians, lut_factor) {
+            (Some(arc_sample), Some(lut_f)) if lut_f > 0.0 => {
+                let sample_factor = mean_chip_factor(arc_sample);
+                if sample_factor > 0.0 {
+                    cl * (lut_f / sample_factor)
+                } else {
+                    cl
+                }
+            }
+            _ => cl,
+        };
         valid_count += 1;
-        burn_samples.push((cl, i));
+        burn_samples.push((cl_normalized, i));
         // Layer 1 tolerance band: a single sample 1-2% over `max` (e.g.
         // wanaka TP4 5/2026 transient at 1.05% over) shouldn't flip the
         // verdict to `Exceeds(High)`. The widened trigger is purely a
         // gate-trip decision; the underlying `peak_above` deviation is
         // still recorded so downstream displays surface the value.
         let max_trigger = max * (1.0 + tolerance.breakage);
-        if cl > max_trigger {
-            let dev = cl - max;
+        if cl_normalized > max_trigger {
+            let dev = cl_normalized - max;
             if peak_above.is_none_or(|(prev, _)| dev > prev) {
                 peak_above = Some((dev, i));
             }
-        } else if cl > peak_in_range.0 {
-            peak_in_range = (cl, i);
+        } else if cl_normalized > peak_in_range.0 {
+            peak_in_range = (cl_normalized, i);
         }
     }
 
@@ -400,13 +470,21 @@ pub fn evaluate(
 
     // 6. Build verdict. Above-max takes priority over below-min: breakage is more
     // catastrophic than burn risk and we want it surfaced.
+    let span_lookup = spans.map(SpanLookup::new);
+    let locality_for = |idx: usize| -> Option<String> {
+        trace
+            .samples
+            .get(idx)
+            .and_then(|s| super::locality::classify_sample_locality(s, span_lookup.as_ref()))
+    };
     if let Some((dev, idx)) = peak_above {
         return ChiploadVerdict::Exceeds {
             side: ChipSide::High,
             triggering: ChiploadMetric {
                 observed_mm_per_tooth: max + dev,
                 statistic: ChiploadStatistic::PeakHigh,
-                evidence: SampleEvidence::at_with_stat(idx, ChiploadStatistic::PeakHigh),
+                evidence: SampleEvidence::at_with_stat(idx, ChiploadStatistic::PeakHigh)
+                    .with_locality(locality_for(idx)),
                 bounds,
             },
             confidence: chipload_confidence,
@@ -419,7 +497,8 @@ pub fn evaluate(
             triggering: ChiploadMetric {
                 observed_mm_per_tooth: observed,
                 statistic: ChiploadStatistic::MedianLow,
-                evidence: SampleEvidence::at_with_stat(idx, ChiploadStatistic::MedianLow),
+                evidence: SampleEvidence::at_with_stat(idx, ChiploadStatistic::MedianLow)
+                    .with_locality(locality_for(idx)),
                 bounds,
             },
             confidence: chipload_confidence,
@@ -433,7 +512,8 @@ pub fn evaluate(
         (Some(_), Some((median_cl, median_idx))) => Some(ChiploadMetric {
             observed_mm_per_tooth: median_cl,
             statistic: ChiploadStatistic::MedianLow,
-            evidence: SampleEvidence::at_with_stat(median_idx, ChiploadStatistic::MedianLow),
+            evidence: SampleEvidence::at_with_stat(median_idx, ChiploadStatistic::MedianLow)
+                .with_locality(locality_for(median_idx)),
             bounds: bounds.clone(),
         }),
         _ => None,
@@ -444,6 +524,7 @@ pub fn evaluate(
         statistic: ChiploadStatistic::PeakInRange,
         evidence: if peak_value > 0.0 {
             SampleEvidence::at_with_stat(peak_idx, ChiploadStatistic::PeakInRange)
+                .with_locality(locality_for(peak_idx))
         } else {
             SampleEvidence::empty()
         },
@@ -453,18 +534,42 @@ pub fn evaluate(
         approach_to_min,
         approach_to_max,
         confidence: chipload_confidence,
+        // C1+C2 reverted 2026-05-10 (D3 Path A); D7 will repopulate
+        // from span-aware entry detection.
+        entry_spikes: Vec::new(),
     }
 }
 
 /// Map a cutter geometry hint to a vendor-LUT tool family. Mirrors
 /// `feeds::vendor_normalize::to_lookup_query` so the same routing logic
 /// runs for the chipload guardrail as for the F&S calculator.
+///
+/// Two operation kinds get rerouted away from their declared
+/// `feeds_family`:
+///
+/// - `ProjectCurve` isn't a vendor LUT family in its own right; it's
+///   geometrically a 3D contour-trace, so ball/tapered-ball tools route
+///   to `(Parallel, Finish)` and flat tools to `(Contour, Finish)`.
+///   V-bit / bull-nose / facing-bit project_curve toolpaths leave the
+///   lookup unrouted (returns `None`).
+/// - `Adaptive3d` declares `feeds_family: Adaptive` to share F&S inputs
+///   with 2D adaptive HSM, but its path geometry is closer to pocket-
+///   style clearing in wood. The vendor's 2D adaptive rows narrow
+///   stepover by design (e.g. 0.95mm `ae_max` for a 6mm flat in
+///   hardwood), while operators want 2.5–3mm stepover on Adaptive3d.
+///   Route Adaptive3d to `Pocket` so the LUT envelope reflects the
+///   actual mechanical regime. (G16 §10 sign-off, design doc §1.3.)
 pub(crate) fn routed_lookup_family(
     operation_kind: OperationType,
     tool_family: ToolFamily,
     operation_family: LutOperationFamily,
     pass_role: LutPassRole,
 ) -> Option<(LutOperationFamily, LutPassRole)> {
+    if operation_kind == OperationType::Adaptive3d
+        && operation_family == LutOperationFamily::Adaptive
+    {
+        return Some((LutOperationFamily::Pocket, pass_role));
+    }
     if operation_kind != OperationType::ProjectCurve {
         return Some((operation_family, pass_role));
     }
@@ -524,6 +629,16 @@ mod tests {
         )
     }
 
+    /// Engagement arc the test LUT row (HardMaple Pocket Roughing 6 mm
+    /// flat) is calibrated against, so D9's per-sample normalization is
+    /// a no-op for these fixtures and tests preserve their pre-D9
+    /// semantics. Derived as `acos(1 − 2·ae_mid/D)` with `ae_min=1.0`,
+    /// `ae_max=2.2`, `D=6.0` from
+    /// `data/vendor_lut/observations/amana_flat_end.json` → ≈ 1.0844 rad.
+    /// Tests that want to exercise normalization itself live in the
+    /// dedicated `engagement_aware_normalization` module below.
+    const TEST_LUT_NOMINAL_ARC_RAD: f64 = 1.0843860798928202;
+
     fn sample(tp_id: usize, idx: usize, chipload: f64, engagement: f64) -> SimulationCutSample {
         SimulationCutSample {
             toolpath_id: tp_id,
@@ -539,7 +654,7 @@ mod tests {
             flute_count: 2,
             axial_doc_mm: 1.0,
             radial_engagement: engagement,
-            arc_engagement_radians: Some(std::f64::consts::FRAC_PI_2),
+            arc_engagement_radians: Some(TEST_LUT_NOMINAL_ARC_RAD),
             chipload_mm_per_tooth: chipload,
             effective_chip_thickness_mm: Some(chipload),
             removed_volume_est_mm3: 0.1,
@@ -585,7 +700,14 @@ mod tests {
         // chipload must be in the scaled band (raw 0.018–0.030 → scaled
         // ≈ 0.032–0.054). The verdict is `Approximate` because the
         // diameter scale crosses the ±40 % threshold.
-        let t = trace(vec![sample(0, 0, 0.04, 0.5)]);
+        // The contour-finish row's nominal arc is much narrower than the
+        // pocket-roughing row used by the default `sample()` fixture
+        // (`ae_rule: "2% to 8%D"` → arc ≈ 0.459 rad). Override here so
+        // D9's per-sample normalization is a no-op for this test — the
+        // assertion is about row selection, not engagement geometry.
+        let mut s = sample(0, 0, 0.04, 0.5);
+        s.arc_engagement_radians = Some(0.459);
+        let t = trace(vec![s]);
         let v = evaluate(
             0,
             &tool(),
@@ -593,6 +715,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Trace,
             LutPassRole::Finish,
             1000.0,
@@ -621,6 +744,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Trace,
             LutPassRole::Finish,
             1000.0,
@@ -636,6 +760,73 @@ mod tests {
     }
 
     #[test]
+    fn adaptive3d_reroutes_from_adaptive_to_pocket_family() {
+        // Adaptive3d's declared feeds_family is Adaptive, but its path
+        // geometry is closer to pocket-style clearing in wood. The router
+        // overrides Adaptive → Pocket so the LUT envelope reflects the
+        // correct mechanical regime (design doc §1.3, §10 sign-off).
+        let routed = routed_lookup_family(
+            OperationType::Adaptive3d,
+            ToolFamily::FlatEnd,
+            LutOperationFamily::Adaptive,
+            LutPassRole::Roughing,
+        );
+        assert_eq!(
+            routed,
+            Some((LutOperationFamily::Pocket, LutPassRole::Roughing))
+        );
+    }
+
+    #[test]
+    fn adaptive3d_reroute_preserves_pass_role() {
+        // SemiFinish pass-role passes through unchanged (we only swap
+        // the family axis, not the role axis).
+        let routed = routed_lookup_family(
+            OperationType::Adaptive3d,
+            ToolFamily::FlatEnd,
+            LutOperationFamily::Adaptive,
+            LutPassRole::SemiFinish,
+        );
+        assert_eq!(
+            routed,
+            Some((LutOperationFamily::Pocket, LutPassRole::SemiFinish))
+        );
+    }
+
+    #[test]
+    fn adaptive3d_with_non_adaptive_family_passes_through() {
+        // Defensive: the rule only fires when the incoming family is
+        // Adaptive (the catalog default). Any other incoming family is
+        // a custom override and must be respected.
+        let routed = routed_lookup_family(
+            OperationType::Adaptive3d,
+            ToolFamily::FlatEnd,
+            LutOperationFamily::Pocket,
+            LutPassRole::Roughing,
+        );
+        assert_eq!(
+            routed,
+            Some((LutOperationFamily::Pocket, LutPassRole::Roughing))
+        );
+    }
+
+    #[test]
+    fn pocket_op_with_adaptive_family_passes_through() {
+        // The Adaptive3d reroute is gated on operation_kind too — a
+        // Pocket op asking for the Adaptive family stays Adaptive.
+        let routed = routed_lookup_family(
+            OperationType::Pocket,
+            ToolFamily::FlatEnd,
+            LutOperationFamily::Adaptive,
+            LutPassRole::Roughing,
+        );
+        assert_eq!(
+            routed,
+            Some((LutOperationFamily::Adaptive, LutPassRole::Roughing))
+        );
+    }
+
+    #[test]
     fn no_trace_returns_simulation_required() {
         let v = evaluate(
             0,
@@ -643,6 +834,7 @@ mod tests {
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
+            None,
             None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
@@ -671,6 +863,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -697,6 +890,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -726,6 +920,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -755,6 +950,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -785,6 +981,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -806,6 +1003,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -841,6 +1039,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -882,6 +1081,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1500.0,
@@ -900,17 +1100,13 @@ mod tests {
         );
     }
 
-    /// Item C verify #3: pure-Helix steady-state samples on a sloped 3D
-    /// cut (the canonical adaptive3d / drop_cutter pattern, where the
-    /// simulator tags every XY+Z move as `Helix`) are *kept* by the
-    /// filter as long as their feed matches the commanded operation
-    /// feed. This is the negative-of-Item-C-original case: filtering on
-    /// `cut_kinematics == Linear` would have wrongly discarded these.
+    /// G17 C1+C2 reverted 2026-05-10 (D3 Path A): Helix samples are no
+    /// longer routed to an entry-spike advisory — D0 confirmed Helix
+    /// kinematics is almost entirely terrain-following on adaptive3d,
+    /// not configured entry. So a Helix sample above LUT max trips
+    /// Exceeds again, the same as Linear.
     #[test]
-    fn helix_steady_state_samples_are_kept() {
-        // All Helix at the commanded feed; a chipload above max would
-        // surface as Exceeds(Breakage). If the filter wrongly dropped
-        // Helix samples we'd see SteadyStateSamplesNotPresent instead.
+    fn helix_high_sample_trips_exceeds() {
         let mut s0 = sample(0, 0, 0.5, 0.5);
         s0.feed_rate_mm_min = 1500.0;
         s0.cut_kinematics = crate::simulation_cut::CutKinematics::Helix;
@@ -925,21 +1121,23 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1500.0,
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
-        match v {
-            ChiploadVerdict::Exceeds {
-                side: ChipSide::High,
-                ..
-            } => {}
-            other => panic!(
-                "expected Exceeds(High) — Helix samples must be kept by the filter, got {other:?}"
+        assert!(
+            matches!(
+                v,
+                ChiploadVerdict::Exceeds {
+                    side: ChipSide::High,
+                    ..
+                }
             ),
-        }
+            "Helix high sample must trip Exceeds post-revert, got {v:?}"
+        );
     }
 
     /// Item C edge case: a sample at exactly 95% of the commanded feed
@@ -958,6 +1156,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -994,6 +1193,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1024,6 +1224,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1060,6 +1261,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1173,6 +1375,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1196,6 +1399,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1233,6 +1437,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1263,6 +1468,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1297,6 +1503,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1325,6 +1532,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1340,6 +1548,130 @@ mod tests {
                 }
             ),
             "expected Exceeds(Low) at 0.94×min with burn_tolerance=0.05, got {v:?}"
+        );
+    }
+
+    // ── Gate-trip behavior across kinematics (G17 C1+C2 reverted) ────────
+
+    /// A Linear (steady-state) sample over LUT max trips Exceeds.
+    #[test]
+    fn linear_steady_state_high_sample_trips_exceeds() {
+        // Uses pocket-rough LUT max (0.058208…). 0.5 mm/tooth >> max.
+        let mut s = sample(0, 0, 0.5, 0.5);
+        s.feed_rate_mm_min = 1500.0;
+        s.cut_kinematics = crate::simulation_cut::CutKinematics::Linear;
+        let t = trace(vec![s]);
+        let v = evaluate(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            None,
+            LutOperationFamily::Pocket,
+            LutPassRole::Roughing,
+            1500.0,
+            OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        assert!(
+            matches!(
+                v,
+                ChiploadVerdict::Exceeds {
+                    side: ChipSide::High,
+                    ..
+                }
+            ),
+            "Linear steady-state high sample must trip Exceeds, got {v:?}"
+        );
+    }
+
+    /// D5 — drill / pin-drill operations: every move is a plunge with
+    /// no XY arc engagement, so the chip-geometry model returns no
+    /// `effective_chip_thickness_mm` for any sample. The gate must
+    /// route to `Unmodeled(ArcEngagementNotCaptured)` rather than
+    /// silently falling through with zero valid samples — that's the
+    /// "drill is a different gate model" carve-out.
+    ///
+    /// This locks in the implicit carve-out so D7's span-aware filter
+    /// stays a no-op for drill ops without needing OperationType
+    /// recognition.
+    #[test]
+    fn drill_like_no_arc_samples_route_to_unmodeled() {
+        // engagement above the air-cut threshold (`>= 0.02`) so the
+        // sample passes the steady-state filter and reaches the
+        // chip-geometry path. arc=None mirrors a real plunge move
+        // where the simulator can't compute an engagement arc.
+        let mut s0 = sample(0, 0, 0.5, 0.5);
+        s0.feed_rate_mm_min = 1500.0;
+        s0.cut_kinematics = crate::simulation_cut::CutKinematics::Plunge;
+        s0.arc_engagement_radians = None;
+        s0.effective_chip_thickness_mm = None;
+        let mut s1 = sample(0, 1, 0.5, 0.5);
+        s1.feed_rate_mm_min = 1500.0;
+        s1.cut_kinematics = crate::simulation_cut::CutKinematics::Plunge;
+        s1.arc_engagement_radians = None;
+        s1.effective_chip_thickness_mm = None;
+        let t = trace(vec![s0, s1]);
+        let v = evaluate(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            None,
+            LutOperationFamily::Pocket,
+            LutPassRole::Roughing,
+            1500.0,
+            OperationType::Drill,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        match v {
+            ChiploadVerdict::Unmodeled {
+                reason: UnmodeledReason::ArcEngagementNotCaptured,
+            } => {}
+            other => panic!(
+                "drill-like all-plunge no-arc samples must route to Unmodeled(ArcEngagementNotCaptured), got {other:?}"
+            ),
+        }
+    }
+
+    /// G17 C1+C2 reverted 2026-05-10 (D3 Path A): Plunge samples no
+    /// longer skip the trip. A Plunge sample over LUT max trips
+    /// Exceeds — the same as Linear/Helix. (Real adaptive3d Plunge
+    /// samples emit no chip-thickness, so this case mostly matters for
+    /// other op families that do model plunge chip thickness.)
+    #[test]
+    fn plunge_high_sample_trips_exceeds() {
+        let mut s = sample(0, 0, 0.5, 0.5);
+        s.feed_rate_mm_min = 1500.0;
+        s.cut_kinematics = crate::simulation_cut::CutKinematics::Plunge;
+        let t = trace(vec![s]);
+        let v = evaluate(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            None,
+            LutOperationFamily::Pocket,
+            LutPassRole::Roughing,
+            1500.0,
+            OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        assert!(
+            matches!(
+                v,
+                ChiploadVerdict::Exceeds {
+                    side: ChipSide::High,
+                    ..
+                }
+            ),
+            "Plunge high sample must trip Exceeds post-revert, got {v:?}"
         );
     }
 }

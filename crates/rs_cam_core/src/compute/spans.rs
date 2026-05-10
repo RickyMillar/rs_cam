@@ -424,6 +424,29 @@ fn push_adaptive3d_spans(
                 }),
         );
     }
+
+    // Pass 3 (D4): structural Entry spans for each configured pass
+    // entry. Each `PassEntry` event carries `[move_index, entry_end_move_idx)`
+    // — the rapid-traverse-and-descent sequence emitted by adaptive3d's
+    // entry-style match arms. Span-aware downstream consumers (D6's
+    // span-aware locality classifier, D7's span-ancestry gate filter)
+    // read these to distinguish configured entry transients from
+    // steady-state cuts.
+    for ann in events {
+        if let E::PassEntry {
+            entry_end_move_idx,
+            style_label,
+            ..
+        } = &ann.event
+        {
+            let start = ann.move_index;
+            let end = (*entry_end_move_idx).min(n_moves);
+            if end <= start {
+                continue;
+            }
+            spans.push(Span::new(start, end, SpanKind::Entry).with_label(*style_label));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -574,6 +597,84 @@ mod tests {
         ));
         assert_eq!(depth[1].start_move, 30);
         assert_eq!(depth[1].end_move, 60);
+    }
+
+    /// D4 — `PassEntry` events with explicit `entry_end_move_idx`
+    /// produce `SpanKind::Entry` spans labeled with the configured
+    /// entry style.
+    #[test]
+    fn adaptive3d_emits_entry_spans_from_pass_entry_events() {
+        let events = vec![
+            ev(
+                0,
+                Adaptive3dRuntimeEvent::PassEntry {
+                    pass_index: 0,
+                    entry_x: 1.0,
+                    entry_y: 2.0,
+                    entry_z: 3.0,
+                    entry_end_move_idx: 8,
+                    style_label: "plunge entry",
+                },
+            ),
+            ev(
+                30,
+                Adaptive3dRuntimeEvent::PassEntry {
+                    pass_index: 1,
+                    entry_x: 5.0,
+                    entry_y: 6.0,
+                    entry_z: 7.0,
+                    entry_end_move_idx: 35,
+                    style_label: "helix entry",
+                },
+            ),
+        ];
+        let spans = spans_from_adaptive3d_annotations(&events, 100);
+        let entries: Vec<_> = spans
+            .iter()
+            .filter(|s| s.kind == SpanKind::Entry)
+            .collect();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].range(), 0..8);
+        assert_eq!(entries[0].label, "plunge entry");
+        assert_eq!(entries[1].range(), 30..35);
+        assert_eq!(entries[1].label, "helix entry");
+    }
+
+    /// D4 — empty entry sequences (`entry_end_move_idx == start`) and
+    /// `end > n_moves` are skipped / clamped without panicking.
+    #[test]
+    fn adaptive3d_entry_span_skips_empty_and_clamps_end() {
+        let events = vec![
+            ev(
+                10,
+                Adaptive3dRuntimeEvent::PassEntry {
+                    pass_index: 0,
+                    entry_x: 0.0,
+                    entry_y: 0.0,
+                    entry_z: 0.0,
+                    entry_end_move_idx: 10, // empty
+                    style_label: "plunge entry",
+                },
+            ),
+            ev(
+                90,
+                Adaptive3dRuntimeEvent::PassEntry {
+                    pass_index: 1,
+                    entry_x: 0.0,
+                    entry_y: 0.0,
+                    entry_z: 0.0,
+                    entry_end_move_idx: 200, // past n_moves
+                    style_label: "ramp entry",
+                },
+            ),
+        ];
+        let spans = spans_from_adaptive3d_annotations(&events, 100);
+        let entries: Vec<_> = spans
+            .iter()
+            .filter(|s| s.kind == SpanKind::Entry)
+            .collect();
+        assert_eq!(entries.len(), 1, "empty entry should be skipped");
+        assert_eq!(entries[0].range(), 90..100, "end should clamp to n_moves");
     }
 
     #[test]

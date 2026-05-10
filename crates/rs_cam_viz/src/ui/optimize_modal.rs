@@ -8,8 +8,11 @@
 //! toolpath). The controller's `OpenOptimizeModal` handler runs
 //! `optimize_toolpath` synchronously and stashes the outcome here.
 
-use rs_cam_core::tool_load::optimize::{OptimizeCandidate, OptimizeOutcome, ParamDelta};
-use rs_cam_core::tool_load::verdict::ToolpathLoadVerdict;
+use rs_cam_core::tool_load::optimize::{
+    EntryAdvisory, GateKind, KnobAxis, LimitingGate, OperatorSuggestion, OptimizeCandidate,
+    OptimizeOutcome, ParamDelta, SearchEnvelopeReached, limiting_gates_for_verdict,
+};
+use rs_cam_core::tool_load::verdict::{ChipSide, ToolpathLoadVerdict};
 
 use super::{AppEvent, theme};
 use crate::state::AppState;
@@ -105,21 +108,43 @@ fn draw_outcome(
             events,
         ),
         OptimizeOutcome::NoSafeImprovement {
-            explanation,
             attempted,
+            narrative,
             ..
         } => {
-            // Show the explanation banner first, then the attempted
-            // candidates so the user can see what was tried and why
-            // each row fell short. Without the table the refusal is
-            // a black box.
+            // G17 A2: render the structured narrative — headline,
+            // search envelope, then the attempted table. Per-row
+            // limiting-gate readings replace the generic "gate" status.
             ui.label(
                 egui::RichText::new("No improvement found")
                     .strong()
                     .color(theme::WARNING),
             );
             ui.add_space(4.0);
-            ui.label(egui::RichText::new(explanation).small());
+            ui.label(egui::RichText::new(&narrative.headline).small());
+            if let Some(envelope) = format_envelope_summary(&narrative.envelope) {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(envelope)
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+            }
+            // G17 C2: entry-spike advisories on the closest-to-safe
+            // candidate. Informational; not blocking.
+            for advisory in &narrative.entry_advisories {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(format!("Note: {}", format_entry_advisory(advisory)))
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+            }
+            // G17 A4: operator-actionable suggestions, if any.
+            if !narrative.suggestions.is_empty() {
+                ui.add_space(6.0);
+                draw_suggestions(ui, &narrative.suggestions);
+            }
             ui.add_space(8.0);
             if attempted.len() <= 1 {
                 // No non-baseline candidates ran (early refuse). Just
@@ -136,25 +161,73 @@ fn draw_outcome(
         OptimizeOutcome::Ranked(candidates) => {
             draw_ranked(ui, candidates, outcome.first_safe(), toolpath_id, events);
         }
-        OptimizeOutcome::TradeOff(candidates) => {
+        OptimizeOutcome::MarginalSafe {
+            candidates,
+            narrative,
+            ..
+        } => {
+            // G16 §11.4 Layer 3: candidates passed every gate but at
+            // least one Within reading was admitted only by the
+            // tolerance band. G17 A2 swaps the prior generic
+            // explanation for narrative.headline (which carries the
+            // band-admit overshoot) and renders the search envelope.
+            ui.label(
+                egui::RichText::new("Verify on a scrap")
+                    .strong()
+                    .color(theme::WARNING),
+            );
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(&narrative.headline).small());
+            if let Some(envelope) = format_envelope_summary(&narrative.envelope) {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(envelope)
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+            }
+            // G17 C2: entry-spike advisories on the recommended
+            // marginal candidate.
+            for advisory in &narrative.entry_advisories {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(format!("Note: {}", format_entry_advisory(advisory)))
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+            }
+            ui.add_space(8.0);
+            draw_ranked(
+                ui,
+                candidates,
+                outcome.first_marginal_safe(),
+                toolpath_id,
+                events,
+            );
+        }
+        OptimizeOutcome::TradeOff {
+            candidates,
+            narrative,
+        } => {
             // Trade-off candidates: faster than baseline AND improve a
-            // failing gate, but worsen another. Render the same table
-            // as Ranked but with a "trade-off" header so the user
-            // knows there's a regression to accept. No ⭐ — the
-            // optimizer doesn't auto-recommend trade-offs.
+            // failing gate, but worsen another. G17 A2 renders the
+            // structured narrative.headline ("improves chipload but
+            // worsens deflection") instead of the generic copy.
             ui.label(
                 egui::RichText::new("Trade-off candidates")
                     .strong()
                     .color(theme::WARNING),
             );
             ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new(
-                    "Each candidate below improves the failing baseline gate but worsens \
-                     another. Apply only after reviewing the per-gate columns.",
-                )
-                .small(),
-            );
+            ui.label(egui::RichText::new(&narrative.headline).small());
+            if let Some(envelope) = format_envelope_summary(&narrative.envelope) {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(envelope)
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+            }
             ui.add_space(8.0);
             draw_ranked(ui, candidates, None, toolpath_id, events);
         }
@@ -245,20 +318,31 @@ fn draw_attempted_row(
 
     draw_verdict_badges(ui, &candidate.verdict);
 
-    // Status: why isn't this candidate the recommendation?
-    let status = if candidate.verdict.chipload.is_exceeded()
-        || candidate.verdict.power.is_exceeded()
-        || candidate.verdict.deflection.is_exceeded()
-    {
-        ("gate", theme::ERROR)
+    // G17 A2: per-row limiting reading. Replaces the generic "gate"
+    // status with the specific reading that stopped this candidate —
+    // e.g. "chipload 0.071 (+28%)". Slower-than-baseline rows say
+    // "slower"; defensively-clean rows say "ok".
+    let limiting = limiting_gates_for_verdict(&candidate.verdict);
+    if let Some(g) = limiting.first() {
+        let color = if g.band_admitted {
+            theme::WARNING
+        } else {
+            theme::ERROR
+        };
+        ui.label(
+            egui::RichText::new(format_limiting_gate(g))
+                .small()
+                .color(color),
+        );
     } else if cycle_delta >= -0.5 {
-        ("slower", theme::WARNING)
+        ui.label(
+            egui::RichText::new("slower")
+                .small()
+                .color(theme::WARNING),
+        );
     } else {
-        // Safe and faster but somehow not first_safe — shouldn't
-        // happen in NoSafeImprovement outcomes, but render defensively.
-        ("ok", theme::TEXT_MUTED)
-    };
-    ui.label(egui::RichText::new(status.0).small().color(status.1));
+        ui.label(egui::RichText::new("ok").small().color(theme::TEXT_MUTED));
+    }
 }
 
 fn draw_refusal_section(
@@ -486,6 +570,148 @@ fn format_delta(delta: &ParamDelta) -> String {
     }
 }
 
+/// G17 A4 — render the suggestions as a small inline callout. Each
+/// suggestion is a one-liner with no button (operator must manually
+/// act; we never auto-apply a heuristic).
+fn draw_suggestions(ui: &mut egui::Ui, suggestions: &[OperatorSuggestion]) {
+    egui::Frame::none()
+        .fill(ui.visuals().faint_bg_color)
+        .inner_margin(egui::Margin::symmetric(8.0, 6.0))
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new("Try this")
+                    .small()
+                    .strong()
+                    .color(theme::TEXT_MUTED),
+            );
+            for s in suggestions {
+                ui.label(egui::RichText::new(format!("• {}", format_suggestion(s))).small());
+            }
+        });
+}
+
+/// G17 A4 — render an `OperatorSuggestion` as one operator-facing
+/// sentence. Avoids "Bayesian" / "closed-loop" / other engine
+/// vocabulary; uses bare imperative ("Cap feed at …", "Raise feed to …").
+fn format_suggestion(s: &OperatorSuggestion) -> String {
+    fn axis_label_units(axis: KnobAxis) -> (&'static str, &'static str, usize) {
+        // (display label, units, decimal places)
+        match axis {
+            KnobAxis::Feed => ("feed", "mm/min", 0),
+            KnobAxis::SpindleRpm => ("RPM", "rpm", 0),
+            KnobAxis::Stepover => ("stepover", "mm", 2),
+            KnobAxis::DepthPerPass => ("depth-per-pass", "mm", 2),
+            KnobAxis::ScallopHeight => ("scallop height", "mm", 3),
+        }
+    }
+    match s {
+        OperatorSuggestion::CapAxisAt { axis, ceiling } => {
+            let (label, units, dp) = axis_label_units(*axis);
+            format!(
+                "Cap {label} at ~{ceiling:.dp$} {units} and re-optimize.",
+                dp = dp
+            )
+        }
+        OperatorSuggestion::RaiseAxisAbove { axis, floor } => {
+            let (label, units, dp) = axis_label_units(*axis);
+            format!(
+                "Raise {label} above ~{floor:.dp$} {units} and re-optimize.",
+                dp = dp
+            )
+        }
+        OperatorSuggestion::DataGapHere { reason } => format!("Data gap: {reason}"),
+    }
+}
+
+/// G17 A2 — one-line summary of the search envelope reached, e.g.
+/// "tried feed 3150 → 4000 mm/min, stepover 2.0 → 2.2 mm". Returns
+/// `None` when no axis moved off baseline (all extents collapsed).
+fn format_envelope_summary(env: &SearchEnvelopeReached) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(e) = env.feed_mm_min
+        && e.min < e.max
+    {
+        parts.push(format!("feed {:.0} → {:.0} mm/min", e.min, e.max));
+    }
+    if let Some(e) = env.spindle_rpm
+        && e.min < e.max
+    {
+        parts.push(format!("rpm {:.0} → {:.0}", e.min, e.max));
+    }
+    if let Some(e) = env.stepover_mm
+        && e.min < e.max
+    {
+        parts.push(format!("stepover {:.2} → {:.2} mm", e.min, e.max));
+    }
+    if let Some(e) = env.depth_per_pass_mm
+        && e.min < e.max
+    {
+        parts.push(format!("DOC {:.2} → {:.2} mm", e.min, e.max));
+    }
+    if let Some(e) = env.scallop_height_mm
+        && e.min < e.max
+    {
+        parts.push(format!("scallop {:.3} → {:.3} mm", e.min, e.max));
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(format!("Tried {}.", parts.join(", ")))
+    }
+}
+
+/// G17 C2 — operator-friendly one-liner for an entry-sample advisory.
+/// "helix entry chipload reached 0.0707 (+29% over LUT max 0.055) —
+/// consider gentler entry."
+fn format_entry_advisory(a: &EntryAdvisory) -> String {
+    let pct = a.overshoot_fraction * 100.0;
+    let gate_phrase = match a.gate {
+        GateKind::Chipload => match a.side {
+            Some(rs_cam_core::tool_load::verdict::ChipSide::High) => format!(
+                "chipload reached {:.4} ({pct:+.0}% over LUT max {:.4})",
+                a.observed, a.bound,
+            ),
+            Some(rs_cam_core::tool_load::verdict::ChipSide::Low) => format!(
+                "chipload dropped to {:.4} ({pct:+.0}% under LUT min {:.4})",
+                a.observed, a.bound,
+            ),
+            None => format!("chipload {:.4}", a.observed),
+        },
+        GateKind::Power => format!(
+            "power reached {:.2} kW ({pct:+.0}% over available {:.2})",
+            a.observed, a.bound,
+        ),
+        GateKind::Deflection => format!(
+            "deflection reached {:.0} µm ({pct:+.0}% over the {:.0} µm threshold)",
+            a.observed * 1000.0,
+            a.bound * 1000.0,
+        ),
+    };
+    format!("{} {gate_phrase} — consider gentler entry.", a.locality)
+}
+
+/// G17 A2 + A3 — compact per-gate reading with optional locality
+/// suffix. "chipload 0.0707 (+29%) — slot section" for the wanaka
+/// TP 1 case. The locality suffix tells the operator *where* in the
+/// cut the limit was hit; sourced from
+/// `tool_load::locality::classify_sample_locality`.
+fn format_limiting_gate(g: &LimitingGate) -> String {
+    let pct = g.overshoot_fraction * 100.0;
+    let core = match g.gate {
+        GateKind::Chipload => match g.side {
+            Some(ChipSide::High) => format!("chipload {:.4} ({pct:+.0}%)", g.observed),
+            Some(ChipSide::Low) => format!("chipload {:.4} ({pct:+.0}%)", g.observed),
+            None => format!("chipload {:.4}", g.observed),
+        },
+        GateKind::Power => format!("power {:.2} kW ({pct:+.0}%)", g.observed),
+        GateKind::Deflection => format!("defl {:.0} µm ({pct:+.0}%)", g.observed * 1000.0),
+    };
+    match &g.locality {
+        Some(loc) => format!("{core} — {loc}"),
+        None => core,
+    }
+}
+
 /// Format cycle time in mm:ss for cycles ≥ 60s, or as "X.Xs" for
 /// shorter runs.
 fn format_cycle(seconds: f64) -> String {
@@ -539,5 +765,159 @@ mod tests {
     #[test]
     fn format_cycle_handles_inf() {
         assert_eq!(format_cycle(f64::INFINITY), "—");
+    }
+
+    #[test]
+    fn format_envelope_summary_collapsed_extents_returns_none() {
+        // Single candidate at baseline — every axis collapses to one
+        // value. Nothing to summarise.
+        let env = SearchEnvelopeReached {
+            feed_mm_min: Some(rs_cam_core::tool_load::optimize::AxisExtent {
+                min: 3000.0,
+                max: 3000.0,
+            }),
+            ..Default::default()
+        };
+        assert!(format_envelope_summary(&env).is_none());
+    }
+
+    #[test]
+    fn format_envelope_summary_lists_axes_that_moved() {
+        let env = SearchEnvelopeReached {
+            feed_mm_min: Some(rs_cam_core::tool_load::optimize::AxisExtent {
+                min: 3150.0,
+                max: 4000.0,
+            }),
+            stepover_mm: Some(rs_cam_core::tool_load::optimize::AxisExtent {
+                min: 2.0,
+                max: 2.2,
+            }),
+            // DOC collapsed → omitted from the summary.
+            depth_per_pass_mm: Some(rs_cam_core::tool_load::optimize::AxisExtent {
+                min: 3.0,
+                max: 3.0,
+            }),
+            ..Default::default()
+        };
+        let s = format_envelope_summary(&env).expect("two axes moved");
+        assert!(s.contains("feed 3150 → 4000"));
+        assert!(s.contains("stepover 2.00 → 2.20"));
+        assert!(!s.contains("DOC"), "collapsed DOC should not render: {s}");
+    }
+
+    #[test]
+    fn format_limiting_gate_chipload_high() {
+        let g = LimitingGate {
+            gate: GateKind::Chipload,
+            side: Some(ChipSide::High),
+            observed: 0.0707,
+            bound: 0.055,
+            overshoot_fraction: (0.0707 - 0.055) / 0.055,
+            band_admitted: false,
+            locality: None,
+        };
+        let s = format_limiting_gate(&g);
+        // Wanaka TP 1 case: 0.0707 mm/tooth, 28% over LUT max.
+        assert!(s.contains("chipload"));
+        assert!(s.contains("0.0707"));
+        assert!(
+            s.contains("+29") || s.contains("+28"),
+            "should mention overshoot % (~28-29%), got: {s}",
+        );
+    }
+
+    #[test]
+    fn format_suggestion_cap_feed() {
+        let s = OperatorSuggestion::CapAxisAt {
+            axis: KnobAxis::Feed,
+            ceiling: 2960.7,
+        };
+        let rendered = format_suggestion(&s);
+        // No "Bayesian" / "closed-loop" in operator copy — just the
+        // imperative.
+        assert!(rendered.starts_with("Cap feed at ~2961 mm/min"));
+        assert!(rendered.ends_with("re-optimize."));
+    }
+
+    #[test]
+    fn format_suggestion_raise_feed_uses_raise_verb() {
+        let s = OperatorSuggestion::RaiseAxisAbove {
+            axis: KnobAxis::Feed,
+            floor: 4032.0,
+        };
+        let rendered = format_suggestion(&s);
+        assert!(rendered.starts_with("Raise feed above ~4032 mm/min"));
+    }
+
+    #[test]
+    fn format_suggestion_cap_doc_uses_two_decimals() {
+        let s = OperatorSuggestion::CapAxisAt {
+            axis: KnobAxis::DepthPerPass,
+            ceiling: 3.87,
+        };
+        let rendered = format_suggestion(&s);
+        assert!(
+            rendered.contains("3.87 mm"),
+            "DOC should render with 2 dp: {rendered}"
+        );
+        assert!(rendered.starts_with("Cap depth-per-pass"));
+    }
+
+    #[test]
+    fn format_entry_advisory_chipload_high_includes_locality_and_pct() {
+        let a = EntryAdvisory {
+            gate: GateKind::Chipload,
+            side: Some(rs_cam_core::tool_load::verdict::ChipSide::High),
+            observed: 0.0707,
+            bound: 0.055,
+            overshoot_fraction: (0.0707 - 0.055) / 0.055,
+            locality: "helix entry".to_owned(),
+        };
+        let s = format_entry_advisory(&a);
+        // Wanaka shape: helix entry sample reading + LUT max + pct +
+        // operator-friendly suggestion.
+        assert!(s.starts_with("helix entry"));
+        assert!(s.contains("0.0707"));
+        assert!(s.contains("LUT max"));
+        assert!(s.contains("+29") || s.contains("+28"));
+        assert!(s.ends_with("consider gentler entry."));
+    }
+
+    #[test]
+    fn format_limiting_gate_appends_locality_suffix() {
+        // G17 A3: locality is rendered as " — <label>" after the
+        // reading. Wanaka TP 1 case: chipload peak in a full-slot
+        // engagement region.
+        let g = LimitingGate {
+            gate: GateKind::Chipload,
+            side: Some(ChipSide::High),
+            observed: 0.0707,
+            bound: 0.055,
+            overshoot_fraction: (0.0707 - 0.055) / 0.055,
+            band_admitted: false,
+            locality: Some("slot section".to_owned()),
+        };
+        let s = format_limiting_gate(&g);
+        assert!(s.contains("chipload"));
+        assert!(
+            s.ends_with("— slot section"),
+            "locality suffix should append: {s}",
+        );
+    }
+
+    #[test]
+    fn format_limiting_gate_deflection_uses_microns() {
+        let g = LimitingGate {
+            gate: GateKind::Deflection,
+            side: None,
+            observed: 0.237,
+            bound: 0.200,
+            overshoot_fraction: (0.237 - 0.200) / 0.200,
+            band_admitted: false,
+            locality: None,
+        };
+        let s = format_limiting_gate(&g);
+        // Wanaka refined #1 case: 237 µm peak.
+        assert!(s.contains("237"), "deflection should be rendered in µm: {s}");
     }
 }

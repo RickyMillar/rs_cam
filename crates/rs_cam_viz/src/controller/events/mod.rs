@@ -346,14 +346,19 @@ impl<B: ComputeBackend> AppController<B> {
             );
             return;
         };
-        let crate::state::OptimizeRunStatus::Ready(OptimizeOutcome::Ranked(candidates)) =
-            &modal.status
-        else {
-            self.push_notification(
-                "Apply failed: Optimize has no candidates to apply".to_owned(),
-                crate::controller::Severity::Error,
-            );
-            return;
+        let candidates = match &modal.status {
+            crate::state::OptimizeRunStatus::Ready(OptimizeOutcome::Ranked(c)) => c,
+            crate::state::OptimizeRunStatus::Ready(OptimizeOutcome::MarginalSafe {
+                candidates: c,
+                ..
+            }) => c,
+            _ => {
+                self.push_notification(
+                    "Apply failed: Optimize has no candidates to apply".to_owned(),
+                    crate::controller::Severity::Error,
+                );
+                return;
+            }
         };
         let Some(candidate) = candidates.get(candidate_index) else {
             self.push_notification(

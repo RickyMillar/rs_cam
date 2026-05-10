@@ -241,6 +241,13 @@ pub struct SampleEvidence {
     pub sample_range: Range<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub statistic: Option<ChiploadStatistic>,
+    /// G17 A3 — short operator-facing label for *where* the triggering
+    /// sample sits in the cut: "slot section", "heavy engagement",
+    /// "plunge entry", "helix entry". `None` for plain steady-state
+    /// samples or when arc engagement was not captured. Set by the
+    /// per-gate evaluators via [`crate::tool_load::locality`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locality: Option<String>,
 }
 
 impl SampleEvidence {
@@ -249,6 +256,7 @@ impl SampleEvidence {
         Self {
             sample_range: 0..0,
             statistic: None,
+            locality: None,
         }
     }
 
@@ -257,6 +265,7 @@ impl SampleEvidence {
         Self {
             sample_range: idx..(idx + 1),
             statistic: None,
+            locality: None,
         }
     }
 
@@ -265,7 +274,17 @@ impl SampleEvidence {
         Self {
             sample_range: idx..(idx + 1),
             statistic: Some(statistic),
+            locality: None,
         }
+    }
+
+    /// Builder — attach a locality label after construction. Pass
+    /// `Some(label)` from a `classify_sample_locality` call; `None`
+    /// leaves the field unset.
+    #[must_use]
+    pub fn with_locality(mut self, locality: Option<String>) -> Self {
+        self.locality = locality;
+        self
     }
 }
 
@@ -295,6 +314,40 @@ pub enum ChipBoundsSource {
     /// The diagnostic detail (scale factors, calibrated row id) lives
     /// on the verdict's `Confidence::Approximate` payload.
     VendorLutExtrapolated,
+}
+
+/// G17 C2 — informational entry-sample spike that exceeded the
+/// gate's bound but was *excluded* from the trip decision because it
+/// sat in a transient entry move (helix / plunge). Carries the worst
+/// reading observed in the entry samples so the UI can surface it as
+/// a "Note:" advisory without flipping the verdict to `Exceeds`.
+///
+/// Only present on the `Within` arm of each gate verdict. When the
+/// gate trips on a steady-state sample (`Exceeds`), the trip itself
+/// is the loud signal and the entry spike is omitted to keep the
+/// payload focused.
+///
+/// `side` is meaningful only on chipload spikes (which can spike
+/// independently on the burn / breakage sides). Power and deflection
+/// always set `side: None`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EntrySpike {
+    /// Worst observed value in the entry samples for this gate's
+    /// concerning direction.
+    pub observed: f64,
+    /// The bound the entry sample exceeded. Same semantics as
+    /// `LimitingGate.bound` — chipload max for breakage, chipload
+    /// min for burn, `available_kw` for power, `bounds.exceeds_mm`
+    /// for deflection.
+    pub bound: f64,
+    /// Locality label for the entry sample
+    /// (`"helix entry"` / `"plunge entry"` /
+    /// occasionally `"heavy engagement"`). Mirrors
+    /// [`SampleEvidence::locality`].
+    pub locality: String,
+    /// For chipload: which side spiked. `None` for power / deflection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<ChipSide>,
 }
 
 /// Vendor LUT chip-load bounds. `min_mm_per_tooth` is `Option` because
@@ -344,6 +397,12 @@ pub enum ChiploadVerdict {
         /// rejects rows with no max).
         approach_to_max: ChiploadMetric,
         confidence: Confidence,
+        /// G17 C2 — entry-sample spike(s) that exceeded the LUT
+        /// bounds but were excluded from the gate trip. Up to two
+        /// entries (one per side: high / low). Empty when no entry
+        /// sample exceeded its bound.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        entry_spikes: Vec<EntrySpike>,
     },
     Exceeds {
         side: ChipSide,
@@ -425,6 +484,10 @@ pub enum PowerVerdict {
         available_kw: f64,
         evidence: SampleEvidence,
         confidence: Confidence,
+        /// G17 C2 — entry-sample power spike that exceeded
+        /// `available_kw` but was excluded from the gate trip.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entry_spike: Option<EntrySpike>,
     },
     Exceeds {
         peak_kw: f64,
@@ -522,6 +585,10 @@ pub enum DeflectionVerdict {
         bounds: DeflectionBounds,
         evidence: SampleEvidence,
         confidence: Confidence,
+        /// G17 C2 — entry-sample deflection spike that exceeded
+        /// `bounds.exceeds_mm` but was excluded from the gate trip.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entry_spike: Option<EntrySpike>,
     },
     Exceeds {
         peak_mm: f64,
@@ -676,6 +743,7 @@ mod tests {
                     },
                 },
                 confidence: Confidence::Validated,
+            entry_spikes: Vec::new(),
             },
             power: PowerVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired,
@@ -688,6 +756,7 @@ mod tests {
                 },
                 evidence: SampleEvidence::empty(),
                 confidence: Confidence::Validated,
+            entry_spike: None,
             },
         };
         assert_eq!(v.modeled_count(), 2);
@@ -717,6 +786,7 @@ mod tests {
                         },
                     },
                     confidence: Confidence::Approximate("isotropic Kc only".to_owned()),
+            entry_spikes: Vec::new(),
                 },
                 power: PowerVerdict::Unmodeled {
                     reason: UnmodeledReason::CutterModeUnsupported("v-bit tip".to_owned()),
@@ -729,6 +799,7 @@ mod tests {
                     },
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Approximate("L/D in 4-6 range".to_owned()),
+            entry_spike: None,
                 },
             }],
         };
@@ -758,6 +829,7 @@ mod tests {
                             },
                         },
                         confidence: Confidence::Validated,
+            entry_spikes: Vec::new(),
                     },
                     power: PowerVerdict::Unmodeled {
                         reason: UnmodeledReason::NotImplemented("phase 1b".to_owned()),
@@ -787,6 +859,7 @@ mod tests {
                             },
                         },
                         confidence: Confidence::Validated,
+            entry_spikes: Vec::new(),
                     },
                     power: PowerVerdict::Unmodeled {
                         reason: UnmodeledReason::NotImplemented("phase 1b".to_owned()),
@@ -799,6 +872,7 @@ mod tests {
                         },
                         evidence: SampleEvidence::empty(),
                         confidence: Confidence::Validated,
+            entry_spike: None,
                     },
                 },
             ],
@@ -847,6 +921,7 @@ mod tests {
                 bounds: chip_bounds_with_min(),
             },
             confidence: Confidence::Validated,
+            entry_spikes: Vec::new(),
         };
         assert_eq!(within.state(), LoadState::Within);
         assert!(!within.is_exceeded());
@@ -885,6 +960,7 @@ mod tests {
                 bounds: chip_bounds_no_min(),
             },
             confidence: Confidence::Validated,
+            entry_spikes: Vec::new(),
         };
         let json = serde_json::to_string(&v).expect("ser");
         let back: ChiploadVerdict = serde_json::from_str(&json).expect("de");
@@ -921,6 +997,7 @@ mod tests {
             available_kw: 0.71,
             evidence: SampleEvidence::at(2),
             confidence: Confidence::Approximate("isotropic Kc".to_owned()),
+            entry_spike: None,
         };
         match &v {
             PowerVerdict::Within { available_kw, .. } => {
@@ -962,6 +1039,7 @@ mod tests {
             bounds: deflection_bounds(),
             evidence: SampleEvidence::at(5),
             confidence: Confidence::Approximate("approximate band".to_owned()),
+            entry_spike: None,
         };
         let json = serde_json::to_string(&v).expect("ser");
         let back: DeflectionVerdict = serde_json::from_str(&json).expect("de");
@@ -982,6 +1060,7 @@ mod tests {
             available_kw: 0.71,
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
+            entry_spike: None,
         };
         let s = v.as_criterion_status();
         assert!(s.sample_range.is_none());
@@ -1038,6 +1117,7 @@ mod tests {
                     available_kw: 0.71,
                     evidence: SampleEvidence::at(2),
                     confidence: Confidence::Approximate("isotropic Kc".to_owned()),
+            entry_spike: None,
                 },
                 deflection: DeflectionVerdict::Within {
                     peak_mm: 0.080,
@@ -1047,6 +1127,7 @@ mod tests {
                     },
                     evidence: SampleEvidence::at(5),
                     confidence: Confidence::Approximate("approximate band".to_owned()),
+            entry_spike: None,
                 },
             }],
         };
@@ -1110,6 +1191,7 @@ mod tests {
                     },
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Validated,
+            entry_spike: None,
                 },
             }],
         };
