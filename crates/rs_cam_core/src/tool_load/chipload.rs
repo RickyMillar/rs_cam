@@ -46,6 +46,9 @@ use crate::feeds::vendor_normalize::material_to_lut;
 use crate::material::Material;
 use crate::simulation_cut::SimulationCutTrace;
 use crate::tool::{MillingCutter, ToolDefinition};
+use crate::toolpath_spans::Span;
+
+use super::locality::SpanLookup;
 
 /// D9 — `mean_chip / feed_per_tooth` for a flat endmill at the given
 /// engagement arc. Mirrors `flat_chip_geometry_for_radius`'s mean-chip
@@ -240,6 +243,7 @@ pub fn evaluate(
     tool: &ToolDefinition,
     material: &Material,
     sim_trace: Option<&SimulationCutTrace>,
+    spans: Option<&[Span]>,
     operation_family: LutOperationFamily,
     pass_role: LutPassRole,
     operation_feed_rate_mm_min: f64,
@@ -466,11 +470,12 @@ pub fn evaluate(
 
     // 6. Build verdict. Above-max takes priority over below-min: breakage is more
     // catastrophic than burn risk and we want it surfaced.
+    let span_lookup = spans.map(SpanLookup::new);
     let locality_for = |idx: usize| -> Option<String> {
         trace
             .samples
             .get(idx)
-            .and_then(super::locality::classify_sample_locality)
+            .and_then(|s| super::locality::classify_sample_locality(s, span_lookup.as_ref()))
     };
     if let Some((dev, idx)) = peak_above {
         return ChiploadVerdict::Exceeds {
@@ -710,6 +715,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Trace,
             LutPassRole::Finish,
             1000.0,
@@ -738,6 +744,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Trace,
             LutPassRole::Finish,
             1000.0,
@@ -828,6 +835,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             None,
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -855,6 +863,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -881,6 +890,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -910,6 +920,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -939,6 +950,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -969,6 +981,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -990,6 +1003,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1025,6 +1039,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1066,6 +1081,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1500.0,
@@ -1105,6 +1121,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1500.0,
@@ -1139,6 +1156,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1175,6 +1193,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1205,6 +1224,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1241,6 +1261,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1354,6 +1375,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1377,6 +1399,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1414,6 +1437,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1444,6 +1468,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1478,6 +1503,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1506,6 +1532,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1000.0,
@@ -1541,6 +1568,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1500.0,
@@ -1593,6 +1621,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1500.0,
@@ -1627,6 +1656,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
+            None,
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
             1500.0,

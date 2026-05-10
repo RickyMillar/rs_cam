@@ -57,12 +57,12 @@ pub(crate) use candidate::{
 };
 pub(crate) use delta::delta_against_baseline;
 pub use delta::{GateDelta, GateDeltas, ParamDelta};
-pub(crate) use outcome::build_outcome;
 pub use narrative::{
     AxisExtent, EntryAdvisory, FailureNarrative, GateKind, KnobAxis, LimitingGate,
     OperatorSuggestion, SearchEnvelopeReached, TradeOffNarrative, entry_advisories_for_verdict,
     limiting_gates_for_verdict, suggest_levers,
 };
+pub(crate) use outcome::build_outcome;
 pub use outcome::{OptimizeOutcome, ProjectOptimizeReport};
 
 use context::{
@@ -174,6 +174,12 @@ pub fn optimize_toolpath(
             };
         }
     };
+    // D6/D7: pull spans for the current toolpath out of the cached
+    // compute result. None when generation hasn't been run; locality
+    // classifier degrades to engagement-only labels in that case.
+    let baseline_spans: Option<&[crate::toolpath_spans::Span]> = session
+        .get_result(toolpath_index)
+        .map(|r| r.annotated.spans.as_slice());
     let baseline_load_ctx = ToolpathLoadContext {
         toolpath_id: ctx.toolpath_id,
         tool: &ctx.tool,
@@ -182,6 +188,7 @@ pub fn optimize_toolpath(
         pass_role: ctx.lut_pass_role,
         operation_feed_rate_mm_min: baseline_op.feed_rate(),
         operation_kind: ctx.operation_kind,
+        spans: baseline_spans,
     };
     let machine = session.machine().clone();
     let policy_tolerance = tolerance_bands_from_policy(search_policy());
@@ -1701,7 +1708,7 @@ mod tests {
                     bounds,
                 },
                 confidence: Confidence::Validated,
-            entry_spikes: Vec::new(),
+                entry_spikes: Vec::new(),
             };
             ToolpathLoadVerdict {
                 toolpath_id: 0,

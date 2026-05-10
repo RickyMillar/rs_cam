@@ -46,7 +46,9 @@
 use crate::material::Material;
 use crate::simulation_cut::{SimulationCutSample, SimulationCutTrace};
 use crate::tool::ToolDefinition;
+use crate::toolpath_spans::Span;
 
+use super::locality::SpanLookup;
 use super::verdict::{
     Confidence, DeflectionBounds, DeflectionVerdict, SampleEvidence, UnmodeledReason,
 };
@@ -103,6 +105,7 @@ pub fn evaluate(
     tool: &ToolDefinition,
     material: &Material,
     sim_trace: Option<&SimulationCutTrace>,
+    spans: Option<&[Span]>,
     tolerance: &super::ToleranceBands,
 ) -> DeflectionVerdict {
     let Some(trace) = sim_trace else {
@@ -177,12 +180,13 @@ pub fn evaluate(
         format!("peak tip deflection {peak_um:.0} µm (isotropic Kc, bending only)")
     };
 
+    let span_lookup = spans.map(SpanLookup::new);
     let evidence = match peak_idx {
         Some(idx) => SampleEvidence::at(idx).with_locality(
             trace
                 .samples
                 .get(idx)
-                .and_then(super::locality::classify_sample_locality),
+                .and_then(|s| super::locality::classify_sample_locality(s, span_lookup.as_ref())),
         ),
         None => SampleEvidence::empty(),
     };
@@ -340,6 +344,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             None,
+            None,
             &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
@@ -362,6 +367,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&trace),
+            None,
             &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
@@ -391,6 +397,7 @@ mod tests {
                 kc: 10.0,
             },
             Some(&trace),
+            None,
             &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
@@ -427,6 +434,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&trace),
+            None,
             &crate::tool_load::ToleranceBands::default(),
         );
         match v {
@@ -469,6 +477,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&trace),
+            None,
             &crate::tool_load::ToleranceBands::default(),
         );
         match v {
@@ -504,6 +513,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&trace),
+            None,
             &crate::tool_load::ToleranceBands::default(),
         );
         let peak_um = match v {
@@ -560,6 +570,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&trace),
+            None,
             &crate::tool_load::ToleranceBands::default(),
         );
         match v {
@@ -598,6 +609,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&trace),
+            None,
             &crate::tool_load::ToleranceBands::default(),
         );
         let widened = evaluate(
@@ -607,6 +619,7 @@ mod tests {
                 species: WoodSpecies::HardMaple,
             },
             Some(&trace),
+            None,
             &crate::tool_load::ToleranceBands {
                 deflection_breach: 100.0, // absurdly wide → no peak can trip Exceeds
                 ..crate::tool_load::ToleranceBands::default()
