@@ -66,6 +66,7 @@ fn wanaka_tool() -> ToolDefinition {
 /// feed/RPM/flutes. The `effective_chip_thickness_mm` is filled in by
 /// the simulator helper `effective_chip_thickness_mm(...)` — this is
 /// the line the fix changes.
+#[allow(dead_code)]
 fn half_engagement_sample(
     cutter: &dyn MillingCutter,
     tp_id: usize,
@@ -184,15 +185,66 @@ fn exposed_chip_thickness_at_half_engagement_uses_arc_average_convention() {
     );
 }
 
-/// Gate-verdict check: a wanaka-like sample at half engagement should
-/// pass the chipload gate against the hard-maple pocket-roughing LUT
-/// row. Currently fails because the exposed value is the peak (=
-/// 0.0875 mm) which exceeds the LUT cap (~0.04 mm).
+/// Gate-verdict check: a sample whose feed-per-tooth lands in the
+/// LUT's published per-flute envelope should pass the chipload gate
+/// when sampled at the LUT row's nominal engagement.
+///
+/// History: pre-G17 this test exercised a wanaka-feed sample (0.0875
+/// mm/tooth) at half engagement — incidentally close enough to the
+/// LUT row's nominal arc that the arc-average mean (~0.0326) just
+/// cleared the LUT min (0.032), so the test passed without ever
+/// modeling the engagement explicitly. Post-D9 (engagement-aware LUT
+/// comparison), the half-engagement reading gets normalized to the
+/// LUT row's nominal engagement (`acos(1 − 2·1.6/6) ≈ 1.084 rad`,
+/// ~27 % radial), which surfaces a real semantic gap: at any
+/// engagement, wanaka's commanded 0.0875 mm/tooth is below the
+/// Amana-published per-flute minimum for HardMaple roughing
+/// (`min_mean / M(arc_lut) ≈ 0.032 / 0.233 ≈ 0.137 mm/tooth`). That
+/// is its own optimization conversation; the convention check below
+/// just verifies that with a feed inside the published envelope, the
+/// gate accepts.
 #[test]
-fn wanaka_like_half_engagement_sample_passes_chipload_gate() {
+fn lut_nominal_engagement_sample_within_published_envelope_passes() {
     let tool = wanaka_tool();
-    let cutter = FlatEndmill::new(6.35, 20.0);
-    let sample = half_engagement_sample(&cutter, 0, 0);
+    let cutter = FlatEndmill::new(6.0, 20.0);
+
+    // Feed per tooth chosen to land safely inside the LUT envelope
+    // (0.032..=0.055 mean / 0.233 factor → 0.137..=0.236 mm/tooth).
+    let feed_per_tooth = 0.18;
+    // Sample at the LUT row's nominal engagement so D9's per-sample
+    // normalization is a no-op.
+    let arc_lut_nominal = (1.0_f64 - 2.0 * 1.6 / 6.0).acos();
+    let exposed = effective_chip_thickness_mm(
+        &cutter,
+        WANAKA_AXIAL_DOC_MM,
+        Some(arc_lut_nominal),
+        feed_per_tooth,
+        2,
+    )
+    .expect("flat endmill chip geometry supported at LUT-nominal engagement");
+
+    let sample = SimulationCutSample {
+        toolpath_id: 0,
+        move_index: 0,
+        sample_index: 0,
+        position: [0.0, 0.0, 0.0],
+        cumulative_time_s: 0.0,
+        segment_time_s: 0.1,
+        is_cutting: true,
+        cut_kinematics: CutKinematics::Linear,
+        feed_rate_mm_min: 1000.0,
+        spindle_rpm: 18000,
+        flute_count: 2,
+        axial_doc_mm: WANAKA_AXIAL_DOC_MM,
+        radial_engagement: 0.27,
+        arc_engagement_radians: Some(arc_lut_nominal),
+        chipload_mm_per_tooth: feed_per_tooth,
+        effective_chip_thickness_mm: Some(exposed),
+        removed_volume_est_mm3: 0.1,
+        mrr_mm3_s: 1.0,
+        semantic_item_id: None,
+        span_path: Vec::new(),
+    };
     let trace = trace(vec![sample]);
 
     let verdict = chipload::evaluate(
@@ -214,15 +266,92 @@ fn wanaka_like_half_engagement_sample_passes_chipload_gate() {
             confidence: Confidence::Validated,
             ..
         } => {}
+        other => panic!("unexpected verdict: {other:?}"),
+    }
+}
+
+/// D9 — slot-engagement transient sample (the wanaka TP 1 surface
+/// pattern: terrain-following XY+Z move that briefly slot-engages on
+/// a vertical face) at a feed-per-tooth that's well inside the LUT
+/// envelope must NOT trip the gate post-D9. Pre-D9 this read as
+/// `mean ≈ 0.637 × feed_per_tooth` and got compared raw against the
+/// LUT cap calibrated at narrow engagement, over-penalizing slot
+/// transients on terrain.
+#[test]
+fn slot_engagement_sample_at_safe_feed_passes_after_d9_normalization() {
+    use std::f64::consts::PI;
+
+    let tool = wanaka_tool();
+    let cutter = FlatEndmill::new(6.0, 20.0);
+
+    // Feed at the middle of the LUT envelope, expressed as feed/tooth.
+    // Mean chip at slot = 0.18 × 0.637 ≈ 0.115 mm — far above LUT max
+    // 0.055 mm if compared raw. Post-D9 normalization scales to the
+    // LUT-nominal arc (~1.084 rad, factor ≈ 0.233), giving
+    // `0.115 × 0.233 / 0.637 ≈ 0.042 mm` — within bounds.
+    let feed_per_tooth = 0.18;
+    let arc_slot = PI;
+    let exposed = effective_chip_thickness_mm(
+        &cutter,
+        WANAKA_AXIAL_DOC_MM,
+        Some(arc_slot),
+        feed_per_tooth,
+        2,
+    )
+    .expect("flat endmill chip geometry supported at slot");
+    assert!(
+        exposed > 0.10,
+        "raw mean at slot should be ≥ 0.10 mm to exercise normalization meaningfully (got {exposed:.4})"
+    );
+
+    let sample = SimulationCutSample {
+        toolpath_id: 0,
+        move_index: 0,
+        sample_index: 0,
+        position: [0.0, 0.0, 0.0],
+        cumulative_time_s: 0.0,
+        segment_time_s: 0.1,
+        is_cutting: true,
+        cut_kinematics: CutKinematics::Linear,
+        feed_rate_mm_min: 1000.0,
+        spindle_rpm: 18000,
+        flute_count: 2,
+        axial_doc_mm: WANAKA_AXIAL_DOC_MM,
+        radial_engagement: 1.0,
+        arc_engagement_radians: Some(arc_slot),
+        chipload_mm_per_tooth: feed_per_tooth,
+        effective_chip_thickness_mm: Some(exposed),
+        removed_volume_est_mm3: 0.1,
+        mrr_mm3_s: 1.0,
+        semantic_item_id: None,
+        span_path: Vec::new(),
+    };
+    let trace = trace(vec![sample]);
+
+    let verdict = chipload::evaluate(
+        0,
+        &tool,
+        &Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        },
+        Some(&trace),
+        LutOperationFamily::Pocket,
+        LutPassRole::Roughing,
+        1000.0,
+        OperationType::Pocket,
+        &rs_cam_core::tool_load::ToleranceBands::default(),
+    );
+
+    match verdict {
+        rs_cam_core::tool_load::ChiploadVerdict::Within { .. } => {}
         rs_cam_core::tool_load::ChiploadVerdict::Exceeds {
             side: rs_cam_core::tool_load::verdict::ChipSide::High,
             triggering,
             ..
         } => panic!(
-            "chipload gate trips on a half-engagement sample at the \
-             commanded wanaka feed/RPM (peak={:.4}). Root cause: \
-             simulator exposes peak instantaneous chip thickness, but \
-             vendor LUT caps are calibrated against arc-average.",
+            "slot-engagement sample at safe feed-per-tooth (= {feed_per_tooth} mm/tooth) trips the chipload gate (observed = {:.4}). \
+             D9 normalization should scale the slot-engagement raw mean back to LUT-nominal-engagement equivalent before comparing. \
+             See planning/STRUCTURAL_ENTRY_SPANS_AND_LOCALITY.md D2.",
             triggering.observed_mm_per_tooth
         ),
         other => panic!("unexpected verdict: {other:?}"),
