@@ -326,6 +326,7 @@ fn wizard_state_mutations_round_trip() {
     session.wizard_mut().units_override = Some(rs_cam_core::gcode::Units::Inch);
     session.wizard_mut().safe_z_override = Some(20.0);
     session.wizard_mut().spindle_warmup_secs = 5;
+    session.wizard_mut().dry_run = true;
     session.wizard_mut().allow_validator_errors = true;
     session.wizard_mut().last_step_visited = 5;
 
@@ -336,6 +337,71 @@ fn wizard_state_mutations_round_trip() {
     assert_eq!(w.units_override, Some(rs_cam_core::gcode::Units::Inch));
     assert_eq!(w.safe_z_override, Some(20.0));
     assert_eq!(w.spindle_warmup_secs, 5);
+    assert!(w.dry_run);
     assert!(w.allow_validator_errors);
     assert_eq!(w.last_step_visited, 5);
+}
+
+/// Dry-run mode must clamp every cutting move's Z to the effective
+/// safe-Z. Build a session with a toolpath that descends below the
+/// surface (Z=-1.0), enable dry-run + a safe-Z override of 12.5,
+/// and parse every G1/G2/G3 line of the emitted output. None of
+/// them may have a Z value other than 12.500. G0 rapids must keep
+/// their original Z values (entry/exit kinematics intact).
+#[test]
+fn wizard_dry_run_clamps_cutting_moves_to_safe_z() {
+    let (mut session, gui, sim) = build_session();
+
+    session.wizard_mut().dry_run = true;
+    session.wizard_mut().safe_z_override = Some(12.5);
+
+    let gcode =
+        export_gcode_from_session(&session, &gui, &sim).expect("dry-run export succeeds");
+
+    let mut g1_count = 0usize;
+    let mut rapid_z5_count = 0usize;
+    for line in gcode.lines() {
+        let tline = line.trim_start();
+        let leading = tline
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_ascii_uppercase();
+        let is_cut = matches!(leading.as_str(), "G1" | "G2" | "G3");
+        let is_rapid = leading == "G0";
+        let z = tline
+            .split_whitespace()
+            .find_map(|tok| {
+                tok.strip_prefix('Z')
+                    .or_else(|| tok.strip_prefix('z'))
+                    .and_then(|rest| rest.parse::<f64>().ok())
+            });
+        if is_cut
+            && let Some(z) = z
+        {
+            assert!(
+                (z - 12.5).abs() < 1e-6,
+                "dry-run cutting move must have Z=12.500, got {z} in: {line}"
+            );
+            g1_count += 1;
+        }
+        // build_session emits rapids at Z=5.0 — those must stay at 5.0
+        // (NOT get rewritten to 12.5). A G0 Z line at exactly 5.0 is
+        // proof that the rapid kinematics weren't touched.
+        if is_rapid
+            && let Some(z) = z
+            && (z - 5.0).abs() < 1e-6
+        {
+            rapid_z5_count += 1;
+        }
+    }
+    assert!(
+        g1_count >= 1,
+        "test fixture should have produced at least one cutting move"
+    );
+    assert!(
+        rapid_z5_count >= 1,
+        "build_session emits at least one rapid at Z=5.0; dry-run must \
+         leave it intact (got {rapid_z5_count} matching rapids)"
+    );
 }
