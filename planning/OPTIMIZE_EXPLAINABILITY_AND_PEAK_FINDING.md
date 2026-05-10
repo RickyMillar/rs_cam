@@ -17,7 +17,11 @@ criteria.
 | A. Explainability | A3. Sample locality classification (kinematics + arc engagement) | ✅ | `fc17798` | 2026-05-10 |
 | A. Explainability | A4. Operator-facing suggestion lever | ✅ | `2c7ffe5` | 2026-05-10 |
 | A. Explainability | A5. Search-frontier heatmap (feed × stepover) | ⏳ optional | — | — |
-| B. Peak-finding | B0. Gating prerequisites re-evaluated | 🚫 blocked on A2 | — | — |
+| C. Gate semantics | C1. Steady-state gate trip (minimal) | ⏳ proposed | — | — |
+| C. Gate semantics | C2. C1 + entry-spike advisory | ⏳ proposed | — | — |
+| C. Gate semantics | C3. Locality-aware suggestions | ⏳ proposed | — | — |
+| C. Gate semantics | C4. Per-locality gate verdict breakdown | ⏭️ deferred | — | — |
+| B. Peak-finding | B0. Gating prerequisites re-evaluated | 🚫 blocked on C1 | — | — |
 | B. Peak-finding | B1. `OptimizationStrategy` trait contract | 🚫 blocked on B0 | — | — |
 | B. Peak-finding | B2. Closed-loop retarget composition (§3.5 deferred) | 🚫 blocked on B1 | — | — |
 | B. Peak-finding | B3. Gaussian-process strategy (§11.6.4) | 🚫 blocked on B2 + re-gate | — | — |
@@ -75,6 +79,47 @@ Sequenced: A first (independent value — even with B, "no safe
 improvement" cases will still happen on some fixtures), B gated on
 A2's narrative landing first so engine and UI converge on the same
 vocabulary.
+
+---
+
+## Mid-thread-A reflection (2026-05-10) — gate-decision is the bottleneck, not search
+
+Thread A landed end-to-end. Re-running wanaka MCP smoke after A3
+(locality classifier) revealed something the original plan missed:
+
+> **Every gate violation across both wanaka TPs sits in a helical
+> entry move, not steady-state cutting.** TP 1 chipload high,
+> TP 1 deflection exceed, TP 6 chipload band-admit (high *and* low),
+> TP 1 burn-side narrative — all carry `locality: "helix entry"` (or
+> "heavy engagement"). Not one gate trip is in steady-state cut.
+
+Implications for thread B:
+
+1. **Bayesian (B3) wouldn't move the needle on wanaka.** GP would
+   search the same `(feed × stepover × DOC)` space the grid already
+   probes. Every candidate it proposes still trips on its own helix
+   entry. The §11.6.4 gating criterion #1 — "optimizer settles on a
+   local optimum > 10s slower than a hand-found global, both Within"
+   — doesn't cleanly apply: there is no Within candidate within the
+   search envelope under the current gate-trip rule.
+2. **B2 (closed-loop retarget) has the same property.** Drops feed
+   when chipload spikes; the spike is in the entry; the new
+   candidate's entry still spikes; symptom-treating loop.
+3. **The actual rule that's biting is gate-trip semantics, not
+   search coverage.** The chipload evaluator already has a
+   `steady_state_samples_for_toolpath` filter — used to find the LUT
+   row to compare against, but *not* to drive the trip decision.
+   Result: the trip decision is dominated by transient entry
+   samples. The bulk cut in TP 1 is probably already Within.
+
+This isn't a thread-A or thread-B problem. It's a third concern:
+**what samples should drive the gate trip?** Hence Thread C below.
+
+A small meta-observation: thread A worked exactly as designed.
+Surfacing the locality field added 2 hours of work and rerouted a
+1-2 week investment. Worth remembering for future explainability
+phases — the structured data has compounding value beyond the UI it
+was built for.
 
 ---
 
@@ -266,6 +311,166 @@ baseline highlighted. Operator sees the search frontier visually.
 
 ---
 
+## Thread C — Gate semantics refinement
+
+**Premise** (from the mid-thread-A reflection above): the gate-trip
+decision currently fires on transient entry samples (helix / plunge),
+not on steady-state cutting. On wanaka, every gate violation lives
+in an entry move — the bulk cut is probably already Within. Search
+improvements (B2 / B3) won't change this; they'd find the same
+local optima and trip on the same entry samples.
+
+Thread C is small, evaluator-side, and *might* dissolve thread B's
+premise for wanaka entirely. Worst case it shrinks the search-coverage
+gap so B's ROI is easier to evaluate honestly. Either way, do C
+before B.
+
+### C1. Steady-state gate trip (minimal)
+
+**Reference:** mid-thread-A reflection.
+**Effort:** ~½d. **Files:** 3 evaluators (`chipload.rs`, `power.rs`,
+`deflection.rs`). **LOC:** small — re-routing existing data, no new
+filter to write.
+
+Today: the chipload evaluator's `peak_above` / `peak_below` /
+`peak_in_range` loop walks `steady_state_samples` (already filtered
+for steady-state via `steady_state_samples_for_toolpath`) — but the
+input filter is wide. Look at the actual filter — it walks samples
+where `is_cutting && radial_engagement >= 0.02 && |feed - operation_feed| < tolerance`.
+That admits helix-entry samples (they're cutting, engaged, at the
+operation feed). The filter excludes air cuts and rapids, not
+transient entries.
+
+Goal: tighten the gate-trip filter so transient entry samples
+(`CutKinematics::Helix`, `CutKinematics::Plunge`) don't drive the
+trip decision. Same change applied to power + deflection evaluators.
+
+- [ ] Add `is_steady_state_for_gate(sample)` predicate near
+      `steady_state_samples_for_toolpath`. Returns false for
+      `CutKinematics::Helix` and `CutKinematics::Plunge`. (The
+      narrative module's `classify_sample_locality` already
+      enumerates these; reuse the same condition.)
+- [ ] Apply in chipload's main sample loop: continue past
+      transient-entry samples for both `peak_above` and
+      `burn_samples`. The bounds-matching pass that picks the LUT
+      row's `lookup_axial_doc_mm` keeps reading every sample (we
+      want the entry's DOC for matching, just not for the trip).
+- [ ] Apply in power's `peak_idx` selection.
+- [ ] Apply in deflection's `peak_idx` selection.
+- [ ] Do **not** mutate the verdict's evidence to claim the entry
+      sample didn't exist — the existing `confidence.detail` strings
+      ("slot engagement (arc >= π) — climb/conventional split not
+      modeled") still surface entry context. The change is *only*
+      in which samples drive the trip decision.
+- [ ] Tests: 3 fixtures per evaluator (entry-only spike → Within;
+      steady-state spike → Exceeds; mixed → Exceeds on the
+      steady-state reading not the entry). One regression for
+      wanaka_full_tuned TP 1 in `tests/wanaka_*.rs` if a fixture
+      can be cooked up there.
+- [ ] Wanaka MCP smoke afterward: TP 1 should land Ranked instead
+      of NoSafeImprovement; suggestion lever should change to
+      "no action needed" (or empty).
+
+**Risk:** moderate. The behavior change is real. A user who genuinely
+broke a tool on a bad helix entry would have seen `Exceeds` before;
+post-C1 they'd see `Within` plus a confidence detail string. C2
+addresses this by surfacing entry spikes as informational advisories.
+
+**Counter-evidence to gather:** is there any project where the entry
+sample IS the legitimate concern? Worth running C1 against fixtures
+beyond wanaka before locking in the rule.
+
+### C2. C1 + entry-spike advisory
+
+**Reference:** mitigates C1's "did we hide a real entry failure?"
+risk.
+**Effort:** ~1d after C1 lands. **Files:** verdict + narrative + modal. **LOC:** ~80.
+
+Goal: when an entry sample exceeds the bound but the steady-state
+trip says Within, surface it as an advisory — visible on the verdict
++ narrative without flipping the gate decision.
+
+Two approaches; option B is preferred:
+
+- **Option A:** new variant `EntryWarning` between `Within` and
+  `Exceeds` on each gate verdict. Three-state → four-state
+  enum. Touches every verdict consumer. Lots of mechanical churn for
+  one new bit.
+- **Option B (preferred):** add `entry_spike: Option<EntrySpike>`
+  field to each verdict's `Within` arm. When set, contains the worst
+  entry-sample reading + bound + locality. UI renders as a "Note:"
+  line under the verdict badge, neutral colour (not red). Narrative's
+  `LimitingGate` could carry an `advisory: bool` flag mirroring
+  `band_admitted` for similar treatment.
+
+- [ ] Decide A vs B (recommend B).
+- [ ] Plumb the chosen shape through the three evaluators —
+      record entry spikes during the same pass that runs C1's
+      filtered trip decision.
+- [ ] Modal renders advisory line on the per-row verdict badge:
+      "Note: helix entry sample reached 0.0707 — consider gentler
+      helix."
+- [ ] Tests: 2 per evaluator (entry-only spike → Within +
+      advisory; mixed entry spike + steady-state Exceeds →
+      Exceeds, no advisory needed because the trip is already
+      visible).
+
+**Risk:** low. Pure additive shape change.
+
+### C3. Locality-aware suggestions
+
+**Reference:** A4's `suggest_levers` reads `LimitingGate.observed`
+and `bound`; it doesn't read `locality`. The wanaka run showed it
+suggesting "cap feed at 2954 mm/min" when the limiting reading was
+in a helix entry — the cap would slow the bulk cut and barely
+improve the entry. Wrong leverage.
+**Effort:** ~½d. **Files:** `narrative.rs`. **LOC:** ~40.
+
+Goal: when `LimitingGate.locality` is "helix entry" / "plunge entry"
+/ "heavy engagement", emit entry-strategy suggestions instead of
+bulk-parameter caps.
+
+- [ ] New variants on `OperatorSuggestion`:
+      - `WidenHelix { current: f64, suggested: f64 }` ("Try
+        increasing helix_radius_factor above ~0.5")
+      - `SlowEntry { current: f64, suggested: f64 }` ("Try
+        reducing helix_pitch below ~1.5 mm")
+      - `SwitchEntryStyle { from: EntryStyle, to: EntryStyle }`
+        ("Try ramp entry instead of plunge")
+- [ ] In `suggest_for_gate`, branch on `g.locality` first; only
+      fall through to bulk-parameter caps when locality is None or
+      "slot section".
+- [ ] Heuristic for entry-style suggestions: rough reciprocals of
+      the same chipload formula, with operator-friendly defaults
+      (e.g. helix_radius_factor target = current × 1.5, capped at 0.7).
+- [ ] Modal `format_suggestion` renders the new variants.
+- [ ] Tests: 2 per new variant.
+
+Independent of C1/C2 — could ship before or after, but most useful
+*after* C1 lands (since post-C1 some "no safe improvement" cases
+will *only* have entry-locality limiting gates left, and the
+suggestion needs to match).
+
+### C4. Per-locality gate verdict breakdown
+
+**Reference:** most thorough — emit gate state per locality bucket.
+**Effort:** ~2d. **Files:** verdict, narrative, modal. **LOC:** ~250.
+**Status:** ⏭️ **Deferred.**
+
+The shape would be: each gate verdict carries
+`Map<Locality, GateState>` so the UI can render a small table:
+
+| Region | Chipload | Power | Deflection |
+|---|---|---|---|
+| Steady-state | Within | Within | Within |
+| Helix entry | Exceeds High | Within | Exceeds |
+| Plunge entry | — | — | — |
+
+Defer until C1+C2+C3 prove insufficient. The shape is also more
+invasive than C2's optional advisory and the UI gets busy fast.
+
+---
+
 ## Thread B — Peak-finding search
 
 ### B0. Gating prerequisites re-evaluated
@@ -286,12 +491,16 @@ re-check whether the original §11.6.4 gating criteria still trip:
 Possible outcomes:
 
 - **All three trip:** start B1.
-- **Some trip but A's narrative made the gap acceptable:** defer
-  again, document what changed.
-- **None trip:** archive thread B; the gap was perceptual, not
-  algorithmic.
+- **Some trip but A's narrative + C's gate semantics made the gap
+  acceptable:** defer again, document what changed.
+- **None trip:** archive thread B; the gap was perceptual or a
+  gate-rule artefact, not algorithmic.
 
-- [ ] Run optimize on 5+ projects with A2 modal active.
+- [ ] **Pre-requisite: C1 must land first.** The mid-thread-A
+      reflection showed wanaka's gate trips are entry-sample driven,
+      not search-coverage driven. Re-running B0 before C1 would
+      attribute a gate-rule problem to a search-coverage problem.
+- [ ] Run optimize on 5+ projects with A2 modal + C1 active.
 - [ ] Hand-search the same projects for global optima within the same
       search envelope.
 - [ ] Document gap data in this tracker; gate B1 explicitly on the
@@ -404,16 +613,25 @@ slow ops get closed-loop or GP.
 ## Sequencing
 
 ```
-A1 ─→ A2 ─→ A3 ─→ A4
-              │
-              └─→ B0 ─→ B1 ─→ B2 ─→ (re-gate) ─→ B3 ─→ B4
+A1 ✅ ─→ A2 ✅ ─→ A3 ✅ ─→ A4 ✅
+                            │
+                            ▼
+                     C1 ─→ (wanaka MCP smoke)
+                            │
+                            ├─→ wanaka now Ranked? ──→ C2 ─→ C3 ─→ (other-fixture survey) ──┐
+                            │                                                                ▼
+                            └─→ wanaka still NoSafeImprovement? ─→ B0 ─→ B1 ─→ B2 ─→ (re-gate) ─→ B3 ─→ B4
 ```
 
-A2 is the cut point: thread B does not start until A2 ships and the
-narrative vocabulary contract is real. After B2 lands, re-evaluate
-whether B3 is needed (it may not be).
+**C1 is the new cut point.** The mid-thread-A reflection showed that
+on wanaka the search isn't the bottleneck — the gate-trip rule is.
+C1 is small (~½ day) and may dissolve thread B's premise for this
+project. If C1 transforms the picture, C2+C3 polish the gate-semantics
+story and B becomes "for other projects, eventually". If C1 doesn't
+help, B0's gating data is sharper because we've ruled out the
+gate-rule explanation.
 
-A5 (heatmap) is independent of B and can ship anytime after A2.
+A5 (heatmap) is independent of everything and can ship anytime.
 
 ---
 
@@ -426,14 +644,20 @@ A5 (heatmap) is independent of B and can ship anytime after A2.
 | A3 | 1d | low | Reads existing span data |
 | A4 | ½d | low | Heuristic synthesis from existing fields |
 | A5 | 2d | medium | Optional; heatmap UX needs care |
-| B0 | ½d | n/a | Re-evaluate prerequisites |
+| C1 | ½d | medium | Behaviour change; needs cross-fixture sanity |
+| C2 | 1d | low | Pure additive shape change; mitigates C1 risk |
+| C3 | ½d | low | Heuristic synthesis on top of A4 |
+| C4 | 2d | medium | Deferred; covered by C1+C2+C3 today |
+| B0 | ½d | n/a | Re-evaluate prerequisites (now post-C1) |
 | B1 | ½d | low | Trait extraction |
 | B2 | 3-5d | medium | Closed-loop iteration; care with termination |
 | B3 | 1-2w | high | GP integration; may not be needed if B2 closes the gap |
 | B4 | ½d | low | Policy literal + selector |
 
-Total to "magic isn't gone but is explained": **A1+A2+A3+A4 ≈ 3d**.
-Total to "magic also doesn't fail as often": **+B1+B2 ≈ 4-6d**.
+Total to "magic isn't gone but is explained": **A1+A2+A3+A4 ≈ 3d** (✅ shipped).
+Total to "wanaka actually optimises (best case)": **+C1 ≈ ½d**.
+Total to "wanaka optimises + safe entry-spike surface + better suggestions": **+C1+C2+C3 ≈ 2d**.
+Total to "magic also doesn't fail as often on other projects": **+B1+B2 ≈ 4-6d** (only after C0 data review).
 
 ---
 
@@ -444,14 +668,28 @@ Total to "magic also doesn't fail as often": **+B1+B2 ≈ 4-6d**.
   field is opt-in for the renderer.
 - **Thread A risk: suggestion lever (A4) gives bad advice.** Heuristics
   are coarse. Mitigation: phrase as "you'd need roughly X" not "set
-  X". Never auto-apply.
+  X". Never auto-apply. (Confirmed real on wanaka — A4 suggests
+  capping bulk feed when the limiting reading is in the entry.
+  Mitigated by C3.)
+- **Thread C risk: hides legitimate entry failures.** C1 changes
+  what samples drive the trip; an operator who genuinely broke a
+  tool on a bad helix entry would have seen `Exceeds` before C1.
+  Mitigation: C2 adds entry-spike advisory so the data is still
+  visible without flipping the trip; ship C1+C2 together if
+  possible.
+- **Thread C risk: wanaka-specific bias.** The "every gate trip is
+  in the entry" pattern is from one project. Could be a wanaka
+  helix-config quirk, not a general issue. Mitigation: run C1
+  against ≥2 other fixtures before locking the rule. If we don't
+  have suitable fixtures, log the risk and accept it.
 - **Thread B risk: closed-loop retarget oscillates.** Two opposing
   retargeters could ping-pong (drop feed → chipload OK but cycle
   worse → bump feed → chipload Exceeds again). Mitigation: bound
   iterations, treat oscillation as termination signal, surface
   "search converged on a local minimum" in narrative.
-- **Thread B risk: GP over-engineering.** B2 may close the gap. Hard
-  re-gate after B2 lands; do not start B3 by inertia.
+- **Thread B risk: GP over-engineering.** B2 may close the gap;
+  C1 may dissolve the premise. Hard re-gate after C1 *and* after
+  B2; do not start B3 by inertia.
 - **Vocabulary drift:** B emits per-probe rationale that doesn't
   match A's narrative phrasing. Mitigation: B reuses A's enums
   (`LimitingGate`, `OperatorSuggestion`) as the rationale carrier.
@@ -628,6 +866,15 @@ each phase using A1 as template.)
   carries `suggestions: [cap_axis_at(feed, 2954.67), cap_axis_at(depth_per_pass, 3.88)]`
   — both heuristic outputs match closed-form math. TP 6 (MarginalSafe)
   carries `suggestions: []` as designed.
+- **2026-05-10 — Thread B re-gated on C1.** Mid-thread-A reflection
+  (see body) showed wanaka's gate trips are entry-sample driven, not
+  search-coverage driven. Bayesian (B3) wouldn't fix wanaka because
+  it'd search the same space and trip on the same entry samples.
+  Inserted Thread C (gate semantics refinement) ahead of B0; B0's
+  data-collection now requires C1 to land first so we don't attribute
+  a gate-rule artefact to a search-coverage gap. C1 is small (~½ day);
+  may dissolve B's premise for wanaka entirely. Worst case it
+  shrinks the gap so B's ROI is easier to evaluate honestly.
 - **2026-05-10 — A3+A4 finding worth filing for B / future polish.**
   A3 locality across both wanaka TPs reveals that **every chipload /
   deflection / power peak in this project sits in a helical entry
