@@ -884,6 +884,7 @@ pub(super) fn build_session_from_project(
         toolpath_configs,
         results: std::collections::HashMap::new(),
         simulation: None,
+        wizard: super::WizardState::default(),
         next_toolpath_id,
         next_tool_id,
         next_setup_id,
