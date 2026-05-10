@@ -35,6 +35,13 @@ pub struct ToolpathNarrationContext<'a> {
     pub feed_rate_mm_min: Option<f64>,
     pub spindle_rpm: Option<u32>,
     pub flute_count: Option<u32>,
+    /// True for `OperationType::{Drill, AlignmentPinDrill}`. The
+    /// engagement model is XY-only (cylinder side-engagement against
+    /// the dexel grid), so drill cycles always read 0 % engagement and
+    /// 100 % air-cut even when actively making chips. Setting this
+    /// suppresses the air-cut anomaly in narration. F4 of
+    /// `planning/OPTIMIZER_UX_DIALIN_FIXES.md`.
+    pub is_drill_cycle: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -952,6 +959,18 @@ fn append_air_cut_anomaly(
         return;
     }
     let air_pct = air_cut_time_s / cutting_time_s * 100.0;
+    if context.is_drill_cycle {
+        // F4 — engagement is XY-only (cylinder side-engagement). Drill
+        // cycles cut on Z-only moves so they always read 100 % air-cut
+        // and 0 engagement; that's a model limitation, not an actual
+        // anomaly, and surfacing it as ⚠ trains the operator to ignore
+        // legitimate warnings on milling ops.
+        anomalies.push(
+            "ℹ engagement and air-cut% are not modeled for drill cycles (the dexel uses XY cylinder side-engagement; drill chips on Z-only moves). Treat MRR / feed / power separately for drilling."
+                .to_owned(),
+        );
+        return;
+    }
     let marker = if air_pct > AIR_CUT_WARNING_PERCENT {
         "⚠"
     } else {
@@ -1068,6 +1087,7 @@ mod tests {
             feed_rate_mm_min: Some(1000.0),
             spindle_rpm: Some(18_000),
             flute_count: Some(2),
+            is_drill_cycle: false,
         };
 
         let report = narrate_toolpath_with_context(

@@ -683,6 +683,11 @@ impl super::RsCamApp {
                     .unwrap_or(state.session.post_config().spindle_speed),
             ),
             flute_count: Some(tool_config.flute_count),
+            is_drill_cycle: matches!(
+                tc.operation.op_type(),
+                rs_cam_core::compute::catalog::OperationType::Drill
+                    | rs_cam_core::compute::catalog::OperationType::AlignmentPinDrill
+            ),
         };
 
         rs_cam_core::narrate::narrate_toolpath_with_context(
@@ -1869,8 +1874,14 @@ impl super::RsCamApp {
         // multi-pass operation without re-grouping the raw sample stream.
         let per_depth_pass = build_per_depth_pass_summary(state, sim_trace);
 
+        // F5 — first-look summary so a single MCP read answers
+        // "what's broken in this project?" without folding the
+        // per-toolpath array.
+        let summary_value =
+            serde_json::to_value(report.summary()).unwrap_or(serde_json::Value::Null);
         let load_value = serde_json::to_value(&report).unwrap_or(serde_json::Value::Null);
         json_str(serde_json::json!({
+            "summary": summary_value,
             "load_report": load_value,
             "per_depth_pass": per_depth_pass,
         }))
