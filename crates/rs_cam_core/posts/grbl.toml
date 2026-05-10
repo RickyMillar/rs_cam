@@ -33,6 +33,18 @@ M5
 M0
 """
 
+# Grbl 1.1 lacks mist coolant (M7) and cutter compensation
+# (G40/G41/G42). Without these guards, user pre/post snippets that
+# emit M7 or comp toggles fail at the controller.
+unsupported_mcodes = [7]
+supports_cutter_comp = false
+
+# Linearise sub-0.05mm arcs into chords — Grbl 1.1 rejects them
+# outright with "arc trajectory inconsistent" otherwise.
+[arc_linearize]
+enabled = true
+threshold_mm = 0.05
+
 [decimals]
 xyz = 3
 feed = 0

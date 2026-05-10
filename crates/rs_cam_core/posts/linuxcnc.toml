@@ -29,6 +29,15 @@ M5
 M0
 """
 
+# LinuxCNC supports the full M-code/G-code surface including mist,
+# flood, and cutter compensation (G41/G42).
+# supports_cutter_comp defaults to true.
+
+# Linearise sub-0.05mm arcs to dodge offline parser rejections.
+[arc_linearize]
+enabled = true
+threshold_mm = 0.05
+
 [decimals]
 xyz = 4
 feed = 1

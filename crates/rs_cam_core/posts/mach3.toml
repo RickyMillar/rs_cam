@@ -29,6 +29,13 @@ M5
 M0
 """
 
+# Mach3 supports mist coolant (M7) and cutter compensation
+# (G41/G42). supports_cutter_comp defaults to true.
+
+[arc_linearize]
+enabled = true
+threshold_mm = 0.05
+
 [decimals]
 xyz = 4
 feed = 1

@@ -51,6 +51,16 @@ M5
 M0
 """
 
+# grblHAL implements M7 (mist) and the full M-code surface, so no
+# unsupported_mcodes entries here. Cutter compensation is OFF by
+# default for hobby grblHAL builds (most boards don't enable it);
+# flip this in a per-machine override if your build does.
+supports_cutter_comp = false
+
+[arc_linearize]
+enabled = true
+threshold_mm = 0.05
+
 [decimals]
 xyz = 3
 feed = 0
