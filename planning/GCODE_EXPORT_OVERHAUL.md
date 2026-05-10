@@ -1,6 +1,6 @@
 # G-Code Export Overhaul — Roadmap
 
-**Status:** Phase 0, 0.5, 1, 2, 3, 4a, and 4b complete. Phase 5 (Wizard UX) is next.
+**Status:** Phase 0, 0.5, 1, 2, 3, 4a, 4b, and 5 complete. Phase 6 (power-user features) is the deferred backlog.
 **Owner:** TBD
 **Last updated:** 2026-05-10
 **Worktree:** `/home/ricky/personal_repos/rs_cam-gcode-overhaul/` on branch `gcode-overhaul` (branched from `master` @ fe27805). All implementation work for this overhaul lives there; the main checkout stays on `master` for unrelated work and the other agent's optimizer changes.
@@ -310,21 +310,24 @@ Fixture corpus broadened from 6 to 16 (added F7-F16): full-circle, X-only feed, 
 
 ---
 
-### Phase 5 — Wizard UX
-**Now the UI can be built against a stable, knob-rich backend.**
+### Phase 5 — Wizard UX — **DONE**
 
-Replace the current "Export G-code (all)" / "Export Combined" / per-setup menu items with a single **Export Wizard** modal:
+Six-step Export Wizard modal in `crates/rs_cam_viz/src/ui/export_wizard.rs`, backed by `WizardState` on `ProjectSession` (resumable settings — `last_step_visited` puts the user back where they left off):
 
-- **Step 1 — Post.** Dropdown of available posts (from `posts/` dir). Show post metadata (controller name, version, notes). Validate against `PostLimits` (max RPM, max feed) — flash warnings if project values exceed.
-- **Step 2 — Output layout.** Radio: Single file / One file per setup (with M0 between) / One file per toolpath. File-naming template field.
-- **Step 3 — Coordinate & units.** WCS picker (G54..G59). Units (auto from post / mm / inch override). Safe Z (per-project default + per-export override).
-- **Step 4 — Tool change & spindle.** Per-tool pre/post snippets (read-only summary; edit in tool inspector). Spindle warmup dwell. Coolant default.
-- **Step 5 — Preview & validate.** Render the first ~200 lines of output. Run `Validator`; show findings inline. Block "Save" if `Severity::Error` findings present (with override checkbox + scary warning).
-- **Step 6 — Save.** File picker (or directory for split modes). Show summary: line count, est. time, tool changes, longest cut, validator findings count.
+- **Step 1 — Post.** `PostFormat::ALL` dropdown, read-only metadata grid (units, default WCS, decimals, cutter-comp, arc-linearise), `PostLimits` warning when project RPM exceeds the post's `max_rpm`.
+- **Step 2 — Output layout.** Radio for `OutputLayout::SingleFile` / `PerSetup` / `PerToolpath`, filename-template field with live `{job}/{setup}/{toolpath}/{ext}` preview, single-setup-PerSetup warning.
+- **Step 3 — Coordinate & units.** WCS picker (G54..G59 + "Use post default"), units override (G21/G20 + "Use post default") with mismatch warning, safe-Z override behind a checkbox.
+- **Step 4 — Tool change & spindle.** Read-only summary of tools used, with toolpath count + pre/post-snippet flags per tool and a "N tool changes required" callout. Spindle warmup dwell input. Coolant counts per `CoolantMode`.
+- **Step 5 — Preview & validate.** Re-emits via `export_gcode_from_session` every frame; preview pane (first ~200 lines, monospace), findings list grouped by severity with icon/colour coding, "✓ No findings" banner when clean, override checkbox + red banner when any `Severity::Error` is present.
+- **Step 6 — Save.** Summary table (post, layout, template, line count, moves, cutting distance, longest cut, est. cycle time, tool changes, validator findings). Save button dispatches `handle_wizard_save` which picks file or directory based on layout, applies template substitutions, respects the validator gate, writes file(s), and closes the wizard.
 
-**UX detail:** the wizard should be **resumable** — settings persist per-project, so re-export uses last choices. Stored on `ProjectSession`.
+**Menu / shortcuts:** "Export G-code…" (Ctrl+Shift+E) opens the wizard; "Direct export (skip wizard)" submenu groups the legacy entries (All toolpaths via Ctrl+Alt+E, Combined for multi-setup, per-setup direct exports).
 
-**Exit:** menu items replaced; wizard tested end-to-end via `mcp` automation harness; current export flows still accessible via keyboard shortcut for power users.
+**`io::export` additions:** `export_single_toolpath_from_session` for the PerToolpath layout (mirrors `export_setup_gcode_from_session`).
+
+**Tests:** `crates/rs_cam_viz/tests/wizard_e2e.rs` — four tests covering all three save layouts plus a state-mutation round-trip. The egui surface itself isn't driven (headless egui rendering is out of scope); the MCP layer doesn't currently expose wizard-driving tools, so the e2e covers the same data path the UI dispatches through.
+
+**Exit met:** menu items reorganised; wizard data path tested end-to-end; legacy direct-export still reachable via menu submenu and Ctrl+Alt+E.
 
 ---
 
@@ -369,7 +372,7 @@ Add as needed (Centroid, Masso, Buildbotics, Mach4, Smoothieware) on user reques
 | 3 | Data-driven post (TOML) | No (byte-identical) | 3–4 days (done) |
 | 4a | CI emulator gate (gvalidate + rs274ngc) | No | <1 day (done) |
 | 4b | Broaden corpus + grblHAL post + new PostDefinition fields | No (additive) | 1 day (done) |
-| 5 | Wizard UX | No (additive) | 3–4 days |
+| 5 | Wizard UX | No (additive) | 1 day (done) |
 | 6 | Power features (incl. CAMotics motion-sim option) | Per-feature | Open-ended |
 
-**Total to land Phase 5: ~3 weeks of focused work.** Phase 0–1 alone (1 week) gets you the safety net even if the rest slips.
+**All non-deferred phases shipped on `gcode-overhaul`.** Phase 6 items remain on the backlog (per-tool pre/post g-code, dry-run mode, re-simulation gate, custom user posts, post linter, MCP wizard tools).
