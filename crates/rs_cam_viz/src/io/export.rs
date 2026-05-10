@@ -147,6 +147,7 @@ pub fn export_combined_gcode_from_session(
                 Some(GcodeSetupPhase {
                     setup_label: &setup.name,
                     phases,
+                    pause_message: setup.pause_message.as_deref(),
                 })
             }
         })

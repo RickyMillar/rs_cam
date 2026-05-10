@@ -380,6 +380,7 @@ fn capture_f14_multi_line_pause_message() {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             }],
+            pause_message: None,
         },
         // Setup label deliberately contains a newline — the program-
         // pause renderer must handle multi-line comment messages
@@ -397,6 +398,7 @@ fn capture_f14_multi_line_pause_message() {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             }],
+            pause_message: None,
         },
     ];
     capture_multi_setup("f14_multi_line_pause_message", &setups, 25.0);
@@ -482,6 +484,7 @@ fn capture_f6_two_setups() {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             }],
+            pause_message: None,
         },
         GcodeSetupPhase {
             setup_label: "Bottom",
@@ -495,6 +498,7 @@ fn capture_f6_two_setups() {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             }],
+            pause_message: None,
         },
     ];
     capture_multi_setup("f6_two_setups", &setups, 25.0);
