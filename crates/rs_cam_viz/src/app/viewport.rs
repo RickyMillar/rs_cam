@@ -439,7 +439,19 @@ impl RsCamApp {
                 ui.ctx().request_repaint();
             }
 
-            self.draw_simulation_hotspot_pins(ui, rect, aspect);
+            // F6.1 viewport extension — bucket-derived hotspot pins
+            // removed from the 3D viewport for the same reason as the
+            // sim timeline (planning/OPTIMIZER_UX_DIALIN_FIXES.md F6).
+            // `SimulationCutTrace.hotspots` is one aggregator per
+            // `(toolpath_id, semantic_item_id)`, not a problem flag, so
+            // painting them as orange pins reads as "danger everywhere"
+            // when nearly all of them are routine reporting buckets.
+            // The diagnostics-panel hotspot table still surfaces every
+            // bucket for navigation; clicking a row there sets
+            // `focused_hotspot` and seeks the playback. Viewport pins
+            // for the Critical / Risky tier (gate trips) land with the
+            // F6.2 graph-panel work.
+            let _ = aspect;
             let active_overlay = {
                 let state = self.controller.state_mut();
                 if state.simulation.debug.enabled && state.simulation.debug.highlight_active_item {
@@ -464,117 +476,6 @@ impl RsCamApp {
             if let Some((label, bbox)) = active_overlay.as_ref() {
                 self.draw_semantic_item_overlay(ui, rect, label, bbox);
             }
-        }
-    }
-
-    fn draw_simulation_hotspot_pins(
-        &mut self,
-        ui: &mut egui::Ui,
-        viewport_rect: egui::Rect,
-        aspect: f32,
-    ) {
-        let pins = {
-            let state = self.controller.state();
-            let Some(trace) = state
-                .simulation
-                .results
-                .as_ref()
-                .and_then(|r| r.cut_trace.as_ref())
-            else {
-                return;
-            };
-            // Inspector focus filters viewport hotspot pins to the focused
-            // toolpath only. When `focused_toolpath()` is `None` (no sim, no
-            // boundary at playback), fall through and show all pins.
-            let focus = state.simulation.focused_toolpath();
-            trace
-                .hotspots
-                .iter()
-                .enumerate()
-                .filter_map(|(hotspot_index, hotspot)| {
-                    let toolpath_id = crate::state::toolpath::ToolpathId(hotspot.toolpath_id);
-                    if let Some(focus_id) = focus
-                        && toolpath_id != focus_id
-                    {
-                        return None;
-                    }
-                    let global_move = state
-                        .simulation
-                        .global_move_for_local(toolpath_id, hotspot.move_start)?;
-                    let tp_name = state
-                        .simulation
-                        .boundaries()
-                        .iter()
-                        .find(|b| b.id == toolpath_id)
-                        .map_or_else(|| format!("TP {}", toolpath_id.0 + 1), |b| b.name.clone());
-                    let screen = self.camera.project_to_screen(
-                        [
-                            hotspot.representative_position[0] as f32,
-                            hotspot.representative_position[1] as f32,
-                            hotspot.representative_position[2] as f32,
-                        ],
-                        aspect,
-                        viewport_rect.width(),
-                        viewport_rect.height(),
-                    )?;
-                    Some((
-                        egui::pos2(
-                            viewport_rect.min.x + screen[0],
-                            viewport_rect.min.y + screen[1],
-                        ),
-                        toolpath_id,
-                        hotspot_index,
-                        global_move,
-                        hotspot.wasted_runtime_s,
-                        tp_name,
-                    ))
-                })
-                .take(24)
-                .collect::<Vec<_>>()
-        };
-
-        let mut clicked: Option<(crate::state::toolpath::ToolpathId, usize, usize)> = None;
-        for (screen_pos, toolpath_id, hotspot_index, global_move, wasted_runtime_s, tp_name) in pins
-        {
-            if !viewport_rect.contains(screen_pos) {
-                continue;
-            }
-            let radius = 6.0;
-            let rect =
-                egui::Rect::from_center_size(screen_pos, egui::vec2(radius * 2.0, radius * 2.0));
-            let id = ui
-                .id()
-                .with(("sim_hotspot_pin", toolpath_id.0, hotspot_index));
-            let response = ui.interact(rect, id, egui::Sense::click());
-            let fill = if response.hovered() {
-                egui::Color32::from_rgb(255, 220, 90)
-            } else {
-                egui::Color32::from_rgb(255, 145, 70)
-            };
-            ui.painter().circle_filled(screen_pos, radius, fill);
-            ui.painter().circle_stroke(
-                screen_pos,
-                radius + 1.0,
-                egui::Stroke::new(1.0, egui::Color32::BLACK),
-            );
-            response.clone().on_hover_text(format!(
-                "{}: runtime hotspot #{}, wasted {:.2}s — click to inspect",
-                tp_name,
-                hotspot_index + 1,
-                wasted_runtime_s
-            ));
-            if response.clicked() {
-                clicked = Some((toolpath_id, hotspot_index, global_move));
-            }
-        }
-
-        if let Some((toolpath_id, hotspot_index, global_move)) = clicked {
-            let state = self.controller.state_mut();
-            state.simulation.debug.focused_hotspot = Some((toolpath_id, hotspot_index));
-            state.simulation.debug.focused_issue_index = None;
-            state.simulation.playback.current_move = global_move;
-            state.simulation.playback.playing = false;
-            self.pending_checkpoint_load = true;
         }
     }
 
