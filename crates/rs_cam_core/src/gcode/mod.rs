@@ -4,6 +4,7 @@
 //! Writing to `String` is infallible (only fails on OOM, which panics regardless),
 //! so discarding the `Result` with `let _ =` is safe.
 
+pub mod emitter;
 pub mod ir;
 mod modal;
 pub mod post;
