@@ -232,6 +232,8 @@ impl<B: ComputeBackend> AppController<B> {
             | AppEvent::CloseExportWizard
             | AppEvent::WizardSetStep(_)
             | AppEvent::WizardSetPost(_)
+            | AppEvent::WizardSetOutputLayout(_)
+            | AppEvent::WizardSetFilenameTemplate(_)
             | AppEvent::Quit => {}
         }
     }

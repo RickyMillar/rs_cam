@@ -15,6 +15,7 @@
 //! 6. Save with summary.
 
 use rs_cam_core::gcode::{PostDefinition, PostFormat};
+use rs_cam_core::session::OutputLayout;
 
 use super::AppEvent;
 use crate::state::AppState;
@@ -49,6 +50,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
             ui.add_space(6.0);
             match state.wizard_active_step {
                 0 => step_post(ui, state, events),
+                1 => step_output_layout(ui, state, events),
                 _ => placeholder(ui, state.wizard_active_step),
             }
             ui.add_space(8.0);
@@ -195,6 +197,114 @@ fn step_post(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
     ui.add_space(10.0);
     draw_limit_warnings(ui, post_def, state.gui.post.spindle_speed);
+}
+
+// ── Step 2 — Output layout ───────────────────────────────────────────
+
+fn step_output_layout(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
+    ui.heading("Output layout");
+    ui.add_space(4.0);
+
+    let wiz = state.session.wizard();
+    let current = wiz.output_layout;
+    let mut selected = current;
+
+    ui.label("How should the emitted g-code be split across files?");
+    ui.add_space(4.0);
+    for &layout in &[
+        OutputLayout::SingleFile,
+        OutputLayout::PerSetup,
+        OutputLayout::PerToolpath,
+    ] {
+        ui.radio_value(&mut selected, layout, layout.label());
+    }
+    if selected != current {
+        events.push(AppEvent::WizardSetOutputLayout(selected));
+    }
+
+    ui.add_space(4.0);
+    let setup_count = state.session.list_setups().len();
+    if matches!(selected, OutputLayout::PerSetup) && setup_count <= 1 {
+        ui.colored_label(
+            egui::Color32::from_rgb(220, 140, 0),
+            "⚠ Project has only one setup — \"per setup\" will produce a single file.",
+        );
+    }
+
+    ui.add_space(12.0);
+    ui.heading("Filename template");
+    ui.add_space(4.0);
+    ui.label(
+        egui::RichText::new("Substitutions: {job}, {setup}, {toolpath}, {ext}")
+            .small()
+            .italics(),
+    );
+    let mut template = wiz.filename_template.clone();
+    let resp = ui.add(
+        egui::TextEdit::singleline(&mut template)
+            .desired_width(360.0)
+            .hint_text("{job}.nc"),
+    );
+    if resp.changed() {
+        events.push(AppEvent::WizardSetFilenameTemplate(template));
+    }
+
+    ui.add_space(8.0);
+    let preview = render_filename_preview(&wiz.filename_template, state, selected);
+    egui::Grid::new("wizard_filename_preview")
+        .num_columns(2)
+        .spacing([12.0, 4.0])
+        .show(ui, |ui| {
+            ui.label("Preview:");
+            ui.label(egui::RichText::new(preview).monospace());
+            ui.end_row();
+        });
+}
+
+fn render_filename_preview(template: &str, state: &AppState, layout: OutputLayout) -> String {
+    let job = if state.session.name().is_empty() {
+        "untitled"
+    } else {
+        state.session.name()
+    };
+    let setup = state
+        .session
+        .list_setups()
+        .first()
+        .map(|s| s.name.as_str())
+        .unwrap_or("setup1");
+    let toolpath = state
+        .session
+        .toolpath_configs()
+        .iter()
+        .find(|tc| tc.enabled)
+        .map(|tc| tc.name.as_str())
+        .unwrap_or("toolpath1");
+    let mut out = template
+        .replace("{job}", &slugify(job))
+        .replace("{setup}", &slugify(setup))
+        .replace("{toolpath}", &slugify(toolpath))
+        .replace("{ext}", "nc");
+    if !out.contains('.') {
+        out.push_str(".nc");
+    }
+    match layout {
+        OutputLayout::SingleFile => out,
+        OutputLayout::PerSetup => format!("{out}  (one per setup)"),
+        OutputLayout::PerToolpath => format!("{out}  (one per toolpath)"),
+    }
+}
+
+fn slugify(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 fn draw_limit_warnings(ui: &mut egui::Ui, post: &PostDefinition, project_rpm: u32) {
