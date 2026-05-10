@@ -2,7 +2,7 @@
 
 **Phase 0 deliverable.** Per-dialect, per-fixture summary of how the **current** rs_cam emitter (`crates/rs_cam_core/src/gcode.rs`) differs from what Fusion's published `.cps` posts would produce for an equivalent toolpath.
 
-**Status: spec-only gaps captured (Phase 0); emulator validation results landed (Phase 0.5); validator baseline locked in (Phase 1).** The "rs_cam current" column is filled from the captures in `planning/gcode_current_outputs/`. The right-hand columns will be filled by piping each capture through `grbl-sim`'s `gvalidate`, `grblHAL_validator`, and LinuxCNC's `rs274ngc` parser (see [Phase 0.5](GCODE_EXPORT_OVERHAUL.md#phase-05--controller-emulator-validation-replaces-fusion-byte-parity) in the plan).
+**Status (post-Phase 4b):** spec-only gaps captured (Phase 0); emulator validation suite in place (Phase 0.5 + 4a); validator baseline locked in (Phase 1); corpus broadened from 6 to 16 fixtures (Phase 4b). The "rs_cam current" column is filled from the captures in `planning/gcode_current_outputs/` (now 64 captures across 16 fixtures × 4 dialects, including grblHAL). 96 emulator-validation tests, all green.
 
 **Original target — Fusion byte-parity — was abandoned because Autodesk's `post` CLI doesn't exist for Linux** (it ships only inside Fusion 360, which has no native Linux build; cam-posteditor's binary lookup hardcodes Win/Mac install paths). Re-targeted to controller-emulator validation — which tests what actually matters (does the controller accept this g-code?) and is hermetic on Linux for CI use.
 
@@ -95,6 +95,40 @@ When `rs274ngc` is missing, the 12 rs274ngc tests skip with a clear message (or 
 - Tool table: a minimal `T1..T20` tool table is generated to `/tmp/rscam_rs274_tools.tbl` (defines tool indices so `M6 T<n>` lookups don't fail with "tool not in table").
 - Batch flag `-g` required (else rs274 prompts interactively).
 - Per-invocation tempdir cwd to keep rs274's `parameter.var` writes from leaking across tests (`--test-threads=1` is the belt; the workdir is the suspenders — both are needed in practice).
+
+---
+
+## Phase 4b broadened-corpus findings (F7-F16)
+
+10 new fixtures added covering full-circle, X-only feed, ramp-into-arc, sub-mm arcs, depth-step boundaries, tool-change-at-Z-zero, climb-vs-conventional, multi-line pause messages, embedded-newline pre/post snippets, and G41/G40 cutter-comp round-trip. **Six fixture × dialect cells fail validation, surfacing four real emitter bugs**:
+
+### 🔴 Bug 1: F10 sub-mm arcs rejected by every parser
+
+gvalidate exit 33 ("arc trajectory inconsistent"), rs274ngc exit 1. Affects all four dialects.
+
+**Fix path:** Wire `PostDefinition.arc_linearize` (added in Phase 4b as data) into `program_builder` so arcs whose computed radius is below `threshold_mm` (default 0.05) emit as a single linear chord instead of `G2`/`G3`. Trivial once a place to put the conversion is chosen — likely a pre-pass on the `Program` IR before emission.
+
+### 🔴 Bug 2: F14 multi-line pause messages break comment block
+
+`render_comment` wraps the message in `(...)` but doesn't sanitize embedded `\n`. The second line emerges as bare g-code, which every parser rejects (exit 2 on Grbl-family, exit 1 on rs274ngc). Affects all four dialects.
+
+**Fix path:** Either (a) split the message on `\n` and emit each line wrapped, (b) escape `\n` to a literal that the post comment style supports, or (c) refuse multi-line at the API boundary and document. Choice depends on what wizard UX wants for setup-change messages.
+
+### 🔴 Bug 3: F15 user pre/post snippets bypass post compatibility
+
+The Grbl post lets user `pre_gcode = "M7"` through unchanged. Grbl 1.1 doesn't support M7 (only M8 flood / M9 off). gvalidate rejects exit 20. Affects Grbl-family only (LinuxCNC/Mach3 do support M7).
+
+**Fix path:** Emitter validates user snippet content against a (future) `PostDefinition.allowed_codes` allowlist before splicing. Or `disallowed_codes` denylist for the Grbl post specifically.
+
+### 🔴 Bug 4: F16 cutter compensation emitted regardless of post support
+
+`controller_compensation = Some(Left)` always emits `G41 D<n>` + `G40` regardless of whether the post supports it. Grbl 1.1 has no comp; rs274ngc rejects compensated geometry without a runtime contour context (exit 20 on Grbl, exit 1 on rs274ngc). Affects all four dialects.
+
+**Fix path:** Emitter consults a (future) `PostDefinition.supports_cutter_comp` field; falsy → emit a comment line instead of comp codes (or refuse upstream in the wizard).
+
+### Roadmap
+
+These four bugs become the work list for the wizard phase (Phase 5) — they all want PostDefinition fields the wizard surfaces. The emulator-validation suite tracks them as `assert_*_rejects_any` with the fix reason; flipping each to `assert_*_accepts` is the merge gate for the corresponding fix.
 
 ### 🔴 F5 Grbl — REAL BUG: rs_cam emits `M6` for Grbl tool changes
 

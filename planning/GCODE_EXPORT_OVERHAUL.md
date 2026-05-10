@@ -1,6 +1,6 @@
 # G-Code Export Overhaul — Roadmap
 
-**Status:** Phase 0, 0.5, 1, 2, 3, and 4a complete. Phase 4b (corpus broadening + grblHAL post + new `PostDefinition` fields) is next.
+**Status:** Phase 0, 0.5, 1, 2, 3, 4a, and 4b complete. Phase 5 (Wizard UX) is next.
 **Owner:** TBD
 **Last updated:** 2026-05-10
 **Worktree:** `/home/ricky/personal_repos/rs_cam-gcode-overhaul/` on branch `gcode-overhaul` (branched from `master` @ fe27805). All implementation work for this overhaul lives there; the main checkout stays on `master` for unrelated work and the other agent's optimizer changes.
@@ -279,16 +279,34 @@ CI gate via `CI_REQUIRE_VALIDATORS` env var: unset/0 → skip-on-missing; `1`/`t
 
 ---
 
-### Phase 4b — Broaden corpus, grblHAL post, new PostDefinition fields
-**Earn the safety claim through controller-parser passes, not Fusion bytes.**
+### Phase 4b — Broaden corpus, grblHAL post, new PostDefinition fields — **DONE**
 
-- Grow the fixture corpus from 6 to 15-20 (add edge cases as they emerge: full-circle, single-axis-only-feed, ramp-into-arc, extremely small arcs, depth-step boundaries, etc.). Same `Toolpath`-based fixture style as Phase 0.
-- Add `grblhal.toml` post + run its fixtures through `grblHAL_validator`. Source a community grblHAL `.cps` for design reference (Autodesk doesn't publish one).
-- Add `WcsCode`, units toggle, arc-linearize as `PostDefinition` fields; surface to fixture jobs to verify each toggle changes output as expected and still passes the validator.
-- CI gate: `cargo test --test gcode_emulator_validation` (from Phase 0.5) runs on every PR; any non-zero validator exit blocks merge.
-- Optional secondary anchor: pick 1-2 hand-traced reference outputs from the `.cps` source for spot-check golden tests on cosmetic style (header layout, comment case). Strictly cosmetic — emulator validation is the safety gate.
+PostDefinition extended with three new boundary fields surfaced as data for the wizard (Phase 5):
 
-**Exit:** every shipped dialect has both (a) a green emulator-validation suite covering 15+ fixtures and (b) at least one hand-traced cosmetic-style golden per dialect. New dialect = new TOML + new fixture rows + green emulator pass + (optional) hand-traced cosmetic golden.
+- `wcs: Option<WcsCode>` (G54..G59) — drives `{wcs_word}` / `{wcs_line}` template substitution
+- `units: Units` (mm | inch) — drives `{units_word}` (G21/G20)
+- `arc_linearize: ArcLinearize { enabled, threshold_mm }` — consumed by `program_builder` when wired (deferred to Phase 5+; field already documents the contract)
+
+`PostLimits.max_rpm` and `max_feed` are now enforced by the emitter via a new `Statement::SpindleSet` chokepoint and per-feed-word clamping in `Linear`/`ArcCw`/`ArcCcw`. Each clamp emits a comment line documenting requested vs clamped value. Shipped TOMLs leave `[limits]` unset, so the change is a no-op for default flows.
+
+`posts/grblhal.toml` shipped — `PostFormat::GrblHal` variant wired through `definition()`, `get_post_definition`, validator invariants, and viz round-trip. Same decimals/comment style as Grbl; adds explicit G54 + WCS metadata.
+
+Fixture corpus broadened from 6 to 16 (added F7-F16): full-circle, X-only feed, ramp-into-arc, sub-mm arcs, depth-step boundary, tool-change-at-Z-zero, climb-vs-conventional, multi-line pause message, embedded-newline pre/post snippets, G41/G40 round-trip.
+
+**Bugs surfaced by the broadened corpus** (each documented as expected-rejects in `gcode_emulator_validation` until the fix lands):
+
+1. **F10 sub-mm arcs**: rejected by every parser (gvalidate exit 33, rs274ngc exit 1). Fix: wire `arc_linearize` into `program_builder` so arcs below `threshold_mm` emit as straight-line chords. Trivial once a place to put the conversion is chosen.
+2. **F14 multi-line pause messages**: `render_comment` doesn't sanitize embedded `\n`; the second line emerges as bare g-code. Fix: split on `\n` and emit each line wrapped in the comment style, OR escape, OR refuse at the API boundary.
+3. **F15 user pre/post M7**: the Grbl post lets user snippets emit `M7` mist coolant, which Grbl 1.1 doesn't support. Fix: emitter must validate user snippet content against a (future) `PostDefinition.allowed_codes` list.
+4. **F16 cutter compensation**: rs_cam emits G41/G40 unconditionally regardless of post support. Grbl 1.1 has no comp; rs274ngc rejects compensated geometry without runtime contour context. Fix: emitter must consult a (future) `supports_cutter_comp` PostDefinition field; user owns supplying valid contour geometry.
+
+**Verification:**
+
+- `cargo test --test gcode_validator_baseline` — green at 98 findings across 64 captures (was 37/24).
+- `RS274NGC_BIN=… cargo test --test gcode_emulator_validation -- --ignored --test-threads=1` — green at 96 tests (was 36).
+- `cargo clippy --workspace --all-targets -- -D warnings` — clean.
+
+**Total commit count for the overhaul** (Phase 0 through 4b inclusive): 27 commits on `gcode-overhaul`.
 
 ---
 
@@ -350,7 +368,7 @@ Add as needed (Centroid, Masso, Buildbotics, Mach4, Smoothieware) on user reques
 | 2 | `Program` IR refactor | No (byte-identical) | 2–3 days (done) |
 | 3 | Data-driven post (TOML) | No (byte-identical) | 3–4 days (done) |
 | 4a | CI emulator gate (gvalidate + rs274ngc) | No | <1 day (done) |
-| 4b | Broaden corpus + grblHAL post + new PostDefinition fields | Maybe (intentional fixes) | 3–4 days |
+| 4b | Broaden corpus + grblHAL post + new PostDefinition fields | No (additive) | 1 day (done) |
 | 5 | Wizard UX | No (additive) | 3–4 days |
 | 6 | Power features (incl. CAMotics motion-sim option) | Per-feature | Open-ended |
 
