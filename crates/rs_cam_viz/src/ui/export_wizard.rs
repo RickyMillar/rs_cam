@@ -55,6 +55,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                 2 => step_coord_units(ui, state, events),
                 3 => step_tool_change(ui, state, events),
                 4 => step_preview(ui, state, events),
+                5 => step_save(ui, state, events),
                 _ => placeholder(ui, state.wizard_active_step),
             }
             ui.add_space(8.0);
@@ -96,16 +97,10 @@ fn draw_nav(ui: &mut egui::Ui, active: u8, events: &mut Vec<AppEvent>) {
         {
             events.push(AppEvent::WizardSetStep(active.saturating_sub(1)));
         }
-        let next_label = if active + 1 == STEP_COUNT {
-            "Save"
-        } else {
-            "Next ▶"
-        };
-        let next_enabled = active + 1 < STEP_COUNT;
-        if ui
-            .add_enabled(next_enabled, egui::Button::new(next_label))
-            .clicked()
-        {
+        if active + 1 == STEP_COUNT {
+            // Save lives in step_save's body so it can disable based on
+            // the validator gate.
+        } else if ui.button("Next ▶").clicked() {
             events.push(AppEvent::WizardSetStep(active + 1));
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -692,6 +687,129 @@ fn count_by_severity(findings: &[Finding]) -> (usize, usize, usize) {
         }
     }
     (e, w, i)
+}
+
+// ── Step 6 — Save with summary ───────────────────────────────────────
+
+fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
+    ui.heading("Save");
+    ui.add_space(4.0);
+
+    let session = &state.session;
+    let wiz = session.wizard();
+    let post = state.gui.post.format;
+    let post_def = post.definition();
+
+    let gcode_result = crate::io::export::export_gcode_from_session(
+        session,
+        &state.gui,
+        &state.simulation,
+    );
+    let gcode = match gcode_result {
+        Ok(s) => s,
+        Err(err) => {
+            ui.colored_label(
+                egui::Color32::from_rgb(220, 60, 60),
+                format!("Cannot prepare export: {err}"),
+            );
+            return;
+        }
+    };
+
+    let line_count = gcode.lines().count();
+    let findings = validate(&gcode, post);
+    let (errors, warnings, infos) = count_by_severity(&findings);
+
+    let mut total_moves = 0usize;
+    let mut cutting_dist = 0.0f64;
+    let mut est_time_min = 0.0f64;
+    let mut tool_set: Vec<usize> = Vec::new();
+    let mut longest_cut = 0.0f64;
+    for tc in session.toolpath_configs() {
+        if !tc.enabled {
+            continue;
+        }
+        if !tool_set.contains(&tc.tool_id) {
+            tool_set.push(tc.tool_id);
+        }
+        if let Some(rt) = state.gui.toolpath_rt.get(&tc.id)
+            && let Some(result) = rt.result.as_ref()
+        {
+            total_moves += result.stats.move_count;
+            cutting_dist += result.stats.cutting_distance;
+            let feed = tc.operation.feed_rate().max(1.0);
+            est_time_min += result.stats.cutting_distance / feed;
+            longest_cut = longest_cut.max(result.stats.cutting_distance);
+        }
+    }
+    let tool_changes = tool_set.len().saturating_sub(1);
+
+    egui::Grid::new("wizard_step_save_summary")
+        .num_columns(2)
+        .spacing([12.0, 4.0])
+        .show(ui, |ui| {
+            ui.label("Post:");
+            ui.label(&post_def.name);
+            ui.end_row();
+
+            ui.label("Layout:");
+            ui.label(wiz.output_layout.label());
+            ui.end_row();
+
+            ui.label("Filename template:");
+            ui.label(egui::RichText::new(&wiz.filename_template).monospace());
+            ui.end_row();
+
+            ui.label("G-code lines (preview build):");
+            ui.label(format!("{line_count}"));
+            ui.end_row();
+
+            ui.label("Total moves:");
+            ui.label(format!("{total_moves}"));
+            ui.end_row();
+
+            ui.label("Cutting distance:");
+            ui.label(format!("{cutting_dist:.0} mm"));
+            ui.end_row();
+
+            ui.label("Longest single-toolpath cut:");
+            ui.label(format!("{longest_cut:.0} mm"));
+            ui.end_row();
+
+            ui.label("Estimated cycle time:");
+            ui.label(format!("~{est_time_min:.1} min"));
+            ui.end_row();
+
+            ui.label("Tool changes:");
+            ui.label(format!("{tool_changes}"));
+            ui.end_row();
+
+            ui.label("Validator findings:");
+            ui.label(format!(
+                "{errors} error / {warnings} warn / {infos} info"
+            ));
+            ui.end_row();
+        });
+
+    ui.add_space(12.0);
+
+    let save_blocked = errors > 0 && !wiz.allow_validator_errors;
+    if save_blocked {
+        ui.colored_label(
+            egui::Color32::from_rgb(220, 60, 60),
+            format!(
+                "Save is blocked: {errors} validator error(s). Go back to Preview & validate \
+                 to review and tick the override checkbox if you want to proceed anyway."
+            ),
+        );
+    }
+
+    ui.horizontal(|ui| {
+        let save = ui.add_enabled(!save_blocked, egui::Button::new("Save…"));
+        if save.clicked() {
+            events.push(AppEvent::WizardSave);
+        }
+    });
 }
 
 fn coolant_idx(c: CoolantMode) -> usize {

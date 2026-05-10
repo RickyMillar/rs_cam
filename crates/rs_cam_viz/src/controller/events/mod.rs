@@ -239,6 +239,7 @@ impl<B: ComputeBackend> AppController<B> {
             | AppEvent::WizardSetSafeZOverride(_)
             | AppEvent::WizardSetSpindleWarmup(_)
             | AppEvent::WizardSetAllowValidatorErrors(_)
+            | AppEvent::WizardSave
             | AppEvent::Quit => {}
         }
     }
