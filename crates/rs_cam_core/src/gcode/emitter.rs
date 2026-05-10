@@ -26,6 +26,39 @@ pub fn emit_program(program: &Program, post: &PostDefinition) -> String {
     output
 }
 
+/// Clamp `requested` to `max` if `max` is set and `requested > max`.
+/// On clamp, append a comment line documenting the substitution so
+/// operators can spot the post-modified value before running the file.
+fn clamp_rpm(output: &mut String, post: &PostDefinition, requested: u32) -> u32 {
+    if let Some(max) = post.limits.max_rpm
+        && requested > max.get()
+    {
+        let line = post.render_comment(&format!(
+            "WARNING: requested S{requested} clamped to S{} ({} max_rpm)",
+            max.get(),
+            post.name
+        ));
+        output.push_str(&line);
+        return max.get();
+    }
+    requested
+}
+
+fn clamp_feed(output: &mut String, post: &PostDefinition, requested: f64) -> f64 {
+    if let Some(max) = post.limits.max_feed
+        && requested > max.get()
+    {
+        let line = post.render_comment(&format!(
+            "WARNING: requested F{requested:.1} clamped to F{:.1} ({} max_feed)",
+            max.get(),
+            post.name
+        ));
+        output.push_str(&line);
+        return max.get();
+    }
+    requested
+}
+
 fn emit_statement(output: &mut String, statement: &Statement, post: &PostDefinition) {
     let xyz = post.decimals.xyz;
     let feed_dp = post.decimals.feed;
@@ -33,7 +66,12 @@ fn emit_statement(output: &mut String, statement: &Statement, post: &PostDefinit
 
     match *statement {
         Statement::Preamble { spindle_rpm } => {
-            output.push_str(&post.render_preamble(spindle_rpm));
+            let rpm = clamp_rpm(output, post, spindle_rpm);
+            output.push_str(&post.render_preamble(rpm));
+        }
+        Statement::SpindleSet { rpm } => {
+            let rpm = clamp_rpm(output, post, rpm);
+            let _ = writeln!(output, "M3 S{rpm}");
         }
         Statement::Postamble => output.push_str(&post.render_postamble()),
         Statement::ProgramPause { ref message } => {
@@ -45,6 +83,7 @@ fn emit_statement(output: &mut String, statement: &Statement, post: &PostDefinit
             let _ = writeln!(output, "G0 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$}");
         }
         Statement::Linear { x, y, z, feed } => {
+            let feed = clamp_feed(output, post, feed);
             let _ = writeln!(
                 output,
                 "G1 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} F{feed:.feed_dp$}"
@@ -54,12 +93,14 @@ fn emit_statement(output: &mut String, statement: &Statement, post: &PostDefinit
             let _ = writeln!(output, "G1 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$}");
         }
         Statement::ArcCw { x, y, z, i, j, feed } => {
+            let feed = clamp_feed(output, post, feed);
             let _ = writeln!(
                 output,
                 "G2 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} I{i:.ijk$} J{j:.ijk$} F{feed:.feed_dp$}"
             );
         }
         Statement::ArcCcw { x, y, z, i, j, feed } => {
+            let feed = clamp_feed(output, post, feed);
             let _ = writeln!(
                 output,
                 "G3 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} I{i:.ijk$} J{j:.ijk$} F{feed:.feed_dp$}"
@@ -125,5 +166,60 @@ mod tests {
 
         assert!(gcode.contains("G4 P2"));
         assert!(gcode.contains("G28 G91 Z0"));
+    }
+
+    /// Custom post with max_rpm + max_feed; emitter must clamp both
+    /// the preamble RPM and feed words, prepending a comment that
+    /// names the requested vs clamped value.
+    #[test]
+    fn post_limits_clamp_rpm_and_feed() {
+        let toml = r#"
+            name = "Capped"
+            preamble = """\
+M3 S{spindle_rpm}
+"""
+            postamble = "M30\n"
+            program_pause = "M0\n"
+            [decimals]
+            xyz = 3
+            feed = 0
+            ijk = 3
+            [comment]
+            format = "({text})"
+            [limits]
+            max_rpm = 12000
+            max_feed = 800.0
+        "#;
+        let post = crate::gcode::PostDefinition::from_toml(toml).expect("toml");
+        let mut tp = Toolpath::new();
+        tp.feed_to(P3::new(1.0, 0.0, 0.0), 1500.0);
+
+        let program = program_builder::build_single(&tp, 24_000);
+        let gcode = emit_program(&program, &post);
+
+        // RPM clamp: requested 24000 → 12000, with warning comment.
+        assert!(gcode.contains("M3 S12000"), "rpm not clamped: {gcode}");
+        assert!(gcode.contains("S24000"), "warning should mention requested: {gcode}");
+        assert!(gcode.contains("max_rpm"));
+        // Feed clamp: requested 1500 → 800, with warning comment.
+        assert!(gcode.contains("F800"), "feed not clamped: {gcode}");
+        assert!(gcode.contains("F1500"), "warning should mention requested: {gcode}");
+        assert!(gcode.contains("max_feed"));
+    }
+
+    /// Limits unset (shipped TOMLs): emitter must NOT alter or annotate
+    /// the requested values.
+    #[test]
+    fn no_limits_means_no_clamp_no_warning() {
+        let mut tp = Toolpath::new();
+        tp.feed_to(P3::new(1.0, 0.0, 0.0), 9999.0);
+
+        let program = program_builder::build_single(&tp, 30_000);
+        let gcode = emit_program(&program, post::grbl());
+
+        assert!(gcode.contains("M3 S30000"));
+        assert!(gcode.contains("F9999"));
+        assert!(!gcode.contains("WARNING"));
+        assert!(!gcode.contains("clamped"));
     }
 }

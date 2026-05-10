@@ -22,6 +22,10 @@
 pub enum Statement {
     /// Multi-line preamble block (post-specific).
     Preamble { spindle_rpm: u32 },
+    /// Set spindle speed clockwise: `M3 S<rpm>\n`. Distinct from
+    /// `Raw("M3 S<n>\n")` so the emitter can apply `PostLimits.max_rpm`
+    /// clamping at this single chokepoint.
+    SpindleSet { rpm: u32 },
     /// Multi-line postamble block.
     Postamble,
     /// Multi-line program pause (M5 + comment + M0, post-specific).

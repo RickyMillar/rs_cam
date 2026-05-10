@@ -114,7 +114,9 @@ pub fn build_phased(phases: &[GcodePhase<'_>]) -> Program {
 
         // Spindle speed change (only if we didn't already emit it in the tool change block).
         if phase.spindle_rpm != state.current_rpm {
-            program.push(Statement::Raw(format!("M3 S{}\n", phase.spindle_rpm)));
+            program.push(Statement::SpindleSet {
+                rpm: phase.spindle_rpm,
+            });
             state.current_rpm = phase.spindle_rpm;
         }
 
@@ -186,7 +188,7 @@ pub fn build_multi_setup(setups: &[GcodeSetupPhase<'_>], safe_z: f64) -> Program
                 .first()
                 .map(|phase| phase.spindle_rpm)
                 .unwrap_or(state.current_rpm);
-            program.push(Statement::Raw(format!("M3 S{next_rpm}\n")));
+            program.push(Statement::SpindleSet { rpm: next_rpm });
             state.current_rpm = next_rpm;
             state.reset_feed();
 
@@ -216,7 +218,9 @@ pub fn build_multi_setup(setups: &[GcodeSetupPhase<'_>], safe_z: f64) -> Program
             }
 
             if phase.spindle_rpm != state.current_rpm {
-                program.push(Statement::Raw(format!("M3 S{}\n", phase.spindle_rpm)));
+                program.push(Statement::SpindleSet {
+                rpm: phase.spindle_rpm,
+            });
                 state.current_rpm = phase.spindle_rpm;
             }
 
@@ -252,7 +256,9 @@ fn push_tool_change(
     }
     program.push(Statement::Raw("M5\n".to_owned()));
     program.push(Statement::Raw(format!("M6 T{tool_num}\n")));
-    program.push(Statement::Raw(format!("M3 S{}\n", phase.spindle_rpm)));
+    program.push(Statement::SpindleSet {
+                rpm: phase.spindle_rpm,
+            });
     state.current_rpm = phase.spindle_rpm;
     state.current_tool = Some(tool_num);
     if phase.coolant.is_active() {
