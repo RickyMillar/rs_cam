@@ -8,12 +8,10 @@ G0 X0.0000 Y0.0000 Z5.0000
 G1 X10.0000 Y0.0000 Z-2.0000 F600.0
 G0 Z25.0000
 M5
-(Setup change: Bottom
-Flip stock 180 then resume)
+(Setup change: Bottom / Flip stock 180 then resume)
 M0
 M3 S18000
-(=== Bottom
-Flip stock 180 then resume ===)
+(=== Bottom / Flip stock 180 then resume ===)
 (Bottom profile)
 G0 X20.0000 Y0.0000 Z5.0000
 G1 X30.0000 Y0.0000 Z-2.0000 F600.0
