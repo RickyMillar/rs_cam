@@ -234,6 +234,9 @@ impl<B: ComputeBackend> AppController<B> {
             | AppEvent::WizardSetPost(_)
             | AppEvent::WizardSetOutputLayout(_)
             | AppEvent::WizardSetFilenameTemplate(_)
+            | AppEvent::WizardSetWcsOverride(_)
+            | AppEvent::WizardSetUnitsOverride(_)
+            | AppEvent::WizardSetSafeZOverride(_)
             | AppEvent::Quit => {}
         }
     }
