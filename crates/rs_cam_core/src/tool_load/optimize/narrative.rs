@@ -247,7 +247,10 @@ pub(crate) fn build_failure_narrative_marginal(
 ///   the recommended feed is comfortably under the gate trigger.
 /// - **Chipload Exceeds Low (burn)** → same math, opposite direction:
 ///   `target_feed = current_feed × (bound / observed) × 1.05`. Emit
-///   `RaiseAxisAbove`.
+///   `RaiseAxisAbove`. F7 — also emit a parallel `CapAxisAt(SpindleRpm)`
+///   suggestion so operators whose feed is already at the machine cap
+///   have an alternative lever (lower RPM raises chipload at the same
+///   feed).
 /// - **Deflection Exceeds** → tip deflection scales roughly linearly
 ///   with axial DOC (force ∝ DOC × engagement; tip deflection ∝ force).
 ///   `target_doc = current_doc × (bound / observed) × 0.95`.
@@ -255,18 +258,51 @@ pub(crate) fn build_failure_narrative_marginal(
 ///   stepover proportionally reduces engagement and so power.
 ///   `target_stepover = current_stepover × (bound / observed) × 0.95`.
 ///
-/// Returns at most one suggestion per limiting gate. Per-gate
-/// suggestions are independent — emitting all of them lets the
-/// operator pick the lever they prefer (e.g. cap feed *or* cap DOC,
-/// not both).
+/// Per-gate suggestions are independent — emitting all of them lets
+/// the operator pick the lever they prefer (e.g. cap feed *or* cap
+/// DOC, not both).
 pub fn suggest_levers(
     limiting_gates: &[LimitingGate],
     candidate: &OptimizeCandidate,
 ) -> Vec<OperatorSuggestion> {
     let mut out: Vec<OperatorSuggestion> = Vec::new();
     for g in limiting_gates {
-        if let Some(s) = suggest_for_gate(g, candidate) {
-            out.push(s);
+        out.extend(suggest_for_gate_all(g, candidate));
+    }
+    out
+}
+
+fn suggest_for_gate_all(
+    g: &LimitingGate,
+    candidate: &OptimizeCandidate,
+) -> Vec<OperatorSuggestion> {
+    let mut out: Vec<OperatorSuggestion> = Vec::new();
+    if let Some(primary) = suggest_for_gate(g, candidate) {
+        out.push(primary);
+    }
+    // F7 — burn-side chipload has two physical fix levers (raise feed
+    // OR lower RPM). The default suggestion is RaiseAxisAbove(Feed),
+    // which is useless when feed is already at the machine cap. Emit
+    // the RPM-down alternative unconditionally so the operator sees
+    // both options and can pick whichever respects their machine
+    // limits. Until the optimizer's Stage 1.5 RPM-down sweep (F1)
+    // lands, this is the only way operators learn about the lever.
+    if let (GateKind::Chipload, Some(ChipSide::Low)) = (g.gate, g.side)
+        && g.observed.abs() >= 1e-9
+        && g.bound.abs() >= 1e-9
+        && let Some(rpm) = candidate.params.spindle_rpm()
+        && rpm > 0
+    {
+        // chipload = feed / (rpm × flutes). To raise observed → bound
+        // at fixed feed, scale RPM by observed/bound. The 0.95 margin
+        // sits the result safely inside the burn-tolerance band.
+        let ratio = g.observed / g.bound;
+        let ceiling = f64::from(rpm) * ratio * 0.95;
+        if ceiling.is_finite() && ceiling > 0.0 {
+            out.push(OperatorSuggestion::CapAxisAt {
+                axis: KnobAxis::SpindleRpm,
+                ceiling,
+            });
         }
     }
     out
@@ -1046,6 +1082,57 @@ mod tests {
         assert!(
             (4000.0..4100.0).contains(floor),
             "expected feed floor ~4032, got {floor}"
+        );
+    }
+
+    /// F7 — chipload-low candidates with an explicit spindle_rpm should
+    /// surface a parallel CapAxisAt(SpindleRpm) suggestion. The RPM
+    /// suggestion is the alternate physical lever for fixing burn risk:
+    /// at fixed feed, lowering RPM raises chipload. Operators whose feed
+    /// is already at the machine cap rely on this hint until the
+    /// optimizer's Stage 1.5 RPM-down sweep (F1) lands.
+    #[test]
+    fn suggest_levers_chipload_low_also_offers_lower_rpm() {
+        use crate::tool_load::verdict::{
+            ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, Confidence,
+            SampleEvidence,
+        };
+        let burn_chipload = ChiploadVerdict::Exceeds {
+            side: ChipSide::Low,
+            triggering: ChiploadMetric {
+                observed_mm_per_tooth: 0.025,
+                statistic: ChiploadStatistic::MedianLow,
+                evidence: SampleEvidence::empty(),
+                bounds: ChipBounds {
+                    min_mm_per_tooth: Some(0.032),
+                    max_mm_per_tooth: 0.055,
+                    source: ChipBoundsSource::VendorLut,
+                },
+            },
+            confidence: Confidence::Validated,
+        };
+        // Build a candidate at feed 4000 (machine cap) and explicit
+        // spindle_rpm = 18000 — the wanaka case.
+        let mut cand = candidate(4000.0, 500.0, vd(burn_chipload, within_deflection(0.030)), None);
+        if let OperationConfig::Pocket(ref mut p) = cand.params {
+            p.spindle_rpm = Some(18_000);
+        }
+        let limiting = limiting_gates_from_exceeds(&cand.verdict);
+        let suggestions = suggest_levers(&limiting, &cand);
+        let cap_rpm = suggestions
+            .iter()
+            .find_map(|s| match s {
+                OperatorSuggestion::CapAxisAt {
+                    axis: KnobAxis::SpindleRpm,
+                    ceiling,
+                } => Some(*ceiling),
+                _ => None,
+            })
+            .expect("chipload-low at explicit RPM should also offer CapAxisAt(SpindleRpm)");
+        // 18000 × (0.025/0.032) × 0.95 ≈ 13359
+        assert!(
+            (13000.0..14000.0).contains(&cap_rpm),
+            "expected RPM ceiling ~13359, got {cap_rpm}"
         );
     }
 
