@@ -18,9 +18,9 @@ place.
 | D3. Decision point — stopgap revert vs roll-forward | ✅ Path A (revert) | `8e2a7fc` | 2026-05-10 |
 | D4. Adaptive3d entry-emitter Entry spans (plunge/helix/ramp) | ✅ done | `9182795` | 2026-05-10 |
 | D5. Other operation generators — Entry span coverage | ✅ done (audit + tests; no new emissions needed) | `4e462ca` | 2026-05-10 |
-| D6. Span-aware locality classifier | 🚫 blocked on D4 | — | — |
-| D7. Span-aware C1 filter (replaces kinematics filter) | 🚫 blocked on D6 | — | — |
-| D8. Cross-fixture re-validation | 🚫 blocked on D7 | — | — |
+| D6. Span-aware locality classifier | ✅ done | `1ef05c7` | 2026-05-10 |
+| D7. Span-aware C1 filter (replaces kinematics filter) | ✅ done | `eef73ca` | 2026-05-10 |
+| D8. Cross-fixture re-validation | ⏳ pending | — | — |
 | D9. Engagement-aware LUT comparison | ✅ done | `693bbf5` | 2026-05-10 |
 
 Legend: ⏳ pending · 🟡 in-progress · ✅ done · 🚫 blocked · ⏭️ skipped
@@ -974,4 +974,96 @@ gap — closed by D4. D5 is the audit-and-lock-in pass for the rest.
 D5 closes the structural-emission story. D6 + D7 (span-aware
 classifier + filter) can now consume the Entry spans this and D4
 laid down.
+
+### 2026-05-10 — D6 landed (span-aware locality classifier)
+
+`tool_load::locality::classify_sample_locality` rewritten to read
+structural span ancestry. New helper `SpanLookup<'a>` wraps a borrow of
+the toolpath's `&[Span]`; the classifier walks `sample.span_path` via
+the lookup and returns the span's label for `Entry` / `DressupArtifact`
+ancestors and a `"region join"` string for `LinkBridge`. When neither
+matches (or the lookup is `None` — legacy callers without an annotated
+toolpath), it falls back to engagement-only labels (`"slot section"` /
+`"heavy engagement"`).
+
+The pre-D6 kinematics-derived `"helix entry"` / `"plunge entry"`
+strings on `CutKinematics::{Helix, Plunge}` samples are gone. D0's
+finding (Helix dominated by terrain-following sloped cuts on
+adaptive3d) made those labels misleading; structural Entry spans are
+now the authoritative signal.
+
+**Plumbing:**
+- `ToolpathLoadContext` carries `spans: Option<&[Span]>`. Consumers
+  populate from `session.get_result(idx).annotated.spans`. `None`
+  preserves the engagement-only fallback for callers without spans.
+- `evaluate_toolpath` threads it to chipload / power / deflection
+  evaluators.
+- `gcode::project_load_report` and the optimize candidate /
+  baseline-context construction sites both build the spans slice
+  from the cached compute result.
+
+**Tests:**
+- `locality::tests` rewritten end-to-end. Coverage:
+  - `entry_ancestor_returns_entry_label` — Entry span's label
+    propagates.
+  - `helix_entry_label_propagates_from_span` — same with the
+    `"helix entry"` label.
+  - `no_entry_ancestor_falls_back_to_engagement_label` — the D6
+    regression: terrain-following Helix kinematics WITHOUT an Entry
+    ancestor must NOT be labelled `"helix entry"`. Asserts
+    `"slot section"` and `"heavy engagement"` instead.
+  - `dressup_artifact_label_propagates`,
+    `link_bridge_ancestor_returns_region_join`,
+    `linear_with_*_arc_classifies_as_*`, `missing_lookup_skips_*`,
+    `out_of_range_span_id_is_silently_ignored`.
+- 1 340 lib tests pass; clippy clean.
+
+### 2026-05-10 — D7 landed (span-ancestry steady-state filter)
+
+`tool_load::locality::is_steady_state_for_gate(sample, span_lookup)`
+reintroduced (the D3 revert deleted the kinematics-based version). New
+predicate: a sample is steady-state iff none of its `span_path`
+ancestors is `SpanKind::Entry`. When `span_lookup = None`, the
+predicate returns `true` (every sample drives the trip — pre-D3
+behaviour for legacy callers, no silent filtering).
+
+Wired into the per-criterion trip loops:
+- **chipload.rs**: Entry-ancestry samples bypass the high/low trip
+  decision; `entry_high` / `entry_low` track the worst Entry over-max
+  and under-min readings and populate `entry_spikes` on the `Within`
+  arm (one per side, observed value with the bound it crossed).
+- **power.rs**: Entry samples don't drive `peak_power`; if peak
+  Entry-ancestry power exceeds the available ceiling it populates
+  `entry_spike` on `Within`.
+- **deflection.rs**: Entry samples don't drive `peak_delta_mm`; an
+  Entry sample with `δ > EXCEEDS_BOUND_MM` populates `entry_spike`.
+
+**Verification on wanaka_e2e_chipload_gate:**
+- Verdict still `Exceeds(Low)` at median 0.0205 mm/tooth (vs LUT min
+  0.032). Unchanged from D9 — that's the real burn-side finding
+  (commanded feed below Amana min), not an Entry artifact.
+- Locality string on the trip evidence is now `"arc-fit"` (the median
+  sample sits inside an arc-fit DressupArtifact span) instead of the
+  pre-D6 `"helix entry"`. Confirms D6 + D7 reading structural span
+  ancestry rather than kinematics.
+
+**Tests:**
+- `locality::tests::is_steady_state_for_gate_excludes_entry_ancestor` —
+  inside-Entry sample → not steady-state, outside → steady-state.
+- `locality::tests::is_steady_state_for_gate_terrain_helix_is_steady_state`
+  — the D7 regression: Helix-kinematics terrain sample WITHOUT an
+  Entry ancestor counts as steady-state and drives the trip.
+- `locality::tests::is_steady_state_for_gate_no_lookup_assumes_steady_state`
+  — no span data → conservatively treat every sample as steady-state.
+- 1 343 lib tests pass; workspace tests pass; clippy clean.
+
+**Status of remaining phases:**
+- D8 (cross-fixture validation) still pending. Run `optimize_toolpath`
+  against every adaptive3d / pocket / scallop fixture in `test_data/`
+  and capture before/after verdict deltas (pre-D6/D7 vs post). Wanaka
+  TP 1's Exceeds(Low) is the headline expected case; other fixtures
+  may shift if they have terrain Helix samples that were previously
+  hidden by C1 (now correctly counted as steady-state) or configured
+  Entry transients that were previously tripping (now correctly
+  surfaced as advisories).
 
