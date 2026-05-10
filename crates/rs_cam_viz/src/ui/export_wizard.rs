@@ -15,6 +15,7 @@
 //! 6. Save with summary.
 
 use rs_cam_core::gcode::{CoolantMode, PostDefinition, PostFormat, Units, WcsCode};
+use rs_cam_core::gcode_validator::{Finding, Severity, validate};
 use rs_cam_core::session::OutputLayout;
 
 use super::AppEvent;
@@ -53,6 +54,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                 1 => step_output_layout(ui, state, events),
                 2 => step_coord_units(ui, state, events),
                 3 => step_tool_change(ui, state, events),
+                4 => step_preview(ui, state, events),
                 _ => placeholder(ui, state.wizard_active_step),
             }
             ui.add_space(8.0);
@@ -544,6 +546,152 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
             .small()
             .italics(),
     );
+}
+
+// ── Step 5 — Preview & validate ──────────────────────────────────────
+
+const PREVIEW_LINE_LIMIT: usize = 200;
+
+fn step_preview(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
+    ui.heading("Preview & validate");
+    ui.add_space(4.0);
+
+    // Re-emit on every frame. The emitter is fast (sub-ms for typical
+    // projects); cache only matters if profiling shows a hotspot.
+    let gcode_result = crate::io::export::export_gcode_from_session(
+        &state.session,
+        &state.gui,
+        &state.simulation,
+    );
+
+    let gcode = match gcode_result {
+        Ok(s) => s,
+        Err(err) => {
+            ui.colored_label(
+                egui::Color32::from_rgb(220, 60, 60),
+                format!("Cannot generate preview: {err}"),
+            );
+            return;
+        }
+    };
+
+    let format = state.gui.post.format;
+    let findings = validate(&gcode, format);
+
+    let line_count = gcode.lines().count();
+    let preview: String = gcode
+        .lines()
+        .take(PREVIEW_LINE_LIMIT)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(format!(
+                "{} lines emitted; preview shows first {} line(s).",
+                line_count,
+                line_count.min(PREVIEW_LINE_LIMIT),
+            ))
+            .small(),
+        );
+        if line_count > PREVIEW_LINE_LIMIT {
+            ui.label(
+                egui::RichText::new(format!("(+{} hidden)", line_count - PREVIEW_LINE_LIMIT))
+                    .small()
+                    .italics(),
+            );
+        }
+    });
+    ui.add_space(4.0);
+    egui::ScrollArea::vertical()
+        .id_salt("wizard_preview_scroll")
+        .max_height(220.0)
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.add(
+                egui::TextEdit::multiline(&mut preview.as_str())
+                    .font(egui::TextStyle::Monospace)
+                    .desired_width(f32::INFINITY)
+                    .desired_rows(12),
+            );
+        });
+
+    ui.add_space(10.0);
+    ui.heading("Validator findings");
+    ui.add_space(4.0);
+
+    if findings.is_empty() {
+        ui.colored_label(
+            egui::Color32::from_rgb(60, 180, 90),
+            "✓ No findings. Safe to save.",
+        );
+    } else {
+        let (errors, warnings, infos) = count_by_severity(&findings);
+        ui.label(
+            egui::RichText::new(format!(
+                "{} error(s), {} warning(s), {} info note(s).",
+                errors, warnings, infos,
+            ))
+            .small(),
+        );
+        ui.add_space(4.0);
+        egui::ScrollArea::vertical()
+            .id_salt("wizard_findings_scroll")
+            .max_height(160.0)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for f in &findings {
+                    draw_finding(ui, f);
+                }
+            });
+
+        if errors > 0 {
+            ui.add_space(8.0);
+            let wiz = state.session.wizard();
+            let mut allow = wiz.allow_validator_errors;
+            let resp = ui.checkbox(
+                &mut allow,
+                "I understand the risks — allow save with validator errors present",
+            );
+            if resp.changed() && allow != wiz.allow_validator_errors {
+                events.push(AppEvent::WizardSetAllowValidatorErrors(allow));
+            }
+            if !allow {
+                ui.colored_label(
+                    egui::Color32::from_rgb(220, 60, 60),
+                    "Save is blocked: errors must be resolved or the override above must be checked.",
+                );
+            }
+        }
+    }
+}
+
+fn draw_finding(ui: &mut egui::Ui, f: &Finding) {
+    let (icon, color) = match f.severity {
+        Severity::Error => ("✕", egui::Color32::from_rgb(220, 60, 60)),
+        Severity::Warning => ("⚠", egui::Color32::from_rgb(220, 140, 0)),
+        Severity::Info => ("ℹ", egui::Color32::from_rgb(120, 160, 220)),
+    };
+    ui.horizontal(|ui| {
+        ui.colored_label(color, icon);
+        ui.label(
+            egui::RichText::new(format!("L{}: {:?} — {}", f.line, f.kind, f.message)).small(),
+        );
+    });
+}
+
+fn count_by_severity(findings: &[Finding]) -> (usize, usize, usize) {
+    let mut e = 0;
+    let mut w = 0;
+    let mut i = 0;
+    for f in findings {
+        match f.severity {
+            Severity::Error => e += 1,
+            Severity::Warning => w += 1,
+            Severity::Info => i += 1,
+        }
+    }
+    (e, w, i)
 }
 
 fn coolant_idx(c: CoolantMode) -> usize {

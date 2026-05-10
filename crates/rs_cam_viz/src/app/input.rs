@@ -203,6 +203,11 @@ impl RsCamApp {
                     s.session.wizard_mut().spindle_warmup_secs = secs;
                     s.gui.mark_edited();
                 }
+                AppEvent::WizardSetAllowValidatorErrors(allow) => {
+                    let s = self.controller.state_mut();
+                    s.session.wizard_mut().allow_validator_errors = allow;
+                    s.gui.mark_edited();
+                }
                 AppEvent::WizardSetOutputLayout(layout) => {
                     let s = self.controller.state_mut();
                     s.session.wizard_mut().output_layout = layout;
