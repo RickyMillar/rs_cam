@@ -134,6 +134,8 @@ pub enum AppEvent {
     /// Step 3: safe-Z override (mm). `None` = use the project default
     /// (`gui.post.safe_z`).
     WizardSetSafeZOverride(Option<f64>),
+    /// Step 4: spindle warmup dwell in seconds. Zero disables.
+    WizardSetSpindleWarmup(u32),
     /// Set the tool-load export-gate override flags. The two flags are
     /// independent — `accept_unmodeled` only bypasses `Unmodeled` verdicts,
     /// `accept_exceeded` only bypasses `Exceeds` verdicts.
