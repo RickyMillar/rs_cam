@@ -239,10 +239,12 @@ impl PostDefinition {
 // ----- shipped posts (TOML embedded at build time) -----
 
 const GRBL_TOML: &str = include_str!("../../posts/grbl.toml");
+const GRBLHAL_TOML: &str = include_str!("../../posts/grblhal.toml");
 const LINUXCNC_TOML: &str = include_str!("../../posts/linuxcnc.toml");
 const MACH3_TOML: &str = include_str!("../../posts/mach3.toml");
 
 static GRBL: OnceLock<PostDefinition> = OnceLock::new();
+static GRBLHAL: OnceLock<PostDefinition> = OnceLock::new();
 static LINUXCNC: OnceLock<PostDefinition> = OnceLock::new();
 static MACH3: OnceLock<PostDefinition> = OnceLock::new();
 
@@ -254,6 +256,15 @@ pub fn grbl() -> &'static PostDefinition {
         // reaching production, so unwrap-on-init is acceptable here.
         #[allow(clippy::expect_used)]
         PostDefinition::from_toml(GRBL_TOML).expect("shipped grbl.toml must parse")
+    })
+}
+
+/// The shipped grblHAL post definition.
+pub fn grblhal() -> &'static PostDefinition {
+    GRBLHAL.get_or_init(|| {
+        // SAFETY: see `grbl()` — shipped TOML is test-gated.
+        #[allow(clippy::expect_used)]
+        PostDefinition::from_toml(GRBLHAL_TOML).expect("shipped grblhal.toml must parse")
     })
 }
 
@@ -283,7 +294,7 @@ mod tests {
     #[test]
     fn shipped_posts_load() {
         // Each shipped TOML must parse and have sensible decimals.
-        for post in [grbl(), linuxcnc(), mach3()] {
+        for post in [grbl(), grblhal(), linuxcnc(), mach3()] {
             assert!(!post.name.is_empty(), "{} has empty name", post.name);
             assert!(post.decimals.xyz <= 6, "{} xyz dp absurd", post.name);
             assert!(post.decimals.feed <= 6, "{} feed dp absurd", post.name);
@@ -382,8 +393,18 @@ mod tests {
     }
 
     #[test]
+    fn grblhal_post_has_g54_and_units_metadata() {
+        let p = grblhal();
+        assert_eq!(p.wcs, Some(WcsCode::G54));
+        assert_eq!(p.units, Units::Mm);
+        let preamble = p.render_preamble(18_000);
+        assert!(preamble.contains("G54\n"), "grblhal preamble: {preamble}");
+        assert!(preamble.contains("M3 S18000"));
+    }
+
+    #[test]
     fn arc_linearize_defaults_disabled() {
-        for post in [grbl(), linuxcnc(), mach3()] {
+        for post in [grbl(), grblhal(), linuxcnc(), mach3()] {
             assert!(
                 !post.arc_linearize.enabled,
                 "{} arc_linearize should default off",

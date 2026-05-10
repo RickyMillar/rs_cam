@@ -393,18 +393,25 @@ pub fn replace_rapids_with_feed(gcode: &str, high_feedrate: f64) -> String {
 #[serde(rename_all = "snake_case")]
 pub enum PostFormat {
     Grbl,
+    GrblHal,
     LinuxCnc,
     Mach3,
 }
 
 impl PostFormat {
     /// All available post-processor formats.
-    pub const ALL: &[PostFormat] = &[PostFormat::Grbl, PostFormat::LinuxCnc, PostFormat::Mach3];
+    pub const ALL: &[PostFormat] = &[
+        PostFormat::Grbl,
+        PostFormat::GrblHal,
+        PostFormat::LinuxCnc,
+        PostFormat::Mach3,
+    ];
 
     /// Human-readable display label for UI.
     pub fn label(self) -> &'static str {
         match self {
             PostFormat::Grbl => "GRBL",
+            PostFormat::GrblHal => "grblHAL",
             PostFormat::LinuxCnc => "LinuxCNC",
             PostFormat::Mach3 => "Mach3",
         }
@@ -414,6 +421,7 @@ impl PostFormat {
     pub fn definition(self) -> &'static PostDefinition {
         match self {
             PostFormat::Grbl => post::grbl(),
+            PostFormat::GrblHal => post::grblhal(),
             PostFormat::LinuxCnc => post::linuxcnc(),
             PostFormat::Mach3 => post::mach3(),
         }
@@ -424,6 +432,7 @@ impl PostFormat {
 pub fn get_post_definition(name: &str) -> Option<&'static PostDefinition> {
     match name.to_lowercase().as_str() {
         "grbl" => Some(PostFormat::Grbl.definition()),
+        "grblhal" | "grbl_hal" => Some(PostFormat::GrblHal.definition()),
         "linuxcnc" | "linux_cnc" => Some(PostFormat::LinuxCnc.definition()),
         "mach3" => Some(PostFormat::Mach3.definition()),
         _ => None,
@@ -579,6 +588,8 @@ mod tests {
     #[test]
     fn test_get_post_definition() {
         assert!(get_post_definition("grbl").is_some());
+        assert!(get_post_definition("grblhal").is_some());
+        assert!(get_post_definition("grbl_hal").is_some());
         assert!(get_post_definition("linuxcnc").is_some());
         assert!(get_post_definition("linux_cnc").is_some());
         assert!(get_post_definition("mach3").is_some());
