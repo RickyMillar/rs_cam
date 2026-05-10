@@ -210,6 +210,109 @@ fn wizard_per_toolpath_save_writes_one_file_per_toolpath() {
     assert!(written >= 1);
 }
 
+/// Wizard overrides — set on `WizardState` — must round-trip into the
+/// emitted g-code through `export_gcode_from_session`. Exercises the
+/// full data path: WizardState → overlay_for() → export helpers →
+/// export_gcode_phases_with_overlay_checked → emitter.
+#[test]
+fn wizard_overlay_overrides_reflect_in_emitted_gcode() {
+    let (mut session, mut gui, sim) = build_session();
+
+    // grblHAL preamble emits {wcs_line} + {units_word} + M3 S{rpm}, so
+    // overrides on those three words show up in the rendered preamble.
+    gui.post.format = rs_cam_core::gcode::PostFormat::GrblHal;
+
+    session.wizard_mut().wcs_override = Some(rs_cam_core::gcode::WcsCode::G56);
+    session.wizard_mut().units_override = Some(rs_cam_core::gcode::Units::Inch);
+    session.wizard_mut().spindle_warmup_secs = 9;
+
+    let gcode =
+        export_gcode_from_session(&session, &gui, &sim).expect("overlay export succeeds");
+
+    assert!(
+        gcode.contains("G56\n"),
+        "WCS override should land in preamble: {gcode}"
+    );
+    assert!(
+        gcode.contains("G20"),
+        "units override should flip G21→G20: {gcode}"
+    );
+    assert!(
+        gcode.contains("G4 P9\n"),
+        "warmup override should inject dwell after preamble: {gcode}"
+    );
+
+    // Order check: dwell sits between preamble's M3 and the first move.
+    let m3 = gcode.find("M3 S").expect("preamble M3");
+    let dwell = gcode.find("G4 P9").expect("warmup dwell");
+    let first_move = gcode.find("G0 X").expect("first move");
+    assert!(m3 < dwell && dwell < first_move);
+}
+
+/// Default `WizardState` (no overrides) must produce byte-identical
+/// output to the pre-overlay export path. Mirrors the gcode-level
+/// `default_overlay_is_byte_identical_to_no_overlay` test, but at the
+/// viz-export entry point that the wizard's Save handler calls.
+#[test]
+fn default_wizard_state_does_not_mutate_export() {
+    use rs_cam_core::gcode::{
+        ToolLoadExportPolicy, export_gcode_phases_with_overlay_checked,
+    };
+
+    let (session, gui, sim) = build_session();
+    // build_session leaves WizardState at its default — no overrides set.
+    assert!(session.wizard().wcs_override.is_none());
+    assert!(session.wizard().units_override.is_none());
+    assert!(session.wizard().safe_z_override.is_none());
+    assert_eq!(session.wizard().spindle_warmup_secs, 0);
+
+    // Exercise the same data path the wizard's Save dispatches through.
+    let with_overlay =
+        export_gcode_from_session(&session, &gui, &sim).expect("export succeeds");
+
+    // Build the equivalent default-overlay export by hand to confirm the
+    // helper isn't injecting anything unexpected. Both paths route
+    // through `export_gcode_phases_with_overlay_checked` — only the
+    // overlay-construction step differs.
+    use rs_cam_core::gcode::{CoolantMode, GcodePhase};
+    let phases: Vec<GcodePhase<'_>> = session
+        .toolpath_configs()
+        .iter()
+        .filter(|tc| tc.enabled)
+        .filter_map(|tc| {
+            let rt = gui.toolpath_rt.get(&tc.id)?;
+            let result = rt.result.as_ref()?;
+            Some(GcodePhase {
+                toolpath: result.toolpath(),
+                spindle_rpm: gui.post.spindle_speed,
+                label: &tc.name,
+                pre_gcode: tc.pre_gcode.as_deref(),
+                post_gcode: tc.post_gcode.as_deref(),
+                tool_number: session
+                    .tools()
+                    .iter()
+                    .find(|t| t.id.0 == tc.tool_id)
+                    .map(|t| t.tool_number),
+                coolant: CoolantMode::Off,
+                controller_compensation: None,
+            })
+        })
+        .collect();
+    let baseline = export_gcode_phases_with_overlay_checked(
+        &phases,
+        gui.post.format.definition(),
+        None,
+        ToolLoadExportPolicy::default(),
+        &Default::default(),
+    )
+    .expect("baseline export succeeds");
+
+    assert_eq!(
+        with_overlay, baseline,
+        "default wizard state must not mutate output"
+    );
+}
+
 /// Wizard-state mutations are observable through the public accessor
 /// (mimics how the AppEvent handlers update settings).
 #[test]
