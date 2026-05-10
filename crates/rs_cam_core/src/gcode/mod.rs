@@ -132,8 +132,23 @@ pub struct GcodePhase<'a> {
 
 /// Emit G-code from multiple phases, inserting tool changes, spindle speed
 /// changes, and coolant commands between operations as needed.
-pub(crate) fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &PostDefinition) -> String {
-    emitter::emit_program(&program_builder::build_phased(phases), post)
+///
+/// Test-only shim around `emit_gcode_phased_with_overlay(_, _, &default)`.
+/// Production callers go through `export_gcode_phases_(with_overlay_)checked`.
+#[cfg(test)]
+fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &PostDefinition) -> String {
+    emit_gcode_phased_with_overlay(phases, post, &WizardOverlay::default())
+}
+
+/// Same as `emit_gcode_phased`, but applies a `WizardOverlay` (WCS, units,
+/// spindle warmup) on top of the post's defaults. `WizardOverlay::default()`
+/// is byte-identical to the no-overlay path.
+pub(crate) fn emit_gcode_phased_with_overlay(
+    phases: &[GcodePhase<'_>],
+    post: &PostDefinition,
+    overlay: &WizardOverlay,
+) -> String {
+    emitter::emit_program_with_overlay(&program_builder::build_phased(phases), post, overlay)
 }
 
 /// Emit checked G-code from a project session.
@@ -317,12 +332,31 @@ pub fn enforce_load_policy(
 pub fn export_gcode_phases_checked(
     phases: &[GcodePhase<'_>],
     post: &PostDefinition,
+    sim_trace: Option<&SimulationCutTrace>,
+    policy: ToolLoadExportPolicy,
+) -> Result<String, ExportError> {
+    export_gcode_phases_with_overlay_checked(
+        phases,
+        post,
+        sim_trace,
+        policy,
+        &WizardOverlay::default(),
+    )
+}
+
+/// Same as `export_gcode_phases_checked`, plus a `WizardOverlay` applied
+/// to the emit step. Default overlay is byte-identical to the no-overlay
+/// path (Cow::Borrowed both ways).
+pub fn export_gcode_phases_with_overlay_checked(
+    phases: &[GcodePhase<'_>],
+    post: &PostDefinition,
     _sim_trace: Option<&SimulationCutTrace>,
     _policy: ToolLoadExportPolicy,
+    overlay: &WizardOverlay,
 ) -> Result<String, ExportError> {
     // TODO: enforced in tool_load follow-up. The policy and simulation trace
     // are intentionally accepted but ignored in this refactor.
-    Ok(emit_gcode_phased(phases, post))
+    Ok(emit_gcode_phased_with_overlay(phases, post, overlay))
 }
 
 fn controller_comp_for_project_toolpath(
@@ -355,21 +389,64 @@ pub fn export_gcode_multi_setup_checked(
     setups: &[GcodeSetupPhase<'_>],
     post: &PostDefinition,
     safe_z: f64,
+    sim_trace: Option<&SimulationCutTrace>,
+    policy: ToolLoadExportPolicy,
+) -> Result<String, ExportError> {
+    export_gcode_multi_setup_with_overlay_checked(
+        setups,
+        post,
+        safe_z,
+        sim_trace,
+        policy,
+        &WizardOverlay::default(),
+    )
+}
+
+/// Same as `export_gcode_multi_setup_checked`, plus a `WizardOverlay`.
+pub fn export_gcode_multi_setup_with_overlay_checked(
+    setups: &[GcodeSetupPhase<'_>],
+    post: &PostDefinition,
+    safe_z: f64,
     _sim_trace: Option<&SimulationCutTrace>,
     _policy: ToolLoadExportPolicy,
+    overlay: &WizardOverlay,
 ) -> Result<String, ExportError> {
     // TODO: enforced in tool_load follow-up. The policy and simulation trace
     // are intentionally accepted but ignored in this refactor.
-    Ok(emit_gcode_multi_setup(setups, post, safe_z))
+    Ok(emit_gcode_multi_setup_with_overlay(
+        setups, post, safe_z, overlay,
+    ))
 }
 
 /// Emit G-code for multiple setups with M0 pauses between them.
-pub(crate) fn emit_gcode_multi_setup(
+///
+/// Test-only shim around `emit_gcode_multi_setup_with_overlay(_, _, _, &default)`.
+/// Production callers go through `export_gcode_multi_setup_(with_overlay_)checked`.
+#[cfg(test)]
+fn emit_gcode_multi_setup(
     setups: &[GcodeSetupPhase<'_>],
     post: &PostDefinition,
     safe_z: f64,
 ) -> String {
-    emitter::emit_program(&program_builder::build_multi_setup(setups, safe_z), post)
+    emit_gcode_multi_setup_with_overlay(setups, post, safe_z, &WizardOverlay::default())
+}
+
+/// Same as `emit_gcode_multi_setup`, but applies a `WizardOverlay`. The
+/// overlay's `safe_z_override` (when set) replaces the `safe_z` argument
+/// for the inter-setup retract; WCS/units/warmup apply as in
+/// `emit_gcode_phased_with_overlay`.
+pub(crate) fn emit_gcode_multi_setup_with_overlay(
+    setups: &[GcodeSetupPhase<'_>],
+    post: &PostDefinition,
+    safe_z: f64,
+    overlay: &WizardOverlay,
+) -> String {
+    let effective_safe_z = overlay.safe_z_override.unwrap_or(safe_z);
+    emitter::emit_program_with_overlay(
+        &program_builder::build_multi_setup(setups, effective_safe_z),
+        post,
+        overlay,
+    )
 }
 
 /// Replace G0 rapid moves with G1 at a high feedrate.

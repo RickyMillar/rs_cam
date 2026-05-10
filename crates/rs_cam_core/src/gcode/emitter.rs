@@ -16,6 +16,7 @@ use std::fmt::Write;
 
 use super::ir::{Program, Statement};
 use super::post::PostDefinition;
+use super::wizard_overlay::WizardOverlay;
 
 /// Render a `Program` to g-code text using the given `PostDefinition`.
 pub fn emit_program(program: &Program, post: &PostDefinition) -> String {
@@ -24,6 +25,20 @@ pub fn emit_program(program: &Program, post: &PostDefinition) -> String {
         emit_statement(&mut output, statement, post);
     }
     output
+}
+
+/// Render a `Program` with a `WizardOverlay` applied. Default overlay is
+/// byte-identical to `emit_program` (both helpers return `Cow::Borrowed`
+/// when nothing is overridden — verified by the captured-fixture
+/// regression baseline).
+pub fn emit_program_with_overlay(
+    program: &Program,
+    post: &PostDefinition,
+    overlay: &WizardOverlay,
+) -> String {
+    let effective_post = overlay.applied_post(post);
+    let effective_program = overlay.apply_to_program(program);
+    emit_program(&effective_program, &effective_post)
 }
 
 /// Clamp `requested` to `max` if `max` is set and `requested > max`.
