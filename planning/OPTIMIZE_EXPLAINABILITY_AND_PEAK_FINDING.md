@@ -571,3 +571,22 @@ each phase using A1 as template.)
   (`format_envelope_summary`, `format_limiting_gate`) covered by 4
   unit tests with wanaka-realistic values; MCP-side JSON smoke pending
   binary rebuild.
+- **2026-05-10 — A2 MCP smoke (post-rebuild).** Verified narrative
+  serializes through MCP on `wanaka_full_tuned.toml`:
+    - **TP 1 (NoSafeImprovement):** headline reads "Tried 3
+      candidates; closest-to-safe still hit: chipload 0.0707 mm/tooth
+      (+29% over LUT max 0.0550); deflection 237 µm (+18% over the
+      200 µm threshold)." Envelope captures feed 3150→4000, stepover
+      0.84→2.2, DOC 3.0→4.83, RPM held at 18000.
+    - **TP 6 (MarginalSafe):** headline reads "Best candidate is +1%
+      past the strict chipload bound — admitted by the tolerance band;
+      verify on a scrap before applying." Envelope captures feed
+      3150→3500, RPM 18000→20000, stepover 2.0→2.6, DOC collapsed at
+      3.0 (UI suppresses collapsed extents).
+    - **Unexpected (filed for polish):** TP 6's recommended candidate
+      is band-admitted on BOTH chipload sides simultaneously (peak
+      0.0557 just over LUT max 0.055, median 0.0309 just under LUT
+      min 0.032). 5% `breakage_tolerance` and `burn_tolerance` both
+      fire. `headline_marginal` only surfaces the first
+      (`find(|g| g.band_admitted)` returns High side); could
+      summarize both in a future polish pass.
