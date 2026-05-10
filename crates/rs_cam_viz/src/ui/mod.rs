@@ -127,6 +127,13 @@ pub enum AppEvent {
     /// `{job}` / `{setup}` / `{toolpath}` are applied at save time
     /// based on the active layout.
     WizardSetFilenameTemplate(String),
+    /// Step 3: WCS override. `None` = use the post's default.
+    WizardSetWcsOverride(Option<rs_cam_core::gcode::WcsCode>),
+    /// Step 3: units override. `None` = inherit from the post.
+    WizardSetUnitsOverride(Option<rs_cam_core::gcode::Units>),
+    /// Step 3: safe-Z override (mm). `None` = use the project default
+    /// (`gui.post.safe_z`).
+    WizardSetSafeZOverride(Option<f64>),
     /// Set the tool-load export-gate override flags. The two flags are
     /// independent — `accept_unmodeled` only bypasses `Unmodeled` verdicts,
     /// `accept_exceeded` only bypasses `Exceeds` verdicts.

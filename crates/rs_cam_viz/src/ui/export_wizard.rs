@@ -14,7 +14,7 @@
 //! 5. Preview + validator findings inline.
 //! 6. Save with summary.
 
-use rs_cam_core::gcode::{PostDefinition, PostFormat};
+use rs_cam_core::gcode::{PostDefinition, PostFormat, Units, WcsCode};
 use rs_cam_core::session::OutputLayout;
 
 use super::AppEvent;
@@ -51,6 +51,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
             match state.wizard_active_step {
                 0 => step_post(ui, state, events),
                 1 => step_output_layout(ui, state, events),
+                2 => step_coord_units(ui, state, events),
                 _ => placeholder(ui, state.wizard_active_step),
             }
             ui.add_space(8.0);
@@ -305,6 +306,121 @@ fn slugify(s: &str) -> String {
             }
         })
         .collect()
+}
+
+// ── Step 3 — Coordinate & units ──────────────────────────────────────
+
+fn step_coord_units(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
+    ui.heading("Coordinate system & units");
+    ui.add_space(4.0);
+
+    let post = state.gui.post.format.definition();
+    let wiz = state.session.wizard();
+
+    // ── WCS picker ──
+    ui.label(
+        egui::RichText::new(format!(
+            "Post default: {}",
+            post.wcs.map_or("(none in preamble)", |w| w.as_word())
+        ))
+        .small()
+        .italics(),
+    );
+    let mut wcs_selected = wiz.wcs_override;
+    let wcs_label = wcs_selected.map_or_else(|| "Use post default".to_owned(), |w| w.as_word().to_owned());
+    egui::ComboBox::from_label("Work coordinate system (WCS)")
+        .selected_text(wcs_label)
+        .show_ui(ui, |ui| {
+            ui.selectable_value(&mut wcs_selected, None, "Use post default");
+            for w in [
+                WcsCode::G54,
+                WcsCode::G55,
+                WcsCode::G56,
+                WcsCode::G57,
+                WcsCode::G58,
+                WcsCode::G59,
+            ] {
+                ui.selectable_value(&mut wcs_selected, Some(w), w.as_word());
+            }
+        });
+    if wcs_selected != wiz.wcs_override {
+        events.push(AppEvent::WizardSetWcsOverride(wcs_selected));
+    }
+
+    ui.add_space(12.0);
+
+    // ── Units picker ──
+    ui.label(
+        egui::RichText::new(format!("Post emits: {} ({})", post.units.as_word(), units_label(post.units)))
+            .small()
+            .italics(),
+    );
+    let mut units_selected = wiz.units_override;
+    let units_label_text = units_selected.map_or_else(
+        || "Use post default".to_owned(),
+        |u| format!("{} ({})", u.as_word(), units_label(u)),
+    );
+    egui::ComboBox::from_label("Units")
+        .selected_text(units_label_text)
+        .show_ui(ui, |ui| {
+            ui.selectable_value(&mut units_selected, None, "Use post default");
+            ui.selectable_value(&mut units_selected, Some(Units::Mm), "G21 (mm)");
+            ui.selectable_value(&mut units_selected, Some(Units::Inch), "G20 (inch)");
+        });
+    if units_selected != wiz.units_override {
+        events.push(AppEvent::WizardSetUnitsOverride(units_selected));
+    }
+
+    if let Some(u) = units_selected
+        && u != post.units
+    {
+        ui.colored_label(
+            egui::Color32::from_rgb(220, 140, 0),
+            format!(
+                "⚠ Units override ({}) differs from post default ({}). \
+                 Coordinate values are not auto-converted — verify your \
+                 toolpath is in the right unit system.",
+                u.as_word(),
+                post.units.as_word(),
+            ),
+        );
+    }
+
+    ui.add_space(12.0);
+
+    // ── Safe-Z override ──
+    let project_safe_z = state.gui.post.safe_z;
+    ui.label(
+        egui::RichText::new(format!("Project default: {project_safe_z:.3} mm"))
+            .small()
+            .italics(),
+    );
+    let mut use_override = wiz.safe_z_override.is_some();
+    let mut safe_z_value = wiz.safe_z_override.unwrap_or(project_safe_z);
+    let toggle = ui.checkbox(&mut use_override, "Override safe-Z for this export");
+    let prev_override = wiz.safe_z_override;
+
+    if use_override {
+        let resp = ui.add(
+            egui::DragValue::new(&mut safe_z_value)
+                .speed(0.5)
+                .suffix(" mm")
+                .range(-1000.0..=1000.0),
+        );
+        let new_override = Some(safe_z_value);
+        if (toggle.changed() || resp.changed()) && new_override != prev_override {
+            events.push(AppEvent::WizardSetSafeZOverride(new_override));
+        }
+    } else if toggle.changed() && prev_override.is_some() {
+        events.push(AppEvent::WizardSetSafeZOverride(None));
+    }
+}
+
+fn units_label(u: Units) -> &'static str {
+    match u {
+        Units::Mm => "mm",
+        Units::Inch => "inch",
+    }
 }
 
 fn draw_limit_warnings(ui: &mut egui::Ui, post: &PostDefinition, project_rpm: u32) {

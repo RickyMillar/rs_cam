@@ -183,6 +183,21 @@ impl RsCamApp {
                         s.session.wizard_mut().last_step_visited = clamped;
                     }
                 }
+                AppEvent::WizardSetWcsOverride(wcs) => {
+                    let s = self.controller.state_mut();
+                    s.session.wizard_mut().wcs_override = wcs;
+                    s.gui.mark_edited();
+                }
+                AppEvent::WizardSetUnitsOverride(units) => {
+                    let s = self.controller.state_mut();
+                    s.session.wizard_mut().units_override = units;
+                    s.gui.mark_edited();
+                }
+                AppEvent::WizardSetSafeZOverride(safe_z) => {
+                    let s = self.controller.state_mut();
+                    s.session.wizard_mut().safe_z_override = safe_z;
+                    s.gui.mark_edited();
+                }
                 AppEvent::WizardSetOutputLayout(layout) => {
                     let s = self.controller.state_mut();
                     s.session.wizard_mut().output_layout = layout;
