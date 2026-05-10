@@ -32,6 +32,15 @@ pub struct WizardOverlay {
     pub units_override: Option<Units>,
     pub safe_z_override: Option<f64>,
     pub spindle_warmup_secs: u32,
+    /// When `Some`, dry-run mode is enabled and every cutting move's Z
+    /// is clamped to this value so the spindle stays in air for the
+    /// entire program. Rapids and `SafeZRetract` statements are left
+    /// alone (they already operate above material).
+    ///
+    /// The viz layer resolves this from `wizard.dry_run` plus the
+    /// effective safe-Z (`wizard.safe_z_override.unwrap_or(gui.post.safe_z)`)
+    /// before calling the emit helpers.
+    pub dry_run_safe_z: Option<f64>,
 }
 
 impl WizardOverlay {
@@ -43,6 +52,7 @@ impl WizardOverlay {
             && self.units_override.is_none()
             && self.safe_z_override.is_none()
             && self.spindle_warmup_secs == 0
+            && self.dry_run_safe_z.is_none()
     }
 
     /// Apply the post-affecting overrides (`wcs_override`, `units_override`)
@@ -66,25 +76,63 @@ impl WizardOverlay {
         Cow::Owned(p)
     }
 
-    /// Inject the warmup dwell statement into `program` after its first
-    /// `Preamble`. Returns `Cow::Borrowed(program)` when no warmup is
-    /// configured. The preamble is the first statement built by every
-    /// `program_builder` entry point, so the dwell lands immediately
-    /// after the spindle-start `M3 S<rpm>` the preamble emits.
+    /// Apply program-level transforms (warmup-dwell injection + dry-run
+    /// Z clamp). Returns `Cow::Borrowed(program)` when neither transform
+    /// is active, avoiding allocation on the default path.
+    ///
+    /// **Warmup**: when `spindle_warmup_secs > 0`, inserts a
+    /// `G4 P{secs}` `Statement::Raw` immediately after the program's
+    /// first `Preamble` so the spindle has time to come up to speed
+    /// before the first cut.
+    ///
+    /// **Dry-run**: when `dry_run_safe_z = Some(z)`, replaces the Z
+    /// component of every cutting move (`Linear`, `LinearModal`,
+    /// `ArcCw`, `ArcCcw`) with `z`. `Rapid` and `SafeZRetract` are
+    /// left untouched — those already operate above material and
+    /// changing them would break the entry/exit kinematics.
     pub fn apply_to_program<'a>(&self, program: &'a Program) -> Cow<'a, Program> {
-        if self.spindle_warmup_secs == 0 {
+        let needs_warmup = self.spindle_warmup_secs > 0;
+        let needs_dry_run = self.dry_run_safe_z.is_some();
+        if !needs_warmup && !needs_dry_run {
             return Cow::Borrowed(program);
         }
         let mut p = program.clone();
-        if let Some(idx) = p
-            .statements
-            .iter()
-            .position(|s| matches!(s, Statement::Preamble { .. }))
+        if needs_warmup
+            && let Some(idx) = p
+                .statements
+                .iter()
+                .position(|s| matches!(s, Statement::Preamble { .. }))
         {
             let dwell = Statement::Raw(format!("G4 P{}\n", self.spindle_warmup_secs));
             p.statements.insert(idx + 1, dwell);
         }
+        if let Some(safe_z) = self.dry_run_safe_z {
+            for s in &mut p.statements {
+                clamp_cutting_z(s, safe_z);
+            }
+        }
         Cow::Owned(p)
+    }
+}
+
+/// Clamp the Z component of cutting-move statements to `safe_z`.
+/// Rapids, retracts, and non-move statements are left alone.
+fn clamp_cutting_z(s: &mut Statement, safe_z: f64) {
+    match s {
+        Statement::Linear { z, .. }
+        | Statement::LinearModal { z, .. }
+        | Statement::ArcCw { z, .. }
+        | Statement::ArcCcw { z, .. } => {
+            *z = safe_z;
+        }
+        Statement::Preamble { .. }
+        | Statement::SpindleSet { .. }
+        | Statement::Postamble
+        | Statement::ProgramPause { .. }
+        | Statement::Comment(_)
+        | Statement::Raw(_)
+        | Statement::Rapid { .. }
+        | Statement::SafeZRetract { .. } => {}
     }
 }
 
@@ -112,6 +160,7 @@ mod tests {
             units_override: None,
             safe_z_override: Some(20.0),
             spindle_warmup_secs: 3,
+            dry_run_safe_z: None,
         };
         let base = post::grbl();
         let cow = o.applied_post(base);
@@ -175,6 +224,94 @@ mod tests {
             other => panic!("expected G4 dwell, got {other:?}"),
         }
         assert!(matches!(stmts[2], Statement::Postamble));
+    }
+
+    #[test]
+    fn dry_run_clamps_cutting_z_only() {
+        let o = WizardOverlay {
+            dry_run_safe_z: Some(7.5),
+            ..Default::default()
+        };
+        let prog = Program {
+            statements: vec![
+                Statement::Preamble { spindle_rpm: 18_000 },
+                Statement::Rapid { x: 0.0, y: 0.0, z: 5.0 },
+                Statement::Linear { x: 1.0, y: 0.0, z: -2.0, feed: 600.0 },
+                Statement::LinearModal { x: 2.0, y: 0.0, z: -2.0 },
+                Statement::ArcCw { x: 3.0, y: 0.0, z: -2.5, i: 1.0, j: 0.0, feed: 600.0 },
+                Statement::ArcCcw { x: 4.0, y: 0.0, z: -2.5, i: -1.0, j: 0.0, feed: 600.0 },
+                Statement::SafeZRetract { z: 10.0 },
+                Statement::Postamble,
+            ],
+            ..Default::default()
+        };
+        let cow = o.apply_to_program(&prog);
+        let stmts = &cow.statements;
+        // Rapid kept at original Z (entry/exit kinematics intact).
+        match stmts[1] {
+            Statement::Rapid { z, .. } => assert!((z - 5.0).abs() < 1e-9),
+            ref other => panic!("expected Rapid, got {other:?}"),
+        }
+        // Cutting moves all clamped to 7.5.
+        for idx in [2, 3, 4, 5] {
+            let z = match stmts[idx] {
+                Statement::Linear { z, .. }
+                | Statement::LinearModal { z, .. }
+                | Statement::ArcCw { z, .. }
+                | Statement::ArcCcw { z, .. } => z,
+                ref other => panic!("stmt {idx}: expected cutting move, got {other:?}"),
+            };
+            assert!(
+                (z - 7.5).abs() < 1e-9,
+                "stmt {idx}: dry-run should clamp Z to 7.5, got {z}"
+            );
+        }
+        // SafeZRetract left alone (already above material).
+        match stmts[6] {
+            Statement::SafeZRetract { z } => assert!((z - 10.0).abs() < 1e-9),
+            ref other => panic!("expected SafeZRetract, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dry_run_none_borrows_program() {
+        let o = WizardOverlay {
+            dry_run_safe_z: None,
+            ..Default::default()
+        };
+        let prog = Program {
+            statements: vec![Statement::Linear { x: 0.0, y: 0.0, z: -1.0, feed: 600.0 }],
+            ..Default::default()
+        };
+        let cow = o.apply_to_program(&prog);
+        assert!(matches!(cow, Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn dry_run_and_warmup_compose() {
+        // Both transforms active: warmup dwell after preamble + Z clamp.
+        let o = WizardOverlay {
+            dry_run_safe_z: Some(3.0),
+            spindle_warmup_secs: 4,
+            ..Default::default()
+        };
+        let prog = Program {
+            statements: vec![
+                Statement::Preamble { spindle_rpm: 18_000 },
+                Statement::Linear { x: 0.0, y: 0.0, z: -1.0, feed: 600.0 },
+            ],
+            ..Default::default()
+        };
+        let cow = o.apply_to_program(&prog);
+        assert_eq!(cow.statements.len(), 3);
+        match &cow.statements[1] {
+            Statement::Raw(s) => assert_eq!(s, "G4 P4\n"),
+            other => panic!("expected dwell, got {other:?}"),
+        }
+        match cow.statements[2] {
+            Statement::Linear { z, .. } => assert!((z - 3.0).abs() < 1e-9),
+            ref other => panic!("expected clamped Linear, got {other:?}"),
+        }
     }
 
     #[test]

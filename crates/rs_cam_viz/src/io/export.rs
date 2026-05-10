@@ -5,23 +5,34 @@ use rs_cam_core::gcode::{
 };
 use rs_cam_core::session::ProjectSession;
 
+use crate::state::job::ToolConfig;
+use crate::state::runtime::GuiState;
+use crate::state::simulation::SimulationState;
+use crate::state::toolpath::{CompensationType, OperationConfig, ProfileSide};
+
 /// Pull the wizard's per-job overrides into a `WizardOverlay` for the
 /// emit step. The default overlay (no fields set) is byte-identical to
 /// the pre-overlay export path.
-fn overlay_for(session: &ProjectSession) -> WizardOverlay {
+///
+/// Dry-run resolution: when `wizard.dry_run` is true, `dry_run_safe_z`
+/// is set to the effective safe-Z (`wizard.safe_z_override` or
+/// `gui.post.safe_z`). Otherwise it stays `None` and the overlay's
+/// `apply_to_program` no-ops on cutting Z values.
+fn overlay_for(session: &ProjectSession, gui: &GuiState) -> WizardOverlay {
     let w = session.wizard();
+    let dry_run_safe_z = if w.dry_run {
+        Some(w.safe_z_override.unwrap_or(gui.post.safe_z))
+    } else {
+        None
+    };
     WizardOverlay {
         wcs_override: w.wcs_override,
         units_override: w.units_override,
         safe_z_override: w.safe_z_override,
         spindle_warmup_secs: w.spindle_warmup_secs,
+        dry_run_safe_z,
     }
 }
-
-use crate::state::job::ToolConfig;
-use crate::state::runtime::GuiState;
-use crate::state::simulation::SimulationState;
-use crate::state::toolpath::{CompensationType, OperationConfig, ProfileSide};
 
 fn tool_number_for_export(tool: &ToolConfig) -> u32 {
     tool.tool_number
@@ -100,7 +111,7 @@ pub fn export_gcode_from_session(
         post,
         viz_sim_trace(sim),
         gui.tool_load_overrides.as_policy(),
-        &overlay_for(session),
+        &overlay_for(session, gui),
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
@@ -153,7 +164,7 @@ pub fn export_combined_gcode_from_session(
         gui.post.safe_z,
         viz_sim_trace(sim),
         gui.tool_load_overrides.as_policy(),
-        &overlay_for(session),
+        &overlay_for(session, gui),
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
@@ -200,7 +211,7 @@ pub fn export_single_toolpath_from_session(
         post,
         viz_sim_trace(sim),
         gui.tool_load_overrides.as_policy(),
-        &overlay_for(session),
+        &overlay_for(session, gui),
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
@@ -246,7 +257,7 @@ pub fn export_setup_gcode_from_session(
         post,
         viz_sim_trace(sim),
         gui.tool_load_overrides.as_policy(),
-        &overlay_for(session),
+        &overlay_for(session, gui),
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
