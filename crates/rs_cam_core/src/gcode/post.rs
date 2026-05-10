@@ -146,6 +146,20 @@ fn default_arc_linearize_threshold() -> f64 {
     0.05
 }
 
+/// Collapse newlines in comment text so the rendered `(...)` block
+/// stays on one line. Tabs and CR are also collapsed for parser safety.
+fn sanitize_comment_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '\n' => out.push_str(" / "),
+            '\r' | '\t' => out.push(' '),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 /// Data-driven post processor definition. Loaded from TOML.
 ///
 /// Templates use `{spindle_rpm}` (preamble) and `{message_comment}`
@@ -171,9 +185,33 @@ pub struct PostDefinition {
     /// in the preamble template.
     #[serde(default)]
     pub units: Units,
-    /// Arc-linearisation policy applied by `program_builder`.
+    /// Arc-linearisation policy applied by the emitter.
     #[serde(default)]
     pub arc_linearize: ArcLinearize,
+    /// M-codes the controller does not implement. Lines containing any
+    /// of these M-words are dropped at emit time and replaced with a
+    /// warning comment. Use this for user pre/post snippets that target
+    /// a different controller than the project's post.
+    ///
+    /// Examples:
+    /// - Grbl 1.1 lacks M7 (mist coolant) — list `7` here so user
+    ///   snippets that emit `M7` get commented out instead of failing
+    ///   the parser.
+    #[serde(default)]
+    pub unsupported_mcodes: Vec<u32>,
+    /// Whether the controller implements cutter compensation
+    /// (G40/G41/G42). When false, comp lines from program_builder are
+    /// dropped at emit time with a warning comment. Grbl 1.1 has no
+    /// cutter comp; LinuxCNC and Mach3 do.
+    #[serde(default = "default_supports_cutter_comp")]
+    pub supports_cutter_comp: bool,
+}
+
+fn default_supports_cutter_comp() -> bool {
+    // Default true preserves the existing emission behaviour for the
+    // LinuxCNC/Mach3 posts (which DO support comp). Grbl/grblHAL TOMLs
+    // override to false explicitly.
+    true
 }
 
 /// Comment formatting. `format` contains `{text}`; the emitter renders
@@ -223,15 +261,22 @@ impl PostDefinition {
     }
 
     /// Render a comment line: `format.replace("{text}", text)` + trailing `\n`.
+    ///
+    /// Embedded `\n` in `text` is collapsed to ` / ` so the comment
+    /// stays on a single line — controllers reject `(...)` blocks that
+    /// span multiple lines (the second line is treated as bare g-code).
     pub fn render_comment(&self, text: &str) -> String {
-        format!("{}\n", self.comment.format.replace("{text}", text))
+        let sanitized = sanitize_comment_text(text);
+        format!("{}\n", self.comment.format.replace("{text}", &sanitized))
     }
 
     /// Render a program-pause block. Substitutes `{message_comment}`
     /// with the message wrapped in this post's comment style (no trailing
-    /// newline — the template provides it).
+    /// newline — the template provides it). Multi-line messages are
+    /// collapsed (see `render_comment`).
     pub fn render_program_pause(&self, message: &str) -> String {
-        let formatted = self.comment.format.replace("{text}", message);
+        let sanitized = sanitize_comment_text(message);
+        let formatted = self.comment.format.replace("{text}", &sanitized);
         self.program_pause.replace("{message_comment}", &formatted)
     }
 }
@@ -403,18 +448,44 @@ mod tests {
     }
 
     #[test]
-    fn arc_linearize_defaults_disabled() {
+    fn shipped_posts_enable_arc_linearize() {
+        // Phase 4b: every shipped post enables arc linearisation at the
+        // 0.05mm default threshold to dodge offline-parser rejections
+        // on sub-mm arcs (real bug surfaced by F10 fixture).
         for post in [grbl(), grblhal(), linuxcnc(), mach3()] {
-            assert!(
-                !post.arc_linearize.enabled,
-                "{} arc_linearize should default off",
-                post.name
-            );
+            assert!(post.arc_linearize.enabled, "{}: arc_linearize disabled", post.name);
             assert!(
                 (post.arc_linearize.threshold_mm - 0.05).abs() < 1e-9,
-                "{} default threshold should be 0.05",
-                post.name
+                "{}: threshold should be 0.05, got {}",
+                post.name,
+                post.arc_linearize.threshold_mm
             );
         }
+    }
+
+    #[test]
+    fn comment_renderer_collapses_newlines() {
+        let p = grbl();
+        let c = p.render_comment("line one\nline two\rline three\tafter tab");
+        assert_eq!(c, "(line one / line two line three after tab)\n");
+        // Exactly one trailing newline; no embedded newlines.
+        assert_eq!(c.matches('\n').count(), 1);
+        assert!(c.ends_with('\n'));
+    }
+
+    #[test]
+    fn shipped_post_unsupported_mcodes() {
+        assert_eq!(grbl().unsupported_mcodes, vec![7]);
+        assert!(grblhal().unsupported_mcodes.is_empty());
+        assert!(linuxcnc().unsupported_mcodes.is_empty());
+        assert!(mach3().unsupported_mcodes.is_empty());
+    }
+
+    #[test]
+    fn shipped_post_supports_cutter_comp() {
+        assert!(!grbl().supports_cutter_comp);
+        assert!(!grblhal().supports_cutter_comp);
+        assert!(linuxcnc().supports_cutter_comp);
+        assert!(mach3().supports_cutter_comp);
     }
 }
