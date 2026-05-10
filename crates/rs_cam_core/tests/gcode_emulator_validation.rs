@@ -30,18 +30,23 @@
 //!
 //! ## Running
 //!
-//! Tests are `#[ignore]`-gated:
+//! Tests are `#[ignore]`-gated. **Use `--test-threads=1`** when rs274ngc
+//! tests are enabled — the LinuxCNC interpreter has process-wide
+//! initialisation state (parameter / tool table caches) that corrupts
+//! under parallel exec, even with per-invocation tempdirs. Symptom is
+//! exit code -1 with empty stdout/stderr in 30-50% of runs. gvalidate-
+//! only runs are safe in parallel.
 //!
 //! ```bash
 //! # Build gvalidate first:
 //! cd reference/validators/grbl/grbl/sim && make gvalidate
 //! # Run with locally available validators (missing ones skip):
-//! cargo test --test gcode_emulator_validation -- --ignored --nocapture
+//! cargo test --test gcode_emulator_validation -- --ignored --test-threads=1 --nocapture
 //! # CI mode (require ALL validators present; missing hard-fails):
-//! CI_REQUIRE_VALIDATORS=1 cargo test --test gcode_emulator_validation -- --ignored
+//! CI_REQUIRE_VALIDATORS=1 cargo test --test gcode_emulator_validation -- --ignored --test-threads=1
 //! # Stage gating per-validator:
-//! CI_REQUIRE_VALIDATORS=gvalidate cargo test --test gcode_emulator_validation -- --ignored
-//! CI_REQUIRE_VALIDATORS=gvalidate,rs274ngc cargo test --test gcode_emulator_validation -- --ignored
+//! CI_REQUIRE_VALIDATORS=gvalidate cargo test --test gcode_emulator_validation -- --ignored --test-threads=1
+//! CI_REQUIRE_VALIDATORS=gvalidate,rs274ngc cargo test --test gcode_emulator_validation -- --ignored --test-threads=1
 //! ```
 //!
 //! See `planning/post_reference_notes.md` ("Validator install") for build
@@ -157,15 +162,26 @@ fn run_validator(
     let original = std::fs::read_to_string(capture).expect("read capture");
     let cleaned = strip_pause_codes(&original);
 
-    let tmp = std::env::temp_dir().join(format!(
-        "rscam_{}_{}.nc",
+    // Per-invocation tempdir cwd so parallel test threads don't stomp
+    // on shared state files (rs274 writes parameter.var into cwd).
+    let tag = capture.file_stem().and_then(|s| s.to_str()).unwrap_or("x");
+    let workdir = std::env::temp_dir().join(format!(
+        "rscam_{}_{}_{}_{}",
         name,
-        capture.file_stem().and_then(|s| s.to_str()).unwrap_or("x")
+        tag,
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
     ));
+    std::fs::create_dir_all(&workdir).expect("create workdir");
+    let tmp = workdir.join(format!("{tag}.nc"));
     std::fs::write(&tmp, &cleaned).expect("write temp");
 
     let mut cmd = Command::new(binary);
-    cmd.args(extra_args)
+    cmd.current_dir(&workdir)
+        .args(extra_args)
         .arg(&tmp)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -198,7 +214,7 @@ fn run_validator(
     if let Some(mut err) = child.stderr.take() {
         let _ = err.read_to_string(&mut stderr);
     }
-    let _ = std::fs::remove_file(&tmp);
+    let _ = std::fs::remove_dir_all(&workdir);
     Some((exit, stdout, stderr))
 }
 
@@ -291,6 +307,23 @@ fn rs274ngc_path() -> Option<PathBuf> {
 ///
 /// `gcoder` returns 0 on success, non-zero on parse error. It writes a
 /// human-readable trace to stdout and any error text to stderr.
+/// Write a minimal tool table once per process so `M6 T<n>` lookups in
+/// the captures don't fail with "Requested tool N not found in the tool
+/// table". Defines T1..T20 with arbitrary diameters — the validator
+/// only cares that the tool index exists.
+fn ensure_tool_table() -> PathBuf {
+    let path = std::env::temp_dir().join("rscam_rs274_tools.tbl");
+    if !path.exists() {
+        let mut s = String::new();
+        for n in 1..=20 {
+            use std::fmt::Write as _;
+            let _ = writeln!(s, "T{n} P{n} D{}.000000 Z+0.000000", n + 1);
+        }
+        std::fs::write(&path, s).expect("write tool table");
+    }
+    path
+}
+
 fn assert_rs274_accepts(fixture: &str, dialect: &str) {
     let Some(binary) = rs274ngc_path() else {
         let msg = "rs274ngc not found on $PATH or in reference/validators/linuxcnc — see planning/post_reference_notes.md";
@@ -300,8 +333,15 @@ fn assert_rs274_accepts(fixture: &str, dialect: &str) {
         eprintln!("SKIP: {msg}");
         return;
     };
+    let tbl = ensure_tool_table();
+    let tbl_str = tbl.to_string_lossy().into_owned();
     let capture = fixture_output(fixture, dialect);
-    let Some((exit, stdout, stderr)) = run_validator("rs274ngc", &binary, &[], &capture) else {
+    // -g: batch mode (no interactive prompt). Without it, rs274 waits
+    // for "enter a number: 1=start interpreting, ...".
+    // -t: tool table that defines T1..T20 so M6 T<n> lookups succeed.
+    let Some((exit, stdout, stderr)) =
+        run_validator("rs274ngc", &binary, &["-g", "-t", &tbl_str], &capture)
+    else {
         return;
     };
     println!("{fixture}_{dialect} (rs274ngc): exit {exit}");
