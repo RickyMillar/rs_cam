@@ -81,4 +81,8 @@ jobs:
       - name: Run emulator-validation gate (gvalidate-only)
         env:
           CI_REQUIRE_VALIDATORS: gvalidate
-        run: cargo test -p rs_cam_core --test gcode_emulator_validation -- --ignored --nocapture
+        # --test-threads=1: rs274ngc has process-wide state that
+        # corrupts under parallel exec; gvalidate is safe in parallel
+        # but we standardise on serial execution so adding rs274ngc
+        # later doesn't require workflow churn.
+        run: cargo test -p rs_cam_core --test gcode_emulator_validation -- --ignored --test-threads=1 --nocapture
