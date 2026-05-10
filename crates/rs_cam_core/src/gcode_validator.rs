@@ -119,6 +119,16 @@ const fn invariants_for(post: PostFormat) -> PostInvariants {
             program_end_code: 30,
             requires_wcs: true,
         },
+        // grblHAL is a strict superset of Grbl 1.1 with full M6 ATC
+        // support. The grblhal post emits an explicit G54 (validator
+        // still requires WCS).
+        PostFormat::GrblHal => PostInvariants {
+            supports_m6: true,
+            requires_g91_1: false,
+            requires_percent_brackets: false,
+            program_end_code: 30,
+            requires_wcs: true,
+        },
     }
 }
 

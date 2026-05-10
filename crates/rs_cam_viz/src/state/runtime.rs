@@ -313,6 +313,7 @@ impl GuiState {
         rs_cam_core::session::ProjectPostConfig {
             format: match post.format {
                 PostFormat::Grbl => "grbl",
+                PostFormat::GrblHal => "grblhal",
                 PostFormat::LinuxCnc => "linuxcnc",
                 PostFormat::Mach3 => "mach3",
             }
