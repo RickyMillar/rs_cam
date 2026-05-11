@@ -1825,6 +1825,7 @@ optimizer trust workstream. Polish items add another week.
 | 10  | F.4       | Operator suggestions now filtered through MachineProfile envelope (max_feed, spindle min/max RPM); infeasible suggestions collapse to a single DataGapHere explaining the conflict | -1🟡 |
 | 11  | F.8/F.9/F.11/F.12 | Data-shape cleanups: `UnmodeledReason::NotApplicableForOp` (drill cycles short-circuit before arc-engagement check); MCP `per_sample_peak_chipload_mm_per_tooth` field rename clarifies semantics; `ExceedsEntry.toolpath_name` added; `OptimizeCandidate.air_cut_pct` populated from trace per-toolpath summary | -3🟡 -2🟢 |
 | 12  | F.7       | OptimizeOutcome unified to struct with OutcomeKind tag + always-present candidates/narrative/recommended_index/reason; FailureNarrative + TradeOffNarrative collapsed into one OutcomeNarrative | -1🟡 |
+| 14  | F.10 (RCA) | Arc-fit RCA documented (`planning/F10_RCA.md`) — Kåsa least-squares fit produces huge-R results on barely-curving polylines; cut-path fidelity preserved but legibility / post-safety affected. Fix pending. | 0 (RCA only) |
 
 ### Roadmap F bullets (pending — wanaka 2026-05-11)
 
@@ -1887,6 +1888,15 @@ optimizer trust workstream. Polish items add another week.
 - 🟡 **F.10** Arc-fit dressup produces R > 30× tool_radius arcs
   on adaptive3d perimeter sweeps — narration flags them, no gate
   trips, but may post-process unsafely on some controllers.
+  **RCA in PR 14** (`planning/F10_RCA.md`) — root cause is the
+  Kåsa least-squares circle fit (`arcfit.rs:312`) producing huge-R
+  results on barely-curving polylines. Sagitta ≤ 0.05mm is
+  preserved so cut-path fidelity is intact, but a `R/tool_radius`
+  cap is needed for legibility + post-format safety. Fix is
+  **pending** — recommended approach is a one-line cap inside
+  `try_fit_arc`, reusing the `30.0` constant from
+  `narrate.rs:20`, plus optional 5° minimum swept angle for
+  defence-in-depth.
 - ~~🟢 **F.11** `exceeds_breakdown` in summary lacks `toolpath_name`.~~
   **Closed by PR 11** — `ExceedsEntry.toolpath_name: String` field
   added; `summary()` impl receives an id→name lookup from the
