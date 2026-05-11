@@ -1844,12 +1844,28 @@ impl super::RsCamApp {
         accept_unmodeled_tool_load: bool,
         accept_exceeded_tool_load: bool,
     ) -> String {
-        let session = &self.controller.state().session;
+        // Route through the viz-side exporter so the gate sees viz worker
+        // results (`gui.toolpath_rt[id].result`) and the viz cut trace
+        // (`state.simulation.results.cut_trace`). The core-side
+        // `session.export_gcode_with_policy` reads `session.results` and
+        // `session.simulation`, which the GUI/MCP path never populates —
+        // that's the root cause of the 0-byte file + spurious
+        // SimulationRequired gate (UX_PAIN_POINTS_2026-05-11.md, Roadmap A).
+        let state = self.controller.state();
         let policy = rs_cam_core::gcode::ToolLoadExportPolicy {
             accept_unmodeled: accept_unmodeled_tool_load,
             accept_exceeded: accept_exceeded_tool_load,
         };
-        match session.export_gcode_with_policy(Path::new(path), None, policy) {
+        let gcode = match crate::io::export::export_gcode_from_session_with_policy(
+            &state.session,
+            &state.gui,
+            &state.simulation,
+            policy,
+        ) {
+            Ok(g) => g,
+            Err(e) => return text(format!("Export failed: {e}")),
+        };
+        match std::fs::write(Path::new(path), &gcode) {
             Ok(()) => text(format!("G-code exported to {path}")),
             Err(e) => text(format!("Export failed: {e}")),
         }

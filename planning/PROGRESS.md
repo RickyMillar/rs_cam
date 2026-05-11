@@ -22,6 +22,23 @@
 - unified service layer: `ProjectSession` API in core, shared `execute_operation()` dispatch for all 23 ops
 - MCP server (`rs_cam_mcp`) exposing `ProjectSession` tools for AI agent integration
 
+## Recent work (2026-05-11)
+
+### UX roadmap PR 1 — MCP export end-to-end (Roadmap A)
+
+Fixed the GUI-embedded MCP `export_gcode` path that was producing 0-byte
+output and tripping the chipload gate even when `get_tool_load_report`
+showed real data. Root cause: `mcp_export_gcode` called
+`session.export_gcode_with_policy` (core), which reads from
+`session.results` / `session.simulation` — neither of which the GUI/MCP
+path ever populates. Viz worker results live in `gui.toolpath_rt[id]`
+and viz simulation in `state.simulation.results.cut_trace`.
+
+Fix: route MCP export through a new
+`export_gcode_from_session_with_policy` variant in `io/export.rs`, then
+write the file at the MCP layer. Closes both 🔴s in
+`planning/UX_PAIN_POINTS_2026-05-11.md` Roadmap A.
+
 ## Recent work (2026-05-08)
 
 ### Optimizer gap-doc burst — six closures + one new gap opened
