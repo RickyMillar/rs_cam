@@ -76,10 +76,14 @@ fn hemisphere_mesh() -> (TriangleMesh, SpatialIndex) {
     (mesh, index)
 }
 
-/// `link_moves: false` baseline.
+/// `link_moves: false` baseline. Also pins `optimize_rapid_order: false`
+/// so the baseline genuinely lacks TSP reordering (Roadmap B.6 flipped
+/// the Default for `optimize_rapid_order` to `true`, so an unmodified
+/// `Default` would no longer be a "no-TSP" baseline).
 fn dressup_no_links() -> DressupConfig {
     DressupConfig {
         link_moves: false,
+        optimize_rapid_order: false,
         ..DressupConfig::default()
     }
 }

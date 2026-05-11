@@ -347,6 +347,10 @@ pub struct DressupConfig {
 
 impl Default for DressupConfig {
     fn default() -> Self {
+        // Roadmap B.6 — three pure-flips: link_moves, feed_optimization,
+        // optimize_rapid_order. All are wins for the typical case;
+        // operations that can't tolerate them are stripped by
+        // `normalize_for_op` (which `for_op` now also calls on construct).
         Self {
             entry_style: DressupEntryStyle::None,
             ramp_angle: 3.0,
@@ -356,15 +360,15 @@ impl Default for DressupConfig {
             dogbone_angle: 90.0,
             lead_in_out: false,
             lead_radius: 2.0,
-            link_moves: false,
+            link_moves: true,
             link_max_distance: 10.0,
             link_feed_rate: 500.0,
             arc_fitting: false,
             arc_tolerance: 0.05,
-            feed_optimization: false,
+            feed_optimization: true,
             feed_max_rate: 3000.0,
             feed_ramp_rate: 200.0,
-            optimize_rapid_order: false,
+            optimize_rapid_order: true,
             retract_strategy: RetractStrategy::Full,
         }
     }
@@ -376,7 +380,13 @@ impl DressupConfig {
         use super::catalog::UiProcessRole;
         let base = Self::default();
         match role {
+            // Roadmap B.5 — Roughing operations get a Ramp entry by
+            // default (was None, which gave every Pocket / Profile /
+            // Adaptive / Face / Adaptive3d a vertical plunge). The
+            // op-type override below promotes Adaptive/Adaptive3d to
+            // Helix and strips back to None for Drill/Trace.
             UiProcessRole::Roughing => Self {
+                entry_style: DressupEntryStyle::Ramp,
                 arc_fitting: true,
                 link_moves: true,
                 optimize_rapid_order: true,
@@ -416,6 +426,12 @@ impl DressupConfig {
             // rapid-retract between fragments.
             cfg.link_moves = false;
         }
+        // Apply the same per-op constraints fresh creates would otherwise
+        // only see on project-file load. Without this, an MCP/GUI fresh
+        // toolpath would carry e.g. `link_moves = true` (from the new
+        // Default B.6) on a DropCutter where it's known to break
+        // (Roadmap B.5/B.6).
+        cfg.normalize_for_op(op);
         cfg
     }
 
@@ -451,6 +467,20 @@ impl DressupConfig {
                 self.link_moves = false;
                 changed = true;
             }
+        }
+        // Roadmap B.5 — entry-style overrides per op-type. Drill/Trace
+        // can't take any entry style (they're stock-based / single-pass);
+        // Adaptive/Adaptive3d benefit from Helix over Ramp because their
+        // pocketing geometry has natural circular boundaries.
+        let force_no_entry = matches!(op, OperationType::Drill | OperationType::Trace);
+        if force_no_entry && self.entry_style != DressupEntryStyle::None {
+            self.entry_style = DressupEntryStyle::None;
+            changed = true;
+        }
+        let prefer_helix = matches!(op, OperationType::Adaptive | OperationType::Adaptive3d);
+        if prefer_helix && self.entry_style == DressupEntryStyle::Ramp {
+            self.entry_style = DressupEntryStyle::Helix;
+            changed = true;
         }
         changed
     }

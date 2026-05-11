@@ -24,6 +24,45 @@
 
 ## Recent work (2026-05-11)
 
+### UX roadmap PR 5 — Operation defaults (Roadmap B.1–B.7)
+
+Stock-aware per-op defaults so a fresh toolpath ships with sensible
+depth and dressup choices instead of generic constants:
+
+- **B.1** drop_cutter `min_z` now defaults to the stock-bottom Z
+  (was hard-coded `-50.0`, which clipped any stock not at exactly
+  that depth).
+- **B.2** face `depth` defaults to `max(stock_padding, 1.0)` — a
+  sensible "skim the surface" depth (was `0`, a do-nothing toolpath).
+- **B.3** profile / drill `depth` default to `stock_z` (full-through);
+  pocket `depth = (stock_z * 0.5).min(5.0)`; adaptive `depth = stock_z * 0.5`.
+- **B.4** MCP `add_toolpath` now runs the same feeds calculator
+  the GUI applies on Feeds-tab render. Without this, MCP-only
+  sessions shipped with the static default `feed_rate`.
+- **B.5** Roughing role gets `entry_style: Ramp` by default
+  (was `None` → vertical plunge for every Pocket / Profile / Adaptive
+  / Face / Adaptive3d). Adaptive/Adaptive3d → Helix override; Drill/
+  Trace forced back to None — both via `normalize_for_op`, which
+  `for_op` now also calls so fresh creates apply the same constraints
+  as loaded ones.
+- **B.6** `DressupConfig::default` flips `link_moves`,
+  `feed_optimization`, `optimize_rapid_order` to `true` (pure wins;
+  ops that can't tolerate them are stripped by `normalize_for_op`).
+  Test fixtures updated to make their "no TSP" baseline explicit.
+- **B.7** Boundary auto-enable to `ModelSilhouette` for 3D ops on
+  mesh models so the cutter doesn't sweep over the whole stock area.
+
+Two helpers added in core: `NewDefaultCtx` and
+`OperationConfig::new_default_with_ctx` / `apply_stock_defaults`.
+The `new_default(op_type)` no-context constructor stays for tests.
+
+Two viz helpers exposed (`compute_feeds_for_op`,
+`apply_feeds_result_to_op`) so MCP can mirror the GUI feeds path
+without duplicating the FeedsInput plumbing.
+
+B.8 (stepover units hint) and B.9 (advanced collapsibles for
+adaptive3d / steep_shallow) are UI-only polish — deferred to PR 7+.
+
 ### UX roadmap PR 4 — Sim diagnostics framing (Roadmap C)
 
 Six related fixes to the simulation diagnostics surface:
