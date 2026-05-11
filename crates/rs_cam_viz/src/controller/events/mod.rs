@@ -287,9 +287,9 @@ impl<B: ComputeBackend> AppController<B> {
         let Some(trace) = trace_clone else {
             self.state.optimize_modal = Some(crate::state::OptimizeModalState {
                 toolpath_id: toolpath_id.0,
-                status: crate::state::OptimizeRunStatus::Ready(OptimizeOutcome::Skipped {
-                    reason: RefuseReason::SimulationRequired,
-                }),
+                status: crate::state::OptimizeRunStatus::Ready(OptimizeOutcome::skipped(
+                    RefuseReason::SimulationRequired,
+                )),
             });
             return;
         };
@@ -334,7 +334,7 @@ impl<B: ComputeBackend> AppController<B> {
         toolpath_id: crate::state::toolpath::ToolpathId,
         candidate_index: usize,
     ) {
-        use rs_cam_core::tool_load::optimize::{OptimizeOutcome, feeds_auto_for_candidate};
+        use rs_cam_core::tool_load::optimize::{OutcomeKind, feeds_auto_for_candidate};
 
         // Lookup phase: extract everything we need from the cached
         // outcome and the toolpath config, then drop the borrow before
@@ -348,11 +348,11 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         };
         let candidates = match &modal.status {
-            crate::state::OptimizeRunStatus::Ready(OptimizeOutcome::Ranked(c)) => c,
-            crate::state::OptimizeRunStatus::Ready(OptimizeOutcome::MarginalSafe {
-                candidates: c,
-                ..
-            }) => c,
+            crate::state::OptimizeRunStatus::Ready(outcome)
+                if matches!(outcome.kind, OutcomeKind::Ranked | OutcomeKind::MarginalSafe) =>
+            {
+                &outcome.candidates
+            }
             _ => {
                 self.push_notification(
                     "Apply failed: Optimize has no candidates to apply".to_owned(),
@@ -501,7 +501,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// each toolpath; closes the rollup and marks every touched
     /// toolpath stale so auto-regen kicks in.
     fn apply_optimize_project(&mut self) {
-        use rs_cam_core::tool_load::optimize::{OptimizeOutcome, feeds_auto_for_candidate};
+        use rs_cam_core::tool_load::optimize::{OutcomeKind, feeds_auto_for_candidate};
 
         // Lookup phase: pull out (toolpath_id, params, delta) tuples
         // from the cached state. Drop the borrow before any mutation.
@@ -525,9 +525,9 @@ impl<B: ComputeBackend> AppController<B> {
             if !selected {
                 continue;
             }
-            let OptimizeOutcome::Ranked(_) = outcome else {
+            if outcome.kind != OutcomeKind::Ranked {
                 continue;
-            };
+            }
             let Some(candidate) = outcome.first_safe() else {
                 tracing::debug!("Skipping row {idx}: no first_safe candidate");
                 continue;

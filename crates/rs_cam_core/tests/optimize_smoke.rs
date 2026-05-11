@@ -34,7 +34,7 @@ use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{LoadedModel, ProjectSession, SimulationOptions, ToolpathConfig};
 use rs_cam_core::tool_load::optimize::{
-    NoProgress, OptimizeOutcome, optimize_project, optimize_toolpath,
+    NoProgress, OutcomeKind, optimize_project, optimize_toolpath,
 };
 
 /// Build a session with the demo_pocket SVG, an end mill, and a
@@ -181,44 +181,43 @@ fn optimize_toolpath_full_pipeline() {
     // hardcoded tool/material) or Ranked. We assert only that the
     // outcome was produced — not the specific variant — because
     // LUT-routing outcomes drift as the calibration data evolves.
-    match outcome {
-        OptimizeOutcome::Ranked(candidates) => {
+    match outcome.kind {
+        OutcomeKind::Ranked => {
             assert!(
-                !candidates.is_empty(),
+                !outcome.candidates.is_empty(),
                 "Ranked outcome must carry at least the baseline candidate"
             );
-            // Index 0 is always the baseline.
             assert!(
-                !candidates[0].delta.has_changes(),
+                !outcome.candidates[0].delta.has_changes(),
                 "Index 0 must be baseline (no delta)"
             );
         }
-        OptimizeOutcome::NoSafeImprovement { explanation, .. } => {
+        OutcomeKind::NoSafeImprovement => {
             assert!(
-                !explanation.is_empty(),
+                !outcome.narrative.explanation.is_empty(),
                 "NoSafeImprovement must carry an explanation"
             );
         }
-        OptimizeOutcome::Skipped { .. } => {
+        OutcomeKind::Skipped => {
             // Acceptable for a fixture with no LUT-matching tool.
         }
-        OptimizeOutcome::TradeOff { candidates, .. } => {
+        OutcomeKind::TradeOff => {
             assert!(
-                !candidates.is_empty(),
+                !outcome.candidates.is_empty(),
                 "TradeOff outcome must carry at least the baseline candidate"
             );
             assert!(
-                !candidates[0].delta.has_changes(),
+                !outcome.candidates[0].delta.has_changes(),
                 "Index 0 must be baseline (no delta)"
             );
         }
-        OptimizeOutcome::MarginalSafe { candidates, .. } => {
+        OutcomeKind::MarginalSafe => {
             assert!(
-                !candidates.is_empty(),
+                !outcome.candidates.is_empty(),
                 "MarginalSafe outcome must carry at least the baseline candidate"
             );
             assert!(
-                !candidates[0].delta.has_changes(),
+                !outcome.candidates[0].delta.has_changes(),
                 "Index 0 must be baseline (no delta)"
             );
         }
@@ -305,7 +304,7 @@ fn optimize_toolpath_cancel_returns_quickly() {
 
     let outcome = optimize_toolpath(&mut session, &baseline_trace, toolpath_index, &cancel);
     assert!(
-        !matches!(outcome, OptimizeOutcome::Ranked(_)),
+        outcome.kind != OutcomeKind::Ranked,
         "Pre-cancelled run should not produce Ranked: {:?}",
         outcome
     );

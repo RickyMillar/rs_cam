@@ -10,7 +10,7 @@
 
 use rs_cam_core::tool_load::optimize::{
     EntryAdvisory, GateKind, KnobAxis, LimitingGate, OperatorSuggestion, OptimizeCandidate,
-    OptimizeOutcome, ParamDelta, SearchEnvelopeReached, limiting_gates_for_verdict,
+    OptimizeOutcome, OutcomeKind, ParamDelta, SearchEnvelopeReached, limiting_gates_for_verdict,
 };
 use rs_cam_core::tool_load::verdict::{ChipSide, ToolpathLoadVerdict};
 
@@ -100,18 +100,17 @@ fn draw_outcome(
     toolpath_id: usize,
     events: &mut Vec<AppEvent>,
 ) {
-    match outcome {
-        OptimizeOutcome::Skipped { reason } => draw_refusal_section(
-            ui,
-            "Cannot optimise this toolpath",
-            reason.explanation_for_optimize(),
-            events,
-        ),
-        OptimizeOutcome::NoSafeImprovement {
-            attempted,
-            narrative,
-            ..
-        } => {
+    let narrative = outcome.narrative.as_ref();
+    let attempted = &outcome.candidates;
+    match outcome.kind {
+        OutcomeKind::Skipped => {
+            let reason = outcome
+                .reason
+                .as_ref()
+                .map_or("optimizer refused", |r| r.explanation_for_optimize());
+            draw_refusal_section(ui, "Cannot optimise this toolpath", reason, events);
+        }
+        OutcomeKind::NoSafeImprovement => {
             // G17 A2: render the structured narrative — headline,
             // search envelope, then the attempted table. Per-row
             // limiting-gate readings replace the generic "gate" status.
@@ -158,14 +157,16 @@ fn draw_outcome(
                 draw_attempted(ui, attempted, events);
             }
         }
-        OptimizeOutcome::Ranked(candidates) => {
-            draw_ranked(ui, candidates, outcome.first_safe(), toolpath_id, events);
+        OutcomeKind::Ranked => {
+            draw_ranked(
+                ui,
+                &outcome.candidates,
+                outcome.first_safe(),
+                toolpath_id,
+                events,
+            );
         }
-        OptimizeOutcome::MarginalSafe {
-            candidates,
-            narrative,
-            ..
-        } => {
+        OutcomeKind::MarginalSafe => {
             // G16 §11.4 Layer 3: candidates passed every gate but at
             // least one Within reading was admitted only by the
             // tolerance band. G17 A2 swaps the prior generic
@@ -199,16 +200,13 @@ fn draw_outcome(
             ui.add_space(8.0);
             draw_ranked(
                 ui,
-                candidates,
+                &outcome.candidates,
                 outcome.first_marginal_safe(),
                 toolpath_id,
                 events,
             );
         }
-        OptimizeOutcome::TradeOff {
-            candidates,
-            narrative,
-        } => {
+        OutcomeKind::TradeOff => {
             // Trade-off candidates: faster than baseline AND improve a
             // failing gate, but worsen another. G17 A2 renders the
             // structured narrative.headline ("improves chipload but
@@ -229,7 +227,7 @@ fn draw_outcome(
                 );
             }
             ui.add_space(8.0);
-            draw_ranked(ui, candidates, None, toolpath_id, events);
+            draw_ranked(ui, &outcome.candidates, None, toolpath_id, events);
         }
     }
 }

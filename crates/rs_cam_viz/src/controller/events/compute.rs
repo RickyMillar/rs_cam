@@ -698,7 +698,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// the existing project load report against the new trace and
     /// reading per-toolpath cycle times directly off the trace.
     pub(crate) fn maybe_finalize_reconciliation(&mut self) {
-        use rs_cam_core::tool_load::optimize::{OptimizeOutcome, ProjectOptimizeReport};
+        use rs_cam_core::tool_load::optimize::{OutcomeKind, ProjectOptimizeReport};
 
         let Some(view) = self.state.optimize_project.as_ref() else {
             return;
@@ -744,13 +744,14 @@ impl<B: ComputeBackend> AppController<B> {
                 .find(|s| s.toolpath_id == toolpath_id)
                 .map(|s| s.total_runtime_s);
             let verdict = verdict_by_id.get(&toolpath_id).cloned().cloned();
-            if let OptimizeOutcome::Ranked(candidates) = outcome {
+            if outcome.kind == OutcomeKind::Ranked {
                 // The applied candidate is `first_safe` per the rollup
                 // Apply path. Find its index by re-running the same
                 // selector, then update that candidate. We fall back
                 // to candidate index 1 if the rollup logic disagrees
                 // (e.g. the candidate set changed mid-flight, which
                 // shouldn't happen since the report is immutable).
+                let candidates = &mut outcome.candidates;
                 let idx = ProjectOptimizeReport::first_safe_index(candidates).unwrap_or(0);
                 if idx > 0
                     && let Some(c) = candidates.get_mut(idx)
