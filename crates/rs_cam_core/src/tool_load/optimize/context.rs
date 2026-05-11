@@ -36,6 +36,27 @@ pub(crate) fn cycle_time_from_trace(trace: &SimulationCutTrace, toolpath_id: usi
         .map(|s| s.total_runtime_s)
 }
 
+/// Roadmap F.12 — per-toolpath air-cut fraction (range 0.0..=1.0).
+/// Defined as `air_cut_time_s / total_runtime_s` from the trace's
+/// per-toolpath summary. Returns `None` when the toolpath has no
+/// summary entry (failed sim) or `total_runtime_s` is non-positive.
+pub(crate) fn air_cut_pct_from_trace(
+    trace: &SimulationCutTrace,
+    toolpath_id: usize,
+) -> Option<f64> {
+    trace
+        .toolpath_summaries
+        .iter()
+        .find(|s| s.toolpath_id == toolpath_id)
+        .and_then(|s| {
+            if s.total_runtime_s > 0.0 {
+                Some(s.air_cut_time_s / s.total_runtime_s)
+            } else {
+                None
+            }
+        })
+}
+
 /// Read the baseline cutting-RPM as the median spindle RPM observed in
 /// the trace's cutting samples. Falls back to the operation's commanded
 /// RPM, then to the machine's minimum RPM.
@@ -474,5 +495,59 @@ mod restore_guard_tests {
         let mut session = session_with_one_pocket();
         let result = BaselineRestoreGuard::new(&mut session, 99);
         assert!(matches!(result, Err(SessionError::ToolpathNotFound(99))));
+    }
+
+    // ── F.12 — per-toolpath air-cut fraction helper ──────────────────
+
+    fn trace_with_summary(
+        toolpath_id: usize,
+        total_runtime_s: f64,
+        air_cut_time_s: f64,
+    ) -> crate::simulation_cut::SimulationCutTrace {
+        crate::simulation_cut::SimulationCutTrace {
+            schema_version: 1,
+            sample_step_mm: 1.0,
+            summary: crate::simulation_cut::SimulationCutSummary::default(),
+            toolpath_summaries: vec![
+                crate::simulation_cut::SimulationToolpathCutSummary {
+                    toolpath_id,
+                    sample_count: 1,
+                    total_runtime_s,
+                    cutting_runtime_s: total_runtime_s,
+                    rapid_runtime_s: 0.0,
+                    air_cut_time_s,
+                    low_engagement_time_s: 0.0,
+                    average_engagement: 0.3,
+                    peak_chipload_mm_per_tooth: 0.05,
+                    peak_axial_doc_mm: 1.0,
+                    total_removed_volume_est_mm3: 1.0,
+                    average_mrr_mm3_s: 1.0,
+                },
+            ],
+            semantic_summaries: Vec::new(),
+            hotspots: Vec::new(),
+            issues: Vec::new(),
+            samples: Vec::new(),
+            provenance: None,
+        }
+    }
+
+    #[test]
+    fn air_cut_pct_from_trace_divides_air_by_total() {
+        let trace = trace_with_summary(7, 100.0, 42.0);
+        let pct = air_cut_pct_from_trace(&trace, 7).expect("summary present");
+        assert!((pct - 0.42).abs() < 1e-9, "{pct}");
+    }
+
+    #[test]
+    fn air_cut_pct_from_trace_missing_toolpath_returns_none() {
+        let trace = trace_with_summary(7, 100.0, 42.0);
+        assert!(air_cut_pct_from_trace(&trace, 99).is_none());
+    }
+
+    #[test]
+    fn air_cut_pct_from_trace_zero_runtime_returns_none() {
+        let trace = trace_with_summary(7, 0.0, 0.0);
+        assert!(air_cut_pct_from_trace(&trace, 7).is_none());
     }
 }

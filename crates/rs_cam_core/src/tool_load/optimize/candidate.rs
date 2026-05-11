@@ -25,7 +25,9 @@ use crate::tool_load::{ToolpathLoadContext, evaluate_toolpath};
 
 use super::axes::SearchAxis;
 use super::bounds;
-use super::context::{BaselineRestoreGuard, EvaluationContext, cycle_time_from_trace};
+use super::context::{
+    BaselineRestoreGuard, EvaluationContext, air_cut_pct_from_trace, cycle_time_from_trace,
+};
 use super::delta::{GateDeltas, ParamDelta};
 use super::policy::{self, SearchPolicy};
 use super::rank::composite_score;
@@ -61,6 +63,15 @@ pub struct OptimizeCandidate {
     /// `build_outcome` so consumers don't have to recompute.
     #[serde(default)]
     pub gate_deltas: Option<GateDeltas>,
+    /// Roadmap F.12 — fraction of cutting time spent in air for this
+    /// toolpath in this candidate's sim. Range 0.0..=1.0. `None` when
+    /// the trace lacked a per-toolpath summary (failed sim). The
+    /// optimizer's cost function is cycle_time (which already includes
+    /// air-cut time), so candidates reducing wasted travel naturally
+    /// win — surfacing this lets operators see *why* (less wasted
+    /// travel vs higher MRR) without re-folding the trace.
+    #[serde(default)]
+    pub air_cut_pct: Option<f64>,
 }
 
 /// True if this op exposes a meaningful `depth_per_pass` knob.
@@ -384,6 +395,8 @@ pub(crate) fn evaluate_candidate(
     let cycle_time_s = trace
         .and_then(|t| cycle_time_from_trace(t, ctx.toolpath_id))
         .unwrap_or(f64::INFINITY);
+    // Roadmap F.12 — surface air-cut % alongside cycle_time.
+    let air_cut_pct = trace.and_then(|t| air_cut_pct_from_trace(t, ctx.toolpath_id));
 
     Ok(OptimizeCandidate {
         params: candidate_op,
@@ -394,6 +407,7 @@ pub(crate) fn evaluate_candidate(
         reconciled_cycle_time_s: None,
         reconciled_verdict: None,
         gate_deltas: None,
+        air_cut_pct,
     })
 }
 

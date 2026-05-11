@@ -203,6 +203,7 @@ mod tests {
             reconciled_cycle_time_s: None,
             reconciled_verdict: None,
             gate_deltas: None,
+            air_cut_pct: None,
         }
     }
 

@@ -45,6 +45,17 @@ pub enum UnmodeledReason {
     /// The criterion is intentionally not implemented yet (deferred to a
     /// later phase). The string names the phase or follow-up.
     NotImplemented(String),
+    /// The gate is geometrically not applicable to this operation. The
+    /// simulator isn't failing — the criterion just has no meaning for
+    /// the op type. The carried `String` is the operator-facing
+    /// explanation (e.g. `"drill cycle — no continuous engagement"`).
+    ///
+    /// Roadmap F.8: separates "couldn't measure" (re-run sim, supply
+    /// better data) from "doesn't apply" (no action needed). Surfaced
+    /// for drill / alignment-pin-drill cycles which are plunge-only.
+    /// `String` (not `&'static str`) because the verdict deserializes
+    /// over the MCP wire.
+    NotApplicableForOp(String),
 }
 
 /// What a "Within" or "Exceeds" verdict claims about its inputs.
@@ -153,8 +164,19 @@ pub struct ToolLoadReportSummary {
     pub within: usize,
     /// Toolpaths with at least one criterion in `Exceeds`.
     pub exceeds: usize,
-    /// Toolpaths whose every criterion is `Unmodeled` (drill cycles, etc).
+    /// Toolpaths whose every criterion is `Unmodeled` because the gate
+    /// inputs are missing or stale (e.g. simulation not run, arc
+    /// engagement not captured, vendor LUT row not found). These need
+    /// operator action (re-sim, calibrate, supply tool data).
     pub fully_unmodeled: usize,
+    /// Roadmap F.8: toolpaths whose every criterion is `Unmodeled`
+    /// because the gate genuinely doesn't apply to the operation type
+    /// (drill cycles, alignment-pin drills — no continuous engagement
+    /// to measure). No operator action needed. Buckets separately from
+    /// `fully_unmodeled` so a project summary can answer "what's
+    /// broken?" without flagging plunge-only ops.
+    #[serde(default)]
+    pub not_applicable: usize,
     /// One entry per `Exceeds` criterion across the project, in toolpath
     /// order.
     pub exceeds_breakdown: Vec<ExceedsEntry>,
@@ -163,6 +185,11 @@ pub struct ToolLoadReportSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExceedsEntry {
     pub toolpath_id: usize,
+    /// Operator-facing toolpath name resolved at summary time. Empty
+    /// string when the caller didn't supply a name resolver (e.g. unit
+    /// tests). Roadmap F.11.
+    #[serde(default)]
+    pub toolpath_name: String,
     /// `"chipload"` / `"power"` / `"deflection"`.
     pub gate: String,
     /// `"low"` / `"high"` for chipload; `None` for power / deflection.
@@ -201,23 +228,44 @@ impl ToolLoadReport {
     }
 
     /// F5 — project-level rollup of per-toolpath verdicts. Cheap to call;
-    /// folds the `per_toolpath` array once.
-    pub fn summary(&self) -> ToolLoadReportSummary {
+    /// folds the `per_toolpath` array once. `name_for` resolves
+    /// `toolpath_id → display name` for `ExceedsEntry.toolpath_name`
+    /// (Roadmap F.11); pass `|_| None` from contexts that don't have a
+    /// `ProjectSession` handy and the field collapses to an empty
+    /// string.
+    pub fn summary<F>(&self, name_for: F) -> ToolLoadReportSummary
+    where
+        F: Fn(usize) -> Option<String>,
+    {
         let mut within = 0usize;
         let mut exceeds = 0usize;
         let mut fully_unmodeled = 0usize;
+        let mut not_applicable = 0usize;
         let mut exceeds_breakdown: Vec<ExceedsEntry> = Vec::new();
         for v in &self.per_toolpath {
             if v.any_exceeded() {
                 exceeds += 1;
             } else if v.modeled_count() == 0 {
-                fully_unmodeled += 1;
+                // Roadmap F.8: bucket "doesn't apply" separately from
+                // "couldn't measure". A toolpath is `not_applicable`
+                // only when every gate reports `NotApplicableForOp` —
+                // if any gate is `Unmodeled` for a measurable reason
+                // (sim required, arc engagement not captured, ...)
+                // the toolpath needs operator action and rolls up as
+                // `fully_unmodeled`.
+                if all_not_applicable(v) {
+                    not_applicable += 1;
+                } else {
+                    fully_unmodeled += 1;
+                }
             } else {
                 within += 1;
             }
+            let name = name_for(v.toolpath_id).unwrap_or_default();
             if let ChiploadVerdict::Exceeds { side, .. } = &v.chipload {
                 exceeds_breakdown.push(ExceedsEntry {
                     toolpath_id: v.toolpath_id,
+                    toolpath_name: name.clone(),
                     gate: "chipload".to_owned(),
                     side: Some(
                         match side {
@@ -231,6 +279,7 @@ impl ToolLoadReport {
             if v.power.is_exceeded() {
                 exceeds_breakdown.push(ExceedsEntry {
                     toolpath_id: v.toolpath_id,
+                    toolpath_name: name.clone(),
                     gate: "power".to_owned(),
                     side: None,
                 });
@@ -238,6 +287,7 @@ impl ToolLoadReport {
             if v.deflection.is_exceeded() {
                 exceeds_breakdown.push(ExceedsEntry {
                     toolpath_id: v.toolpath_id,
+                    toolpath_name: name,
                     gate: "deflection".to_owned(),
                     side: None,
                 });
@@ -248,9 +298,24 @@ impl ToolLoadReport {
             within,
             exceeds,
             fully_unmodeled,
+            not_applicable,
             exceeds_breakdown,
         }
     }
+}
+
+/// True when every criterion on the verdict is
+/// `Unmodeled(NotApplicableForOp)` — the gate genuinely doesn't apply
+/// to the op type (drill cycles, alignment-pin drills). Used by
+/// `summary()` to partition `fully_unmodeled` from `not_applicable`.
+fn all_not_applicable(v: &ToolpathLoadVerdict) -> bool {
+    is_not_applicable(v.chipload.unmodeled_reason())
+        && is_not_applicable(v.power.unmodeled_reason())
+        && is_not_applicable(v.deflection.unmodeled_reason())
+}
+
+fn is_not_applicable(reason: Option<&UnmodeledReason>) -> bool {
+    matches!(reason, Some(UnmodeledReason::NotApplicableForOp(_)))
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -966,6 +1031,126 @@ mod tests {
         assert_eq!(exceeded[0].1[0], ExceededCriterion::deflection());
     }
 
+    /// F.8 — toolpaths whose every gate reports `NotApplicableForOp`
+    /// bucket into `summary.not_applicable`, not `fully_unmodeled`.
+    /// Mixed-reason toolpaths (one gate N/A, one gate `Unmodeled` for a
+    /// measurable reason) still roll up as `fully_unmodeled` so the
+    /// "what needs operator action?" question gets the right answer.
+    #[test]
+    fn summary_buckets_not_applicable_separately_from_fully_unmodeled() {
+        let r = ToolLoadReport {
+            per_toolpath: vec![
+                // Drill cycle — every gate N/A.
+                ToolpathLoadVerdict {
+                    toolpath_id: 0,
+                    chipload: ChiploadVerdict::Unmodeled {
+                        reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
+                    },
+                    power: PowerVerdict::Unmodeled {
+                        reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
+                    },
+                    deflection: DeflectionVerdict::Unmodeled {
+                        reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
+                    },
+                },
+                // Sim wasn't run yet — every gate `SimulationRequired`.
+                // Operator action: run the sim.
+                ToolpathLoadVerdict {
+                    toolpath_id: 1,
+                    chipload: ChiploadVerdict::Unmodeled {
+                        reason: UnmodeledReason::SimulationRequired,
+                    },
+                    power: PowerVerdict::Unmodeled {
+                        reason: UnmodeledReason::SimulationRequired,
+                    },
+                    deflection: DeflectionVerdict::Unmodeled {
+                        reason: UnmodeledReason::SimulationRequired,
+                    },
+                },
+                // Mixed: one gate N/A, one needs sim. Operator still
+                // has an action item, so this rolls up as
+                // `fully_unmodeled` (not `not_applicable`).
+                ToolpathLoadVerdict {
+                    toolpath_id: 2,
+                    chipload: ChiploadVerdict::Unmodeled {
+                        reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
+                    },
+                    power: PowerVerdict::Unmodeled {
+                        reason: UnmodeledReason::SimulationRequired,
+                    },
+                    deflection: DeflectionVerdict::Unmodeled {
+                        reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
+                    },
+                },
+            ],
+        };
+        let s = r.summary(|_| None);
+        assert_eq!(s.total_toolpaths, 3);
+        assert_eq!(s.within, 0);
+        assert_eq!(s.exceeds, 0);
+        assert_eq!(
+            s.not_applicable, 1,
+            "only the all-N/A toolpath should land in not_applicable"
+        );
+        assert_eq!(
+            s.fully_unmodeled, 2,
+            "both the all-SimulationRequired and the mixed toolpath should land in fully_unmodeled"
+        );
+    }
+
+    /// F.11 — `summary()` resolves `toolpath_name` for every
+    /// `ExceedsEntry` via the supplied closure. Empty string when the
+    /// closure returns `None` (e.g. an id that's been deleted between
+    /// the report's capture and the summary fold).
+    #[test]
+    fn summary_resolves_toolpath_name_into_exceeds_breakdown() {
+        let r = ToolLoadReport {
+            per_toolpath: vec![ToolpathLoadVerdict {
+                toolpath_id: 42,
+                chipload: ChiploadVerdict::Exceeds {
+                    side: ChipSide::High,
+                    triggering: ChiploadMetric {
+                        observed_mm_per_tooth: 0.20,
+                        statistic: ChiploadStatistic::PeakHigh,
+                        evidence: SampleEvidence::at(0),
+                        bounds: ChipBounds {
+                            min_mm_per_tooth: Some(0.038),
+                            max_mm_per_tooth: 0.07,
+                            source: ChipBoundsSource::VendorLut,
+                        },
+                    },
+                    confidence: Confidence::Validated,
+                },
+                power: PowerVerdict::Unmodeled {
+                    reason: UnmodeledReason::SimulationRequired,
+                },
+                deflection: DeflectionVerdict::Within {
+                    peak_mm: 0.020,
+                    bounds: DeflectionBounds {
+                        validated_within_mm: 0.050,
+                        exceeds_mm: 0.200,
+                    },
+                    evidence: SampleEvidence::empty(),
+                    confidence: Confidence::Validated,
+                    entry_spike: None,
+                },
+            }],
+        };
+        // Resolver hit — name flows into the entry.
+        let s = r.summary(|id| (id == 42).then(|| "TP3 Adaptive Rough".to_owned()));
+        assert_eq!(s.exceeds_breakdown.len(), 1);
+        let e = &s.exceeds_breakdown[0];
+        assert_eq!(e.toolpath_id, 42);
+        assert_eq!(e.toolpath_name, "TP3 Adaptive Rough");
+        assert_eq!(e.gate, "chipload");
+        assert_eq!(e.side.as_deref(), Some("high"));
+
+        // Resolver returns None — name collapses to empty (matches the
+        // `#[serde(default)]` round-trip behavior).
+        let s = r.summary(|_| None);
+        assert_eq!(s.exceeds_breakdown[0].toolpath_name, "");
+    }
+
     // ── Typed verdict scaffolding (Step 7a) ─────────────────────────
 
     fn chip_bounds_with_min() -> ChipBounds {
@@ -1296,5 +1481,187 @@ mod tests {
         );
         assert_eq!(ExceededCriterion::power().reason_label, "spindle power");
         assert_eq!(ExceededCriterion::deflection().reason_label, "stiffness");
+    }
+
+    // ── F.8 + F.11 — summary() bucketing and name resolution ────────
+
+    /// Helper: build a `ToolpathLoadVerdict` whose every gate is
+    /// `NotApplicableForOp` — the F.8 drill-cycle shape.
+    fn vd_all_not_applicable(id: usize) -> ToolpathLoadVerdict {
+        let reason = UnmodeledReason::NotApplicableForOp(
+            "drill cycle — no continuous engagement".to_owned(),
+        );
+        ToolpathLoadVerdict {
+            toolpath_id: id,
+            chipload: ChiploadVerdict::Unmodeled {
+                reason: reason.clone(),
+            },
+            power: PowerVerdict::Unmodeled {
+                reason: reason.clone(),
+            },
+            deflection: DeflectionVerdict::Unmodeled { reason },
+        }
+    }
+
+    /// Helper: every gate `Unmodeled(SimulationRequired)` — the
+    /// fully-unmodeled bucket where operator action *would* help.
+    fn vd_all_sim_required(id: usize) -> ToolpathLoadVerdict {
+        ToolpathLoadVerdict {
+            toolpath_id: id,
+            chipload: ChiploadVerdict::Unmodeled {
+                reason: UnmodeledReason::SimulationRequired,
+            },
+            power: PowerVerdict::Unmodeled {
+                reason: UnmodeledReason::SimulationRequired,
+            },
+            deflection: DeflectionVerdict::Unmodeled {
+                reason: UnmodeledReason::SimulationRequired,
+            },
+        }
+    }
+
+    #[test]
+    fn summary_separates_not_applicable_from_fully_unmodeled() {
+        let r = ToolLoadReport {
+            per_toolpath: vec![
+                vd_all_not_applicable(0),  // drill — doesn't apply
+                vd_all_not_applicable(1),  // drill — doesn't apply
+                vd_all_sim_required(2),    // failed sim — fully unmodeled
+            ],
+        };
+        let s = r.summary(|_| None);
+        assert_eq!(s.total_toolpaths, 3);
+        assert_eq!(s.not_applicable, 2);
+        assert_eq!(s.fully_unmodeled, 1);
+        assert_eq!(s.within, 0);
+        assert_eq!(s.exceeds, 0);
+    }
+
+    /// Verdicts with at least one gate genuinely modeled still roll
+    /// up as `Within` — the not-applicable bucket is the all-gate case.
+    #[test]
+    fn summary_not_applicable_requires_all_gates_to_not_apply() {
+        let mut v = vd_all_not_applicable(0);
+        // Override one gate with a real modeled reading.
+        v.deflection = DeflectionVerdict::Within {
+            peak_mm: 0.02,
+            bounds: DeflectionBounds {
+                validated_within_mm: 0.050,
+                exceeds_mm: 0.200,
+            },
+            evidence: SampleEvidence::empty(),
+            confidence: Confidence::Validated,
+            entry_spike: None,
+        };
+        let r = ToolLoadReport {
+            per_toolpath: vec![v],
+        };
+        let s = r.summary(|_| None);
+        assert_eq!(s.not_applicable, 0);
+        assert_eq!(s.fully_unmodeled, 0);
+        assert_eq!(s.within, 1);
+    }
+
+    #[test]
+    fn summary_populates_exceeds_breakdown_toolpath_name() {
+        let r = ToolLoadReport {
+            per_toolpath: vec![ToolpathLoadVerdict {
+                toolpath_id: 42,
+                chipload: ChiploadVerdict::Within {
+                    approach_to_min: None,
+                    approach_to_max: ChiploadMetric {
+                        observed_mm_per_tooth: 0.05,
+                        statistic: ChiploadStatistic::PeakInRange,
+                        evidence: SampleEvidence::empty(),
+                        bounds: ChipBounds {
+                            min_mm_per_tooth: Some(0.038),
+                            max_mm_per_tooth: 0.07,
+                            source: ChipBoundsSource::VendorLut,
+                        },
+                    },
+                    confidence: Confidence::Validated,
+                    entry_spikes: Vec::new(),
+                },
+                power: PowerVerdict::Unmodeled {
+                    reason: UnmodeledReason::SimulationRequired,
+                },
+                deflection: DeflectionVerdict::Exceeds {
+                    peak_mm: 0.300,
+                    bounds: DeflectionBounds {
+                        validated_within_mm: 0.050,
+                        exceeds_mm: 0.200,
+                    },
+                    evidence: SampleEvidence::empty(),
+                    confidence: Confidence::Validated,
+                },
+            }],
+        };
+        let s = r.summary(|id| {
+            if id == 42 {
+                Some("TP 5: Front pocket".to_owned())
+            } else {
+                None
+            }
+        });
+        assert_eq!(s.exceeds_breakdown.len(), 1);
+        let entry = &s.exceeds_breakdown[0];
+        assert_eq!(entry.toolpath_id, 42);
+        assert_eq!(entry.gate, "deflection");
+        assert_eq!(entry.toolpath_name, "TP 5: Front pocket");
+    }
+
+    /// Callers without a name resolver (legacy test fixtures, headless
+    /// gcode export) get an empty `toolpath_name` rather than failing.
+    #[test]
+    fn summary_without_resolver_yields_empty_name() {
+        let r = ToolLoadReport {
+            per_toolpath: vec![ToolpathLoadVerdict {
+                toolpath_id: 0,
+                chipload: ChiploadVerdict::Exceeds {
+                    side: ChipSide::High,
+                    triggering: ChiploadMetric {
+                        observed_mm_per_tooth: 0.20,
+                        statistic: ChiploadStatistic::PeakHigh,
+                        evidence: SampleEvidence::at(0),
+                        bounds: ChipBounds {
+                            min_mm_per_tooth: Some(0.038),
+                            max_mm_per_tooth: 0.07,
+                            source: ChipBoundsSource::VendorLut,
+                        },
+                    },
+                    confidence: Confidence::Validated,
+                },
+                power: PowerVerdict::Unmodeled {
+                    reason: UnmodeledReason::SimulationRequired,
+                },
+                deflection: DeflectionVerdict::Within {
+                    peak_mm: 0.02,
+                    bounds: DeflectionBounds {
+                        validated_within_mm: 0.050,
+                        exceeds_mm: 0.200,
+                    },
+                    evidence: SampleEvidence::empty(),
+                    confidence: Confidence::Validated,
+                    entry_spike: None,
+                },
+            }],
+        };
+        let s = r.summary(|_| None);
+        assert_eq!(s.exceeds_breakdown.len(), 1);
+        assert_eq!(s.exceeds_breakdown[0].toolpath_name, "");
+    }
+
+    /// `UnmodeledReason::NotApplicableForOp` carries the operator-facing
+    /// explanation string and round-trips through serde.
+    #[test]
+    fn not_applicable_for_op_round_trips() {
+        let r = UnmodeledReason::NotApplicableForOp(
+            "drill cycle — no continuous engagement".to_owned(),
+        );
+        let s = serde_json::to_string(&r).expect("ser");
+        assert!(s.contains("not_applicable_for_op"), "tag missing: {s}");
+        assert!(s.contains("drill cycle"), "detail missing: {s}");
+        let back: UnmodeledReason = serde_json::from_str(&s).expect("de");
+        assert_eq!(back, r);
     }
 }

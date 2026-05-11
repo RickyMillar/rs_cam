@@ -1823,6 +1823,7 @@ optimizer trust workstream. Polish items add another week.
 | 8   | F.3       | New SpanKind::WaterlineCleanup variant; adaptive3d span emission tags cleanup spans; is_steady_state_for_gate filters cleanup-ancestry samples (uniform across chipload/power/deflection) | -1🟡 |
 | 9   | F.2       | Auto-verify after per-TP Apply: chain apply → regen → resim via new pending_apply_resim state; notification text replaced ("regenerating and verifying…") | -1🔴 |
 | 10  | F.4       | Operator suggestions now filtered through MachineProfile envelope (max_feed, spindle min/max RPM); infeasible suggestions collapse to a single DataGapHere explaining the conflict | -1🟡 |
+| 11  | F.8/F.9/F.11/F.12 | Data-shape cleanups: `UnmodeledReason::NotApplicableForOp` (drill cycles short-circuit before arc-engagement check); MCP `per_sample_peak_chipload_mm_per_tooth` field rename clarifies semantics; `ExceedsEntry.toolpath_name` added; `OptimizeCandidate.air_cut_pct` populated from trace per-toolpath summary | -3🟡 -2🟢 |
 
 ### Roadmap F bullets (pending — wanaka 2026-05-11)
 
@@ -1864,16 +1865,28 @@ optimizer trust workstream. Polish items add another week.
 - 🟡 **F.7** `OptimizeOutcome` variants have inconsistent JSON
   shapes — `Ranked` has no `narrative`; success path lacks the
   diagnostic structure the failure path carries.
-- 🟡 **F.8** `Unmodeled` reasons conflate "sim failed to compute"
-  with "gate doesn't apply for this op type" (drill cycles).
-- 🟡 **F.9** `per_depth_pass.peak_chipload` is per-sample raw peak
-  (~4× the gate's `median_low` value); divergence is invisible.
+- ~~🟡 **F.8** `Unmodeled` reasons conflate "sim failed to compute"
+  with "gate doesn't apply for this op type" (drill cycles).~~
+  **Closed by PR 11** — new `UnmodeledReason::NotApplicableForOp`
+  variant; chipload/power/deflection short-circuit for drill cycles
+  before the arc-engagement check.
+- ~~🟡 **F.9** `per_depth_pass.peak_chipload` is per-sample raw peak
+  (~4× the gate's `median_low` value); divergence is invisible.~~
+  **Closed by PR 11** — MCP JSON field renamed to
+  `per_sample_peak_chipload_mm_per_tooth` so the semantics are
+  inline; no more "raw peak vs gate stat" confusion in the wire
+  format.
 - 🟡 **F.10** Arc-fit dressup produces R > 30× tool_radius arcs
   on adaptive3d perimeter sweeps — narration flags them, no gate
   trips, but may post-process unsafely on some controllers.
-- 🟢 **F.11** `exceeds_breakdown` in summary lacks `toolpath_name`.
-- 🟢 **F.12** Optimizer doesn't surface air-cut% delta on candidates
-  even though it's part of cycle_time; high-air-cut roughs aren't
-  visibly improving on that axis.
+- ~~🟢 **F.11** `exceeds_breakdown` in summary lacks `toolpath_name`.~~
+  **Closed by PR 11** — `ExceedsEntry.toolpath_name: String` field
+  added; `summary()` impl receives an id→name lookup from the
+  caller.
+- ~~🟢 **F.12** Optimizer doesn't surface air-cut% delta on candidates~~
+  **Closed by PR 11** — `OptimizeCandidate.air_cut_pct: Option<f64>`
+  populated from `SimulationCutTrace.toolpath_summaries`. Operators
+  can now see whether a candidate's cycle-time win came from
+  reduced air-cut vs higher MRR.
 
 

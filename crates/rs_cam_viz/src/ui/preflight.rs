@@ -473,6 +473,10 @@ fn unmodeled_reason_label(reason: &rs_cam_core::tool_load::UnmodeledReason) -> &
         UnmodeledReason::MaterialUnvalidated => "material not validated",
         UnmodeledReason::CutterModeUnsupported(_) => "cutter mode unsupported",
         UnmodeledReason::NotImplemented(_) => "not implemented",
+        // Roadmap F.8 — gate genuinely doesn't apply (drill cycles).
+        // No operator action; this surface doesn't render the carried
+        // detail string, just labels the bucket.
+        UnmodeledReason::NotApplicableForOp(_) => "not applicable for op type",
     }
 }
 

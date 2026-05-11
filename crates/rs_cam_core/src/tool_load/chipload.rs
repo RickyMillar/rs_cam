@@ -250,6 +250,17 @@ pub fn evaluate(
     operation_kind: OperationType,
     tolerance: &super::ToleranceBands,
 ) -> ChiploadVerdict {
+    // Roadmap F.8 — short-circuit when the op is geometrically
+    // plunge-only. Drill cycles have no continuous chipload to
+    // compare against an LUT envelope; the right answer is "doesn't
+    // apply" not "samples not in steady state" or "no vendor data".
+    if super::power::is_plunge_only_op(operation_kind) {
+        return ChiploadVerdict::Unmodeled {
+            reason: UnmodeledReason::NotApplicableForOp(
+                "drill cycle — no continuous engagement".to_owned(),
+            ),
+        };
+    }
     // 1. Provenance gate.
     let Some(trace) = sim_trace else {
         return ChiploadVerdict::Unmodeled {
@@ -1633,16 +1644,19 @@ mod tests {
         );
     }
 
-    /// D5 — drill / pin-drill operations: every move is a plunge with
-    /// no XY arc engagement, so the chip-geometry model returns no
-    /// `effective_chip_thickness_mm` for any sample. The gate must
-    /// route to `Unmodeled(ArcEngagementNotCaptured)` rather than
-    /// silently falling through with zero valid samples — that's the
-    /// "drill is a different gate model" carve-out.
+    /// Roadmap F.8 — drill / pin-drill operations: the chipload gate
+    /// is geometrically not applicable (plunge-only kinematics, no
+    /// continuous engagement). The gate short-circuits at the top of
+    /// `evaluate` with `Unmodeled(NotApplicableForOp("drill cycle …"))`
+    /// regardless of the sample stream — that's the "doesn't apply"
+    /// bucket, distinct from "couldn't measure" (`SimulationRequired`
+    /// / `ArcEngagementNotCaptured`) which would imply re-running the
+    /// sim with better inputs.
     ///
-    /// This locks in the implicit carve-out so D7's span-aware filter
-    /// stays a no-op for drill ops without needing OperationType
-    /// recognition.
+    /// Pre-F.8 this case routed to `ArcEngagementNotCaptured` because
+    /// every plunge sample dropped its arc; the old reason was correct
+    /// mechanically but misleading semantically (the sim wasn't
+    /// failing — the metric just has no meaning here).
     #[test]
     fn drill_like_no_arc_samples_route_to_unmodeled() {
         // engagement above the air-cut threshold (`>= 0.02`) so the
@@ -1676,10 +1690,15 @@ mod tests {
         );
         match v {
             ChiploadVerdict::Unmodeled {
-                reason: UnmodeledReason::ArcEngagementNotCaptured,
-            } => {}
+                reason: UnmodeledReason::NotApplicableForOp(detail),
+            } => {
+                assert!(
+                    detail.contains("drill"),
+                    "NotApplicableForOp detail should name the op family, got: {detail}"
+                );
+            }
             other => panic!(
-                "drill-like all-plunge no-arc samples must route to Unmodeled(ArcEngagementNotCaptured), got {other:?}"
+                "drill-like samples must route to Unmodeled(NotApplicableForOp(\"drill …\")), got {other:?}"
             ),
         }
     }

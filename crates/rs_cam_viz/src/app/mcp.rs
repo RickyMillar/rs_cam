@@ -1934,8 +1934,19 @@ impl super::RsCamApp {
         // F5 — first-look summary so a single MCP read answers
         // "what's broken in this project?" without folding the
         // per-toolpath array.
-        let summary_value =
-            serde_json::to_value(report.summary()).unwrap_or(serde_json::Value::Null);
+        //
+        // Roadmap F.11 — name resolver populates
+        // `exceeds_breakdown[].toolpath_name` so agents don't need a
+        // second `list_toolpaths()` round-trip to label each entry.
+        let summary_value = serde_json::to_value(report.summary(|id| {
+            state
+                .session
+                .toolpath_configs()
+                .iter()
+                .find(|tc| tc.id == id)
+                .map(|tc| tc.name.clone())
+        }))
+        .unwrap_or(serde_json::Value::Null);
         let load_value = serde_json::to_value(&report).unwrap_or(serde_json::Value::Null);
         json_str(serde_json::json!({
             "summary": summary_value,
@@ -2819,6 +2830,14 @@ fn build_span_cut_summaries(
             if acc.sample_count == 0 {
                 continue;
             }
+            // Roadmap F.9 — the chipload key carries the per-sample
+            // raw peak (typically several × the chipload gate's
+            // `median_low` statistic on a 2D pocket / 3D rough). The
+            // explicit `per_sample_peak_*` prefix makes the statistic
+            // inline so agents/operators don't read it as a gate
+            // exceedance. The gate's own statistic appears separately
+            // on the load report's `chipload` verdict (see
+            // `ChiploadMetric.statistic`).
             out.push(serde_json::json!({
                 "toolpath_id": tc.id,
                 "span_id": span_id,
@@ -2836,7 +2855,7 @@ fn build_span_cut_summaries(
                 "low_engagement_time_s": acc.low_engagement_time_s,
                 "wasted_runtime_s": acc.air_cut_time_s + acc.low_engagement_time_s,
                 "average_engagement": acc.average_engagement(),
-                "peak_chipload_mm_per_tooth": acc.peak_chipload,
+                "per_sample_peak_chipload_mm_per_tooth": acc.peak_chipload,
                 "peak_axial_doc_mm": acc.peak_axial_doc,
                 "total_removed_volume_est_mm3": acc.removed_volume_mm3,
                 "average_mrr_mm3_s": acc.average_mrr(),
@@ -2987,7 +3006,13 @@ fn build_per_depth_pass_summary(
                     "total_removed_volume_est_mm3": acc.removed_volume_mm3,
                     "average_mrr_mm3_s": acc.average_mrr(),
                     "average_engagement": acc.average_engagement(),
-                    "peak_chipload_mm_per_tooth": acc.peak_chipload,
+                    // Roadmap F.9 — name the field by its statistic so
+                    // operators don't read this as the gate-trip value.
+                    // The chipload gate uses `median_low(samples)` on
+                    // the burn side; this RAW per-sample peak can be
+                    // ~4× larger and looks like an exceedance when read
+                    // in isolation. See planning/UX_PAIN_POINTS_2026-05-11.md F.9.
+                    "per_sample_peak_chipload_mm_per_tooth": acc.peak_chipload,
                     "peak_axial_doc_mm": acc.peak_axial_doc,
                 })
             })
