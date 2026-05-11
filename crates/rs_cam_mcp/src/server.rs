@@ -331,7 +331,11 @@ pub struct SaveProjectParam {
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 #[allow(dead_code)]
 pub struct ModelIdParam {
-    /// Model ID (0-based)
+    /// Model ID as returned by `inspect_model` (the opaque DB-assigned
+    /// `id` field). NOT a 0-based positional index — IDs typically start
+    /// at 1 and are incremented per import. To find the right ID for a
+    /// model, call `inspect_model` and use the `id` field from the
+    /// response.
     pub model_id: usize,
 }
 
@@ -1769,7 +1773,7 @@ impl CamServer {
 
     #[tool(
         name = "inspect_brep_faces",
-        description = "Inspect BREP faces of a STEP model: surface types, bboxes, normals, radii, dihedral edges."
+        description = "Inspect BREP faces of a STEP model: surface types, bboxes, normals, radii, dihedral edges. Pass the `id` field from `inspect_model` as model_id (an opaque DB ID, not a 0-based index — usually 1 for the first imported model)."
     )]
     async fn inspect_brep_faces(
         &self,

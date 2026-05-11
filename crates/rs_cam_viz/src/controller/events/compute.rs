@@ -770,12 +770,31 @@ impl<B: ComputeBackend> AppController<B> {
                         ga.completed += 1;
                     } else {
                         ga.failed += 1;
-                        let error_msg = rt
-                            .map(|rt| match &rt.status {
-                                crate::state::toolpath::ComputeStatus::Error(e) => e.clone(),
-                                _ => "No result produced".to_owned(),
-                            })
-                            .unwrap_or_else(|| "Toolpath runtime not found".to_owned());
+                        // Roadmap E.4 — distinguish "completed cleanly with
+                        // zero moves" (likely a config issue: depth/stock/
+                        // model) from a thrown error or an in-flight status.
+                        let tp_name = self
+                            .state
+                            .session
+                            .find_toolpath_config_by_id(tp_id.0)
+                            .map(|(_, tc)| tc.name.clone())
+                            .unwrap_or_else(|| format!("toolpath {}", tp_id.0));
+                        let error_msg = match rt.map(|rt| &rt.status) {
+                            Some(crate::state::toolpath::ComputeStatus::Error(e)) => e.clone(),
+                            Some(crate::state::toolpath::ComputeStatus::Done) => format!(
+                                "{tp_name}: completed with no moves — check depth, stock, or model assignment"
+                            ),
+                            Some(status) => {
+                                let label = match status {
+                                    crate::state::toolpath::ComputeStatus::Pending => "Pending",
+                                    crate::state::toolpath::ComputeStatus::Computing => "Computing",
+                                    crate::state::toolpath::ComputeStatus::Done => "Done",
+                                    crate::state::toolpath::ComputeStatus::Error(_) => "Error",
+                                };
+                                format!("{tp_name}: no result, status={label}")
+                            }
+                            None => format!("{tp_name}: toolpath runtime not found"),
+                        };
                         ga.errors.push((tp_id.0, error_msg));
                     }
 

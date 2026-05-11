@@ -24,6 +24,25 @@
 
 ## Recent work (2026-05-11)
 
+### UX roadmap PR 3 — MCP layer cleanups (Roadmap E.1–E.5)
+
+Five small edits that close opaque-error pain across the MCP surface:
+
+- **E.1** `mcp_load_project` now appends `controller.load_warnings()`
+  to its response so missing-model / migration warnings reach an MCP
+  client (the GUI already shows them in a modal).
+- **E.2** Toolpath panel ERR chip now shows the underlying error
+  string on hover instead of being a mute three-letter symbol.
+- **E.3** `mcp_list_toolpaths` injects `stale` and `status` fields per
+  row by zipping core summaries with `gui.toolpath_rt` — answers
+  "does this need regeneration?" without a second round-trip.
+- **E.4** generate_all's "No result produced" fallthrough now matches
+  on `ComputeStatus`: Done → "completed with no moves — check depth,
+  stock, or model assignment"; in-flight statuses include the label.
+- **E.5** Doc-only: `ModelIdParam` and `inspect_brep_faces`
+  description clarify that `model_id` is the opaque ID from
+  `inspect_model`, not a 0-based index.
+
 ### UX roadmap PR 2 — STEP/BREP loader (Roadmap D)
 
 Closed the "two project file loaders disagree" pattern for STEP. The

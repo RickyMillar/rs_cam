@@ -586,8 +586,39 @@ impl super::RsCamApp {
     }
 
     fn mcp_list_toolpaths(&self) -> String {
-        let session = &self.controller.state().session;
-        json_str(serde_json::to_value(session.list_toolpaths()).unwrap_or_default())
+        // Override the core listing to inject viz-only fields (`stale`,
+        // `status`) so an automation client can tell at a glance whether a
+        // toolpath needs regeneration. Staleness lives in
+        // `ToolpathRuntime.stale_since` — viz-only — and the core summary
+        // never sees it. (Roadmap E.3)
+        let state = self.controller.state();
+        let session = &state.session;
+        let summaries = session.list_toolpaths();
+        let rows: Vec<serde_json::Value> = summaries
+            .into_iter()
+            .map(|s| {
+                let rt = state.gui.toolpath_rt.get(&s.id);
+                let stale = rt.is_some_and(|r| r.stale_since.is_some());
+                let status = match rt.map(|r| &r.status) {
+                    Some(rs_cam_core::compute::config::ComputeStatus::Pending) => "Pending",
+                    Some(rs_cam_core::compute::config::ComputeStatus::Computing) => "Computing",
+                    Some(rs_cam_core::compute::config::ComputeStatus::Done) => "Done",
+                    Some(rs_cam_core::compute::config::ComputeStatus::Error(_)) => "Error",
+                    None => "Pending",
+                };
+                serde_json::json!({
+                    "index": s.index,
+                    "id": s.id,
+                    "name": s.name,
+                    "operation_label": s.operation_label,
+                    "enabled": s.enabled,
+                    "tool_name": s.tool_name,
+                    "stale": stale,
+                    "status": status,
+                })
+            })
+            .collect();
+        json_str(serde_json::Value::Array(rows))
     }
 
     fn mcp_list_tools(&self) -> String {
@@ -1815,10 +1846,20 @@ impl super::RsCamApp {
                 let name = self.controller.state().session.name().to_owned();
                 let tp_count = self.controller.state().session.toolpath_count();
                 let setup_count = self.controller.state().session.setup_count();
+                let mut msg =
+                    format!("Loaded '{name}' -- {setup_count} setups, {tp_count} toolpaths");
+                // Surface load warnings the GUI shows in a modal but the MCP
+                // wrapper previously dropped on the floor (Roadmap E.1).
+                let warnings = self.controller.load_warnings();
+                if !warnings.is_empty() {
+                    msg.push_str("\nWarnings:");
+                    for w in warnings {
+                        msg.push_str("\n  - ");
+                        msg.push_str(w);
+                    }
+                }
                 McpResponse {
-                    result: Ok(text(format!(
-                        "Loaded '{name}' -- {setup_count} setups, {tp_count} toolpaths"
-                    ))),
+                    result: Ok(text(msg)),
                 }
             }
             Err(e) => McpResponse {
