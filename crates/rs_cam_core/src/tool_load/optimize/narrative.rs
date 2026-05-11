@@ -22,6 +22,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::machine::MachineProfile;
 use crate::tool_load::verdict::{
     ChipSide, ChiploadVerdict, DeflectionVerdict, PowerVerdict, ToolpathLoadVerdict,
 };
@@ -178,9 +179,14 @@ pub enum KnobAxis {
 /// closest-to-safe candidate is the first non-baseline entry in the
 /// attempted set (already sorted by composite score in `build_outcome`).
 /// `limiting_gates` are its `Exceeds` readings.
+///
+/// `machine` is consulted to filter operator suggestions that fall
+/// outside the machine envelope (e.g. "raise feed above 10080 mm/min"
+/// when the machine's `max_feed_mm_min` is 4000). Roadmap F.4.
 pub(crate) fn build_failure_narrative_no_safe(
     baseline: &OptimizeCandidate,
     attempted: &[OptimizeCandidate],
+    machine: &MachineProfile,
 ) -> FailureNarrative {
     let envelope = envelope_across(baseline, attempted);
     let closest = attempted.get(1);
@@ -188,9 +194,10 @@ pub(crate) fn build_failure_narrative_no_safe(
         .map(|c| limiting_gates_from_exceeds(&c.verdict))
         .unwrap_or_default();
     let headline = headline_no_safe(attempted.len().saturating_sub(1), &limiting_gates);
-    let suggestions = closest
+    let raw_suggestions = closest
         .map(|c| suggest_levers(&limiting_gates, c))
         .unwrap_or_default();
+    let suggestions = filter_suggestions_by_envelope(raw_suggestions, machine);
     let entry_advisories = closest
         .map(|c| entry_advisories_for_verdict(&c.verdict))
         .unwrap_or_default();
@@ -363,6 +370,78 @@ fn suggest_for_gate(
         }
         (GateKind::Chipload, None) => None,
     }
+}
+
+/// Roadmap F.4 — filter operator suggestions against the machine
+/// envelope so the user never sees infeasible advice. Examples:
+///
+/// - "Raise feed above 10080 mm/min" when `machine.max_feed_mm_min`
+///   is 4000 — the operator literally cannot do this.
+/// - "Cap RPM below 3166" when the spindle's `min_rpm` is 8000 — the
+///   spindle won't run that slow.
+/// - "Cap feed below 30 mm/min" when that's below the minimum feed
+///   needed for the operation to make any chip — typically a
+///   pathological recommendation from a near-zero `bound/observed`
+///   ratio.
+///
+/// When the filter drops every primary suggestion, replace the list
+/// with a single `DataGapHere` variant describing the envelope
+/// conflict so the operator at least sees *why* there's no actionable
+/// lever (e.g. "feed must be ≥10080 but machine cap is 4000; RPM must
+/// be ≤3166 but spindle min is 8000 — consider larger tool diameter
+/// or stiffer toolholder").
+fn filter_suggestions_by_envelope(
+    suggestions: Vec<OperatorSuggestion>,
+    machine: &MachineProfile,
+) -> Vec<OperatorSuggestion> {
+    let (rpm_min, rpm_max) = machine.rpm_range();
+    let feed_max = machine.max_feed_mm_min;
+
+    let mut dropped: Vec<String> = Vec::new();
+    let mut kept: Vec<OperatorSuggestion> = Vec::new();
+
+    for s in suggestions {
+        match s {
+            OperatorSuggestion::RaiseAxisAbove {
+                axis: KnobAxis::Feed,
+                floor,
+            } if floor > feed_max => {
+                dropped.push(format!(
+                    "feed would need to rise above {floor:.0} mm/min, but machine cap is {feed_max:.0}"
+                ));
+            }
+            OperatorSuggestion::CapAxisAt {
+                axis: KnobAxis::SpindleRpm,
+                ceiling,
+            } if ceiling < rpm_min => {
+                dropped.push(format!(
+                    "RPM would need to drop below {ceiling:.0}, but spindle floor is {rpm_min:.0}"
+                ));
+            }
+            OperatorSuggestion::RaiseAxisAbove {
+                axis: KnobAxis::SpindleRpm,
+                floor,
+            } if floor > rpm_max => {
+                dropped.push(format!(
+                    "RPM would need to rise above {floor:.0}, but spindle ceiling is {rpm_max:.0}"
+                ));
+            }
+            // Other CapAxisAt(Feed/DepthPerPass/Stepover/ScallopHeight)
+            // and RaiseAxisAbove cases don't have a single-axis machine
+            // bound that makes them flatly infeasible — keep them.
+            other => kept.push(other),
+        }
+    }
+
+    if kept.is_empty() && !dropped.is_empty() {
+        let reason = format!(
+            "No safe improvement within machine envelope: {}. Consider a larger tool diameter, a different material, or a stiffer toolholder.",
+            dropped.join("; ")
+        );
+        return vec![OperatorSuggestion::DataGapHere { reason }];
+    }
+
+    kept
 }
 
 /// Build a `TradeOffNarrative`. Reads the recommended candidate's
@@ -919,7 +998,7 @@ mod tests {
                 }),
             ),
         ];
-        let n = build_failure_narrative_no_safe(&baseline, &attempted);
+        let n = build_failure_narrative_no_safe(&baseline, &attempted, &MachineProfile::default());
         assert!(
             n.headline.contains("chipload"),
             "headline should mention chipload, got: {}",
@@ -1190,6 +1269,104 @@ mod tests {
         );
         let suggestions = suggest_levers(&[], &cand);
         assert!(suggestions.is_empty());
+    }
+
+    /// Roadmap F.4 — TP12 (Rivers copy) case shape: optimizer wants
+    /// "raise feed above 10080 mm/min", but the project's machine has
+    /// `max_feed_mm_min = 4000`. The infeasible suggestion must be
+    /// filtered out and replaced with a DataGapHere explaining the
+    /// envelope conflict.
+    #[test]
+    fn filter_envelope_drops_infeasible_feed_raise_and_emits_data_gap() {
+        let suggestions = vec![OperatorSuggestion::RaiseAxisAbove {
+            axis: KnobAxis::Feed,
+            floor: 10080.0,
+        }];
+        let machine = MachineProfile::default(); // max_feed_mm_min = 4000
+        let filtered = filter_suggestions_by_envelope(suggestions, &machine);
+        assert_eq!(filtered.len(), 1);
+        match &filtered[0] {
+            OperatorSuggestion::DataGapHere { reason } => {
+                assert!(
+                    reason.contains("feed") && reason.contains("4000"),
+                    "DataGapHere should explain the feed envelope conflict, got: {reason}"
+                );
+            }
+            other => panic!("expected DataGapHere, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn filter_envelope_drops_infeasible_rpm_cap() {
+        let suggestions = vec![OperatorSuggestion::CapAxisAt {
+            axis: KnobAxis::SpindleRpm,
+            ceiling: 3166.0,
+        }];
+        let machine = MachineProfile::default(); // min_rpm = 8000
+        let filtered = filter_suggestions_by_envelope(suggestions, &machine);
+        assert_eq!(filtered.len(), 1);
+        match &filtered[0] {
+            OperatorSuggestion::DataGapHere { reason } => {
+                assert!(
+                    reason.contains("RPM") && reason.contains("8000"),
+                    "DataGapHere should explain the spindle envelope conflict, got: {reason}"
+                );
+            }
+            other => panic!("expected DataGapHere, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn filter_envelope_keeps_feasible_suggestions() {
+        // Feed cap at 3000 mm/min is inside the 4000 cap — totally
+        // feasible. Keep it.
+        let suggestions = vec![OperatorSuggestion::CapAxisAt {
+            axis: KnobAxis::Feed,
+            ceiling: 3000.0,
+        }];
+        let machine = MachineProfile::default();
+        let filtered = filter_suggestions_by_envelope(suggestions, &machine);
+        assert_eq!(filtered.len(), 1);
+        assert!(matches!(
+            &filtered[0],
+            OperatorSuggestion::CapAxisAt {
+                axis: KnobAxis::Feed,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn filter_envelope_mixed_drops_only_infeasible() {
+        // Two suggestions: one feasible (cap DOC), one not (raise feed
+        // above machine cap). Filter should keep the DOC cap.
+        let suggestions = vec![
+            OperatorSuggestion::CapAxisAt {
+                axis: KnobAxis::DepthPerPass,
+                ceiling: 2.0,
+            },
+            OperatorSuggestion::RaiseAxisAbove {
+                axis: KnobAxis::Feed,
+                floor: 10080.0,
+            },
+        ];
+        let machine = MachineProfile::default();
+        let filtered = filter_suggestions_by_envelope(suggestions, &machine);
+        assert_eq!(filtered.len(), 1, "DOC cap should survive the filter");
+        assert!(matches!(
+            &filtered[0],
+            OperatorSuggestion::CapAxisAt {
+                axis: KnobAxis::DepthPerPass,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn filter_envelope_passes_through_when_no_suggestions() {
+        let filtered =
+            filter_suggestions_by_envelope(Vec::new(), &MachineProfile::default());
+        assert!(filtered.is_empty());
     }
 
     #[test]

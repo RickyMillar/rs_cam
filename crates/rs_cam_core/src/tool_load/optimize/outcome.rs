@@ -222,12 +222,13 @@ impl ProjectOptimizeReport {
 pub(crate) fn build_outcome(
     baseline: OptimizeCandidate,
     candidates: Vec<OptimizeCandidate>,
+    machine: &crate::machine::MachineProfile,
 ) -> OptimizeOutcome {
     if candidates.is_empty() {
         let attempted = vec![baseline];
         let narrative = attempted
             .first()
-            .map(|b| Box::new(build_failure_narrative_no_safe(b, &attempted)))
+            .map(|b| Box::new(build_failure_narrative_no_safe(b, &attempted, machine)))
             .unwrap_or_default();
         return OptimizeOutcome::NoSafeImprovement {
             reason: RefuseReason::NoImprovementFound,
@@ -354,7 +355,7 @@ pub(crate) fn build_outcome(
     attempted.extend(sorted);
     let narrative = attempted
         .first()
-        .map(|b| Box::new(build_failure_narrative_no_safe(b, &attempted)))
+        .map(|b| Box::new(build_failure_narrative_no_safe(b, &attempted, machine)))
         .unwrap_or_default();
     OptimizeOutcome::NoSafeImprovement {
         reason: RefuseReason::NoImprovementFound,

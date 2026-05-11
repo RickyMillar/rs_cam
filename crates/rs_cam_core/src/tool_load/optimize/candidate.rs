@@ -109,6 +109,7 @@ pub(crate) fn has_doc_knob(op_kind: OperationType) -> bool {
 pub(crate) fn finalize_partial(
     baseline: OptimizeCandidate,
     candidates: Vec<OptimizeCandidate>,
+    machine: &crate::machine::MachineProfile,
 ) -> super::OptimizeOutcome {
     if candidates.is_empty() {
         return super::OptimizeOutcome::NoSafeImprovement {
@@ -118,7 +119,7 @@ pub(crate) fn finalize_partial(
             narrative: Box::default(),
         };
     }
-    super::build_outcome(baseline, candidates)
+    super::build_outcome(baseline, candidates, machine)
 }
 
 // ── Stage 1: DOC candidate generation (Engineering Default 9) ─────────
