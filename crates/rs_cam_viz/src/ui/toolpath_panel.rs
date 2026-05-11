@@ -308,19 +308,23 @@ fn draw_toolpath_card(
                 let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 14.0), egui::Sense::hover());
                 ui.painter().rect_filled(rect, 2.0, swatch_color);
 
-                // Status chip
-                let (status_text, status_color) = match status {
-                    ComputeStatus::Pending => ("PEND", theme::TEXT_DIM),
-                    ComputeStatus::Computing => ("GEN", theme::WARNING),
-                    ComputeStatus::Done => ("OK", theme::SUCCESS_BRIGHT),
-                    ComputeStatus::Error(_) => ("ERR", theme::ERROR),
+                // Status chip — capture the error message so the ERR chip
+                // can show it on hover instead of being a mute symbol.
+                let (status_text, status_color, err_msg) = match status {
+                    ComputeStatus::Pending => ("PEND", theme::TEXT_DIM, None),
+                    ComputeStatus::Computing => ("GEN", theme::WARNING, None),
+                    ComputeStatus::Done => ("OK", theme::SUCCESS_BRIGHT, None),
+                    ComputeStatus::Error(msg) => ("ERR", theme::ERROR, Some(msg.as_str())),
                 };
-                ui.label(
+                let chip_resp = ui.label(
                     egui::RichText::new(status_text)
                         .small()
                         .strong()
                         .color(status_color),
                 );
+                if let Some(msg) = err_msg {
+                    chip_resp.on_hover_text(msg);
+                }
                 // Manual-gen indicator for 3D ops
                 if !auto_regen {
                     ui.label(
