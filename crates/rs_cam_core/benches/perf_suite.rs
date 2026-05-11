@@ -282,6 +282,9 @@ fn bench_arc_fitting(c: &mut Criterion) {
                 black_box(fit_arcs(
                     rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp.clone()),
                     0.01,
+                    // No specific tool modelled in this bench; disable the
+                    // F.10 radius cap so we only measure fit performance.
+                    f64::INFINITY,
                 ))
             })
         });

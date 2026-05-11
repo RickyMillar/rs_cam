@@ -3,8 +3,16 @@
 //! Uses a biarc-like approach: finds groups of consecutive linear moves that lie
 //! approximately on a circular arc, then replaces them with a single arc move.
 //! This reduces G-code size and improves surface finish on curved toolpaths.
+//!
+//! Roadmap F.10: fits are also rejected when the recovered radius exceeds
+//! `tool_radius * LARGE_ARC_RADIUS_MULTIPLIER`. Kåsa's algebraic least-squares
+//! is biased toward huge circles on barely-curving polylines; without this cap
+//! adaptive3d occasionally emits arcs of R = 257mm on parts whose largest
+//! feature is ~72mm. Pass `f64::INFINITY` to disable the cap (e.g. in tests
+//! that don't model a specific tool).
 
 use crate::geo::P3;
+use crate::narrate::LARGE_ARC_RADIUS_MULTIPLIER;
 use crate::toolpath::{Move, MoveType, Toolpath};
 use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
 
@@ -23,7 +31,11 @@ use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
 /// - When `spans_valid` is `false`, the legacy unconditional collapse runs and
 ///   spans pass through untouched.
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-pub fn fit_arcs(annotated: AnnotatedToolpath, tolerance: f64) -> AnnotatedToolpath {
+pub fn fit_arcs(
+    annotated: AnnotatedToolpath,
+    tolerance: f64,
+    tool_radius: f64,
+) -> AnnotatedToolpath {
     let AnnotatedToolpath {
         toolpath,
         spans,
@@ -131,7 +143,7 @@ pub fn fit_arcs(annotated: AnnotatedToolpath, tolerance: f64) -> AnnotatedToolpa
                 .chain((i..run_end).map(|j| &moves[j].target))
                 .collect();
 
-            if let Some(arc) = try_fit_arc(&points, tolerance) {
+            if let Some(arc) = try_fit_arc(&points, tolerance, tool_radius) {
                 best_arc_end = run_end;
                 best_arc = Some(arc);
                 run_end += 1;
@@ -230,7 +242,11 @@ struct ArcParams {
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Try to fit a circular arc through a sequence of XY points.
 /// Returns arc parameters if all points are within tolerance of the arc.
-fn try_fit_arc(points: &[&P3], tolerance: f64) -> Option<ArcParams> {
+///
+/// `tool_radius` caps the fitted radius at
+/// `tool_radius * LARGE_ARC_RADIUS_MULTIPLIER` (Roadmap F.10). Pass
+/// `f64::INFINITY` to disable the cap.
+fn try_fit_arc(points: &[&P3], tolerance: f64, tool_radius: f64) -> Option<ArcParams> {
     if points.len() < 3 {
         return None;
     }
@@ -248,6 +264,16 @@ fn try_fit_arc(points: &[&P3], tolerance: f64) -> Option<ArcParams> {
 
     // Reject degenerate arcs (very large radius = nearly straight line)
     if radius > 1e6 {
+        return None;
+    }
+
+    // Roadmap F.10: cap fitted radius at LARGE_ARC_RADIUS_MULTIPLIER × tool
+    // radius. Kåsa's algebraic least-squares is biased toward huge circles on
+    // barely-curving inputs; without this cap, adaptive3d output occasionally
+    // collapses a slightly-bowed polyline into an arc whose radius dwarfs any
+    // feature on the part. The narration warns on these via the same
+    // multiplier — keeping the fitter and narrator in sync.
+    if radius > tool_radius * LARGE_ARC_RADIUS_MULTIPLIER {
         return None;
     }
 
@@ -452,7 +478,9 @@ mod tests {
         let pts = make_circle_points(0.0, 0.0, 10.0, 64, 5.0, true);
         let refs: Vec<&P3> = pts.iter().collect();
 
-        let arc = try_fit_arc(&refs[0..5], 0.05).unwrap();
+        // tool_radius = INFINITY disables the F.10 radius cap; this test
+        // exercises the geometric fit, not the cap.
+        let arc = try_fit_arc(&refs[0..5], 0.05, f64::INFINITY).unwrap();
         assert!((arc.cx - 0.0).abs() < 0.1);
         assert!((arc.cy - 0.0).abs() < 0.1);
         assert!(!arc.clockwise); // CCW
@@ -463,7 +491,7 @@ mod tests {
         let pts = make_circle_points(0.0, 0.0, 10.0, 64, 5.0, false); // CW
         let refs: Vec<&P3> = pts.iter().collect();
 
-        let arc = try_fit_arc(&refs[0..5], 0.05).unwrap();
+        let arc = try_fit_arc(&refs[0..5], 0.05, f64::INFINITY).unwrap();
         assert!(arc.clockwise);
     }
 
@@ -485,10 +513,49 @@ mod tests {
         // Even with a generous 1mm tolerance, the 21mm sagitta should
         // cause this to fail.
         assert!(
-            try_fit_arc(&refs, 1.0).is_none(),
+            try_fit_arc(&refs, 1.0, f64::INFINITY).is_none(),
             "arc-fit must reject rectangle-corner inputs (sagitta would \
              far exceed tolerance)"
         );
+    }
+
+    /// Regression for Roadmap F.10: a barely-curving polyline must not be
+    /// fitted as a huge arc when a tool radius is supplied. Wanaka's
+    /// adaptive3d emitted R=257mm arcs on a 6mm end-mill (radius 3mm) — the
+    /// Kåsa algebraic fit slides the centre far away for small-bow inputs,
+    /// even though every chord stays within the 0.05mm sagitta envelope.
+    /// With the F.10 cap (30 × 3mm = 90mm), the fitter must refuse.
+    #[test]
+    fn test_fit_arc_rejects_huge_radius_for_tool_radius() {
+        // y = 0.001 * x², x = 0..20 in 1mm steps → 21 points along a barely
+        // curving parabola. Best-fit circle radius ~ 500mm.
+        let pts: Vec<P3> = (0..=20)
+            .map(|i| {
+                let x = i as f64;
+                P3::new(x, 0.001 * x * x, 0.0)
+            })
+            .collect();
+        let refs: Vec<&P3> = pts.iter().collect();
+
+        // With tool_radius=3.0 the cap is 90mm; any fit at this scale is far
+        // larger than that and must be rejected.
+        assert!(
+            try_fit_arc(&refs, 0.05, 3.0).is_none(),
+            "arc-fit must reject implausibly large radii (>30× tool radius)"
+        );
+
+        // Sanity: without the cap, the algorithm DOES produce a fit (this is
+        // exactly the F.10 failure mode we're guarding against).
+        if let Some(arc) = try_fit_arc(&refs, 0.05, f64::INFINITY) {
+            let dx = refs[0].x - arc.cx;
+            let dy = refs[0].y - arc.cy;
+            let r = (dx * dx + dy * dy).sqrt();
+            assert!(
+                r > 90.0,
+                "uncapped fit should expose the Kåsa large-R bias (got R={})",
+                r,
+            );
+        }
     }
 
     #[test]
@@ -500,7 +567,7 @@ mod tests {
             P3::new(3.0, 0.0, 0.0),
         ];
         let refs: Vec<&P3> = pts.iter().collect();
-        assert!(try_fit_arc(&refs, 0.01).is_none());
+        assert!(try_fit_arc(&refs, 0.01, f64::INFINITY).is_none());
     }
 
     #[test]
@@ -509,7 +576,9 @@ mod tests {
         tp.rapid_to(P3::new(0.0, 0.0, 10.0));
         tp.rapid_to(P3::new(10.0, 0.0, 0.0));
 
-        let result = fit_arcs(AnnotatedToolpath::new(tp), 0.01).toolpath;
+        // tool_radius = INFINITY: tests check structural behavior independent
+        // of the F.10 large-radius cap.
+        let result = fit_arcs(AnnotatedToolpath::new(tp), 0.01, f64::INFINITY).toolpath;
         assert_eq!(result.moves.len(), 2);
         assert_eq!(result.moves[0].move_type, MoveType::Rapid);
         assert_eq!(result.moves[1].move_type, MoveType::Rapid);
@@ -527,7 +596,7 @@ mod tests {
         }
         tp.rapid_to(P3::new(pts[0].x, pts[0].y, 10.0));
 
-        let result = fit_arcs(AnnotatedToolpath::new(tp.clone()), 0.1).toolpath;
+        let result = fit_arcs(AnnotatedToolpath::new(tp.clone()), 0.1, f64::INFINITY).toolpath;
 
         // Should have fewer moves (arcs replace multiple linears)
         assert!(
@@ -560,7 +629,7 @@ mod tests {
         tp.feed_to(P3::new(20.0, 0.0, 0.0), 1000.0);
         tp.feed_to(P3::new(30.0, 0.0, 0.0), 1000.0);
 
-        let result = fit_arcs(AnnotatedToolpath::new(tp), 0.01).toolpath;
+        let result = fit_arcs(AnnotatedToolpath::new(tp), 0.01, f64::INFINITY).toolpath;
 
         // Straight line segments should pass through unchanged
         let arc_count = result
@@ -585,7 +654,7 @@ mod tests {
         tp.feed_to(P3::new(-10.0, 0.0, 0.0), 1000.0);
         tp.feed_to(P3::new(0.0, -10.0, 5.0), 1000.0); // Z jump
 
-        let result = fit_arcs(AnnotatedToolpath::new(tp.clone()), 0.01).toolpath;
+        let result = fit_arcs(AnnotatedToolpath::new(tp.clone()), 0.01, f64::INFINITY).toolpath;
         // First 2 linears at Z=0 can be arc-fit, but the Z=5 one breaks the arc.
         // So we get: rapid + arc + linear = 3 moves (fewer than 4)
         assert!(
@@ -680,7 +749,7 @@ mod tests {
     #[test]
     fn test_fit_arcs_empty() {
         let tp = Toolpath::new();
-        let result = fit_arcs(AnnotatedToolpath::new(tp), 0.01).toolpath;
+        let result = fit_arcs(AnnotatedToolpath::new(tp), 0.01, f64::INFINITY).toolpath;
         assert!(result.moves.is_empty());
     }
 
@@ -720,7 +789,7 @@ mod tests {
 
         // Without the barrier check, arc-fit could try to span the whole run.
         // With the barrier, no arc may span the boundary.
-        let result = fit_arcs(annotated, 0.1);
+        let result = fit_arcs(annotated, 0.1, f64::INFINITY);
 
         // Build a remap from old indices to the new arc/move via DressupArtifact
         // span coverage in the new toolpath. Any arc that COVERS a barrier in
@@ -775,7 +844,7 @@ mod tests {
         let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
         let annotated = AnnotatedToolpath::with_spans(tp.clone(), spans);
 
-        let result = fit_arcs(annotated, 0.1);
+        let result = fit_arcs(annotated, 0.1, f64::INFINITY);
         let n_out = result.toolpath.moves.len();
         assert!(n_out < n_in, "arc-fit should fire");
 
@@ -827,7 +896,7 @@ mod tests {
         let garbage = vec![Span::new(0, 1, SpanKind::Operation)];
         annotated.spans = garbage.clone();
 
-        let result = fit_arcs(annotated, 0.1);
+        let result = fit_arcs(annotated, 0.1, f64::INFINITY);
 
         assert!(result.toolpath.moves.len() < n_in, "arc-fit fires");
         assert!(!result.spans_valid, "invalid stays invalid");
