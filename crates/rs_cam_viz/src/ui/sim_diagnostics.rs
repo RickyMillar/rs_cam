@@ -1108,6 +1108,7 @@ fn span_kind_label(kind: SpanKind) -> &'static str {
         SpanKind::LeadOut => "LeadOut",
         SpanKind::LinkBridge => "LinkBridge",
         SpanKind::DressupArtifact => "DressupArtifact",
+        SpanKind::WaterlineCleanup => "WaterlineCleanup",
         SpanKind::RapidOrderBarrier => "RapidOrderBarrier",
     }
 }

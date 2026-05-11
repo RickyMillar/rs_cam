@@ -3093,6 +3093,7 @@ fn parse_span_kind_filter(s: &str) -> Result<rs_cam_core::toolpath_spans::SpanKi
         "lead_out" => Ok(SpanKind::LeadOut),
         "link_bridge" => Ok(SpanKind::LinkBridge),
         "dressup_artifact" => Ok(SpanKind::DressupArtifact),
+        "waterline_cleanup" => Ok(SpanKind::WaterlineCleanup),
         "rapid_order_barrier" => Ok(SpanKind::RapidOrderBarrier),
         other => Err(format!("unknown span_kind {other:?}")),
     }
@@ -3108,6 +3109,7 @@ fn span_kind_label(k: rs_cam_core::toolpath_spans::SpanKind) -> &'static str {
         SpanKind::LeadOut => "LeadOut",
         SpanKind::LinkBridge => "LinkBridge",
         SpanKind::DressupArtifact => "DressupArtifact",
+        SpanKind::WaterlineCleanup => "WaterlineCleanup",
         SpanKind::RapidOrderBarrier => "RapidOrderBarrier",
     }
 }

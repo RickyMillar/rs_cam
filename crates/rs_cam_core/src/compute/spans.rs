@@ -376,8 +376,11 @@ fn push_adaptive3d_spans(
         spans.push(Span::boundary(*idx, SpanKind::RapidOrderBarrier));
     }
 
-    // Emit DepthPass spans. Each pass runs from its start move to the
-    // next pass start, or to n_moves for the last one.
+    // Emit DepthPass spans (or WaterlineCleanup spans for the cleanup
+    // pass — those don't carry z/pass_index and should be classified as
+    // transient transitions by the gate predicate; see Roadmap F.3).
+    // Each pass runs from its start move to the next pass start, or to
+    // n_moves for the last one.
     for (i, (start, z, level_index)) in depth_starts.iter().enumerate() {
         let end = depth_starts
             .get(i + 1)
@@ -386,17 +389,16 @@ fn push_adaptive3d_spans(
         if end <= *start {
             continue;
         }
-        let mut span = Span::new(*start, end, SpanKind::DepthPass);
-        if let (Some(z), Some(idx)) = (*z, *level_index) {
-            span = span
+        let span = if let (Some(z), Some(idx)) = (*z, *level_index) {
+            Span::new(*start, end, SpanKind::DepthPass)
                 .with_label(format!("Z level {}", idx + 1))
                 .with_payload(SpanPayload::DepthPass {
                     z_level: z,
                     pass_index: idx,
-                });
+                })
         } else {
-            span = span.with_label("Waterline cleanup");
-        }
+            Span::new(*start, end, SpanKind::WaterlineCleanup).with_label("Waterline cleanup")
+        };
         spans.push(span);
     }
 
@@ -675,6 +677,49 @@ mod tests {
             .collect();
         assert_eq!(entries.len(), 1, "empty entry should be skipped");
         assert_eq!(entries[0].range(), 90..100, "end should clamp to n_moves");
+    }
+
+    #[test]
+    fn adaptive3d_waterline_cleanup_becomes_waterline_cleanup_span() {
+        // Roadmap F.3: the cleanup pass at the end of an adaptive3d run
+        // emits `Adaptive3dRuntimeEvent::WaterlineCleanup` (no z/pass
+        // index). Before F.3 it became a `DepthPass` span and the
+        // gate predicate treated samples inside as steady-state — a
+        // single transient lift-bridge sample could trip the gate.
+        // After F.3 it becomes a `WaterlineCleanup` span which
+        // `is_steady_state_for_gate` filters out.
+        let events = vec![
+            ev(
+                0,
+                Adaptive3dRuntimeEvent::GlobalZLevel {
+                    z_level: 5.0,
+                    level_index: 0,
+                    level_total: 1,
+                    metrics: metrics(),
+                },
+            ),
+            ev(40, Adaptive3dRuntimeEvent::WaterlineCleanup),
+        ];
+        let spans = spans_from_adaptive3d_annotations(&events, 60);
+
+        let depth: Vec<_> = spans
+            .iter()
+            .filter(|s| s.kind == SpanKind::DepthPass)
+            .collect();
+        assert_eq!(depth.len(), 1, "only the Z-level pass is DepthPass");
+        assert_eq!(depth[0].range(), 0..40);
+
+        let cleanup: Vec<_> = spans
+            .iter()
+            .filter(|s| s.kind == SpanKind::WaterlineCleanup)
+            .collect();
+        assert_eq!(cleanup.len(), 1, "cleanup pass becomes WaterlineCleanup");
+        assert_eq!(cleanup[0].range(), 40..60);
+        assert_eq!(cleanup[0].label, "Waterline cleanup");
+        assert!(
+            cleanup[0].payload.is_none(),
+            "cleanup spans don't carry z_level/pass_index"
+        );
     }
 
     #[test]
