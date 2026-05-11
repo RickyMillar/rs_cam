@@ -301,7 +301,11 @@ pub struct SetDressupFieldParam {
     pub index: usize,
     /// Dressup field name (e.g. "link_moves", "arc_fitting", "retract_strategy")
     pub key: String,
-    /// New value for the field (JSON)
+    /// New value for the field (JSON). Pass enum values as bare JSON
+    /// strings — e.g. `"ramp"` (NOT `"\"ramp\""`); pass booleans as
+    /// `true` / `false` or `0` / `1` (server coerces); pass numbers
+    /// as JSON numbers OR numeric strings like `"7"` (server coerces
+    /// when the existing field is numeric).
     pub value: serde_json::Value,
 }
 

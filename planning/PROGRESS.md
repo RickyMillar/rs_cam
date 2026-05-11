@@ -24,6 +24,25 @@
 
 ## Recent work (2026-05-11)
 
+### UX roadmap PR 6 — MCP type coercion (Roadmap E.6)
+
+Three small coercion gaps that made the MCP set_*_param surfaces
+fragile to JSON-RPC clients that vary in how they encode scalars:
+
+- **E.6.a** `set_toolpath_param`'s wildcard arm now coerces numeric
+  strings ("7", "12.5") into JSON numbers when the existing field is
+  numeric or absent. The four explicit fields (`feed_rate`, `plunge_rate`,
+  `stepover`, `depth_per_pass`) already had this; op-specific fields
+  like `depth`, `cut_depth`, `min_z` previously failed serde with
+  `"7"`.
+- **E.6.b** `set_dressup_field` adds the symmetric `0/1 → bool` and
+  `numeric-string → number` coercions that `set_toolpath_param`'s
+  wildcard already had.
+- **E.6.c** `SetDressupFieldParam` schema doc explicitly states that
+  enum values arrive as bare JSON strings (`"ramp"`, not
+  `"\"ramp\""`), and that the server tolerates `0/1` for booleans
+  and numeric strings for numbers.
+
 ### UX roadmap PR 5 — Operation defaults (Roadmap B.1–B.7)
 
 Stock-aware per-op defaults so a fresh toolpath ships with sensible
