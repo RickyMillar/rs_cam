@@ -233,8 +233,22 @@ impl ProjectSession {
                             _ => value,
                         }
                     }
+                    // Some MCP wrappers double-encode strings ("0" arrives
+                    // as the literal 3-char string `"0"`). Strip surrounding
+                    // quotes before parsing so both forms work for booleans
+                    // and numerics.
+                    (Some(existing), serde_json::Value::String(s)) if existing.is_boolean() => {
+                        match crate::session::compute::strip_outer_quotes(s)
+                            .to_ascii_lowercase()
+                            .as_str()
+                        {
+                            "0" | "false" => serde_json::Value::Bool(false),
+                            "1" | "true" => serde_json::Value::Bool(true),
+                            _ => value,
+                        }
+                    }
                     (Some(existing), serde_json::Value::String(s)) if existing.is_number() => {
-                        match s.parse::<f64>() {
+                        match crate::session::compute::strip_outer_quotes(s).parse::<f64>() {
                             Ok(n) => serde_json::Number::from_f64(n)
                                 .map(serde_json::Value::Number)
                                 .unwrap_or(value),

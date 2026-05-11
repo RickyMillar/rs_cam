@@ -30,6 +30,19 @@ use super::{
 };
 
 /// Translate a triangle mesh by (dx, dy, dz) and rebuild bbox/faces.
+/// Strip a single layer of surrounding ASCII double-quotes from a string
+/// if present. Used by the MCP coercion path to tolerate clients that
+/// double-encode scalar values (e.g. `"7"` arriving as the literal
+/// 3-char string `"7"`). Returns the input unchanged when there are no
+/// surrounding quotes or when the string isn't long enough to have any.
+pub(crate) fn strip_outer_quotes(s: &str) -> &str {
+    if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
+        &s[1..s.len() - 1]
+    } else {
+        s
+    }
+}
+
 fn translate_mesh(mesh: &TriangleMesh, dx: f64, dy: f64, dz: f64) -> TriangleMesh {
     let verts: Vec<P3> = mesh
         .vertices
@@ -65,10 +78,11 @@ impl ProjectSession {
         // Numeric fields accept either JSON numbers or numeric strings —
         // some MCP / JSON-RPC clients stringify scalar values when the
         // schema type is permissive (`serde_json::Value`), so this
-        // fallback keeps the API resilient.
+        // fallback keeps the API resilient. `strip_outer_quotes` also
+        // tolerates the doubly-encoded `"\"7\""` form.
         let as_number = |v: &serde_json::Value| -> Option<f64> {
             v.as_f64()
-                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                .or_else(|| v.as_str().and_then(|s| strip_outer_quotes(s).parse().ok()))
         };
 
         match param {
@@ -181,10 +195,21 @@ impl ProjectSession {
                             _ => value,
                         }
                     }
+                    // Some MCP wrappers double-encode strings ("7" arrives
+                    // as the literal 3-char string `"7"`). Strip surrounding
+                    // quotes before parsing so both `"7"` and `"\"7\""`
+                    // arrive as a number.
+                    (Some(existing), serde_json::Value::String(s)) if existing.is_boolean() => {
+                        match strip_outer_quotes(s).to_ascii_lowercase().as_str() {
+                            "0" | "false" => serde_json::Value::Bool(false),
+                            "1" | "true" => serde_json::Value::Bool(true),
+                            _ => value,
+                        }
+                    }
                     (existing_opt, serde_json::Value::String(s))
                         if existing_opt.is_none_or(|v| v.is_number()) =>
                     {
-                        match s.parse::<f64>() {
+                        match strip_outer_quotes(s).parse::<f64>() {
                             Ok(n) => serde_json::Number::from_f64(n)
                                 .map(serde_json::Value::Number)
                                 .unwrap_or(value),
