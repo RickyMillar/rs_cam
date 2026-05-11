@@ -142,6 +142,14 @@ impl From<CollisionCheckError> for SessionError {
 pub(crate) enum LoadedGeometry {
     Mesh(TriangleMesh),
     Polygons(Vec<Polygon2>),
+    /// Mesh + BREP face groups (STEP / CAD models). The enriched form
+    /// is required for face-selective operations; downgrading to a
+    /// flat `Mesh` silently strips topology and breaks face pickers.
+    /// Only constructed when the `step` cargo feature is on; the
+    /// match arm consuming it is also gated, but the variant lives
+    /// outside the cfg so callers needn't sprinkle cfg-pattern matches.
+    #[cfg_attr(not(feature = "step"), allow(dead_code))]
+    Enriched(EnrichedMesh),
 }
 
 /// A loaded model with its geometry.

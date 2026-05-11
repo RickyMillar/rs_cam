@@ -24,6 +24,23 @@
 
 ## Recent work (2026-05-11)
 
+### UX roadmap PR 2 — STEP/BREP loader (Roadmap D)
+
+Closed the "two project file loaders disagree" pattern for STEP. The
+session loader (`project_file::load_model_geometry`'s Step arm) was
+downgrading to a flat `TriangleMesh` and setting `enriched_mesh: None`,
+silently breaking `inspect_brep_faces` and the GUI face picker for any
+project loaded via the session path. The parallel `io::load_model_file`
+loader has always preserved the BREP — they're now in sync.
+
+Added a `LoadedGeometry::Enriched` variant + a third arm in the model
+loop that constructs `LoadedModel` with `enriched_mesh: Some(...)` and
+mesh derived from `enriched.mesh`. Defensive UI: a STEP model loaded
+without its enriched mesh now surfaces a "BREP topology not loaded"
+warning row above the (absent) face picker, so the symptom isn't a
+silent UX gap. Regression test in
+`crates/rs_cam_core/tests/step_project_load.rs`.
+
 ### UX roadmap PR 1 — MCP export end-to-end (Roadmap A)
 
 Fixed the GUI-embedded MCP `export_gcode` path that was producing 0-byte
