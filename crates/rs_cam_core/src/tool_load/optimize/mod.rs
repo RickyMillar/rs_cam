@@ -312,7 +312,7 @@ pub fn optimize_toolpath(
 
     if cancel.load(Ordering::SeqCst) {
         drop(guard);
-        return finalize_partial(baseline_candidate, all_candidates);
+        return finalize_partial(baseline_candidate, all_candidates, &machine);
     }
 
     // 8. Axis-grid strategy: joint DOC × stepover × scallop_height
@@ -332,7 +332,7 @@ pub fn optimize_toolpath(
 
     if cancel.load(Ordering::SeqCst) {
         drop(guard);
-        return finalize_partial(baseline_candidate, all_candidates);
+        return finalize_partial(baseline_candidate, all_candidates, &machine);
     }
 
     // 9. Stage 2: top-N by composite_score, re-eval at full resolution.
@@ -361,7 +361,7 @@ pub fn optimize_toolpath(
     //     not the session). The outcome is returned to the caller; the
     //     caller's view of `session` is now back at the baseline.
     drop(guard);
-    build_outcome(baseline_candidate, stage2_candidates)
+    build_outcome(baseline_candidate, stage2_candidates, &machine)
 }
 
 /// Run Stage 0 (analytical RPM/feed headroom scale-up) for one
@@ -1743,7 +1743,7 @@ mod tests {
     #[test]
     fn build_outcome_empty_candidates_yields_no_safe_improvement() {
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
-        let outcome = build_outcome(baseline, Vec::new());
+        let outcome = build_outcome(baseline, Vec::new(), &crate::machine::MachineProfile::default());
         match outcome {
             OptimizeOutcome::NoSafeImprovement {
                 reason,
@@ -1771,7 +1771,7 @@ mod tests {
             synthetic_candidate(1300.0, 105.0, within_verdict()),
             synthetic_candidate(1200.0, 110.0, within_verdict()),
         ];
-        let outcome = build_outcome(baseline, candidates);
+        let outcome = build_outcome(baseline, candidates, &crate::machine::MachineProfile::default());
         match outcome {
             OptimizeOutcome::NoSafeImprovement {
                 explanation,
@@ -1800,7 +1800,7 @@ mod tests {
             synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict()),
             synthetic_candidate(2300.0, 65.0, exceeds_chipload_verdict()),
         ];
-        let outcome = build_outcome(baseline, candidates);
+        let outcome = build_outcome(baseline, candidates, &crate::machine::MachineProfile::default());
         match outcome {
             OptimizeOutcome::NoSafeImprovement {
                 explanation,
@@ -1826,7 +1826,7 @@ mod tests {
         let faster_safe = synthetic_candidate(2100.0, 70.0, within_verdict());
         let faster_unsafe = synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict());
         let candidates = vec![faster_unsafe, faster_safe];
-        let outcome = build_outcome(baseline, candidates);
+        let outcome = build_outcome(baseline, candidates, &crate::machine::MachineProfile::default());
         let OptimizeOutcome::Ranked(ranked) = outcome else {
             panic!("expected Ranked");
         };
@@ -1969,7 +1969,7 @@ mod tests {
         // Ranked, with gate_deltas populated on the candidate.
         let baseline = synthetic_candidate(1500.0, 100.0, exceeds_chipload_verdict());
         let pure = synthetic_candidate(2100.0, 70.0, within_verdict());
-        let outcome = build_outcome(baseline, vec![pure]);
+        let outcome = build_outcome(baseline, vec![pure], &crate::machine::MachineProfile::default());
         let OptimizeOutcome::Ranked(ranked) = outcome else {
             panic!("expected Ranked, got {outcome:?}");
         };
@@ -1991,7 +1991,7 @@ mod tests {
         tradeoff_verdict.chipload = within_verdict().chipload;
         tradeoff_verdict.power = exceeds_power_verdict().power;
         let candidate = synthetic_candidate(2200.0, 80.0, tradeoff_verdict);
-        let outcome = build_outcome(baseline, vec![candidate]);
+        let outcome = build_outcome(baseline, vec![candidate], &crate::machine::MachineProfile::default());
         let OptimizeOutcome::TradeOff {
             candidates: tradeoffs,
             ..
@@ -2014,7 +2014,7 @@ mod tests {
         let mut tradeoff_verdict = within_verdict();
         tradeoff_verdict.power = exceeds_power_verdict().power;
         let tradeoff_cand = synthetic_candidate(2200.0, 70.0, tradeoff_verdict);
-        let outcome = build_outcome(baseline, vec![tradeoff_cand, pure]);
+        let outcome = build_outcome(baseline, vec![tradeoff_cand, pure], &crate::machine::MachineProfile::default());
         assert!(
             matches!(outcome, OptimizeOutcome::Ranked(_)),
             "pure improvement must win, got {outcome:?}"
@@ -2029,7 +2029,7 @@ mod tests {
         let mut tradeoff_verdict = within_verdict();
         tradeoff_verdict.power = exceeds_power_verdict().power;
         let candidate = synthetic_candidate(2200.0, 70.0, tradeoff_verdict);
-        let outcome = build_outcome(baseline, vec![candidate]);
+        let outcome = build_outcome(baseline, vec![candidate], &crate::machine::MachineProfile::default());
         assert!(matches!(outcome, OptimizeOutcome::TradeOff { .. }));
         assert!(
             outcome.first_safe().is_none(),
@@ -2082,7 +2082,7 @@ mod tests {
         // should land in MarginalSafe, not Ranked.
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let band_admitted = synthetic_candidate(2100.0, 75.0, band_admitted_verdict());
-        let outcome = build_outcome(baseline, vec![band_admitted]);
+        let outcome = build_outcome(baseline, vec![band_admitted], &crate::machine::MachineProfile::default());
         let OptimizeOutcome::MarginalSafe {
             candidates,
             explanation,
@@ -2104,7 +2104,7 @@ mod tests {
         // band-admitted candidates. The user picks them via the modal.
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let band_admitted = synthetic_candidate(2100.0, 75.0, band_admitted_verdict());
-        let outcome = build_outcome(baseline, vec![band_admitted]);
+        let outcome = build_outcome(baseline, vec![band_admitted], &crate::machine::MachineProfile::default());
         assert!(matches!(outcome, OptimizeOutcome::MarginalSafe { .. }));
         assert!(
             outcome.first_safe().is_none(),
@@ -2116,7 +2116,7 @@ mod tests {
     fn first_marginal_safe_recommends_from_marginal_outcome() {
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let band_admitted = synthetic_candidate(2100.0, 75.0, band_admitted_verdict());
-        let outcome = build_outcome(baseline, vec![band_admitted]);
+        let outcome = build_outcome(baseline, vec![band_admitted], &crate::machine::MachineProfile::default());
         let recommended = outcome
             .first_marginal_safe()
             .expect("MarginalSafe outcome must surface a recommendation");
@@ -2131,7 +2131,7 @@ mod tests {
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let band_admitted = synthetic_candidate(2100.0, 70.0, band_admitted_verdict());
         let strict = synthetic_candidate(2000.0, 75.0, within_verdict());
-        let outcome = build_outcome(baseline, vec![band_admitted, strict]);
+        let outcome = build_outcome(baseline, vec![band_admitted, strict], &crate::machine::MachineProfile::default());
         assert!(
             matches!(outcome, OptimizeOutcome::Ranked(_)),
             "strict-safe pure improvement must win the tier dispatch, got {outcome:?}"

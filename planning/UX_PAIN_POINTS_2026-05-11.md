@@ -1822,6 +1822,7 @@ optimizer trust workstream. Polish items add another week.
 | 7   | F.1       | session.results ↔ gui.toolpath_rt cache reconciliation: ProjectSession::insert_result + GUI compute callback writes through; RCA in planning/F1_RCA.md | -1🔴 |
 | 8   | F.3       | New SpanKind::WaterlineCleanup variant; adaptive3d span emission tags cleanup spans; is_steady_state_for_gate filters cleanup-ancestry samples (uniform across chipload/power/deflection) | -1🟡 |
 | 9   | F.2       | Auto-verify after per-TP Apply: chain apply → regen → resim via new pending_apply_resim state; notification text replaced ("regenerating and verifying…") | -1🔴 |
+| 10  | F.4       | Operator suggestions now filtered through MachineProfile envelope (max_feed, spindle min/max RPM); infeasible suggestions collapse to a single DataGapHere explaining the conflict | -1🟡 |
 
 ### Roadmap F bullets (pending — wanaka 2026-05-11)
 
@@ -1848,9 +1849,13 @@ optimizer trust workstream. Polish items add another week.
   cleanup-ancestry samples uniformly for all three gates
   (chipload / power / deflection). Same structural pattern as the
   Entry-spike routing.
-- 🟡 **F.4** "No safe improvement" narrative suggestions ignore
-  machine envelope (suggests feed > 10080 mm/min on a machine
-  with max_feed = 4000).
+- ~~🟡 **F.4** "No safe improvement" narrative suggestions ignore
+  machine envelope.~~ **Closed by PR 10** — new
+  `filter_suggestions_by_envelope` in `narrative.rs` filters each
+  `OperatorSuggestion` against `MachineProfile.{max_feed_mm_min,
+  spindle min/max RPM}`. Infeasible suggestions are dropped; when
+  the filter empties the list, a single `DataGapHere` is emitted
+  with a sentence-form explanation of the envelope conflict.
 - 🟡 **F.5** Optimizer-locked `feeds_auto.*` fields have no UI
   indicator in the Feeds tab — user can't tell what's locked or
   why.
