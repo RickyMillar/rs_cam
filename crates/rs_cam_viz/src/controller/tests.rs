@@ -803,6 +803,77 @@ fn cancelled_toolpath_preserves_debug_trace_metadata() {
 }
 
 // ---------------------------------------------------------------------------
+// Roadmap F.1 — session.results cache must repopulate when the threaded
+// compute backend returns a fresh result. Before the fix, the callback
+// only wrote to gui.toolpath_rt and session.results stayed empty after
+// apply_toolpath_param_snapshot — breaking project_load_report's span
+// lookup for the just-applied toolpath. See planning/F1_RCA.md.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn drain_compute_results_repopulates_session_results() {
+    let mut controller = sample_controller();
+    // sample_controller pre-seeds rt.result but leaves session.results
+    // empty — exactly the post-Apply pre-fix divergence state.
+    assert!(
+        controller.state.session.get_result(0).is_none(),
+        "fixture should start with empty session.results[0]"
+    );
+
+    let annotated = Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+        Toolpath::new(),
+    ));
+
+    controller.compute.drained.push(ComputeMessage::Toolpath(
+        crate::compute::worker::ComputeResult {
+            toolpath_id: ToolpathId(0),
+            result: Ok(ToolpathResult {
+                annotated: Arc::clone(&annotated),
+                stats: Default::default(),
+                debug_trace: None,
+                semantic_trace: None,
+                debug_trace_path: None,
+            }),
+            debug_trace: None,
+            semantic_trace: None,
+            debug_trace_path: None,
+        },
+    ));
+
+    controller.drain_compute_results();
+
+    // The fix: session.results[0] is populated.
+    let session_result = controller
+        .state
+        .session
+        .get_result(0)
+        .expect("session.results[0] should be populated after drain");
+    // Both caches share the same Arc (no duplicated allocation).
+    assert!(Arc::ptr_eq(&session_result.annotated, &annotated));
+}
+
+#[test]
+fn drain_compute_results_skips_session_write_on_error() {
+    let mut controller = sample_controller();
+    controller.compute.drained.push(ComputeMessage::Toolpath(
+        crate::compute::worker::ComputeResult {
+            toolpath_id: ToolpathId(0),
+            result: Err(crate::compute::ComputeError::Message("boom".into())),
+            debug_trace: None,
+            semantic_trace: None,
+            debug_trace_path: None,
+        },
+    ));
+
+    controller.drain_compute_results();
+
+    assert!(
+        controller.state.session.get_result(0).is_none(),
+        "session.results must not be written on compute error"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Tool deletion safety tests (C5)
 // ---------------------------------------------------------------------------
 

@@ -337,6 +337,31 @@ impl<B: ComputeBackend> AppController<B> {
                     match result.result {
                         Ok(computed) => {
                             rt.status = ComputeStatus::Done;
+                            // Sync the core-side `session.results` cache so the
+                            // single point of truth for "this toolpath has a
+                            // fresh result" is `ProjectSession`, not the
+                            // viz-side `gui.toolpath_rt`. Without this, the
+                            // gcode export / load-report paths read stale-empty
+                            // `session.results[idx]` after Apply (see
+                            // `planning/F1_RCA.md`).
+                            if let Some((tp_index, _)) =
+                                self.state.session.find_toolpath_config_by_id(tp_id.0)
+                            {
+                                let core_result = rs_cam_core::session::ToolpathComputeResult {
+                                    annotated: Arc::clone(&computed.annotated),
+                                    stats: computed.stats.clone(),
+                                    // Debug + semantic traces stay viz-side
+                                    // (Arc'd on `rt.debug_trace` /
+                                    // `rt.semantic_trace` above). Core readers
+                                    // currently only consume `annotated.spans`
+                                    // from `session.results`; bloating the
+                                    // cache with owned trace copies is wasted
+                                    // work.
+                                    debug_trace: None,
+                                    semantic_trace: None,
+                                };
+                                let _ = self.state.session.insert_result(tp_index, core_result);
+                            }
                             rt.result = Some(computed);
                         }
                         Err(ComputeError::Cancelled) => {

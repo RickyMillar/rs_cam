@@ -787,6 +787,31 @@ impl ProjectSession {
         Ok(())
     }
 
+    /// Write a freshly-computed `ToolpathComputeResult` into `session.results`.
+    ///
+    /// Symmetric counterpart to the `self.results.remove(&index)` calls
+    /// performed by every mutating method on `ProjectSession`. The
+    /// invariant is: `session.results[idx]` should always be either
+    /// absent (toolpath is stale / never generated) or a fresh result
+    /// produced from the current toolpath config. The viz-side threaded
+    /// compute backend writes through this method so the core cache
+    /// stays in sync with the viz-side `gui.toolpath_rt[id].result`
+    /// cache; before this method existed, the two caches diverged after
+    /// `apply_toolpath_param_snapshot` cleared `results[idx]` and the
+    /// GUI regen only repopulated `gui.toolpath_rt`. See
+    /// `planning/F1_RCA.md` (Roadmap F.1) for the divergence write-up.
+    pub fn insert_result(
+        &mut self,
+        index: usize,
+        result: super::ToolpathComputeResult,
+    ) -> Result<(), SessionError> {
+        if index >= self.toolpath_configs.len() {
+            return Err(SessionError::ToolpathNotFound(index));
+        }
+        self.results.insert(index, result);
+        Ok(())
+    }
+
     /// Wholesale replace all setups and toolpath configs from an external
     /// source (e.g. GUI's `JobState`).  This is the bulk-sync path used by
     /// `sync_session_from_job`.
@@ -1436,5 +1461,48 @@ mod tests {
             crate::compute::config::FeedsAutoMode::default(),
         );
         assert!(matches!(result, Err(SessionError::ToolpathNotFound(99))));
+    }
+
+    #[test]
+    fn insert_result_populates_cache() {
+        let mut s = make_session();
+        s.add_tool(make_tool());
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
+
+        assert!(s.get_result(0).is_none());
+        s.insert_result(0, fake_result()).unwrap();
+        assert!(s.get_result(0).is_some());
+    }
+
+    #[test]
+    fn insert_result_after_apply_snapshot_restores_cache() {
+        // Roadmap F.1: apply_toolpath_param_snapshot clears
+        // results[idx]. The viz-side regen used to leave that empty
+        // because writes only landed in gui.toolpath_rt. insert_result
+        // is the symmetric write that closes the cache gap.
+        let mut s = make_session();
+        s.add_tool(make_tool());
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
+        s.results.insert(0, fake_result());
+
+        s.apply_toolpath_param_snapshot(
+            0,
+            OperationConfig::Pocket(PocketConfig::default()),
+            DressupConfig::default(),
+            None,
+            crate::compute::config::FeedsAutoMode::default(),
+        )
+        .unwrap();
+        assert!(s.get_result(0).is_none());
+
+        s.insert_result(0, fake_result()).unwrap();
+        assert!(s.get_result(0).is_some());
+    }
+
+    #[test]
+    fn insert_result_rejects_out_of_range_index() {
+        let mut s = make_session();
+        let err = s.insert_result(99, fake_result()).unwrap_err();
+        assert!(matches!(err, SessionError::ToolpathNotFound(99)));
     }
 }

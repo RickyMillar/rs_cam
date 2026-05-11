@@ -1819,14 +1819,17 @@ optimizer trust workstream. Polish items add another week.
 | 5   | B.1–B.7   | stock-aware depth defaults, MCP feeds calc, dressups, boundary | -1🔴 -4🟡 -1🟢 (B.8/B.9 deferred) |
 | 6   | E.6       | numeric-string + 0/1→bool coercion, schema docs       | -1🟡            |
 | —   | F (new)   | Wanaka session: optimizer trust gaps + gate sensitivity | +2🔴 +8🟡 +2🟢 (added — investigation pending) |
+| 7   | F.1       | session.results ↔ gui.toolpath_rt cache reconciliation: ProjectSession::insert_result + GUI compute callback writes through; RCA in planning/F1_RCA.md | -1🔴 |
 
 ### Roadmap F bullets (pending — wanaka 2026-05-11)
 
-- 🔴 **F.1** Optimizer's predicted verdict diverges from live re-sim
-  by 70% on TP10 deflection. Resolution / sample-filter / generation
-  determinism / cross-setup all ruled out. Suspected: span boundary
-  drift between cached project results and freshly-applied regen.
-  Needs instrumented repro test.
+- ~~🔴 **F.1** Optimizer's predicted verdict diverges from live re-sim
+  by 70% on TP10 deflection.~~ **Closed by PR 7** — RCA in
+  `planning/F1_RCA.md` identified the cause: `session.results` and
+  `gui.toolpath_rt` were two parallel caches that desynchronized
+  after Apply. Fixed by adding `ProjectSession::insert_result` and
+  routing the GUI compute callback through it so the core cache is
+  always populated when a fresh result lands.
 - 🔴 **F.2** Apply doesn't auto-verify the prediction; misleading
   notification text "Regenerate to apply" implies the mutation
   hasn't happened. User has to manually regen + resim to discover
