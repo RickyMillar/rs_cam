@@ -141,6 +141,17 @@ pub enum SpanKind {
     /// Hard barrier *before* `start_move`. TSP must not reorder across this
     /// move boundary. Always zero-width: `start_move == end_move`.
     RapidOrderBarrier,
+    /// A waterline / boundary cleanup pass added after the main Z-level
+    /// passes of an adaptive3d operation. These spans carry transient
+    /// link-and-clean moves that bridge across regions previously cleared
+    /// (or partially cleared) by the depth-pass loop. Lateral feeds inside
+    /// these spans can briefly engage uncleared material left between
+    /// passes — the simulator faithfully reports the engagement, but it's
+    /// not a steady-state cutting condition the operator can dial in via
+    /// feeds & speeds. Gate predicates filter samples with a
+    /// `WaterlineCleanup` ancestor the same way they filter
+    /// [`SpanKind::Entry`] transients (Roadmap F.3).
+    WaterlineCleanup,
 }
 
 // ── SpanPayload ─────────────────────────────────────────────────────────

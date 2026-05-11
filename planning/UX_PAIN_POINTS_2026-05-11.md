@@ -1820,6 +1820,7 @@ optimizer trust workstream. Polish items add another week.
 | 6   | E.6       | numeric-string + 0/1→bool coercion, schema docs       | -1🟡            |
 | —   | F (new)   | Wanaka session: optimizer trust gaps + gate sensitivity | +2🔴 +8🟡 +2🟢 (added — investigation pending) |
 | 7   | F.1       | session.results ↔ gui.toolpath_rt cache reconciliation: ProjectSession::insert_result + GUI compute callback writes through; RCA in planning/F1_RCA.md | -1🔴 |
+| 8   | F.3       | New SpanKind::WaterlineCleanup variant; adaptive3d span emission tags cleanup spans; is_steady_state_for_gate filters cleanup-ancestry samples (uniform across chipload/power/deflection) | -1🟡 |
 
 ### Roadmap F bullets (pending — wanaka 2026-05-11)
 
@@ -1834,9 +1835,13 @@ optimizer trust workstream. Polish items add another week.
   notification text "Regenerate to apply" implies the mutation
   hasn't happened. User has to manually regen + resim to discover
   the gate flipped red.
-- 🟡 **F.3** Deflection gate trips on single-sample lift-bridge
-  transients in Waterline-cleanup spans (1 sample out of 21 236
-  triggers the gate at stepover=2.6).
+- ~~🟡 **F.3** Deflection gate trips on single-sample lift-bridge
+  transients in Waterline-cleanup spans.~~ **Closed by PR 8** — new
+  `SpanKind::WaterlineCleanup` variant tags the cleanup pass at
+  adaptive3d span emission; `is_steady_state_for_gate` excludes
+  cleanup-ancestry samples uniformly for all three gates
+  (chipload / power / deflection). Same structural pattern as the
+  Entry-spike routing.
 - 🟡 **F.4** "No safe improvement" narrative suggestions ignore
   machine envelope (suggests feed > 10080 mm/min on a machine
   with max_feed = 4000).

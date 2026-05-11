@@ -88,6 +88,9 @@ pub fn classify_sample_locality(
                 return Some(label.to_owned());
             }
         }
+        if lookup.ancestors_contain_kind(&sample.span_path, SpanKind::WaterlineCleanup) {
+            return Some("waterline cleanup".to_owned());
+        }
         if lookup.ancestors_contain_kind(&sample.span_path, SpanKind::LinkBridge) {
             return Some("region join".to_owned());
         }
@@ -104,7 +107,7 @@ pub fn classify_sample_locality(
 
 /// Predicate the per-gate trip loops use to decide whether a sample is
 /// part of steady-state cutting (and therefore eligible to drive the
-/// gate trip) or part of a configured entry transient (kept out of the
+/// gate trip) or part of a transient transition (kept out of the
 /// trip; surfaced separately as an `EntrySpike` advisory).
 ///
 /// G17 D7 of `planning/STRUCTURAL_ENTRY_SPANS_AND_LOCALITY.md`. The
@@ -112,8 +115,18 @@ pub fn classify_sample_locality(
 /// (`CutKinematics::{Helix, Plunge}` → not steady-state) hid terrain-
 /// following Helix samples on adaptive3d 3D-rough cuts (D0 finding).
 /// The replacement reads structural span ancestry: a sample is
-/// steady-state iff none of its `span_path` ancestors is
-/// [`SpanKind::Entry`].
+/// steady-state iff none of its `span_path` ancestors is one of the
+/// transient kinds.
+///
+/// Transient kinds excluded:
+/// - [`SpanKind::Entry`] — configured entry transitions (plunge, ramp,
+///   helix).
+/// - [`SpanKind::WaterlineCleanup`] — adaptive3d's post-pass cleanup
+///   sweep. Lateral feeds in cleanup spans can briefly engage
+///   uncleared material the lift-bridge crosses; the simulator
+///   reports the engagement faithfully but it's not a steady-state
+///   condition the operator dialed in via feeds & speeds (Roadmap
+///   F.3).
 ///
 /// When `span_lookup` is `None` (no annotated toolpath plumbed), the
 /// predicate returns `true` — conservatively treating every sample as
@@ -124,7 +137,11 @@ pub fn is_steady_state_for_gate(
     span_lookup: Option<&SpanLookup<'_>>,
 ) -> bool {
     match span_lookup {
-        Some(lookup) => !lookup.ancestors_contain_kind(&sample.span_path, SpanKind::Entry),
+        Some(lookup) => {
+            !lookup.ancestors_contain_kind(&sample.span_path, SpanKind::Entry)
+                && !lookup
+                    .ancestors_contain_kind(&sample.span_path, SpanKind::WaterlineCleanup)
+        }
         None => true,
     }
 }
@@ -259,6 +276,24 @@ mod tests {
     }
 
     #[test]
+    fn waterline_cleanup_ancestor_classifies_as_waterline_cleanup() {
+        // Roadmap F.3: post-pass waterline cleanup spans carry transient
+        // lift-bridge transitions, not steady-state cuts. Narration must
+        // surface them so the operator can tell a peak comes from a
+        // transient transition rather than dialed-in cutting.
+        let spans = vec![
+            span(0, 10, SpanKind::Operation, "op"),
+            span(2, 8, SpanKind::WaterlineCleanup, "Waterline cleanup"),
+        ];
+        let lookup = SpanLookup::new(&spans);
+        let s = sample(Some(PI), vec![SpanId(0), SpanId(1)]);
+        assert_eq!(
+            classify_sample_locality(&s, Some(&lookup)).as_deref(),
+            Some("waterline cleanup"),
+        );
+    }
+
+    #[test]
     fn linear_with_full_slot_arc_classifies_as_slot_section() {
         let s = sample(Some(PI), Vec::new());
         assert_eq!(
@@ -334,6 +369,27 @@ mod tests {
         // rather than silently filter (matches pre-D3 behaviour).
         let s = sample(Some(PI), vec![SpanId(0)]);
         assert!(is_steady_state_for_gate(&s, None));
+    }
+
+    #[test]
+    fn is_steady_state_for_gate_excludes_waterline_cleanup_ancestor() {
+        // Roadmap F.3: a lift-bridge sample inside a WaterlineCleanup
+        // span has a real peak engagement reported by the simulator
+        // (e.g. the dexel says material is in the cutter's footprint),
+        // but it's a transient transition, not a steady-state cut. The
+        // gate must filter it out the same way it filters Entry
+        // transients.
+        let spans = vec![
+            span(0, 20, SpanKind::Operation, "op"),
+            span(10, 20, SpanKind::WaterlineCleanup, "Waterline cleanup"),
+        ];
+        let lookup = SpanLookup::new(&spans);
+        // Inside cleanup → not steady-state.
+        let cleanup_sample = sample(Some(PI), vec![SpanId(0), SpanId(1)]);
+        assert!(!is_steady_state_for_gate(&cleanup_sample, Some(&lookup)));
+        // Inside an earlier depth pass (no cleanup ancestor) → steady-state.
+        let cut_sample = sample(Some(PI), vec![SpanId(0)]);
+        assert!(is_steady_state_for_gate(&cut_sample, Some(&lookup)));
     }
 
     #[test]
