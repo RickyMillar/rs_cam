@@ -1343,6 +1343,224 @@ string) succeeded. Schema gives no guidance.
 
 ---
 
+## Roadmap F — Optimizer trust + gate sensitivity (wanaka 2026-05-11)
+
+Live wanaka session findings while verifying PRs 1–6. Optimizer
+search is functioning (TP4 Back Rough 773s → 475s, all gates green;
+TP10 3D Rough 6 also found a green-state candidate). But the
+end-to-end Apply flow has trust-eroding holes that explain the
+user's "optimizer never suggests improvements" perception even
+though candidates ARE being produced.
+
+### Wanaka baseline reference (frozen state, fixture
+`/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml`)
+
+| TP | Op | Tool | Baseline chipload | Bounds | Verdict |
+|---|---|---|---|---|---|
+| 4 Back Rough | adaptive3d | 6mm flat EM | 0.020 | [0.032, 0.055] | exceeds-low (BURN) |
+| 10 3D Rough 6 | adaptive3d | 6mm flat EM | 0.020 | [0.032, 0.055] | exceeds-low (BURN) |
+| 5 Rivers (back) | project_curve | tapered ball 2mm | 0.0027 | [0.0044, 0.0087] (extrapolated) | exceeds-low |
+| 6 Lakes (back, inside) | project_curve | tapered ball 2mm | 0.0027 | [0.0042, 0.0085] (extrapolated) | exceeds-low |
+| 11 3D Finish 6 | drop_cutter | tapered ball 2mm | 0.0034 | [0.0038, 0.0077] (extrapolated) | exceeds-low |
+| 12 Rivers copy | project_curve | 6mm flat EM | 0.0011 | [0.030, 0.051] (extrapolated) | exceeds-low |
+
+After applying TP4 + TP10 best-safe candidates: 2/8 within bounds
+(was 0/8). Total runtime 3796s → 3478s (-8.4%). The remaining 4
+exceeding toolpaths are project_curve / drop_cutter ops where the
+optimizer correctly returned `no_safe_improvement` — machine
+`max_feed = 4000 mm/min` is the binding constraint.
+
+### F.1 — Optimizer predicted verdict diverges from live re-sim 🔴
+
+Concrete repro: TP10 stage-2 candidate predicted
+`deflection.peak_mm = 0.157` (within). After Apply + regen +
+re-sim, actual `peak_mm = 0.270` (exceeds 0.200 bound). 70%
+prediction error.
+
+Verified ruled out:
+- **Resolution mismatch.** Both run at 0.5mm
+  (`policy.rs:602` refined; `compute.rs:1262` auto-res clamps to
+  [0.02, 0.5] and resolves to 0.5 on this stock).
+- **Sample-attribution bug.** `deflection::evaluate` at
+  `tool_load/deflection.rs:148` filters
+  `s.toolpath_id == toolpath_id`. Both runs operate on the same
+  filtered subset.
+- **Generation non-determinism.** Regenerating with the same params
+  yields identical move counts.
+- **Cross-setup cascade.** TP4 (Setup 1, Bottom) and TP10
+  (Setup 2, Top) are in different setups; TP4 changes can't
+  affect TP10's stock state.
+
+Suspected cause (untested): the optimizer's per-candidate eval
+loop at `candidate.rs:331-345` regenerates *only the candidate's
+toolpath index* (`generate_toolpath(toolpath_index)`) and then
+runs a full project sim. The other toolpaths' cached annotated
+results were created at baseline params and never see the
+candidate's effect on stock state. But the live re-sim after
+Apply happens *after* the candidate's own `generate_toolpath`
+populated a fresh result with the new dressup pipeline, including
+possibly different `Waterline cleanup` spans. **The hypothesis to
+test: the spans differ between the two runs even though the move
+list is identical**, because dressups can reshape span boundaries
+in ways that change deflection sample localization.
+
+**Fix path (investigation):**
+1. Add a determinism check: in `evaluate_candidate`, after the
+   first verdict, re-run sim a second time without touching any
+   state and assert the verdict matches. If it doesn't, log both.
+2. If determinism passes, instrument the diff between the
+   optimizer-time trace and the live-resim trace — same toolpath,
+   same params, different verdict. Compare sample counts, span
+   boundaries, and the specific sample at the reported peak index.
+3. The diff will localize whether the divergence is in `Span`
+   re-assignment, `entry_filter` routing, or stock state.
+
+**Risk:** every Apply is a coin-flip until this is closed. Users
+trust evaporates fast.
+
+### F.2 — Apply doesn't auto-verify the prediction 🔴
+
+`apply_optimize_candidate` at
+`crates/rs_cam_viz/src/controller/events/mod.rs:332-430` does:
+1. apply_toolpath_param_snapshot
+2. mark_edited
+3. mark stale
+4. close modal
+5. notify "Applied … Regenerate to apply"
+
+It does NOT auto-regenerate, does NOT auto-resim, and does NOT
+compare the live verdict against the candidate's predicted
+verdict. So an unsafe-after-apply outcome (F.1) only surfaces
+after the user manually clicks Regenerate, then Run Simulation,
+then notices the gate flipped red.
+
+**Fix:** after the apply mutation:
+- Auto-trigger `GenerateToolpath(id)`
+- After regen succeeds, auto-trigger `RunSimulation` if the
+  baseline was simulated
+- After sim succeeds, compare live `ToolpathLoadVerdict` to the
+  stored candidate verdict; if any gate disagrees by >20% on
+  `peak_mm` or flips state (Within → Exceeds), surface a toast:
+  > "Optimizer predicted deflection 0.157 within bounds, but
+  >  actual is 0.270 (exceeds). Revert?"
+
+The notification text is also misleading — change
+"Applied optimize candidate to toolpath X. Regenerate to apply"
+to "Applied; regenerating…" since the apply already happened.
+
+### F.3 — Deflection gate over-trips on single-sample lift-bridges 🟡
+
+TP10 at stepover=2.6 fails deflection because **1 sample out of
+21,236** in span 9 (`Waterline cleanup`, no `pass_index`) hits
+6mm DOC — the lift function bridging across uncleared stock left
+by the prior depth pass. The simulator faithfully reports the
+6mm engagement (per the `peak_axial_doc_mm` semantics doc'd in
+CLAUDE.md), but the deflection gate uses raw `peak_mm` across all
+samples, so a single transient transition trips the gate.
+
+Confirmed by experiment: same feed/rpm with stepover=2.0 gives
+peak DOC = 3.30mm (info-only anomaly) and deflection 0.157 ✓; at
+stepover=2.6 the cleanup span needs to bridge wider gaps and
+peak DOC jumps to 6.00mm, deflection 0.270 ✗.
+
+**Fix options:**
+- **(a)** Exclude lift-bridge / Waterline-cleanup spans from the
+  deflection gate's peak calculation — those are transient
+  transitions, not steady-state cutting. The narration already
+  identifies them; the gate should consult `Span.kind` and skip.
+- **(b)** Use a sliding-window p99 instead of raw peak: a 10-sample
+  rolling window over which p99 > bound. A single transient won't
+  trip; a sustained problem will.
+- **(c)** Surface both peak and steady-state-peak — let the gate's
+  verdict report "1 sample transient at 0.270mm in lift bridge;
+  steady-state peak 0.158mm within bounds."
+
+Tests: `crates/rs_cam_core/src/tool_load/deflection.rs:341+`
+covers the gate's behavior on synthetic traces — new test for
+lift-bridge sample exclusion / p99 windowing belongs there.
+
+### F.4 — Optimizer suggestions ignore machine envelope 🟡
+
+TP12 (Rivers copy) returns `no_safe_improvement` with narrative
+suggestions:
+- "raise feed above 10080 mm/min"
+- "cap RPM below 3166"
+
+But machine `max_feed_mm_min = 4000` and `spindle.min_rpm = 8000`.
+*Both suggestions are infeasible.* The narrative is mathematically
+correct but practically useless — the user has nowhere to take
+the recommendation.
+
+**Fix:** in
+`crates/rs_cam_core/src/tool_load/optimize/narrative.rs` where
+suggestions are built, filter through
+`MachineProfile.{max_feed_mm_min, spindle.{min,max}_rpm}` before
+emitting. If both directions are infeasible, replace the
+suggestion list with a single explanatory line:
+> "No safe improvement at this machine envelope: feed bounded
+> ≤4000 mm/min, but ≥10080 needed; RPM bounded ≥8000, but
+> ≤3166 needed. Consider larger tool diameter (raises feed
+> headroom) or a stiffer material removal model."
+
+### F.5 — Locked feeds_auto fields are invisible 🟡
+
+After Apply, `feeds_auto_for_candidate`
+(`crates/rs_cam_core/src/tool_load/optimize/candidate.rs:274`)
+flips the changed fields' auto flags to `false`. Per-field:
+- feed_rate → false if delta.feed_mm_min is Some
+- spindle_speed → false if delta.spindle_rpm is Some
+- stepover → false if delta.stepover_mm is Some
+- depth_per_pass → false if delta.depth_per_pass_mm is Some
+
+This is correct behaviour ("don't silently overwrite"), but **the
+Feeds tab UI gives no indication that these fields are
+optimizer-locked**. A user who later wants the feeds calc to
+take over again has to find the right checkboxes in the Feeds
+tab and flip them individually, without any visual cue that
+they're locked or by what.
+
+**Fix:** in the Feeds tab UI, when `feeds_auto.X = false` AND
+the current value matches the most-recently-applied optimizer
+candidate, render a small chip next to the field:
+> "Set by Optimize · ✕ unlock"
+
+Clicking ✕ flips `feeds_auto.X` back to true; on the next render
+of the Feeds tab `calculate_and_apply_feeds` will overwrite with
+the calculated value. No new state needed if the chip just
+displays when "value matches optimizer record AND auto is off."
+
+Belongs in `crates/rs_cam_viz/src/ui/properties/mod.rs` near
+where the four DragValue + auto-checkbox pairs live.
+
+### F.6 — Project-level Optimize is undiscoverable 🟢
+
+`AppEvent::ApplyOptimizeProject` / `open_optimize_project` already
+exists in
+`crates/rs_cam_viz/src/controller/events/mod.rs:437` but the
+per-toolpath modal users open one TP at a time when they have
+6 problem toolpaths. The flow could collapse to a single review
++ batch apply.
+
+**Fix:** from the sim_diagnostics "Findings" section in
+`crates/rs_cam_viz/src/ui/sim_diagnostics.rs` (the same panel
+where the count of exceeding toolpaths surfaces), add an
+"Optimize all N exceeding toolpaths" link that triggers
+`AppEvent::OpenOptimizeProject`. Discoverable in context.
+
+### Implementation order
+
+1. **F.1 investigation** — instrumentation + repro test. Without
+   the root cause, F.2's auto-verify will fire on every apply.
+2. **F.3 gate fix** — exclude lift-bridge spans or windowed-p99.
+   Reduces phantom failures so F.2's warning fires only on real
+   problems.
+3. **F.2 auto-verify + notification copy.**
+4. **F.4 machine-envelope-filtered suggestions.**
+5. **F.5 feeds-auto lock chips.**
+6. **F.6 project-level optimize entry from sim diag.**
+
+---
+
 ## Out-of-roadmap items
 
 These bullets from the report are not in the roadmap because:
@@ -1384,12 +1602,28 @@ These bullets from the report are not in the roadmap because:
    ~3-4 days.
 6. **PR 6 — MCP type coercion (Roadmap E.6).** Independent of the
    above. ~1 day.
-7. **PR 7 — Optimizer modal triple (J8 deferred bullets).** ~2 days.
-8. **PR 8+ — Polish:** stock pin overlap, LUT chip, face-vs-toolpath
-   warning, etc.
+7. **PR 7 — Optimizer trust investigation (Roadmap F.1).**
+   Instrumentation + repro test for the predicted-vs-live verdict
+   divergence on TP10. RCA only — no fix yet. ~1-2 days.
+8. **PR 8 — Deflection gate lift-bridge exclusion (Roadmap F.3).**
+   Either skip Waterline-cleanup spans from `peak_mm` or windowed
+   p99. Reduces phantom failures before F.2 lands. ~1 day.
+9. **PR 9 — Auto-verify after Apply + notification copy (Roadmap F.2).**
+   Chain regen + sim + verdict-diff after `ApplyOptimizeCandidate`.
+   Surface a revert toast when prediction diverges. ~1 day.
+10. **PR 10 — Machine-envelope-filtered suggestions (Roadmap F.4).**
+    Filter narrative suggestions through machine limits in
+    `narrative.rs`. ~½ day.
+11. **PR 11 — Feeds-auto lock chips (Roadmap F.5) + project-Optimize
+    discoverability (F.6).** Co-located UI work in properties +
+    sim_diagnostics. ~1 day.
+12. **PR 12 — Optimizer modal triple (J8 deferred bullets).** ~2 days.
+13. **PR 13+ — Polish:** stock pin overlap, LUT chip, face-vs-toolpath
+    warning, B.8 stepover-as-%, B.9 collapsibles.
 
 Total estimated work: ~12-15 dev-days for the high-impact stack
-(PRs 1-6). Polish items add another week.
+(PRs 1-6, landed). Roadmap F adds another ~5-6 dev-days for the
+optimizer trust workstream. Polish items add another week.
 
 ## Closed by PR
 
@@ -1401,5 +1635,29 @@ Total estimated work: ~12-15 dev-days for the high-impact stack
 | 4   | C.1–C.6   | issue partition, summary swap, BURN floor, hotspots, banner | -1🔴 -4🟡   |
 | 5   | B.1–B.7   | stock-aware depth defaults, MCP feeds calc, dressups, boundary | -1🔴 -4🟡 -1🟢 (B.8/B.9 deferred) |
 | 6   | E.6       | numeric-string + 0/1→bool coercion, schema docs       | -1🟡            |
+| —   | F (new)   | Wanaka session: optimizer trust gaps + gate sensitivity | +2🔴 +3🟡 +1🟢 (added — investigation pending) |
+
+### Roadmap F bullets (pending — wanaka 2026-05-11)
+
+- 🔴 **F.1** Optimizer's predicted verdict diverges from live re-sim
+  by 70% on TP10 deflection. Resolution / sample-filter / generation
+  determinism / cross-setup all ruled out. Suspected: span boundary
+  drift between cached project results and freshly-applied regen.
+  Needs instrumented repro test.
+- 🔴 **F.2** Apply doesn't auto-verify the prediction; misleading
+  notification text "Regenerate to apply" implies the mutation
+  hasn't happened. User has to manually regen + resim to discover
+  the gate flipped red.
+- 🟡 **F.3** Deflection gate trips on single-sample lift-bridge
+  transients in Waterline-cleanup spans (1 sample out of 21 236
+  triggers the gate at stepover=2.6).
+- 🟡 **F.4** "No safe improvement" narrative suggestions ignore
+  machine envelope (suggests feed > 10080 mm/min on a machine
+  with max_feed = 4000).
+- 🟡 **F.5** Optimizer-locked `feeds_auto.*` fields have no UI
+  indicator in the Feeds tab — user can't tell what's locked or
+  why.
+- 🟢 **F.6** Project-level Optimize is undiscoverable from the
+  per-toolpath modal / sim_diagnostics surface.
 
 
