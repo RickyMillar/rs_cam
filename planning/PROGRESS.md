@@ -24,6 +24,42 @@
 
 ## Recent work (2026-05-11)
 
+### Wanaka optimizer verification + Roadmap F authored
+
+Live MCP session on `wanaka_full_tuned.toml` (2 setups, 8 toolpaths,
+6 of 8 BURN-risk at chipload-low baseline). Verified that the
+optimizer IS producing real wins where geometry allows:
+
+- TP4 Back Rough: 773s → 475s (-38.6%), all gates green after Apply
+- TP10 3D Rough 6: 200s → 180s (-9.8%) at the corrected stepover=2.0
+  (optimizer's stage-2 suggestion of stepover=2.6 made deflection
+  exceed; stepover=2.0 with the same feed/rpm change is the
+  sweet spot)
+- Project total: 3796s → 3478s (-8.4%), TPs within bounds 0 → 2/8
+- Project-curve / drop-cutter ops (TP5/6/11/12) honestly return
+  `no_safe_improvement` — machine `max_feed=4000` is the binding
+  constraint, optimizer can't conjure feed headroom that doesn't
+  exist
+
+Findings written up as **Roadmap F** in
+`planning/UX_PAIN_POINTS_2026-05-11.md`:
+- 🔴 F.1 Optimizer predicted verdict diverges from live re-sim (70%
+  on TP10 deflection; root cause needs RCA — likely span-boundary
+  drift between cached project results and applied regen)
+- 🔴 F.2 Apply doesn't auto-verify; user has to manually regen+resim
+  to discover the gate flipped red, by which point the modal has
+  closed and the prediction is lost
+- 🟡 F.3 Deflection gate trips on single-sample lift-bridge
+  transients in Waterline-cleanup spans
+- 🟡 F.4 Suggestions ignore machine envelope
+- 🟡 F.5 Optimizer-locked `feeds_auto.*` fields have no UI indicator
+- 🟢 F.6 Project-level Optimize undiscoverable
+
+Suggested PR sequencing 7-13 in the roadmap; F.1 + F.3 are the
+trust-critical pair (without F.1's RCA, F.2's auto-verify can't be
+calibrated, and without F.3 the auto-verify will fire on false
+positives). ~5-6 dev-days for the F stack.
+
 ### UX roadmap PR 6 — MCP type coercion (Roadmap E.6)
 
 Three small coercion gaps that made the MCP set_*_param surfaces
