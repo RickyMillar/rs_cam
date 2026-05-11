@@ -853,6 +853,78 @@ fn drain_compute_results_repopulates_session_results() {
 }
 
 #[test]
+fn drain_compute_results_clears_pending_apply_resim_on_success() {
+    // Roadmap F.2 — auto-verify after Apply. The drain handler must
+    // clear `pending_apply_resim` and trigger the project sim when
+    // the regen for the just-applied candidate lands. We assert the
+    // pending flag is cleared; the actual sim submission is a side
+    // effect on the backend (covered by integration of F.2's behavior
+    // in the GUI).
+    let mut controller = sample_controller();
+    controller.state.pending_apply_resim = Some(0);
+    let annotated = Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+        Toolpath::new(),
+    ));
+    controller.compute.drained.push(ComputeMessage::Toolpath(
+        crate::compute::worker::ComputeResult {
+            toolpath_id: ToolpathId(0),
+            result: Ok(ToolpathResult {
+                annotated,
+                stats: Default::default(),
+                debug_trace: None,
+                semantic_trace: None,
+                debug_trace_path: None,
+            }),
+            debug_trace: None,
+            semantic_trace: None,
+            debug_trace_path: None,
+        },
+    ));
+
+    controller.drain_compute_results();
+
+    assert!(
+        controller.state.pending_apply_resim.is_none(),
+        "pending_apply_resim should be cleared when the matching regen lands"
+    );
+}
+
+#[test]
+fn drain_compute_results_keeps_pending_apply_resim_for_other_toolpath() {
+    // If a regen lands for a different TP than the one awaiting
+    // verification, the pending flag stays set — we only kick the
+    // post-apply sim when the matching TP's regen finishes.
+    let mut controller = sample_controller();
+    controller.state.pending_apply_resim = Some(42);
+    let annotated = Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+        Toolpath::new(),
+    ));
+    controller.compute.drained.push(ComputeMessage::Toolpath(
+        crate::compute::worker::ComputeResult {
+            toolpath_id: ToolpathId(0),
+            result: Ok(ToolpathResult {
+                annotated,
+                stats: Default::default(),
+                debug_trace: None,
+                semantic_trace: None,
+                debug_trace_path: None,
+            }),
+            debug_trace: None,
+            semantic_trace: None,
+            debug_trace_path: None,
+        },
+    ));
+
+    controller.drain_compute_results();
+
+    assert_eq!(
+        controller.state.pending_apply_resim,
+        Some(42),
+        "pending_apply_resim should remain set when an unrelated regen lands"
+    );
+}
+
+#[test]
 fn drain_compute_results_skips_session_write_on_error() {
     let mut controller = sample_controller();
     controller.compute.drained.push(ComputeMessage::Toolpath(

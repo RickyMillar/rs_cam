@@ -391,6 +391,16 @@ impl<B: ComputeBackend> AppController<B> {
                         self.run_simulation_with_all();
                     }
 
+                    // Roadmap F.2 — auto-verify after per-TP Apply. If
+                    // this regen is for the just-applied candidate,
+                    // clear the pending flag and kick a full project
+                    // sim so the user sees the verified live verdict
+                    // without having to click Run Simulation by hand.
+                    if self.state.pending_apply_resim == Some(tp_id.0) {
+                        self.state.pending_apply_resim = None;
+                        self.run_simulation_with_all();
+                    }
+
                     // Notify pending MCP request for this toolpath
                     #[cfg(feature = "mcp")]
                     self.notify_mcp_toolpath_complete(tp_id);

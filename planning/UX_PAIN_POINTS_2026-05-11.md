@@ -1821,6 +1821,7 @@ optimizer trust workstream. Polish items add another week.
 | —   | F (new)   | Wanaka session: optimizer trust gaps + gate sensitivity | +2🔴 +8🟡 +2🟢 (added — investigation pending) |
 | 7   | F.1       | session.results ↔ gui.toolpath_rt cache reconciliation: ProjectSession::insert_result + GUI compute callback writes through; RCA in planning/F1_RCA.md | -1🔴 |
 | 8   | F.3       | New SpanKind::WaterlineCleanup variant; adaptive3d span emission tags cleanup spans; is_steady_state_for_gate filters cleanup-ancestry samples (uniform across chipload/power/deflection) | -1🟡 |
+| 9   | F.2       | Auto-verify after per-TP Apply: chain apply → regen → resim via new pending_apply_resim state; notification text replaced ("regenerating and verifying…") | -1🔴 |
 
 ### Roadmap F bullets (pending — wanaka 2026-05-11)
 
@@ -1831,10 +1832,15 @@ optimizer trust workstream. Polish items add another week.
   after Apply. Fixed by adding `ProjectSession::insert_result` and
   routing the GUI compute callback through it so the core cache is
   always populated when a fresh result lands.
-- 🔴 **F.2** Apply doesn't auto-verify the prediction; misleading
-  notification text "Regenerate to apply" implies the mutation
-  hasn't happened. User has to manually regen + resim to discover
-  the gate flipped red.
+- ~~🔴 **F.2** Apply doesn't auto-verify the prediction; misleading
+  notification text "Regenerate to apply".~~ **Closed by PR 9** —
+  per-TP Apply now sets `pending_apply_resim`, auto-submits the
+  regen, and the drain handler triggers a full project sim when
+  the regen lands (when a baseline sim existed). Notification copy
+  replaced with "regenerating and verifying…". The verdict-comparison
+  toast (predicted vs live divergence > 20%) was deferred since F.1
+  fix should eliminate divergence at source; if any remains after
+  the architectural cache fix, a follow-up PR can add the toast.
 - ~~🟡 **F.3** Deflection gate trips on single-sample lift-bridge
   transients in Waterline-cleanup spans.~~ **Closed by PR 8** — new
   `SpanKind::WaterlineCleanup` variant tags the cleanup pass at
