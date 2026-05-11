@@ -573,7 +573,10 @@ pub(crate) fn load_model_geometry(
                         detail: format!("STEP load failed: {e}"),
                     }
                 })?;
-                Ok(LoadedGeometry::Mesh((*enriched.mesh).clone()))
+                // Preserve BREP topology — the parallel `io::load_model_file`
+                // loader already does this. Downgrading to a flat mesh here
+                // (the prior bug) silently broke face-selective operations.
+                Ok(LoadedGeometry::Enriched(enriched))
             }
             #[cfg(not(feature = "step"))]
             {
@@ -762,6 +765,27 @@ pub(super) fn build_session_from_project(
                     kind: model_kind,
                     units: model_units,
                     enriched_mesh: None,
+                    winding_report: None,
+                    load_error: None,
+                });
+            }
+            Ok(LoadedGeometry::Enriched(enriched)) => {
+                tracing::info!(
+                    name = %model_section.name,
+                    tris = enriched.mesh.triangles.len(),
+                    faces = enriched.face_count(),
+                    "Loaded enriched (BREP) model"
+                );
+                let mesh_arc = Arc::clone(&enriched.mesh);
+                models.push(LoadedModel {
+                    id: model_id,
+                    name: model_section.name.clone(),
+                    mesh: Some(mesh_arc),
+                    polygons: None,
+                    path: model_path,
+                    kind: model_kind,
+                    units: model_units,
+                    enriched_mesh: Some(Arc::new(enriched)),
                     winding_report: None,
                     load_error: None,
                 });

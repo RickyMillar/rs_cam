@@ -1396,5 +1396,6 @@ Total estimated work: ~12-15 dev-days for the high-impact stack
 | PR  | Roadmap   | Bullets closed                                       | Severity delta  |
 | --- | --------- | ---------------------------------------------------- | --------------- |
 | 1   | A         | J12.2 0-byte export, J12.2 gate-vs-report disagree   | -2🔴            |
+| 2   | D         | J10 STEP loader strips BREP (+ defensive UI warning) | -1🔴            |
 
 

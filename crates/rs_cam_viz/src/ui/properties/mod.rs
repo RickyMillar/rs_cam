@@ -358,11 +358,21 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             let workholding = state.session.stock_config().workholding_rigidity;
 
             // Check if the toolpath's model has enriched mesh (for face selection UI)
-            let model_has_enriched = state
+            let model_for_panel = state
                 .session
                 .find_toolpath_config_by_id(id.0)
-                .and_then(|(_, tc)| state.session.models().iter().find(|m| m.id == tc.model_id))
+                .and_then(|(_, tc)| state.session.models().iter().find(|m| m.id == tc.model_id));
+            let model_has_enriched = model_for_panel
                 .map(|m| m.enriched_mesh.is_some())
+                .unwrap_or(false);
+            // Defensive: if a STEP model loaded without BREP (e.g. older
+            // project file or future loader regression), surface a warning
+            // so the face picker isn't silently absent.
+            let model_is_step_missing_brep = model_for_panel
+                .map(|m| {
+                    m.kind == Some(rs_cam_core::compute::stock_config::ModelKind::Step)
+                        && m.enriched_mesh.is_none()
+                })
                 .unwrap_or(false);
 
             // Snapshot height context before mutable borrow. Use the shared
@@ -398,6 +408,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     &machine,
                     workholding,
                     model_has_enriched,
+                    model_is_step_missing_brep,
                     height_ctx.as_ref(),
                     events,
                 );
@@ -2115,6 +2126,7 @@ fn draw_toolpath_panel(
     machine: &rs_cam_core::machine::MachineProfile,
     workholding: rs_cam_core::feeds::WorkholdingRigidity,
     model_has_enriched: bool,
+    model_is_step_missing_brep: bool,
     height_ctx: Option<&HeightContext>,
     events: &mut Vec<AppEvent>,
 ) {
@@ -2162,6 +2174,19 @@ fn draw_toolpath_panel(
                 }
             });
     });
+
+    // BREP-not-loaded warning: surfaces when a STEP model loaded without
+    // its enriched mesh (older project files written before the BREP
+    // round-trip fix, or an unexpected loader regression). Without this,
+    // the face picker just silently disappears.
+    if model_is_step_missing_brep {
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new("⚠ BREP topology not loaded — face picker unavailable. Reload model.")
+                .color(egui::Color32::from_rgb(220, 160, 60))
+                .strong(),
+        );
+    }
 
     // Face selection (STEP models only)
     if model_has_enriched {
