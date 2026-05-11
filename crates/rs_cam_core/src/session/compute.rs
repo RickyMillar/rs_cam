@@ -163,12 +163,32 @@ impl ProjectSession {
                 // Lets callers that can only produce JSON numbers (e.g. MCP
                 // clients that treat every value as numeric) drive boolean
                 // params like z_blend, detect_flat_areas, slot_clearing.
+                //
+                // Also coerce numeric strings ("7", "12.5") into JSON
+                // numbers when the existing field is numeric (or absent).
+                // The four explicitly-handled fields above (`feed_rate`,
+                // `plunge_rate`, `stepover`, `depth_per_pass`) get this
+                // for free via `as_number`; this wildcard fallback
+                // extends the same tolerance to op-specific fields like
+                // `depth`, `cut_depth`, `min_z`, etc., which previously
+                // round-tripped through serde and rejected strings.
+                // (Roadmap E.6.a)
                 let value = match (params_obj.get(param), &value) {
                     (Some(existing), serde_json::Value::Number(n)) if existing.is_boolean() => {
                         match n.as_i64() {
                             Some(0) => serde_json::Value::Bool(false),
                             Some(1) => serde_json::Value::Bool(true),
                             _ => value,
+                        }
+                    }
+                    (existing_opt, serde_json::Value::String(s))
+                        if existing_opt.is_none_or(|v| v.is_number()) =>
+                    {
+                        match s.parse::<f64>() {
+                            Ok(n) => serde_json::Number::from_f64(n)
+                                .map(serde_json::Value::Number)
+                                .unwrap_or(value),
+                            Err(_) => value,
                         }
                     }
                     _ => value,

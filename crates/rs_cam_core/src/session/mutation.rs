@@ -219,6 +219,30 @@ impl ProjectSession {
                         "unknown dressup field '{key}'"
                     )));
                 }
+                // Roadmap E.6.b — symmetric coercion mirroring
+                // `set_toolpath_param`'s wildcard: 0/1 -> bool when the
+                // existing field is a boolean, and numeric-string ->
+                // number when the existing field is numeric. Lets MCP
+                // clients that always serialize numerically (or always
+                // stringify) drive boolean and numeric dressup fields.
+                let value = match (obj.get(key), &value) {
+                    (Some(existing), serde_json::Value::Number(n)) if existing.is_boolean() => {
+                        match n.as_i64() {
+                            Some(0) => serde_json::Value::Bool(false),
+                            Some(1) => serde_json::Value::Bool(true),
+                            _ => value,
+                        }
+                    }
+                    (Some(existing), serde_json::Value::String(s)) if existing.is_number() => {
+                        match s.parse::<f64>() {
+                            Ok(n) => serde_json::Number::from_f64(n)
+                                .map(serde_json::Value::Number)
+                                .unwrap_or(value),
+                            Err(_) => value,
+                        }
+                    }
+                    _ => value,
+                };
                 obj.insert(key.to_owned(), value);
             }
             None => {
