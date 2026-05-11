@@ -495,14 +495,13 @@ fn draw_project_overview(
     let issues = sim.issues(gui, max_feed);
     let issue_count = issues.len();
 
-    let (ok, _warn, bad, unmodeled) = verdict_counts_local(load_report);
+    // Roadmap C.2 — use ToolLoadReport.summary() so denominators are
+    // toolpath-counted, not gate-cell counted ("Within bounds: 0" used to
+    // appear because the per-toolpath × 3-gate fold rarely landed an
+    // entire row in `Within`).
+    let summary = load_report.summary();
+    let (ok, bad, unmodeled) = (summary.within, summary.exceeds, summary.fully_unmodeled);
     let collision_count = sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
-    let hotspot_count = sim
-        .results
-        .as_ref()
-        .and_then(|r| r.cut_trace.as_ref())
-        .map(|t| t.hotspots.len())
-        .unwrap_or(0);
 
     // ─── Global stats ───
     ui.label(
@@ -550,6 +549,44 @@ fn draw_project_overview(
             ui.end_row();
         });
 
+    // Roadmap C.6 — single-line verdict banner mirroring the rule the
+    // MCP `run_simulation` response uses: collisions → ERROR; air cut
+    // > 20% → WARNING; otherwise SUCCESS. Gives a glanceable answer
+    // ("is this run good?") above the per-metric breakdown.
+    let air_cut_pct = sim
+        .results
+        .as_ref()
+        .and_then(|r| r.cut_trace.as_ref())
+        .map(|ct| {
+            let s = &ct.summary;
+            if s.total_runtime_s > 0.0 {
+                s.air_cut_time_s / s.total_runtime_s * 100.0
+            } else {
+                0.0
+            }
+        })
+        .unwrap_or(0.0);
+    let (banner_text, banner_color) = if collision_count > 0 {
+        (
+            format!("⚠ {collision_count} collision{} — review before export",
+                if collision_count == 1 { "" } else { "s" }),
+            theme::ERROR,
+        )
+    } else if air_cut_pct > 20.0 {
+        (
+            format!("⚠ High air cutting ({air_cut_pct:.0}%) — toolpath may be sweeping over uncut stock"),
+            theme::WARNING,
+        )
+    } else {
+        ("✓ No collisions, air cutting under threshold".to_owned(), theme::SUCCESS)
+    };
+    ui.add_space(4.0);
+    ui.label(
+        egui::RichText::new(banner_text)
+            .color(banner_color)
+            .strong(),
+    );
+
     ui.add_space(4.0);
     ui.separator();
 
@@ -561,21 +598,21 @@ fn draw_project_overview(
         .spacing([8.0, 2.0])
         .show(ui, |ui| {
             ui.label(
-                egui::RichText::new("Within bounds")
+                egui::RichText::new("TPs within bounds")
                     .small()
                     .color(egui::Color32::from_rgb(120, 200, 130)),
             );
             ui.label(egui::RichText::new(format!("{ok}")).small());
             ui.end_row();
             ui.label(
-                egui::RichText::new("Exceedances")
+                egui::RichText::new("TPs exceeding")
                     .small()
                     .color(egui::Color32::from_rgb(220, 90, 90)),
             );
             ui.label(egui::RichText::new(format!("{bad}")).small());
             ui.end_row();
             ui.label(
-                egui::RichText::new("Unmodeled")
+                egui::RichText::new("TPs fully unmodeled")
                     .small()
                     .color(egui::Color32::from_rgb(210, 170, 80)),
             );
@@ -593,21 +630,156 @@ fn draw_project_overview(
             );
             ui.label(egui::RichText::new(format!("{collision_count}")).small());
             ui.end_row();
-            ui.label(
-                egui::RichText::new("Issues")
-                    .small()
-                    .color(theme::TEXT_MUTED),
-            );
-            ui.label(egui::RichText::new(format!("{issue_count}")).small());
-            ui.end_row();
-            ui.label(
-                egui::RichText::new("Hotspots")
-                    .small()
-                    .color(theme::TEXT_MUTED),
-            );
-            ui.label(egui::RichText::new(format!("{hotspot_count}")).small());
-            ui.end_row();
         });
+
+    // Roadmap C.1 — partition the issue count by SimulationIssueKind into
+    // a "must address" cluster (collisions, hotspots) and an
+    // informational cluster (low engagement, air cut). The single
+    // `issue_count` row hid 24 800 air-cut "issues" alongside 14
+    // hotspots, which makes the project look broken when most of the
+    // count is emission noise.
+    let mut must_address: Vec<(SimulationIssueKind, usize)> = Vec::new();
+    let mut informational: Vec<(SimulationIssueKind, usize)> = Vec::new();
+    let kinds_must = [
+        SimulationIssueKind::RapidCollision,
+        SimulationIssueKind::HolderCollision,
+        SimulationIssueKind::Hotspot,
+    ];
+    let kinds_info = [
+        SimulationIssueKind::LowEngagement,
+        SimulationIssueKind::AirCut,
+    ];
+    for kind in kinds_must {
+        let count = issues.iter().filter(|i| i.kind == kind).count();
+        if count > 0 {
+            must_address.push((kind, count));
+        }
+    }
+    for kind in kinds_info {
+        let count = issues.iter().filter(|i| i.kind == kind).count();
+        informational.push((kind, count));
+    }
+    if !must_address.is_empty() {
+        ui.add_space(2.0);
+        ui.label(
+            egui::RichText::new("Must address")
+                .small()
+                .strong()
+                .color(theme::ERROR),
+        );
+        egui::Grid::new("cut_overview_must_address")
+            .num_columns(2)
+            .spacing([8.0, 2.0])
+            .show(ui, |ui| {
+                for (kind, count) in &must_address {
+                    ui.label(
+                        egui::RichText::new(issue_kind_label(*kind))
+                            .small()
+                            .color(theme::ERROR),
+                    );
+                    ui.label(egui::RichText::new(format!("{count}")).small());
+                    ui.end_row();
+                }
+            });
+    }
+    if informational.iter().any(|(_, c)| *c > 0) {
+        ui.add_space(2.0);
+        ui.label(
+            egui::RichText::new("Informational")
+                .small()
+                .color(theme::TEXT_MUTED),
+        );
+        egui::Grid::new("cut_overview_informational")
+            .num_columns(2)
+            .spacing([8.0, 2.0])
+            .show(ui, |ui| {
+                for (kind, count) in &informational {
+                    ui.label(
+                        egui::RichText::new(issue_kind_label(*kind))
+                            .small()
+                            .color(theme::TEXT_MUTED),
+                    );
+                    ui.label(egui::RichText::new(format!("{count}")).small());
+                    ui.end_row();
+                }
+            });
+    }
+    let _ = issue_count; // partition above replaces the single tally
+
+    // Roadmap C.4 — project-wide hotspot triage list. Source:
+    // `cut_trace.hotspots`, sorted by `wasted_runtime_s` desc. The
+    // single-card `draw_focused_hotspot_card` only shows one hotspot at
+    // a time; without this list a user has no glanceable triage of
+    // "where is the tool wasting time?" at the project level.
+    //
+    // Snapshot the (idx, toolpath_id, move_start, wasted, peak) tuples
+    // so we can drop the trace borrow before re-borrowing sim mutably
+    // inside the click handler.
+    let hotspot_snapshot: Vec<(usize, usize, usize, f64, f64)> = sim
+        .results
+        .as_ref()
+        .and_then(|r| r.cut_trace.as_ref())
+        .map(|trace| {
+            let mut v: Vec<(usize, usize, usize, f64, f64)> = trace
+                .hotspots
+                .iter()
+                .enumerate()
+                .map(|(idx, h)| {
+                    (
+                        idx,
+                        h.toolpath_id,
+                        h.move_start,
+                        h.wasted_runtime_s,
+                        h.peak_chipload_mm_per_tooth,
+                    )
+                })
+                .collect();
+            v.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
+            v
+        })
+        .unwrap_or_default();
+    if !hotspot_snapshot.is_empty() {
+        ui.add_space(4.0);
+        egui::CollapsingHeader::new(format!("Top hotspots ({})", hotspot_snapshot.len()))
+            .default_open(false)
+            .show(ui, |ui| {
+                const TOP_N: usize = 10;
+                for (h_idx, tp_id_raw, move_start, wasted, peak) in
+                    hotspot_snapshot.iter().take(TOP_N)
+                {
+                    let tp_id = ToolpathId(*tp_id_raw);
+                    let global_start = sim
+                        .global_move_for_local(tp_id, *move_start)
+                        .unwrap_or(*move_start);
+                    let label = format!(
+                        "m{} · waste {:.2}s · peak chip {:.4}",
+                        move_start, wasted, peak
+                    );
+                    let resp = ui
+                        .selectable_label(
+                            false,
+                            egui::RichText::new(label)
+                                .small()
+                                .color(egui::Color32::from_rgb(255, 170, 90)),
+                        )
+                        .on_hover_text("Click to focus and jump to this hotspot.");
+                    if resp.clicked() {
+                        sim.debug.focused_hotspot = Some((tp_id, *h_idx));
+                        events.push(AppEvent::SimJumpToMove(global_start));
+                    }
+                }
+                if hotspot_snapshot.len() > TOP_N {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "… +{} more (open Selected for span-scoped list)",
+                            hotspot_snapshot.len() - TOP_N
+                        ))
+                        .small()
+                        .color(theme::TEXT_DIM),
+                    );
+                }
+            });
+    }
 
     if sim.is_stale(gui.edit_counter) {
         ui.add_space(4.0);
@@ -682,31 +854,6 @@ fn draw_project_overview(
     }
 }
 
-fn verdict_counts_local(report: &ToolLoadReport) -> (usize, usize, usize, usize) {
-    use rs_cam_core::tool_load::verdict::LoadState;
-    let mut ok = 0;
-    let mut warn = 0;
-    let mut bad = 0;
-    let mut unmodeled = 0;
-    for tp in &report.per_toolpath {
-        for (state, confidence) in [
-            (tp.chipload.state(), tp.chipload.confidence()),
-            (tp.power.state(), tp.power.confidence()),
-            (tp.deflection.state(), tp.deflection.confidence()),
-        ] {
-            match state {
-                LoadState::Within => ok += 1,
-                LoadState::Unmodeled => unmodeled += 1,
-                LoadState::Exceeds => bad += 1,
-            }
-            if matches!(confidence, Some(Confidence::Approximate(_))) {
-                warn += 1;
-            }
-        }
-    }
-    (ok, warn, bad, unmodeled)
-}
-
 fn issue_kind_label(kind: SimulationIssueKind) -> &'static str {
     match kind {
         SimulationIssueKind::Hotspot => "Hotspot",
@@ -735,6 +882,19 @@ fn draw_tool_load_badges(
             ..
         }
     );
+    // Roadmap C.3 — for BurnRisk (chipload-low), the relevant bound is
+    // the LUT *floor*, not the cap. Without this, the BURN tooltip
+    // talked about "peak / cap" which made the user think they were
+    // *exceeding* the high bound when they were actually under-feeding.
+    let chipload_bound = if burn_risk
+        && let ChiploadVerdict::Exceeds {
+            triggering: ref m, ..
+        } = verdict.chipload
+    {
+        m.bounds.min_mm_per_tooth.or(chipload_cap)
+    } else {
+        chipload_cap
+    };
     ui.horizontal(|ui| {
         ui.label(
             egui::RichText::new("Tool load:")
@@ -745,7 +905,7 @@ fn draw_tool_load_badges(
             ui,
             "chipload",
             &verdict.chipload.as_criterion_status(),
-            chipload_cap,
+            chipload_bound,
             burn_risk,
         );
         verdict_badge(
@@ -818,11 +978,15 @@ fn verdict_badge(
 }
 
 fn verdict_tooltip(status: &CriterionStatus<'_>, cap: Option<f64>, burn_risk: bool) -> String {
+    // For burn-risk chipload, the bound is the LUT *floor* — render as
+    // "peak / floor" instead of "peak / cap" so the relationship reads
+    // correctly (peak < floor, not peak > cap). (Roadmap C.3)
+    let bound_label = if burn_risk { "floor" } else { "cap" };
     let format_peak = |peak: f64| -> String {
         match cap.filter(|c| *c > 0.0) {
             Some(c) => {
                 let pct = (peak / c * 100.0).round() as i32;
-                format!("peak {peak:.4} / cap {c:.4} ({pct}%)")
+                format!("peak {peak:.4} / {bound_label} {c:.4} ({pct}%)")
             }
             None => format!("peak {peak:.4}"),
         }
@@ -840,9 +1004,15 @@ fn verdict_tooltip(status: &CriterionStatus<'_>, cap: Option<f64>, burn_risk: bo
         LoadState::Exceeds => {
             let reason_str = match (status.kind, burn_risk) {
                 (CriterionKind::Chipload, true) => {
-                    "chipload below vendor min — rubbing/burning risk"
+                    "chipload below vendor min — rubbing/burning risk. \
+                     At low chipload the tool edge rubs instead of cutting; \
+                     friction generates heat that glazes and burns the wood. \
+                     Increase feed rate or reduce RPM."
                 }
-                (CriterionKind::Chipload, false) => "chipload above vendor max — breakage risk",
+                (CriterionKind::Chipload, false) => {
+                    "chipload above vendor max — breakage risk. \
+                     Reduce feed rate or increase RPM."
+                }
                 (CriterionKind::Power, _) => "predicted spindle power exceeds machine limit",
                 (CriterionKind::Deflection, _) => {
                     "tip deflection exceeds 200 µm — finish/breakage risk"
@@ -1135,12 +1305,20 @@ fn draw_selected_section(
     }
 
     // In-scope hotspots and issues.
-    let in_scope_hotspots: Vec<(usize, &rs_cam_core::simulation_cut::SimulationCutHotspot)> = trace
-        .hotspots
-        .iter()
-        .enumerate()
-        .filter(|(_, h)| h.toolpath_id == tp_id.0 && h.span_path.iter().any(|s| s.0 == sid))
-        .collect();
+    // Roadmap C.4 — sort by wasted_runtime_s desc so the most expensive
+    // hotspots show first (rather than insertion order).
+    let mut in_scope_hotspots: Vec<(usize, &rs_cam_core::simulation_cut::SimulationCutHotspot)> =
+        trace
+            .hotspots
+            .iter()
+            .enumerate()
+            .filter(|(_, h)| h.toolpath_id == tp_id.0 && h.span_path.iter().any(|s| s.0 == sid))
+            .collect();
+    in_scope_hotspots.sort_by(|a, b| {
+        b.1.wasted_runtime_s
+            .partial_cmp(&a.1.wasted_runtime_s)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let boundary_start = sim
         .boundaries()
         .iter()

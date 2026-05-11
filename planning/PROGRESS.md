@@ -24,6 +24,30 @@
 
 ## Recent work (2026-05-11)
 
+### UX roadmap PR 4 — Sim diagnostics framing (Roadmap C)
+
+Six related fixes to the simulation diagnostics surface:
+
+- **C.1** Issue count partition into "Must address" (collisions /
+  hotspots) vs "Informational" (low engagement / air cut). Stops
+  ~24 800 air-cut emission-noise issues from drowning out the 14
+  hotspots that actually matter.
+- **C.2** `verdict_counts_local` swap to `ToolLoadReport.summary()`
+  for toolpath-counted denominators ("TPs within bounds" /
+  "TPs exceeding" / "TPs fully unmodeled"). Removes the stale
+  re-counter that produced "Within bounds: 0" on healthy projects.
+- **C.3** BURN-risk chipload tooltip + badge now use the LUT
+  `min_mm_per_tooth` floor instead of the breakage cap, so
+  "peak / floor" reads correctly. Tooltip prose extended with
+  the why ("rubbing → glazing → burns").
+- **C.4** Top-N hotspot triage list at the project level (sorted by
+  `wasted_runtime_s`), and the in-scope span list is now sorted too.
+- **C.5** Burn / breakage tooltip prose now names the controls a
+  user can change (raise feed / lower RPM, or vice versa).
+- **C.6** Verdict banner mirroring the MCP `run_simulation` rule
+  (collisions → ERROR, air > 20% → WARNING, else SUCCESS) above the
+  Findings grid for an at-a-glance "is this run good?" answer.
+
 ### UX roadmap PR 3 — MCP layer cleanups (Roadmap E.1–E.5)
 
 Five small edits that close opaque-error pain across the MCP surface:
