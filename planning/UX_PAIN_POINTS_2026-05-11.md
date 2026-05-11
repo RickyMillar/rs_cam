@@ -1559,6 +1559,189 @@ where the count of exceeding toolpaths surfaces), add an
 5. **F.5 feeds-auto lock chips.**
 6. **F.6 project-level optimize entry from sim diag.**
 
+### F.7 — `OptimizeOutcome` variants have inconsistent shapes 🟡
+
+The four `OptimizeOutcome` variants (`Ranked`, `NoSafeImprovement`,
+`MarginalSafe`, `TradeOff`) serialize differently in the MCP
+response:
+
+- `Ranked(candidates)` is a JSON array of candidates, NO `narrative`
+  block, the `delta` per-candidate doesn't get a top-level summary
+- `NoSafeImprovement { attempted, narrative, reason, explanation }`
+  has `attempted` (not `candidates`) and rich `narrative` with
+  `headline`, `limiting_gates`, `suggestions`
+- `MarginalSafe { candidates, narrative, ... }` has `candidates` AND
+  `narrative` — different from both above
+- `TradeOff { candidates, narrative }` — different again
+
+For an MCP agent or downstream consumer trying to parse "did
+optimization succeed?" the answer is "depends on `kind` enum +
+which field shape it implies." Plus the success path lacks the
+narrative that the failure path has — users only get the
+diagnostic explanation when the optimizer FAILS, never when it
+succeeds.
+
+**Fix:** unify the response shape. Every outcome carries:
+```
+{
+  "kind": "ranked" | "no_safe_improvement" | "marginal_safe" | "trade_off",
+  "candidates": [...],          // always — empty array for skipped
+  "narrative": {                 // always
+    "headline": "...",
+    "envelope": ...,
+    "limiting_gates": [...],     // empty when no gate trip
+    "suggestions": [...],        // empty when no suggestions
+  },
+  "recommended_index": Option<usize>  // 1+ for ranked first-safe, None for no_safe
+}
+```
+
+Live in
+`crates/rs_cam_core/src/tool_load/optimize/outcome.rs` and
+`narrative.rs`. Touches the GUI optimize_modal renderer
+(`crates/rs_cam_viz/src/ui/optimize_modal.rs:97-235`) — four
+separate render arms can collapse to one.
+
+### F.8 — `Unmodeled` reasons mix "can't compute" vs "doesn't apply" 🟡
+
+TP14 Pin Drill returns:
+```
+"chipload": { "kind": "unmodeled", "reason": { "kind": "arc_engagement_not_captured" } }
+```
+
+But drills don't have arc engagement — they're stock-based, plunge-only.
+The simulator isn't failing; the gate genuinely doesn't apply. Same
+for TP7 Holes (Drill op). Showing
+`arc_engagement_not_captured` to a user (or an agent) implies "the
+sim couldn't measure it; maybe re-run with finer resolution?" which
+is the wrong action.
+
+**Fix:** add a new variant to `UnmodeledReason`:
+```rust
+pub enum UnmodeledReason {
+    // existing
+    NotApplicableForOp(&'static str),  // new — drill cycle, etc
+}
+```
+
+In `chipload::evaluate` / `deflection::evaluate` / `power::evaluate`,
+when the op type is one where the gate is geometrically not
+applicable (Drill, AlignmentPinDrill, etc.), short-circuit to
+`NotApplicableForOp("drill cycle — no continuous engagement")`
+before the arc-engagement check.
+
+This also lets the summary count distinguish "5 toolpaths fully
+unmodeled because of failed sim" from "2 toolpaths where gates
+don't apply" — currently they bucket together as
+`fully_unmodeled: 2`.
+
+### F.9 — `peak_chipload` in `per_depth_pass` vs gate statistic
+divergence is invisible 🟡
+
+`per_depth_pass.[].peak_chipload_mm_per_tooth` is the RAW
+per-sample peak (e.g. TP10 reports 0.164 mm/tooth in every span).
+But the chipload gate uses the `median_low` statistic and reads
+0.038 — within bounds. The raw peak is ~4× the gate value.
+
+For an agent (or human) reading the per_depth_pass dump, the
+0.164 number looks like a big exceedance. There's no inline note
+saying "this is the per-sample peak; the gate reads
+`median_low(samples_in_span)` because steady-state matters, not
+single-sample transients."
+
+**Fix:** add a `gate_statistic` field next to `peak_*` in the
+per_depth_pass entries:
+```json
+{
+  "peak_chipload_mm_per_tooth": 0.164,
+  "median_low_chipload_mm_per_tooth": 0.038,
+  "gate_statistic": "median_low"
+}
+```
+
+Or simpler: rename `peak_chipload_mm_per_tooth` to
+`per_sample_peak_chipload_mm_per_tooth` so the semantics are
+inline.
+
+Lives in
+`crates/rs_cam_core/src/simulation_cut.rs` (the
+`DepthPassSummary` struct) and the MCP serializer in
+`crates/rs_cam_viz/src/app/mcp.rs` `build_per_depth_pass_summary`.
+
+### F.10 — Arc-fit dressup creating implausibly large arcs 🟡
+
+TP10 narration consistently flags:
+> ⚠ 5 perimeter sweep arc(s) with R > tool_radius × 30
+> (smallest 91.5mm, largest 257.3mm)
+
+Tool radius = 3mm, so 30× = 90mm threshold. Some of these arcs
+are 90× the tool radius. The narration's own explanation:
+> "Suspiciously large arcs can indicate circumscribing-circle
+> arc-fit after path simplification."
+
+Same flag fires at both stepover=2.0 and stepover=2.6 — it's a
+generation behaviour independent of the optimizer. No gate
+currently trips on it; the user only sees it if they read the
+narration. But large arcs on a 3-axis router can produce
+unexpected linear interpolation in the G-code post if the
+controller doesn't honor G2/G3 with that radius.
+
+**Fix path (investigation):**
+1. Identify which spans contain the large arcs and what command
+   they implement (e.g. perimeter sweep around a region).
+2. Determine whether arc-fit is "too aggressive" (collapsing a
+   long polyline into one circumscribed arc) or whether the
+   simplification is sound but the output isn't trustworthy on
+   a 3-axis controller.
+3. Either tighten `arc_tolerance` default for adaptive3d
+   (currently 0.05mm), add a `max_arc_radius_mm` cap, or split
+   arcs over a configurable radius threshold.
+
+`crates/rs_cam_core/src/compute/config.rs:340` (DressupConfig
+`arc_tolerance`) and the arc-fit dressup implementation.
+
+### F.11 — `exceeds_breakdown` lacks toolpath name 🟢
+
+In `ToolLoadReportSummary.exceeds_breakdown`, each entry has:
+```json
+{ "gate": "chipload", "side": "low", "toolpath_id": 12 }
+```
+
+But not `name`. Agents (and the GUI rollup) have to cross-reference
+`session.list_toolpaths()` to get a human-readable label.
+
+**Fix:** add `toolpath_name: String` to `ExceedsEntry` in
+`crates/rs_cam_core/src/tool_load/verdict.rs:163`. The
+`summary()` impl at `:205-253` has access to
+`v.toolpath_id` but not the name — needs a lookup helper or a
+small refactor to pass `(id, name)` pairs.
+
+### F.12 — High air-cut % on adaptive3d roughs not optimized for 🟢
+
+Wanaka reports 42–54% air cutting on TP4 and TP10 (the adaptive3d
+roughs). The narration explicitly flags:
+> ⚠ 54.2% of cutting time is air-cut; average engagement 0.379.
+> Treat this as relative for 2D/SVG ops, but high values on 3D
+> roughing suggest boundary/stepover tuning or stale
+> remaining-stock assumptions.
+
+The optimizer's cost function is cycle_time, but air-cut time IS
+part of cycle_time, so candidates with less air-cutting should
+naturally win. They don't here — TP4's optimized candidate still
+has ~40%+ air. Either:
+- The path generator's air-cut behaviour is invariant to the
+  stepover/feed/rpm axes the optimizer searches over
+- There's a deeper geometric inefficiency (toolpath revisits
+  cleared regions, or boundary is wider than the model)
+
+**Fix path:** add an air-cut-percentage axis to the optimizer's
+narrative output ("air_cut_pct: 42% → 38% on best candidate") so
+users can see at a glance whether they're reclaiming cycle time
+by reducing wasted travel vs raising material removal rate. Then
+investigate whether path-generator-level changes (boundary
+inheritance, region ordering, rapid-vs-feed transitions) need
+their own optimizer axes.
+
 ---
 
 ## Out-of-roadmap items
@@ -1635,7 +1818,7 @@ optimizer trust workstream. Polish items add another week.
 | 4   | C.1–C.6   | issue partition, summary swap, BURN floor, hotspots, banner | -1🔴 -4🟡   |
 | 5   | B.1–B.7   | stock-aware depth defaults, MCP feeds calc, dressups, boundary | -1🔴 -4🟡 -1🟢 (B.8/B.9 deferred) |
 | 6   | E.6       | numeric-string + 0/1→bool coercion, schema docs       | -1🟡            |
-| —   | F (new)   | Wanaka session: optimizer trust gaps + gate sensitivity | +2🔴 +3🟡 +1🟢 (added — investigation pending) |
+| —   | F (new)   | Wanaka session: optimizer trust gaps + gate sensitivity | +2🔴 +8🟡 +2🟢 (added — investigation pending) |
 
 ### Roadmap F bullets (pending — wanaka 2026-05-11)
 
@@ -1659,5 +1842,19 @@ optimizer trust workstream. Polish items add another week.
   why.
 - 🟢 **F.6** Project-level Optimize is undiscoverable from the
   per-toolpath modal / sim_diagnostics surface.
+- 🟡 **F.7** `OptimizeOutcome` variants have inconsistent JSON
+  shapes — `Ranked` has no `narrative`; success path lacks the
+  diagnostic structure the failure path carries.
+- 🟡 **F.8** `Unmodeled` reasons conflate "sim failed to compute"
+  with "gate doesn't apply for this op type" (drill cycles).
+- 🟡 **F.9** `per_depth_pass.peak_chipload` is per-sample raw peak
+  (~4× the gate's `median_low` value); divergence is invisible.
+- 🟡 **F.10** Arc-fit dressup produces R > 30× tool_radius arcs
+  on adaptive3d perimeter sweeps — narration flags them, no gate
+  trips, but may post-process unsafely on some controllers.
+- 🟢 **F.11** `exceeds_breakdown` in summary lacks `toolpath_name`.
+- 🟢 **F.12** Optimizer doesn't surface air-cut% delta on candidates
+  even though it's part of cycle_time; high-air-cut roughs aren't
+  visibly improving on that axis.
 
 
