@@ -642,6 +642,23 @@ fn draw_project_overview(
             ui.end_row();
         });
 
+    // Roadmap F.6 — when one or more toolpaths exceed their gate
+    // bounds, surface the project-level Optimize entry point inline
+    // so the user doesn't have to open each per-TP modal in turn.
+    // Discovered-in-context (the Findings grid is where the user
+    // sees the exceeding count).
+    if bad > 0 {
+        ui.add_space(2.0);
+        let label = if bad == 1 {
+            "⚡ Optimize 1 exceeding toolpath".to_owned()
+        } else {
+            format!("⚡ Optimize all {bad} exceeding toolpaths")
+        };
+        if ui.button(label).clicked() {
+            events.push(AppEvent::OpenOptimizeProject);
+        }
+    }
+
     // Roadmap C.1 — partition the issue count by SimulationIssueKind into
     // a "must address" cluster (collisions, hotspots) and an
     // informational cluster (low engagement, air cut). The single
