@@ -8,7 +8,7 @@
 //! reason — no separate error column.
 
 use rs_cam_core::tool_load::optimize::{
-    OptimizeCandidate, OptimizeOutcome, ParamDelta, ProjectOptimizeReport,
+    OptimizeCandidate, OptimizeOutcome, OutcomeKind, ParamDelta, ProjectOptimizeReport,
 };
 
 use super::{AppEvent, theme};
@@ -194,28 +194,22 @@ fn compute_optimized_cycle(report: &ProjectOptimizeReport, row_selected: &[bool]
         .per_toolpath
         .iter()
         .zip(row_selected.iter().chain(std::iter::repeat(&false)))
-        .map(|((_, outcome), &selected)| match outcome {
-            OptimizeOutcome::Ranked(candidates) => {
-                let baseline = candidates.first().map_or(0.0, |c| c.cycle_time_s);
+        .map(|((_, outcome), &selected)| match outcome.kind {
+            OutcomeKind::Ranked => {
+                let baseline = outcome.candidates.first().map_or(0.0, |c| c.cycle_time_s);
                 if selected {
                     outcome.first_safe().map_or(baseline, |c| c.cycle_time_s)
                 } else {
                     baseline
                 }
             }
-            OptimizeOutcome::TradeOff { candidates, .. } => {
-                // Trade-off rows aren't auto-selectable from the
-                // project rollup — the user has to open the modal to
-                // accept the regression. Contribute baseline.
-                candidates.first().map_or(0.0, |c| c.cycle_time_s)
-            }
-            OptimizeOutcome::MarginalSafe { candidates, .. } => {
-                // MarginalSafe rows aren't auto-selectable either —
-                // user opens the modal and verifies before applying.
+            OutcomeKind::TradeOff | OutcomeKind::MarginalSafe => {
+                // Trade-off and MarginalSafe rows aren't auto-selectable
+                // from the project rollup — user must open the modal.
                 // Contribute baseline.
-                candidates.first().map_or(0.0, |c| c.cycle_time_s)
+                outcome.candidates.first().map_or(0.0, |c| c.cycle_time_s)
             }
-            OptimizeOutcome::NoSafeImprovement { .. } | OptimizeOutcome::Skipped { .. } => {
+            OutcomeKind::NoSafeImprovement | OutcomeKind::Skipped => {
                 // No candidate to swap — contributes baseline.
                 // We don't have direct access to baseline cycle for
                 // refused rows from the outcome; treat as 0 to avoid
@@ -243,10 +237,9 @@ fn draw_bottleneck_callout(
         .per_toolpath
         .iter()
         .find(|(idx, _)| *idx == bottleneck_index)
-        .and_then(|(_, outcome)| match outcome {
-            OptimizeOutcome::Ranked(candidates) => candidates.first().map(|c| c.cycle_time_s),
-            OptimizeOutcome::MarginalSafe { candidates, .. } => {
-                candidates.first().map(|c| c.cycle_time_s)
+        .and_then(|(_, outcome)| match outcome.kind {
+            OutcomeKind::Ranked | OutcomeKind::MarginalSafe => {
+                outcome.candidates.first().map(|c| c.cycle_time_s)
             }
             _ => None,
         })
@@ -278,9 +271,9 @@ fn draw_row(
         .get(toolpath_index)
         .map_or_else(|| format!("idx {toolpath_index}"), |tc| tc.name.clone());
 
-    match outcome {
-        OptimizeOutcome::Ranked(candidates) => {
-            let baseline = candidates.first();
+    match outcome.kind {
+        OutcomeKind::Ranked => {
+            let baseline = outcome.candidates.first();
             let recommended = outcome.first_safe();
             let selected = row_selected.get(row_idx).copied().unwrap_or(false);
             let mut checked = selected;
@@ -311,18 +304,15 @@ fn draw_row(
                 ui.label("");
             }
         }
-        OptimizeOutcome::NoSafeImprovement {
-            explanation,
-            attempted,
-            ..
-        } => {
+        OutcomeKind::NoSafeImprovement => {
+            let explanation = &outcome.narrative.explanation;
             ui.label(""); // checkbox column blank
             ui.label(egui::RichText::new(name).small());
             ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
             // Refused row narrative + a count of candidates tried so
             // the user can see "no improvement" wasn't a black box.
             // Subtract 1 to exclude the baseline at index 0.
-            let tried = attempted.len().saturating_sub(1);
+            let tried = outcome.candidates.len().saturating_sub(1);
             let suffix = if tried > 0 {
                 format!(" — tried {tried}")
             } else {
@@ -336,18 +326,22 @@ fn draw_row(
             .on_hover_text(explanation.as_str());
             ui.label("");
         }
-        OptimizeOutcome::Skipped { reason } => {
+        OutcomeKind::Skipped => {
+            let reason_text = outcome
+                .reason
+                .as_ref()
+                .map_or("optimizer refused", |r| r.explanation_for_optimize());
             ui.label("");
             ui.label(egui::RichText::new(name).small());
             ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
             ui.label(
-                egui::RichText::new(reason.explanation_for_optimize().to_owned())
+                egui::RichText::new(reason_text.to_owned())
                     .small()
                     .color(theme::TEXT_DIM),
             );
             ui.label("");
         }
-        OptimizeOutcome::TradeOff { candidates, .. } => {
+        OutcomeKind::TradeOff => {
             // Trade-off rows: faster candidate exists but has a gate
             // regression. Render with a "trade-off" badge and no
             // checkbox (open the modal to apply).
@@ -358,7 +352,7 @@ fn draw_row(
                     .small()
                     .color(theme::WARNING),
             );
-            let tried = candidates.len().saturating_sub(1);
+            let tried = outcome.candidates.len().saturating_sub(1);
             ui.label(
                 egui::RichText::new(format!("{tried} faster candidate(s) with gate regression"))
                     .small()
@@ -366,7 +360,7 @@ fn draw_row(
             );
             ui.label("");
         }
-        OptimizeOutcome::MarginalSafe { candidates, .. } => {
+        OutcomeKind::MarginalSafe => {
             // G16 §11.4 Layer 3: faster candidate exists but at least
             // one gate reading was admitted only by the tolerance
             // band. No checkbox — user must verify on a scrap via the
@@ -378,7 +372,7 @@ fn draw_row(
                     .small()
                     .color(theme::WARNING),
             );
-            let tried = candidates.len().saturating_sub(1);
+            let tried = outcome.candidates.len().saturating_sub(1);
             ui.label(
                 egui::RichText::new(format!("{tried} candidate(s) inside tolerance band"))
                     .small()
@@ -558,9 +552,9 @@ fn draw_readonly_row(
         .toolpath_configs()
         .get(toolpath_index)
         .map_or_else(|| format!("idx {toolpath_index}"), |tc| tc.name.clone());
-    match outcome {
-        OptimizeOutcome::Ranked(candidates) => {
-            let baseline = candidates.first();
+    match outcome.kind {
+        OutcomeKind::Ranked => {
+            let baseline = outcome.candidates.first();
             let recommended = outcome.first_safe();
             ui.label(egui::RichText::new(name).small());
             if let (Some(b), Some(rec)) = (baseline, recommended) {
@@ -605,14 +599,11 @@ fn draw_readonly_row(
                 }
             }
         }
-        OptimizeOutcome::NoSafeImprovement {
-            explanation,
-            attempted,
-            ..
-        } => {
+        OutcomeKind::NoSafeImprovement => {
+            let explanation = &outcome.narrative.explanation;
             ui.label(egui::RichText::new(name).small());
             ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
-            let tried = attempted.len().saturating_sub(1);
+            let tried = outcome.candidates.len().saturating_sub(1);
             let suffix = if tried > 0 {
                 format!(" — tried {tried}")
             } else {
@@ -628,11 +619,15 @@ fn draw_readonly_row(
                 ui.label("");
             }
         }
-        OptimizeOutcome::Skipped { reason } => {
+        OutcomeKind::Skipped => {
+            let reason_text = outcome
+                .reason
+                .as_ref()
+                .map_or("optimizer refused", |r| r.explanation_for_optimize());
             ui.label(egui::RichText::new(name).small());
             ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
             ui.label(
-                egui::RichText::new(reason.explanation_for_optimize().to_owned())
+                egui::RichText::new(reason_text.to_owned())
                     .small()
                     .color(theme::TEXT_DIM),
             );
@@ -641,14 +636,14 @@ fn draw_readonly_row(
                 ui.label("");
             }
         }
-        OptimizeOutcome::TradeOff { candidates, .. } => {
+        OutcomeKind::TradeOff => {
             ui.label(egui::RichText::new(name).small());
             ui.label(
                 egui::RichText::new("trade-off")
                     .small()
                     .color(theme::WARNING),
             );
-            let tried = candidates.len().saturating_sub(1);
+            let tried = outcome.candidates.len().saturating_sub(1);
             ui.label(
                 egui::RichText::new(format!("{tried} faster candidate(s) — needs review"))
                     .small()
@@ -659,14 +654,14 @@ fn draw_readonly_row(
                 ui.label("");
             }
         }
-        OptimizeOutcome::MarginalSafe { candidates, .. } => {
+        OutcomeKind::MarginalSafe => {
             ui.label(egui::RichText::new(name).small());
             ui.label(
                 egui::RichText::new("verify on scrap")
                     .small()
                     .color(theme::WARNING),
             );
-            let tried = candidates.len().saturating_sub(1);
+            let tried = outcome.candidates.len().saturating_sub(1);
             ui.label(
                 egui::RichText::new(format!("{tried} candidate(s) inside tolerance band"))
                     .small()

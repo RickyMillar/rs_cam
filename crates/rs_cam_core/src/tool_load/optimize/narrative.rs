@@ -1,16 +1,13 @@
-//! Structured failure / trade-off narratives for `OptimizeOutcome`.
+//! Unified outcome narrative for `OptimizeOutcome`.
 //!
 //! A1 of `planning/OPTIMIZE_EXPLAINABILITY_AND_PEAK_FINDING.md` —
 //! promotes the free `explanation: String` to typed fields the UI
 //! (A2) and any agent client (MCP) can render selectively.
 //!
-//! - [`FailureNarrative`] attaches to `NoSafeImprovement` and
-//!   `MarginalSafe`. Carries: a one-line headline, per-gate limiting
-//!   readings on the closest-to-safe candidate, the search envelope
-//!   reached, and any operator-actionable suggestions (A4 fills these;
-//!   A1 emits an empty `Vec`).
-//! - [`TradeOffNarrative`] attaches to `TradeOff`. Carries headline +
-//!   improved / worsened gate lists + envelope.
+//! [`OutcomeNarrative`] attaches to every tier (Ranked, MarginalSafe,
+//! TradeOff, NoSafeImprovement, Skipped). Carries the union of the
+//! per-tier rationale shapes; fields that don't apply to a given tier
+//! stay empty and are skipped on the wire.
 //!
 //! Builders here are pure functions over the attempted candidate set;
 //! `build_outcome` calls them. Headlines are mechanical for A1 — A2
@@ -29,17 +26,41 @@ use crate::tool_load::verdict::{
 
 use super::OptimizeCandidate;
 
-/// Narrative attached to `NoSafeImprovement` and `MarginalSafe`.
-/// `Default` produces an empty narrative — useful for test fixtures
-/// that construct outcomes by hand without going through `build_outcome`.
+/// Unified narrative carried by every [`super::OptimizeOutcome`] tier.
+/// Roadmap F.7 collapsed the prior split (`FailureNarrative` +
+/// `TradeOffNarrative`) into one shape so MCP agents and the GUI modal
+/// can render outcomes uniformly without per-tier match logic.
+///
+/// Per-tier population:
+///
+/// - **Ranked**: `headline` + `envelope` only.
+/// - **MarginalSafe**: `headline`, `explanation`, `envelope`,
+///   `limiting_gates` (band-admitted readings), `entry_advisories`.
+/// - **TradeOff**: `headline`, `envelope`, `improved_gates`,
+///   `worsened_gates`.
+/// - **NoSafeImprovement**: `headline`, `explanation`, `envelope`,
+///   `limiting_gates` (Exceeds readings), `entry_advisories`,
+///   `suggestions`.
+/// - **Skipped**: empty (no candidates were evaluated).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct FailureNarrative {
+pub struct OutcomeNarrative {
     /// One-line headline for the modal. Operator-facing language;
     /// mechanically generated for A1.
     pub headline: String,
+    /// Free-form modal subhead. Long-form text the UI shows under the
+    /// headline. Empty for tiers that don't need one (Ranked,
+    /// TradeOff, Skipped).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub explanation: String,
+    /// Extents per knob axis across the attempted candidate set —
+    /// surfaces "We tried feeds up to X mm/min" without the UI
+    /// re-computing.
+    #[serde(default)]
+    pub envelope: SearchEnvelopeReached,
     /// Per-gate limiting readings on the closest-to-safe candidate.
     /// For `NoSafeImprovement`, an Exceeds gate; for `MarginalSafe`,
     /// a Within reading admitted only by the phase-1 tolerance band.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub limiting_gates: Vec<LimitingGate>,
     /// G17 C2 — entry-sample spikes from the recommended /
     /// closest-to-safe candidate that exceeded the gate's bound but
@@ -47,13 +68,18 @@ pub struct FailureNarrative {
     /// Empty when no entry sample breached its bound.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub entry_advisories: Vec<EntryAdvisory>,
-    /// Extents per knob axis across the attempted candidate set —
-    /// surfaces "We tried feeds up to X mm/min" without the UI
-    /// re-computing.
-    pub envelope: SearchEnvelopeReached,
-    /// Operator-actionable suggestions. A4 will populate from
-    /// heuristics; A1 emits `Vec::new()`.
+    /// Operator-actionable suggestions. A4 populates from heuristics;
+    /// A1 emits `Vec::new()`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub suggestions: Vec<OperatorSuggestion>,
+    /// TradeOff: gates the recommended candidate moved from
+    /// Exceeds/Worse → Within/Better. Empty for other tiers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub improved_gates: Vec<GateKind>,
+    /// TradeOff: gates the recommended candidate moved from
+    /// Within/Better → Exceeds/Worse. Empty for other tiers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub worsened_gates: Vec<GateKind>,
 }
 
 /// G17 C2 — informational entry-sample breach surfaced on the
@@ -69,18 +95,6 @@ pub struct EntryAdvisory {
     /// under-the-bound (chipload Low entries).
     pub overshoot_fraction: f64,
     pub locality: String,
-}
-
-/// Narrative attached to `TradeOff`. Distinct shape from
-/// `FailureNarrative` because trade-offs are described by which gates
-/// moved up vs down, not by a single limiting reading. `Default`
-/// produces an empty narrative for test fixtures.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct TradeOffNarrative {
-    pub headline: String,
-    pub improved_gates: Vec<GateKind>,
-    pub worsened_gates: Vec<GateKind>,
-    pub envelope: SearchEnvelopeReached,
 }
 
 /// One per-gate limiting reading. The same shape covers
@@ -175,7 +189,29 @@ pub enum KnobAxis {
     ScallopHeight,
 }
 
-/// Build a `FailureNarrative` for a `NoSafeImprovement` outcome. The
+/// Build an `OutcomeNarrative` for a `Ranked` outcome — headline +
+/// envelope only. Per-row deltas live on each `OptimizeCandidate`, so
+/// the narrative just needs the search envelope summary for the
+/// modal's subheader.
+pub(crate) fn build_ranked_narrative(candidates: &[OptimizeCandidate]) -> OutcomeNarrative {
+    let envelope = candidates
+        .split_first()
+        .map(|(baseline, rest)| envelope_across(baseline, rest))
+        .unwrap_or_default();
+    let non_baseline = candidates.len().saturating_sub(1);
+    let headline = match non_baseline {
+        0 => String::new(),
+        1 => "Found 1 candidate that improves on the baseline.".to_owned(),
+        n => format!("Found {n} candidates that improve on the baseline."),
+    };
+    OutcomeNarrative {
+        headline,
+        envelope,
+        ..OutcomeNarrative::default()
+    }
+}
+
+/// Build an `OutcomeNarrative` for a `NoSafeImprovement` outcome. The
 /// closest-to-safe candidate is the first non-baseline entry in the
 /// attempted set (already sorted by composite score in `build_outcome`).
 /// `limiting_gates` are its `Exceeds` readings.
@@ -183,11 +219,11 @@ pub enum KnobAxis {
 /// `machine` is consulted to filter operator suggestions that fall
 /// outside the machine envelope (e.g. "raise feed above 10080 mm/min"
 /// when the machine's `max_feed_mm_min` is 4000). Roadmap F.4.
-pub(crate) fn build_failure_narrative_no_safe(
+pub(crate) fn build_no_safe_narrative(
     baseline: &OptimizeCandidate,
     attempted: &[OptimizeCandidate],
     machine: &MachineProfile,
-) -> FailureNarrative {
+) -> OutcomeNarrative {
     let envelope = envelope_across(baseline, attempted);
     let closest = attempted.get(1);
     let limiting_gates = closest
@@ -201,23 +237,26 @@ pub(crate) fn build_failure_narrative_no_safe(
     let entry_advisories = closest
         .map(|c| entry_advisories_for_verdict(&c.verdict))
         .unwrap_or_default();
-    FailureNarrative {
+    OutcomeNarrative {
         headline,
+        explanation: String::new(),
+        envelope,
         limiting_gates,
         entry_advisories,
-        envelope,
         suggestions,
+        improved_gates: Vec::new(),
+        worsened_gates: Vec::new(),
     }
 }
 
-/// Build a `FailureNarrative` for a `MarginalSafe` outcome. The
+/// Build an `OutcomeNarrative` for a `MarginalSafe` outcome. The
 /// recommended candidate is the first non-baseline entry that is
 /// marginally safe (every gate Within, at least one reading
 /// band-admitted). `limiting_gates` are its band-admitted readings.
-pub(crate) fn build_failure_narrative_marginal(
+pub(crate) fn build_marginal_safe_narrative(
     baseline: &OptimizeCandidate,
     candidates: &[OptimizeCandidate],
-) -> FailureNarrative {
+) -> OutcomeNarrative {
     let envelope = envelope_across(baseline, candidates);
     let recommended = candidates
         .iter()
@@ -233,12 +272,15 @@ pub(crate) fn build_failure_narrative_marginal(
     // MarginalSafe candidates are already inside the tolerance band —
     // no operator action needed unless the user wants to tighten further.
     // Skip suggestions for now; the "verify on a scrap" header covers it.
-    FailureNarrative {
+    OutcomeNarrative {
         headline,
+        explanation: String::new(),
+        envelope,
         limiting_gates,
         entry_advisories,
-        envelope,
         suggestions: Vec::new(),
+        improved_gates: Vec::new(),
+        worsened_gates: Vec::new(),
     }
 }
 
@@ -444,13 +486,13 @@ fn filter_suggestions_by_envelope(
     kept
 }
 
-/// Build a `TradeOffNarrative`. Reads the recommended candidate's
-/// `gate_deltas` (populated by `build_outcome`) to list improved /
-/// worsened gates.
+/// Build an `OutcomeNarrative` for a `TradeOff` outcome. Reads the
+/// recommended candidate's `gate_deltas` (populated by `build_outcome`)
+/// to list improved / worsened gates.
 pub(crate) fn build_tradeoff_narrative(
     baseline: &OptimizeCandidate,
     candidates: &[OptimizeCandidate],
-) -> TradeOffNarrative {
+) -> OutcomeNarrative {
     let envelope = envelope_across(baseline, candidates);
     let (improved_gates, worsened_gates) = candidates
         .iter()
@@ -458,11 +500,15 @@ pub(crate) fn build_tradeoff_narrative(
         .find_map(|c| c.gate_deltas.map(|d| split_improved_worsened(&d)))
         .unwrap_or_default();
     let headline = headline_tradeoff(&improved_gates, &worsened_gates);
-    TradeOffNarrative {
+    OutcomeNarrative {
         headline,
+        explanation: String::new(),
+        envelope,
+        limiting_gates: Vec::new(),
+        entry_advisories: Vec::new(),
+        suggestions: Vec::new(),
         improved_gates,
         worsened_gates,
-        envelope,
     }
 }
 
@@ -999,7 +1045,7 @@ mod tests {
                 }),
             ),
         ];
-        let n = build_failure_narrative_no_safe(&baseline, &attempted, &MachineProfile::default());
+        let n = build_no_safe_narrative(&baseline, &attempted, &MachineProfile::default());
         assert!(
             n.headline.contains("chipload"),
             "headline should mention chipload, got: {}",
@@ -1055,7 +1101,7 @@ mod tests {
                 }),
             ),
         ];
-        let n = build_failure_narrative_marginal(&baseline, &candidates);
+        let n = build_marginal_safe_narrative(&baseline, &candidates);
         let admitted = n
             .limiting_gates
             .iter()

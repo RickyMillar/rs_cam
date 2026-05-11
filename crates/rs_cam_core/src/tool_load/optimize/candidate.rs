@@ -123,12 +123,15 @@ pub(crate) fn finalize_partial(
     machine: &crate::machine::MachineProfile,
 ) -> super::OptimizeOutcome {
     if candidates.is_empty() {
-        return super::OptimizeOutcome::NoSafeImprovement {
-            reason: super::RefuseReason::NoImprovementFound,
+        let narrative = super::OutcomeNarrative {
             explanation: "cancelled before any candidates were evaluated".to_owned(),
-            attempted: vec![baseline],
-            narrative: Box::default(),
+            ..super::OutcomeNarrative::default()
         };
+        return super::OptimizeOutcome::no_safe_improvement(
+            vec![baseline],
+            super::RefuseReason::NoImprovementFound,
+            narrative,
+        );
     }
     super::build_outcome(baseline, candidates, machine)
 }

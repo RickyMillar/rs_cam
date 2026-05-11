@@ -58,12 +58,12 @@ pub(crate) use candidate::{
 pub(crate) use delta::delta_against_baseline;
 pub use delta::{GateDelta, GateDeltas, ParamDelta};
 pub use narrative::{
-    AxisExtent, EntryAdvisory, FailureNarrative, GateKind, KnobAxis, LimitingGate,
-    OperatorSuggestion, SearchEnvelopeReached, TradeOffNarrative, entry_advisories_for_verdict,
+    AxisExtent, EntryAdvisory, GateKind, KnobAxis, LimitingGate, OperatorSuggestion,
+    OutcomeNarrative, SearchEnvelopeReached, entry_advisories_for_verdict,
     limiting_gates_for_verdict, suggest_levers,
 };
 pub(crate) use outcome::build_outcome;
-pub use outcome::{OptimizeOutcome, ProjectOptimizeReport};
+pub use outcome::{OptimizeOutcome, OutcomeKind, ProjectOptimizeReport};
 
 use context::{
     BaselineRestoreGuard, EvaluationContext, air_cut_pct_from_trace, baseline_rpm_from_trace,
@@ -139,9 +139,7 @@ pub fn optimize_toolpath(
     // 1. Build the evaluation context. Skip cleanly if the toolpath or
     //    its tool is missing.
     let Some(ctx) = EvaluationContext::from_session(session, toolpath_index) else {
-        return OptimizeOutcome::Skipped {
-            reason: RefuseReason::SimulationRequired,
-        };
+        return OptimizeOutcome::skipped(RefuseReason::SimulationRequired);
     };
 
     // 2. Skip op kinds the gate can't model. Drill cycles are pure
@@ -150,17 +148,13 @@ pub fn optimize_toolpath(
         ctx.operation_kind,
         OperationType::Drill | OperationType::AlignmentPinDrill
     ) {
-        return OptimizeOutcome::Skipped {
-            reason: RefuseReason::SteadyStateSamplesNotPresent,
-        };
+        return OptimizeOutcome::skipped(RefuseReason::SteadyStateSamplesNotPresent);
     }
 
     // 3. Skip Custom material — Kc is unvalidated, power model
     //    unreliable.
     if matches!(ctx.material, crate::material::Material::Custom { .. }) {
-        return OptimizeOutcome::Skipped {
-            reason: RefuseReason::MaterialUnvalidated,
-        };
+        return OptimizeOutcome::skipped(RefuseReason::MaterialUnvalidated);
     }
 
     // 4. Build the baseline candidate from the existing trace. Score
@@ -169,9 +163,7 @@ pub fn optimize_toolpath(
     let baseline_op = match session.get_toolpath_config(toolpath_index) {
         Some(tc) => tc.operation.clone(),
         None => {
-            return OptimizeOutcome::Skipped {
-                reason: RefuseReason::SimulationRequired,
-            };
+            return OptimizeOutcome::skipped(RefuseReason::SimulationRequired);
         }
     };
     // D6/D7: pull spans for the current toolpath out of the cached
@@ -201,9 +193,7 @@ pub fn optimize_toolpath(
     let baseline_cycle_s = match cycle_time_from_trace(baseline_trace, ctx.toolpath_id) {
         Some(t) if t > 0.0 => t,
         _ => {
-            return OptimizeOutcome::Skipped {
-                reason: RefuseReason::SteadyStateSamplesNotPresent,
-            };
+            return OptimizeOutcome::skipped(RefuseReason::SteadyStateSamplesNotPresent);
         }
     };
     let baseline_air_cut_pct = air_cut_pct_from_trace(baseline_trace, ctx.toolpath_id);
@@ -240,22 +230,28 @@ pub fn optimize_toolpath(
         &baseline_verdict,
         matched_lut_row.as_ref(),
     ) {
-        return OptimizeOutcome::NoSafeImprovement {
-            reason: refusal.reason,
+        let narrative = OutcomeNarrative {
             explanation: refusal.explanation,
-            attempted: vec![baseline_candidate],
-            narrative: Box::default(),
+            ..OutcomeNarrative::default()
         };
+        return OptimizeOutcome::no_safe_improvement(
+            vec![baseline_candidate],
+            refusal.reason,
+            narrative,
+        );
     }
 
     // Cancel check before any sims.
     if cancel.load(Ordering::SeqCst) {
-        return OptimizeOutcome::NoSafeImprovement {
-            reason: RefuseReason::NoImprovementFound,
+        let narrative = OutcomeNarrative {
             explanation: "cancelled before any candidates were generated".to_owned(),
-            attempted: vec![baseline_candidate],
-            narrative: Box::default(),
+            ..OutcomeNarrative::default()
         };
+        return OptimizeOutcome::no_safe_improvement(
+            vec![baseline_candidate],
+            RefuseReason::NoImprovementFound,
+            narrative,
+        );
     }
 
     // 6. From here on the session is mutated per-candidate. The
@@ -263,9 +259,7 @@ pub fn optimize_toolpath(
     //    face_selection, feeds_auto)` on drop, regardless of how
     //    we exit (early return, Err, panic).
     let Ok(mut guard) = BaselineRestoreGuard::new(session, toolpath_index) else {
-        return OptimizeOutcome::Skipped {
-            reason: RefuseReason::SimulationRequired,
-        };
+        return OptimizeOutcome::skipped(RefuseReason::SimulationRequired);
     };
 
     let baseline_rpm = baseline_rpm_from_trace(
@@ -349,13 +343,16 @@ pub fn optimize_toolpath(
     );
     let Ok(stage2_candidates) = refine_stage2(&mut guard, &ctx, stage2_seeds, cancel) else {
         drop(guard);
-        return OptimizeOutcome::NoSafeImprovement {
-            reason: RefuseReason::NoImprovementFound,
+        let narrative = OutcomeNarrative {
             explanation: "candidate evaluation failed at full resolution — partial result returned"
                 .to_owned(),
-            attempted: vec![baseline_candidate],
-            narrative: Box::default(),
+            ..OutcomeNarrative::default()
         };
+        return OptimizeOutcome::no_safe_improvement(
+            vec![baseline_candidate],
+            RefuseReason::NoImprovementFound,
+            narrative,
+        );
     };
 
     // 10. Drop the guard explicitly so the baseline is restored before
@@ -823,14 +820,10 @@ mod orchestration_skip_tests {
         let trace = empty_trace();
         let cancel = AtomicBool::new(false);
         let outcome = optimize_toolpath(&mut session, &trace, 0, &cancel);
-        assert!(
-            matches!(
-                outcome,
-                OptimizeOutcome::Skipped {
-                    reason: RefuseReason::SteadyStateSamplesNotPresent
-                }
-            ),
-            "got {outcome:?}"
+        assert_eq!(outcome.kind, OutcomeKind::Skipped, "got {outcome:?}");
+        assert_eq!(
+            outcome.reason,
+            Some(RefuseReason::SteadyStateSamplesNotPresent)
         );
     }
 
@@ -842,12 +835,11 @@ mod orchestration_skip_tests {
         let trace = empty_trace();
         let cancel = AtomicBool::new(false);
         let outcome = optimize_toolpath(&mut session, &trace, 0, &cancel);
-        assert!(matches!(
-            outcome,
-            OptimizeOutcome::Skipped {
-                reason: RefuseReason::SteadyStateSamplesNotPresent
-            }
-        ));
+        assert_eq!(outcome.kind, OutcomeKind::Skipped);
+        assert_eq!(
+            outcome.reason,
+            Some(RefuseReason::SteadyStateSamplesNotPresent)
+        );
     }
 
     #[test]
@@ -866,12 +858,8 @@ mod orchestration_skip_tests {
         let trace = empty_trace();
         let cancel = AtomicBool::new(false);
         let outcome = optimize_toolpath(&mut session, &trace, 0, &cancel);
-        assert!(matches!(
-            outcome,
-            OptimizeOutcome::Skipped {
-                reason: RefuseReason::MaterialUnvalidated
-            }
-        ));
+        assert_eq!(outcome.kind, OutcomeKind::Skipped);
+        assert_eq!(outcome.reason, Some(RefuseReason::MaterialUnvalidated));
     }
 
     #[test]
@@ -880,7 +868,7 @@ mod orchestration_skip_tests {
         let trace = empty_trace();
         let cancel = AtomicBool::new(false);
         let outcome = optimize_toolpath(&mut session, &trace, 99, &cancel);
-        assert!(matches!(outcome, OptimizeOutcome::Skipped { .. }));
+        assert!(outcome.kind == OutcomeKind::Skipped);
     }
 
     #[test]
@@ -891,12 +879,11 @@ mod orchestration_skip_tests {
         let trace = empty_trace();
         let cancel = AtomicBool::new(false);
         let outcome = optimize_toolpath(&mut session, &trace, 0, &cancel);
-        assert!(matches!(
-            outcome,
-            OptimizeOutcome::Skipped {
-                reason: RefuseReason::SteadyStateSamplesNotPresent
-            }
-        ));
+        assert_eq!(outcome.kind, OutcomeKind::Skipped);
+        assert_eq!(
+            outcome.reason,
+            Some(RefuseReason::SteadyStateSamplesNotPresent)
+        );
     }
 
     #[test]
@@ -926,7 +913,7 @@ mod orchestration_skip_tests {
         let outcome = optimize_toolpath(&mut session, &trace, 0, &cancel);
         // Cancel-up-front should not produce a Ranked outcome.
         assert!(
-            !matches!(outcome, OptimizeOutcome::Ranked(_)),
+            outcome.kind != OutcomeKind::Ranked,
             "cancelled run should not produce Ranked, got {outcome:?}"
         );
     }
@@ -1004,31 +991,27 @@ mod orchestration_skip_tests {
         let trace = trace_with_summary_and_high_force_samples();
         let cancel = AtomicBool::new(false);
         let outcome = optimize_toolpath(&mut session, &trace, 0, &cancel);
-        match outcome {
-            OptimizeOutcome::NoSafeImprovement {
-                reason,
-                explanation,
-                attempted,
-                ..
-            } => {
-                assert_eq!(reason, RefuseReason::DeflectionSetupLocked);
-                assert!(
-                    explanation.contains("µm"),
-                    "explanation should report deflection in µm, got: {explanation}"
-                );
-                assert!(
-                    explanation.contains("stickout"),
-                    "explanation should point at the stickout lever, got: {explanation}"
-                );
-                assert_eq!(
-                    attempted.len(),
-                    1,
-                    "deflection refusal should not burn any candidate sims — only the baseline \
-                     candidate should be attempted"
-                );
-            }
-            other => panic!("expected DeflectionSetupLocked NoSafeImprovement, got {other:?}"),
-        }
+        assert_eq!(
+            outcome.kind,
+            OutcomeKind::NoSafeImprovement,
+            "got {outcome:?}"
+        );
+        assert_eq!(outcome.reason, Some(RefuseReason::DeflectionSetupLocked));
+        let explanation = &outcome.narrative.explanation;
+        assert!(
+            explanation.contains("µm"),
+            "explanation should report deflection in µm, got: {explanation}"
+        );
+        assert!(
+            explanation.contains("stickout"),
+            "explanation should point at the stickout lever, got: {explanation}"
+        );
+        assert_eq!(
+            outcome.candidates.len(),
+            1,
+            "deflection refusal should not burn any candidate sims — only the baseline \
+             candidate should be attempted"
+        );
     }
 
     #[test]
@@ -1276,7 +1259,7 @@ mod project_rollup_tests {
         let report = optimize_project(&mut session, &trace, &NoProgress, &cancel);
         assert_eq!(report.per_toolpath.len(), 3);
         for (_, outcome) in &report.per_toolpath {
-            assert!(matches!(outcome, OptimizeOutcome::Skipped { .. }));
+            assert!(outcome.kind == OutcomeKind::Skipped);
         }
     }
 
@@ -1417,14 +1400,8 @@ mod project_rollup_tests {
         let cancel = AtomicBool::new(false);
         let report = optimize_project(&mut session, &trace, &NoProgress, &cancel);
         assert_eq!(report.per_toolpath.len(), 2);
-        assert!(matches!(
-            report.per_toolpath[0].1,
-            OptimizeOutcome::Skipped { .. }
-        ));
-        assert!(matches!(
-            report.per_toolpath[1].1,
-            OptimizeOutcome::Skipped { .. }
-        ));
+        assert_eq!(report.per_toolpath[0].1.kind, OutcomeKind::Skipped);
+        assert_eq!(report.per_toolpath[1].1.kind, OutcomeKind::Skipped);
     }
 }
 
@@ -1462,17 +1439,17 @@ mod tests {
     #[test]
     fn first_safe_skips_index_zero_baseline() {
         // Skipped/NoSafeImprovement outcomes never recommend.
-        let skipped = OptimizeOutcome::Skipped {
-            reason: RefuseReason::SimulationRequired,
-        };
+        let skipped = OptimizeOutcome::skipped(RefuseReason::SimulationRequired);
         assert!(skipped.first_safe().is_none());
 
-        let nsi = OptimizeOutcome::NoSafeImprovement {
-            reason: RefuseReason::NoFeasibleRow,
-            explanation: "test".to_owned(),
-            attempted: Vec::new(),
-            narrative: Box::default(),
-        };
+        let nsi = OptimizeOutcome::no_safe_improvement(
+            Vec::new(),
+            RefuseReason::NoFeasibleRow,
+            OutcomeNarrative {
+                explanation: "test".to_owned(),
+                ..OutcomeNarrative::default()
+            },
+        );
         assert!(nsi.first_safe().is_none());
     }
 
@@ -1587,11 +1564,15 @@ mod tests {
         }
     }
 
+    fn ranked_test(candidates: Vec<OptimizeCandidate>) -> OptimizeOutcome {
+        OptimizeOutcome::ranked(candidates, None, OutcomeNarrative::default())
+    }
+
     #[test]
     fn first_safe_finds_faster_safe_candidate() {
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let faster_safe = synthetic_candidate(2100.0, 70.0, within_verdict());
-        let outcome = OptimizeOutcome::Ranked(vec![baseline, faster_safe]);
+        let outcome = ranked_test(vec![baseline, faster_safe]);
         let recommended = outcome.first_safe().expect("should recommend");
         assert!((recommended.cycle_time_s - 70.0).abs() < 1e-9);
     }
@@ -1602,7 +1583,7 @@ mod tests {
         let faster_unsafe = synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict());
         let faster_safe = synthetic_candidate(2100.0, 70.0, within_verdict());
         // Unsafe is faster but is not safe; recommendation is the safe one.
-        let outcome = OptimizeOutcome::Ranked(vec![baseline, faster_unsafe, faster_safe]);
+        let outcome = ranked_test(vec![baseline, faster_unsafe, faster_safe]);
         let recommended = outcome.first_safe().expect("should recommend");
         assert!((recommended.cycle_time_s - 70.0).abs() < 1e-9);
     }
@@ -1611,7 +1592,7 @@ mod tests {
     fn first_safe_returns_none_when_only_slower_candidates() {
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let slower_safe = synthetic_candidate(1200.0, 110.0, within_verdict());
-        let outcome = OptimizeOutcome::Ranked(vec![baseline, slower_safe]);
+        let outcome = ranked_test(vec![baseline, slower_safe]);
         assert!(outcome.first_safe().is_none());
     }
 
@@ -1619,7 +1600,7 @@ mod tests {
     fn first_safe_returns_none_when_all_candidates_unsafe() {
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let faster_unsafe = synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict());
-        let outcome = OptimizeOutcome::Ranked(vec![baseline, faster_unsafe]);
+        let outcome = ranked_test(vec![baseline, faster_unsafe]);
         assert!(outcome.first_safe().is_none());
     }
 
@@ -1747,24 +1728,16 @@ mod tests {
     fn build_outcome_empty_candidates_yields_no_safe_improvement() {
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let outcome = build_outcome(baseline, Vec::new(), &crate::machine::MachineProfile::default());
-        match outcome {
-            OptimizeOutcome::NoSafeImprovement {
-                reason,
-                explanation,
-                attempted,
-                ..
-            } => {
-                assert!(matches!(reason, RefuseReason::NoImprovementFound));
-                assert!(
-                    explanation.contains("no candidates"),
-                    "explanation should say no candidates were produced: {explanation}"
-                );
-                // Even with no candidates, the baseline is preserved
-                // so the modal/rollup can show "this is what you had".
-                assert_eq!(attempted.len(), 1);
-            }
-            other => panic!("expected NoSafeImprovement, got {other:?}"),
-        }
+        assert_eq!(outcome.kind, OutcomeKind::NoSafeImprovement, "got {outcome:?}");
+        assert_eq!(outcome.reason, Some(RefuseReason::NoImprovementFound));
+        let explanation = &outcome.narrative.explanation;
+        assert!(
+            explanation.contains("no candidates"),
+            "explanation should say no candidates were produced: {explanation}"
+        );
+        // Even with no candidates, the baseline is preserved so the
+        // modal/rollup can show "this is what you had".
+        assert_eq!(outcome.candidates.len(), 1);
     }
 
     #[test]
@@ -1775,25 +1748,18 @@ mod tests {
             synthetic_candidate(1200.0, 110.0, within_verdict()),
         ];
         let outcome = build_outcome(baseline, candidates, &crate::machine::MachineProfile::default());
-        match outcome {
-            OptimizeOutcome::NoSafeImprovement {
-                explanation,
-                attempted,
-                ..
-            } => {
-                assert!(
-                    explanation.contains("no candidate beat the baseline"),
-                    "explanation should mention slower-than-baseline: {explanation}"
-                );
-                // Baseline at index 0 + the two attempted candidates.
-                assert_eq!(
-                    attempted.len(),
-                    3,
-                    "attempted must include baseline + 2 candidates"
-                );
-            }
-            other => panic!("expected NoSafeImprovement, got {other:?}"),
-        }
+        assert_eq!(outcome.kind, OutcomeKind::NoSafeImprovement, "got {outcome:?}");
+        let explanation = &outcome.narrative.explanation;
+        assert!(
+            explanation.contains("no candidate beat the baseline"),
+            "explanation should mention slower-than-baseline: {explanation}"
+        );
+        // Baseline at index 0 + the two attempted candidates.
+        assert_eq!(
+            outcome.candidates.len(),
+            3,
+            "candidates must include baseline + 2 candidates"
+        );
     }
 
     #[test]
@@ -1804,23 +1770,16 @@ mod tests {
             synthetic_candidate(2300.0, 65.0, exceeds_chipload_verdict()),
         ];
         let outcome = build_outcome(baseline, candidates, &crate::machine::MachineProfile::default());
-        match outcome {
-            OptimizeOutcome::NoSafeImprovement {
-                explanation,
-                attempted,
-                ..
-            } => {
-                assert!(
-                    explanation.contains("gate limit"),
-                    "explanation should mention gate limit: {explanation}"
-                );
-                assert_eq!(attempted.len(), 3);
-                // Sorted by ascending cycle time means index 1 has
-                // the lower cycle (60s), index 2 the higher (65s).
-                assert!(attempted[1].cycle_time_s <= attempted[2].cycle_time_s);
-            }
-            other => panic!("expected NoSafeImprovement, got {other:?}"),
-        }
+        assert_eq!(outcome.kind, OutcomeKind::NoSafeImprovement, "got {outcome:?}");
+        let explanation = &outcome.narrative.explanation;
+        assert!(
+            explanation.contains("gate limit"),
+            "explanation should mention gate limit: {explanation}"
+        );
+        assert_eq!(outcome.candidates.len(), 3);
+        // Sorted by ascending cycle time means index 1 has
+        // the lower cycle (60s), index 2 the higher (65s).
+        assert!(outcome.candidates[1].cycle_time_s <= outcome.candidates[2].cycle_time_s);
     }
 
     #[test]
@@ -1830,9 +1789,8 @@ mod tests {
         let faster_unsafe = synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict());
         let candidates = vec![faster_unsafe, faster_safe];
         let outcome = build_outcome(baseline, candidates, &crate::machine::MachineProfile::default());
-        let OptimizeOutcome::Ranked(ranked) = outcome else {
-            panic!("expected Ranked");
-        };
+        assert_eq!(outcome.kind, OutcomeKind::Ranked, "got {outcome:?}");
+        let ranked = &outcome.candidates;
         // Baseline at index 0.
         assert!((ranked[0].cycle_time_s - 100.0).abs() < 1e-9);
         // Sorted ascending after baseline: 60.0 (unsafe), 70.0 (safe).
@@ -1973,9 +1931,8 @@ mod tests {
         let baseline = synthetic_candidate(1500.0, 100.0, exceeds_chipload_verdict());
         let pure = synthetic_candidate(2100.0, 70.0, within_verdict());
         let outcome = build_outcome(baseline, vec![pure], &crate::machine::MachineProfile::default());
-        let OptimizeOutcome::Ranked(ranked) = outcome else {
-            panic!("expected Ranked, got {outcome:?}");
-        };
+        assert_eq!(outcome.kind, OutcomeKind::Ranked, "got {outcome:?}");
+        let ranked = &outcome.candidates;
         assert!(ranked[0].gate_deltas.is_none(), "baseline has no deltas");
         let deltas = ranked[1].gate_deltas.expect("candidate has deltas");
         assert_eq!(deltas.chipload, GateDelta::Improved);
@@ -1995,13 +1952,8 @@ mod tests {
         tradeoff_verdict.power = exceeds_power_verdict().power;
         let candidate = synthetic_candidate(2200.0, 80.0, tradeoff_verdict);
         let outcome = build_outcome(baseline, vec![candidate], &crate::machine::MachineProfile::default());
-        let OptimizeOutcome::TradeOff {
-            candidates: tradeoffs,
-            ..
-        } = outcome
-        else {
-            panic!("expected TradeOff, got {outcome:?}");
-        };
+        assert_eq!(outcome.kind, OutcomeKind::TradeOff, "got {outcome:?}");
+        let tradeoffs = &outcome.candidates;
         assert_eq!(tradeoffs.len(), 2, "baseline + 1 trade-off");
         let deltas = tradeoffs[1].gate_deltas.expect("populated");
         assert_eq!(deltas.chipload, GateDelta::Improved);
@@ -2018,8 +1970,9 @@ mod tests {
         tradeoff_verdict.power = exceeds_power_verdict().power;
         let tradeoff_cand = synthetic_candidate(2200.0, 70.0, tradeoff_verdict);
         let outcome = build_outcome(baseline, vec![tradeoff_cand, pure], &crate::machine::MachineProfile::default());
-        assert!(
-            matches!(outcome, OptimizeOutcome::Ranked(_)),
+        assert_eq!(
+            outcome.kind,
+            OutcomeKind::Ranked,
             "pure improvement must win, got {outcome:?}"
         );
     }
@@ -2033,7 +1986,7 @@ mod tests {
         tradeoff_verdict.power = exceeds_power_verdict().power;
         let candidate = synthetic_candidate(2200.0, 70.0, tradeoff_verdict);
         let outcome = build_outcome(baseline, vec![candidate], &crate::machine::MachineProfile::default());
-        assert!(matches!(outcome, OptimizeOutcome::TradeOff { .. }));
+        assert_eq!(outcome.kind, OutcomeKind::TradeOff);
         assert!(
             outcome.first_safe().is_none(),
             "TradeOff outcomes should not auto-recommend"
@@ -2086,15 +2039,9 @@ mod tests {
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let band_admitted = synthetic_candidate(2100.0, 75.0, band_admitted_verdict());
         let outcome = build_outcome(baseline, vec![band_admitted], &crate::machine::MachineProfile::default());
-        let OptimizeOutcome::MarginalSafe {
-            candidates,
-            explanation,
-            ..
-        } = outcome
-        else {
-            panic!("expected MarginalSafe, got {outcome:?}");
-        };
-        assert_eq!(candidates.len(), 2, "baseline + 1 band-admitted");
+        assert_eq!(outcome.kind, OutcomeKind::MarginalSafe, "got {outcome:?}");
+        assert_eq!(outcome.candidates.len(), 2, "baseline + 1 band-admitted");
+        let explanation = &outcome.narrative.explanation;
         assert!(
             explanation.contains("tolerance band") || explanation.contains("scrap"),
             "explanation should mention tolerance band / scrap test: {explanation}"
@@ -2108,7 +2055,7 @@ mod tests {
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let band_admitted = synthetic_candidate(2100.0, 75.0, band_admitted_verdict());
         let outcome = build_outcome(baseline, vec![band_admitted], &crate::machine::MachineProfile::default());
-        assert!(matches!(outcome, OptimizeOutcome::MarginalSafe { .. }));
+        assert_eq!(outcome.kind, OutcomeKind::MarginalSafe);
         assert!(
             outcome.first_safe().is_none(),
             "MarginalSafe outcomes should not auto-recommend via first_safe"
@@ -2135,8 +2082,9 @@ mod tests {
         let band_admitted = synthetic_candidate(2100.0, 70.0, band_admitted_verdict());
         let strict = synthetic_candidate(2000.0, 75.0, within_verdict());
         let outcome = build_outcome(baseline, vec![band_admitted, strict], &crate::machine::MachineProfile::default());
-        assert!(
-            matches!(outcome, OptimizeOutcome::Ranked(_)),
+        assert_eq!(
+            outcome.kind,
+            OutcomeKind::Ranked,
             "strict-safe pure improvement must win the tier dispatch, got {outcome:?}"
         );
         let recommended = outcome.first_safe().expect("strict candidate present");

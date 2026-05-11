@@ -1,12 +1,15 @@
 //! Outcome types and the tier dispatcher (`build_outcome`).
 //!
-//! - [`OptimizeOutcome`] — what `optimize_toolpath` returns: Ranked,
-//!   TradeOff, NoSafeImprovement, or Skipped.
+//! - [`OptimizeOutcome`] — what `optimize_toolpath` returns: a unified
+//!   struct carrying a [`OutcomeKind`] tag plus always-present
+//!   `candidates` / `narrative` / `recommended_index` / `reason` fields
+//!   (Roadmap F.7). MCP agents and the GUI modal read the same shape
+//!   for every tier, branching only on `kind`.
 //! - [`ProjectOptimizeReport`] — project-level rollup over every
 //!   enabled toolpath.
 //! - [`build_outcome`] — tier dispatcher. Sorts the Stage-2 candidates,
 //!   populates each candidate's `gate_deltas`, and folds the list into
-//!   one of the four `OptimizeOutcome` variants.
+//!   the appropriate [`OutcomeKind`].
 
 use serde::{Deserialize, Serialize};
 
@@ -18,125 +21,199 @@ use super::delta::{
     classify_candidate_vs_baseline,
 };
 use super::narrative::{
-    FailureNarrative, TradeOffNarrative, build_failure_narrative_marginal,
-    build_failure_narrative_no_safe, build_tradeoff_narrative,
+    OutcomeNarrative, build_marginal_safe_narrative, build_no_safe_narrative,
+    build_ranked_narrative, build_tradeoff_narrative,
 };
 use super::rank::composite_score;
 use super::search_policy;
 
-/// Outcome of `optimize_toolpath` for one toolpath.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "detail", rename_all = "snake_case")]
-pub enum OptimizeOutcome {
-    /// At least one candidate was generated. Index 0 is always the
-    /// baseline (current params). The recommendation is whichever
-    /// candidate has `.first_safe()` returns — the first non-baseline
-    /// candidate whose verdict is not `Exceeds` on any criterion.
-    Ranked(Vec<OptimizeCandidate>),
-    /// At least one candidate is faster than baseline AND every gate is
-    /// `Within`, but at least one `Within` reading was admitted only by
-    /// the layer-1 tolerance band (G16 §11.4) — the candidate would be
-    /// `Exceeds` under the strict LUT bound. The user must explicitly
-    /// confirm before applying ("verify on a scrap"); the optimizer
-    /// won't auto-recommend.
-    ///
-    /// Index 0 is the baseline; subsequent entries are sorted by
-    /// composite score and carry populated `gate_deltas`. The
-    /// `explanation` is the modal subhead (Engineering Default 4).
-    MarginalSafe {
-        candidates: Vec<OptimizeCandidate>,
-        /// Free-form modal subhead. Kept alongside `narrative` until
-        /// A2 swaps the UI to read `narrative.headline` directly.
-        explanation: String,
-        /// Structured narrative (G17 A1) — limiting gates,
-        /// search envelope, suggestions. UI in A2 will render this.
-        /// Boxed to keep the enum's variant size symmetric (the
-        /// narrative carries a String + Vecs and would otherwise
-        /// trip `clippy::large_enum_variant`).
-        narrative: Box<FailureNarrative>,
-    },
-    /// At least one candidate is faster than baseline AND improves a
-    /// failing baseline gate, but also worsens a non-failing one.
-    /// Distinct from `Ranked` because the user has to explicitly
-    /// accept the regression — the optimizer can't auto-recommend a
-    /// trade-off.
-    ///
-    /// Index 0 is the baseline; subsequent entries are sorted ascending
-    /// by cycle time and carry populated `gate_deltas`. `narrative`
-    /// (G17 A1) lists improved / worsened gates plus the search
-    /// envelope.
-    TradeOff {
-        candidates: Vec<OptimizeCandidate>,
-        /// Boxed for the same variant-size reason as `MarginalSafe::narrative`.
-        narrative: Box<TradeOffNarrative>,
-    },
-    /// Every non-baseline candidate either failed the gate (Exceeds on
-    /// some criterion) or was slower than baseline. The rollup row
-    /// surfaces this with the binding-limit narrative. The
-    /// `attempted` list lets the user see what the optimizer tried
-    /// — without it, "no improvement found" is opaque.
-    NoSafeImprovement {
-        reason: RefuseReason,
-        /// Free-form modal subhead. Kept alongside `narrative` until
-        /// A2 swaps the UI to read `narrative.headline` directly.
-        explanation: String,
-        /// Every candidate that made it to Stage 2 evaluation,
-        /// including the baseline at index 0. Stage-1 candidates that
-        /// didn't survive into Stage 2 are not included (they're
-        /// intermediate). Empty when the search bailed before any
-        /// candidate could be evaluated (e.g. cancel-up-front).
-        attempted: Vec<OptimizeCandidate>,
-        /// Structured narrative (G17 A1). UI in A2 will render this.
-        /// Boxed for the same variant-size reason as `MarginalSafe::narrative`.
-        narrative: Box<FailureNarrative>,
-    },
+/// Tier of an [`OptimizeOutcome`]. Replaces the prior variant-tag on a
+/// tagged enum so the outcome's data shape stays uniform across tiers
+/// — only the kind tag varies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutcomeKind {
+    /// At least one candidate is strictly safe AND faster than baseline.
+    /// `recommended_index` points at the auto-Apply target.
+    Ranked,
+    /// At least one candidate is faster AND every gate is `Within`, but
+    /// at least one `Within` reading was admitted only by the layer-1
+    /// tolerance band (G16 §11.4) — would be `Exceeds` under the strict
+    /// LUT bound. The user must explicitly confirm before applying
+    /// ("verify on a scrap"); the optimizer won't auto-recommend.
+    /// `recommended_index` points at the verify-on-scrap target.
+    MarginalSafe,
+    /// At least one candidate is faster AND improves a failing baseline
+    /// gate, but also worsens a non-failing one. The user has to
+    /// explicitly accept the regression — the optimizer can't
+    /// auto-recommend a trade-off. `recommended_index` is None;
+    /// `narrative.improved_gates` / `worsened_gates` describe the swap.
+    TradeOff,
+    /// Every non-baseline candidate either failed the gate or was
+    /// slower than baseline (or pre-flight refused before any sim
+    /// fired). `reason` carries the refuse classification;
+    /// `narrative.limiting_gates` carries what the closest candidate
+    /// hit; `narrative.suggestions` lists machine-feasible operator
+    /// levers.
+    NoSafeImprovement,
     /// The optimizer can't model this toolpath at all — drill cycles,
     /// project_curve with no steady-state samples, custom materials.
-    /// The gate refuses, so the optimizer refuses.
-    Skipped { reason: RefuseReason },
+    /// `reason` is set; `candidates` is empty.
+    Skipped,
+}
+
+/// Outcome of `optimize_toolpath` for one toolpath. Roadmap F.7
+/// collapsed the prior variant-shaped enum into one struct with a
+/// [`OutcomeKind`] tag, so every consumer can read `candidates`,
+/// `narrative`, `recommended_index`, and `reason` uniformly without
+/// per-tier pattern matching. Per-tier semantics are encoded by which
+/// fields the constructors populate:
+///
+/// | kind | candidates | narrative | recommended_index | reason |
+/// |---|---|---|---|---|
+/// | Ranked | baseline + sorted | headline + envelope | Some(N) for first strict-safe | None |
+/// | MarginalSafe | baseline + sorted | + limiting_gates (band) | Some(N) for first band-safe | None |
+/// | TradeOff | baseline + sorted | + improved/worsened gates | None | None |
+/// | NoSafeImprovement | baseline + attempted | + limiting_gates + suggestions | None | Some(_) |
+/// | Skipped | empty | empty | None | Some(_) |
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OptimizeOutcome {
+    pub kind: OutcomeKind,
+    /// Index 0 is always the baseline (for non-Skipped outcomes);
+    /// subsequent entries are the search candidates already sorted by
+    /// composite score with `gate_deltas` populated. Empty for
+    /// `Skipped`.
+    pub candidates: Vec<OptimizeCandidate>,
+    /// Boxed to keep the outcome's size symmetric and small for use
+    /// inside `Vec<OptimizeOutcome>` collections (the narrative carries
+    /// strings + Vecs that would otherwise dominate the struct size).
+    pub narrative: Box<OutcomeNarrative>,
+    /// Auto-Apply / verify-on-scrap target index into `candidates`.
+    /// `Some(N)` only when `kind` is `Ranked` (first strictly-safe
+    /// faster candidate) or `MarginalSafe` (first marginally-safe
+    /// faster candidate). `None` for `TradeOff`, `NoSafeImprovement`,
+    /// `Skipped`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recommended_index: Option<usize>,
+    /// Refusal classification. `Some(_)` only when `kind` is
+    /// `NoSafeImprovement` or `Skipped`; `None` for the other tiers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<RefuseReason>,
 }
 
 impl OptimizeOutcome {
-    /// Recommended candidate: the first non-baseline candidate that
-    /// (a) passes the gate (no `Exceeds` verdict on any criterion)
-    /// AND (b) is faster than baseline by more than
-    /// the policy recommendation cycle delta. Returns `None` for `Skipped` /
-    /// `NoSafeImprovement` outcomes, and for `Ranked` outcomes where
-    /// no candidate clears both bars.
+    /// Construct a `Ranked` outcome. Caller is responsible for sorting
+    /// `candidates` (baseline at index 0) and computing
+    /// `recommended_index` via [`ProjectOptimizeReport::first_safe_index`].
+    pub fn ranked(
+        candidates: Vec<OptimizeCandidate>,
+        recommended_index: Option<usize>,
+        narrative: OutcomeNarrative,
+    ) -> Self {
+        Self {
+            kind: OutcomeKind::Ranked,
+            candidates,
+            narrative: Box::new(narrative),
+            recommended_index,
+            reason: None,
+        }
+    }
+
+    /// Construct a `MarginalSafe` outcome.
+    pub fn marginal_safe(
+        candidates: Vec<OptimizeCandidate>,
+        recommended_index: Option<usize>,
+        narrative: OutcomeNarrative,
+    ) -> Self {
+        Self {
+            kind: OutcomeKind::MarginalSafe,
+            candidates,
+            narrative: Box::new(narrative),
+            recommended_index,
+            reason: None,
+        }
+    }
+
+    /// Construct a `TradeOff` outcome. `recommended_index` is always
+    /// `None` — trade-offs require explicit user acceptance via the
+    /// modal.
+    pub fn trade_off(candidates: Vec<OptimizeCandidate>, narrative: OutcomeNarrative) -> Self {
+        Self {
+            kind: OutcomeKind::TradeOff,
+            candidates,
+            narrative: Box::new(narrative),
+            recommended_index: None,
+            reason: None,
+        }
+    }
+
+    /// Construct a `NoSafeImprovement` outcome. `candidates` includes
+    /// the baseline at index 0 plus every candidate the optimizer
+    /// managed to evaluate; the prior `attempted` field is folded in.
+    pub fn no_safe_improvement(
+        candidates: Vec<OptimizeCandidate>,
+        reason: RefuseReason,
+        narrative: OutcomeNarrative,
+    ) -> Self {
+        Self {
+            kind: OutcomeKind::NoSafeImprovement,
+            candidates,
+            narrative: Box::new(narrative),
+            recommended_index: None,
+            reason: Some(reason),
+        }
+    }
+
+    /// Construct a `Skipped` outcome — the optimizer refused before
+    /// evaluating any candidate.
+    pub fn skipped(reason: RefuseReason) -> Self {
+        Self {
+            kind: OutcomeKind::Skipped,
+            candidates: Vec::new(),
+            narrative: Box::default(),
+            recommended_index: None,
+            reason: Some(reason),
+        }
+    }
+
+    /// Recommended candidate from a `Ranked` outcome: the first
+    /// non-baseline strictly-safe candidate faster than baseline by
+    /// more than the policy recommendation cycle delta. Returns `None`
+    /// for any other `kind`.
     ///
-    /// Why faster-than-baseline matters: `Ranked` may surface
+    /// Why faster-than-baseline matters: a `Ranked` outcome may surface
     /// candidates the user can override to (per the modal's table),
     /// but the *recommendation* — the ⭐ row in the modal — should be
     /// a candidate that actually wins on cycle time. An equally-fast
     /// or slower safe candidate is information, not a recommendation.
     pub fn first_safe(&self) -> Option<&OptimizeCandidate> {
-        let OptimizeOutcome::Ranked(candidates) = self else {
+        if self.kind != OutcomeKind::Ranked {
             return None;
-        };
-        let baseline = candidates.first()?;
+        }
+        let baseline = self.candidates.first()?;
         let min_cycle_delta_s = search_policy().ranking.recommendation_cycle_delta_s.value;
-        candidates.iter().skip(1).find(|c| {
+        self.candidates.iter().skip(1).find(|c| {
             candidate_is_strictly_safe(c)
                 && c.cycle_time_s + min_cycle_delta_s < baseline.cycle_time_s
         })
     }
 
     /// Recommended candidate from a `MarginalSafe` outcome: the first
-    /// non-baseline candidate that is marginally safe (every gate
-    /// `Within`, at least one reading band-admitted) and faster than
-    /// baseline by more than the policy recommendation cycle delta.
-    /// Returns `None` for any other outcome variant.
+    /// non-baseline marginally-safe candidate (every gate `Within`, at
+    /// least one reading band-admitted) faster than baseline by more
+    /// than the policy recommendation cycle delta. Returns `None` for
+    /// any other `kind`.
     ///
     /// Distinct from [`first_safe`](Self::first_safe): the modal must
     /// surface this as a "verify on a scrap" recommendation, not an
     /// auto-Apply target.
     pub fn first_marginal_safe(&self) -> Option<&OptimizeCandidate> {
-        let OptimizeOutcome::MarginalSafe { candidates, .. } = self else {
+        if self.kind != OutcomeKind::MarginalSafe {
             return None;
-        };
-        let baseline = candidates.first()?;
+        }
+        let baseline = self.candidates.first()?;
         let min_cycle_delta_s = search_policy().ranking.recommendation_cycle_delta_s.value;
-        candidates.iter().skip(1).find(|c| {
+        self.candidates.iter().skip(1).find(|c| {
             candidate_is_marginally_safe(c)
                 && c.cycle_time_s + min_cycle_delta_s < baseline.cycle_time_s
         })
@@ -228,17 +305,20 @@ pub(crate) fn build_outcome(
         let attempted = vec![baseline];
         let narrative = attempted
             .first()
-            .map(|b| Box::new(build_failure_narrative_no_safe(b, &attempted, machine)))
+            .map(|b| build_no_safe_narrative(b, &attempted, machine))
+            .map(|mut n| {
+                n.explanation = format!(
+                    "{}: no candidates were produced — operation has no geometry knobs and feed/RPM are at machine limits",
+                    RefuseReason::NoImprovementFound.explanation_for_optimize()
+                );
+                n
+            })
             .unwrap_or_default();
-        return OptimizeOutcome::NoSafeImprovement {
-            reason: RefuseReason::NoImprovementFound,
-            explanation: format!(
-                "{}: no candidates were produced — operation has no geometry knobs and feed/RPM are at machine limits",
-                RefuseReason::NoImprovementFound.explanation_for_optimize()
-            ),
+        return OptimizeOutcome::no_safe_improvement(
             attempted,
+            RefuseReason::NoImprovementFound,
             narrative,
-        };
+        );
     }
 
     // Populate per-candidate gate deltas vs baseline. Done up-front so
@@ -300,25 +380,26 @@ pub(crate) fn build_outcome(
         let mut ranked = Vec::with_capacity(sorted.len() + 1);
         ranked.push(baseline);
         ranked.extend(sorted);
-        return OptimizeOutcome::Ranked(ranked);
+        let recommended_index = ProjectOptimizeReport::first_safe_index(&ranked);
+        let narrative = build_ranked_narrative(&ranked);
+        return OptimizeOutcome::ranked(ranked, recommended_index, narrative);
     }
 
     if any_marginal_improvement {
         let mut marginal = Vec::with_capacity(sorted.len() + 1);
         marginal.push(baseline);
         marginal.extend(sorted);
-        let narrative = marginal
+        let recommended_index = ProjectOptimizeReport::first_marginal_safe_index(&marginal);
+        let mut narrative = marginal
             .first()
-            .map(|b| Box::new(build_failure_narrative_marginal(b, &marginal)))
+            .map(|b| build_marginal_safe_narrative(b, &marginal))
             .unwrap_or_default();
-        return OptimizeOutcome::MarginalSafe {
-            candidates: marginal,
-            explanation: "Best candidate is admitted only by the layer-1 tolerance band — \
+        narrative.explanation =
+            "Best candidate is admitted only by the layer-1 tolerance band — \
                  verify on a scrap before applying. The strict LUT bound was \
                  exceeded by less than the configured breakage / burn tolerance."
-                .to_owned(),
-            narrative,
-        };
+                .to_owned();
+        return OptimizeOutcome::marginal_safe(marginal, recommended_index, narrative);
     }
 
     if any_tradeoff {
@@ -327,12 +408,9 @@ pub(crate) fn build_outcome(
         tradeoffs.extend(sorted);
         let narrative = tradeoffs
             .first()
-            .map(|b| Box::new(build_tradeoff_narrative(b, &tradeoffs)))
+            .map(|b| build_tradeoff_narrative(b, &tradeoffs))
             .unwrap_or_default();
-        return OptimizeOutcome::TradeOff {
-            candidates: tradeoffs,
-            narrative,
-        };
+        return OptimizeOutcome::trade_off(tradeoffs, narrative);
     }
 
     // Fall through: NoSafeImprovement, with the same attempted-list
@@ -353,14 +431,10 @@ pub(crate) fn build_outcome(
     let mut attempted = Vec::with_capacity(sorted.len() + 1);
     attempted.push(baseline);
     attempted.extend(sorted);
-    let narrative = attempted
+    let mut narrative = attempted
         .first()
-        .map(|b| Box::new(build_failure_narrative_no_safe(b, &attempted, machine)))
+        .map(|b| build_no_safe_narrative(b, &attempted, machine))
         .unwrap_or_default();
-    OptimizeOutcome::NoSafeImprovement {
-        reason: RefuseReason::NoImprovementFound,
-        explanation,
-        attempted,
-        narrative,
-    }
+    narrative.explanation = explanation;
+    OptimizeOutcome::no_safe_improvement(attempted, RefuseReason::NoImprovementFound, narrative)
 }

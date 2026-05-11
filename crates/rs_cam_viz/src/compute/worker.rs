@@ -771,7 +771,8 @@ fn spawn_optimize_lane(
 ) -> std::thread::JoinHandle<()> {
     use rs_cam_core::tool_load::RefuseReason;
     use rs_cam_core::tool_load::optimize::{
-        OptimizeOutcome, ProjectOptimizeReport, optimize_project, optimize_toolpath,
+        OptimizeOutcome, OutcomeKind, OutcomeNarrative, ProjectOptimizeReport, optimize_project,
+        optimize_toolpath,
     };
 
     std::thread::spawn(move || {
@@ -834,17 +835,20 @@ fn spawn_optimize_lane(
                     // optimize_toolpath itself produces this when it
                     // observes the cancel between candidates.
                     let outcome = if lane.cancel.load(Ordering::SeqCst) {
-                        match outcome {
-                            OptimizeOutcome::Ranked(_)
-                            | OptimizeOutcome::MarginalSafe { .. }
-                            | OptimizeOutcome::TradeOff { .. }
-                            | OptimizeOutcome::NoSafeImprovement { .. } => outcome,
-                            OptimizeOutcome::Skipped { .. } => OptimizeOutcome::NoSafeImprovement {
-                                reason: RefuseReason::NoImprovementFound,
-                                explanation: "cancelled before optimization could run".to_owned(),
-                                attempted: Vec::new(),
-                                narrative: Box::default(),
-                            },
+                        match outcome.kind {
+                            OutcomeKind::Ranked
+                            | OutcomeKind::MarginalSafe
+                            | OutcomeKind::TradeOff
+                            | OutcomeKind::NoSafeImprovement => outcome,
+                            OutcomeKind::Skipped => OptimizeOutcome::no_safe_improvement(
+                                Vec::new(),
+                                RefuseReason::NoImprovementFound,
+                                OutcomeNarrative {
+                                    explanation: "cancelled before optimization could run"
+                                        .to_owned(),
+                                    ..OutcomeNarrative::default()
+                                },
+                            ),
                         }
                     } else {
                         outcome

@@ -1824,6 +1824,7 @@ optimizer trust workstream. Polish items add another week.
 | 9   | F.2       | Auto-verify after per-TP Apply: chain apply → regen → resim via new pending_apply_resim state; notification text replaced ("regenerating and verifying…") | -1🔴 |
 | 10  | F.4       | Operator suggestions now filtered through MachineProfile envelope (max_feed, spindle min/max RPM); infeasible suggestions collapse to a single DataGapHere explaining the conflict | -1🟡 |
 | 11  | F.8/F.9/F.11/F.12 | Data-shape cleanups: `UnmodeledReason::NotApplicableForOp` (drill cycles short-circuit before arc-engagement check); MCP `per_sample_peak_chipload_mm_per_tooth` field rename clarifies semantics; `ExceedsEntry.toolpath_name` added; `OptimizeCandidate.air_cut_pct` populated from trace per-toolpath summary | -3🟡 -2🟢 |
+| 12  | F.7       | OptimizeOutcome unified to struct with OutcomeKind tag + always-present candidates/narrative/recommended_index/reason; FailureNarrative + TradeOffNarrative collapsed into one OutcomeNarrative | -1🟡 |
 
 ### Roadmap F bullets (pending — wanaka 2026-05-11)
 
@@ -1862,9 +1863,16 @@ optimizer trust workstream. Polish items add another week.
   why.
 - 🟢 **F.6** Project-level Optimize is undiscoverable from the
   per-toolpath modal / sim_diagnostics surface.
-- 🟡 **F.7** `OptimizeOutcome` variants have inconsistent JSON
+- ~~🟡 **F.7** `OptimizeOutcome` variants have inconsistent JSON
   shapes — `Ranked` has no `narrative`; success path lacks the
-  diagnostic structure the failure path carries.
+  diagnostic structure the failure path carries.~~ **Closed by PR 12**
+  — `OptimizeOutcome` collapsed from a five-variant tagged enum into a
+  struct carrying a `kind: OutcomeKind` tag plus always-present
+  `candidates`, `narrative`, `recommended_index`, `reason` fields.
+  `FailureNarrative` + `TradeOffNarrative` merged into one
+  `OutcomeNarrative` with `skip_serializing_if` on per-tier fields so
+  the wire JSON stays compact. MCP agents and the GUI modal now read
+  the same shape for every tier.
 - ~~🟡 **F.8** `Unmodeled` reasons conflate "sim failed to compute"
   with "gate doesn't apply for this op type" (drill cycles).~~
   **Closed by PR 11** — new `UnmodeledReason::NotApplicableForOp`
