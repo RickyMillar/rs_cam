@@ -499,7 +499,17 @@ fn draw_project_overview(
     // toolpath-counted, not gate-cell counted ("Within bounds: 0" used to
     // appear because the per-toolpath × 3-gate fold rarely landed an
     // entire row in `Within`).
-    let summary = load_report.summary();
+    //
+    // Roadmap F.11 — pass a name resolver so `exceeds_breakdown` carries
+    // operator-readable labels even though this overview only reads the
+    // bucket counts.
+    let summary = load_report.summary(|id| {
+        session
+            .toolpath_configs()
+            .iter()
+            .find(|tc| tc.id == id)
+            .map(|tc| tc.name.clone())
+    });
     let (ok, bad, unmodeled) = (summary.within, summary.exceeds, summary.fully_unmodeled);
     let collision_count = sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
 
@@ -1049,6 +1059,14 @@ fn verdict_tooltip(status: &CriterionStatus<'_>, cap: Option<f64>, burn_risk: bo
             }
             Some(UnmodeledReason::NotImplemented(phase)) => {
                 format!("Unmodeled: not implemented yet — {phase}")
+            }
+            // Roadmap F.8 — the gate isn't applicable to this op type
+            // (drill / alignment-pin-drill). The carried `String` is
+            // the operator-facing explanation; surface it verbatim so
+            // users read "doesn't apply" rather than the misleading
+            // "couldn't measure" framing.
+            Some(UnmodeledReason::NotApplicableForOp(detail)) => {
+                format!("N/A: {detail}")
             }
             None => "Unmodeled".to_owned(),
         },

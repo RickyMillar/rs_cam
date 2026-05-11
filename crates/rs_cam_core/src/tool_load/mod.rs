@@ -317,6 +317,7 @@ pub fn evaluate_toolpath(
             m,
             sim_trace,
             ctx.spans,
+            ctx.operation_kind,
             tolerance,
         ),
         None => PowerVerdict::Unmodeled {
@@ -346,6 +347,7 @@ pub fn evaluate_toolpath(
             ctx.material,
             sim_trace,
             ctx.spans,
+            ctx.operation_kind,
             tolerance,
         ),
     }

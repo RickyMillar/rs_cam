@@ -43,12 +43,14 @@
 //!   not translate the tip — only rotates it. The "tip-wander" metric
 //!   this gate predicts therefore ignores torsion.
 
+use crate::compute::catalog::OperationType;
 use crate::material::Material;
 use crate::simulation_cut::{SimulationCutSample, SimulationCutTrace};
 use crate::tool::ToolDefinition;
 use crate::toolpath_spans::Span;
 
 use super::locality::SpanLookup;
+use super::power::is_plunge_only_op;
 use super::verdict::{
     Confidence, DeflectionBounds, DeflectionVerdict, EntrySpike, SampleEvidence, UnmodeledReason,
 };
@@ -100,14 +102,27 @@ pub fn sample_tip_deflection_mm(
     Some(tool.tip_deflection_mm(force_n, sample.axial_doc_mm, e))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn evaluate(
     toolpath_id: usize,
     tool: &ToolDefinition,
     material: &Material,
     sim_trace: Option<&SimulationCutTrace>,
     spans: Option<&[Span]>,
+    operation_kind: OperationType,
     tolerance: &super::ToleranceBands,
 ) -> DeflectionVerdict {
+    // Roadmap F.8 — same short-circuit as power/chipload: drill cycles
+    // have no continuous engagement, so the cantilever-deflection
+    // metric is meaningless. Return "doesn't apply" rather than the
+    // misleading `ArcEngagementNotCaptured`.
+    if is_plunge_only_op(operation_kind) {
+        return DeflectionVerdict::Unmodeled {
+            reason: UnmodeledReason::NotApplicableForOp(
+                "drill cycle — no continuous engagement".to_owned(),
+            ),
+        };
+    }
     let Some(trace) = sim_trace else {
         return DeflectionVerdict::Unmodeled {
             reason: UnmodeledReason::SimulationRequired,
@@ -377,6 +392,7 @@ mod tests {
             },
             None,
             None,
+            OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
@@ -400,6 +416,7 @@ mod tests {
             },
             Some(&trace),
             None,
+            OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
@@ -430,6 +447,7 @@ mod tests {
             },
             Some(&trace),
             None,
+            OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
@@ -467,6 +485,7 @@ mod tests {
             },
             Some(&trace),
             None,
+            OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
         match v {
@@ -510,6 +529,7 @@ mod tests {
             },
             Some(&trace),
             None,
+            OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
         match v {
@@ -546,6 +566,7 @@ mod tests {
             },
             Some(&trace),
             None,
+            OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
         let peak_um = match v {
@@ -603,6 +624,7 @@ mod tests {
             },
             Some(&trace),
             None,
+            OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
         match v {
@@ -642,6 +664,7 @@ mod tests {
             },
             Some(&trace),
             None,
+            OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
         let widened = evaluate(
@@ -652,6 +675,7 @@ mod tests {
             },
             Some(&trace),
             None,
+            OperationType::Pocket,
             &crate::tool_load::ToleranceBands {
                 deflection_breach: 100.0, // absurdly wide → no peak can trip Exceeds
                 ..crate::tool_load::ToleranceBands::default()
@@ -663,6 +687,47 @@ mod tests {
             _ => panic!(
                 "deflection_breach must not flip verdict in the wrong direction; \
                  strict={strict:?} widened={widened:?}"
+            ),
+        }
+    }
+
+    /// Roadmap F.8 — same short-circuit as the chipload and power
+    /// gates: drill cycles have no continuous engagement, so the
+    /// cantilever-deflection metric has no meaning. Refuse with
+    /// `NotApplicableForOp` even on a fully-engaged sample stream.
+    #[test]
+    fn drill_op_routes_to_not_applicable() {
+        let tool = carbide_flat(6.0, 45.0);
+        let trace = trace_with(vec![cutting_sample(
+            0,
+            0,
+            2.5,
+            std::f64::consts::PI,
+            1500.0,
+            1.0,
+        )]);
+        let v = evaluate(
+            0,
+            &tool,
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&trace),
+            None,
+            OperationType::Drill,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        match v {
+            DeflectionVerdict::Unmodeled {
+                reason: UnmodeledReason::NotApplicableForOp(detail),
+            } => {
+                assert!(
+                    detail.contains("drill"),
+                    "NotApplicableForOp detail should name the op family, got: {detail}"
+                );
+            }
+            other => panic!(
+                "drill must route to Unmodeled(NotApplicableForOp), got {other:?}"
             ),
         }
     }

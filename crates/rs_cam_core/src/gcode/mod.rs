@@ -273,6 +273,7 @@ pub fn project_load_report(
                 machine,
                 sim_trace,
                 spans,
+                tc.operation.op_type(),
                 &strict_tolerance,
             ),
             deflection: crate::tool_load::deflection::evaluate(
@@ -281,6 +282,7 @@ pub fn project_load_report(
                 material,
                 sim_trace,
                 spans,
+                tc.operation.op_type(),
                 &strict_tolerance,
             ),
         });

@@ -66,8 +66,8 @@ pub(crate) use outcome::build_outcome;
 pub use outcome::{OptimizeOutcome, ProjectOptimizeReport};
 
 use context::{
-    BaselineRestoreGuard, EvaluationContext, baseline_rpm_from_trace, cycle_time_from_trace,
-    find_matched_lut_row,
+    BaselineRestoreGuard, EvaluationContext, air_cut_pct_from_trace, baseline_rpm_from_trace,
+    cycle_time_from_trace, find_matched_lut_row,
 };
 use policy::SearchPolicy;
 
@@ -206,6 +206,7 @@ pub fn optimize_toolpath(
             };
         }
     };
+    let baseline_air_cut_pct = air_cut_pct_from_trace(baseline_trace, ctx.toolpath_id);
     let baseline_candidate = OptimizeCandidate {
         params: baseline_op.clone(),
         delta: ParamDelta::default(),
@@ -215,6 +216,7 @@ pub fn optimize_toolpath(
         reconciled_cycle_time_s: None,
         reconciled_verdict: None,
         gate_deltas: None,
+        air_cut_pct: baseline_air_cut_pct,
     };
 
     // 5. Look up the matched LUT row. Used by Stage 0's `k_lut` bound
@@ -1495,6 +1497,7 @@ mod tests {
             reconciled_cycle_time_s: None,
             reconciled_verdict: None,
             gate_deltas: None,
+            air_cut_pct: None,
         }
     }
 

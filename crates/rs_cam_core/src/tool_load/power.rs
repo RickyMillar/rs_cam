@@ -22,6 +22,7 @@
 //! `Approximate(SlotEngagement)` because chip-distribution between climb
 //! and conventional sides differs there and we don't decompose.
 
+use crate::compute::catalog::OperationType;
 use crate::machine::MachineProfile;
 use crate::material::Material;
 use crate::simulation_cut::SimulationCutTrace;
@@ -34,6 +35,7 @@ use super::verdict::{Confidence, EntrySpike, PowerVerdict, SampleEvidence, Unmod
 /// Worst-case anisotropy multiplier on Kc. See module-level doc.
 const ANISOTROPY_MULTIPLIER: f64 = 2.5;
 
+#[allow(clippy::too_many_arguments)]
 pub fn evaluate(
     toolpath_id: usize,
     tool: &ToolDefinition,
@@ -41,8 +43,20 @@ pub fn evaluate(
     machine: &MachineProfile,
     sim_trace: Option<&SimulationCutTrace>,
     spans: Option<&[Span]>,
+    operation_kind: OperationType,
     tolerance: &super::ToleranceBands,
 ) -> PowerVerdict {
+    // Roadmap F.8 — short-circuit before any gate-input checks when
+    // the op is geometrically plunge-only. Drilling has no continuous
+    // engagement to drive a power-vs-RPM curve; the right answer is
+    // "doesn't apply" not "arc engagement not captured".
+    if is_plunge_only_op(operation_kind) {
+        return PowerVerdict::Unmodeled {
+            reason: UnmodeledReason::NotApplicableForOp(
+                "drill cycle — no continuous engagement".to_owned(),
+            ),
+        };
+    }
     let Some(trace) = sim_trace else {
         return PowerVerdict::Unmodeled {
             reason: UnmodeledReason::SimulationRequired,
@@ -221,6 +235,16 @@ pub fn evaluate(
     }
 }
 
+/// Roadmap F.8 — operation kinds whose geometry is plunge-only. The
+/// three load gates (chipload, power, deflection) all need the same
+/// short-circuit, so the predicate lives in one place.
+pub(super) fn is_plunge_only_op(op_kind: OperationType) -> bool {
+    matches!(
+        op_kind,
+        OperationType::Drill | OperationType::AlignmentPinDrill
+    )
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -318,6 +342,7 @@ mod tests {
             &shapeoko_makita(),
             None,
             None,
+            OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
@@ -342,6 +367,7 @@ mod tests {
             &shapeoko_makita(),
             Some(&trace),
             None,
+            OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
@@ -371,6 +397,7 @@ mod tests {
             &shapeoko_makita(),
             Some(&trace),
             None,
+            OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
         assert!(matches!(
@@ -406,6 +433,7 @@ mod tests {
             &shapeoko_makita(),
             Some(&trace),
             None,
+            OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
         match v {
@@ -439,6 +467,7 @@ mod tests {
             &shapeoko_makita(),
             Some(&trace),
             None,
+            OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
         match v {
@@ -466,6 +495,7 @@ mod tests {
             &shapeoko_makita(),
             Some(&trace),
             None,
+            OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
         match v {
@@ -497,11 +527,76 @@ mod tests {
             &shapeoko_makita(),
             Some(&trace),
             None,
+            OperationType::Pocket,
             &bands,
         );
         assert!(
             matches!(v, PowerVerdict::Within { .. }),
             "expected Within with power_breach=1.0, got {v:?}"
         );
+    }
+
+    /// Roadmap F.8 — drill / pin-drill operations short-circuit to
+    /// `NotApplicableForOp` before any trace inspection. Even with a
+    /// fully-populated trace at heavy load (the same fixture as
+    /// `heavy_cut_exceeds_machine_with_available_kw`), the power gate
+    /// must refuse with the "doesn't apply" reason, not Exceeds.
+    #[test]
+    fn drill_op_routes_to_not_applicable_regardless_of_trace() {
+        let trace = trace_with(vec![cutting_sample(0, 20.0, std::f64::consts::PI, 6000.0)]);
+        let v = evaluate(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::Ipe,
+            },
+            &shapeoko_makita(),
+            Some(&trace),
+            None,
+            OperationType::Drill,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        match v {
+            PowerVerdict::Unmodeled {
+                reason: UnmodeledReason::NotApplicableForOp(detail),
+            } => {
+                assert!(
+                    detail.contains("drill"),
+                    "NotApplicableForOp detail should name the op family, got: {detail}"
+                );
+            }
+            other => panic!(
+                "drill must route to Unmodeled(NotApplicableForOp), got {other:?}"
+            ),
+        }
+    }
+
+    /// Same for alignment-pin drilling — also plunge-only kinematics.
+    #[test]
+    fn alignment_pin_drill_routes_to_not_applicable() {
+        let trace = trace_with(vec![cutting_sample(
+            0,
+            1.0,
+            std::f64::consts::FRAC_PI_2,
+            1000.0,
+        )]);
+        let v = evaluate(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            &shapeoko_makita(),
+            Some(&trace),
+            None,
+            OperationType::AlignmentPinDrill,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        assert!(matches!(
+            v,
+            PowerVerdict::Unmodeled {
+                reason: UnmodeledReason::NotApplicableForOp(_)
+            }
+        ));
     }
 }
