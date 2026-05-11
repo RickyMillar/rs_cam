@@ -17,7 +17,11 @@ use crate::toolpath::{Move, MoveType, Toolpath};
 use crate::toolpath_spans::{AnnotatedToolpath, SpanKind, SpanPayload};
 
 const Z_EPSILON_MM: f64 = 0.05;
-const LARGE_ARC_RADIUS_MULTIPLIER: f64 = 30.0;
+/// Threshold for flagging arc moves whose radius is suspiciously large
+/// relative to the tool radius. Also used by `arcfit::try_fit_arc` to
+/// reject implausible Kåsa-bias fits before they reach narration — see
+/// Roadmap F.10 RCA at `planning/F10_RCA.md`.
+pub(crate) const LARGE_ARC_RADIUS_MULTIPLIER: f64 = 30.0;
 const AIR_CUT_WARNING_PERCENT: f64 = 50.0;
 const DEEP_DOC_MULTIPLIER: f64 = 1.5;
 const MAX_LEVEL_LINES: usize = 8;

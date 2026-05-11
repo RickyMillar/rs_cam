@@ -1388,7 +1388,7 @@ pub fn apply_dressups(
             |scope| {
                 scope.set_param("tolerance", tolerance);
             },
-            |at| crate::arcfit::fit_arcs(at, tolerance),
+            |at| crate::arcfit::fit_arcs(at, tolerance, tool_radius),
         );
     }
 

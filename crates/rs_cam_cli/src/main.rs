@@ -2770,6 +2770,7 @@ fn main() -> Result<()> {
                 toolpath = fit_arcs(
                     rs_cam_core::toolpath_spans::AnnotatedToolpath::new(toolpath),
                     arc_tolerance,
+                    cutter.diameter() / 2.0,
                 )
                 .toolpath;
                 debug!(
