@@ -38,7 +38,8 @@ use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::error::VizError;
 use rs_cam_viz::io::export::{
     export_combined_gcode_from_session, export_gcode_from_session,
-    export_setup_gcode_from_session, export_single_toolpath_from_session,
+    export_gcode_from_session_with_policy, export_setup_gcode_from_session,
+    export_single_toolpath_from_session,
 };
 use rs_cam_viz::state::job::SetupId;
 use rs_cam_viz::state::runtime::{GuiState, ToolpathRuntime};
@@ -492,5 +493,28 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
     assert!(
         !override_gcode.contains("Setup change: Bottom"),
         "override must replace (not append to) the default text"
+    );
+}
+
+/// Roadmap A regression: the MCP export path must read the viz-side worker
+/// results (`gui.toolpath_rt[id].result`) rather than the empty
+/// `session.results`. The bug previously produced a 0-byte output file.
+/// This exercises the `_with_policy` variant the MCP wraps.
+#[test]
+fn export_with_policy_emits_gcode_from_viz_results() {
+    let (session, gui, sim) = build_session();
+    let policy = rs_cam_core::gcode::ToolLoadExportPolicy {
+        accept_unmodeled: true,
+        accept_exceeded: true,
+    };
+    let gcode = export_gcode_from_session_with_policy(&session, &gui, &sim, policy)
+        .expect("policy export succeeds");
+    assert!(
+        !gcode.is_empty(),
+        "policy export must not produce empty output"
+    );
+    assert!(
+        gcode.contains("G1"),
+        "expected at least one feed move: {gcode}"
     );
 }

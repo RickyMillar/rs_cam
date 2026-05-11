@@ -1,5 +1,5 @@
 use rs_cam_core::gcode::{
-    ControllerCompensation, GcodePhase, GcodeSetupPhase, WizardOverlay,
+    ControllerCompensation, GcodePhase, GcodeSetupPhase, ToolLoadExportPolicy, WizardOverlay,
     export_gcode_multi_setup_with_overlay_checked, export_gcode_phases_with_overlay_checked,
     replace_rapids_with_feed,
 };
@@ -91,6 +91,19 @@ pub fn export_gcode_from_session(
     gui: &GuiState,
     sim: &SimulationState,
 ) -> Result<String, crate::error::VizError> {
+    export_gcode_from_session_with_policy(session, gui, sim, gui.tool_load_overrides.as_policy())
+}
+
+/// Same as [`export_gcode_from_session`], but lets the caller supply an
+/// explicit tool-load policy instead of reading `gui.tool_load_overrides`.
+/// Used by the MCP export path so an automation client can pass
+/// accept_unmodeled / accept_exceeded directly without mutating GUI state.
+pub fn export_gcode_from_session_with_policy(
+    session: &ProjectSession,
+    gui: &GuiState,
+    sim: &SimulationState,
+    policy: ToolLoadExportPolicy,
+) -> Result<String, crate::error::VizError> {
     let post = gui.post.format.definition();
 
     let phases: Vec<GcodePhase<'_>> = session
@@ -110,7 +123,7 @@ pub fn export_gcode_from_session(
         &phases,
         post,
         viz_sim_trace(sim),
-        gui.tool_load_overrides.as_policy(),
+        policy,
         &overlay_for(session, gui),
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
