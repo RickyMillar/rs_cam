@@ -53,8 +53,64 @@ pub fn mcp_highlight_effect(ui: &mut egui::Ui, gui: &crate::state::runtime::GuiS
 }
 
 /// Global embedded vendor LUT, loaded once on first access.
-static VENDOR_LUT: std::sync::LazyLock<rs_cam_core::feeds::VendorLut> =
+pub(crate) static VENDOR_LUT: std::sync::LazyLock<rs_cam_core::feeds::VendorLut> =
     std::sync::LazyLock::new(rs_cam_core::feeds::VendorLut::embedded);
+
+/// Compute feeds for an op + tool + material + machine without touching
+/// any UI state. Mirrors the `FeedsInput` setup that
+/// `calculate_and_apply_feeds` does so MCP-only sessions get the same
+/// auto-corrected feeds the GUI applies on Feeds-tab render. (Roadmap B.4)
+pub(crate) fn compute_feeds_for_op(
+    tool: &crate::state::job::ToolConfig,
+    material: &rs_cam_core::material::Material,
+    machine: &rs_cam_core::machine::MachineProfile,
+    workholding: rs_cam_core::feeds::WorkholdingRigidity,
+    op: &OperationConfig,
+) -> rs_cam_core::feeds::FeedsResult {
+    let (family, role) = operation_to_feeds_family(op);
+    let (axial_hint, radial_hint, scallop_hint) = operation_feeds_hints(op);
+    let input = rs_cam_core::feeds::FeedsInput {
+        tool_diameter: tool.diameter,
+        flute_count: tool.flute_count,
+        flute_length: tool.cutting_length,
+        shank_diameter: Some(tool.shank_diameter),
+        tool_geometry: tool_geometry_hint(tool),
+        material,
+        machine,
+        operation: family,
+        pass_role: role,
+        axial_depth_mm: axial_hint,
+        radial_width_mm: radial_hint,
+        target_scallop_mm: scallop_hint,
+        vendor_lut: Some(&*VENDOR_LUT),
+        setup: rs_cam_core::feeds::SetupContext {
+            tool_overhang_mm: Some(tool.stickout),
+            workholding_rigidity: workholding,
+        },
+    };
+    rs_cam_core::feeds::calculate(&input)
+}
+
+/// Apply a [`FeedsResult`] to an [`OperationConfig`], honoring the
+/// per-field auto flags so user-overridden fields are preserved.
+pub(crate) fn apply_feeds_result_to_op(
+    op: &mut OperationConfig,
+    result: &rs_cam_core::feeds::FeedsResult,
+    auto: &rs_cam_core::compute::config::FeedsAutoMode,
+) {
+    if auto.feed_rate {
+        op.set_feed_rate(result.feed_rate_mm_min);
+    }
+    if auto.plunge_rate {
+        op.set_plunge_rate(result.plunge_rate_mm_min);
+    }
+    if auto.stepover {
+        op.set_stepover(result.radial_width_mm);
+    }
+    if auto.depth_per_pass {
+        op.set_depth_per_pass(result.axial_depth_mm);
+    }
+}
 
 /// Flush tool undo snapshot if the user navigated away from a tool.
 fn flush_tool_snapshot(state: &mut AppState) {
@@ -936,7 +992,7 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
 }
 
 /// Map OperationConfig variant to (OperationFamily, PassRole) for the feeds calculator.
-fn operation_to_feeds_family(
+pub(crate) fn operation_to_feeds_family(
     op: &OperationConfig,
 ) -> (
     rs_cam_core::feeds::OperationFamily,
@@ -946,7 +1002,7 @@ fn operation_to_feeds_family(
 }
 
 /// Derive ToolGeometryHint from the tool's own geometry_hint() method.
-fn tool_geometry_hint(
+pub(crate) fn tool_geometry_hint(
     tool: &crate::state::job::ToolConfig,
 ) -> rs_cam_core::feeds::ToolGeometryHint {
     crate::compute::worker::helpers::build_cutter(tool).to_geometry_hint()
@@ -954,7 +1010,7 @@ fn tool_geometry_hint(
 
 /// Extract operation-specific parameter hints for the feeds calculator.
 /// Returns (axial_depth_hint, radial_width_hint, scallop_hint).
-fn operation_feeds_hints(op: &OperationConfig) -> (Option<f64>, Option<f64>, Option<f64>) {
+pub(crate) fn operation_feeds_hints(op: &OperationConfig) -> (Option<f64>, Option<f64>, Option<f64>) {
     match op {
         // Scallop: scallop_height drives stepover for ball tools
         OperationConfig::Scallop(cfg) => (None, None, Some(cfg.scallop_height)),

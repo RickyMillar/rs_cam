@@ -48,7 +48,20 @@ impl<B: ComputeBackend> AppController<B> {
             );
             return;
         };
-        let operation = OperationConfig::new_default(op_type);
+        // Roadmap B.1–B.3 — pull stock-aware depth defaults so e.g.
+        // a fresh DropCutter starts with `min_z = stock_bottom_z`
+        // instead of the hard-coded `-50.0` that clipped any stock
+        // not sitting at exactly that depth.
+        let stock_bbox = self.state.session.stock_bbox();
+        let stock_padding = self.state.session.stock_config().padding;
+        let ctx = rs_cam_core::compute::catalog::NewDefaultCtx::from_stock_bbox(
+            stock_bbox,
+            stock_padding,
+        );
+        let operation = OperationConfig::new_default_with_ctx(op_type, &ctx);
+        // Capture is_3d before `operation` moves into the toolpath
+        // config below — used by the boundary auto-enable (B.7).
+        let op_is_3d = operation.is_3d();
         if !operation.is_stock_based() && self.state.session.models().is_empty() {
             let msg = format!(
                 "Cannot add {} toolpath: import geometry first",
@@ -81,7 +94,28 @@ impl<B: ComputeBackend> AppController<B> {
             model_id,
             pre_gcode: None,
             post_gcode: None,
-            boundary: crate::state::toolpath::BoundaryConfig::default(),
+            // Roadmap B.7 — for 3D ops on a 3D mesh model, default the
+            // machining boundary to the model silhouette so the cutter
+            // doesn't sweep over the whole stock area on small parts in
+            // oversized stock. Falls back to the default (disabled) for
+            // 2D / stock-based ops or when no mesh model is available.
+            boundary: {
+                let has_mesh = self
+                    .state
+                    .session
+                    .models()
+                    .iter()
+                    .any(|m| m.mesh.is_some());
+                if op_is_3d && has_mesh {
+                    crate::state::toolpath::BoundaryConfig {
+                        enabled: true,
+                        source: crate::state::toolpath::BoundarySource::ModelSilhouette,
+                        ..crate::state::toolpath::BoundaryConfig::default()
+                    }
+                } else {
+                    crate::state::toolpath::BoundaryConfig::default()
+                }
+            },
             boundary_inherit: true,
             stock_source: crate::state::toolpath::StockSource::Fresh,
             coolant: rs_cam_core::gcode::CoolantMode::Off,

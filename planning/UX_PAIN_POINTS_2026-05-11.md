@@ -1399,5 +1399,6 @@ Total estimated work: ~12-15 dev-days for the high-impact stack
 | 2   | D         | J10 STEP loader strips BREP (+ defensive UI warning) | -1🔴            |
 | 3   | E.1–E.5   | load warnings, ERR-chip hover, stale flag, gen msg, doc | -1🔴 -3🟡 -1🟢 |
 | 4   | C.1–C.6   | issue partition, summary swap, BURN floor, hotspots, banner | -1🔴 -4🟡   |
+| 5   | B.1–B.7   | stock-aware depth defaults, MCP feeds calc, dressups, boundary | -1🔴 -4🟡 -1🟢 (B.8/B.9 deferred) |
 
 

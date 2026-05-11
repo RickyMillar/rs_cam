@@ -847,6 +847,92 @@ impl OperationConfig {
             DepthSemantics::None => 0.0,
         }
     }
+}
+
+/// Stock context for [`OperationConfig::new_default_with_ctx`] and
+/// [`OperationConfig::apply_stock_defaults`]. Carries the few stock
+/// dimensions a sensible per-op depth default needs to know about.
+#[derive(Debug, Clone, Copy)]
+pub struct NewDefaultCtx {
+    /// Top of the stock in the part-Z frame (typically 0 for 3D, may be
+    /// negative for 2D where the stock origin is below Z=0).
+    pub stock_top_z: f64,
+    /// Bottom of the stock in the part-Z frame.
+    pub stock_bottom_z: f64,
+    /// Stock thickness in mm (`stock_top_z - stock_bottom_z`).
+    pub stock_z: f64,
+    /// Stock-top minus model-top margin in mm. Drives the face skim
+    /// depth default. Falls back to `5.0` when no model is loaded.
+    pub stock_padding: f64,
+}
+
+impl NewDefaultCtx {
+    /// Build a context from a session's stock config + bbox. Use this
+    /// from production sites that have a `&ProjectSession` in scope.
+    pub fn from_stock_bbox(bbox: crate::geo::BoundingBox3, padding: f64) -> Self {
+        let stock_z = (bbox.max.z - bbox.min.z).max(0.0);
+        Self {
+            stock_top_z: bbox.max.z,
+            stock_bottom_z: bbox.min.z,
+            stock_z,
+            stock_padding: padding,
+        }
+    }
+}
+
+impl OperationConfig {
+
+    /// Construct a fresh op config and immediately apply stock-aware
+    /// depth defaults via [`Self::apply_stock_defaults`]. This is the
+    /// preferred constructor at production sites (controller/MCP) where
+    /// the session's stock is in scope; tests can keep using
+    /// [`Self::new_default`].
+    pub fn new_default_with_ctx(op_type: OperationType, ctx: &NewDefaultCtx) -> Self {
+        let mut cfg = Self::new_default(op_type);
+        cfg.apply_stock_defaults(ctx);
+        cfg
+    }
+
+    /// Apply stock-aware overrides to depth-style fields that the
+    /// per-config `Default` impl can't see (it has no stock context).
+    /// Roadmap B.1–B.3: drop_cutter `min_z`, face `depth`, pocket /
+    /// profile / drill / adaptive `depth`. No-op for ops whose default
+    /// is already stock-agnostic.
+    pub fn apply_stock_defaults(&mut self, ctx: &NewDefaultCtx) {
+        match self {
+            // B.1 — drop_cutter min_z is the absolute Z floor; default
+            // (-50.0) is wrong for any stock that doesn't sit at exactly
+            // that depth. Use the stock bottom so the cutter scans the
+            // whole stock without clipping.
+            OperationConfig::DropCutter(cfg) => {
+                cfg.min_z = ctx.stock_bottom_z;
+            }
+            // B.2 — face depth defaults to 0 (single-pass at stock
+            // top) which produces a do-nothing toolpath. Use the stock
+            // padding (typical stock-top minus model-top margin) or 1mm
+            // as a sensible "skim the surface" depth.
+            OperationConfig::Face(cfg) => {
+                cfg.depth = ctx.stock_padding.max(1.0);
+            }
+            // B.3 — pocket / profile / drill / adaptive get static
+            // depth defaults that are unrelated to stock. Profile and
+            // Drill are typically full-through; Pocket and Adaptive
+            // make more sense at half-stock.
+            OperationConfig::Profile(cfg) => {
+                cfg.depth = ctx.stock_z;
+            }
+            OperationConfig::Drill(cfg) => {
+                cfg.depth = ctx.stock_z;
+            }
+            OperationConfig::Pocket(cfg) => {
+                cfg.depth = (ctx.stock_z * 0.5).min(5.0);
+            }
+            OperationConfig::Adaptive(cfg) => {
+                cfg.depth = ctx.stock_z * 0.5;
+            }
+            _ => {}
+        }
+    }
 
     pub fn new_default(op_type: OperationType) -> Self {
         match op_type {
