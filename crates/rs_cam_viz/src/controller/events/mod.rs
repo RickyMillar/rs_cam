@@ -420,13 +420,37 @@ impl<B: ComputeBackend> AppController<B> {
             rt.stale_since = Some(std::time::Instant::now());
         }
         self.state.optimize_modal = None;
-        self.push_notification(
-            format!(
-                "Applied optimize candidate to toolpath {}. Regenerate to apply.",
-                toolpath_id.0
-            ),
-            crate::controller::Severity::Info,
-        );
+
+        // Roadmap F.2 — auto-verify after Apply. Set the pending flag,
+        // submit the regen, and let the drain handler kick a full
+        // project sim when this toolpath's regen lands. The user gets
+        // a live verdict for the applied params without clicking
+        // Regenerate → Run Simulation by hand.
+        //
+        // We only chain the re-sim when the project had a baseline
+        // sim — otherwise there's nothing to "verify against" and a
+        // forced sim against an unused project just wastes wall-clock
+        // time.
+        let had_baseline_sim = self.state.simulation.results.is_some();
+        if had_baseline_sim {
+            self.state.pending_apply_resim = Some(toolpath_id.0);
+            self.push_notification(
+                format!(
+                    "Applied optimize candidate to toolpath {}; regenerating and verifying…",
+                    toolpath_id.0
+                ),
+                crate::controller::Severity::Info,
+            );
+            self.submit_toolpath_compute(toolpath_id);
+        } else {
+            self.push_notification(
+                format!(
+                    "Applied optimize candidate to toolpath {}. Regenerate to take effect.",
+                    toolpath_id.0
+                ),
+                crate::controller::Severity::Info,
+            );
+        }
     }
 
     /// Open the project-level Optimize rollup. Submits an

@@ -68,6 +68,13 @@ pub struct AppState {
     /// rollup. Holds the toolpath ids that need to finish regenerating
     /// before we kick the reconciliation sim. Empty otherwise.
     pub pending_reconciliation_for_ids: Vec<usize>,
+    /// Toolpath id of a per-TP Optimize candidate just applied via
+    /// `apply_optimize_candidate`. When the corresponding regen lands,
+    /// the drain handler auto-triggers a full project sim so the
+    /// freshly-applied params are verified against live simulation
+    /// without the user having to click Run Simulation manually
+    /// (Roadmap F.2). `None` when no per-TP Apply is in flight.
+    pub pending_apply_resim: Option<usize>,
 }
 
 /// Persistent state for the per-toolpath Optimize modal. Carries the
@@ -145,6 +152,7 @@ impl AppState {
             optimize_project: None,
             is_optimizing: false,
             pending_reconciliation_for_ids: Vec::new(),
+            pending_apply_resim: None,
         }
     }
 }
