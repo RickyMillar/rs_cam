@@ -361,8 +361,29 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
 
     // --- Step 9: Safety factor ---
     feed *= machine.safety_factor;
-    let plunge_rate = plunge * machine.safety_factor;
+    let mut plunge_rate = plunge * machine.safety_factor;
     let ramp_feed_rate = ramp_feed * machine.safety_factor;
+
+    // Fix 2 (Wanaka audit): tool-geometry-aware plunge cap.
+    // Material::plunge_rate_base returns one value per material with
+    // no tool-geometry awareness, so a 1 mm tapered ball gets the
+    // same plunge as a 12 mm end-mill. Published FSWizard / GWizard
+    // ranges are 100–300 mm/min for sub-2 mm tapered/ball tools in
+    // wood — derate accordingly. Cap at 150 mm/min per mm of
+    // effective tip diameter for ball/tapered-ball geometries; larger
+    // tools and flat/bull tools are unchanged. See
+    // `planning/PRE_OPTIMIZE_DEFAULTS_AUDIT.md` Fix 2.
+    let plunge_cap = match input.tool_geometry {
+        ToolGeometryHint::Ball => Some(d),
+        ToolGeometryHint::TaperedBall { tip_radius, .. } => Some((tip_radius * 2.0).max(0.5)),
+        _ => None,
+    };
+    if let Some(tip_d) = plunge_cap {
+        let cap = 150.0 * tip_d;
+        if plunge_rate > cap {
+            plunge_rate = cap;
+        }
+    }
 
     // Final power at actual feed
     let actual_power = (kc * ap * ae * feed) / (60.0 * 1_000_000.0);
@@ -531,8 +552,31 @@ fn default_engagement(
             }
         }
 
-        // Apply machine rigidity bounds
+        // Apply machine rigidity bounds.
+        //
+        // For ap (DOC) the rigidity factor is a target floor — the
+        // machine can sustain at least this much axial engagement.
+        //
+        // For ae (WOC) the rigidity factor is a ceiling by default
+        // (don't exceed the machine's adaptive capability), but for
+        // **wood-class materials on flat/bull tools** it's also a
+        // target floor — wood-router practice is to actually use the
+        // full machine factor (~0.20 D) rather than the metal-grade
+        // 0.14 base. Without this the empirical engagement profile
+        // sits in the "light" bin (≤ 0.10 D — too narrow), wasting
+        // cycle time without improving safety. See
+        // `planning/PRE_OPTIMIZE_DEFAULTS_AUDIT.md` Fix 1.
         ap_factor = ap_factor.max(machine.rigidity.adaptive_doc_factor * profile.ap_factor / 1.5);
+        let wood_class_flat_tool = matches!(
+            input.material,
+            Material::SolidWood { .. } | Material::Plywood { .. } | Material::SheetGood { .. }
+        ) && matches!(
+            input.tool_geometry,
+            ToolGeometryHint::Flat | ToolGeometryHint::Bull { .. }
+        );
+        if wood_class_flat_tool {
+            ae_factor = ae_factor.max(machine.rigidity.adaptive_woc_factor);
+        }
         ae_factor = ae_factor.min(machine.rigidity.adaptive_woc_factor);
     }
 
@@ -814,6 +858,163 @@ mod tests {
                 finish.radial_width_mm
             );
         }
+    }
+
+    /// Fix 2 (Wanaka audit): plunge for small ball/tapered-ball tools
+    /// must derate by tool-tip diameter. A 1 mm tapered ball in
+    /// hardwood was previously emitting 750 mm/min plunge (the
+    /// material-level base × machine safety factor) — 2.5× above
+    /// FSWizard's 100–300 mm/min safe band. Cap is 150 mm/min per
+    /// mm of tip diameter.
+    #[test]
+    fn test_small_tapered_ball_plunge_derated() {
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        };
+        let machine = MachineProfile::shapeoko_vfd();
+
+        let result = calculate(&FeedsInput {
+            tool_diameter: 1.0,
+            flute_count: 1,
+            flute_length: 6.0,
+            tool_geometry: ToolGeometryHint::TaperedBall {
+                tip_radius: 0.5,
+                taper_angle_deg: 7.0,
+            },
+            shank_diameter: Some(6.0),
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Parallel,
+            pass_role: PassRole::Finish,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext::default(),
+        });
+
+        assert!(
+            result.plunge_rate_mm_min <= 200.0,
+            "1mm TB plunge {} should be ≤ 200 mm/min after Fix 2 derate",
+            result.plunge_rate_mm_min
+        );
+        assert!(
+            result.plunge_rate_mm_min >= 50.0,
+            "1mm TB plunge {} should not collapse to near-zero",
+            result.plunge_rate_mm_min
+        );
+    }
+
+    /// Counter-test: flat end-mills are unaffected by Fix 2.
+    #[test]
+    fn test_flat_endmill_plunge_unchanged_by_fix2() {
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        };
+        let machine = MachineProfile::shapeoko_vfd();
+
+        let result = calculate(&FeedsInput {
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext::default(),
+        });
+
+        // 6mm flat in hardwood: material_base/hardness × safety ≈
+        // 1000/1.42 × 0.75 ≈ 528 mm/min. Should NOT be capped.
+        assert!(
+            result.plunge_rate_mm_min > 400.0,
+            "6mm flat plunge {} should not be derated by Fix 2 tool-geometry cap",
+            result.plunge_rate_mm_min
+        );
+    }
+
+    /// Fix 1 (Wanaka audit): adaptive stepover for wood + flat tools
+    /// should track the machine rigidity factor (`adaptive_woc_factor`),
+    /// not the metal-grade 0.14 base. Empirical: 6 mm flat in
+    /// Generic Hardwood on a wood-router with `adaptive_woc_factor =
+    /// 0.20` should yield ae ≈ 1.2 mm, not 0.7 mm. Engagement profile
+    /// then sits in the "normal" bin instead of "light".
+    #[test]
+    fn test_wood_adaptive_stepover_tracks_machine_factor() {
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        };
+        let machine = MachineProfile::shapeoko_vfd();
+        let target = machine.rigidity.adaptive_woc_factor * 6.0;
+
+        let result = calculate(&FeedsInput {
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext::default(),
+        });
+
+        assert!(
+            (result.radial_width_mm - target).abs() < 1e-6,
+            "wood adaptive WOC {} should match machine.adaptive_woc_factor × D = {}",
+            result.radial_width_mm,
+            target
+        );
+    }
+
+    /// Counter-test: metals should NOT get the wood adaptive bonus —
+    /// the metal-grade 0.14 base (with hardness derates) stays in
+    /// force so adaptive stepover remains conservative.
+    #[test]
+    fn test_metal_adaptive_stepover_keeps_metal_base() {
+        let material = Material::Plastic {
+            family: crate::material::PlasticFamily::Acrylic,
+        };
+        // Acrylic is not wood-class — should bypass the Fix 1 floor.
+        let machine = MachineProfile::shapeoko_vfd();
+        let machine_factor_ae = machine.rigidity.adaptive_woc_factor * 6.0;
+
+        let result = calculate(&FeedsInput {
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext::default(),
+        });
+
+        // Plastic is not wood-class; ae should sit below the
+        // machine ceiling rather than being raised to it.
+        assert!(
+            result.radial_width_mm < machine_factor_ae,
+            "non-wood adaptive WOC {} should stay below machine factor {}",
+            result.radial_width_mm,
+            machine_factor_ae
+        );
     }
 
     #[test]

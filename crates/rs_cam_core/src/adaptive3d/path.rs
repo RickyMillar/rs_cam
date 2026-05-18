@@ -887,13 +887,27 @@ pub(super) fn segments_to_toolpath(
                         }
                         emit_peck_plunge(&mut tp, entry, descent_floor, params);
                     }
-                    // Helix and Ramp entries already self-pace their descent;
-                    // the rapid-floor optimisation doesn't apply (the helix /
-                    // ramp's whole point is to descend at a controlled rate).
+                    // Fix 4 (helix/agent_search RCA): honor `rapid_floor_z`
+                    // for Helix and Ramp the same way Plunge does. Rapid
+                    // through pre-cleared air down to the floor, then start
+                    // the controlled descent from there. Without this, the
+                    // helix/ramp descends at plunge_rate from safe_z through
+                    // every previously-cleared Z level — which (a) inflates
+                    // air-cut % and (b) can intersect uncleared neighbouring
+                    // stock at the helix radius during the multi-Z drop,
+                    // producing rapid-into-material collisions. See
+                    // `planning/F4_HELIX_AGENT_SEARCH_RCA.md`.
                     EntryStyle3d::Helix { radius, pitch } => {
+                        const RAPID_DESCENT_BUFFER_MM: f64 = 0.5;
+                        let descent_floor = (*rapid_floor_z + RAPID_DESCENT_BUFFER_MM)
+                            .min(params.safe_z)
+                            .max(entry.z);
                         lift_to_safe_z(&mut tp, params.safe_z);
                         tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
-                        let helix_start = P3::new(entry.x, entry.y, params.safe_z);
+                        if descent_floor < params.safe_z - 1e-6 {
+                            tp.rapid_to(P3::new(entry.x, entry.y, descent_floor));
+                        }
+                        let helix_start = P3::new(entry.x, entry.y, descent_floor);
                         crate::dressup::emit_helix(
                             &mut tp,
                             &helix_start,
@@ -904,9 +918,16 @@ pub(super) fn segments_to_toolpath(
                         );
                     }
                     EntryStyle3d::Ramp { max_angle_deg } => {
+                        const RAPID_DESCENT_BUFFER_MM: f64 = 0.5;
+                        let descent_floor = (*rapid_floor_z + RAPID_DESCENT_BUFFER_MM)
+                            .min(params.safe_z)
+                            .max(entry.z);
                         lift_to_safe_z(&mut tp, params.safe_z);
                         tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
-                        let ramp_start = P3::new(entry.x, entry.y, params.safe_z);
+                        if descent_floor < params.safe_z - 1e-6 {
+                            tp.rapid_to(P3::new(entry.x, entry.y, descent_floor));
+                        }
+                        let ramp_start = P3::new(entry.x, entry.y, descent_floor);
                         crate::dressup::emit_ramp(
                             &mut tp,
                             &ramp_start,
