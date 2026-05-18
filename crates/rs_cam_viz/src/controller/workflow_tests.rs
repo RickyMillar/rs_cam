@@ -184,7 +184,6 @@ fn add_pocket(controller: &mut AppController<ScriptedBackend>) -> ToolpathId {
         stock_source: Default::default(),
         coolant: Default::default(),
         face_selection: None,
-        feeds_auto: Default::default(),
         debug_options: Default::default(),
     };
     controller.state.session.add_toolpath(0, tp_config).unwrap();
@@ -419,7 +418,6 @@ fn w4_face_selection_in_undo_snapshot() {
             tc.operation.clone(),
             tc.dressups.clone(),
             tc.face_selection.clone(),
-            tc.feeds_auto.clone(),
         ));
     }
 
@@ -436,7 +434,7 @@ fn w4_face_selection_in_undo_snapshot() {
 
     // Flush snapshot (simulates navigating away from toolpath)
     // Take the snapshot and push an undo action
-    if let Some((snap_id, old_op, old_dressups, old_faces, old_feeds_auto)) =
+    if let Some((snap_id, old_op, old_dressups, old_faces)) =
         c.state.history.toolpath_snapshot.take()
     {
         if let Some((_, tc)) = c.state.session.find_toolpath_config_by_id(snap_id.0) {
@@ -450,8 +448,6 @@ fn w4_face_selection_in_undo_snapshot() {
                     new_dressups: tc.dressups.clone(),
                     old_face_selection: old_faces,
                     new_face_selection: tc.face_selection.clone(),
-                    old_feeds_auto,
-                    new_feeds_auto: tc.feeds_auto.clone(),
                 });
         }
     }
@@ -519,7 +515,6 @@ fn w5_project_round_trip_preserves_step_face_selection() {
         stock_source: Default::default(),
         coolant: Default::default(),
         face_selection: Some(vec![face_id]),
-        feeds_auto: Default::default(),
         debug_options: Default::default(),
     };
     session.add_toolpath(0, tp_config).unwrap();

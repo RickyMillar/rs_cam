@@ -327,14 +327,13 @@ impl<B: ComputeBackend> AppController<B> {
     /// Apply a candidate from the cached Optimize outcome. Index 0 is
     /// the baseline (no-op); higher indexes select a non-baseline
     /// candidate. Routes through `apply_toolpath_param_snapshot` with
-    /// the candidate's params + a `feeds_auto` whose flags are flipped
-    /// per the candidate's `ParamDelta` (Resolution 7's mapping).
+    /// the candidate's params.
     fn apply_optimize_candidate(
         &mut self,
         toolpath_id: crate::state::toolpath::ToolpathId,
         candidate_index: usize,
     ) {
-        use rs_cam_core::tool_load::optimize::{OutcomeKind, feeds_auto_for_candidate};
+        use rs_cam_core::tool_load::optimize::OutcomeKind;
 
         // Lookup phase: extract everything we need from the cached
         // outcome and the toolpath config, then drop the borrow before
@@ -374,7 +373,6 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         }
         let candidate_op = candidate.params.clone();
-        let candidate_delta = candidate.delta.clone();
 
         let Some(idx) = self
             .state
@@ -398,15 +396,12 @@ impl<B: ComputeBackend> AppController<B> {
         };
         let dressups = tc.dressups.clone();
         let face_selection = tc.face_selection.clone();
-        let baseline_feeds_auto = tc.feeds_auto.clone();
-        let feeds_auto = feeds_auto_for_candidate(&baseline_feeds_auto, &candidate_delta);
 
         if let Err(e) = self.state.session.apply_toolpath_param_snapshot(
             idx,
             candidate_op,
             dressups,
             face_selection,
-            feeds_auto,
         ) {
             self.push_notification(
                 format!("Apply failed: {e}"),
@@ -501,7 +496,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// each toolpath; closes the rollup and marks every touched
     /// toolpath stale so auto-regen kicks in.
     fn apply_optimize_project(&mut self) {
-        use rs_cam_core::tool_load::optimize::{OutcomeKind, feeds_auto_for_candidate};
+        use rs_cam_core::tool_load::optimize::OutcomeKind;
 
         // Lookup phase: pull out (toolpath_id, params, delta) tuples
         // from the cached state. Drop the borrow before any mutation.
@@ -511,11 +506,7 @@ impl<B: ComputeBackend> AppController<B> {
         let crate::state::OptimizeProjectStatus::Ready(report) = &view.status else {
             return;
         };
-        let mut targets: Vec<(
-            usize,
-            rs_cam_core::compute::catalog::OperationConfig,
-            rs_cam_core::tool_load::optimize::ParamDelta,
-        )> = Vec::new();
+        let mut targets: Vec<(usize, rs_cam_core::compute::catalog::OperationConfig)> = Vec::new();
         for (idx, ((toolpath_index, outcome), selected)) in report
             .per_toolpath
             .iter()
@@ -532,11 +523,7 @@ impl<B: ComputeBackend> AppController<B> {
                 tracing::debug!("Skipping row {idx}: no first_safe candidate");
                 continue;
             };
-            targets.push((
-                *toolpath_index,
-                candidate.params.clone(),
-                candidate.delta.clone(),
-            ));
+            targets.push((*toolpath_index, candidate.params.clone()));
         }
 
         if targets.is_empty() {
@@ -549,23 +536,20 @@ impl<B: ComputeBackend> AppController<B> {
 
         let mut applied: usize = 0;
         let mut failed: Vec<String> = Vec::new();
-        for (toolpath_index, params, delta) in targets {
+        for (toolpath_index, params) in targets {
             let Some(tc) = self.state.session.get_toolpath_config(toolpath_index) else {
                 failed.push(format!("toolpath idx {toolpath_index} disappeared"));
                 continue;
             };
             let dressups = tc.dressups.clone();
             let face_selection = tc.face_selection.clone();
-            let baseline_feeds_auto = tc.feeds_auto.clone();
             let toolpath_id_raw = tc.id;
-            let feeds_auto = feeds_auto_for_candidate(&baseline_feeds_auto, &delta);
 
             if let Err(e) = self.state.session.apply_toolpath_param_snapshot(
                 toolpath_index,
                 params,
                 dressups,
                 face_selection,
-                feeds_auto,
             ) {
                 failed.push(format!("toolpath idx {toolpath_index}: {e}"));
                 continue;

@@ -22,9 +22,38 @@
 - unified service layer: `ProjectSession` API in core, shared `execute_operation()` dispatch for all 23 ops
 - MCP server (`rs_cam_mcp`) exposing `ProjectSession` tools for AI agent integration
 
-## Recent work (2026-05-11)
+## Recent work (2026-05-12)
 
-### Wanaka optimizer verification + Roadmap F authored
+### Roadmap F.5 — feeds-auto removal
+
+Original F.5 plan was to add "Set by Optimize · ✕ unlock" chips next
+to optimizer-locked feed fields, exposing the `FeedsAutoMode` flags
+that the Feeds tab used to silently overwrite operation params from
+the LUT calculator every render frame.
+
+Resolved instead by **deleting the whole auto-fill abstraction**:
+
+- `FeedsAutoMode` struct removed from `compute/config.rs`.
+- `ToolpathConfig.feeds_auto`, `ToolpathEntryInit.feeds_auto`,
+  `ToolpathSnapshot`'s 5th tuple slot, and the `feeds_auto` fields on
+  the `ToolpathParamsChange` undo action all gone.
+- `apply_toolpath_param_snapshot` slimmed from 5 → 4 args.
+- `feeds_auto_for_candidate` removed from the optimizer.
+- `calculate_and_apply_feeds` no longer writes to the op — it just
+  calculates and caches a `FeedsResult` on the entry.
+- `draw_feeds_card` rebuilt with per-row ⚡ Suggest buttons next to
+  Feed / Plunge / DOC / WOC plus a ⚡ Suggest all, each setting
+  `stale_since` so the auto-regen banner catches the change.
+- Project-file load tolerates the legacy `feeds_auto = {...}` TOML
+  block via `_legacy_feeds_auto: Option<toml::Value>` with
+  `skip_serializing` — old projects still load, never re-emit it.
+
+Net −242 lines across 29 files. Every operation-param field is now
+user-owned at all times; the LUT only writes when the user clicks
+Suggest. Eliminates the silent-overwrite footgun that motivated F.5
+rather than papering over it.
+
+### Wanaka optimizer verification + Roadmap F authored (2026-05-11)
 
 Live MCP session on `wanaka_full_tuned.toml` (2 setups, 8 toolpaths,
 6 of 8 BURN-risk at chipload-low baseline). Verified that the
@@ -52,7 +81,7 @@ Findings written up as **Roadmap F** in
 - 🟡 F.3 Deflection gate trips on single-sample lift-bridge
   transients in Waterline-cleanup spans
 - 🟡 F.4 Suggestions ignore machine envelope
-- 🟡 F.5 Optimizer-locked `feeds_auto.*` fields have no UI indicator
+- ✅ F.5 Resolved by removing the auto-fill abstraction entirely — see "Roadmap F.5 — feeds-auto removal" above
 - 🟢 F.6 Project-level Optimize undiscoverable
 
 Suggested PR sequencing 7-13 in the roadmap; F.1 + F.3 are the

@@ -79,7 +79,7 @@ impl<B: ComputeBackend> AppController<B> {
             .map(|m| m.id)
             .unwrap_or(0);
 
-        let tc = rs_cam_core::session::ToolpathConfig {
+        let mut tc = rs_cam_core::session::ToolpathConfig {
             id: 0, // will be assigned by session
             name: format!(
                 "{} {}",
@@ -120,9 +120,26 @@ impl<B: ComputeBackend> AppController<B> {
             stock_source: crate::state::toolpath::StockSource::Fresh,
             coolant: rs_cam_core::gcode::CoolantMode::Off,
             face_selection: None,
-            feeds_auto: crate::state::toolpath::FeedsAutoMode::default(),
             debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         };
+
+        // Roadmap F.5 — one-shot LUT call at toolpath creation.
+        // New toolpaths get recommended feeds written in once; after
+        // that, fields are always user-owned and only the Suggest
+        // buttons re-run the calculator.
+        if let Some(tool) = self.state.session.tools().iter().find(|t| t.id.0 == tool_id) {
+            let material = &self.state.session.stock_config().material;
+            let machine = self.state.session.machine();
+            let workholding = self.state.session.stock_config().workholding_rigidity;
+            let result = crate::ui::properties::compute_feeds_for_op(
+                tool,
+                material,
+                machine,
+                workholding,
+                &tc.operation,
+            );
+            crate::ui::properties::apply_feeds_result_to_op(&mut tc.operation, &result);
+        }
 
         if let Some(setup_idx) = target_setup_idx
             && let Ok(tp_idx) = self.state.session.add_toolpath(setup_idx, tc)
@@ -170,7 +187,6 @@ impl<B: ComputeBackend> AppController<B> {
                     stock_source: src.stock_source,
                     coolant: src.coolant,
                     face_selection: src.face_selection.clone(),
-                    feeds_auto: src.feeds_auto.clone(),
                     debug_options: src.debug_options,
                 }
             });

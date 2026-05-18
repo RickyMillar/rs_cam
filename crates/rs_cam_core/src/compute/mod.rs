@@ -29,7 +29,7 @@ pub use catalog::{
 
 pub use config::{
     BoundaryConfig, BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig,
-    DressupEntryStyle, FeedsAutoMode, HeightContext, HeightMode, HeightReference, HeightsConfig,
+    DressupEntryStyle, HeightContext, HeightMode, HeightReference, HeightsConfig,
     ReferenceOffset, ResolvedHeights, RetractStrategy, StockSource, ToolpathId, ToolpathStats,
 };
 

@@ -51,7 +51,7 @@ pub mod retarget;
 pub mod space;
 pub mod strategy;
 
-pub use candidate::{OptimizeCandidate, feeds_auto_for_candidate};
+pub use candidate::OptimizeCandidate;
 pub(crate) use candidate::{
     evaluate_candidate, finalize_partial, refine_stage2, select_stage2_candidates,
 };
@@ -256,7 +256,7 @@ pub fn optimize_toolpath(
 
     // 6. From here on the session is mutated per-candidate. The
     //    BaselineRestoreGuard restores `(operation, dressups,
-    //    face_selection, feeds_auto)` on drop, regardless of how
+    //    face_selection)` on drop, regardless of how
     //    we exit (early return, Err, panic).
     let Ok(mut guard) = BaselineRestoreGuard::new(session, toolpath_index) else {
         return OptimizeOutcome::skipped(RefuseReason::SimulationRequired);
@@ -759,7 +759,7 @@ mod orchestration_skip_tests {
     use super::refusal::{bipolar_prescription, deflection_setup_prescription};
     use super::*;
     use crate::compute::catalog::OperationConfig;
-    use crate::compute::config::{DressupConfig, FeedsAutoMode};
+    use crate::compute::config::DressupConfig;
     use crate::compute::operation_configs::{AlignmentPinDrillConfig, DrillConfig, PocketConfig};
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::feeds::OperationFamily;
@@ -801,7 +801,6 @@ mod orchestration_skip_tests {
             stock_source: crate::compute::config::StockSource::Fresh,
             coolant: crate::gcode::CoolantMode::Off,
             face_selection: None,
-            feeds_auto: FeedsAutoMode::default(),
             debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
         }
     }
@@ -1094,7 +1093,7 @@ mod project_rollup_tests {
     use super::*;
     use crate::compute::catalog::OperationConfig;
     use crate::compute::config::{
-        BoundaryConfig, DressupConfig, FeedsAutoMode, HeightsConfig, StockSource,
+        BoundaryConfig, DressupConfig, HeightsConfig, StockSource,
     };
     use crate::compute::operation_configs::{AlignmentPinDrillConfig, DrillConfig, PocketConfig};
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
@@ -1163,7 +1162,6 @@ mod project_rollup_tests {
             stock_source: StockSource::Fresh,
             coolant: CoolantMode::Off,
             face_selection: None,
-            feeds_auto: FeedsAutoMode::default(),
             debug_options: ToolpathDebugOptions::default(),
         }
     }
@@ -2551,7 +2549,6 @@ mod stage1_grid_tests {
 mod candidate_eval_tests {
     use super::context::{diameter_for_lut_lookup, lut_op_family_from, lut_pass_role_from};
     use super::*;
-    use crate::compute::config::FeedsAutoMode;
     use crate::compute::operation_configs::PocketConfig;
     use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
     use crate::feeds::{OperationFamily, PassRole};
@@ -2603,46 +2600,6 @@ mod candidate_eval_tests {
         candidate.set_feed_rate(1500.000001);
         let delta = delta_against_baseline(&base, &candidate);
         assert!(delta.feed_mm_min.is_none(), "got {delta:?}");
-    }
-
-    #[test]
-    fn feeds_auto_for_candidate_flips_only_changed_fields() {
-        let baseline = FeedsAutoMode::default(); // all true
-        let delta = ParamDelta {
-            feed_mm_min: Some(2100.0),
-            spindle_rpm: None,
-            stepover_mm: None,
-            depth_per_pass_mm: Some(2.5),
-            scallop_height_mm: None,
-        };
-        let result = feeds_auto_for_candidate(&baseline, &delta);
-        assert!(!result.feed_rate, "feed_rate should be flipped to false");
-        assert!(!result.depth_per_pass, "depth_per_pass should be flipped");
-        // Untouched flags remain true.
-        assert!(result.plunge_rate);
-        assert!(result.stepover);
-        assert!(result.spindle_speed);
-    }
-
-    #[test]
-    fn feeds_auto_for_candidate_preserves_existing_user_overrides() {
-        // User had already manually overridden stepover (false) before
-        // Optimize ran. The optimizer is changing feed but not
-        // stepover. The stepover override must survive.
-        let baseline = FeedsAutoMode {
-            feed_rate: true,
-            plunge_rate: true,
-            stepover: false, // user override
-            depth_per_pass: true,
-            spindle_speed: true,
-        };
-        let delta = ParamDelta {
-            feed_mm_min: Some(2100.0),
-            ..Default::default()
-        };
-        let result = feeds_auto_for_candidate(&baseline, &delta);
-        assert!(!result.feed_rate, "optimize flipped feed_rate");
-        assert!(!result.stepover, "user's stepover override preserved");
     }
 
     #[test]

@@ -349,7 +349,6 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
                 stock_source: tp.stock_source,
                 coolant: tp.coolant,
                 face_selection: tp.face_selection.clone(),
-                feeds_auto: tp.feeds_auto.clone(),
                 debug_options: tp.debug_options,
             });
         }

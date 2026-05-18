@@ -2049,7 +2049,6 @@ pub fn collect_warnings(
         // Stepover vs recommended (from feeds calculation)
         if let Some(ref result) = entry.feeds_result
             && result.radial_width_mm > 0.0
-            && !entry.feeds_auto.stepover
         {
             let ratio = stepover / result.radial_width_mm;
             if ratio > 2.0 {
@@ -2130,7 +2129,6 @@ pub fn collect_warnings(
     if let Some(dpp) = entry.operation.depth_per_pass()
         && let Some(ref result) = entry.feeds_result
         && result.axial_depth_mm > 0.0
-        && !entry.feeds_auto.depth_per_pass
     {
         let ratio = dpp / result.axial_depth_mm;
         if ratio > 2.0 {
@@ -2172,7 +2170,6 @@ pub fn collect_warnings(
     // Feed vs recommended (from feeds calculation)
     if let Some(ref result) = entry.feeds_result
         && result.feed_rate_mm_min > 0.0
-        && !entry.feeds_auto.feed_rate
     {
         let ratio = feed / result.feed_rate_mm_min;
         if ratio > 2.0 {
@@ -2316,7 +2313,6 @@ mod tests {
             stock_source: Default::default(),
             coolant: Default::default(),
             face_selection: None,
-            feeds_auto: Default::default(),
             debug_options: Default::default(),
         }
     }

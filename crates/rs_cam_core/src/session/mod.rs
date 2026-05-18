@@ -32,7 +32,7 @@ use std::sync::Arc;
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{
-    BoundaryConfig, DressupConfig, FeedsAutoMode, HeightsConfig, StockSource, ToolpathStats,
+    BoundaryConfig, DressupConfig, HeightsConfig, StockSource, ToolpathStats,
 };
 use crate::compute::simulate::SimulationResult;
 use crate::compute::stock_config::{FixtureId, KeepOutId, ModelKind, ModelUnits, StockConfig};
@@ -391,8 +391,6 @@ pub struct ToolpathConfig {
     pub coolant: CoolantMode,
     /// Optional BREP face selection (for STEP/CAD models).
     pub face_selection: Option<Vec<FaceGroupId>>,
-    /// Tracks which feed parameters are auto-calculated vs user-overridden.
-    pub feeds_auto: FeedsAutoMode,
     /// Debug trace options for this toolpath.
     pub debug_options: ToolpathDebugOptions,
 }
@@ -1056,7 +1054,7 @@ mod tests {
                     stock_source: crate::compute::config::StockSource::default(),
                     coolant: crate::gcode::CoolantMode::default(),
                     face_selection: None,
-                    feeds_auto: crate::compute::config::FeedsAutoMode::default(),
+                    _legacy_feeds_auto: None,
                     debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
                 }],
             }],
@@ -1159,7 +1157,7 @@ mod tests {
                     stock_source: crate::compute::config::StockSource::default(),
                     coolant: crate::gcode::CoolantMode::default(),
                     face_selection: None,
-                    feeds_auto: crate::compute::config::FeedsAutoMode::default(),
+                    _legacy_feeds_auto: None,
                     debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
                 }],
             }],
@@ -1287,7 +1285,6 @@ mod tests {
             stock_source: crate::compute::config::StockSource::default(),
             coolant: crate::gcode::CoolantMode::default(),
             face_selection: None,
-            feeds_auto: crate::compute::config::FeedsAutoMode::default(),
             debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
         };
 

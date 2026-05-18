@@ -9,15 +9,13 @@
 //! - Stage-1 grid builders — `build_doc_variants`,
 //!   `build_stepover_variants`, `build_scallop_height_variants`.
 //! - Stage-2 refinement — `select_stage2_candidates`, `refine_stage2`.
-//! - Pipeline helpers — `feeds_auto_for_candidate`, `finalize_partial`,
-//!   `has_doc_knob`.
+//! - Pipeline helpers — `finalize_partial`, `has_doc_knob`.
 
 use std::sync::atomic::AtomicBool;
 
 use serde::{Deserialize, Serialize};
 
 use crate::compute::catalog::{OperationConfig, OperationType};
-use crate::compute::config::FeedsAutoMode;
 use crate::feeds::vendor_lookup::MatchedRow;
 use crate::session::{ProjectSession, SessionError, SimulationOptions};
 use crate::tool_load::verdict::ToolpathLoadVerdict;
@@ -42,8 +40,7 @@ pub struct OptimizeCandidate {
     /// unchanged fields too, so Apply just needs to write this into
     /// `session.toolpath_configs[idx].operation`.
     pub params: OperationConfig,
-    /// Diff from the baseline params, for display and feeds_auto flag
-    /// management at Apply time.
+    /// Diff from the baseline params, for display at Apply time.
     pub delta: ParamDelta,
     /// Measured cycle time from this candidate's sim (seconds).
     pub cycle_time_s: f64,
@@ -275,37 +272,8 @@ pub(crate) fn build_scallop_height_variants(baseline_scallop_mm: f64) -> Vec<f64
 // candidate goes through this function — there is no second sim or
 // second gate anywhere.
 
-/// Compose a `feeds_auto` for the candidate apply: clone the baseline
-/// flags, then flip `false` for any field the candidate is changing.
-/// During eval the candidate's params are ephemeral (the restore guard
-/// puts the baseline back on drop), but flipping these flags here
-/// prevents the GUI's LUT auto-write from clobbering the candidate
-/// mid-sim if the user happens to be on the Feeds tab. After Apply,
-/// the same flags persist, which is what we want — the user's chosen
-/// candidate should not be silently overwritten.
-///
-/// Public because the GUI's Apply handler in viz needs the same
-/// translation when committing the user's selection.
-pub fn feeds_auto_for_candidate(baseline: &FeedsAutoMode, delta: &ParamDelta) -> FeedsAutoMode {
-    let mut out = baseline.clone();
-    if delta.feed_mm_min.is_some() {
-        out.feed_rate = false;
-    }
-    if delta.spindle_rpm.is_some() {
-        out.spindle_speed = false;
-    }
-    if delta.stepover_mm.is_some() {
-        out.stepover = false;
-    }
-    if delta.depth_per_pass_mm.is_some() {
-        out.depth_per_pass = false;
-    }
-    out
-}
-
 /// Evaluate one candidate end-to-end:
-///   1. Apply candidate params via the restore guard (transactional
-///      mutation that also clears the relevant `feeds_auto.*` flags).
+///   1. Apply candidate params via the restore guard.
 ///   2. Regenerate the toolpath at the new params.
 ///   3. Run a fresh project sim at `sim_resolution_mm` dexel.
 ///   4. Score via the gate (`tool_load::evaluate_toolpath`).
@@ -331,7 +299,6 @@ pub(crate) fn evaluate_candidate(
     let baseline = guard.baseline();
     let dressups = baseline.dressups.clone();
     let face_selection = baseline.face_selection.clone();
-    let feeds_auto = feeds_auto_for_candidate(&baseline.feeds_auto, &delta);
     let toolpath_index = ctx.toolpath_index;
 
     // Apply.
@@ -340,7 +307,6 @@ pub(crate) fn evaluate_candidate(
         candidate_op.clone(),
         dressups,
         face_selection,
-        feeds_auto,
     )?;
 
     // Regen — writes session.results[idx], leaves other entries intact.

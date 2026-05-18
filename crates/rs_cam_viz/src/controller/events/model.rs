@@ -449,7 +449,6 @@ impl<B: ComputeBackend> AppController<B> {
                     stock_source: crate::state::toolpath::StockSource::Fresh,
                     coolant: rs_cam_core::gcode::CoolantMode::Off,
                     face_selection: None,
-                    feeds_auto: crate::state::toolpath::FeedsAutoMode::default(),
                     debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
                 };
                 let _ = self.state.session.add_toolpath(setup_idx, tc);

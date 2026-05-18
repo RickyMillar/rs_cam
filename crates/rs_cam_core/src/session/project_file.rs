@@ -10,9 +10,7 @@ use super::{
     ToolpathConfig,
 };
 use crate::compute::catalog::{OperationConfig, OperationType};
-use crate::compute::config::{
-    BoundaryConfig, DressupConfig, FeedsAutoMode, HeightsConfig, StockSource,
-};
+use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use crate::compute::stock_config::{FixtureId, KeepOutId, ModelKind, ModelUnits, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::compute::transform::{FaceUp, ZRotation};
@@ -413,9 +411,11 @@ pub struct ProjectToolpathSection {
     /// Optional BREP face selection (raw u16 IDs).
     #[serde(default)]
     pub face_selection: Option<Vec<u16>>,
-    /// Tracks which feed parameters are auto-calculated vs user-overridden.
-    #[serde(default)]
-    pub feeds_auto: FeedsAutoMode,
+    /// Legacy field — older projects emit a `feeds_auto = {...}` block.
+    /// Read and discarded; never written. Roadmap F.5 deleted the
+    /// background auto-fill behaviour these flags described.
+    #[serde(default, rename = "feeds_auto", skip_serializing)]
+    pub _legacy_feeds_auto: Option<toml::Value>,
     /// Debug trace options.
     #[serde(default)]
     pub debug_options: ToolpathDebugOptions,
@@ -628,7 +628,6 @@ fn toolpath_config_from_section(
             .face_selection
             .as_ref()
             .map(|ids| ids.iter().copied().map(FaceGroupId).collect()),
-        feeds_auto: tp.feeds_auto.clone(),
         debug_options: tp.debug_options,
     }
 }

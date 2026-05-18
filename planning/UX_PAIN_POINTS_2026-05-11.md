@@ -970,17 +970,17 @@ Roots: `operation_configs.rs:229` (Pocket=3), `:263` (Profile=6),
 
 ### B.4 — `feed_rate` defaults (MCP-only gap) 🟡
 
-Root cause: GUI sessions are auto-corrected by `calculate_and_apply_feeds`
-at `crates/rs_cam_viz/src/ui/properties/mod.rs:964` — runs every frame
-the Feeds tab is visible, writes back into the op config when
-`FeedsAutoMode` flags are `true` (default). MCP sessions never trigger
-this. `mcp_add_toolpath` (`app/mcp.rs:1990`) leaves the static
-constants in place.
+Root cause (as of 2026-05-11): GUI sessions used to be auto-corrected
+by `calculate_and_apply_feeds`, which ran every frame the Feeds tab
+was visible and wrote back into the op config when `FeedsAutoMode`
+flags were `true` (default). MCP sessions never triggered this.
 
-**Fix:** in `mcp_add_toolpath`, after constructing the config, call
-`feeds::calculate(&tool, &material, &machine, &op_cfg)` and write the
-result back into the op fields where the corresponding `feeds_auto.*`
-flag is `true`. This mirrors what the GUI does on first display.
+**Fix as shipped:** `mcp_add_toolpath` (`app/mcp.rs:1990`) now runs
+the same feeds calculator on toolpath creation. Note: F.5 has since
+removed the GUI's silent auto-write entirely (per-row ⚡ Suggest
+buttons replace it), so the calculator no longer runs every frame —
+but `mcp_add_toolpath` still seeds reasonable defaults on creation,
+which is the only thing this finding required.
 
 ### B.5 — Dressup `entry_style` for Roughing role 🟡
 
@@ -1502,35 +1502,44 @@ suggestion list with a single explanatory line:
 > ≤3166 needed. Consider larger tool diameter (raises feed
 > headroom) or a stiffer material removal model."
 
-### F.5 — Locked feeds_auto fields are invisible 🟡
+### F.5 — Locked feeds_auto fields are invisible ✅ (resolved 2026-05-12)
 
-After Apply, `feeds_auto_for_candidate`
-(`crates/rs_cam_core/src/tool_load/optimize/candidate.rs:274`)
-flips the changed fields' auto flags to `false`. Per-field:
-- feed_rate → false if delta.feed_mm_min is Some
-- spindle_speed → false if delta.spindle_rpm is Some
-- stepover → false if delta.stepover_mm is Some
-- depth_per_pass → false if delta.depth_per_pass_mm is Some
+**Original framing:** the Feeds tab silently overwrote feed / plunge /
+stepover / DOC every render frame from the LUT for any field whose
+`feeds_auto.*` flag was still `true`. The optimizer's Apply path
+flipped those flags to `false` for changed fields to stop the
+auto-write clobbering its candidate, but the UI gave no indication
+the fields were locked or by what.
 
-This is correct behaviour ("don't silently overwrite"), but **the
-Feeds tab UI gives no indication that these fields are
-optimizer-locked**. A user who later wants the feeds calc to
-take over again has to find the right checkboxes in the Feeds
-tab and flip them individually, without any visual cue that
-they're locked or by what.
+The originally-planned fix was a small chip ("Set by Optimize · ✕
+unlock") next to each locked field.
 
-**Fix:** in the Feeds tab UI, when `feeds_auto.X = false` AND
-the current value matches the most-recently-applied optimizer
-candidate, render a small chip next to the field:
-> "Set by Optimize · ✕ unlock"
+**Resolved instead by deleting the auto-fill abstraction entirely.**
+The LUT calculator no longer writes to the operation config in the
+background. Instead the Feeds card grew per-row ⚡ Suggest buttons
+(plus a ⚡ Suggest all) — the only path that pushes calculated
+values into the op. Every field is user-owned at all times; there
+is nothing to lock, nothing to indicate, and the optimizer doesn't
+need to clear flags on Apply.
 
-Clicking ✕ flips `feeds_auto.X` back to true; on the next render
-of the Feeds tab `calculate_and_apply_feeds` will overwrite with
-the calculated value. No new state needed if the chip just
-displays when "value matches optimizer record AND auto is off."
+Touched code:
 
-Belongs in `crates/rs_cam_viz/src/ui/properties/mod.rs` near
-where the four DragValue + auto-checkbox pairs live.
+- `FeedsAutoMode` removed from `crates/rs_cam_core/src/compute/config.rs`.
+- `ToolpathConfig.feeds_auto` removed; project-file loader keeps a
+  read-only `_legacy_feeds_auto: Option<toml::Value>` absorber with
+  `skip_serializing` so old `.toml` projects still load and silently
+  drop the field.
+- `feeds_auto_for_candidate` removed from
+  `crates/rs_cam_core/src/tool_load/optimize/candidate.rs`.
+- `apply_toolpath_param_snapshot` now 4-arg (was 5-arg).
+- `ToolpathSnapshot` tuple slimmed 5 → 4; `ToolpathParamsChange`
+  undo action loses `old/new_feeds_auto`.
+- `calculate_and_apply_feeds` in `properties/mod.rs` is now pure
+  read-and-cache.
+- `draw_feeds_card` rebuilt with per-row Suggest buttons that set
+  `entry.stale_since` so the auto-regen banner catches the write.
+
+Net −242 lines across 29 files.
 
 ### F.6 — Project-level Optimize is undiscoverable 🟢
 
@@ -1797,9 +1806,11 @@ These bullets from the report are not in the roadmap because:
 10. **PR 10 — Machine-envelope-filtered suggestions (Roadmap F.4).**
     Filter narrative suggestions through machine limits in
     `narrative.rs`. ~½ day.
-11. **PR 11 — Feeds-auto lock chips (Roadmap F.5) + project-Optimize
-    discoverability (F.6).** Co-located UI work in properties +
-    sim_diagnostics. ~1 day.
+11. **PR 11 — Feeds-auto removal (Roadmap F.5) + project-Optimize
+    discoverability (F.6).** F.5 shipped as a refactor that deletes
+    the silent auto-write rather than papering it over with chips —
+    Feeds card grew ⚡ Suggest buttons instead. F.6 shipped separately
+    in `0402abe`.
 12. **PR 12 — Optimizer modal triple (J8 deferred bullets).** ~2 days.
 13. **PR 13+ — Polish:** stock pin overlap, LUT chip, face-vs-toolpath
     warning, B.8 stepover-as-%, B.9 collapsibles.
@@ -1859,9 +1870,15 @@ optimizer trust workstream. Polish items add another week.
   spindle min/max RPM}`. Infeasible suggestions are dropped; when
   the filter empties the list, a single `DataGapHere` is emitted
   with a sentence-form explanation of the envelope conflict.
-- 🟡 **F.5** Optimizer-locked `feeds_auto.*` fields have no UI
-  indicator in the Feeds tab — user can't tell what's locked or
-  why.
+- ~~🟡 **F.5** Optimizer-locked `feeds_auto.*` fields have no UI
+  indicator in the Feeds tab.~~ **Closed by PR 11** — resolved by
+  deleting the `FeedsAutoMode` abstraction entirely. The LUT
+  calculator no longer auto-writes on every Feeds-tab render; the
+  Feeds card grew per-row ⚡ Suggest buttons (and a ⚡ Suggest all)
+  that are the only path that pushes calculated values into the op.
+  Op fields are user-owned at all times — nothing to lock, no chip
+  needed. Net −242 lines across 29 files. See F.5 entry for the
+  full touched-code list.
 - 🟢 **F.6** Project-level Optimize is undiscoverable from the
   per-toolpath modal / sim_diagnostics surface.
 - ~~🟡 **F.7** `OptimizeOutcome` variants have inconsistent JSON
