@@ -455,3 +455,26 @@ The remaining open items are:
 - One peak-DOC artifact investigation (research-grade follow-up, not blocking).
 
 The toolpaths are sane against the FSWizard reference. The user can run a physical first-piece test with confidence that nothing in the project is obviously wrong, with the caveat that the three plunge rates should be reduced before committing to long unattended runs.
+
+---
+
+## Post-fix validation (commit c5b9f74, 2026-05-19)
+
+Three of the five defaults defects surfaced in this assessment are now fixed in code:
+
+| Original defect | Fix | Validation |
+|---|---|---|
+| TP1/TP6 adaptive stepover narrow (0.7-0.8 mm vs 1.2 mm target) | **Fix 1** — wood + flat tool adaptive WOC tracks `machine.adaptive_woc_factor × D` | `tests/wanaka_defaults_validation.rs::wanaka_adaptive3d_6mm_em_lands_stepover_at_target` |
+| TP4/TP5/TP7 plunge unsafe on 1 mm tapered ball (400/750 mm/min) | **Fix 2** — tapered-ball / ball plunge cap at 150 mm/min per mm of tip diameter | `tests/wanaka_defaults_validation.rs::wanaka_1mm_tapered_ball_plunge_capped` |
+| Helix entry regresses on `agent_search` clearing | **Fix 4** — helix/ramp variants now honor `rapid_floor_z` the same way plunge does | All 30 `adaptive3d::tests` pass; full RCA in `planning/F4_HELIX_AGENT_SEARCH_RCA.md` |
+
+Three counter-tests guard against false-positive scope:
+- `wanaka_6mm_em_plunge_not_derated` — Fix 2 only affects ball/tapered-ball tools
+- `test_metal_adaptive_stepover_keeps_metal_base` — Fix 1 only affects wood-class materials
+- `test_flat_endmill_plunge_unchanged_by_fix2` — 6 mm EM plunge stays in metal-grade band
+
+**Two findings deferred:**
+- **Fix 3 (drop_cutter ball-finish stepover)** — the LUT already returns the correct 0.03 mm stepover for 1 mm tapered ball drop_cutter finish; the Wanaka TP7 0.30 came from a pre-Roadmap-F.5 static default and is a stale-saved-value issue, not a code defect.
+- **Fix 5 (existing-project re-derivation policy)** — recommended Option C (load-time validator with per-rule auto-fix) in `planning/F5_FRESH_DEFAULTS_POLICY.md`; implementation deferred to a separate batch.
+
+**Empirical re-validation pending:** to confirm the fixes hold end-to-end on the Wanaka project itself, the GUI/MCP binary needs to be rebuilt and the project re-loaded with new toolpaths created via `add_toolpath` (so the LUT-on-create path picks up the new defaults). The library-level fixes are locked in by the unit and integration tests above.
