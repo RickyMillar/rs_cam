@@ -1271,7 +1271,6 @@ impl CamServer {
             stock_source: rs_cam_core::compute::config::StockSource::default(),
             coolant: rs_cam_core::gcode::CoolantMode::default(),
             face_selection: None,
-            feeds_auto: rs_cam_core::compute::config::FeedsAutoMode::default(),
             debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         };
 

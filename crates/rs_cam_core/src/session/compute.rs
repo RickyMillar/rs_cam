@@ -1322,7 +1322,6 @@ mod tests {
             stock_source: crate::session::StockSource::Fresh,
             coolant: CoolantMode::Off,
             face_selection: None,
-            feeds_auto: crate::compute::config::FeedsAutoMode::default(),
             debug_options: ToolpathDebugOptions::default(),
         }
     }

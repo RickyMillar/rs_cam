@@ -91,25 +91,17 @@ pub(crate) fn compute_feeds_for_op(
     rs_cam_core::feeds::calculate(&input)
 }
 
-/// Apply a [`FeedsResult`] to an [`OperationConfig`], honoring the
-/// per-field auto flags so user-overridden fields are preserved.
+/// Write a [`FeedsResult`] into an [`OperationConfig`] unconditionally.
+/// Used at toolpath creation (Roadmap F.5) and by the Feeds-tab
+/// Suggest buttons; fields are always user-owned afterward.
 pub(crate) fn apply_feeds_result_to_op(
     op: &mut OperationConfig,
     result: &rs_cam_core::feeds::FeedsResult,
-    auto: &rs_cam_core::compute::config::FeedsAutoMode,
 ) {
-    if auto.feed_rate {
-        op.set_feed_rate(result.feed_rate_mm_min);
-    }
-    if auto.plunge_rate {
-        op.set_plunge_rate(result.plunge_rate_mm_min);
-    }
-    if auto.stepover {
-        op.set_stepover(result.radial_width_mm);
-    }
-    if auto.depth_per_pass {
-        op.set_depth_per_pass(result.axial_depth_mm);
-    }
+    op.set_feed_rate(result.feed_rate_mm_min);
+    op.set_plunge_rate(result.plunge_rate_mm_min);
+    op.set_stepover(result.radial_width_mm);
+    op.set_depth_per_pass(result.axial_depth_mm);
 }
 
 /// Flush tool undo snapshot if the user navigated away from a tool.
@@ -172,7 +164,7 @@ fn flush_machine_snapshot(state: &mut AppState) {
 
 /// Flush toolpath params undo snapshot if the user navigated away from a toolpath.
 fn flush_toolpath_snapshot(state: &mut AppState) {
-    if let Some((tp_id, old_op, old_dressups, old_faces, old_feeds_auto)) =
+    if let Some((tp_id, old_op, old_dressups, old_faces)) =
         state.history.toolpath_snapshot.take()
     {
         if !matches!(state.selection, crate::state::selection::Selection::Toolpath(id) if id == tp_id)
@@ -188,14 +180,11 @@ fn flush_toolpath_snapshot(state: &mut AppState) {
                         new_dressups: tc.dressups.clone(),
                         old_face_selection: old_faces,
                         new_face_selection: tc.face_selection.clone(),
-                        old_feeds_auto,
-                        new_feeds_auto: tc.feeds_auto.clone(),
                     });
                 state.gui.mark_edited();
             }
         } else {
-            state.history.toolpath_snapshot =
-                Some((tp_id, old_op, old_dressups, old_faces, old_feeds_auto));
+            state.history.toolpath_snapshot = Some((tp_id, old_op, old_dressups, old_faces));
         }
     }
 }
@@ -382,7 +371,6 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     tc.operation.clone(),
                     tc.dressups.clone(),
                     tc.face_selection.clone(),
-                    tc.feeds_auto.clone(),
                 ));
             }
             // Snapshot tool/model lists to avoid borrow conflict with toolpaths
@@ -1027,7 +1015,11 @@ pub(crate) fn operation_feeds_hints(op: &OperationConfig) -> (Option<f64>, Optio
     }
 }
 
-/// Run feeds calculation, auto-write into operation, and draw the feeds card.
+/// Run the LUT calculator (read-only), cache the result on the entry,
+/// and draw the feeds card with per-field Suggest buttons. The
+/// calculator never writes to the operation here (Roadmap F.5) — the
+/// Suggest buttons inside `draw_feeds_card` are the only path that
+/// pushes calculated values into the op.
 fn calculate_and_apply_feeds(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
@@ -1036,89 +1028,75 @@ fn calculate_and_apply_feeds(
     machine: &rs_cam_core::machine::MachineProfile,
     workholding: rs_cam_core::feeds::WorkholdingRigidity,
 ) {
-    let has_any_auto = entry.feeds_auto.feed_rate
-        || entry.feeds_auto.plunge_rate
-        || entry.feeds_auto.stepover
-        || entry.feeds_auto.depth_per_pass;
-
-    if !has_any_auto {
-        // Only draw the card if we have a cached result
-        if entry.feeds_result.is_some() {
-            draw_feeds_card(ui, entry);
-        }
-        return;
-    }
-
-    let (family, role) = operation_to_feeds_family(&entry.operation);
-
-    // Extract operation-specific hints for the calculator
-    let (axial_hint, radial_hint, scallop_hint) = operation_feeds_hints(&entry.operation);
-
-    let input = rs_cam_core::feeds::FeedsInput {
-        tool_diameter: tool.diameter,
-        flute_count: tool.flute_count,
-        flute_length: tool.cutting_length,
-        shank_diameter: Some(tool.shank_diameter),
-        tool_geometry: tool_geometry_hint(tool),
-        material,
-        machine,
-        operation: family,
-        pass_role: role,
-        axial_depth_mm: axial_hint,
-        radial_width_mm: radial_hint,
-        target_scallop_mm: scallop_hint,
-        vendor_lut: Some(&*VENDOR_LUT),
-        setup: rs_cam_core::feeds::SetupContext {
-            tool_overhang_mm: Some(tool.stickout),
-            workholding_rigidity: workholding,
-        },
-    };
-
-    let result = rs_cam_core::feeds::calculate(&input);
-
-    // Auto-write calculated values into the operation config
-    if entry.feeds_auto.feed_rate {
-        entry.operation.set_feed_rate(result.feed_rate_mm_min);
-    }
-    if entry.feeds_auto.plunge_rate {
-        entry.operation.set_plunge_rate(result.plunge_rate_mm_min);
-    }
-    if entry.feeds_auto.stepover {
-        entry.operation.set_stepover(result.radial_width_mm);
-    }
-    if entry.feeds_auto.depth_per_pass {
-        entry.operation.set_depth_per_pass(result.axial_depth_mm);
-    }
-
+    let result = compute_feeds_for_op(tool, material, machine, workholding, &entry.operation);
     entry.feeds_result = Some(result);
     draw_feeds_card(ui, entry);
 }
 
-fn draw_feeds_card(ui: &mut egui::Ui, entry: &ToolpathEntry) {
+fn draw_feeds_card(ui: &mut egui::Ui, entry: &mut ToolpathEntry) {
     ui.add_space(8.0);
     ui.collapsing("Feeds & Speeds", |ui| {
-        if let Some(result) = &entry.feeds_result {
+        // Read-only snapshot of the cached LUT result so we can borrow
+        // `entry.operation` mutably from the Suggest buttons below.
+        let Some(result) = entry.feeds_result.clone() else {
+            return;
+        };
+        {
             egui::Grid::new("feeds_card")
-                .num_columns(2)
+                .num_columns(3)
                 .spacing([8.0, 3.0])
                 .show(ui, |ui| {
                     ui.label("RPM:");
                     ui.label(format!("{:.0}", result.rpm));
+                    ui.label("");
                     ui.end_row();
                     ui.label("Chip Load:");
                     ui.label(format!("{:.4} mm/tooth", result.chip_load_mm));
+                    ui.label("");
                     ui.end_row();
                     ui.label("Feed:");
                     ui.label(format!("{:.0} mm/min", result.feed_rate_mm_min));
+                    if ui
+                        .small_button("\u{26A1} Suggest")
+                        .on_hover_text("Overwrite the operation's feed rate with this recommended value.")
+                        .clicked()
+                    {
+                        entry.operation.set_feed_rate(result.feed_rate_mm_min);
+                        entry.stale_since = Some(std::time::Instant::now());
+                    }
                     ui.end_row();
                     ui.label("Plunge:");
                     ui.label(format!("{:.0} mm/min", result.plunge_rate_mm_min));
+                    if ui
+                        .small_button("\u{26A1} Suggest")
+                        .on_hover_text("Overwrite the operation's plunge rate with this recommended value.")
+                        .clicked()
+                    {
+                        entry.operation.set_plunge_rate(result.plunge_rate_mm_min);
+                        entry.stale_since = Some(std::time::Instant::now());
+                    }
                     ui.end_row();
                     ui.label("DOC:");
                     ui.label(format!("{:.2} mm", result.axial_depth_mm));
+                    if ui
+                        .small_button("\u{26A1} Suggest")
+                        .on_hover_text("Overwrite the operation's depth-per-pass with this recommended value.")
+                        .clicked()
+                    {
+                        entry.operation.set_depth_per_pass(result.axial_depth_mm);
+                        entry.stale_since = Some(std::time::Instant::now());
+                    }
                     ui.end_row();
                     ui.label("WOC:");
                     ui.label(format!("{:.2} mm", result.radial_width_mm));
+                    if ui
+                        .small_button("\u{26A1} Suggest")
+                        .on_hover_text("Overwrite the operation's stepover with this recommended value.")
+                        .clicked()
+                    {
+                        entry.operation.set_stepover(result.radial_width_mm);
+                        entry.stale_since = Some(std::time::Instant::now());
+                    }
                     ui.end_row();
 
                     // Power bar
@@ -1145,12 +1123,28 @@ fn draw_feeds_card(ui: &mut egui::Ui, entry: &ToolpathEntry) {
                             result.power_kw, result.available_power_kw
                         ));
                     });
+                    ui.label("");
                     ui.end_row();
 
                     ui.label("MRR:");
                     ui.label(format!("{:.0} mm\u{00B3}/min", result.mrr_mm3_min));
+                    ui.label("");
                     ui.end_row();
                 });
+
+            // Roadmap F.5 — "Suggest all" pushes every editable LUT
+            // value into the operation in one click. Fields stay
+            // user-editable; no flag bookkeeping involved.
+            if ui
+                .button("\u{26A1} Suggest all")
+                .on_hover_text(
+                    "Overwrite feed, plunge, depth-per-pass, and stepover with the recommended values above.",
+                )
+                .clicked()
+            {
+                apply_feeds_result_to_op(&mut entry.operation, &result);
+                entry.stale_since = Some(std::time::Instant::now());
+            }
 
             // Vendor source
             match &result.chipload_source {
@@ -2113,7 +2107,6 @@ fn build_entry_from_session_and_gui(
         result: rt.result.clone(),
         stale_since: rt.stale_since,
         auto_regen: rt.auto_regen,
-        feeds_auto: tc.feeds_auto.clone(),
         face_selection: tc.face_selection.clone(),
         feeds_result: rt.feeds_result.clone(),
         debug_options: tc.debug_options,
@@ -2150,7 +2143,6 @@ fn write_entry_config_to_session(
             Some(entry.post_gcode.clone())
         };
         tc.stock_source = entry.stock_source;
-        tc.feeds_auto = entry.feeds_auto.clone();
         tc.face_selection = entry.face_selection.clone();
         tc.debug_options = entry.debug_options;
     }
@@ -2376,60 +2368,10 @@ fn draw_toolpath_panel(
 
     match active_tab {
         ToolpathTab::Params => {
-            // Auto-feeds toggles — show which parameters are auto-calculated
-            let auto = &mut entry.feeds_auto;
-            let has_any_auto =
-                auto.feed_rate || auto.plunge_rate || auto.stepover || auto.depth_per_pass;
-            let auto_label = if has_any_auto {
-                "Auto Feeds (on)"
-            } else {
-                "Auto Feeds (off)"
-            };
-            let auto_color = if has_any_auto {
-                egui::Color32::from_rgb(100, 180, 100)
-            } else {
-                egui::Color32::from_rgb(140, 140, 155)
-            };
-            ui.collapsing(
-                egui::RichText::new(auto_label).small().color(auto_color),
-                |ui| {
-                    ui.label(
-                        egui::RichText::new(
-                            "When on, values are computed from tool/material/machine",
-                        )
-                        .small()
-                        .italics()
-                        .color(egui::Color32::from_rgb(110, 110, 120)),
-                    );
-                    ui.horizontal(|ui| {
-                        ui.checkbox(&mut auto.feed_rate, "Feed");
-                        ui.checkbox(&mut auto.plunge_rate, "Plunge");
-                        ui.checkbox(&mut auto.stepover, "Stepover");
-                        ui.checkbox(&mut auto.depth_per_pass, "DOC");
-                    });
-                    if has_any_auto {
-                        ui.label(
-                            egui::RichText::new(
-                                "Auto values shown in Feeds tab; manual edits below are overridden",
-                            )
-                            .small()
-                            .color(egui::Color32::from_rgb(220, 170, 60)),
-                        );
-                    }
-                },
-            );
-
-            // Compact auto-feed summary (when auto-feeds are active)
-            if has_any_auto && let Some(result) = &entry.feeds_result {
-                ui.label(
-                    egui::RichText::new(format!(
-                        "Auto: {:.0} mm/min feed, {:.0} RPM",
-                        result.feed_rate_mm_min, result.rpm,
-                    ))
-                    .small()
-                    .color(egui::Color32::from_rgb(100, 170, 140)),
-                );
-            }
+            // Roadmap F.5 — the per-frame auto-feeds toggle UI is
+            // gone. Recommended values live in the Feeds tab with
+            // per-field "Suggest" buttons; user owns the operation
+            // fields directly.
 
             ui.add_space(4.0);
             // Operation description from spec (consistent across all operations)

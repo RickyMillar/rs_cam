@@ -239,7 +239,6 @@ fn sample_controller() -> AppController<ScriptedBackend> {
         stock_source: Default::default(),
         coolant: Default::default(),
         face_selection: None,
-        feeds_auto: Default::default(),
         debug_options: Default::default(),
     };
     controller.state.session.add_toolpath(0, tp_config).unwrap();
@@ -443,7 +442,6 @@ fn simulation_results_capture_setup_boundaries() {
         stock_source: Default::default(),
         coolant: Default::default(),
         face_selection: None,
-        feeds_auto: Default::default(),
         debug_options: Default::default(),
     };
     controller

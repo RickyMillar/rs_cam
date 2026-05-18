@@ -21,8 +21,7 @@ use super::search_policy;
 
 /// Human-readable diff between a candidate and the baseline. Each field
 /// carries `Some(new_value)` only if the candidate is changing it.
-/// Used by the modal to render "feed 1899→2100" style summaries and by
-/// the Apply path to know which `feeds_auto.*` flags need clearing.
+/// Used by the modal to render "feed 1899→2100" style summaries.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ParamDelta {
     /// New feed in mm/min. `None` if the candidate matches baseline feed.

@@ -167,28 +167,6 @@ impl Default for HeightsConfig {
     }
 }
 
-/// Tracks which feed parameters are auto-calculated vs user-overridden.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeedsAutoMode {
-    pub feed_rate: bool,
-    pub plunge_rate: bool,
-    pub stepover: bool,
-    pub depth_per_pass: bool,
-    pub spindle_speed: bool,
-}
-
-impl Default for FeedsAutoMode {
-    fn default() -> Self {
-        Self {
-            feed_rate: true,
-            plunge_rate: true,
-            stepover: true,
-            depth_per_pass: true,
-            spindle_speed: true,
-        }
-    }
-}
-
 impl HeightsConfig {
     /// Resolve all heights given stock/model/post context.
     pub fn resolve(&self, ctx: &HeightContext) -> ResolvedHeights {

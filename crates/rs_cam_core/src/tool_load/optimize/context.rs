@@ -5,8 +5,8 @@
 //!   routing) computed once per `optimize_toolpath` call and shared
 //!   across every candidate.
 //! - [`ToolpathParamsSnapshot`] / [`BaselineRestoreGuard`] — RAII guard
-//!   that snapshots `(operation, dressups, face_selection, feeds_auto)`
-//!   at construction and re-applies them on drop. Restoration runs on
+//!   that snapshots `(operation, dressups, face_selection)` at
+//!   construction and re-applies them on drop. Restoration runs on
 //!   every exit path (Ok, refusal, cancel, panic).
 //! - Pure helpers: [`cycle_time_from_trace`], [`baseline_rpm_from_trace`],
 //!   [`diameter_for_lut_lookup`], [`find_matched_lut_row`],
@@ -14,7 +14,7 @@
 //!   [`machine_max_power_kw`].
 
 use crate::compute::catalog::{OperationConfig, OperationType};
-use crate::compute::config::{DressupConfig, FeedsAutoMode};
+use crate::compute::config::DressupConfig;
 use crate::enriched_mesh::FaceGroupId;
 use crate::feeds::vendor_lookup::MatchedRow;
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
@@ -182,17 +182,16 @@ pub(crate) fn machine_max_power_kw(machine: &MachineProfile) -> f64 {
 // `session.toolpath_configs[idx].operation` (via
 // `apply_toolpath_param_snapshot`), regenerates, and runs a fresh sim.
 // Without explicit cleanup, the session is left holding the last
-// candidate's params when the optimizer returns — a silent state leak
-// of the same flavour as the `feeds_auto` LUT-overwrite issue.
+// candidate's params when the optimizer returns — a silent state leak.
 //
 // `BaselineRestoreGuard` snapshots `(operation, dressups,
-// face_selection, feeds_auto)` at construction and re-applies them in
-// `Drop`, regardless of how the optimizer exits (Ok, refusal, cancel,
-// or panic in `execute_operation`). Apply remains a separate
+// face_selection)` at construction and re-applies them in `Drop`,
+// regardless of how the optimizer exits (Ok, refusal, cancel, or
+// panic in `execute_operation`). Apply remains a separate
 // user-initiated mutation; the optimizer's internal candidate writes
 // never persist past `optimize_toolpath` returning.
 
-/// Snapshot of the four toolpath fields the optimizer mutates per
+/// Snapshot of the toolpath fields the optimizer mutates per
 /// candidate. Captured up-front and re-applied via
 /// `apply_toolpath_param_snapshot` on drop.
 #[derive(Debug, Clone)]
@@ -200,7 +199,6 @@ pub(crate) struct ToolpathParamsSnapshot {
     pub operation: OperationConfig,
     pub dressups: DressupConfig,
     pub face_selection: Option<Vec<FaceGroupId>>,
-    pub feeds_auto: FeedsAutoMode,
 }
 
 impl ToolpathParamsSnapshot {
@@ -212,7 +210,6 @@ impl ToolpathParamsSnapshot {
             operation: tc.operation.clone(),
             dressups: tc.dressups.clone(),
             face_selection: tc.face_selection.clone(),
-            feeds_auto: tc.feeds_auto.clone(),
         })
     }
 }
@@ -270,7 +267,6 @@ impl Drop for BaselineRestoreGuard<'_> {
             self.snapshot.operation.clone(),
             self.snapshot.dressups.clone(),
             self.snapshot.face_selection.clone(),
-            self.snapshot.feeds_auto.clone(),
         );
     }
 }
@@ -367,7 +363,6 @@ mod restore_guard_tests {
             stock_source: crate::compute::config::StockSource::Fresh,
             coolant: crate::gcode::CoolantMode::Off,
             face_selection: None,
-            feeds_auto: FeedsAutoMode::default(),
             debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
         }
     }
@@ -402,13 +397,9 @@ mod restore_guard_tests {
             let new_op_clone = new_op.clone();
             let dressups = guard.baseline().dressups.clone();
             let face_sel = guard.baseline().face_selection.clone();
-            // Use a feeds_auto with a flipped flag to verify restoration
-            // covers the feeds_auto override too.
-            let mut tweaked = guard.baseline().feeds_auto.clone();
-            tweaked.feed_rate = false;
             guard
                 .session_mut()
-                .apply_toolpath_param_snapshot(0, new_op_clone, dressups, face_sel, tweaked)
+                .apply_toolpath_param_snapshot(0, new_op_clone, dressups, face_sel)
                 .unwrap();
             // While the guard lives, the session reflects the candidate.
             assert!(
@@ -418,11 +409,6 @@ mod restore_guard_tests {
                     - 2999.0)
                     .abs()
                     < 1e-6
-            );
-            assert!(
-                !guard.session_mut().toolpath_configs()[0]
-                    .feeds_auto
-                    .feed_rate
             );
             // Mutation also bridges into the snapshot — but only for
             // copies; the captured snapshot is immutable.
@@ -442,7 +428,6 @@ mod restore_guard_tests {
         // After drop, session restored to baseline.
         let tc = &session.toolpath_configs()[0];
         assert!((tc.operation.feed_rate() - 1500.0).abs() < 1e-6);
-        assert!(tc.feeds_auto.feed_rate, "feeds_auto.feed_rate restored");
     }
 
     #[test]
@@ -460,12 +445,11 @@ mod restore_guard_tests {
             // Mutate to a non-baseline state.
             let dressups = guard.baseline().dressups.clone();
             let face_sel = guard.baseline().face_selection.clone();
-            let feeds_auto = guard.baseline().feeds_auto.clone();
             let mut new_op = guard.baseline().operation.clone();
             new_op.set_feed_rate(9999.0);
             guard
                 .session_mut()
-                .apply_toolpath_param_snapshot(0, new_op, dressups, face_sel, feeds_auto)
+                .apply_toolpath_param_snapshot(0, new_op, dressups, face_sel)
                 .unwrap();
             // Confirm we're in the mutated state.
             assert!(

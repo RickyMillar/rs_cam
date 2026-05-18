@@ -25,7 +25,7 @@ use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
-    BoundaryConfig, DressupConfig, FeedsAutoMode, HeightsConfig, StockSource,
+    BoundaryConfig, DressupConfig, HeightsConfig, StockSource,
 };
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
@@ -112,7 +112,6 @@ fn build_pocket_session() -> Option<(ProjectSession, usize)> {
         stock_source: StockSource::Fresh,
         coolant: CoolantMode::Off,
         face_selection: None,
-        feeds_auto: FeedsAutoMode::default(),
         debug_options: ToolpathDebugOptions::default(),
     };
     let toolpath_index = session.add_toolpath(0, tc).expect("add_toolpath");

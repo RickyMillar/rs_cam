@@ -34,7 +34,6 @@ impl<B: ComputeBackend> AppController<B> {
                     old_op,
                     old_dressups,
                     old_face_selection,
-                    old_feeds_auto,
                     ..
                 } => {
                     if let Some((idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id.0) {
@@ -43,7 +42,6 @@ impl<B: ComputeBackend> AppController<B> {
                             old_op,
                             old_dressups,
                             old_face_selection,
-                            old_feeds_auto,
                         );
                         if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id.0) {
                             rt.stale_since = Some(std::time::Instant::now());
@@ -88,7 +86,6 @@ impl<B: ComputeBackend> AppController<B> {
                     new_op,
                     new_dressups,
                     new_face_selection,
-                    new_feeds_auto,
                     ..
                 } => {
                     if let Some((idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id.0) {
@@ -97,7 +94,6 @@ impl<B: ComputeBackend> AppController<B> {
                             new_op,
                             new_dressups,
                             new_face_selection,
-                            new_feeds_auto,
                         );
                         if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id.0) {
                             rt.stale_since = Some(std::time::Instant::now());

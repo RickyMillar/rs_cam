@@ -2068,21 +2068,17 @@ impl super::RsCamApp {
         let label = op_type.label();
         let tp_name = name.unwrap_or_else(|| label.to_owned());
 
-        // Roadmap B.4 — GUI sessions get auto-corrected feeds via
-        // `calculate_and_apply_feeds` when the Feeds tab renders. MCP
-        // sessions never trigger that, so a fresh MCP toolpath would
-        // ship with the static default feed_rate. Run the same
-        // calculator now and write the results back into the op config
-        // wherever the corresponding `feeds_auto.*` flag is true.
+        // Roadmap F.5 — one-shot LUT call at toolpath creation. New
+        // toolpaths get recommended feeds written in once; after that,
+        // fields are always user-owned.
         if let Some(tool) = session.tools().iter().find(|t| t.id.0 == tool_raw_id) {
             let material = &session.stock_config().material;
             let machine = session.machine();
             let workholding = session.stock_config().workholding_rigidity;
-            let feeds_auto = rs_cam_core::compute::config::FeedsAutoMode::default();
             let result = crate::ui::properties::compute_feeds_for_op(
                 tool, material, machine, workholding, &op_config,
             );
-            crate::ui::properties::apply_feeds_result_to_op(&mut op_config, &result, &feeds_auto);
+            crate::ui::properties::apply_feeds_result_to_op(&mut op_config, &result);
         }
 
         // Roadmap B.7 — boundary auto-enable for 3D ops on mesh models.
@@ -2113,7 +2109,6 @@ impl super::RsCamApp {
             stock_source: rs_cam_core::compute::config::StockSource::default(),
             coolant: rs_cam_core::gcode::CoolantMode::default(),
             face_selection: None,
-            feeds_auto: rs_cam_core::compute::config::FeedsAutoMode::default(),
             debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         };
 

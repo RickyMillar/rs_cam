@@ -10,8 +10,8 @@ use crate::state::job::{ModelId, ToolId};
 
 use super::catalog::OperationConfig;
 use super::support::{
-    BoundaryConfig, ComputeStatus, DressupConfig, FeedsAutoMode, HeightsConfig, StockSource,
-    ToolpathId, ToolpathStats,
+    BoundaryConfig, ComputeStatus, DressupConfig, HeightsConfig, StockSource, ToolpathId,
+    ToolpathStats,
 };
 
 #[derive(Debug, Clone)]
@@ -34,7 +34,6 @@ pub struct ToolpathEntryInit {
     pub post_gcode: String,
     pub stock_source: StockSource,
     pub auto_regen: Option<bool>,
-    pub feeds_auto: FeedsAutoMode,
     pub face_selection: Option<Vec<FaceGroupId>>,
     pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
 }
@@ -66,7 +65,6 @@ impl ToolpathEntryInit {
             post_gcode: String::new(),
             stock_source: StockSource::Fresh,
             auto_regen: None,
-            feeds_auto: FeedsAutoMode::default(),
             face_selection: None,
             debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         }
@@ -117,7 +115,6 @@ impl ToolpathEntryInit {
             post_gcode: source.post_gcode.clone(),
             stock_source: source.stock_source,
             auto_regen: Some(source.auto_regen),
-            feeds_auto: source.feeds_auto.clone(),
             face_selection: source.face_selection.clone(),
             debug_options: source.debug_options,
         }
@@ -145,7 +142,6 @@ pub struct ToolpathEntry {
     pub result: Option<ToolpathResult>,
     pub stale_since: Option<std::time::Instant>,
     pub auto_regen: bool,
-    pub feeds_auto: FeedsAutoMode,
     pub face_selection: Option<Vec<FaceGroupId>>,
     pub feeds_result: Option<rs_cam_core::feeds::FeedsResult>,
     pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
@@ -203,7 +199,6 @@ impl ToolpathEntry {
             result: None,
             stale_since: None,
             auto_regen,
-            feeds_auto: init.feeds_auto,
             face_selection: init.face_selection,
             feeds_result: None,
             debug_options: init.debug_options,

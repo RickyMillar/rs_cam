@@ -12,9 +12,8 @@ use crate::state::job::{
     ZDatum, ZRotation,
 };
 use crate::state::toolpath::{
-    BoundaryConfig, BoundaryContainment, BoundarySource, DressupConfig, FeedsAutoMode,
-    HeightsConfig, OperationConfig, OperationType, StockSource, ToolpathEntry, ToolpathEntryInit,
-    ToolpathId,
+    BoundaryConfig, BoundaryContainment, BoundarySource, DressupConfig, HeightsConfig,
+    OperationConfig, OperationType, StockSource, ToolpathEntry, ToolpathEntryInit, ToolpathId,
 };
 use rs_cam_core::gcode::CoolantMode;
 
@@ -235,8 +234,11 @@ pub struct ProjectToolpathSection {
     pub stock_source: StockSource,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_regen: Option<bool>,
-    #[serde(default)]
-    pub feeds_auto: FeedsAutoMode,
+    /// Legacy field — older projects emit a `feeds_auto = {...}` block.
+    /// Read and discarded; never written. Roadmap F.5 deleted the
+    /// background auto-fill behaviour these flags described.
+    #[serde(default, rename = "feeds_auto", skip_serializing)]
+    pub _legacy_feeds_auto: Option<toml::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub face_selection: Option<Vec<u16>>,
     #[serde(default)]
@@ -539,7 +541,7 @@ impl ProjectToolpathSection {
             post_gcode: toolpath.post_gcode.clone(),
             stock_source: toolpath.stock_source,
             auto_regen: Some(toolpath.auto_regen),
-            feeds_auto: toolpath.feeds_auto.clone(),
+            _legacy_feeds_auto: None,
             face_selection: toolpath
                 .face_selection
                 .as_ref()
@@ -1133,7 +1135,6 @@ fn restore_project_toolpath(
     init.post_gcode = section.post_gcode;
     init.stock_source = section.stock_source;
     init.auto_regen = section.auto_regen;
-    init.feeds_auto = section.feeds_auto;
     init.face_selection = section.face_selection.map(|ids| {
         ids.into_iter()
             .map(rs_cam_core::enriched_mesh::FaceGroupId)
@@ -1511,7 +1512,6 @@ mod tests {
         toolpath.pre_gcode = "M7".to_owned();
         toolpath.post_gcode = "M9".to_owned();
         toolpath.auto_regen = false;
-        toolpath.feeds_auto.feed_rate = false;
         toolpath.debug_options.enabled = true;
         job.push_toolpath(toolpath);
 
@@ -1536,7 +1536,6 @@ mod tests {
         assert_eq!(toolpath.pre_gcode, "M7");
         assert_eq!(toolpath.post_gcode, "M9");
         assert!(!toolpath.auto_regen);
-        assert!(!toolpath.feeds_auto.feed_rate);
         assert!(toolpath.debug_options.enabled);
         assert!(toolpath.result.is_none());
         assert!(toolpath.stale_since.is_some());
