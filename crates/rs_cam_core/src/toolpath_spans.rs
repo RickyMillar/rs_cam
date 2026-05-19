@@ -236,6 +236,41 @@ impl AnnotatedToolpath {
             .collect()
     }
 
+    /// Per-move bitmap of "sits inside a transit-style span".
+    ///
+    /// Transit-style spans are non-steady-state cutting contexts:
+    /// `Entry`, `LeadOut`, `LinkBridge`, `WaterlineCleanup`, `DressupArtifact`.
+    /// Used by the simulator's metrics path to suppress extreme-value
+    /// metrics (peak axial DOC, peak chipload) for samples whose dexel
+    /// reading reflects "stock height we're flying over" rather than
+    /// engagement (the lift-bridge artifact pattern documented in
+    /// `planning/P3_TRANSIT_PEAK_DOC_RCA.md`).
+    pub fn transit_moves_bitmap(&self) -> Vec<bool> {
+        let n = self.toolpath.moves.len();
+        let mut out = vec![false; n];
+        for span in &self.spans {
+            if span.is_boundary() {
+                continue;
+            }
+            let is_transit = matches!(
+                span.kind,
+                SpanKind::Entry
+                    | SpanKind::LeadOut
+                    | SpanKind::LinkBridge
+                    | SpanKind::WaterlineCleanup
+                    | SpanKind::DressupArtifact
+            );
+            if !is_transit {
+                continue;
+            }
+            let end = span.end_move.min(n);
+            for entry in out.iter_mut().take(end).skip(span.start_move) {
+                *entry = true;
+            }
+        }
+        out
+    }
+
     /// Precompute [`Self::span_path_at`] for every move index in the toolpath.
     /// Cheaper than calling `span_path_at` per move when stamping ~100K
     /// simulation samples.
@@ -570,6 +605,68 @@ mod tests {
         // Move 6 is inside Operation + second DepthPass; the boundary is excluded.
         let path = at.span_path_at(6);
         assert_eq!(path, vec![SpanId(0), SpanId(4)]);
+    }
+
+    #[test]
+    fn transit_moves_bitmap_flags_transit_kinds() {
+        let at = AnnotatedToolpath::with_spans(
+            toolpath_with_n_moves(10),
+            vec![
+                Span::new(0, 10, SpanKind::Operation),
+                Span::new(0, 2, SpanKind::Entry),
+                Span::new(2, 6, SpanKind::DepthPass),
+                Span::new(6, 8, SpanKind::LinkBridge),
+                Span::new(8, 10, SpanKind::WaterlineCleanup),
+            ],
+        );
+        let transit = at.transit_moves_bitmap();
+        assert_eq!(transit.len(), 10);
+        // Moves 0..2: Entry → transit
+        assert!(transit[0]);
+        assert!(transit[1]);
+        // Moves 2..6: DepthPass → not transit
+        for (i, &t) in transit.iter().enumerate().take(6).skip(2) {
+            assert!(!t, "move {i} (DepthPass) should not be transit");
+        }
+        // Moves 6..8: LinkBridge → transit
+        assert!(transit[6]);
+        assert!(transit[7]);
+        // Moves 8..10: WaterlineCleanup → transit
+        assert!(transit[8]);
+        assert!(transit[9]);
+    }
+
+    #[test]
+    fn transit_moves_bitmap_ignores_cutting_kinds() {
+        let at = AnnotatedToolpath::with_spans(
+            toolpath_with_n_moves(6),
+            vec![
+                Span::new(0, 6, SpanKind::Operation),
+                Span::new(0, 3, SpanKind::DepthPass),
+                Span::new(3, 6, SpanKind::Region),
+                Span::boundary(3, SpanKind::RapidOrderBarrier),
+            ],
+        );
+        let transit = at.transit_moves_bitmap();
+        // Operation / DepthPass / Region / RapidOrderBarrier are NOT transit.
+        assert_eq!(transit, vec![false; 6]);
+    }
+
+    #[test]
+    fn transit_moves_bitmap_handles_dressup_and_leadout() {
+        let at = AnnotatedToolpath::with_spans(
+            toolpath_with_n_moves(6),
+            vec![
+                Span::new(0, 6, SpanKind::Operation),
+                Span::new(0, 2, SpanKind::DressupArtifact),
+                Span::new(2, 4, SpanKind::Region),
+                Span::new(4, 6, SpanKind::LeadOut),
+            ],
+        );
+        let transit = at.transit_moves_bitmap();
+        assert!(transit[0] && transit[1]); // DressupArtifact
+        assert!(!transit[2] && !transit[3]); // Region
+        assert!(transit[4] && transit[5]); // LeadOut
     }
 
     #[test]

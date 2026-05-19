@@ -547,3 +547,36 @@ finding.
 **Tests:** 14 new unit tests (10 module-level in `plunge_stress.rs` for the
 cap formula + 4 session-level for verdict wiring, including the Wanaka TP7
 750 mm/min reproduction and a flat-EM negative control).
+
+### Priority 3 — Suppress peak-axial-DOC on transit/link spans (done)
+
+**Root cause** (`planning/P3_TRANSIT_PEAK_DOC_RCA.md`): the simulation's
+`SummaryAccumulator::observe` takes the per-sample max of `axial_doc_mm`
+across **every** sample regardless of context. For samples in transit-style
+spans (Entry, LeadOut, LinkBridge, WaterlineCleanup, DressupArtifact) the
+dexel reading reports `stock_top − cutter_z` over uncleared neighbouring
+stock, not engagement. Wanaka TP3 reads `peak_axial_doc_mm = 18.59 mm` on a
+6 mm tool from one such sample during a link bridge.
+
+**Fix:** new `in_transit_span: bool` field on `SimulationCutSample` (with
+`#[serde(default)]` for back-compat). The simulator populates it from
+`AnnotatedToolpath::transit_moves_bitmap()`. `SummaryAccumulator` gates
+`peak_axial_doc_mm` and `peak_chipload_mm_per_tooth` updates on
+`!sample.in_transit_span` — runtime-distribution metrics (cutting time,
+engagement histogram, air-cut time) stay unchanged.
+
+**Expected delta on Wanaka:**
+
+| TP | Before peak DOC | After peak DOC |
+|---|---|---|
+| TP3 Rivers EM | 18.59 mm (artifact) | ≈ 3 mm (real cut depth) |
+| TP6 3D Rough 6 | 5.50 mm (commanded 2 mm) | ≈ 2 mm |
+| TP4 Rivers TB | 2.04 mm (commanded 0.2 mm) | ≈ 0.5 mm |
+| TP5 Lakes TB | 1.88 mm (commanded 0.2 mm) | ≈ 0.5 mm |
+| TP1 Back Rough | 3.00 mm (already clean) | 3.00 mm unchanged |
+
+**Tests:** 8 new unit tests — 3 on `AnnotatedToolpath::transit_moves_bitmap`
+(transit kinds detected, cutting kinds not flagged, dressup/lead-out
+handled) + 5 on the accumulator (cutting samples in, transit samples out,
+purely-transit stream stays at 0, peak chipload gated too, per-TP summary
+respects the flag).

@@ -106,6 +106,7 @@ impl TriDexelStock {
         sample_step_mm: f64,
         semantic_trace: Option<&ToolpathSemanticTrace>,
         span_paths_by_move: &[Vec<SpanId>],
+        transit_moves: &[bool],
         capture_arc_engagement: bool,
         cancel: &dyn CancelCheck,
     ) -> Result<Vec<SimulationCutSample>, Cancelled> {
@@ -123,6 +124,7 @@ impl TriDexelStock {
             sample_step_mm,
             semantic_trace,
             span_paths_by_move,
+            transit_moves,
             capture_arc_engagement,
             cancel,
         )
@@ -145,6 +147,7 @@ impl TriDexelStock {
         sample_step_mm: f64,
         semantic_trace: Option<&ToolpathSemanticTrace>,
         span_paths_by_move: &[Vec<SpanId>],
+        transit_moves: &[bool],
         capture_arc_engagement: bool,
         cancel: &dyn CancelCheck,
     ) -> Result<Vec<SimulationCutSample>, Cancelled> {
@@ -169,6 +172,10 @@ impl TriDexelStock {
                 .get(move_index)
                 .map(|v| v.as_slice())
                 .unwrap_or(empty_span_path.as_slice());
+            // P3: rapids are inherently transit. Linear/Arc moves are
+            // transit only when sitting in a transit-style span.
+            let in_transit_span = transit_moves.get(move_index).copied().unwrap_or(false)
+                || matches!(toolpath.moves[move_index].move_type, MoveType::Rapid);
 
             match toolpath.moves[move_index].move_type {
                 MoveType::Rapid => {
@@ -186,6 +193,7 @@ impl TriDexelStock {
                             flute_count,
                             semantic_item_id,
                             span_path,
+                            in_transit_span,
                         },
                         &mut cumulative_time_s,
                         &mut next_sample_index,
@@ -211,6 +219,7 @@ impl TriDexelStock {
                             sample_step_mm,
                             cut_kinematics: classify_cut_kinematics(start, end, false),
                             capture_arc_engagement,
+                            in_transit_span,
                         },
                         cancel,
                         &mut cumulative_time_s,
@@ -240,6 +249,7 @@ impl TriDexelStock {
                                 sample_step_mm,
                                 cut_kinematics: CutKinematics::Arc,
                                 capture_arc_engagement,
+                                in_transit_span,
                             },
                             cancel,
                             &mut cumulative_time_s,
@@ -278,6 +288,7 @@ impl TriDexelStock {
                                 sample_step_mm,
                                 cut_kinematics: CutKinematics::Arc,
                                 capture_arc_engagement,
+                                in_transit_span,
                             },
                             cancel,
                             &mut cumulative_time_s,
@@ -439,6 +450,7 @@ impl TriDexelStock {
                 },
                 semantic_item_id: params.semantic_item_id,
                 span_path: params.span_path.to_vec(),
+                in_transit_span: params.in_transit_span,
             });
             *next_sample_index += 1;
         }
@@ -564,6 +576,7 @@ mod tests {
                 2.0,
                 None,
                 &[],
+                &[],
                 true,
                 &never_cancel,
             )
@@ -631,6 +644,7 @@ mod tests {
                 3000.0,
                 1.0,
                 None,
+                &[],
                 &[],
                 true,
                 &never_cancel,

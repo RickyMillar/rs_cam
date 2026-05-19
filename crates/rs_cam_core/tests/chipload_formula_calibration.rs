@@ -96,6 +96,7 @@ fn half_engagement_sample(
         mrr_mm3_s: 1.0,
         semantic_item_id: None,
         span_path: Vec::new(),
+        in_transit_span: false,
     }
 }
 
@@ -244,6 +245,7 @@ fn lut_nominal_engagement_sample_within_published_envelope_passes() {
         mrr_mm3_s: 1.0,
         semantic_item_id: None,
         span_path: Vec::new(),
+        in_transit_span: false,
     };
     let trace = trace(vec![sample]);
 
@@ -326,6 +328,7 @@ fn slot_engagement_sample_at_safe_feed_passes_after_d9_normalization() {
         mrr_mm3_s: 1.0,
         semantic_item_id: None,
         span_path: Vec::new(),
+        in_transit_span: false,
     };
     let trace = trace(vec![sample]);
 

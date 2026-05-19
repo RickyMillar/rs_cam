@@ -96,6 +96,7 @@ fn make_cut_samples(n_samples: usize, toolpath_count: usize) -> Vec<SimulationCu
                 mrr_mm3_s: if radial_engagement < 0.02 { 0.0 } else { 80.0 },
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             }
         })
         .collect()
@@ -411,6 +412,7 @@ fn bench_simulate_toolpath_metrics(c: &mut Criterion) {
                     1.0,    // sample_step
                     None,   // no semantic trace
                     &[],    // no span paths
+                    &[],    // no transit moves
                     false,  // capture_arc_engagement
                     &never_cancel,
                 )

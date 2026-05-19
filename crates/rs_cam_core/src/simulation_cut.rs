@@ -74,6 +74,15 @@ pub struct SimulationCutSample {
     /// (Operation, then DepthPass, …). Empty when the toolpath had no spans.
     #[serde(default)]
     pub span_path: Vec<SpanId>,
+    /// True when this sample's move sits in a transit-style span (Entry,
+    /// LeadOut, LinkBridge, WaterlineCleanup, DressupArtifact). The dexel
+    /// reading at transit samples reports `stock_top − cutter_z` over
+    /// neighbouring stock, not steady-state engagement; extreme-value
+    /// metrics (`peak_axial_doc_mm`, `peak_chipload_mm_per_tooth`) skip
+    /// transit samples to avoid lift-bridge artifacts.
+    /// P3 — see `planning/P3_TRANSIT_PEAK_DOC_RCA.md`.
+    #[serde(default)]
+    pub in_transit_span: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -474,10 +483,19 @@ impl SummaryAccumulator {
         self.total_runtime_s += sample.segment_time_s;
         self.total_removed_volume_est_mm3 += sample.removed_volume_est_mm3.max(0.0);
         self.peak_engagement = self.peak_engagement.max(sample.radial_engagement.max(0.0));
-        self.peak_chipload_mm_per_tooth = self
-            .peak_chipload_mm_per_tooth
-            .max(sample.chipload_mm_per_tooth.max(0.0));
-        self.peak_axial_doc_mm = self.peak_axial_doc_mm.max(sample.axial_doc_mm.max(0.0));
+        // P3: skip extreme-value updates for transit-span samples. The
+        // dexel reports `stock_top − cutter_z` over uncleared neighbouring
+        // stock during link bridges, helix entries, lead-outs, and
+        // waterline-cleanup spans — not steady-state engagement. Including
+        // those samples inflates peak DOC to multiples of the configured
+        // depth_per_pass (Wanaka TP3 reads 18.59 mm on a 6 mm tool).
+        // See `planning/P3_TRANSIT_PEAK_DOC_RCA.md`.
+        if !sample.in_transit_span {
+            self.peak_chipload_mm_per_tooth = self
+                .peak_chipload_mm_per_tooth
+                .max(sample.chipload_mm_per_tooth.max(0.0));
+            self.peak_axial_doc_mm = self.peak_axial_doc_mm.max(sample.axial_doc_mm.max(0.0));
+        }
         self.peak_mrr_mm3_s = self.peak_mrr_mm3_s.max(sample.mrr_mm3_s.max(0.0));
 
         if sample.is_cutting {
@@ -762,6 +780,7 @@ mod tests {
                     mrr_mm3_s: 10.0,
                     semantic_item_id: Some(9),
                     span_path: Vec::new(),
+                    in_transit_span: false,
                 },
                 SimulationCutSample {
                     toolpath_id: 1,
@@ -784,6 +803,7 @@ mod tests {
                     mrr_mm3_s: 10.0,
                     semantic_item_id: Some(9),
                     span_path: Vec::new(),
+                    in_transit_span: false,
                 },
                 SimulationCutSample {
                     toolpath_id: 1,
@@ -806,6 +826,7 @@ mod tests {
                     mrr_mm3_s: 0.0,
                     semantic_item_id: None,
                     span_path: Vec::new(),
+                    in_transit_span: false,
                 },
             ],
         );
@@ -860,6 +881,7 @@ mod tests {
                     mrr_mm3_s: 1.0,
                     semantic_item_id: Some(2),
                     span_path: Vec::new(),
+                    in_transit_span: false,
                 },
                 SimulationCutSample {
                     toolpath_id: 1,
@@ -882,6 +904,7 @@ mod tests {
                     mrr_mm3_s: 2.0,
                     semantic_item_id: Some(2),
                     span_path: Vec::new(),
+                    in_transit_span: false,
                 },
             ],
             [(1, &trace)],
@@ -929,6 +952,7 @@ mod tests {
                     mrr_mm3_s: 0.5,
                     semantic_item_id: Some(7),
                     span_path: span_path.clone(),
+                    in_transit_span: false,
                 },
                 SimulationCutSample {
                     toolpath_id: 1,
@@ -951,6 +975,7 @@ mod tests {
                     mrr_mm3_s: 0.5,
                     semantic_item_id: Some(7),
                     span_path: span_path.clone(),
+                    in_transit_span: false,
                 },
             ],
         );
@@ -1033,6 +1058,7 @@ mod tests {
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
             SimulationCutSample {
                 toolpath_id: 0,
@@ -1055,6 +1081,7 @@ mod tests {
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
         ];
 
@@ -1097,6 +1124,7 @@ mod tests {
                 mrr_mm3_s: 1.0,
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
             // Low engagement: is_cutting=true, 0.02 <= engagement < 0.10
             SimulationCutSample {
@@ -1120,6 +1148,7 @@ mod tests {
                 mrr_mm3_s: 3.0,
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
             // Good engagement: is_cutting=true, engagement >= 0.10
             SimulationCutSample {
@@ -1143,6 +1172,7 @@ mod tests {
                 mrr_mm3_s: 10.0,
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
         ];
 
@@ -1252,6 +1282,7 @@ mod tests {
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             });
         }
         // One good sample breaks the segment
@@ -1276,6 +1307,7 @@ mod tests {
             mrr_mm3_s: 10.0,
             semantic_item_id: None,
             span_path: Vec::new(),
+            in_transit_span: false,
         });
         for i in 0..5 {
             samples.push(SimulationCutSample {
@@ -1299,6 +1331,7 @@ mod tests {
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             });
         }
 
@@ -1361,6 +1394,7 @@ mod tests {
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
             SimulationCutSample {
                 toolpath_id: 0,
@@ -1383,6 +1417,7 @@ mod tests {
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
         ];
 
@@ -1421,6 +1456,7 @@ mod tests {
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
             SimulationCutSample {
                 toolpath_id: 1,
@@ -1443,6 +1479,7 @@ mod tests {
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
             SimulationCutSample {
                 toolpath_id: 0,
@@ -1465,6 +1502,7 @@ mod tests {
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
         ];
 
@@ -1506,6 +1544,7 @@ mod tests {
                 mrr_mm3_s: 20.0,
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
             SimulationCutSample {
                 toolpath_id: 0,
@@ -1528,6 +1567,7 @@ mod tests {
                 mrr_mm3_s: 50.0,
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
         ];
 
@@ -1576,6 +1616,7 @@ mod tests {
                 mrr_mm3_s: 10.0,
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
             SimulationCutSample {
                 toolpath_id: 1,
@@ -1598,6 +1639,7 @@ mod tests {
                 mrr_mm3_s: 15.0,
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
         ];
 
@@ -1661,6 +1703,7 @@ mod tests {
                 mrr_mm3_s: 5.0,
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
             // 0.3s at engagement=0.80
             SimulationCutSample {
@@ -1684,6 +1727,7 @@ mod tests {
                 mrr_mm3_s: 6.67,
                 semantic_item_id: None,
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
         ];
 
@@ -1726,6 +1770,7 @@ mod tests {
                 mrr_mm3_s: 10.0,
                 semantic_item_id: Some(1),
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
             SimulationCutSample {
                 toolpath_id: 0,
@@ -1748,6 +1793,7 @@ mod tests {
                 mrr_mm3_s: 10.0,
                 semantic_item_id: Some(2),
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
             SimulationCutSample {
                 toolpath_id: 0,
@@ -1770,6 +1816,7 @@ mod tests {
                 mrr_mm3_s: 10.0,
                 semantic_item_id: Some(1),
                 span_path: Vec::new(),
+                in_transit_span: false,
             },
         ];
 
@@ -1812,5 +1859,111 @@ mod tests {
         assert_eq!(sanitize_filename_component("---test---"), "---test---");
         assert_eq!(sanitize_filename_component(""), "simulation_cut_trace");
         assert_eq!(sanitize_filename_component("___"), "simulation_cut_trace");
+    }
+
+    // ── P3: transit-span gating of peak-axial-DOC ───────────────────────
+
+    /// Build a minimal cutting sample for the peak-DOC accumulator tests.
+    fn make_sample(
+        sample_index: usize,
+        axial_doc_mm: f64,
+        in_transit_span: bool,
+    ) -> SimulationCutSample {
+        SimulationCutSample {
+            toolpath_id: 0,
+            move_index: sample_index,
+            sample_index,
+            position: [0.0, 0.0, 0.0],
+            cumulative_time_s: sample_index as f64 * 0.01,
+            segment_time_s: 0.01,
+            is_cutting: true,
+            cut_kinematics: CutKinematics::Linear,
+            feed_rate_mm_min: 1000.0,
+            spindle_rpm: 18_000,
+            flute_count: 2,
+            axial_doc_mm,
+            radial_engagement: 0.3,
+            arc_engagement_radians: None,
+            chipload_mm_per_tooth: 0.03,
+            effective_chip_thickness_mm: Some(0.03),
+            removed_volume_est_mm3: 1.0,
+            mrr_mm3_s: 50.0,
+            semantic_item_id: None,
+            span_path: Vec::new(),
+            in_transit_span,
+        }
+    }
+
+    #[test]
+    fn peak_doc_includes_cutting_samples() {
+        // Wanaka commanded DOC is 3 mm. A clean cutting sample at 3 mm
+        // axial DOC should appear in the peak.
+        let samples = vec![make_sample(0, 3.0, false)];
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+        assert!((trace.summary.peak_axial_doc_mm - 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn peak_doc_suppresses_transit_lift_bridge_artifact() {
+        // Wanaka TP3 pattern: a transit sample reads 18.59 mm because the
+        // cutter is bridging cleared air over uncleared neighbouring stock.
+        // It must NOT contaminate peak axial DOC.
+        let samples = vec![
+            make_sample(0, 3.0, false),
+            make_sample(1, 18.59, true), // lift-bridge artifact
+            make_sample(2, 3.0, false),
+        ];
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+        assert!(
+            (trace.summary.peak_axial_doc_mm - 3.0).abs() < 1e-9,
+            "transit-span sample at 18.59 mm should be excluded from peak DOC; got {}",
+            trace.summary.peak_axial_doc_mm
+        );
+    }
+
+    #[test]
+    fn peak_doc_excludes_purely_transit_streams() {
+        // If every sample is in a transit span (extreme case), peak DOC is 0.
+        let samples = vec![
+            make_sample(0, 18.0, true),
+            make_sample(1, 12.0, true),
+            make_sample(2, 7.0, true),
+        ];
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+        assert_eq!(trace.summary.peak_axial_doc_mm, 0.0);
+    }
+
+    #[test]
+    fn peak_chipload_also_skips_transit_samples() {
+        // The same lift-bridge artifact inflates peak_chipload — the gate
+        // applies to both extreme-value metrics.
+        let mut transit = make_sample(0, 18.0, true);
+        transit.chipload_mm_per_tooth = 5.0; // wildly high
+        let mut cutting = make_sample(1, 3.0, false);
+        cutting.chipload_mm_per_tooth = 0.05;
+        let trace = SimulationCutTrace::from_samples(0.5, vec![transit, cutting]);
+        assert!(
+            trace.summary.peak_chipload_mm_per_tooth < 0.1,
+            "transit-span sample must be excluded from peak chipload"
+        );
+    }
+
+    #[test]
+    fn per_toolpath_peak_doc_respects_transit_flag() {
+        let samples = vec![
+            make_sample(0, 3.0, false),
+            make_sample(1, 5.5, true), // lift-bridge artifact (Wanaka TP6 pattern)
+        ];
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+        let tp = trace
+            .toolpath_summaries
+            .iter()
+            .find(|s| s.toolpath_id == 0)
+            .expect("toolpath 0 should have a summary");
+        assert!(
+            (tp.peak_axial_doc_mm - 3.0).abs() < 1e-9,
+            "per-TP peak DOC must respect transit flag; got {}",
+            tp.peak_axial_doc_mm
+        );
     }
 }
