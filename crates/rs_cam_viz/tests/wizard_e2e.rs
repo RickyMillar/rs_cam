@@ -117,6 +117,7 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
         debug_trace: None,
         semantic_trace: None,
         debug_trace_path: None,
+        drill_op: None,
     });
     gui.toolpath_rt.insert(tp_id, rt);
 
@@ -459,6 +460,7 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
         debug_trace: None,
         semantic_trace: None,
         debug_trace_path: None,
+        drill_op: None,
     });
     gui.toolpath_rt.insert(bottom_tp_id, rt);
 

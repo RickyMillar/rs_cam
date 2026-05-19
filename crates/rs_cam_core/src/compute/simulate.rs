@@ -54,6 +54,13 @@ pub struct SimToolpathEntry {
     /// low-engagement `SimulationCutIssue` emission for these toolpaths
     /// and to mark their per-TP summary as `metrics_not_applicable`.
     pub metrics_not_applicable: bool,
+    /// First-class drill-op view (§6.E dual-representation invariant).
+    /// When `Some`, the simulator bypasses per-segment stamping for this
+    /// entry and applies [`crate::dexel_stock::TriDexelStock::apply_drill_op`]
+    /// for analytical cone/cylinder removal. The `annotated` toolpath is
+    /// still used for G-code export, rapid-collision checks, and move
+    /// indexing.
+    pub drill_op: Option<Arc<crate::drill_op::DrillOp>>,
 }
 
 /// A group of toolpaths from one setup, sharing a cut direction.
@@ -323,6 +330,11 @@ where
     let mut rapid_collision_move_indices: Vec<usize> = Vec::new();
     let mut prior_stocks: std::collections::HashMap<usize, Arc<TriDexelStock>> =
         std::collections::HashMap::new();
+    // §6.E accumulators for analytic drill geometry. `group_drill_ops` is
+    // reset per group (matches per-setup `group_stock` lifetime); the
+    // global accumulator stores transformed copies so the final
+    // composite mesh shows holes from all setups.
+    let mut global_drill_ops: Vec<crate::drill_op::DrillOp> = Vec::new();
 
     for group in &request.groups {
         // Per-setup stock: use local bbox if available, else fall back to global.
@@ -331,6 +343,10 @@ where
             .as_ref()
             .unwrap_or(&request.stock_bbox);
         let mut group_stock = TriDexelStock::from_bounds(local_bbox, request.resolution);
+        // §6.E per-group accumulator: holes drilled into `group_stock`
+        // get appended as analytic cylinders when this group's mesh
+        // is extracted.
+        let mut group_drill_ops: Vec<Arc<crate::drill_op::DrillOp>> = Vec::new();
         // Per-setup stocks are always simulated from the top (Z-axis).
         let direction = StockCutDirection::FromTop;
 
@@ -362,7 +378,17 @@ where
             let radius = entry.tool.radius();
             let start_move = total_moves;
 
-            if request.metric_options.enabled {
+            if let Some(drill_op_arc) = entry.drill_op.as_ref() {
+                // §6.E analytical drill removal: bypass per-segment
+                // stamping. Cone/cylinder envelope is applied directly
+                // to the dexel grid; the linearized toolpath remains
+                // available for rapid-collision checks, G-code, and
+                // wire-render. DrillSample stream lands in PR2 — for
+                // now no per-sample metrics are emitted (the entry is
+                // flagged `metrics_not_applicable`).
+                group_stock.apply_drill_op(drill_op_arc);
+                group_drill_ops.push(Arc::clone(drill_op_arc));
+            } else if request.metric_options.enabled {
                 let entry_rpm = entry.spindle_rpm.unwrap_or(request.spindle_rpm);
                 let span_paths_by_move = entry.annotated.span_paths_by_move();
                 let transit_moves = entry.annotated.transit_moves_bitmap();
@@ -417,7 +443,34 @@ where
 
             // Stamp the global stock in parallel for checkpoint/playback support.
             // This uses the same global-frame toolpath + direction as playback.
-            {
+            // For drill ops, apply analytical removal in the global frame
+            // — hole XYs are transformed when `local_to_global` is set.
+            if let Some(drill_op_arc) = entry.drill_op.as_ref() {
+                let global_drill_op = match &group.local_to_global {
+                    Some(info) => {
+                        let mut transformed = (**drill_op_arc).clone();
+                        for hole in &mut transformed.holes {
+                            let g_top = info.local_to_global(crate::geo::P3::new(
+                                hole.xy[0],
+                                hole.xy[1],
+                                hole.top_z,
+                            ));
+                            let g_bot = info.local_to_global(crate::geo::P3::new(
+                                hole.xy[0],
+                                hole.xy[1],
+                                hole.bottom_z,
+                            ));
+                            hole.xy = [g_top.x, g_top.y];
+                            hole.top_z = g_top.z;
+                            hole.bottom_z = g_bot.z;
+                        }
+                        transformed
+                    }
+                    None => (**drill_op_arc).clone(),
+                };
+                global_stock.apply_drill_op(&global_drill_op);
+                global_drill_ops.push(global_drill_op);
+            } else {
                 let playback_lut = RadialProfileLUT::from_cutter(&entry.tool, 256);
                 let _ = global_stock.simulate_toolpath_with_lut_cancel(
                     &global_tp,
@@ -429,7 +482,16 @@ where
             }
 
             // Checkpoint: composited mesh for display + global stock for playback resume.
-            let local_mesh = dexel_stock_to_mesh(&group_stock);
+            let mut local_mesh = dexel_stock_to_mesh(&group_stock);
+            // §6.E append analytic drill cylinders so checkpoint frames
+            // show clean circular hole walls even at low dexel resolution.
+            // Cylinders are emitted in local-frame coords; the
+            // transform_stock_mesh_to_global call below handles re-framing.
+            if !group_drill_ops.is_empty() {
+                let refs: Vec<&crate::drill_op::DrillOp> =
+                    group_drill_ops.iter().map(|d| d.as_ref()).collect();
+                crate::dexel_mesh::append_drill_cylinders(&mut local_mesh, &refs);
+            }
             let checkpoint_mesh =
                 transform_stock_mesh_to_global(&local_mesh, &group.local_to_global);
             checkpoints.push(SimCheckpointMesh {
@@ -442,7 +504,12 @@ where
         }
 
         // After all toolpaths in this group, extract mesh and composite.
-        let group_mesh = dexel_stock_to_mesh(&group_stock);
+        let mut group_mesh = dexel_stock_to_mesh(&group_stock);
+        if !group_drill_ops.is_empty() {
+            let refs: Vec<&crate::drill_op::DrillOp> =
+                group_drill_ops.iter().map(|d| d.as_ref()).collect();
+            crate::dexel_mesh::append_drill_cylinders(&mut group_mesh, &refs);
+        }
         if let Some(info) = &group.local_to_global {
             composite_mesh.append_transformed(&group_mesh, |x, y, z| {
                 let p = info.local_to_global(P3::new(f64::from(x), f64::from(y), f64::from(z)));
@@ -452,6 +519,13 @@ where
             composite_mesh.append_transformed(&group_mesh, |x, y, z| (x, y, z));
         }
     }
+
+    // `global_drill_ops` is currently accumulated for future use by
+    // alternative mesh extractions (e.g. checkpoint resume with cylinders
+    // re-emitted in global coords). The composite mesh above is built
+    // from per-group local meshes that already include their own
+    // cylinders, so no additional append is needed here.
+    let _ = global_drill_ops;
 
     let cut_trace = if request.metric_options.enabled {
         let semantic_traces: Vec<_> = request
@@ -632,6 +706,7 @@ mod tests {
             semantic_trace: None,
             spindle_rpm: None,
             metrics_not_applicable: false,
+            drill_op: None,
         };
 
         let group = SimGroupEntry {
@@ -828,6 +903,7 @@ mod tests {
             semantic_trace: None,
             spindle_rpm: None,
             metrics_not_applicable: false,
+            drill_op: None,
         };
 
         let group = SimGroupEntry {
@@ -929,6 +1005,7 @@ mod tests {
                 semantic_trace: None,
                 spindle_rpm: None,
                 metrics_not_applicable: false,
+            drill_op: None,
             }],
             direction: StockCutDirection::FromTop,
             local_stock_bbox: Some(stock_bbox),
@@ -946,6 +1023,7 @@ mod tests {
                 semantic_trace: None,
                 spindle_rpm: None,
                 metrics_not_applicable: false,
+            drill_op: None,
             }],
             direction: StockCutDirection::FromBottom,
             local_stock_bbox: Some(BoundingBox3 {

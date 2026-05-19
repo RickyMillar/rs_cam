@@ -909,6 +909,122 @@ fn append_mesh(base: &mut StockMesh, other: &StockMesh) {
         .extend(other.indices.iter().map(|i| i + index_offset));
 }
 
+/// Append analytic drill-hole geometry to a stock mesh — DEXEL roadmap §6.E
+/// Step 3.
+///
+/// Each [`crate::drill_op::DrillOp`] adds a 16-sided cylinder side wall
+/// (and a flat-bottom cap for [`crate::drill_op::ToolProfile::Flat`])
+/// inside the existing heightmap mesh. This gives clean circular walls
+/// at low dexel resolutions instead of cell-stepped approximations.
+///
+/// Composition: call AFTER [`dexel_stock_to_mesh`] so the analytic
+/// cylinders sit on top of the heightmap-rendered approximation. The
+/// "seam" between heightmap walls and analytic cylinders is visible
+/// at low dexel resolution — Step 5 (marching cubes) replaces the
+/// heightmap walls so they align cleanly.
+pub fn append_drill_cylinders(base: &mut StockMesh, drill_ops: &[&crate::drill_op::DrillOp]) {
+    const AZIMUTH_SEGMENTS: usize = 16;
+    for drill_op in drill_ops {
+        let radius = drill_op.tool_diameter_mm as f32 * 0.5;
+        if radius <= 0.0 {
+            continue;
+        }
+        // Cone-tip protrusion for non-flat profiles. For Flat, tip is at
+        // bottom_z; for coned profiles, the cylindrical shoulder starts
+        // at bottom_z + tip_protrusion.
+        let tip_protrusion =
+            drill_op.tool_profile.tip_protrusion_mm(drill_op.tool_diameter_mm * 0.5) as f32;
+
+        for hole in &drill_op.holes {
+            let cx = hole.xy[0] as f32;
+            let cy = hole.xy[1] as f32;
+            let bottom_z = hole.bottom_z as f32;
+            let top_z = hole.top_z as f32;
+            // Skip degenerate holes (e.g. zero-depth).
+            if top_z <= bottom_z {
+                continue;
+            }
+            // Cylinder section bottom is at the shoulder where the cone
+            // meets the cylindrical body (or `bottom_z` for Flat).
+            let cylinder_bottom = bottom_z + tip_protrusion;
+            let is_flat = matches!(
+                drill_op.tool_profile,
+                crate::drill_op::ToolProfile::Flat
+            );
+
+            let azimuth: Vec<(f32, f32)> = (0..AZIMUTH_SEGMENTS)
+                .map(|i| {
+                    let theta = (i as f32) * std::f32::consts::TAU / AZIMUTH_SEGMENTS as f32;
+                    (theta.cos(), theta.sin())
+                })
+                .collect();
+
+            let mut cyl = StockMesh::empty();
+
+            // ── Cylinder side wall (cylinder_bottom → top_z) ─────────
+            // Vertices: ring at cylinder_bottom + ring at top_z.
+            for &(cos_t, sin_t) in &azimuth {
+                let px = cx + radius * cos_t;
+                let py = cy + radius * sin_t;
+                cyl.vertices.extend_from_slice(&[px, py, cylinder_bottom]);
+                cyl.colors.extend_from_slice(&[CUT_R, CUT_G, CUT_B]);
+            }
+            for &(cos_t, sin_t) in &azimuth {
+                let px = cx + radius * cos_t;
+                let py = cy + radius * sin_t;
+                cyl.vertices.extend_from_slice(&[px, py, top_z]);
+                cyl.colors.extend_from_slice(&[CUT_R, CUT_G, CUT_B]);
+            }
+            // Triangles: 2 per quad, inward-facing normals (visible when
+            // viewed from inside the hole). Winding `bot_i, bot_{i+1},
+            // top_i` gives a normal cross product pointing toward the
+            // axis at θ=0 (`+θ × +z = -r`).
+            for i in 0..AZIMUTH_SEGMENTS {
+                let next = (i + 1) % AZIMUTH_SEGMENTS;
+                let bi = i as u32;
+                let bn = next as u32;
+                let ti = (AZIMUTH_SEGMENTS + i) as u32;
+                let tn = (AZIMUTH_SEGMENTS + next) as u32;
+                cyl.indices.extend_from_slice(&[bi, bn, ti, ti, bn, tn]);
+            }
+
+            // ── Bottom cap or cone tip ────────────────────────────────
+            if is_flat {
+                // Flat-bottom cap: fan from center (axis, bottom_z) out
+                // to the cylinder_bottom ring. Wound CCW from below so
+                // the visible side is the *top* face inside the hole.
+                let center_idx = cyl.vertices.len() / 3;
+                cyl.vertices.extend_from_slice(&[cx, cy, bottom_z]);
+                cyl.colors.extend_from_slice(&[CUT_R, CUT_G, CUT_B]);
+                for i in 0..AZIMUTH_SEGMENTS {
+                    let next = (i + 1) % AZIMUTH_SEGMENTS;
+                    cyl.indices.extend_from_slice(&[
+                        center_idx as u32,
+                        next as u32,
+                        i as u32,
+                    ]);
+                }
+            } else {
+                // Conical tip: apex at (axis, bottom_z), base on the
+                // cylinder_bottom ring.
+                let apex_idx = cyl.vertices.len() / 3;
+                cyl.vertices.extend_from_slice(&[cx, cy, bottom_z]);
+                cyl.colors.extend_from_slice(&[CUT_R, CUT_G, CUT_B]);
+                for i in 0..AZIMUTH_SEGMENTS {
+                    let next = (i + 1) % AZIMUTH_SEGMENTS;
+                    cyl.indices.extend_from_slice(&[
+                        apex_idx as u32,
+                        next as u32,
+                        i as u32,
+                    ]);
+                }
+            }
+
+            append_mesh(base, &cyl);
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,

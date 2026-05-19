@@ -24,6 +24,121 @@
 
 ## Recent work (2026-05-19)
 
+### Dexel-fidelity roadmap — Step 3 PR1 (DrillOp first-class — data model + analytical removal + mesh)
+
+Step 3 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` part 1 of 2. Lands
+the §6.E dual-representation foundation: a first-class `DrillOp`
+carried atomically alongside the linearized `AnnotatedToolpath`, with
+analytical cone/cylinder stock removal that bypasses per-segment
+stamping for drilling cycles. Closes §3.1 root cause for drills
+(scattered "this is a drill op" special-cases promoted to one data
+model). Path B confirmed (2026-05-19) — full DrillOp promotion to
+support future tapping / canned cycles / hole-level reporting; PR2
+will add the `DrillSample` stream and drill-specific gates.
+
+**Data model.** New `crates/rs_cam_core/src/drill_op.rs` module:
+
+- `DrillOp { holes, hole_source, tool_profile, tool_diameter_mm,
+  cycle, feed_rate_mm_min, spindle_rpm, flute_count, material }`.
+  Material reuses the existing `Material` enum from
+  `crates/rs_cam_core/src/material.rs`.
+- `DrillHole { xy, top_z, bottom_z }` — Z bounds in setup-local
+  coords; `top_z >= bottom_z` for drilling-from-top.
+- `HoleSource::Snapshot(Vec<[f64; 2]>) | ModelDerived` — captures
+  the §6.E hole-source asymmetry. `AlignmentPinDrill` carries
+  `Snapshot` (positions live in the config and round-trip
+  through project IO directly); `Drill` carries `ModelDerived`
+  (centroids re-resolved from polygons on every regenerate).
+- `ToolProfile::Flat | StandardTwist | Spot { included_angle_deg }`
+  with `cone_half_angle_rad()` + `tip_protrusion_mm(radius)` helpers
+  for the analytical kernel and mesh emission. PR1 defaults both
+  `Drill` and `AlignmentPinDrill` to `Flat`; Spot / StandardTwist
+  are data-model-ready and the kernel + mesh honor them.
+
+**Dual-representation invariant** (§6.E). `OpData { Toolpath, DrillOp }`
+enum wraps the existing `Arc<AnnotatedToolpath>` inside
+`ToolpathComputeResult.op_data` (was `.annotated`). The `DrillOp`
+variant carries `(Arc<DrillOp>, Arc<AnnotatedToolpath>)` — both
+representations are produced atomically in `compute/execute.rs` via a
+new `build_drill_op_for_config` helper. The existing
+`session/mutation.rs::results.remove(&index)` invalidation logic stays
+load-bearing: clearing the cached result drops both representations
+together. Accessors `result.annotated()` / `result.drill_op()` /
+`result.is_drill_op()` keep consumer migration small — ~30
+`.annotated` field reads across core / viz / mcp / tests migrated to
+the method form.
+
+**Analytical stock removal.** New `TriDexelStock::apply_drill_op` in
+`crates/rs_cam_core/src/dexel_stock/mod.rs` walks cells inside each
+hole's XY footprint and clips ray-top to `bottom_z + h(r)` where `h(r)`
+is the cone-tip profile (`Flat → 0`, coned → `r / tan(half_angle)`).
+Idempotent: cells whose existing top is already at or below `z_cut`
+are left untouched, so drill-then-pocket and pocket-then-drill compose
+correctly. The simulation dispatcher (`compute/simulate.rs`) branches
+on `entry.drill_op`: when `Some`, per-segment stamping is bypassed
+entirely and `apply_drill_op` mutates the dexel grid in place. The
+global-stock parallel path applies the same kernel with hole
+positions transformed through `SetupTransformInfo::local_to_global`
+when a non-identity setup is present.
+
+**Mesh extraction.** New `append_drill_cylinders(mesh, drill_ops)`
+helper in `crates/rs_cam_core/src/dexel_mesh.rs` emits 16-sided
+cylinder side walls + a flat-bottom cap (or conical tip for non-Flat
+profiles) per hole. Inward-facing normals so the visible side is the
+inside of the hole. Composed via the existing `append_mesh` pattern,
+called after `dexel_stock_to_mesh` on both checkpoint frames and
+group-final composites. **Seam visibility** between the heightmap
+walls and analytic cylinders is the documented PR1 limitation
+(§6.E / §10.7) — Step 5 (marching cubes) replaces the heightmap
+walls. Manual seam-visibility check scheduled before Step 5 lands.
+
+**Surface migration.** `SimToolpathEntry.drill_op` field added in
+`compute/simulate.rs`; `SetupSimToolpath.drill_op` added in
+`crates/rs_cam_viz/src/compute/worker.rs`; `ToolpathResult.drill_op`
+added in `crates/rs_cam_viz/src/state/toolpath/entry.rs`. GUI worker
+in `crates/rs_cam_viz/src/compute/worker/execute/mod.rs` calls
+`build_drill_op_for_config` in the same scope as the toolpath
+generation so the dual-rep invariant holds across the worker
+pipeline. The `metrics_not_applicable` signal in
+`session/compute.rs` now consults `result.is_drill_op()` as the
+primary signal alongside the existing `MoveIntent::Drilling` +
+op-kind fallbacks.
+
+**Tests** (`crates/rs_cam_core/tests/drill_op_step3.rs`, 7 cases):
+- `analytical_removal_sets_ray_top_to_bottom_z_inside_footprint`
+- `analytical_removal_leaves_outside_cells_untouched`
+- `drill_does_not_raise_already_lower_cells` (idempotence —
+  drill-then-pocket composition)
+- `drill_then_pocket_composes_correctly`
+- `append_drill_cylinders_adds_geometry` (16+16+1 = 33 vertices per
+  Flat-profile hole)
+- `opdata_drill_carries_both_representations` (dual-rep invariant
+  at the type level)
+- `cone_profile_protrusion_geometry` (Ø2 StandardTwist tip
+  protrusion ≈ 0.6mm via `1 / tan(59°)`)
+
+All 1476 core lib tests pass. Workspace clippy clean.
+
+**Scope held.** No `DrillSample` stream, no `DrillToolpathSummary`,
+no drill-specific gates (chip welding, peck adequacy), no WANAKA
+revalidation — all PR2. `metrics_not_applicable` continues to drive
+the existing "no engagement metrics for drills" path; drill ops
+still surface `metrics_not_applicable: true` and produce no
+per-sample cut data in PR1. The cylindrical analytic mesh is visible
+at any dexel resolution (closes the "drill holes don't show up"
+symptom at the geometry layer — full validation in PR2 with WANAKA
+revalidation).
+
+**Follow-ups scheduled:**
+- PR2: `DrillSample` stream + `DrillToolpathSummary` + chip-welding
+  / peck-adequacy / plunge-feed gates + WANAKA revalidation.
+- Seam-visibility manual check between Step 3 and Step 5 landings
+  (§6.E / §10.7).
+- Multi-setup global-frame drill mesh emission: PR1 composites
+  per-group cylinders correctly; if a future workflow needs a
+  separate global-frame `DrillOp` accumulator, the field is in
+  place (`global_drill_ops` in `compute/simulate.rs`).
+
 ### Dexel-fidelity roadmap — Step 2 (Engagement vector + per-kinematics summary)
 
 Step 2 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` landed. Closes

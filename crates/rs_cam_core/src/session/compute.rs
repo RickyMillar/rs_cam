@@ -959,6 +959,7 @@ impl ProjectSession {
                         semantic_trace: result.semantic_trace.as_ref().map(|t| Arc::new(t.clone())),
                         spindle_rpm: tc.operation.spindle_rpm(),
                         metrics_not_applicable,
+                        drill_op: result.drill_op().cloned(),
                     });
                 }
             }

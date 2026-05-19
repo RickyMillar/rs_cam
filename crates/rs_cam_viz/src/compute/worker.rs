@@ -82,6 +82,12 @@ pub struct SetupSimToolpath {
     /// P4: true for drill / pin-drill kinds — see `SimToolpathEntry`.
     #[allow(dead_code)] // populated by caller; consumed by execute pipeline
     pub metrics_not_applicable: bool,
+    /// §6.E first-class drill-op view (dual-representation invariant).
+    /// When `Some`, the worker forwards this onto `SimToolpathEntry.drill_op`
+    /// so the simulator uses analytical removal instead of per-segment
+    /// stamping. Populated by [`crate::controller::events::simulation`]
+    /// from the session's cached `ToolpathComputeResult`.
+    pub drill_op: Option<Arc<rs_cam_core::drill_op::DrillOp>>,
 }
 
 /// A group of toolpaths from one setup in setup-local coordinates.

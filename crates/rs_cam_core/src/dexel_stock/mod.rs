@@ -190,6 +190,79 @@ impl TriDexelStock {
         let ray = &mut self.z_grid.rays[row * self.z_grid.cols + col];
         crate::dexel::ray_subtract_above(ray, z);
     }
+
+    /// Analytical drill removal — DEXEL roadmap §6.E Step 3.
+    ///
+    /// Bypasses per-segment stamping for drilling cycles. For each hole,
+    /// walks cells inside the tool's XY footprint and clips each ray's
+    /// material to the tip envelope:
+    ///
+    /// `z_cut(r) = bottom_z + h(r)` where `h(r)` is the cone-tip
+    /// protrusion above the deepest point. `ToolProfile::Flat` uses
+    /// `h(r) = 0`; coned profiles use `h(r) = r / tan(half_angle)`.
+    ///
+    /// Idempotent and composable with prior stamping: any cell whose
+    /// existing top is already at or below `z_cut(r)` is left untouched.
+    /// A subsequent milling op sees the post-drill ray state because the
+    /// kernel mutates the dexel in place.
+    pub fn apply_drill_op(&mut self, drill_op: &crate::drill_op::DrillOp) {
+        let radius_mm = drill_op.tool_diameter_mm * 0.5;
+        if radius_mm <= 0.0 {
+            return;
+        }
+        let half_angle = drill_op.tool_profile.cone_half_angle_rad();
+        let inv_tan = if matches!(drill_op.tool_profile, crate::drill_op::ToolProfile::Flat)
+            || half_angle <= 0.0
+        {
+            None
+        } else {
+            // h(r) = r / tan(half_angle) = r * (1 / tan(α))
+            Some(1.0 / half_angle.tan())
+        };
+
+        let radius_sq = radius_mm * radius_mm;
+        let cell_size = self.z_grid.cell_size;
+        let cell_radius = (radius_mm / cell_size).ceil() as isize + 1;
+
+        for hole in &drill_op.holes {
+            let Some((center_row, center_col)) =
+                self.z_grid.world_to_cell(hole.xy[0], hole.xy[1])
+            else {
+                continue;
+            };
+            let center_row = center_row as isize;
+            let center_col = center_col as isize;
+
+            for dr in -cell_radius..=cell_radius {
+                let row = center_row + dr;
+                if row < 0 || row >= self.z_grid.rows as isize {
+                    continue;
+                }
+                for dc in -cell_radius..=cell_radius {
+                    let col = center_col + dc;
+                    if col < 0 || col >= self.z_grid.cols as isize {
+                        continue;
+                    }
+                    let (cell_x, cell_y) =
+                        self.z_grid.cell_to_world(row as usize, col as usize);
+                    let dx = cell_x - hole.xy[0];
+                    let dy = cell_y - hole.xy[1];
+                    let r_sq = dx * dx + dy * dy;
+                    if r_sq > radius_sq {
+                        continue;
+                    }
+                    let z_cut = match inv_tan {
+                        None => hole.bottom_z,
+                        Some(inv_tan) => {
+                            let r = r_sq.sqrt();
+                            hole.bottom_z + r * inv_tan
+                        }
+                    };
+                    self.clear_above_at(row as usize, col as usize, z_cut as f32);
+                }
+            }
+        }
+    }
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────
