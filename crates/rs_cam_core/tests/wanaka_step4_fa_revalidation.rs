@@ -44,7 +44,9 @@ fn wanaka_step4_back_rough_engagement_in_plausible_range() {
     let cancel = AtomicBool::new(false);
 
     // Generate Pin Drill (TP0) and Back Rough (TP1).
-    session.generate_toolpath(0, &cancel).expect("gen pin drill");
+    session
+        .generate_toolpath(0, &cancel)
+        .expect("gen pin drill");
     session
         .generate_toolpath(1, &cancel)
         .expect("gen back rough");
@@ -84,8 +86,7 @@ fn wanaka_step4_back_rough_engagement_in_plausible_range() {
     // No NaN/Inf in engagement.
     for s in &back_rough_samples {
         assert!(
-            s.radial_engagement.is_finite()
-                && (0.0..=1.0).contains(&s.radial_engagement),
+            s.radial_engagement.is_finite() && (0.0..=1.0).contains(&s.radial_engagement),
             "Back Rough sample {} has invalid radial_engagement={}",
             s.sample_index,
             s.radial_engagement
@@ -129,13 +130,18 @@ fn wanaka_step4_pin_drill_unaffected() {
 
     let mut session = ProjectSession::load(toml_path).expect("load wanaka");
     let cancel = AtomicBool::new(false);
-    session.generate_toolpath(0, &cancel).expect("gen pin drill");
+    session
+        .generate_toolpath(0, &cancel)
+        .expect("gen pin drill");
 
     let pin_drill_id = session.list_toolpaths()[0].id;
     let opts = SimulationOptions::default();
     let result = session.run_simulation(&opts, &cancel).expect("sim");
     let cut_trace = result.cut_trace.as_ref().expect("cut trace");
-    let summary = cut_trace.drill_summaries.iter().find(|s| s.toolpath_id == pin_drill_id);
+    let summary = cut_trace
+        .drill_summaries
+        .iter()
+        .find(|s| s.toolpath_id == pin_drill_id);
     assert!(
         summary.is_some(),
         "Pin Drill (TP0) produced no drill_summary entry — Step 3 path may be broken"

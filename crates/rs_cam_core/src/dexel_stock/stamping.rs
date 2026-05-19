@@ -27,50 +27,62 @@ use crate::toolpath_spans::SpanId;
 /// ~1–3 percentage points per §8 Step 4, so 1/16 resolution is fine.
 const COVERAGE_SUBSAMPLES_PER_AXIS: usize = 4;
 
+/// Half-extent of the 4×4 sub-sample grid as a fraction of cell size.
+/// Sub-samples at axis offsets `{−3, −1, +1, +3} · cs/8`; the outermost
+/// sub-sample sits at `±3·cs/8` from the cell center.
+const SUBSAMPLE_HALF_EXTENT: f64 = 3.0 / 8.0;
+
+/// Sub-sample axis offsets as fractions of `cs`. Hoisted out of the kernel
+/// inner loops so the arithmetic `start + i·step` doesn't run per cell.
+const SUBSAMPLE_OFFSETS_FRAC: [f64; 4] = [-3.0 / 8.0, -1.0 / 8.0, 1.0 / 8.0, 3.0 / 8.0];
+
 /// Fractional coverage of a square cell by a disk centered at the origin
 /// (offsets pre-shifted so disk center is implicit zero).
 ///
 /// Returns `coverage ∈ [0, 1]` — the area fraction of the cell inside the
-/// disk. Fast-paths fully-inside (all 4 corners inside disk) and fully-outside
-/// (nearest cell point outside disk) before falling back to 4×4 sub-sampling.
+/// disk. Fast-paths fully-inside (all 16 sub-samples inside) and fully-
+/// outside (all 16 sub-samples outside) using the *sub-sample* extent
+/// (not the cell corner) so the fast-path bounds match what the sub-
+/// sampling kernel would compute. Falls back to 4×4 sub-sampling for the
+/// boundary band.
 #[inline]
 fn point_cell_coverage(du: f64, dv: f64, r_sq: f64, cs: f64) -> f32 {
-    let half_cs = cs * 0.5;
+    let extent = cs * SUBSAMPLE_HALF_EXTENT;
     let abs_du = du.abs();
     let abs_dv = dv.abs();
 
-    // Farthest corner from disk center.
-    let far_u = abs_du + half_cs;
-    let far_v = abs_dv + half_cs;
+    // Farthest sub-sample position from disk center (in this cell's
+    // worst-case quadrant). If this is inside the disk, all 16 are.
+    let far_u = abs_du + extent;
+    let far_v = abs_dv + extent;
     let far_sq = far_u * far_u + far_v * far_v;
     if far_sq <= r_sq {
         return 1.0;
     }
 
-    // Nearest point on cell square to disk center (clamped distance).
-    let near_u = (abs_du - half_cs).max(0.0);
-    let near_v = (abs_dv - half_cs).max(0.0);
+    // Nearest sub-sample position to disk center (clamped to 0 in any axis
+    // where the cell straddles the center). If this is outside the disk,
+    // all 16 are.
+    let near_u = (abs_du - extent).max(0.0);
+    let near_v = (abs_dv - extent).max(0.0);
     let near_sq = near_u * near_u + near_v * near_v;
     if near_sq >= r_sq {
         return 0.0;
     }
 
     // Boundary cell: sub-sample.
-    let n = COVERAGE_SUBSAMPLES_PER_AXIS;
-    let step = cs / n as f64;
-    let start = -half_cs + step * 0.5;
     let mut inside = 0u32;
-    for j in 0..n {
-        let py = dv + start + j as f64 * step;
+    for &v_off in &SUBSAMPLE_OFFSETS_FRAC {
+        let py = dv + v_off * cs;
         let py_sq = py * py;
-        for i in 0..n {
-            let px = du + start + i as f64 * step;
+        for &u_off in &SUBSAMPLE_OFFSETS_FRAC {
+            let px = du + u_off * cs;
             if px * px + py_sq <= r_sq {
                 inside += 1;
             }
         }
     }
-    inside as f32 / (n * n) as f32
+    inside as f32 / (COVERAGE_SUBSAMPLES_PER_AXIS * COVERAGE_SUBSAMPLES_PER_AXIS) as f32
 }
 
 /// Fractional coverage of a square cell by a swept-segment stadium.
@@ -99,8 +111,6 @@ fn segment_cell_coverage(
     r_sq: f64,
     cs: f64,
 ) -> (f32, f64, f64) {
-    let half_cs = cs * 0.5;
-
     // Project cell center onto segment.
     let pu = cu - su;
     let pv = cv - sv;
@@ -111,29 +121,27 @@ fn segment_cell_coverage(
     let dv = pv - closest_v;
     let center_d_sq = du * du + dv * dv;
 
-    // Conservative "definitely outside" check: even the nearest cell corner
-    // can't be closer than (sqrt(center_d_sq) - cs·sqrt(2)/2) to the segment.
-    // If that lower bound is ≥ r, the cell is fully outside.
+    // Fast paths using the sub-sample extent (matching the kernel below).
+    // The 16 sub-samples sit within `cs·SUBSAMPLE_HALF_EXTENT·√2` of the
+    // cell center (worst-case corner sub-sample), so the swept-stadium
+    // distance from any sub-sample lies within `[center_d − ext_diag,
+    // center_d + ext_diag]` of the cell-center's distance to the segment.
+    let ext_diag = cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
+    let r = r_sq.sqrt();
     let center_d = center_d_sq.sqrt();
-    let half_diag = cs * std::f64::consts::FRAC_1_SQRT_2;
-    if center_d - half_diag >= r_sq.sqrt() {
+    if center_d - ext_diag >= r {
         return (0.0, t_center, center_d_sq);
     }
-    // Conservative "definitely inside" check: even the farthest cell corner
-    // can't be farther than (center_d + half_diag) from the segment.
-    if center_d + half_diag <= r_sq.sqrt() {
+    if center_d + ext_diag <= r {
         return (1.0, t_center, center_d_sq);
     }
 
     // Boundary cell: sub-sample. Each sub-sample re-projects onto segment.
-    let n = COVERAGE_SUBSAMPLES_PER_AXIS;
-    let step = cs / n as f64;
-    let start = -half_cs + step * 0.5;
     let mut inside = 0u32;
-    for j in 0..n {
-        let py = cv + start + j as f64 * step - sv;
-        for i in 0..n {
-            let px = cu + start + i as f64 * step - su;
+    for &v_off in &SUBSAMPLE_OFFSETS_FRAC {
+        let py = cv + v_off * cs - sv;
+        for &u_off in &SUBSAMPLE_OFFSETS_FRAC {
+            let px = cu + u_off * cs - su;
             let t = ((px * seg_du + py * seg_dv) * inv_seg_len_sq).clamp(0.0, 1.0);
             let qu = px - t * seg_du;
             let qv = py - t * seg_dv;
@@ -142,7 +150,7 @@ fn segment_cell_coverage(
             }
         }
     }
-    let cov = inside as f32 / (n * n) as f32;
+    let cov = inside as f32 / (COVERAGE_SUBSAMPLES_PER_AXIS * COVERAGE_SUBSAMPLES_PER_AXIS) as f32;
     (cov, t_center, center_d_sq)
 }
 
@@ -202,9 +210,13 @@ pub(super) fn stamp_point_on_grid(
     from_high: bool,
 ) {
     let cs = grid.cell_size;
-    // §6.F gap 3: extend bounding box by cs·√2 to capture annular cells whose
-    // centers sit outside the disk but whose corners reach into it.
-    let scan_radius = radius + cs * std::f64::consts::SQRT_2;
+    // §6.F gap 3: extend bounding box past `r` so annular cells (centers
+    // outside disk but sub-samples reaching into it) are visited. The
+    // sub-sample half-extent diagonal is `cs·SUBSAMPLE_HALF_EXTENT·√2 ≈
+    // 0.53 cs`; floor/ceil rounding adds a further ~cs margin. The kernel
+    // returns coverage=0 for genuinely-outside cells via its fast-outside
+    // check, so a tight scan_radius is fine.
+    let scan_radius = radius + cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
 
     let col_min = ((cu - scan_radius - grid.origin_u) / cs).floor() as isize;
     let col_max = ((cu + scan_radius - grid.origin_u) / cs).ceil() as isize;
@@ -286,7 +298,7 @@ pub(super) fn stamp_segment_on_grid(
     let cs = grid.cell_size;
     let r_sq = lut.radius_sq();
     // §6.F gap 3: extend scan by cs·√2 to capture annular cells.
-    let scan_radius = radius + cs * std::f64::consts::SQRT_2;
+    let scan_radius = radius + cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
 
     let u_min = su.min(eu) - scan_radius;
     let u_max = su.max(eu) + scan_radius;
@@ -390,7 +402,7 @@ pub(super) fn stamp_segment_with_metrics(
         let cell_area = cs * cs;
         let r_sq = lut.radius_sq();
         // §6.F gap 3: extend scan to capture annular cells.
-        let scan_radius = radius + cs * std::f64::consts::SQRT_2;
+        let scan_radius = radius + cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
 
         let col_min = ((su - scan_radius - grid.origin_u) / cs).floor() as isize;
         let col_max = ((su + scan_radius - grid.origin_u) / cs).ceil() as isize;
@@ -452,7 +464,7 @@ pub(super) fn stamp_segment_with_metrics(
     let cell_area = cs * cs;
     let radius_sq = lut.radius_sq();
     // §6.F gap 3: extend scan by cs·√2 to capture annular cells.
-    let scan_radius = radius + cs * std::f64::consts::SQRT_2;
+    let scan_radius = radius + cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
 
     // Bounding box of segment sweep + tool radius (superset of all footprints).
     let u_min = su.min(eu) - scan_radius;
