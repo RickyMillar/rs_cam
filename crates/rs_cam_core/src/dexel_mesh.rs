@@ -157,22 +157,32 @@ pub fn dexel_stock_to_mesh(stock: &TriDexelStock) -> StockMesh {
     mesh
 }
 
-/// Build a closed solid mesh from a Z-grid with **segment-aware** extraction.
+/// Build a closed solid mesh from a Z-grid via marching cubes
+/// (DEXEL roadmap Step 5 — J, see `planning/DEXEL_Z_ONLY_INVESTIGATION.md` §6.J).
 ///
-/// The solid has six parts:
-/// 1. **Top face** — one vertex per cell at `ray_top`, CCW winding.
-///    Quads touching empty (through-hole) cells are skipped.
-/// 2. **Bottom face** — one vertex per cell at `ray_bottom`, CW winding.
-///    Same empty-cell skipping as top face.
-/// 3. **Perimeter skirt** — vertical quads around the grid boundary.
-/// 4. **Hole walls** — vertical quads at internal boundaries between material
-///    and empty cells, creating visible interior walls of through-holes.
-/// 5. **Internal cavity floors/ceilings** — horizontal faces at each gap
-///    between segments within a single ray (through-cuts, internal voids).
-/// 6. **Internal cavity walls** — vertical quads at cell boundaries where
-///    segment counts differ, sealing the sides of internal cavities.
-#[allow(clippy::indexing_slicing)] // grid indexing bounded by row*cols iteration
+/// Delegates to [`crate::dexel_mesh_mc::z_grid_marching_cubes`]. The MC path
+/// is watertight, topology-aware, and composes single-segment, multi-segment,
+/// cavity, through-hole, and dual-direction (top + bottom) cuts uniformly via
+/// a per-cell SDF derived from the ray data. Replaces the prior heightmap-
+/// style six-part decomposition (top/bottom faces + perimeter skirt + hole
+/// walls + cavity floors/ceilings + cavity walls) with a single MC pass.
+///
+/// The MC mesh has consistent CCW winding around outward-facing normals,
+/// matching the renderer's CPU-side normal computation in
+/// `crates/rs_cam_viz/src/render/sim_render.rs::from_heightmap_mesh`.
 pub fn z_grid_to_solid_mesh(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: f64) -> StockMesh {
+    crate::dexel_mesh_mc::z_grid_marching_cubes(grid, stock_top_z, stock_bottom_z)
+}
+
+/// Legacy heightmap-style closed solid mesh. Kept private for reference and
+/// for the cavity-emission tests that still exercise the segment-aware path.
+/// Use [`z_grid_to_solid_mesh`] (which delegates to MC) for production paths.
+#[allow(clippy::indexing_slicing, dead_code)] // grid indexing bounded by row*cols iteration
+fn z_grid_to_solid_mesh_heightmap(
+    grid: &DexelGrid,
+    stock_top_z: f64,
+    stock_bottom_z: f64,
+) -> StockMesh {
     let rows = grid.rows;
     let cols = grid.cols;
     let cells = rows * cols;
@@ -1031,45 +1041,50 @@ mod tests {
     use crate::tool::{FlatEndmill, MillingCutter};
 
     #[test]
-    fn solid_mesh_vertex_count() {
-        // 5×5 grid (stock 4×4 at cell_size 1.0) = 25 cells.
-        // Solid: 25 top + 25 bottom = 50 vertices.
+    fn solid_mesh_is_non_empty_and_well_formed() {
+        // DEXEL roadmap Step 5 (J): MC heightmap mesh replaces the hard-coded
+        // 50-vertex / 288-index layout of the legacy heightmap. Assert
+        // topology invariants instead.
         let stock = TriDexelStock::from_stock(0.0, 0.0, 4.0, 4.0, 0.0, 5.0, 1.0);
         let mesh = dexel_stock_to_mesh(&stock);
-        assert_eq!(mesh.vertices.len() / 3, 50);
-        assert_eq!(mesh.colors.len() / 3, 50);
-
-        // Top face: 4×4 quads × 2 tris = 32 tris
-        // Bottom face: same = 32 tris
-        // Perimeter: 2×(4+4) = 16 quads × 2 tris = 32 tris
-        // Total: 96 tris × 3 = 288 indices
-        assert_eq!(mesh.indices.len(), 288);
+        assert!(
+            !mesh.vertices.is_empty(),
+            "uncut block must produce vertices"
+        );
+        assert_eq!(mesh.vertices.len() % 3, 0);
+        assert_eq!(mesh.indices.len() % 3, 0);
+        assert_eq!(mesh.colors.len(), mesh.vertices.len());
+        // No indices should be out of range.
+        let n_verts = mesh.vertices.len() / 3;
+        for &i in &mesh.indices {
+            assert!(
+                (i as usize) < n_verts,
+                "index {i} out of range (verts: {n_verts})"
+            );
+        }
     }
 
     #[test]
-    fn uncut_solid_top_at_stock_top() {
+    fn uncut_solid_includes_stock_top_and_bottom() {
         let stock = TriDexelStock::from_stock(0.0, 0.0, 4.0, 4.0, 0.0, 5.0, 1.0);
         let mesh = dexel_stock_to_mesh(&stock);
-
-        // Top vertex at (0,0) = index 0, Z at offset 2.
-        let top_z = mesh.vertices[2];
-        assert!(
-            (top_z - 5.0).abs() < 0.01,
-            "Top vertex Z should be stock top"
-        );
-
-        // Bottom vertex at (0,0) = index 25 (rows*cols), Z at offset 25*3+2.
-        let rows = stock.z_grid.rows;
-        let cols = stock.z_grid.cols;
-        let bot_z = mesh.vertices[(rows * cols) * 3 + 2];
-        assert!(
-            (bot_z - 0.0).abs() < 0.01,
-            "Bottom vertex Z should be stock bottom"
-        );
+        let mut saw_top = false;
+        let mut saw_bot = false;
+        for i in 0..mesh.vertices.len() / 3 {
+            let z = mesh.vertices[i * 3 + 2];
+            if (z - 5.0).abs() < 0.01 {
+                saw_top = true;
+            }
+            if z.abs() < 0.01 {
+                saw_bot = true;
+            }
+        }
+        assert!(saw_top, "uncut mesh must include a stock-top vertex");
+        assert!(saw_bot, "uncut mesh must include a stock-bottom vertex");
     }
 
     #[test]
-    fn through_hole_produces_no_top_bottom_faces() {
+    fn through_hole_alters_mesh_and_emits_walls() {
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 2.0, 2.0, 0.0, 10.0, 1.0);
         // Clear the center ray entirely (through-hole).
         stock.z_grid.ray_mut(1, 1).clear();
@@ -1079,62 +1094,97 @@ mod tests {
             let s = TriDexelStock::from_stock(0.0, 0.0, 2.0, 2.0, 0.0, 10.0, 1.0);
             dexel_stock_to_mesh(&s)
         };
-        // The mesh with a hole should have fewer triangles than solid stock
-        // because top/bottom quads touching the empty cell are skipped.
-        assert!(
-            mesh.indices.len() < mesh_without_hole.indices.len(),
-            "Through-hole mesh should have fewer indices: {} vs {}",
+        // MC heightmap mesh: hole skips one top + one bottom quad and adds
+        // four hole-wall quads. Net index count differs from the solid case
+        // (typically larger, since 4 wall quads > 2 skipped face quads).
+        assert_ne!(
             mesh.indices.len(),
-            mesh_without_hole.indices.len()
+            mesh_without_hole.indices.len(),
+            "Hole should alter the index count vs solid"
         );
-        // Should also have wall faces for the hole boundary.
         assert!(
             !mesh.indices.is_empty(),
-            "Mesh with hole should still have some faces"
+            "Mesh with hole must still have faces"
+        );
+        // Verify wall presence: hole-wall corners sit at u or v ≈ 0.5 / 1.5
+        // (cell-corner positions on the (1,1) cell boundary) and z=stock_top
+        // (= 10) or z=stock_bottom (= 0).
+        let mut found_wall = false;
+        for i in 0..mesh.vertices.len() / 3 {
+            let x = mesh.vertices[i * 3];
+            let y = mesh.vertices[i * 3 + 1];
+            let z = mesh.vertices[i * 3 + 2];
+            if ((x - 0.5).abs() < 0.01 || (x - 1.5).abs() < 0.01)
+                && ((y - 0.5).abs() < 0.01 || (y - 1.5).abs() < 0.01)
+                && ((z - 10.0).abs() < 0.01 || z.abs() < 0.01)
+            {
+                found_wall = true;
+                break;
+            }
+        }
+        assert!(
+            found_wall,
+            "expected hole-wall vertex on the (1,1) cell perimeter"
         );
     }
 
     #[test]
-    fn uncut_colors_are_light_tan() {
+    fn uncut_top_face_colors_are_light_tan() {
         let stock = TriDexelStock::from_stock(0.0, 0.0, 1.0, 1.0, 0.0, 5.0, 1.0);
         let mesh = dexel_stock_to_mesh(&stock);
-        let cells = stock.z_grid.rows * stock.z_grid.cols;
-        // Top vertices (first `cells` verts) should all be uncut (light tan).
-        for i in 0..cells {
-            assert!(
-                (mesh.colors[i * 3] - UNCUT_R).abs() < 0.01,
-                "Top vertex {i} R"
-            );
-            assert!(
-                (mesh.colors[i * 3 + 1] - UNCUT_G).abs() < 0.01,
-                "Top vertex {i} G"
-            );
-            assert!(
-                (mesh.colors[i * 3 + 2] - UNCUT_B).abs() < 0.01,
-                "Top vertex {i} B"
-            );
+        // Find vertices at z = stock_top — they should all be uncut color.
+        let mut found = 0;
+        for i in 0..mesh.vertices.len() / 3 {
+            let z = mesh.vertices[i * 3 + 2];
+            if (z - 5.0).abs() < 0.01 {
+                let r = mesh.colors[i * 3];
+                let g = mesh.colors[i * 3 + 1];
+                let b = mesh.colors[i * 3 + 2];
+                assert!((r - UNCUT_R).abs() < 0.01, "top-face vertex {i} R={r}");
+                assert!((g - UNCUT_G).abs() < 0.01, "top-face vertex {i} G={g}");
+                assert!((b - UNCUT_B).abs() < 0.01, "top-face vertex {i} B={b}");
+                found += 1;
+            }
         }
+        assert!(found > 0, "expected at least one top-face vertex");
     }
 
     #[test]
-    fn deep_cut_colors_are_dark_walnut() {
-        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 2.0, 2.0, 0.0, 5.0, 1.0);
-        // Cut center ray deep but leave enough material to be above MIN_MATERIAL_THICKNESS.
-        ray_subtract_above(stock.z_grid.ray_mut(1, 1), 0.1);
-
+    fn deep_cut_produces_dark_walnut_colors() {
+        // Cut a 3×3 region deep — corner-bilinear average produces interior
+        // corners at the cut depth, yielding dark-walnut top-face vertices.
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 6.0, 6.0, 0.0, 5.0, 1.0);
+        for r in 2..=4 {
+            for c in 2..=4 {
+                ray_subtract_above(stock.z_grid.ray_mut(r, c), 0.1);
+            }
+        }
         let mesh = dexel_stock_to_mesh(&stock);
-        // Top vertex (1,1) = index 4, colors at 12..15.
-        let r = mesh.colors[12];
-        let g = mesh.colors[13];
-        let b = mesh.colors[14];
-        assert!((r - CUT_R).abs() < 0.05, "R: {r} vs {CUT_R}");
-        assert!((g - CUT_G).abs() < 0.05, "G: {g} vs {CUT_G}");
-        assert!((b - CUT_B).abs() < 0.05, "B: {b} vs {CUT_B}");
+        // Find a vertex near the centre with z near the cut depth.
+        let mut found_dark = false;
+        for i in 0..mesh.vertices.len() / 3 {
+            let x = mesh.vertices[i * 3];
+            let y = mesh.vertices[i * 3 + 1];
+            let z = mesh.vertices[i * 3 + 2];
+            if (x - 3.0).abs() < 1.0 && (y - 3.0).abs() < 1.0 && z < 1.0 {
+                let r = mesh.colors[i * 3];
+                let g = mesh.colors[i * 3 + 1];
+                let b = mesh.colors[i * 3 + 2];
+                if (r - CUT_R).abs() < 0.05 && (g - CUT_G).abs() < 0.05 && (b - CUT_B).abs() < 0.05
+                {
+                    found_dark = true;
+                    break;
+                }
+            }
+        }
+        assert!(found_dark, "expected dark-walnut vertex near deep cut");
     }
 
     /// Top + Bottom two-setup simulation: the solid mesh must have both
     /// top-surface vertices (from ray_top) and bottom-surface vertices
-    /// (from ray_bottom) reflecting cuts from both directions.
+    /// (from ray_bottom) reflecting cuts from both directions. Under MC
+    /// heightmap extraction (Step 5), assert via point-cloud query rather
+    /// than the legacy fixed-index layout.
     #[test]
     fn top_bottom_job_mesh_shows_both_cuts() {
         use crate::dexel::{ray_bottom, ray_top};
@@ -1174,23 +1224,27 @@ mod tests {
         assert!((ray_bottom(ray).expect("ray should have material") - 3.0).abs() < 0.1);
 
         let mesh = dexel_stock_to_mesh(&stock);
-        let cols = stock.z_grid.cols;
-        let cells = stock.z_grid.rows * cols;
-
-        // Top vertex at (row, col).
-        let top_idx = row * cols + col;
-        let top_z = mesh.vertices[top_idx * 3 + 2];
+        // The cutter footprint (Ø6.35) clears several cells; MC heightmap
+        // emits top-face vertices at z≈7 and bottom-face vertices at z≈3
+        // within the cut region. Query by point cloud.
+        let mut hits_top = 0;
+        let mut hits_bot = 0;
+        for i in 0..mesh.vertices.len() / 3 {
+            let x = mesh.vertices[i * 3];
+            let y = mesh.vertices[i * 3 + 1];
+            let z = mesh.vertices[i * 3 + 2];
+            if (x - 55.0).abs() < 2.0 && (y - 55.0).abs() < 2.0 {
+                if (z - 7.0).abs() < 0.5 {
+                    hits_top += 1;
+                }
+                if (z - 3.0).abs() < 0.5 {
+                    hits_bot += 1;
+                }
+            }
+        }
         assert!(
-            (top_z - 7.0).abs() < 0.1,
-            "Top surface Z should be ~7, got {top_z}"
-        );
-
-        // Bottom vertex at (row, col).
-        let bot_idx = cells + row * cols + col;
-        let bot_z = mesh.vertices[bot_idx * 3 + 2];
-        assert!(
-            (bot_z - 3.0).abs() < 0.1,
-            "Bottom surface Z should be ~3, got {bot_z}"
+            hits_top > 0 && hits_bot > 0,
+            "expected MC vertices at both cut levels: top_hits={hits_top}, bot_hits={hits_bot}"
         );
     }
 
@@ -1222,28 +1276,33 @@ mod tests {
     // ── Segment-aware mesh tests ──────────────────────────────────────
 
     #[test]
-    fn single_segment_rays_match_baseline() {
-        // An uncut stock has single-segment rays. The mesh should have the
-        // same top/bottom vertex layout as before (2*cells vertices in the
-        // envelope layers).
+    fn single_segment_rays_produce_no_cavity_emission() {
+        // Under MC heightmap extraction (Step 5), single-segment rays bypass
+        // the per-gap cavity fallback. The mesh should be exactly the
+        // top + bottom + perimeter envelope; introducing a multi-segment ray
+        // strictly grows the vertex count via cavity emission.
         let stock = TriDexelStock::from_stock(0.0, 0.0, 4.0, 4.0, 0.0, 5.0, 1.0);
-        let mesh = dexel_stock_to_mesh(&stock);
-        let cells = stock.z_grid.rows * stock.z_grid.cols;
+        let envelope_mesh = dexel_stock_to_mesh(&stock);
+        let envelope_verts = envelope_mesh.vertices.len() / 3;
+        assert!(envelope_verts > 0);
 
-        // First 2*cells vertices are the envelope (top + bottom).
+        // Introduce a 2×2 region of through-cuts so the cavity fallback
+        // (which matches gaps across 2x2 cell blocks) actually emits
+        // floor/ceiling quads. A single-cell gap won't match neighbours
+        // and will not trigger the cavity fallback.
+        let mut stock_with_gap = stock;
+        for r in 2..=3 {
+            for c in 2..=3 {
+                crate::dexel::ray_subtract_interval(stock_with_gap.z_grid.ray_mut(r, c), 2.0, 3.0);
+            }
+        }
+        let gap_mesh = dexel_stock_to_mesh(&stock_with_gap);
         assert!(
-            mesh.vertices.len() / 3 >= 2 * cells,
-            "Should have at least 2*cells={} vertices, got {}",
-            2 * cells,
-            mesh.vertices.len() / 3
-        );
-
-        // No internal cavity surfaces should be emitted for single-segment rays.
-        // The vertex count should be exactly 2*cells (no extra cavity vertices).
-        assert_eq!(
-            mesh.vertices.len() / 3,
-            2 * cells,
-            "Single-segment rays should produce exactly 2*cells vertices"
+            gap_mesh.vertices.len() / 3 > envelope_verts,
+            "multi-segment ray should produce more vertices than single-segment envelope: \
+             gap={}, envelope={}",
+            gap_mesh.vertices.len() / 3,
+            envelope_verts
         );
     }
 
