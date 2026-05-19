@@ -14,6 +14,7 @@ pub mod debug_trace;
 pub mod depth;
 pub mod dexel;
 pub mod dexel_mesh;
+pub mod dexel_mesh_mc;
 pub mod dexel_stock;
 pub mod dressup;
 pub mod drill;
