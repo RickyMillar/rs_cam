@@ -18,6 +18,7 @@ pub mod stats;
 pub mod stock_config;
 pub mod tool_config;
 pub mod transform;
+pub mod validate;
 
 // ── Phase 1: Config type re-exports ──
 

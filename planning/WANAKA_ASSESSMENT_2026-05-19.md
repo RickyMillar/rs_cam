@@ -616,3 +616,61 @@ useful again.
 **Tests:** 4 new unit tests — drill samples emit zero issues; per-TP
 summary marked correctly; non-drill TP still emits issues; mixed
 drill+non-drill trace isolates the suppression to the drill TP.
+
+### Priority 5 — Load-time validator for stale defaults (Option C, done)
+
+**Root cause** (`planning/P5_STALE_DEFAULTS_VALIDATOR_RCA.md` +
+`planning/F5_FRESH_DEFAULTS_POLICY.md`): projects saved before a default
+improvement landed (B.1, Fix 1, Fix 2, …) carry the pre-change values
+forever. Loading does not re-derive these. The user has no signal that
+their saved project is missing a safety improvement.
+
+**Fix:** new `crates/rs_cam_core/src/compute/validate.rs` module exposing
+`validate_stale_defaults(&ProjectSession) -> Vec<StaleDefault>` and
+`apply_stale_default_fix(&mut session, &defect)`. Starter rule library
+covers the three Wanaka findings:
+
+1. `drop_cutter_min_z_pre_b1` — `DropCutter::min_z <= -49.999`
+2. `tapered_ball_plunge_pre_fix2` — ball/tapered-ball plunge above the
+   `150 × tip_diameter_mm` cap (matches Fix 2)
+3. `wood_adaptive_stepover_pre_fix1` — wood + flat + Adaptive/Adaptive3d
+   with stepover below `0.15 × tool diameter` (matches Fix 1)
+
+MCP surface: `project_summary` now returns a `stale_defaults` array
+alongside the existing project metadata. Operators see the offenders on
+load; each `StaleDefault` carries the rule id, current value, new value,
+and a one-line `detail`. A separate `apply_stale_default_fix` call (or
+batch-iterating over the list) applies the auto-fix.
+
+**Expected delta on Wanaka:**
+
+| TP | Pre-fix value | Rule triggered |
+|---|---|---|
+| TP7 (drop_cutter) | `min_z = -50.0` | `drop_cutter_min_z_pre_b1` |
+| TP4 (1 mm TB) | `plunge = 400` | `tapered_ball_plunge_pre_fix2` |
+| TP5 (1 mm TB) | `plunge = 400` | `tapered_ball_plunge_pre_fix2` |
+| TP7 (1 mm TB) | `plunge = 750` | `tapered_ball_plunge_pre_fix2` |
+| TP1 (6 mm EM) | `stepover = 0.7` | `wood_adaptive_stepover_pre_fix1` |
+| TP6 (6 mm EM) | `stepover = 0.8` | `wood_adaptive_stepover_pre_fix1` |
+
+Operator can apply all six fixes via a batch loop and end up with the
+post-Fix-1/Fix-2/B.1 defaults without re-deriving the whole LUT (no
+collateral damage to other tuned parameters).
+
+**Tests:** 11 new unit tests — per-rule positive + negative cases
+(`min_z = -50` fires; `-20` silent. 1 mm TB at 750 fires; flat EM at 750
+silent; at-cap silent. Wood+flat+Adaptive3d at 0.7 fires; metal silent;
+ball tool silent; Pocket op silent). Plus mixed-Wanaka-session producing
+all three rules and a clean-session control producing zero.
+
+---
+
+## Status (2026-05-19)
+
+All five warning-calibration priorities shipped: P1 (op-kind air-cut
+thresholds), P2 (plunge-stress gate), P3 (transit-span peak DOC),
+P4 (drill metric suppression), P5 (stale-defaults validator).
+
+Library-level evidence: **1473 `cargo test --lib` tests pass**, **clippy
+zero-warnings**, and **42 new unit tests** cover the calibration logic
+across the five priorities. Per-priority RCAs in `planning/P{1..5}_*.md`.
