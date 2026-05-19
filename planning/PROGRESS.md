@@ -187,7 +187,7 @@ Drill ops are unaffected (Step 3 analytical removal kernel).
 Marching cubes is Step 5.
 
 **Commits:** `be0dcbf` (F.a kernel + adjusted tests + new regression
-tests), `2770089` (WANAKA F.a revalidation test), `<pending>` (perf
+tests), `2770089` (WANAKA F.a revalidation test), `d4ef955` (perf
 optimisation + bench A/B + doc updates).
 
 ---
