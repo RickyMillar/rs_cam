@@ -143,6 +143,7 @@ impl<B: ComputeBackend> AppController<B> {
                         semantic_trace: rt.semantic_trace.clone(),
                         spindle_rpm: tc.operation.spindle_rpm(),
                         metrics_not_applicable,
+                        drill_op: result.drill_op.clone(),
                     })
                 })
                 .collect();

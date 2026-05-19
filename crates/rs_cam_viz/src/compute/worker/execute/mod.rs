@@ -186,6 +186,7 @@ fn build_core_simulation_request(
                         semantic_trace: tp.semantic_trace.clone(),
                         spindle_rpm: tp.spindle_rpm,
                         metrics_not_applicable: tp.metrics_not_applicable,
+                        drill_op: tp.drill_op.clone(),
                     }
                 })
                 .collect(),
@@ -515,12 +516,28 @@ fn run_compute_with_phase_tracker(
             compute_stats(&current.toolpath)
         };
 
+        // §6.E build the drill-op view atomically with the annotated
+        // toolpath. Mirrors session/compute.rs production path so the
+        // GUI worker carries the same dual-representation invariant.
+        let local_tool_def = build_cutter(&req.tool);
+        let default_bbox = rs_cam_core::geo::BoundingBox3::empty();
+        let local_stock_bbox = req.stock_bbox.as_ref().unwrap_or(&default_bbox);
+        let drill_op = rs_cam_core::compute::execute::build_drill_op_for_config(
+            &req.operation,
+            req.polygons.as_deref().map(|v| v.as_slice()),
+            &local_tool_def,
+            &req.tool,
+            local_stock_bbox,
+            rs_cam_core::material::Material::default(),
+        )
+        .map(Arc::new);
         Ok(ToolpathResult {
             annotated: Arc::new(current),
             stats,
             debug_trace: None,
             semantic_trace: None,
             debug_trace_path: None,
+            drill_op,
         })
     })();
 

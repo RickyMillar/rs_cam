@@ -157,6 +157,11 @@ pub struct ToolpathResult {
     pub debug_trace: Option<Arc<rs_cam_core::debug_trace::ToolpathDebugTrace>>,
     pub semantic_trace: Option<Arc<rs_cam_core::semantic_trace::ToolpathSemanticTrace>>,
     pub debug_trace_path: Option<PathBuf>,
+    /// §6.E first-class drill-op view. `Some` for `Drill` /
+    /// `AlignmentPinDrill` configs; routed onto
+    /// [`SetupSimToolpath.drill_op`](crate::compute::worker::SetupSimToolpath)
+    /// and through to [`SimToolpathEntry.drill_op`](rs_cam_core::compute::simulate::SimToolpathEntry).
+    pub drill_op: Option<Arc<rs_cam_core::drill_op::DrillOp>>,
 }
 
 impl ToolpathResult {
@@ -287,6 +292,7 @@ mod tests {
             debug_trace: None,
             semantic_trace: None,
             debug_trace_path: None,
+            drill_op: None,
         });
 
         let duplicate = source.duplicate_as(ToolpathId(9), "Adaptive 3D Copy".to_owned());
@@ -321,6 +327,7 @@ mod tests {
             debug_trace: None,
             semantic_trace: None,
             debug_trace_path: None,
+            drill_op: None,
         });
         let recorder = rs_cam_core::debug_trace::ToolpathDebugRecorder::new("Loaded", "DropCutter");
         let trace = Arc::new(recorder.finish());

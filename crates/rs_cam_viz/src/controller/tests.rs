@@ -252,6 +252,7 @@ fn sample_controller() -> AppController<ScriptedBackend> {
         debug_trace: None,
         semantic_trace: None,
         debug_trace_path: None,
+        drill_op: None,
     });
     controller.state.gui.toolpath_rt.insert(tp_id, rt);
 
@@ -392,6 +393,7 @@ fn controller_save_open_and_export_smoke() {
         debug_trace: None,
         semantic_trace: None,
         debug_trace_path: None,
+        drill_op: None,
     });
 
     let gcode = controller.export_gcode().expect("export gcode");
@@ -698,6 +700,7 @@ fn toolpath_results_persist_debug_trace_metadata() {
                 debug_trace: Some(Arc::clone(&trace)),
                 semantic_trace: Some(Arc::clone(&semantic_trace)),
                 debug_trace_path: Some(debug_path.clone()),
+                drill_op: None,
             }),
             debug_trace: Some(Arc::clone(&trace)),
             semantic_trace: Some(Arc::clone(&semantic_trace)),
@@ -831,6 +834,7 @@ fn drain_compute_results_repopulates_session_results() {
                 debug_trace: None,
                 semantic_trace: None,
                 debug_trace_path: None,
+                drill_op: None,
             }),
             debug_trace: None,
             semantic_trace: None,
@@ -872,6 +876,7 @@ fn drain_compute_results_clears_pending_apply_resim_on_success() {
                 debug_trace: None,
                 semantic_trace: None,
                 debug_trace_path: None,
+                drill_op: None,
             }),
             debug_trace: None,
             semantic_trace: None,
@@ -906,6 +911,7 @@ fn drain_compute_results_keeps_pending_apply_resim_for_other_toolpath() {
                 debug_trace: None,
                 semantic_trace: None,
                 debug_trace_path: None,
+                drill_op: None,
             }),
             debug_trace: None,
             semantic_trace: None,

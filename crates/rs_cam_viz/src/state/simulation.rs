@@ -2234,6 +2234,7 @@ mod tests {
             debug_trace: Some(debug_trace),
             semantic_trace: Some(semantic_trace),
             debug_trace_path: None,
+            drill_op: None,
         });
         gui.toolpath_rt.insert(toolpath_id, rt);
         gui
