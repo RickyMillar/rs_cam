@@ -164,9 +164,7 @@ fn flush_machine_snapshot(state: &mut AppState) {
 
 /// Flush toolpath params undo snapshot if the user navigated away from a toolpath.
 fn flush_toolpath_snapshot(state: &mut AppState) {
-    if let Some((tp_id, old_op, old_dressups, old_faces)) =
-        state.history.toolpath_snapshot.take()
-    {
+    if let Some((tp_id, old_op, old_dressups, old_faces)) = state.history.toolpath_snapshot.take() {
         if !matches!(state.selection, crate::state::selection::Selection::Toolpath(id) if id == tp_id)
         {
             if let Some((_, tc)) = state.session.find_toolpath_config_by_id(tp_id.0) {
@@ -998,7 +996,9 @@ pub(crate) fn tool_geometry_hint(
 
 /// Extract operation-specific parameter hints for the feeds calculator.
 /// Returns (axial_depth_hint, radial_width_hint, scallop_hint).
-pub(crate) fn operation_feeds_hints(op: &OperationConfig) -> (Option<f64>, Option<f64>, Option<f64>) {
+pub(crate) fn operation_feeds_hints(
+    op: &OperationConfig,
+) -> (Option<f64>, Option<f64>, Option<f64>) {
     match op {
         // Scallop: scallop_height drives stepover for ball tools
         OperationConfig::Scallop(cfg) => (None, None, Some(cfg.scallop_height)),
@@ -2230,9 +2230,11 @@ fn draw_toolpath_panel(
     if model_is_step_missing_brep {
         ui.add_space(4.0);
         ui.label(
-            egui::RichText::new("⚠ BREP topology not loaded — face picker unavailable. Reload model.")
-                .color(egui::Color32::from_rgb(220, 160, 60))
-                .strong(),
+            egui::RichText::new(
+                "⚠ BREP topology not loaded — face picker unavailable. Reload model.",
+            )
+            .color(egui::Color32::from_rgb(220, 160, 60))
+            .strong(),
         );
     }
 

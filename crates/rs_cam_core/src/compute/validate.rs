@@ -125,7 +125,9 @@ pub fn apply_stale_default_fix(
             }
         }
         StaleDefaultRule::TaperedBallPlungePreFix2 => {
-            tc.operation.as_params_mut().set_plunge_rate(defect.new_value);
+            tc.operation
+                .as_params_mut()
+                .set_plunge_rate(defect.new_value);
         }
         StaleDefaultRule::WoodAdaptiveStepoverPreFix1 => {
             tc.operation.as_params_mut().set_stepover(defect.new_value);
@@ -179,7 +181,9 @@ fn check_tapered_ball_plunge(tc: &ToolpathConfig, tool: &ToolConfig) -> Option<S
         rule_id: StaleDefaultRule::TaperedBallPlungePreFix2,
         toolpath_id: tc.id,
         toolpath_name: tc.name.clone(),
-        title: StaleDefaultRule::TaperedBallPlungePreFix2.title().to_owned(),
+        title: StaleDefaultRule::TaperedBallPlungePreFix2
+            .title()
+            .to_owned(),
         detail: format!(
             "Tool is a small ball/tapered-ball; plunge rate {plunge:.0} mm/min exceeds \
              the {cap:.0} mm/min flute-tip safety cap. Pre-Fix-2 projects bypass the \
@@ -267,12 +271,12 @@ fn find_tool_for(session: &ProjectSession, raw_id: usize) -> Option<&ToolConfig>
 mod tests {
     use super::*;
     use crate::compute::catalog::OperationConfig;
+    use crate::compute::config::StockSource;
     use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
     use crate::compute::operation_configs::{Adaptive3dConfig, DropCutterConfig, PocketConfig};
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::debug_trace::ToolpathDebugOptions;
     use crate::gcode::CoolantMode;
-    use crate::compute::config::StockSource;
     use crate::material::{Material, WoodSpecies};
     use crate::session::{ProjectSession, ToolpathConfig};
 
@@ -329,8 +333,11 @@ mod tests {
         s.add_tool(flat_em(6.0));
         let mut cfg = DropCutterConfig::default();
         cfg.min_z = -50.0;
-        s.add_toolpath(0, make_tp(0, "Old Finish", OperationConfig::DropCutter(cfg), 0))
-            .unwrap();
+        s.add_toolpath(
+            0,
+            make_tp(0, "Old Finish", OperationConfig::DropCutter(cfg), 0),
+        )
+        .unwrap();
         let defects = validate_stale_defaults(&s);
         assert_eq!(defects.len(), 1);
         assert_eq!(defects[0].rule_id, StaleDefaultRule::DropCutterMinZPreB1);
@@ -343,8 +350,11 @@ mod tests {
         s.add_tool(flat_em(6.0));
         let mut cfg = DropCutterConfig::default();
         cfg.min_z = -20.0;
-        s.add_toolpath(0, make_tp(0, "New Finish", OperationConfig::DropCutter(cfg), 0))
-            .unwrap();
+        s.add_toolpath(
+            0,
+            make_tp(0, "New Finish", OperationConfig::DropCutter(cfg), 0),
+        )
+        .unwrap();
         let defects = validate_stale_defaults(&s);
         assert!(defects.is_empty(), "min_z = -20 must not fire B.1 rule");
     }
@@ -493,8 +503,11 @@ mod tests {
         let mut stock = s.stock_config().clone();
         stock.origin_z = -25.0;
         s.set_stock_config(stock);
-        s.add_toolpath(0, make_tp(0, "Old Finish", OperationConfig::DropCutter(cfg), 0))
-            .unwrap();
+        s.add_toolpath(
+            0,
+            make_tp(0, "Old Finish", OperationConfig::DropCutter(cfg), 0),
+        )
+        .unwrap();
         let defects = validate_stale_defaults(&s);
         assert_eq!(defects.len(), 1);
         apply_stale_default_fix(&mut s, &defects[0]).unwrap();

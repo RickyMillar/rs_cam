@@ -1,4 +1,5 @@
 use crate::debug_trace::TOOLPATH_DEBUG_SCHEMA_VERSION;
+use crate::drill_metrics::{DrillSample, DrillToolpathSummary};
 use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticTrace};
 use crate::toolpath_spans::SpanId;
 use serde::{Deserialize, Serialize};
@@ -325,6 +326,13 @@ pub struct SimulationToolpathCutSummary {
     /// `air_cut_time_s`, `average_engagement`, and related per-TP UI
     /// elements when this is set. The time totals stay populated for
     /// MRR / runtime accounting.
+    ///
+    /// Drill ops still produce drill-native metrics — look up the
+    /// matching [`crate::drill_metrics::DrillToolpathSummary`] in
+    /// [`SimulationCutTrace::drill_summaries`] by `toolpath_id` (or via
+    /// [`SimulationCutTrace::drill_summary_for`]) for peck adequacy,
+    /// chip-welding risk, and cycle time. The flag means "no engagement
+    /// metrics" — not "no metrics at all" (§6.E / Step 3 PR2).
     /// P4 — see `planning/P4_DRILL_METRIC_SUPPRESSION_RCA.md`.
     #[serde(default)]
     pub metrics_not_applicable: bool,
@@ -436,6 +444,21 @@ pub struct SimulationCutTrace {
     pub samples: Vec<SimulationCutSample>,
     #[serde(default)]
     pub provenance: Option<SimulationProvenance>,
+    /// Per-peck drill samples (§6.E / Step 3 PR2). Empty for traces that
+    /// only carried milling toolpaths; populated by
+    /// [`crate::drill_metrics::emit_drill_samples`] from each drill
+    /// toolpath's `DrillOp`. Joinable to [`Self::drill_summaries`] by
+    /// `toolpath_id`.
+    #[serde(default)]
+    pub drill_samples: Vec<DrillSample>,
+    /// Per-toolpath drill summary (§6.E / Step 3 PR2). One entry per drill
+    /// toolpath, joined to [`Self::toolpath_summaries`] by `toolpath_id`.
+    /// Carries the inputs to the drill gates (chip welding,
+    /// peck adequacy) and a cycle-time / chip-evacuation rollup that
+    /// covers what `SimulationToolpathCutSummary` cannot for ops with no
+    /// engagement-axis samples.
+    #[serde(default)]
+    pub drill_summaries: Vec<DrillToolpathSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -665,7 +688,21 @@ impl SimulationCutTrace {
             issues,
             samples,
             provenance: None,
+            drill_samples: Vec::new(),
+            drill_summaries: Vec::new(),
         }
+    }
+
+    /// Look up the per-toolpath drill summary by id. `None` when this
+    /// toolpath isn't a drill op (no entry in [`Self::drill_summaries`]).
+    /// Pairs with the per-toolpath
+    /// [`SimulationToolpathCutSummary::metrics_not_applicable`] flag —
+    /// when that flag is set, this lookup is the right place to read
+    /// drill-native metrics in lieu of engagement-axis ones.
+    pub fn drill_summary_for(&self, toolpath_id: usize) -> Option<&DrillToolpathSummary> {
+        self.drill_summaries
+            .iter()
+            .find(|s| s.toolpath_id == toolpath_id)
     }
 }
 

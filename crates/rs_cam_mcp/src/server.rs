@@ -8,7 +8,7 @@ use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::ServerInfo;
 use rmcp::schemars;
-use rmcp::{ServerHandler, tool, tool_router};
+use rmcp::{tool, tool_router, ServerHandler};
 use serde::Deserialize;
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
@@ -472,8 +472,7 @@ impl CamServer {
             return no_project_error();
         };
         let bbox = session.stock_bbox();
-        let stale_defaults =
-            rs_cam_core::compute::validate::validate_stale_defaults(session);
+        let stale_defaults = rs_cam_core::compute::validate::validate_stale_defaults(session);
         json_str(serde_json::json!({
             "name": session.name(),
             "stock": {

@@ -300,6 +300,7 @@ mod tests {
             chipload: within(0.05),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
+            drill_gates: None,
         };
 
         let candidates = strategy.candidates(&view, &verdict);
@@ -349,6 +350,7 @@ mod tests {
             chipload: exceeds_chipload(0.005),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
+            drill_gates: None,
         };
         assert!(strategy.candidates(&view, &verdict).is_empty());
     }
@@ -374,6 +376,7 @@ mod tests {
             chipload: unmodeled(),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
+            drill_gates: None,
         };
         assert_eq!(strategy.candidates(&view, &verdict).len(), 1);
     }
@@ -400,6 +403,7 @@ mod tests {
             chipload: within(0.05),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
+            drill_gates: None,
         };
         assert!(strategy.candidates(&view, &verdict).is_empty());
     }

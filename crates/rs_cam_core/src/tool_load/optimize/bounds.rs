@@ -59,23 +59,13 @@ impl Interval {
 #[derive(Debug, Clone, PartialEq)]
 pub enum BoundsSource {
     /// LUT row's calibrated envelope contributed to `preferred`.
-    LutPreferred {
-        row_id: String,
-        lo: f64,
-        hi: f64,
-    },
+    LutPreferred { row_id: String, lo: f64, hi: f64 },
     /// Machine envelope contributed to `hard`.
     MachineEnvelope { lo: f64, hi: f64 },
     /// Policy hard floor contributed to `hard.lo`.
-    HardFloor {
-        floor: f64,
-        source: &'static str,
-    },
+    HardFloor { floor: f64, source: &'static str },
     /// Policy hard ceiling contributed to `hard.hi`.
-    HardCeiling {
-        ceiling: f64,
-        source: &'static str,
-    },
+    HardCeiling { ceiling: f64, source: &'static str },
     /// Baseline × multipliers contributed to `warm_start`.
     BaselineMultiplier {
         mult_lo: f64,
@@ -279,18 +269,16 @@ pub fn resolve_rpm_bounds(
         hi: machine_max,
     });
 
-    let preferred = lut_row.and_then(|row| {
-        match (row.rpm_min, row.rpm_max) {
-            (Some(lo), Some(hi)) if lo > 0.0 && hi >= lo => {
-                sources.push(BoundsSource::LutPreferred {
-                    row_id: row.observation_id.clone(),
-                    lo,
-                    hi,
-                });
-                Some(Interval::new(lo, hi))
-            }
-            _ => None,
+    let preferred = lut_row.and_then(|row| match (row.rpm_min, row.rpm_max) {
+        (Some(lo), Some(hi)) if lo > 0.0 && hi >= lo => {
+            sources.push(BoundsSource::LutPreferred {
+                row_id: row.observation_id.clone(),
+                lo,
+                hi,
+            });
+            Some(Interval::new(lo, hi))
         }
+        _ => None,
     });
 
     let raw_lo = (baseline * 0.8).max(machine_min);
@@ -325,9 +313,7 @@ pub(crate) fn resolve_axis_bounds(
         SearchAxis::SpindleRpm => resolve_rpm_bounds(baseline, ctx, lut_row, policy),
         SearchAxis::DepthPerPass => resolve_doc_bounds(baseline, lut_row, view.op_type, policy),
         SearchAxis::Stepover => resolve_stepover_bounds(baseline, lut_row, view.op_type, policy),
-        SearchAxis::ScallopHeight => {
-            resolve_scallop_height_bounds(baseline, view.op_type, policy)
-        }
+        SearchAxis::ScallopHeight => resolve_scallop_height_bounds(baseline, view.op_type, policy),
         // Reserved axes have no resolver yet.
         SearchAxis::AngularStep | SearchAxis::HelixPitch | SearchAxis::RampAngle => {
             return None;
@@ -376,11 +362,7 @@ fn resolve_geometry_bounds(
     });
 
     let preferred = lut_preferred.map(|(lo, hi, row_id)| {
-        sources.push(BoundsSource::LutPreferred {
-            row_id,
-            lo,
-            hi,
-        });
+        sources.push(BoundsSource::LutPreferred { row_id, lo, hi });
         Interval::new(lo, hi)
     });
 
@@ -455,10 +437,14 @@ pub(crate) fn factory_default_for_axis(
 ) -> Option<f64> {
     let default_op = OperationConfig::new_default(op_type);
     let (val, hard_floor) = match axis {
-        SearchAxis::DepthPerPass => {
-            (default_op.depth_per_pass()?, policy.axes.doc.hard_floor.value)
-        }
-        SearchAxis::Stepover => (default_op.stepover()?, policy.axes.stepover.hard_floor.value),
+        SearchAxis::DepthPerPass => (
+            default_op.depth_per_pass()?,
+            policy.axes.doc.hard_floor.value,
+        ),
+        SearchAxis::Stepover => (
+            default_op.stepover()?,
+            policy.axes.stepover.hard_floor.value,
+        ),
         SearchAxis::ScallopHeight => (
             default_op.scallop_height()?,
             policy.axes.scallop_height.hard_floor.value,
@@ -543,8 +529,14 @@ mod tests {
         let bounds = resolve_stepover_bounds(0.84, Some(&row), OperationType::Adaptive3d, &policy);
 
         // Warm start uses 0.7 / 1.3 multipliers (Adaptive3d is 3-variant).
-        assert!((bounds.warm_start.lo - 0.84 * 0.7).abs() < 1e-9, "{bounds:?}");
-        assert!((bounds.warm_start.hi - 0.84 * 1.3).abs() < 1e-9, "{bounds:?}");
+        assert!(
+            (bounds.warm_start.lo - 0.84 * 0.7).abs() < 1e-9,
+            "{bounds:?}"
+        );
+        assert!(
+            (bounds.warm_start.hi - 0.84 * 1.3).abs() < 1e-9,
+            "{bounds:?}"
+        );
 
         // Preferred carries the LUT.
         let pref = bounds.preferred.expect("preferred must be set");

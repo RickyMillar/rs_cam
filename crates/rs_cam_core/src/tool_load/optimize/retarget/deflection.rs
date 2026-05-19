@@ -20,7 +20,7 @@ use crate::tool_load::optimize::patches::{AxisPatch, PatchSource};
 use crate::tool_load::optimize::space::SearchSpace;
 use crate::tool_load::verdict::DeflectionVerdict;
 
-use super::{Retargeter, RetargetSolution};
+use super::{RetargetSolution, Retargeter};
 
 /// Drives DOC in response to a deflection-exceeded verdict.
 ///

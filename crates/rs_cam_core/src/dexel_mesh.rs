@@ -932,8 +932,9 @@ pub fn append_drill_cylinders(base: &mut StockMesh, drill_ops: &[&crate::drill_o
         // Cone-tip protrusion for non-flat profiles. For Flat, tip is at
         // bottom_z; for coned profiles, the cylindrical shoulder starts
         // at bottom_z + tip_protrusion.
-        let tip_protrusion =
-            drill_op.tool_profile.tip_protrusion_mm(drill_op.tool_diameter_mm * 0.5) as f32;
+        let tip_protrusion = drill_op
+            .tool_profile
+            .tip_protrusion_mm(drill_op.tool_diameter_mm * 0.5) as f32;
 
         for hole in &drill_op.holes {
             let cx = hole.xy[0] as f32;
@@ -947,10 +948,7 @@ pub fn append_drill_cylinders(base: &mut StockMesh, drill_ops: &[&crate::drill_o
             // Cylinder section bottom is at the shoulder where the cone
             // meets the cylindrical body (or `bottom_z` for Flat).
             let cylinder_bottom = bottom_z + tip_protrusion;
-            let is_flat = matches!(
-                drill_op.tool_profile,
-                crate::drill_op::ToolProfile::Flat
-            );
+            let is_flat = matches!(drill_op.tool_profile, crate::drill_op::ToolProfile::Flat);
 
             let azimuth: Vec<(f32, f32)> = (0..AZIMUTH_SEGMENTS)
                 .map(|i| {
@@ -998,11 +996,8 @@ pub fn append_drill_cylinders(base: &mut StockMesh, drill_ops: &[&crate::drill_o
                 cyl.colors.extend_from_slice(&[CUT_R, CUT_G, CUT_B]);
                 for i in 0..AZIMUTH_SEGMENTS {
                     let next = (i + 1) % AZIMUTH_SEGMENTS;
-                    cyl.indices.extend_from_slice(&[
-                        center_idx as u32,
-                        next as u32,
-                        i as u32,
-                    ]);
+                    cyl.indices
+                        .extend_from_slice(&[center_idx as u32, next as u32, i as u32]);
                 }
             } else {
                 // Conical tip: apex at (axis, bottom_z), base on the
@@ -1012,11 +1007,8 @@ pub fn append_drill_cylinders(base: &mut StockMesh, drill_ops: &[&crate::drill_o
                 cyl.colors.extend_from_slice(&[CUT_R, CUT_G, CUT_B]);
                 for i in 0..AZIMUTH_SEGMENTS {
                     let next = (i + 1) % AZIMUTH_SEGMENTS;
-                    cyl.indices.extend_from_slice(&[
-                        apex_idx as u32,
-                        next as u32,
-                        i as u32,
-                    ]);
+                    cyl.indices
+                        .extend_from_slice(&[apex_idx as u32, next as u32, i as u32]);
                 }
             }
 

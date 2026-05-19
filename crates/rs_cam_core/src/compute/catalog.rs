@@ -915,7 +915,6 @@ impl NewDefaultCtx {
 }
 
 impl OperationConfig {
-
     /// Construct a fresh op config and immediately apply stock-aware
     /// depth defaults via [`Self::apply_stock_defaults`]. This is the
     /// preferred constructor at production sites (controller/MCP) where
@@ -1163,9 +1162,7 @@ mod tests {
     #[test]
     fn air_cut_threshold_suppresses_drill_kinds() {
         assert!(
-            OperationType::Drill
-                .air_cut_high_threshold_pct()
-                .is_none(),
+            OperationType::Drill.air_cut_high_threshold_pct().is_none(),
             "Drill should suppress air-cut metric (dexel can't measure Z-only)"
         );
         assert!(

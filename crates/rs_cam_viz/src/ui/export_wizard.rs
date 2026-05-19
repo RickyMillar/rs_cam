@@ -327,7 +327,8 @@ fn step_coord_units(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
         .italics(),
     );
     let mut wcs_selected = wiz.wcs_override;
-    let wcs_label = wcs_selected.map_or_else(|| "Use post default".to_owned(), |w| w.as_word().to_owned());
+    let wcs_label =
+        wcs_selected.map_or_else(|| "Use post default".to_owned(), |w| w.as_word().to_owned());
     egui::ComboBox::from_label("Work coordinate system (WCS)")
         .selected_text(wcs_label)
         .show_ui(ui, |ui| {
@@ -351,9 +352,13 @@ fn step_coord_units(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
 
     // ── Units picker ──
     ui.label(
-        egui::RichText::new(format!("Post emits: {} ({})", post.units.as_word(), units_label(post.units)))
-            .small()
-            .italics(),
+        egui::RichText::new(format!(
+            "Post emits: {} ({})",
+            post.units.as_word(),
+            units_label(post.units)
+        ))
+        .small()
+        .italics(),
     );
     let mut units_selected = wiz.units_override;
     let units_label_text = units_selected.map_or_else(
@@ -419,10 +424,7 @@ fn step_coord_units(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
 
     // ── Dry-run toggle ──
     let mut dry_run = wiz.dry_run;
-    let dry_resp = ui.checkbox(
-        &mut dry_run,
-        "Dry-run (clamp every cutting move to safe-Z)",
-    );
+    let dry_resp = ui.checkbox(&mut dry_run, "Dry-run (clamp every cutting move to safe-Z)");
     if dry_resp.changed() {
         events.push(AppEvent::WizardSetDryRun(dry_run));
     }
@@ -592,10 +594,8 @@ fn step_setup_pauses(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEv
     let setups = state.session.list_setups();
     if setups.len() <= 1 {
         ui.label(
-            egui::RichText::new(
-                "Project has one setup — no inter-setup pauses to configure.",
-            )
-            .italics(),
+            egui::RichText::new("Project has one setup — no inter-setup pauses to configure.")
+                .italics(),
         );
         ui.add_space(8.0);
         ui.label(
@@ -633,10 +633,9 @@ fn step_setup_pauses(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEv
 
         ui.horizontal(|ui| {
             ui.label("Preset:");
-            let label = matched_preset
-                .map_or("Custom", |idx| {
-                    PAUSE_PRESETS.get(idx).map_or("Custom", |(name, _)| *name)
-                });
+            let label = matched_preset.map_or("Custom", |idx| {
+                PAUSE_PRESETS.get(idx).map_or("Custom", |(name, _)| *name)
+            });
             egui::ComboBox::from_id_salt(("pause_preset", setup_id))
                 .selected_text(label)
                 .show_ui(ui, |ui| {
@@ -688,11 +687,8 @@ fn step_preview(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>)
 
     // Re-emit on every frame. The emitter is fast (sub-ms for typical
     // projects); cache only matters if profiling shows a hotspot.
-    let gcode_result = crate::io::export::export_gcode_from_session(
-        &state.session,
-        &state.gui,
-        &state.simulation,
-    );
+    let gcode_result =
+        crate::io::export::export_gcode_from_session(&state.session, &state.gui, &state.simulation);
 
     let gcode = match gcode_result {
         Ok(s) => s,
@@ -804,9 +800,7 @@ fn draw_finding(ui: &mut egui::Ui, f: &Finding) {
     };
     ui.horizontal(|ui| {
         ui.colored_label(color, icon);
-        ui.label(
-            egui::RichText::new(format!("L{}: {:?} — {}", f.line, f.kind, f.message)).small(),
-        );
+        ui.label(egui::RichText::new(format!("L{}: {:?} — {}", f.line, f.kind, f.message)).small());
     });
 }
 
@@ -835,11 +829,8 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     let post = state.gui.post.format;
     let post_def = post.definition();
 
-    let gcode_result = crate::io::export::export_gcode_from_session(
-        session,
-        &state.gui,
-        &state.simulation,
-    );
+    let gcode_result =
+        crate::io::export::export_gcode_from_session(session, &state.gui, &state.simulation);
     let gcode = match gcode_result {
         Ok(s) => s,
         Err(err) => {
@@ -929,9 +920,7 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             }
 
             ui.label("Validator findings:");
-            ui.label(format!(
-                "{errors} error / {warnings} warn / {infos} info"
-            ));
+            ui.label(format!("{errors} error / {warnings} warn / {infos} info"));
             ui.end_row();
         });
 

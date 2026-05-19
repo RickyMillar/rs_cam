@@ -1411,13 +1411,8 @@ mod tests {
         let snapshot_dress = DressupConfig::default();
         let snapshot_faces = Some(vec![crate::enriched_mesh::FaceGroupId(7)]);
 
-        s.apply_toolpath_param_snapshot(
-            0,
-            snapshot_op,
-            snapshot_dress,
-            snapshot_faces.clone(),
-        )
-        .unwrap();
+        s.apply_toolpath_param_snapshot(0, snapshot_op, snapshot_dress, snapshot_faces.clone())
+            .unwrap();
 
         match &s.toolpath_configs()[0].operation {
             OperationConfig::AlignmentPinDrill(_) => {}

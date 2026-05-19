@@ -97,9 +97,9 @@ pub fn apply_axis_patch_to_op(
             op.set_scallop_height(patch.value);
             Ok(())
         }
-        SearchAxis::AngularStep
-        | SearchAxis::HelixPitch
-        | SearchAxis::RampAngle => Err(AxisError::NotImplemented { axis: patch.axis }),
+        SearchAxis::AngularStep | SearchAxis::HelixPitch | SearchAxis::RampAngle => {
+            Err(AxisError::NotImplemented { axis: patch.axis })
+        }
     }
 }
 
@@ -118,9 +118,9 @@ pub fn apply_patches_to_op(
         // Primary patch. Skip them at apply time; their value is read
         // by the candidate-rationale builder, not the apply path.
         if matches!(patch.source, PatchSource::Coupled { .. })
-            && patches.iter().any(|p| {
-                p.axis == patch.axis && matches!(p.source, PatchSource::Primary)
-            })
+            && patches
+                .iter()
+                .any(|p| p.axis == patch.axis && matches!(p.source, PatchSource::Primary))
         {
             continue;
         }

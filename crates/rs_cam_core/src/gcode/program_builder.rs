@@ -183,7 +183,9 @@ pub fn build_multi_setup(setups: &[GcodeSetupPhase<'_>], safe_z: f64) -> Program
                 || format!("Setup change: {}", setup.setup_label),
                 |msg| msg.to_owned(),
             );
-            program.push(Statement::ProgramPause { message: pause_text });
+            program.push(Statement::ProgramPause {
+                message: pause_text,
+            });
 
             let next_rpm = setup
                 .phases
@@ -221,8 +223,8 @@ pub fn build_multi_setup(setups: &[GcodeSetupPhase<'_>], safe_z: f64) -> Program
 
             if phase.spindle_rpm != state.current_rpm {
                 program.push(Statement::SpindleSet {
-                rpm: phase.spindle_rpm,
-            });
+                    rpm: phase.spindle_rpm,
+                });
                 state.current_rpm = phase.spindle_rpm;
             }
 
@@ -259,8 +261,8 @@ fn push_tool_change(
     program.push(Statement::Raw("M5\n".to_owned()));
     program.push(Statement::Raw(format!("M6 T{tool_num}\n")));
     program.push(Statement::SpindleSet {
-                rpm: phase.spindle_rpm,
-            });
+        rpm: phase.spindle_rpm,
+    });
     state.current_rpm = phase.spindle_rpm;
     state.current_tool = Some(tool_num);
     if phase.coolant.is_active() {

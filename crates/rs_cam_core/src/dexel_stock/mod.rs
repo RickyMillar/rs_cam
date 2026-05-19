@@ -225,8 +225,7 @@ impl TriDexelStock {
         let cell_radius = (radius_mm / cell_size).ceil() as isize + 1;
 
         for hole in &drill_op.holes {
-            let Some((center_row, center_col)) =
-                self.z_grid.world_to_cell(hole.xy[0], hole.xy[1])
+            let Some((center_row, center_col)) = self.z_grid.world_to_cell(hole.xy[0], hole.xy[1])
             else {
                 continue;
             };
@@ -243,8 +242,7 @@ impl TriDexelStock {
                     if col < 0 || col >= self.z_grid.cols as isize {
                         continue;
                     }
-                    let (cell_x, cell_y) =
-                        self.z_grid.cell_to_world(row as usize, col as usize);
+                    let (cell_x, cell_y) = self.z_grid.cell_to_world(row as usize, col as usize);
                     let dx = cell_x - hole.xy[0];
                     let dy = cell_y - hole.xy[1];
                     let r_sq = dx * dx + dy * dy;

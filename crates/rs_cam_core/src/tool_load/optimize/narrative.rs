@@ -357,10 +357,7 @@ fn suggest_for_gate_all(
     out
 }
 
-fn suggest_for_gate(
-    g: &LimitingGate,
-    candidate: &OptimizeCandidate,
-) -> Option<OperatorSuggestion> {
+fn suggest_for_gate(g: &LimitingGate, candidate: &OptimizeCandidate) -> Option<OperatorSuggestion> {
     if g.observed.abs() < 1e-9 || g.bound.abs() < 1e-9 {
         return None;
     }
@@ -764,13 +761,7 @@ fn config_axes(cfg: &crate::compute::catalog::OperationConfig) -> ConfigAxes {
             Some(p.depth_per_pass),
             None,
         ),
-        Op::Scallop(p) => (
-            Some(p.feed_rate),
-            None,
-            None,
-            None,
-            Some(p.scallop_height),
-        ),
+        Op::Scallop(p) => (Some(p.feed_rate), None, None, None, Some(p.scallop_height)),
         _ => (None, None, None, None, None),
     }
 }
@@ -1009,6 +1000,7 @@ mod tests {
             chipload,
             power: within_power(),
             deflection: defl,
+            drill_gates: None,
         }
     }
 
@@ -1056,7 +1048,11 @@ mod tests {
             "headline should mention overshoot direction, got: {}",
             n.headline,
         );
-        assert_eq!(n.limiting_gates.len(), 2, "chipload + deflection both Exceeds");
+        assert_eq!(
+            n.limiting_gates.len(),
+            2,
+            "chipload + deflection both Exceeds"
+        );
         let chipload_gate = n
             .limiting_gates
             .iter()
@@ -1239,7 +1235,12 @@ mod tests {
         };
         // Build a candidate at feed 4000 (machine cap) and explicit
         // spindle_rpm = 18000 — the wanaka case.
-        let mut cand = candidate(4000.0, 500.0, vd(burn_chipload, within_deflection(0.030)), None);
+        let mut cand = candidate(
+            4000.0,
+            500.0,
+            vd(burn_chipload, within_deflection(0.030)),
+            None,
+        );
         if let OperationConfig::Pocket(ref mut p) = cand.params {
             p.spindle_rpm = Some(18_000);
         }
@@ -1294,6 +1295,7 @@ mod tests {
                 chipload: chipload_with_spike,
                 power: within_power(),
                 deflection: within_deflection(0.030),
+                drill_gates: None,
             },
             None,
         );
@@ -1411,8 +1413,7 @@ mod tests {
 
     #[test]
     fn filter_envelope_passes_through_when_no_suggestions() {
-        let filtered =
-            filter_suggestions_by_envelope(Vec::new(), &MachineProfile::default());
+        let filtered = filter_suggestions_by_envelope(Vec::new(), &MachineProfile::default());
         assert!(filtered.is_empty());
     }
 

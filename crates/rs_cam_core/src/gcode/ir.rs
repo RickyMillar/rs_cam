@@ -42,12 +42,7 @@ pub enum Statement {
     /// Rapid traverse via `post.rapid`.
     Rapid { x: f64, y: f64, z: f64 },
     /// Linear feed with explicit F (first occurrence at this rate).
-    Linear {
-        x: f64,
-        y: f64,
-        z: f64,
-        feed: f64,
-    },
+    Linear { x: f64, y: f64, z: f64, feed: f64 },
     /// Linear feed with elided F (modal — same rate as previous Linear).
     LinearModal { x: f64, y: f64, z: f64 },
     /// Clockwise arc (XY plane, IJK relative center).

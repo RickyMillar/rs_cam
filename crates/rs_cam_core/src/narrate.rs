@@ -969,10 +969,34 @@ fn append_air_cut_anomaly(
         // and 0 engagement; that's a model limitation, not an actual
         // anomaly, and surfacing it as ⚠ trains the operator to ignore
         // legitimate warnings on milling ops.
-        anomalies.push(
-            "ℹ engagement and air-cut% are not modeled for drill cycles (the dexel uses XY cylinder side-engagement; drill chips on Z-only moves). Treat MRR / feed / power separately for drilling."
-                .to_owned(),
-        );
+        //
+        // §6.E / Step 3 PR2: when a `DrillToolpathSummary` is available
+        // (post-PR1, every drill op produces one), surface peck pattern
+        // adequacy + chip-welding risk in narration so operators get
+        // drill-relevant signal instead of just "metrics N/A".
+        let drill_summary = context
+            .toolpath_id
+            .and_then(|id| trace.drill_summary_for(id));
+        if let Some(d) = drill_summary {
+            let risk = match d.chip_welding_risk {
+                crate::drill_metrics::ChipWeldingRisk::Low => "low",
+                crate::drill_metrics::ChipWeldingRisk::Elevated => "elevated",
+                crate::drill_metrics::ChipWeldingRisk::High => "high",
+            };
+            anomalies.push(format!(
+                "ℹ drill cycle — engagement / air-cut% are not modeled; see drill summary: {} hole(s), {} peck(s), depth-to-diameter {:.1}× (chip-welding risk {}), peck pattern {}.",
+                d.hole_count,
+                d.peck_count,
+                d.max_depth_to_diameter,
+                risk,
+                if d.peck_pattern_adequate { "adequate" } else { "INADEQUATE — reduce peck depth" },
+            ));
+        } else {
+            anomalies.push(
+                "ℹ engagement and air-cut% are not modeled for drill cycles (the dexel uses XY cylinder side-engagement; drill chips on Z-only moves). Treat MRR / feed / power separately for drilling."
+                    .to_owned(),
+            );
+        }
         return;
     }
     let marker = if air_pct > AIR_CUT_WARNING_PERCENT {

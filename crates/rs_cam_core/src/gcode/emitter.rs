@@ -199,7 +199,14 @@ fn emit_statement(output: &mut String, statement: &Statement, post: &PostDefinit
         Statement::LinearModal { x, y, z } => {
             let _ = writeln!(output, "G1 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$}");
         }
-        Statement::ArcCw { x, y, z, i, j, feed } => {
+        Statement::ArcCw {
+            x,
+            y,
+            z,
+            i,
+            j,
+            feed,
+        } => {
             let feed = clamp_feed(output, post, feed);
             if should_linearize_arc(post, i, j) {
                 // Sub-threshold arc — emit as a chord. Some controllers
@@ -215,7 +222,14 @@ fn emit_statement(output: &mut String, statement: &Statement, post: &PostDefinit
                 );
             }
         }
-        Statement::ArcCcw { x, y, z, i, j, feed } => {
+        Statement::ArcCcw {
+            x,
+            y,
+            z,
+            i,
+            j,
+            feed,
+        } => {
             let feed = clamp_feed(output, post, feed);
             if should_linearize_arc(post, i, j) {
                 let _ = writeln!(
@@ -245,8 +259,8 @@ fn emit_statement(output: &mut String, statement: &Statement, post: &PostDefinit
 mod tests {
     use super::*;
     use crate::gcode::post;
-    use crate::gcode::program_builder;
     use crate::gcode::post::{Units, WcsCode};
+    use crate::gcode::program_builder;
     use crate::geo::P3;
     use crate::toolpath::Toolpath;
 
@@ -328,11 +342,17 @@ M3 S{spindle_rpm}
 
         // RPM clamp: requested 24000 → 12000, with warning comment.
         assert!(gcode.contains("M3 S12000"), "rpm not clamped: {gcode}");
-        assert!(gcode.contains("S24000"), "warning should mention requested: {gcode}");
+        assert!(
+            gcode.contains("S24000"),
+            "warning should mention requested: {gcode}"
+        );
         assert!(gcode.contains("max_rpm"));
         // Feed clamp: requested 1500 → 800, with warning comment.
         assert!(gcode.contains("F800"), "feed not clamped: {gcode}");
-        assert!(gcode.contains("F1500"), "warning should mention requested: {gcode}");
+        assert!(
+            gcode.contains("F1500"),
+            "warning should mention requested: {gcode}"
+        );
         assert!(gcode.contains("max_feed"));
     }
 
@@ -349,7 +369,12 @@ M3 S{spindle_rpm}
     fn default_overlay_is_byte_identical_to_no_overlay() {
         // The whole regression-anchor argument: a default overlay must
         // not change a single byte of output for any shipped post.
-        for post_def in [post::grbl(), post::grblhal(), post::linuxcnc(), post::mach3()] {
+        for post_def in [
+            post::grbl(),
+            post::grblhal(),
+            post::linuxcnc(),
+            post::mach3(),
+        ] {
             let prog = simple_program();
             let plain = emit_program(&prog, post_def);
             let with_default =

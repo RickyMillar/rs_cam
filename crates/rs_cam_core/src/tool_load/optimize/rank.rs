@@ -198,6 +198,7 @@ mod tests {
                 chipload,
                 power,
                 deflection,
+                drill_gates: None,
             },
             stage: SearchStage::Refined,
             reconciled_cycle_time_s: None,
@@ -438,10 +439,10 @@ mod tests {
             deflection_within(0.030),
         );
         let edge = candidate(
-            110.0, // 10s savings
-            chipload_within(0.070),     // pen 1.0 → α·1 = 5
-            power_within(1.00, 1.00),   // pen 1.0 → β·1 = 3
-            deflection_within(0.200),   // pen 1.0 → γ·1 = 2
+            110.0,                    // 10s savings
+            chipload_within(0.070),   // pen 1.0 → α·1 = 5
+            power_within(1.00, 1.00), // pen 1.0 → β·1 = 3
+            deflection_within(0.200), // pen 1.0 → γ·1 = 2
         );
         let edge_score = composite_score(&edge, &baseline, &policy);
         // 10 - 5 - 3 - 2 = 0. Exactly at the cliff.
@@ -537,10 +538,8 @@ mod tests {
         for (label, cand) in &scenarios {
             let savings = baseline.cycle_time_s - cand.cycle_time_s;
             let chip_pen = chipload_distance_penalty(&cand.verdict.chipload);
-            let pow_pen = power_overuse_penalty(
-                &cand.verdict.power,
-                r.power_warning_fraction.value,
-            );
+            let pow_pen =
+                power_overuse_penalty(&cand.verdict.power, r.power_warning_fraction.value);
             let defl_pen = deflection_overuse_penalty(&cand.verdict.deflection);
             let score = composite_score(cand, &baseline, &policy);
             println!(

@@ -307,6 +307,12 @@ where
     let mut boundaries = Vec::new();
     let mut checkpoints = Vec::new();
     let mut cut_samples: Vec<SimulationCutSample> = Vec::new();
+    // §6.E PR2 accumulators for drill-native metrics emitted alongside the
+    // engagement-side `cut_samples` stream. Each drill toolpath contributes
+    // a per-peck sample vector + a per-toolpath summary; both are attached
+    // to `SimulationCutTrace` after the per-group simulation loop.
+    let mut drill_samples_all: Vec<crate::drill_metrics::DrillSample> = Vec::new();
+    let mut drill_summaries_all: Vec<crate::drill_metrics::DrillToolpathSummary> = Vec::new();
     // Composited mesh from all per-setup simulations.
     let mut composite_mesh = StockMesh::empty();
     // Parallel global stock for checkpoint/playback support.
@@ -383,11 +389,21 @@ where
                 // stamping. Cone/cylinder envelope is applied directly
                 // to the dexel grid; the linearized toolpath remains
                 // available for rapid-collision checks, G-code, and
-                // wire-render. DrillSample stream lands in PR2 — for
-                // now no per-sample metrics are emitted (the entry is
-                // flagged `metrics_not_applicable`).
+                // wire-render.
                 group_stock.apply_drill_op(drill_op_arc);
                 group_drill_ops.push(Arc::clone(drill_op_arc));
+                // PR2: emit per-peck drill samples + per-toolpath summary
+                // (the analytical kernel doesn't produce
+                // `SimulationCutSample`s, so the drill-native stream lands
+                // here instead).
+                let pecks = crate::drill_metrics::emit_drill_samples(entry.id, drill_op_arc);
+                let summary = crate::drill_metrics::build_drill_toolpath_summary(
+                    entry.id,
+                    drill_op_arc,
+                    &pecks,
+                );
+                drill_samples_all.extend(pecks);
+                drill_summaries_all.push(summary);
             } else if request.metric_options.enabled {
                 let entry_rpm = entry.spindle_rpm.unwrap_or(request.spindle_rpm);
                 let span_paths_by_move = entry.annotated.span_paths_by_move();
@@ -451,9 +467,7 @@ where
                         let mut transformed = (**drill_op_arc).clone();
                         for hole in &mut transformed.holes {
                             let g_top = info.local_to_global(crate::geo::P3::new(
-                                hole.xy[0],
-                                hole.xy[1],
-                                hole.top_z,
+                                hole.xy[0], hole.xy[1], hole.top_z,
                             ));
                             let g_bot = info.local_to_global(crate::geo::P3::new(
                                 hole.xy[0],
@@ -556,6 +570,8 @@ where
             &metrics_not_applicable_ids,
         );
         trace.provenance = Some(build_simulation_provenance(request));
+        trace.drill_samples = std::mem::take(&mut drill_samples_all);
+        trace.drill_summaries = std::mem::take(&mut drill_summaries_all);
         Some(Arc::new(trace))
     } else {
         None
@@ -1005,7 +1021,7 @@ mod tests {
                 semantic_trace: None,
                 spindle_rpm: None,
                 metrics_not_applicable: false,
-            drill_op: None,
+                drill_op: None,
             }],
             direction: StockCutDirection::FromTop,
             local_stock_bbox: Some(stock_bbox),
@@ -1023,7 +1039,7 @@ mod tests {
                 semantic_trace: None,
                 spindle_rpm: None,
                 metrics_not_applicable: false,
-            drill_op: None,
+                drill_op: None,
             }],
             direction: StockCutDirection::FromBottom,
             local_stock_bbox: Some(BoundingBox3 {

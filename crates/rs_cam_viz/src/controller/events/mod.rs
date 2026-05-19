@@ -348,7 +348,10 @@ impl<B: ComputeBackend> AppController<B> {
         };
         let candidates = match &modal.status {
             crate::state::OptimizeRunStatus::Ready(outcome)
-                if matches!(outcome.kind, OutcomeKind::Ranked | OutcomeKind::MarginalSafe) =>
+                if matches!(
+                    outcome.kind,
+                    OutcomeKind::Ranked | OutcomeKind::MarginalSafe
+                ) =>
             {
                 &outcome.candidates
             }

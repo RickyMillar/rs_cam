@@ -1215,10 +1215,7 @@ impl ProjectSession {
             .as_ref()
             .and_then(|s| s.cut_trace.as_deref())
             .map(|trace| {
-                air_cut_offenders_for_toolpaths(
-                    &trace.toolpath_summaries,
-                    &self.toolpath_configs,
-                )
+                air_cut_offenders_for_toolpaths(&trace.toolpath_summaries, &self.toolpath_configs)
             })
             .unwrap_or_default();
 
@@ -1365,9 +1362,7 @@ fn air_cut_offenders_for_toolpaths(
 /// plunge_rate, cap)` triples in toolpath order.
 ///
 /// See `planning/P2_PLUNGE_STRESS_GATE_RCA.md`.
-fn plunge_stress_offenders_for_session(
-    session: &ProjectSession,
-) -> Vec<(String, f64, f64)> {
+fn plunge_stress_offenders_for_session(session: &ProjectSession) -> Vec<(String, f64, f64)> {
     use crate::compute::tool_config::ToolId;
     use crate::tool::MillingCutter;
     use crate::tool_load::plunge_stress::check_plunge_stress;
@@ -1386,9 +1381,7 @@ fn plunge_stress_offenders_for_session(
         if plunge_rate <= 0.0 {
             continue;
         }
-        if let Some(w) =
-            check_plunge_stress(geometry, tool_def.diameter(), plunge_rate)
-        {
+        if let Some(w) = check_plunge_stress(geometry, tool_def.diameter(), plunge_rate) {
             offenders.push((tc.name.clone(), w.plunge_rate_mm_min, w.safe_cap_mm_min));
         }
     }
@@ -1616,17 +1609,11 @@ mod tests {
         // Integer-valued f64.
         s.set_toolpath_param(0, "spindle_rpm", json!(13500.0))
             .unwrap();
-        assert_eq!(
-            s.toolpath_configs()[0].operation.spindle_rpm(),
-            Some(13500)
-        );
+        assert_eq!(s.toolpath_configs()[0].operation.spindle_rpm(), Some(13500));
         // Numeric string.
         s.set_toolpath_param(0, "spindle_rpm", json!("18000"))
             .unwrap();
-        assert_eq!(
-            s.toolpath_configs()[0].operation.spindle_rpm(),
-            Some(18000)
-        );
+        assert_eq!(s.toolpath_configs()[0].operation.spindle_rpm(), Some(18000));
         // Non-integer float is rejected (would lose precision).
         let result = s.set_toolpath_param(0, "spindle_rpm", json!(13500.5));
         assert!(matches!(result, Err(SessionError::InvalidParam(_))));

@@ -40,7 +40,11 @@ fn stock_5x5x10() -> TriDexelStock {
 
 fn flat_drill(diameter_mm: f64, xy: [f64; 2], top_z: f64, bottom_z: f64) -> DrillOp {
     DrillOp {
-        holes: vec![DrillHole { xy, top_z, bottom_z }],
+        holes: vec![DrillHole {
+            xy,
+            top_z,
+            bottom_z,
+        }],
         hole_source: HoleSource::ModelDerived,
         tool_profile: ToolProfile::Flat,
         tool_diameter_mm: diameter_mm,
@@ -92,9 +96,7 @@ fn drill_does_not_raise_already_lower_cells() {
     // Manually clear the center cell down to z=2 (simulating a prior pocket).
     let (row, col) = stock.z_grid.world_to_cell(2.5, 2.5).unwrap();
     stock.clear_above_at(row, col, 2.0);
-    assert!(
-        (ray_top(stock.z_grid.ray(row, col)).unwrap() as f64 - 2.0).abs() < 0.01
-    );
+    assert!((ray_top(stock.z_grid.ray(row, col)).unwrap() as f64 - 2.0).abs() < 0.01);
 
     // Now drill the same XY with bottom_z = 4.0 (above the pocket floor).
     let drill = flat_drill(2.0, [2.5, 2.5], 10.0, 4.0);
@@ -184,9 +186,7 @@ fn cone_profile_protrusion_geometry() {
     let profile = ToolProfile::StandardTwist;
     let radius_mm: f64 = 1.0;
     let protrusion = profile.tip_protrusion_mm(radius_mm);
-    assert!(
-        (protrusion - radius_mm / 59.0_f64.to_radians().tan()).abs() < 1e-9
-    );
+    assert!((protrusion - radius_mm / 59.0_f64.to_radians().tan()).abs() < 1e-9);
     assert!(
         protrusion > 0.5 && protrusion < 0.7,
         "Ø2 standard twist tip_protrusion should be ~0.6mm, got {protrusion}"

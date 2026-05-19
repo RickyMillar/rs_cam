@@ -466,7 +466,12 @@ mod tests {
             "TOML for default pause_message=None must not include the key; got:\n{serialized}"
         );
         let loaded = ProjectSession::load(&path_none).unwrap();
-        assert!(loaded.list_setups().iter().all(|s| s.pause_message.is_none()));
+        assert!(
+            loaded
+                .list_setups()
+                .iter()
+                .all(|s| s.pause_message.is_none())
+        );
         cleanup(&path_none);
 
         // Override: setup[1].pause_message = Some("Run Z Probe macro then Resume")

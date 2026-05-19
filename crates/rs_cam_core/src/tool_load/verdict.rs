@@ -86,6 +86,15 @@ pub struct ToolpathLoadVerdict {
     pub chipload: ChiploadVerdict,
     pub power: PowerVerdict,
     pub deflection: DeflectionVerdict,
+    /// Drill-specific gate trio (§6.E / Step 3 PR2). Populated only for
+    /// drill toolpaths — `None` for milling ops. Lives alongside the
+    /// existing three gates so consumers iterating
+    /// [`ToolpathLoadVerdict::criteria`] keep working unchanged, while
+    /// drill-aware UI can fan out the drill-specific gates when the field
+    /// is `Some`. The existing chipload/power/deflection gates remain
+    /// `Unmodeled(NotApplicableForOp)` for drill ops.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drill_gates: Option<crate::tool_load::drill_gates::DrillGatesVerdict>,
 }
 
 impl ToolpathLoadVerdict {
@@ -665,8 +674,9 @@ impl PowerVerdict {
 
     pub fn confidence(&self) -> Option<&Confidence> {
         match self {
-            PowerVerdict::Within { confidence, .. }
-            | PowerVerdict::Exceeds { confidence, .. } => Some(confidence),
+            PowerVerdict::Within { confidence, .. } | PowerVerdict::Exceeds { confidence, .. } => {
+                Some(confidence)
+            }
             PowerVerdict::Unmodeled { .. } => None,
         }
     }
@@ -889,7 +899,7 @@ mod tests {
                     },
                 },
                 confidence: Confidence::Validated,
-            entry_spikes: Vec::new(),
+                entry_spikes: Vec::new(),
             },
             power: PowerVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired,
@@ -902,8 +912,9 @@ mod tests {
                 },
                 evidence: SampleEvidence::empty(),
                 confidence: Confidence::Validated,
-            entry_spike: None,
+                entry_spike: None,
             },
+            drill_gates: None,
         };
         assert_eq!(v.modeled_count(), 2);
         assert!(!v.any_exceeded());
@@ -932,7 +943,7 @@ mod tests {
                         },
                     },
                     confidence: Confidence::Approximate("isotropic Kc only".to_owned()),
-            entry_spikes: Vec::new(),
+                    entry_spikes: Vec::new(),
                 },
                 power: PowerVerdict::Unmodeled {
                     reason: UnmodeledReason::CutterModeUnsupported("v-bit tip".to_owned()),
@@ -945,8 +956,9 @@ mod tests {
                     },
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Approximate("L/D in 4-6 range".to_owned()),
-            entry_spike: None,
+                    entry_spike: None,
                 },
+                drill_gates: None,
             }],
         };
         let v = serde_json::to_value(&r).expect("must round-trip");
@@ -975,7 +987,7 @@ mod tests {
                             },
                         },
                         confidence: Confidence::Validated,
-            entry_spikes: Vec::new(),
+                        entry_spikes: Vec::new(),
                     },
                     power: PowerVerdict::Unmodeled {
                         reason: UnmodeledReason::NotImplemented("phase 1b".to_owned()),
@@ -989,6 +1001,7 @@ mod tests {
                         evidence: SampleEvidence::empty(),
                         confidence: Confidence::Validated,
                     },
+                    drill_gates: None,
                 },
                 ToolpathLoadVerdict {
                     toolpath_id: 1,
@@ -1005,7 +1018,7 @@ mod tests {
                             },
                         },
                         confidence: Confidence::Validated,
-            entry_spikes: Vec::new(),
+                        entry_spikes: Vec::new(),
                     },
                     power: PowerVerdict::Unmodeled {
                         reason: UnmodeledReason::NotImplemented("phase 1b".to_owned()),
@@ -1018,8 +1031,9 @@ mod tests {
                         },
                         evidence: SampleEvidence::empty(),
                         confidence: Confidence::Validated,
-            entry_spike: None,
+                        entry_spike: None,
                     },
+                    drill_gates: None,
                 },
             ],
         };
@@ -1052,6 +1066,7 @@ mod tests {
                     deflection: DeflectionVerdict::Unmodeled {
                         reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
                     },
+                    drill_gates: None,
                 },
                 // Sim wasn't run yet — every gate `SimulationRequired`.
                 // Operator action: run the sim.
@@ -1066,6 +1081,7 @@ mod tests {
                     deflection: DeflectionVerdict::Unmodeled {
                         reason: UnmodeledReason::SimulationRequired,
                     },
+                    drill_gates: None,
                 },
                 // Mixed: one gate N/A, one needs sim. Operator still
                 // has an action item, so this rolls up as
@@ -1081,6 +1097,7 @@ mod tests {
                     deflection: DeflectionVerdict::Unmodeled {
                         reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
                     },
+                    drill_gates: None,
                 },
             ],
         };
@@ -1134,6 +1151,7 @@ mod tests {
                     confidence: Confidence::Validated,
                     entry_spike: None,
                 },
+                drill_gates: None,
             }],
         };
         // Resolver hit — name flows into the entry.
@@ -1383,7 +1401,7 @@ mod tests {
                     available_kw: 0.71,
                     evidence: SampleEvidence::at(2),
                     confidence: Confidence::Approximate("isotropic Kc".to_owned()),
-            entry_spike: None,
+                    entry_spike: None,
                 },
                 deflection: DeflectionVerdict::Within {
                     peak_mm: 0.080,
@@ -1393,8 +1411,9 @@ mod tests {
                     },
                     evidence: SampleEvidence::at(5),
                     confidence: Confidence::Approximate("approximate band".to_owned()),
-            entry_spike: None,
+                    entry_spike: None,
                 },
+                drill_gates: None,
             }],
         };
         let s = serde_json::to_string(&r).expect("serialize");
@@ -1457,8 +1476,9 @@ mod tests {
                     },
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Validated,
-            entry_spike: None,
+                    entry_spike: None,
                 },
+                drill_gates: None,
             }],
         };
         let exceeded = r.exceeded_criteria();
@@ -1500,6 +1520,7 @@ mod tests {
                 reason: reason.clone(),
             },
             deflection: DeflectionVerdict::Unmodeled { reason },
+            drill_gates: None,
         }
     }
 
@@ -1517,6 +1538,7 @@ mod tests {
             deflection: DeflectionVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired,
             },
+            drill_gates: None,
         }
     }
 
@@ -1524,9 +1546,9 @@ mod tests {
     fn summary_separates_not_applicable_from_fully_unmodeled() {
         let r = ToolLoadReport {
             per_toolpath: vec![
-                vd_all_not_applicable(0),  // drill — doesn't apply
-                vd_all_not_applicable(1),  // drill — doesn't apply
-                vd_all_sim_required(2),    // failed sim — fully unmodeled
+                vd_all_not_applicable(0), // drill — doesn't apply
+                vd_all_not_applicable(1), // drill — doesn't apply
+                vd_all_sim_required(2),   // failed sim — fully unmodeled
             ],
         };
         let s = r.summary(|_| None);
@@ -1594,6 +1616,7 @@ mod tests {
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Validated,
                 },
+                drill_gates: None,
             }],
         };
         let s = r.summary(|id| {
@@ -1644,6 +1667,7 @@ mod tests {
                     confidence: Confidence::Validated,
                     entry_spike: None,
                 },
+                drill_gates: None,
             }],
         };
         let s = r.summary(|_| None);

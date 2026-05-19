@@ -333,11 +333,7 @@ fn draw_attempted_row(
                 .color(color),
         );
     } else if cycle_delta >= -0.5 {
-        ui.label(
-            egui::RichText::new("slower")
-                .small()
-                .color(theme::WARNING),
-        );
+        ui.label(egui::RichText::new("slower").small().color(theme::WARNING));
     } else {
         ui.label(egui::RichText::new("ok").small().color(theme::TEXT_MUTED));
     }
@@ -786,10 +782,7 @@ mod tests {
                 min: 3150.0,
                 max: 4000.0,
             }),
-            stepover_mm: Some(rs_cam_core::tool_load::optimize::AxisExtent {
-                min: 2.0,
-                max: 2.2,
-            }),
+            stepover_mm: Some(rs_cam_core::tool_load::optimize::AxisExtent { min: 2.0, max: 2.2 }),
             // DOC collapsed → omitted from the summary.
             depth_per_pass_mm: Some(rs_cam_core::tool_load::optimize::AxisExtent {
                 min: 3.0,
@@ -916,6 +909,9 @@ mod tests {
         };
         let s = format_limiting_gate(&g);
         // Wanaka refined #1 case: 237 µm peak.
-        assert!(s.contains("237"), "deflection should be rendered in µm: {s}");
+        assert!(
+            s.contains("237"),
+            "deflection should be rendered in µm: {s}"
+        );
     }
 }

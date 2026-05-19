@@ -30,8 +30,8 @@ pub use catalog::{
 
 pub use config::{
     BoundaryConfig, BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig,
-    DressupEntryStyle, HeightContext, HeightMode, HeightReference, HeightsConfig,
-    ReferenceOffset, ResolvedHeights, RetractStrategy, StockSource, ToolpathId, ToolpathStats,
+    DressupEntryStyle, HeightContext, HeightMode, HeightReference, HeightsConfig, ReferenceOffset,
+    ResolvedHeights, RetractStrategy, StockSource, ToolpathId, ToolpathStats,
 };
 
 pub use operation_configs::{

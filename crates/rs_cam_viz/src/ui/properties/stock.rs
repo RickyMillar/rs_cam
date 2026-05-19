@@ -563,7 +563,8 @@ mod tests {
             ..StockConfig::default()
         };
         // Seed an existing pin so auto_place_pins picks up the diameter.
-        s.alignment_pins.push(AlignmentPin::new(0.0, 0.0, pin_diameter));
+        s.alignment_pins
+            .push(AlignmentPin::new(0.0, 0.0, pin_diameter));
         s
     }
 
@@ -603,11 +604,7 @@ mod tests {
         auto_place_pins(&mut s, 2);
         // Diameter 6 → radius 3; min centre offset from any edge = 5.0.
         for p in &s.alignment_pins {
-            let edge_distance = p
-                .x
-                .min(s.x - p.x)
-                .min(p.y)
-                .min(s.y - p.y);
+            let edge_distance = p.x.min(s.x - p.x).min(p.y).min(s.y - p.y);
             assert!(
                 edge_distance >= 5.0 - 1e-6,
                 "pin at ({}, {}) sits {} from nearest edge; expected >= 5.0",

@@ -781,6 +781,8 @@ mod orchestration_skip_tests {
             hotspots: Vec::new(),
             issues: Vec::new(),
             provenance: None,
+            drill_samples: Vec::new(),
+            drill_summaries: Vec::new(),
         }
     }
 
@@ -1098,9 +1100,7 @@ mod project_rollup_tests {
 
     use super::*;
     use crate::compute::catalog::OperationConfig;
-    use crate::compute::config::{
-        BoundaryConfig, DressupConfig, HeightsConfig, StockSource,
-    };
+    use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
     use crate::compute::operation_configs::{AlignmentPinDrillConfig, DrillConfig, PocketConfig};
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::debug_trace::ToolpathDebugOptions;
@@ -1126,6 +1126,8 @@ mod project_rollup_tests {
             hotspots: Vec::new(),
             issues: Vec::new(),
             provenance: None,
+            drill_samples: Vec::new(),
+            drill_summaries: Vec::new(),
         }
     }
 
@@ -1558,6 +1560,7 @@ mod tests {
             chipload: within_chipload_verdict(0.04),
             power: within_power_verdict(),
             deflection: within_deflection_verdict(0.030),
+            drill_gates: None,
         }
     }
 
@@ -1567,6 +1570,7 @@ mod tests {
             chipload: exceeds_chipload_verdict_high(0.08),
             power: within_power_verdict(),
             deflection: within_deflection_verdict(0.030),
+            drill_gates: None,
         }
     }
 
@@ -1705,6 +1709,7 @@ mod tests {
                 chipload,
                 power: within_power_verdict(),
                 deflection: within_deflection_verdict(0.030),
+                drill_gates: None,
             }
         };
         // Faster but parked at LUT max (chipload 0.07 → distance 1.0
@@ -1733,8 +1738,16 @@ mod tests {
     #[test]
     fn build_outcome_empty_candidates_yields_no_safe_improvement() {
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
-        let outcome = build_outcome(baseline, Vec::new(), &crate::machine::MachineProfile::default());
-        assert_eq!(outcome.kind, OutcomeKind::NoSafeImprovement, "got {outcome:?}");
+        let outcome = build_outcome(
+            baseline,
+            Vec::new(),
+            &crate::machine::MachineProfile::default(),
+        );
+        assert_eq!(
+            outcome.kind,
+            OutcomeKind::NoSafeImprovement,
+            "got {outcome:?}"
+        );
         assert_eq!(outcome.reason, Some(RefuseReason::NoImprovementFound));
         let explanation = &outcome.narrative.explanation;
         assert!(
@@ -1753,8 +1766,16 @@ mod tests {
             synthetic_candidate(1300.0, 105.0, within_verdict()),
             synthetic_candidate(1200.0, 110.0, within_verdict()),
         ];
-        let outcome = build_outcome(baseline, candidates, &crate::machine::MachineProfile::default());
-        assert_eq!(outcome.kind, OutcomeKind::NoSafeImprovement, "got {outcome:?}");
+        let outcome = build_outcome(
+            baseline,
+            candidates,
+            &crate::machine::MachineProfile::default(),
+        );
+        assert_eq!(
+            outcome.kind,
+            OutcomeKind::NoSafeImprovement,
+            "got {outcome:?}"
+        );
         let explanation = &outcome.narrative.explanation;
         assert!(
             explanation.contains("no candidate beat the baseline"),
@@ -1775,8 +1796,16 @@ mod tests {
             synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict()),
             synthetic_candidate(2300.0, 65.0, exceeds_chipload_verdict()),
         ];
-        let outcome = build_outcome(baseline, candidates, &crate::machine::MachineProfile::default());
-        assert_eq!(outcome.kind, OutcomeKind::NoSafeImprovement, "got {outcome:?}");
+        let outcome = build_outcome(
+            baseline,
+            candidates,
+            &crate::machine::MachineProfile::default(),
+        );
+        assert_eq!(
+            outcome.kind,
+            OutcomeKind::NoSafeImprovement,
+            "got {outcome:?}"
+        );
         let explanation = &outcome.narrative.explanation;
         assert!(
             explanation.contains("gate limit"),
@@ -1794,7 +1823,11 @@ mod tests {
         let faster_safe = synthetic_candidate(2100.0, 70.0, within_verdict());
         let faster_unsafe = synthetic_candidate(2500.0, 60.0, exceeds_chipload_verdict());
         let candidates = vec![faster_unsafe, faster_safe];
-        let outcome = build_outcome(baseline, candidates, &crate::machine::MachineProfile::default());
+        let outcome = build_outcome(
+            baseline,
+            candidates,
+            &crate::machine::MachineProfile::default(),
+        );
         assert_eq!(outcome.kind, OutcomeKind::Ranked, "got {outcome:?}");
         let ranked = &outcome.candidates;
         // Baseline at index 0.
@@ -1936,7 +1969,11 @@ mod tests {
         // Ranked, with gate_deltas populated on the candidate.
         let baseline = synthetic_candidate(1500.0, 100.0, exceeds_chipload_verdict());
         let pure = synthetic_candidate(2100.0, 70.0, within_verdict());
-        let outcome = build_outcome(baseline, vec![pure], &crate::machine::MachineProfile::default());
+        let outcome = build_outcome(
+            baseline,
+            vec![pure],
+            &crate::machine::MachineProfile::default(),
+        );
         assert_eq!(outcome.kind, OutcomeKind::Ranked, "got {outcome:?}");
         let ranked = &outcome.candidates;
         assert!(ranked[0].gate_deltas.is_none(), "baseline has no deltas");
@@ -1957,7 +1994,11 @@ mod tests {
         tradeoff_verdict.chipload = within_verdict().chipload;
         tradeoff_verdict.power = exceeds_power_verdict().power;
         let candidate = synthetic_candidate(2200.0, 80.0, tradeoff_verdict);
-        let outcome = build_outcome(baseline, vec![candidate], &crate::machine::MachineProfile::default());
+        let outcome = build_outcome(
+            baseline,
+            vec![candidate],
+            &crate::machine::MachineProfile::default(),
+        );
         assert_eq!(outcome.kind, OutcomeKind::TradeOff, "got {outcome:?}");
         let tradeoffs = &outcome.candidates;
         assert_eq!(tradeoffs.len(), 2, "baseline + 1 trade-off");
@@ -1975,7 +2016,11 @@ mod tests {
         let mut tradeoff_verdict = within_verdict();
         tradeoff_verdict.power = exceeds_power_verdict().power;
         let tradeoff_cand = synthetic_candidate(2200.0, 70.0, tradeoff_verdict);
-        let outcome = build_outcome(baseline, vec![tradeoff_cand, pure], &crate::machine::MachineProfile::default());
+        let outcome = build_outcome(
+            baseline,
+            vec![tradeoff_cand, pure],
+            &crate::machine::MachineProfile::default(),
+        );
         assert_eq!(
             outcome.kind,
             OutcomeKind::Ranked,
@@ -1991,7 +2036,11 @@ mod tests {
         let mut tradeoff_verdict = within_verdict();
         tradeoff_verdict.power = exceeds_power_verdict().power;
         let candidate = synthetic_candidate(2200.0, 70.0, tradeoff_verdict);
-        let outcome = build_outcome(baseline, vec![candidate], &crate::machine::MachineProfile::default());
+        let outcome = build_outcome(
+            baseline,
+            vec![candidate],
+            &crate::machine::MachineProfile::default(),
+        );
         assert_eq!(outcome.kind, OutcomeKind::TradeOff);
         assert!(
             outcome.first_safe().is_none(),
@@ -2034,6 +2083,7 @@ mod tests {
             chipload: band_admitted_chipload_verdict(0.072),
             power: within_power_verdict(),
             deflection: within_deflection_verdict(0.030),
+            drill_gates: None,
         }
     }
 
@@ -2044,7 +2094,11 @@ mod tests {
         // should land in MarginalSafe, not Ranked.
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let band_admitted = synthetic_candidate(2100.0, 75.0, band_admitted_verdict());
-        let outcome = build_outcome(baseline, vec![band_admitted], &crate::machine::MachineProfile::default());
+        let outcome = build_outcome(
+            baseline,
+            vec![band_admitted],
+            &crate::machine::MachineProfile::default(),
+        );
         assert_eq!(outcome.kind, OutcomeKind::MarginalSafe, "got {outcome:?}");
         assert_eq!(outcome.candidates.len(), 2, "baseline + 1 band-admitted");
         let explanation = &outcome.narrative.explanation;
@@ -2060,7 +2114,11 @@ mod tests {
         // band-admitted candidates. The user picks them via the modal.
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let band_admitted = synthetic_candidate(2100.0, 75.0, band_admitted_verdict());
-        let outcome = build_outcome(baseline, vec![band_admitted], &crate::machine::MachineProfile::default());
+        let outcome = build_outcome(
+            baseline,
+            vec![band_admitted],
+            &crate::machine::MachineProfile::default(),
+        );
         assert_eq!(outcome.kind, OutcomeKind::MarginalSafe);
         assert!(
             outcome.first_safe().is_none(),
@@ -2072,7 +2130,11 @@ mod tests {
     fn first_marginal_safe_recommends_from_marginal_outcome() {
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let band_admitted = synthetic_candidate(2100.0, 75.0, band_admitted_verdict());
-        let outcome = build_outcome(baseline, vec![band_admitted], &crate::machine::MachineProfile::default());
+        let outcome = build_outcome(
+            baseline,
+            vec![band_admitted],
+            &crate::machine::MachineProfile::default(),
+        );
         let recommended = outcome
             .first_marginal_safe()
             .expect("MarginalSafe outcome must surface a recommendation");
@@ -2087,7 +2149,11 @@ mod tests {
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let band_admitted = synthetic_candidate(2100.0, 70.0, band_admitted_verdict());
         let strict = synthetic_candidate(2000.0, 75.0, within_verdict());
-        let outcome = build_outcome(baseline, vec![band_admitted, strict], &crate::machine::MachineProfile::default());
+        let outcome = build_outcome(
+            baseline,
+            vec![band_admitted, strict],
+            &crate::machine::MachineProfile::default(),
+        );
         assert_eq!(
             outcome.kind,
             OutcomeKind::Ranked,

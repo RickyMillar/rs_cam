@@ -82,7 +82,11 @@ impl RsCamApp {
                 }
                 self.remember_dir(Some(&dir));
                 self.controller.push_notification(
-                    format!("Exported {} setup file(s) to {}", written.len(), dir.display()),
+                    format!(
+                        "Exported {} setup file(s) to {}",
+                        written.len(),
+                        dir.display()
+                    ),
                     crate::controller::Severity::Info,
                 );
                 self.close_wizard();
@@ -215,12 +219,20 @@ impl RsCamApp {
         }
     }
 
-    fn gate(&mut self, gcode: &str, post: rs_cam_core::gcode::PostFormat, allow_errors: bool) -> bool {
+    fn gate(
+        &mut self,
+        gcode: &str,
+        post: rs_cam_core::gcode::PostFormat,
+        allow_errors: bool,
+    ) -> bool {
         if allow_errors {
             return true;
         }
         let findings = validate(gcode, post);
-        let errors = findings.iter().filter(|f| f.severity == Severity::Error).count();
+        let errors = findings
+            .iter()
+            .filter(|f| f.severity == Severity::Error)
+            .count();
         if errors > 0 {
             self.controller.push_notification(
                 format!(
@@ -236,8 +248,11 @@ impl RsCamApp {
 
     fn remember_dir(&mut self, dir: Option<&Path>) {
         if let Some(d) = dir {
-            self.controller.state_mut().session.wizard_mut().last_save_dir =
-                Some(d.to_path_buf());
+            self.controller
+                .state_mut()
+                .session
+                .wizard_mut()
+                .last_save_dir = Some(d.to_path_buf());
         }
     }
 
@@ -258,13 +273,23 @@ fn slugify(s: &str) -> String {
         .collect()
 }
 
-fn render_filename(template: &str, job: &str, setup: Option<&str>, toolpath: Option<&str>) -> String {
+fn render_filename(
+    template: &str,
+    job: &str,
+    setup: Option<&str>,
+    toolpath: Option<&str>,
+) -> String {
     let mut out = template
         .replace("{job}", job)
-        .replace("{setup}", &setup.map(slugify).unwrap_or_else(|| "setup".to_owned()))
+        .replace(
+            "{setup}",
+            &setup.map(slugify).unwrap_or_else(|| "setup".to_owned()),
+        )
         .replace(
             "{toolpath}",
-            &toolpath.map(slugify).unwrap_or_else(|| "toolpath".to_owned()),
+            &toolpath
+                .map(slugify)
+                .unwrap_or_else(|| "toolpath".to_owned()),
         )
         .replace("{ext}", "nc");
     if !out.contains('.') {
