@@ -482,6 +482,40 @@ impl OperationType {
             }
         }
     }
+
+    /// Op-kind air-cut percentage band above which a per-toolpath warning
+    /// should fire. `None` means "metric not applicable" (drill kinematics
+    /// — dexel can't measure Z-only moves; see `planning/P1_AIR_CUT_THRESHOLDS_RCA.md`).
+    ///
+    /// Calibrated from `WANAKA_ASSESSMENT_2026-05-19.md` expectation bands.
+    /// Returning `Some(threshold)` means: a TP whose `air_cut_time_s /
+    /// total_runtime_s` exceeds `threshold/100` is a real signal.
+    pub fn air_cut_high_threshold_pct(self) -> Option<f64> {
+        use OperationType::{
+            Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,
+            HorizontalFinish, Inlay, Pencil, Pocket, Profile, ProjectCurve, RadialFinish,
+            RampFinish, Rest, Scallop, SpiralFinish, SteepShallow, Trace, VCarve, Waterline,
+            Zigzag,
+        };
+        match self {
+            // Drill kinematics: dexel polygon-to-material init can't see Z-only
+            // moves, so air-cut % is unusable. Suppress entirely (Priority 4).
+            Drill | AlignmentPinDrill => None,
+            // ProjectCurve is inherently sparse: rivers/curves are tiny features
+            // in big stock; rapids dominate by construction. Wanaka TPs read
+            // 78–92% air-cut at-baseline. Only flag near-total air (~97%+).
+            ProjectCurve => Some(97.0),
+            // 3D finish ops: close-contact passes expected; >30% indicates poor
+            // boundary or excess retraction.
+            DropCutter | Scallop | Waterline | Pencil | HorizontalFinish | SteepShallow
+            | RampFinish | SpiralFinish | RadialFinish => Some(30.0),
+            // 2.5D clearing and 3D rough: boundary overshoot + Z-level transitions
+            // make 40% the high-water mark.
+            Pocket | Face | Adaptive | Rest | Zigzag | Adaptive3d => Some(40.0),
+            // 2D contour-style ops.
+            Profile | Chamfer | Inlay | VCarve | Trace => Some(40.0),
+        }
+    }
 }
 
 /// Common parameter accessors for all operation configs.
@@ -1062,7 +1096,7 @@ pub fn feed_optimization_unavailable_reason(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -1124,6 +1158,83 @@ mod tests {
                 .transform_capabilities()
                 .continuous_path_required
         );
+    }
+
+    #[test]
+    fn air_cut_threshold_suppresses_drill_kinds() {
+        assert!(
+            OperationType::Drill
+                .air_cut_high_threshold_pct()
+                .is_none(),
+            "Drill should suppress air-cut metric (dexel can't measure Z-only)"
+        );
+        assert!(
+            OperationType::AlignmentPinDrill
+                .air_cut_high_threshold_pct()
+                .is_none(),
+            "AlignmentPinDrill should suppress air-cut metric"
+        );
+    }
+
+    #[test]
+    fn air_cut_threshold_permissive_for_project_curve() {
+        let t = OperationType::ProjectCurve
+            .air_cut_high_threshold_pct()
+            .expect("ProjectCurve should have an air-cut threshold");
+        assert!(
+            t >= 95.0,
+            "ProjectCurve threshold must accept sparse-pattern baseline (Wanaka rivers read 78–92%); got {t}"
+        );
+    }
+
+    #[test]
+    fn air_cut_threshold_strict_for_finish_ops() {
+        for op in [
+            OperationType::DropCutter,
+            OperationType::Scallop,
+            OperationType::Waterline,
+            OperationType::Pencil,
+            OperationType::HorizontalFinish,
+            OperationType::SteepShallow,
+            OperationType::RampFinish,
+            OperationType::SpiralFinish,
+            OperationType::RadialFinish,
+        ] {
+            let t = op
+                .air_cut_high_threshold_pct()
+                .unwrap_or_else(|| panic!("{op:?} should have an air-cut threshold"));
+            assert!(t <= 30.0, "{op:?} finish threshold expected ≤30, got {t}");
+        }
+    }
+
+    #[test]
+    fn air_cut_threshold_band_for_clearing_ops() {
+        for op in [
+            OperationType::Adaptive3d,
+            OperationType::Adaptive,
+            OperationType::Pocket,
+            OperationType::Face,
+            OperationType::Zigzag,
+            OperationType::Rest,
+        ] {
+            let t = op
+                .air_cut_high_threshold_pct()
+                .unwrap_or_else(|| panic!("{op:?} should have an air-cut threshold"));
+            assert!(
+                (35.0..=45.0).contains(&t),
+                "{op:?} clearing threshold expected ~40, got {t}"
+            );
+        }
+    }
+
+    #[test]
+    fn air_cut_threshold_exhaustive_for_all_ops() {
+        // Adding a new OperationType variant should require classifying it.
+        // We can't enforce this at compile time (the method returns Option),
+        // so this test ensures someone touched every variant deliberately.
+        for &op in OperationType::ALL {
+            let _ = op.air_cut_high_threshold_pct();
+        }
     }
 
     #[test]

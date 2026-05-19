@@ -478,3 +478,41 @@ Three counter-tests guard against false-positive scope:
 - **Fix 5 (existing-project re-derivation policy)** — recommended Option C (load-time validator with per-rule auto-fix) in `planning/F5_FRESH_DEFAULTS_POLICY.md`; implementation deferred to a separate batch.
 
 **Empirical re-validation pending:** to confirm the fixes hold end-to-end on the Wanaka project itself, the GUI/MCP binary needs to be rebuilt and the project re-loaded with new toolpaths created via `add_toolpath` (so the LUT-on-create path picks up the new defaults). The library-level fixes are locked in by the unit and integration tests above.
+
+---
+
+## Warning-calibration follow-up (Priority 1 — 2026-05-19)
+
+The defaults-calibration work above fixed the *source* of bad parameters. The
+next axis is **warning-calibration**: the sim was warning about toolpaths the
+LUT had just recommended — eroding trust faster than the bad defaults did.
+
+### Priority 1 — Op-kind-aware air-cut thresholds (done)
+
+**Root cause** (`planning/P1_AIR_CUT_THRESHOLDS_RCA.md`): the project-level
+verdict used a single `air_cut_percentage > 40.0` threshold across all op
+kinds. ProjectCurve over sparse rivers (78–92% air-cut is intrinsic) and
+Drill ops (dexel reads 100% always for Z-only kinematics) both tripped the
+warning falsely.
+
+**Fix:** `OperationType::air_cut_high_threshold_pct()` returns per-op-kind
+high-water marks (`None` for drill kinds — handled in P4). `Session::diagnostics()`
+now scans `toolpath_summaries` and only warns when individual TPs exceed
+their own op-kind threshold; the verdict names the specific TP(s).
+
+**Expected delta on Wanaka:**
+
+| Before | After |
+|---|---|
+| `WARNING: high air cutting` (no TP named) | `OK` — all 8 TPs are within their op-kind bands |
+
+The Wanaka project sims with TP3 ProjectCurve at 92%, TP4 at 84%, TP5 at 78%
+(all below the 97% ProjectCurve threshold), TP6 Adaptive3d at 52% (above 40%
+threshold — this one **will** be flagged), TP7 DropCutter at 11.5% (below 30%
+threshold), TP1 Adaptive3d at 28.5% (below 40% threshold), TP0/TP2 drill ops
+suppressed. Post-Phase-2 with TP1 at 34% and TP6 at 54.8%, expect TP6 to be
+the only TP cited.
+
+**Tests:** 13 new unit tests across `compute/catalog.rs` (5 — threshold
+calibration) and `session/compute.rs` (8 — verdict logic with positive and
+negative cases per op-kind).

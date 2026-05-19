@@ -1163,6 +1163,24 @@ impl ProjectSession {
                 (0.0, 0.0, 0.0)
             };
 
+        // Per-TP op-kind-aware air-cut warnings. A blanket project-wide
+        // threshold (the old `>40%`) fires falsely on projects that contain
+        // even one sparse-pattern op like ProjectCurve, where 80–95% air-cut
+        // is intrinsic. Per-TP thresholds live on `OperationType`
+        // (see `OperationType::air_cut_high_threshold_pct`).
+        // P1 — see planning/P1_AIR_CUT_THRESHOLDS_RCA.md.
+        let air_cut_offenders: Vec<(String, f64)> = self
+            .simulation
+            .as_ref()
+            .and_then(|s| s.cut_trace.as_deref())
+            .map(|trace| {
+                air_cut_offenders_for_toolpaths(
+                    &trace.toolpath_summaries,
+                    &self.toolpath_configs,
+                )
+            })
+            .unwrap_or_default();
+
         let verdict = if total_collision_count > 0 {
             format!(
                 "ERROR: {} holder/shank collisions detected",
@@ -1173,8 +1191,12 @@ impl ProjectSession {
                 "WARNING: {} rapid-through-stock collisions",
                 total_rapid_collision_count
             )
-        } else if air_cut_percentage > 40.0 {
-            format!("WARNING: {air_cut_percentage:.1}% air cutting")
+        } else if !air_cut_offenders.is_empty() {
+            let names: Vec<String> = air_cut_offenders
+                .iter()
+                .map(|(n, pct)| format!("{n} ({pct:.0}%)"))
+                .collect();
+            format!("WARNING: high air cutting on {}", names.join(", "))
         } else {
             "OK".to_owned()
         };
@@ -1251,6 +1273,38 @@ impl ProjectSession {
         std::fs::write(&path, json)
             .map_err(|e| SessionError::Export(format!("Failed to write {}: {e}", path.display())))
     }
+}
+
+/// Identify toolpaths whose air-cut percentage exceeds their op-kind's
+/// high-water threshold. Returns `(toolpath_name, air_cut_pct)` pairs.
+///
+/// Pure helper; takes only the data it needs so it can be unit-tested
+/// without constructing a full `SimulationResult`. See
+/// `planning/P1_AIR_CUT_THRESHOLDS_RCA.md` for the threshold rationale.
+fn air_cut_offenders_for_toolpaths(
+    toolpath_summaries: &[crate::simulation_cut::SimulationToolpathCutSummary],
+    toolpath_configs: &[super::ToolpathConfig],
+) -> Vec<(String, f64)> {
+    let mut offenders = Vec::new();
+    for tp_summary in toolpath_summaries {
+        if tp_summary.total_runtime_s <= 0.0 {
+            continue;
+        }
+        let Some(tc) = toolpath_configs
+            .iter()
+            .find(|t| t.id == tp_summary.toolpath_id)
+        else {
+            continue;
+        };
+        let Some(threshold) = tc.operation.op_type().air_cut_high_threshold_pct() else {
+            continue;
+        };
+        let air_pct = tp_summary.air_cut_time_s / tp_summary.total_runtime_s * 100.0;
+        if air_pct > threshold {
+            offenders.push((tc.name.clone(), air_pct));
+        }
+    }
+    offenders
 }
 
 /// Compute auto-resolution from simulation groups and stock bbox.
@@ -1598,5 +1652,175 @@ mod tests {
         let diag = s.diagnostics();
         assert_eq!(diag.verdict, "OK");
         assert!(diag.per_toolpath.is_empty());
+    }
+
+    // ── P1: op-kind-aware air-cut thresholds ──────────────────────
+
+    use crate::compute::operation_configs::{
+        Adaptive3dConfig, AlignmentPinDrillConfig, DropCutterConfig, ProjectCurveConfig,
+    };
+    use crate::simulation_cut::SimulationToolpathCutSummary;
+
+    fn make_tp(id: usize, name: &str, op: OperationConfig) -> ToolpathConfig {
+        ToolpathConfig {
+            id,
+            name: name.to_owned(),
+            enabled: true,
+            operation: op,
+            dressups: DressupConfig::default(),
+            heights: HeightsConfig::default(),
+            tool_id: 0,
+            model_id: 0,
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: BoundaryConfig::default(),
+            boundary_inherit: true,
+            stock_source: crate::session::StockSource::Fresh,
+            coolant: CoolantMode::Off,
+            face_selection: None,
+            debug_options: ToolpathDebugOptions::default(),
+        }
+    }
+
+    fn summary(id: usize, air_pct: f64) -> SimulationToolpathCutSummary {
+        let total = 100.0;
+        SimulationToolpathCutSummary {
+            toolpath_id: id,
+            sample_count: 0,
+            total_runtime_s: total,
+            cutting_runtime_s: total * (1.0 - air_pct / 100.0),
+            rapid_runtime_s: 0.0,
+            air_cut_time_s: total * air_pct / 100.0,
+            low_engagement_time_s: 0.0,
+            average_engagement: 0.0,
+            peak_chipload_mm_per_tooth: 0.0,
+            peak_axial_doc_mm: 0.0,
+            total_removed_volume_est_mm3: 0.0,
+            average_mrr_mm3_s: 0.0,
+        }
+    }
+
+    #[test]
+    fn air_cut_offenders_silent_on_sparse_project_curve() {
+        // Wanaka TP3: 92% air-cut on ProjectCurve is intrinsic, not a defect.
+        let tps = vec![make_tp(
+            0,
+            "Rivers (back)",
+            OperationConfig::ProjectCurve(ProjectCurveConfig::default()),
+        )];
+        let sums = vec![summary(0, 92.1)];
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        assert!(
+            offenders.is_empty(),
+            "ProjectCurve at baseline air-cut should not warn; got {offenders:?}"
+        );
+    }
+
+    #[test]
+    fn air_cut_offenders_silent_on_adaptive3d_below_threshold() {
+        // Wanaka TP1: 28.5% air-cut on Adaptive3d should be silent.
+        let tps = vec![make_tp(
+            0,
+            "Back Rough",
+            OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
+        )];
+        let sums = vec![summary(0, 28.5)];
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        assert!(
+            offenders.is_empty(),
+            "Adaptive3d below 40% threshold should be silent; got {offenders:?}"
+        );
+    }
+
+    #[test]
+    fn air_cut_offenders_silent_on_drop_cutter_finish() {
+        // Wanaka TP7: 11.5% air-cut on DropCutter is healthy.
+        let tps = vec![make_tp(
+            0,
+            "3D Finish 6",
+            OperationConfig::DropCutter(DropCutterConfig::default()),
+        )];
+        let sums = vec![summary(0, 11.5)];
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        assert!(offenders.is_empty(), "DropCutter at 11.5% should be silent");
+    }
+
+    #[test]
+    fn air_cut_offenders_warns_on_adaptive3d_above_threshold() {
+        // 60% air-cut on Adaptive3d is well above the 40% high-water mark.
+        let tps = vec![make_tp(
+            0,
+            "Bad Rough",
+            OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
+        )];
+        let sums = vec![summary(0, 60.0)];
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        assert_eq!(offenders.len(), 1, "Adaptive3d at 60% should warn");
+        assert_eq!(offenders[0].0, "Bad Rough");
+        assert!((offenders[0].1 - 60.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn air_cut_offenders_warns_on_drop_cutter_above_threshold() {
+        // 40% air-cut on DropCutter exceeds the 30% finish threshold.
+        let tps = vec![make_tp(
+            0,
+            "Sloppy Finish",
+            OperationConfig::DropCutter(DropCutterConfig::default()),
+        )];
+        let sums = vec![summary(0, 40.0)];
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        assert_eq!(offenders.len(), 1, "DropCutter at 40% should warn");
+    }
+
+    #[test]
+    fn air_cut_offenders_warns_on_project_curve_near_total_air() {
+        // 99% air-cut on ProjectCurve indicates a misconfigured TP — flag it.
+        let tps = vec![make_tp(
+            0,
+            "Empty Rivers",
+            OperationConfig::ProjectCurve(ProjectCurveConfig::default()),
+        )];
+        let sums = vec![summary(0, 99.0)];
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        assert_eq!(offenders.len(), 1, "ProjectCurve at 99% should warn");
+    }
+
+    #[test]
+    fn air_cut_offenders_suppresses_drill_ops_entirely() {
+        // Drill kinematics: air-cut metric is unusable. Never warn.
+        let tps = vec![make_tp(
+            0,
+            "Pin Drill",
+            OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default()),
+        )];
+        let sums = vec![summary(0, 100.0)]; // dexel reports 100% always
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        assert!(
+            offenders.is_empty(),
+            "AlignmentPinDrill must never trigger air-cut warning (P4 suppression)"
+        );
+    }
+
+    #[test]
+    fn air_cut_offenders_isolates_bad_tp_in_mixed_project() {
+        // Wanaka-like mix: ProjectCurve at 92% (noise) + Adaptive3d at 60% (signal).
+        // Only the Adaptive3d should be flagged.
+        let tps = vec![
+            make_tp(
+                0,
+                "Rivers",
+                OperationConfig::ProjectCurve(ProjectCurveConfig::default()),
+            ),
+            make_tp(
+                1,
+                "Bad Rough",
+                OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
+            ),
+        ];
+        let sums = vec![summary(0, 92.0), summary(1, 60.0)];
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        assert_eq!(offenders.len(), 1);
+        assert_eq!(offenders[0].0, "Bad Rough");
     }
 }
