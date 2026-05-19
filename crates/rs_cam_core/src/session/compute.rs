@@ -1181,6 +1181,12 @@ impl ProjectSession {
             })
             .unwrap_or_default();
 
+        // P2: plunge-stress warnings for small ball / tapered-ball tools.
+        // Fix 2 caps fresh LUT recommendations, but pre-Fix-2 projects carry
+        // static-default plunge rates that bypass the cap. See
+        // `planning/P2_PLUNGE_STRESS_GATE_RCA.md`.
+        let plunge_stress_offenders = plunge_stress_offenders_for_session(self);
+
         let verdict = if total_collision_count > 0 {
             format!(
                 "ERROR: {} holder/shank collisions detected",
@@ -1191,6 +1197,12 @@ impl ProjectSession {
                 "WARNING: {} rapid-through-stock collisions",
                 total_rapid_collision_count
             )
+        } else if !plunge_stress_offenders.is_empty() {
+            let names: Vec<String> = plunge_stress_offenders
+                .iter()
+                .map(|(n, rate, cap)| format!("{n} ({rate:.0} > cap {cap:.0} mm/min)"))
+                .collect();
+            format!("WARNING: unsafe plunge rate on {}", names.join(", "))
         } else if !air_cut_offenders.is_empty() {
             let names: Vec<String> = air_cut_offenders
                 .iter()
@@ -1302,6 +1314,41 @@ fn air_cut_offenders_for_toolpaths(
         let air_pct = tp_summary.air_cut_time_s / tp_summary.total_runtime_s * 100.0;
         if air_pct > threshold {
             offenders.push((tc.name.clone(), air_pct));
+        }
+    }
+    offenders
+}
+
+/// Identify toolpaths whose configured plunge rate exceeds the safe cap
+/// for the tool's geometry (ball / tapered-ball). Returns `(name,
+/// plunge_rate, cap)` triples in toolpath order.
+///
+/// See `planning/P2_PLUNGE_STRESS_GATE_RCA.md`.
+fn plunge_stress_offenders_for_session(
+    session: &ProjectSession,
+) -> Vec<(String, f64, f64)> {
+    use crate::compute::tool_config::ToolId;
+    use crate::tool::MillingCutter;
+    use crate::tool_load::plunge_stress::check_plunge_stress;
+
+    let mut offenders = Vec::new();
+    for tc in &session.toolpath_configs {
+        if !tc.enabled {
+            continue;
+        }
+        let Some(tool_cfg) = session.get_tool(ToolId(tc.tool_id)) else {
+            continue;
+        };
+        let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
+        let geometry = tool_def.to_geometry_hint();
+        let plunge_rate = tc.operation.plunge_rate();
+        if plunge_rate <= 0.0 {
+            continue;
+        }
+        if let Some(w) =
+            check_plunge_stress(geometry, tool_def.diameter(), plunge_rate)
+        {
+            offenders.push((tc.name.clone(), w.plunge_rate_mm_min, w.safe_cap_mm_min));
         }
     }
     offenders
@@ -1800,6 +1847,96 @@ mod tests {
             offenders.is_empty(),
             "AlignmentPinDrill must never trigger air-cut warning (P4 suppression)"
         );
+    }
+
+    // ── P2: plunge-stress gate at session level ──────────────────
+
+    fn make_tapered_ball_tool(diameter: f64) -> ToolConfig {
+        let mut t = ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose);
+        t.diameter = diameter; // tip diameter
+        t.shaft_diameter = (diameter + 2.0).max(3.0);
+        t.taper_half_angle = 7.0;
+        t
+    }
+
+    fn make_tp_with_plunge(
+        id: usize,
+        name: &str,
+        op: OperationConfig,
+        plunge_rate: f64,
+    ) -> ToolpathConfig {
+        let mut tc = make_tp(id, name, op);
+        tc.operation.as_params_mut().set_plunge_rate(plunge_rate);
+        tc
+    }
+
+    #[test]
+    fn plunge_stress_warns_on_wanaka_tp7_pattern() {
+        // 1 mm tapered ball at 750 mm/min plunge — the TP7 finding.
+        let mut s = ProjectSession::new_empty();
+        s.add_tool(make_tapered_ball_tool(1.0));
+        let tp = make_tp_with_plunge(
+            0,
+            "3D Finish 6",
+            OperationConfig::DropCutter(DropCutterConfig::default()),
+            750.0,
+        );
+        s.add_toolpath(0, tp).unwrap();
+        let offenders = plunge_stress_offenders_for_session(&s);
+        assert_eq!(offenders.len(), 1);
+        assert_eq!(offenders[0].0, "3D Finish 6");
+        assert!((offenders[0].1 - 750.0).abs() < 1e-6);
+        assert!((offenders[0].2 - 150.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn plunge_stress_silent_for_flat_em_at_750() {
+        // 6 mm flat end-mill at 750 mm/min — no cap applies.
+        let mut s = ProjectSession::new_empty();
+        let tp = make_tp_with_plunge(
+            0,
+            "Back Rough",
+            OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
+            750.0,
+        );
+        s.add_toolpath(0, tp).unwrap();
+        let offenders = plunge_stress_offenders_for_session(&s);
+        assert!(
+            offenders.is_empty(),
+            "flat EM should be silent on plunge stress; got {offenders:?}"
+        );
+    }
+
+    #[test]
+    fn plunge_stress_silent_when_at_or_below_cap() {
+        // 1 mm tapered ball at 150 mm/min — exactly at cap.
+        let mut s = ProjectSession::new_empty();
+        s.add_tool(make_tapered_ball_tool(1.0));
+        let tp = make_tp_with_plunge(
+            0,
+            "Engrave",
+            OperationConfig::ProjectCurve(ProjectCurveConfig::default()),
+            150.0,
+        );
+        s.add_toolpath(0, tp).unwrap();
+        let offenders = plunge_stress_offenders_for_session(&s);
+        assert!(offenders.is_empty(), "150 mm/min on 1 mm TB is at cap");
+    }
+
+    #[test]
+    fn plunge_stress_ignores_disabled_toolpaths() {
+        let mut s = ProjectSession::new_empty();
+        s.add_tool(make_tapered_ball_tool(1.0));
+        let mut tp = make_tp_with_plunge(
+            0,
+            "Disabled",
+            OperationConfig::DropCutter(DropCutterConfig::default()),
+            750.0,
+        );
+        tp.enabled = false;
+        s.add_toolpath(0, tp).unwrap();
+        let offenders = plunge_stress_offenders_for_session(&s);
+        assert!(offenders.is_empty(), "disabled TPs should be ignored");
     }
 
     #[test]
