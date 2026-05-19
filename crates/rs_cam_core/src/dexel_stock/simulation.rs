@@ -666,7 +666,16 @@ mod tests {
             .expect("arc sample");
         let arc = sample.arc_engagement_radians.expect("arc captured");
         assert_eq!(sample.cut_kinematics, CutKinematics::Linear);
-        assert!((arc - std::f64::consts::PI).abs() <= 0.12, "arc={arc}");
+        // Tolerance relaxed from 0.12 → 0.5 rad under F.a sub-cell stamping
+        // (DEXEL_Z_ONLY_INVESTIGATION.md §6.F / §8 Step 4). The perp-extent
+        // coverage gate excludes the outermost annular band of cells whose
+        // coverage < 1.0, so a true full slot reads radial ≈ 0.95 (limited
+        // by grid discretization and the gate) instead of exactly 1.0.
+        // Because `arc = arccos(1 - 2·radial)` has a near-vertical slope at
+        // radial ≈ 1, that maps to arc ≈ 2.69 rad rather than π = 3.14.
+        // The half-immersion test is unaffected (arccos has a finite slope
+        // at radial = 0.5).
+        assert!((arc - std::f64::consts::PI).abs() <= 0.5, "arc={arc}");
     }
 
     #[test]

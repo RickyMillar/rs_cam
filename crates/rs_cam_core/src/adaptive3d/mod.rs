@@ -484,6 +484,7 @@ mod tests {
                 rays.push(SmallVec::from_buf([seg]));
             }
         }
+        let coverage_max = vec![0.0_f32; rows * cols];
         let grid = crate::dexel::DexelGrid {
             rays,
             rows,
@@ -492,6 +493,7 @@ mod tests {
             origin_v: origin_y,
             cell_size,
             axis: crate::dexel::DexelAxis::Z,
+            coverage_max,
         };
         TriDexelStock {
             z_grid: grid,
@@ -2239,12 +2241,26 @@ mod tests {
     fn planner_sim_dexel_parity_agent_search() {
         let (_divergent, interior, total, max_dz, _violations) =
             run_planner_sim_parity(ClearingStrategy3d::AgentSearch, "AgentSearch hemisphere");
-        // Interior threshold: < 1% interior cells. Boundary divergence
+        // Interior threshold: < 10% interior cells. Boundary divergence
         // (cells outside the mesh footprint) is a separate, known issue
         // outside the scope of this parity test — see the planner-↔-sim
         // stamping fix notes (Bug 1 / Bug 2). What this test guards is
         // INSIDE-the-mesh stamping consistency.
-        let threshold = total / 100;
+        //
+        // The threshold was bumped from 1% to 10% when sub-cell stamping
+        // (F.a — see DEXEL_Z_ONLY_INVESTIGATION.md §6.F / §8 Step 4)
+        // landed. F.a's multiplicative blend semantics do not compose
+        // perfectly under subsegmentation: the simulator subdivides each
+        // emitted segment at `sample_step_mm` for per-sample metrics and
+        // stamps each subsegment separately, while the planner stamps
+        // whole emitted segments. Cells straddling subsegment boundaries
+        // see compound `(1-f₁)(1-f₂)` blends that under-saturate vs the
+        // single whole-segment `f` blend. §6.F explicitly predicts this
+        // edge-cell drift ("F.a is not invisible to the planning layer
+        // … shallower bites at feature edges"). The 10% headroom keeps
+        // the test as a Bug-1 / Bug-2 regression catch without flagging
+        // the expected F.a drift.
+        let threshold = total / 10;
         assert!(
             interior <= threshold,
             "Planner and simulator dexels diverged on {interior} INTERIOR cells \
@@ -2261,7 +2277,10 @@ mod tests {
             ClearingStrategy3d::ContourParallel,
             "ContourParallel hemisphere",
         );
-        let threshold = total / 100;
+        // See `planner_sim_dexel_parity_agent_search` for the threshold
+        // rationale: bumped from 1% to 10% under F.a sub-cell stamping
+        // (DEXEL_Z_ONLY_INVESTIGATION.md §6.F / §8 Step 4).
+        let threshold = total / 10;
         assert!(
             interior <= threshold,
             "Planner and simulator dexels diverged on {interior} INTERIOR cells \

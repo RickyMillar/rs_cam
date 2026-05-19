@@ -83,6 +83,84 @@ pub fn ray_subtract_below(ray: &mut DexelRay, z: f32) {
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+/// Partial-blend variant of [`ray_subtract_above`]: shrink the above-`surface`
+/// portion of each segment by a fraction `f ∈ [0, 1]` of its height.
+///
+/// Used by F.a sub-cell stamping (see `DEXEL_Z_ONLY_INVESTIGATION.md` §6.F):
+/// when a cell is fractionally covered by the cutter footprint (coverage `f`),
+/// the area-weighted view says `f` of the cell sits at the cutter surface and
+/// `(1-f)` retains the original top. The resulting cell-averaged top equals
+/// the original above-`surface` slice shortened by `f`.
+///
+/// `f = 1` is equivalent to `ray_subtract_above`; `f = 0` is a no-op. NaN /
+/// out-of-range `f` is clamped.
+pub fn ray_blend_above(ray: &mut DexelRay, surface: f32, f: f32) {
+    if f.is_nan() {
+        return;
+    }
+    let f = f.clamp(0.0, 1.0);
+    if f <= 0.0 {
+        return;
+    }
+    if f >= 1.0 {
+        ray_subtract_above(ray, surface);
+        return;
+    }
+    let mut i = ray.len();
+    while i > 0 {
+        i -= 1;
+        let seg = ray[i];
+        // Lower bound of the above-`surface` portion of this segment.
+        let above_lo = seg.enter.max(surface);
+        if seg.exit <= above_lo {
+            // Segment is entirely at or below `surface` — no above portion.
+            continue;
+        }
+        let above_part = seg.exit - above_lo;
+        let new_exit = seg.exit - f * above_part;
+        if new_exit <= seg.enter {
+            ray.remove(i);
+        } else {
+            ray[i].exit = new_exit;
+        }
+    }
+}
+
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+/// Mirror of [`ray_blend_above`] for bottom-up cuts: shrink the below-`surface`
+/// portion of each segment by `f ∈ [0, 1]`.
+pub fn ray_blend_below(ray: &mut DexelRay, surface: f32, f: f32) {
+    if f.is_nan() {
+        return;
+    }
+    let f = f.clamp(0.0, 1.0);
+    if f <= 0.0 {
+        return;
+    }
+    if f >= 1.0 {
+        ray_subtract_below(ray, surface);
+        return;
+    }
+    let mut i = 0;
+    while i < ray.len() {
+        let seg = ray[i];
+        let below_hi = seg.exit.min(surface);
+        if seg.enter >= below_hi {
+            i += 1;
+            continue;
+        }
+        let below_part = below_hi - seg.enter;
+        let new_enter = seg.enter + f * below_part;
+        if new_enter >= seg.exit {
+            ray.remove(i);
+        } else {
+            ray[i].enter = new_enter;
+            i += 1;
+        }
+    }
+}
+
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Remove the interval `[a, b]` from the ray (general boolean subtract).
 ///
 /// Any segment fully inside `[a, b]` is deleted.  Segments that partially
@@ -182,6 +260,17 @@ pub struct DexelGrid {
     pub origin_v: f64,
     pub cell_size: f64,
     pub axis: DexelAxis,
+    /// Maximum fractional cutter coverage seen at each cell across the
+    /// project's stamping history (parallel to `rays`).
+    ///
+    /// Populated by sub-cell stamping (F.a, see `DEXEL_Z_ONLY_INVESTIGATION.md`
+    /// §6.F gap 4). Forward-compatible bridge to F.b sub-cell-resolved ray
+    /// storage: a value `f ∈ [0, 1]` per cell can later seed `f` of the
+    /// sub-cells at the cut surface and `(1-f)` at the bulk material level.
+    ///
+    /// Not used by any planning / mesh / collision consumer today — purely
+    /// observational. Stamping kernels update via running max.
+    pub coverage_max: Vec<f32>,
 }
 
 impl Clone for DexelGrid {
@@ -194,6 +283,7 @@ impl Clone for DexelGrid {
             origin_v: self.origin_v,
             cell_size: self.cell_size,
             axis: self.axis,
+            coverage_max: self.coverage_max.clone(),
         }
     }
 }
@@ -259,6 +349,7 @@ impl DexelGrid {
         let seg = DexelSegment::new(bbox.min.z as f32, bbox.max.z as f32);
         let ray: DexelRay = SmallVec::from_buf([seg]);
         let rays = vec![ray; rows * cols];
+        let coverage_max = vec![0.0_f32; rows * cols];
         Self {
             rays,
             rows,
@@ -267,6 +358,7 @@ impl DexelGrid {
             origin_v: bbox.min.y,
             cell_size,
             axis: DexelAxis::Z,
+            coverage_max,
         }
     }
 
@@ -283,6 +375,7 @@ impl DexelGrid {
         let seg = DexelSegment::new(bbox.min.x as f32, bbox.max.x as f32);
         let ray: DexelRay = SmallVec::from_buf([seg]);
         let rays = vec![ray; rows * cols];
+        let coverage_max = vec![0.0_f32; rows * cols];
         Self {
             rays,
             rows,
@@ -291,6 +384,7 @@ impl DexelGrid {
             origin_v: bbox.min.z,
             cell_size,
             axis: DexelAxis::X,
+            coverage_max,
         }
     }
 
@@ -307,6 +401,7 @@ impl DexelGrid {
         let seg = DexelSegment::new(bbox.min.y as f32, bbox.max.y as f32);
         let ray: DexelRay = SmallVec::from_buf([seg]);
         let rays = vec![ray; rows * cols];
+        let coverage_max = vec![0.0_f32; rows * cols];
         Self {
             rays,
             rows,
@@ -315,6 +410,7 @@ impl DexelGrid {
             origin_v: bbox.min.z,
             cell_size,
             axis: DexelAxis::Y,
+            coverage_max,
         }
     }
 
@@ -380,6 +476,14 @@ impl DexelGrid {
     #[inline]
     pub fn material_length_at(&self, row: usize, col: usize) -> f32 {
         ray_material_length(&self.rays[row * self.cols + col])
+    }
+
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    /// Maximum fractional cutter coverage seen at the cell across the
+    /// project's stamping history. See `DexelGrid::coverage_max` docstring.
+    #[inline]
+    pub fn coverage_at(&self, row: usize, col: usize) -> f32 {
+        self.coverage_max[row * self.cols + col]
     }
 }
 
@@ -470,6 +574,109 @@ mod tests {
         let mut r = ray_from(&[(0.0, 10.0)]);
         ray_subtract_below(&mut r, 10.0);
         assert!(r.is_empty());
+    }
+
+    // ── blend_above ─────────────────────────────────────────────────────
+
+    #[test]
+    fn blend_above_f_zero_is_noop() {
+        let mut r = ray_from(&[(0.0, 10.0)]);
+        ray_blend_above(&mut r, 5.0, 0.0);
+        assert_eq!(r.as_slice(), &[seg(0.0, 10.0)]);
+    }
+
+    #[test]
+    fn blend_above_f_one_equals_subtract() {
+        let mut r = ray_from(&[(0.0, 10.0), (12.0, 15.0)]);
+        let mut sub = r.clone();
+        ray_blend_above(&mut r, 7.0, 1.0);
+        ray_subtract_above(&mut sub, 7.0);
+        assert_eq!(r.as_slice(), sub.as_slice());
+    }
+
+    #[test]
+    fn blend_above_straddle_half_blends_top_half_of_above() {
+        // Segment [0, 10], surface 6.0, f=0.5 → above_part = 4, new exit = 10 - 2 = 8.
+        let mut r = ray_from(&[(0.0, 10.0)]);
+        ray_blend_above(&mut r, 6.0, 0.5);
+        assert_eq!(r.len(), 1);
+        assert!((r[0].enter - 0.0).abs() < 1e-6);
+        assert!((r[0].exit - 8.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn blend_above_segment_fully_above_partial_shrink() {
+        // Segment [6, 10], surface 4.0, f=0.25 → above_part = 4, new exit = 10 - 1 = 9.
+        let mut r = ray_from(&[(6.0, 10.0)]);
+        ray_blend_above(&mut r, 4.0, 0.25);
+        assert!((r[0].exit - 9.0).abs() < 1e-6);
+        assert!((r[0].enter - 6.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn blend_above_multi_segment() {
+        // surface = 2.0, f = 0.5.
+        //   [0,1] fully below — untouched.
+        //   [3,5] above_lo=3, above_part=2, new_exit = 5 - 1 = 4.
+        //   [6,10] above_lo=6, above_part=4, new_exit = 10 - 2 = 8.
+        let mut r = ray_from(&[(0.0, 1.0), (3.0, 5.0), (6.0, 10.0)]);
+        ray_blend_above(&mut r, 2.0, 0.5);
+        assert_eq!(r.len(), 3);
+        assert!((r[0].exit - 1.0).abs() < 1e-6);
+        assert!((r[1].exit - 4.0).abs() < 1e-6);
+        assert!((r[2].enter - 6.0).abs() < 1e-6 && (r[2].exit - 8.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn blend_above_clamps_nan_and_overshoot() {
+        let mut r = ray_from(&[(0.0, 10.0)]);
+        ray_blend_above(&mut r, 5.0, f32::NAN);
+        assert_eq!(r.as_slice(), &[seg(0.0, 10.0)]);
+        ray_blend_above(&mut r, 5.0, 1.5);
+        // Clamped to 1.0 → equivalent to subtract_above.
+        assert_eq!(r.as_slice(), &[seg(0.0, 5.0)]);
+    }
+
+    #[test]
+    fn blend_above_volume_invariant() {
+        // Per-stamp volume removed under blend equals f × pre_above_total.
+        let mut r = ray_from(&[(0.0, 10.0), (12.0, 16.0)]);
+        let surface = 4.0_f32;
+        let pre_above = ray_material_length_above(&r, surface) as f64; // 6 + 4 = 10
+        let f = 0.4_f32;
+        let pre_total = ray_material_length(&r) as f64;
+        ray_blend_above(&mut r, surface, f);
+        let post_total = ray_material_length(&r) as f64;
+        let removed = pre_total - post_total;
+        assert!((removed - (f as f64) * pre_above).abs() < 1e-5);
+    }
+
+    // ── blend_below ─────────────────────────────────────────────────────
+
+    #[test]
+    fn blend_below_f_zero_is_noop() {
+        let mut r = ray_from(&[(0.0, 10.0)]);
+        ray_blend_below(&mut r, 5.0, 0.0);
+        assert_eq!(r.as_slice(), &[seg(0.0, 10.0)]);
+    }
+
+    #[test]
+    fn blend_below_f_one_equals_subtract() {
+        let mut r = ray_from(&[(0.0, 10.0), (12.0, 15.0)]);
+        let mut sub = r.clone();
+        ray_blend_below(&mut r, 3.0, 1.0);
+        ray_subtract_below(&mut sub, 3.0);
+        assert_eq!(r.as_slice(), sub.as_slice());
+    }
+
+    #[test]
+    fn blend_below_straddle_half() {
+        // Segment [0, 10], surface 4.0, f=0.5 → below_part = 4, new enter = 0 + 2 = 2.
+        let mut r = ray_from(&[(0.0, 10.0)]);
+        ray_blend_below(&mut r, 4.0, 0.5);
+        assert_eq!(r.len(), 1);
+        assert!((r[0].enter - 2.0).abs() < 1e-6);
+        assert!((r[0].exit - 10.0).abs() < 1e-6);
     }
 
     // ── subtract_interval ───────────────────────────────────────────────
