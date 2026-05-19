@@ -104,22 +104,41 @@ fn trace_ring(tp: &mut Toolpath, ring: &[P2], cut_z: f64, params: &TraceParams) 
     #[allow(clippy::indexing_slicing)]
     let first = ring[0];
 
+    use crate::toolpath::MoveIntent;
     // Rapid to safe_z above the first point
-    tp.rapid_to(P3::new(first.x, first.y, params.safe_z));
+    tp.rapid_to_with_intent(
+        P3::new(first.x, first.y, params.safe_z),
+        MoveIntent::Linking,
+    );
 
     // Plunge to cutting depth
-    tp.feed_to(P3::new(first.x, first.y, cut_z), params.plunge_rate);
+    tp.feed_to_with_intent(
+        P3::new(first.x, first.y, cut_z),
+        params.plunge_rate,
+        MoveIntent::EntryPlunge,
+    );
 
     // Feed along all subsequent points
     for pt in ring.iter().skip(1) {
-        tp.feed_to(P3::new(pt.x, pt.y, cut_z), params.feed_rate);
+        tp.feed_to_with_intent(
+            P3::new(pt.x, pt.y, cut_z),
+            params.feed_rate,
+            MoveIntent::FinishingCut,
+        );
     }
 
     // Close the loop by feeding back to the first point
-    tp.feed_to(P3::new(first.x, first.y, cut_z), params.feed_rate);
+    tp.feed_to_with_intent(
+        P3::new(first.x, first.y, cut_z),
+        params.feed_rate,
+        MoveIntent::FinishingCut,
+    );
 
     // Retract to safe_z
-    tp.rapid_to(P3::new(first.x, first.y, params.safe_z));
+    tp.rapid_to_with_intent(
+        P3::new(first.x, first.y, params.safe_z),
+        MoveIntent::Retract,
+    );
 }
 
 #[cfg(test)]

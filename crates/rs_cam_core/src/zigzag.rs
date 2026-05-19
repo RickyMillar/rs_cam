@@ -200,17 +200,26 @@ pub fn lines_to_toolpath(lines: &[[P2; 2]], params: &ZigzagParams) -> Toolpath {
         let start = &line[0];
         let end = &line[1];
 
+        use crate::toolpath::MoveIntent;
         // Rapid to start of line at safe Z
-        tp.rapid_to(P3::new(start.x, start.y, params.safe_z));
+        tp.rapid_to_with_intent(
+            P3::new(start.x, start.y, params.safe_z),
+            MoveIntent::Linking,
+        );
         // Plunge
-        tp.feed_to(
+        tp.feed_to_with_intent(
             P3::new(start.x, start.y, params.cut_depth),
             params.plunge_rate,
+            MoveIntent::EntryPlunge,
         );
         // Cut across
-        tp.feed_to(P3::new(end.x, end.y, params.cut_depth), params.feed_rate);
+        tp.feed_to_with_intent(
+            P3::new(end.x, end.y, params.cut_depth),
+            params.feed_rate,
+            MoveIntent::ClearingCut,
+        );
         // Retract
-        tp.rapid_to(P3::new(end.x, end.y, params.safe_z));
+        tp.rapid_to_with_intent(P3::new(end.x, end.y, params.safe_z), MoveIntent::Retract);
     }
 
     tp

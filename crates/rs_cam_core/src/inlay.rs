@@ -172,7 +172,13 @@ fn male_toolpath(polygon: &Polygon2, params: &InlayParams) -> Toolpath {
             continue;
         }
 
-        tp.emit_path_segment(&points, params.safe_z, params.feed_rate, params.plunge_rate);
+        tp.emit_path_segment_with_intent(
+            &points,
+            params.safe_z,
+            params.feed_rate,
+            params.plunge_rate,
+            crate::toolpath::MoveIntent::FinishingCut,
+        );
     }
 
     tp

@@ -713,11 +713,12 @@ pub fn pencil_toolpath_structured_annotated(
         }
 
         let move_index = tp.moves.len();
-        tp.emit_path_segment(
+        tp.emit_path_segment_with_intent(
             &valid_points,
             params.safe_z,
             params.feed_rate,
             params.plunge_rate,
+            crate::toolpath::MoveIntent::FinishingCut,
         );
         annotations.push(PencilRuntimeAnnotation {
             move_index,

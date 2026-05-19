@@ -154,8 +154,15 @@ pub fn spiral_finish_toolpath_structured_annotated(
     // SAFETY: path is non-empty (early return above)
     #[allow(clippy::indexing_slicing)]
     let first = path[0].0;
-    tp.rapid_to(P3::new(first.x, first.y, params.safe_z));
-    tp.feed_to(first, params.plunge_rate);
+    tp.rapid_to_with_intent(
+        P3::new(first.x, first.y, params.safe_z),
+        crate::toolpath::MoveIntent::Linking,
+    );
+    tp.feed_to_with_intent(
+        first,
+        params.plunge_rate,
+        crate::toolpath::MoveIntent::EntryPlunge,
+    );
     #[allow(clippy::indexing_slicing)]
     let (first_ring_index, first_radius) = (path[0].1, path[0].2);
     annotations.push(SpiralFinishRuntimeAnnotation {
@@ -179,7 +186,11 @@ pub fn spiral_finish_toolpath_structured_annotated(
                 },
             });
         }
-        tp.feed_to(*point, params.feed_rate);
+        tp.feed_to_with_intent(
+            *point,
+            params.feed_rate,
+            crate::toolpath::MoveIntent::FinishingCut,
+        );
     }
     tp.final_retract(params.safe_z);
 

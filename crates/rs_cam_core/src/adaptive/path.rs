@@ -547,16 +547,21 @@ pub(super) fn segments_to_toolpath(
                 });
             }
             AdaptiveSegment::Rapid(entry) => {
-                tp.rapid_to(crate::geo::P3::new(entry.x, entry.y, params.safe_z));
-                tp.feed_to(
+                tp.rapid_to_with_intent(
+                    crate::geo::P3::new(entry.x, entry.y, params.safe_z),
+                    crate::toolpath::MoveIntent::Linking,
+                );
+                tp.feed_to_with_intent(
                     crate::geo::P3::new(entry.x, entry.y, params.cut_depth),
                     params.plunge_rate,
+                    crate::toolpath::MoveIntent::EntryPlunge,
                 );
             }
             AdaptiveSegment::Link(entry) => {
-                tp.feed_to(
+                tp.feed_to_with_intent(
                     crate::geo::P3::new(entry.x, entry.y, params.cut_depth),
                     params.feed_rate,
+                    crate::toolpath::MoveIntent::Linking,
                 );
             }
             AdaptiveSegment::Cut(path) => {
@@ -566,9 +571,10 @@ pub(super) fn segments_to_toolpath(
                     for m in moves.iter().skip(1) {
                         match m {
                             BlendedMove::Linear(p) => {
-                                tp.feed_to(
+                                tp.feed_to_with_intent(
                                     crate::geo::P3::new(p.x, p.y, params.cut_depth),
                                     params.feed_rate,
+                                    crate::toolpath::MoveIntent::ClearingCut,
                                 );
                             }
                             BlendedMove::Arc {
@@ -586,18 +592,31 @@ pub(super) fn segments_to_toolpath(
                                 let j = center.y - prev.y;
                                 let target = crate::geo::P3::new(end.x, end.y, params.cut_depth);
                                 if *clockwise {
-                                    tp.arc_cw_to(target, i, j, params.feed_rate);
+                                    tp.arc_cw_to_with_intent(
+                                        target,
+                                        i,
+                                        j,
+                                        params.feed_rate,
+                                        crate::toolpath::MoveIntent::ClearingCut,
+                                    );
                                 } else {
-                                    tp.arc_ccw_to(target, i, j, params.feed_rate);
+                                    tp.arc_ccw_to_with_intent(
+                                        target,
+                                        i,
+                                        j,
+                                        params.feed_rate,
+                                        crate::toolpath::MoveIntent::ClearingCut,
+                                    );
                                 }
                             }
                         }
                     }
                 } else {
                     for p in simplified.iter().skip(1) {
-                        tp.feed_to(
+                        tp.feed_to_with_intent(
                             crate::geo::P3::new(p.x, p.y, params.cut_depth),
                             params.feed_rate,
+                            crate::toolpath::MoveIntent::ClearingCut,
                         );
                     }
                 }
@@ -606,11 +625,10 @@ pub(super) fn segments_to_toolpath(
     }
 
     if let Some(last) = tp.moves.last() {
-        tp.rapid_to(crate::geo::P3::new(
-            last.target.x,
-            last.target.y,
-            params.safe_z,
-        ));
+        tp.rapid_to_with_intent(
+            crate::geo::P3::new(last.target.x, last.target.y, params.safe_z),
+            crate::toolpath::MoveIntent::Retract,
+        );
     }
 
     (tp, annotations)

@@ -206,11 +206,12 @@ pub fn horizontal_finish_toolpath(
                 if !cl.contacted {
                     // Off the mesh — flush any accumulated segment.
                     if !segment.is_empty() {
-                        tp.emit_path_segment(
+                        tp.emit_path_segment_with_intent(
                             &segment,
                             params.safe_z,
                             params.feed_rate,
                             params.plunge_rate,
+                            crate::toolpath::MoveIntent::FinishingCut,
                         );
                         segment.clear();
                     }
@@ -229,11 +230,12 @@ pub fn horizontal_finish_toolpath(
                 } else {
                     // Not flat — flush segment, skip this point.
                     if !segment.is_empty() {
-                        tp.emit_path_segment(
+                        tp.emit_path_segment_with_intent(
                             &segment,
                             params.safe_z,
                             params.feed_rate,
                             params.plunge_rate,
+                            crate::toolpath::MoveIntent::FinishingCut,
                         );
                         segment.clear();
                     }
@@ -242,11 +244,12 @@ pub fn horizontal_finish_toolpath(
 
             // Flush any remaining segment at end of line.
             if !segment.is_empty() {
-                tp.emit_path_segment(
+                tp.emit_path_segment_with_intent(
                     &segment,
                     params.safe_z,
                     params.feed_rate,
                     params.plunge_rate,
+                    crate::toolpath::MoveIntent::FinishingCut,
                 );
             }
         }

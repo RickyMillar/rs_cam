@@ -16,13 +16,13 @@ Single source of truth for where this roadmap is. Implementing agents: update th
 | Step | Status | PR / commit | Notes |
 |---|---|---|---|
 | Step 0 — `mcp.rs` accumulator dedup | ☑ done | `e80614f` | `SpanCutAcc` + `DepthPassAcc` deleted; both routes now use canonical `SummaryAccumulator`. P3 transit-span peak gating now propagates to per-span and per-depth-pass summaries. |
-| Step 1 — C + I (MoveIntent + retract reclassification) | ☐ pending | — | **Path B chosen (2026-05-19):** kernel-swap NOT bundled. Step 1 stays small (just C + I). Driver: tapping is on the future feature roadmap — needs hole-level data model. |
+| Step 1 — C + I (MoveIntent + retract reclassification) | ☑ done | _pending commit_ | `MoveIntent` enum + `Move.intent` field; every in-tree generator emits non-`Unknown` tags; simulator reclassifies `MoveIntent::Retract` Linears as non-cutting; `metrics_not_applicable` now driven by `MoveIntent::Drilling` (op-kind fallback retained for legacy paths); CLAUDE.md "2D SVG engagement always zero" caveat removed. **Path B confirmed:** no kernel-swap bundled here. |
 | Step 2 — D + H (Engagement vector + per-kinematics summary) | ☐ pending | — | Schedule legacy `radial_engagement` deletion PR at the same time. |
 | Step 3 — E (DrillOp first-class) | ☐ pending | — | **Confirmed in-scope (2026-05-19 — Path B).** Full `DrillOp` promotion to support future tapping / canned cycles / hole-level reporting. Watch the dual-representation invariant in §6.E revision. |
 | Step 4 — F.a (sub-cell stamping) | ☐ pending | — | Watch the four algorithmic gaps in §6.F revision. |
 | Step 5 — J (marching cubes) | ☐ pending | — | Replaces `dexel_stock_to_mesh` only; live preview path stays on heightmap. |
 
-**Last touched:** 2026-05-19 — Step 0 landed; Path B chosen for Steps 1 + 3 (full DrillOp, future tapping support).
+**Last touched:** 2026-05-19 — Step 1 (C + I) landed: `MoveIntent` on `Move`, generators tagged, retract-feed reclassification + drill-intent-driven `metrics_not_applicable` wired through simulator and MCP narrate path.
 
 **Per-step acceptance gates** (apply to every step before marking ☑):
 - All tests pass; new tests cover the regression-locking surface called out in §9.

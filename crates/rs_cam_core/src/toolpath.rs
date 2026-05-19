@@ -19,6 +19,40 @@ pub enum MoveType {
     ArcCCW { i: f64, j: f64, feed_rate: f64 },
 }
 
+/// Per-move classification supplied by the toolpath generator.
+///
+/// Orthogonal to `MoveType` (kinematic class) and to `ToolpathSemanticTrace`
+/// (range-level structural grouping). Lets the simulator distinguish a drill
+/// peck from a v-carve plunge entry, and a retract from a feed-through-air,
+/// without depending on a kinematic heuristic.
+///
+/// `Unknown` is a deprecation marker for generators that have not yet
+/// migrated. All in-tree generators emit non-`Unknown` tags; the
+/// simulator's kinematic classifier remains as the fallback for
+/// `Unknown`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MoveIntent {
+    /// Drill-cycle plunge (true end-cutting). Engagement metrics do not apply.
+    Drilling,
+    /// Milling op entering material with a near-pure plunge.
+    EntryPlunge,
+    /// Roughing material-removal feed.
+    ClearingCut,
+    /// Finishing-pass feed.
+    FinishingCut,
+    /// Helical entry into material.
+    EntryHelix,
+    /// Ramped entry into material.
+    EntryRamp,
+    /// Tool-position-to-tool-position transition at feed (not material removal).
+    Linking,
+    /// Lift off material before a rapid (no material removal).
+    Retract,
+    /// Fallback for legacy / unaware generators. Deprecation marker.
+    #[default]
+    Unknown,
+}
+
 impl MoveType {
     /// True for any cutting move (Linear, ArcCW, ArcCCW). False for Rapid.
     pub fn is_cutting(self) -> bool {
@@ -41,6 +75,7 @@ impl MoveType {
 pub struct Move {
     pub target: P3,
     pub move_type: MoveType,
+    pub intent: MoveIntent,
 }
 
 /// A complete toolpath: a sequence of moves.
@@ -55,30 +90,64 @@ impl Toolpath {
     }
 
     pub fn rapid_to(&mut self, target: P3) {
-        self.moves.push(Move {
-            target,
-            move_type: MoveType::Rapid,
-        });
+        self.rapid_to_with_intent(target, MoveIntent::Unknown);
     }
 
     pub fn feed_to(&mut self, target: P3, feed_rate: f64) {
-        self.moves.push(Move {
-            target,
-            move_type: MoveType::Linear { feed_rate },
-        });
+        self.feed_to_with_intent(target, feed_rate, MoveIntent::Unknown);
     }
 
     pub fn arc_cw_to(&mut self, target: P3, i: f64, j: f64, feed_rate: f64) {
-        self.moves.push(Move {
-            target,
-            move_type: MoveType::ArcCW { i, j, feed_rate },
-        });
+        self.arc_cw_to_with_intent(target, i, j, feed_rate, MoveIntent::Unknown);
     }
 
     pub fn arc_ccw_to(&mut self, target: P3, i: f64, j: f64, feed_rate: f64) {
+        self.arc_ccw_to_with_intent(target, i, j, feed_rate, MoveIntent::Unknown);
+    }
+
+    pub fn rapid_to_with_intent(&mut self, target: P3, intent: MoveIntent) {
+        self.moves.push(Move {
+            target,
+            move_type: MoveType::Rapid,
+            intent,
+        });
+    }
+
+    pub fn feed_to_with_intent(&mut self, target: P3, feed_rate: f64, intent: MoveIntent) {
+        self.moves.push(Move {
+            target,
+            move_type: MoveType::Linear { feed_rate },
+            intent,
+        });
+    }
+
+    pub fn arc_cw_to_with_intent(
+        &mut self,
+        target: P3,
+        i: f64,
+        j: f64,
+        feed_rate: f64,
+        intent: MoveIntent,
+    ) {
+        self.moves.push(Move {
+            target,
+            move_type: MoveType::ArcCW { i, j, feed_rate },
+            intent,
+        });
+    }
+
+    pub fn arc_ccw_to_with_intent(
+        &mut self,
+        target: P3,
+        i: f64,
+        j: f64,
+        feed_rate: f64,
+        intent: MoveIntent,
+    ) {
         self.moves.push(Move {
             target,
             move_type: MoveType::ArcCCW { i, j, feed_rate },
+            intent,
         });
     }
 
@@ -103,6 +172,11 @@ impl Toolpath {
     ///
     /// For an empty path, this is a no-op. For a single point, emits
     /// rapid+plunge+retract only (no feed moves).
+    ///
+    /// Default intents are `Unknown` for all emitted moves. Generators
+    /// that know the operation kind should call `emit_path_segment_with_intent`
+    /// instead so the simulator can disambiguate plunge entries, cut
+    /// bodies, and retracts.
     pub fn emit_path_segment(
         &mut self,
         path: &[P3],
@@ -110,20 +184,41 @@ impl Toolpath {
         feed_rate: f64,
         plunge_rate: f64,
     ) {
+        self.emit_path_segment_with_intent(
+            path,
+            safe_z,
+            feed_rate,
+            plunge_rate,
+            MoveIntent::Unknown,
+        );
+    }
+
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    /// Emit rapid(Linking)→plunge(EntryPlunge)→feed(`body_intent`)→rapid(Retract)
+    /// for a 3D path.
+    ///
+    /// `body_intent` tags the feed segments along the path body
+    /// (typically `ClearingCut` or `FinishingCut`). The lead-in plunge is
+    /// tagged `EntryPlunge` and the lead-out lift is tagged `Retract`,
+    /// regardless of `body_intent`.
+    pub fn emit_path_segment_with_intent(
+        &mut self,
+        path: &[P3],
+        safe_z: f64,
+        feed_rate: f64,
+        plunge_rate: f64,
+        body_intent: MoveIntent,
+    ) {
         if path.is_empty() {
             return;
         }
-        // Rapid to above first point
-        self.rapid_to(P3::new(path[0].x, path[0].y, safe_z));
-        // Plunge to first point
-        self.feed_to(path[0], plunge_rate);
-        // Feed along remaining points
+        self.rapid_to_with_intent(P3::new(path[0].x, path[0].y, safe_z), MoveIntent::Linking);
+        self.feed_to_with_intent(path[0], plunge_rate, MoveIntent::EntryPlunge);
         for p in path.iter().skip(1) {
-            self.feed_to(*p, feed_rate);
+            self.feed_to_with_intent(*p, feed_rate, body_intent);
         }
-        // Retract
         if let Some(last) = path.last() {
-            self.rapid_to(P3::new(last.x, last.y, safe_z));
+            self.rapid_to_with_intent(P3::new(last.x, last.y, safe_z), MoveIntent::Retract);
         }
     }
 
@@ -132,7 +227,10 @@ impl Toolpath {
         if let Some(last) = self.moves.last()
             && last.target.z < safe_z - 0.001
         {
-            self.rapid_to(P3::new(last.target.x, last.target.y, safe_z));
+            self.rapid_to_with_intent(
+                P3::new(last.target.x, last.target.y, safe_z),
+                MoveIntent::Retract,
+            );
         }
     }
 
@@ -375,35 +473,38 @@ pub fn raster_toolpath_from_grid(
             for &(seg_s, seg_e) in &segments {
                 let first_col = col_at(seg_s);
                 let first_pt = grid.get(row, first_col);
-                tp.rapid_to(P3::new(first_pt.x, first_pt.y, safe_z));
-                tp.feed_to(first_pt.position(), plunge_rate);
+                tp.rapid_to_with_intent(
+                    P3::new(first_pt.x, first_pt.y, safe_z),
+                    MoveIntent::Linking,
+                );
+                tp.feed_to_with_intent(first_pt.position(), plunge_rate, MoveIntent::EntryPlunge);
 
                 for i in (seg_s + 1)..=seg_e {
                     let col = col_at(i);
                     let pt = grid.get(row, col);
-                    tp.feed_to(pt.position(), feed_rate);
+                    tp.feed_to_with_intent(pt.position(), feed_rate, MoveIntent::FinishingCut);
                 }
 
                 let last_col = col_at(seg_e);
                 let last_pt = grid.get(row, last_col);
-                tp.rapid_to(P3::new(last_pt.x, last_pt.y, safe_z));
+                tp.rapid_to_with_intent(P3::new(last_pt.x, last_pt.y, safe_z), MoveIntent::Retract);
             }
         } else {
             // No min_z filtering — emit the entire row
             let first_col = col_at(0);
             let first_pt = grid.get(row, first_col);
-            tp.rapid_to(P3::new(first_pt.x, first_pt.y, safe_z));
-            tp.feed_to(first_pt.position(), plunge_rate);
+            tp.rapid_to_with_intent(P3::new(first_pt.x, first_pt.y, safe_z), MoveIntent::Linking);
+            tp.feed_to_with_intent(first_pt.position(), plunge_rate, MoveIntent::EntryPlunge);
 
             for i in 1..grid.cols {
                 let col = col_at(i);
                 let cl = grid.get(row, col);
-                tp.feed_to(cl.position(), feed_rate);
+                tp.feed_to_with_intent(cl.position(), feed_rate, MoveIntent::FinishingCut);
             }
 
             let last_col = col_at(grid.cols - 1);
             let last_pt = grid.get(row, last_col);
-            tp.rapid_to(P3::new(last_pt.x, last_pt.y, safe_z));
+            tp.rapid_to_with_intent(P3::new(last_pt.x, last_pt.y, safe_z), MoveIntent::Retract);
         }
     }
 
@@ -606,6 +707,57 @@ mod tests {
         assert_eq!(tp.moves.len(), 2);
         assert_eq!(tp.moves[1].move_type, MoveType::Rapid);
         assert!((tp.moves[1].target.z - 10.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn emit_path_segment_with_intent_tags_each_phase() {
+        let path = vec![
+            P3::new(0.0, 0.0, -1.0),
+            P3::new(5.0, 0.0, -1.0),
+            P3::new(10.0, 0.0, -1.0),
+        ];
+        let mut tp = Toolpath::new();
+        tp.emit_path_segment_with_intent(&path, 10.0, 1000.0, 500.0, MoveIntent::ClearingCut);
+
+        // rapid(Linking) + plunge(EntryPlunge) + feed(ClearingCut) + feed(ClearingCut) + rapid(Retract)
+        assert_eq!(tp.moves.len(), 5);
+        assert_eq!(tp.moves[0].intent, MoveIntent::Linking);
+        assert_eq!(tp.moves[1].intent, MoveIntent::EntryPlunge);
+        assert_eq!(tp.moves[2].intent, MoveIntent::ClearingCut);
+        assert_eq!(tp.moves[3].intent, MoveIntent::ClearingCut);
+        assert_eq!(tp.moves[4].intent, MoveIntent::Retract);
+    }
+
+    #[test]
+    fn emit_path_segment_default_tags_bookends_leaves_body_unknown() {
+        // Non-intent-aware callers (legacy generators) still benefit from
+        // the bookend tags — the lead-in plunge is `EntryPlunge` and the
+        // lead-out lift is `Retract`. Only the cut body is `Unknown` until
+        // the caller is migrated, because we don't know whether it's
+        // clearing or finishing without that info. The Retract tag is the
+        // load-bearing piece — it makes the simulator's retract-feed
+        // reclassification work even for legacy generators.
+        let path = vec![
+            P3::new(0.0, 0.0, -1.0),
+            P3::new(5.0, 0.0, -1.0),
+            P3::new(10.0, 0.0, -1.0),
+        ];
+        let mut tp = Toolpath::new();
+        tp.emit_path_segment(&path, 10.0, 1000.0, 500.0);
+        assert_eq!(tp.moves[0].intent, MoveIntent::Linking);
+        assert_eq!(tp.moves[1].intent, MoveIntent::EntryPlunge);
+        // Body moves keep the caller-supplied intent (Unknown for legacy).
+        assert_eq!(tp.moves[2].intent, MoveIntent::Unknown);
+        assert_eq!(tp.moves[3].intent, MoveIntent::Unknown);
+        assert_eq!(tp.moves[4].intent, MoveIntent::Retract);
+    }
+
+    #[test]
+    fn final_retract_tags_intent() {
+        let mut tp = Toolpath::new();
+        tp.feed_to(P3::new(5.0, 5.0, -3.0), 1000.0);
+        tp.final_retract(10.0);
+        assert_eq!(tp.moves[1].intent, MoveIntent::Retract);
     }
 
     #[test]

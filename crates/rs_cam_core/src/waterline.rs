@@ -16,7 +16,7 @@ use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::pushcutter::{batch_push_cutter, batch_push_cutter_with_cancel};
 use crate::tool::MillingCutter;
-use crate::toolpath::Toolpath;
+use crate::toolpath::{MoveIntent, Toolpath};
 
 /// Parameters for waterline toolpath generation.
 pub struct WaterlineParams {
@@ -143,21 +143,39 @@ pub fn waterline_toolpath_with_cancel(
             #[allow(clippy::indexing_slicing)]
             {
                 // Rapid to above first point
-                toolpath.rapid_to(P3::new(contour[0].x, contour[0].y, params.safe_z));
+                toolpath.rapid_to_with_intent(
+                    P3::new(contour[0].x, contour[0].y, params.safe_z),
+                    MoveIntent::Linking,
+                );
 
                 // Plunge to Z
-                toolpath.feed_to(P3::new(contour[0].x, contour[0].y, z), params.plunge_rate);
+                toolpath.feed_to_with_intent(
+                    P3::new(contour[0].x, contour[0].y, z),
+                    params.plunge_rate,
+                    MoveIntent::EntryPlunge,
+                );
 
                 // Follow contour
                 for pt in &contour[1..] {
-                    toolpath.feed_to(P3::new(pt.x, pt.y, z), params.feed_rate);
+                    toolpath.feed_to_with_intent(
+                        P3::new(pt.x, pt.y, z),
+                        params.feed_rate,
+                        MoveIntent::FinishingCut,
+                    );
                 }
 
                 // Close the contour
-                toolpath.feed_to(P3::new(contour[0].x, contour[0].y, z), params.feed_rate);
+                toolpath.feed_to_with_intent(
+                    P3::new(contour[0].x, contour[0].y, z),
+                    params.feed_rate,
+                    MoveIntent::FinishingCut,
+                );
 
                 // Retract
-                toolpath.rapid_to(P3::new(contour[0].x, contour[0].y, params.safe_z));
+                toolpath.rapid_to_with_intent(
+                    P3::new(contour[0].x, contour[0].y, params.safe_z),
+                    MoveIntent::Retract,
+                );
             }
         }
 

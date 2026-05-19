@@ -323,11 +323,12 @@ fn project_polygon_rings(
                 // accumulated chain so the next contiguous stretch starts
                 // fresh with a rapid-plunge rather than a feed bridging it.
                 if !current_chain.is_empty() {
-                    tp.emit_path_segment(
+                    tp.emit_path_segment_with_intent(
                         &current_chain,
                         params.safe_z,
                         params.feed_rate,
                         params.plunge_rate,
+                        crate::toolpath::MoveIntent::FinishingCut,
                     );
                     current_chain.clear();
                 }
@@ -336,11 +337,12 @@ fn project_polygon_rings(
 
         // Flush remaining chain
         if !current_chain.is_empty() {
-            tp.emit_path_segment(
+            tp.emit_path_segment_with_intent(
                 &current_chain,
                 params.safe_z,
                 params.feed_rate,
                 params.plunge_rate,
+                crate::toolpath::MoveIntent::FinishingCut,
             );
         }
     }

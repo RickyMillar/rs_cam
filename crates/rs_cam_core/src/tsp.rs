@@ -510,16 +510,19 @@ mod tests {
         moves.push(Move {
             target: P3::new(first.x, first.y, safe_z),
             move_type: MoveType::Rapid,
+            intent: crate::toolpath::MoveIntent::Unknown,
         });
         for p in points {
             moves.push(Move {
                 target: *p,
                 move_type: MoveType::Linear { feed_rate },
+                intent: crate::toolpath::MoveIntent::Unknown,
             });
         }
         moves.push(Move {
             target: P3::new(last.x, last.y, safe_z),
             move_type: MoveType::Rapid,
+            intent: crate::toolpath::MoveIntent::Unknown,
         });
         moves
     }
