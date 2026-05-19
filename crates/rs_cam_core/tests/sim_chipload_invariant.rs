@@ -103,6 +103,7 @@ fn flat_endmill_second_pass_through_cleared_strip_agrees() {
             2.0,
             None,
             &[],
+            &[],
             true,
             &never_cancel,
         )
@@ -163,6 +164,7 @@ fn ball_endmill_sloped_second_pass_through_cleared_strip_agrees() {
             2.0,
             None,
             &[],
+            &[],
             true,
             &never_cancel,
         )
@@ -184,6 +186,7 @@ fn ball_endmill_sloped_second_pass_through_cleared_strip_agrees() {
             3000.0,
             1.0,
             None,
+            &[],
             &[],
             true,
             &never_cancel,
@@ -220,6 +223,7 @@ fn flat_endmill_adjacent_stepover_pass_agrees() {
             3000.0,
             2.0,
             None,
+            &[],
             &[],
             true,
             &never_cancel,

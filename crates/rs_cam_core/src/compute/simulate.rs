@@ -359,6 +359,7 @@ where
             if request.metric_options.enabled {
                 let entry_rpm = entry.spindle_rpm.unwrap_or(request.spindle_rpm);
                 let span_paths_by_move = entry.annotated.span_paths_by_move();
+                let transit_moves = entry.annotated.transit_moves_bitmap();
                 let mut samples = group_stock
                     .simulate_toolpath_with_lut_metrics_cancel(
                         entry_toolpath,
@@ -373,6 +374,7 @@ where
                         sample_step_mm,
                         entry.semantic_trace.as_deref(),
                         &span_paths_by_move,
+                        &transit_moves,
                         request.metric_options.capture_arc_engagement,
                         &|| cancel.load(Ordering::SeqCst),
                     )

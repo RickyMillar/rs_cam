@@ -31,6 +31,10 @@ pub(super) struct CuttingCaptureParams<'a> {
     pub(super) sample_step_mm: f64,
     pub(super) cut_kinematics: CutKinematics,
     pub(super) capture_arc_engagement: bool,
+    /// P3: move sits in a transit-style span (Entry/LinkBridge/LeadOut/
+    /// WaterlineCleanup/DressupArtifact). Marks every sample emitted from
+    /// this move as `in_transit_span = true`.
+    pub(super) in_transit_span: bool,
 }
 
 // ── Grid-generic stamp helpers ───────────────────────────────────────────
@@ -435,6 +439,8 @@ pub(super) struct SegmentSampleParams<'a> {
     pub(super) flute_count: u32,
     pub(super) semantic_item_id: Option<u64>,
     pub(super) span_path: &'a [SpanId],
+    /// P3: move sits in a transit-style span. See `CuttingCaptureParams`.
+    pub(super) in_transit_span: bool,
 }
 
 pub(super) fn sample_segment_runtime(
@@ -484,6 +490,7 @@ pub(super) fn sample_segment_runtime(
             mrr_mm3_s: 0.0,
             semantic_item_id: params.semantic_item_id,
             span_path: params.span_path.to_vec(),
+            in_transit_span: params.in_transit_span,
         });
         *next_sample_index += 1;
     }

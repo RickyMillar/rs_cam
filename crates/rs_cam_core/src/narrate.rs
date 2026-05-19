@@ -1298,6 +1298,7 @@ mod tests {
             mrr_mm3_s: 0.0,
             semantic_item_id: None,
             span_path: Vec::new(),
+            in_transit_span: false,
         }
     }
 }

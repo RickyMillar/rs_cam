@@ -67,6 +67,7 @@ fn run_stepover_and_get_steady_state(sample_step_mm: f64) -> f64 {
             sample_step_mm,
             None,
             &[],
+            &[],
             true,
             &never_cancel,
         )
@@ -143,6 +144,7 @@ fn radial_engagement_full_slot_first_cut() {
             0.5,
             None,
             &[],
+            &[],
             true,
             &never_cancel,
         )
@@ -182,6 +184,7 @@ fn radial_engagement_air_cut_reads_zero() {
             3000.0,
             0.5,
             None,
+            &[],
             &[],
             true,
             &never_cancel,
