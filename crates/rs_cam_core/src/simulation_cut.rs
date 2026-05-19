@@ -509,26 +509,31 @@ impl SimulationCutTrace {
     }
 }
 
+/// Time-weighted aggregator over `SimulationCutSample`s. Canonical source of
+/// engagement / DOC / chipload / removed-volume summary math; the MCP per-span
+/// and per-depth-pass summaries route through the same `observe` so the
+/// statistics, gating, and edge cases (P3 transit-span peak gating, air-cut
+/// thresholds) stay in lock-step with the top-level toolpath summary.
 #[derive(Default)]
-struct SummaryAccumulator {
-    total_runtime_s: f64,
-    cutting_runtime_s: f64,
-    rapid_runtime_s: f64,
-    air_cut_time_s: f64,
-    low_engagement_time_s: f64,
-    engagement_time_weighted_sum: f64,
-    peak_engagement: f64,
-    peak_chipload_mm_per_tooth: f64,
-    peak_axial_doc_mm: f64,
-    total_removed_volume_est_mm3: f64,
-    peak_mrr_mm3_s: f64,
-    air_cut_issue_count: usize,
-    low_engagement_issue_count: usize,
-    sample_count: usize,
+pub struct SummaryAccumulator {
+    pub total_runtime_s: f64,
+    pub cutting_runtime_s: f64,
+    pub rapid_runtime_s: f64,
+    pub air_cut_time_s: f64,
+    pub low_engagement_time_s: f64,
+    pub engagement_time_weighted_sum: f64,
+    pub peak_engagement: f64,
+    pub peak_chipload_mm_per_tooth: f64,
+    pub peak_axial_doc_mm: f64,
+    pub total_removed_volume_est_mm3: f64,
+    pub peak_mrr_mm3_s: f64,
+    pub air_cut_issue_count: usize,
+    pub low_engagement_issue_count: usize,
+    pub sample_count: usize,
 }
 
 impl SummaryAccumulator {
-    fn observe(&mut self, sample: &SimulationCutSample) {
+    pub fn observe(&mut self, sample: &SimulationCutSample) {
         self.sample_count += 1;
         self.total_runtime_s += sample.segment_time_s;
         self.total_removed_volume_est_mm3 += sample.removed_volume_est_mm3.max(0.0);
@@ -563,7 +568,7 @@ impl SummaryAccumulator {
         }
     }
 
-    fn average_engagement(&self) -> f64 {
+    pub fn average_engagement(&self) -> f64 {
         if self.cutting_runtime_s <= 1e-9 {
             0.0
         } else {
@@ -571,7 +576,7 @@ impl SummaryAccumulator {
         }
     }
 
-    fn average_mrr(&self) -> f64 {
+    pub fn average_mrr(&self) -> f64 {
         if self.cutting_runtime_s <= 1e-9 {
             0.0
         } else {

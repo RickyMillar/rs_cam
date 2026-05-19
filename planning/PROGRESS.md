@@ -22,6 +22,29 @@
 - unified service layer: `ProjectSession` API in core, shared `execute_operation()` dispatch for all 23 ops
 - MCP server (`rs_cam_mcp`) exposing `ProjectSession` tools for AI agent integration
 
+## Recent work (2026-05-19)
+
+### Dexel-fidelity roadmap — Step 0 (mcp.rs accumulator dedup)
+
+Step 0 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` landed. Two parallel
+re-implementations of `SummaryAccumulator::observe` in
+`crates/rs_cam_viz/src/app/mcp.rs` (`SpanCutAcc` and `DepthPassAcc`)
+were removed and replaced with the canonical `SummaryAccumulator` from
+`crates/rs_cam_core/src/simulation_cut.rs`. The canonical type was
+promoted to `pub` with `pub` fields and `pub fn` accessors so external
+crates can drive it.
+
+Behavior win: the P3 transit-span peak gating (which excludes
+helix-entry / link-bridge / lead-out samples from `peak_chipload` and
+`peak_axial_doc`) now propagates from the top-level toolpath summary
+down to per-span and per-depth-pass summaries returned by the MCP
+`inspect_spans` / `get_tool_load_report` surfaces. Per-depth-pass
+`total_removed_volume_est_mm3` now also includes rapid-sample
+contributions (~0 in practice; effectively unchanged).
+
+No new tests added — the regression-locking surface lives in the
+canonical accumulator, which was already covered.
+
 ## Recent work (2026-05-12)
 
 ### Roadmap F.5 — feeds-auto removal
