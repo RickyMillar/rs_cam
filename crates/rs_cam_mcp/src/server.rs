@@ -472,6 +472,8 @@ impl CamServer {
             return no_project_error();
         };
         let bbox = session.stock_bbox();
+        let stale_defaults =
+            rs_cam_core::compute::validate::validate_stale_defaults(session);
         json_str(serde_json::json!({
             "name": session.name(),
             "stock": {
@@ -482,6 +484,7 @@ impl CamServer {
             "setup_count": session.setup_count(),
             "toolpath_count": session.toolpath_count(),
             "tools": session.list_tools(),
+            "stale_defaults": stale_defaults,
         }))
     }
 
