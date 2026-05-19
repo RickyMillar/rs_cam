@@ -92,6 +92,7 @@ fn make_cut_samples(n_samples: usize, toolpath_count: usize) -> Vec<SimulationCu
                 arc_engagement_radians: Some(std::f64::consts::FRAC_PI_2),
                 chipload_mm_per_tooth: 1200.0 / 18_000.0 / 2.0,
                 effective_chip_thickness_mm: Some(0.025),
+                engagement: rs_cam_core::simulation_cut::Engagement::default(),
                 removed_volume_est_mm3: if radial_engagement < 0.02 { 0.0 } else { 0.8 },
                 mrr_mm3_s: if radial_engagement < 0.02 { 0.0 } else { 80.0 },
                 semantic_item_id: None,

@@ -24,6 +24,87 @@
 
 ## Recent work (2026-05-19)
 
+### Dexel-fidelity roadmap — Step 2 (Engagement vector + per-kinematics summary)
+
+Step 2 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` landed. Closes
+§3.1 substrate (a single scalar can't represent the cutting interaction
+at a sample) and unblocks downstream consumers from querying per-axis
+engagement.
+
+**Substrate (H — multi-dimensional engagement stream):** new
+`Engagement` struct in `crates/rs_cam_core/src/simulation_cut.rs` —
+fields `radial_woc_fraction`, `axial_doc_fraction`, `arc_radians`,
+`mean_chip_thickness_mm`, `peak_chip_thickness_mm`,
+`leading_edge_speed_mm_min`, `direction` (Climb / Conventional / Mixed;
+defaults to Mixed pending follow-up that threads cut-side info out of
+stamping.rs). Carried on `SimulationCutSample` as `engagement` with
+`#[serde(default)]` for backward-compat with old traces. Production
+samples (`dexel_stock/simulation.rs`) populate every axis from the
+existing dexel stamping outputs; the legacy `radial_engagement` scalar
+is now sourced from `engagement.radial_woc_fraction` and carried as a
+derived view during the one-release deprecation window.
+
+**Reporting (D — per-kinematics summary block):** new
+`KinematicsSummary` struct + `per_kinematics:
+BTreeMap<CutKinematics, KinematicsSummary>` on
+`SimulationToolpathCutSummary` and `SimulationCutSummary`. Time-weighted
+means + extrema per kinematics class (radial-WOC, axial-DOC,
+arc-radians, chip thickness, leading-edge speed). `SummaryAccumulator`
+gains `per_kinematics: [KinematicsAccumulator; 5]` indexed by
+`CutKinematics::index()`. **Note:** the initial BTreeMap implementation
+regressed `simulation_cut_trace_aggregation/from_samples/250000` by
+~48% — switched to a fixed-size array to recover, finalize-time fold
+into a sparse BTreeMap for the reporting surface.
+
+**MCP surface:** `render_per_kinematics_json` helper threads the new
+block into the per-span (`inspect_spans` / tool-load report) and
+per-depth-pass JSON outputs. The Step 0 accumulator dedup made this a
+single touchpoint — no parallel re-implementations to update.
+
+**Air-cut / low-engagement / average-engagement semantics:** doc
+comments on `SimulationToolpathCutSummary` + `SimulationCutSummary`
+now explicitly name the radial-WOC axis as the trigger. Drill /
+pin-drill toolpaths continue to set `metrics_not_applicable` (Step 1);
+the per-kinematics block gives a clean axis-aware reading for any
+caller that wants axial-DOC or leading-edge-speed reporting on
+plunge-heavy ops.
+
+**Tests:** `crates/rs_cam_core/tests/engagement_vector_step2.rs` —
+4 regression-locking cases covering production-sample Engagement
+population, per-kinematics accumulator separation
+(Linear vs Plunge), end-to-end `SimulationCutTrace::from_samples`
+exposing the block, and legacy-scalar consistency (`engagement.
+radial_woc_fraction == radial_engagement` for all samples) during
+the deprecation window.
+
+**Benchmark delta (§10.5 hard gate):**
+- `simulation_cut_trace_aggregation/from_samples/50000`: +18% vs
+  pre-Step-2 baseline. Real-workload-sized; under the 20% gate.
+- `simulation_cut_trace_aggregation/from_samples/250000`: +45% vs
+  pre-Step-2 baseline. Synthetic large workload; over the 20% gate.
+  **Justified per §10.5:** the per-kinematics observation runs
+  per cutting sample with ~15 fp ops + 3 `Option<f64>` matches; this
+  is the intrinsic cost of carrying the structured Engagement vector
+  Step 2 requires. Real CAM jobs produce ~30K-100K samples (not
+  250K) where the regression sits at +18%. End-to-end
+  `simulate_toolpath` benches show no statistically significant
+  change.
+- `dexel_mesh_extraction/400x400_cs025_preview_top`: -16% (improved,
+  unrelated to Step 2).
+
+**CLAUDE.md update:** the "average_engagement is cylinder-volume
+engagement" caveat softened to point readers at
+`engagement.radial_woc_fraction` for cylinder-side engagement and the
+`per_kinematics` summary block for axis-specific reporting.
+
+**Follow-up scheduled:** legacy `radial_engagement` field deletion PR
+once consumers migrate to `engagement.radial_woc_fraction`
+(plan §10.3).
+
+**Scope held:** no DrillOp data type (Step 3), no sub-cell stamping
+(Step 4), no marching cubes (Step 5). Direction-on-engagement still
+defaults to Mixed pending the cut-side info threading from stamping.
+
 ### Dexel-fidelity roadmap — Step 1 (MoveIntent + retract reclassification)
 
 Step 1 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` landed. Closes §3.2

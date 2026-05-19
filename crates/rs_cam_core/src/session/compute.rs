@@ -1764,6 +1764,7 @@ mod tests {
             total_removed_volume_est_mm3: 0.0,
             average_mrr_mm3_s: 0.0,
             metrics_not_applicable: false,
+            per_kinematics: std::collections::BTreeMap::new(),
         }
     }
 

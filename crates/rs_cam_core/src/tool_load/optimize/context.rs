@@ -507,6 +507,7 @@ mod restore_guard_tests {
                     total_removed_volume_est_mm3: 1.0,
                     average_mrr_mm3_s: 1.0,
                     metrics_not_applicable: false,
+                    per_kinematics: std::collections::BTreeMap::new(),
                 },
             ],
             semantic_summaries: Vec::new(),
