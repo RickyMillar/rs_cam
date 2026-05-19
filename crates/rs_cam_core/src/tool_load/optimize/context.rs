@@ -506,6 +506,7 @@ mod restore_guard_tests {
                     peak_axial_doc_mm: 1.0,
                     total_removed_volume_est_mm3: 1.0,
                     average_mrr_mm3_s: 1.0,
+                    metrics_not_applicable: false,
                 },
             ],
             semantic_summaries: Vec::new(),

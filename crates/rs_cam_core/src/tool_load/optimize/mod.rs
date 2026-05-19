@@ -905,6 +905,7 @@ mod orchestration_skip_tests {
             peak_axial_doc_mm: 2.0,
             total_removed_volume_est_mm3: 100.0,
             average_mrr_mm3_s: 2.0,
+            metrics_not_applicable: false,
         });
 
         let mut session = session_with_op(OperationConfig::Pocket(PocketConfig::default()));
@@ -942,6 +943,7 @@ mod orchestration_skip_tests {
             peak_axial_doc_mm: 6.0,
             total_removed_volume_est_mm3: 100.0,
             average_mrr_mm3_s: 2.0,
+            metrics_not_applicable: false,
         });
         // Slot at 6 mm DOC on a 6.35 mm cutter at full π arc — force
         // peaks at Kc × 6 × 6.35. With softwood Kc=6 and the default
@@ -1138,6 +1140,7 @@ mod project_rollup_tests {
             peak_axial_doc_mm: 2.0,
             total_removed_volume_est_mm3: 100.0,
             average_mrr_mm3_s: 2.0,
+            metrics_not_applicable: false,
         }
     }
 

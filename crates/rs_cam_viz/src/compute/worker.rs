@@ -79,6 +79,9 @@ pub struct SetupSimToolpath {
     /// Per-toolpath spindle RPM override. `None` means use the simulation
     /// request's project/post default RPM.
     pub spindle_rpm: Option<u32>,
+    /// P4: true for drill / pin-drill kinds — see `SimToolpathEntry`.
+    #[allow(dead_code)] // populated by caller; consumed by execute pipeline
+    pub metrics_not_applicable: bool,
 }
 
 /// A group of toolpaths from one setup in setup-local coordinates.

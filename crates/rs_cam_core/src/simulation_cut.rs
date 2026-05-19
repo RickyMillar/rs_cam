@@ -181,6 +181,16 @@ pub struct SimulationToolpathCutSummary {
     pub peak_axial_doc_mm: f64,
     pub total_removed_volume_est_mm3: f64,
     pub average_mrr_mm3_s: f64,
+    /// True when the dexel's radial-engagement and air-cut metrics
+    /// cannot be measured for this toolpath's kinematics (currently
+    /// drill / alignment-pin-drill cycles — Z-only moves the XY-cylinder
+    /// engagement model can't see). Downstream consumers MUST suppress
+    /// `air_cut_time_s`, `average_engagement`, and related per-TP UI
+    /// elements when this is set. The time totals stay populated for
+    /// MRR / runtime accounting.
+    /// P4 — see `planning/P4_DRILL_METRIC_SUPPRESSION_RCA.md`.
+    #[serde(default)]
+    pub metrics_not_applicable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -320,6 +330,33 @@ impl SimulationCutTrace {
     where
         I: IntoIterator<Item = (usize, &'a ToolpathSemanticTrace)>,
     {
+        Self::from_samples_with_context(
+            sample_step_mm,
+            samples,
+            semantic_traces,
+            &std::collections::BTreeSet::new(),
+        )
+    }
+
+    /// Trace builder with op-kind context.
+    ///
+    /// `metrics_not_applicable_toolpath_ids` is the set of toolpath ids whose
+    /// kinematics don't fit the dexel's XY-cylinder side-engagement model
+    /// (drill / alignment-pin-drill — Z-only moves). For samples in those
+    /// toolpaths the builder suppresses air-cut / low-engagement
+    /// `SimulationCutIssue` emission (otherwise every sample emits one and
+    /// inflates `issue_count` to the thousands) and sets the per-TP
+    /// `metrics_not_applicable` flag on the summary.
+    /// P4 — see `planning/P4_DRILL_METRIC_SUPPRESSION_RCA.md`.
+    pub fn from_samples_with_context<'a, I>(
+        sample_step_mm: f64,
+        samples: Vec<SimulationCutSample>,
+        semantic_traces: I,
+        metrics_not_applicable_toolpath_ids: &std::collections::BTreeSet<usize>,
+    ) -> Self
+    where
+        I: IntoIterator<Item = (usize, &'a ToolpathSemanticTrace)>,
+    {
         let semantic_traces: BTreeMap<usize, &ToolpathSemanticTrace> =
             semantic_traces.into_iter().collect();
         let mut toolpaths: BTreeMap<usize, SummaryAccumulator> = BTreeMap::new();
@@ -355,7 +392,14 @@ impl SimulationCutTrace {
                     .observe(sample);
             }
 
-            let kind = if !sample.is_cutting {
+            // P4: for ops whose kinematics fall outside the dexel's
+            // XY-cylinder engagement model (drill / pin-drill), every
+            // cutting sample reads ~0 radial engagement. Skip issue
+            // emission for these to avoid drowning the issue list in
+            // thousands of false "air_cut" entries.
+            let kind = if !sample.is_cutting
+                || metrics_not_applicable_toolpath_ids.contains(&sample.toolpath_id)
+            {
                 None
             } else if sample.radial_engagement < 0.02 {
                 Some(SimulationCutIssueKind::AirCut)
@@ -405,7 +449,13 @@ impl SimulationCutTrace {
 
         let toolpath_summaries: Vec<_> = toolpaths
             .into_iter()
-            .map(|(toolpath_id, acc)| acc.finish_toolpath(toolpath_id))
+            .map(|(toolpath_id, acc)| {
+                let mut s = acc.finish_toolpath(toolpath_id);
+                if metrics_not_applicable_toolpath_ids.contains(&toolpath_id) {
+                    s.metrics_not_applicable = true;
+                }
+                s
+            })
             .collect();
         let mut semantic_summaries: Vec<_> = semantic_accs
             .into_iter()
@@ -543,6 +593,7 @@ impl SummaryAccumulator {
             peak_axial_doc_mm: self.peak_axial_doc_mm,
             total_removed_volume_est_mm3: self.total_removed_volume_est_mm3,
             average_mrr_mm3_s: self.average_mrr(),
+            metrics_not_applicable: false,
         }
     }
 
@@ -1946,6 +1997,121 @@ mod tests {
             trace.summary.peak_chipload_mm_per_tooth < 0.1,
             "transit-span sample must be excluded from peak chipload"
         );
+    }
+
+    // ── P4: suppress issues + mark `metrics_not_applicable` for drills ──
+
+    fn make_drill_sample(toolpath_id: usize, sample_index: usize) -> SimulationCutSample {
+        // Drill kinematics: is_cutting=true, radial_engagement=0 (dexel can't
+        // see Z-only moves).
+        let mut s = make_sample(sample_index, 1.0, false);
+        s.toolpath_id = toolpath_id;
+        s.radial_engagement = 0.0;
+        s
+    }
+
+    #[test]
+    fn drill_samples_dont_emit_air_cut_issues() {
+        // 100 samples of a drill TP; without the gate they'd produce 1
+        // coalesced air-cut issue. With the gate, zero.
+        let samples: Vec<_> = (0..100).map(|i| make_drill_sample(7, i)).collect();
+        let drill_ids: std::collections::BTreeSet<usize> = std::iter::once(7).collect();
+        let trace = SimulationCutTrace::from_samples_with_context(
+            0.5,
+            samples,
+            std::iter::empty::<(usize, &'static ToolpathSemanticTrace)>(),
+            &drill_ids,
+        );
+        assert_eq!(
+            trace.issues.len(),
+            0,
+            "drill TP should emit zero air-cut issues"
+        );
+    }
+
+    #[test]
+    fn drill_toolpath_summary_is_marked_not_applicable() {
+        let samples = vec![make_drill_sample(7, 0), make_drill_sample(7, 1)];
+        let drill_ids: std::collections::BTreeSet<usize> = std::iter::once(7).collect();
+        let trace = SimulationCutTrace::from_samples_with_context(
+            0.5,
+            samples,
+            std::iter::empty::<(usize, &'static ToolpathSemanticTrace)>(),
+            &drill_ids,
+        );
+        let tp = trace
+            .toolpath_summaries
+            .iter()
+            .find(|s| s.toolpath_id == 7)
+            .expect("toolpath 7 should have a summary");
+        assert!(
+            tp.metrics_not_applicable,
+            "drill TP summary should be marked metrics_not_applicable"
+        );
+    }
+
+    #[test]
+    fn non_drill_toolpath_still_emits_issues() {
+        // 100 air-cut samples on a non-drill toolpath → still emit 1 coalesced issue.
+        let mut samples = Vec::new();
+        for i in 0..100 {
+            let mut s = make_sample(i, 1.0, false);
+            s.toolpath_id = 1;
+            s.radial_engagement = 0.0;
+            samples.push(s);
+        }
+        let drill_ids = std::collections::BTreeSet::new();
+        let trace = SimulationCutTrace::from_samples_with_context(
+            0.5,
+            samples,
+            std::iter::empty::<(usize, &'static ToolpathSemanticTrace)>(),
+            &drill_ids,
+        );
+        assert_eq!(
+            trace.issues.len(),
+            1,
+            "non-drill TP with low engagement should emit 1 coalesced air-cut issue"
+        );
+        // Summary should NOT be marked metrics_not_applicable.
+        let tp = trace
+            .toolpath_summaries
+            .iter()
+            .find(|s| s.toolpath_id == 1)
+            .unwrap();
+        assert!(!tp.metrics_not_applicable);
+    }
+
+    #[test]
+    fn mixed_drill_and_non_drill_isolates_suppression() {
+        // 1 drill (ids=7) + 1 non-drill (id=1) toolpath in one trace.
+        // Only TP1's air-cut samples should produce issues.
+        let mut samples: Vec<_> = (0..50).map(|i| make_drill_sample(7, i)).collect();
+        for i in 50..100 {
+            let mut s = make_sample(i, 1.0, false);
+            s.toolpath_id = 1;
+            s.radial_engagement = 0.0;
+            samples.push(s);
+        }
+        let drill_ids: std::collections::BTreeSet<usize> = std::iter::once(7).collect();
+        let trace = SimulationCutTrace::from_samples_with_context(
+            0.5,
+            samples,
+            std::iter::empty::<(usize, &'static ToolpathSemanticTrace)>(),
+            &drill_ids,
+        );
+        assert_eq!(trace.issues.len(), 1, "only non-drill TP emits an issue");
+        let drill_summary = trace
+            .toolpath_summaries
+            .iter()
+            .find(|s| s.toolpath_id == 7)
+            .unwrap();
+        let mill_summary = trace
+            .toolpath_summaries
+            .iter()
+            .find(|s| s.toolpath_id == 1)
+            .unwrap();
+        assert!(drill_summary.metrics_not_applicable);
+        assert!(!mill_summary.metrics_not_applicable);
     }
 
     #[test]

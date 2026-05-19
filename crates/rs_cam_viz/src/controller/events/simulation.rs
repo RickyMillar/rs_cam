@@ -129,6 +129,12 @@ impl<B: ComputeBackend> AppController<B> {
                         .iter()
                         .find(|t| t.id.0 == tc.tool_id)?
                         .clone();
+                    let op_type = tc.operation.op_type();
+                    let metrics_not_applicable = matches!(
+                        op_type,
+                        rs_cam_core::compute::catalog::OperationType::Drill
+                            | rs_cam_core::compute::catalog::OperationType::AlignmentPinDrill
+                    );
                     Some(SetupSimToolpath {
                         id: ToolpathId(tc.id),
                         name: tc.name.clone(),
@@ -136,6 +142,7 @@ impl<B: ComputeBackend> AppController<B> {
                         tool,
                         semantic_trace: rt.semantic_trace.clone(),
                         spindle_rpm: tc.operation.spindle_rpm(),
+                        metrics_not_applicable,
                     })
                 })
                 .collect();

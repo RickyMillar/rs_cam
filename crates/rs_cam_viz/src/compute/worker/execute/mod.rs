@@ -185,6 +185,7 @@ fn build_core_simulation_request(
                         tool_summary: tp.tool.summary(),
                         semantic_trace: tp.semantic_trace.clone(),
                         spindle_rpm: tp.spindle_rpm,
+                        metrics_not_applicable: tp.metrics_not_applicable,
                     }
                 })
                 .collect(),

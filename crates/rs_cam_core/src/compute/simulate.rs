@@ -48,6 +48,12 @@ pub struct SimToolpathEntry {
     /// `effective_spindle_rpm(&tc.operation, &post)` so that per-op
     /// overrides propagate into `SimulationCutSample.spindle_rpm`.
     pub spindle_rpm: Option<u32>,
+    /// P4: true for drill / alignment-pin-drill kinds whose Z-only
+    /// kinematics the dexel's XY-cylinder engagement model can't see.
+    /// The trace builder uses this to suppress per-sample air-cut /
+    /// low-engagement `SimulationCutIssue` emission for these toolpaths
+    /// and to mark their per-TP summary as `metrics_not_applicable`.
+    pub metrics_not_applicable: bool,
 }
 
 /// A group of toolpaths from one setup, sharing a cut direction.
@@ -460,10 +466,20 @@ where
                 })
             })
             .collect();
-        let mut trace = SimulationCutTrace::from_samples_with_semantics(
+        // P4: collect drill-kind toolpath ids so the trace builder
+        // suppresses air-cut / low-engagement issue spam for them.
+        let metrics_not_applicable_ids: std::collections::BTreeSet<usize> = request
+            .groups
+            .iter()
+            .flat_map(|g| g.toolpaths.iter())
+            .filter(|e| e.metrics_not_applicable)
+            .map(|e| e.id)
+            .collect();
+        let mut trace = SimulationCutTrace::from_samples_with_context(
             sample_step_mm,
             cut_samples,
             semantic_traces,
+            &metrics_not_applicable_ids,
         );
         trace.provenance = Some(build_simulation_provenance(request));
         Some(Arc::new(trace))
@@ -615,6 +631,7 @@ mod tests {
             tool_summary: "6mm Flat".to_owned(),
             semantic_trace: None,
             spindle_rpm: None,
+            metrics_not_applicable: false,
         };
 
         let group = SimGroupEntry {
@@ -810,6 +827,7 @@ mod tests {
             tool_summary: "6.35mm Flat".to_owned(),
             semantic_trace: None,
             spindle_rpm: None,
+            metrics_not_applicable: false,
         };
 
         let group = SimGroupEntry {
@@ -910,6 +928,7 @@ mod tests {
                 tool_summary: "6mm Flat".into(),
                 semantic_trace: None,
                 spindle_rpm: None,
+                metrics_not_applicable: false,
             }],
             direction: StockCutDirection::FromTop,
             local_stock_bbox: Some(stock_bbox),
@@ -926,6 +945,7 @@ mod tests {
                 tool_summary: "6mm Flat".into(),
                 semantic_trace: None,
                 spindle_rpm: None,
+                metrics_not_applicable: false,
             }],
             direction: StockCutDirection::FromBottom,
             local_stock_bbox: Some(BoundingBox3 {
