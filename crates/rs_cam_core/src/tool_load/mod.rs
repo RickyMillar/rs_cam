@@ -23,6 +23,7 @@ pub mod chipload;
 pub mod deflection;
 pub mod locality;
 pub mod optimize;
+pub mod plunge_stress;
 pub mod power;
 pub mod verdict;
 

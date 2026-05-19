@@ -516,3 +516,34 @@ the only TP cited.
 **Tests:** 13 new unit tests across `compute/catalog.rs` (5 — threshold
 calibration) and `session/compute.rs` (8 — verdict logic with positive and
 negative cases per op-kind).
+
+### Priority 2 — Plunge-stress warning for small ball/tapered-ball tools (done)
+
+**Root cause** (`planning/P2_PLUNGE_STRESS_GATE_RCA.md`): Fix 2 caps fresh-LUT
+plunge recommendations at `150 mm/min × tip_diameter_mm` for ball/tapered-ball
+geometries, but pre-Fix-2 projects (like Wanaka) carry static-default plunge
+rates that bypass the cap. The sim's chipload/power/deflection gates evaluate
+continuous cutting samples and never look at plunge moves, so a 1 mm tapered
+ball plunging at 750 mm/min in hardwood sims as silent-OK while FSWizard says
+it's 2.5× the safe rate.
+
+**Fix:** New `tool_load::plunge_stress` module exposes
+`safe_plunge_cap_mm_min(geometry, diameter)` and `check_plunge_stress(...)`.
+`Session::diagnostics()` scans enabled toolpaths and surfaces offenders in
+the verdict as "WARNING: unsafe plunge rate on TP-name (rate > cap mm/min)".
+
+**Expected delta on Wanaka:**
+
+| TP | Tool | Plunge | Expected |
+|---|---|---|---|
+| TP4 Rivers TB | 1 mm tapered ball | 400 | warn (cap 150) |
+| TP5 Lakes TB | 1 mm tapered ball | 400 | warn (cap 150) |
+| TP7 3D Finish 6 | 1 mm tapered ball | 750 | warn (cap 150) |
+| TP1 / TP6 (6 mm EM) | flat | 500–750 | silent (no cap on flat) |
+
+Three of the eight TPs cited in the verdict, matching the Phase 3 FSWizard
+finding.
+
+**Tests:** 14 new unit tests (10 module-level in `plunge_stress.rs` for the
+cap formula + 4 session-level for verdict wiring, including the Wanaka TP7
+750 mm/min reproduction and a flat-EM negative control).
