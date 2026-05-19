@@ -631,10 +631,7 @@ mod tests {
             ),
         ];
         let spans = spans_from_adaptive3d_annotations(&events, 100);
-        let entries: Vec<_> = spans
-            .iter()
-            .filter(|s| s.kind == SpanKind::Entry)
-            .collect();
+        let entries: Vec<_> = spans.iter().filter(|s| s.kind == SpanKind::Entry).collect();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].range(), 0..8);
         assert_eq!(entries[0].label, "plunge entry");
@@ -671,10 +668,7 @@ mod tests {
             ),
         ];
         let spans = spans_from_adaptive3d_annotations(&events, 100);
-        let entries: Vec<_> = spans
-            .iter()
-            .filter(|s| s.kind == SpanKind::Entry)
-            .collect();
+        let entries: Vec<_> = spans.iter().filter(|s| s.kind == SpanKind::Entry).collect();
         assert_eq!(entries.len(), 1, "empty entry should be skipped");
         assert_eq!(entries[0].range(), 90..100, "end should clamp to n_moves");
     }

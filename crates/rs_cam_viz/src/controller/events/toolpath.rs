@@ -100,12 +100,7 @@ impl<B: ComputeBackend> AppController<B> {
             // oversized stock. Falls back to the default (disabled) for
             // 2D / stock-based ops or when no mesh model is available.
             boundary: {
-                let has_mesh = self
-                    .state
-                    .session
-                    .models()
-                    .iter()
-                    .any(|m| m.mesh.is_some());
+                let has_mesh = self.state.session.models().iter().any(|m| m.mesh.is_some());
                 if op_is_3d && has_mesh {
                     crate::state::toolpath::BoundaryConfig {
                         enabled: true,
@@ -127,7 +122,13 @@ impl<B: ComputeBackend> AppController<B> {
         // New toolpaths get recommended feeds written in once; after
         // that, fields are always user-owned and only the Suggest
         // buttons re-run the calculator.
-        if let Some(tool) = self.state.session.tools().iter().find(|t| t.id.0 == tool_id) {
+        if let Some(tool) = self
+            .state
+            .session
+            .tools()
+            .iter()
+            .find(|t| t.id.0 == tool_id)
+        {
             let material = &self.state.session.stock_config().material;
             let machine = self.state.session.machine();
             let workholding = self.state.session.stock_config().workholding_rigidity;

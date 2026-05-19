@@ -83,7 +83,9 @@ impl SearchAxis {
         match self {
             SearchAxis::FeedRate => AxisUnit::MmPerMin,
             SearchAxis::SpindleRpm => AxisUnit::Rpm,
-            SearchAxis::DepthPerPass | SearchAxis::Stepover | SearchAxis::ScallopHeight
+            SearchAxis::DepthPerPass
+            | SearchAxis::Stepover
+            | SearchAxis::ScallopHeight
             | SearchAxis::HelixPitch => AxisUnit::Mm,
             SearchAxis::AngularStep | SearchAxis::RampAngle => AxisUnit::Deg,
         }
@@ -368,8 +370,8 @@ mod tests {
                 let v = view.axis_value(binding.axis, &ctx);
                 // Stepover is allowed to be None on Pencil (G3 conditional
                 // when num_offset_passes <= 1; default config has 1 pass).
-                let stepover_conditional = binding.axis == SearchAxis::Stepover
-                    && op_type == OperationType::Pencil;
+                let stepover_conditional =
+                    binding.axis == SearchAxis::Stepover && op_type == OperationType::Pencil;
                 if !stepover_conditional {
                     assert!(
                         v.is_some(),

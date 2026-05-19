@@ -139,8 +139,7 @@ pub fn is_steady_state_for_gate(
     match span_lookup {
         Some(lookup) => {
             !lookup.ancestors_contain_kind(&sample.span_path, SpanKind::Entry)
-                && !lookup
-                    .ancestors_contain_kind(&sample.span_path, SpanKind::WaterlineCleanup)
+                && !lookup.ancestors_contain_kind(&sample.span_path, SpanKind::WaterlineCleanup)
         }
         None => true,
     }

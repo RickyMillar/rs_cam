@@ -24,6 +24,111 @@
 
 ## Recent work (2026-05-19)
 
+### Dexel-fidelity roadmap — Step 3 PR2 (Drill-native metrics + drill-specific gates)
+
+Step 3 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` part 2 of 2 — closes
+out the §6.E plan by emitting drill-native metrics and gating on them.
+Drill ops still set `metrics_not_applicable: true` on the per-toolpath
+summary (engagement-axis metrics genuinely don't apply to Z-only
+kinematics) but now produce a parallel `DrillToolpathSummary` slot with
+peck-pattern adequacy, chip-welding risk, cycle time, and an
+`avg_chip_evacuation_score` reading — surfaced alongside three new
+drill-specific tool-load gates.
+
+**`DrillSample` stream + `DrillToolpathSummary`.** New
+`crates/rs_cam_core/src/drill_metrics.rs` module emits one
+`DrillSample { hole_id, peck_index, descent_mm, cumulative_depth_mm,
+axial_chipload_mm_per_rev, dwell_s, chip_evacuation_score }` per peck
+per hole, expanded from the `DrillOp.cycle` (Simple/Dwell = one sample
+per hole; Peck/ChipBreak = ceil(depth / peck_depth) samples per hole
+with the final peck clamped to bottom_z). The aggregator produces a
+per-toolpath `DrillToolpathSummary` with hole_count, peck_count,
+feed_time_s, dwell_time_s, deepest_hole_mm, max_depth_to_diameter,
+`ChipWeldingRisk { Low | Elevated | High }`, `peck_pattern_adequate`,
+and `avg_chip_evacuation_score`. Both are carried on
+`SimulationCutTrace.{drill_samples, drill_summaries}` (joinable by
+`toolpath_id`); the new `drill_summary_for(toolpath_id)` accessor pairs
+with `metrics_not_applicable` as the "engagement N/A → look here
+instead" navigation hint.
+
+**Emission point.** `compute/simulate.rs` drill branch (`entry.drill_op
+.is_some()`) now calls `emit_drill_samples` + `build_drill_toolpath_summary`
+alongside the existing `apply_drill_op` analytical-removal kernel. The
+samples accumulate into per-group vectors, then attach to the
+`SimulationCutTrace` when metrics are enabled. Drill ops still bypass
+the per-segment stamping loop entirely — no `SimulationCutSample`
+emission for them, no spurious engagement accounting.
+
+**Drill gates.** New `crates/rs_cam_core/src/tool_load/drill_gates.rs`
+yields a `DrillGatesVerdict { chip_welding, peck_adequacy, plunge_feed
+}` carried as `Option<DrillGatesVerdict>` on `ToolpathLoadVerdict`
+(populated only for drill ops, `None` otherwise). Each gate produces a
+`DrillGateOutcome::{Within | Exceeds }` with `DrillGateSeverity::{
+Elevated | Critical }` so the UI can render a warning band:
+- **Chip welding**: `max_depth_to_diameter` vs material threshold
+  (softwood 8, hardwood 5, plastic 4, foam 12, sheet/plywood 5).
+  Elevated at 0.75–1.0× threshold; Critical at ≥ 1.0×.
+- **Peck adequacy**: deepest single-peck D/d vs material per-peck
+  threshold (softwood 2.0, plastic 1.0, foam 4.0). Critical when
+  exceeded — pecking that breaks chips still fails if any single peck
+  is too deep.
+- **Plunge feed sanity**: `feed_rate / diameter` (1/min) vs material
+  envelope (softwood 50..400, plastic 60..500, etc). Elevated below
+  min (rubbing risk); Critical above max (cutter breakage risk).
+
+The existing chipload / power / deflection gates continue to report
+`Unmodeled(NotApplicableForOp)` for drill ops — the new gates
+supplement rather than replace that signal. `project_load_report`
+(`gcode/mod.rs`) populates `drill_gates` by re-emitting drill samples
+and the summary from the cached `DrillOp` payload at report-build time
+(cheap — deterministic from `DrillOp` data, no extra sim).
+
+**Narrate enrichment.** `narrate.rs` drill-cycle branch now reads the
+`DrillToolpathSummary` (when available) and emits a richer
+informational line — "n hole(s), m peck(s), depth-to-diameter X.Y×
+(chip-welding risk low/elevated/high), peck pattern
+adequate/INADEQUATE" — instead of just the "engagement / air-cut%
+are not modeled" note.
+
+**Validation.** New
+`crates/rs_cam_core/tests/drill_metrics_pr2.rs` integration test
+builds a `ProjectSession` programmatically with an `AlignmentPinDrill`
+toolpath (two holes, Ø4 tool, softwood stock, 15mm deep,
+Peck(3mm) cycle), generates, simulates, and asserts:
+- `OpData::DrillOp` variant carried on `ToolpathComputeResult`
+- `drill_summary_for(0)` returns a populated summary with the
+  expected peck_count + chip_welding_risk + peck_pattern_adequate
+- `drill_samples` count matches `peck_count` and every sample has
+  `chip_evacuation_score > 0.99` (Peck cycle fully evacuates)
+- `tool_load_report().per_toolpath[0].drill_gates` is `Some(...)` and
+  none of the three gates is exceeded for the happy-path config
+- Composite mesh vertex count > 198 (two holes × 33 verts/hole × 3
+  floats baseline from `append_drill_cylinders`)
+
+A counter-test (oversized peck of 10mm on Ø4 softwood) confirms the
+peck-adequacy gate trips and the summary's `peck_pattern_adequate`
+flag flips to false.
+
+**`metrics_not_applicable` clarification.** The flag's docstring on
+`SimulationToolpathCutSummary` now spells out that it means "no
+*engagement* metrics" — drill ops still produce drill-native metrics
+in `drill_summaries`. Same field name, same semantics, clearer pairing.
+
+**Files touched.** `drill_metrics.rs` (new), `drill_gates.rs` (new),
+`drill_metrics_pr2.rs` (new test), `simulation_cut.rs`, `compute/
+simulate.rs`, `tool_load/verdict.rs`, `tool_load/mod.rs`, `gcode/mod.rs`,
+`narrate.rs`, `lib.rs`. CLAUDE.md updated with the drill-cycle row in
+"Model types and what they need" and a "Drill-specific thresholds"
+table in "Key diagnostic thresholds". ~600 insertions across 12 files
+(+ ~10 mechanical `drill_gates: None` injections at existing
+`ToolpathLoadVerdict { ... }` test fixtures).
+
+**Validation status.** `cargo test -p rs_cam_core --lib` → 1491 passed,
+0 failed. `cargo test --test drill_metrics_pr2` → 2 passed. Workspace
+clippy clean.
+
+---
+
 ### Dexel-fidelity roadmap — Step 3 PR1 (DrillOp first-class — data model + analytical removal + mesh)
 
 Step 3 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` part 1 of 2. Lands

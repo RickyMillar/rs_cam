@@ -73,12 +73,10 @@ impl<'a> OptimizationStrategy for PerGateRetargetStrategy<'a> {
             out.push(into_candidate(POWER_SUB, sol));
         }
 
-        if let Some(sol) = self.deflection.target(
-            &baseline_verdict.deflection,
-            self.space,
-            baseline,
-            self.ctx,
-        ) {
+        if let Some(sol) =
+            self.deflection
+                .target(&baseline_verdict.deflection, self.space, baseline, self.ctx)
+        {
             out.push(into_candidate(DEFLECTION_SUB, sol));
         }
 
@@ -276,8 +274,11 @@ mod tests {
         }
     }
 
-
-    fn make_chipload(env: &Env, lut_min: Option<f64>, lut_max: Option<f64>) -> ChiploadFeedRetargeter {
+    fn make_chipload(
+        env: &Env,
+        lut_min: Option<f64>,
+        lut_max: Option<f64>,
+    ) -> ChiploadFeedRetargeter {
         ChiploadFeedRetargeter {
             lut_chipload_min: lut_min.unwrap_or(f64::NAN),
             lut_chipload_max: lut_max.unwrap_or(f64::NAN),
@@ -317,6 +318,7 @@ mod tests {
             chipload: within(0.05),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
+            drill_gates: None,
         };
         assert!(strat.candidates(&view, &verdict).is_empty());
     }
@@ -339,6 +341,7 @@ mod tests {
             chipload: exceeds_burn(0.025),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
+            drill_gates: None,
         };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 1);
@@ -363,6 +366,7 @@ mod tests {
             chipload: exceeds_burn(0.025),
             power: exceeds_power(1.5),
             deflection: within_deflection(0.020),
+            drill_gates: None,
         };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 2);
@@ -388,6 +392,7 @@ mod tests {
             chipload: exceeds_burn(0.025),
             power: exceeds_power(1.5),
             deflection: exceeds_deflection(0.32),
+            drill_gates: None,
         };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 3);
@@ -416,6 +421,7 @@ mod tests {
             chipload: exceeds_burn(0.025),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
+            drill_gates: None,
         };
         assert!(strat.candidates(&view, &verdict).is_empty());
     }
@@ -440,6 +446,7 @@ mod tests {
             chipload: exceeds_burn(0.025),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
+            drill_gates: None,
         };
         assert!(strat.candidates(&view, &burn).is_empty());
 
@@ -448,6 +455,7 @@ mod tests {
             chipload: exceeds_breakage(0.20),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
+            drill_gates: None,
         };
         let cps = strat.candidates(&view, &breakage);
         assert_eq!(cps.len(), 1);
@@ -476,6 +484,7 @@ mod tests {
             chipload: exceeds_burn(0.0253),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
+            drill_gates: None,
         };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 1);

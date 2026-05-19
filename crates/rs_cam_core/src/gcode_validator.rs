@@ -349,10 +349,8 @@ fn rule_missing_program_brackets(
     let first_non_blank = lines.iter().position(|l| !l.trim().is_empty());
     let last_non_blank = lines.iter().rposition(|l| !l.trim().is_empty());
 
-    let leading_ok =
-        first_non_blank.is_some_and(|i| lines.get(i).is_some_and(|l| l.trim() == "%"));
-    let trailing_ok =
-        last_non_blank.is_some_and(|i| lines.get(i).is_some_and(|l| l.trim() == "%"));
+    let leading_ok = first_non_blank.is_some_and(|i| lines.get(i).is_some_and(|l| l.trim() == "%"));
+    let trailing_ok = last_non_blank.is_some_and(|i| lines.get(i).is_some_and(|l| l.trim() == "%"));
 
     if !leading_ok {
         findings.push(Finding {
@@ -394,8 +392,12 @@ fn rule_missing_wcs(
     };
 
     // Check for any WCS code (G54-G59) before the first cutting move.
-    let wcs_present = (54..=59)
-        .any(|n| lines.iter().take(first_motion).any(|l| has_word_int(l, 'G', n)));
+    let wcs_present = (54..=59).any(|n| {
+        lines
+            .iter()
+            .take(first_motion)
+            .any(|l| has_word_int(l, 'G', n))
+    });
 
     if !wcs_present {
         findings.push(Finding {
@@ -413,7 +415,12 @@ fn rule_missing_wcs(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
 
@@ -468,11 +475,17 @@ mod tests {
         let good = "G90 G21 G17 G91.1\nG54\nG1 X10 F600\nM30\n";
 
         assert_eq!(
-            count_kind(&validate(bad, PostFormat::LinuxCnc), FindingKind::MissingG91_1),
+            count_kind(
+                &validate(bad, PostFormat::LinuxCnc),
+                FindingKind::MissingG91_1
+            ),
             1
         );
         assert_eq!(
-            count_kind(&validate(good, PostFormat::LinuxCnc), FindingKind::MissingG91_1),
+            count_kind(
+                &validate(good, PostFormat::LinuxCnc),
+                FindingKind::MissingG91_1
+            ),
             0
         );
         assert_eq!(

@@ -394,11 +394,10 @@ pub(crate) fn build_outcome(
             .first()
             .map(|b| build_marginal_safe_narrative(b, &marginal))
             .unwrap_or_default();
-        narrative.explanation =
-            "Best candidate is admitted only by the layer-1 tolerance band — \
+        narrative.explanation = "Best candidate is admitted only by the layer-1 tolerance band — \
                  verify on a scrap before applying. The strict LUT bound was \
                  exceeded by less than the configured breakage / burn tolerance."
-                .to_owned();
+            .to_owned();
         return OptimizeOutcome::marginal_safe(marginal, recommended_index, narrative);
     }
 

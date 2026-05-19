@@ -21,6 +21,7 @@
 
 pub mod chipload;
 pub mod deflection;
+pub mod drill_gates;
 pub mod locality;
 pub mod optimize;
 pub mod plunge_stress;
@@ -351,6 +352,7 @@ pub fn evaluate_toolpath(
             ctx.operation_kind,
             tolerance,
         ),
+        drill_gates: None,
     }
 }
 

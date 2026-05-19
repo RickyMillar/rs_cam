@@ -453,7 +453,11 @@ mod tests {
         // 0.05mm default threshold to dodge offline-parser rejections
         // on sub-mm arcs (real bug surfaced by F10 fixture).
         for post in [grbl(), grblhal(), linuxcnc(), mach3()] {
-            assert!(post.arc_linearize.enabled, "{}: arc_linearize disabled", post.name);
+            assert!(
+                post.arc_linearize.enabled,
+                "{}: arc_linearize disabled",
+                post.name
+            );
             assert!(
                 (post.arc_linearize.threshold_mm - 0.05).abs() < 1e-9,
                 "{}: threshold should be 0.05, got {}",

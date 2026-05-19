@@ -101,6 +101,12 @@ mod tests {
             OutputLayout::PerSetup.label(),
             OutputLayout::PerToolpath.label(),
         ];
-        assert_eq!(labels.iter().collect::<std::collections::HashSet<_>>().len(), 3);
+        assert_eq!(
+            labels
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            3
+        );
     }
 }

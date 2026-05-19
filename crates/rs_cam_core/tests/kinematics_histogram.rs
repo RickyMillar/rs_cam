@@ -151,7 +151,10 @@ fn report_for_toolpath(
     }
     let total = in_cut.len() as f64;
     println!("  Kinematics histogram:");
-    for (i, name) in ["Linear", "Plunge", "Helix", "Arc", "Rapid"].iter().enumerate() {
+    for (i, name) in ["Linear", "Plunge", "Helix", "Arc", "Rapid"]
+        .iter()
+        .enumerate()
+    {
         let c = counts[i];
         if c > 0 {
             println!(
@@ -165,7 +168,10 @@ fn report_for_toolpath(
 
     // Per-kinematics chip-thickness percentiles.
     println!("  Chip-thickness (mm) percentiles by kinematics:");
-    for (i, name) in ["Linear", "Plunge", "Helix", "Arc", "Rapid"].iter().enumerate() {
+    for (i, name) in ["Linear", "Plunge", "Helix", "Arc", "Rapid"]
+        .iter()
+        .enumerate()
+    {
         if counts[i] == 0 {
             continue;
         }
@@ -176,10 +182,7 @@ fn report_for_toolpath(
             .filter_map(|s| s.effective_chip_thickness_mm)
             .collect();
         if chips.is_empty() {
-            println!(
-                "    {:>7}: (no effective_chip_thickness_mm samples)",
-                name
-            );
+            println!("    {:>7}: (no effective_chip_thickness_mm samples)", name);
             continue;
         }
         chips.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -205,9 +208,7 @@ fn report_for_toolpath(
     if helix.is_empty() {
         return;
     }
-    println!(
-        "  Helix samples stratified by |dz/path_length| of parent move:"
-    );
+    println!("  Helix samples stratified by |dz/path_length| of parent move:");
     // Buckets: [0,0.1), [0.1,0.3), [0.3,0.6), [0.6,0.9), [0.9,1.0]
     let bucket_edges: &[(f64, f64, &str)] = &[
         (0.00, 0.10, "0.0–0.1 (near-flat)"),

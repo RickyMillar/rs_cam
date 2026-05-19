@@ -128,6 +128,8 @@ fn trace(samples: Vec<SimulationCutSample>) -> SimulationCutTrace {
         issues: Vec::new(),
         samples,
         provenance: None,
+        drill_samples: Vec::new(),
+        drill_summaries: Vec::new(),
     }
 }
 

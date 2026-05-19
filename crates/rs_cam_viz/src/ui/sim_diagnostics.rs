@@ -578,17 +578,24 @@ fn draw_project_overview(
         .unwrap_or(0.0);
     let (banner_text, banner_color) = if collision_count > 0 {
         (
-            format!("⚠ {collision_count} collision{} — review before export",
-                if collision_count == 1 { "" } else { "s" }),
+            format!(
+                "⚠ {collision_count} collision{} — review before export",
+                if collision_count == 1 { "" } else { "s" }
+            ),
             theme::ERROR,
         )
     } else if air_cut_pct > 20.0 {
         (
-            format!("⚠ High air cutting ({air_cut_pct:.0}%) — toolpath may be sweeping over uncut stock"),
+            format!(
+                "⚠ High air cutting ({air_cut_pct:.0}%) — toolpath may be sweeping over uncut stock"
+            ),
             theme::WARNING,
         )
     } else {
-        ("✓ No collisions, air cutting under threshold".to_owned(), theme::SUCCESS)
+        (
+            "✓ No collisions, air cutting under threshold".to_owned(),
+            theme::SUCCESS,
+        )
     };
     ui.add_space(4.0);
     ui.label(

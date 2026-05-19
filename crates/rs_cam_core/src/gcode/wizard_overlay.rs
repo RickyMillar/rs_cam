@@ -195,7 +195,9 @@ mod tests {
     fn warmup_zero_borrows_program() {
         let o = WizardOverlay::default();
         let prog = Program {
-            statements: vec![Statement::Preamble { spindle_rpm: 18_000 }],
+            statements: vec![Statement::Preamble {
+                spindle_rpm: 18_000,
+            }],
             ..Default::default()
         };
         let cow = o.apply_to_program(&prog);
@@ -210,7 +212,9 @@ mod tests {
         };
         let prog = Program {
             statements: vec![
-                Statement::Preamble { spindle_rpm: 18_000 },
+                Statement::Preamble {
+                    spindle_rpm: 18_000,
+                },
                 Statement::Postamble,
             ],
             ..Default::default()
@@ -234,12 +238,41 @@ mod tests {
         };
         let prog = Program {
             statements: vec![
-                Statement::Preamble { spindle_rpm: 18_000 },
-                Statement::Rapid { x: 0.0, y: 0.0, z: 5.0 },
-                Statement::Linear { x: 1.0, y: 0.0, z: -2.0, feed: 600.0 },
-                Statement::LinearModal { x: 2.0, y: 0.0, z: -2.0 },
-                Statement::ArcCw { x: 3.0, y: 0.0, z: -2.5, i: 1.0, j: 0.0, feed: 600.0 },
-                Statement::ArcCcw { x: 4.0, y: 0.0, z: -2.5, i: -1.0, j: 0.0, feed: 600.0 },
+                Statement::Preamble {
+                    spindle_rpm: 18_000,
+                },
+                Statement::Rapid {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 5.0,
+                },
+                Statement::Linear {
+                    x: 1.0,
+                    y: 0.0,
+                    z: -2.0,
+                    feed: 600.0,
+                },
+                Statement::LinearModal {
+                    x: 2.0,
+                    y: 0.0,
+                    z: -2.0,
+                },
+                Statement::ArcCw {
+                    x: 3.0,
+                    y: 0.0,
+                    z: -2.5,
+                    i: 1.0,
+                    j: 0.0,
+                    feed: 600.0,
+                },
+                Statement::ArcCcw {
+                    x: 4.0,
+                    y: 0.0,
+                    z: -2.5,
+                    i: -1.0,
+                    j: 0.0,
+                    feed: 600.0,
+                },
                 Statement::SafeZRetract { z: 10.0 },
                 Statement::Postamble,
             ],
@@ -280,7 +313,12 @@ mod tests {
             ..Default::default()
         };
         let prog = Program {
-            statements: vec![Statement::Linear { x: 0.0, y: 0.0, z: -1.0, feed: 600.0 }],
+            statements: vec![Statement::Linear {
+                x: 0.0,
+                y: 0.0,
+                z: -1.0,
+                feed: 600.0,
+            }],
             ..Default::default()
         };
         let cow = o.apply_to_program(&prog);
@@ -297,8 +335,15 @@ mod tests {
         };
         let prog = Program {
             statements: vec![
-                Statement::Preamble { spindle_rpm: 18_000 },
-                Statement::Linear { x: 0.0, y: 0.0, z: -1.0, feed: 600.0 },
+                Statement::Preamble {
+                    spindle_rpm: 18_000,
+                },
+                Statement::Linear {
+                    x: 0.0,
+                    y: 0.0,
+                    z: -1.0,
+                    feed: 600.0,
+                },
             ],
             ..Default::default()
         };

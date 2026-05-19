@@ -126,11 +126,19 @@ The GUI embeds an MCP server (`--mcp` flag) so Claude can control the live GUI i
 | Rapid collisions | 0 | 1-10 | > 10 |
 | Avg engagement | > 0.3 | 0.1-0.3 | < 0.1 |
 
+**Drill-specific thresholds (Step 3 PR2)** — read from `cut_trace.drill_summaries` keyed by `toolpath_id`, gate verdicts from `tool_load_report().per_toolpath[].drill_gates`:
+
+| Metric | Low / Within | Elevated | High / Exceeds |
+|--------|--------------|----------|----------------|
+| `max_depth_to_diameter` vs material threshold (softwood 8, hardwood 5, plastic 4) | < 0.75× | 0.75–1.0× | ≥ 1.0× |
+| Single peck D/d vs material per-peck threshold (softwood 2.0, plastic 1.0) | ≤ 1.0× | — | > 1.0× |
+| Plunge feed / diameter (1/min) | inside material envelope | below min | above max |
+
 **Metric caveats** (April 2026 review — `planning/adaptive_review_2026-04.md`):
 
 - `rapid_collision_count` is the most reliable signal. Trust it as the primary "did anything bad happen" indicator regardless of operation type.
 - `average_engagement` is the **cylinder-side radial-WOC fraction** (a.k.a. `engagement.radial_woc_fraction`), not leading-edge engagement. For adaptive3d it typically reads ~10× lower than the algorithmic target (~3% observed vs ~30% target from `target_engagement_fraction`). Use it for **relative** comparison between parameter variants, not as an absolute pass/fail bar. For axis-aware reporting (axial-DOC, arc, chip thickness, leading-edge speed by kinematics class) read the `per_kinematics` summary block — Step 2 of the dexel-fidelity roadmap landed the structured `Engagement` vector on every sample (see `planning/DEXEL_Z_ONLY_INVESTIGATION.md` §6.D / §6.H).
-- `air_cut_percentage` is calibrated against cutting-time, not wall-clock. Plunge-and-retract-loop ops (project_curve, v_carve, drill) no longer inflate air-cut from retract feeds — retracts are now tagged `MoveIntent::Retract` and excluded from cutting metrics (Step 1, 2026-05-19; see `planning/DEXEL_Z_ONLY_INVESTIGATION.md`). Drill toolpaths report `metrics_not_applicable: true` rather than a misleading engagement number.
+- `air_cut_percentage` is calibrated against cutting-time, not wall-clock. Plunge-and-retract-loop ops (project_curve, v_carve, drill) no longer inflate air-cut from retract feeds — retracts are now tagged `MoveIntent::Retract` and excluded from cutting metrics (Step 1, 2026-05-19; see `planning/DEXEL_Z_ONLY_INVESTIGATION.md`). Drill toolpaths still set `metrics_not_applicable: true` (engagement axes don't apply to Z-only kinematics), but Step 3 PR2 added a parallel `drill_summaries` slot on `SimulationCutTrace` — drill ops produce **drill-native** metrics (per-peck `DrillSample`, per-toolpath `DrillToolpathSummary` with peck adequacy + chip-welding risk + cycle time) and three drill-specific gates on `ToolpathLoadVerdict.drill_gates` (chip welding, peck adequacy, plunge feed sanity). The legacy "treat as not-applicable" advice still applies to engagement metrics; consult `drill_summaries` / `drill_gates` for the actionable signal.
 - `peak_axial_doc_mm` is the per-sample maximum, computed differently per move kinematics: for **lateral feed** moves it's the engagement depth (material height above the cutter at the deepest cell in its footprint); for **pure-vertical** moves (peck-plunge) it's the segment's Z descent. So a single sample at deep cutter-Z over uncleared tall stock reports `stock_top - cutter_z`, which can be much larger than `depth_per_pass` even when `depth_per_pass` is set correctly. High readings indicate the lift function is bridging across previously-uncleared stock — see `planning/AGENTSEARCH_INVESTIGATION_LOG.md` O5 for one cause.
 - `issue_count` with thousands of `air_cut` entries per run is **emission noise**, not a signal. Every sample outside fresh material counts as an "issue". Look at `hotspots` and `rapid_collision_count` instead.
 
@@ -141,6 +149,7 @@ The GUI embeds an MCP server (`--mcp` flag) so Claude can control the live GUI i
 | `stl` (3D mesh) | `inspect_model` → bbox, triangle count | adaptive3d (rough), drop_cutter/waterline/scallop (finish) |
 | `step` (BREP) | `inspect_model` + `inspect_brep_faces` → face types, normals | Same as STL + face-selective operations |
 | `svg`/`dxf` (2D) | `inspect_model` → polygon count, area, perimeter | pocket, profile, adaptive, v_carve, trace |
+| Drill cycle (any model + hole positions) | Hole XY/Z from model centroids or stock `alignment_pins` snapshot | `drill`, `alignment_pin_drill` — bypass dexel stamping for analytical cone/cylinder removal; produce `DrillToolpathSummary` + `drill_gates` instead of engagement metrics |
 
 ### Tool selection guidance
 

@@ -61,7 +61,9 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
     session.set_name("wizard e2e".to_owned());
 
     // Tool 1
-    session.tools_mut().push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    session
+        .tools_mut()
+        .push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
 
     // Flat mesh as a model
     let mesh = Arc::new(make_test_flat(40.0));
@@ -133,7 +135,10 @@ fn wizard_single_file_save_writes_valid_gcode() {
 
     let gcode =
         export_gcode_from_session(&session, &gui, &sim).expect("single-file export succeeds");
-    assert!(gcode.contains("G1"), "expected at least one feed move in output");
+    assert!(
+        gcode.contains("G1"),
+        "expected at least one feed move in output"
+    );
 
     // Validator runs without panicking and returns a finite list.
     let findings = rs_cam_core::gcode_validator::validate(&gcode, PostFormat::Grbl);
@@ -227,8 +232,7 @@ fn wizard_overlay_overrides_reflect_in_emitted_gcode() {
     session.wizard_mut().units_override = Some(rs_cam_core::gcode::Units::Inch);
     session.wizard_mut().spindle_warmup_secs = 9;
 
-    let gcode =
-        export_gcode_from_session(&session, &gui, &sim).expect("overlay export succeeds");
+    let gcode = export_gcode_from_session(&session, &gui, &sim).expect("overlay export succeeds");
 
     assert!(
         gcode.contains("G56\n"),
@@ -256,9 +260,7 @@ fn wizard_overlay_overrides_reflect_in_emitted_gcode() {
 /// viz-export entry point that the wizard's Save handler calls.
 #[test]
 fn default_wizard_state_does_not_mutate_export() {
-    use rs_cam_core::gcode::{
-        ToolLoadExportPolicy, export_gcode_phases_with_overlay_checked,
-    };
+    use rs_cam_core::gcode::{ToolLoadExportPolicy, export_gcode_phases_with_overlay_checked};
 
     let (session, gui, sim) = build_session();
     // build_session leaves WizardState at its default — no overrides set.
@@ -268,8 +270,7 @@ fn default_wizard_state_does_not_mutate_export() {
     assert_eq!(session.wizard().spindle_warmup_secs, 0);
 
     // Exercise the same data path the wizard's Save dispatches through.
-    let with_overlay =
-        export_gcode_from_session(&session, &gui, &sim).expect("export succeeds");
+    let with_overlay = export_gcode_from_session(&session, &gui, &sim).expect("export succeeds");
 
     // Build the equivalent default-overlay export by hand to confirm the
     // helper isn't injecting anything unexpected. Both paths route
@@ -356,8 +357,7 @@ fn wizard_dry_run_clamps_cutting_moves_to_safe_z() {
     session.wizard_mut().dry_run = true;
     session.wizard_mut().safe_z_override = Some(12.5);
 
-    let gcode =
-        export_gcode_from_session(&session, &gui, &sim).expect("dry-run export succeeds");
+    let gcode = export_gcode_from_session(&session, &gui, &sim).expect("dry-run export succeeds");
 
     let mut g1_count = 0usize;
     let mut rapid_z5_count = 0usize;
@@ -370,16 +370,12 @@ fn wizard_dry_run_clamps_cutting_moves_to_safe_z() {
             .to_ascii_uppercase();
         let is_cut = matches!(leading.as_str(), "G1" | "G2" | "G3");
         let is_rapid = leading == "G0";
-        let z = tline
-            .split_whitespace()
-            .find_map(|tok| {
-                tok.strip_prefix('Z')
-                    .or_else(|| tok.strip_prefix('z'))
-                    .and_then(|rest| rest.parse::<f64>().ok())
-            });
-        if is_cut
-            && let Some(z) = z
-        {
+        let z = tline.split_whitespace().find_map(|tok| {
+            tok.strip_prefix('Z')
+                .or_else(|| tok.strip_prefix('z'))
+                .and_then(|rest| rest.parse::<f64>().ok())
+        });
+        if is_cut && let Some(z) = z {
             assert!(
                 (z - 12.5).abs() < 1e-6,
                 "dry-run cutting move must have Z=12.500, got {z} in: {line}"
@@ -442,9 +438,10 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
         face_selection: None,
         debug_options: Default::default(),
     };
-    session.add_toolpath(bottom_idx, tp_bottom).expect("add bottom toolpath");
-    let bottom_tp_id = session
-        .list_setups()[bottom_idx]
+    session
+        .add_toolpath(bottom_idx, tp_bottom)
+        .expect("add bottom toolpath");
+    let bottom_tp_id = session.list_setups()[bottom_idx]
         .toolpath_indices
         .first()
         .map(|&i| session.toolpath_configs()[i].id)

@@ -252,6 +252,23 @@ pub fn project_load_report(
         // gcode export keeps strict LUT/machine-ceiling behaviour — only
         // the optimizer routes wider tolerance bands. See `ToleranceBands`.
         let strict_tolerance = crate::tool_load::ToleranceBands::default();
+        // §6.E / Step 3 PR2: when the toolpath is a drill op, evaluate
+        // drill-specific gates from the `DrillOp` payload. The existing
+        // chipload / power / deflection gates remain
+        // `Unmodeled(NotApplicableForOp)` for these toolpaths — drill
+        // gates supplement, not replace, that signal.
+        let drill_gates = project
+            .get_result(idx)
+            .and_then(|r| r.drill_op().cloned())
+            .map(|drill_op_arc| {
+                let samples = crate::drill_metrics::emit_drill_samples(tc.id, &drill_op_arc);
+                let summary = crate::drill_metrics::build_drill_toolpath_summary(
+                    tc.id,
+                    &drill_op_arc,
+                    &samples,
+                );
+                crate::tool_load::drill_gates::evaluate(&drill_op_arc, &summary)
+            });
         per_toolpath.push(crate::tool_load::ToolpathLoadVerdict {
             toolpath_id: tc.id,
             chipload: crate::tool_load::chipload::evaluate(
@@ -285,6 +302,7 @@ pub fn project_load_report(
                 tc.operation.op_type(),
                 &strict_tolerance,
             ),
+            drill_gates,
         });
     }
     crate::tool_load::ToolLoadReport { per_toolpath }
@@ -574,9 +592,13 @@ mod tests {
         ];
 
         let legacy = emit_gcode_phased(&phases, post::grbl());
-        let checked =
-            export_gcode_phases_checked(&phases, post::grbl(), None, ToolLoadExportPolicy::default())
-                .expect("checked export should succeed");
+        let checked = export_gcode_phases_checked(
+            &phases,
+            post::grbl(),
+            None,
+            ToolLoadExportPolicy::default(),
+        )
+        .expect("checked export should succeed");
 
         assert_eq!(checked, legacy);
     }
@@ -1243,6 +1265,7 @@ mod tests {
                 chipload,
                 power,
                 deflection,
+                drill_gates: None,
             }],
         }
     }

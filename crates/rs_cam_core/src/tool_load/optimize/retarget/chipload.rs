@@ -21,7 +21,7 @@
 
 use crate::tool_load::optimize::axes::{AxisContext, AxisView, SearchAxis};
 use crate::tool_load::optimize::patches::{AxisPatch, PatchSource};
-use crate::tool_load::optimize::retarget::{Retargeter, RetargetSolution};
+use crate::tool_load::optimize::retarget::{RetargetSolution, Retargeter};
 use crate::tool_load::optimize::space::SearchSpace;
 use crate::tool_load::verdict::{ChipSide, ChiploadVerdict};
 
@@ -213,8 +213,7 @@ mod tests {
     use crate::tool_load::optimize::policy::SearchPolicy;
     use crate::tool_load::optimize::space::SearchSpace;
     use crate::tool_load::verdict::{
-        ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, Confidence,
-        SampleEvidence,
+        ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, Confidence, SampleEvidence,
     };
 
     /// Test fixture bundling everything an `AxisContext` needs to live, plus

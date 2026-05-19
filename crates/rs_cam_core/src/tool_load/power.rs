@@ -331,6 +331,8 @@ mod tests {
             issues: Vec::new(),
             samples,
             provenance: None,
+            drill_samples: Vec::new(),
+            drill_summaries: Vec::new(),
         }
     }
 
@@ -568,9 +570,7 @@ mod tests {
                     "NotApplicableForOp detail should name the op family, got: {detail}"
                 );
             }
-            other => panic!(
-                "drill must route to Unmodeled(NotApplicableForOp), got {other:?}"
-            ),
+            other => panic!("drill must route to Unmodeled(NotApplicableForOp), got {other:?}"),
         }
     }
 
