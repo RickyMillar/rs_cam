@@ -580,3 +580,39 @@ engagement histogram, air-cut time) stay unchanged.
 handled) + 5 on the accumulator (cutting samples in, transit samples out,
 purely-transit stream stays at 0, peak chipload gated too, per-TP summary
 respects the flag).
+
+### Priority 4 — Suppress air-cut/engagement metrics for drill ops (done)
+
+**Root cause** (`planning/P4_DRILL_METRIC_SUPPRESSION_RCA.md`): the dexel's
+radial-engagement metric is XY cylinder side-engagement; for drill kinds
+(`Drill`, `AlignmentPinDrill`) every move is Z-only so the cylinder sweeps
+no horizontal distance and every sample reads `radial_engagement = 0`. P1
+silenced the false air-cut **warning**, but the sim still emitted thousands
+of false `SimulationCutIssue` entries per drill TP (one per sample) and
+the per-TP summary carried `air_cut_time_s / total_runtime_s = ~1.0`.
+
+**Fix:** new `from_samples_with_context` builder method on
+`SimulationCutTrace` accepts `metrics_not_applicable_toolpath_ids:
+&BTreeSet<usize>`. The accumulator skips issue-classification for samples
+whose toolpath is in the set, and marks their per-TP summary with a new
+`metrics_not_applicable: bool` field (`#[serde(default)]` for back-compat).
+
+The simulator-pipeline caller (`compute/simulate.rs` and the viz worker)
+populates this from each `SimToolpathEntry::metrics_not_applicable`, which
+is set at construction time from `OperationType::{Drill, AlignmentPinDrill}`.
+
+**Expected delta on Wanaka:**
+
+| TP | Before | After |
+|---|---|---|
+| TP0 Pin Drill | `issue_count` ≈ 60 air-cut entries | `issue_count` = 0; per-TP summary `metrics_not_applicable = true` |
+| TP2 Holes (Drill) | `issue_count` ≈ 200 air-cut entries | `issue_count` = 0; per-TP summary `metrics_not_applicable = true` |
+| TP1 / TP6 / TP3 (non-drill) | unchanged | unchanged |
+
+Project-aggregate `issue_count` drops from "drowned in drill noise" to
+"signal-bearing milling issues only" — downstream hotspot lists become
+useful again.
+
+**Tests:** 4 new unit tests — drill samples emit zero issues; per-TP
+summary marked correctly; non-drill TP still emits issues; mixed
+drill+non-drill trace isolates the suppression to the drill TP.

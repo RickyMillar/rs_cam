@@ -910,6 +910,12 @@ impl ProjectSession {
                         build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill))
                     });
 
+                    let op_type = tc.operation.op_type();
+                    let metrics_not_applicable = matches!(
+                        op_type,
+                        crate::compute::catalog::OperationType::Drill
+                            | crate::compute::catalog::OperationType::AlignmentPinDrill
+                    );
                     entries.push(SimToolpathEntry {
                         id: tc.id,
                         name: tc.name.clone(),
@@ -919,6 +925,7 @@ impl ProjectSession {
                         tool_summary,
                         semantic_trace: result.semantic_trace.as_ref().map(|t| Arc::new(t.clone())),
                         spindle_rpm: tc.operation.spindle_rpm(),
+                        metrics_not_applicable,
                     });
                 }
             }
@@ -1744,6 +1751,7 @@ mod tests {
             peak_axial_doc_mm: 0.0,
             total_removed_volume_est_mm3: 0.0,
             average_mrr_mm3_s: 0.0,
+            metrics_not_applicable: false,
         }
     }
 
