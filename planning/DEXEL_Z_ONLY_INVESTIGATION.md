@@ -15,14 +15,14 @@ Single source of truth for where this roadmap is. Implementing agents: update th
 
 | Step | Status | PR / commit | Notes |
 |---|---|---|---|
-| Step 0 — `mcp.rs` accumulator dedup | ☐ pending | — | Independent. Shippable immediately. |
+| Step 0 — `mcp.rs` accumulator dedup | ☑ done | (this commit) | `SpanCutAcc` + `DepthPassAcc` deleted; both routes now use canonical `SummaryAccumulator`. P3 transit-span peak gating now propagates to per-span and per-depth-pass summaries. |
 | Step 1 — C + I (MoveIntent + retract reclassification) | ☐ pending | — | Decide before starting: include kernel-swap drill-removal kernel? (subsumes Step 3 if yes — see §6.E callout) |
 | Step 2 — D + H (Engagement vector + per-kinematics summary) | ☐ pending | — | Schedule legacy `radial_engagement` deletion PR at the same time. |
 | Step 3 — E (DrillOp first-class) | ☐ pending — *conditional* | — | Skip if kernel-swap chosen in Step 1, unless a user-facing feature demands operability surface. |
 | Step 4 — F.a (sub-cell stamping) | ☐ pending | — | Watch the four algorithmic gaps in §6.F revision. |
 | Step 5 — J (marching cubes) | ☐ pending | — | Replaces `dexel_stock_to_mesh` only; live preview path stays on heightmap. |
 
-**Last touched:** 2026-05-19 — plan revised post-deep-dive. No implementation yet.
+**Last touched:** 2026-05-19 — Step 0 landed (mcp.rs accumulator dedup).
 
 **Per-step acceptance gates** (apply to every step before marking ☑):
 - All tests pass; new tests cover the regression-locking surface called out in §9.

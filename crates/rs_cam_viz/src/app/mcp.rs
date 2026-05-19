@@ -2812,7 +2812,7 @@ fn build_span_cut_summaries(
                 }
             }
 
-            let mut acc = SpanCutAcc::default();
+            let mut acc = rs_cam_core::simulation_cut::SummaryAccumulator::default();
             for sample in trace
                 .samples
                 .iter()
@@ -2850,67 +2850,14 @@ fn build_span_cut_summaries(
                 "low_engagement_time_s": acc.low_engagement_time_s,
                 "wasted_runtime_s": acc.air_cut_time_s + acc.low_engagement_time_s,
                 "average_engagement": acc.average_engagement(),
-                "per_sample_peak_chipload_mm_per_tooth": acc.peak_chipload,
-                "peak_axial_doc_mm": acc.peak_axial_doc,
-                "total_removed_volume_est_mm3": acc.removed_volume_mm3,
+                "per_sample_peak_chipload_mm_per_tooth": acc.peak_chipload_mm_per_tooth,
+                "peak_axial_doc_mm": acc.peak_axial_doc_mm,
+                "total_removed_volume_est_mm3": acc.total_removed_volume_est_mm3,
                 "average_mrr_mm3_s": acc.average_mrr(),
             }));
         }
     }
     serde_json::Value::Array(out)
-}
-
-#[derive(Default)]
-struct SpanCutAcc {
-    sample_count: usize,
-    total_runtime_s: f64,
-    cutting_runtime_s: f64,
-    rapid_runtime_s: f64,
-    air_cut_time_s: f64,
-    low_engagement_time_s: f64,
-    removed_volume_mm3: f64,
-    engagement_time_weighted_sum: f64,
-    peak_chipload: f64,
-    peak_axial_doc: f64,
-}
-
-impl SpanCutAcc {
-    fn observe(&mut self, sample: &rs_cam_core::simulation_cut::SimulationCutSample) {
-        self.sample_count += 1;
-        self.total_runtime_s += sample.segment_time_s;
-        self.removed_volume_mm3 += sample.removed_volume_est_mm3.max(0.0);
-        if sample.is_cutting {
-            self.cutting_runtime_s += sample.segment_time_s;
-            self.engagement_time_weighted_sum += sample.radial_engagement * sample.segment_time_s;
-            if sample.radial_engagement < 0.02 {
-                self.air_cut_time_s += sample.segment_time_s;
-            } else if sample.radial_engagement < 0.10 {
-                self.low_engagement_time_s += sample.segment_time_s;
-            }
-        } else {
-            self.rapid_runtime_s += sample.segment_time_s;
-        }
-        self.peak_chipload = self
-            .peak_chipload
-            .max(sample.chipload_mm_per_tooth.max(0.0));
-        self.peak_axial_doc = self.peak_axial_doc.max(sample.axial_doc_mm.max(0.0));
-    }
-
-    fn average_mrr(&self) -> f64 {
-        if self.cutting_runtime_s <= 1e-9 {
-            0.0
-        } else {
-            self.removed_volume_mm3 / self.cutting_runtime_s
-        }
-    }
-
-    fn average_engagement(&self) -> f64 {
-        if self.cutting_runtime_s <= 1e-9 {
-            0.0
-        } else {
-            self.engagement_time_weighted_sum / self.cutting_runtime_s
-        }
-    }
 }
 
 /// Build the per-DepthPass histogram for [`mcp_get_tool_load_report`].
@@ -2964,8 +2911,9 @@ fn build_per_depth_pass_summary(
         let depth_pass_ids: std::collections::HashSet<u32> =
             depth_pass_meta.iter().map(|(i, _, _)| *i as u32).collect();
         // Accumulate per-pass stats in lock-step with depth_pass_meta.
-        let mut accs: Vec<DepthPassAcc> = (0..depth_pass_meta.len())
-            .map(|_| DepthPassAcc::default())
+        let mut accs: Vec<rs_cam_core::simulation_cut::SummaryAccumulator> = (0..depth_pass_meta
+            .len())
+            .map(|_| rs_cam_core::simulation_cut::SummaryAccumulator::default())
             .collect();
         let pass_index_of: std::collections::HashMap<u32, usize> = depth_pass_meta
             .iter()
@@ -2998,7 +2946,7 @@ fn build_per_depth_pass_summary(
                     "pass_index": pass_idx,
                     "sample_count": acc.sample_count,
                     "cutting_runtime_s": acc.cutting_runtime_s,
-                    "total_removed_volume_est_mm3": acc.removed_volume_mm3,
+                    "total_removed_volume_est_mm3": acc.total_removed_volume_est_mm3,
                     "average_mrr_mm3_s": acc.average_mrr(),
                     "average_engagement": acc.average_engagement(),
                     // Roadmap F.9 — name the field by its statistic so
@@ -3007,8 +2955,8 @@ fn build_per_depth_pass_summary(
                     // the burn side; this RAW per-sample peak can be
                     // ~4× larger and looks like an exceedance when read
                     // in isolation. See planning/UX_PAIN_POINTS_2026-05-11.md F.9.
-                    "per_sample_peak_chipload_mm_per_tooth": acc.peak_chipload,
-                    "peak_axial_doc_mm": acc.peak_axial_doc,
+                    "per_sample_peak_chipload_mm_per_tooth": acc.peak_chipload_mm_per_tooth,
+                    "peak_axial_doc_mm": acc.peak_axial_doc_mm,
                 })
             })
             .collect();
@@ -3019,47 +2967,6 @@ fn build_per_depth_pass_summary(
         serde_json::Value::Null
     } else {
         serde_json::Value::Object(out)
-    }
-}
-
-#[derive(Default)]
-struct DepthPassAcc {
-    sample_count: usize,
-    cutting_runtime_s: f64,
-    removed_volume_mm3: f64,
-    engagement_time_weighted_sum: f64,
-    peak_chipload: f64,
-    peak_axial_doc: f64,
-}
-
-impl DepthPassAcc {
-    fn observe(&mut self, sample: &rs_cam_core::simulation_cut::SimulationCutSample) {
-        self.sample_count += 1;
-        if sample.is_cutting {
-            self.cutting_runtime_s += sample.segment_time_s;
-            self.engagement_time_weighted_sum += sample.radial_engagement * sample.segment_time_s;
-            self.removed_volume_mm3 += sample.removed_volume_est_mm3.max(0.0);
-        }
-        self.peak_chipload = self
-            .peak_chipload
-            .max(sample.chipload_mm_per_tooth.max(0.0));
-        self.peak_axial_doc = self.peak_axial_doc.max(sample.axial_doc_mm.max(0.0));
-    }
-
-    fn average_mrr(&self) -> f64 {
-        if self.cutting_runtime_s <= 1e-9 {
-            0.0
-        } else {
-            self.removed_volume_mm3 / self.cutting_runtime_s
-        }
-    }
-
-    fn average_engagement(&self) -> f64 {
-        if self.cutting_runtime_s <= 1e-9 {
-            0.0
-        } else {
-            self.engagement_time_weighted_sum / self.cutting_runtime_s
-        }
     }
 }
 
