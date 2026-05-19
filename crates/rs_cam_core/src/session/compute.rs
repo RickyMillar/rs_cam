@@ -910,12 +910,24 @@ impl ProjectSession {
                         build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill))
                     });
 
+                    // §6.C / §6.I revision: prefer the move-intent signal
+                    // (a toolpath containing any `MoveIntent::Drilling` move)
+                    // over the op-kind heuristic. The op-kind matches stay
+                    // as the fallback so an in-flight Drill/AlignmentPinDrill
+                    // whose generator hasn't been migrated still gets flagged.
                     let op_type = tc.operation.op_type();
-                    let metrics_not_applicable = matches!(
-                        op_type,
-                        crate::compute::catalog::OperationType::Drill
-                            | crate::compute::catalog::OperationType::AlignmentPinDrill
-                    );
+                    let has_drilling_intent = result
+                        .annotated
+                        .toolpath
+                        .moves
+                        .iter()
+                        .any(|m| matches!(m.intent, crate::toolpath::MoveIntent::Drilling));
+                    let metrics_not_applicable = has_drilling_intent
+                        || matches!(
+                            op_type,
+                            crate::compute::catalog::OperationType::Drill
+                                | crate::compute::catalog::OperationType::AlignmentPinDrill
+                        );
                     entries.push(SimToolpathEntry {
                         id: tc.id,
                         name: tc.name.clone(),

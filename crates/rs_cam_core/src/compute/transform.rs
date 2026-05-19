@@ -386,7 +386,11 @@ impl SetupTransformInfo {
                         }
                     }
                 };
-                Move { target, move_type }
+                Move {
+                    target,
+                    move_type,
+                    intent: m.intent,
+                }
             })
             .collect();
 

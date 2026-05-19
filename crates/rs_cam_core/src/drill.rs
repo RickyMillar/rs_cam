@@ -4,7 +4,7 @@
 //! dwell (G82), peck (G83), and chip-break (G73).
 
 use crate::geo::P3;
-use crate::toolpath::Toolpath;
+use crate::toolpath::{MoveIntent, Toolpath};
 
 /// Drill cycle type, matching standard G-code canned cycles.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -52,9 +52,9 @@ pub fn drill_toolpath(holes: &[[f64; 2]], params: &DrillParams) -> Toolpath {
 
     for &[x, y] in holes {
         // 1. Rapid to safe_z (vertical move if not already there)
-        tp.rapid_to(P3::new(x, y, params.safe_z));
+        tp.rapid_to_with_intent(P3::new(x, y, params.safe_z), MoveIntent::Linking);
         // 2. Rapid down to retract_z (R-plane)
-        tp.rapid_to(P3::new(x, y, params.retract_z));
+        tp.rapid_to_with_intent(P3::new(x, y, params.retract_z), MoveIntent::Linking);
 
         let bottom_z = params.top_z - params.depth;
 
@@ -62,8 +62,12 @@ pub fn drill_toolpath(holes: &[[f64; 2]], params: &DrillParams) -> Toolpath {
             DrillCycle::Simple | DrillCycle::Dwell(_) => {
                 // Feed to full depth, then rapid out.
                 // (Dwell timing is a post-processor feature — the motion is identical.)
-                tp.feed_to(P3::new(x, y, bottom_z), params.feed_rate);
-                tp.rapid_to(P3::new(x, y, params.retract_z));
+                tp.feed_to_with_intent(
+                    P3::new(x, y, bottom_z),
+                    params.feed_rate,
+                    MoveIntent::Drilling,
+                );
+                tp.rapid_to_with_intent(P3::new(x, y, params.retract_z), MoveIntent::Retract);
             }
             DrillCycle::Peck(peck_depth) => {
                 drill_peck_full_retract(&mut tp, x, y, params, peck_depth, bottom_z);
@@ -94,19 +98,23 @@ fn drill_peck_full_retract(
     loop {
         let target_z = (current_z - peck_depth).max(bottom_z);
         // Feed down to next peck depth
-        tp.feed_to(P3::new(x, y, target_z), params.feed_rate);
+        tp.feed_to_with_intent(
+            P3::new(x, y, target_z),
+            params.feed_rate,
+            MoveIntent::Drilling,
+        );
 
         if (target_z - bottom_z).abs() < 1e-9 {
             // Reached full depth — retract and done
-            tp.rapid_to(P3::new(x, y, params.retract_z));
+            tp.rapid_to_with_intent(P3::new(x, y, params.retract_z), MoveIntent::Retract);
             break;
         }
 
         // Retract fully to R-plane
-        tp.rapid_to(P3::new(x, y, params.retract_z));
+        tp.rapid_to_with_intent(P3::new(x, y, params.retract_z), MoveIntent::Retract);
         // Rapid back to just above previous cut depth
         let reentry_z = target_z + CLEARANCE;
-        tp.rapid_to(P3::new(x, y, reentry_z));
+        tp.rapid_to_with_intent(P3::new(x, y, reentry_z), MoveIntent::Linking);
 
         current_z = target_z;
     }
@@ -128,17 +136,21 @@ fn drill_chip_break(
     loop {
         let target_z = (current_z - peck_depth).max(bottom_z);
         // Feed down to next peck depth
-        tp.feed_to(P3::new(x, y, target_z), params.feed_rate);
+        tp.feed_to_with_intent(
+            P3::new(x, y, target_z),
+            params.feed_rate,
+            MoveIntent::Drilling,
+        );
 
         if (target_z - bottom_z).abs() < 1e-9 {
             // Reached full depth — retract and done
-            tp.rapid_to(P3::new(x, y, params.retract_z));
+            tp.rapid_to_with_intent(P3::new(x, y, params.retract_z), MoveIntent::Retract);
             break;
         }
 
         // Small retract for chip breaking
         let retract_z = target_z + retract_amount;
-        tp.rapid_to(P3::new(x, y, retract_z));
+        tp.rapid_to_with_intent(P3::new(x, y, retract_z), MoveIntent::Retract);
 
         current_z = target_z;
     }

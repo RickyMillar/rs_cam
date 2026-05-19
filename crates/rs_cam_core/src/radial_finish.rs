@@ -104,11 +104,12 @@ pub fn radial_finish_toolpath(
             spoke_points
         };
 
-        tp.emit_path_segment(
+        tp.emit_path_segment_with_intent(
             &spoke_points,
             params.safe_z,
             params.feed_rate,
             params.plunge_rate,
+            crate::toolpath::MoveIntent::FinishingCut,
         );
     }
 

@@ -188,19 +188,35 @@ fn generate_steep_passes(
                 continue;
             }
 
+            use crate::toolpath::MoveIntent;
             // Emit toolpath for this contour
             let z_adjusted = z + stock_to_leave;
-            tp.rapid_to(P3::new(filtered[0].x, filtered[0].y, safe_z));
-            tp.feed_to(
+            tp.rapid_to_with_intent(
+                P3::new(filtered[0].x, filtered[0].y, safe_z),
+                MoveIntent::Linking,
+            );
+            tp.feed_to_with_intent(
                 P3::new(filtered[0].x, filtered[0].y, z_adjusted),
                 plunge_rate,
+                MoveIntent::EntryPlunge,
             );
             for pt in &filtered[1..] {
-                tp.feed_to(P3::new(pt.x, pt.y, z_adjusted), feed_rate);
+                tp.feed_to_with_intent(
+                    P3::new(pt.x, pt.y, z_adjusted),
+                    feed_rate,
+                    MoveIntent::FinishingCut,
+                );
             }
             // Close the contour
-            tp.feed_to(P3::new(filtered[0].x, filtered[0].y, z_adjusted), feed_rate);
-            tp.rapid_to(P3::new(filtered[0].x, filtered[0].y, safe_z));
+            tp.feed_to_with_intent(
+                P3::new(filtered[0].x, filtered[0].y, z_adjusted),
+                feed_rate,
+                MoveIntent::FinishingCut,
+            );
+            tp.rapid_to_with_intent(
+                P3::new(filtered[0].x, filtered[0].y, safe_z),
+                MoveIntent::Retract,
+            );
         }
 
         z -= z_step;
@@ -257,15 +273,22 @@ fn generate_shallow_passes(
                 run.push(P3::new(x, y, z));
                 in_region = true;
             } else if in_region {
+                use crate::toolpath::MoveIntent;
                 // Exiting region — emit the run
                 if run.len() >= 2 {
-                    tp.rapid_to(P3::new(run[0].x, run[0].y, safe_z));
-                    tp.feed_to(run[0], plunge_rate);
+                    tp.rapid_to_with_intent(
+                        P3::new(run[0].x, run[0].y, safe_z),
+                        MoveIntent::Linking,
+                    );
+                    tp.feed_to_with_intent(run[0], plunge_rate, MoveIntent::EntryPlunge);
                     for pt in &run[1..] {
-                        tp.feed_to(*pt, feed_rate);
+                        tp.feed_to_with_intent(*pt, feed_rate, MoveIntent::FinishingCut);
                     }
                     if let Some(&last) = run.last() {
-                        tp.rapid_to(P3::new(last.x, last.y, safe_z));
+                        tp.rapid_to_with_intent(
+                            P3::new(last.x, last.y, safe_z),
+                            MoveIntent::Retract,
+                        );
                     }
                 }
                 run.clear();
@@ -275,13 +298,14 @@ fn generate_shallow_passes(
 
         // Flush remaining run at end of row
         if run.len() >= 2 {
-            tp.rapid_to(P3::new(run[0].x, run[0].y, safe_z));
-            tp.feed_to(run[0], plunge_rate);
+            use crate::toolpath::MoveIntent;
+            tp.rapid_to_with_intent(P3::new(run[0].x, run[0].y, safe_z), MoveIntent::Linking);
+            tp.feed_to_with_intent(run[0], plunge_rate, MoveIntent::EntryPlunge);
             for pt in &run[1..] {
-                tp.feed_to(*pt, feed_rate);
+                tp.feed_to_with_intent(*pt, feed_rate, MoveIntent::FinishingCut);
             }
             if let Some(&last) = run.last() {
-                tp.rapid_to(P3::new(last.x, last.y, safe_z));
+                tp.rapid_to_with_intent(P3::new(last.x, last.y, safe_z), MoveIntent::Retract);
             }
         }
     }

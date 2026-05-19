@@ -400,18 +400,22 @@ mod tests {
             Move {
                 target: P3::new(0.0, 0.0, 0.0),
                 move_type: MoveType::Rapid,
+                intent: crate::toolpath::MoveIntent::Unknown,
             },
             Move {
                 target: P3::new(1.0, 0.0, 0.0),
                 move_type: MoveType::Linear { feed_rate: 1000.0 },
+                intent: crate::toolpath::MoveIntent::Unknown,
             },
             Move {
                 target: P3::new(2.0, 0.0, 0.0),
                 move_type: MoveType::Linear { feed_rate: 3000.0 },
+                intent: crate::toolpath::MoveIntent::Unknown,
             },
             Move {
                 target: P3::new(3.0, 0.0, 0.0),
                 move_type: MoveType::Linear { feed_rate: 1000.0 },
+                intent: crate::toolpath::MoveIntent::Unknown,
             },
         ];
 

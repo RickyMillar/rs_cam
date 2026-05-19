@@ -36,17 +36,22 @@ use super::{
 /// would carve a column from `start_z` down through full stock
 /// thickness in one shot ("punched hole" symptom).
 fn emit_peck_plunge(tp: &mut Toolpath, entry: &P3, start_z: f64, params: &Adaptive3dParams) {
+    use crate::toolpath::MoveIntent;
     const PECK_CLEARANCE_MM: f64 = 0.5;
     let dpp = params.depth_per_pass.max(0.1);
     let mut current_z = start_z;
     while current_z - entry.z > dpp + 1e-6 {
         let next_z = current_z - dpp;
-        tp.feed_to(P3::new(entry.x, entry.y, next_z), params.plunge_rate);
+        tp.feed_to_with_intent(
+            P3::new(entry.x, entry.y, next_z),
+            params.plunge_rate,
+            MoveIntent::EntryPlunge,
+        );
         let retract_z = next_z + PECK_CLEARANCE_MM;
-        tp.rapid_to(P3::new(entry.x, entry.y, retract_z));
+        tp.rapid_to_with_intent(P3::new(entry.x, entry.y, retract_z), MoveIntent::Retract);
         current_z = retract_z;
     }
-    tp.feed_to(*entry, params.plunge_rate);
+    tp.feed_to_with_intent(*entry, params.plunge_rate, MoveIntent::EntryPlunge);
 }
 
 pub(super) enum Adaptive3dSegment {
@@ -785,7 +790,10 @@ pub(super) fn segments_to_toolpath(
         if let Some(last) = tp.moves.last()
             && last.target.z < safe_z
         {
-            tp.rapid_to(P3::new(last.target.x, last.target.y, safe_z));
+            tp.rapid_to_with_intent(
+                P3::new(last.target.x, last.target.y, safe_z),
+                crate::toolpath::MoveIntent::Retract,
+            );
         }
     };
 
@@ -812,12 +820,18 @@ pub(super) fn segments_to_toolpath(
                 match params.entry_style {
                     EntryStyle3d::Plunge => {
                         lift_to_safe_z(&mut tp, params.safe_z);
-                        tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                        tp.rapid_to_with_intent(
+                            P3::new(entry.x, entry.y, params.safe_z),
+                            crate::toolpath::MoveIntent::Linking,
+                        );
                         emit_peck_plunge(&mut tp, entry, params.safe_z, params);
                     }
                     EntryStyle3d::Helix { radius, pitch } => {
                         lift_to_safe_z(&mut tp, params.safe_z);
-                        tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                        tp.rapid_to_with_intent(
+                            P3::new(entry.x, entry.y, params.safe_z),
+                            crate::toolpath::MoveIntent::Linking,
+                        );
                         let helix_start = P3::new(entry.x, entry.y, params.safe_z);
                         crate::dressup::emit_helix(
                             &mut tp,
@@ -830,7 +844,10 @@ pub(super) fn segments_to_toolpath(
                     }
                     EntryStyle3d::Ramp { max_angle_deg } => {
                         lift_to_safe_z(&mut tp, params.safe_z);
-                        tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                        tp.rapid_to_with_intent(
+                            P3::new(entry.x, entry.y, params.safe_z),
+                            crate::toolpath::MoveIntent::Linking,
+                        );
                         let ramp_start = P3::new(entry.x, entry.y, params.safe_z);
                         crate::dressup::emit_ramp(
                             &mut tp,
@@ -878,12 +895,18 @@ pub(super) fn segments_to_toolpath(
                         // off).
                         const RAPID_DESCENT_BUFFER_MM: f64 = 0.5;
                         lift_to_safe_z(&mut tp, params.safe_z);
-                        tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                        tp.rapid_to_with_intent(
+                            P3::new(entry.x, entry.y, params.safe_z),
+                            crate::toolpath::MoveIntent::Linking,
+                        );
                         let descent_floor = (*rapid_floor_z + RAPID_DESCENT_BUFFER_MM)
                             .min(params.safe_z)
                             .max(entry.z);
                         if descent_floor < params.safe_z - 1e-6 {
-                            tp.rapid_to(P3::new(entry.x, entry.y, descent_floor));
+                            tp.rapid_to_with_intent(
+                                P3::new(entry.x, entry.y, descent_floor),
+                                crate::toolpath::MoveIntent::Linking,
+                            );
                         }
                         emit_peck_plunge(&mut tp, entry, descent_floor, params);
                     }
@@ -903,9 +926,15 @@ pub(super) fn segments_to_toolpath(
                             .min(params.safe_z)
                             .max(entry.z);
                         lift_to_safe_z(&mut tp, params.safe_z);
-                        tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                        tp.rapid_to_with_intent(
+                            P3::new(entry.x, entry.y, params.safe_z),
+                            crate::toolpath::MoveIntent::Linking,
+                        );
                         if descent_floor < params.safe_z - 1e-6 {
-                            tp.rapid_to(P3::new(entry.x, entry.y, descent_floor));
+                            tp.rapid_to_with_intent(
+                                P3::new(entry.x, entry.y, descent_floor),
+                                crate::toolpath::MoveIntent::Linking,
+                            );
                         }
                         let helix_start = P3::new(entry.x, entry.y, descent_floor);
                         crate::dressup::emit_helix(
@@ -923,9 +952,15 @@ pub(super) fn segments_to_toolpath(
                             .min(params.safe_z)
                             .max(entry.z);
                         lift_to_safe_z(&mut tp, params.safe_z);
-                        tp.rapid_to(P3::new(entry.x, entry.y, params.safe_z));
+                        tp.rapid_to_with_intent(
+                            P3::new(entry.x, entry.y, params.safe_z),
+                            crate::toolpath::MoveIntent::Linking,
+                        );
                         if descent_floor < params.safe_z - 1e-6 {
-                            tp.rapid_to(P3::new(entry.x, entry.y, descent_floor));
+                            tp.rapid_to_with_intent(
+                                P3::new(entry.x, entry.y, descent_floor),
+                                crate::toolpath::MoveIntent::Linking,
+                            );
                         }
                         let ramp_start = P3::new(entry.x, entry.y, descent_floor);
                         crate::dressup::emit_ramp(
@@ -955,7 +990,11 @@ pub(super) fn segments_to_toolpath(
                 }
             }
             Adaptive3dSegment::Link(target) => {
-                tp.feed_to(*target, params.feed_rate);
+                tp.feed_to_with_intent(
+                    *target,
+                    params.feed_rate,
+                    crate::toolpath::MoveIntent::Linking,
+                );
             }
             Adaptive3dSegment::Cut(path) => {
                 if path.len() < 2 {
@@ -964,14 +1003,21 @@ pub(super) fn segments_to_toolpath(
                 let simplified = simplify_path_3d(path, params.tolerance);
                 let blended = blend_corners_3d(&simplified, params.min_cutting_radius);
                 for pt in blended.iter().skip(1) {
-                    tp.feed_to(*pt, params.feed_rate);
+                    tp.feed_to_with_intent(
+                        *pt,
+                        params.feed_rate,
+                        crate::toolpath::MoveIntent::ClearingCut,
+                    );
                 }
             }
         }
     }
 
     if let Some(last) = tp.moves.last() {
-        tp.rapid_to(P3::new(last.target.x, last.target.y, params.safe_z));
+        tp.rapid_to_with_intent(
+            P3::new(last.target.x, last.target.y, params.safe_z),
+            crate::toolpath::MoveIntent::Retract,
+        );
     }
 
     (tp, annotations)

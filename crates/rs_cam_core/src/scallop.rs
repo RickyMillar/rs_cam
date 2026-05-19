@@ -23,7 +23,7 @@ use crate::polygon::{Polygon2, offset_polygon};
 use crate::scallop_math::variable_stepover;
 use crate::slope::SurfaceHeightmap;
 use crate::tool::MillingCutter;
-use crate::toolpath::Toolpath;
+use crate::toolpath::{MoveIntent, Toolpath};
 
 use tracing::info;
 
@@ -447,11 +447,14 @@ pub fn scallop_toolpath_structured_annotated(
             #[allow(clippy::indexing_slicing)]
             if i == 0 {
                 // First ring: rapid to start
-                tp.rapid_to(P3::new(rotated[0].x, rotated[0].y, params.safe_z));
-                tp.feed_to(rotated[0], params.plunge_rate);
+                tp.rapid_to_with_intent(
+                    P3::new(rotated[0].x, rotated[0].y, params.safe_z),
+                    MoveIntent::Linking,
+                );
+                tp.feed_to_with_intent(rotated[0], params.plunge_rate, MoveIntent::EntryPlunge);
             } else {
                 // Connect from previous ring end to this ring start (helical transition)
-                tp.feed_to(rotated[0], params.feed_rate);
+                tp.feed_to_with_intent(rotated[0], params.feed_rate, MoveIntent::FinishingCut);
             }
 
             // Follow the ring
@@ -465,7 +468,7 @@ pub fn scallop_toolpath_structured_annotated(
                         continue;
                     }
                 }
-                tp.feed_to(*pt, params.feed_rate);
+                tp.feed_to_with_intent(*pt, params.feed_rate, MoveIntent::FinishingCut);
             }
 
             #[allow(clippy::indexing_slicing)]
@@ -475,7 +478,10 @@ pub fn scallop_toolpath_structured_annotated(
         }
 
         // Final retract
-        tp.rapid_to(P3::new(prev_end.x, prev_end.y, params.safe_z));
+        tp.rapid_to_with_intent(
+            P3::new(prev_end.x, prev_end.y, params.safe_z),
+            MoveIntent::Retract,
+        );
     } else {
         // Discrete ring mode: rapid between rings
         let mut emitted_rings = Vec::new();
@@ -516,21 +522,30 @@ pub fn scallop_toolpath_structured_annotated(
                     continuous: false,
                 },
             });
-            tp.rapid_to(P3::new(filtered[0].x, filtered[0].y, params.safe_z));
-            tp.feed_to(filtered[0], params.plunge_rate);
+            tp.rapid_to_with_intent(
+                P3::new(filtered[0].x, filtered[0].y, params.safe_z),
+                MoveIntent::Linking,
+            );
+            tp.feed_to_with_intent(filtered[0], params.plunge_rate, MoveIntent::EntryPlunge);
             for pt in &filtered[1..] {
-                tp.feed_to(*pt, params.feed_rate);
+                tp.feed_to_with_intent(*pt, params.feed_rate, MoveIntent::FinishingCut);
             }
             // Close the ring
-            tp.feed_to(filtered[0], params.feed_rate);
-            tp.rapid_to(P3::new(filtered[0].x, filtered[0].y, params.safe_z));
+            tp.feed_to_with_intent(filtered[0], params.feed_rate, MoveIntent::FinishingCut);
+            tp.rapid_to_with_intent(
+                P3::new(filtered[0].x, filtered[0].y, params.safe_z),
+                MoveIntent::Retract,
+            );
         }
     }
 
     if let Some(last) = tp.moves.last()
         && !matches!(last.move_type, crate::toolpath::MoveType::Rapid)
     {
-        tp.rapid_to(P3::new(last.target.x, last.target.y, params.safe_z));
+        tp.rapid_to_with_intent(
+            P3::new(last.target.x, last.target.y, params.safe_z),
+            MoveIntent::Retract,
+        );
     }
 
     info!(

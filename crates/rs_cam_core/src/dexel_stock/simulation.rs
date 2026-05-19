@@ -177,6 +177,18 @@ impl TriDexelStock {
             let in_transit_span = transit_moves.get(move_index).copied().unwrap_or(false)
                 || matches!(toolpath.moves[move_index].move_type, MoveType::Rapid);
 
+            // §6.C / §6.I: a Linear feed tagged `MoveIntent::Retract` is a
+            // lift through cleared air, not a cutting move. Treat it like a
+            // Rapid for accumulator + dexel purposes — same time accounting,
+            // no stamping, `is_cutting = false`. The kinematic-heuristic
+            // fallback below remains for moves with `MoveIntent::Unknown`.
+            let intent = toolpath.moves[move_index].intent;
+            let is_retract_feed = matches!(intent, crate::toolpath::MoveIntent::Retract)
+                && matches!(
+                    toolpath.moves[move_index].move_type,
+                    MoveType::Linear { .. }
+                );
+
             match toolpath.moves[move_index].move_type {
                 MoveType::Rapid => {
                     sample_segment_runtime(
@@ -189,6 +201,28 @@ impl TriDexelStock {
                             feed_rate_mm_min: rapid_feed_mm_min.max(1.0),
                             is_cutting: false,
                             cut_kinematics: CutKinematics::Rapid,
+                            spindle_rpm,
+                            flute_count,
+                            semantic_item_id,
+                            span_path,
+                            in_transit_span,
+                        },
+                        &mut cumulative_time_s,
+                        &mut next_sample_index,
+                        &mut samples,
+                    );
+                }
+                MoveType::Linear { feed_rate } if is_retract_feed => {
+                    sample_segment_runtime(
+                        start,
+                        end,
+                        &SegmentSampleParams {
+                            move_index,
+                            toolpath_id,
+                            sample_step_mm,
+                            feed_rate_mm_min: feed_rate.max(1.0),
+                            is_cutting: false,
+                            cut_kinematics: CutKinematics::Linear,
                             spindle_rpm,
                             flute_count,
                             semantic_item_id,

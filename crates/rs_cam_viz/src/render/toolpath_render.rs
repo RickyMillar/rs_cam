@@ -1199,7 +1199,7 @@ mod tests {
     #[test]
     fn span_aware_renderer_colors_entry_distinct_from_default() {
         use rs_cam_core::geo::P3;
-        use rs_cam_core::toolpath::{Move, MoveType};
+        use rs_cam_core::toolpath::{Move, MoveIntent, MoveType};
         use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
 
         // Build a 3-move toolpath: rapid → cut(entry) → cut(default).
@@ -1207,14 +1207,17 @@ mod tests {
         tp.moves.push(Move {
             target: P3::new(0.0, 0.0, 0.0),
             move_type: MoveType::Rapid,
+            intent: MoveIntent::Unknown,
         });
         tp.moves.push(Move {
             target: P3::new(1.0, 0.0, 0.0),
             move_type: MoveType::Linear { feed_rate: 100.0 },
+            intent: MoveIntent::Unknown,
         });
         tp.moves.push(Move {
             target: P3::new(2.0, 0.0, 0.0),
             move_type: MoveType::Linear { feed_rate: 100.0 },
+            intent: MoveIntent::Unknown,
         });
         // Entry span covers move 1 only; default cut for move 2.
         let spans = vec![Span::new(1, 2, SpanKind::Entry)];

@@ -139,11 +139,12 @@ fn emit_rest_segment(tp: &mut Toolpath, points: &[P2], params: &RestParams) {
     }
     let z = params.cut_depth;
     let path_3d: Vec<P3> = points.iter().map(|p| P3::new(p.x, p.y, z)).collect();
-    tp.emit_path_segment(
+    tp.emit_path_segment_with_intent(
         &path_3d,
         params.safe_z,
         params.feed_rate,
         params.plunge_rate,
+        crate::toolpath::MoveIntent::ClearingCut,
     );
 }
 

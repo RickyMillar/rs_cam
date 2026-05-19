@@ -24,6 +24,66 @@
 
 ## Recent work (2026-05-19)
 
+### Dexel-fidelity roadmap — Step 1 (MoveIntent + retract reclassification)
+
+Step 1 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` landed. Closes §3.2
+("retract-feed inflation") entirely and the reporting half of §3.1
+("category error" for drills).
+
+**Substrate (I — intent-aware classification):** new `MoveIntent` enum
+on the `Move` struct at `crates/rs_cam_core/src/toolpath.rs` —
+variants `Drilling`, `EntryPlunge`, `ClearingCut`, `FinishingCut`,
+`EntryHelix`, `EntryRamp`, `Linking`, `Retract`, `Unknown`. Attachment
+was on the `Move` struct (not inside `MoveType::Linear`) to avoid
+breaking the 60+ pattern-match sites on `MoveType`; `MoveType` is not
+serde-derived so no project-IO break risk. New helpers
+`rapid_to_with_intent` / `feed_to_with_intent` / `arc_*_with_intent`
+and `emit_path_segment_with_intent` give generators a tagged emission
+surface; legacy `feed_to` / `rapid_to` stay around and now stamp
+`Unknown` on the cut body — but `emit_path_segment` still tags its
+bookend plunge as `EntryPlunge` and retract as `Retract` so legacy
+generators automatically pick up the retract-feed reclassification.
+
+**Generator migration:** drill (`Drilling`), pocket / adaptive / rest /
+zigzag (`ClearingCut`), profile / waterline / scallop / project_curve /
+trace / spiral_finish / pencil / steep_shallow / inlay / vcarve /
+ramp_finish / radial_finish / horizontal_finish (`FinishingCut`),
+adaptive3d (`ClearingCut` body + `EntryHelix` / `EntryRamp` via the
+shared `dressup::emit_helix` / `emit_ramp` paths). `raster_toolpath_from_grid`
+in `toolpath.rs` itself also tags its emissions.
+
+**Reporting (C — retract suppression):** in
+`crates/rs_cam_core/src/dexel_stock/simulation.rs` the dispatcher
+intercepts `MoveType::Linear` with `MoveIntent::Retract` and routes
+through `sample_segment_runtime` with `is_cutting = false`, mirroring
+the Rapid branch — no stamping, no time inflation. Plunge-and-retract-
+loop ops (project_curve, v_carve, drill cycles) stop reporting inflated
+`air_cut_time_s`.
+
+**Drill detection generalized:** `metrics_not_applicable` (in
+`session/compute.rs`) and `is_drill_cycle` (in MCP narrate context at
+`crates/rs_cam_viz/src/app/mcp.rs`) now read primarily from "does this
+toolpath contain any `MoveIntent::Drilling` move?", with the
+op-kind-based `Drill | AlignmentPinDrill` heuristic retained as a
+fallback for non-migrated generators.
+
+**Tests:** `crates/rs_cam_core/tests/move_intent_step1.rs` —
+4 regression-locking cases covering drill-cycle Drilling tagging
+(simple and peck), retract-feed `is_cutting = false` in the simulator,
+and the kinematic-fallback behavior for `Unknown`-intent Linear moves.
+Plus 4 inline `toolpath::tests::*` cases for the emission helpers.
+
+**CLAUDE.md update:** the "2D SVG engagement always zero" caveat was
+removed — that symptom was driven by retract-feed inflation, which
+this step closes. Replaced with a tighter note on how `air_cut_percentage`
+is now intent-aware. Drill toolpaths report `metrics_not_applicable: true`
+rather than a misleading engagement scalar.
+
+**Scope held:** Path B confirmed (see Status block). Kernel-swap for
+analytical drill removal was NOT bundled — that's Step 3 (E full
+`DrillOp` promotion). Step 1 stayed small and focused on the metric-
+reporting fixes that block clear diagnosis of the deeper issues.
+
 ### Dexel-fidelity roadmap — Step 0 (mcp.rs accumulator dedup)
 
 Step 0 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` landed. Two parallel

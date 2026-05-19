@@ -102,25 +102,38 @@ fn contour_to_toolpath(contour: &[P2], params: &ProfileParams) -> Toolpath {
     #[allow(clippy::indexing_slicing)]
     let start = pts[0];
 
+    use crate::toolpath::MoveIntent;
     // Rapid to start at safe Z
-    tp.rapid_to(P3::new(start.x, start.y, params.safe_z));
+    tp.rapid_to_with_intent(
+        P3::new(start.x, start.y, params.safe_z),
+        MoveIntent::Linking,
+    );
     // Plunge to cut depth
-    tp.feed_to(
+    tp.feed_to_with_intent(
         P3::new(start.x, start.y, params.cut_depth),
         params.plunge_rate,
+        MoveIntent::EntryPlunge,
     );
     // Feed around contour
     #[allow(clippy::indexing_slicing)]
     for pt in &pts[1..] {
-        tp.feed_to(P3::new(pt.x, pt.y, params.cut_depth), params.feed_rate);
+        tp.feed_to_with_intent(
+            P3::new(pt.x, pt.y, params.cut_depth),
+            params.feed_rate,
+            MoveIntent::FinishingCut,
+        );
     }
     // Close the loop
-    tp.feed_to(
+    tp.feed_to_with_intent(
         P3::new(start.x, start.y, params.cut_depth),
         params.feed_rate,
+        MoveIntent::FinishingCut,
     );
     // Retract
-    tp.rapid_to(P3::new(start.x, start.y, params.safe_z));
+    tp.rapid_to_with_intent(
+        P3::new(start.x, start.y, params.safe_z),
+        MoveIntent::Retract,
+    );
 
     tp
 }

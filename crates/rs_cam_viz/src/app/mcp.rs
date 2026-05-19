@@ -714,11 +714,19 @@ impl super::RsCamApp {
                     .unwrap_or(state.session.post_config().spindle_speed),
             ),
             flute_count: Some(tool_config.flute_count),
-            is_drill_cycle: matches!(
-                tc.operation.op_type(),
-                rs_cam_core::compute::catalog::OperationType::Drill
-                    | rs_cam_core::compute::catalog::OperationType::AlignmentPinDrill
-            ),
+            // §6.C / §6.I revision: prefer the MoveIntent::Drilling signal
+            // from the toolpath; fall back to op-kind for legacy generators.
+            is_drill_cycle: result
+                .annotated
+                .toolpath
+                .moves
+                .iter()
+                .any(|m| matches!(m.intent, rs_cam_core::toolpath::MoveIntent::Drilling))
+                || matches!(
+                    tc.operation.op_type(),
+                    rs_cam_core::compute::catalog::OperationType::Drill
+                        | rs_cam_core::compute::catalog::OperationType::AlignmentPinDrill
+                ),
         };
 
         rs_cam_core::narrate::narrate_toolpath_with_context(

@@ -183,9 +183,10 @@ pub(crate) fn emit_ramp(
     max_angle_deg: f64,
     feed_rate: f64,
 ) {
+    use crate::toolpath::MoveIntent;
     if max_angle_deg <= 0.0 || max_angle_deg >= 90.0 {
         // Invalid angle — fall back to straight plunge
-        tp.feed_to(*end, feed_rate);
+        tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
         return;
     }
 
@@ -196,7 +197,7 @@ pub(crate) fn emit_ramp(
 
     if start.z > ramp_start_z + 0.1 {
         // Rapid down to clearance height first
-        tp.rapid_to(P3::new(start.x, start.y, ramp_start_z));
+        tp.rapid_to_with_intent(P3::new(start.x, start.y, ramp_start_z), MoveIntent::Linking);
     }
 
     let ramp_dz = (ramp_start_z - end.z).abs().max(0.1);
@@ -208,16 +209,21 @@ pub(crate) fn emit_ramp(
     let mid_z = (ramp_start_z + end.z) / 2.0;
 
     // Move forward and down to midpoint
-    tp.feed_to(
+    tp.feed_to_with_intent(
         P3::new(
             start.x + dir.0 * half_len,
             start.y + dir.1 * half_len,
             mid_z,
         ),
         feed_rate,
+        MoveIntent::EntryRamp,
     );
     // Move back to start XY at final Z
-    tp.feed_to(P3::new(start.x, start.y, end.z), feed_rate);
+    tp.feed_to_with_intent(
+        P3::new(start.x, start.y, end.z),
+        feed_rate,
+        MoveIntent::EntryRamp,
+    );
 }
 
 pub(crate) fn emit_helix(
@@ -228,17 +234,21 @@ pub(crate) fn emit_helix(
     pitch: f64,
     feed_rate: f64,
 ) {
+    use crate::toolpath::MoveIntent;
     // Only helix the last portion — rapid down to clearance first
     let clearance = ENTRY_CLEARANCE;
     let helix_start_z = end.z + clearance;
 
     if start.z > helix_start_z + 0.1 {
-        tp.rapid_to(P3::new(start.x, start.y, helix_start_z));
+        tp.rapid_to_with_intent(
+            P3::new(start.x, start.y, helix_start_z),
+            MoveIntent::Linking,
+        );
     }
 
     let dz = (helix_start_z.min(start.z) - end.z).abs();
     if dz < 0.01 || pitch < 0.01 || radius <= 0.0 {
-        tp.feed_to(*end, feed_rate);
+        tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
         return;
     }
 
@@ -247,7 +257,7 @@ pub(crate) fn emit_helix(
     let steps_per_rev = 36; // 10° per step
     let total_steps = (revolutions * steps_per_rev as f64).ceil() as usize;
     if total_steps == 0 {
-        tp.feed_to(*end, feed_rate);
+        tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
         return;
     }
 
@@ -262,11 +272,11 @@ pub(crate) fn emit_helix(
         let (sin_a, cos_a) = angle.sin_cos();
         let x = center_x + radius * cos_a;
         let y = center_y + radius * sin_a;
-        tp.feed_to(P3::new(x, y, z), feed_rate);
+        tp.feed_to_with_intent(P3::new(x, y, z), feed_rate, MoveIntent::EntryHelix);
     }
 
     // Return to center at final Z
-    tp.feed_to(*end, feed_rate);
+    tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryHelix);
 }
 
 // ---------------------------------------------------------------------------

@@ -160,6 +160,11 @@ pub fn fit_arcs(
             let ij_i = arc.cx - start.x;
             let ij_j = arc.cy - start.y;
 
+            // Collapsed-arc intent inherits from the source feed segments.
+            // All collapsed segments share `feed_rate` already; intent
+            // taken from the first collapsed source move.
+            let arc_intent = moves[i].intent;
+
             let arc_idx = result.moves.len();
             if arc.clockwise {
                 result.moves.push(Move {
@@ -169,6 +174,7 @@ pub fn fit_arcs(
                         j: ij_j,
                         feed_rate,
                     },
+                    intent: arc_intent,
                 });
             } else {
                 result.moves.push(Move {
@@ -178,6 +184,7 @@ pub fn fit_arcs(
                         j: ij_j,
                         feed_rate,
                     },
+                    intent: arc_intent,
                 });
             }
             arc_positions.push(arc_idx);

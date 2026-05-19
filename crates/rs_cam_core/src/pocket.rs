@@ -121,25 +121,38 @@ fn contours_to_toolpath(contours: &[Vec<P2>], params: &PocketParams) -> Toolpath
         #[allow(clippy::indexing_slicing)]
         let start = pts[0];
 
+        use crate::toolpath::MoveIntent;
         // Rapid to start point at safe Z
-        tp.rapid_to(P3::new(start.x, start.y, params.safe_z));
+        tp.rapid_to_with_intent(
+            P3::new(start.x, start.y, params.safe_z),
+            MoveIntent::Linking,
+        );
         // Plunge to cutting depth
-        tp.feed_to(
+        tp.feed_to_with_intent(
             P3::new(start.x, start.y, params.cut_depth),
             params.plunge_rate,
+            MoveIntent::EntryPlunge,
         );
         // Feed around the contour
         #[allow(clippy::indexing_slicing)]
         for pt in &pts[1..] {
-            tp.feed_to(P3::new(pt.x, pt.y, params.cut_depth), params.feed_rate);
+            tp.feed_to_with_intent(
+                P3::new(pt.x, pt.y, params.cut_depth),
+                params.feed_rate,
+                MoveIntent::ClearingCut,
+            );
         }
         // Close the loop (back to start)
-        tp.feed_to(
+        tp.feed_to_with_intent(
             P3::new(start.x, start.y, params.cut_depth),
             params.feed_rate,
+            MoveIntent::ClearingCut,
         );
         // Retract to safe Z
-        tp.rapid_to(P3::new(start.x, start.y, params.safe_z));
+        tp.rapid_to_with_intent(
+            P3::new(start.x, start.y, params.safe_z),
+            MoveIntent::Retract,
+        );
     }
 
     tp

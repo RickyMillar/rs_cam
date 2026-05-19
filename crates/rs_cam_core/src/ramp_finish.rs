@@ -514,7 +514,13 @@ pub fn ramp_finish_toolpath_structured_annotated(
         };
 
         let move_index = tp.moves.len();
-        tp.emit_path_segment(&path, params.safe_z, params.feed_rate, params.plunge_rate);
+        tp.emit_path_segment_with_intent(
+            &path,
+            params.safe_z,
+            params.feed_rate,
+            params.plunge_rate,
+            crate::toolpath::MoveIntent::FinishingCut,
+        );
         annotations.push(RampFinishRuntimeAnnotation {
             move_index,
             event: RampFinishRuntimeEvent::Ramp {
