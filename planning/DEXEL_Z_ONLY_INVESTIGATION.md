@@ -15,7 +15,7 @@ Single source of truth for where this roadmap is. Implementing agents: update th
 
 | Step | Status | PR / commit | Notes |
 |---|---|---|---|
-| Step 0 — `mcp.rs` accumulator dedup | ☑ done | (this commit) | `SpanCutAcc` + `DepthPassAcc` deleted; both routes now use canonical `SummaryAccumulator`. P3 transit-span peak gating now propagates to per-span and per-depth-pass summaries. |
+| Step 0 — `mcp.rs` accumulator dedup | ☑ done | `e80614f` | `SpanCutAcc` + `DepthPassAcc` deleted; both routes now use canonical `SummaryAccumulator`. P3 transit-span peak gating now propagates to per-span and per-depth-pass summaries. |
 | Step 1 — C + I (MoveIntent + retract reclassification) | ☐ pending | — | Decide before starting: include kernel-swap drill-removal kernel? (subsumes Step 3 if yes — see §6.E callout) |
 | Step 2 — D + H (Engagement vector + per-kinematics summary) | ☐ pending | — | Schedule legacy `radial_engagement` deletion PR at the same time. |
 | Step 3 — E (DrillOp first-class) | ☐ pending — *conditional* | — | Skip if kernel-swap chosen in Step 1, unless a user-facing feature demands operability surface. |
