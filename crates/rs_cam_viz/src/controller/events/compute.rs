@@ -348,7 +348,9 @@ impl<B: ComputeBackend> AppController<B> {
                                 self.state.session.find_toolpath_config_by_id(tp_id.0)
                             {
                                 let core_result = rs_cam_core::session::ToolpathComputeResult {
-                                    annotated: Arc::clone(&computed.annotated),
+                                    op_data: rs_cam_core::drill_op::OpData::Toolpath(Arc::clone(
+                                        &computed.annotated,
+                                    )),
                                     stats: computed.stats.clone(),
                                     // Debug + semantic traces stay viz-side
                                     // (Arc'd on `rt.debug_trace` /

@@ -907,7 +907,7 @@ impl CamServer {
                 None
             };
             let pixels = rs_cam_core::fingerprint::render_toolpath_composite(
-                &result.annotated,
+                result.annotated(),
                 bg.as_ref(),
                 w,
                 h,

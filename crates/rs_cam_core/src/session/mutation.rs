@@ -882,8 +882,8 @@ mod tests {
 
     fn fake_result() -> ToolpathComputeResult {
         ToolpathComputeResult {
-            annotated: Arc::new(crate::toolpath_spans::AnnotatedToolpath::new(
-                crate::toolpath::Toolpath::new(),
+            op_data: crate::drill_op::OpData::Toolpath(Arc::new(
+                crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new()),
             )),
             stats: ToolpathStats::default(),
             debug_trace: None,

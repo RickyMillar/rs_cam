@@ -59,6 +59,118 @@ fn generated_with_drill_spans(toolpath: Toolpath) -> GeneratedToolpath {
     AnnotatedToolpath::with_spans(toolpath, spans)
 }
 
+/// Build the [`crate::drill_op::DrillOp`] for a drilling-cycle operation,
+/// re-resolving hole positions from the same inputs the toolpath
+/// generator just consumed.
+///
+/// Returns `None` for non-drill ops. The caller pairs this with the
+/// `AnnotatedToolpath` produced by [`execute_operation_annotated`] to
+/// form a [`crate::drill_op::OpData::DrillOp`] — the dual-representation
+/// invariant.
+///
+/// Hole-source asymmetry (§6.E):
+/// - `OperationConfig::Drill`: holes are polygon centroids
+///   (`HoleSource::ModelDerived`); re-resolved every regenerate.
+/// - `OperationConfig::AlignmentPinDrill`: holes are snapshotted in
+///   `cfg.holes`; `HoleSource::Snapshot` round-trips through project IO.
+pub fn build_drill_op_for_config(
+    op: &OperationConfig,
+    polygons: Option<&[Polygon2]>,
+    tool_def: &ToolDefinition,
+    tool_cfg: &ToolConfig,
+    stock_bbox: &BoundingBox3,
+    material: crate::material::Material,
+) -> Option<crate::drill_op::DrillOp> {
+    use crate::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
+
+    let tool_diameter_mm = tool_def.radius() * 2.0;
+    let flute_count = tool_cfg.flute_count;
+
+    match op {
+        OperationConfig::Drill(cfg) => {
+            let polys = polygons?;
+            let mut hole_xys = Vec::new();
+            for poly in polys {
+                if poly.exterior.is_empty() {
+                    continue;
+                }
+                let (sx, sy) = poly
+                    .exterior
+                    .iter()
+                    .fold((0.0, 0.0), |(ax, ay), pt| (ax + pt.x, ay + pt.y));
+                let n = poly.exterior.len() as f64;
+                hole_xys.push([sx / n, sy / n]);
+            }
+            if hole_xys.is_empty() {
+                return None;
+            }
+            let top_z = stock_bbox.max.z;
+            let bottom_z = top_z - cfg.depth;
+            let holes = hole_xys
+                .into_iter()
+                .map(|xy| DrillHole {
+                    xy,
+                    top_z,
+                    bottom_z,
+                })
+                .collect();
+            Some(DrillOp {
+                holes,
+                hole_source: HoleSource::ModelDerived,
+                tool_profile: ToolProfile::Flat,
+                tool_diameter_mm,
+                cycle: cfg.cycle.to_core(cfg),
+                feed_rate_mm_min: cfg.feed_rate,
+                spindle_rpm: cfg.spindle_rpm.unwrap_or(0),
+                flute_count,
+                material,
+            })
+        }
+        OperationConfig::AlignmentPinDrill(cfg) => {
+            if cfg.holes.is_empty() {
+                return None;
+            }
+            let top_z = stock_bbox.max.z;
+            let bottom_z = stock_bbox.min.z - cfg.spoilboard_penetration;
+            let cycle = match cfg.cycle {
+                crate::compute::operation_configs::DrillCycleType::Simple => {
+                    crate::drill::DrillCycle::Simple
+                }
+                crate::compute::operation_configs::DrillCycleType::Dwell => {
+                    crate::drill::DrillCycle::Dwell(0.5)
+                }
+                crate::compute::operation_configs::DrillCycleType::Peck => {
+                    crate::drill::DrillCycle::Peck(cfg.peck_depth)
+                }
+                crate::compute::operation_configs::DrillCycleType::ChipBreak => {
+                    crate::drill::DrillCycle::ChipBreak(cfg.peck_depth, 0.5)
+                }
+            };
+            let holes = cfg
+                .holes
+                .iter()
+                .map(|&xy| DrillHole {
+                    xy,
+                    top_z,
+                    bottom_z,
+                })
+                .collect();
+            Some(DrillOp {
+                holes,
+                hole_source: HoleSource::Snapshot(cfg.holes.clone()),
+                tool_profile: ToolProfile::Flat,
+                tool_diameter_mm,
+                cycle,
+                feed_rate_mm_min: cfg.feed_rate,
+                spindle_rpm: cfg.spindle_rpm.unwrap_or(0),
+                flute_count,
+                material,
+            })
+        }
+        _ => None,
+    }
+}
+
 impl std::fmt::Display for OperationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
