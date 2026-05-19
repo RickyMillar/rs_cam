@@ -10,14 +10,155 @@
 //! the crate.
 
 use crate::dexel::{
-    DexelGrid, ray_material_length, ray_material_length_above, ray_subtract_above,
-    ray_subtract_below,
+    DexelGrid, ray_blend_above, ray_blend_below, ray_material_length, ray_material_length_above,
 };
 use crate::geo::P3;
 use crate::radial_profile::RadialProfileLUT;
 use crate::semantic_trace::ToolpathSemanticTrace;
 use crate::simulation_cut::{CutKinematics, SimulationCutSample};
 use crate::toolpath_spans::SpanId;
+
+// ── Sub-cell coverage helpers (F.a, see DEXEL_Z_ONLY_INVESTIGATION.md §6.F) ─
+
+/// Sub-sampling fan-out per cell for fractional disk/segment coverage.
+///
+/// 4×4 = 16 sub-samples gives coverage in increments of 1/16 ≈ 6.25 % at
+/// boundary cells. Engagement deltas across the WANAKA corpus shift by
+/// ~1–3 percentage points per §8 Step 4, so 1/16 resolution is fine.
+const COVERAGE_SUBSAMPLES_PER_AXIS: usize = 4;
+
+/// Fractional coverage of a square cell by a disk centered at the origin
+/// (offsets pre-shifted so disk center is implicit zero).
+///
+/// Returns `coverage ∈ [0, 1]` — the area fraction of the cell inside the
+/// disk. Fast-paths fully-inside (all 4 corners inside disk) and fully-outside
+/// (nearest cell point outside disk) before falling back to 4×4 sub-sampling.
+#[inline]
+fn point_cell_coverage(du: f64, dv: f64, r_sq: f64, cs: f64) -> f32 {
+    let half_cs = cs * 0.5;
+    let abs_du = du.abs();
+    let abs_dv = dv.abs();
+
+    // Farthest corner from disk center.
+    let far_u = abs_du + half_cs;
+    let far_v = abs_dv + half_cs;
+    let far_sq = far_u * far_u + far_v * far_v;
+    if far_sq <= r_sq {
+        return 1.0;
+    }
+
+    // Nearest point on cell square to disk center (clamped distance).
+    let near_u = (abs_du - half_cs).max(0.0);
+    let near_v = (abs_dv - half_cs).max(0.0);
+    let near_sq = near_u * near_u + near_v * near_v;
+    if near_sq >= r_sq {
+        return 0.0;
+    }
+
+    // Boundary cell: sub-sample.
+    let n = COVERAGE_SUBSAMPLES_PER_AXIS;
+    let step = cs / n as f64;
+    let start = -half_cs + step * 0.5;
+    let mut inside = 0u32;
+    for j in 0..n {
+        let py = dv + start + j as f64 * step;
+        let py_sq = py * py;
+        for i in 0..n {
+            let px = du + start + i as f64 * step;
+            if px * px + py_sq <= r_sq {
+                inside += 1;
+            }
+        }
+    }
+    inside as f32 / (n * n) as f32
+}
+
+/// Fractional coverage of a square cell by a swept-segment stadium.
+///
+/// `(cu, cv)` is the cell center; the segment goes from `(su, sv)` through
+/// direction `(seg_du, seg_dv)` with length² = `seg_len_sq`. `r_sq` is the
+/// cutter radius squared.
+///
+/// Returns `(coverage, t_at_closest, near_dist_sq)`:
+/// - `coverage` ∈ [0, 1] — area fraction inside the stadium.
+/// - `t_at_closest` — parameter t ∈ [0, 1] at the closest point on segment
+///   to cell center (used for per-cell depth interpolation).
+/// - `near_dist_sq` — squared distance from cell center's segment-projection
+///   to the cell (the "closest in-stadium point" distance), useful as the
+///   LUT query (§6.F gap 3).
+#[allow(clippy::too_many_arguments)]
+#[inline]
+fn segment_cell_coverage(
+    cu: f64,
+    cv: f64,
+    su: f64,
+    sv: f64,
+    seg_du: f64,
+    seg_dv: f64,
+    inv_seg_len_sq: f64,
+    r_sq: f64,
+    cs: f64,
+) -> (f32, f64, f64) {
+    let half_cs = cs * 0.5;
+
+    // Project cell center onto segment.
+    let pu = cu - su;
+    let pv = cv - sv;
+    let t_center = ((pu * seg_du + pv * seg_dv) * inv_seg_len_sq).clamp(0.0, 1.0);
+    let closest_u = t_center * seg_du;
+    let closest_v = t_center * seg_dv;
+    let du = pu - closest_u;
+    let dv = pv - closest_v;
+    let center_d_sq = du * du + dv * dv;
+
+    // Conservative "definitely outside" check: even the nearest cell corner
+    // can't be closer than (sqrt(center_d_sq) - cs·sqrt(2)/2) to the segment.
+    // If that lower bound is ≥ r, the cell is fully outside.
+    let center_d = center_d_sq.sqrt();
+    let half_diag = cs * std::f64::consts::FRAC_1_SQRT_2;
+    if center_d - half_diag >= r_sq.sqrt() {
+        return (0.0, t_center, center_d_sq);
+    }
+    // Conservative "definitely inside" check: even the farthest cell corner
+    // can't be farther than (center_d + half_diag) from the segment.
+    if center_d + half_diag <= r_sq.sqrt() {
+        return (1.0, t_center, center_d_sq);
+    }
+
+    // Boundary cell: sub-sample. Each sub-sample re-projects onto segment.
+    let n = COVERAGE_SUBSAMPLES_PER_AXIS;
+    let step = cs / n as f64;
+    let start = -half_cs + step * 0.5;
+    let mut inside = 0u32;
+    for j in 0..n {
+        let py = cv + start + j as f64 * step - sv;
+        for i in 0..n {
+            let px = cu + start + i as f64 * step - su;
+            let t = ((px * seg_du + py * seg_dv) * inv_seg_len_sq).clamp(0.0, 1.0);
+            let qu = px - t * seg_du;
+            let qv = py - t * seg_dv;
+            if qu * qu + qv * qv <= r_sq {
+                inside += 1;
+            }
+        }
+    }
+    let cov = inside as f32 / (n * n) as f32;
+    (cov, t_center, center_d_sq)
+}
+
+/// LUT query for an annular cell at squared distance `dist_sq` from disk
+/// center: clamp to the cutter edge if the cell center sits outside the
+/// disk (§6.F gap 3). Returns `None` only if the LUT returns `None` at the
+/// query point (e.g., cutter has a hollow center — not used in practice).
+#[inline]
+fn lut_h_with_edge_fallback(lut: &RadialProfileLUT, dist_sq: f64) -> Option<f64> {
+    if dist_sq <= lut.radius_sq() {
+        lut.height_at_dist_sq(dist_sq)
+    } else {
+        // Annular cell: query at the cutter edge.
+        lut.height_at_dist_sq(lut.radius_sq())
+    }
+}
 
 #[derive(Clone, Copy)]
 pub(super) struct CuttingCaptureParams<'a> {
@@ -45,6 +186,12 @@ pub(super) struct CuttingCaptureParams<'a> {
 /// `(cu, cv)` is the tool center in the grid's planar axes.
 /// `tip_depth` is the tool tip coordinate along the grid's ray axis.
 /// `from_high` selects `subtract_above` (true) or `subtract_below` (false).
+///
+/// Uses sub-cell area-weighted coverage (F.a, see
+/// `DEXEL_Z_ONLY_INVESTIGATION.md` §6.F): boundary cells are blended toward
+/// the cutter surface by their fractional coverage `f` instead of flipping
+/// binary on/off at the cell-center crossing. `DexelGrid.coverage_max` is
+/// updated to the running max of `f` per cell.
 pub(super) fn stamp_point_on_grid(
     grid: &mut DexelGrid,
     lut: &RadialProfileLUT,
@@ -55,11 +202,14 @@ pub(super) fn stamp_point_on_grid(
     from_high: bool,
 ) {
     let cs = grid.cell_size;
+    // §6.F gap 3: extend bounding box by cs·√2 to capture annular cells whose
+    // centers sit outside the disk but whose corners reach into it.
+    let scan_radius = radius + cs * std::f64::consts::SQRT_2;
 
-    let col_min = ((cu - radius - grid.origin_u) / cs).floor() as isize;
-    let col_max = ((cu + radius - grid.origin_u) / cs).ceil() as isize;
-    let row_min = ((cv - radius - grid.origin_v) / cs).floor() as isize;
-    let row_max = ((cv + radius - grid.origin_v) / cs).ceil() as isize;
+    let col_min = ((cu - scan_radius - grid.origin_u) / cs).floor() as isize;
+    let col_max = ((cu + scan_radius - grid.origin_u) / cs).ceil() as isize;
+    let row_min = ((cv - scan_radius - grid.origin_v) / cs).floor() as isize;
+    let row_max = ((cv + scan_radius - grid.origin_v) / cs).ceil() as isize;
 
     let col_lo = col_min.max(0) as usize;
     let col_hi = (col_max as usize).min(grid.cols.saturating_sub(1));
@@ -71,25 +221,31 @@ pub(super) fn stamp_point_on_grid(
     for row in row_lo..=row_hi {
         let cell_v = grid.origin_v + row as f64 * cs;
         let dv = cell_v - cv;
-        let dv_sq = dv * dv;
-        if dv_sq > r_sq {
-            continue;
-        }
         for col in col_lo..=col_hi {
             let cell_u = grid.origin_u + col as f64 * cs;
             let du = cell_u - cu;
-            let dist_sq = du * du + dv_sq;
-            if let Some(h) = lut.height_at_dist_sq(dist_sq) {
-                let ray = &mut grid.rays[row * grid.cols + col];
-                if from_high {
-                    // Tool enters from +Z: cutter surface is above the tip.
-                    let surface = (tip_depth + h) as f32;
-                    ray_subtract_above(ray, surface);
-                } else {
-                    // Tool enters from -Z: cutter surface is below the tip.
-                    let surface = (tip_depth - h) as f32;
-                    ray_subtract_below(ray, surface);
-                }
+            let coverage = point_cell_coverage(du, dv, r_sq, cs);
+            if coverage <= 0.0 {
+                continue;
+            }
+            // §6.F gap 3: interior cells query h at the cell center; annular
+            // cells (where the center sits outside the disk) fall back to h
+            // at the cutter edge.
+            let dist_sq = du * du + dv * dv;
+            let Some(h) = lut_h_with_edge_fallback(lut, dist_sq) else {
+                continue;
+            };
+            let idx = row * grid.cols + col;
+            let ray = &mut grid.rays[idx];
+            if from_high {
+                let surface = (tip_depth + h) as f32;
+                ray_blend_above(ray, surface, coverage);
+            } else {
+                let surface = (tip_depth - h) as f32;
+                ray_blend_below(ray, surface, coverage);
+            }
+            if coverage > grid.coverage_max[idx] {
+                grid.coverage_max[idx] = coverage;
             }
         }
     }
@@ -100,6 +256,9 @@ pub(super) fn stamp_point_on_grid(
 ///
 /// `start` and `end` are `(u, v, depth)` — the segment endpoints decomposed
 /// into the grid's planar axes (u, v) and ray-depth axis (depth).
+///
+/// Uses sub-cell coverage (F.a — see [`stamp_point_on_grid`]) to area-weight
+/// per-cell ray updates against the swept-stadium footprint.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn stamp_segment_on_grid(
     grid: &mut DexelGrid,
@@ -125,11 +284,14 @@ pub(super) fn stamp_segment_on_grid(
 
     let inv_seg_len_sq = 1.0 / seg_len_sq;
     let cs = grid.cell_size;
+    let r_sq = lut.radius_sq();
+    // §6.F gap 3: extend scan by cs·√2 to capture annular cells.
+    let scan_radius = radius + cs * std::f64::consts::SQRT_2;
 
-    let u_min = su.min(eu) - radius;
-    let u_max = su.max(eu) + radius;
-    let v_min = sv.min(ev) - radius;
-    let v_max = sv.max(ev) + radius;
+    let u_min = su.min(eu) - scan_radius;
+    let u_max = su.max(eu) + scan_radius;
+    let v_min = sv.min(ev) - scan_radius;
+    let v_max = sv.max(ev) + scan_radius;
 
     let col_lo = ((u_min - grid.origin_u) / cs).floor().max(0.0) as usize;
     let col_hi = (((u_max - grid.origin_u) / cs).ceil() as usize).min(grid.cols.saturating_sub(1));
@@ -138,30 +300,37 @@ pub(super) fn stamp_segment_on_grid(
 
     for row in row_lo..=row_hi {
         let cell_v = grid.origin_v + row as f64 * cs;
-        let pv = cell_v - sv;
-
         for col in col_lo..=col_hi {
             let cell_u = grid.origin_u + col as f64 * cs;
-            let pu = cell_u - su;
-
-            let t = ((pu * seg_du + pv * seg_dv) * inv_seg_len_sq).clamp(0.0, 1.0);
-
-            let closest_u = t * seg_du;
-            let closest_v = t * seg_dv;
-            let du = pu - closest_u;
-            let dv = pv - closest_v;
-            let dist_sq = du * du + dv * dv;
-
-            if let Some(h) = lut.height_at_dist_sq(dist_sq) {
-                let depth = sd + t * seg_dd;
-                let ray = &mut grid.rays[row * grid.cols + col];
-                if from_high {
-                    let surface = (depth + h) as f32;
-                    ray_subtract_above(ray, surface);
-                } else {
-                    let surface = (depth - h) as f32;
-                    ray_subtract_below(ray, surface);
-                }
+            let (coverage, t_center, center_d_sq) = segment_cell_coverage(
+                cell_u,
+                cell_v,
+                su,
+                sv,
+                seg_du,
+                seg_dv,
+                inv_seg_len_sq,
+                r_sq,
+                cs,
+            );
+            if coverage <= 0.0 {
+                continue;
+            }
+            let Some(h) = lut_h_with_edge_fallback(lut, center_d_sq) else {
+                continue;
+            };
+            let depth = sd + t_center * seg_dd;
+            let idx = row * grid.cols + col;
+            let ray = &mut grid.rays[idx];
+            if from_high {
+                let surface = (depth + h) as f32;
+                ray_blend_above(ray, surface, coverage);
+            } else {
+                let surface = (depth - h) as f32;
+                ray_blend_below(ray, surface, coverage);
+            }
+            if coverage > grid.coverage_max[idx] {
+                grid.coverage_max[idx] = coverage;
             }
         }
     }
@@ -220,11 +389,13 @@ pub(super) fn stamp_segment_with_metrics(
         let cs = grid.cell_size;
         let cell_area = cs * cs;
         let r_sq = lut.radius_sq();
+        // §6.F gap 3: extend scan to capture annular cells.
+        let scan_radius = radius + cs * std::f64::consts::SQRT_2;
 
-        let col_min = ((su - radius - grid.origin_u) / cs).floor() as isize;
-        let col_max = ((su + radius - grid.origin_u) / cs).ceil() as isize;
-        let row_min = ((sv - radius - grid.origin_v) / cs).floor() as isize;
-        let row_max = ((sv + radius - grid.origin_v) / cs).ceil() as isize;
+        let col_min = ((su - scan_radius - grid.origin_u) / cs).floor() as isize;
+        let col_max = ((su + scan_radius - grid.origin_u) / cs).ceil() as isize;
+        let row_min = ((sv - scan_radius - grid.origin_v) / cs).floor() as isize;
+        let row_max = ((sv + scan_radius - grid.origin_v) / cs).ceil() as isize;
         let col_lo = col_min.max(0) as usize;
         let col_hi = (col_max as usize).min(grid.cols.saturating_sub(1));
         let row_lo = row_min.max(0) as usize;
@@ -235,31 +406,39 @@ pub(super) fn stamp_segment_with_metrics(
         for row in row_lo..=row_hi {
             let cell_v = grid.origin_v + row as f64 * cs;
             let dv = cell_v - sv;
-            let dv_sq = dv * dv;
-            if dv_sq > r_sq {
-                continue;
-            }
             for col in col_lo..=col_hi {
                 let cell_u = grid.origin_u + col as f64 * cs;
                 let du = cell_u - su;
-                let dist_sq = du * du + dv_sq;
-                if let Some(h) = lut.height_at_dist_sq(dist_sq) {
-                    let ray = &mut grid.rays[row * grid.cols + col];
-                    if from_high {
-                        let surface = (d + h) as f32;
-                        let above = ray_material_length_above(ray, surface) as f64;
-                        ray_subtract_above(ray, surface);
-                        removed_volume += above * cell_area;
-                    } else {
-                        // Mirror: count material below `surface` then subtract.
-                        // For an axis flipped this direction, the same area
-                        // arithmetic applies.
-                        let surface = (d - h) as f32;
-                        let total_before = ray_material_length(ray) as f64;
-                        ray_subtract_below(ray, surface);
-                        let total_after = ray_material_length(ray) as f64;
-                        removed_volume += (total_before - total_after) * cell_area;
-                    }
+                let coverage = point_cell_coverage(du, dv, r_sq, cs);
+                if coverage <= 0.0 {
+                    continue;
+                }
+                let dist_sq = du * du + dv * dv;
+                let Some(h) = lut_h_with_edge_fallback(lut, dist_sq) else {
+                    continue;
+                };
+                let idx = row * grid.cols + col;
+                let ray = &mut grid.rays[idx];
+                if from_high {
+                    let surface = (d + h) as f32;
+                    let above = ray_material_length_above(ray, surface) as f64;
+                    ray_blend_above(ray, surface, coverage);
+                    // §6.F gap 1: scale per-cell removed volume by coverage so
+                    // the annular-cell rebalance under fractional stamping is
+                    // accounted for. The non-degenerate branch is self-
+                    // correcting (pre/post diff); the degenerate branch
+                    // accumulates `above` directly and would otherwise
+                    // overcount by 1/f for boundary cells.
+                    removed_volume += coverage as f64 * above * cell_area;
+                } else {
+                    let surface = (d - h) as f32;
+                    let total_before = ray_material_length(ray) as f64;
+                    ray_blend_below(ray, surface, coverage);
+                    let total_after = ray_material_length(ray) as f64;
+                    removed_volume += (total_before - total_after) * cell_area;
+                }
+                if coverage > grid.coverage_max[idx] {
+                    grid.coverage_max[idx] = coverage;
                 }
             }
         }
@@ -272,12 +451,14 @@ pub(super) fn stamp_segment_with_metrics(
     let cs = grid.cell_size;
     let cell_area = cs * cs;
     let radius_sq = lut.radius_sq();
+    // §6.F gap 3: extend scan by cs·√2 to capture annular cells.
+    let scan_radius = radius + cs * std::f64::consts::SQRT_2;
 
     // Bounding box of segment sweep + tool radius (superset of all footprints).
-    let u_min = su.min(eu) - radius;
-    let u_max = su.max(eu) + radius;
-    let v_min = sv.min(ev) - radius;
-    let v_max = sv.max(ev) + radius;
+    let u_min = su.min(eu) - scan_radius;
+    let u_max = su.max(eu) + scan_radius;
+    let v_min = sv.min(ev) - scan_radius;
+    let v_max = sv.max(ev) + scan_radius;
 
     let col_lo = ((u_min - grid.origin_u) / cs).floor().max(0.0) as usize;
     let col_hi = (((u_max - grid.origin_u) / cs).ceil() as usize).min(grid.cols.saturating_sub(1));
@@ -301,86 +482,106 @@ pub(super) fn stamp_segment_with_metrics(
     // left material fractionally above the cutter surface due to floating
     // point. Real bites are mm-scale.
     const FRESH_MATERIAL_THRESHOLD_MM: f64 = 0.05;
+    // F.a coverage gate for perp-extent contribution (§6.F). Multiplicative
+    // sub-cell blend leaves residual material at boundary cells (any cell
+    // with coverage < 1) that subsequent passes "bite", which would
+    // otherwise inflate radial engagement on repeated passes over already-
+    // cleared territory (e.g., `radial_engagement_air_cut_reads_zero`).
+    //
+    // Requiring `coverage ≥ 0.95` means only cells that this stamp covers
+    // essentially-fully contribute to the width-of-cut measurement. With
+    // 4×4 sub-sampling (1/16 quantization), the gate is equivalent to
+    // "cov = 1.0" — only fast-path fully-inside cells contribute. For a
+    // full slot this still yields radial ≈ (2r − 2·cell_size_subsample) /
+    // (2r) ≈ 0.97 (above the existing `> 0.85` slot assertion), and on
+    // air cuts over previously-cleared paths it reads exactly zero (the
+    // cov=1.0 cells were cleared by the prior pass, so pre_fresh = 0).
+    const PERP_COVERAGE_GATE: f32 = 0.95;
 
     for row in row_lo..=row_hi {
         let cell_v = grid.origin_v + row as f64 * cs;
-        let pv = cell_v - sv;
-
         for col in col_lo..=col_hi {
             let cell_u = grid.origin_u + col as f64 * cs;
-            let pu = cell_u - su;
 
-            // Closest point on segment to this cell center.
-            let t = ((pu * seg_du + pv * seg_dv) * inv_seg_len_sq).clamp(0.0, 1.0);
-            let closest_u = t * seg_du;
-            let closest_v = t * seg_dv;
-            let du = pu - closest_u;
-            let dv = pv - closest_v;
-            let dist_sq = du * du + dv * dv;
+            let (coverage, t_center, center_d_sq) = segment_cell_coverage(
+                cell_u,
+                cell_v,
+                su,
+                sv,
+                seg_du,
+                seg_dv,
+                inv_seg_len_sq,
+                radius_sq,
+                cs,
+            );
+            if coverage <= 0.0 {
+                continue;
+            }
+            let Some(h) = lut_h_with_edge_fallback(lut, center_d_sq) else {
+                continue;
+            };
 
-            // Only process cells within the tool radius (circular footprint).
-            if let Some(h) = lut.height_at_dist_sq(dist_sq) {
-                let ray = &mut grid.rays[row * grid.cols + col];
+            let idx = row * grid.cols + col;
+            let ray = &mut grid.rays[idx];
 
-                // 1. Pre-stamp material totals (read before mutation). pre_len
-                //    is total material height; pre_fresh is material above the
-                //    cutter surface at this cell — i.e. material this stamp
-                //    will (or already would have) removed. pre_fresh drives
-                //    the radial engagement metric: it is independent of
-                //    sample density because dense overlapping samples in
-                //    already-cleared territory see pre_fresh ≈ 0.
-                let pre_len = ray_material_length(ray) as f64;
-                pre_volume += pre_len * cell_area;
-                let depth = sd + t * seg_dd;
-                let cell_tool_surface = if from_high { depth + h } else { depth - h };
-                let above = ray_material_length_above(ray, cell_tool_surface as f32) as f64;
-                let pre_fresh = if from_high { above } else { pre_len - above };
+            // 1. Pre-stamp material totals (read before mutation). pre_len
+            //    is total material height; pre_fresh is material above the
+            //    cutter surface at this cell — i.e. material this stamp
+            //    will (or already would have) removed. pre_fresh drives
+            //    the radial engagement metric: independent of sample density
+            //    because dense overlapping samples in already-cleared
+            //    territory see pre_fresh ≈ 0.
+            let pre_len = ray_material_length(ray) as f64;
+            pre_volume += pre_len * cell_area;
+            let depth = sd + t_center * seg_dd;
+            let cell_tool_surface = if from_high { depth + h } else { depth - h };
+            let above = ray_material_length_above(ray, cell_tool_surface as f32) as f64;
+            let pre_fresh = if from_high { above } else { pre_len - above };
 
-                // 2. Apply the stamp using per-cell t-projected depth and
-                //    per-cell h. This is the geometry that determines what
-                //    material the cutter ACTUALLY removed at this cell.
-                if from_high {
-                    ray_subtract_above(ray, cell_tool_surface as f32);
-                } else {
-                    ray_subtract_below(ray, cell_tool_surface as f32);
+            // 2. Apply the stamp under coverage-weighted blend. f=1 (fully
+            //    covered) is identical to the prior subtract-above call;
+            //    f<1 leaves (1-f) of the above-surface slice intact.
+            if from_high {
+                ray_blend_above(ray, cell_tool_surface as f32, coverage);
+            } else {
+                ray_blend_below(ray, cell_tool_surface as f32, coverage);
+            }
+
+            // 3. Post-stamp material height. The pre/post diff naturally
+            //    scales with coverage — no separate volume correction needed
+            //    (unlike the degenerate branch, §6.F gap 1).
+            let post_len = ray_material_length(ray) as f64;
+            post_volume += post_len * cell_area;
+
+            if coverage > grid.coverage_max[idx] {
+                grid.coverage_max[idx] = coverage;
+            }
+
+            // 4. Engagement metrics. The midpoint disk defines the
+            //    reference footprint for both arc binning and the
+            //    width-of-cut measurement. radial_engagement and
+            //    arc_engagement_radians both gate on pre-stamp fresh
+            //    material above the cutter surface (independent of
+            //    sample density). max_penetration (axial DOC) still
+            //    gates on actual removal — it's the per-cell removed
+            //    height, which is well-defined per stamp regardless of
+            //    overlap with prior stamps.
+            let dm_u = cell_u - mid_u;
+            let dm_v = cell_v - mid_v;
+            let mid_dist_sq = dm_u * dm_u + dm_v * dm_v;
+            if mid_dist_sq <= radius_sq && lut.height_at_dist_sq(mid_dist_sq).is_some() {
+                if pre_fresh > FRESH_MATERIAL_THRESHOLD_MM && coverage >= PERP_COVERAGE_GATE {
+                    let perp = (-seg_dv * dm_u + seg_du * dm_v) * inv_seg_len;
+                    if perp < perp_min {
+                        perp_min = perp;
+                    }
+                    if perp > perp_max {
+                        perp_max = perp;
+                    }
                 }
-
-                // 3. Post-stamp material height (read after mutation).
-                let post_len = ray_material_length(ray) as f64;
-                post_volume += post_len * cell_area;
-
-                // 4. Engagement metrics. The midpoint disk defines the
-                //    reference footprint for both arc binning and the
-                //    width-of-cut measurement. radial_engagement and
-                //    arc_engagement_radians both gate on pre-stamp fresh
-                //    material above the cutter surface (independent of
-                //    sample density). max_penetration (axial DOC) still
-                //    gates on actual removal — it's the per-cell removed
-                //    height, which is well-defined per stamp regardless of
-                //    overlap with prior stamps.
-                let dm_u = cell_u - mid_u;
-                let dm_v = cell_v - mid_v;
-                let mid_dist_sq = dm_u * dm_u + dm_v * dm_v;
-                if mid_dist_sq <= radius_sq && lut.height_at_dist_sq(mid_dist_sq).is_some() {
-                    if pre_fresh > FRESH_MATERIAL_THRESHOLD_MM {
-                        // Perpendicular projection (signed) for width-of-cut.
-                        let perp = (-seg_dv * dm_u + seg_du * dm_v) * inv_seg_len;
-                        if perp < perp_min {
-                            perp_min = perp;
-                        }
-                        if perp > perp_max {
-                            perp_max = perp;
-                        }
-                        // Arc engagement is derived geometrically from the
-                        // perp extent below; no per-cell bearing binning is
-                        // needed (the per-cell scan suffers from the same
-                        // dense-sample lune artifact that motivated the
-                        // perp-extent metric in the first place).
-                    }
-                    let removed_here = (pre_len - post_len).max(0.0);
-                    if removed_here > 1e-6 {
-                        max_penetration = max_penetration.max(removed_here);
-                    }
+                let removed_here = (pre_len - post_len).max(0.0);
+                if removed_here > 1e-6 {
+                    max_penetration = max_penetration.max(removed_here);
                 }
             }
         }
