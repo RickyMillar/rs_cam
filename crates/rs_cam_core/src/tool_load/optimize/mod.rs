@@ -171,7 +171,7 @@ pub fn optimize_toolpath(
     // classifier degrades to engagement-only labels in that case.
     let baseline_spans: Option<&[crate::toolpath_spans::Span]> = session
         .get_result(toolpath_index)
-        .map(|r| r.annotated.spans.as_slice());
+        .map(|r| r.annotated().spans.as_slice());
     let baseline_load_ctx = ToolpathLoadContext {
         toolpath_id: ctx.toolpath_id,
         tool: &ctx.tool,

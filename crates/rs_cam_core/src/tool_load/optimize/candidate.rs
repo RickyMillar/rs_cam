@@ -343,7 +343,7 @@ pub(crate) fn evaluate_candidate(
     // locality labels).
     let spans: Option<&[crate::toolpath_spans::Span]> = session_ref
         .get_result(toolpath_index)
-        .map(|r| r.annotated.spans.as_slice());
+        .map(|r| r.annotated().spans.as_slice());
     let load_ctx = ToolpathLoadContext {
         toolpath_id: ctx.toolpath_id,
         tool: &ctx.tool,

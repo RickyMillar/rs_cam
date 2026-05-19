@@ -97,7 +97,7 @@ fn kinematics_histogram_wanaka() {
         );
         println!("  total moves: {}", toolpath.moves.len());
         // D4 — count Entry spans, sanity-check coverage.
-        let annotated = &tp_result.annotated;
+        let annotated = tp_result.annotated();
         let entry_spans: Vec<_> = annotated
             .spans
             .iter()

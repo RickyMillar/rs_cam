@@ -227,7 +227,7 @@ pub fn project_load_report(
         // classifiers fall back to engagement-only labels in that case.
         let spans: Option<&[crate::toolpath_spans::Span]> = project
             .get_result(idx)
-            .map(|r| r.annotated.spans.as_slice());
+            .map(|r| r.annotated().spans.as_slice());
         let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
         let spec = tc.operation.spec();
         let lut_op = match spec.feeds_family {

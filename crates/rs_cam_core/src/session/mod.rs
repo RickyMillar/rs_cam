@@ -396,21 +396,44 @@ pub struct ToolpathConfig {
 }
 
 /// Result of generating a single toolpath.
+///
+/// `op_data` carries either a plain [`crate::toolpath_spans::AnnotatedToolpath`]
+/// or a [`crate::drill_op::DrillOp`] + `AnnotatedToolpath` pair (the
+/// dual-representation invariant from §6.E of the dexel-fidelity roadmap).
+/// Spans on the annotated toolpath are emitted by operation generators;
+/// transforms (dressups, boundary clip, TSP, arc-fit, feed optimisation)
+/// either remap them or set
+/// [`AnnotatedToolpath::spans_valid`](crate::toolpath_spans::AnnotatedToolpath::spans_valid)
+/// to `false` when they can't.
 pub struct ToolpathComputeResult {
-    /// Generated toolpath with semantic spans attached. Spans are emitted
-    /// directly by the operation generators; transforms (dressups, boundary
-    /// clip, TSP, arc-fit, feed optimisation) either remap them or set
-    /// [`AnnotatedToolpath::spans_valid`] to `false` when they can't.
-    pub annotated: Arc<crate::toolpath_spans::AnnotatedToolpath>,
+    pub op_data: crate::drill_op::OpData,
     pub stats: ToolpathStats,
     pub debug_trace: Option<ToolpathDebugTrace>,
     pub semantic_trace: Option<ToolpathSemanticTrace>,
 }
 
 impl ToolpathComputeResult {
+    /// Convenience accessor for the linearized annotated toolpath.
+    /// Returns a reference regardless of whether `op_data` is the plain
+    /// `Toolpath` or the `DrillOp` variant.
+    pub fn annotated(&self) -> &Arc<crate::toolpath_spans::AnnotatedToolpath> {
+        self.op_data.annotated()
+    }
+
     /// Convenience accessor for the underlying [`Toolpath`].
     pub fn toolpath(&self) -> &Toolpath {
-        &self.annotated.toolpath
+        &self.op_data.annotated().toolpath
+    }
+
+    /// First-class drill-op view, if this is a drilling operation.
+    pub fn drill_op(&self) -> Option<&Arc<crate::drill_op::DrillOp>> {
+        self.op_data.drill_op()
+    }
+
+    /// True if this result represents a drilling operation
+    /// (`OperationConfig::Drill` or `AlignmentPinDrill`).
+    pub fn is_drill_op(&self) -> bool {
+        self.op_data.is_drill_op()
     }
 }
 
@@ -1237,8 +1260,8 @@ mod tests {
         session.results.insert(
             0,
             ToolpathComputeResult {
-                annotated: std::sync::Arc::new(crate::toolpath_spans::AnnotatedToolpath::new(
-                    crate::toolpath::Toolpath::new(),
+                op_data: crate::drill_op::OpData::Toolpath(std::sync::Arc::new(
+                    crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new()),
                 )),
                 stats: crate::compute::config::ToolpathStats::default(),
                 debug_trace: None,

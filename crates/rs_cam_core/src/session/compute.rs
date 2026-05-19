@@ -613,10 +613,27 @@ impl ProjectSession {
                 let mut semantic_trace = semantic_recorder.finish();
                 enrich_traces(&mut debug_trace, &mut semantic_trace);
 
+                // Build the drill-op view atomically with the annotated
+                // toolpath when this is a drill cycle (§6.E dual-rep
+                // invariant). PR1 carries `Material::default()`; drill
+                // gates that need the workpiece material land in PR2.
+                let drill_op = crate::compute::execute::build_drill_op_for_config(
+                    &operation,
+                    polygons.as_deref().map(|v| v.as_slice()),
+                    &tool_def,
+                    &tool,
+                    &effective_stock_bbox,
+                    crate::material::Material::default(),
+                );
+                let annotated_arc = Arc::new(annotated);
+                let op_data = match drill_op {
+                    Some(d) => crate::drill_op::OpData::DrillOp(Arc::new(d), annotated_arc),
+                    None => crate::drill_op::OpData::Toolpath(annotated_arc),
+                };
                 self.results.insert(
                     index,
                     ToolpathComputeResult {
-                        annotated: Arc::new(annotated),
+                        op_data,
                         stats,
                         debug_trace: Some(debug_trace),
                         semantic_trace: Some(semantic_trace),
@@ -897,7 +914,7 @@ impl ProjectSession {
                     if opts.skip_ids.contains(&tc.id) {
                         continue;
                     }
-                    if result.annotated.toolpath.moves.len() < 2 {
+                    if result.annotated().toolpath.moves.len() < 2 {
                         continue;
                     }
 
@@ -917,12 +934,16 @@ impl ProjectSession {
                     // whose generator hasn't been migrated still gets flagged.
                     let op_type = tc.operation.op_type();
                     let has_drilling_intent = result
-                        .annotated
+                        .annotated()
                         .toolpath
                         .moves
                         .iter()
                         .any(|m| matches!(m.intent, crate::toolpath::MoveIntent::Drilling));
-                    let metrics_not_applicable = has_drilling_intent
+                    // §6.E DrillOp variant is the new primary signal;
+                    // intent + op-kind remain as fallbacks for the
+                    // dual-representation invariant.
+                    let metrics_not_applicable = result.is_drill_op()
+                        || has_drilling_intent
                         || matches!(
                             op_type,
                             crate::compute::catalog::OperationType::Drill
@@ -931,7 +952,7 @@ impl ProjectSession {
                     entries.push(SimToolpathEntry {
                         id: tc.id,
                         name: tc.name.clone(),
-                        annotated: Arc::clone(&result.annotated),
+                        annotated: Arc::clone(result.annotated()),
                         tool: tool_def,
                         flute_count,
                         tool_summary,
@@ -1087,7 +1108,7 @@ impl ProjectSession {
         };
 
         Ok(crate::narrate::narrate_toolpath_with_context(
-            &result.annotated,
+            result.annotated(),
             result.semantic_trace.as_ref(),
             cut_trace,
             result.debug_trace.as_ref(),
@@ -1617,8 +1638,8 @@ mod tests {
         s.results.insert(
             0,
             ToolpathComputeResult {
-                annotated: Arc::new(crate::toolpath_spans::AnnotatedToolpath::new(
-                    crate::toolpath::Toolpath::new(),
+                op_data: crate::drill_op::OpData::Toolpath(Arc::new(
+                    crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new()),
                 )),
                 stats: ToolpathStats::default(),
                 debug_trace: None,
@@ -1687,8 +1708,8 @@ mod tests {
         s.results.insert(
             0,
             ToolpathComputeResult {
-                annotated: Arc::new(crate::toolpath_spans::AnnotatedToolpath::new(
-                    crate::toolpath::Toolpath::new(),
+                op_data: crate::drill_op::OpData::Toolpath(Arc::new(
+                    crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new()),
                 )),
                 stats: ToolpathStats::default(),
                 debug_trace: None,

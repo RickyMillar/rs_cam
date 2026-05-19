@@ -847,7 +847,7 @@ fn drain_compute_results_repopulates_session_results() {
         .get_result(0)
         .expect("session.results[0] should be populated after drain");
     // Both caches share the same Arc (no duplicated allocation).
-    assert!(Arc::ptr_eq(&session_result.annotated, &annotated));
+    assert!(Arc::ptr_eq(session_result.annotated(), &annotated));
 }
 
 #[test]
