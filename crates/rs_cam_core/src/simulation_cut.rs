@@ -16,15 +16,81 @@ pub struct SimulationMetricOptions {
 
 pub const SIMULATION_CUT_TRACE_SCHEMA_VERSION: u32 = 3;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
+pub enum CutKinematics {
+    Linear = 0,
+    Plunge = 1,
+    Helix = 2,
+    Arc = 3,
+    #[default]
+    Rapid = 4,
+}
+
+impl CutKinematics {
+    pub const COUNT: usize = 5;
+
+    pub const ALL: [CutKinematics; Self::COUNT] = [
+        CutKinematics::Linear,
+        CutKinematics::Plunge,
+        CutKinematics::Helix,
+        CutKinematics::Arc,
+        CutKinematics::Rapid,
+    ];
+
+    #[inline]
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+}
+
+/// Cutter-side engagement orientation relative to the feed direction.
+/// `Mixed` is the safe fallback when the sample emitter cannot determine
+/// orientation (e.g. plunges, helix entries with rapidly changing tangent).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CutKinematics {
-    Linear,
-    Plunge,
-    Helix,
-    Arc,
+pub enum EngagementDirection {
+    Climb,
+    Conventional,
     #[default]
-    Rapid,
+    Mixed,
+}
+
+/// Structured engagement vector carried per `SimulationCutSample`. Step 2
+/// of the dexel-fidelity roadmap (see `planning/DEXEL_Z_ONLY_INVESTIGATION.md`
+/// §6.H) — replaces the scalar `radial_engagement` field as the canonical
+/// engagement representation. The legacy scalar on `SimulationCutSample`
+/// is retained for one release as a derived view (populated from
+/// `radial_woc_fraction` at emit-time) and will be removed in a follow-up PR.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct Engagement {
+    /// 0..1 — cylinder-side width-of-cut as a fraction of cutter diameter.
+    /// Same definition as the legacy `radial_engagement` scalar.
+    pub radial_woc_fraction: f64,
+    /// 0..1 — axial depth-of-cut as a fraction of flute length. `0.0` when
+    /// flute length is unavailable at the sample emitter (some test
+    /// fixtures, legacy traces); consumers should treat zero as "unknown"
+    /// rather than "no axial engagement". Use `axial_doc_mm` on the
+    /// sample for the absolute reading.
+    pub axial_doc_fraction: f64,
+    /// Engagement arc in radians (entry → exit). `None` for plunges and
+    /// other Z-only moves where the concept does not apply.
+    pub arc_radians: Option<f64>,
+    /// Commanded mean chip thickness — geometric mean of instantaneous chip
+    /// thickness across the engagement arc, equal to commanded
+    /// `chipload_mm_per_tooth` for steady-state lateral cuts.
+    pub mean_chip_thickness_mm: Option<f64>,
+    /// Peak chip thickness across the engagement arc — what the flute
+    /// experiences at its most-engaged angular position. Sources from the
+    /// existing `effective_chip_thickness_mm` field, which already carries
+    /// the geometric-peak math (see stamping.rs notes).
+    pub peak_chip_thickness_mm: Option<f64>,
+    /// Feed velocity at the engaged cutting edge (mm/min). For 3-axis
+    /// lateral moves this is `feed_rate_mm_min`. Used by the chipload gate.
+    pub leading_edge_speed_mm_min: f64,
+    /// Climb / conventional / mixed. `Mixed` when ambiguous.
+    pub direction: EngagementDirection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,6 +125,13 @@ pub struct SimulationCutSample {
     pub spindle_rpm: u32,
     pub flute_count: u32,
     pub axial_doc_mm: f64,
+    /// Cylinder-side width-of-cut as a fraction of cutter diameter (0..1).
+    /// **Deprecated** (Step 2 of dexel-fidelity roadmap, 2026-05-19): mirrors
+    /// `engagement.radial_woc_fraction`; will be removed in a follow-up PR
+    /// after one release deprecation window. New code should read
+    /// `sample.engagement.radial_woc_fraction`. The scalar is populated at
+    /// sample-emit time from `engagement.radial_woc_fraction` so the two
+    /// stay in lock-step until the field is removed.
     pub radial_engagement: f64,
     #[serde(default)]
     pub arc_engagement_radians: Option<f64>,
@@ -66,6 +139,14 @@ pub struct SimulationCutSample {
     pub chipload_mm_per_tooth: f64,
     #[serde(default)]
     pub effective_chip_thickness_mm: Option<f64>,
+    /// Structured engagement vector — see [`Engagement`]. Production samples
+    /// (dexel simulator) populate every applicable axis. Test fixtures and
+    /// legacy traces deserialized without this field receive
+    /// `Engagement::default()`, in which case consumers should fall back to
+    /// the scalar `radial_engagement` and the other top-level fields on the
+    /// sample.
+    #[serde(default)]
+    pub engagement: Engagement,
     pub removed_volume_est_mm3: f64,
     pub mrr_mm3_s: f64,
     pub semantic_item_id: Option<u64>,
@@ -167,6 +248,50 @@ fn new_open_segment(
     }
 }
 
+/// Per-`CutKinematics` summary block emitted alongside the scalar summary
+/// fields. Step 2 of the dexel-fidelity roadmap (see
+/// `planning/DEXEL_Z_ONLY_INVESTIGATION.md` §6.D) — lets readers ask the
+/// engagement question that applies to their op kind without committing to
+/// whether the scalar `average_engagement` means what they expect.
+///
+/// Each kinematics class carries the axes that are well-defined for it:
+/// `Linear` reports radial-WOC + arc + chip thickness; `Plunge` reports
+/// axial-DOC + leading-edge speed; `Helix`/`Arc` carry both. Fields are
+/// time-weighted averages over samples with the matching `cut_kinematics`
+/// tag that were also `is_cutting`. `Rapid` is excluded (the canonical
+/// rapid metrics live on the top-level summary).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct KinematicsSummary {
+    /// Total cutting time spent in this kinematics class (seconds).
+    pub cutting_runtime_s: f64,
+    /// Time-weighted mean of `engagement.radial_woc_fraction`. `0.0` when
+    /// `cutting_runtime_s == 0`.
+    pub average_radial_woc_fraction: f64,
+    /// Maximum `engagement.radial_woc_fraction` observed.
+    pub peak_radial_woc_fraction: f64,
+    /// Time-weighted mean of `engagement.axial_doc_fraction`. `0.0` when
+    /// no samples carried a non-zero axial-DOC fraction.
+    pub average_axial_doc_fraction: f64,
+    /// Maximum `engagement.axial_doc_fraction` observed.
+    pub peak_axial_doc_fraction: f64,
+    /// Maximum `axial_doc_mm` observed (millimetres, absolute).
+    pub peak_axial_doc_mm: f64,
+    /// Time-weighted mean of `engagement.arc_radians` across samples that
+    /// carried it. `None` when no sample in this class reported an arc
+    /// (e.g. pure plunges).
+    pub average_arc_radians: Option<f64>,
+    /// Time-weighted mean of `engagement.mean_chip_thickness_mm` across
+    /// samples that carried it. `None` when no sample reported chip
+    /// thickness.
+    pub average_mean_chip_thickness_mm: Option<f64>,
+    /// Maximum `engagement.peak_chip_thickness_mm` observed.
+    pub peak_chip_thickness_mm: Option<f64>,
+    /// Time-weighted mean of `engagement.leading_edge_speed_mm_min`.
+    pub average_leading_edge_speed_mm_min: f64,
+    /// Number of cutting samples that landed in this kinematics class.
+    pub sample_count: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SimulationToolpathCutSummary {
     pub toolpath_id: usize,
@@ -174,8 +299,20 @@ pub struct SimulationToolpathCutSummary {
     pub total_runtime_s: f64,
     pub cutting_runtime_s: f64,
     pub rapid_runtime_s: f64,
+    /// Time spent cutting with `engagement.radial_woc_fraction < 0.02`.
+    /// Triggered on the radial-WOC axis only. For toolpaths whose
+    /// kinematics make radial-WOC meaningless (drill / pin-drill — see
+    /// `metrics_not_applicable`), this field still accumulates but
+    /// downstream consumers MUST suppress it via the flag; it does not
+    /// indicate an actual problem. Per-kinematics breakdown is on
+    /// `per_kinematics` for callers that need an axis-aware reading.
     pub air_cut_time_s: f64,
+    /// Time spent cutting with `0.02 ≤ engagement.radial_woc_fraction < 0.10`.
+    /// Same axis + caveats as `air_cut_time_s`.
     pub low_engagement_time_s: f64,
+    /// Time-weighted mean of `engagement.radial_woc_fraction` across
+    /// cutting samples. For axis-aware reporting (axial-DOC, arc, chip
+    /// thickness, leading-edge speed), read `per_kinematics`.
     pub average_engagement: f64,
     pub peak_chipload_mm_per_tooth: f64,
     pub peak_axial_doc_mm: f64,
@@ -191,6 +328,14 @@ pub struct SimulationToolpathCutSummary {
     /// P4 — see `planning/P4_DRILL_METRIC_SUPPRESSION_RCA.md`.
     #[serde(default)]
     pub metrics_not_applicable: bool,
+    /// Per-`CutKinematics` summary block. Lets readers ask the engagement
+    /// question that applies to the op kind producing this toolpath — e.g.
+    /// drill cycles carry meaningful `Plunge` axial-DOC stats without
+    /// muddying the scalar `average_engagement`. Step 2 of the
+    /// dexel-fidelity roadmap. Missing keys mean "no samples landed in
+    /// that kinematics class for this toolpath."
+    #[serde(default)]
+    pub per_kinematics: BTreeMap<CutKinematics, KinematicsSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -255,13 +400,28 @@ pub struct SimulationCutSummary {
     pub total_runtime_s: f64,
     pub cutting_runtime_s: f64,
     pub rapid_runtime_s: f64,
+    /// Sum of `air_cut_time_s` across toolpaths. Triggered on the
+    /// radial-WOC axis (`engagement.radial_woc_fraction < 0.02`); see
+    /// per-toolpath summary's `metrics_not_applicable` flag for ops where
+    /// radial-WOC is the wrong axis (drilling). For axis-aware reporting
+    /// use `per_kinematics`.
     pub air_cut_time_s: f64,
+    /// Sum of `low_engagement_time_s` across toolpaths. Same radial-WOC
+    /// axis caveats as `air_cut_time_s`.
     pub low_engagement_time_s: f64,
+    /// Aggregate time-weighted mean of `engagement.radial_woc_fraction`
+    /// across all cutting samples. Use `per_kinematics` for axis-aware
+    /// reporting.
     pub average_engagement: f64,
     pub peak_chipload_mm_per_tooth: f64,
     pub peak_axial_doc_mm: f64,
     pub total_removed_volume_est_mm3: f64,
     pub average_mrr_mm3_s: f64,
+    /// Per-`CutKinematics` summary block across all toolpaths. See
+    /// [`KinematicsSummary`] for axis semantics. Step 2 of the
+    /// dexel-fidelity roadmap.
+    #[serde(default)]
+    pub per_kinematics: BTreeMap<CutKinematics, KinematicsSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -530,6 +690,128 @@ pub struct SummaryAccumulator {
     pub air_cut_issue_count: usize,
     pub low_engagement_issue_count: usize,
     pub sample_count: usize,
+    /// Per-`CutKinematics` sub-accumulators. Step 2 D substrate — let the
+    /// final summary expose engagement axes that apply to each kinematics
+    /// class. Only cutting samples land here (`is_cutting == true`); `Rapid`
+    /// samples are filtered upstream since they don't model cutting.
+    ///
+    /// Indexed by `CutKinematics::index()`. Fixed-size array (not BTreeMap)
+    /// because aggregating 250 k samples is hot enough that map allocs +
+    /// rebalances showed up as a 50% regression in the
+    /// `simulation_cut_trace_aggregation/from_samples` bench.
+    pub per_kinematics: [KinematicsAccumulator; CutKinematics::COUNT],
+}
+
+/// Per-`CutKinematics` sub-accumulator. Time-weighted means + extrema across
+/// the engagement vector axes. Lives inside `SummaryAccumulator::per_kinematics`.
+#[derive(Default, Clone)]
+pub struct KinematicsAccumulator {
+    pub cutting_runtime_s: f64,
+    pub radial_woc_time_weighted_sum: f64,
+    pub peak_radial_woc_fraction: f64,
+    pub axial_doc_fraction_time_weighted_sum: f64,
+    pub peak_axial_doc_fraction: f64,
+    pub peak_axial_doc_mm: f64,
+    /// Sum of `arc_radians * segment_time_s` for samples carrying arc; paired
+    /// with `arc_observed_runtime_s` to compute a defined mean only when at
+    /// least one sample reported an arc.
+    pub arc_time_weighted_sum: f64,
+    pub arc_observed_runtime_s: f64,
+    pub mean_chip_thickness_time_weighted_sum: f64,
+    pub mean_chip_thickness_observed_runtime_s: f64,
+    pub peak_chip_thickness_mm: f64,
+    pub leading_edge_speed_time_weighted_sum: f64,
+    pub sample_count: usize,
+}
+
+/// Fold the array-of-accumulators into a sparse `BTreeMap` of finished
+/// summaries, dropping empty (no-sample) entries. The reporting layer wants
+/// "only the kinematics classes that were observed"; the accumulation hot
+/// path wants O(1) array indexing.
+pub fn finalize_per_kinematics(
+    accs: [KinematicsAccumulator; CutKinematics::COUNT],
+) -> BTreeMap<CutKinematics, KinematicsSummary> {
+    let mut out = BTreeMap::new();
+    for (kind, acc) in CutKinematics::ALL.into_iter().zip(accs.into_iter()) {
+        if acc.sample_count > 0 {
+            out.insert(kind, acc.finish());
+        }
+    }
+    out
+}
+
+impl KinematicsAccumulator {
+    fn observe_cutting(&mut self, sample: &SimulationCutSample) {
+        let dt = sample.segment_time_s;
+        self.cutting_runtime_s += dt;
+        self.sample_count += 1;
+        let eng = &sample.engagement;
+        self.radial_woc_time_weighted_sum += eng.radial_woc_fraction * dt;
+        self.peak_radial_woc_fraction = self.peak_radial_woc_fraction.max(eng.radial_woc_fraction);
+        self.axial_doc_fraction_time_weighted_sum += eng.axial_doc_fraction * dt;
+        self.peak_axial_doc_fraction = self.peak_axial_doc_fraction.max(eng.axial_doc_fraction);
+        // P3: transit-span samples produce dexel-bridge artifacts on peak
+        // DOC. Defer to the same gating the top-level accumulator uses.
+        if !sample.in_transit_span {
+            self.peak_axial_doc_mm = self.peak_axial_doc_mm.max(sample.axial_doc_mm.max(0.0));
+        }
+        if let Some(arc) = eng.arc_radians {
+            self.arc_time_weighted_sum += arc * dt;
+            self.arc_observed_runtime_s += dt;
+        }
+        if let Some(mct) = eng.mean_chip_thickness_mm {
+            self.mean_chip_thickness_time_weighted_sum += mct * dt;
+            self.mean_chip_thickness_observed_runtime_s += dt;
+        }
+        if let Some(pct) = eng.peak_chip_thickness_mm {
+            self.peak_chip_thickness_mm = self.peak_chip_thickness_mm.max(pct);
+        }
+        self.leading_edge_speed_time_weighted_sum += eng.leading_edge_speed_mm_min * dt;
+    }
+
+    pub fn finish(self) -> KinematicsSummary {
+        let t = self.cutting_runtime_s.max(1e-12);
+        KinematicsSummary {
+            cutting_runtime_s: self.cutting_runtime_s,
+            average_radial_woc_fraction: if self.cutting_runtime_s > 1e-9 {
+                self.radial_woc_time_weighted_sum / t
+            } else {
+                0.0
+            },
+            peak_radial_woc_fraction: self.peak_radial_woc_fraction,
+            average_axial_doc_fraction: if self.cutting_runtime_s > 1e-9 {
+                self.axial_doc_fraction_time_weighted_sum / t
+            } else {
+                0.0
+            },
+            peak_axial_doc_fraction: self.peak_axial_doc_fraction,
+            peak_axial_doc_mm: self.peak_axial_doc_mm,
+            average_arc_radians: if self.arc_observed_runtime_s > 1e-9 {
+                Some(self.arc_time_weighted_sum / self.arc_observed_runtime_s)
+            } else {
+                None
+            },
+            average_mean_chip_thickness_mm: if self.mean_chip_thickness_observed_runtime_s > 1e-9 {
+                Some(
+                    self.mean_chip_thickness_time_weighted_sum
+                        / self.mean_chip_thickness_observed_runtime_s,
+                )
+            } else {
+                None
+            },
+            peak_chip_thickness_mm: if self.peak_chip_thickness_mm > 0.0 {
+                Some(self.peak_chip_thickness_mm)
+            } else {
+                None
+            },
+            average_leading_edge_speed_mm_min: if self.cutting_runtime_s > 1e-9 {
+                self.leading_edge_speed_time_weighted_sum / t
+            } else {
+                0.0
+            },
+            sample_count: self.sample_count,
+        }
+    }
 }
 
 impl SummaryAccumulator {
@@ -563,6 +845,16 @@ impl SummaryAccumulator {
                 self.low_engagement_time_s += sample.segment_time_s;
                 self.low_engagement_issue_count += 1;
             }
+            // Step 2 D substrate: route cutting samples to their kinematics
+            // sub-accumulator. `Rapid` is skipped (samples emitted as
+            // `is_cutting=true` with `Rapid` kinematics would be a bug in the
+            // emitter; we honour the `is_cutting` gate first). `Linear`
+            // samples with `MoveIntent::Retract` were already reclassified
+            // to `is_cutting=false` in Step 1, so they don't reach this
+            // branch.
+            #[allow(clippy::indexing_slicing)]
+            // SAFETY: `cut_kinematics.index()` is bounded by COUNT.
+            self.per_kinematics[sample.cut_kinematics.index()].observe_cutting(sample);
         } else {
             self.rapid_runtime_s += sample.segment_time_s;
         }
@@ -584,7 +876,10 @@ impl SummaryAccumulator {
         }
     }
 
-    fn finish_toolpath(self, toolpath_id: usize) -> SimulationToolpathCutSummary {
+    pub fn finish_toolpath(self, toolpath_id: usize) -> SimulationToolpathCutSummary {
+        let average_engagement = self.average_engagement();
+        let average_mrr_mm3_s = self.average_mrr();
+        let per_kinematics = finalize_per_kinematics(self.per_kinematics);
         SimulationToolpathCutSummary {
             toolpath_id,
             sample_count: self.sample_count,
@@ -593,12 +888,13 @@ impl SummaryAccumulator {
             rapid_runtime_s: self.rapid_runtime_s,
             air_cut_time_s: self.air_cut_time_s,
             low_engagement_time_s: self.low_engagement_time_s,
-            average_engagement: self.average_engagement(),
+            average_engagement,
             peak_chipload_mm_per_tooth: self.peak_chipload_mm_per_tooth,
             peak_axial_doc_mm: self.peak_axial_doc_mm,
             total_removed_volume_est_mm3: self.total_removed_volume_est_mm3,
-            average_mrr_mm3_s: self.average_mrr(),
+            average_mrr_mm3_s,
             metrics_not_applicable: false,
+            per_kinematics,
         }
     }
 
@@ -609,6 +905,9 @@ impl SummaryAccumulator {
         issue_count: usize,
         hotspot_count: usize,
     ) -> SimulationCutSummary {
+        let average_engagement = self.average_engagement();
+        let average_mrr_mm3_s = self.average_mrr();
+        let per_kinematics = finalize_per_kinematics(self.per_kinematics);
         SimulationCutSummary {
             sample_count,
             toolpath_count,
@@ -619,11 +918,12 @@ impl SummaryAccumulator {
             rapid_runtime_s: self.rapid_runtime_s,
             air_cut_time_s: self.air_cut_time_s,
             low_engagement_time_s: self.low_engagement_time_s,
-            average_engagement: self.average_engagement(),
+            average_engagement,
             peak_chipload_mm_per_tooth: self.peak_chipload_mm_per_tooth,
             peak_axial_doc_mm: self.peak_axial_doc_mm,
             total_removed_volume_est_mm3: self.total_removed_volume_est_mm3,
-            average_mrr_mm3_s: self.average_mrr(),
+            average_mrr_mm3_s,
+            per_kinematics,
         }
     }
 }
@@ -832,6 +1132,7 @@ mod tests {
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0166,
                     effective_chip_thickness_mm: Some(0.0166),
+                    engagement: Engagement::default(),
                     removed_volume_est_mm3: 2.0,
                     mrr_mm3_s: 10.0,
                     semantic_item_id: Some(9),
@@ -855,6 +1156,7 @@ mod tests {
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0166,
                     effective_chip_thickness_mm: Some(0.0166),
+                    engagement: Engagement::default(),
                     removed_volume_est_mm3: 3.0,
                     mrr_mm3_s: 10.0,
                     semantic_item_id: Some(9),
@@ -878,6 +1180,7 @@ mod tests {
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0,
                     effective_chip_thickness_mm: None,
+                    engagement: Engagement::default(),
                     removed_volume_est_mm3: 0.0,
                     mrr_mm3_s: 0.0,
                     semantic_item_id: None,
@@ -933,6 +1236,7 @@ mod tests {
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0083,
                     effective_chip_thickness_mm: Some(0.0083),
+                    engagement: Engagement::default(),
                     removed_volume_est_mm3: 0.2,
                     mrr_mm3_s: 1.0,
                     semantic_item_id: Some(2),
@@ -956,6 +1260,7 @@ mod tests {
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0083,
                     effective_chip_thickness_mm: Some(0.0083),
+                    engagement: Engagement::default(),
                     removed_volume_est_mm3: 0.4,
                     mrr_mm3_s: 2.0,
                     semantic_item_id: Some(2),
@@ -1004,6 +1309,7 @@ mod tests {
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0166,
                     effective_chip_thickness_mm: Some(0.0166),
+                    engagement: Engagement::default(),
                     removed_volume_est_mm3: 0.1,
                     mrr_mm3_s: 0.5,
                     semantic_item_id: Some(7),
@@ -1027,6 +1333,7 @@ mod tests {
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0166,
                     effective_chip_thickness_mm: Some(0.0166),
+                    engagement: Engagement::default(),
                     removed_volume_est_mm3: 0.1,
                     mrr_mm3_s: 0.5,
                     semantic_item_id: Some(7),
@@ -1110,6 +1417,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.0,
                 effective_chip_thickness_mm: None,
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
@@ -1133,6 +1441,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.0,
                 effective_chip_thickness_mm: None,
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
@@ -1176,6 +1485,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 0.1,
                 mrr_mm3_s: 1.0,
                 semantic_item_id: None,
@@ -1200,6 +1510,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 0.3,
                 mrr_mm3_s: 3.0,
                 semantic_item_id: None,
@@ -1224,6 +1535,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.02,
                 effective_chip_thickness_mm: Some(0.02),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 semantic_item_id: None,
@@ -1334,6 +1646,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
@@ -1359,6 +1672,7 @@ mod tests {
             arc_engagement_radians: None,
             chipload_mm_per_tooth: 0.02,
             effective_chip_thickness_mm: Some(0.02),
+            engagement: Engagement::default(),
             removed_volume_est_mm3: 1.0,
             mrr_mm3_s: 10.0,
             semantic_item_id: None,
@@ -1383,6 +1697,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
@@ -1446,6 +1761,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
@@ -1469,6 +1785,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
@@ -1508,6 +1825,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
@@ -1531,6 +1849,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
@@ -1554,6 +1873,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
@@ -1596,6 +1916,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.05,
                 effective_chip_thickness_mm: Some(0.05),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 2.0,
                 mrr_mm3_s: 20.0,
                 semantic_item_id: None,
@@ -1619,6 +1940,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.08,
                 effective_chip_thickness_mm: Some(0.08),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 5.0,
                 mrr_mm3_s: 50.0,
                 semantic_item_id: None,
@@ -1668,6 +1990,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 semantic_item_id: None,
@@ -1691,6 +2014,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.02,
                 effective_chip_thickness_mm: Some(0.02),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 3.0,
                 mrr_mm3_s: 15.0,
                 semantic_item_id: None,
@@ -1755,6 +2079,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 0.5,
                 mrr_mm3_s: 5.0,
                 semantic_item_id: None,
@@ -1779,6 +2104,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.02,
                 effective_chip_thickness_mm: Some(0.02),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 2.0,
                 mrr_mm3_s: 6.67,
                 semantic_item_id: None,
@@ -1822,6 +2148,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 semantic_item_id: Some(1),
@@ -1845,6 +2172,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 semantic_item_id: Some(2),
@@ -1868,6 +2196,7 @@ mod tests {
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
+                engagement: Engagement::default(),
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 semantic_item_id: Some(1),
@@ -1942,6 +2271,7 @@ mod tests {
             arc_engagement_radians: None,
             chipload_mm_per_tooth: 0.03,
             effective_chip_thickness_mm: Some(0.03),
+            engagement: Engagement::default(),
             removed_volume_est_mm3: 1.0,
             mrr_mm3_s: 50.0,
             semantic_item_id: None,

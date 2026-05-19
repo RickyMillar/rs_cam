@@ -1294,6 +1294,7 @@ mod tests {
             arc_engagement_radians: Some(0.1),
             chipload_mm_per_tooth: 0.03,
             effective_chip_thickness_mm: Some(0.0),
+            engagement: crate::simulation_cut::Engagement::default(),
             removed_volume_est_mm3: 0.0,
             mrr_mm3_s: 0.0,
             semantic_item_id: None,

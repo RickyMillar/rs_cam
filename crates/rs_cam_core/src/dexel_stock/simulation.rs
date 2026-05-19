@@ -459,6 +459,20 @@ impl TriDexelStock {
                 chipload_mm_per_tooth,
                 params.flute_count,
             );
+            let flute_length = cutter.length().max(1e-9);
+            let engagement = crate::simulation_cut::Engagement {
+                radial_woc_fraction: radial_engagement,
+                axial_doc_fraction: (axial_doc_mm / flute_length).clamp(0.0, 1.0),
+                arc_radians: arc_engagement_radians,
+                mean_chip_thickness_mm: Some(chipload_mm_per_tooth),
+                peak_chip_thickness_mm: effective_chip_thickness_mm,
+                leading_edge_speed_mm_min: params.feed_rate_mm_min,
+                // Step 2 carries direction as a substrate; climb/conventional
+                // discrimination needs perp-axis side info from stamping
+                // (which side of the engaged arc has fresh material) — to be
+                // threaded in a follow-up. `Mixed` is the safe fallback.
+                direction: crate::simulation_cut::EngagementDirection::Mixed,
+            };
             samples.push(SimulationCutSample {
                 toolpath_id: params.toolpath_id,
                 move_index: params.move_index,
@@ -476,6 +490,7 @@ impl TriDexelStock {
                 arc_engagement_radians,
                 chipload_mm_per_tooth,
                 effective_chip_thickness_mm,
+                engagement,
                 removed_volume_est_mm3,
                 mrr_mm3_s: if segment_time_s <= 1e-9 {
                     0.0

@@ -2084,7 +2084,11 @@ impl super::RsCamApp {
             let machine = session.machine();
             let workholding = session.stock_config().workholding_rigidity;
             let result = crate::ui::properties::compute_feeds_for_op(
-                tool, material, machine, workholding, &op_config,
+                tool,
+                material,
+                machine,
+                workholding,
+                &op_config,
             );
             crate::ui::properties::apply_feeds_result_to_op(&mut op_config, &result);
         }
@@ -2862,6 +2866,11 @@ fn build_span_cut_summaries(
                 "peak_axial_doc_mm": acc.peak_axial_doc_mm,
                 "total_removed_volume_est_mm3": acc.total_removed_volume_est_mm3,
                 "average_mrr_mm3_s": acc.average_mrr(),
+                // Step 2 D — per-kinematics axes inline so agents can read
+                // axial-DOC for plunge-heavy passes and arc-WOC for lateral
+                // ones without parsing a separate summary. See
+                // planning/DEXEL_Z_ONLY_INVESTIGATION.md §6.D.
+                "per_kinematics": render_per_kinematics_json(&acc),
             }));
         }
     }
@@ -2965,6 +2974,7 @@ fn build_per_depth_pass_summary(
                     // in isolation. See planning/UX_PAIN_POINTS_2026-05-11.md F.9.
                     "per_sample_peak_chipload_mm_per_tooth": acc.peak_chipload_mm_per_tooth,
                     "peak_axial_doc_mm": acc.peak_axial_doc_mm,
+                    "per_kinematics": render_per_kinematics_json(&acc),
                 })
             })
             .collect();
@@ -2976,6 +2986,50 @@ fn build_per_depth_pass_summary(
     } else {
         serde_json::Value::Object(out)
     }
+}
+
+/// Render a `SummaryAccumulator`'s per-`CutKinematics` sub-accumulators as
+/// inline JSON for MCP per-span / per-depth-pass output. Step 2 D — exposes
+/// axial-DOC for plunge-heavy passes, arc-WOC for lateral ones, etc. without
+/// reshuffling the surrounding payload. Empty when no cutting samples were
+/// observed in this scope.
+fn render_per_kinematics_json(
+    acc: &rs_cam_core::simulation_cut::SummaryAccumulator,
+) -> serde_json::Value {
+    use rs_cam_core::simulation_cut::CutKinematics;
+    let mut map = serde_json::Map::new();
+    for kind in CutKinematics::ALL {
+        #[allow(clippy::indexing_slicing)] // SAFETY: `kind.index()` is bounded by COUNT.
+        let sub = &acc.per_kinematics[kind.index()];
+        if sub.sample_count == 0 {
+            continue;
+        }
+        let summary = sub.clone().finish();
+        let label = match kind {
+            CutKinematics::Linear => "linear",
+            CutKinematics::Plunge => "plunge",
+            CutKinematics::Helix => "helix",
+            CutKinematics::Arc => "arc",
+            CutKinematics::Rapid => "rapid",
+        };
+        map.insert(
+            label.to_owned(),
+            serde_json::json!({
+                "cutting_runtime_s": summary.cutting_runtime_s,
+                "sample_count": summary.sample_count,
+                "average_radial_woc_fraction": summary.average_radial_woc_fraction,
+                "peak_radial_woc_fraction": summary.peak_radial_woc_fraction,
+                "average_axial_doc_fraction": summary.average_axial_doc_fraction,
+                "peak_axial_doc_fraction": summary.peak_axial_doc_fraction,
+                "peak_axial_doc_mm": summary.peak_axial_doc_mm,
+                "average_arc_radians": summary.average_arc_radians,
+                "average_mean_chip_thickness_mm": summary.average_mean_chip_thickness_mm,
+                "peak_chip_thickness_mm": summary.peak_chip_thickness_mm,
+                "average_leading_edge_speed_mm_min": summary.average_leading_edge_speed_mm_min,
+            }),
+        );
+    }
+    serde_json::Value::Object(map)
 }
 
 /// Generation-debug span "kind" strings that participate in a given
