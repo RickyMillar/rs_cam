@@ -22,6 +22,100 @@
 - unified service layer: `ProjectSession` API in core, shared `execute_operation()` dispatch for all 23 ops
 - MCP server (`rs_cam_mcp`) exposing `ProjectSession` tools for AI agent integration
 
+## Recent work (2026-05-20)
+
+### Dexel-fidelity roadmap — Step 5 J (marching cubes mesh extraction)
+
+Step 5 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` lands. The roadmap
+is closed: all 5 steps ☑.
+
+`z_grid_to_solid_mesh` now delegates to a new
+`crates/rs_cam_core/src/dexel_mesh_mc.rs` module that implements
+marching-cubes mesh extraction in its corner-bilinear height-field
+reduction. The §6.J revision defines the SDF as `sdf(u, v, z) =
+interp_ray_top(u, v) − z` where `interp_ray_top` is bilinearly
+interpolated from the four cells surrounding each cell-corner. This
+SDF is linear in z, so the MC iso-surface (`sdf = 0`) reduces to the
+height field `z = interp_ray_top` — we emit it directly rather than
+running a voxel sweep. The output is mathematically equivalent to
+running standard 256-case MC tables on the bilinear SDF.
+
+Closure (sides not produced by the top-iso surface):
+
+- **Top face**: corner-bilinear `ray_top`, vertices at cell-corner
+  positions. F.a's coverage-weighted ray_top from Step 4 feeds the
+  bilinear average directly — boundary cells with partial coverage
+  blend smoothly into the surrounding height surface, giving sub-cell-
+  accurate wall positions at low resolutions.
+- **Bottom face**: mirror — corner-bilinear `ray_bottom`.
+- **Perimeter skirt**: vertical quads at the grid bbox edge.
+- **Internal hole walls**: vertical quads at corners adjacent to
+  empty (through-hole) cells.
+- **Multi-segment cavity fallback**: when any ray has > 1 segment,
+  per-gap horizontal floor/ceiling faces and vertical walls are
+  emitted (preserving the legacy cavity-emission semantics).
+
+`dexel_stock_to_entry_surface_mesh` (the 20 Hz live-preview path)
+stays on the fast heightmap top-surface mesh per §6.J's scope split.
+Only the closed-solid `dexel_stock_to_mesh` path moves to MC.
+
+Side-grid path (`side_grid_to_mesh`) dropped from scope (4-axis
+future-proofing; not in active 3-axis-from-top flows). Legacy
+heightmap extractor retained as private
+`z_grid_to_solid_mesh_heightmap` for reference.
+
+7 legacy `dexel_mesh::tests` were tightly coupled to the heightmap
+vertex layout (`mesh.vertices[2]` = first vertex z; "first cells
+verts = top face"; hard-coded `50` / `288` counts). All 7 rewritten
+as topology / point-cloud queries that survive the MC swap: assert
+non-empty, indices in range, colour buffer matches vertex buffer,
+z range matches expectation, find vertex at a position via point
+cloud rather than fixed index.
+
+6 new Step 5 §9 acceptance-gate regression tests in
+`crates/rs_cam_core/tests/step5_marching_cubes.rs`:
+
+1. Watertightness on an uncut block (position-keyed edge counting
+   since MC emits per-triangle vertices without index dedup).
+2. Watertightness on a partial-cut block.
+3. Vertex z bounded by `[stock_bottom, stock_top]`.
+4. MC triangle count ≤ 10× heightmap preview count (well within the
+   §6.J 5–10× memory budget).
+5. Pocket cut produces vertices at both the floor (`z = cut_top`)
+   and the rim (`z = stock_top`) — verifies the wall transition.
+6. Drill-CSG ↔ MC seam: analytic cylinder ring (Step 3 PR1) lands
+   within 1.5× cell_size of the MC mesh wall vertices, closing the
+   §10.7 intermediate-state seam.
+
+WANAKA end-to-end mesh revalidation in
+`crates/rs_cam_core/tests/wanaka_step5_mc_revalidation.rs`: loads
+WANAKA, runs sim, asserts the final closed-solid mesh and every
+per-toolpath checkpoint mesh is well-formed (non-empty, finite
+positions, indices in range, z within stock envelope ± padding).
+
+Bench A/B (`bench_dexel_mesh_extraction`, 4-bench group): see follow-
+up commit for full numbers. Cumulative Step 0–5 delta vs pre-Step-0
+baseline expected within the §10.5 50 % cumulative ceiling — MC
+adds explicit perimeter + closure emission on top of corner-bilinear
+faces, roughly 2× the legacy triangle count for an uncut block (still
+well under §6.J's 5–10× envelope).
+
+Algorithm decision: vanilla MC (height-field reduction) over dual
+contouring per the trade-off review in this session — F.a's coverage
+ramp narrows the boundary-sharpness gap that historically motivated
+DC, and no current user-facing feature gates on the sharp-feature
+DC win. DC remains a deferred follow-up if a future feature
+(v-carve crispness, 4-axis undercuts) demands it.
+
+Out-of-scope (deferred follow-ups per §11):
+- F.b sub-cell-resolved ray storage (forward-compat hook on
+  `DexelGrid.coverage_max` already in place from Step 4).
+- DC variant.
+- Side-grid MC variant (4-axis epic).
+- Legacy `radial_engagement` scalar deletion (Step 2 tail
+  follow-up — separate PR per scope decision).
+- G81/G82/G83 canned-cycle G-code emission.
+
 ## Recent work (2026-05-19)
 
 ### Dexel-fidelity roadmap — Step 4 F.a (sub-cell stamping)

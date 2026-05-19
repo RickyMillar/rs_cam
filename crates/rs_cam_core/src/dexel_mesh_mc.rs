@@ -137,12 +137,44 @@ pub fn z_grid_marching_cubes(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z:
         (u as f32, v as f32)
     };
 
-    let mut vertices: Vec<f32> = Vec::new();
-    let mut indices: Vec<u32> = Vec::new();
-    let mut colors: Vec<f32> = Vec::new();
+    // ── 3. Shared-vertex emit: build vertices at each non-empty corner once
+    //       (top + bottom), record their indices, then emit triangles by
+    //       index. This reduces vertex count from 6×cells to 2×corners — a
+    //       ~6× reduction in allocations and per-vertex work.
+    let mut top_idx: Vec<u32> = vec![u32::MAX; corner_count];
+    let mut bot_idx: Vec<u32> = vec![u32::MAX; corner_count];
+    // Reasonable capacity: top + bottom corner counts (most corners
+    // non-empty), plus a small overhead for cavity emissions.
+    let cap = (corner_count * 2 * 3) + (rows + cols) * 12;
+    let mut vertices: Vec<f32> = Vec::with_capacity(cap);
+    let mut colors: Vec<f32> = Vec::with_capacity(cap);
+    let mut indices: Vec<u32> = Vec::with_capacity(cells * 12);
 
-    // ── 3. Top face: emit one quad per cell at the corner-bilinear top
-    //       heights. Skip cells where any of the 4 owning corners is empty.
+    for ci in 0..corner_rows {
+        for cj in 0..corner_cols {
+            let cidx = ci * corner_cols + cj;
+            if corner_empty[cidx] {
+                continue;
+            }
+            let (u, v) = corner_xy(ci, cj);
+            // Top vertex.
+            let ti = (vertices.len() / 3) as u32;
+            let tz = corner_top[cidx];
+            vertices.extend_from_slice(&[u, v, tz]);
+            let (cr, cg, cb) = wood_color_at_z(tz, stock_top, stock_bot, z_range);
+            colors.extend_from_slice(&[cr, cg, cb]);
+            top_idx[cidx] = ti;
+            // Bottom vertex.
+            let bi = (vertices.len() / 3) as u32;
+            let bz = corner_bot[cidx];
+            vertices.extend_from_slice(&[u, v, bz]);
+            let (cr, cg, cb) = wood_color_at_z(bz, stock_top, stock_bot, z_range);
+            colors.extend_from_slice(&[cr, cg, cb]);
+            bot_idx[cidx] = bi;
+        }
+    }
+
+    // ── 4. Top face: 2 triangles per cell using shared corner indices.
     for ci in 0..rows {
         for cj in 0..cols {
             if cell_empty[ci * cols + cj] {
@@ -155,28 +187,17 @@ pub fn z_grid_marching_cubes(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z:
             if corner_empty[c00] || corner_empty[c01] || corner_empty[c10] || corner_empty[c11] {
                 continue;
             }
-            let (u0, v0) = corner_xy(ci, cj);
-            let (u1, v1) = corner_xy(ci + 1, cj + 1);
-            let z00 = corner_top[c00];
-            let z01 = corner_top[c01];
-            let z10 = corner_top[c10];
-            let z11 = corner_top[c11];
-            push_quad_top(
-                &mut vertices,
-                &mut indices,
-                &mut colors,
-                (u0, v0, z00),
-                (u1, v0, z01),
-                (u0, v1, z10),
-                (u1, v1, z11),
-                stock_top,
-                stock_bot,
-                z_range,
-            );
+            // Winding for +Z normal (CCW viewed from +Z): (c00, c10, c01),
+            // (c01, c10, c11).
+            let v00 = top_idx[c00];
+            let v01 = top_idx[c01];
+            let v10 = top_idx[c10];
+            let v11 = top_idx[c11];
+            indices.extend_from_slice(&[v00, v10, v01, v01, v10, v11]);
         }
     }
 
-    // ── 4. Bottom face: mirrored winding so normals point −Z.
+    // ── 5. Bottom face: same cells, reversed winding (−Z normal).
     for ci in 0..rows {
         for cj in 0..cols {
             if cell_empty[ci * cols + cj] {
@@ -189,126 +210,69 @@ pub fn z_grid_marching_cubes(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z:
             if corner_empty[c00] || corner_empty[c01] || corner_empty[c10] || corner_empty[c11] {
                 continue;
             }
-            let (u0, v0) = corner_xy(ci, cj);
-            let (u1, v1) = corner_xy(ci + 1, cj + 1);
-            let z00 = corner_bot[c00];
-            let z01 = corner_bot[c01];
-            let z10 = corner_bot[c10];
-            let z11 = corner_bot[c11];
-            push_quad_bottom(
-                &mut vertices,
-                &mut indices,
-                &mut colors,
-                (u0, v0, z00),
-                (u1, v0, z01),
-                (u0, v1, z10),
-                (u1, v1, z11),
-                stock_top,
-                stock_bot,
-                z_range,
-            );
+            let v00 = bot_idx[c00];
+            let v01 = bot_idx[c01];
+            let v10 = bot_idx[c10];
+            let v11 = bot_idx[c11];
+            indices.extend_from_slice(&[v00, v01, v10, v01, v11, v10]);
         }
     }
 
-    // ── 5. Perimeter skirt — vertical quads along the bbox edge connecting
-    //       top corners to bottom corners. Skip segments where both
-    //       endpoint corners are empty.
-    // Front edge (ci = 0).
+    // ── 6. Perimeter skirt — vertical quads using shared corner indices.
+    // Front edge (ci = 0): normals face −V → CCW from −V.
     for cj in 0..cols {
         let cl = cj;
         let cr = cj + 1;
         if corner_empty[cl] || corner_empty[cr] {
             continue;
         }
-        let (ul, vl) = corner_xy(0, cj);
-        let (ur, _) = corner_xy(0, cj + 1);
-        push_vertical_quad(
-            &mut vertices,
-            &mut indices,
-            &mut colors,
-            (ul, vl, corner_top[cl]),
-            (ur, vl, corner_top[cr]),
-            (ul, vl, corner_bot[cl]),
-            (ur, vl, corner_bot[cr]),
-            true,
-            stock_top,
-            stock_bot,
-            z_range,
-        );
+        let tl = top_idx[cl];
+        let tr = top_idx[cr];
+        let bl = bot_idx[cl];
+        let br = bot_idx[cr];
+        indices.extend_from_slice(&[tl, tr, bl, tr, br, bl]);
     }
-    // Back edge (ci = rows).
+    // Back edge (ci = rows): normals face +V.
     for cj in 0..cols {
         let cl = rows * corner_cols + cj;
         let cr = rows * corner_cols + cj + 1;
         if corner_empty[cl] || corner_empty[cr] {
             continue;
         }
-        let (ul, vl) = corner_xy(rows, cj);
-        let (ur, _) = corner_xy(rows, cj + 1);
-        push_vertical_quad(
-            &mut vertices,
-            &mut indices,
-            &mut colors,
-            (ul, vl, corner_top[cl]),
-            (ur, vl, corner_top[cr]),
-            (ul, vl, corner_bot[cl]),
-            (ur, vl, corner_bot[cr]),
-            false,
-            stock_top,
-            stock_bot,
-            z_range,
-        );
+        let tl = top_idx[cl];
+        let tr = top_idx[cr];
+        let bl = bot_idx[cl];
+        let br = bot_idx[cr];
+        indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
     }
-    // Left edge (cj = 0).
+    // Left edge (cj = 0): normals face −U.
     for ci in 0..rows {
         let cb = ci * corner_cols;
         let ct = (ci + 1) * corner_cols;
         if corner_empty[cb] || corner_empty[ct] {
             continue;
         }
-        let (ul, vl) = corner_xy(ci, 0);
-        let (_, vt) = corner_xy(ci + 1, 0);
-        push_vertical_quad(
-            &mut vertices,
-            &mut indices,
-            &mut colors,
-            (ul, vl, corner_top[cb]),
-            (ul, vt, corner_top[ct]),
-            (ul, vl, corner_bot[cb]),
-            (ul, vt, corner_bot[ct]),
-            false,
-            stock_top,
-            stock_bot,
-            z_range,
-        );
+        let tb = top_idx[cb];
+        let tt = top_idx[ct];
+        let bb = bot_idx[cb];
+        let bt = bot_idx[ct];
+        indices.extend_from_slice(&[tb, bb, tt, tt, bb, bt]);
     }
-    // Right edge (cj = cols).
+    // Right edge (cj = cols): normals face +U.
     for ci in 0..rows {
         let cb = ci * corner_cols + cols;
         let ct = (ci + 1) * corner_cols + cols;
         if corner_empty[cb] || corner_empty[ct] {
             continue;
         }
-        let (ul, vl) = corner_xy(ci, cols);
-        let (_, vt) = corner_xy(ci + 1, cols);
-        push_vertical_quad(
-            &mut vertices,
-            &mut indices,
-            &mut colors,
-            (ul, vl, corner_top[cb]),
-            (ul, vt, corner_top[ct]),
-            (ul, vl, corner_bot[cb]),
-            (ul, vt, corner_bot[ct]),
-            true,
-            stock_top,
-            stock_bot,
-            z_range,
-        );
+        let tb = top_idx[cb];
+        let tt = top_idx[ct];
+        let bb = bot_idx[cb];
+        let bt = bot_idx[ct];
+        indices.extend_from_slice(&[tb, tt, bb, tt, bt, bb]);
     }
 
-    // ── 6. Hole walls — at every cell edge separating a material cell from
-    //       an empty cell, emit a vertical quad at the corner positions of
-    //       that edge.
+    // ── 7. Hole walls — vertical quads at material/empty cell boundaries.
     // Column-direction edges (between cells (ci, cj) and (ci, cj+1)).
     for ci in 0..rows {
         for cj in 0..(cols.saturating_sub(1)) {
@@ -317,29 +281,20 @@ pub fn z_grid_marching_cubes(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z:
             if a_empty == b_empty {
                 continue;
             }
-            // Material on one side, empty on the other → wall at cj+1.
             let cb = ci * corner_cols + cj + 1;
             let ct = (ci + 1) * corner_cols + cj + 1;
             if corner_empty[cb] || corner_empty[ct] {
                 continue;
             }
-            let (ul, vl) = corner_xy(ci, cj + 1);
-            let (_, vt) = corner_xy(ci + 1, cj + 1);
-            // Material on left (cj) → wall faces +u; material on right → −u.
-            let face_pos_u = !a_empty;
-            push_vertical_quad(
-                &mut vertices,
-                &mut indices,
-                &mut colors,
-                (ul, vl, corner_top[cb]),
-                (ul, vt, corner_top[ct]),
-                (ul, vl, corner_bot[cb]),
-                (ul, vt, corner_bot[ct]),
-                face_pos_u,
-                stock_top,
-                stock_bot,
-                z_range,
-            );
+            let tb = top_idx[cb];
+            let tt = top_idx[ct];
+            let bb = bot_idx[cb];
+            let bt = bot_idx[ct];
+            if !a_empty {
+                indices.extend_from_slice(&[tb, tt, bb, tt, bt, bb]);
+            } else {
+                indices.extend_from_slice(&[tb, bb, tt, tt, bb, bt]);
+            }
         }
     }
     // Row-direction edges (between cells (ci, cj) and (ci+1, cj)).
@@ -355,22 +310,15 @@ pub fn z_grid_marching_cubes(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z:
             if corner_empty[cl] || corner_empty[cr] {
                 continue;
             }
-            let (ul, vl) = corner_xy(ci + 1, cj);
-            let (ur, _) = corner_xy(ci + 1, cj + 1);
-            let face_pos_v = !a_empty;
-            push_vertical_quad(
-                &mut vertices,
-                &mut indices,
-                &mut colors,
-                (ul, vl, corner_top[cl]),
-                (ur, vl, corner_top[cr]),
-                (ul, vl, corner_bot[cl]),
-                (ur, vl, corner_bot[cr]),
-                !face_pos_v,
-                stock_top,
-                stock_bot,
-                z_range,
-            );
+            let tl = top_idx[cl];
+            let tr = top_idx[cr];
+            let bl = bot_idx[cl];
+            let br = bot_idx[cr];
+            if !a_empty {
+                indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
+            } else {
+                indices.extend_from_slice(&[tl, tr, bl, tr, br, bl]);
+            }
         }
     }
 
@@ -396,7 +344,7 @@ pub fn z_grid_marching_cubes(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z:
 }
 
 #[inline]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, dead_code)]
 fn push_quad_top(
     vertices: &mut Vec<f32>,
     indices: &mut Vec<u32>,
@@ -425,7 +373,7 @@ fn push_quad_top(
 }
 
 #[inline]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, dead_code)]
 fn push_quad_bottom(
     vertices: &mut Vec<f32>,
     indices: &mut Vec<u32>,
@@ -456,7 +404,7 @@ fn push_quad_bottom(
 /// bottom-left, bottom-right). `face_outward_positive` selects winding so the
 /// normal points along the positive axis if true.
 #[inline]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, dead_code)]
 fn push_vertical_quad(
     vertices: &mut Vec<f32>,
     indices: &mut Vec<u32>,
