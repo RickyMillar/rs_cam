@@ -416,6 +416,28 @@ pub fn json_str(data: serde_json::Value) -> String {
 }
 
 /// Standardized error response when no project is loaded.
+/// Build-identification block embedded in `project_summary`.
+///
+/// Gives an agent a way to detect that the running MCP binary predates a
+/// feature it expects (see UX dial-in review, finding A3). `git_sha` is
+/// `None` unless the build environment sets `VERGEN_GIT_SHA`; `features`
+/// is a hand-curated list of capability flags that consumers can probe.
+pub fn build_info() -> serde_json::Value {
+    serde_json::json!({
+        "crate_version": env!("CARGO_PKG_VERSION"),
+        "git_sha": option_env!("VERGEN_GIT_SHA"),
+        "features": [
+            "stale_defaults",
+            "drill_summaries",
+            "drill_gates",
+            "transit_span_doc",
+            "air_cut_op_kind_aware",
+            "plunge_stress_gate",
+            "verdict_list",
+        ],
+    })
+}
+
 pub fn no_project_error() -> String {
     json_str(serde_json::json!({"error": "No project loaded. Call load_project first."}))
 }
@@ -490,6 +512,7 @@ impl CamServer {
             "toolpath_count": session.toolpath_count(),
             "tools": session.list_tools(),
             "stale_defaults": stale_defaults,
+            "build": build_info(),
         }))
     }
 
@@ -645,6 +668,7 @@ impl CamServer {
                 "collision_count": diag.collision_count,
                 "rapid_collision_count": diag.rapid_collision_count,
                 "verdict": diag.verdict,
+                "verdicts": diag.verdicts,
                 "per_toolpath": diag.per_toolpath,
             });
             if let Some(sim) = s.simulation_result() {

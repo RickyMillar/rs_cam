@@ -1036,6 +1036,13 @@ fn verdict_tooltip(status: &CriterionStatus<'_>, cap: Option<f64>, burn_risk: bo
             }
         },
         LoadState::Exceeds => {
+            // UX dial-in A9: when the LUT row backing the verdict is
+            // extrapolated past the calibration band, the "rubbing risk"
+            // claim is advisory rather than authoritative. Prefix with
+            // an ADVISORY tag so users (and agents) don't anchor on the
+            // hard-fail framing for tools where the LUT row is
+            // significantly stretched.
+            let is_extrapolated = matches!(status.confidence, Some(Confidence::Approximate(_)));
             let reason_str = match (status.kind, burn_risk) {
                 (CriterionKind::Chipload, true) => {
                     "chipload below vendor min — rubbing/burning risk. \
@@ -1056,7 +1063,12 @@ fn verdict_tooltip(status: &CriterionStatus<'_>, cap: Option<f64>, burn_risk: bo
                 Some(Confidence::Validated) | None => "validated".to_owned(),
                 Some(Confidence::Approximate(why)) => format!("approximate: {why}"),
             };
-            format!("EXCEEDS: {reason_str} ({}, {conf})", format_peak(peak))
+            let prefix = if is_extrapolated && status.kind == CriterionKind::Chipload {
+                "ADVISORY (extrapolated LUT row)"
+            } else {
+                "EXCEEDS"
+            };
+            format!("{prefix}: {reason_str} ({}, {conf})", format_peak(peak))
         }
         LoadState::Unmodeled => match status.unmodeled_reason {
             Some(UnmodeledReason::SimulationRequired) => {
@@ -1091,6 +1103,11 @@ fn verdict_tooltip(status: &CriterionStatus<'_>, cap: Option<f64>, burn_risk: bo
             // "couldn't measure" framing.
             Some(UnmodeledReason::NotApplicableForOp(detail)) => {
                 format!("N/A: {detail}")
+            }
+            // UX dial-in A10 — sim ran but toolpath never contacted the
+            // stock. The finding is the no-contact, not "missing data".
+            Some(UnmodeledReason::AllSamplesAirCutOrRapid) => {
+                "Unmodeled: toolpath made no contact with material — every sample was a rapid or air-cut. Check depth / direction / stock position.".to_owned()
             }
             None => "Unmodeled".to_owned(),
         },

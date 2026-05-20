@@ -199,10 +199,34 @@ pub(crate) fn build_ranked_narrative(candidates: &[OptimizeCandidate]) -> Outcom
         .map(|(baseline, rest)| envelope_across(baseline, rest))
         .unwrap_or_default();
     let non_baseline = candidates.len().saturating_sub(1);
+    // UX dial-in finding C3: quote the cycle-time delta so the headline
+    // is self-contained ("Found 3; best -42% at 145.5s vs 249.5s
+    // baseline") rather than just an opaque count.
+    let cycle_delta_tail = candidates
+        .split_first()
+        .and_then(|(baseline, rest)| {
+            let baseline_s = baseline.cycle_time_s;
+            if baseline_s <= 0.0 {
+                return None;
+            }
+            let best_s = rest
+                .iter()
+                .map(|c| c.cycle_time_s)
+                .filter(|s| *s > 0.0)
+                .fold(f64::INFINITY, f64::min);
+            if !best_s.is_finite() {
+                return None;
+            }
+            let delta_pct = (best_s - baseline_s) / baseline_s * 100.0;
+            Some(format!(
+                " Best: {delta_pct:+.1}% cycle time at {best_s:.1}s vs {baseline_s:.1}s baseline."
+            ))
+        })
+        .unwrap_or_default();
     let headline = match non_baseline {
         0 => String::new(),
-        1 => "Found 1 candidate that improves on the baseline.".to_owned(),
-        n => format!("Found {n} candidates that improve on the baseline."),
+        1 => format!("Found 1 candidate that improves on the baseline.{cycle_delta_tail}"),
+        n => format!("Found {n} candidates that improve on the baseline.{cycle_delta_tail}"),
     };
     OutcomeNarrative {
         headline,

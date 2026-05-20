@@ -449,12 +449,44 @@ pub struct ToolpathSummary {
 }
 
 /// Summary of a tool for listing.
+///
+/// UX dial-in A8 — `diameter` is the cutter's named (tip) diameter. The
+/// LUT chipload lookup uses an *effective* diameter that depends on
+/// engagement depth (`feeds::geometry::ball_effective_diameter` /
+/// `tapered_ball_effective_diameter`), which can differ substantially
+/// for tapered / ball / bullnose tools. Geometry context is included so
+/// consumers can correlate the named diameter with the effective
+/// LUT-lookup diameter rather than reading a single number that doesn't
+/// tell the whole story.
 #[derive(serde::Serialize)]
 pub struct ToolSummary {
     pub id: ToolId,
     pub name: String,
     pub tool_type: ToolType,
+    /// Named cutter diameter (mm). For tapered / ball tools this is the
+    /// tip diameter; the LUT-effective diameter scales up with axial
+    /// depth.
     pub diameter: f64,
+    /// Cutting flute length (mm) — sets the upper bound on engagement
+    /// depth and on how much a tapered tool's effective diameter can
+    /// grow.
+    pub cutting_length: f64,
+    /// Taper half-angle in degrees (TaperedBallNose only — 0 for other
+    /// tools).
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub taper_half_angle_deg: f64,
+    /// Corner radius (mm) for BullNose tools — 0 for endmills / vbits.
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub corner_radius_mm: f64,
+    /// Included angle (degrees) for V-bits — 0 for non-V tools.
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub included_angle_deg: f64,
+    /// Flute count — used by both feeds/speeds and chipload-per-tooth.
+    pub flute_count: u32,
+}
+
+fn is_zero_f64(v: &f64) -> bool {
+    *v == 0.0
 }
 
 /// Options for running simulation.
@@ -488,12 +520,81 @@ pub struct ToolpathDiagnostic {
     pub toolpath_id: usize,
     pub name: String,
     pub operation_type: String,
+    /// Stable op-kind tag (e.g. `"drill"`, `"alignment_pin_drill"`, `"pocket"`).
+    /// Lets consumers filter Z-only kinematics ops out of rapid:cut-ratio
+    /// signals — see [`crate::compute::catalog::OperationType`].
+    pub op_kind: String,
     pub tool_name: String,
     pub move_count: usize,
     pub cutting_distance_mm: f64,
     pub rapid_distance_mm: f64,
     pub collision_count: usize,
     pub rapid_collision_count: usize,
+}
+
+/// Severity bucket for a [`Verdict`]. Ordered: `Critical < Important < Polish`
+/// so a sort on severity puts the most important first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum VerdictSeverity {
+    /// Holder/shank collision, rapid-through-stock collision — likely to
+    /// damage the part or the tool. Block export until resolved.
+    Critical,
+    /// Gate exceeded, toolpath generated zero in-material cut, unsafe plunge —
+    /// the operator must consciously decide before proceeding.
+    Important,
+    /// Air-cut high, low engagement, slow cycle time — cosmetic / efficiency.
+    Polish,
+}
+
+/// What triggered a [`Verdict`]. Stable tag so MCP consumers can branch on
+/// kind without parsing the human-readable headline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerdictKind {
+    HolderCollision,
+    RapidCollision,
+    PlungeStress,
+    AirCut,
+    GeneratedEmpty,
+}
+
+impl VerdictKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::HolderCollision => "holder_collision",
+            Self::RapidCollision => "rapid_collision",
+            Self::PlungeStress => "plunge_stress",
+            Self::AirCut => "air_cut",
+            Self::GeneratedEmpty => "generated_empty",
+        }
+    }
+}
+
+/// Backing evidence for a verdict — the move / Z that triggered the call.
+/// Optional because some verdicts (e.g. holder collision summed across a
+/// project) don't have a single representative move.
+#[derive(Debug, Clone, Default)]
+pub struct VerdictEvidence {
+    pub move_index: Option<usize>,
+    pub z_value: Option<f64>,
+    pub count: Option<usize>,
+}
+
+/// Structured project-level verdict. Replaces the legacy single-line
+/// `ProjectDiagnostics::verdict` string — that field is still populated
+/// (with the highest-severity verdict's headline) for backward compatibility
+/// but new consumers should read [`ProjectDiagnostics::verdicts`].
+#[derive(Debug, Clone)]
+pub struct Verdict {
+    pub severity: VerdictSeverity,
+    pub kind: VerdictKind,
+    /// One-line human-readable headline, names the offending TPs.
+    pub headline: String,
+    /// Toolpath ids this verdict refers to (may be empty for project-wide
+    /// signals).
+    pub offender_toolpath_ids: Vec<usize>,
+    /// Suggested next action ("increase retract_z…", "set boundary…").
+    pub fix_hint: String,
+    pub evidence: VerdictEvidence,
 }
 
 /// Project-level diagnostics summary.
@@ -505,7 +606,13 @@ pub struct ProjectDiagnostics {
     pub collision_count: usize,
     pub rapid_collision_count: usize,
     pub per_toolpath: Vec<ToolpathDiagnostic>,
+    /// Legacy single-line verdict. Derived from the highest-severity entry
+    /// in [`Self::verdicts`]; `"OK"` when no verdicts fire. Kept for old
+    /// consumers — new code should read `verdicts` directly.
     pub verdict: String,
+    /// Severity-ranked list of structured verdicts (critical → polish).
+    /// Empty when the project has no findings.
+    pub verdicts: Vec<Verdict>,
 }
 
 // ── ProjectSession ─────────────────────────────────────────────────────
@@ -581,7 +688,13 @@ impl ProjectSession {
             toml::from_str(&content).map_err(|e| SessionError::TomlParse(e.to_string()))?;
         project_file::validate_looks_like_cam_project(&project, Some(path))?;
         let base_dir = path.parent().unwrap_or(Path::new("."));
-        Self::from_project_file(project, base_dir)
+        let mut session = Self::from_project_file(project, base_dir)?;
+        if (session.name == "Untitled" || session.name.trim().is_empty())
+            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+        {
+            session.name = stem.to_owned();
+        }
+        Ok(session)
     }
 
     /// Construct a session from a parsed project file.
@@ -637,6 +750,11 @@ impl ProjectSession {
                 name: t.name.clone(),
                 tool_type: t.tool_type,
                 diameter: t.diameter,
+                cutting_length: t.cutting_length,
+                taper_half_angle_deg: t.taper_half_angle,
+                corner_radius_mm: t.corner_radius_mm.max(t.corner_radius),
+                included_angle_deg: t.included_angle,
+                flute_count: t.flute_count,
             })
             .collect()
     }
@@ -943,10 +1061,11 @@ impl ProjectSession {
 impl serde::Serialize for ToolpathDiagnostic {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("ToolpathDiagnostic", 9)?;
+        let mut s = serializer.serialize_struct("ToolpathDiagnostic", 10)?;
         s.serialize_field("toolpath_id", &self.toolpath_id)?;
         s.serialize_field("name", &self.name)?;
         s.serialize_field("operation_type", &self.operation_type)?;
+        s.serialize_field("op_kind", &self.op_kind)?;
         s.serialize_field("tool_name", &self.tool_name)?;
         s.serialize_field("move_count", &self.move_count)?;
         s.serialize_field("cutting_distance_mm", &self.cutting_distance_mm)?;
@@ -957,10 +1076,52 @@ impl serde::Serialize for ToolpathDiagnostic {
     }
 }
 
+impl serde::Serialize for VerdictSeverity {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let s = match self {
+            Self::Critical => "critical",
+            Self::Important => "important",
+            Self::Polish => "polish",
+        };
+        serializer.serialize_str(s)
+    }
+}
+
+impl serde::Serialize for VerdictKind {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl serde::Serialize for VerdictEvidence {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut s = serializer.serialize_struct("VerdictEvidence", 3)?;
+        s.serialize_field("move_index", &self.move_index)?;
+        s.serialize_field("z_value", &self.z_value)?;
+        s.serialize_field("count", &self.count)?;
+        s.end()
+    }
+}
+
+impl serde::Serialize for Verdict {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut s = serializer.serialize_struct("Verdict", 6)?;
+        s.serialize_field("severity", &self.severity)?;
+        s.serialize_field("kind", &self.kind)?;
+        s.serialize_field("headline", &self.headline)?;
+        s.serialize_field("offender_toolpath_ids", &self.offender_toolpath_ids)?;
+        s.serialize_field("fix_hint", &self.fix_hint)?;
+        s.serialize_field("evidence", &self.evidence)?;
+        s.end()
+    }
+}
+
 impl serde::Serialize for ProjectDiagnostics {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("ProjectDiagnostics", 7)?;
+        let mut s = serializer.serialize_struct("ProjectDiagnostics", 8)?;
         s.serialize_field("total_runtime_s", &self.total_runtime_s)?;
         s.serialize_field("air_cut_percentage", &self.air_cut_percentage)?;
         s.serialize_field("average_engagement", &self.average_engagement)?;
@@ -968,6 +1129,7 @@ impl serde::Serialize for ProjectDiagnostics {
         s.serialize_field("rapid_collision_count", &self.rapid_collision_count)?;
         s.serialize_field("per_toolpath", &self.per_toolpath)?;
         s.serialize_field("verdict", &self.verdict)?;
+        s.serialize_field("verdicts", &self.verdicts)?;
         s.end()
     }
 }

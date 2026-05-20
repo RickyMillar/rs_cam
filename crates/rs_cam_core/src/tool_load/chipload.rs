@@ -291,10 +291,18 @@ pub fn evaluate(
     // 3. Build verdicts for no usable sample data before attempting a LUT
     // lookup. This preserves the distinction between missing samples and
     // missing vendor data.
+    //
+    // UX dial-in A10: when sim ran end-to-end but no sample was in-cut
+    // and out of air, surface the actual finding ("toolpath made no
+    // contact with material") rather than `SimulationRequired`, which
+    // misleadingly implies the user needs to re-sim.
     if !any_in_cut_for_toolpath {
-        return ChiploadVerdict::Unmodeled {
-            reason: UnmodeledReason::SimulationRequired,
+        let reason = if trace.samples.iter().any(|s| s.toolpath_id == toolpath_id) {
+            UnmodeledReason::AllSamplesAirCutOrRapid
+        } else {
+            UnmodeledReason::SimulationRequired
         };
+        return ChiploadVerdict::Unmodeled { reason };
     }
     if steady_samples.is_empty() {
         return ChiploadVerdict::Unmodeled {
@@ -915,8 +923,12 @@ mod tests {
     }
 
     #[test]
-    fn no_cutting_samples_returns_simulation_required() {
-        // Sample exists but is_cutting=false → no in-cut data
+    fn samples_exist_but_none_in_cut_reports_all_samples_air() {
+        // UX dial-in A10: when sim ran and produced samples for this
+        // toolpath but none are in-cut (every sample is air-cut or
+        // rapid), the verdict surfaces the actionable finding
+        // "toolpath made no material contact" instead of the
+        // misleading "simulation required".
         let mut s = sample(0, 0, 0.05, 0.5);
         s.is_cutting = false;
         let t = trace(vec![s]);
@@ -937,7 +949,7 @@ mod tests {
         assert!(matches!(
             v,
             ChiploadVerdict::Unmodeled {
-                reason: UnmodeledReason::SimulationRequired
+                reason: UnmodeledReason::AllSamplesAirCutOrRapid
             }
         ));
     }
@@ -1307,10 +1319,10 @@ mod tests {
     }
 
     /// Item C edge case: existing `no_cutting_samples` semantics
-    /// preserved — a toolpath with zero in-cut samples (every sample is
-    /// `is_cutting=false`) still reports `SimulationRequired`, not
-    /// `SteadyStateSamplesNotPresent`. The two reasons describe
-    /// different failure modes; the gate may render them differently.
+    /// preserved — a toolpath with samples but none in-cut now reports
+    /// `AllSamplesAirCutOrRapid` (UX dial-in A10) rather than the
+    /// misleading `SimulationRequired`. The "any sample exists for this
+    /// TP" branch takes priority over the steady-state reason.
     #[test]
     fn no_in_cut_samples_takes_priority_over_steady_state_reason() {
         let mut s = sample(0, 0, 0.05, 0.5);
@@ -1335,7 +1347,7 @@ mod tests {
         assert!(matches!(
             v,
             ChiploadVerdict::Unmodeled {
-                reason: UnmodeledReason::SimulationRequired
+                reason: UnmodeledReason::AllSamplesAirCutOrRapid
             }
         ));
     }
