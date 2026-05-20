@@ -2067,6 +2067,7 @@ fn main() -> Result<()> {
                     rs_cam_core::toolpath_spans::AnnotatedToolpath::new(toolpath),
                     entry_style,
                     plunge_rate,
+                    0.0,
                 )
                 .toolpath;
             }
@@ -2171,6 +2172,7 @@ fn main() -> Result<()> {
                     rs_cam_core::toolpath_spans::AnnotatedToolpath::new(toolpath),
                     entry_style,
                     plunge_rate,
+                    0.0,
                 )
                 .toolpath;
             }

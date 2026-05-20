@@ -1299,6 +1299,7 @@ pub fn apply_dressups(
     cfg: &DressupConfig,
     tool_diameter: f64,
     safe_z: f64,
+    stock_top: f64,
     prior_stock: Option<&crate::dexel_stock::TriDexelStock>,
     feed_opt_stock: Option<&mut crate::dexel_stock::TriDexelStock>,
     cutter: Option<&dyn MillingCutter>,
@@ -1376,6 +1377,7 @@ pub fn apply_dressups(
                             max_angle_deg: ramp_angle,
                         },
                         plunge_rate,
+                        stock_top,
                     )
                 },
             );
@@ -1406,6 +1408,7 @@ pub fn apply_dressups(
                             pitch: helix_pitch,
                         },
                         plunge_rate,
+                        stock_top,
                     )
                 },
             );
@@ -2595,6 +2598,7 @@ mod tests {
             &cfg,
             6.35,
             30.0,
+            0.0,
             None,
             None,
             None,

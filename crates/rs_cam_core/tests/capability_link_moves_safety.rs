@@ -106,6 +106,7 @@ fn dressup(tp: Toolpath, cfg: &DressupConfig, op: OperationType, tool_diameter: 
         cfg,
         tool_diameter,
         /* safe_z */ 30.0,
+        /* stock_top */ 0.0,
         /* prior_stock */ None,
         /* feed_opt_stock */ None,
         /* cutter */ None,

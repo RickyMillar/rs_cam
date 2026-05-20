@@ -56,6 +56,7 @@ pub(super) fn apply_dressups(
         cfg,
         tool.envelope_diameter(),
         safe_z,
+        req.heights.top_z,
         req.prior_stock.as_ref(),
         feed_opt_stock.as_mut(),
         cutter
