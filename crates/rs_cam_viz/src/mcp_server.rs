@@ -203,7 +203,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "get_cut_trace",
-        description = "Get simulation cut trace data: semantic summaries, structural span summaries, hotspots, and issues. Run simulation first. Filter to a single toolpath via toolpath_id, or to a structural span via span_kind (e.g. \"depth_pass\"), span_id (from inspect_spans), or pass_index (DepthPass payload, 0-based)."
+        description = "Get simulation cut trace data: semantic summaries, structural span summaries, hotspots, issues, and (for drill toolpaths) drill_summaries. Run simulation first. Filter to a single toolpath via toolpath_id, or to a structural span via span_kind (e.g. \"depth_pass\"), span_id (from inspect_spans), or pass_index (DepthPass payload, 0-based). Set include_drill_samples=true to also include the per-peck DrillSample stream (can be verbose)."
     )]
     async fn get_cut_trace(
         &self,
@@ -214,6 +214,7 @@ impl EmbeddedCamServer {
             span_kind,
             span_id,
             pass_index,
+            include_drill_samples,
         }): Parameters<CutTraceParam>,
     ) -> String {
         Self::format_result(
@@ -224,6 +225,7 @@ impl EmbeddedCamServer {
                 span_kind,
                 span_id,
                 pass_index,
+                include_drill_samples: include_drill_samples.unwrap_or(false),
             })
             .await,
         )

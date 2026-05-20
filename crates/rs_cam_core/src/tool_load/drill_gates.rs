@@ -69,7 +69,7 @@ pub struct DrillGatesVerdict {
 
 /// Material-aware plunge feed-per-diameter envelope (1/min). Above the
 /// max: cutter breakage / stall risk. Below the min: rubbing / burning.
-fn plunge_feed_envelope(material: &Material) -> (f64, f64) {
+pub fn plunge_feed_envelope(material: &Material) -> (f64, f64) {
     match material {
         Material::SolidWood { .. } => (50.0, 400.0),
         Material::Plywood { .. } | Material::SheetGood { .. } => (40.0, 350.0),

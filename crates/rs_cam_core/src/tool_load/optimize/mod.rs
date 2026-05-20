@@ -172,6 +172,9 @@ pub fn optimize_toolpath(
     let baseline_spans: Option<&[crate::toolpath_spans::Span]> = session
         .get_result(toolpath_index)
         .map(|r| r.annotated().spans.as_slice());
+    let baseline_drill_op = session
+        .get_result(toolpath_index)
+        .and_then(|r| r.drill_op());
     let baseline_load_ctx = ToolpathLoadContext {
         toolpath_id: ctx.toolpath_id,
         tool: &ctx.tool,
@@ -181,6 +184,7 @@ pub fn optimize_toolpath(
         operation_feed_rate_mm_min: baseline_op.feed_rate(),
         operation_kind: ctx.operation_kind,
         spans: baseline_spans,
+        drill_op: baseline_drill_op.map(|arc| arc.as_ref()),
     };
     let machine = session.machine().clone();
     let policy_tolerance = tolerance_bands_from_policy(search_policy());

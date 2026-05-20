@@ -179,6 +179,12 @@ pub struct CutTraceParam {
     /// Read by the embedded GUI MCP; standalone CLI MCP currently ignores it.
     #[allow(dead_code)]
     pub pass_index: Option<u32>,
+    /// Optional: also include the per-peck `drill_samples` array in the
+    /// response. Defaults to `false` because the stream can be verbose on
+    /// large drill cycles; per-toolpath `drill_summaries` are always
+    /// included regardless.
+    #[allow(dead_code)]
+    pub include_drill_samples: Option<bool>,
 }
 
 #[allow(dead_code)] // Used by rs_cam_viz embedded MCP, not the standalone binary
@@ -1010,6 +1016,7 @@ impl CamServer {
             span_kind: _,
             span_id: _,
             pass_index: _,
+            include_drill_samples,
         }): Parameters<CutTraceParam>,
     ) -> String {
         let guard = self.session.lock().await;
@@ -1060,6 +1067,26 @@ impl CamServer {
         let summary_val =
             serde_json::to_value(&ct.summary).unwrap_or_else(|_| serde_json::json!({}));
 
+        // §6.E / Step 3 PR2 — drill-native outputs. `drill_summaries` always
+        // surfaces; `drill_samples` is gated by `include_drill_samples`.
+        let drill_summaries_val: Vec<&_> = ct
+            .drill_summaries
+            .iter()
+            .filter(|s| toolpath_id.is_none_or(|id| s.toolpath_id == id))
+            .collect();
+        let drill_summaries_val =
+            serde_json::to_value(&drill_summaries_val).unwrap_or_else(|_| serde_json::json!([]));
+        let drill_samples_val = if include_drill_samples.unwrap_or(false) {
+            let filtered: Vec<&_> = ct
+                .drill_samples
+                .iter()
+                .filter(|s| toolpath_id.is_none_or(|id| s.toolpath_id == id))
+                .collect();
+            serde_json::to_value(&filtered).unwrap_or_else(|_| serde_json::json!([]))
+        } else {
+            serde_json::Value::Null
+        };
+
         json_str(serde_json::json!({
             "summary": summary_val,
             "semantic_summaries": summaries_val,
@@ -1067,6 +1094,8 @@ impl CamServer {
             "hotspot_count": hotspot_count,
             "issue_count": issue_count,
             "issues": issues_val,
+            "drill_summaries": drill_summaries_val,
+            "drill_samples": drill_samples_val,
         }))
     }
 

@@ -91,6 +91,7 @@ impl super::RsCamApp {
                 span_kind,
                 span_id,
                 pass_index,
+                include_drill_samples,
             } => {
                 let resp = self.mcp_get_cut_trace(
                     toolpath_id,
@@ -99,6 +100,7 @@ impl super::RsCamApp {
                     span_kind.as_deref(),
                     span_id,
                     pass_index,
+                    include_drill_samples,
                 );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
@@ -727,6 +729,7 @@ impl super::RsCamApp {
                     rs_cam_core::compute::catalog::OperationType::Drill
                         | rs_cam_core::compute::catalog::OperationType::AlignmentPinDrill
                 ),
+            material: Some(&state.session.stock_config().material),
         };
 
         rs_cam_core::narrate::narrate_toolpath_with_context(
@@ -739,6 +742,7 @@ impl super::RsCamApp {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn mcp_get_cut_trace(
         &self,
         toolpath_id: Option<usize>,
@@ -747,6 +751,7 @@ impl super::RsCamApp {
         span_kind: Option<&str>,
         span_id: Option<u32>,
         pass_index: Option<u32>,
+        include_drill_samples: bool,
     ) -> String {
         use rs_cam_core::toolpath_spans::{SpanId, SpanPayload};
 
@@ -875,6 +880,28 @@ impl super::RsCamApp {
         let summary_val =
             serde_json::to_value(&ct.summary).unwrap_or_else(|_| serde_json::json!({}));
 
+        // §6.E / Step 3 PR2 — drill-native outputs. `drill_summaries` always
+        // surfaces (per-toolpath summary block, compact). `drill_samples` is
+        // gated by `include_drill_samples` because the per-peck stream can be
+        // verbose on cycles with many holes.
+        let drill_summaries_val: Vec<&_> = ct
+            .drill_summaries
+            .iter()
+            .filter(|s| toolpath_id.is_none_or(|id| s.toolpath_id == id))
+            .collect();
+        let drill_summaries_val =
+            serde_json::to_value(&drill_summaries_val).unwrap_or_else(|_| serde_json::json!([]));
+        let drill_samples_val = if include_drill_samples {
+            let filtered: Vec<&_> = ct
+                .drill_samples
+                .iter()
+                .filter(|s| toolpath_id.is_none_or(|id| s.toolpath_id == id))
+                .collect();
+            serde_json::to_value(&filtered).unwrap_or_else(|_| serde_json::json!([]))
+        } else {
+            serde_json::Value::Null
+        };
+
         json_str(serde_json::json!({
             "summary": summary_val,
             "semantic_summaries": summaries_val,
@@ -883,6 +910,8 @@ impl super::RsCamApp {
             "hotspot_count": hotspot_count,
             "issue_count": issue_count,
             "issues": issues_val,
+            "drill_summaries": drill_summaries_val,
+            "drill_samples": drill_samples_val,
         }))
     }
 
