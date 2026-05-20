@@ -126,6 +126,7 @@ fn run_full_pipeline(
         cfg,
         tool_diameter,
         /* safe_z */ 30.0,
+        /* stock_top */ 0.0,
         None,
         None,
         None,
@@ -174,7 +175,9 @@ fn synthetic_three_pass_preserves_invariants_across_all_combos() {
     for (label, cfg) in dressup_combos() {
         let input = synthetic_three_pass();
         let n_in = input.toolpath.moves.len();
-        let output = apply_dressups(input, &cfg, 6.0, 10.0, None, None, None, cap, None, None);
+        let output = apply_dressups(
+            input, &cfg, 6.0, 10.0, 0.0, None, None, None, cap, None, None,
+        );
         assert_invariants(&output, label);
         assert_operation_span_tracks_moves(&output, label);
         assert!(
@@ -199,7 +202,9 @@ fn synthetic_three_pass_link_moves_never_straddles_barrier() {
         link_max_distance: 100.0,
         ..DressupConfig::default()
     };
-    let output = apply_dressups(input, &cfg, 6.0, 10.0, None, None, None, cap, None, None);
+    let output = apply_dressups(
+        input, &cfg, 6.0, 10.0, 0.0, None, None, None, cap, None, None,
+    );
     assert_invariants(&output, "link_moves_barrier_check");
     if !output.spans_valid {
         return;
@@ -241,7 +246,9 @@ fn synthetic_with_invalid_input_spans_stays_invalid() {
         arc_tolerance: 0.05,
         ..DressupConfig::default()
     };
-    let output = apply_dressups(input, &cfg, 6.0, 10.0, None, None, None, cap, None, None);
+    let output = apply_dressups(
+        input, &cfg, 6.0, 10.0, 0.0, None, None, None, cap, None, None,
+    );
     assert_invariants(&output, "invalid_input_passthrough");
     assert!(
         !output.spans_valid,

@@ -833,6 +833,11 @@ pub(super) fn segments_to_toolpath(
                             crate::toolpath::MoveIntent::Linking,
                         );
                         let helix_start = P3::new(entry.x, entry.y, params.safe_z);
+                        // No `rapid_floor_z` was supplied for this entry, so the
+                        // column below safe_z may still hold uncut stock. Pass
+                        // `safe_z` as the stock_top guard so emit_helix does not
+                        // emit a rapid descent below safe_z; it will plunge-feed
+                        // instead. (UX-dial-in B1.)
                         crate::dressup::emit_helix(
                             &mut tp,
                             &helix_start,
@@ -840,6 +845,7 @@ pub(super) fn segments_to_toolpath(
                             radius,
                             pitch,
                             params.plunge_rate,
+                            params.safe_z,
                         );
                     }
                     EntryStyle3d::Ramp { max_angle_deg } => {
@@ -856,6 +862,7 @@ pub(super) fn segments_to_toolpath(
                             (1.0, 0.0),
                             max_angle_deg,
                             params.plunge_rate,
+                            params.safe_z,
                         );
                     }
                 };
@@ -937,6 +944,10 @@ pub(super) fn segments_to_toolpath(
                             );
                         }
                         let helix_start = P3::new(entry.x, entry.y, descent_floor);
+                        // `descent_floor` already sits at the dexel-sampled
+                        // cleared-air floor; everything below is uncut material.
+                        // Pass it as `stock_top` so emit_helix plunge-feeds the
+                        // rest rather than rapid-descending into stock.
                         crate::dressup::emit_helix(
                             &mut tp,
                             &helix_start,
@@ -944,6 +955,7 @@ pub(super) fn segments_to_toolpath(
                             radius,
                             pitch,
                             params.plunge_rate,
+                            descent_floor,
                         );
                     }
                     EntryStyle3d::Ramp { max_angle_deg } => {
@@ -963,6 +975,8 @@ pub(super) fn segments_to_toolpath(
                             );
                         }
                         let ramp_start = P3::new(entry.x, entry.y, descent_floor);
+                        // Same rationale as the helix variant above: descent_floor
+                        // is the boundary between cleared air and uncut material.
                         crate::dressup::emit_ramp(
                             &mut tp,
                             &ramp_start,
@@ -970,6 +984,7 @@ pub(super) fn segments_to_toolpath(
                             (1.0, 0.0),
                             max_angle_deg,
                             params.plunge_rate,
+                            descent_floor,
                         );
                     }
                 };

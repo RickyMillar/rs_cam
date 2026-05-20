@@ -575,6 +575,13 @@ impl ProjectSession {
                     &tc.dressups,
                     tool_def.diameter(),
                     heights.retract_z,
+                    // Stock top in the simulator's frame (= the bbox passed to
+                    // dexel construction) — used by `apply_entry` to keep ramp /
+                    // helix descent rapids above stock. The dexel collision
+                    // check operates on this same Z; using a different frame
+                    // (e.g. `heights.top_z`) here re-introduces the
+                    // false-positive rapids the fix targets.
+                    effective_stock_bbox.max.z,
                     prior_stock_ref,
                     None,
                     None,

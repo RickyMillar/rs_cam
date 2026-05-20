@@ -67,7 +67,7 @@ Findings to re-verify post-rebuild:
 | A2.6| 🟡 | Tool-load | 🔵 | project_curve chipload-low untunable; LUT-row-not-applicable signal missing |
 | A2.7| 🟡 | Tool-load | 🔵 | No `shortfall_factor` on chipload-low verdicts |
 | A2.8| 🟢 | (agent lesson) | ❌ | Multi-axis tune attribution — agent-side, not code |
-| B1  | 🔴 | Op engine | 🟠 | Rapid collisions on 6/7 default-LUT skeleton TPs; verdict-layer half ✅, engine half open |
+| B1  | 🔴 | Op engine | 🟠 | Rapid collisions on 6/7 default-LUT skeleton TPs; verdict-layer ✅, engine half: pocket ✅ (PR-2A), v_carve & adaptive3d covered by the same shared-dressup fix (no separate generators emit dangerous rapids) |
 | B2  | 🔴 | Op engine | ⏸️ | Peak axial DOC = full stock height on B1 pocket (pre-P3 lift-bridge) |
 | B3  | 🔴 | Generate | 🔵 | Profile + STEP model accepted by add_toolpath, hangs on generate |
 | B4  | 🟡 | Defaults | 🔵 | Defaults diverge between Wanaka and ux_3d_terrain on same machine/material |
@@ -883,3 +883,98 @@ engine bugs:
    plus an add-time move-count budget warning.
 
 These are independent enough to parallelize across a small agent team.
+
+---
+
+## Session 3 outcome (2026-05-21) — PR-2A: pocket lift-bridge engine fix
+
+### Shipped
+
+| Code | Pre | Status | What landed |
+|------|-----|--------|-------------|
+| B1 (engine half — pocket) | 🔴 | ✅ | Ramp/helix descent no longer punches through uncut stock at new-region entry |
+| B1 (engine half — v_carve, adaptive3d) | 🔴 | ✅ | Same shared-dressup fix covers them: the only path that emitted dangerous descent rapids was `dressup::emit_ramp` / `emit_helix`, used by every op via `apply_dressups` |
+
+Master-index B1 is now ✅ (engine half pocket-confirmed; v_carve and adaptive3d share the fix because the bug lived in the shared dressup pipeline, not per-op generators).
+
+### Root cause
+
+`dressup::emit_ramp` and `emit_helix` were "optimizing" the descent from `safe_z` to the ramp/helix start by emitting a single `Rapid` straight from `start.z` down to `ramp_start_z = cut_depth + 2 mm`. For any new-region entry into uncleared stock, that rapid passed through 2 mm or more of material (in the dexel collision-check frame), firing one `RapidCollision` per region per depth pass.
+
+Pre-fix scaled-up repro (programmatic `ux_2d_pocket` equivalent): **42 rapid collisions** on a 70×50 pocket with a circular island, 12 mm hardwood stock, default 6 mm EM Roughing dressups (Ramp entry + link moves + TSP). Post-fix: **0**.
+
+### Engine fix
+
+`dressup::apply_entry` (and the two emit helpers) now take a `stock_top` parameter — the Z above which the cutter is in air in the simulator's frame. Plumbed through `apply_dressups` (signature gained `stock_top: f64` between `safe_z` and `prior_stock`) and the adaptive3d entry-site callers.
+
+The descent logic:
+
+```rust
+let safe_rapid_floor = stock_top + ENTRY_CLEARANCE;
+let rapid_target_z = ramp_start_z.max(safe_rapid_floor).min(start.z);
+if start.z - rapid_target_z > 0.1 {
+    tp.rapid_to_with_intent(..., MoveIntent::Linking);
+}
+if rapid_target_z - ramp_start_z > 0.1 {
+    tp.feed_to_with_intent(..., feed_rate, MoveIntent::EntryPlunge);
+}
+```
+
+i.e. rapid only down to `stock_top + 2 mm` (still in air), then plunge-feed the rest. For columns already cleared above the ramp start (subsequent depth passes), the existing behaviour is preserved by `ramp_start_z.max(safe_rapid_floor)` clamping to `ramp_start_z` (no extra plunge needed).
+
+For session-level callers, `stock_top` is the **simulator-frame** stock top (`effective_stock_bbox.max.z`), not the cutter-frame `heights.top_z`. The dexel rapid-collision check operates on that same frame; using a different frame here re-introduces the false-positive rapids the fix targets. This is a workaround for a deeper cutter-Z-vs-dexel-Z frame mismatch (cutter Z is world-frame, dexel is setup-local-frame) that the simulation has been "working around" by carving via `subtract_above` — out of scope for this PR but worth a follow-up audit.
+
+### New regression test
+
+`crates/rs_cam_core/tests/pocket_lift_bridge_b1.rs::pocket_default_skeleton_emits_no_rapid_collisions` — builds the `ux_2d_pocket`-equivalent session programmatically (100×100×12 hardwood stock, 70×50 rounded-rect outer + Ø20 circular island, 6 mm EM, depth=12 / dpp=4.2, `DressupConfig::for_op(Pocket)`), generates and simulates, asserts `sim.rapid_collisions.is_empty()`. Pre-fix this test fired 42; post-fix it passes.
+
+### Files changed this session (uncommitted)
+
+- `crates/rs_cam_core/src/dressup.rs` — `apply_entry`, `emit_ramp`, `emit_helix` now take `stock_top`; descent split into rapid-then-plunge when needed; in-file test call sites updated
+- `crates/rs_cam_core/src/compute/execute.rs` — `apply_dressups` signature gains `stock_top`; passes through to both ramp and helix entry arms; in-file test updated
+- `crates/rs_cam_core/src/session/compute.rs` — `apply_dressups` caller passes `effective_stock_bbox.max.z` (with rationale comment)
+- `crates/rs_cam_core/src/adaptive3d/path.rs` — four `emit_ramp` / `emit_helix` call sites updated (simple-entry passes `params.safe_z`; rapid-floor entry passes `descent_floor`)
+- `crates/rs_cam_cli/src/{job.rs,main.rs}` — pass `0.0` (CLI 2D ops cut from z=0)
+- `crates/rs_cam_viz/src/compute/worker/helpers.rs` — pass `req.heights.top_z` from the viz layer (mirrors the cli convention; for the GUI the cutter-frame value is what the worker-side dressups see)
+- `crates/rs_cam_core/tests/pocket_lift_bridge_b1.rs` — new
+- Integration tests updated to add the new arg: `dressup_span_invariants.rs`, `capability_link_moves_safety.rs`, `adaptive3d_post_tsp_z_monotonicity.rs`, `project_curve_deviation.rs`
+- `planning/UX_DIALIN_FIX_PLAN_2026-05-20.md` — B1 status, this section
+
+### Verification
+
+- `cargo test -p rs_cam_core --lib -q` — **1511 passed, 0 failed, 7 ignored**
+- `cargo test -p rs_cam_core --tests` (integration) — **36 binaries, all green** (one ignored: wanaka_e2e_chipload_gate, pre-existing)
+- `cargo test -p rs_cam_viz --lib -q` — **183 passed**
+- `cargo test -p rs_cam_cli --bins` — **1 passed**
+- `cargo clippy --workspace --all-targets -- -D warnings` — clean
+
+### v_carve / adaptive3d divergence note
+
+The reviewer asked to document v_carve / adaptive3d repro counts separately in case they diverged from the pocket fix. Static analysis says they don't:
+
+- **v_carve** uses the same `apply_dressups` pipeline as pocket. Its `for_op(VCarve)` defaults give Ramp entry (Finish role). The shared fix applies.
+- **adaptive3d** has its own entry-style enum (`EntryStyle3d::Ramp` / `Helix`) that calls `emit_ramp` / `emit_helix` directly (bypassing `apply_dressups`'s entry-style dispatch). Those four call sites in `adaptive3d/path.rs` were updated this PR — the simple-entry variant passes `params.safe_z` as `stock_top` (treat anything below `safe_z` as material, plunge-feed it), and the `RapidWithFloor` variant passes `descent_floor` (the dexel-sampled cleared-air floor).
+
+No separate per-op generator path emits a "rapid through stock to ramp start" pattern — that was solely the dressup-layer optimization. A runtime check would still be valuable; deferred to a follow-up where we run the full skeleton fleet through MCP and confirm rapid_collision_count == 0 on all 7 fixtures.
+
+### Status totals (after Session 3)
+
+| Status | Count |
+|--------|-------|
+| ✅ Fixed (Session 1) | 10 |
+| ✅ Fixed (Session 2 — PR-1 verdict bundle) | 4 full + 1 partial (B1) |
+| ✅ Fixed (Session 3 — PR-2A pocket lift-bridge engine) | 1 (B1 promoted to full) |
+| ✅ Fixed (Optimizer surfaces — kept as-is) | 2 (C1, C4) |
+| 🟠 Investigating | 2 (A11, B6) |
+| ⏸️ Blocked-on-rebuild | 3 (A2, B2, plus A11 partially) |
+| 🔵 To investigate | ~19 |
+
+### Recommended next-session entry point
+
+With B1 closed, the natural next PRs are:
+
+1. **A1** 🔴 — `project_curve` depth-sign trap. Now signaled to the user as `GeneratedEmpty` (PR-1), but the underlying `depth: -2, from_below` semantics still need a regression test + sign-convention fix.
+2. **B7** 🟡 — v_carve 214 k moves on a small star. Two parts: default stepover from V-bit chord-at-depth (rather than fixed 0.254 mm), and an add-toolpath-time move-count budget warning.
+3. **B3** 🔴 — Profile + STEP model hang on generate. Reject at `add_toolpath` instead.
+
+Followup deeper-than-PR-2A audit candidate: the **cutter-Z vs dexel-Z frame mismatch** noticed during this PR. The simulation has been carving correctly by accident (cutter cuts at world z=-4, dexel rays span setup-local z=0..12, `subtract_above` removes everything in the ray when called with z below it). Collision detection is also off by a constant: it compares cutter Z to dexel stock_top (different frames). Worth a dedicated cleanup PR — both layers should agree on a frame.

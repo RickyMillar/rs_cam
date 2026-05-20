@@ -424,6 +424,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                         rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
                         style,
                         plunge_rate,
+                        0.0,
                     )
                     .toolpath;
                 }
@@ -479,6 +480,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                         rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
                         style,
                         plunge_rate,
+                        0.0,
                     )
                     .toolpath;
                 }

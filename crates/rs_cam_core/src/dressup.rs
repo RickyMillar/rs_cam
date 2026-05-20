@@ -33,11 +33,18 @@ pub enum EntryStyle {
 /// in-place by one or more ramp/helix moves; the remap reflects the 1→K
 /// expansion. The inserted moves are tagged with [`SpanKind::Entry`] when
 /// the input has valid spans.
+///
+/// `stock_top` is the Z of the top of uncut stock material in the cutter
+/// frame. Used to ensure the entry's initial descent does not emit a
+/// `Rapid` that passes below the stock surface — without this guard a
+/// fresh contour's "rapid to ramp_start_z" would punch through uncut
+/// material when `ramp_start_z < stock_top` (UX-dial-in B1).
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn apply_entry(
     annotated: AnnotatedToolpath,
     style: EntryStyle,
     plunge_rate: f64,
+    stock_top: f64,
 ) -> AnnotatedToolpath {
     let AnnotatedToolpath {
         toolpath,
@@ -71,6 +78,7 @@ pub fn apply_entry(
                         ramp_dir,
                         max_angle_deg,
                         feed_rate.min(plunge_rate),
+                        stock_top,
                     );
                 }
                 EntryStyle::Helix { radius, pitch } => {
@@ -81,6 +89,7 @@ pub fn apply_entry(
                         radius,
                         pitch,
                         feed_rate.min(plunge_rate),
+                        stock_top,
                     );
                 }
             }
@@ -182,6 +191,7 @@ pub(crate) fn emit_ramp(
     dir: (f64, f64),
     max_angle_deg: f64,
     feed_rate: f64,
+    stock_top: f64,
 ) {
     use crate::toolpath::MoveIntent;
     if max_angle_deg <= 0.0 || max_angle_deg >= 90.0 {
@@ -196,8 +206,32 @@ pub(crate) fn emit_ramp(
     let ramp_start_z = end.z + clearance;
 
     if start.z > ramp_start_z + 0.1 {
-        // Rapid down to clearance height first
-        tp.rapid_to_with_intent(P3::new(start.x, start.y, ramp_start_z), MoveIntent::Linking);
+        // Split the descent so the rapid stays in air.
+        //
+        // The cutter starts at `start.z` (above stock, by `safe_z`
+        // convention) and wants to be at `ramp_start_z` (which is
+        // typically below `stock_top` for any cut into material). A
+        // straight rapid would punch through uncut stock at the new
+        // contour's XY column (UX-dial-in B1 — pre-fix this fired 28
+        // collisions on a default-skeleton pocket). Instead, rapid
+        // only down to `stock_top + clearance` (still in air), then
+        // feed-plunge through material to `ramp_start_z` before the
+        // angled ramp begins.
+        let safe_rapid_floor = stock_top + clearance;
+        let rapid_target_z = ramp_start_z.max(safe_rapid_floor).min(start.z);
+        if start.z - rapid_target_z > 0.1 {
+            tp.rapid_to_with_intent(
+                P3::new(start.x, start.y, rapid_target_z),
+                MoveIntent::Linking,
+            );
+        }
+        if rapid_target_z - ramp_start_z > 0.1 {
+            tp.feed_to_with_intent(
+                P3::new(start.x, start.y, ramp_start_z),
+                feed_rate,
+                MoveIntent::EntryPlunge,
+            );
+        }
     }
 
     let ramp_dz = (ramp_start_z - end.z).abs().max(0.1);
@@ -233,6 +267,7 @@ pub(crate) fn emit_helix(
     radius: f64,
     pitch: f64,
     feed_rate: f64,
+    stock_top: f64,
 ) {
     use crate::toolpath::MoveIntent;
     // Only helix the last portion — rapid down to clearance first
@@ -240,10 +275,24 @@ pub(crate) fn emit_helix(
     let helix_start_z = end.z + clearance;
 
     if start.z > helix_start_z + 0.1 {
-        tp.rapid_to_with_intent(
-            P3::new(start.x, start.y, helix_start_z),
-            MoveIntent::Linking,
-        );
+        // Same lift-bridge guard as `emit_ramp` (UX-dial-in B1): only
+        // rapid through air; plunge-feed any portion that would
+        // otherwise punch through uncut material above `helix_start_z`.
+        let safe_rapid_floor = stock_top + clearance;
+        let rapid_target_z = helix_start_z.max(safe_rapid_floor).min(start.z);
+        if start.z - rapid_target_z > 0.1 {
+            tp.rapid_to_with_intent(
+                P3::new(start.x, start.y, rapid_target_z),
+                MoveIntent::Linking,
+            );
+        }
+        if rapid_target_z - helix_start_z > 0.1 {
+            tp.feed_to_with_intent(
+                P3::new(start.x, start.y, helix_start_z),
+                feed_rate,
+                MoveIntent::EntryPlunge,
+            );
+        }
     }
 
     let dz = (helix_start_z.min(start.z) - end.z).abs();
@@ -1174,11 +1223,22 @@ mod tests {
             AnnotatedToolpath::new(tp.clone()),
             EntryStyle::Ramp { max_angle_deg: 3.0 },
             500.0,
+            0.0,
         )
         .toolpath;
 
-        // Should not have a straight plunge (large Z drop with no XY movement)
+        // The ramp body itself (MoveIntent::EntryRamp) must not be a
+        // straight plunge — that's the dressup's whole point. The
+        // lift-bridge safety guard (UX-dial-in B1, 2026-05-21) may emit
+        // a separate plunge-feed segment tagged `EntryPlunge` so the
+        // descent through stock above the ramp doesn't punch through
+        // uncut material; that segment is intentionally vertical and
+        // is excluded from the "ramp must have XY" assertion below.
         for i in 1..result.moves.len() {
+            let intent = result.moves[i].intent;
+            if intent != crate::toolpath::MoveIntent::EntryRamp {
+                continue;
+            }
             if let MoveType::Linear { .. } = result.moves[i].move_type {
                 let prev = &result.moves[i - 1].target;
                 let curr = &result.moves[i].target;
@@ -1189,9 +1249,7 @@ mod tests {
                 if dz > 1.0 {
                     assert!(
                         dxy > 0.1,
-                        "Ramp should have XY movement during Z descent: dz={}, dxy={}",
-                        dz,
-                        dxy
+                        "Ramp body should have XY movement during Z descent: dz={dz}, dxy={dxy}",
                     );
                 }
             }
@@ -1205,6 +1263,7 @@ mod tests {
             AnnotatedToolpath::new(tp.clone()),
             EntryStyle::Ramp { max_angle_deg: 5.0 },
             500.0,
+            0.0,
         )
         .toolpath;
 
@@ -1223,6 +1282,7 @@ mod tests {
             AnnotatedToolpath::new(tp.clone()),
             EntryStyle::Ramp { max_angle_deg: 3.0 },
             500.0,
+            0.0,
         )
         .toolpath;
 
@@ -1249,6 +1309,7 @@ mod tests {
                 pitch: 1.0,
             },
             500.0,
+            0.0,
         )
         .toolpath;
 
@@ -1271,6 +1332,7 @@ mod tests {
                 pitch: 1.0,
             },
             500.0,
+            0.0,
         )
         .toolpath;
 
@@ -1288,6 +1350,7 @@ mod tests {
                 pitch: 1.0,
             },
             500.0,
+            0.0,
         )
         .toolpath;
 
@@ -1920,7 +1983,7 @@ mod tests {
         tp.rapid_to(P3::new(0.0, 0.0, 10.0));
         tp.feed_to(P3::new(0.0, 0.0, 0.0), 100.0);
         let style = EntryStyle::Ramp { max_angle_deg: 0.0 };
-        let result = apply_entry(AnnotatedToolpath::new(tp.clone()), style, 50.0).toolpath;
+        let result = apply_entry(AnnotatedToolpath::new(tp.clone()), style, 50.0, 0.0).toolpath;
         // Should not contain NaN or infinity
         for m in &result.moves {
             assert!(m.target.x.is_finite(), "NaN in ramp with 0° angle");
@@ -1937,7 +2000,7 @@ mod tests {
         let style = EntryStyle::Ramp {
             max_angle_deg: 90.0,
         };
-        let result = apply_entry(AnnotatedToolpath::new(tp.clone()), style, 50.0).toolpath;
+        let result = apply_entry(AnnotatedToolpath::new(tp.clone()), style, 50.0, 0.0).toolpath;
         for m in &result.moves {
             assert!(m.target.x.is_finite(), "NaN in ramp with 90° angle");
             assert!(m.target.z.is_finite(), "NaN in ramp with 90° angle");
@@ -1953,7 +2016,7 @@ mod tests {
             radius: 0.0,
             pitch: 2.0,
         };
-        let result = apply_entry(AnnotatedToolpath::new(tp.clone()), style, 50.0).toolpath;
+        let result = apply_entry(AnnotatedToolpath::new(tp.clone()), style, 50.0, 0.0).toolpath;
         for m in &result.moves {
             assert!(m.target.x.is_finite(), "NaN in helix with 0 radius");
             assert!(m.target.z.is_finite(), "NaN in helix with 0 radius");
@@ -1969,7 +2032,7 @@ mod tests {
             radius: -1.0,
             pitch: 2.0,
         };
-        let result = apply_entry(AnnotatedToolpath::new(tp.clone()), style, 50.0).toolpath;
+        let result = apply_entry(AnnotatedToolpath::new(tp.clone()), style, 50.0, 0.0).toolpath;
         for m in &result.moves {
             assert!(m.target.x.is_finite(), "NaN in helix with negative radius");
         }
@@ -2011,7 +2074,12 @@ mod tests {
             Span::new(0, 2, SpanKind::DepthPass),
         ];
         let annotated = AnnotatedToolpath::with_spans(tp, spans);
-        let result = apply_entry(annotated, EntryStyle::Ramp { max_angle_deg: 3.0 }, 500.0);
+        let result = apply_entry(
+            annotated,
+            EntryStyle::Ramp { max_angle_deg: 3.0 },
+            500.0,
+            0.0,
+        );
         result
             .check_invariants()
             .expect("post-entry spans pass invariants");
@@ -2032,7 +2100,12 @@ mod tests {
         let n_in = tp.moves.len();
         let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
         let annotated = AnnotatedToolpath::with_spans(tp, spans);
-        let result = apply_entry(annotated, EntryStyle::Ramp { max_angle_deg: 3.0 }, 500.0);
+        let result = apply_entry(
+            annotated,
+            EntryStyle::Ramp { max_angle_deg: 3.0 },
+            500.0,
+            0.0,
+        );
         let entries: Vec<&Span> = result
             .spans
             .iter()
@@ -2054,7 +2127,12 @@ mod tests {
         let mut annotated = AnnotatedToolpath::new(tp.clone());
         annotated.spans_valid = false;
         annotated.spans = vec![Span::new(0, 1, SpanKind::Operation)]; // garbage
-        let result = apply_entry(annotated, EntryStyle::Ramp { max_angle_deg: 3.0 }, 500.0);
+        let result = apply_entry(
+            annotated,
+            EntryStyle::Ramp { max_angle_deg: 3.0 },
+            500.0,
+            0.0,
+        );
         assert!(!result.spans_valid);
         // Garbage span returned untouched.
         assert_eq!(result.spans, vec![Span::new(0, 1, SpanKind::Operation)]);
