@@ -369,7 +369,7 @@ fn draw_signal_spine(
             // chip. Drawing only meaningful samples lets the eye focus on
             // the engaged-cut chipload distribution.
             |s| {
-                if s.radial_engagement < 0.02 {
+                if s.engagement.radial_woc_fraction < 0.02 {
                     None
                 } else {
                     s.effective_chip_thickness_mm

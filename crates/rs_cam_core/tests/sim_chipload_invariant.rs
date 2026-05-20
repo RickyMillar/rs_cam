@@ -47,13 +47,13 @@ fn assert_arc_and_radial_agree<'a>(
     let mut violations = Vec::new();
     for sample in samples.filter(|sample| sample.is_cutting) {
         let arc_engaged = sample.arc_engagement_radians.unwrap_or(0.0) > 0.0;
-        let radial_engaged = sample.radial_engagement > 0.0;
+        let radial_engaged = sample.engagement.radial_woc_fraction > 0.0;
         if arc_engaged != radial_engaged {
             violations.push((
                 sample.sample_index,
                 sample.position,
                 sample.arc_engagement_radians.unwrap_or(0.0),
-                sample.radial_engagement,
+                sample.engagement.radial_woc_fraction,
                 sample.removed_volume_est_mm3,
             ));
         }

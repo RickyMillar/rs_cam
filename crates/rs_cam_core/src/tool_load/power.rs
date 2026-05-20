@@ -108,7 +108,7 @@ pub fn evaluate(
         if !s.is_cutting {
             continue;
         }
-        if s.radial_engagement < 0.02 {
+        if s.engagement.radial_woc_fraction < 0.02 {
             continue;
         }
         let Some(arc) = s.arc_engagement_radians else {
@@ -291,11 +291,10 @@ mod tests {
             spindle_rpm: 18_000,
             flute_count: 2,
             axial_doc_mm: axial,
-            radial_engagement: 0.5,
             arc_engagement_radians: Some(arc_rad),
             chipload_mm_per_tooth: feed_mmpm / (18_000.0 * 2.0),
             effective_chip_thickness_mm: Some(feed_mmpm / (18_000.0 * 2.0)),
-            engagement: crate::simulation_cut::Engagement::default(),
+            engagement: crate::simulation_cut::Engagement::with_radial_woc(0.5),
             removed_volume_est_mm3: 0.1,
             mrr_mm3_s: 1.0,
             semantic_item_id: None,

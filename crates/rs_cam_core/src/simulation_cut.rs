@@ -15,7 +15,7 @@ pub struct SimulationMetricOptions {
     pub capture_arc_engagement: bool,
 }
 
-pub const SIMULATION_CUT_TRACE_SCHEMA_VERSION: u32 = 3;
+pub const SIMULATION_CUT_TRACE_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -60,14 +60,12 @@ pub enum EngagementDirection {
 
 /// Structured engagement vector carried per `SimulationCutSample`. Step 2
 /// of the dexel-fidelity roadmap (see `planning/DEXEL_Z_ONLY_INVESTIGATION.md`
-/// §6.H) — replaces the scalar `radial_engagement` field as the canonical
-/// engagement representation. The legacy scalar on `SimulationCutSample`
-/// is retained for one release as a derived view (populated from
-/// `radial_woc_fraction` at emit-time) and will be removed in a follow-up PR.
+/// §6.H + §10.3 tail PR) — the canonical engagement representation. The
+/// legacy `radial_engagement: f64` scalar was removed in the §10.3 follow-up
+/// PR (2026-05-20); read `engagement.radial_woc_fraction` instead.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct Engagement {
     /// 0..1 — cylinder-side width-of-cut as a fraction of cutter diameter.
-    /// Same definition as the legacy `radial_engagement` scalar.
     pub radial_woc_fraction: f64,
     /// 0..1 — axial depth-of-cut as a fraction of flute length. `0.0` when
     /// flute length is unavailable at the sample emitter (some test
@@ -92,6 +90,17 @@ pub struct Engagement {
     pub leading_edge_speed_mm_min: f64,
     /// Climb / conventional / mixed. `Mixed` when ambiguous.
     pub direction: EngagementDirection,
+}
+
+impl Engagement {
+    /// Convenience for tests/fixtures that only need to express the radial
+    /// width-of-cut fraction; remaining axes take their `Default` values.
+    pub fn with_radial_woc(radial_woc_fraction: f64) -> Self {
+        Self {
+            radial_woc_fraction,
+            ..Default::default()
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -126,14 +135,6 @@ pub struct SimulationCutSample {
     pub spindle_rpm: u32,
     pub flute_count: u32,
     pub axial_doc_mm: f64,
-    /// Cylinder-side width-of-cut as a fraction of cutter diameter (0..1).
-    /// **Deprecated** (Step 2 of dexel-fidelity roadmap, 2026-05-19): mirrors
-    /// `engagement.radial_woc_fraction`; will be removed in a follow-up PR
-    /// after one release deprecation window. New code should read
-    /// `sample.engagement.radial_woc_fraction`. The scalar is populated at
-    /// sample-emit time from `engagement.radial_woc_fraction` so the two
-    /// stay in lock-step until the field is removed.
-    pub radial_engagement: f64,
     #[serde(default)]
     pub arc_engagement_radians: Option<f64>,
     /// Commanded feed per tooth: feed_rate / spindle_rpm / flute_count.
@@ -141,11 +142,10 @@ pub struct SimulationCutSample {
     #[serde(default)]
     pub effective_chip_thickness_mm: Option<f64>,
     /// Structured engagement vector — see [`Engagement`]. Production samples
-    /// (dexel simulator) populate every applicable axis. Test fixtures and
-    /// legacy traces deserialized without this field receive
-    /// `Engagement::default()`, in which case consumers should fall back to
-    /// the scalar `radial_engagement` and the other top-level fields on the
-    /// sample.
+    /// (dexel simulator) populate every applicable axis. Legacy traces
+    /// deserialised without this field receive `Engagement::default()` and
+    /// will report zero engagement; bump the file's schema version if you
+    /// want to reject pre-v4 traces explicitly.
     #[serde(default)]
     pub engagement: Engagement,
     pub removed_volume_est_mm3: f64,
@@ -235,7 +235,7 @@ fn new_open_segment(
         sample_index: sample.sample_index,
         cumulative_time_s: sample.cumulative_time_s,
         position: sample.position,
-        radial_engagement: sample.radial_engagement,
+        radial_engagement: sample.engagement.radial_woc_fraction,
         semantic_item_id: sample.semantic_item_id,
         label,
         end_move_index: sample.move_index,
@@ -244,7 +244,7 @@ fn new_open_segment(
         end_position: sample.position,
         sample_count: 1,
         duration_s: 0.0,
-        min_radial_engagement: sample.radial_engagement,
+        min_radial_engagement: sample.engagement.radial_woc_fraction,
         span_path: sample.span_path.clone(),
     }
 }
@@ -584,9 +584,9 @@ impl SimulationCutTrace {
                 || metrics_not_applicable_toolpath_ids.contains(&sample.toolpath_id)
             {
                 None
-            } else if sample.radial_engagement < 0.02 {
+            } else if sample.engagement.radial_woc_fraction < 0.02 {
                 Some(SimulationCutIssueKind::AirCut)
-            } else if sample.radial_engagement < 0.10 {
+            } else if sample.engagement.radial_woc_fraction < 0.10 {
                 Some(SimulationCutIssueKind::LowEngagement)
             } else {
                 None
@@ -600,8 +600,8 @@ impl SimulationCutTrace {
                     open.end_cumulative_time_s = sample.cumulative_time_s;
                     open.end_position = sample.position;
                     open.duration_s = sample.cumulative_time_s - open.cumulative_time_s;
-                    if sample.radial_engagement < open.min_radial_engagement {
-                        open.min_radial_engagement = sample.radial_engagement;
+                    if sample.engagement.radial_woc_fraction < open.min_radial_engagement {
+                        open.min_radial_engagement = sample.engagement.radial_woc_fraction;
                     }
                     open.sample_count += 1;
                 }
@@ -856,7 +856,9 @@ impl SummaryAccumulator {
         self.sample_count += 1;
         self.total_runtime_s += sample.segment_time_s;
         self.total_removed_volume_est_mm3 += sample.removed_volume_est_mm3.max(0.0);
-        self.peak_engagement = self.peak_engagement.max(sample.radial_engagement.max(0.0));
+        self.peak_engagement = self
+            .peak_engagement
+            .max(sample.engagement.radial_woc_fraction.max(0.0));
         // P3: skip extreme-value updates for transit-span samples. The
         // dexel reports `stock_top − cutter_z` over uncleared neighbouring
         // stock during link bridges, helix entries, lead-outs, and
@@ -874,11 +876,12 @@ impl SummaryAccumulator {
 
         if sample.is_cutting {
             self.cutting_runtime_s += sample.segment_time_s;
-            self.engagement_time_weighted_sum += sample.radial_engagement * sample.segment_time_s;
-            if sample.radial_engagement < 0.02 {
+            self.engagement_time_weighted_sum +=
+                sample.engagement.radial_woc_fraction * sample.segment_time_s;
+            if sample.engagement.radial_woc_fraction < 0.02 {
                 self.air_cut_time_s += sample.segment_time_s;
                 self.air_cut_issue_count += 1;
-            } else if sample.radial_engagement < 0.10 {
+            } else if sample.engagement.radial_woc_fraction < 0.10 {
                 self.low_engagement_time_s += sample.segment_time_s;
                 self.low_engagement_issue_count += 1;
             }
@@ -1165,11 +1168,10 @@ mod tests {
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 1.5,
-                    radial_engagement: 0.01,
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0166,
                     effective_chip_thickness_mm: Some(0.0166),
-                    engagement: Engagement::default(),
+                    engagement: Engagement::with_radial_woc(0.01),
                     removed_volume_est_mm3: 2.0,
                     mrr_mm3_s: 10.0,
                     semantic_item_id: Some(9),
@@ -1189,11 +1191,10 @@ mod tests {
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 2.0,
-                    radial_engagement: 0.08,
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0166,
                     effective_chip_thickness_mm: Some(0.0166),
-                    engagement: Engagement::default(),
+                    engagement: Engagement::with_radial_woc(0.08),
                     removed_volume_est_mm3: 3.0,
                     mrr_mm3_s: 10.0,
                     semantic_item_id: Some(9),
@@ -1213,11 +1214,10 @@ mod tests {
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 0.0,
-                    radial_engagement: 0.0,
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0,
                     effective_chip_thickness_mm: None,
-                    engagement: Engagement::default(),
+                    engagement: Engagement::with_radial_woc(0.0),
                     removed_volume_est_mm3: 0.0,
                     mrr_mm3_s: 0.0,
                     semantic_item_id: None,
@@ -1269,11 +1269,10 @@ mod tests {
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 1.0,
-                    radial_engagement: 0.08,
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0083,
                     effective_chip_thickness_mm: Some(0.0083),
-                    engagement: Engagement::default(),
+                    engagement: Engagement::with_radial_woc(0.08),
                     removed_volume_est_mm3: 0.2,
                     mrr_mm3_s: 1.0,
                     semantic_item_id: Some(2),
@@ -1293,11 +1292,10 @@ mod tests {
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 1.2,
-                    radial_engagement: 0.15,
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0083,
                     effective_chip_thickness_mm: Some(0.0083),
-                    engagement: Engagement::default(),
+                    engagement: Engagement::with_radial_woc(0.15),
                     removed_volume_est_mm3: 0.4,
                     mrr_mm3_s: 2.0,
                     semantic_item_id: Some(2),
@@ -1342,11 +1340,10 @@ mod tests {
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 1.5,
-                    radial_engagement: 0.005,
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0166,
                     effective_chip_thickness_mm: Some(0.0166),
-                    engagement: Engagement::default(),
+                    engagement: Engagement::with_radial_woc(0.005),
                     removed_volume_est_mm3: 0.1,
                     mrr_mm3_s: 0.5,
                     semantic_item_id: Some(7),
@@ -1366,11 +1363,10 @@ mod tests {
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 1.5,
-                    radial_engagement: 0.005,
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0166,
                     effective_chip_thickness_mm: Some(0.0166),
-                    engagement: Engagement::default(),
+                    engagement: Engagement::with_radial_woc(0.005),
                     removed_volume_est_mm3: 0.1,
                     mrr_mm3_s: 0.5,
                     semantic_item_id: Some(7),
@@ -1450,11 +1446,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 0.0,
-                radial_engagement: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.0,
                 effective_chip_thickness_mm: None,
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.0),
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
@@ -1474,11 +1469,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 0.0,
-                radial_engagement: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.0,
                 effective_chip_thickness_mm: None,
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.0),
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
@@ -1518,11 +1512,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
-                radial_engagement: 0.01,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.01),
                 removed_volume_est_mm3: 0.1,
                 mrr_mm3_s: 1.0,
                 semantic_item_id: None,
@@ -1543,11 +1536,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
-                radial_engagement: 0.05,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.05),
                 removed_volume_est_mm3: 0.3,
                 mrr_mm3_s: 3.0,
                 semantic_item_id: None,
@@ -1568,11 +1560,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 2.0,
-                radial_engagement: 0.50,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.02,
                 effective_chip_thickness_mm: Some(0.02),
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.50),
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 semantic_item_id: None,
@@ -1679,11 +1670,11 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
-                radial_engagement: 0.005 + i as f64 * 0.001, // all below 0.02
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
-                engagement: Engagement::default(),
+                // all below 0.02
+                engagement: Engagement::with_radial_woc(0.005 + i as f64 * 0.001),
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
@@ -1705,11 +1696,10 @@ mod tests {
             spindle_rpm: 18_000,
             flute_count: 2,
             axial_doc_mm: 2.0,
-            radial_engagement: 0.50,
             arc_engagement_radians: None,
             chipload_mm_per_tooth: 0.02,
             effective_chip_thickness_mm: Some(0.02),
-            engagement: Engagement::default(),
+            engagement: Engagement::with_radial_woc(0.50),
             removed_volume_est_mm3: 1.0,
             mrr_mm3_s: 10.0,
             semantic_item_id: None,
@@ -1730,11 +1720,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
-                radial_engagement: 0.01,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.01),
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
@@ -1794,11 +1783,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
-                radial_engagement: 0.01,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.01),
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
@@ -1818,11 +1806,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
-                radial_engagement: 0.01,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.01),
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
@@ -1858,11 +1845,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
-                radial_engagement: 0.01,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.01),
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
@@ -1882,11 +1868,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
-                radial_engagement: 0.01,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.01),
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
@@ -1906,11 +1891,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
-                radial_engagement: 0.01,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.01),
                 removed_volume_est_mm3: 0.0,
                 mrr_mm3_s: 0.0,
                 semantic_item_id: None,
@@ -1949,11 +1933,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.5,
-                radial_engagement: 0.30,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.05,
                 effective_chip_thickness_mm: Some(0.05),
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.30),
                 removed_volume_est_mm3: 2.0,
                 mrr_mm3_s: 20.0,
                 semantic_item_id: None,
@@ -1973,11 +1956,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 3.0,
-                radial_engagement: 0.60,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.08,
                 effective_chip_thickness_mm: Some(0.08),
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.60),
                 removed_volume_est_mm3: 5.0,
                 mrr_mm3_s: 50.0,
                 semantic_item_id: None,
@@ -2023,11 +2005,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
-                radial_engagement: 0.40,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.40),
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 semantic_item_id: None,
@@ -2047,11 +2028,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 2.0,
-                radial_engagement: 0.50,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.02,
                 effective_chip_thickness_mm: Some(0.02),
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.50),
                 removed_volume_est_mm3: 3.0,
                 mrr_mm3_s: 15.0,
                 semantic_item_id: None,
@@ -2112,11 +2092,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
-                radial_engagement: 0.20,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.20),
                 removed_volume_est_mm3: 0.5,
                 mrr_mm3_s: 5.0,
                 semantic_item_id: None,
@@ -2137,11 +2116,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 2.0,
-                radial_engagement: 0.80,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.02,
                 effective_chip_thickness_mm: Some(0.02),
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.80),
                 removed_volume_est_mm3: 2.0,
                 mrr_mm3_s: 6.67,
                 semantic_item_id: None,
@@ -2181,11 +2159,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
-                radial_engagement: 0.50,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.50),
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 semantic_item_id: Some(1),
@@ -2205,11 +2182,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
-                radial_engagement: 0.50,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.50),
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 semantic_item_id: Some(2),
@@ -2229,11 +2205,10 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
-                radial_engagement: 0.50,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
-                engagement: Engagement::default(),
+                engagement: Engagement::with_radial_woc(0.50),
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 semantic_item_id: Some(1),
@@ -2304,11 +2279,10 @@ mod tests {
             spindle_rpm: 18_000,
             flute_count: 2,
             axial_doc_mm,
-            radial_engagement: 0.3,
             arc_engagement_radians: None,
             chipload_mm_per_tooth: 0.03,
             effective_chip_thickness_mm: Some(0.03),
-            engagement: Engagement::default(),
+            engagement: Engagement::with_radial_woc(0.3),
             removed_volume_est_mm3: 1.0,
             mrr_mm3_s: 50.0,
             semantic_item_id: None,
@@ -2378,7 +2352,7 @@ mod tests {
         // see Z-only moves).
         let mut s = make_sample(sample_index, 1.0, false);
         s.toolpath_id = toolpath_id;
-        s.radial_engagement = 0.0;
+        s.engagement.radial_woc_fraction = 0.0;
         s
     }
 
@@ -2429,7 +2403,7 @@ mod tests {
         for i in 0..100 {
             let mut s = make_sample(i, 1.0, false);
             s.toolpath_id = 1;
-            s.radial_engagement = 0.0;
+            s.engagement.radial_woc_fraction = 0.0;
             samples.push(s);
         }
         let drill_ids = std::collections::BTreeSet::new();
@@ -2461,7 +2435,7 @@ mod tests {
         for i in 50..100 {
             let mut s = make_sample(i, 1.0, false);
             s.toolpath_id = 1;
-            s.radial_engagement = 0.0;
+            s.engagement.radial_woc_fraction = 0.0;
             samples.push(s);
         }
         let drill_ids: std::collections::BTreeSet<usize> = std::iter::once(7).collect();

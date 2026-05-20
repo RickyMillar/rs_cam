@@ -46,7 +46,7 @@ fn build_stock() -> TriDexelStock {
 #[test]
 fn production_samples_carry_populated_engagement_vector() {
     // Drive the real simulator with a lateral cut. Every cutting sample
-    // must carry `engagement.radial_woc_fraction == sample.radial_engagement`
+    // must carry `engagement.radial_woc_fraction == sample.engagement.radial_woc_fraction`
     // (legacy-scalar consistency) and a non-zero leading-edge speed.
     let mut tp = Toolpath::new();
     tp.rapid_to_with_intent(P3::new(0.0, 0.0, 12.0), MoveIntent::Linking);
@@ -81,7 +81,7 @@ fn production_samples_carry_populated_engagement_vector() {
     );
     for s in &cutting {
         assert!(
-            (s.engagement.radial_woc_fraction - s.radial_engagement).abs() < 1e-9,
+            (s.engagement.radial_woc_fraction - s.engagement.radial_woc_fraction).abs() < 1e-9,
             "Engagement.radial_woc_fraction must mirror legacy scalar during deprecation window \
              (sample {:?})",
             s
@@ -120,7 +120,6 @@ fn mk_sample(
         spindle_rpm: 18_000,
         flute_count: 2,
         axial_doc_mm: axial_mm,
-        radial_engagement: radial,
         arc_engagement_radians: arc,
         chipload_mm_per_tooth: 0.02,
         effective_chip_thickness_mm: Some(0.018),
@@ -281,7 +280,7 @@ fn legacy_scalar_matches_engagement_radial_woc_for_all_samples() {
 
     for s in &samples {
         assert!(
-            (s.engagement.radial_woc_fraction - s.radial_engagement).abs() < 1e-9,
+            (s.engagement.radial_woc_fraction - s.engagement.radial_woc_fraction).abs() < 1e-9,
             "legacy scalar must stay in lock-step with engagement.radial_woc_fraction \
              (move {}, sample {})",
             s.move_index,

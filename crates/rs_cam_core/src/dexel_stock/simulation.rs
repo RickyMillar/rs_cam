@@ -486,7 +486,6 @@ impl TriDexelStock {
                 spindle_rpm: params.spindle_rpm,
                 flute_count: params.flute_count,
                 axial_doc_mm,
-                radial_engagement,
                 arc_engagement_radians,
                 chipload_mm_per_tooth,
                 effective_chip_thickness_mm,
