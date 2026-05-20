@@ -297,6 +297,14 @@ pub struct ToolpathLoadContext<'a> {
     /// available; classifiers degrade to engagement-only labels.
     #[allow(clippy::struct_field_names)]
     pub spans: Option<&'a [crate::toolpath_spans::Span]>,
+    /// `DrillOp` payload for drill toolpaths — `Some` for
+    /// `OperationType::{Drill, AlignmentPinDrill}`, `None` otherwise.
+    /// Drives the `drill_gates` field on the resulting verdict
+    /// (chip-welding / peck-adequacy / plunge-feed). Mills supply
+    /// `None` and `drill_gates` stays `None` on their verdict — the
+    /// existing chipload / power / deflection criteria do all the
+    /// load-checking for non-drill ops.
+    pub drill_op: Option<&'a crate::drill_op::DrillOp>,
 }
 
 /// Evaluate every guardrail criterion for a single toolpath. All three
@@ -328,6 +336,17 @@ pub fn evaluate_toolpath(
             ),
         },
     };
+    // §6.E / Step 3 PR2: evaluate drill gates when this toolpath
+    // carries a `DrillOp` payload. Mirrors what
+    // `gcode::project_load_report` does for the user-facing report so
+    // the optimizer and the gcode-export paths agree on drill-side
+    // verdicts.
+    let drill_gates = ctx.drill_op.map(|drill_op| {
+        let samples = crate::drill_metrics::emit_drill_samples(ctx.toolpath_id, drill_op);
+        let summary =
+            crate::drill_metrics::build_drill_toolpath_summary(ctx.toolpath_id, drill_op, &samples);
+        drill_gates::evaluate(drill_op, &summary)
+    });
     ToolpathLoadVerdict {
         toolpath_id: ctx.toolpath_id,
         chipload: chipload::evaluate(
@@ -352,7 +371,7 @@ pub fn evaluate_toolpath(
             ctx.operation_kind,
             tolerance,
         ),
-        drill_gates: None,
+        drill_gates,
     }
 }
 

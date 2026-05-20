@@ -344,6 +344,9 @@ pub(crate) fn evaluate_candidate(
     let spans: Option<&[crate::toolpath_spans::Span]> = session_ref
         .get_result(toolpath_index)
         .map(|r| r.annotated().spans.as_slice());
+    let drill_op = session_ref
+        .get_result(toolpath_index)
+        .and_then(|r| r.drill_op());
     let load_ctx = ToolpathLoadContext {
         toolpath_id: ctx.toolpath_id,
         tool: &ctx.tool,
@@ -353,6 +356,7 @@ pub(crate) fn evaluate_candidate(
         operation_feed_rate_mm_min: candidate_op.feed_rate(),
         operation_kind: ctx.operation_kind,
         spans,
+        drill_op: drill_op.map(|arc| arc.as_ref()),
     };
     let policy_tolerance = tolerance_bands_from_policy(search_policy());
     let verdict = evaluate_toolpath(

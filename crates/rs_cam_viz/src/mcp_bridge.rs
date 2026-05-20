@@ -53,6 +53,9 @@ pub enum McpRequestKind {
         span_id: Option<u32>,
         /// Optional `DepthPass` `pass_index` payload match.
         pass_index: Option<u32>,
+        /// When true, include the per-peck `drill_samples` array in the
+        /// response (defaults to false; verbose).
+        include_drill_samples: bool,
     },
     GetGenerationDebugTrace {
         index: usize,

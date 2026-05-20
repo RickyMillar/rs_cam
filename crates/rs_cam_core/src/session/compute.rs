@@ -1106,6 +1106,7 @@ impl ProjectSession {
                 crate::compute::catalog::OperationType::Drill
                     | crate::compute::catalog::OperationType::AlignmentPinDrill
             ),
+            material: Some(&self.stock.material),
         };
 
         Ok(crate::narrate::narrate_toolpath_with_context(

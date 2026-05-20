@@ -46,6 +46,10 @@ pub struct ToolpathNarrationContext<'a> {
     /// suppresses the air-cut anomaly in narration. F4 of
     /// `planning/OPTIMIZER_UX_DIALIN_FIXES.md`.
     pub is_drill_cycle: bool,
+    /// Stock material — used by the drill-cycle narration block to
+    /// evaluate the plunge-feed envelope (material-aware mm/min per mm
+    /// of cutter diameter). `None` falls back to envelope-free reporting.
+    pub material: Option<&'a crate::material::Material>,
 }
 
 #[derive(Debug, Clone)]
@@ -972,8 +976,9 @@ fn append_air_cut_anomaly(
         //
         // §6.E / Step 3 PR2: when a `DrillToolpathSummary` is available
         // (post-PR1, every drill op produces one), surface peck pattern
-        // adequacy + chip-welding risk in narration so operators get
-        // drill-relevant signal instead of just "metrics N/A".
+        // adequacy + chip-welding risk + cycle time + plunge-feed
+        // envelope so operators get drill-relevant signal instead of
+        // just "metrics N/A".
         let drill_summary = context
             .toolpath_id
             .and_then(|id| trace.drill_summary_for(id));
@@ -983,14 +988,52 @@ fn append_air_cut_anomaly(
                 crate::drill_metrics::ChipWeldingRisk::Elevated => "elevated",
                 crate::drill_metrics::ChipWeldingRisk::High => "high",
             };
+            let cycle_time_s = d.feed_time_s + d.dwell_time_s;
             anomalies.push(format!(
-                "ℹ drill cycle — engagement / air-cut% are not modeled; see drill summary: {} hole(s), {} peck(s), depth-to-diameter {:.1}× (chip-welding risk {}), peck pattern {}.",
+                "ℹ drill cycle — engagement / air-cut% are not modeled. {} hole(s), {} peck(s), deepest hole {:.2} mm, depth-to-diameter {:.1}× (chip-welding risk {}), peck pattern {}.",
                 d.hole_count,
                 d.peck_count,
+                d.deepest_hole_mm,
                 d.max_depth_to_diameter,
                 risk,
                 if d.peck_pattern_adequate { "adequate" } else { "INADEQUATE — reduce peck depth" },
             ));
+            // Cycle-time + chip-evacuation breakdown (one line, all
+            // drill-natural metrics — no engagement or air-cut here).
+            anomalies.push(format!(
+                "ℹ drill cycle time: {:.1}s feed-down + {:.1}s dwell = {:.1}s; mean chip-evacuation score {:.2} (0=trapped, 1=cleared).",
+                d.feed_time_s,
+                d.dwell_time_s,
+                cycle_time_s,
+                d.avg_chip_evacuation_score,
+            ));
+            // Plunge-feed envelope check (drill-specific gate). Reports
+            // feed/diameter (1/min) and the material's safe band when
+            // both feed and diameter are present; out-of-band readings
+            // become ⚠ markers.
+            if let (Some(feed), Some(dia)) = (context.feed_rate_mm_min, context.tool_diameter_mm)
+                && dia > 0.0
+            {
+                let ratio = feed / dia;
+                let (mark, envelope_label) = if let Some(material) = context.material {
+                    let (lo, hi) = crate::tool_load::drill_gates::plunge_feed_envelope(material);
+                    let mark = if ratio < lo || ratio > hi {
+                        "⚠"
+                    } else {
+                        "ℹ"
+                    };
+                    (
+                        mark,
+                        format!(" (material envelope {:.0}–{:.0} 1/min)", lo, hi),
+                    )
+                } else {
+                    ("ℹ", String::new())
+                };
+                anomalies.push(format!(
+                    "{mark} plunge feed/diameter: {:.0} 1/min{envelope_label} — feed {:.0} mm/min ÷ Ø {:.2} mm.",
+                    ratio, feed, dia,
+                ));
+            }
         } else {
             anomalies.push(
                 "ℹ engagement and air-cut% are not modeled for drill cycles (the dexel uses XY cylinder side-engagement; drill chips on Z-only moves). Treat MRR / feed / power separately for drilling."
@@ -1116,6 +1159,7 @@ mod tests {
             spindle_rpm: Some(18_000),
             flute_count: Some(2),
             is_drill_cycle: false,
+            material: None,
         };
 
         let report = narrate_toolpath_with_context(
