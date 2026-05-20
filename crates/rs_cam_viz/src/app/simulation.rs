@@ -179,27 +179,38 @@ impl RsCamApp {
                 && let Some(results) = self.controller.state().simulation.results.as_ref()
             {
                 let mut global_offset = 0;
-                for (toolpath, tool, direction) in &results.playback_data {
+                for (toolpath, tool, direction, drill_op) in &results.playback_data {
                     let tp_moves = toolpath.moves.len();
                     let tp_start = global_offset;
                     let tp_end = global_offset + tp_moves;
 
                     if tp_end > current_live && tp_start < target_move {
-                        let local_start = current_live.saturating_sub(tp_start);
-                        let local_end = if target_move < tp_end {
-                            target_move - tp_start
+                        if let Some(drill_op_arc) = drill_op {
+                            // Drill ops use analytical removal (DEXEL Step 3 PR1).
+                            // `simulate_toolpath_range`'s degenerate-Z dexel
+                            // stamping doesn't match the analytical kernel — and
+                            // the live-sim mesh would diverge from the
+                            // checkpoint mesh during forward scrub. `apply_drill_op`
+                            // is idempotent, so re-calling on each forward replay
+                            // is safe.
+                            stock.apply_drill_op(drill_op_arc);
                         } else {
-                            tp_moves
-                        };
+                            let local_start = current_live.saturating_sub(tp_start);
+                            let local_end = if target_move < tp_end {
+                                target_move - tp_start
+                            } else {
+                                tp_moves
+                            };
 
-                        let cutter = crate::compute::worker::helpers::build_cutter(tool);
-                        stock.simulate_toolpath_range(
-                            toolpath,
-                            &cutter,
-                            *direction,
-                            local_start,
-                            local_end,
-                        );
+                            let cutter = crate::compute::worker::helpers::build_cutter(tool);
+                            stock.simulate_toolpath_range(
+                                toolpath,
+                                &cutter,
+                                *direction,
+                                local_start,
+                                local_end,
+                            );
+                        }
                     }
                     global_offset += tp_moves;
                 }
@@ -247,6 +258,32 @@ impl RsCamApp {
             } else {
                 dexel_stock_to_mesh(stock)
             };
+
+            // Append analytical drill cylinders for drill ops whose TP the
+            // playhead has entered. This matches the compute path's checkpoint
+            // mesh (which appends cylinders at every boundary) — without it
+            // the live-sim mesh drops the cylinder geometry between
+            // checkpoints and drill holes render as the dexel-stamped
+            // approximation only. See `compute/simulate.rs:504-508`.
+            if let Some(results) = self.controller.state().simulation.results.as_ref() {
+                let mut offset: usize = 0;
+                let completed: Vec<&rs_cam_core::drill_op::DrillOp> = results
+                    .playback_data
+                    .iter()
+                    .filter_map(|(tp, _t, _d, drill_op)| {
+                        let tp_start = offset;
+                        offset += tp.moves.len();
+                        if tp_start < target_move {
+                            drill_op.as_deref()
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                if !completed.is_empty() {
+                    rs_cam_core::dexel_mesh::append_drill_cylinders(&mut mesh, &completed);
+                }
+            }
 
             // Transform mesh from global stock frame to the active setup's
             // local frame so it matches the tool position (already in local).

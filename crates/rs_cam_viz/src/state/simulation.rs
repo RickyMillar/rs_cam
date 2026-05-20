@@ -429,13 +429,9 @@ pub struct SimulationResults {
     pub checkpoints: Vec<SimCheckpoint>,
     /// Which toolpaths were included (None = all enabled).
     pub selected_toolpaths: Option<Vec<ToolpathId>>,
-    /// Pre-transformed toolpath data for incremental playback.
-    /// Each entry: (toolpath in global stock frame, tool_config, direction).
-    pub playback_data: Vec<(
-        std::sync::Arc<rs_cam_core::toolpath::Toolpath>,
-        super::job::ToolConfig,
-        StockCutDirection,
-    )>,
+    /// Pre-transformed toolpath data for incremental playback. See
+    /// [`crate::compute::worker::PlaybackToolpath`] for entry semantics.
+    pub playback_data: Vec<crate::compute::worker::PlaybackToolpath>,
     /// Global stock bounding box used for this simulation (for fresh-stock reset).
     pub stock_bbox: rs_cam_core::geo::BoundingBox3,
     /// Simulation-time cutting metrics captured during the run.

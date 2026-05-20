@@ -209,15 +209,12 @@ fn build_core_simulation_request(
 }
 
 /// Build viz playback data from the viz request (global-frame toolpaths + tool
-/// config + cut direction). Core does not produce this because it is a viz-only
-/// concern (incremental playback in the 3D viewport).
-fn build_playback_data(
-    req: &SimulationRequest,
-) -> Vec<(
-    Arc<Toolpath>,
-    super::ToolConfig,
-    rs_cam_core::dexel_stock::StockCutDirection,
-)> {
+/// config + cut direction + optional global-frame drill_op). Core does not
+/// produce this because it is a viz-only concern (incremental playback in the
+/// 3D viewport). The `drill_op`, when present, lets `update_live_sim` apply
+/// analytical removal during forward scrub rather than relying on
+/// `simulate_toolpath_range`'s degenerate-Z dexel stamping for plunge moves.
+fn build_playback_data(req: &SimulationRequest) -> Vec<super::PlaybackToolpath> {
     let mut playback = Vec::new();
     for group in &req.groups {
         let playback_direction = group.local_to_global.as_ref().map_or(
@@ -230,7 +227,36 @@ fn build_playback_data(
             } else {
                 Arc::new(tp.annotated.toolpath.clone())
             };
-            playback.push((global_tp, tp.tool.clone(), playback_direction));
+            // Transform drill_op holes into the global frame, matching the
+            // approach in `rs_cam_core::compute::simulate` (the global stock
+            // there receives the same transformed DrillOp for checkpoint use).
+            let global_drill_op = tp.drill_op.as_ref().map(|drill_op_arc| {
+                if let Some(info) = &group.local_to_global {
+                    let mut transformed = (**drill_op_arc).clone();
+                    for hole in &mut transformed.holes {
+                        let g_top = info.local_to_global(rs_cam_core::geo::P3::new(
+                            hole.xy[0], hole.xy[1], hole.top_z,
+                        ));
+                        let g_bot = info.local_to_global(rs_cam_core::geo::P3::new(
+                            hole.xy[0],
+                            hole.xy[1],
+                            hole.bottom_z,
+                        ));
+                        hole.xy = [g_top.x, g_top.y];
+                        hole.top_z = g_top.z;
+                        hole.bottom_z = g_bot.z;
+                    }
+                    Arc::new(transformed)
+                } else {
+                    Arc::clone(drill_op_arc)
+                }
+            });
+            playback.push((
+                global_tp,
+                tp.tool.clone(),
+                playback_direction,
+                global_drill_op,
+            ));
         }
     }
     playback
