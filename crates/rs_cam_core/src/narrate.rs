@@ -905,6 +905,13 @@ fn append_peak_doc_anomaly(
     trace: &SimulationCutTrace,
     context: &ToolpathNarrationContext<'_>,
 ) {
+    // Drill cycles cut on Z-only moves; the per-segment cutting-sample
+    // stream is empty by design (analytical removal — see Step 3 PR1).
+    // Peak axial DOC is meaningless here; the drill block in
+    // `append_air_cut_anomaly` surfaces the drill-native metrics instead.
+    if context.is_drill_cycle {
+        return;
+    }
     let peak = trace
         .samples
         .iter()
@@ -958,15 +965,11 @@ fn append_air_cut_anomaly(
     trace: &SimulationCutTrace,
     context: &ToolpathNarrationContext<'_>,
 ) {
-    let Some((air_cut_time_s, cutting_time_s, average_engagement)) =
-        cut_summary_metrics(trace, context)
-    else {
-        return;
-    };
-    if cutting_time_s <= 0.0 {
-        return;
-    }
-    let air_pct = air_cut_time_s / cutting_time_s * 100.0;
+    // Drill TPs are marked `metrics_not_applicable` (Step 3 PR2) so
+    // they're absent from `toolpath_summaries` — `cut_summary_metrics`
+    // returns None for them. Handle the drill case BEFORE that early
+    // return so the drill-native block surfaces regardless of whether
+    // the milling-side per-toolpath summary exists.
     if context.is_drill_cycle {
         // F4 — engagement is XY-only (cylinder side-engagement). Drill
         // cycles cut on Z-only moves so they always read 100 % air-cut
@@ -1042,6 +1045,17 @@ fn append_air_cut_anomaly(
         }
         return;
     }
+    // Milling-side path: pull the per-toolpath cutting / air-cut / engagement
+    // numbers; bail out cleanly if no summary exists (e.g. zero cutting time).
+    let Some((air_cut_time_s, cutting_time_s, average_engagement)) =
+        cut_summary_metrics(trace, context)
+    else {
+        return;
+    };
+    if cutting_time_s <= 0.0 {
+        return;
+    }
+    let air_pct = air_cut_time_s / cutting_time_s * 100.0;
     let marker = if air_pct > AIR_CUT_WARNING_PERCENT {
         "⚠"
     } else {
