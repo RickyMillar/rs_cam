@@ -1,5 +1,16 @@
 # Priority 3 RCA — Suppress peak-axial-DOC on transit/link spans
 
+**Status:** ☑ FIXED in `13f4e4e` (2026-05-19) — landed same day as the
+RCA. `in_transit_span: bool` field on `SimulationCutSample`,
+`AnnotatedToolpath::transit_moves_bitmap()` builder, `SummaryAccumulator`
++ `KinematicsAccumulator` peak-DOC/peak-chipload gates, 4 regression
+tests in `crates/rs_cam_core/src/simulation_cut.rs`
+(`peak_doc_suppresses_transit_lift_bridge_artifact`,
+`peak_doc_excludes_purely_transit_streams`,
+`peak_chipload_also_skips_transit_samples`,
+`per_toolpath_peak_doc_respects_transit_flag`). Document retained for
+historical context.
+
 **Date:** 2026-05-19
 **Sources:** `crates/rs_cam_core/src/simulation_cut.rs`, `crates/rs_cam_core/src/dexel_stock/simulation.rs`, `crates/rs_cam_core/src/toolpath_spans.rs`, `WANAKA_ASSESSMENT_2026-05-19.md`
 
