@@ -98,10 +98,22 @@ pub(crate) fn apply_feeds_result_to_op(
     op: &mut OperationConfig,
     result: &rs_cam_core::feeds::FeedsResult,
 ) {
-    op.set_feed_rate(result.feed_rate_mm_min);
-    op.set_plunge_rate(result.plunge_rate_mm_min);
-    op.set_stepover(result.radial_width_mm);
-    op.set_depth_per_pass(result.axial_depth_mm);
+    // UX dial-in B5: feeds calc returns full-precision floats (e.g.
+    // 769.506587956183 mm/min) which read as "weird specific number" in
+    // the UI. Round suggestions to 1 dp for feed/plunge (mm/min) and
+    // 3 dp for stepover/DOC (mm) so suggested values feel like
+    // suggestions, not measurements.
+    op.set_feed_rate(round_to(result.feed_rate_mm_min, 1.0));
+    op.set_plunge_rate(round_to(result.plunge_rate_mm_min, 1.0));
+    op.set_stepover(round_to(result.radial_width_mm, 0.001));
+    op.set_depth_per_pass(round_to(result.axial_depth_mm, 0.001));
+}
+
+fn round_to(value: f64, step: f64) -> f64 {
+    if step <= 0.0 {
+        return value;
+    }
+    (value / step).round() * step
 }
 
 /// Flush tool undo snapshot if the user navigated away from a tool.

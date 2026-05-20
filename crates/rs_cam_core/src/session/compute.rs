@@ -26,7 +26,7 @@ use crate::tool::MillingCutter;
 
 use super::{
     ProjectDiagnostics, ProjectSession, SessionError, SimulationOptions, ToolpathComputeResult,
-    ToolpathDiagnostic,
+    ToolpathDiagnostic, Verdict, VerdictEvidence, VerdictKind, VerdictSeverity,
 };
 
 /// Translate a triangle mesh by (dx, dy, dz) and rebuild bbox/faces.
@@ -1132,10 +1132,26 @@ impl ProjectSession {
         let mut total_rapid_collision_count: usize = 0;
         let no_cancel = AtomicBool::new(false);
 
-        // Build per-boundary rapid collision counts from the simulation result.
-        // Each boundary maps to one toolpath via its id.
-        let rapid_counts_by_boundary: Vec<(usize, usize)> = if let Some(sim) = &self.simulation {
-            sim.boundaries
+        // Per-TP context collected in the toolpath loop for later verdict
+        // emission. We index by `toolpath_id` (which equals `tc.id`).
+        struct RapidWorst {
+            move_index: usize,
+            z: f64,
+        }
+        let mut holder_collisions_by_tp: Vec<(usize, String, usize)> = Vec::new();
+        let mut rapid_collisions_by_tp: Vec<(usize, String, usize, RapidWorst)> = Vec::new();
+        let mut empty_results_by_tp: Vec<(usize, String, &str)> = Vec::new();
+
+        // Build per-boundary maps from the simulation result. Each boundary
+        // maps to one toolpath via its `id`.
+        type RapidCountsByBoundary = Vec<(usize, usize)>;
+        type RapidWorstByBoundary = Vec<(usize, RapidWorst)>;
+        let (rapid_counts_by_boundary, rapid_worst_by_boundary): (
+            RapidCountsByBoundary,
+            RapidWorstByBoundary,
+        ) = if let Some(sim) = &self.simulation {
+            let counts = sim
+                .boundaries
                 .iter()
                 .map(|b| {
                     let count = sim
@@ -1145,20 +1161,66 @@ impl ProjectSession {
                         .count();
                     (b.id, count)
                 })
-                .collect()
+                .collect();
+
+            // Pick the worst (lowest end.z = deepest descent) rapid collision
+            // per boundary so the verdict layer can cite a representative
+            // move for the fix hint.
+            let worst = sim
+                .boundaries
+                .iter()
+                .filter_map(|b| {
+                    sim.rapid_collisions
+                        .iter()
+                        .filter(|rc| rc.move_index >= b.start_move && rc.move_index < b.end_move)
+                        .min_by(|a, c| {
+                            a.end
+                                .z
+                                .partial_cmp(&c.end.z)
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        })
+                        .map(|rc| {
+                            (
+                                b.id,
+                                RapidWorst {
+                                    move_index: rc.move_index,
+                                    z: rc.end.z,
+                                },
+                            )
+                        })
+                })
+                .collect();
+
+            (counts, worst)
         } else {
-            Vec::new()
+            (Vec::new(), Vec::new())
         };
 
         for (idx, tc) in self.toolpath_configs.iter().enumerate() {
             if let Some(result) = self.results.get(&idx) {
-                // Look up rapid collision count from simulation boundaries.
+                // Look up rapid collision count + worst move from simulation
+                // boundaries.
                 let rapid_count = rapid_counts_by_boundary
                     .iter()
-                    .filter(|(id, _)| *id == idx)
+                    .filter(|(id, _)| *id == tc.id)
                     .map(|(_, count)| *count)
                     .sum::<usize>();
                 total_rapid_collision_count += rapid_count;
+
+                if rapid_count > 0
+                    && let Some((_, worst)) =
+                        rapid_worst_by_boundary.iter().find(|(id, _)| *id == tc.id)
+                {
+                    rapid_collisions_by_tp.push((
+                        tc.id,
+                        tc.name.clone(),
+                        rapid_count,
+                        RapidWorst {
+                            move_index: worst.move_index,
+                            z: worst.z,
+                        },
+                    ));
+                }
 
                 // Run holder/shank collision check; gracefully default to 0
                 // if model geometry is missing or check otherwise fails.
@@ -1168,6 +1230,18 @@ impl ProjectSession {
                     .unwrap_or(0);
                 total_collision_count += holder_collision_count;
 
+                if holder_collision_count > 0 {
+                    holder_collisions_by_tp.push((tc.id, tc.name.clone(), holder_collision_count));
+                }
+
+                // C7: detect toolpaths that generated successfully but laid
+                // down zero in-material cut. Drill kinematics are exempt —
+                // the dexel-side cutting metric doesn't apply to Z-only ops.
+                let op_type = tc.operation.op_type();
+                if result.stats.cutting_distance <= 0.0 && !op_type.is_drill_kinematics() {
+                    empty_results_by_tp.push((tc.id, tc.name.clone(), op_type.label()));
+                }
+
                 let tool_name = self
                     .find_tool_by_raw_id(tc.tool_id)
                     .map(|t| t.name.clone())
@@ -1176,7 +1250,8 @@ impl ProjectSession {
                 per_toolpath.push(ToolpathDiagnostic {
                     toolpath_id: tc.id,
                     name: tc.name.clone(),
-                    operation_type: tc.operation.label().to_owned(),
+                    operation_type: op_type.label().to_owned(),
+                    op_kind: op_type.kind_str().to_owned(),
                     tool_name,
                     move_count: result.stats.move_count,
                     cutting_distance_mm: result.stats.cutting_distance,
@@ -1226,31 +1301,147 @@ impl ProjectSession {
         // `planning/P2_PLUNGE_STRESS_GATE_RCA.md`.
         let plunge_stress_offenders = plunge_stress_offenders_for_session(self);
 
-        let verdict = if total_collision_count > 0 {
-            format!(
-                "ERROR: {} holder/shank collisions detected",
-                total_collision_count
-            )
-        } else if total_rapid_collision_count > 0 {
-            format!(
-                "WARNING: {} rapid-through-stock collisions",
-                total_rapid_collision_count
-            )
-        } else if !plunge_stress_offenders.is_empty() {
-            let names: Vec<String> = plunge_stress_offenders
-                .iter()
-                .map(|(n, rate, cap)| format!("{n} ({rate:.0} > cap {cap:.0} mm/min)"))
-                .collect();
-            format!("WARNING: unsafe plunge rate on {}", names.join(", "))
-        } else if !air_cut_offenders.is_empty() {
+        // ── Build the structured verdict list (severity-ranked) ───────
+        let mut verdicts: Vec<Verdict> = Vec::new();
+
+        // Critical: holder/shank collision per TP.
+        for (id, name, count) in &holder_collisions_by_tp {
+            verdicts.push(Verdict {
+                severity: VerdictSeverity::Critical,
+                kind: VerdictKind::HolderCollision,
+                headline: format!(
+                    "ERROR: holder/shank collisions on TP{id} '{name}' ({count} collisions)"
+                ),
+                offender_toolpath_ids: vec![*id],
+                fix_hint: "Increase tool stickout, switch to a tool with a smaller holder, \
+                           or raise the operation's safe-Z. Re-run collision check after \
+                           the change."
+                    .to_owned(),
+                evidence: VerdictEvidence {
+                    move_index: None,
+                    z_value: None,
+                    count: Some(*count),
+                },
+            });
+        }
+
+        // Critical: rapid-through-stock collisions per TP, with worst-move
+        // context for the fix hint.
+        for (id, name, count, worst) in &rapid_collisions_by_tp {
+            verdicts.push(Verdict {
+                severity: VerdictSeverity::Critical,
+                kind: VerdictKind::RapidCollision,
+                headline: format!(
+                    "WARNING: rapid collisions on TP{id} '{name}' ({count} collisions, \
+                     worst at move {move_index}, z={z:.3})",
+                    move_index = worst.move_index,
+                    z = worst.z,
+                ),
+                offender_toolpath_ids: vec![*id],
+                fix_hint: "Likely cause: inter-region rapid moves not lifting to safe-Z. \
+                           Fix: increase retract_z in operation params, raise safe-Z on \
+                           the post-config, or set a tighter boundary so the lift path \
+                           clears already-cut regions."
+                    .to_owned(),
+                evidence: VerdictEvidence {
+                    move_index: Some(worst.move_index),
+                    z_value: Some(worst.z),
+                    count: Some(*count),
+                },
+            });
+        }
+
+        // Important: unsafe plunge feed on small ball / tapered-ball tools.
+        for (name, rate, cap) in &plunge_stress_offenders {
+            verdicts.push(Verdict {
+                severity: VerdictSeverity::Important,
+                kind: VerdictKind::PlungeStress,
+                headline: format!(
+                    "WARNING: unsafe plunge rate on '{name}' ({rate:.0} > cap {cap:.0} mm/min)"
+                ),
+                offender_toolpath_ids: self
+                    .toolpath_configs
+                    .iter()
+                    .filter(|tc| tc.name == *name)
+                    .map(|tc| tc.id)
+                    .collect(),
+                fix_hint: format!(
+                    "Cap plunge feed at {cap:.0} mm/min for this tool geometry. Use \
+                     the Feeds tab Suggest button to repopulate with safe values."
+                ),
+                evidence: VerdictEvidence {
+                    move_index: None,
+                    z_value: None,
+                    count: None,
+                },
+            });
+        }
+
+        // Important: toolpath generated but produced zero in-material cut.
+        for (id, name, op_label) in &empty_results_by_tp {
+            verdicts.push(Verdict {
+                severity: VerdictSeverity::Important,
+                kind: VerdictKind::GeneratedEmpty,
+                headline: format!(
+                    "WARNING: TP{id} '{name}' ({op_label}) generated but produced zero \
+                     in-material cut"
+                ),
+                offender_toolpath_ids: vec![*id],
+                fix_hint: "Check that the setup orientation, stock alignment, and target \
+                           model geometry overlap. For depth-driven ops verify the sign \
+                           convention (negative = below stock top). Toolpath may have \
+                           generated entirely above the stock surface."
+                    .to_owned(),
+                evidence: VerdictEvidence {
+                    move_index: None,
+                    z_value: None,
+                    count: None,
+                },
+            });
+        }
+
+        // Polish: air-cut high (per-TP, op-kind-aware threshold).
+        if !air_cut_offenders.is_empty() {
             let names: Vec<String> = air_cut_offenders
                 .iter()
-                .map(|(n, pct)| format!("{n} ({pct:.0}%)"))
+                .map(|(n, pct)| format!("'{n}' is {pct:.0}% air-cut"))
                 .collect();
-            format!("WARNING: high air cutting on {}", names.join(", "))
-        } else {
-            "OK".to_owned()
-        };
+            let offender_ids: Vec<usize> = air_cut_offenders
+                .iter()
+                .filter_map(|(n, _)| {
+                    self.toolpath_configs
+                        .iter()
+                        .find(|tc| tc.name == *n)
+                        .map(|tc| tc.id)
+                })
+                .collect();
+            verdicts.push(Verdict {
+                severity: VerdictSeverity::Polish,
+                kind: VerdictKind::AirCut,
+                headline: format!("WARNING: high air cutting on {}", names.join(", ")),
+                offender_toolpath_ids: offender_ids,
+                fix_hint: "Tighten the boundary, lower the stock-top, or pre-rough with \
+                           a faster op so the finishing pass doesn't traverse uncut \
+                           material. Negligible for sparse projection ops."
+                    .to_owned(),
+                evidence: VerdictEvidence {
+                    move_index: None,
+                    z_value: None,
+                    count: None,
+                },
+            });
+        }
+
+        // Sort by severity (Critical → Important → Polish). Within a
+        // severity the insertion order above is the intended display order.
+        verdicts.sort_by_key(|v| v.severity);
+
+        // Legacy single-line verdict for backward-compat callers: take the
+        // highest-severity entry's headline; "OK" when empty.
+        let verdict = verdicts
+            .first()
+            .map(|v| v.headline.clone())
+            .unwrap_or_else(|| "OK".to_owned());
 
         ProjectDiagnostics {
             total_runtime_s,
@@ -1260,6 +1451,7 @@ impl ProjectSession {
             rapid_collision_count: total_rapid_collision_count,
             per_toolpath,
             verdict,
+            verdicts,
         }
     }
 
@@ -1728,6 +1920,262 @@ mod tests {
         let diag = s.diagnostics();
         assert_eq!(diag.verdict, "OK");
         assert!(diag.per_toolpath.is_empty());
+        assert!(diag.verdicts.is_empty());
+    }
+
+    // ── Verdict layer (PR-1: A4 + B8 + B1-verdict + A12 + C7) ──────
+
+    fn make_session_with_two_tps() -> ProjectSession {
+        let mut s = make_session();
+        // TP0: Pocket — exercising A4 (TP-named verdict) and C7 (empty cut).
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        // TP1: Drill — exercises A12 (op_kind tag).
+        let mut drill_tc = make_tc(s.tools()[0].id.0);
+        drill_tc.operation =
+            OperationConfig::Drill(crate::compute::operation_configs::DrillConfig::default());
+        drill_tc.name = "Pin holes".to_owned();
+        s.add_toolpath(0, drill_tc).unwrap();
+        s
+    }
+
+    fn empty_result() -> ToolpathComputeResult {
+        ToolpathComputeResult {
+            op_data: crate::drill_op::OpData::Toolpath(Arc::new(
+                crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new()),
+            )),
+            stats: ToolpathStats::default(),
+            debug_trace: None,
+            semantic_trace: None,
+        }
+    }
+
+    /// A12: per-toolpath diagnostics carry an `op_kind` snake_case tag so
+    /// downstream consumers can suppress rapid:cut-ratio signals on
+    /// drill / pin-drill ops.
+    #[test]
+    fn diagnostics_tags_per_tp_with_op_kind() {
+        let mut s = make_session_with_two_tps();
+        // Both TPs need a result to appear in per_toolpath; cutting_distance
+        // is non-zero so the C7 GeneratedEmpty verdict doesn't fire for TP0.
+        let mut r = empty_result();
+        r.stats.cutting_distance = 100.0;
+        s.results.insert(0, r);
+        let mut r1 = empty_result();
+        r1.stats.cutting_distance = 50.0;
+        s.results.insert(1, r1);
+
+        let diag = s.diagnostics();
+        assert_eq!(diag.per_toolpath.len(), 2);
+        let pocket = diag
+            .per_toolpath
+            .iter()
+            .find(|d| d.name == "test")
+            .expect("pocket TP present");
+        assert_eq!(pocket.op_kind, "pocket");
+        let drill = diag
+            .per_toolpath
+            .iter()
+            .find(|d| d.name == "Pin holes")
+            .expect("drill TP present");
+        assert_eq!(drill.op_kind, "drill");
+    }
+
+    /// C7: a non-drill toolpath that generated successfully but laid down
+    /// zero in-material cut emits a GeneratedEmpty verdict naming the TP.
+    /// Drill toolpaths with zero cutting distance are intentionally
+    /// exempt — the dexel cutting metric doesn't apply to Z-only ops.
+    #[test]
+    fn diagnostics_emits_generated_empty_for_zero_cut_non_drill() {
+        let mut s = make_session_with_two_tps();
+        s.results.insert(0, empty_result()); // pocket, cutting_distance == 0
+        // Drill also has zero cutting_distance but should NOT trigger C7.
+        s.results.insert(1, empty_result());
+
+        let diag = s.diagnostics();
+        let empty_verdicts: Vec<_> = diag
+            .verdicts
+            .iter()
+            .filter(|v| v.kind == VerdictKind::GeneratedEmpty)
+            .collect();
+        assert_eq!(
+            empty_verdicts.len(),
+            1,
+            "expected one GeneratedEmpty verdict (pocket); drill must be exempt: {:?}",
+            diag.verdicts
+        );
+        let v = empty_verdicts[0];
+        assert_eq!(v.severity, VerdictSeverity::Important);
+        assert!(
+            v.headline.contains("'test'"),
+            "headline should name the offending TP: {}",
+            v.headline
+        );
+        assert_eq!(v.offender_toolpath_ids, vec![s.toolpath_configs[0].id]);
+        assert!(!v.fix_hint.is_empty(), "fix_hint must be populated");
+    }
+
+    /// B8: verdicts are severity-ranked (Critical → Important → Polish).
+    /// When several conditions are present the list returns all of them
+    /// in priority order instead of picking only one (the old early-exit).
+    #[test]
+    fn diagnostics_ranks_verdicts_by_severity() {
+        use crate::compute::simulate::{SimBoundary, SimulationResult};
+        use crate::dexel_stock::StockCutDirection;
+        use crate::stock_mesh::StockMesh;
+
+        let mut s = make_session_with_two_tps();
+        // TP0 (pocket): zero cut → C7 GeneratedEmpty (Important).
+        s.results.insert(0, empty_result());
+        // TP1 (drill): nonzero cut so it stays out of GeneratedEmpty.
+        let mut r1 = empty_result();
+        r1.stats.cutting_distance = 50.0;
+        s.results.insert(1, r1);
+
+        // Inject a simulation result that carries a rapid-through-stock
+        // collision on TP0 → triggers a Critical RapidCollision verdict.
+        let pocket_tp_id = s.toolpath_configs[0].id;
+        s.simulation = Some(SimulationResult {
+            mesh: StockMesh {
+                vertices: Vec::new(),
+                indices: Vec::new(),
+                colors: Vec::new(),
+            },
+            total_moves: 5,
+            deviations: None,
+            boundaries: vec![SimBoundary {
+                id: pocket_tp_id,
+                name: "test".to_owned(),
+                tool_name: "EM".to_owned(),
+                start_move: 0,
+                end_move: 5,
+                direction: StockCutDirection::FromTop,
+            }],
+            checkpoints: Vec::new(),
+            rapid_collisions: vec![crate::collision::RapidCollision {
+                move_index: 2,
+                start: P3::new(0.0, 0.0, 5.0),
+                end: P3::new(0.0, 0.0, -2.5),
+            }],
+            rapid_collision_move_indices: vec![2],
+            cut_trace: None,
+            resolution_clamped: false,
+            prior_stocks: std::collections::HashMap::new(),
+        });
+
+        let diag = s.diagnostics();
+        assert!(
+            diag.verdicts.len() >= 2,
+            "expected both Critical + Important verdicts; got {:?}",
+            diag.verdicts
+        );
+        // Critical comes before Important.
+        assert_eq!(diag.verdicts[0].severity, VerdictSeverity::Critical);
+        assert_eq!(diag.verdicts[0].kind, VerdictKind::RapidCollision);
+        let importants: Vec<_> = diag
+            .verdicts
+            .iter()
+            .filter(|v| v.severity == VerdictSeverity::Important)
+            .collect();
+        assert!(
+            importants
+                .iter()
+                .any(|v| v.kind == VerdictKind::GeneratedEmpty),
+            "GeneratedEmpty must still surface alongside RapidCollision"
+        );
+        // Legacy single-line verdict mirrors the top-severity headline.
+        assert_eq!(diag.verdict, diag.verdicts[0].headline);
+    }
+
+    /// B1 (verdict half) + A4: rapid-collision verdict names the offending
+    /// TP, quotes the collision count, cites the worst move's z, and offers
+    /// a fix hint pointing at retract_z / safe-Z / boundary config.
+    #[test]
+    fn diagnostics_rapid_collision_verdict_carries_evidence() {
+        use crate::compute::simulate::{SimBoundary, SimulationResult};
+        use crate::dexel_stock::StockCutDirection;
+        use crate::stock_mesh::StockMesh;
+
+        let mut s = make_session();
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        let mut r = empty_result();
+        r.stats.cutting_distance = 100.0;
+        s.results.insert(0, r);
+
+        let tp_id = s.toolpath_configs[0].id;
+        s.simulation = Some(SimulationResult {
+            mesh: StockMesh {
+                vertices: Vec::new(),
+                indices: Vec::new(),
+                colors: Vec::new(),
+            },
+            total_moves: 10,
+            deviations: None,
+            boundaries: vec![SimBoundary {
+                id: tp_id,
+                name: "test".to_owned(),
+                tool_name: "EM".to_owned(),
+                start_move: 0,
+                end_move: 10,
+                direction: StockCutDirection::FromTop,
+            }],
+            checkpoints: Vec::new(),
+            rapid_collisions: vec![
+                crate::collision::RapidCollision {
+                    move_index: 1,
+                    start: P3::new(0.0, 0.0, 5.0),
+                    end: P3::new(0.0, 0.0, 1.0),
+                },
+                // Deepest rapid — this should be cited as the worst move.
+                crate::collision::RapidCollision {
+                    move_index: 7,
+                    start: P3::new(1.0, 1.0, 5.0),
+                    end: P3::new(1.0, 1.0, -3.25),
+                },
+            ],
+            rapid_collision_move_indices: vec![1, 7],
+            cut_trace: None,
+            resolution_clamped: false,
+            prior_stocks: std::collections::HashMap::new(),
+        });
+
+        let diag = s.diagnostics();
+        let v = diag
+            .verdicts
+            .iter()
+            .find(|v| v.kind == VerdictKind::RapidCollision)
+            .expect("rapid collision verdict must fire");
+        assert_eq!(v.severity, VerdictSeverity::Critical);
+        // A4: names the TP.
+        assert!(
+            v.headline.contains("'test'"),
+            "headline names offending TP: {}",
+            v.headline
+        );
+        // Count is quoted.
+        assert!(
+            v.headline.contains("2 collisions"),
+            "headline: {}",
+            v.headline
+        );
+        // Worst-move evidence cites move_index=7 and z=-3.250.
+        assert_eq!(v.evidence.move_index, Some(7));
+        assert_eq!(v.evidence.count, Some(2));
+        assert!(
+            v.evidence.z_value.is_some()
+                && (v.evidence.z_value.unwrap_or(0.0) - (-3.25)).abs() < 1e-6,
+            "evidence.z_value: {:?}",
+            v.evidence.z_value
+        );
+        // Fix hint mentions retract_z (the operator's lever).
+        let hint_lc = v.fix_hint.to_lowercase();
+        assert!(
+            hint_lc.contains("retract_z")
+                || hint_lc.contains("safe-z")
+                || hint_lc.contains("boundary"),
+            "fix_hint must point at retract_z / safe-Z / boundary: {}",
+            v.fix_hint
+        );
+        assert_eq!(v.offender_toolpath_ids, vec![tp_id]);
     }
 
     // ── P1: op-kind-aware air-cut thresholds ──────────────────────

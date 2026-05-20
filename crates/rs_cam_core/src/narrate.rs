@@ -939,7 +939,17 @@ fn append_peak_doc_anomaly(
         .map(|mv| move_type_label(mv.move_type))
         .unwrap_or("unknown move");
     let threshold_text = context.depth_per_pass_mm.map_or_else(
-        || "commanded depth_per_pass is unknown".to_owned(),
+        || match context.operation_label {
+            Some("3D Finish") => "this op follows surface heights — no commanded DOC".to_owned(),
+            Some("Project Curve") => {
+                "this op follows the curve at a fixed surface offset — no commanded DOC".to_owned()
+            }
+            Some("Drill") | Some("Pin Drill") => {
+                "this op advances by peck depth — no continuous DOC".to_owned()
+            }
+            Some("VCarve") => "this op cuts to a target V-bit depth — no commanded DOC".to_owned(),
+            _ => "commanded depth_per_pass is unknown".to_owned(),
+        },
         |depth| format!("commanded depth_per_pass = {:.2}mm", depth),
     );
     let severity = context.depth_per_pass_mm.map_or("ℹ", |depth| {
@@ -1027,13 +1037,13 @@ fn append_air_cut_anomaly(
                     };
                     (
                         mark,
-                        format!(" (material envelope {:.0}–{:.0} 1/min)", lo, hi),
+                        format!(" (material envelope {:.0}–{:.0} mm/min per mm Ø)", lo, hi),
                     )
                 } else {
                     ("ℹ", String::new())
                 };
                 anomalies.push(format!(
-                    "{mark} plunge feed/diameter: {:.0} 1/min{envelope_label} — feed {:.0} mm/min ÷ Ø {:.2} mm.",
+                    "{mark} plunge intensity: {:.0} mm/min per mm Ø{envelope_label} — feed {:.0} mm/min ÷ Ø {:.2} mm.",
                     ratio, feed, dia,
                 ));
             }
@@ -1061,9 +1071,29 @@ fn append_air_cut_anomaly(
     } else {
         "ℹ"
     };
+    let hint = match context.operation_label {
+        Some("3D Rough") | Some("Adaptive") | Some("Rest Machining") => {
+            " High values on roughing ops usually mean boundary/stepover tuning or stale remaining-stock assumptions."
+        }
+        Some("3D Finish")
+        | Some("Scallop Finish")
+        | Some("Waterline")
+        | Some("Pencil Finish")
+        | Some("Steep/Shallow")
+        | Some("Ramp Finish")
+        | Some("Spiral Finish")
+        | Some("Radial Finish")
+        | Some("Horizontal Finish") => {
+            " For finishing ops, air-cut% is dominated by surface terrain — relative comparison across runs is more useful than the absolute number."
+        }
+        Some("Project Curve") | Some("VCarve") | Some("Trace") => {
+            " Curve-following ops cut along a single path; air-cut% mostly reflects rapids and approach segments rather than wasted cutting."
+        }
+        _ => "",
+    };
     anomalies.push(format!(
-        "{marker} {:.1}% of cutting time is air-cut; average engagement {:.3}. Treat this as relative for 2D/SVG ops, but high values on 3D roughing suggest boundary/stepover tuning or stale remaining-stock assumptions.",
-        air_pct, average_engagement
+        "{marker} {:.1}% of cutting time is air-cut; average engagement {:.3}.{}",
+        air_pct, average_engagement, hint
     ));
 }
 

@@ -477,6 +477,7 @@ fn unmodeled_reason_label(reason: &rs_cam_core::tool_load::UnmodeledReason) -> &
         // No operator action; this surface doesn't render the carried
         // detail string, just labels the bucket.
         UnmodeledReason::NotApplicableForOp(_) => "not applicable for op type",
+        UnmodeledReason::AllSamplesAirCutOrRapid => "toolpath made no material contact",
     }
 }
 

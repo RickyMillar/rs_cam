@@ -56,6 +56,12 @@ pub enum UnmodeledReason {
     /// `String` (not `&'static str`) because the verdict deserializes
     /// over the MCP wire.
     NotApplicableForOp(String),
+    /// Simulation ran end-to-end but the toolpath made no contact with
+    /// material: every sample is either a rapid move or an air-cut
+    /// pass. Distinct from `SimulationRequired` (no trace exists) —
+    /// surfaces the user-facing finding that the toolpath generated
+    /// zero in-material work (UX dial-in finding A1 / A10).
+    AllSamplesAirCutOrRapid,
 }
 
 /// What a "Within" or "Exceeds" verdict claims about its inputs.

@@ -449,6 +449,45 @@ impl OperationType {
         self.spec().label
     }
 
+    /// Stable snake_case identifier for serialized / diagnostic use. Unlike
+    /// [`Self::label`] (which is for human-facing UI text), this is suitable
+    /// for JSON wire formats and for consumers that need to branch on op
+    /// kind without parsing the prose label.
+    pub fn kind_str(self) -> &'static str {
+        match self {
+            Self::Face => "face",
+            Self::Pocket => "pocket",
+            Self::Profile => "profile",
+            Self::Adaptive => "adaptive",
+            Self::VCarve => "v_carve",
+            Self::Rest => "rest",
+            Self::Inlay => "inlay",
+            Self::Zigzag => "zigzag",
+            Self::Trace => "trace",
+            Self::Drill => "drill",
+            Self::Chamfer => "chamfer",
+            Self::DropCutter => "drop_cutter",
+            Self::Adaptive3d => "adaptive3d",
+            Self::Waterline => "waterline",
+            Self::Pencil => "pencil",
+            Self::Scallop => "scallop",
+            Self::SteepShallow => "steep_shallow",
+            Self::RampFinish => "ramp_finish",
+            Self::SpiralFinish => "spiral_finish",
+            Self::RadialFinish => "radial_finish",
+            Self::HorizontalFinish => "horizontal_finish",
+            Self::ProjectCurve => "project_curve",
+            Self::AlignmentPinDrill => "alignment_pin_drill",
+        }
+    }
+
+    /// True for op kinds whose kinematics are Z-only (peck-plunge drilling).
+    /// Used by the verdict layer to suppress rapid:cut-ratio and engagement
+    /// signals that don't apply to drilling — see fix-plan §1 A12.
+    pub fn is_drill_kinematics(self) -> bool {
+        matches!(self, Self::Drill | Self::AlignmentPinDrill)
+    }
+
     pub fn transform_capabilities(self) -> OperationTransformCapabilities {
         use OperationType::{
             Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,
