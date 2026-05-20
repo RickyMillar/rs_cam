@@ -349,7 +349,7 @@ fn append_engagement_histogram(
             continue;
         }
         total += 1;
-        let engagement = sample.radial_engagement;
+        let engagement = sample.engagement.radial_woc_fraction;
         let bucket = if engagement < 0.02 {
             0
         } else if engagement < 0.10 {
@@ -1314,11 +1314,10 @@ mod tests {
             spindle_rpm: 18_000,
             flute_count: 2,
             axial_doc_mm,
-            radial_engagement,
             arc_engagement_radians: Some(0.1),
             chipload_mm_per_tooth: 0.03,
             effective_chip_thickness_mm: Some(0.0),
-            engagement: crate::simulation_cut::Engagement::default(),
+            engagement: crate::simulation_cut::Engagement::with_radial_woc(radial_engagement),
             removed_volume_est_mm3: 0.0,
             mrr_mm3_s: 0.0,
             semantic_item_id: None,

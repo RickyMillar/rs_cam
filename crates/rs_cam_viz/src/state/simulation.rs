@@ -218,9 +218,9 @@ impl SpanAggregate {
             return;
         }
         self.n_cutting += 1;
-        self.sum_eng += sample.radial_engagement;
-        if sample.radial_engagement > self.peak_eng {
-            self.peak_eng = sample.radial_engagement;
+        self.sum_eng += sample.engagement.radial_woc_fraction;
+        if sample.engagement.radial_woc_fraction > self.peak_eng {
+            self.peak_eng = sample.engagement.radial_woc_fraction;
         }
         let chip = sample
             .effective_chip_thickness_mm
@@ -2292,11 +2292,10 @@ mod tests {
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 1.0,
-                    radial_engagement: 0.01,
                     arc_engagement_radians: Some(std::f64::consts::FRAC_PI_2),
                     chipload_mm_per_tooth: 0.0083,
                     effective_chip_thickness_mm: Some(0.0083),
-                    engagement: rs_cam_core::simulation_cut::Engagement::default(),
+                    engagement: rs_cam_core::simulation_cut::Engagement::with_radial_woc(0.01),
                     removed_volume_est_mm3: 0.1,
                     mrr_mm3_s: 0.5,
                     semantic_item_id: Some(2),
@@ -2316,11 +2315,10 @@ mod tests {
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 0.4,
-                    radial_engagement: 0.08,
                     arc_engagement_radians: Some(std::f64::consts::FRAC_PI_2),
                     chipload_mm_per_tooth: 0.0277,
                     effective_chip_thickness_mm: Some(0.0277),
-                    engagement: rs_cam_core::simulation_cut::Engagement::default(),
+                    engagement: rs_cam_core::simulation_cut::Engagement::with_radial_woc(0.08),
                     removed_volume_est_mm3: 2.0,
                     mrr_mm3_s: 5.0,
                     semantic_item_id: Some(3),

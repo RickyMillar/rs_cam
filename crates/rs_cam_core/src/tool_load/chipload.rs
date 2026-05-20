@@ -188,7 +188,10 @@ pub(crate) fn steady_state_samples_for_toolpath<'a>(
         .iter()
         .enumerate()
         .filter_map(|(i, s)| {
-            if s.toolpath_id != toolpath_id || !s.is_cutting || s.radial_engagement < 0.02 {
+            if s.toolpath_id != toolpath_id
+                || !s.is_cutting
+                || s.engagement.radial_woc_fraction < 0.02
+            {
                 return None;
             }
             any_in_cut = true;
@@ -710,11 +713,10 @@ mod tests {
             spindle_rpm: 18000,
             flute_count: 2,
             axial_doc_mm: 1.0,
-            radial_engagement: engagement,
             arc_engagement_radians: Some(TEST_LUT_NOMINAL_ARC_RAD),
             chipload_mm_per_tooth: chipload,
             effective_chip_thickness_mm: Some(chipload),
-            engagement: crate::simulation_cut::Engagement::default(),
+            engagement: crate::simulation_cut::Engagement::with_radial_woc(engagement),
             removed_volume_est_mm3: 0.1,
             mrr_mm3_s: 1.0,
             semantic_item_id: None,

@@ -73,7 +73,7 @@ fn wanaka_step4_back_rough_engagement_in_plausible_range() {
     // Engagement: at least some samples must register non-zero engagement.
     let nonzero_engagement = back_rough_samples
         .iter()
-        .filter(|s| s.radial_engagement > 0.01)
+        .filter(|s| s.engagement.radial_woc_fraction > 0.01)
         .count();
     assert!(
         nonzero_engagement > back_rough_samples.len() / 20,
@@ -86,10 +86,11 @@ fn wanaka_step4_back_rough_engagement_in_plausible_range() {
     // No NaN/Inf in engagement.
     for s in &back_rough_samples {
         assert!(
-            s.radial_engagement.is_finite() && (0.0..=1.0).contains(&s.radial_engagement),
+            s.engagement.radial_woc_fraction.is_finite()
+                && (0.0..=1.0).contains(&s.engagement.radial_woc_fraction),
             "Back Rough sample {} has invalid radial_engagement={}",
             s.sample_index,
-            s.radial_engagement
+            s.engagement.radial_woc_fraction
         );
         assert!(
             s.axial_doc_mm.is_finite() && s.axial_doc_mm >= 0.0,
@@ -101,7 +102,7 @@ fn wanaka_step4_back_rough_engagement_in_plausible_range() {
 
     let avg_engagement = back_rough_samples
         .iter()
-        .map(|s| s.radial_engagement)
+        .map(|s| s.engagement.radial_woc_fraction)
         .sum::<f64>()
         / back_rough_samples.len() as f64;
     let peak_axial = back_rough_samples

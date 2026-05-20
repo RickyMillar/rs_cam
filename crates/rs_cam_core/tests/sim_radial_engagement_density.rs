@@ -84,7 +84,7 @@ fn run_stepover_and_get_steady_state(sample_step_mm: f64) -> f64 {
         if !(15.0..=35.0).contains(&x) {
             continue;
         }
-        sum += s.radial_engagement;
+        sum += s.engagement.radial_woc_fraction;
         n += 1;
     }
     if n == 0 { 0.0 } else { sum / n as f64 }
@@ -152,7 +152,11 @@ fn radial_engagement_full_slot_first_cut() {
 
     let cutting: Vec<_> = samples.iter().filter(|s| s.is_cutting).collect();
     assert!(!cutting.is_empty());
-    let avg = cutting.iter().map(|s| s.radial_engagement).sum::<f64>() / cutting.len() as f64;
+    let avg = cutting
+        .iter()
+        .map(|s| s.engagement.radial_woc_fraction)
+        .sum::<f64>()
+        / cutting.len() as f64;
     eprintln!("full-slot avg engagement: {avg:.3}");
     assert!(
         avg > 0.85,
@@ -196,9 +200,9 @@ fn radial_engagement_air_cut_reads_zero() {
         .filter(|s| s.move_index >= first_pass_end_index && s.is_cutting)
     {
         assert!(
-            s.radial_engagement < 0.05,
+            s.engagement.radial_woc_fraction < 0.05,
             "second-pass air cut sample read engagement {:.3}, expected ~0",
-            s.radial_engagement
+            s.engagement.radial_woc_fraction
         );
     }
 }

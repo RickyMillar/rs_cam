@@ -24,6 +24,32 @@
 
 ## Recent work (2026-05-20)
 
+### Dexel-fidelity roadmap — Step 2 tail PR (radial_engagement scalar deletion)
+
+Closes the §10.3 follow-up that was scheduled at Step 2 landing.
+`SimulationCutSample.radial_engagement: f64` is removed. All consumers
+read `sample.engagement.radial_woc_fraction` (or the structured
+per-kinematics block). `SIMULATION_CUT_TRACE_SCHEMA_VERSION` bumps
+3 → 4.
+
+Migration touched 18 files (5 tool_load/* gates, 2 GUI accumulators,
+the simulation accumulator, narrate, 8 test files + benches). New
+`Engagement::with_radial_woc(r)` helper minimises test-fixture churn.
+`SimulationCutIssue.radial_engagement` and `min_radial_engagement`
+remain — those are snapshot fields on the issue payload, distinct
+from the deleted sample-level scalar; they now source from the
+structured engagement vector.
+
+The DEXEL roadmap is now fully closed including all tracked
+follow-ups; the only items still open are the §11 indefinitely-
+deferred set (F.b sub-cell ray storage, DC mesh extraction, side-grid
+MC, canned-cycle G-code, deflection coupling, grain modelling).
+
+`/verify` clean: cargo fmt --check ✓, clippy --workspace --all-targets
+-D warnings ✓, full workspace test 1676 passed / 0 failed / 122
+ignored (the ignored set is pre-existing — wanaka_back_rough chipload
+gate blocker, two multi-setup tri-dexel known failures, etc).
+
 ### Dexel-fidelity roadmap — Step 5 J (marching cubes mesh extraction)
 
 Step 5 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` lands. The roadmap

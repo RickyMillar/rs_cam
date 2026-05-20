@@ -910,7 +910,7 @@ mod tests {
         for s in &cutting {
             assert!(s.axial_doc_mm >= 0.0, "axial_doc must be non-negative");
             assert!(
-                s.radial_engagement >= 0.0,
+                s.engagement.radial_woc_fraction >= 0.0,
                 "engagement must be non-negative"
             );
             assert!(

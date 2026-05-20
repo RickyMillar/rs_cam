@@ -173,7 +173,7 @@ fn retract_feed_is_non_cutting_in_simulator() {
             "Linear move with MoveIntent::Retract should yield is_cutting=false, got {s:?}"
         );
         assert_eq!(
-            s.radial_engagement, 0.0,
+            s.engagement.radial_woc_fraction, 0.0,
             "retract sample should have zero radial engagement"
         );
     }

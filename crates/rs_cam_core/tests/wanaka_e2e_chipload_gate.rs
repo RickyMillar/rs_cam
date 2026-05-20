@@ -160,7 +160,7 @@ fn wanaka_back_rough_chipload_gate_passes_after_auto_fix() {
                 peak_sample.position[1],
                 peak_sample.position[2],
                 peak_sample.axial_doc_mm,
-                peak_sample.radial_engagement,
+                peak_sample.engagement.radial_woc_fraction,
                 peak_sample.arc_engagement_radians,
                 peak_sample.removed_volume_est_mm3,
                 peak_sample.mrr_mm3_s,
@@ -175,9 +175,9 @@ fn wanaka_back_rough_chipload_gate_passes_after_auto_fix() {
             if s.toolpath_id != back_rough_id || !s.is_cutting {
                 continue;
             }
-            if s.radial_engagement < 0.02 {
+            if s.engagement.radial_woc_fraction < 0.02 {
                 air_cut += 1;
-            } else if s.radial_engagement < 0.10 {
+            } else if s.engagement.radial_woc_fraction < 0.10 {
                 low_eng += 1;
             } else {
                 full_eng += 1;
@@ -218,7 +218,7 @@ fn wanaka_back_rough_chipload_gate_passes_after_auto_fix() {
                 s.spindle_rpm,
                 s.flute_count,
                 s.axial_doc_mm,
-                s.radial_engagement,
+                s.engagement.radial_woc_fraction,
                 s.arc_engagement_radians,
                 s.chipload_mm_per_tooth,
                 s.effective_chip_thickness_mm,
@@ -232,7 +232,7 @@ fn wanaka_back_rough_chipload_gate_passes_after_auto_fix() {
             if s.toolpath_id != back_rough_id || !s.is_cutting {
                 continue;
             }
-            if s.radial_engagement < 0.02 {
+            if s.engagement.radial_woc_fraction < 0.02 {
                 continue;
             }
             if s.feed_rate_mm_min < 0.95 * 3150.0 {
