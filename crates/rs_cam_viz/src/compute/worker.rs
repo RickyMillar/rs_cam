@@ -135,6 +135,21 @@ pub struct SimBoundary {
 
 pub use rs_cam_core::compute::simulate::SimCheckpointMesh;
 
+/// One entry in the live-sim playback stream: pre-transformed toolpath in the
+/// global stock frame, the tool config, the cut direction for the toolpath's
+/// setup, and (for drill operations) the analytical `DrillOp` already
+/// re-expressed in the global frame.
+///
+/// `drill_op = Some(...)` instructs `update_live_sim` to use
+/// `TriDexelStock::apply_drill_op` rather than `simulate_toolpath_range` —
+/// matching what the compute path applies to each checkpoint stock.
+pub type PlaybackToolpath = (
+    Arc<Toolpath>,
+    ToolConfig,
+    StockCutDirection,
+    Option<Arc<rs_cam_core::drill_op::DrillOp>>,
+);
+
 pub struct SimulationResult {
     pub mesh: StockMesh,
     pub total_moves: usize,
@@ -143,7 +158,7 @@ pub struct SimulationResult {
     pub checkpoints: Vec<SimCheckpointMesh>,
     /// Pre-transformed toolpath data for incremental playback.
     /// Each entry: (toolpath, tool_config, direction).
-    pub playback_data: Vec<(Arc<Toolpath>, ToolConfig, StockCutDirection)>,
+    pub playback_data: Vec<PlaybackToolpath>,
     /// Rapid-through-stock collisions detected during simulation.
     pub rapid_collisions: Vec<RapidCollision>,
     /// Move indices with rapid collisions (for timeline markers).

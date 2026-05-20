@@ -1798,6 +1798,198 @@ fn simulation_metrics_capture_emits_cut_trace_and_artifact() {
     }
 }
 
+// Regression: playback_data must carry drill_op for drill toolpaths so the
+// live-sim forward-replay can call `apply_drill_op` (analytical kernel)
+// instead of falling through to `simulate_toolpath_range`'s degenerate-Z
+// dexel stamping. Without this, drill holes vanish or look wrong when
+// scrubbing forward through a drill TP boundary, because the live-sim mesh
+// diverges from what the compute path applied to the checkpoint stock.
+//
+// See `crates/rs_cam_viz/src/app/simulation.rs::update_live_sim` and the
+// compute-side analogue at `compute/simulate.rs:387-406`.
+#[test]
+fn playback_data_carries_drill_op_for_drill_toolpaths() {
+    use rs_cam_core::drill::DrillCycle;
+    use rs_cam_core::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
+    use rs_cam_core::material::Material;
+
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    // The toolpath here is a placeholder — drill TPs in the analytical path
+    // still emit motion (plunge+retract per hole), but the analytical kernel
+    // ignores it and operates on `DrillOp.holes` directly.
+    let mut tp = Toolpath::new();
+    tp.rapid_to(P3::new(5.0, 5.0, 10.0));
+    tp.feed_to(P3::new(5.0, 5.0, 4.0), 300.0);
+    tp.rapid_to(P3::new(5.0, 5.0, 10.0));
+
+    let drill_op = Arc::new(DrillOp {
+        holes: vec![DrillHole {
+            xy: [5.0, 5.0],
+            top_z: 10.0,
+            bottom_z: 4.0,
+        }],
+        hole_source: HoleSource::ModelDerived,
+        tool_profile: ToolProfile::Flat,
+        tool_diameter_mm: 2.0,
+        cycle: DrillCycle::Simple,
+        feed_rate_mm_min: 300.0,
+        spindle_rpm: 18_000,
+        flute_count: 2,
+        material: Material::default(),
+    });
+
+    let stock_bbox = BoundingBox3 {
+        min: P3::new(0.0, 0.0, 0.0),
+        max: P3::new(10.0, 10.0, 10.0),
+    };
+
+    let request = SimulationRequest {
+        groups: vec![SetupSimGroup {
+            toolpaths: vec![SetupSimToolpath {
+                id: ToolpathId(42),
+                name: "Drill".to_owned(),
+                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp)),
+                tool,
+                semantic_trace: None,
+                spindle_rpm: None,
+                metrics_not_applicable: true,
+                drill_op: Some(Arc::clone(&drill_op)),
+            }],
+            local_stock_bbox: stock_bbox,
+            local_to_global: None,
+        }],
+        stock_bbox,
+        stock_top_z: 10.0,
+        resolution: 0.5,
+        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions::default(),
+        spindle_rpm: 18_000,
+        rapid_feed_mm_min: 5_000.0,
+        model_mesh: None,
+    };
+
+    let mut backend = ThreadedComputeBackend::new();
+    backend.submit_simulation(request);
+
+    let msg = wait_for(&mut backend, Duration::from_secs(10), |msg| {
+        matches!(msg, ComputeMessage::Simulation(Ok(_)))
+    })
+    .expect("simulation result");
+    let ComputeMessage::Simulation(Ok(result)) = msg else {
+        panic!("expected successful simulation");
+    };
+
+    assert_eq!(result.playback_data.len(), 1);
+    let (_tp, _tool, _direction, replay_drill_op) = &result.playback_data[0];
+    let replay_drill_op = replay_drill_op
+        .as_ref()
+        .expect("drill TP must carry a drill_op in playback_data so live-sim can apply it");
+    assert_eq!(replay_drill_op.holes.len(), 1);
+    // No setup transform applied — global frame equals local.
+    assert_eq!(replay_drill_op.holes[0].xy, [5.0, 5.0]);
+    assert!((replay_drill_op.holes[0].top_z - 10.0).abs() < 1e-9);
+    assert!((replay_drill_op.holes[0].bottom_z - 4.0).abs() < 1e-9);
+    assert!((replay_drill_op.tool_diameter_mm - 2.0).abs() < 1e-9);
+}
+
+// Regression: when the drill TP sits in a flipped setup (face_up=Bottom),
+// the playback_data drill_op must be re-expressed in the global stock
+// frame — otherwise live-sim's `apply_drill_op` would carve a hole at
+// the wrong Z (and possibly outside the stock bbox).
+#[test]
+fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
+    use rs_cam_core::drill::DrillCycle;
+    use rs_cam_core::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
+    use rs_cam_core::material::Material;
+
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tp = Toolpath::new();
+    tp.rapid_to(P3::new(5.0, 5.0, 10.0));
+    tp.feed_to(P3::new(5.0, 5.0, 4.0), 300.0);
+    tp.rapid_to(P3::new(5.0, 5.0, 10.0));
+
+    let drill_op = Arc::new(DrillOp {
+        holes: vec![DrillHole {
+            xy: [5.0, 5.0],
+            top_z: 10.0,
+            bottom_z: 4.0,
+        }],
+        hole_source: HoleSource::ModelDerived,
+        tool_profile: ToolProfile::Flat,
+        tool_diameter_mm: 2.0,
+        cycle: DrillCycle::Simple,
+        feed_rate_mm_min: 300.0,
+        spindle_rpm: 18_000,
+        flute_count: 2,
+        material: Material::default(),
+    });
+
+    let stock_bbox = BoundingBox3 {
+        min: P3::new(0.0, 0.0, 0.0),
+        max: P3::new(10.0, 10.0, 10.0),
+    };
+
+    let request = SimulationRequest {
+        groups: vec![SetupSimGroup {
+            toolpaths: vec![SetupSimToolpath {
+                id: ToolpathId(7),
+                name: "Drill (back)".to_owned(),
+                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp)),
+                tool,
+                semantic_trace: None,
+                spindle_rpm: None,
+                metrics_not_applicable: true,
+                drill_op: Some(Arc::clone(&drill_op)),
+            }],
+            local_stock_bbox: stock_bbox,
+            local_to_global: Some(SetupTransformInfo {
+                face_up: crate::state::job::FaceUp::Bottom,
+                z_rotation: crate::state::job::ZRotation::Deg0,
+                stock_x: 10.0,
+                stock_y: 10.0,
+                stock_z: 10.0,
+                ..Default::default()
+            }),
+        }],
+        stock_bbox,
+        stock_top_z: 10.0,
+        resolution: 0.5,
+        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions::default(),
+        spindle_rpm: 18_000,
+        rapid_feed_mm_min: 5_000.0,
+        model_mesh: None,
+    };
+
+    let mut backend = ThreadedComputeBackend::new();
+    backend.submit_simulation(request);
+
+    let msg = wait_for(&mut backend, Duration::from_secs(10), |msg| {
+        matches!(msg, ComputeMessage::Simulation(Ok(_)))
+    })
+    .expect("simulation result");
+    let ComputeMessage::Simulation(Ok(result)) = msg else {
+        panic!("expected successful simulation");
+    };
+
+    let (_tp, _tool, _direction, replay_drill_op) = &result.playback_data[0];
+    let replay_drill_op = replay_drill_op
+        .as_ref()
+        .expect("drill TP must carry a drill_op");
+    // FaceUp::Bottom flips Z about the midplane (5.0), so local top_z=10
+    // maps to global 0, local bottom_z=4 to global 6. Global frame is what
+    // live-sim's `apply_drill_op` consumes.
+    let h = &replay_drill_op.holes[0];
+    assert!(
+        (h.top_z - 0.0).abs() < 1e-6,
+        "global top_z after FaceUp::Bottom flip should be 0, got {}",
+        h.top_z
+    );
+    assert!(
+        (h.bottom_z - 6.0).abs() < 1e-6,
+        "global bottom_z after FaceUp::Bottom flip should be 6, got {}",
+        h.bottom_z
+    );
+}
+
 #[test]
 fn simulation_metrics_capture_emits_semantic_cut_summaries() {
     let mut backend = ThreadedComputeBackend::new();
