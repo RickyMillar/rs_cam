@@ -44,7 +44,7 @@ Findings to re-verify post-rebuild:
 
 | ID  | Sev | Surface | Status | Title |
 |-----|-----|---------|--------|-------|
-| A1  | 🔴 | Op engine | 🔵 | project_curve depth-sign trap (TP3 100% air, no banner) |
+| A1  | 🔴 | Op engine | ✅ | project_curve depth-sign trap (TP3 100% air, no banner) |
 | A2  | 🔴 | Defaults | ⏸️ | drop_cutter stale defaults `min_z=-50`, `plunge=750` not flagged |
 | A3  | 🟡 | Build cadence | ✅ | `project_summary` has no build-sha / feature list |
 | A4  | 🟡 | Sim verdict | ✅ | Project verdict doesn't name offending TPs |
@@ -978,3 +978,101 @@ With B1 closed, the natural next PRs are:
 3. **B3** 🔴 — Profile + STEP model hang on generate. Reject at `add_toolpath` instead.
 
 Followup deeper-than-PR-2A audit candidate: the **cutter-Z vs dexel-Z frame mismatch** noticed during this PR. The simulation has been carving correctly by accident (cutter cuts at world z=-4, dexel rays span setup-local z=0..12, `subtract_above` removes everything in the ray when called with z below it). Collision detection is also off by a constant: it compares cutter Z to dexel stock_top (different frames). Worth a dedicated cleanup PR — both layers should agree on a frame.
+
+---
+
+## Session 4 outcome (2026-05-21) — PR-2B: B1 runtime confirmation + A1 project_curve negative-depth validator
+
+### Shipped
+
+| Code | Pre | Status | What landed |
+|------|-----|--------|-------------|
+| B1 (runtime confirm — v_carve) | ✅(static) | ✅(runtime) | Programmatic regression test on 12.7 mm V-bit + star polygon over hardwood: **0** rapid collisions |
+| B1 (runtime confirm — adaptive3d) | ✅(static) | ✅(runtime) | Programmatic regression test on hemisphere mesh + 6 mm EM + Helix entry: **0** rapid collisions |
+| A1 (project_curve depth-sign) | 🔵 | ✅ | Convention pinned with 4-case empirical test + `ProjectCurveNegativeDepth` validator rule with auto-fix |
+
+A1 is now ✅ in the master index. B1 was already ✅; runtime confirmation tests close the "static-analysis only" caveat from Session 3.
+
+### Part 1 — B1 runtime confirmation
+
+Two new regression tests mirror `pocket_lift_bridge_b1.rs` for the remaining engines:
+
+- `crates/rs_cam_core/tests/vcarve_lift_bridge_b1.rs::vcarve_default_skeleton_emits_no_rapid_collisions` — 5-pointed star polygon, 12.7 mm V-bit (60° included), 12 mm hardwood, `DressupConfig::for_op(VCarve)` (Finish role → Ramp entry). Asserts substantive toolpath (>50 moves) **and** `sim.rapid_collisions.is_empty()`. Passes.
+- `crates/rs_cam_core/tests/adaptive3d_lift_bridge_b1.rs::adaptive3d_default_skeleton_emits_no_rapid_collisions` — synthetic hemisphere (radius 15) inside 50×50×25 hardwood, 6 mm EM, `Adaptive3dEntryStyle::Helix` (the variant exercising the 4 emit call sites patched in PR-2A's `adaptive3d/path.rs`). Asserts >200 moves and zero rapid collisions. Passes.
+
+The Session 3 static-analysis claim ("v_carve and adaptive3d share the fix") is now backed by empirical runtime data. If the shared fix ever regresses, all three tests will fail in lockstep.
+
+### Part 2 — PR-2B: A1 project_curve depth-sign
+
+#### Empirical convention finding
+
+`crates/rs_cam_core/tests/project_curve_depth_sign.rs` pins the documented convention ("positive = into material") with four explicit cases on a flat mesh at z=0:
+
+| Case | Expected cutter Z | Empirically observed |
+|------|-------------------|----------------------|
+| `FromAbove`, `depth = +2` | `-2` (into material) | `-2` ✅ |
+| `FromAbove`, `depth = -2` | `+2` (in air above) | `+2` ✅ |
+| `FromBelow`, `depth = +2` | `+2` (into material, cutter approaches up) | `+2` ✅ |
+| `FromBelow`, `depth = -2` | `-2` (in air below) | `-2` ✅ |
+
+Conclusion: the geometric convention is **internally consistent and not backwards**. The user's `depth = -2, from_below` in the Wanaka project landed the path in air not because the code mis-signs the depth but because the user typed a negative magnitude when the convention requires positive.
+
+Flipping the convention would be a breaking change for every existing project file that uses the correct positive sign. We don't flip it; we add a pre-generation defense-in-depth instead.
+
+#### New validator rule: `ProjectCurveNegativeDepth`
+
+`crates/rs_cam_core/src/compute/validate.rs` gains a fourth `StaleDefaultRule` variant. Detection criterion: `OperationConfig::ProjectCurve(cfg)` with `cfg.depth < 0`. Auto-fix: flip the sign (`cfg.depth = -cfg.depth`). Detail message names the direction (`"From Above"` / `"From Below"`) and explains the convention so the user understands the fix.
+
+Validator output is already surfaced via MCP `project_summary.stale_defaults` and the GUI; the rule lands there with no extra wiring.
+
+Five new tests cover the rule:
+
+- Fires on the Wanaka TP3 pattern (`depth = -2, from_below`) with `current_value=-2`, `new_value=+2`, detail contains `"From Below"`.
+- Fires on `from_above` too (the convention is direction-agnostic).
+- Silent on positive depth (happy path).
+- Silent on `depth = 0` (legitimate "trace at surface" use case for drag-knife / visual line work).
+- Auto-fix flips the sign and a re-run of the validator is clean.
+
+#### Defense-in-depth confirmation
+
+The PR-1 `GeneratedEmpty` verdict already catches the *symptom* post-generation. Its `fix_hint` previously read "negative = below stock top" which was ambiguous about which signed quantity it referred to. Updated to call out the project_curve convention by name and point at the new validator rule for the one-click fix.
+
+### Files changed this session
+
+- `crates/rs_cam_core/src/compute/validate.rs` — new `ProjectCurveNegativeDepth` rule, check function, auto-fix branch, 5 new tests
+- `crates/rs_cam_core/src/session/compute.rs` — `GeneratedEmpty` verdict `fix_hint` clarified to name the project_curve convention and the validator rule id
+- `crates/rs_cam_core/tests/project_curve_depth_sign.rs` — new (4 convention tests)
+- `crates/rs_cam_core/tests/vcarve_lift_bridge_b1.rs` — new (B1 v_carve runtime confirm)
+- `crates/rs_cam_core/tests/adaptive3d_lift_bridge_b1.rs` — new (B1 adaptive3d runtime confirm)
+- `planning/UX_DIALIN_FIX_PLAN_2026-05-20.md` — A1 master-index ✅, this section
+
+### Verification
+
+- `cargo test -p rs_cam_core --lib compute::validate` — **17 passed** (12 pre-existing + 5 new)
+- `cargo test -p rs_cam_core --test project_curve_depth_sign` — **4 passed**
+- `cargo test -p rs_cam_core --test vcarve_lift_bridge_b1` — **1 passed**
+- `cargo test -p rs_cam_core --test adaptive3d_lift_bridge_b1` — **1 passed**
+- `cargo test -p rs_cam_core --lib` — **1516 passed, 0 failed, 7 ignored**
+- `cargo clippy --workspace --all-targets -- -D warnings` — clean
+- `cargo fmt --check` — clean
+
+### Status totals (after Session 4)
+
+| Status | Count |
+|--------|-------|
+| ✅ Fixed (Sessions 1-3) | 17 |
+| ✅ Fixed (Session 4 — PR-2B A1 + B1 runtime confirm) | 1 (A1) |
+| ✅ Fixed (Optimizer surfaces — kept as-is) | 2 (C1, C4) |
+| 🟠 Investigating | 2 (A11, B6) |
+| ⏸️ Blocked-on-rebuild | 3 (A2, B2, plus A11 partially) |
+| 🔵 To investigate | ~18 |
+
+### Recommended next-session entry point
+
+With A1 and B1 closed, the natural next PRs are:
+
+1. **B7** 🟡 — v_carve 214 k moves on a small star. Two parts: default stepover from V-bit chord-at-depth (rather than fixed 0.254 mm), and an add-toolpath-time move-count budget warning (>50 k).
+2. **B3** 🔴 — Profile + STEP model hang on generate. Reject at `add_toolpath` instead of letting generation hang.
+3. **Cutter-Z vs dexel-Z frame audit** — the deeper cleanup Session 3 flagged. Dedicated PR.
+4. **A2** ⏸️ — drop_cutter stale defaults. Now that the validator infrastructure has a fourth rule, the pattern is well-trodden; re-verify against current HEAD.
+5. **A11** 🟠 — drill plunge envelope floor suggestion.

@@ -1395,9 +1395,12 @@ impl ProjectSession {
                 ),
                 offender_toolpath_ids: vec![*id],
                 fix_hint: "Check that the setup orientation, stock alignment, and target \
-                           model geometry overlap. For depth-driven ops verify the sign \
-                           convention (negative = below stock top). Toolpath may have \
-                           generated entirely above the stock surface."
+                           model geometry overlap. For project_curve specifically, \
+                           `depth` follows the \"positive = into material\" convention — \
+                           a negative depth lifts the cutter into air. The \
+                           project_curve_negative_depth validator rule flags this \
+                           pre-generation; the project_summary.stale_defaults entry has \
+                           a one-click flip-sign fix."
                     .to_owned(),
                 evidence: VerdictEvidence {
                     move_index: None,
