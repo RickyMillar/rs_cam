@@ -446,6 +446,28 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .find_toolpath_config_by_id(id.0)
                 .map(|(_, tc)| format!("{:?}", tc.heights));
 
+            // Pre-compute stale-default defects for this TP so the panel
+            // can render the validator banner without needing a session
+            // reference. Defects are recomputed each frame, so a Fix
+            // click takes effect immediately on the next render.
+            let stale_default_defects = state
+                .session
+                .find_toolpath_config_by_id(id.0)
+                .map(|(_, tc)| {
+                    let tool =
+                        state.session.tools().iter().find(|t| {
+                            t.id == rs_cam_core::compute::tool_config::ToolId(tc.tool_id)
+                        });
+                    let stock_bottom_z = state.session.stock_config().origin_z;
+                    rs_cam_core::compute::validate::validate_one_toolpath(
+                        tc,
+                        tool,
+                        &state.session.stock_config().material,
+                        stock_bottom_z,
+                    )
+                })
+                .unwrap_or_default();
+
             // Build a temporary ToolpathEntry from session config + gui runtime
             // so the existing draw_toolpath_panel can work unchanged.
             if let Some(mut entry) =
@@ -464,6 +486,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     model_has_enriched,
                     model_is_step_missing_brep,
                     height_ctx.as_ref(),
+                    &stale_default_defects,
                     events,
                 );
 
@@ -2188,6 +2211,7 @@ fn draw_toolpath_panel(
     model_has_enriched: bool,
     model_is_step_missing_brep: bool,
     height_ctx: Option<&HeightContext>,
+    stale_default_defects: &[rs_cam_core::compute::validate::StaleDefault],
     events: &mut Vec<AppEvent>,
 ) {
     ui.heading(&entry.name);
@@ -2382,12 +2406,103 @@ fn draw_toolpath_panel(
 
     match active_tab {
         ToolpathTab::Params => {
-            // Roadmap F.5 — the per-frame auto-feeds toggle UI is
-            // gone. Recommended values live in the Feeds tab with
-            // per-field "Suggest" buttons; user owns the operation
-            // fields directly.
-
             ui.add_space(4.0);
+
+            // Validator-driven Fix banner (PR-2C Phase 1). One row per
+            // detected stale-default rule for this TP, with a one-click
+            // Fix that mutates the operation directly. Defects are
+            // recomputed by the caller each frame, so the banner
+            // disappears as soon as the fix takes effect.
+            for defect in stale_default_defects {
+                egui::Frame::group(ui.style())
+                    .fill(egui::Color32::from_rgb(50, 38, 22))
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        egui::Color32::from_rgb(200, 150, 60),
+                    ))
+                    .inner_margin(egui::Margin::same(6.0))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new("\u{26A0}")
+                                    .color(egui::Color32::from_rgb(220, 180, 60))
+                                    .strong(),
+                            );
+                            ui.label(egui::RichText::new(&defect.title).strong());
+                        });
+                        ui.label(
+                            egui::RichText::new(&defect.detail)
+                                .small()
+                                .color(egui::Color32::from_rgb(180, 180, 180)),
+                        );
+                        if ui
+                            .small_button(format!("\u{2713} Fix (set to {:.3})", defect.new_value))
+                            .on_hover_text(
+                                "Apply the validator's auto-fix to this toolpath. \
+                                 Mark stale and regenerate to apply.",
+                            )
+                            .clicked()
+                        {
+                            rs_cam_core::compute::validate::apply_stale_default_to_op(
+                                &mut entry.operation,
+                                defect,
+                            );
+                            entry.stale_since = Some(std::time::Instant::now());
+                        }
+                    });
+                ui.add_space(2.0);
+            }
+
+            // LUT-driven "Suggest all" button (PR-2C Phase 1). Mirrors
+            // the same-named button in the Feeds tab so the user can
+            // bulk-apply LUT recommendations without a tab switch.
+            // Per-field Suggest pills remain in the Feeds tab (Phase 2).
+            if let Some(tool_cfg) = tool_configs
+                .iter()
+                .find(|(id, _)| *id == entry.tool_id)
+                .map(|(_, t)| t)
+            {
+                let result = compute_feeds_for_op(
+                    tool_cfg,
+                    material,
+                    machine,
+                    workholding,
+                    &entry.operation,
+                );
+                ui.horizontal(|ui| {
+                    if ui
+                        .button("\u{26A1} Suggest all (LUT)")
+                        .on_hover_text(format!(
+                            "Overwrite feed ({:.0}), plunge ({:.0}), depth-per-pass ({:.2}), \
+                             stepover ({:.2}), and RPM ({:.0}) from the LUT. \
+                             See the Feeds tab for the formula breakdown and per-field Suggest buttons.",
+                            result.feed_rate_mm_min,
+                            result.plunge_rate_mm_min,
+                            result.axial_depth_mm,
+                            result.radial_width_mm,
+                            result.rpm,
+                        ))
+                        .clicked()
+                    {
+                        apply_feeds_result_to_op(&mut entry.operation, &result);
+                        entry.stale_since = Some(std::time::Instant::now());
+                    }
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "\u{2192} feed {:.0}, plunge {:.0}, DOC {:.2}, WOC {:.2}",
+                            result.feed_rate_mm_min,
+                            result.plunge_rate_mm_min,
+                            result.axial_depth_mm,
+                            result.radial_width_mm,
+                        ))
+                        .small()
+                        .color(egui::Color32::from_rgb(140, 160, 180)),
+                    );
+                });
+                entry.feeds_result = Some(result);
+                ui.add_space(4.0);
+            }
+
             // Operation description from spec (consistent across all operations)
             let spec = entry.operation.op_type().spec();
             ui.label(

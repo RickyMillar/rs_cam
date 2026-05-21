@@ -103,20 +103,41 @@ pub fn validate_stale_defaults(session: &ProjectSession) -> Vec<StaleDefault> {
     let stock_bottom_z = compute_stock_bottom_z(session);
     for tc in session.toolpath_configs() {
         let tool = find_tool_for(session, tc.tool_id);
-        if let Some(d) = check_drop_cutter_min_z(tc, stock_bottom_z) {
+        out.extend(validate_one_toolpath(
+            tc,
+            tool,
+            &stock.material,
+            stock_bottom_z,
+        ));
+    }
+    out
+}
+
+/// Validate a single toolpath against the rule library. Same rules as
+/// [`validate_stale_defaults`] but takes the toolpath, tool, material,
+/// and stock-bottom Z directly so callers without a `ProjectSession`
+/// (e.g. the GUI toolpath-properties panel) can run the same checks
+/// against in-flight edits.
+pub fn validate_one_toolpath(
+    tc: &ToolpathConfig,
+    tool: Option<&ToolConfig>,
+    material: &Material,
+    stock_bottom_z: f64,
+) -> Vec<StaleDefault> {
+    let mut out = Vec::new();
+    if let Some(d) = check_drop_cutter_min_z(tc, stock_bottom_z) {
+        out.push(d);
+    }
+    if let Some(tool) = tool {
+        if let Some(d) = check_tapered_ball_plunge(tc, tool) {
             out.push(d);
         }
-        if let Some(tool) = tool {
-            if let Some(d) = check_tapered_ball_plunge(tc, tool) {
-                out.push(d);
-            }
-            if let Some(d) = check_wood_adaptive_stepover(tc, tool, &stock.material) {
-                out.push(d);
-            }
-        }
-        if let Some(d) = check_project_curve_negative_depth(tc) {
+        if let Some(d) = check_wood_adaptive_stepover(tc, tool, material) {
             out.push(d);
         }
+    }
+    if let Some(d) = check_project_curve_negative_depth(tc) {
+        out.push(d);
     }
     out
 }
@@ -133,27 +154,34 @@ pub fn apply_stale_default_fix(
         .iter_mut()
         .find(|tc| tc.id == defect.toolpath_id)
         .ok_or(SessionError::ToolpathNotFound(defect.toolpath_id))?;
+    apply_stale_default_to_op(&mut tc.operation, defect);
+    Ok(())
+}
+
+/// Apply the auto-fix's field change directly to an [`OperationConfig`].
+/// Used by callers that hold the operation mutably without a session
+/// (e.g. the GUI toolpath-properties panel, which builds a transient
+/// `ToolpathEntry` and writes back to the session at the end of the
+/// frame). Session-level callers should prefer [`apply_stale_default_fix`].
+pub fn apply_stale_default_to_op(op: &mut OperationConfig, defect: &StaleDefault) {
     match defect.rule_id {
         StaleDefaultRule::DropCutterMinZPreB1 => {
-            if let OperationConfig::DropCutter(cfg) = &mut tc.operation {
+            if let OperationConfig::DropCutter(cfg) = op {
                 cfg.min_z = defect.new_value;
             }
         }
         StaleDefaultRule::TaperedBallPlungePreFix2 => {
-            tc.operation
-                .as_params_mut()
-                .set_plunge_rate(defect.new_value);
+            op.as_params_mut().set_plunge_rate(defect.new_value);
         }
         StaleDefaultRule::WoodAdaptiveStepoverPreFix1 => {
-            tc.operation.as_params_mut().set_stepover(defect.new_value);
+            op.as_params_mut().set_stepover(defect.new_value);
         }
         StaleDefaultRule::ProjectCurveNegativeDepth => {
-            if let OperationConfig::ProjectCurve(cfg) = &mut tc.operation {
+            if let OperationConfig::ProjectCurve(cfg) = op {
                 cfg.depth = defect.new_value;
             }
         }
     }
-    Ok(())
 }
 
 // ── Rule implementations ──────────────────────────────────────────────
