@@ -15,6 +15,7 @@
 //! - [`StaleDefaultRule::DropCutterMinZPreB1`] — B.1
 //! - [`StaleDefaultRule::TaperedBallPlungePreFix2`] — Fix 2
 //! - [`StaleDefaultRule::WoodAdaptiveStepoverPreFix1`] — Fix 1
+//! - [`StaleDefaultRule::ProjectCurveNegativeDepth`] — A1 (UX dial-in 2026-05-20)
 //!
 //! Adding a rule per future B-roadmap entry is the ongoing convention
 //! (see F5 doc).
@@ -45,6 +46,13 @@ pub enum StaleDefaultRule {
     /// adaptive `ae_factor` from 0.14 to 0.20 — pre-Fix-1 projects sit
     /// below.
     WoodAdaptiveStepoverPreFix1,
+    /// ProjectCurve with `depth < 0`. The geometric convention is
+    /// "positive depth = into material", so a negative value lifts the
+    /// cutter into air and produces a 100 % air-cut toolpath. Almost
+    /// always a user mistake — surface review 2026-05-20 caught one in
+    /// the Wanaka project (TP3 "Rivers (back) (copy)"). Auto-fix flips
+    /// the sign.
+    ProjectCurveNegativeDepth,
 }
 
 impl StaleDefaultRule {
@@ -53,6 +61,7 @@ impl StaleDefaultRule {
             Self::DropCutterMinZPreB1 => "drop_cutter_min_z_pre_b1",
             Self::TaperedBallPlungePreFix2 => "tapered_ball_plunge_pre_fix2",
             Self::WoodAdaptiveStepoverPreFix1 => "wood_adaptive_stepover_pre_fix1",
+            Self::ProjectCurveNegativeDepth => "project_curve_negative_depth",
         }
     }
 
@@ -62,6 +71,9 @@ impl StaleDefaultRule {
             Self::TaperedBallPlungePreFix2 => "Plunge rate exceeds the small-ball safety cap",
             Self::WoodAdaptiveStepoverPreFix1 => {
                 "Adaptive stepover is narrower than the wood/rigidity target"
+            }
+            Self::ProjectCurveNegativeDepth => {
+                "Project-curve depth is negative — toolpath will cut air"
             }
         }
     }
@@ -102,6 +114,9 @@ pub fn validate_stale_defaults(session: &ProjectSession) -> Vec<StaleDefault> {
                 out.push(d);
             }
         }
+        if let Some(d) = check_project_curve_negative_depth(tc) {
+            out.push(d);
+        }
     }
     out
 }
@@ -131,6 +146,11 @@ pub fn apply_stale_default_fix(
         }
         StaleDefaultRule::WoodAdaptiveStepoverPreFix1 => {
             tc.operation.as_params_mut().set_stepover(defect.new_value);
+        }
+        StaleDefaultRule::ProjectCurveNegativeDepth => {
+            if let OperationConfig::ProjectCurve(cfg) = &mut tc.operation {
+                cfg.depth = defect.new_value;
+            }
         }
     }
     Ok(())
@@ -239,6 +259,35 @@ fn check_wood_adaptive_stepover(
     })
 }
 
+fn check_project_curve_negative_depth(tc: &ToolpathConfig) -> Option<StaleDefault> {
+    let OperationConfig::ProjectCurve(cfg) = &tc.operation else {
+        return None;
+    };
+    if cfg.depth >= 0.0 {
+        return None;
+    }
+    let new_value = -cfg.depth;
+    let direction_label = cfg.direction.label();
+    Some(StaleDefault {
+        rule_id: StaleDefaultRule::ProjectCurveNegativeDepth,
+        toolpath_id: tc.id,
+        toolpath_name: tc.name.clone(),
+        title: StaleDefaultRule::ProjectCurveNegativeDepth
+            .title()
+            .to_owned(),
+        detail: format!(
+            "ProjectCurve `depth` is {:.3} mm (negative). The geometric convention is \
+             \"positive depth = into material\" — with `direction = {direction_label}`, a \
+             negative depth lifts the cutter into air for the whole toolpath (0 mm of \
+             in-material cut). Flipping to {new_value:+.3} mm restores the intended \
+             {new_value:.1} mm-deep cut.",
+            cfg.depth,
+        ),
+        new_value,
+        current_value: cfg.depth,
+    })
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────
 
 fn is_wood_class(m: &Material) -> bool {
@@ -273,7 +322,9 @@ mod tests {
     use crate::compute::catalog::OperationConfig;
     use crate::compute::config::StockSource;
     use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
-    use crate::compute::operation_configs::{Adaptive3dConfig, DropCutterConfig, PocketConfig};
+    use crate::compute::operation_configs::{
+        Adaptive3dConfig, DropCutterConfig, PocketConfig, ProjectCurveConfig, ProjectCurveDirection,
+    };
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::debug_trace::ToolpathDebugOptions;
     use crate::gcode::CoolantMode;
@@ -549,6 +600,109 @@ mod tests {
         assert!(rule_ids.contains(&StaleDefaultRule::DropCutterMinZPreB1));
         assert!(rule_ids.contains(&StaleDefaultRule::TaperedBallPlungePreFix2));
         assert!(rule_ids.contains(&StaleDefaultRule::WoodAdaptiveStepoverPreFix1));
+    }
+
+    // ── ProjectCurve negative-depth rule ─────────────────────────────
+
+    #[test]
+    fn rule_fires_on_wanaka_tp3_pattern_negative_depth_from_below() {
+        let mut s = wood_session();
+        s.add_tool(flat_em(6.0));
+        let mut cfg = ProjectCurveConfig::default();
+        cfg.depth = -2.0;
+        cfg.direction = ProjectCurveDirection::FromBelow;
+        s.add_toolpath(
+            0,
+            make_tp(
+                0,
+                "Rivers (back) (copy)",
+                OperationConfig::ProjectCurve(cfg),
+                0,
+            ),
+        )
+        .unwrap();
+        let defects = validate_stale_defaults(&s);
+        assert_eq!(defects.len(), 1);
+        assert_eq!(
+            defects[0].rule_id,
+            StaleDefaultRule::ProjectCurveNegativeDepth
+        );
+        assert!((defects[0].current_value - (-2.0)).abs() < 1e-9);
+        assert!((defects[0].new_value - 2.0).abs() < 1e-9);
+        // The detail must surface the direction so the user knows which
+        // sign convention applies.
+        assert!(defects[0].detail.contains("From Below"));
+    }
+
+    #[test]
+    fn rule_fires_on_negative_depth_from_above_too() {
+        // The convention is "positive = into material" for both
+        // directions; negative is always wrong.
+        let mut s = wood_session();
+        s.add_tool(flat_em(6.0));
+        let mut cfg = ProjectCurveConfig::default();
+        cfg.depth = -0.5;
+        cfg.direction = ProjectCurveDirection::FromAbove;
+        s.add_toolpath(0, make_tp(0, "PC", OperationConfig::ProjectCurve(cfg), 0))
+            .unwrap();
+        let defects = validate_stale_defaults(&s);
+        assert_eq!(defects.len(), 1);
+        assert!((defects[0].new_value - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn rule_silent_on_positive_depth() {
+        let mut s = wood_session();
+        s.add_tool(flat_em(6.0));
+        let mut cfg = ProjectCurveConfig::default();
+        cfg.depth = 2.0;
+        s.add_toolpath(
+            0,
+            make_tp(0, "Good PC", OperationConfig::ProjectCurve(cfg), 0),
+        )
+        .unwrap();
+        let defects = validate_stale_defaults(&s);
+        assert!(
+            defects.is_empty(),
+            "positive depth is the documented happy-path"
+        );
+    }
+
+    #[test]
+    fn rule_silent_on_zero_depth() {
+        // Zero-depth is a legitimate "trace at surface" use case (e.g.
+        // visual-only line, drag-knife style). Don't flag it.
+        let mut s = wood_session();
+        s.add_tool(flat_em(6.0));
+        let mut cfg = ProjectCurveConfig::default();
+        cfg.depth = 0.0;
+        s.add_toolpath(
+            0,
+            make_tp(0, "Trace PC", OperationConfig::ProjectCurve(cfg), 0),
+        )
+        .unwrap();
+        let defects = validate_stale_defaults(&s);
+        assert!(defects.is_empty(), "depth=0 surface trace is allowed");
+    }
+
+    #[test]
+    fn auto_fix_flips_negative_depth_sign() {
+        let mut s = wood_session();
+        s.add_tool(flat_em(6.0));
+        let mut cfg = ProjectCurveConfig::default();
+        cfg.depth = -3.5;
+        s.add_toolpath(0, make_tp(0, "PC", OperationConfig::ProjectCurve(cfg), 0))
+            .unwrap();
+        let defects = validate_stale_defaults(&s);
+        assert_eq!(defects.len(), 1);
+        apply_stale_default_fix(&mut s, &defects[0]).unwrap();
+        let OperationConfig::ProjectCurve(after) = &s.toolpath_configs()[0].operation else {
+            panic!("operation type changed during auto-fix");
+        };
+        assert!((after.depth - 3.5).abs() < 1e-9);
+        // Re-running the validator should now be clean.
+        let after_defects = validate_stale_defaults(&s);
+        assert!(after_defects.is_empty(), "auto-fix should clear the rule");
     }
 
     #[test]
