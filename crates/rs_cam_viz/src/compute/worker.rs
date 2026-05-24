@@ -59,6 +59,10 @@ pub struct ComputeRequest {
     pub cutting_levels: Vec<f64>,
     /// Pre-simulated remaining stock from prior toolpaths in the same setup.
     pub prior_stock: Option<TriDexelStock>,
+    /// Workpiece material (F-016). Forwarded into the drill-op view so
+    /// `chip_welding` / `peck_adequacy` / `plunge_feed` gates evaluate
+    /// against the actual stock, not `Material::default()`.
+    pub material: rs_cam_core::material::Material,
 }
 
 pub struct ComputeResult {

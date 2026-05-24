@@ -781,15 +781,16 @@ impl ProjectSession {
 
                 // Build the drill-op view atomically with the annotated
                 // toolpath when this is a drill cycle (§6.E dual-rep
-                // invariant). PR1 carries `Material::default()`; drill
-                // gates that need the workpiece material land in PR2.
+                // invariant). Material comes from the live stock config so
+                // the chip-welding / peck-adequacy / plunge-feed gates
+                // (F-016) see the workpiece's actual hardness.
                 let drill_op = crate::compute::execute::build_drill_op_for_config(
                     &operation,
                     polygons.as_deref().map(|v| v.as_slice()),
                     &tool_def,
                     &tool,
                     &effective_stock_bbox,
-                    crate::material::Material::default(),
+                    self.stock.material.clone(),
                 );
                 let annotated_arc = Arc::new(annotated);
                 let op_data = match drill_op {

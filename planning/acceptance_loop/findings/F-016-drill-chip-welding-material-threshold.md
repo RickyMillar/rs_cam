@@ -2,10 +2,10 @@
 
 - **Stage:** sim
 - **Severity:** medium
-- **Status:** open
+- **Status:** landed
 - **First found in:** round-01 (2026-05-24)
 - **Effort:** S (one-liner suspected)
-- **Linked PRs:** —
+- **Linked PRs:** (commit pending)
 - **Source audits:** smoke-run evidence
 
 ## Evidence

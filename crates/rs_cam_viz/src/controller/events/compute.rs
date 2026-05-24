@@ -299,6 +299,7 @@ impl<B: ComputeBackend> AppController<B> {
 
         let prior_stock: Option<TriDexelStock> = None;
         let cutting_levels = operation.cutting_levels(heights.top_z);
+        let material = stock_snapshot.material;
 
         self.compute.submit_toolpath(ComputeRequest {
             toolpath_id: tp_id,
@@ -320,6 +321,7 @@ impl<B: ComputeBackend> AppController<B> {
             heights,
             cutting_levels,
             prior_stock,
+            material,
         });
     }
 

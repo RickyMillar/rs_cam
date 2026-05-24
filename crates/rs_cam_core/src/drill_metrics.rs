@@ -451,4 +451,33 @@ mod tests {
             "single peck of d/D = 3.0 should be flagged inadequate"
         );
     }
+
+    /// F-016: chip-welding threshold must branch on material. Pre-fix
+    /// callers passed `Material::default()` everywhere, so hardwood and
+    /// plastic stocks silently inherited the softwood threshold.
+    #[test]
+    fn chip_welding_threshold_per_material_family() {
+        use crate::material::{PlasticFamily, WoodSpecies};
+
+        let softwood = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
+        let hardwood = Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        };
+        let dense_hardwood = Material::SolidWood {
+            species: WoodSpecies::Jarrah,
+        };
+        let plastic = Material::Plastic {
+            family: PlasticFamily::Acrylic,
+        };
+
+        assert!((chip_welding_threshold(&softwood) - 8.0).abs() < 1e-9);
+        // GenericHardwood (janka 1450) → medium-hardwood band (6.0).
+        assert!((chip_welding_threshold(&hardwood) - 6.0).abs() < 1e-9);
+        // Jarrah (janka 1910) → dense-hardwood band (5.0).
+        assert!((chip_welding_threshold(&dense_hardwood) - 5.0).abs() < 1e-9);
+        // Plastic → 4.0 per CLAUDE.md drill threshold table.
+        assert!((chip_welding_threshold(&plastic) - 4.0).abs() < 1e-9);
+    }
 }
