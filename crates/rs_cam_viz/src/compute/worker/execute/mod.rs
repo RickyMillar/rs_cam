@@ -555,7 +555,7 @@ fn run_compute_with_phase_tracker(
             &local_tool_def,
             &req.tool,
             local_stock_bbox,
-            rs_cam_core::material::Material::default(),
+            req.material.clone(),
         )
         .map(Arc::new);
         Ok(ToolpathResult {
@@ -663,6 +663,7 @@ mod tests {
             cutting_levels,
             debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
             prior_stock: None,
+            material: rs_cam_core::material::Material::default(),
         }
     }
 

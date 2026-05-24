@@ -27,7 +27,6 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 | Finding | Title | Stage | Sev | Effort | Status |
 |---|---|---|---|:-:|---|
 | [F-015](findings/F-015-op-precondition-static-validation.md) | Op-precondition static validation rules missing (rest, drill, project_curve) | substrate | medium | M | open — next implementer pickup |
-| [F-016](findings/F-016-drill-chip-welding-material-threshold.md) | Drill `chip_welding` threshold not material-aware | sim | medium | S | open |
 | [F-020](findings/F-020-optimizer-ranked-bs-path.md) | Optimizer Ranked-outcome BS-stepover path untested | optimize | high | M | open (needs test fixture before fix) |
 | [F-006](findings/F-006-operation-config-three-default-paths.md) | Default `OperationConfig` produced via three paths | suggest | medium | M | open — partially absorbed by F-003 |
 | [F-004](findings/F-004-three-project-loaders.md) | Three project-TOML loaders | substrate | medium | L | open — likely lands with F-005 |
@@ -57,6 +56,7 @@ _(none — round-01 unification batch landed 2026-05-25; see Implementation log)
 - **F-007** — `DrillConfig::set_plunge_rate` honored (landed 2026-05-25).
 - **F-008** — `compute_stale_set` introduced as single authority (landed 2026-05-25).
 - **F-013** — feeds-result invariants enforced (landed 2026-05-25 with F-003).
+- **F-016** — drill `chip_welding` / `peck_adequacy` / `plunge_feed` gates now see the live stock material instead of `Material::default()` (landed 2026-05-25).
 
 ## Acceptance bars status
 
@@ -89,6 +89,10 @@ Snapshot taken from round-01 baseline.
 - 2026-05-25 — F-001/F-002/F-003/F-007/F-008/F-013 unification batch
   landed (see `planning/CODEBASE_UNIFICATION_PLAN.md` for the per-fix
   mapping). Subsumes F-012; partially absorbs F-006 / F-011.
+- 2026-05-25 — F-016 landed: drill_op view now carries the live stock
+  material (was `Material::default()`). Acceptance tests:
+  `crates/rs_cam_core/tests/drill_material_plumbing_f016.rs::{drill_op_carries_hardwood_material_from_stock, drill_op_carries_softwood_material_from_stock, drill_op_carries_plastic_material_from_stock}`
+  and `drill_metrics::tests::chip_welding_threshold_per_material_family`.
 
 ## How to update this file
 

@@ -36,6 +36,7 @@ fn sample_request(operation: OperationConfig, stock_source: StockSource) -> Comp
         cutting_levels,
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
+        material: rs_cam_core::material::Material::default(),
     }
 }
 
@@ -115,6 +116,7 @@ fn quick_pocket_request(id: usize) -> ComputeRequest {
         cutting_levels,
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
+        material: rs_cam_core::material::Material::default(),
     }
 }
 
@@ -151,6 +153,7 @@ fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
         cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
+        material: rs_cam_core::material::Material::default(),
     }
 }
 
@@ -187,6 +190,7 @@ fn waterline_request(id: usize) -> ComputeRequest {
         cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
+        material: rs_cam_core::material::Material::default(),
     }
 }
 
@@ -224,6 +228,7 @@ fn adaptive3d_request(id: usize) -> ComputeRequest {
         cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
+        material: rs_cam_core::material::Material::default(),
     }
 }
 
@@ -281,6 +286,7 @@ fn drill_request(id: usize) -> ComputeRequest {
         cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
+        material: rs_cam_core::material::Material::default(),
     }
 }
 
@@ -310,6 +316,7 @@ fn steep_shallow_request(id: usize) -> ComputeRequest {
         cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
+        material: rs_cam_core::material::Material::default(),
     }
 }
 
@@ -352,6 +359,7 @@ fn pencil_request(id: usize) -> ComputeRequest {
         cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
+        material: rs_cam_core::material::Material::default(),
     }
 }
 
@@ -387,6 +395,7 @@ fn scallop_request(id: usize) -> ComputeRequest {
         cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
+        material: rs_cam_core::material::Material::default(),
     }
 }
 
@@ -423,6 +432,7 @@ fn ramp_finish_request(id: usize) -> ComputeRequest {
         cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
+        material: rs_cam_core::material::Material::default(),
     }
 }
 
@@ -457,6 +467,7 @@ fn spiral_finish_request(id: usize) -> ComputeRequest {
         cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
+        material: rs_cam_core::material::Material::default(),
     }
 }
 
@@ -492,6 +503,7 @@ fn radial_finish_request(id: usize) -> ComputeRequest {
         cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
+        material: rs_cam_core::material::Material::default(),
     }
 }
 
@@ -526,6 +538,7 @@ fn horizontal_finish_request(id: usize) -> ComputeRequest {
         cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
+        material: rs_cam_core::material::Material::default(),
     }
 }
 
@@ -564,6 +577,7 @@ fn project_curve_request(id: usize) -> ComputeRequest {
         cutting_levels: vec![],
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
+        material: rs_cam_core::material::Material::default(),
     }
 }
 
