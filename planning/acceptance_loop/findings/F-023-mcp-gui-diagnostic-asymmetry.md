@@ -5,7 +5,7 @@
 - **Status:** landed
 - **First found in:** round-02 (2026-05-25)
 - **Effort:** S–M
-- **Linked PRs:** —
+- **Linked PRs:** commit dbe2c5d (local master)
 - **Source audits:** live smoke evidence (see Evidence section)
 
 ## Evidence
