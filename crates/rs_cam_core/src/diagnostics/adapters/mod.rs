@@ -19,6 +19,7 @@
 //!   `evidence`.
 
 pub mod from_feeds;
+pub mod from_preconditions;
 pub mod from_project_diagnostics;
 pub mod from_stale_default;
 pub mod from_static_checks;

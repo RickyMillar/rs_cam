@@ -13,7 +13,8 @@
 
 use super::Diagnostic;
 use super::adapters::{
-    from_feeds, from_project_diagnostics, from_stale_default, from_static_checks, from_tool_load,
+    from_feeds, from_preconditions, from_project_diagnostics, from_stale_default,
+    from_static_checks, from_tool_load,
 };
 use super::supersession::apply_supersession;
 use crate::compute::catalog::OperationConfig;
@@ -21,6 +22,10 @@ use crate::compute::tool_config::ToolConfig;
 use crate::compute::validate::StaleDefault;
 use crate::feeds::FeedsResult;
 use crate::tool_load::ToolpathLoadVerdict;
+
+pub use from_preconditions::{
+    PreconditionContext, PriorToolpathSummary, TargetModelGeometry, ToolDiameterEntry,
+};
 
 /// Inputs the pure orchestrator needs to compute a toolpath's
 /// diagnostic list. All fields except the operation/tool are
@@ -39,6 +44,11 @@ pub struct ToolpathDiagnoseInputs<'a> {
     pub load_verdict: Option<&'a ToolpathLoadVerdict>,
     /// Stale-default defects detected for this toolpath.
     pub stale_defaults: &'a [StaleDefault],
+    /// Op-precondition context (prior toolpaths in the same setup,
+    /// target-model geometry, tool diameters). `None` for callers that
+    /// don't have a session in hand — precondition checks are then
+    /// silently skipped.
+    pub preconditions: Option<&'a PreconditionContext>,
 }
 
 /// Compute the unified diagnostic list for a single toolpath.
@@ -60,6 +70,14 @@ pub fn diagnose_toolpath_inputs(inputs: &ToolpathDiagnoseInputs<'_>) -> Vec<Diag
         inputs.tool,
         inputs.heights,
     ));
+    if let Some(ctx) = inputs.preconditions {
+        out.extend(from_preconditions::diagnostics_from_preconditions(
+            inputs.toolpath_id,
+            inputs.operation,
+            inputs.tool.id.0,
+            ctx,
+        ));
+    }
     out.extend(from_stale_default::diagnostics_from_stale_defaults(
         inputs.stale_defaults,
     ));

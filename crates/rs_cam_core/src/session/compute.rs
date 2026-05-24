@@ -1747,6 +1747,7 @@ impl ProjectSession {
                 &height_ctx,
             );
         let feeds_result = self.feeds_result_for_toolpath(tc, tool);
+        let preconditions = self.precondition_context_for_toolpath(tc);
 
         let inputs = crate::diagnostics::ToolpathDiagnoseInputs {
             toolpath_id: tc.id,
@@ -1756,8 +1757,77 @@ impl ProjectSession {
             feeds_result: feeds_result.as_ref(),
             load_verdict,
             stale_defaults: &stale_defaults,
+            preconditions: Some(&preconditions),
         };
         Ok(crate::diagnostics::diagnose_toolpath_inputs(&inputs))
+    }
+
+    /// Build a [`PreconditionContext`] for a single toolpath. Captures
+    /// the prior toolpaths in the same setup (so the rest-machining
+    /// precondition can verify a larger upstream tool exists), the
+    /// target model's geometry kind (so the drill / project-curve
+    /// preconditions can verify a curve / mesh source is in scope),
+    /// and the per-tool diameters used by the rest "prev tool must be
+    /// larger" check.
+    ///
+    /// Pure helper — no I/O, no mutation. Safe to call repeatedly per
+    /// diagnose round.
+    fn precondition_context_for_toolpath(
+        &self,
+        tc: &super::ToolpathConfig,
+    ) -> crate::diagnostics::diagnose::PreconditionContext {
+        use crate::diagnostics::diagnose::{
+            PreconditionContext, PriorToolpathSummary, TargetModelGeometry, ToolDiameterEntry,
+        };
+
+        // Find the setup that owns this toolpath and collect prior
+        // toolpaths in that setup (lower display index than `tc`).
+        let mut prior_toolpaths_in_setup = Vec::new();
+        if let Some(setup) = self.setups.iter().find(|s| {
+            s.toolpath_indices
+                .iter()
+                .any(|&i| self.toolpath_configs.get(i).is_some_and(|t| t.id == tc.id))
+        }) {
+            for &idx in &setup.toolpath_indices {
+                if let Some(other) = self.toolpath_configs.get(idx) {
+                    if other.id == tc.id {
+                        break;
+                    }
+                    prior_toolpaths_in_setup.push(PriorToolpathSummary {
+                        enabled: other.enabled,
+                        tool_id: other.tool_id,
+                        model_id: other.model_id,
+                    });
+                }
+            }
+        }
+
+        let target_model = self
+            .models
+            .iter()
+            .find(|m| m.id == tc.model_id)
+            .map(|m| TargetModelGeometry {
+                has_polygons: m.polygons.as_ref().is_some_and(|p| !p.is_empty()),
+                has_mesh: m.mesh.is_some(),
+            });
+
+        let any_loaded_model_has_mesh = self.models.iter().any(|m| m.mesh.is_some());
+
+        let tool_diameters = self
+            .tools
+            .iter()
+            .map(|t| ToolDiameterEntry {
+                id: t.id,
+                diameter: t.diameter,
+            })
+            .collect();
+
+        PreconditionContext {
+            prior_toolpaths_in_setup,
+            target_model,
+            any_loaded_model_has_mesh,
+            tool_diameters,
+        }
     }
 
     /// Build a [`HeightContext`] for a given toolpath. Mirrors the GUI's
