@@ -2,7 +2,7 @@
 
 - **Stage:** docs
 - **Severity:** low
-- **Status:** open
+- **Status:** landed
 - **First found in:** round-01 (2026-05-24)
 - **Effort:** S (~30 LOC delete / annotate)
 - **Linked PRs:** —

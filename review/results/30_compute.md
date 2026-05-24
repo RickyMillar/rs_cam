@@ -1,5 +1,16 @@
 # Review: Compute Orchestration
 
+> **NOTE 2026-05-25 (F-014):** The "Execute Dispatch" section below
+> (and the Summary's mention of a "trait-based dispatch for 22 operation
+> types") describes the now-removed viz `SemanticToolpathOp` trait.
+> Operation dispatch was unified into core during the service-layer
+> consolidation — see `crates/rs_cam_core/src/compute/execute.rs:201`
+> `execute_operation` and `execute_operation_annotated`. Viz calls into
+> that single core entry-point (see
+> `crates/rs_cam_viz/src/compute/worker/execute/mod.rs:18, 132, 624`).
+> The dual-lane / cancellation / phase-tracking commentary in this
+> document still reflects the current architecture.
+
 ## Summary
 
 The dual-lane compute system (Toolpath + Analysis) is well-architected with clean separation, atomic cancellation, progress reporting via phase tracking, and a sophisticated trait-based dispatch for 22 operation types. The semantic tracing infrastructure is excellent. Main concerns are: no thread panic handling (crash cascades through mutex poisoning), 10+ `.expect("lane mutex poisoned")` calls, `execute.rs` at 2492 lines, and test coverage gaps for most operation types and error paths.
@@ -45,13 +56,21 @@ The dual-lane compute system (Toolpath + Analysis) is well-architected with clea
 - Example phases: "Initialize stock", "Simulate {name}", "Compute stats", "Apply dressups"
 - UI drains results every frame via `drain_compute_results()` (controller/events.rs:854)
 
-### Execute Dispatch
+### Execute Dispatch — (resolved 2026-05-25 — viz dispatch unified into core; see `crates/rs_cam_core/src/compute/execute.rs:201` `execute_operation`)
 
 - **Trait-based** (`SemanticToolpathOp`) rather than a monolithic match — excellent design (execute.rs:23-28)
 - `OperationConfig::semantic_op()` match (execute.rs:30-56): 27 lines mapping 22 operation types
 - 22 separate `impl SemanticToolpathOp` blocks (execute.rs:1521-2477)
 - **Test validates exhaustiveness**: `semantic_dispatch_covers_all_operation_types` (execute.rs:2486-2490)
 - Each operation follows consistent pattern: extract params → validate inputs → build scope → generate toolpath → annotate structure → bind scopes → return Result
+
+> **Current state (2026-05-25):** The viz `SemanticToolpathOp` trait
+> and its 22 `impl` blocks have been deleted. Operation dispatch is
+> now a single `match` over `OperationConfig` inside core's
+> `execute_operation` / `execute_operation_annotated` at
+> `crates/rs_cam_core/src/compute/execute.rs:201`. Viz invokes the
+> annotated variant directly (see `crates/rs_cam_viz/src/compute/worker/execute/mod.rs:132`).
+> Exhaustiveness is enforced by the `match` being non-exhaustive-free.
 
 ### Dressup Application
 
