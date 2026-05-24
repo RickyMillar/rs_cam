@@ -191,6 +191,7 @@ fn all_diagnostic_ids_reachable_in_adapter_source() {
             "PRECOND_PROJECT_CURVE_NO_SURFACE",
             ids::PRECOND_PROJECT_CURVE_NO_SURFACE,
         ),
+        ("REF_MODEL_MISSING", ids::REF_MODEL_MISSING),
     ];
     let mut missing = Vec::new();
     for (symbol, literal) in consts {

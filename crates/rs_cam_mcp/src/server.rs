@@ -239,7 +239,9 @@ pub struct AddToolpathParam {
     pub operation_type: String,
     /// Tool index (0-based) from list_tools
     pub tool_index: usize,
-    /// Model ID (raw numeric ID shown in toolpath configs, usually 0 for the first model)
+    /// Model ID (project-assigned `id` field — use the `id` value
+    /// from `inspect_model` results, NOT a 0-based positional index;
+    /// IDs typically start at 1 and increment per import).
     pub model_id: usize,
     /// Optional name for the toolpath
     pub name: Option<String>,

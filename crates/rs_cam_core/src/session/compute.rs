@@ -1748,6 +1748,7 @@ impl ProjectSession {
             );
         let feeds_result = self.feeds_result_for_toolpath(tc, tool);
         let preconditions = self.precondition_context_for_toolpath(tc);
+        let model_refs = self.model_ref_context_for_toolpath(tc);
 
         let inputs = crate::diagnostics::ToolpathDiagnoseInputs {
             toolpath_id: tc.id,
@@ -1758,8 +1759,24 @@ impl ProjectSession {
             load_verdict,
             stale_defaults: &stale_defaults,
             preconditions: Some(&preconditions),
+            model_refs: Some(&model_refs),
         };
         Ok(crate::diagnostics::diagnose_toolpath_inputs(&inputs))
+    }
+
+    /// Build a [`ModelRefContext`] for a single toolpath (F-023).
+    /// Captures whether the toolpath's `model_id` resolves against the
+    /// project's loaded models so the unified diagnostic stream emits
+    /// the same "Selected model missing" signal the GUI banner has
+    /// always shown.
+    fn model_ref_context_for_toolpath(
+        &self,
+        tc: &super::ToolpathConfig,
+    ) -> crate::diagnostics::diagnose::ModelRefContext {
+        crate::diagnostics::diagnose::ModelRefContext {
+            model_id: tc.model_id,
+            model_resolved: self.models.iter().any(|m| m.id == tc.model_id),
+        }
     }
 
     /// Build a [`PreconditionContext`] for a single toolpath. Captures
