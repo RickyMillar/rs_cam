@@ -3,12 +3,26 @@
 **Read this first.** This is the single source of truth. Both auditor
 and implementer write here.
 
+> **Autonomous mode**: when the user asks Claude to "keep running the
+> loop", the auditor session reads
+> `handoff_prompts/autonomous_auditor.md` and orchestrates implementer
+> agents in background. The user is only paged when the rs-cam MCP
+> needs reconnecting/rebuilding (the auditor cannot do that itself).
+
 ## Current round
 
-**round-02** (audit pending after round-01's fixes land)
+**round-02** (audit partial — test-level verification done 2026-05-25;
+live MCP smoke deferred until rs-cam MCP reconnect)
 
-- Auditor for round-02: not yet assigned (next post-compact Claude session)
-- Implementer(s) active: none (round-01 unification batch landed 2026-05-25)
+- Auditor for round-02: post-compact Claude session, 2026-05-25
+- Implementer(s) active: none — next pickup is F-015
+- **Verification status:** F-001/F-002/F-003/F-007/F-008/F-013/F-016
+  test-verified via `drill_material_plumbing_f016` (3/3 PASS),
+  `chip_welding_threshold_per_material_family` (PASS), and commit
+  inspection on 072c11a + 2a287c1. **Smoke verification of the
+  acceptance bars (chipload-2D, deflection over-fire) is deferred to
+  round-03** — needs live MCP to re-run AS006–AS017 against round-01
+  baseline.
 
 ## Last verified baseline
 
@@ -34,19 +48,18 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 | [F-009](findings/F-009-diagnostic-views-viz-only.md) | Five diagnostic views, only viz emits them | substrate | medium | M | open — partially lands with F-005 |
 | [F-005](findings/F-005-two-mcp-servers.md) | Two MCP server implementations | substrate | medium | XL | deferred — wait for F-001…F-005 of unification to land first |
 | [F-011](findings/F-011-operation-feeds-hints-split-crates.md) | `operation_feeds_hints` split across crates | suggest | low | S | open — lands with F-003 |
-| [F-012](findings/F-012-feeds-result-toolpath-workholding-medium.md) | `feeds_result_for_toolpath` hardcodes workholding=Medium | suggest | high | S | duplicate of F-003 — close when F-003 lands |
 | [F-017](findings/F-017-rapid-collisions-everywhere.md) | Rapid collisions in nearly every op (1041 on adaptive3d) | sim | medium | L | open — separate path-planning investigation |
 | [F-010](findings/F-010-catalog-six-match-blocks.md) | Catalog has six 23-arm match blocks | substrate | low | M | open — re-evaluate after F-003 lands |
 | [F-019](findings/F-019-stepover-semantic-cardinality.md) | Stepover semantic cardinality across op families | suggest | low | M | deferred — re-evaluate after F-003 |
 | [F-021](findings/F-021-suggest-all-paint-thrash.md) | Suggest All button recomputes LUT every paint | viz | low | S | open |
-| [F-022](findings/F-022-catalog-match-arm-collapse.md) | Collapse remaining catalog `match` blocks | substrate | low | M | deferred — depends on F-003 |
+| [F-022](findings/F-022-catalog-match-arm-collapse.md) | Collapse remaining catalog `match` blocks | substrate | low | M | open — unblocked by F-003 landing |
 | [F-014](findings/F-014-doc-drift-service-layer.md) | Three audit docs describe dead architecture | docs | low | S | open |
 
 ## In flight (claimed by implementer)
 
 | Finding | Claimed by | PR | Notes |
 |---|---|---|---|
-_(none — round-01 unification batch landed 2026-05-25; see Implementation log)_
+_(none — see Implementation log for F-015 landing 2026-05-25)_
 
 ## Closed this round
 
@@ -57,6 +70,7 @@ _(none — round-01 unification batch landed 2026-05-25; see Implementation log)
 - **F-008** — `compute_stale_set` introduced as single authority (landed 2026-05-25).
 - **F-013** — feeds-result invariants enforced (landed 2026-05-25 with F-003).
 - **F-016** — drill `chip_welding` / `peck_adequacy` / `plunge_feed` gates now see the live stock material instead of `Material::default()` (landed 2026-05-25).
+- **F-012** — closed as duplicate of F-003 (the singleton collapse covered the workholding-Medium hardcode in `feeds_result_for_toolpath`).
 
 ## Acceptance bars status
 
@@ -93,6 +107,15 @@ Snapshot taken from round-01 baseline.
   material (was `Material::default()`). Acceptance tests:
   `crates/rs_cam_core/tests/drill_material_plumbing_f016.rs::{drill_op_carries_hardwood_material_from_stock, drill_op_carries_softwood_material_from_stock, drill_op_carries_plastic_material_from_stock}`
   and `drill_metrics::tests::chip_welding_threshold_per_material_family`.
+- 2026-05-25 — F-015 landed: op-precondition static-validation adapter
+  (`from_preconditions`) now surfaces blocking diagnostics on rest /
+  drill / alignment_pin_drill / project_curve before generate time.
+  New file `crates/rs_cam_core/src/diagnostics/adapters/from_preconditions.rs`
+  + wire-up in `session/compute.rs::precondition_context_for_toolpath`.
+  Acceptance tests:
+  `crates/rs_cam_core/tests/op_precondition_static_validation_f015.rs::{rest_op_without_prior_enabled_tool_surfaces_blocking_diagnostic, rest_op_without_prev_tool_id_surfaces_blocking_diagnostic, rest_op_with_correct_prior_is_silent, project_curve_in_single_model_project_surfaces_blocking_diagnostic, project_curve_without_any_surface_mesh_surfaces_blocking_diagnostic, project_curve_with_curve_and_surface_models_is_silent, drill_op_against_mesh_only_model_surfaces_blocking_diagnostic, drill_op_against_polygon_model_is_silent}`
+  + adapter unit tests at
+  `diagnostics::adapters::from_preconditions::tests::*`.
 
 ## How to update this file
 

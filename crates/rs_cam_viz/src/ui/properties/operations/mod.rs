@@ -2031,6 +2031,10 @@ pub fn collect_diagnostics(
         feeds_result: entry.feeds_result.as_ref(),
         load_verdict,
         stale_defaults,
+        // GUI panel runs against the in-flight entry without a session
+        // context; precondition checks are surfaced via the session
+        // `diagnose_toolpath_with_trace` path that the MCP layer reads.
+        preconditions: None,
     };
     rs_cam_core::diagnostics::diagnose_toolpath_inputs(&inputs)
 }
@@ -2248,6 +2252,22 @@ mod tests {
             .per_toolpath
             .iter()
             .find(|v| v.toolpath_id == tc.id);
+        // For parity with the session path, replicate the same
+        // PreconditionContext the session builds — Pocket has no
+        // precondition rules so this is a no-op for the assert below,
+        // but doing it here keeps the parity test honest if a future
+        // change adds Pocket preconditions.
+        let preconditions = rs_cam_core::diagnostics::diagnose::PreconditionContext {
+            tool_diameters: session
+                .tools()
+                .iter()
+                .map(|t| rs_cam_core::diagnostics::diagnose::ToolDiameterEntry {
+                    id: t.id,
+                    diameter: t.diameter,
+                })
+                .collect(),
+            ..Default::default()
+        };
         let inputs = rs_cam_core::diagnostics::ToolpathDiagnoseInputs {
             toolpath_id: tc.id,
             operation: &tc.operation,
@@ -2256,6 +2276,7 @@ mod tests {
             feeds_result: feeds_result.as_ref(),
             load_verdict,
             stale_defaults: &stale_defaults,
+            preconditions: Some(&preconditions),
         };
         let gui_diags = rs_cam_core::diagnostics::diagnose_toolpath_inputs(&inputs);
 

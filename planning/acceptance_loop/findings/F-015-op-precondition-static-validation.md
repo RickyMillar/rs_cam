@@ -2,7 +2,7 @@
 
 - **Stage:** substrate
 - **Severity:** medium
-- **Status:** open — next implementer pickup after unification batch
+- **Status:** landed (2026-05-25)
 - **First found in:** round-01 (2026-05-24)
 - **Effort:** M (~150 LOC, new diagnostics adapter)
 - **Linked PRs:** —

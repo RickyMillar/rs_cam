@@ -169,6 +169,28 @@ fn all_diagnostic_ids_reachable_in_adapter_source() {
             "STALE_PROJECT_CURVE_NEGATIVE_DEPTH",
             ids::STALE_PROJECT_CURVE_NEGATIVE_DEPTH,
         ),
+        ("PRECOND_REST_NO_PRIOR", ids::PRECOND_REST_NO_PRIOR),
+        (
+            "PRECOND_REST_PREV_TOOL_MISSING",
+            ids::PRECOND_REST_PREV_TOOL_MISSING,
+        ),
+        (
+            "PRECOND_REST_PREV_TOOL_NOT_LARGER",
+            ids::PRECOND_REST_PREV_TOOL_NOT_LARGER,
+        ),
+        ("PRECOND_DRILL_NO_HOLES", ids::PRECOND_DRILL_NO_HOLES),
+        (
+            "PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES",
+            ids::PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES,
+        ),
+        (
+            "PRECOND_PROJECT_CURVE_NO_CURVE",
+            ids::PRECOND_PROJECT_CURVE_NO_CURVE,
+        ),
+        (
+            "PRECOND_PROJECT_CURVE_NO_SURFACE",
+            ids::PRECOND_PROJECT_CURVE_NO_SURFACE,
+        ),
     ];
     let mut missing = Vec::new();
     for (symbol, literal) in consts {
