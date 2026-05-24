@@ -1,5 +1,18 @@
 # Review: Duplication & Abstraction Opportunities
 
+> **NOTE 2026-05-25 (F-014):** The dispatch-duplication findings in this
+> document (Finding #2 "Operation Dispatch Match Arms" and Finding #4
+> "SemanticToolpathOp Tracing Setup") are **resolved** — viz no longer
+> reimplements operation dispatch. Both crates now share a single
+> `execute_operation` entry-point at
+> `crates/rs_cam_core/src/compute/execute.rs:201`; the viz
+> `SemanticToolpathOp` trait + 22 impls were deleted (see
+> `crates/rs_cam_viz/src/compute/worker/execute/mod.rs` and the
+> "Dispatch now goes through rs_cam_core::compute::execute::execute_operation"
+> comment near line 624). The other findings (dressup tracing
+> boilerplate, feed-param UI patterns, depth stepping, import handlers)
+> have not been re-audited and may still apply.
+
 ## Summary
 Most duplication lives in the GUI layer (rs_cam_viz), not across crate boundaries. The top hotspots are dressup tracing boilerplate (~360 LOC), operation dispatch match arms (~200 LOC), and repeated UI parameter grid patterns (~120 LOC). The core/CLI/GUI separation is well respected — the duplication that exists is within-layer repetition of scaffolding patterns.
 
@@ -11,21 +24,23 @@ Most duplication lives in the GUI layer (rs_cam_viz), not across crate boundarie
 - ~45-50 LOC per dressup × 8 dressups = ~360 LOC of identical scaffolding
 - **Fix:** Extract `apply_dressup_with_tracing(name, kind, debug, semantic, |tp| ...)` helper
 
-### 2. Operation Dispatch Match Arms (~200 LOC)
+### 2. Operation Dispatch Match Arms (~200 LOC) — (resolved 2026-05-25, see `crates/rs_cam_core/src/compute/execute.rs:201` `execute_operation`)
 - **Location:** `crates/rs_cam_viz/src/compute/worker/execute.rs:23-55` (semantic_op), `crates/rs_cam_viz/src/ui/properties/mod.rs:804-827` (draw_toolpath_panel)
 - Three separate match expressions must be updated for every new operation: semantic_op dispatch (22 arms), UI parameter drawing (22 arms), tool dispatch in build_cutter (5 arms)
 - Each arm is a simple cast/delegation with no logic
 - **Fix:** Macro-generated dispatch or trait-based registry
+- **Status (2026-05-25):** Viz `semantic_op` dispatch removed — `SemanticToolpathOp` trait + 22 impls deleted, viz calls core's `execute_operation_annotated` directly. The UI parameter-drawing match and `build_cutter` match remain (those are viz-layer concerns, not dispatch dup).
 
 ### 3. Feed Parameter UI Pattern (~120 LOC)
 - **Location:** `crates/rs_cam_viz/src/ui/properties/mod.rs` across 15+ operation editors
 - Nearly identical "Feed Rate + Plunge Rate + Climb" blocks repeated in draw_pocket_params, draw_profile_params, draw_adaptive_params, draw_inlay_params, etc.
 - **Fix:** Extract `draw_feed_params(ui, cfg)` helper
 
-### 4. SemanticToolpathOp Tracing Setup (~440 LOC)
+### 4. SemanticToolpathOp Tracing Setup (~440 LOC) — (resolved 2026-05-25, see `crates/rs_cam_core/src/compute/execute.rs:201` `execute_operation`)
 - **Location:** `crates/rs_cam_viz/src/compute/worker/execute.rs:1521-2452`
 - Each of 22 operations repeats ~20 LOC of identical scope/tracing infrastructure in `generate_with_tracing()`
 - **Note:** Fixing this requires rethinking the operation trait interface — high cost, low ROI
+- **Status (2026-05-25):** The entire `SemanticToolpathOp` trait + its 22 `impl` blocks (~440 LOC) were deleted when dispatch unified into core. Tracing now happens inside `execute_operation_annotated` in core.
 
 ### 5. Import Path Handlers (~90 LOC)
 - **Location:** `crates/rs_cam_viz/src/io/import.rs:11-101`

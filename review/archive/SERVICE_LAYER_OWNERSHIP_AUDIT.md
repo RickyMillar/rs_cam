@@ -1,3 +1,24 @@
+> **ARCHIVED 2026-05-25 — content largely superseded.**
+> The core architectural premise of this audit (HIGH-1 dual operation
+> execution pipelines, HIGH-2 dual `apply_dressups`, HIGH-3 duplicated
+> `OperationError`, MEDIUM-3 viz-only `require_polygons`/`require_mesh`,
+> MEDIUM-4 dead viz `run_*` functions) has been resolved. Operation
+> dispatch is now unified at
+> `crates/rs_cam_core/src/compute/execute.rs:201 execute_operation`
+> (with the annotated variant `execute_operation_annotated`). Viz
+> delegates through that single core entry-point — see
+> `crates/rs_cam_viz/src/compute/worker/execute/mod.rs:18, 132, 624`,
+> including the comment confirming "Dispatch now goes through
+> rs_cam_core::compute::execute::execute_operation."
+>
+> Some MEDIUM/LOW findings here may still have residual value as
+> historical context; the document is preserved for that reason rather
+> than deleted. Do not use it as a current-state reference.
+>
+> Closes F-014. See `planning/acceptance_loop/findings/F-014-doc-drift-service-layer.md`.
+
+---
+
 # Service Layer Ownership Audit
 
 **Baseline:** commit 443a613 (pre-extraction, no `compute/` module in core)
