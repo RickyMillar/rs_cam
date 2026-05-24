@@ -97,6 +97,14 @@ pub const PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES: &str =
 pub const PRECOND_PROJECT_CURVE_NO_CURVE: &str = "precondition.project_curve_no_curve";
 pub const PRECOND_PROJECT_CURVE_NO_SURFACE: &str = "precondition.project_curve_no_surface";
 
+// ── Cross-reference rules (F-023) ────────────────────────────────────
+//
+// Static checks that a toolpath's references (model, eventually
+// tool / setup) resolve against the current project. Fires before
+// generation time so the GUI banner *and* the MCP `diagnostic_delta`
+// envelope carry the same signal.
+pub const REF_MODEL_MISSING: &str = "ref.model_missing";
+
 /// All canonical diagnostic IDs. Used by tests to enforce uniqueness
 /// and as a registry for downstream consumers that want to iterate
 /// the supported rule set.
@@ -151,4 +159,5 @@ pub const ALL: &[&str] = &[
     PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES,
     PRECOND_PROJECT_CURVE_NO_CURVE,
     PRECOND_PROJECT_CURVE_NO_SURFACE,
+    REF_MODEL_MISSING,
 ];

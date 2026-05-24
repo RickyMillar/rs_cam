@@ -2035,6 +2035,10 @@ pub fn collect_diagnostics(
         // context; precondition checks are surfaced via the session
         // `diagnose_toolpath_with_trace` path that the MCP layer reads.
         preconditions: None,
+        // Same rationale for model-ref checks — the viz-side
+        // `validate_geometry_selection` already covers this case
+        // inline. MCP routes through `diagnose_toolpath_with_trace`.
+        model_refs: None,
     };
     rs_cam_core::diagnostics::diagnose_toolpath_inputs(&inputs)
 }
@@ -2268,6 +2272,10 @@ mod tests {
                 .collect(),
             ..Default::default()
         };
+        let model_refs = rs_cam_core::diagnostics::diagnose::ModelRefContext {
+            model_id: tc.model_id,
+            model_resolved: session.models().iter().any(|m| m.id == tc.model_id),
+        };
         let inputs = rs_cam_core::diagnostics::ToolpathDiagnoseInputs {
             toolpath_id: tc.id,
             operation: &tc.operation,
@@ -2277,6 +2285,7 @@ mod tests {
             load_verdict,
             stale_defaults: &stale_defaults,
             preconditions: Some(&preconditions),
+            model_refs: Some(&model_refs),
         };
         let gui_diags = rs_cam_core::diagnostics::diagnose_toolpath_inputs(&inputs);
 

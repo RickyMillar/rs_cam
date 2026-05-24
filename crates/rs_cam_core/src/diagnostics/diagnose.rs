@@ -13,7 +13,7 @@
 
 use super::Diagnostic;
 use super::adapters::{
-    from_feeds, from_preconditions, from_project_diagnostics, from_stale_default,
+    from_feeds, from_model_refs, from_preconditions, from_project_diagnostics, from_stale_default,
     from_static_checks, from_tool_load,
 };
 use super::supersession::apply_supersession;
@@ -23,6 +23,7 @@ use crate::compute::validate::StaleDefault;
 use crate::feeds::FeedsResult;
 use crate::tool_load::ToolpathLoadVerdict;
 
+pub use from_model_refs::ModelRefContext;
 pub use from_preconditions::{
     PreconditionContext, PriorToolpathSummary, TargetModelGeometry, ToolDiameterEntry,
 };
@@ -49,6 +50,13 @@ pub struct ToolpathDiagnoseInputs<'a> {
     /// don't have a session in hand — precondition checks are then
     /// silently skipped.
     pub preconditions: Option<&'a PreconditionContext>,
+    /// Model cross-reference context (F-023). Carries the toolpath's
+    /// `model_id` together with whether it resolves against the loaded
+    /// project models, so the unified pipeline emits a `Blocking`
+    /// `ref.model_missing` diagnostic the same way the GUI banner
+    /// does. `None` for callers without a session — the check is
+    /// skipped rather than crashed.
+    pub model_refs: Option<&'a ModelRefContext>,
 }
 
 /// Compute the unified diagnostic list for a single toolpath.
@@ -70,6 +78,13 @@ pub fn diagnose_toolpath_inputs(inputs: &ToolpathDiagnoseInputs<'_>) -> Vec<Diag
         inputs.tool,
         inputs.heights,
     ));
+    if let Some(ctx) = inputs.model_refs {
+        out.extend(from_model_refs::diagnostics_from_model_refs(
+            inputs.toolpath_id,
+            inputs.operation,
+            ctx,
+        ));
+    }
     if let Some(ctx) = inputs.preconditions {
         out.extend(from_preconditions::diagnostics_from_preconditions(
             inputs.toolpath_id,
