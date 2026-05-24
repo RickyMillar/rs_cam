@@ -36,12 +36,10 @@
 //! detection lands in Phase 2 with the `SimulationProvenance` hash; for
 //! now any present trace is considered live.
 
-use std::sync::OnceLock;
-
 use crate::compute::catalog::OperationType;
 use crate::feeds::ToolGeometryHint;
 use crate::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_row};
-use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily, VendorLut};
+use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily};
 use crate::feeds::vendor_normalize::material_to_lut;
 use crate::material::Material;
 use crate::simulation_cut::SimulationCutTrace;
@@ -88,13 +86,8 @@ fn lut_nominal_arc_rad(row: &LookupResult) -> Option<f64> {
     Some(ratio.acos())
 }
 
-/// Process-wide cache of the embedded Amana vendor LUT. The LUT is built
-/// from `include_str!` data, so building it parses 5 JSON files; we do
-/// that once.
-static EMBEDDED_LUT: OnceLock<VendorLut> = OnceLock::new();
-
-pub(super) fn embedded_lut() -> &'static VendorLut {
-    EMBEDDED_LUT.get_or_init(VendorLut::embedded)
+pub(super) fn embedded_lut() -> &'static crate::feeds::VendorLut {
+    crate::feeds::embedded_vendor_lut()
 }
 
 use super::verdict::{
@@ -721,6 +714,8 @@ mod tests {
             spindle_rpm: 18000,
             flute_count: 2,
             axial_doc_mm: 1.0,
+            axial_engagement_mm: 1.0,
+            plunge_descent_mm: 0.0,
             arc_engagement_radians: Some(TEST_LUT_NOMINAL_ARC_RAD),
             chipload_mm_per_tooth: chipload,
             effective_chip_thickness_mm: Some(chipload),
@@ -750,6 +745,7 @@ mod tests {
                 average_engagement: 0.5,
                 peak_chipload_mm_per_tooth: 0.05,
                 peak_axial_doc_mm: 1.0,
+                peak_plunge_descent_mm: 0.0,
                 total_removed_volume_est_mm3: 1.0,
                 average_mrr_mm3_s: 1.0,
                 per_kinematics: std::collections::BTreeMap::new(),

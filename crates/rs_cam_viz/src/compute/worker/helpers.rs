@@ -54,6 +54,7 @@ pub(super) fn apply_dressups(
     rs_cam_core::compute::execute::apply_dressups(
         annotated,
         cfg,
+        req.operation.feed_rate(),
         tool.envelope_diameter(),
         safe_z,
         req.heights.top_z,

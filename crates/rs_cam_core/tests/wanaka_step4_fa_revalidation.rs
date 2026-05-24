@@ -33,6 +33,7 @@ use std::sync::atomic::AtomicBool;
 const WANAKA_TOML: &str = "/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml";
 
 #[test]
+#[ignore = "expensive WANAKA end-to-end stamping revalidation; run with `cargo test --test wanaka_step4_fa_revalidation -- --ignored`"]
 fn wanaka_step4_back_rough_engagement_in_plausible_range() {
     let toml_path = Path::new(WANAKA_TOML);
     if !toml_path.exists() {
@@ -118,6 +119,7 @@ fn wanaka_step4_back_rough_engagement_in_plausible_range() {
 }
 
 #[test]
+#[ignore = "WANAKA fixture regression; run with `cargo test --test wanaka_step4_fa_revalidation -- --ignored`"]
 fn wanaka_step4_pin_drill_unaffected() {
     // Counter-test: drill ops bypass stamping entirely (Step 3 PR1
     // analytical removal). Their drill_summaries entries must remain

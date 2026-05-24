@@ -1,7 +1,7 @@
 use crate::compute::ComputeBackend;
 use crate::state::Workspace;
 use crate::state::selection::Selection;
-use crate::state::toolpath::{OperationConfig, ToolpathId};
+use crate::state::toolpath::ToolpathId;
 use crate::ui::AppEvent;
 
 use super::super::AppController;
@@ -54,11 +54,34 @@ impl<B: ComputeBackend> AppController<B> {
         // not sitting at exactly that depth.
         let stock_bbox = self.state.session.stock_bbox();
         let stock_padding = self.state.session.stock_config().padding;
-        let ctx = rs_cam_core::compute::catalog::NewDefaultCtx::from_stock_bbox(
-            stock_bbox,
-            stock_padding,
-        );
-        let operation = OperationConfig::new_default_with_ctx(op_type, &ctx);
+        let stock_ctx =
+            rs_cam_core::feeds::suggest::StockContext::from_stock_bbox(stock_bbox, stock_padding);
+        let Some(tool) = self
+            .state
+            .session
+            .tools()
+            .iter()
+            .find(|t| t.id.0 == tool_id)
+        else {
+            tracing::warn!("Cannot add toolpath: selected tool not found");
+            self.push_notification(
+                "Cannot add toolpath: selected tool not found".into(),
+                super::super::Severity::Warning,
+            );
+            return;
+        };
+        let operation = rs_cam_core::feeds::suggest::suggest_params(
+            rs_cam_core::feeds::suggest::SuggestParamsInput {
+                op_type,
+                tool,
+                machine: self.state.session.machine(),
+                material: &self.state.session.stock_config().material,
+                workholding: self.state.session.stock_config().workholding_rigidity,
+                lut: rs_cam_core::feeds::embedded_vendor_lut(),
+                stock_ctx: &stock_ctx,
+            },
+        )
+        .operation;
         // Capture is_3d before `operation` moves into the toolpath
         // config below — used by the boundary auto-enable (B.7).
         let op_is_3d = operation.is_3d();
@@ -79,7 +102,7 @@ impl<B: ComputeBackend> AppController<B> {
             .map(|m| m.id)
             .unwrap_or(0);
 
-        let mut tc = rs_cam_core::session::ToolpathConfig {
+        let tc = rs_cam_core::session::ToolpathConfig {
             id: 0, // will be assigned by session
             name: format!(
                 "{} {}",
@@ -117,30 +140,6 @@ impl<B: ComputeBackend> AppController<B> {
             face_selection: None,
             debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         };
-
-        // Roadmap F.5 — one-shot LUT call at toolpath creation.
-        // New toolpaths get recommended feeds written in once; after
-        // that, fields are always user-owned and only the Suggest
-        // buttons re-run the calculator.
-        if let Some(tool) = self
-            .state
-            .session
-            .tools()
-            .iter()
-            .find(|t| t.id.0 == tool_id)
-        {
-            let material = &self.state.session.stock_config().material;
-            let machine = self.state.session.machine();
-            let workholding = self.state.session.stock_config().workholding_rigidity;
-            let result = crate::ui::properties::compute_feeds_for_op(
-                tool,
-                material,
-                machine,
-                workholding,
-                &tc.operation,
-            );
-            crate::ui::properties::apply_feeds_result_to_op(&mut tc.operation, &result);
-        }
 
         if let Some(setup_idx) = target_setup_idx
             && let Ok(tp_idx) = self.state.session.add_toolpath(setup_idx, tc)

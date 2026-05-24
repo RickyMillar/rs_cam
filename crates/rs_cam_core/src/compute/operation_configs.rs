@@ -472,6 +472,22 @@ pub struct Adaptive3dConfig {
     pub z_blend: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// Insert fine sub-passes within each DPP descent, restricted to
+    /// cells whose surface slope is below `shallow_angle_deg`. Steep
+    /// areas keep stepping down at `depth_per_pass` as before; shallow
+    /// areas get a finer staircase straight from the rough so finishing
+    /// passes have less terracing to remove. Off by default.
+    #[serde(default)]
+    pub mill_shallow_areas: bool,
+    /// Slope angle threshold (degrees from horizontal) below which a
+    /// cell counts as "shallow." Typical 25-35°. `None` ⇒ defaults to
+    /// 30° at planning time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shallow_angle_deg: Option<f64>,
+    /// Stepdown within shallow regions. `None` ⇒ defaults to half of
+    /// `depth_per_pass` at planning time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shallow_stepdown: Option<f64>,
 }
 
 impl Default for Adaptive3dConfig {
@@ -495,6 +511,9 @@ impl Default for Adaptive3dConfig {
             clearing_strategy: ClearingStrategy::ContourParallel,
             z_blend: false,
             spindle_rpm: None,
+            mill_shallow_areas: false,
+            shallow_angle_deg: None,
+            shallow_stepdown: None,
         }
     }
 }
@@ -1143,7 +1162,9 @@ impl OperationParams for DrillConfig {
     fn plunge_rate(&self) -> f64 {
         self.feed_rate
     }
-    fn set_plunge_rate(&mut self, _value: f64) {}
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.depth)
     }
@@ -1166,7 +1187,9 @@ impl OperationParams for AlignmentPinDrillConfig {
     fn plunge_rate(&self) -> f64 {
         self.feed_rate
     }
-    fn set_plunge_rate(&mut self, _value: f64) {}
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.spoilboard_penetration)
     }

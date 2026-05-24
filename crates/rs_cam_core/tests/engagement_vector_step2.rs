@@ -120,6 +120,8 @@ fn mk_sample(
         spindle_rpm: 18_000,
         flute_count: 2,
         axial_doc_mm: axial_mm,
+        axial_engagement_mm: axial_mm,
+        plunge_descent_mm: 0.0,
         arc_engagement_radians: arc,
         chipload_mm_per_tooth: 0.02,
         effective_chip_thickness_mm: Some(0.018),

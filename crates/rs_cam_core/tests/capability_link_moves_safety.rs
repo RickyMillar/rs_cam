@@ -104,6 +104,7 @@ fn dressup(tp: Toolpath, cfg: &DressupConfig, op: OperationType, tool_diameter: 
     apply_dressups(
         rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
         cfg,
+        1000.0,
         tool_diameter,
         /* safe_z */ 30.0,
         /* stock_top */ 0.0,

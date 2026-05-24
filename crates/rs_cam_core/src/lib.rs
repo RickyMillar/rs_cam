@@ -16,6 +16,7 @@ pub mod dexel;
 pub mod dexel_mesh;
 pub mod dexel_mesh_mc;
 pub mod dexel_stock;
+pub mod diagnostics;
 pub mod dressup;
 pub mod drill;
 pub mod drill_metrics;

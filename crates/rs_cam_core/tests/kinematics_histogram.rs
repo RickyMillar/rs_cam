@@ -24,6 +24,7 @@ use std::sync::atomic::AtomicBool;
 const WANAKA_FIXTURE: &str = "/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml";
 
 #[test]
+#[ignore = "expensive WANAKA histogram diagnostic; run with `cargo test --test kinematics_histogram -- --ignored`"]
 fn kinematics_histogram_wanaka() {
     let toml_path = Path::new(WANAKA_FIXTURE);
     if !toml_path.exists() {

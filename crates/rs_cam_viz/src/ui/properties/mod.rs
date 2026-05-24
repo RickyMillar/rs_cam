@@ -16,9 +16,7 @@ use operations::{
     draw_steep_shallow_params, draw_stepover_diagram, draw_trace_params, draw_vcarve_params,
     draw_waterline_params, draw_zigzag_params,
 };
-pub use operations::{
-    ToolpathValidationContext, collect_warnings, validate_toolpath, validate_toolpath_config,
-};
+pub use operations::{ToolpathValidationContext, validate_toolpath, validate_toolpath_config};
 
 use crate::state::AppState;
 use crate::state::selection::Selection;
@@ -50,70 +48,6 @@ pub fn mcp_highlight_effect(ui: &mut egui::Ui, gui: &crate::state::runtime::GuiS
             );
         }
     }
-}
-
-/// Global embedded vendor LUT, loaded once on first access.
-pub(crate) static VENDOR_LUT: std::sync::LazyLock<rs_cam_core::feeds::VendorLut> =
-    std::sync::LazyLock::new(rs_cam_core::feeds::VendorLut::embedded);
-
-/// Compute feeds for an op + tool + material + machine without touching
-/// any UI state. Mirrors the `FeedsInput` setup that
-/// `calculate_and_apply_feeds` does so MCP-only sessions get the same
-/// auto-corrected feeds the GUI applies on Feeds-tab render. (Roadmap B.4)
-pub(crate) fn compute_feeds_for_op(
-    tool: &crate::state::job::ToolConfig,
-    material: &rs_cam_core::material::Material,
-    machine: &rs_cam_core::machine::MachineProfile,
-    workholding: rs_cam_core::feeds::WorkholdingRigidity,
-    op: &OperationConfig,
-) -> rs_cam_core::feeds::FeedsResult {
-    let (family, role) = operation_to_feeds_family(op);
-    let (axial_hint, radial_hint, scallop_hint) = operation_feeds_hints(op);
-    let input = rs_cam_core::feeds::FeedsInput {
-        tool_diameter: tool.diameter,
-        flute_count: tool.flute_count,
-        flute_length: tool.cutting_length,
-        shank_diameter: Some(tool.shank_diameter),
-        tool_geometry: tool_geometry_hint(tool),
-        material,
-        machine,
-        operation: family,
-        pass_role: role,
-        axial_depth_mm: axial_hint,
-        radial_width_mm: radial_hint,
-        target_scallop_mm: scallop_hint,
-        vendor_lut: Some(&*VENDOR_LUT),
-        setup: rs_cam_core::feeds::SetupContext {
-            tool_overhang_mm: Some(tool.stickout),
-            workholding_rigidity: workholding,
-        },
-    };
-    rs_cam_core::feeds::calculate(&input)
-}
-
-/// Write a [`FeedsResult`] into an [`OperationConfig`] unconditionally.
-/// Used at toolpath creation (Roadmap F.5) and by the Feeds-tab
-/// Suggest buttons; fields are always user-owned afterward.
-pub(crate) fn apply_feeds_result_to_op(
-    op: &mut OperationConfig,
-    result: &rs_cam_core::feeds::FeedsResult,
-) {
-    // UX dial-in B5: feeds calc returns full-precision floats (e.g.
-    // 769.506587956183 mm/min) which read as "weird specific number" in
-    // the UI. Round suggestions to 1 dp for feed/plunge (mm/min) and
-    // 3 dp for stepover/DOC (mm) so suggested values feel like
-    // suggestions, not measurements.
-    op.set_feed_rate(round_to(result.feed_rate_mm_min, 1.0));
-    op.set_plunge_rate(round_to(result.plunge_rate_mm_min, 1.0));
-    op.set_stepover(round_to(result.radial_width_mm, 0.001));
-    op.set_depth_per_pass(round_to(result.axial_depth_mm, 0.001));
-}
-
-fn round_to(value: f64, step: f64) -> f64 {
-    if step <= 0.0 {
-        return value;
-    }
-    (value / step).round() * step
 }
 
 /// Flush tool undo snapshot if the user navigated away from a tool.
@@ -468,6 +402,24 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 })
                 .unwrap_or_default();
 
+            // Compute the load verdict for this TP so the params panel can
+            // surface chipload / power / deflection / drill-gate
+            // diagnostics in the unified ribbon rather than only in the
+            // separate tool-load surface.
+            let load_report = {
+                let sim_trace = state
+                    .simulation
+                    .results
+                    .as_ref()
+                    .and_then(|r| r.cut_trace.as_deref());
+                rs_cam_core::gcode::project_load_report(&state.session, sim_trace)
+            };
+            let load_verdict_for_tp = load_report
+                .per_toolpath
+                .iter()
+                .find(|v| v.toolpath_id == id.0)
+                .cloned();
+
             // Build a temporary ToolpathEntry from session config + gui runtime
             // so the existing draw_toolpath_panel can work unchanged.
             if let Some(mut entry) =
@@ -487,6 +439,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     model_is_step_missing_brep,
                     height_ctx.as_ref(),
                     &stale_default_defects,
+                    load_verdict_for_tp.as_ref(),
                     events,
                 );
 
@@ -1013,43 +966,6 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
 }
 
 /// Map OperationConfig variant to (OperationFamily, PassRole) for the feeds calculator.
-pub(crate) fn operation_to_feeds_family(
-    op: &OperationConfig,
-) -> (
-    rs_cam_core::feeds::OperationFamily,
-    rs_cam_core::feeds::PassRole,
-) {
-    op.feeds_style()
-}
-
-/// Derive ToolGeometryHint from the tool's own geometry_hint() method.
-pub(crate) fn tool_geometry_hint(
-    tool: &crate::state::job::ToolConfig,
-) -> rs_cam_core::feeds::ToolGeometryHint {
-    crate::compute::worker::helpers::build_cutter(tool).to_geometry_hint()
-}
-
-/// Extract operation-specific parameter hints for the feeds calculator.
-/// Returns (axial_depth_hint, radial_width_hint, scallop_hint).
-pub(crate) fn operation_feeds_hints(
-    op: &OperationConfig,
-) -> (Option<f64>, Option<f64>, Option<f64>) {
-    match op {
-        // Scallop: scallop_height drives stepover for ball tools
-        OperationConfig::Scallop(cfg) => (None, None, Some(cfg.scallop_height)),
-        // Waterline: z_step is the axial slice height
-        OperationConfig::Waterline(cfg) => (Some(cfg.z_step), None, None),
-        // SteepShallow: z_step for the steep (waterline) portion
-        OperationConfig::SteepShallow(cfg) => (Some(cfg.z_step), None, None),
-        // VCarve: max_depth hints the axial depth
-        OperationConfig::VCarve(cfg) => (Some(cfg.max_depth), None, None),
-        // RampFinish: max_stepdown is the axial depth
-        OperationConfig::RampFinish(cfg) => (Some(cfg.max_stepdown), None, None),
-        // All others: let the calculator use defaults
-        _ => (None, None, None),
-    }
-}
-
 /// Run the LUT calculator (read-only), cache the result on the entry,
 /// and draw the feeds card with per-field Suggest buttons. The
 /// calculator never writes to the operation here (Roadmap F.5) — the
@@ -1063,12 +979,24 @@ fn calculate_and_apply_feeds(
     machine: &rs_cam_core::machine::MachineProfile,
     workholding: rs_cam_core::feeds::WorkholdingRigidity,
 ) {
-    let result = compute_feeds_for_op(tool, material, machine, workholding, &entry.operation);
+    let result = rs_cam_core::feeds::suggest::feeds_result_for_operation(
+        &entry.operation,
+        tool,
+        material,
+        machine,
+        workholding,
+        rs_cam_core::feeds::embedded_vendor_lut(),
+    );
     entry.feeds_result = Some(result);
-    draw_feeds_card(ui, entry);
+    draw_feeds_card(ui, entry, tool, machine);
 }
 
-fn draw_feeds_card(ui: &mut egui::Ui, entry: &mut ToolpathEntry) {
+fn draw_feeds_card(
+    ui: &mut egui::Ui,
+    entry: &mut ToolpathEntry,
+    tool: &crate::state::job::ToolConfig,
+    machine: &rs_cam_core::machine::MachineProfile,
+) {
     ui.add_space(8.0);
     ui.collapsing("Feeds & Speeds", |ui| {
         // Read-only snapshot of the cached LUT result so we can borrow
@@ -1177,7 +1105,14 @@ fn draw_feeds_card(ui: &mut egui::Ui, entry: &mut ToolpathEntry) {
                 )
                 .clicked()
             {
-                apply_feeds_result_to_op(&mut entry.operation, &result);
+                let pass_role = entry.operation.feeds_style().1;
+                rs_cam_core::feeds::suggest::apply_feeds_result_to_op(
+                    &mut entry.operation,
+                    &result,
+                    tool,
+                    machine,
+                    pass_role,
+                );
                 entry.stale_since = Some(std::time::Instant::now());
             }
 
@@ -1321,7 +1256,7 @@ fn draw_vendor_lut_viewer(
     egui::CollapsingHeader::new(header)
         .default_open(false)
         .show(ui, |ui| {
-            let lut = &*VENDOR_LUT;
+            let lut = rs_cam_core::feeds::embedded_vendor_lut();
             let target_family = tool_type_to_lut_family(tool_type);
 
             // Filter observations: match tool family, and prefer matching diameter
@@ -1984,9 +1919,11 @@ impl TabBadges {
 
 fn compute_tab_badges(
     entry: &ToolpathEntry,
-    warnings: &[operations::OperationWarning],
+    diagnostics: &[rs_cam_core::diagnostics::Diagnostic],
     height_ctx: Option<&HeightContext>,
 ) -> TabBadges {
+    use rs_cam_core::diagnostics::{Category, DiagnosticState, Severity};
+
     // Heights: badge if any height warning exists
     let heights_badge = if let Some(hctx) = height_ctx {
         let h = entry.heights.resolve(hctx);
@@ -2012,16 +1949,28 @@ fn compute_tab_badges(
         }
     });
 
-    // Mods: badge if warnings mention tool-operation issues (from collect_warnings)
-    let mods_badge = if warnings
-        .iter()
-        .any(|w| w.severity == operations::WarningSeverity::Error)
-    {
+    // Mods: badge derived from actionable Current diagnostics in
+    // Safety / Geometry / ToolLoad / Quality categories. Pre-sim hints
+    // and State (workflow) notices stay quiet so a healthy op doesn't
+    // flash a yellow tab.
+    let mut has_critical = false;
+    let mut has_caution = false;
+    for d in diagnostics {
+        if d.state != DiagnosticState::Current {
+            continue;
+        }
+        if matches!(d.category, Category::State | Category::Efficiency) {
+            continue;
+        }
+        match d.severity {
+            Severity::Blocking | Severity::Critical => has_critical = true,
+            Severity::Caution => has_caution = true,
+            _ => {}
+        }
+    }
+    let mods_badge = if has_critical {
         Some(egui::Color32::from_rgb(220, 100, 80))
-    } else if warnings
-        .iter()
-        .any(|w| w.severity == operations::WarningSeverity::Warning)
-    {
+    } else if has_caution {
         Some(egui::Color32::from_rgb(220, 180, 60))
     } else {
         None
@@ -2031,6 +1980,193 @@ fn compute_tab_badges(
         feeds_badge,
         heights_badge,
         mods_badge,
+    }
+}
+
+/// Tier of a diagnostic row in the params panel. Drives the colour
+/// scheme + collapse behaviour without polluting the core schema.
+#[derive(Debug, Clone, Copy)]
+enum RowTier {
+    Actionable,
+    Stateful,
+    Hint,
+}
+
+/// Render one diagnostic row in the params panel ribbon. Surfaces
+/// evidence + confidence inline. When the diagnostic carries an
+/// `ApplyStaleDefault` fix, the fix button is rendered alongside
+/// (uses the same direct-apply path the validator banner uses).
+/// `SetToolpathParam` fixes are advisory for now — the schema
+/// supports them but no adapter emits them yet.
+fn render_diagnostic_row(
+    ui: &mut egui::Ui,
+    d: &rs_cam_core::diagnostics::Diagnostic,
+    tier: RowTier,
+    entry: &mut ToolpathEntry,
+    stale_default_defects: &[rs_cam_core::compute::validate::StaleDefault],
+) {
+    use rs_cam_core::diagnostics::{Category, DiagnosticFix, Severity};
+
+    let category_label = match d.category {
+        Category::Safety => "Safety",
+        Category::Geometry => "Geometry",
+        Category::ToolLoad => "Tool load",
+        Category::Quality => "Quality",
+        Category::Efficiency => "Efficiency",
+        Category::State => "State",
+    };
+    let color = match tier {
+        RowTier::Actionable => match d.severity {
+            Severity::Blocking | Severity::Critical => egui::Color32::from_rgb(220, 100, 80),
+            Severity::Caution => egui::Color32::from_rgb(220, 180, 60),
+            _ => egui::Color32::from_rgb(100, 180, 220),
+        },
+        RowTier::Stateful => egui::Color32::from_rgb(140, 145, 150),
+        RowTier::Hint => egui::Color32::from_rgb(130, 140, 150),
+    };
+
+    ui.horizontal_wrapped(|ui| {
+        let prefix = if matches!(d.category, Category::State) && matches!(tier, RowTier::Stateful) {
+            String::new()
+        } else {
+            format!("{category_label}: ")
+        };
+        ui.label(
+            egui::RichText::new(format!("{prefix}{}", d.message))
+                .small()
+                .color(color),
+        );
+        if matches!(tier, RowTier::Actionable) {
+            let chip_text = confidence_chip_label(d.confidence);
+            if !chip_text.is_empty() {
+                ui.label(
+                    egui::RichText::new(chip_text)
+                        .small()
+                        .italics()
+                        .color(egui::Color32::from_rgb(110, 115, 125)),
+                );
+            }
+        }
+
+        // Stale-default fix button — looks up the matching defect by
+        // rule_id (the adapter only carries the id; the canonical
+        // payload lives in `stale_default_defects`). Mirrors the
+        // existing validator-banner Fix button so behaviour is
+        // identical to clicking that.
+        if let Some(DiagnosticFix::ApplyStaleDefault {
+            rule_id, new_value, ..
+        }) = &d.fix
+            && let Some(defect) = stale_default_defects
+                .iter()
+                .find(|defect| defect.rule_id.id() == rule_id.as_str())
+            && ui
+                .small_button(format!("\u{2713} Fix ({new_value:.3})"))
+                .on_hover_text(format!(
+                    "Apply validator rule `{rule_id}` to this toolpath."
+                ))
+                .clicked()
+        {
+            rs_cam_core::compute::validate::apply_stale_default_to_op(&mut entry.operation, defect);
+            entry.stale_since = Some(std::time::Instant::now());
+        }
+    });
+
+    if !matches!(tier, RowTier::Hint)
+        && let Some(ev) = &d.evidence
+        && let Some(line) = evidence_line(ev)
+    {
+        ui.label(
+            egui::RichText::new(line)
+                .small()
+                .color(egui::Color32::from_rgb(120, 125, 135)),
+        );
+    }
+}
+
+/// One-line evidence summary for the panel. Returns `None` when the
+/// evidence variant has nothing meaningful to render in the ribbon.
+fn evidence_line(ev: &rs_cam_core::diagnostics::DiagnosticEvidence) -> Option<String> {
+    use rs_cam_core::diagnostics::DiagnosticEvidence as E;
+    Some(match ev {
+        E::SampleRange {
+            sample_start,
+            sample_end,
+            observed,
+            threshold,
+            unit,
+            locality,
+            ..
+        } => {
+            let thr = threshold
+                .map(|t| format!(", threshold {t:.3}"))
+                .unwrap_or_default();
+            let loc = if locality.is_empty() {
+                String::new()
+            } else {
+                format!(" [{}]", locality.as_str())
+            };
+            format!(
+                "at samples {sample_start}-{sample_end}: observed {observed:.3} {unit}{thr}{loc}"
+            )
+        }
+        E::LutCitation {
+            row_id,
+            min,
+            max,
+            observed,
+            unit,
+            extrapolated,
+        } => {
+            let min_s = min
+                .map(|v| format!("min {v:.3}"))
+                .unwrap_or_else(|| "min —".to_owned());
+            let max_s = max.map(|m| format!(", max {m:.3}")).unwrap_or_default();
+            let ext = if *extrapolated { " (extrapolated)" } else { "" };
+            format!("LUT `{row_id}`: observed {observed:.3} {unit} ({min_s}{max_s}){ext}")
+        }
+        E::GeometryCompare {
+            lhs_label,
+            lhs_value,
+            rhs_label,
+            rhs_value,
+            unit,
+        } => format!("{lhs_label} ({lhs_value:.3} {unit}) vs {rhs_label} ({rhs_value:.3} {unit})"),
+        E::Move {
+            move_index,
+            position,
+            ..
+        } => {
+            if let Some([x, y, z]) = position {
+                format!("at move {move_index} ({x:.2}, {y:.2}, {z:.2})")
+            } else {
+                format!("at move {move_index}")
+            }
+        }
+        E::Counts {
+            count,
+            offender_toolpath_ids,
+        } if *count > 0 => {
+            if offender_toolpath_ids.is_empty() {
+                format!("{count} occurrences")
+            } else {
+                let ids: Vec<String> = offender_toolpath_ids
+                    .iter()
+                    .map(|i| i.to_string())
+                    .collect();
+                format!("{count} occurrences across toolpaths {}", ids.join(", "))
+            }
+        }
+        E::Counts { .. } => return None,
+    })
+}
+
+fn confidence_chip_label(c: rs_cam_core::diagnostics::Confidence) -> &'static str {
+    use rs_cam_core::diagnostics::Confidence as C;
+    match c {
+        C::Verified => "(verified)",
+        C::Approximate => "(approximate)",
+        C::Static => "",
+        C::Heuristic => "(heuristic)",
     }
 }
 
@@ -2212,6 +2348,7 @@ fn draw_toolpath_panel(
     model_is_step_missing_brep: bool,
     height_ctx: Option<&HeightContext>,
     stale_default_defects: &[rs_cam_core::compute::validate::StaleDefault],
+    load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
     events: &mut Vec<AppEvent>,
 ) {
     ui.heading(&entry.name);
@@ -2378,16 +2515,84 @@ fn draw_toolpath_panel(
         }
     }
 
-    // Contextual warnings (non-blocking)
-    let warnings = collect_warnings(entry, validation, height_ctx);
-    if !warnings.is_empty() {
-        for w in &warnings {
-            ui.label(
-                egui::RichText::new(&w.message)
-                    .small()
-                    .color(w.severity.color()),
-            );
+    // Contextual diagnostics (non-blocking). Native `Diagnostic`
+    // rendering — splits findings into three tiers:
+    //  * Actionable (state Current, severity ≥ Caution) — coloured row
+    //    with evidence + confidence + optional Fix button.
+    //  * Stateful (NeedsSimulation / StaleEvidence) — neutral grey
+    //    "needs current simulation" / "re-run sim" rows.
+    //  * Hints (state Current, severity ≤ Hint) — collapsed by default.
+    //
+    // Load-gate diagnostics (chipload / power / deflection / drill)
+    // surface in the same ribbon now that we have `load_verdict`.
+    let tool_for_diags = tool_configs
+        .iter()
+        .find(|(id, _)| *id == entry.tool_id)
+        .map(|(_, tc)| tc);
+    let mut diagnostics = operations::collect_diagnostics(
+        entry,
+        tool_for_diags,
+        stale_default_defects,
+        height_ctx,
+        load_verdict,
+    );
+    // Auto-regen workflow notice: still a GUI-state-only finding
+    // (depends on `entry.auto_regen` + compute state). Synthesise it
+    // here so the panel renderer doesn't have to special-case it.
+    if !entry.auto_regen && matches!(entry.status, ComputeStatus::Pending) {
+        diagnostics.push(rs_cam_core::diagnostics::Diagnostic {
+            id: rs_cam_core::diagnostics::DiagnosticId::new("workflow.needs_generation"),
+            scope: rs_cam_core::diagnostics::Scope::Toolpath { id: entry.id.0 },
+            category: rs_cam_core::diagnostics::Category::State,
+            severity: rs_cam_core::diagnostics::Severity::Info,
+            confidence: rs_cam_core::diagnostics::Confidence::Static,
+            state: rs_cam_core::diagnostics::DiagnosticState::Current,
+            source: rs_cam_core::diagnostics::Source::StaticValidation,
+            message: "This operation requires manual generation. Press G or click Generate."
+                .to_owned(),
+            evidence: None,
+            fix: None,
+            supersedes: Vec::new(),
+            suppressed_diagnostics: Vec::new(),
+        });
+    }
+
+    let mut actionable = Vec::new();
+    let mut stateful = Vec::new();
+    let mut hints = Vec::new();
+    for d in &diagnostics {
+        use rs_cam_core::diagnostics::DiagnosticState;
+        match d.state {
+            DiagnosticState::Current if d.severity.is_actionable() => actionable.push(d),
+            DiagnosticState::Current => {
+                // Workflow / State category notices render as stateful
+                // (neutral) — they don't deserve the yellow tier even
+                // though they live in `Current` state.
+                if matches!(d.category, rs_cam_core::diagnostics::Category::State) {
+                    stateful.push(d);
+                } else {
+                    hints.push(d);
+                }
+            }
+            DiagnosticState::NeedsSimulation | DiagnosticState::StaleEvidence => stateful.push(d),
+            DiagnosticState::NotApplicable => {}
         }
+    }
+
+    for d in &actionable {
+        render_diagnostic_row(ui, d, RowTier::Actionable, entry, stale_default_defects);
+    }
+    for d in &stateful {
+        render_diagnostic_row(ui, d, RowTier::Stateful, entry, stale_default_defects);
+    }
+    if !hints.is_empty() {
+        egui::CollapsingHeader::new(format!("Hints ({})", hints.len()))
+            .default_open(false)
+            .show(ui, |ui| {
+                for d in &hints {
+                    render_diagnostic_row(ui, d, RowTier::Hint, entry, stale_default_defects);
+                }
+            });
     }
 
     // ── Tab bar ─────────────────────────────────────────────────────
@@ -2397,7 +2602,7 @@ fn draw_toolpath_panel(
     let mut active_tab: ToolpathTab = ui
         .memory(|mem| mem.data.get_temp(tab_id))
         .unwrap_or(ToolpathTab::Params);
-    let tab_badges = compute_tab_badges(entry, &warnings, height_ctx);
+    let tab_badges = compute_tab_badges(entry, &diagnostics, height_ctx);
     draw_toolpath_tabs(ui, &mut active_tab, &tab_badges);
     ui.memory_mut(|mem| mem.data.insert_temp(tab_id, active_tab));
     ui.separator();
@@ -2462,12 +2667,13 @@ fn draw_toolpath_panel(
                 .find(|(id, _)| *id == entry.tool_id)
                 .map(|(_, t)| t)
             {
-                let result = compute_feeds_for_op(
+                let result = rs_cam_core::feeds::suggest::feeds_result_for_operation(
+                    &entry.operation,
                     tool_cfg,
                     material,
                     machine,
                     workholding,
-                    &entry.operation,
+                    rs_cam_core::feeds::embedded_vendor_lut(),
                 );
                 ui.horizontal(|ui| {
                     if ui
@@ -2484,7 +2690,14 @@ fn draw_toolpath_panel(
                         ))
                         .clicked()
                     {
-                        apply_feeds_result_to_op(&mut entry.operation, &result);
+                        let pass_role = entry.operation.feeds_style().1;
+                        rs_cam_core::feeds::suggest::apply_feeds_result_to_op(
+                            &mut entry.operation,
+                            &result,
+                            tool_cfg,
+                            machine,
+                            pass_role,
+                        );
                         entry.stale_since = Some(std::time::Instant::now());
                     }
                     ui.label(
@@ -2511,33 +2724,54 @@ fn draw_toolpath_panel(
                     .color(egui::Color32::from_rgb(150, 150, 130)),
             );
             ui.add_space(2.0);
+            // PR-2D Phase 2 — pass the cached FeedsResult to every per-op
+            // draw so each numeric field can render an inline ⚡ Suggest
+            // pill. The Phase 1 block above already computed and cached
+            // the result on entry.feeds_result, so this is just a borrow.
+            let feeds_for_pills = entry.feeds_result.as_ref();
             match &mut entry.operation {
-                OperationConfig::Face(cfg) => draw_face_params(ui, cfg),
-                OperationConfig::Pocket(cfg) => draw_pocket_params(ui, cfg),
-                OperationConfig::Profile(cfg) => draw_profile_params(ui, cfg),
-                OperationConfig::Adaptive(cfg) => draw_adaptive_params(ui, cfg),
-                OperationConfig::VCarve(cfg) => draw_vcarve_params(ui, cfg),
-                OperationConfig::Rest(cfg) => draw_rest_params(ui, cfg, tools),
-                OperationConfig::Inlay(cfg) => draw_inlay_params(ui, cfg),
-                OperationConfig::Zigzag(cfg) => draw_zigzag_params(ui, cfg),
-                OperationConfig::Trace(cfg) => draw_trace_params(ui, cfg),
-                OperationConfig::Drill(cfg) => draw_drill_params(ui, cfg),
-                OperationConfig::Chamfer(cfg) => draw_chamfer_params(ui, cfg),
-                OperationConfig::DropCutter(cfg) => draw_dropcutter_params(ui, cfg),
-                OperationConfig::Adaptive3d(cfg) => draw_adaptive3d_params(ui, cfg),
-                OperationConfig::Waterline(cfg) => draw_waterline_params(ui, cfg),
-                OperationConfig::Pencil(cfg) => draw_pencil_params(ui, cfg),
-                OperationConfig::Scallop(cfg) => draw_scallop_params(ui, cfg),
-                OperationConfig::SteepShallow(cfg) => draw_steep_shallow_params(ui, cfg),
-                OperationConfig::RampFinish(cfg) => draw_ramp_finish_params(ui, cfg),
-                OperationConfig::SpiralFinish(cfg) => draw_spiral_finish_params(ui, cfg),
-                OperationConfig::RadialFinish(cfg) => draw_radial_finish_params(ui, cfg),
-                OperationConfig::HorizontalFinish(cfg) => draw_horizontal_finish_params(ui, cfg),
+                OperationConfig::Face(cfg) => draw_face_params(ui, cfg, feeds_for_pills),
+                OperationConfig::Pocket(cfg) => draw_pocket_params(ui, cfg, feeds_for_pills),
+                OperationConfig::Profile(cfg) => draw_profile_params(ui, cfg, feeds_for_pills),
+                OperationConfig::Adaptive(cfg) => draw_adaptive_params(ui, cfg, feeds_for_pills),
+                OperationConfig::VCarve(cfg) => draw_vcarve_params(ui, cfg, feeds_for_pills),
+                OperationConfig::Rest(cfg) => draw_rest_params(ui, cfg, tools, feeds_for_pills),
+                OperationConfig::Inlay(cfg) => draw_inlay_params(ui, cfg, feeds_for_pills),
+                OperationConfig::Zigzag(cfg) => draw_zigzag_params(ui, cfg, feeds_for_pills),
+                OperationConfig::Trace(cfg) => draw_trace_params(ui, cfg, feeds_for_pills),
+                OperationConfig::Drill(cfg) => draw_drill_params(ui, cfg, feeds_for_pills),
+                OperationConfig::Chamfer(cfg) => draw_chamfer_params(ui, cfg, feeds_for_pills),
+                OperationConfig::DropCutter(cfg) => {
+                    draw_dropcutter_params(ui, cfg, feeds_for_pills);
+                }
+                OperationConfig::Adaptive3d(cfg) => {
+                    draw_adaptive3d_params(ui, cfg, feeds_for_pills);
+                }
+                OperationConfig::Waterline(cfg) => {
+                    draw_waterline_params(ui, cfg, feeds_for_pills);
+                }
+                OperationConfig::Pencil(cfg) => draw_pencil_params(ui, cfg, feeds_for_pills),
+                OperationConfig::Scallop(cfg) => draw_scallop_params(ui, cfg, feeds_for_pills),
+                OperationConfig::SteepShallow(cfg) => {
+                    draw_steep_shallow_params(ui, cfg, feeds_for_pills);
+                }
+                OperationConfig::RampFinish(cfg) => {
+                    draw_ramp_finish_params(ui, cfg, feeds_for_pills);
+                }
+                OperationConfig::SpiralFinish(cfg) => {
+                    draw_spiral_finish_params(ui, cfg, feeds_for_pills);
+                }
+                OperationConfig::RadialFinish(cfg) => {
+                    draw_radial_finish_params(ui, cfg, feeds_for_pills);
+                }
+                OperationConfig::HorizontalFinish(cfg) => {
+                    draw_horizontal_finish_params(ui, cfg, feeds_for_pills);
+                }
                 OperationConfig::ProjectCurve(cfg) => {
-                    draw_project_curve_params(ui, cfg, models);
+                    draw_project_curve_params(ui, cfg, models, feeds_for_pills);
                 }
                 OperationConfig::AlignmentPinDrill(cfg) => {
-                    draw_alignment_pin_drill_params(ui, cfg);
+                    draw_alignment_pin_drill_params(ui, cfg, feeds_for_pills);
                 }
             }
 
@@ -2872,6 +3106,117 @@ fn dv(
         resp.on_hover_text(tip);
     }
     ui.end_row();
+}
+
+// PR-2D Phase 2 — per-field LUT Suggest pills.
+//
+// `dv_pill` is `dv` with an optional ⚡ button rendered inline to the right
+// of the DragValue. The button overwrites the field with the LUT
+// recommendation when clicked. Pill colour reflects evidence: green for a
+// vendor LUT row, amber for the formula fallback or edge-radius floor.
+// The pill is greyed out when the current value is already within 1% of
+// the recommendation so a click has no surprise side effect.
+
+fn pill_color_for_source(source: &rs_cam_core::feeds::ChiploadSource) -> egui::Color32 {
+    use rs_cam_core::feeds::ChiploadSource;
+    match source {
+        ChiploadSource::VendorLut { .. } => egui::Color32::from_rgb(80, 180, 80),
+        ChiploadSource::FormulaFallback | ChiploadSource::EdgeRadiusFloor => {
+            egui::Color32::from_rgb(220, 180, 60)
+        }
+    }
+}
+
+fn source_short_label(source: &rs_cam_core::feeds::ChiploadSource) -> String {
+    use rs_cam_core::feeds::ChiploadSource;
+    match source {
+        ChiploadSource::VendorLut { observation_id } => format!("vendor LUT ({observation_id})"),
+        ChiploadSource::FormulaFallback => "formula fallback".to_owned(),
+        ChiploadSource::EdgeRadiusFloor => "edge-radius floor".to_owned(),
+    }
+}
+
+/// Render a small ⚡ Suggest pill. Returns true if the user clicked it.
+pub(crate) fn suggest_pill(
+    ui: &mut egui::Ui,
+    field_label: &str,
+    current: f64,
+    recommended: f64,
+    source: &rs_cam_core::feeds::ChiploadSource,
+    suffix: &str,
+) -> bool {
+    let near_match = recommended > 0.0 && (current - recommended).abs() / recommended < 0.01;
+    let color = pill_color_for_source(source);
+    let trimmed = field_label.trim().trim_end_matches(':');
+    let btn = egui::Button::new(egui::RichText::new("\u{26A1}").color(color)).small();
+    let hover = if near_match {
+        format!(
+            "{trimmed} already matches LUT recommendation ({recommended:.3}{suffix}). \
+             Source: {}.",
+            source_short_label(source),
+        )
+    } else {
+        format!(
+            "Suggest {trimmed} = {recommended:.3}{suffix} (source: {}). \
+             Click to overwrite this field only.",
+            source_short_label(source),
+        )
+    };
+    ui.add_enabled(!near_match, btn)
+        .on_hover_text(hover)
+        .clicked()
+}
+
+/// Same as [`dv`] but with an optional inline ⚡ Suggest pill that pushes
+/// the LUT-recommended value into the field on click. The grid stays
+/// 2-column — the DragValue and pill share one cell via a horizontal
+/// layout so rows without a pill still align cleanly.
+fn dv_pill(
+    ui: &mut egui::Ui,
+    label: &str,
+    val: &mut f64,
+    suffix: &str,
+    speed: f64,
+    range: std::ops::RangeInclusive<f64>,
+    suggestion: Option<(f64, &rs_cam_core::feeds::ChiploadSource)>,
+) -> bool {
+    let label_resp = ui.label(label);
+    let mut clicked = false;
+    ui.horizontal(|ui| {
+        let resp = ui.add(
+            egui::DragValue::new(val)
+                .suffix(suffix)
+                .speed(speed)
+                .range(range),
+        );
+        if label.trim().trim_end_matches(':') == "Stock to Leave" {
+            automation::record(ui, "properties_stock_to_leave", &resp, "Stock to Leave");
+            automation::record(
+                ui,
+                "properties_stock_to_leave_label",
+                &label_resp,
+                "Stock to Leave",
+            );
+        }
+        if let Some(tip) = tooltip_for(label) {
+            resp.on_hover_text(tip);
+        }
+        if let Some((rec, source)) = suggestion
+            && suggest_pill(ui, label, *val, rec, source, suffix)
+        {
+            // Match the rounding used by apply_feeds_result_to_op so
+            // suggested values feel like suggestions, not measurements.
+            let step = if suffix.contains("mm/min") {
+                1.0
+            } else {
+                0.001
+            };
+            *val = rs_cam_core::feeds::suggest::round_suggestion_value(rec, step);
+            clicked = true;
+        }
+    });
+    ui.end_row();
+    clicked
 }
 
 fn tooltip_for(label: &str) -> Option<&'static str> {

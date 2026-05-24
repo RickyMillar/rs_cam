@@ -441,6 +441,11 @@ impl RsCamApp {
                         // If user cancelled the file dialog, keep the dialog open
                     }
                     if ui.button("Discard & Quit").clicked() {
+                        // Clear the dirty flag so the next-frame
+                        // close_requested check in `update` doesn't
+                        // re-open this dialog and trap the user in a
+                        // CancelClose loop.
+                        self.controller.state_mut().gui.dirty = false;
                         self.show_quit_dialog = false;
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }

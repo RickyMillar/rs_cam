@@ -236,6 +236,9 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
         clearing_strategy: ClearingStrategy3d::AgentSearch,
         z_blend: false,
         boundary: None,
+        mill_shallow_areas: false,
+        shallow_angle_rad: None,
+        shallow_stepdown: None,
     };
 
     // ── Generate (annotated) ──────────────────────────────────────────

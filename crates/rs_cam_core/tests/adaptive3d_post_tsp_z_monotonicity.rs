@@ -72,6 +72,7 @@ mod tests {
         let optimized = apply_dressups(
             AnnotatedToolpath::with_spans(raw, spans),
             &cfg,
+            1000.0,
             6.0,
             safe_z,
             0.0,
@@ -115,6 +116,7 @@ mod tests {
         let optimized = apply_dressups(
             AnnotatedToolpath::new(raw),
             &cfg,
+            1000.0,
             6.0,
             safe_z,
             0.0,

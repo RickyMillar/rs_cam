@@ -61,6 +61,13 @@ pub struct SimToolpathEntry {
     /// still used for G-code export, rapid-collision checks, and move
     /// indexing.
     pub drill_op: Option<Arc<crate::drill_op::DrillOp>>,
+    /// Hash of the toolpath's `OperationConfig` at sim-build time.
+    /// Carried so the provenance builder can stamp it without having
+    /// access to the raw config. Used by [`sim_trace_is_fresh`] to
+    /// detect config-only edits (e.g. `feed_rate` changes that don't
+    /// alter move geometry) that should invalidate cached load
+    /// verdicts.
+    pub operation_config_hash: u64,
 }
 
 /// A group of toolpaths from one setup, sharing a cut direction.
@@ -158,7 +165,32 @@ fn hash_f64(hasher: &mut std::collections::hash_map::DefaultHasher, value: f64) 
     value.to_bits().hash(hasher);
 }
 
-fn hash_toolpath(toolpath: &Toolpath) -> u64 {
+/// Hash of an [`OperationConfig`]. Captures *every* parameter that
+/// can influence cutting load — including ones whose edits don't
+/// change move geometry (e.g. `feed_rate`, `plunge_rate`, depth
+/// staging on drill ops). Used at sim-time to stamp
+/// [`SimulationProvenance::operation_config_hashes`] and at
+/// load-report time to detect config-only edits that should
+/// invalidate cached verdicts.
+///
+/// Implementation note: serialises via serde-json (already a workspace
+/// dep) and hashes the bytes. The op config enum derives
+/// `Serialize`/`Deserialize` so this is reliable; it's also
+/// future-proof against new fields on op-specific configs.
+pub fn hash_operation_config(op: &crate::compute::catalog::OperationConfig) -> u64 {
+    // serde-json output is stable for typed structs — field order is
+    // determined by the struct definition, not by hash iteration.
+    let bytes = serde_json::to_vec(op).unwrap_or_default();
+    hash_with(|hasher| {
+        bytes.hash(hasher);
+    })
+}
+
+/// Hash of a linearized toolpath. Used both at sim-time (to populate
+/// [`SimulationProvenance::toolpath_hashes`]) and at load-report time
+/// (to detect a stale cached trace by comparing the current toolpath
+/// hash against the value stored on the trace).
+pub(crate) fn hash_toolpath(toolpath: &Toolpath) -> u64 {
     hash_with(|hasher| {
         toolpath.moves.len().hash(hasher);
         for motion in &toolpath.moves {
@@ -192,6 +224,7 @@ fn hash_toolpath(toolpath: &Toolpath) -> u64 {
 fn build_simulation_provenance(request: &SimulationRequest) -> SimulationProvenance {
     let mut toolpath_hashes = BTreeMap::new();
     let mut tool_hashes = BTreeMap::new();
+    let mut operation_config_hashes = BTreeMap::new();
     for group in &request.groups {
         for entry in &group.toolpaths {
             toolpath_hashes.insert(entry.id, hash_toolpath(&entry.annotated.toolpath));
@@ -207,6 +240,7 @@ fn build_simulation_provenance(request: &SimulationRequest) -> SimulationProvena
                     entry.tool.flute_count.hash(hasher);
                 }),
             );
+            operation_config_hashes.insert(entry.id, entry.operation_config_hash);
         }
     }
     let stock_hash = hash_with(|hasher| {
@@ -228,6 +262,7 @@ fn build_simulation_provenance(request: &SimulationRequest) -> SimulationProvena
         captured_arc_engagement: request.metric_options.capture_arc_engagement,
         toolpath_hashes,
         tool_hashes,
+        operation_config_hashes,
         stock_hash,
         machine_hash,
     }
@@ -697,6 +732,39 @@ mod tests {
     use super::*;
     use crate::geo::P3;
 
+    /// PR-4 polish: feed-rate-only edits (which don't change move
+    /// geometry) must produce a different `hash_operation_config`
+    /// value. Without this, `sim_trace_is_fresh` reports a stale
+    /// trace as fresh and the load verdicts evaluate against
+    /// outdated samples.
+    #[test]
+    fn hash_operation_config_differs_on_feed_rate_only_edit() {
+        use crate::compute::catalog::OperationConfig;
+        use crate::compute::operation_configs::PocketConfig;
+        let mut cfg = PocketConfig {
+            feed_rate: 1000.0,
+            ..PocketConfig::default()
+        };
+        let a = OperationConfig::Pocket(cfg.clone());
+        cfg.feed_rate = 1500.0;
+        let b = OperationConfig::Pocket(cfg);
+        assert_ne!(
+            hash_operation_config(&a),
+            hash_operation_config(&b),
+            "feed_rate change must invalidate config hash"
+        );
+    }
+
+    #[test]
+    fn hash_operation_config_stable_for_identical_configs() {
+        use crate::compute::catalog::OperationConfig;
+        use crate::compute::operation_configs::PocketConfig;
+        let cfg = PocketConfig::default();
+        let a = OperationConfig::Pocket(cfg.clone());
+        let b = OperationConfig::Pocket(cfg);
+        assert_eq!(hash_operation_config(&a), hash_operation_config(&b));
+    }
+
     fn simple_request() -> SimulationRequest {
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(0.0, 0.0, 10.0));
@@ -723,6 +791,7 @@ mod tests {
             spindle_rpm: None,
             metrics_not_applicable: false,
             drill_op: None,
+            operation_config_hash: 0,
         };
 
         let group = SimGroupEntry {
@@ -920,6 +989,7 @@ mod tests {
             spindle_rpm: None,
             metrics_not_applicable: false,
             drill_op: None,
+            operation_config_hash: 0,
         };
 
         let group = SimGroupEntry {
@@ -1022,6 +1092,7 @@ mod tests {
                 spindle_rpm: None,
                 metrics_not_applicable: false,
                 drill_op: None,
+                operation_config_hash: 0,
             }],
             direction: StockCutDirection::FromTop,
             local_stock_bbox: Some(stock_bbox),
@@ -1040,6 +1111,7 @@ mod tests {
                 spindle_rpm: None,
                 metrics_not_applicable: false,
                 drill_op: None,
+                operation_config_hash: 0,
             }],
             direction: StockCutDirection::FromBottom,
             local_stock_bbox: Some(BoundingBox3 {

@@ -24,33 +24,48 @@ pub(super) use surface_3d::{
 
 use crate::state::job::ToolType;
 use crate::state::toolpath::{
-    ComputeStatus, HeightContext, HeightMode, HeightReference, HeightsConfig, OperationConfig,
-    PocketPattern, ReferenceOffset, ToolpathEntry, ToolpathId, UiProcessRole,
+    HeightContext, HeightMode, HeightReference, HeightsConfig, OperationConfig, PocketPattern,
+    ReferenceOffset, ToolpathEntry, ToolpathId,
 };
 
-use super::dv;
+use rs_cam_core::feeds::FeedsResult;
+
+use super::{dv_pill, suggest_pill};
 
 /// Draw the standard "Feed Rate" + "Plunge Rate" + "Spindle RPM" parameter
 /// triple used by most cutting operations.
 ///
 /// `spindle_rpm` is the per-operation override: `None` means "use the project
 /// default" (rendered as an unchecked checkbox with the DragValue disabled).
+///
+/// `feeds_result`, when present, drives inline ⚡ Suggest pills next to each
+/// field (PR-2D Phase 2).
 pub(super) fn draw_feed_params(
     ui: &mut egui::Ui,
     feed_rate: &mut f64,
     plunge_rate: &mut f64,
     spindle_rpm: &mut Option<u32>,
+    feeds_result: Option<&FeedsResult>,
 ) {
-    dv(ui, "Feed Rate:", feed_rate, " mm/min", 50.0, 1.0..=50000.0);
-    dv(
+    dv_pill(
+        ui,
+        "Feed Rate:",
+        feed_rate,
+        " mm/min",
+        50.0,
+        1.0..=50000.0,
+        feeds_result.map(|r| (r.feed_rate_mm_min, &r.chipload_source)),
+    );
+    dv_pill(
         ui,
         "Plunge Rate:",
         plunge_rate,
         " mm/min",
         10.0,
         1.0..=10000.0,
+        feeds_result.map(|r| (r.plunge_rate_mm_min, &r.chipload_source)),
     );
-    draw_spindle_rpm_row(ui, spindle_rpm);
+    draw_spindle_rpm_row(ui, spindle_rpm, feeds_result);
 }
 
 /// Per-operation spindle RPM override: checkbox + DragValue.
@@ -58,7 +73,15 @@ pub(super) fn draw_feed_params(
 /// Unchecked → `None` (the project default applies).
 /// Checked → `Some(rpm)`. The DragValue is disabled while unchecked, and a
 /// dim "uses project default" hint is shown beside it.
-fn draw_spindle_rpm_row(ui: &mut egui::Ui, spindle_rpm: &mut Option<u32>) {
+///
+/// When `feeds_result` is provided, an inline ⚡ pill is rendered after the
+/// DragValue. Clicking it both enables the override and writes the LUT
+/// recommendation into `spindle_rpm`.
+fn draw_spindle_rpm_row(
+    ui: &mut egui::Ui,
+    spindle_rpm: &mut Option<u32>,
+    feeds_result: Option<&FeedsResult>,
+) {
     const DEFAULT_RPM: u32 = 18_000;
 
     let mut override_active = spindle_rpm.is_some();
@@ -97,6 +120,24 @@ fn draw_spindle_rpm_row(ui: &mut egui::Ui, spindle_rpm: &mut Option<u32>) {
             } else {
                 None
             };
+        }
+
+        if let Some(result) = feeds_result {
+            let current = f64::from(rpm_value);
+            if suggest_pill(
+                ui,
+                "Spindle RPM:",
+                current,
+                result.rpm,
+                &result.chipload_source,
+                " RPM",
+            ) {
+                // SAFETY: clamp into u32 range before the as-cast. RPMs
+                // outside 1_000..=60_000 are nonsense anyway.
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let suggested = result.rpm.round().clamp(1_000.0, 60_000.0) as u32;
+                *spindle_rpm = Some(suggested);
+            }
         }
     });
 
@@ -1631,8 +1672,11 @@ pub struct ToolpathValidationContext {
 
 struct ValidationTool {
     id: crate::state::job::ToolId,
+    #[allow(dead_code)] // surfaced via `tool_configs` lookup post-PR-3 cutover
     tool_type: ToolType,
+    #[allow(dead_code)] // surfaced via `tool_configs` lookup post-PR-3 cutover
     diameter: f64,
+    #[allow(dead_code)] // surfaced via `tool_configs` lookup post-PR-3 cutover
     cutting_length: f64,
 }
 
@@ -1954,289 +1998,41 @@ fn has_prior_rest_source(
     })
 }
 
-// ── Contextual warnings (non-blocking) ──────────────────────────────────
+// ── Contextual diagnostics ──────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WarningSeverity {
-    Info,
-    Warning,
-    Error,
-}
-
-impl WarningSeverity {
-    pub fn color(self) -> egui::Color32 {
-        match self {
-            WarningSeverity::Info => egui::Color32::from_rgb(100, 180, 220),
-            WarningSeverity::Warning => egui::Color32::from_rgb(220, 180, 60),
-            WarningSeverity::Error => egui::Color32::from_rgb(220, 100, 80),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct OperationWarning {
-    pub severity: WarningSeverity,
-    pub message: String,
-}
-
-/// Collect non-blocking contextual warnings about the current configuration.
-/// These do NOT prevent generation — they advise the user of suboptimal choices.
-pub fn collect_warnings(
+/// Collect the unified [`rs_cam_core::diagnostics::Diagnostic`]
+/// list for a single toolpath via the core orchestrator. All GUI
+/// surfaces that need per-toolpath diagnostics route through this
+/// function — it delegates to
+/// [`rs_cam_core::diagnostics::diagnose_toolpath_inputs`] so the
+/// params panel and MCP `get_toolpath_diagnostics` produce identical
+/// findings for the same project state.
+///
+/// Load-gate (chipload / power / deflection / drill) diagnostics are
+/// included when a `load_verdict` is supplied — they render in the
+/// same ribbon as the other findings.
+pub fn collect_diagnostics(
     entry: &ToolpathEntry,
-    ctx: &ToolpathValidationContext,
+    tool: Option<&rs_cam_core::compute::tool_config::ToolConfig>,
+    stale_defaults: &[rs_cam_core::compute::validate::StaleDefault],
     height_ctx: Option<&HeightContext>,
-) -> Vec<OperationWarning> {
-    let mut warnings: Vec<OperationWarning> = Vec::new();
-
-    let Some(tool) = ctx.tools.iter().find(|t| t.id == entry.tool_id) else {
-        return warnings;
+    load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
+) -> Vec<rs_cam_core::diagnostics::Diagnostic> {
+    let Some(tool) = tool else {
+        return Vec::new();
     };
-
-    let feed = entry.operation.feed_rate();
-    let plunge = entry.operation.plunge_rate();
-
-    // -- Tool-operation compatibility --
-
-    // Ball nose on 2D clearing operations (suboptimal)
-    if matches!(
-        tool.tool_type,
-        ToolType::BallNose | ToolType::TaperedBallNose
-    ) && matches!(
-        entry.operation,
-        OperationConfig::Pocket(_) | OperationConfig::Face(_) | OperationConfig::Zigzag(_)
-    ) {
-        warnings.push(OperationWarning {
-            severity: WarningSeverity::Warning,
-            message: "Ball nose tools leave scallops on flat surfaces. Consider a flat end mill for clearing operations.".into(),
-        });
-    }
-
-    // End mill on scallop/pencil (ball tip strongly preferred)
-    if matches!(tool.tool_type, ToolType::EndMill)
-        && matches!(
-            entry.operation,
-            OperationConfig::Scallop(_) | OperationConfig::Pencil(_)
-        )
-    {
-        warnings.push(OperationWarning {
-            severity: WarningSeverity::Error,
-            message: "Scallop and Pencil operations require a ball nose tool for correct surface contact.".into(),
-        });
-    }
-
-    // -- Stepover checks --
-    if let Some(stepover) = entry.operation.stepover()
-        && tool.diameter > 0.0
-    {
-        if stepover > tool.diameter {
-            warnings.push(OperationWarning {
-                severity: WarningSeverity::Error,
-                message: format!(
-                    "Stepover ({:.2} mm) exceeds tool diameter ({:.1} mm) \u{2014} will leave uncut strips.",
-                    stepover, tool.diameter,
-                ),
-            });
-        } else if stepover > tool.diameter * 0.8 {
-            warnings.push(OperationWarning {
-                severity: WarningSeverity::Warning,
-                message: format!(
-                    "Stepover is {:.0}% of tool diameter \u{2014} may leave visible scallops.",
-                    (stepover / tool.diameter) * 100.0,
-                ),
-            });
-        }
-
-        // Stepover vs recommended (from feeds calculation)
-        if let Some(ref result) = entry.feeds_result
-            && result.radial_width_mm > 0.0
-        {
-            let ratio = stepover / result.radial_width_mm;
-            if ratio > 2.0 {
-                warnings.push(OperationWarning {
-                    severity: WarningSeverity::Warning,
-                    message: format!(
-                        "Stepover ({:.2} mm) is {:.1}x the recommended value ({:.2} mm) for this machine/material.",
-                        stepover, ratio, result.radial_width_mm,
-                    ),
-                });
-            }
-        }
-
-        // Very fine stepover (informational)
-        if stepover < tool.diameter * 0.05 {
-            warnings.push(OperationWarning {
-                severity: WarningSeverity::Info,
-                message: "Very fine stepover \u{2014} cycle time will be significantly longer."
-                    .into(),
-            });
-        }
-
-        // Finish-specific: stepover > 50%
-        let spec = entry.operation.op_type().spec();
-        if spec.ui_process_role == UiProcessRole::Finish && stepover > tool.diameter * 0.5 {
-            warnings.push(OperationWarning {
-                severity: WarningSeverity::Warning,
-                message: format!(
-                    "Stepover ({:.2} mm) is >{:.0}% of tool diameter. Finish quality may suffer.",
-                    stepover,
-                    (stepover / tool.diameter) * 100.0,
-                ),
-            });
-        }
-
-        // Ball nose scallop height at this stepover
-        if matches!(
-            tool.tool_type,
-            ToolType::BallNose | ToolType::TaperedBallNose
-        ) && spec.ui_process_role == UiProcessRole::Finish
-        {
-            let ball_r = tool.diameter / 2.0;
-            if ball_r > 0.0 && stepover < tool.diameter {
-                // Scallop height = R - sqrt(R^2 - (stepover/2)^2)
-                let half_so = stepover / 2.0;
-                let inner = ball_r * ball_r - half_so * half_so;
-                if inner > 0.0 {
-                    let scallop_h = ball_r - inner.sqrt();
-                    if scallop_h > 0.1 {
-                        warnings.push(OperationWarning {
-                            severity: WarningSeverity::Warning,
-                            message: format!(
-                                "Scallop height will be {:.3} mm at this stepover. Reduce stepover for a smoother finish.",
-                                scallop_h,
-                            ),
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    // -- Depth checks --
-    if let Some(dpp) = entry.operation.depth_per_pass()
-        && tool.cutting_length > 0.0
-        && dpp > tool.cutting_length
-    {
-        warnings.push(OperationWarning {
-            severity: WarningSeverity::Error,
-            message: format!(
-                "Depth per pass ({:.1} mm) exceeds cutting length ({:.1} mm). Tool shank will contact material.",
-                dpp, tool.cutting_length,
-            ),
-        });
-    }
-
-    // Depth vs recommended (from feeds calculation)
-    if let Some(dpp) = entry.operation.depth_per_pass()
-        && let Some(ref result) = entry.feeds_result
-        && result.axial_depth_mm > 0.0
-    {
-        let ratio = dpp / result.axial_depth_mm;
-        if ratio > 2.0 {
-            warnings.push(OperationWarning {
-                severity: WarningSeverity::Warning,
-                message: format!(
-                    "Depth per pass ({:.1} mm) is {:.1}x the recommended value ({:.1} mm) for this machine rigidity.",
-                    dpp, ratio, result.axial_depth_mm,
-                ),
-            });
-        }
-    }
-
-    // Depth > 1.5x tool diameter (high deflection risk)
-    if let Some(dpp) = entry.operation.depth_per_pass()
-        && tool.diameter > 0.0
-        && dpp > tool.diameter * 1.5
-    {
-        warnings.push(OperationWarning {
-            severity: WarningSeverity::Warning,
-            message: format!(
-                "Depth ({:.1} mm) exceeds 1.5x tool diameter ({:.1} mm) \u{2014} high deflection risk.",
-                dpp, tool.diameter,
-            ),
-        });
-    }
-
-    // -- Feed rate checks --
-    if plunge > feed && feed > 0.0 {
-        warnings.push(OperationWarning {
-            severity: WarningSeverity::Warning,
-            message: format!(
-                "Plunge rate ({:.0}) exceeds feed rate ({:.0}). This is unusual \u{2014} plunge is typically 30\u{2013}50% of feed.",
-                plunge, feed,
-            ),
-        });
-    }
-
-    // Feed vs recommended (from feeds calculation)
-    if let Some(ref result) = entry.feeds_result
-        && result.feed_rate_mm_min > 0.0
-    {
-        let ratio = feed / result.feed_rate_mm_min;
-        if ratio > 2.0 {
-            warnings.push(OperationWarning {
-                severity: WarningSeverity::Warning,
-                message: format!(
-                    "Feed rate ({:.0} mm/min) is {:.1}x the auto-calculated value ({:.0} mm/min) \u{2014} risk of tool breakage.",
-                    feed, ratio, result.feed_rate_mm_min,
-                ),
-            });
-        } else if ratio < 0.2 {
-            warnings.push(OperationWarning {
-                severity: WarningSeverity::Info,
-                message: format!(
-                    "Feed rate ({:.0} mm/min) is very low ({:.0}% of recommended) \u{2014} may cause rubbing and heat buildup.",
-                    feed, ratio * 100.0,
-                ),
-            });
-        }
-    }
-
-    // -- Auto-regen notice --
-    if !entry.auto_regen && matches!(entry.status, ComputeStatus::Pending) {
-        warnings.push(OperationWarning {
-            severity: WarningSeverity::Info,
-            message: "This operation requires manual generation. Press G or click Generate.".into(),
-        });
-    }
-
-    // -- Heights cross-validation --
-    if let Some(hctx) = height_ctx {
-        let h = entry.heights.resolve(hctx);
-        if h.bottom_z > h.top_z {
-            warnings.push(OperationWarning {
-                severity: WarningSeverity::Error,
-                message: format!(
-                    "Bottom Z ({:.1}) is above Top Z ({:.1}). No material will be cut.",
-                    h.bottom_z, h.top_z,
-                ),
-            });
-        }
-        if h.feed_z < h.top_z {
-            warnings.push(OperationWarning {
-                severity: WarningSeverity::Warning,
-                message: format!(
-                    "Feed Z ({:.1}) is below Top Z ({:.1}). Tool will plunge into material at feed rate, not cutting rate.",
-                    h.feed_z, h.top_z,
-                ),
-            });
-        }
-        if h.retract_z < h.feed_z {
-            warnings.push(OperationWarning {
-                severity: WarningSeverity::Warning,
-                message: "Retract Z is below Feed Z. Retract moves won\u{2019}t clear the approach height.".into(),
-            });
-        }
-        if h.clearance_z < h.retract_z {
-            warnings.push(OperationWarning {
-                severity: WarningSeverity::Warning,
-                message:
-                    "Clearance Z is below Retract Z. Rapid moves between operations may collide."
-                        .into(),
-            });
-        }
-    }
-
-    warnings
+    let heights = height_ctx
+        .map(rs_cam_core::diagnostics::adapters::from_static_checks::ResolvedHeights::from_context);
+    let inputs = rs_cam_core::diagnostics::ToolpathDiagnoseInputs {
+        toolpath_id: entry.id.0,
+        operation: &entry.operation,
+        tool,
+        heights: heights.as_ref(),
+        feeds_result: entry.feeds_result.as_ref(),
+        load_verdict,
+        stale_defaults,
+    };
+    rs_cam_core::diagnostics::diagnose_toolpath_inputs(&inputs)
 }
 
 #[cfg(test)]
@@ -2377,6 +2173,103 @@ mod tests {
                 .any(|err| err.contains("earlier enabled operation")),
             "expected earlier-operation validation error, got {errs:?}"
         );
+    }
+
+    /// PR-6 polish (P7.13): the session-level
+    /// [`ProjectSession::diagnose_toolpath_with_trace`] path and the
+    /// GUI-side [`collect_diagnostics`] path produce the same set of
+    /// diagnostic IDs for the same toolpath, modulo whether the GUI
+    /// has cached a `feeds_result` on the entry.
+    ///
+    /// This guards the contract that MCP `get_toolpath_diagnostics`
+    /// (which routes via the session method) and the GUI params panel
+    /// (which routes via `collect_diagnostics`) tell the operator the
+    /// same story. Drift here means the MCP agent and the human see
+    /// different findings.
+    #[test]
+    fn gui_and_mcp_diagnostic_ids_match() {
+        use rs_cam_core::compute::tool_config::ToolId as CoreToolId;
+        use std::collections::HashSet;
+
+        let mut session = ProjectSession::new_empty();
+        session.replace_tools(vec![sample_tool(ToolId(1), ToolType::EndMill, 6.0)]);
+        session.models_mut().push(session_polygon_model(4));
+        let pocket_config = make_session_toolpath_config(
+            "Pocket",
+            1,
+            4,
+            OperationConfig::Pocket(Default::default()),
+        );
+        let idx = session.add_toolpath(0, pocket_config).unwrap();
+        // SAFETY: idx returned by add_toolpath.
+        #[allow(clippy::indexing_slicing)]
+        let tc = &session.toolpath_configs()[idx];
+        let tc_id = tc.id;
+        let tc_name = tc.name.clone();
+        let tc_tool_id = tc.tool_id;
+        let tc_model_id = tc.model_id;
+
+        // Session path — MCP `get_toolpath_diagnostics` calls this.
+        let session_diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
+
+        // GUI path — the params panel calls this.
+        let entry = ToolpathEntry::for_operation(
+            ToolpathId(tc_id),
+            tc_name,
+            ToolId(tc_tool_id),
+            ModelId(tc_model_id),
+            OperationType::Pocket,
+        );
+        let core_tool = session
+            .tools()
+            .iter()
+            .find(|t| t.id.0 == tc_tool_id)
+            .cloned()
+            .unwrap();
+        // Resolve heights the same way the GUI does via the session
+        // helper so both paths see identical input.
+        let height_ctx = session.height_context_for_toolpath(tc);
+        let stale_defaults = rs_cam_core::compute::validate::validate_one_toolpath(
+            tc,
+            Some(&core_tool),
+            &session.stock_config().material,
+            session.stock_config().bbox().min.z,
+        );
+        // Match the session's feeds_result + load_verdict computation
+        // so the parity check isolates the orchestration path, not
+        // the input source.
+        let feeds_result = session.feeds_result_for_toolpath(tc, &core_tool);
+        let heights =
+            rs_cam_core::diagnostics::adapters::from_static_checks::ResolvedHeights::from_context(
+                &height_ctx,
+            );
+        let load_report = rs_cam_core::gcode::project_load_report(&session, None);
+        let load_verdict = load_report
+            .per_toolpath
+            .iter()
+            .find(|v| v.toolpath_id == tc.id);
+        let inputs = rs_cam_core::diagnostics::ToolpathDiagnoseInputs {
+            toolpath_id: tc.id,
+            operation: &tc.operation,
+            tool: &core_tool,
+            heights: Some(&heights),
+            feeds_result: feeds_result.as_ref(),
+            load_verdict,
+            stale_defaults: &stale_defaults,
+        };
+        let gui_diags = rs_cam_core::diagnostics::diagnose_toolpath_inputs(&inputs);
+
+        // Compare by ID set — ordering may differ between adapters.
+        let session_ids: HashSet<_> = session_diags.iter().map(|d| d.id.0.clone()).collect();
+        let gui_ids: HashSet<_> = gui_diags.iter().map(|d| d.id.0.clone()).collect();
+        assert_eq!(
+            session_ids, gui_ids,
+            "session and GUI diagnostic paths produced different IDs\nsession: {session_ids:?}\nGUI: {gui_ids:?}"
+        );
+
+        // _Use the variable_ — silences clippy.
+        let _ = entry;
+        let _ = CoreToolId(tc.tool_id);
     }
 
     #[test]

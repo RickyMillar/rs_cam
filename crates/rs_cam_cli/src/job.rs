@@ -222,6 +222,9 @@ pub struct OperationDef {
     pub order_by: Option<String>,
     /// Clearing strategy: "agent" (default) or "contour"/"contour_parallel".
     pub strategy: Option<String>,
+    pub mill_shallow_areas: Option<bool>,
+    pub shallow_angle_deg: Option<f64>,
+    pub shallow_stepdown: Option<f64>,
 }
 
 // ── Parsing ────────────────────────────────────────────────────────────
@@ -671,6 +674,9 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                     clearing_strategy,
                     z_blend: op.z_blend.unwrap_or(false),
                     boundary: None,
+                    mill_shallow_areas: op.mill_shallow_areas.unwrap_or(false),
+                    shallow_angle_rad: op.shallow_angle_deg.map(f64::to_radians),
+                    shallow_stepdown: op.shallow_stepdown,
                 };
 
                 if debug_trace {

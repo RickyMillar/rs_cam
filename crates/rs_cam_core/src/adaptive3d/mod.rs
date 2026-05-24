@@ -132,6 +132,19 @@ pub struct Adaptive3dParams {
     /// through fresh stock with full-depth axial DOC. See investigation
     /// log O5b for the wanaka repro.
     pub boundary: Option<crate::polygon::Polygon2>,
+    /// Mill shallow areas: insert fine sub-passes (at
+    /// `shallow_stepdown` increments) on cells whose surface slope is
+    /// below `shallow_angle_rad`, within each DPP descent. Steep cells
+    /// keep the normal DPP cadence. See planning doc
+    /// `ADAPTIVE3D_DPP_ISLANDS_AND_SHALLOW_MILL.md` Part B.
+    pub mill_shallow_areas: bool,
+    /// Slope angle threshold (radians from horizontal) for the shallow
+    /// mask. `None` ⇒ disabled. Typical 30° = ~0.524 rad.
+    pub shallow_angle_rad: Option<f64>,
+    /// Stepdown to use within shallow regions. `None` ⇒ disabled.
+    /// Should be < `depth_per_pass`; planner ignores the feature when
+    /// either is None or when stepdown >= depth_per_pass.
+    pub shallow_stepdown: Option<f64>,
 }
 
 // SurfaceHeightmap is now in crate::slope (shared across finishing strategies)
@@ -545,6 +558,9 @@ mod tests {
             clearing_strategy: ClearingStrategy3d::ContourParallel,
             z_blend: false,
             boundary: None,
+            mill_shallow_areas: false,
+            shallow_angle_rad: None,
+            shallow_stepdown: None,
         }
     }
 
@@ -1228,10 +1244,13 @@ mod tests {
         };
 
         let rem = material_remaining_in_region(&material_stock, &surface_hm, 10.0, 0.5, &region);
+        let frac = rem.fraction();
         assert!(
-            rem > 0.5,
-            "Full material in region should show high remaining, got {:.2}",
-            rem
+            frac > 0.5,
+            "Full material in region should show high remaining, got {:.2} ({} / {})",
+            frac,
+            rem.cells_with_material,
+            rem.cells_at_z,
         );
     }
 
@@ -1701,6 +1720,178 @@ mod tests {
             uncleared_pct,
             uncleared_count,
             total_checked,
+        );
+    }
+
+    /// Small-DPP island regression: a small hemisphere cap at DPP=0.5
+    /// should clear cleanly (no unmilled core).
+    ///
+    /// Pre-fix (May 2026), three filters in `clear_z_level_agent_2d_slice`
+    /// used DPP-blind area/fraction thresholds. At small DPP the per-level
+    /// slab contributes few cells, the perimeter sweep erodes islands
+    /// across many levels, and real islands fall under the threshold and
+    /// never get milled — leaving visible unmilled cores. The fixes:
+    ///  - `clearing.rs` sub-tool region area threshold scales with
+    ///    `depth_per_pass / tool_radius` instead of being a fixed
+    ///    `(2D)²` (with an area floor so very-small DPP doesn't drop the
+    ///    "ignore sub-tool noise" intent entirely).
+    ///  - per-level early-exit changed from `fraction < 0.005` to
+    ///    absolute `cells_with_material < MIN_CELLS_TO_CLEAR`.
+    ///  - Z-drop path-split threshold gets a 1mm floor so small DPP
+    ///    doesn't over-split.
+    ///
+    /// Test dimensions deliberately small (radius 5mm, stock_top_z 6mm,
+    /// cell_size 0.4) so DPP=0.5 → 12 Z levels rather than 50, keeping
+    /// runtime comparable to the existing DPP=3.0 hemisphere test even
+    /// when cargo runs the full suite in parallel.
+    #[test]
+    fn test_small_dpp_hemisphere_clears_without_islands() {
+        use crate::dexel_stock::StockCutDirection;
+        use crate::radial_profile::RadialProfileLUT;
+
+        let radius = 5.0_f64;
+        let mesh = crate::mesh::make_test_hemisphere(radius, 12);
+        let si = SpatialIndex::build(&mesh, 10.0);
+        let cutter = flat_cutter();
+        let tool_radius = cutter.radius();
+        let stock_top_z = 6.0;
+        let stock_to_leave = 0.3;
+        let depth_per_pass = 0.5;
+
+        let params = Adaptive3dParams {
+            tool_radius,
+            stepover: 2.0,
+            depth_per_pass,
+            stock_to_leave,
+            tolerance: 0.3,
+            stock_top_z,
+            clearing_strategy: ClearingStrategy3d::ContourParallel,
+            ..default_params()
+        };
+
+        let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+        assert!(tp.moves.len() > 10, "Should produce moves");
+
+        let bbox = &mesh.bbox;
+        let r = cutter.radius();
+        let sim_x_min = bbox.min.x - r - 0.5;
+        let sim_x_max = bbox.max.x + r + 0.5;
+        let sim_y_min = bbox.min.y - r - 0.5;
+        let sim_y_max = bbox.max.y + r + 0.5;
+
+        let cell_size = 0.4;
+        let mut sim_stock = TriDexelStock::from_stock(
+            sim_x_min,
+            sim_y_min,
+            sim_x_max,
+            sim_y_max,
+            -1.0,
+            stock_top_z,
+            cell_size,
+        );
+        let lut = RadialProfileLUT::from_cutter(&cutter, 256);
+        sim_stock
+            .simulate_toolpath_with_lut_cancel(
+                &tp,
+                &lut,
+                tool_radius,
+                StockCutDirection::FromTop,
+                &|| false,
+            )
+            .unwrap();
+
+        let grid = &sim_stock.z_grid;
+        let margin_cells = (tool_radius / cell_size).ceil() as usize + 2;
+        let max_excess = depth_per_pass + 0.5;
+        let mut uncleared_count = 0usize;
+        let mut total_checked = 0usize;
+        let mut worst_excess = 0.0f64;
+
+        for row in margin_cells..grid.rows.saturating_sub(margin_cells) {
+            for col in margin_cells..grid.cols.saturating_sub(margin_cells) {
+                let x = grid.origin_u + col as f64 * cell_size;
+                let y = grid.origin_v + row as f64 * cell_size;
+                total_checked += 1;
+                if let Some(tz) = grid.top_z_at(row, col) {
+                    let r_sq = radius * radius - x * x - y * y;
+                    let surface_z = if r_sq > 0.0 { r_sq.sqrt() } else { 0.0 };
+                    let expected_max = (surface_z + stock_to_leave + max_excess) as f32;
+                    if tz > expected_max {
+                        uncleared_count += 1;
+                        let excess = (tz as f64) - (surface_z + stock_to_leave);
+                        if excess > worst_excess {
+                            worst_excess = excess;
+                        }
+                    }
+                }
+            }
+        }
+
+        let uncleared_pct = if total_checked > 0 {
+            uncleared_count as f64 / total_checked as f64 * 100.0
+        } else {
+            0.0
+        };
+
+        // Same 5% allowance as the DPP=3.0 hemisphere test. Pre-fix the
+        // small-DPP case left a visible un-milled apex core (>15%).
+        assert!(
+            uncleared_pct < 5.0,
+            "Small-DPP hemisphere should clear >95% of cells, but {:.1}% ({}/{}) have excess material (worst {:.2}mm)",
+            uncleared_pct,
+            uncleared_count,
+            total_checked,
+            worst_excess,
+        );
+    }
+
+    /// Mill-shallow-areas regression: when `mill_shallow_areas` is false
+    /// (the default), output must be byte-identical to leaving the field
+    /// off entirely. Guards against accidental sub-pass insertion in the
+    /// disabled branch.
+    #[test]
+    fn test_shallow_disabled_matches_baseline() {
+        let radius = 5.0_f64;
+        let mesh = crate::mesh::make_test_hemisphere(radius, 12);
+        let si = SpatialIndex::build(&mesh, 10.0);
+        let cutter = flat_cutter();
+        let tool_radius = cutter.radius();
+
+        let common = |mill_shallow_areas: bool,
+                      shallow_angle_rad: Option<f64>,
+                      shallow_stepdown: Option<f64>|
+         -> Adaptive3dParams {
+            Adaptive3dParams {
+                tool_radius,
+                stepover: 2.0,
+                depth_per_pass: 1.0,
+                stock_to_leave: 0.3,
+                tolerance: 0.3,
+                stock_top_z: 6.0,
+                clearing_strategy: ClearingStrategy3d::AgentSearch,
+                mill_shallow_areas,
+                shallow_angle_rad,
+                shallow_stepdown,
+                ..default_params()
+            }
+        };
+
+        let tp_base = adaptive_3d_toolpath(&mesh, &si, &cutter, &common(false, None, None));
+        let tp_off =
+            adaptive_3d_toolpath(&mesh, &si, &cutter, &common(false, Some(0.5), Some(0.25)));
+
+        assert_eq!(
+            tp_base.moves.len(),
+            tp_off.moves.len(),
+            "shallow=false with stale angle/step must match baseline; got {} vs {}",
+            tp_base.moves.len(),
+            tp_off.moves.len()
+        );
+        let cut_base = tp_base.total_cutting_distance();
+        let cut_off = tp_off.total_cutting_distance();
+        assert!(
+            (cut_base - cut_off).abs() < 0.001,
+            "shallow=false cutting distance must match baseline; got {cut_base:.3} vs {cut_off:.3}"
         );
     }
 

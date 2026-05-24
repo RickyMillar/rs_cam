@@ -7,6 +7,7 @@ use crate::state::simulation::{SimulationIssueKind, SimulationState, StockVizMod
 use crate::state::toolpath::ToolpathId;
 use crate::ui::theme;
 use rs_cam_core::session::ProjectSession;
+use rs_cam_core::tool_load::drill_gates::{DrillGateOutcome, DrillGateSeverity};
 use rs_cam_core::tool_load::verdict::{
     ChipSide, ChiploadVerdict, CriterionKind, CriterionStatus, LoadState,
 };
@@ -909,6 +910,20 @@ fn draw_tool_load_badges(
     power_cap_kw: Option<f64>,
     deflection_cap: Option<f64>,
 ) {
+    if let Some(drill_gates) = &verdict.drill_gates {
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("Drill gates:")
+                    .small()
+                    .color(theme::TEXT_STRONG),
+            );
+            drill_gate_badge(ui, "chip weld", &drill_gates.chip_welding);
+            drill_gate_badge(ui, "peck", &drill_gates.peck_adequacy);
+            drill_gate_badge(ui, "plunge", &drill_gates.plunge_feed);
+        });
+        return;
+    }
+
     let burn_risk = matches!(
         verdict.chipload,
         ChiploadVerdict::Exceeds {
@@ -957,6 +972,40 @@ fn draw_tool_load_badges(
             false,
         );
     });
+}
+
+fn drill_gate_badge(ui: &mut egui::Ui, label: &str, outcome: &DrillGateOutcome) {
+    let (color, text, hover) = match outcome {
+        DrillGateOutcome::Within {
+            observed,
+            threshold,
+        } => (
+            theme::SUCCESS,
+            "OK".to_owned(),
+            format!("Within drill gate: observed {observed:.3}, threshold {threshold:.3}"),
+        ),
+        DrillGateOutcome::Exceeds {
+            observed,
+            threshold,
+            severity,
+        } => {
+            let sev = match severity {
+                DrillGateSeverity::Elevated => "elevated",
+                DrillGateSeverity::Critical => "critical",
+            };
+            (
+                theme::ERROR,
+                sev.to_owned(),
+                format!("Drill gate exceeds: observed {observed:.3}, threshold {threshold:.3}"),
+            )
+        }
+    };
+    ui.label(
+        egui::RichText::new(format!("{label} {text}"))
+            .small()
+            .color(color),
+    )
+    .on_hover_text(hover);
 }
 
 /// Default L/D safe threshold for the deflection gate's `% of cap`

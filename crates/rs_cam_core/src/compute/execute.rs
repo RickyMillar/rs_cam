@@ -912,6 +912,19 @@ pub fn execute_operation_annotated(
                 clearing_strategy,
                 z_blend: cfg.z_blend,
                 boundary: boundary.cloned(),
+                mill_shallow_areas: cfg.mill_shallow_areas,
+                shallow_angle_rad: if cfg.mill_shallow_areas {
+                    Some(cfg.shallow_angle_deg.unwrap_or(30.0).to_radians())
+                } else {
+                    None
+                },
+                shallow_stepdown: if cfg.mill_shallow_areas {
+                    cfg.shallow_stepdown
+                        .or(Some(cfg.depth_per_pass * 0.5))
+                        .filter(|&s| s > 0.0 && s < cfg.depth_per_pass)
+                } else {
+                    None
+                },
             };
             let (tp, annotations) =
                 crate::adaptive3d::adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
@@ -1297,6 +1310,7 @@ fn apply_dressup_traced(
 pub fn apply_dressups(
     annotated: AnnotatedToolpath,
     cfg: &DressupConfig,
+    nominal_feed_rate: f64,
     tool_diameter: f64,
     safe_z: f64,
     stock_top: f64,
@@ -1554,15 +1568,7 @@ pub fn apply_dressups(
     if cfg.feed_optimization
         && let (Some(stock), Some(cut)) = (feed_opt_stock, cutter)
     {
-        let nominal = current
-            .toolpath
-            .moves
-            .iter()
-            .find_map(|m| match m.move_type {
-                crate::toolpath::MoveType::Linear { feed_rate } => Some(feed_rate),
-                _ => None,
-            })
-            .unwrap_or(1000.0);
+        let nominal = nominal_feed_rate;
         let max_rate = cfg.feed_max_rate;
         let ramp_rate = cfg.feed_ramp_rate;
         let params = crate::feedopt::FeedOptParams {
@@ -1583,6 +1589,7 @@ pub fn apply_dressups(
                 semantic_label: "Feed optimization",
             },
             |scope| {
+                scope.set_param("nominal_feed_rate", nominal);
                 scope.set_param("max_feed_rate", max_rate);
                 scope.set_param("ramp_rate", ramp_rate);
             },
@@ -2582,6 +2589,55 @@ mod tests {
     }
 
     #[test]
+    fn feed_optimization_uses_configured_nominal_feed_not_entry_plunge() {
+        let configured_feed = 1200.0;
+        let first_raw_feed = 300.0;
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(10.0, 10.0, 30.0));
+        tp.feed_to(P3::new(10.0, 10.0, 0.0), first_raw_feed);
+        tp.feed_to(P3::new(50.0, 10.0, 0.0), first_raw_feed);
+
+        let cfg = DressupConfig {
+            entry_style: DressupEntryStyle::Ramp,
+            feed_optimization: true,
+            feed_max_rate: 5000.0,
+            ..DressupConfig::default()
+        };
+        let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
+        let mut stock = crate::dexel_stock::TriDexelStock::from_bounds(&test_stock_bbox(), 2.0);
+        let cutter = build_cutter(&tool_cfg);
+        let recorder =
+            crate::semantic_trace::ToolpathSemanticRecorder::new("FeedOpt nominal", "Pocket");
+        let semantic_root = recorder.root_context();
+
+        let _result = apply_dressups(
+            AnnotatedToolpath::new(tp),
+            &cfg,
+            configured_feed,
+            tool_def.diameter(),
+            30.0,
+            25.0,
+            None,
+            Some(&mut stock),
+            Some(&cutter),
+            OperationType::Pocket.transform_capabilities(),
+            None,
+            Some(&semantic_root),
+        );
+        let semantic = recorder.finish();
+        let nominal = semantic
+            .items
+            .iter()
+            .find(|item| item.label == "Feed optimization")
+            .and_then(|item| item.params.values.get("nominal_feed_rate"))
+            .and_then(serde_json::Value::as_f64)
+            .expect("feed optimization trace should carry nominal_feed_rate");
+
+        assert_eq!(nominal, configured_feed);
+        assert_ne!(nominal, first_raw_feed * 0.5);
+    }
+
+    #[test]
     fn apply_dressups_preserves_moves() {
         // Build a simple toolpath with a few moves
         let mut tp = Toolpath::new();
@@ -2596,6 +2652,7 @@ mod tests {
         let result = apply_dressups(
             AnnotatedToolpath::new(tp),
             &cfg,
+            1000.0,
             6.35,
             30.0,
             0.0,

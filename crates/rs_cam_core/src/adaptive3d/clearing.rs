@@ -27,6 +27,74 @@ use super::{
 };
 use crate::toolpath::simplify_path_3d;
 
+// ── Constants ─────────────────────────────────────────────────────────
+
+/// Minimum cell count of remaining material at a Z level for the planner
+/// to bother running the clearing pass. Below this we treat the level as
+/// "done" and move on.
+///
+/// Absolute count (not fraction) — at small `depth_per_pass` a thin
+/// per-level slab contributes few cells even when there's a real island
+/// to clear, so a fraction-based gate (the historical `remaining < 0.005`)
+/// would skip it. Matches `min_cells = 4` in `detect_material_regions`.
+pub(super) const MIN_CELLS_TO_CLEAR: u64 = 4;
+
+// ── Strategy-agnostic dispatch ────────────────────────────────────────
+
+/// Run a single Z-level clear pass via the strategy on `ctx`, with no
+/// per-level marker (used for shallow sub-passes that should slot under
+/// the parent major-Z level's marker, not emit their own).
+///
+/// The main per-Z-level loops in `path.rs` push their own markers
+/// directly for the major levels — this helper exists only for the
+/// shallow sub-pass loop, which calls into the same clear function the
+/// strategy already uses for its main pass.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn clear_z_level_dispatch_no_marker(
+    ctx: &ClearZLevelContext<'_>,
+    material_stock: &mut TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    z_level: f64,
+    segments: &mut Vec<Adaptive3dSegment>,
+    last_pos: &mut Option<P3>,
+    region: Option<&MaterialRegion>,
+    cancel: &dyn CancelCheck,
+) -> Result<(), Cancelled> {
+    match ctx.clearing_strategy {
+        ClearingStrategy3d::ContourParallel => clear_z_level_contour_parallel(
+            ctx,
+            material_stock,
+            surface_hm,
+            z_level,
+            segments,
+            last_pos,
+            region,
+            cancel,
+        ),
+        ClearingStrategy3d::Adaptive => clear_z_level_adaptive(
+            ctx,
+            material_stock,
+            surface_hm,
+            z_level,
+            segments,
+            last_pos,
+            region,
+            cancel,
+        ),
+        ClearingStrategy3d::AgentSearch => clear_z_level_agent_2d_slice(
+            ctx,
+            material_stock,
+            surface_hm,
+            z_level,
+            segments,
+            last_pos,
+            region,
+            None,
+            cancel,
+        ),
+    }
+}
+
 // ── Region detection ──────────────────────────────────────────────────
 
 /// A connected region of material detected by flood fill on the heightmap.
@@ -194,6 +262,12 @@ pub(super) struct ClearZLevelContext<'a> {
     /// simulator will replay (segments_to_toolpath blends Cut paths
     /// before emitting feeds).
     pub(super) min_cutting_radius: f64,
+    /// When `Some`, restricts `build_material_bool_grid` to cells where
+    /// the mask is true. Row-major, indexed `row * surface_cols + col`
+    /// (matches `SurfaceHeightmap::z_values`). Used by the "mill shallow
+    /// areas" feature to run sub-passes only on low-slope cells without
+    /// disturbing the steep-side dexel state.
+    pub(super) shallow_mask: Option<&'a [bool]>,
 }
 
 // ── Contour-parallel clearing ─────────────────────────────────────────
@@ -205,6 +279,12 @@ pub(super) struct ClearZLevelContext<'a> {
 /// a 1-cell false border so marching squares and EDT detect edge boundaries.
 ///
 /// Returns `(padded_grid, padded_rows, padded_cols, origin_x, origin_y, cell_size)`.
+///
+/// `shallow_mask`, when `Some`, is an additional row-major filter
+/// indexed `row * cols + col` (matches `SurfaceHeightmap::z_values` /
+/// `SlopeMap` layout). Cells where the mask is `false` are treated as
+/// "no material" regardless of stock state — used by the
+/// `mill_shallow_areas` sub-pass to restrict clearing to low-slope cells.
 #[allow(clippy::indexing_slicing)] // SAFETY: padded grid indices bounded by loop ranges
 fn build_material_bool_grid(
     material_stock: &TriDexelStock,
@@ -212,6 +292,7 @@ fn build_material_bool_grid(
     z_level: f64,
     stock_to_leave: f64,
     region: Option<&MaterialRegion>,
+    shallow_mask: Option<&[bool]>,
 ) -> (Vec<bool>, usize, usize, f64, f64, f64) {
     let grid = &material_stock.z_grid;
     let rows = grid.rows;
@@ -233,6 +314,14 @@ fn build_material_bool_grid(
                 && (row < r.row_min || row > r.row_max || col < r.col_min || col > r.col_max)
             {
                 continue;
+            }
+
+            // Skip cells excluded by the shallow-area mask.
+            if let Some(mask) = shallow_mask {
+                let idx = row * cols + col;
+                if idx >= mask.len() || !mask[idx] {
+                    continue;
+                }
             }
 
             let surf_z = surface_hm.surface_z_at(row, col);
@@ -455,16 +544,19 @@ pub(super) fn clear_z_level_contour_parallel(
     region: Option<&MaterialRegion>,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
-    // Check material remaining — skip if negligible.
+    // Check material remaining — skip if negligible. Gate on absolute
+    // cell count, not fraction: at small DPP a real island contributes
+    // very few cells per level, and a fraction-based gate would skip it.
     let remaining = if let Some(r) = region {
         material_remaining_in_region(material_stock, surface_hm, z_level, ctx.stock_to_leave, r)
     } else {
         material_remaining_at_level(material_stock, surface_hm, z_level, ctx.stock_to_leave)
     };
-    if remaining < 0.005 {
+    if remaining.cells_with_material < MIN_CELLS_TO_CLEAR {
         debug!(
             z = z_level,
-            remaining, "CP: skipping — no material remaining"
+            cells = remaining.cells_with_material,
+            "CP: skipping — no material remaining"
         );
         return Ok(());
     }
@@ -476,6 +568,7 @@ pub(super) fn clear_z_level_contour_parallel(
         z_level,
         ctx.stock_to_leave,
         region,
+        ctx.shallow_mask,
     );
 
     let mat_count = material_grid.iter().filter(|&&b| b).count();
@@ -501,7 +594,7 @@ pub(super) fn clear_z_level_contour_parallel(
 
     debug!(
         z = z_level,
-        remaining,
+        remaining_cells = remaining.cells_with_material,
         mat_count,
         rows,
         cols,
@@ -662,6 +755,7 @@ pub(super) fn clear_z_level_contour_parallel(
         z_level,
         ctx.stock_to_leave,
         region,
+        ctx.shallow_mask,
     );
     let cleanup_count = cleanup_grid.iter().filter(|&&b| b).count();
     if cleanup_count > 0 {
@@ -785,12 +879,13 @@ pub(super) fn clear_z_level_adaptive(
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
     // ── Material check ─────────────────────────────────────────────────
+    // Absolute cell-count gate (not fraction) — see clear_z_level_concentric.
     let remaining = if let Some(r) = region {
         material_remaining_in_region(material_stock, surface_hm, z_level, ctx.stock_to_leave, r)
     } else {
         material_remaining_at_level(material_stock, surface_hm, z_level, ctx.stock_to_leave)
     };
-    if remaining < 0.005 {
+    if remaining.cells_with_material < MIN_CELLS_TO_CLEAR {
         return Ok(());
     }
 
@@ -801,6 +896,7 @@ pub(super) fn clear_z_level_adaptive(
         z_level,
         ctx.stock_to_leave,
         region,
+        ctx.shallow_mask,
     );
 
     if !material_grid.iter().any(|&b| b) {
@@ -1133,7 +1229,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
     } else {
         material_remaining_at_level(material_stock, surface_hm, z_level, ctx.stock_to_leave)
     };
-    if remaining < 0.005 {
+    if remaining.cells_with_material < MIN_CELLS_TO_CLEAR {
         return Ok(());
     }
 
@@ -1150,7 +1246,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
     });
     if let Some(scope) = level_scope.as_ref() {
         scope.set_z_level(z_level);
-        scope.set_counter("remaining_before", remaining);
+        scope.set_counter("remaining_before", remaining.fraction());
     }
     let level_ctx = level_scope.as_ref().map(|scope| scope.context());
 
@@ -1161,6 +1257,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
         z_level,
         ctx.stock_to_leave,
         region,
+        ctx.shallow_mask,
     );
     if !material_grid.iter().any(|&b| b) {
         return Ok(());
@@ -1224,12 +1321,26 @@ pub(super) fn clear_z_level_agent_2d_slice(
     // travelling between them, technically at feed_rate but barely
     // engaging material. On wanaka this drove 81% air-cut at every Z.
     //
-    // Threshold = (2 × tool_diameter)² ≈ "the tool footprint plus an
-    // offset ring fits". Anything smaller is sub-tool noise the cutter
-    // can't address efficiently anyway. Bottom-Z waterline cleanup
-    // catches surviving material; the finishing pass mops up the rest.
+    // Nominal threshold = (2 × tool_diameter)² ≈ "the tool footprint plus
+    // an offset ring fits". Anything smaller is sub-tool noise the cutter
+    // can't address efficiently anyway.
+    //
+    // DPP scaling: the threshold has to scale with depth-per-pass because
+    // at small DPP the same real island gets sliced into many thin layers,
+    // and the perimeter sweep erodes its area progressively at each level
+    // until it drops below the threshold — at which point the unmilled
+    // core is never addressed (the level skips it, and the next level sees
+    // an even smaller region). Without DPP scaling, small-DPP roughing
+    // leaves visible unmilled islands. We scale linearly with
+    // DPP / baseline_dpp where baseline = tool_radius (a reasonable max
+    // aggressive rough), with a floor of (tool_diameter/2)² so even very
+    // small DPP still drops obvious sub-tool noise.
     let tool_diameter = ctx.tool_radius * 2.0;
-    let min_region_area_mm2 = (tool_diameter * 2.0).powi(2);
+    let baseline_dpp = ctx.tool_radius.max(0.5);
+    let nominal_min_area = (tool_diameter * 2.0).powi(2);
+    let dpp_factor = (ctx.depth_per_pass / baseline_dpp).clamp(0.0, 1.0);
+    let area_floor = tool_diameter.powi(2) * 0.25;
+    let min_region_area_mm2 = (nominal_min_area * dpp_factor).max(area_floor);
     let region_count_before = regions.len();
     regions.retain(|r| r.area().abs() >= min_region_area_mm2);
     let dropped_micro = region_count_before - regions.len();
@@ -1543,8 +1654,17 @@ pub(super) fn clear_z_level_agent_2d_slice(
                     //     uncut stock, see PLUNGE_SLOPE_LIMIT below);
                     //   - engagement transitions (NEW: air→engaged or vice
                     //     versa demarcates a real cut from a transit run).
+                    //
+                    // 1mm floor: at small depth_per_pass (e.g. 0.5mm) the
+                    // 1.1× factor gives a 0.55mm threshold, and any natural
+                    // terrain undulation > 0.55mm between consecutive
+                    // samples chops the path. AgentSearch then plans many
+                    // short paths instead of one long sweep, and the
+                    // linker may not stitch them all up. The floor
+                    // preserves the safety logic without over-splitting.
                     const PLUNGE_SLOPE_LIMIT: f64 = 0.3;
-                    let z_drop_threshold = ctx.depth_per_pass * 1.1;
+                    const Z_DROP_FLOOR_MM: f64 = 1.0;
+                    let z_drop_threshold = (ctx.depth_per_pass * 1.1).max(Z_DROP_FLOOR_MM);
                     let mut sub_start = 0usize;
                     let mut sub_engaged = engaged.first().copied().unwrap_or(true);
                     for i in 1..path_3d.len() {

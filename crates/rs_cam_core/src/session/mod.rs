@@ -17,6 +17,7 @@ pub mod project_file;
 mod save;
 pub mod wizard;
 
+pub use compute::{MutationKind, StaleSet, compute_stale_set};
 pub use wizard::{OutputLayout, WizardState};
 
 // Re-export all public project_file types so external crates see no path change.
@@ -577,6 +578,44 @@ pub struct VerdictEvidence {
     pub move_index: Option<usize>,
     pub z_value: Option<f64>,
     pub count: Option<usize>,
+}
+
+/// Borrow view over the simulation evidence that
+/// [`ProjectSession::diagnostics_with_evidence`] (and friends) need.
+///
+/// Both the core session and the GUI hold the same evidence — but the
+/// GUI's copy lives in a different struct (viz `SimulationResults` +
+/// `SimulationChecks`), and the GUI's boundary type uses a strongly
+/// typed `ToolpathId` while core's uses `usize`. This shared borrow
+/// view lets both callers feed `diagnostics_with_evidence` without
+/// forcing a copy of the full simulation result.
+#[derive(Default)]
+pub struct ProjectEvidence<'a> {
+    /// `(toolpath_id, start_move, end_move)` per simulation boundary —
+    /// the rapid-collision counters use this to attribute counts to
+    /// the right toolpath. The viz side flattens its
+    /// `Vec<ToolpathBoundary>` into this shape.
+    pub boundaries: Vec<(usize, usize, usize)>,
+    pub rapid_collisions: &'a [crate::collision::RapidCollision],
+    pub rapid_collision_move_indices: &'a [usize],
+    pub cut_trace: Option<&'a crate::simulation_cut::SimulationCutTrace>,
+}
+
+impl<'a> ProjectEvidence<'a> {
+    /// Build evidence from a core [`SimulationResult`].
+    pub fn from_simulation(sim: &'a SimulationResult) -> Self {
+        let boundaries = sim
+            .boundaries
+            .iter()
+            .map(|b| (b.id, b.start_move, b.end_move))
+            .collect();
+        Self {
+            boundaries,
+            rapid_collisions: &sim.rapid_collisions,
+            rapid_collision_move_indices: &sim.rapid_collision_move_indices,
+            cut_trace: sim.cut_trace.as_deref(),
+        }
+    }
 }
 
 /// Structured project-level verdict. Replaces the legacy single-line

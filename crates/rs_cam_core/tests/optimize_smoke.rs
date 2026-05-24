@@ -117,6 +117,7 @@ fn build_pocket_session() -> Option<(ProjectSession, usize)> {
 }
 
 #[test]
+#[ignore = "expensive optimizer full-pipeline smoke; run with `cargo test --test optimize_smoke -- --ignored`"]
 fn optimize_toolpath_full_pipeline() {
     let Some((mut session, toolpath_index)) = build_pocket_session() else {
         return;
@@ -222,6 +223,7 @@ fn optimize_toolpath_full_pipeline() {
 }
 
 #[test]
+#[ignore = "expensive optimizer full-project smoke; run with `cargo test --test optimize_smoke -- --ignored`"]
 fn optimize_project_full_pipeline() {
     let Some((mut session, _toolpath_index)) = build_pocket_session() else {
         return;

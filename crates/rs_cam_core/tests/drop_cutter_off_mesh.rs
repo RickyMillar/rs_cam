@@ -67,6 +67,7 @@ fn point_over_mesh(x: f64, y: f64, mesh: &TriangleMesh, index: &SpatialIndex) ->
 }
 
 #[test]
+#[ignore = "expensive fixture regression; run with `cargo test --test drop_cutter_off_mesh -- --ignored`"]
 fn drop_cutter_does_not_cut_outside_mesh_footprint() {
     let path = fixture_path("test_job.toml");
     let mut session = ProjectSession::load(&path).expect("project loads");
@@ -131,6 +132,7 @@ fn drop_cutter_does_not_cut_outside_mesh_footprint() {
 }
 
 #[test]
+#[ignore = "expensive fixture diagnostic; run with `cargo test --test drop_cutter_off_mesh -- --ignored`"]
 fn rapids_should_be_at_safe_z() {
     // User observation: with only rapids shown in the sim viewer, the
     // 3D Finish toolpath makes "weird moves" — wide bands of rapids

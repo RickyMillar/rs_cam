@@ -2665,6 +2665,9 @@ fn main() -> Result<()> {
                 clearing_strategy,
                 z_blend,
                 boundary: None,
+                mill_shallow_areas: false,
+                shallow_angle_rad: None,
+                shallow_stepdown: None,
             };
 
             let start = std::time::Instant::now();

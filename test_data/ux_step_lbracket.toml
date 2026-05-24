@@ -1,0 +1,126 @@
+format_version = 3
+toolpaths = []
+
+[job]
+name = "UX STEP L-Bracket (l_bracket.step)"
+
+[job.stock]
+x = 100.0
+y = 100.0
+z = 60.0
+origin_x = -5.0
+origin_y = -5.0
+origin_z = 0.0
+padding = 5.0
+workholding_rigidity = "Medium"
+auto_from_model = true
+
+[job.stock.material.SolidWood]
+species = "GenericHardwood"
+
+[[job.stock.alignment_pins]]
+x = 5.0
+y = 5.0
+diameter = 6.0
+
+[[job.stock.alignment_pins]]
+x = 95.0
+y = 95.0
+diameter = 6.0
+
+[job.post]
+format = "grbl"
+spindle_speed = 18000
+safe_z = 10.0
+high_feedrate_mode = false
+high_feedrate = 5000.0
+
+[job.machine]
+name = "Generic Wood Router"
+max_feed_mm_min = 4000.0
+max_shank_mm = 6.35
+safety_factor = 0.75
+
+[job.machine.spindle.Variable]
+min_rpm = 8000.0
+max_rpm = 24000.0
+
+[job.machine.power.ConstantPower]
+power_kw = 0.8
+
+[job.machine.chip_load]
+k0 = 0.024
+p = 0.61
+q = 1.26
+
+[job.machine.rigidity]
+doc_roughing_factor = 0.2
+doc_finishing_factor = 0.08
+woc_roughing_factor = 0.7
+woc_roughing_max_mm = 5.0
+woc_finishing_mm = 0.5
+adaptive_doc_factor = 1.5
+adaptive_woc_factor = 0.2
+
+[[tools]]
+id = 1
+name = "End Mill 6mm"
+type = "end_mill"
+diameter = 6.0
+cutting_length = 25.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 90.0
+taper_half_angle = 15.0
+shaft_diameter = 6.35
+holder_diameter = 25.0
+shank_diameter = 6.35
+shank_length = 20.0
+stickout = 45.0
+flute_count = 2
+tool_number = 1
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 2
+name = "Ball Nose 3mm"
+type = "ball_nose"
+diameter = 3.0
+cutting_length = 15.0
+helix_deg = 30.0
+corner_radius_mm = 1.5
+corner_radius = 1.5
+included_angle = 90.0
+taper_half_angle = 15.0
+shaft_diameter = 3.175
+holder_diameter = 25.0
+shank_diameter = 3.175
+shank_length = 20.0
+stickout = 25.0
+flute_count = 2
+tool_number = 2
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[models]]
+id = 1
+path = "../fixtures/gui_step/l_bracket.step"
+name = "l_bracket.step"
+kind = "step"
+
+[models.units]
+kind = "millimeters"
+
+[[setups]]
+id = 0
+name = "Setup 1"
+face_up = "top"
+z_rotation = "0"
+fixtures = []
+keep_out_zones = []

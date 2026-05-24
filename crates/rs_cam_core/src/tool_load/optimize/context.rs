@@ -503,6 +503,7 @@ mod restore_guard_tests {
                 average_engagement: 0.3,
                 peak_chipload_mm_per_tooth: 0.05,
                 peak_axial_doc_mm: 1.0,
+                peak_plunge_descent_mm: 0.0,
                 total_removed_volume_est_mm3: 1.0,
                 average_mrr_mm3_s: 1.0,
                 metrics_not_applicable: false,

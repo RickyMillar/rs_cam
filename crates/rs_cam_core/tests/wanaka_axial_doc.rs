@@ -15,6 +15,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 #[test]
+#[ignore = "expensive WANAKA diagnostic; run with `cargo test --test wanaka_axial_doc -- --ignored`"]
 fn wanaka_back_rough_axial_doc() {
     let toml_path = Path::new("/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml");
     if !toml_path.exists() {

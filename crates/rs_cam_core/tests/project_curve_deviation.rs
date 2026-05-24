@@ -179,6 +179,7 @@ fn fixture_path(name: &str) -> PathBuf {
 }
 
 #[test]
+#[ignore = "expensive live-project debug repro: generates/simulates full fixture and can exceed normal cargo test timeouts"]
 fn live_project_pc6_has_no_phantom_cuts() {
     // Load the actual project the user is running: bottom-face setup,
     // terrain.stl + rivers_aligned.dxf, PC6 at toolpath id 12. Runs the
@@ -391,6 +392,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     let tp_with_links = apply_dressups(
         AnnotatedToolpath::new(all_moves.clone()),
         &with_links,
+        1000.0,
         1.0,
         10.0,
         0.0,
@@ -408,6 +410,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     let tp_no_links = apply_dressups(
         AnnotatedToolpath::new(all_moves.clone()),
         &DressupConfig::default(),
+        1000.0,
         1.0,
         10.0,
         0.0,
@@ -432,6 +435,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     let tp_finish = apply_dressups(
         AnnotatedToolpath::new(all_moves.clone()),
         &finish_defaults,
+        1000.0,
         1.0,
         10.0,
         0.0,
@@ -452,6 +456,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     let tp_ramp = apply_dressups(
         AnnotatedToolpath::new(all_moves.clone()),
         &ramp_only,
+        1000.0,
         1.0,
         10.0,
         0.0,

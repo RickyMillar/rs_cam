@@ -18,7 +18,8 @@ use tracing::{debug, info};
 
 use super::clearing::{
     ClearZLevelContext, clear_z_level_adaptive, clear_z_level_agent_2d_slice,
-    clear_z_level_contour_parallel, detect_material_regions, waterline_cleanup,
+    clear_z_level_contour_parallel, clear_z_level_dispatch_no_marker, detect_material_regions,
+    waterline_cleanup,
 };
 use super::search::{blend_corners_3d, material_remaining_at_level_diag};
 use super::{
@@ -49,7 +50,10 @@ fn emit_peck_plunge(tp: &mut Toolpath, entry: &P3, start_z: f64, params: &Adapti
         );
         let retract_z = next_z + PECK_CLEARANCE_MM;
         tp.rapid_to_with_intent(P3::new(entry.x, entry.y, retract_z), MoveIntent::Retract);
-        current_z = retract_z;
+        // Track the committed cut floor, not the retract height. If the
+        // retract clearance equals or exceeds depth_per_pass, using the
+        // retract height here makes the loop non-progressing.
+        current_z = next_z;
     }
     tp.feed_to_with_intent(*entry, params.plunge_rate, MoveIntent::EntryPlunge);
 }
@@ -230,6 +234,24 @@ pub(super) fn adaptive_3d_segments(
 
     // Compute slope map for slope-aware pre-stamping and selective waterline cleanup.
     let slope_map = surface_hm.slope_map();
+
+    // Pre-compute the shallow-area mask once (it only depends on the
+    // surface geometry, not on the running stock). Indexed row-major,
+    // same layout as surface_hm.z_values / slope_map.angles. Cell is
+    // `true` when its surface slope < shallow_angle_rad. We toggle
+    // ctx.shallow_mask between this and None at the per-Z-level loop
+    // boundary: None for the main DPP clear, Some(mask) for shallow
+    // sub-passes within each DPP descent.
+    let shallow_mask: Option<Vec<bool>> = match (
+        params.mill_shallow_areas,
+        params.shallow_angle_rad,
+        params.shallow_stepdown,
+    ) {
+        (true, Some(angle), Some(step)) if step > 0.0 && step < params.depth_per_pass => {
+            Some(slope_map.angles.iter().map(|&a| a < angle).collect())
+        }
+        _ => None,
+    };
 
     // Clear material at cells outside the mesh XY footprint.
     // Drop-cutter returns min_z for cells beyond the mesh edge, creating phantom
@@ -428,7 +450,7 @@ pub(super) fn adaptive_3d_segments(
     let bbox_y_max = extent_y - envelope_radius;
 
     let lut = RadialProfileLUT::from_cutter(cutter, 256);
-    let ctx = ClearZLevelContext {
+    let mut ctx = ClearZLevelContext {
         mesh,
         index,
         cutter,
@@ -451,6 +473,9 @@ pub(super) fn adaptive_3d_segments(
         z_blend: params.z_blend,
         safe_z: params.safe_z,
         min_cutting_radius: params.min_cutting_radius,
+        // Default to no mask. The per-Z-level loop toggles this to
+        // Some(&shallow_mask) for the shallow sub-passes only.
+        shallow_mask: None,
     };
 
     let mut segments = Vec::new();
@@ -585,6 +610,32 @@ pub(super) fn adaptive_3d_segments(
                             )?;
                         }
                     }
+                    // Shallow sub-passes within this DPP descent — strategy-
+                    // agnostic. Restricted to low-slope cells via
+                    // ctx.shallow_mask, then dispatched back into the same
+                    // clear function the main pass used.
+                    if let (Some(mask), Some(step)) =
+                        (shallow_mask.as_deref(), params.shallow_stepdown)
+                    {
+                        ctx.shallow_mask = Some(mask);
+                        let next_main_z = z_level - params.depth_per_pass;
+                        let mut sub_z = z_level - step;
+                        while sub_z > next_main_z + 1e-3 {
+                            check_cancel(cancel)?;
+                            clear_z_level_dispatch_no_marker(
+                                &ctx,
+                                &mut material_stock,
+                                &surface_hm,
+                                sub_z,
+                                &mut segments,
+                                &mut last_pos,
+                                Some(region),
+                                cancel,
+                            )?;
+                            sub_z -= step;
+                        }
+                        ctx.shallow_mask = None;
+                    }
                     if let Some(scope) = level_scope {
                         let tally = tally_segments_for_z_level(&segments[segs_before..]);
                         scope.set_counter("planner_cut_segments", tally.cut_segs as f64);
@@ -702,6 +753,29 @@ pub(super) fn adaptive_3d_segments(
                             cancel,
                         )?;
                     }
+                }
+                // Shallow sub-passes — strategy-agnostic, see ByArea branch
+                // for rationale.
+                if let (Some(mask), Some(step)) = (shallow_mask.as_deref(), params.shallow_stepdown)
+                {
+                    ctx.shallow_mask = Some(mask);
+                    let next_main_z = z_level - params.depth_per_pass;
+                    let mut sub_z = z_level - step;
+                    while sub_z > next_main_z + 1e-3 {
+                        check_cancel(cancel)?;
+                        clear_z_level_dispatch_no_marker(
+                            &ctx,
+                            &mut material_stock,
+                            &surface_hm,
+                            sub_z,
+                            &mut segments,
+                            &mut last_pos,
+                            None,
+                            cancel,
+                        )?;
+                        sub_z -= step;
+                    }
+                    ctx.shallow_mask = None;
                 }
                 if let Some(scope) = level_scope {
                     let tally = tally_segments_for_z_level(&segments[segs_before..]);
@@ -1056,7 +1130,7 @@ pub(super) fn runtime_annotations_to_labels(
 )]
 mod tests {
     use super::*;
-    use crate::toolpath::MoveType;
+    use crate::toolpath::{MoveIntent, MoveType};
 
     fn minimal_params() -> Adaptive3dParams {
         Adaptive3dParams {
@@ -1080,7 +1154,32 @@ mod tests {
             boundary: None,
             clearing_strategy: ClearingStrategy3d::ContourParallel,
             z_blend: false,
+            mill_shallow_areas: false,
+            shallow_angle_rad: None,
+            shallow_stepdown: None,
         }
+    }
+
+    #[test]
+    fn peck_plunge_progresses_when_depth_per_pass_equals_retract_clearance() {
+        let mut params = minimal_params();
+        params.safe_z = 1.0;
+        params.depth_per_pass = 0.5;
+
+        let rapid = Adaptive3dSegment::Rapid(P3::new(0.0, 0.0, 0.0));
+        let (tp, _) = segments_to_toolpath(&[rapid], &params);
+
+        assert!(
+            tp.moves.len() <= 6,
+            "DPP equal to peck clearance should not create a runaway plunge loop; got {} moves",
+            tp.moves.len()
+        );
+        let entry_plunges = tp
+            .moves
+            .iter()
+            .filter(|m| m.intent == MoveIntent::EntryPlunge)
+            .count();
+        assert_eq!(entry_plunges, 2);
     }
 
     /// Closes the F-5/F-6 regression found during the April 2026 Phase 2

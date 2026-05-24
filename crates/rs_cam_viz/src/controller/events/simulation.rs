@@ -144,6 +144,8 @@ impl<B: ComputeBackend> AppController<B> {
                         spindle_rpm: tc.operation.spindle_rpm(),
                         metrics_not_applicable,
                         drill_op: result.drill_op.clone(),
+                        operation_config_hash:
+                            rs_cam_core::compute::simulate::hash_operation_config(&tc.operation),
                     })
                 })
                 .collect();

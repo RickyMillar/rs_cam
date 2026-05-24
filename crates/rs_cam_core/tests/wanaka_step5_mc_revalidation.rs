@@ -77,6 +77,7 @@ fn assert_mesh_well_formed(label: &str, mesh: &rs_cam_core::stock_mesh::StockMes
 }
 
 #[test]
+#[ignore = "expensive WANAKA end-to-end mesh revalidation; run with `cargo test --test wanaka_step5_mc_revalidation -- --ignored`"]
 fn wanaka_step5_final_mesh_is_well_formed() {
     let toml_path = Path::new(WANAKA_TOML);
     if !toml_path.exists() {

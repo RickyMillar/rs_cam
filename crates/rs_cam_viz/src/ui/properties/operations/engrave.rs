@@ -1,9 +1,18 @@
+use rs_cam_core::feeds::FeedsResult;
+
 use crate::state::toolpath::{ChamferConfig, TraceCompensation, TraceConfig};
 
 use super::super::dv;
 use super::draw_feed_params;
 
-pub(in crate::ui::properties) fn draw_trace_params(ui: &mut egui::Ui, cfg: &mut TraceConfig) {
+pub(in crate::ui::properties) fn draw_trace_params(
+    ui: &mut egui::Ui,
+    cfg: &mut TraceConfig,
+    feeds_result: Option<&FeedsResult>,
+) {
+    // Spec: trace doesn't get stepover/DOC pills (engraving op — LUT
+    // axial/radial recommendations don't speak to single-line tracing).
+    // Only feed/plunge/RPM pills via draw_feed_params.
     egui::Grid::new("trace_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -35,11 +44,18 @@ pub(in crate::ui::properties) fn draw_trace_params(ui: &mut egui::Ui, cfg: &mut 
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
         });
 }
 
-pub(in crate::ui::properties) fn draw_chamfer_params(ui: &mut egui::Ui, cfg: &mut ChamferConfig) {
+pub(in crate::ui::properties) fn draw_chamfer_params(
+    ui: &mut egui::Ui,
+    cfg: &mut ChamferConfig,
+    feeds_result: Option<&FeedsResult>,
+) {
+    // Chamfer width/tip offset are geometry-driven, not feeds-driven; only
+    // feed/plunge/RPM get pills.
     egui::Grid::new("chamfer_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -65,6 +81,7 @@ pub(in crate::ui::properties) fn draw_chamfer_params(ui: &mut egui::Ui, cfg: &mu
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
         });
 }

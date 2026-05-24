@@ -16,10 +16,20 @@
 //! 10. Collect warnings
 
 pub mod geometry;
+pub mod suggest;
 pub mod vendor_lookup;
 pub mod vendor_lut;
 pub mod vendor_normalize;
 pub use vendor_lut::VendorLut;
+
+/// Global embedded vendor LUT, loaded once on first access.
+pub static EMBEDDED_LUT: std::sync::LazyLock<VendorLut> =
+    std::sync::LazyLock::new(VendorLut::embedded);
+
+/// Thin getter for the single embedded LUT instance.
+pub fn embedded_vendor_lut() -> &'static VendorLut {
+    &EMBEDDED_LUT
+}
 
 use crate::machine::MachineProfile;
 use crate::material::Material;

@@ -4,15 +4,16 @@
 
 use std::path::Path;
 
-use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
     BoundaryConfig, BoundaryContainment, BoundarySource, DressupConfig,
 };
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId};
+use rs_cam_core::session::MutationKind;
 
 use crate::controller::Severity;
 use crate::mcp_bridge::{
-    McpRequest, McpRequestKind, McpResponse, PendingGenerateAll, ProgressUpdate,
+    GuiBanner, McpRequest, McpRequestKind, McpResponse, MutationResult, MutationWarning,
+    PendingGenerateAll, ProgressUpdate,
 };
 use crate::state::Workspace;
 use crate::state::selection::Selection;
@@ -78,6 +79,10 @@ impl super::RsCamApp {
             }
             McpRequestKind::GetToolpathParams { index } => {
                 let resp = self.mcp_get_toolpath_params(index);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::GetOperationSchema { operation_type } => {
+                let resp = self.mcp_get_operation_schema(&operation_type);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::GetDiagnostics => {
@@ -250,6 +255,14 @@ impl super::RsCamApp {
             }
             McpRequestKind::GetToolLoadReport => {
                 let resp = self.mcp_get_tool_load_report();
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::GetToolpathDiagnostics { index } => {
+                let resp = self.mcp_get_toolpath_diagnostics(index);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::GetProjectDiagnostics => {
+                let resp = self.mcp_get_project_diagnostics();
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::OptimizeToolpath { index } => {
@@ -604,12 +617,16 @@ impl super::RsCamApp {
             .map(|s| {
                 let rt = state.gui.toolpath_rt.get(&s.id);
                 let stale = rt.is_some_and(|r| r.stale_since.is_some());
-                let status = match rt.map(|r| &r.status) {
-                    Some(rs_cam_core::compute::config::ComputeStatus::Pending) => "Pending",
-                    Some(rs_cam_core::compute::config::ComputeStatus::Computing) => "Computing",
-                    Some(rs_cam_core::compute::config::ComputeStatus::Done) => "Done",
-                    Some(rs_cam_core::compute::config::ComputeStatus::Error(_)) => "Error",
-                    None => "Pending",
+                let (status, error) = match rt.map(|r| &r.status) {
+                    Some(rs_cam_core::compute::config::ComputeStatus::Pending) => ("Pending", None),
+                    Some(rs_cam_core::compute::config::ComputeStatus::Computing) => {
+                        ("Computing", None)
+                    }
+                    Some(rs_cam_core::compute::config::ComputeStatus::Done) => ("Done", None),
+                    Some(rs_cam_core::compute::config::ComputeStatus::Error(e)) => {
+                        ("Error", Some(e.clone()))
+                    }
+                    None => ("Pending", None),
                 };
                 serde_json::json!({
                     "index": s.index,
@@ -620,6 +637,7 @@ impl super::RsCamApp {
                     "tool_name": s.tool_name,
                     "stale": stale,
                     "status": status,
+                    "error": error,
                 })
             })
             .collect();
@@ -652,8 +670,19 @@ impl super::RsCamApp {
         let session = &self.controller.state().session;
         match session.get_toolpath_config(index) {
             Some(tc) => {
-                let op_value =
+                let mut op_value =
                     serde_json::to_value(&tc.operation).unwrap_or_else(|_| serde_json::json!({}));
+                if let Some(obj) = op_value.as_object_mut() {
+                    obj.insert(
+                        "params".to_owned(),
+                        tc.operation.params_value_including_nulls(),
+                    );
+                    obj.insert(
+                        "param_schema".to_owned(),
+                        serde_json::to_value(tc.operation.param_schema_hints())
+                            .unwrap_or_else(|_| serde_json::json!({})),
+                    );
+                }
                 json_str(serde_json::json!({
                     "id": tc.id,
                     "name": tc.name,
@@ -661,11 +690,37 @@ impl super::RsCamApp {
                     "tool_id": tc.tool_id,
                     "model_id": tc.model_id,
                     "operation": op_value,
+                    "runtime": self.mcp_runtime_status_for_toolpath_id(tc.id),
                 }))
             }
             None => {
                 json_str(serde_json::json!({"error": format!("Toolpath index {index} not found")}))
             }
+        }
+    }
+
+    fn mcp_runtime_status_for_toolpath_id(&self, toolpath_id: usize) -> serde_json::Value {
+        let rt = self.controller.state().gui.toolpath_rt.get(&toolpath_id);
+        let (status, error) = match rt.map(|r| &r.status) {
+            Some(rs_cam_core::compute::config::ComputeStatus::Pending) => ("Pending", None),
+            Some(rs_cam_core::compute::config::ComputeStatus::Computing) => ("Computing", None),
+            Some(rs_cam_core::compute::config::ComputeStatus::Done) => ("Done", None),
+            Some(rs_cam_core::compute::config::ComputeStatus::Error(e)) => {
+                ("Error", Some(e.clone()))
+            }
+            None => ("Pending", None),
+        };
+        serde_json::json!({
+            "status": status,
+            "error": error,
+            "stale": rt.is_some_and(|r| r.stale_since.is_some()),
+        })
+    }
+
+    fn mcp_get_operation_schema(&self, operation_type: &str) -> String {
+        match rs_cam_core::session::ProjectSession::operation_schema(operation_type) {
+            Ok(schema) => json_str(serde_json::to_value(schema).unwrap_or_default()),
+            Err(e) => json_str(serde_json::json!({ "error": e.to_string() })),
         }
     }
 
@@ -1653,6 +1708,7 @@ impl super::RsCamApp {
     // ── Alignment pin implementations ───────────────────────────────
 
     fn mcp_add_alignment_pin(&mut self, x: f64, y: f64, diameter: f64) -> String {
+        let before = self.mcp_diagnostic_snapshot();
         let added = self
             .controller
             .state_mut()
@@ -1672,15 +1728,19 @@ impl super::RsCamApp {
         } else {
             format!("Pin already present at ({x:.1}, {y:.1}); skipped duplicate")
         };
-        json_str(serde_json::json!({
-            "ok": true,
-            "added": added,
-            "message": message,
-            "pin_count": pin_count,
-        }))
+        self.mcp_mutation_result(
+            message,
+            serde_json::json!({
+                "added": added,
+                "pin_count": pin_count,
+            }),
+            Vec::new(),
+            &before,
+        )
     }
 
     fn mcp_remove_alignment_pin(&mut self, index: usize) -> String {
+        let before = self.mcp_diagnostic_snapshot();
         let result = self
             .controller
             .state_mut()
@@ -1697,19 +1757,182 @@ impl super::RsCamApp {
                     .stock_config()
                     .alignment_pins
                     .len();
-                json_str(serde_json::json!({
-                    "ok": true,
-                    "message": format!("Removed alignment pin {index}"),
-                    "pin_count": pin_count,
-                }))
+                self.mcp_mutation_result(
+                    format!("Removed alignment pin {index}"),
+                    serde_json::json!({ "pin_count": pin_count }),
+                    Vec::new(),
+                    &before,
+                )
             }
-            Err(e) => json_str(serde_json::json!({ "error": e.to_string() })),
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), None),
         }
+    }
+
+    // ── Mutation result helpers ──────────────────────────────────────
+
+    fn mcp_diagnostic_snapshot(&self) -> Vec<serde_json::Value> {
+        let state = self.controller.state();
+        let sim_trace = state
+            .simulation
+            .results
+            .as_ref()
+            .and_then(|r| r.cut_trace.as_deref());
+        let mut values = Vec::new();
+        let evidence = viz_project_evidence(state);
+        values.extend(
+            state
+                .session
+                .diagnose_project_with_evidence(&evidence)
+                .into_iter()
+                .filter_map(|diag| serde_json::to_value(diag).ok()),
+        );
+        for index in 0..state.session.toolpath_count() {
+            if let Ok(diags) = state.session.diagnose_toolpath_with_trace(index, sim_trace) {
+                values.extend(
+                    diags
+                        .into_iter()
+                        .filter_map(|diag| serde_json::to_value(diag).ok()),
+                );
+            }
+        }
+        values.extend(self.mcp_runtime_error_diagnostics());
+        values
+    }
+
+    fn mcp_runtime_error_diagnostics(&self) -> Vec<serde_json::Value> {
+        let state = self.controller.state();
+        state
+            .session
+            .toolpath_configs()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, tc)| {
+                let rt = state.gui.toolpath_rt.get(&tc.id)?;
+                let rs_cam_core::compute::config::ComputeStatus::Error(error) = &rt.status else {
+                    return None;
+                };
+                Some(serde_json::json!({
+                    "id": format!("runtime.generate_error.{}", tc.id),
+                    "scope": { "kind": "toolpath", "id": tc.id },
+                    "category": "state",
+                    "severity": "blocking",
+                    "confidence": "verified",
+                    "state": "current",
+                    "source": { "kind": "gui_runtime", "toolpath_index": index },
+                    "message": error,
+                }))
+            })
+            .collect()
+    }
+
+    /// Compute the stale set for a mutation and mark `stale_since` on the
+    /// corresponding GUI toolpath runtimes. Returns the toolpath indices
+    /// that were marked stale so callers can emit them in the mutation
+    /// envelope's `stale_toolpaths` field.
+    fn mcp_apply_stale(&mut self, mutation: MutationKind) -> Vec<usize> {
+        let stale =
+            rs_cam_core::session::compute_stale_set(&self.controller.state().session, mutation)
+                .toolpath_indices;
+        let now = std::time::Instant::now();
+        let ids: Vec<usize> = stale
+            .iter()
+            .filter_map(|&index| {
+                self.controller
+                    .state()
+                    .session
+                    .toolpath_configs()
+                    .get(index)
+                    .map(|tc| tc.id)
+            })
+            .collect();
+        for id in ids {
+            if let Some(rt) = self.controller.state_mut().gui.toolpath_rt.get_mut(&id) {
+                rt.stale_since = Some(now);
+            }
+        }
+        stale
+    }
+
+    fn mcp_mutation_error(&self, summary: impl Into<String>, field: Option<String>) -> String {
+        let summary = summary.into();
+        let field_value = field
+            .map(serde_json::Value::String)
+            .unwrap_or(serde_json::Value::Null);
+        json_str(serde_json::json!({
+            "ok": false,
+            "summary": summary,
+            "applied": serde_json::Value::Null,
+            "stale_toolpaths": [],
+            "warnings": [{
+                "level": "error",
+                "field": field_value,
+                "message": summary,
+                "recommendation": null,
+            }],
+            "gui_banners": [],
+            "diagnostic_delta": [],
+        }))
+    }
+
+    fn mcp_mutation_result<T>(
+        &self,
+        summary: String,
+        applied: T,
+        stale_toolpaths: Vec<usize>,
+        before_diagnostics: &[serde_json::Value],
+    ) -> String
+    where
+        T: serde::Serialize,
+    {
+        let after = self.mcp_diagnostic_snapshot();
+        let diagnostic_delta: Vec<serde_json::Value> = after
+            .into_iter()
+            .filter(|diag| !before_diagnostics.contains(diag))
+            .collect();
+        let gui_banners: Vec<GuiBanner> = diagnostic_delta
+            .iter()
+            .filter_map(|diag| {
+                let severity = diag.get("severity")?.as_str()?.to_owned();
+                if !matches!(severity.as_str(), "caution" | "critical" | "blocking") {
+                    return None;
+                }
+                Some(GuiBanner {
+                    kind: "diagnostic".to_owned(),
+                    severity,
+                    title: diag.get("message")?.as_str()?.to_owned(),
+                    detail: diag
+                        .get("source")
+                        .and_then(|source| serde_json::to_string(source).ok()),
+                })
+            })
+            .collect();
+        let warnings: Vec<MutationWarning> = gui_banners
+            .iter()
+            .map(|banner| MutationWarning {
+                level: banner.severity.clone(),
+                field: None,
+                message: banner.title.clone(),
+                recommendation: None,
+            })
+            .collect();
+        json_str(
+            serde_json::to_value(MutationResult {
+                ok: true,
+                summary,
+                applied,
+                stale_toolpaths,
+                warnings,
+                gui_banners,
+                diagnostic_delta,
+            })
+            .unwrap_or_else(|e| serde_json::json!({ "error": e.to_string() })),
+        )
     }
 
     // ── Mutation implementations ─────────────────────────────────────
 
     fn mcp_add_setup(&mut self, name: Option<&str>) -> String {
+        let before = self.mcp_diagnostic_snapshot();
         self.controller.handle_add_setup();
         let setup_count = self.controller.state().session.list_setups().len();
         let setup_id = self
@@ -1720,7 +1943,7 @@ impl super::RsCamApp {
             .last()
             .map(|s| s.id);
         let Some(sid) = setup_id else {
-            return json_str(serde_json::json!({"error": "Failed to add setup"}));
+            return self.mcp_mutation_error("Error: Failed to add setup".to_owned(), None);
         };
         if let Some(n) = name
             && let Some((_, sd)) = self
@@ -1738,19 +1961,24 @@ impl super::RsCamApp {
             .find_setup_by_id(sid)
             .map(|(_, s)| s.name.clone())
             .unwrap_or_default();
-        json_str(serde_json::json!({
-            "index": setup_count - 1,
-            "id": sid,
-            "name": final_name,
-        }))
+        self.mcp_mutation_result(
+            format!("Added setup {}", setup_count - 1),
+            serde_json::json!({
+                "index": setup_count - 1,
+                "id": sid,
+                "name": final_name,
+            }),
+            Vec::new(),
+            &before,
+        )
     }
 
     fn mcp_set_setup_face(&mut self, setup_index: usize, face_up: &str) -> String {
+        let before = self.mcp_diagnostic_snapshot();
         let setups = self.controller.state().session.list_setups();
         let Some(setup) = setups.get(setup_index) else {
-            return json_str(
-                serde_json::json!({"error": format!("Setup index {setup_index} not found")}),
-            );
+            return self
+                .mcp_mutation_error(format!("Error: Setup index {setup_index} not found"), None);
         };
         let setup_id = setup.id;
 
@@ -1762,9 +1990,10 @@ impl super::RsCamApp {
             "left" => rs_cam_core::compute::transform::FaceUp::Left,
             "right" => rs_cam_core::compute::transform::FaceUp::Right,
             _ => {
-                return json_str(serde_json::json!({
-                    "error": format!("Unknown face '{face_up}'. Use: top, bottom, front, back, left, right")
-                }));
+                return self.mcp_mutation_error(
+                    format!("Error: Unknown face '{face_up}'. Use: top, bottom, front, back, left, right"),
+                    Some("face_up".to_owned()),
+                );
             }
         };
 
@@ -1777,12 +2006,18 @@ impl super::RsCamApp {
             sd.face_up = face;
             self.controller.state_mut().gui.mark_edited();
             self.controller.set_pending_upload();
-            json_str(serde_json::json!({
-                "setup_index": setup_index,
-                "face_up": face_up.to_lowercase(),
-            }))
+            let stale = self.mcp_apply_stale(MutationKind::SetupChanged { setup_id });
+            self.mcp_mutation_result(
+                format!("Set setup {setup_index} face to {}", face_up.to_lowercase()),
+                serde_json::json!({
+                    "setup_index": setup_index,
+                    "face_up": face_up.to_lowercase(),
+                }),
+                stale,
+                &before,
+            )
         } else {
-            json_str(serde_json::json!({"error": "Setup not found"}))
+            self.mcp_mutation_error("Error: Setup not found".to_owned(), None)
         }
     }
 
@@ -1791,16 +2026,19 @@ impl super::RsCamApp {
         toolpath_index: usize,
         target_setup_index: usize,
     ) -> String {
+        let before = self.mcp_diagnostic_snapshot();
         let session = &self.controller.state().session;
         let Some(tc) = session.toolpath_configs().get(toolpath_index) else {
-            return json_str(
-                serde_json::json!({"error": format!("Toolpath index {toolpath_index} not found")}),
+            return self.mcp_mutation_error(
+                format!("Error: Toolpath index {toolpath_index} not found"),
+                None,
             );
         };
         let tp_id = crate::state::toolpath::ToolpathId(tc.id);
         let Some(target_setup) = session.list_setups().get(target_setup_index) else {
-            return json_str(
-                serde_json::json!({"error": format!("Setup index {target_setup_index} not found")}),
+            return self.mcp_mutation_error(
+                format!("Error: Setup index {target_setup_index} not found"),
+                None,
             );
         };
         let target_setup_id = crate::state::job::SetupId(target_setup.id);
@@ -1814,10 +2052,15 @@ impl super::RsCamApp {
             ));
         self.controller.state_mut().gui.mark_edited();
 
-        json_str(serde_json::json!({
-            "toolpath_index": toolpath_index,
-            "target_setup_index": target_setup_index,
-        }))
+        self.mcp_mutation_result(
+            format!("Moved toolpath {toolpath_index} to setup {target_setup_index}"),
+            serde_json::json!({
+                "toolpath_index": toolpath_index,
+                "target_setup_index": target_setup_index,
+            }),
+            vec![toolpath_index],
+            &before,
+        )
     }
 
     fn mcp_import_model(&mut self, path: &str) -> String {
@@ -1995,6 +2238,42 @@ impl super::RsCamApp {
         }))
     }
 
+    /// PR-3: unified per-toolpath diagnostics. Calls
+    /// [`ProjectSession::diagnose_toolpath`] which runs every
+    /// adapter and applies supersession. The result is a flat list
+    /// of [`rs_cam_core::diagnostics::Diagnostic`] suitable for
+    /// the GUI params panel or any MCP consumer that wants a single
+    /// canonical view.
+    fn mcp_get_toolpath_diagnostics(&self, index: usize) -> String {
+        let state = self.controller.state();
+        // The active sim trace lives on the viz-side state, not on
+        // the core session — pass it explicitly so the load gates
+        // see fresh evidence rather than `NeedsSimulation`.
+        let sim_trace = state
+            .simulation
+            .results
+            .as_ref()
+            .and_then(|r| r.cut_trace.as_deref());
+        match state.session.diagnose_toolpath_with_trace(index, sim_trace) {
+            Ok(diagnostics) => {
+                json_str(serde_json::to_value(&diagnostics).unwrap_or(serde_json::Value::Null))
+            }
+            Err(e) => json_str(serde_json::json!({"error": format!("{e}")})),
+        }
+    }
+
+    /// PR-3: project-wide diagnostics (collisions, air-cut high,
+    /// generated-empty, plunge stress). Builds a `ProjectEvidence`
+    /// borrow view from viz-side simulation state — collisions
+    /// and runtime/engagement readings reflect the latest run rather
+    /// than the (always empty in GUI mode) core-session snapshot.
+    fn mcp_get_project_diagnostics(&self) -> String {
+        let state = self.controller.state();
+        let evidence = viz_project_evidence(state);
+        let diagnostics = state.session.diagnose_project_with_evidence(&evidence);
+        json_str(serde_json::to_value(&diagnostics).unwrap_or(serde_json::Value::Null))
+    }
+
     /// Run the optimizer on a single toolpath synchronously and
     /// return the OptimizeOutcome as JSON. The GUI thread blocks
     /// for the duration of the search (~1-2 min). MCP automation
@@ -2033,6 +2312,7 @@ impl super::RsCamApp {
         param: &str,
         value: serde_json::Value,
     ) -> String {
+        let before = self.mcp_diagnostic_snapshot();
         match self
             .controller
             .state_mut()
@@ -2041,11 +2321,31 @@ impl super::RsCamApp {
         {
             Ok(()) => {
                 self.controller.state_mut().gui.mark_edited();
-                text(format!(
-                    "Set toolpath {index} param '{param}'. Regenerate to apply."
-                ))
+                let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
+                    toolpath_index: index,
+                });
+                let applied = self
+                    .controller
+                    .state()
+                    .session
+                    .toolpath_configs()
+                    .get(index)
+                    .map(|tc| {
+                        tc.operation
+                            .params_value_including_nulls()
+                            .get(param)
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null)
+                    })
+                    .unwrap_or(serde_json::Value::Null);
+                self.mcp_mutation_result(
+                    format!("Set toolpath {index} param '{param}'. Regenerate to apply."),
+                    applied,
+                    stale,
+                    &before,
+                )
             }
-            Err(e) => text(format!("Error: {e}")),
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), Some(param.to_owned())),
         }
     }
 
@@ -2055,6 +2355,7 @@ impl super::RsCamApp {
         param: &str,
         value: &serde_json::Value,
     ) -> String {
+        let before = self.mcp_diagnostic_snapshot();
         match self
             .controller
             .state_mut()
@@ -2063,11 +2364,27 @@ impl super::RsCamApp {
         {
             Ok(()) => {
                 self.controller.state_mut().gui.mark_edited();
-                text(format!(
-                    "Set tool {index} param '{param}'. Regenerate affected toolpaths to apply."
-                ))
+                let stale =
+                    self.mcp_apply_stale(MutationKind::ToolParamChanged { tool_index: index });
+                let applied = self
+                    .controller
+                    .state()
+                    .session
+                    .tools()
+                    .get(index)
+                    .and_then(|tool| serde_json::to_value(tool).ok())
+                    .and_then(|tool| tool.get(param).cloned())
+                    .unwrap_or(serde_json::Value::Null);
+                self.mcp_mutation_result(
+                    format!(
+                        "Set tool {index} param '{param}'. Regenerate affected toolpaths to apply."
+                    ),
+                    applied,
+                    stale,
+                    &before,
+                )
             }
-            Err(e) => text(format!("Error: {e}")),
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), Some(param.to_owned())),
         }
     }
 
@@ -2079,9 +2396,10 @@ impl super::RsCamApp {
         model_id: usize,
         name: Option<String>,
     ) -> String {
+        let before = self.mcp_diagnostic_snapshot();
         let op_type = match parse_operation_type(operation_type) {
             Ok(ot) => ot,
-            Err(e) => return json_str(serde_json::json!({"error": e})),
+            Err(e) => return self.mcp_mutation_error(format!("Error: {e}"), None),
         };
 
         let session = &self.controller.state().session;
@@ -2089,9 +2407,8 @@ impl super::RsCamApp {
         let tool_raw_id = match tools.get(tool_index) {
             Some(info) => info.id.0,
             None => {
-                return json_str(
-                    serde_json::json!({"error": format!("Tool index {tool_index} not found")}),
-                );
+                return self
+                    .mcp_mutation_error(format!("Error: Tool index {tool_index} not found"), None);
             }
         };
 
@@ -2100,30 +2417,30 @@ impl super::RsCamApp {
         // as a GUI add (drop_cutter min_z = stock_bottom, etc).
         let stock_bbox = session.stock_bbox();
         let stock_padding = session.stock_config().padding;
-        let ctx = rs_cam_core::compute::catalog::NewDefaultCtx::from_stock_bbox(
-            stock_bbox,
-            stock_padding,
-        );
-        let mut op_config = OperationConfig::new_default_with_ctx(op_type, &ctx);
+        let stock_ctx =
+            rs_cam_core::feeds::suggest::StockContext::from_stock_bbox(stock_bbox, stock_padding);
         let label = op_type.label();
         let tp_name = name.unwrap_or_else(|| label.to_owned());
 
-        // Roadmap F.5 — one-shot LUT call at toolpath creation. New
-        // toolpaths get recommended feeds written in once; after that,
+        // Roadmap F.5 — one-shot canonical suggest call at toolpath creation.
+        // New toolpaths get recommended feeds written in once; after that,
         // fields are always user-owned.
-        if let Some(tool) = session.tools().iter().find(|t| t.id.0 == tool_raw_id) {
-            let material = &session.stock_config().material;
-            let machine = session.machine();
-            let workholding = session.stock_config().workholding_rigidity;
-            let result = crate::ui::properties::compute_feeds_for_op(
+        let Some(tool) = session.tools().iter().find(|t| t.id.0 == tool_raw_id) else {
+            return self
+                .mcp_mutation_error(format!("Error: Tool index {tool_index} not found"), None);
+        };
+        let op_config = rs_cam_core::feeds::suggest::suggest_params(
+            rs_cam_core::feeds::suggest::SuggestParamsInput {
+                op_type,
                 tool,
-                material,
-                machine,
-                workholding,
-                &op_config,
-            );
-            crate::ui::properties::apply_feeds_result_to_op(&mut op_config, &result);
-        }
+                machine: session.machine(),
+                material: &session.stock_config().material,
+                workholding: session.stock_config().workholding_rigidity,
+                lut: rs_cam_core::feeds::embedded_vendor_lut(),
+                stock_ctx: &stock_ctx,
+            },
+        )
+        .operation;
 
         // Roadmap B.7 — boundary auto-enable for 3D ops on mesh models.
         let has_mesh = session.models().iter().any(|m| m.mesh.is_some());
@@ -2180,16 +2497,22 @@ impl super::RsCamApp {
                         .insert(id, crate::state::runtime::ToolpathRuntime::new(auto_regen));
                 }
                 self.controller.state_mut().gui.mark_edited();
-                json_str(serde_json::json!({
-                    "index": idx,
-                    "operation": label,
-                }))
+                self.mcp_mutation_result(
+                    format!("Added toolpath {idx} ({label})."),
+                    serde_json::json!({
+                        "index": idx,
+                        "operation": label,
+                    }),
+                    vec![idx],
+                    &before,
+                )
             }
-            Err(e) => json_str(serde_json::json!({"error": format!("{e}")})),
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), None),
         }
     }
 
     fn mcp_remove_toolpath(&mut self, index: usize) -> String {
+        let before = self.mcp_diagnostic_snapshot();
         // Find the toolpath ID before removing
         let tp_id = self
             .controller
@@ -2206,16 +2529,22 @@ impl super::RsCamApp {
                 }
                 self.controller.state_mut().gui.mark_edited();
                 self.controller.set_pending_upload();
-                text(format!("Removed toolpath {index}"))
+                self.mcp_mutation_result(
+                    format!("Removed toolpath {index}"),
+                    serde_json::json!({ "index": index }),
+                    Vec::new(),
+                    &before,
+                )
             }
-            Err(e) => text(format!("Error: {e}")),
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), None),
         }
     }
 
     fn mcp_add_tool(&mut self, name: &str, tool_type: &str, diameter: f64) -> String {
+        let before = self.mcp_diagnostic_snapshot();
         let tt = match parse_tool_type(tool_type) {
             Ok(t) => t,
-            Err(e) => return json_str(serde_json::json!({"error": e})),
+            Err(e) => return self.mcp_mutation_error(format!("Error: {e}"), None),
         };
 
         let mut config = ToolConfig::new_default(ToolId(0), tt);
@@ -2224,33 +2553,51 @@ impl super::RsCamApp {
 
         let idx = self.controller.state_mut().session.add_tool(config);
         self.controller.state_mut().gui.mark_edited();
-        json_str(serde_json::json!({
-            "index": idx,
-            "tool_type": tool_type,
-            "diameter": diameter,
-        }))
+        self.mcp_mutation_result(
+            format!("Added tool '{name}'"),
+            serde_json::json!({
+                "index": idx,
+                "tool_type": tool_type,
+                "diameter": diameter,
+            }),
+            Vec::new(),
+            &before,
+        )
     }
 
     fn mcp_remove_tool(&mut self, index: usize) -> String {
+        let before = self.mcp_diagnostic_snapshot();
         match self.controller.state_mut().session.remove_tool(index) {
             Ok(()) => {
                 self.controller.state_mut().gui.mark_edited();
-                text(format!("Removed tool {index}"))
+                self.mcp_mutation_result(
+                    format!("Removed tool {index}"),
+                    serde_json::json!({ "index": index }),
+                    Vec::new(),
+                    &before,
+                )
             }
-            Err(e) => text(format!("Error: {e}")),
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), None),
         }
     }
 
     fn mcp_set_stock_config(&mut self, x: f64, y: f64, z: f64) -> String {
+        let before = self.mcp_diagnostic_snapshot();
         let mut stock = self.controller.state().session.stock_config().clone();
         stock.x = x;
         stock.y = y;
         stock.z = z;
         self.controller.state_mut().session.set_stock_config(stock);
         self.controller.state_mut().gui.mark_edited();
-        text(format!(
-            "Stock set to {x:.1} x {y:.1} x {z:.1} mm. Regenerate toolpaths and simulation to apply."
-        ))
+        let stale = self.mcp_apply_stale(MutationKind::StockChanged);
+        self.mcp_mutation_result(
+            format!(
+                "Stock set to {x:.1} x {y:.1} x {z:.1} mm. Regenerate toolpaths and simulation to apply."
+            ),
+            serde_json::json!({ "x": x, "y": y, "z": z }),
+            stale,
+            &before,
+        )
     }
 
     fn mcp_set_boundary_config(
@@ -2261,13 +2608,15 @@ impl super::RsCamApp {
         containment: Option<&str>,
         offset: Option<f64>,
     ) -> String {
+        let before = self.mcp_diagnostic_snapshot();
         let boundary_source = match source {
             Some("stock") | None => BoundarySource::Stock,
             Some("model_silhouette") => BoundarySource::ModelSilhouette,
             Some(other) => {
-                return json_str(serde_json::json!({
-                    "error": format!("Unknown boundary source '{other}'. Use 'stock' or 'model_silhouette'.")
-                }));
+                return self.mcp_mutation_error(
+                    format!("Error: Unknown boundary source '{other}'. Use 'stock' or 'model_silhouette'."),
+                    Some("source".to_owned()),
+                );
             }
         };
 
@@ -2276,9 +2625,10 @@ impl super::RsCamApp {
             Some("inside") => BoundaryContainment::Inside,
             Some("outside") => BoundaryContainment::Outside,
             Some(other) => {
-                return json_str(serde_json::json!({
-                    "error": format!("Unknown containment '{other}'. Use 'center', 'inside', or 'outside'.")
-                }));
+                return self.mcp_mutation_error(
+                    format!("Error: Unknown containment '{other}'. Use 'center', 'inside', or 'outside'."),
+                    Some("containment".to_owned()),
+                );
             }
         };
 
@@ -2293,25 +2643,31 @@ impl super::RsCamApp {
             .controller
             .state_mut()
             .session
-            .set_boundary_config(index, boundary)
+            .set_boundary_config(index, boundary.clone())
         {
             Ok(()) => {
                 self.controller.state_mut().gui.mark_edited();
-                text(format!(
-                    "Boundary set on toolpath {index}. Regenerate to apply."
-                ))
+                let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
+                    toolpath_index: index,
+                });
+                self.mcp_mutation_result(
+                    format!("Boundary set on toolpath {index}. Regenerate to apply."),
+                    serde_json::to_value(boundary).unwrap_or(serde_json::Value::Null),
+                    stale,
+                    &before,
+                )
             }
-            Err(e) => text(format!("Error: {e}")),
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), None),
         }
     }
 
     fn mcp_set_dressup_config(&mut self, index: usize, dressup: serde_json::Value) -> String {
+        let before = self.mcp_diagnostic_snapshot();
         let dressup_config: DressupConfig = match serde_json::from_value(dressup) {
             Ok(dc) => dc,
             Err(e) => {
-                return json_str(serde_json::json!({
-                    "error": format!("Invalid dressup config: {e}")
-                }));
+                return self
+                    .mcp_mutation_error(format!("Error: Invalid dressup config: {e}"), None);
             }
         };
 
@@ -2323,11 +2679,25 @@ impl super::RsCamApp {
         {
             Ok(()) => {
                 self.controller.state_mut().gui.mark_edited();
-                text(format!(
-                    "Dressup config set on toolpath {index}. Regenerate to apply."
-                ))
+                let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
+                    toolpath_index: index,
+                });
+                let applied = self
+                    .controller
+                    .state()
+                    .session
+                    .toolpath_configs()
+                    .get(index)
+                    .and_then(|tc| serde_json::to_value(&tc.dressups).ok())
+                    .unwrap_or(serde_json::Value::Null);
+                self.mcp_mutation_result(
+                    format!("Dressup config set on toolpath {index}. Regenerate to apply."),
+                    applied,
+                    stale,
+                    &before,
+                )
             }
-            Err(e) => text(format!("Error: {e}")),
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), None),
         }
     }
 
@@ -2337,6 +2707,7 @@ impl super::RsCamApp {
         key: &str,
         value: serde_json::Value,
     ) -> String {
+        let before = self.mcp_diagnostic_snapshot();
         match self
             .controller
             .state_mut()
@@ -2345,15 +2716,31 @@ impl super::RsCamApp {
         {
             Ok(()) => {
                 self.controller.state_mut().gui.mark_edited();
-                text(format!(
-                    "Dressup field '{key}' set on toolpath {index}. Regenerate to apply."
-                ))
+                let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
+                    toolpath_index: index,
+                });
+                let applied = self
+                    .controller
+                    .state()
+                    .session
+                    .toolpath_configs()
+                    .get(index)
+                    .and_then(|tc| serde_json::to_value(&tc.dressups).ok())
+                    .and_then(|dressups| dressups.get(key).cloned())
+                    .unwrap_or(serde_json::Value::Null);
+                self.mcp_mutation_result(
+                    format!("Dressup field '{key}' set on toolpath {index}. Regenerate to apply."),
+                    applied,
+                    stale,
+                    &before,
+                )
             }
-            Err(e) => text(format!("Error: {e}")),
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), Some(key.to_owned())),
         }
     }
 
     fn mcp_set_toolpath_enabled(&mut self, index: usize, enabled: bool) -> String {
+        let before = self.mcp_diagnostic_snapshot();
         match self
             .controller
             .state_mut()
@@ -2362,23 +2749,32 @@ impl super::RsCamApp {
         {
             Ok(()) => {
                 self.controller.state_mut().gui.mark_edited();
-                text(format!(
-                    "Toolpath {index} {}",
-                    if enabled { "enabled" } else { "disabled" }
-                ))
+                self.mcp_mutation_result(
+                    format!(
+                        "Toolpath {index} {}",
+                        if enabled { "enabled" } else { "disabled" }
+                    ),
+                    serde_json::json!({ "index": index, "enabled": enabled }),
+                    vec![index],
+                    &before,
+                )
             }
-            Err(e) => text(format!("Error: {e}")),
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), None),
         }
     }
 
     fn mcp_set_stock_source(&mut self, index: usize, source: &str) -> String {
+        let before = self.mcp_diagnostic_snapshot();
         let parsed = match source {
             "fresh" => rs_cam_core::compute::config::StockSource::Fresh,
             "from_remaining_stock" => rs_cam_core::compute::config::StockSource::FromRemainingStock,
             other => {
-                return text(format!(
-                    "Error: unknown stock_source '{other}'. Expected 'fresh' or 'from_remaining_stock'."
-                ));
+                return self.mcp_mutation_error(
+                    format!(
+                        "Error: unknown stock_source '{other}'. Expected 'fresh' or 'from_remaining_stock'."
+                    ),
+                    Some("stock_source".to_owned()),
+                );
             }
         };
         match self
@@ -2389,11 +2785,19 @@ impl super::RsCamApp {
         {
             Ok(()) => {
                 self.controller.state_mut().gui.mark_edited();
-                text(format!(
-                    "Stock source set to '{source}' on toolpath {index}. Regenerate to apply."
-                ))
+                let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
+                    toolpath_index: index,
+                });
+                self.mcp_mutation_result(
+                    format!(
+                        "Stock source set to '{source}' on toolpath {index}. Regenerate to apply."
+                    ),
+                    serde_json::json!({ "index": index, "stock_source": source }),
+                    stale,
+                    &before,
+                )
             }
-            Err(e) => text(format!("Error: {e}")),
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), None),
         }
     }
 
@@ -2896,6 +3300,7 @@ fn build_span_cut_summaries(
                 "average_engagement": acc.average_engagement(),
                 "per_sample_peak_chipload_mm_per_tooth": acc.peak_chipload_mm_per_tooth,
                 "peak_axial_doc_mm": acc.peak_axial_doc_mm,
+                "peak_plunge_descent_mm": acc.peak_plunge_descent_mm,
                 "total_removed_volume_est_mm3": acc.total_removed_volume_est_mm3,
                 "average_mrr_mm3_s": acc.average_mrr(),
                 // Step 2 D — per-kinematics axes inline so agents can read
@@ -2907,6 +3312,38 @@ fn build_span_cut_summaries(
         }
     }
     serde_json::Value::Array(out)
+}
+
+/// Build a `ProjectEvidence` borrow view from viz-side state so MCP
+/// handlers can hand off to core diagnostics without GUI/MCP drift.
+/// Pulls boundaries from `state.simulation.results`, rapid collisions
+/// from `state.simulation.checks`, and the cut trace from the results
+/// arc.
+fn viz_project_evidence(
+    state: &crate::state::AppState,
+) -> rs_cam_core::session::ProjectEvidence<'_> {
+    let boundaries = state
+        .simulation
+        .results
+        .as_ref()
+        .map(|r| {
+            r.boundaries
+                .iter()
+                .map(|b| (b.id.0, b.start_move, b.end_move))
+                .collect()
+        })
+        .unwrap_or_default();
+    let cut_trace = state
+        .simulation
+        .results
+        .as_ref()
+        .and_then(|r| r.cut_trace.as_deref());
+    rs_cam_core::session::ProjectEvidence {
+        boundaries,
+        rapid_collisions: &state.simulation.checks.rapid_collisions,
+        rapid_collision_move_indices: &state.simulation.checks.rapid_collision_move_indices,
+        cut_trace,
+    }
 }
 
 /// Build the per-DepthPass histogram for [`mcp_get_tool_load_report`].
@@ -3006,6 +3443,7 @@ fn build_per_depth_pass_summary(
                     // in isolation. See planning/UX_PAIN_POINTS_2026-05-11.md F.9.
                     "per_sample_peak_chipload_mm_per_tooth": acc.peak_chipload_mm_per_tooth,
                     "peak_axial_doc_mm": acc.peak_axial_doc_mm,
+                    "peak_plunge_descent_mm": acc.peak_plunge_descent_mm,
                     "per_kinematics": render_per_kinematics_json(&acc),
                 })
             })
@@ -3054,6 +3492,7 @@ fn render_per_kinematics_json(
                 "average_axial_doc_fraction": summary.average_axial_doc_fraction,
                 "peak_axial_doc_fraction": summary.peak_axial_doc_fraction,
                 "peak_axial_doc_mm": summary.peak_axial_doc_mm,
+                "peak_plunge_descent_mm": summary.peak_plunge_descent_mm,
                 "average_arc_radians": summary.average_arc_radians,
                 "average_mean_chip_thickness_mm": summary.average_mean_chip_thickness_mm,
                 "peak_chip_thickness_mm": summary.peak_chip_thickness_mm,
