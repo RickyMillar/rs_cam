@@ -4,6 +4,8 @@
 
 use std::collections::HashMap;
 
+use serde::Serialize;
+
 use crate::state::toolpath::ToolpathId;
 
 /// A progress update sent from GUI to MCP during long operations.
@@ -35,8 +37,20 @@ pub enum McpRequestKind {
     GetToolpathParams {
         index: usize,
     },
+    GetOperationSchema {
+        operation_type: String,
+    },
     GetDiagnostics,
     GetToolLoadReport,
+    /// PR-3: unified diagnostic list for a single toolpath. Returns
+    /// the deduped [`rs_cam_core::diagnostics::Diagnostic`] vector
+    /// (post-supersession) for the toolpath at the given index.
+    GetToolpathDiagnostics {
+        index: usize,
+    },
+    /// PR-3: project-wide diagnostic list (collisions, air-cut, etc.)
+    /// derived from `ProjectDiagnostics::verdicts`.
+    GetProjectDiagnostics,
     /// Run the optimizer on a single toolpath and return the
     /// OptimizeOutcome as JSON. Long-running (~1-2 min for a typical
     /// 3D op); the GUI thread is blocked for the duration.
@@ -240,6 +254,36 @@ pub enum McpRequestKind {
 /// Response from the GUI thread to the MCP server.
 pub struct McpResponse {
     pub result: Result<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MutationResult<T>
+where
+    T: Serialize,
+{
+    pub ok: bool,
+    pub summary: String,
+    pub applied: T,
+    pub stale_toolpaths: Vec<usize>,
+    pub warnings: Vec<MutationWarning>,
+    pub gui_banners: Vec<GuiBanner>,
+    pub diagnostic_delta: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MutationWarning {
+    pub level: String,
+    pub field: Option<String>,
+    pub message: String,
+    pub recommendation: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GuiBanner {
+    pub kind: String,
+    pub severity: String,
+    pub title: String,
+    pub detail: Option<String>,
 }
 
 /// Tracks pending MCP compute operations awaiting async results.

@@ -8,7 +8,9 @@ use crate::state::toolpath::ToolpathId;
 use crate::state::viewport::ViewportState;
 use crate::ui::theme;
 use rs_cam_core::session::ProjectSession;
-use rs_cam_core::tool_load::verdict::{Confidence, CriterionKind, LoadState, ToolpathLoadVerdict};
+use rs_cam_core::tool_load::verdict::{
+    Confidence, CriterionKind, LoadState, ToolpathLoadVerdict, UnmodeledReason,
+};
 use rs_cam_core::toolpath_spans::{Span, SpanKind, SpanPayload};
 
 /// Left panel in simulation workspace: slim operation list with visibility and jump controls.
@@ -934,6 +936,9 @@ fn toolpath_status_flags(
 
     if let Some(verdict) = verdict {
         for status in verdict.criteria() {
+            if is_drill_not_applicable(verdict, &status) {
+                continue;
+            }
             match status.state {
                 LoadState::Exceeds => flags.push(ToolpathStatusFlag::new(
                     format!("⚠ {}", criterion_short_label(status.kind)),
@@ -965,6 +970,17 @@ fn toolpath_status_flags(
     }
 
     flags
+}
+
+fn is_drill_not_applicable(
+    verdict: &ToolpathLoadVerdict,
+    status: &rs_cam_core::tool_load::verdict::CriterionStatus<'_>,
+) -> bool {
+    verdict.drill_gates.is_some()
+        && matches!(
+            status.unmodeled_reason,
+            Some(UnmodeledReason::NotApplicableForOp(_))
+        )
 }
 
 fn issue_kind_short_label(kind: SimulationIssueKind) -> &'static str {

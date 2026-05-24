@@ -74,36 +74,53 @@ pub(super) fn material_remaining_at_level_diag(
     diag
 }
 
+/// Compact result for the planner's per-level early-exit check.
+/// Returned by [`material_remaining_at_level`] and
+/// [`material_remaining_in_region`].
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct MaterialRemaining {
+    pub cells_with_material: u64,
+    pub cells_at_z: u64,
+}
+
+impl MaterialRemaining {
+    pub fn fraction(self) -> f64 {
+        if self.cells_at_z == 0 {
+            0.0
+        } else {
+            self.cells_with_material as f64 / self.cells_at_z as f64
+        }
+    }
+}
+
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-/// Fraction of grid cells where material remains above the effective floor
-/// at a given z_level. Used to decide when a level is done.
+/// Cells where material remains above the effective floor at a given
+/// z_level. Used to decide when a level is done — callers should gate on
+/// the absolute `cells_with_material` count (not the fraction), because at
+/// small depth-per-pass a real island contributes very few cells per level
+/// and a fraction-based gate would silently skip it.
 pub(super) fn material_remaining_at_level(
     material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     z_level: f64,
     stock_to_leave: f64,
-) -> f64 {
+) -> MaterialRemaining {
     let grid = &material_stock.z_grid;
-    let mut above = 0u64;
-    let mut total = 0u64;
+    let mut out = MaterialRemaining::default();
     for row in 0..grid.rows {
         for col in 0..grid.cols {
             let i = row * grid.cols + col;
             let surf_z = surface_hm.z_values[i];
             let floor = (surf_z + stock_to_leave).max(z_level);
             if surf_z + stock_to_leave <= z_level + 0.01 {
-                total += 1;
+                out.cells_at_z += 1;
                 if stock_has_material_above(material_stock, row, col, floor + 0.01) {
-                    above += 1;
+                    out.cells_with_material += 1;
                 }
             }
         }
     }
-    if total == 0 {
-        0.0
-    } else {
-        above as f64 / total as f64
-    }
+    out
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -115,28 +132,23 @@ pub(super) fn material_remaining_in_region(
     z_level: f64,
     stock_to_leave: f64,
     region: &MaterialRegion,
-) -> f64 {
+) -> MaterialRemaining {
     let grid = &material_stock.z_grid;
-    let mut above = 0u64;
-    let mut total = 0u64;
+    let mut out = MaterialRemaining::default();
     for row in region.row_min..=region.row_max.min(grid.rows - 1) {
         for col in region.col_min..=region.col_max.min(grid.cols - 1) {
             let i = row * grid.cols + col;
             let surf_z = surface_hm.z_values[i];
             let floor = (surf_z + stock_to_leave).max(z_level);
             if surf_z + stock_to_leave <= z_level + 0.01 {
-                total += 1;
+                out.cells_at_z += 1;
                 if stock_has_material_above(material_stock, row, col, floor + 0.01) {
-                    above += 1;
+                    out.cells_with_material += 1;
                 }
             }
         }
     }
-    if total == 0 {
-        0.0
-    } else {
-        above as f64 / total as f64
-    }
+    out
 }
 
 // ── Link vs retract ───────────────────────────────────────────────────

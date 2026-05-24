@@ -198,17 +198,175 @@ pub fn export_gcode_checked(
     export_gcode_phases_checked(&phases, post, sim_trace, policy)
 }
 
+/// Check whether the cached sim trace's provenance still matches the
+/// project's current state. PR-4: this is the staleness signal that
+/// drives [`UnmodeledReason::StaleSimulation`] emissions out of the
+/// load gates — when current toolpaths or tools differ from the
+/// trace's recorded hashes, the gates can no longer be honoured
+/// against the current configs.
+///
+/// Returns `true` when the trace is safe to evaluate against. Traces
+/// without a `provenance` block (pre-provenance schema) get the
+/// benefit of the doubt — backward-compat with older traces — and
+/// return `true`.
+///
+/// Cheap: only iterates enabled toolpaths and hashes the cached
+/// annotated toolpath. Doesn't recompute anything heavy.
+pub fn sim_trace_is_fresh(project: &ProjectSession, trace: &SimulationCutTrace) -> bool {
+    let Some(provenance) = trace.provenance.as_ref() else {
+        // No provenance → schema predates the freshness check. Keep
+        // the legacy behaviour of treating it as fresh; the user can
+        // still hit "Run simulation" to invalidate manually.
+        return true;
+    };
+    for (idx, tc) in project.toolpath_configs().iter().enumerate() {
+        if !tc.enabled {
+            continue;
+        }
+        let Some(result) = project.get_result(idx) else {
+            // A new toolpath that was never simulated — sim trace
+            // covers fewer toolpaths than the project now has.
+            // Treat as stale so the new toolpath's gates surface
+            // as "needs current simulation".
+            return false;
+        };
+        let expected = match provenance.toolpath_hashes.get(&tc.id) {
+            Some(h) => *h,
+            None => return false,
+        };
+        let actual = crate::compute::simulate::hash_toolpath(&result.annotated().toolpath);
+        if expected != actual {
+            return false;
+        }
+        // Config-level hash comparison — catches edits that don't
+        // change move geometry (e.g. `feed_rate`, `plunge_rate`) but
+        // do invalidate the cached load verdicts. Pre-PR-4 traces
+        // have an empty `operation_config_hashes` map; treat a
+        // missing entry as a config match for backward-compat.
+        if let Some(expected_cfg) = provenance.operation_config_hashes.get(&tc.id) {
+            let actual_cfg = crate::compute::simulate::hash_operation_config(&tc.operation);
+            if *expected_cfg != actual_cfg {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Rewrite a verdict's [`UnmodeledReason::SimulationRequired`] into
+/// [`UnmodeledReason::StaleSimulation`]. Used after the load gates
+/// run to convert "no trace" verdicts into "stale trace" verdicts
+/// when the caller knows a trace exists but is stale.
+fn rewrite_sim_required_to_stale_chipload(v: &mut crate::tool_load::ChiploadVerdict) {
+    if let crate::tool_load::ChiploadVerdict::Unmodeled { reason } = v
+        && matches!(
+            reason,
+            crate::tool_load::UnmodeledReason::SimulationRequired
+        )
+    {
+        *reason = crate::tool_load::UnmodeledReason::StaleSimulation;
+    }
+}
+
+fn rewrite_sim_required_to_stale_power(v: &mut crate::tool_load::PowerVerdict) {
+    if let crate::tool_load::PowerVerdict::Unmodeled { reason } = v
+        && matches!(
+            reason,
+            crate::tool_load::UnmodeledReason::SimulationRequired
+        )
+    {
+        *reason = crate::tool_load::UnmodeledReason::StaleSimulation;
+    }
+}
+
+fn rewrite_sim_required_to_stale_deflection(v: &mut crate::tool_load::verdict::DeflectionVerdict) {
+    if let crate::tool_load::verdict::DeflectionVerdict::Unmodeled { reason } = v
+        && matches!(
+            reason,
+            crate::tool_load::UnmodeledReason::SimulationRequired
+        )
+    {
+        *reason = crate::tool_load::UnmodeledReason::StaleSimulation;
+    }
+}
+
+/// Classification of the cached simulation trace's relationship to the
+/// current project state. Resolves the ambiguity between "no trace ever
+/// existed" (e.g. project just loaded) and "trace exists but is stale"
+/// (e.g. user edited a toolpath since the last sim).
+///
+/// Down-stream gates use [`Self::effective_trace`] to decide whether
+/// to evaluate against the cached trace; the diagnostics layer reads
+/// [`Self::is_stale`] to know whether to rewrite
+/// `Unmodeled::SimulationRequired` into `Unmodeled::StaleSimulation`.
+#[derive(Debug, Clone, Copy)]
+pub enum SimEvidenceMeta<'a> {
+    /// No simulation trace has been cached on this evidence path.
+    Missing,
+    /// The cached trace's hashes match the current project state.
+    Fresh(&'a SimulationCutTrace),
+    /// The cached trace exists but the project has drifted since it
+    /// was captured. Down-stream gates are evaluated *without* the
+    /// trace so verdicts read as `Unmodeled::SimulationRequired`;
+    /// the post-process step then promotes those to
+    /// `Unmodeled::StaleSimulation`.
+    Stale,
+}
+
+impl<'a> SimEvidenceMeta<'a> {
+    /// Classify a trace against the current project state.
+    pub fn resolve(project: &ProjectSession, trace: Option<&'a SimulationCutTrace>) -> Self {
+        match trace {
+            None => Self::Missing,
+            Some(t) if sim_trace_is_fresh(project, t) => Self::Fresh(t),
+            Some(_) => Self::Stale,
+        }
+    }
+
+    /// The trace to feed to the load-gate evaluators. `None` for
+    /// `Missing` and `Stale` — gates surface as
+    /// `Unmodeled::SimulationRequired` and the stale-rewrite pass
+    /// fixes that up afterwards.
+    pub fn effective_trace(self) -> Option<&'a SimulationCutTrace> {
+        match self {
+            Self::Fresh(t) => Some(t),
+            _ => None,
+        }
+    }
+
+    /// True iff a stale trace was discarded — drives the
+    /// `SimulationRequired` → `StaleSimulation` rewrite at the end of
+    /// `project_load_report`.
+    pub fn is_stale(self) -> bool {
+        matches!(self, Self::Stale)
+    }
+}
+
 /// Build a `ToolLoadReport` from a `ProjectSession`. Phase 1a wires
 /// `chipload` (per-sample vs vendor LUT, requires `sim_trace`) and
 /// `deflection` (geometric L/D, sample-independent). The `power`
 /// criterion is stubbed `Unmodeled(NotImplemented)` until Phase 1b's
 /// arc-engagement-driven power calc lands.
+///
+/// PR-4: when `sim_trace` is `Some` but `sim_trace_is_fresh` returns
+/// false (project state has drifted since the trace was captured),
+/// the evaluators run with `sim_trace = None` and the resulting
+/// `Unmodeled::SimulationRequired` verdicts are post-processed into
+/// `Unmodeled::StaleSimulation`. The diagnostics adapter renders
+/// `StaleSimulation` as `DiagnosticState::StaleEvidence`, which the
+/// UI displays as a neutral "re-run simulation" hint rather than a
+/// scary warning.
 pub fn project_load_report(
     project: &ProjectSession,
     sim_trace: Option<&SimulationCutTrace>,
 ) -> crate::tool_load::ToolLoadReport {
     use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
     use crate::feeds::{OperationFamily, PassRole};
+
+    // Freshness gate — see [`sim_trace_is_fresh`] for the contract.
+    let sim_evidence = SimEvidenceMeta::resolve(project, sim_trace);
+    let sim_trace = sim_evidence.effective_trace();
+    let sim_is_stale = sim_evidence.is_stale();
 
     let material = &project.stock_config().material;
     let mut per_toolpath = Vec::new();
@@ -305,6 +463,19 @@ pub fn project_load_report(
             drill_gates,
         });
     }
+    // PR-4: if we threw away a stale trace upstream, rewrite the
+    // resulting `SimulationRequired` verdicts to `StaleSimulation`
+    // so the diagnostics adapter surfaces them as
+    // `DiagnosticState::StaleEvidence` ("re-run sim") instead of
+    // `NeedsSimulation` ("never simulated").
+    if sim_is_stale {
+        for verdict in &mut per_toolpath {
+            rewrite_sim_required_to_stale_chipload(&mut verdict.chipload);
+            rewrite_sim_required_to_stale_power(&mut verdict.power);
+            rewrite_sim_required_to_stale_deflection(&mut verdict.deflection);
+        }
+    }
+
     crate::tool_load::ToolLoadReport { per_toolpath }
 }
 
@@ -334,8 +505,34 @@ pub fn enforce_load_policy(
         }
     }
     if !policy.accept_unmodeled && report.any_unmodeled() {
-        let mut msg =
-            String::from("G-code export refused: tool load not fully modeled for toolpath(s):\n");
+        // Distinguish "stale simulation" (re-sim required) from
+        // "never simulated / no LUT data" — they're different user
+        // actions even though both block export.
+        let any_stale = report.per_toolpath.iter().any(|v| {
+            matches!(
+                &v.chipload,
+                crate::tool_load::ChiploadVerdict::Unmodeled {
+                    reason: crate::tool_load::UnmodeledReason::StaleSimulation
+                }
+            ) || matches!(
+                &v.power,
+                crate::tool_load::PowerVerdict::Unmodeled {
+                    reason: crate::tool_load::UnmodeledReason::StaleSimulation
+                }
+            ) || matches!(
+                &v.deflection,
+                crate::tool_load::DeflectionVerdict::Unmodeled {
+                    reason: crate::tool_load::UnmodeledReason::StaleSimulation
+                }
+            )
+        });
+        let headline = if any_stale {
+            "G-code export refused: cached simulation is stale — re-run simulation \
+             to verify load gates against current toolpath state.\n"
+        } else {
+            "G-code export refused: tool load not fully modeled for toolpath(s):\n"
+        };
+        let mut msg = String::from(headline);
         for v in &report.per_toolpath {
             if v.any_unmodeled() {
                 let mut crits = Vec::new();
@@ -351,7 +548,14 @@ pub fn enforce_load_policy(
                 let _ = writeln!(msg, "  toolpath {}: {}", v.toolpath_id, crits.join(", "));
             }
         }
-        msg.push_str("Pass `accept_unmodeled=true` to acknowledge unmodeled criteria.");
+        if any_stale {
+            msg.push_str(
+                "Run simulation, then export again. Pass `accept_unmodeled=true` to \
+                 export against the stale evidence anyway.",
+            );
+        } else {
+            msg.push_str("Pass `accept_unmodeled=true` to acknowledge unmodeled criteria.");
+        }
         return Err(ExportError::new(msg));
     }
     Ok(())

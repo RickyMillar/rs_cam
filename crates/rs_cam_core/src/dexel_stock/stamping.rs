@@ -695,6 +695,8 @@ pub(super) fn sample_segment_runtime(
             spindle_rpm: params.spindle_rpm,
             flute_count: params.flute_count,
             axial_doc_mm: 0.0,
+            axial_engagement_mm: 0.0,
+            plunge_descent_mm: 0.0,
             arc_engagement_radians: None,
             chipload_mm_per_tooth: 0.0,
             effective_chip_thickness_mm: None,

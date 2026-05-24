@@ -5,7 +5,7 @@
 //! cutting force from material specific cutting energy:
 //!
 //! ```text
-//! F = Kc(material) × axial_doc_mm × radial_width_mm    [N]
+//! F = Kc(material) × axial_engagement_mm × radial_width_mm    [N]
 //! ```
 //!
 //! using the same arc-equivalent slab as `power::evaluate`. Then
@@ -82,7 +82,7 @@ pub fn sample_tip_deflection_mm(
 ) -> Option<f64> {
     if !sample.is_cutting
         || sample.engagement.radial_woc_fraction < 0.02
-        || sample.axial_doc_mm <= 0.0
+        || sample.axial_engagement_mm <= 0.0
     {
         return None;
     }
@@ -95,14 +95,14 @@ pub fn sample_tip_deflection_mm(
     }
     let arc = sample.arc_engagement_radians?;
     let engagement_radius =
-        crate::tool::MillingCutter::engagement_radius(tool, sample.axial_doc_mm).max(0.0);
+        crate::tool::MillingCutter::engagement_radius(tool, sample.axial_engagement_mm).max(0.0);
     let radial_width = (arc / std::f64::consts::PI) * engagement_radius * 2.0;
     if radial_width <= 0.0 {
         return None;
     }
-    let force_n = kc * sample.axial_doc_mm * radial_width;
+    let force_n = kc * sample.axial_engagement_mm * radial_width;
     let e = tool.tool_material.youngs_modulus_n_per_mm2();
-    Some(tool.tip_deflection_mm(force_n, sample.axial_doc_mm, e))
+    Some(tool.tip_deflection_mm(force_n, sample.axial_engagement_mm, e))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -345,6 +345,8 @@ mod tests {
             spindle_rpm: 18_000,
             flute_count: 2,
             axial_doc_mm: axial,
+            axial_engagement_mm: axial,
+            plunge_descent_mm: 0.0,
             arc_engagement_radians: Some(arc_rad),
             chipload_mm_per_tooth: feed_mmpm / (18_000.0 * 2.0),
             effective_chip_thickness_mm: Some(feed_mmpm / (18_000.0 * 2.0)),
@@ -374,6 +376,7 @@ mod tests {
                 average_engagement: 0.5,
                 peak_chipload_mm_per_tooth: 0.05,
                 peak_axial_doc_mm: 1.0,
+                peak_plunge_descent_mm: 0.0,
                 total_removed_volume_est_mm3: 1.0,
                 average_mrr_mm3_s: 1.0,
                 per_kinematics: std::collections::BTreeMap::new(),

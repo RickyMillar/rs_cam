@@ -1,5 +1,39 @@
 # rs_cam Agent Notes
 
+> ## 🔴 ACTIVE WORKSTREAM — read this before doing anything
+>
+> This repo is currently in the **acceptance loop** workstream — an
+> audit→fix→re-audit cycle to make the Suggest / Sim / Optimize
+> calculations trustworthy. Any agent landing in this repo for the next
+> few weeks should orient through:
+>
+> 1. **`planning/acceptance_loop/STATE.md`** — single source of truth.
+>    Current round, open findings queue, what's claimed, what's landed.
+>    **Read first.**
+> 2. **`planning/acceptance_loop/README.md`** — how the loop works
+>    (Auditor vs Implementer roles, finding lifecycle, exit criteria).
+> 3. **`planning/acceptance_loop/audit_runbook.md`** — if you are
+>    auditing this round.
+> 4. **`planning/acceptance_loop/implementer_contract.md`** — if you
+>    are landing a fix this round.
+>
+> **Implementers**: pull the top unclaimed finding from `STATE.md`'s
+> queue. Each `planning/acceptance_loop/findings/F-XXX-*.md` file is
+> self-contained — evidence, acceptance test, files, fix shape, risk.
+>
+> **Auditors**: read `STATE.md`, run the agent smoke acceptance suite
+> (`planning/SUGGEST_SIM_OPTIMIZE_AGENT_RUN_PROMPT.md` for mechanics),
+> diff against the last `rounds/round-NN/baseline.md`, update findings
+> and queue. Do not write product code.
+>
+> **The 22 currently open findings span suggest / sim / optimize /
+> substrate.** F-001 (chipload-2D feedopt probe, ~10 LOC, unblocks
+> 7 op kinds) is the single highest-leverage fix.
+>
+> When the acceptance bars in
+> `planning/SUGGEST_SIM_OPTIMIZE_ACCEPTANCE.md` are all met, this
+> block can be removed and the repo returns to normal operation.
+
 ## What this repo is
 
 `rs_cam` is a Rust CAM workspace for 3-axis wood routers.
@@ -139,7 +173,7 @@ The GUI embeds an MCP server (`--mcp` flag) so Claude can control the live GUI i
 - `rapid_collision_count` is the most reliable signal. Trust it as the primary "did anything bad happen" indicator regardless of operation type.
 - `average_engagement` is the **cylinder-side radial-WOC fraction** (a.k.a. `engagement.radial_woc_fraction`), not leading-edge engagement. For adaptive3d it typically reads ~10× lower than the algorithmic target (~3% observed vs ~30% target from `target_engagement_fraction`). Use it for **relative** comparison between parameter variants, not as an absolute pass/fail bar. For axis-aware reporting (axial-DOC, arc, chip thickness, leading-edge speed by kinematics class) read the `per_kinematics` summary block — Step 2 of the dexel-fidelity roadmap landed the structured `Engagement` vector on every sample (see `planning/DEXEL_Z_ONLY_INVESTIGATION.md` §6.D / §6.H). Under Step 4 (F.a sub-cell stamping, 2026-05-19) the perp-extent measurement is gated on cells with stamp coverage ≥ 0.95 to prevent F.a boundary residuals from inflating engagement on repeated passes. A genuine full slot now reads radial ≈ 0.95 (limited by grid discretisation + sub-sample geometry) rather than 1.0; per-toolpath averages drop by roughly that proportion. Continue treating the scalar as a comparative signal, not an absolute fraction-of-diameter readout.
 - `air_cut_percentage` is calibrated against cutting-time, not wall-clock. Plunge-and-retract-loop ops (project_curve, v_carve, drill) no longer inflate air-cut from retract feeds — retracts are now tagged `MoveIntent::Retract` and excluded from cutting metrics (Step 1, 2026-05-19; see `planning/DEXEL_Z_ONLY_INVESTIGATION.md`). Drill toolpaths still set `metrics_not_applicable: true` (engagement axes don't apply to Z-only kinematics), but Step 3 PR2 added a parallel `drill_summaries` slot on `SimulationCutTrace` — drill ops produce **drill-native** metrics (per-peck `DrillSample`, per-toolpath `DrillToolpathSummary` with peck adequacy + chip-welding risk + cycle time) and three drill-specific gates on `ToolpathLoadVerdict.drill_gates` (chip welding, peck adequacy, plunge feed sanity). The legacy "treat as not-applicable" advice still applies to engagement metrics; consult `drill_summaries` / `drill_gates` for the actionable signal.
-- `peak_axial_doc_mm` is the per-sample maximum, computed differently per move kinematics: for **lateral feed** moves it's the engagement depth (material height above the cutter at the deepest cell in its footprint); for **pure-vertical** moves (peck-plunge) it's the segment's Z descent. So a single sample at deep cutter-Z over uncleared tall stock reports `stock_top - cutter_z`, which can be much larger than `depth_per_pass` even when `depth_per_pass` is set correctly. High readings indicate the lift function is bridging across previously-uncleared stock — see `planning/AGENTSEARCH_INVESTIGATION_LOG.md` O5 for one cause.
+- `peak_axial_doc_mm` now reports lateral/arc/helix axial engagement only. Pure-vertical plunge distance is exposed separately as `plunge_descent_mm` / `peak_plunge_descent_mm`, so deflection gates no longer consume peck descent as cutter engagement.
 - `issue_count` with thousands of `air_cut` entries per run is **emission noise**, not a signal. Every sample outside fresh material counts as an "issue". Look at `hotspots` and `rapid_collision_count` instead.
 
 ### Model types and what they need

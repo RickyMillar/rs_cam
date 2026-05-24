@@ -109,6 +109,15 @@ pub struct SimulationProvenance {
     pub captured_arc_engagement: bool,
     pub toolpath_hashes: BTreeMap<usize, u64>,
     pub tool_hashes: BTreeMap<usize, u64>,
+    /// Hash of each toolpath's `OperationConfig` at sim time. New in
+    /// PR-4 polish — lets [`crate::gcode::sim_trace_is_fresh`] catch
+    /// config-only edits (e.g. `feed_rate` changes that don't change
+    /// move geometry but do invalidate cached load verdicts). Empty
+    /// for traces captured before this field landed; the freshness
+    /// check treats a missing entry as a config match for
+    /// backward-compatibility.
+    #[serde(default)]
+    pub operation_config_hashes: BTreeMap<usize, u64>,
     pub stock_hash: u64,
     pub machine_hash: u64,
 }
@@ -134,7 +143,18 @@ pub struct SimulationCutSample {
     pub feed_rate_mm_min: f64,
     pub spindle_rpm: u32,
     pub flute_count: u32,
+    /// Legacy wire name for axial cutting engagement. Pure-vertical plunges
+    /// now report `0.0` here; read `plunge_descent_mm` for Z-only descent.
     pub axial_doc_mm: f64,
+    /// Maximum material height engaged by lateral/arc/helix cutting at this
+    /// sample. Deflection and chip-geometry gates consume this axis.
+    #[serde(default)]
+    pub axial_engagement_mm: f64,
+    /// Z descent represented by a pure-vertical plunge sample. Lateral/arc
+    /// samples leave this at zero so DOC and plunge distance do not share one
+    /// scalar.
+    #[serde(default)]
+    pub plunge_descent_mm: f64,
     #[serde(default)]
     pub arc_engagement_radians: Option<f64>,
     /// Commanded feed per tooth: feed_rate / spindle_rpm / flute_count.
@@ -275,8 +295,11 @@ pub struct KinematicsSummary {
     pub average_axial_doc_fraction: f64,
     /// Maximum `engagement.axial_doc_fraction` observed.
     pub peak_axial_doc_fraction: f64,
-    /// Maximum `axial_doc_mm` observed (millimetres, absolute).
+    /// Maximum lateral/arc/helix axial engagement observed (millimetres).
     pub peak_axial_doc_mm: f64,
+    /// Maximum pure-vertical plunge descent observed (millimetres).
+    #[serde(default)]
+    pub peak_plunge_descent_mm: f64,
     /// Time-weighted mean of `engagement.arc_radians` across samples that
     /// carried it. `None` when no sample in this class reported an arc
     /// (e.g. pure plunges).
@@ -317,6 +340,8 @@ pub struct SimulationToolpathCutSummary {
     pub average_engagement: f64,
     pub peak_chipload_mm_per_tooth: f64,
     pub peak_axial_doc_mm: f64,
+    #[serde(default)]
+    pub peak_plunge_descent_mm: f64,
     pub total_removed_volume_est_mm3: f64,
     pub average_mrr_mm3_s: f64,
     /// True when the dexel's radial-engagement and air-cut metrics
@@ -366,6 +391,8 @@ pub struct SimulationSemanticCutSummary {
     pub peak_engagement: f64,
     pub peak_chipload_mm_per_tooth: f64,
     pub peak_axial_doc_mm: f64,
+    #[serde(default)]
+    pub peak_plunge_descent_mm: f64,
     pub total_removed_volume_est_mm3: f64,
     pub average_mrr_mm3_s: f64,
     pub peak_mrr_mm3_s: f64,
@@ -391,6 +418,8 @@ pub struct SimulationCutHotspot {
     pub average_engagement: f64,
     pub peak_chipload_mm_per_tooth: f64,
     pub peak_axial_doc_mm: f64,
+    #[serde(default)]
+    pub peak_plunge_descent_mm: f64,
     pub total_removed_volume_est_mm3: f64,
     pub average_mrr_mm3_s: f64,
     /// Span path inherited from the first sample contributing to this
@@ -423,6 +452,8 @@ pub struct SimulationCutSummary {
     pub average_engagement: f64,
     pub peak_chipload_mm_per_tooth: f64,
     pub peak_axial_doc_mm: f64,
+    #[serde(default)]
+    pub peak_plunge_descent_mm: f64,
     pub total_removed_volume_est_mm3: f64,
     pub average_mrr_mm3_s: f64,
     /// Per-`CutKinematics` summary block across all toolpaths. See
@@ -722,6 +753,7 @@ pub struct SummaryAccumulator {
     pub peak_engagement: f64,
     pub peak_chipload_mm_per_tooth: f64,
     pub peak_axial_doc_mm: f64,
+    pub peak_plunge_descent_mm: f64,
     pub total_removed_volume_est_mm3: f64,
     pub peak_mrr_mm3_s: f64,
     pub air_cut_issue_count: usize,
@@ -749,6 +781,7 @@ pub struct KinematicsAccumulator {
     pub axial_doc_fraction_time_weighted_sum: f64,
     pub peak_axial_doc_fraction: f64,
     pub peak_axial_doc_mm: f64,
+    pub peak_plunge_descent_mm: f64,
     /// Sum of `arc_radians * segment_time_s` for samples carrying arc; paired
     /// with `arc_observed_runtime_s` to compute a defined mean only when at
     /// least one sample reported an arc.
@@ -790,8 +823,13 @@ impl KinematicsAccumulator {
         // P3: transit-span samples produce dexel-bridge artifacts on peak
         // DOC. Defer to the same gating the top-level accumulator uses.
         if !sample.in_transit_span {
-            self.peak_axial_doc_mm = self.peak_axial_doc_mm.max(sample.axial_doc_mm.max(0.0));
+            self.peak_axial_doc_mm = self
+                .peak_axial_doc_mm
+                .max(sample.axial_engagement_mm.max(0.0));
         }
+        self.peak_plunge_descent_mm = self
+            .peak_plunge_descent_mm
+            .max(sample.plunge_descent_mm.max(0.0));
         if let Some(arc) = eng.arc_radians {
             self.arc_time_weighted_sum += arc * dt;
             self.arc_observed_runtime_s += dt;
@@ -823,6 +861,7 @@ impl KinematicsAccumulator {
             },
             peak_axial_doc_fraction: self.peak_axial_doc_fraction,
             peak_axial_doc_mm: self.peak_axial_doc_mm,
+            peak_plunge_descent_mm: self.peak_plunge_descent_mm,
             average_arc_radians: if self.arc_observed_runtime_s > 1e-9 {
                 Some(self.arc_time_weighted_sum / self.arc_observed_runtime_s)
             } else {
@@ -870,8 +909,13 @@ impl SummaryAccumulator {
             self.peak_chipload_mm_per_tooth = self
                 .peak_chipload_mm_per_tooth
                 .max(sample.chipload_mm_per_tooth.max(0.0));
-            self.peak_axial_doc_mm = self.peak_axial_doc_mm.max(sample.axial_doc_mm.max(0.0));
+            self.peak_axial_doc_mm = self
+                .peak_axial_doc_mm
+                .max(sample.axial_engagement_mm.max(0.0));
         }
+        self.peak_plunge_descent_mm = self
+            .peak_plunge_descent_mm
+            .max(sample.plunge_descent_mm.max(0.0));
         self.peak_mrr_mm3_s = self.peak_mrr_mm3_s.max(sample.mrr_mm3_s.max(0.0));
 
         if sample.is_cutting {
@@ -931,6 +975,7 @@ impl SummaryAccumulator {
             average_engagement,
             peak_chipload_mm_per_tooth: self.peak_chipload_mm_per_tooth,
             peak_axial_doc_mm: self.peak_axial_doc_mm,
+            peak_plunge_descent_mm: self.peak_plunge_descent_mm,
             total_removed_volume_est_mm3: self.total_removed_volume_est_mm3,
             average_mrr_mm3_s,
             metrics_not_applicable: false,
@@ -961,6 +1006,7 @@ impl SummaryAccumulator {
             average_engagement,
             peak_chipload_mm_per_tooth: self.peak_chipload_mm_per_tooth,
             peak_axial_doc_mm: self.peak_axial_doc_mm,
+            peak_plunge_descent_mm: self.peak_plunge_descent_mm,
             total_removed_volume_est_mm3: self.total_removed_volume_est_mm3,
             average_mrr_mm3_s,
             per_kinematics,
@@ -1029,6 +1075,7 @@ impl HotspotAccumulator {
             average_engagement,
             peak_chipload_mm_per_tooth: self.summary.peak_chipload_mm_per_tooth,
             peak_axial_doc_mm: self.summary.peak_axial_doc_mm,
+            peak_plunge_descent_mm: self.summary.peak_plunge_descent_mm,
             total_removed_volume_est_mm3: self.summary.total_removed_volume_est_mm3,
             average_mrr_mm3_s,
             span_path: self.span_path,
@@ -1089,6 +1136,7 @@ impl SemanticSummaryAccumulator {
             peak_engagement: self.summary.peak_engagement,
             peak_chipload_mm_per_tooth: self.summary.peak_chipload_mm_per_tooth,
             peak_axial_doc_mm: self.summary.peak_axial_doc_mm,
+            peak_plunge_descent_mm: self.summary.peak_plunge_descent_mm,
             total_removed_volume_est_mm3: self.summary.total_removed_volume_est_mm3,
             average_mrr_mm3_s: self.summary.average_mrr(),
             peak_mrr_mm3_s: self.summary.peak_mrr_mm3_s,
@@ -1168,6 +1216,8 @@ mod tests {
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 1.5,
+                    axial_engagement_mm: 1.5,
+                    plunge_descent_mm: 0.0,
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0166,
                     effective_chip_thickness_mm: Some(0.0166),
@@ -1191,6 +1241,8 @@ mod tests {
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 2.0,
+                    axial_engagement_mm: 2.0,
+                    plunge_descent_mm: 0.0,
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0166,
                     effective_chip_thickness_mm: Some(0.0166),
@@ -1214,6 +1266,8 @@ mod tests {
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 0.0,
+                    axial_engagement_mm: 0.0,
+                    plunge_descent_mm: 0.0,
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0,
                     effective_chip_thickness_mm: None,
@@ -1269,6 +1323,8 @@ mod tests {
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 1.0,
+                    axial_engagement_mm: 1.0,
+                    plunge_descent_mm: 0.0,
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0083,
                     effective_chip_thickness_mm: Some(0.0083),
@@ -1292,6 +1348,8 @@ mod tests {
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 1.2,
+                    axial_engagement_mm: 1.2,
+                    plunge_descent_mm: 0.0,
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0083,
                     effective_chip_thickness_mm: Some(0.0083),
@@ -1340,6 +1398,8 @@ mod tests {
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 1.5,
+                    axial_engagement_mm: 1.5,
+                    plunge_descent_mm: 0.0,
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0166,
                     effective_chip_thickness_mm: Some(0.0166),
@@ -1363,6 +1423,8 @@ mod tests {
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 1.5,
+                    axial_engagement_mm: 1.5,
+                    plunge_descent_mm: 0.0,
                     arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0166,
                     effective_chip_thickness_mm: Some(0.0166),
@@ -1446,6 +1508,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 0.0,
+                axial_engagement_mm: 0.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.0,
                 effective_chip_thickness_mm: None,
@@ -1469,6 +1533,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 0.0,
+                axial_engagement_mm: 0.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.0,
                 effective_chip_thickness_mm: None,
@@ -1512,6 +1578,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
+                axial_engagement_mm: 1.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
@@ -1536,6 +1604,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
+                axial_engagement_mm: 1.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
@@ -1560,6 +1630,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 2.0,
+                axial_engagement_mm: 2.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.02,
                 effective_chip_thickness_mm: Some(0.02),
@@ -1670,6 +1742,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
+                axial_engagement_mm: 1.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
@@ -1696,6 +1770,8 @@ mod tests {
             spindle_rpm: 18_000,
             flute_count: 2,
             axial_doc_mm: 2.0,
+            axial_engagement_mm: 2.0,
+            plunge_descent_mm: 0.0,
             arc_engagement_radians: None,
             chipload_mm_per_tooth: 0.02,
             effective_chip_thickness_mm: Some(0.02),
@@ -1720,6 +1796,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
+                axial_engagement_mm: 1.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
@@ -1783,6 +1861,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
+                axial_engagement_mm: 1.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
@@ -1806,6 +1886,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
+                axial_engagement_mm: 1.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
@@ -1845,6 +1927,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
+                axial_engagement_mm: 1.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
@@ -1868,6 +1952,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
+                axial_engagement_mm: 1.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
@@ -1891,6 +1977,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
+                axial_engagement_mm: 1.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
@@ -1933,6 +2021,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.5,
+                axial_engagement_mm: 1.5,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.05,
                 effective_chip_thickness_mm: Some(0.05),
@@ -1956,6 +2046,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 3.0,
+                axial_engagement_mm: 3.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.08,
                 effective_chip_thickness_mm: Some(0.08),
@@ -2005,6 +2097,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
+                axial_engagement_mm: 1.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
@@ -2028,6 +2122,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 2.0,
+                axial_engagement_mm: 2.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.02,
                 effective_chip_thickness_mm: Some(0.02),
@@ -2092,6 +2188,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
+                axial_engagement_mm: 1.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
@@ -2116,6 +2214,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 2.0,
+                axial_engagement_mm: 2.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.02,
                 effective_chip_thickness_mm: Some(0.02),
@@ -2159,6 +2259,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
+                axial_engagement_mm: 1.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
@@ -2182,6 +2284,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
+                axial_engagement_mm: 1.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
@@ -2205,6 +2309,8 @@ mod tests {
                 spindle_rpm: 18_000,
                 flute_count: 2,
                 axial_doc_mm: 1.0,
+                axial_engagement_mm: 1.0,
+                plunge_descent_mm: 0.0,
                 arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
@@ -2279,6 +2385,8 @@ mod tests {
             spindle_rpm: 18_000,
             flute_count: 2,
             axial_doc_mm,
+            axial_engagement_mm: axial_doc_mm,
+            plunge_descent_mm: 0.0,
             arc_engagement_radians: None,
             chipload_mm_per_tooth: 0.03,
             effective_chip_thickness_mm: Some(0.03),

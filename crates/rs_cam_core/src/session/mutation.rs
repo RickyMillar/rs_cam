@@ -20,7 +20,7 @@ use crate::polygon::Polygon2;
 /// Compute a 3D bounding box from a slice of 2D polygons (SVG/DXF models).
 /// Z extent is zero; `update_from_bbox` preserves stock Z for 2D models.
 /// Returns `None` if all polygons are empty.
-fn polygons_bbox(polygons: &[Polygon2]) -> Option<BoundingBox3> {
+pub(crate) fn polygons_bbox(polygons: &[Polygon2]) -> Option<BoundingBox3> {
     let mut min_x = f64::INFINITY;
     let mut min_y = f64::INFINITY;
     let mut max_x = f64::NEG_INFINITY;

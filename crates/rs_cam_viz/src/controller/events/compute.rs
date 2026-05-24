@@ -347,10 +347,29 @@ impl<B: ComputeBackend> AppController<B> {
                             if let Some((tp_index, _)) =
                                 self.state.session.find_toolpath_config_by_id(tp_id.0)
                             {
-                                let core_result = rs_cam_core::session::ToolpathComputeResult {
-                                    op_data: rs_cam_core::drill_op::OpData::Toolpath(Arc::clone(
+                                // Honour the §6.E dual-representation
+                                // invariant: drill ops carry both the
+                                // DrillOp payload and the annotated
+                                // toolpath. The worker already built the
+                                // DrillOp into `computed.drill_op`;
+                                // routing it through here so
+                                // `session.results[idx].drill_op()`
+                                // returns Some for drill TPs matches the
+                                // `session.generate_toolpath` production
+                                // path. Without this, drill_gates on the
+                                // tool-load report never populate (the
+                                // gate evaluator reads `result.drill_op()`).
+                                let op_data = match &computed.drill_op {
+                                    Some(drill_op_arc) => rs_cam_core::drill_op::OpData::DrillOp(
+                                        Arc::clone(drill_op_arc),
+                                        Arc::clone(&computed.annotated),
+                                    ),
+                                    None => rs_cam_core::drill_op::OpData::Toolpath(Arc::clone(
                                         &computed.annotated,
                                     )),
+                                };
+                                let core_result = rs_cam_core::session::ToolpathComputeResult {
+                                    op_data,
                                     stats: computed.stats.clone(),
                                     // Debug + semantic traces stay viz-side
                                     // (Arc'd on `rt.debug_trace` /
@@ -945,26 +964,50 @@ impl<B: ComputeBackend> AppController<B> {
         let gui = &self.state.gui;
 
         let mut per_toolpath = Vec::new();
-        for tc in session.toolpath_configs() {
-            if let Some(rt) = gui.toolpath_rt.get(&tc.id)
-                && let Some(ref result) = rt.result
-            {
-                let tool_name = session
-                    .tools()
-                    .iter()
-                    .find(|t| t.id.0 == tc.tool_id)
-                    .map(|t| t.name.clone())
-                    .unwrap_or_default();
-
-                per_toolpath.push(serde_json::json!({
+        let mut runtime_errors = Vec::new();
+        for (index, tc) in session.toolpath_configs().iter().enumerate() {
+            let tool_name = session
+                .tools()
+                .iter()
+                .find(|t| t.id.0 == tc.tool_id)
+                .map(|t| t.name.clone())
+                .unwrap_or_default();
+            if let Some(rt) = gui.toolpath_rt.get(&tc.id) {
+                let (status, error) = match &rt.status {
+                    ComputeStatus::Pending => ("Pending", None),
+                    ComputeStatus::Computing => ("Computing", None),
+                    ComputeStatus::Done => ("Done", None),
+                    ComputeStatus::Error(e) => ("Error", Some(e.clone())),
+                };
+                if let Some(error) = error.clone() {
+                    runtime_errors.push(serde_json::json!({
+                        "toolpath_index": index,
+                        "toolpath_id": tc.id,
+                        "name": tc.name,
+                        "error": error,
+                    }));
+                }
+                let mut row = serde_json::json!({
+                    "toolpath_index": index,
                     "toolpath_id": tc.id,
                     "name": tc.name,
                     "operation_type": tc.operation.label(),
                     "tool_name": tool_name,
-                    "move_count": result.stats.move_count,
-                    "cutting_distance_mm": result.stats.cutting_distance,
-                    "rapid_distance_mm": result.stats.rapid_distance,
-                }));
+                    "status": status,
+                    "error": error,
+                    "stale": rt.stale_since.is_some(),
+                });
+                if let Some(ref result) = rt.result {
+                    // SAFETY: row is a known object constructed above.
+                    #[allow(clippy::indexing_slicing)]
+                    {
+                        row["move_count"] = serde_json::json!(result.stats.move_count);
+                        row["cutting_distance_mm"] =
+                            serde_json::json!(result.stats.cutting_distance);
+                        row["rapid_distance_mm"] = serde_json::json!(result.stats.rapid_distance);
+                    }
+                }
+                per_toolpath.push(row);
             }
         }
 
@@ -1001,6 +1044,7 @@ impl<B: ComputeBackend> AppController<B> {
             "rapid_collision_count": rapid_collision_count,
             "verdict": verdict,
             "per_toolpath": per_toolpath,
+            "runtime_errors": runtime_errors,
         });
 
         if let Some(ref sim_results) = self.state.simulation.results

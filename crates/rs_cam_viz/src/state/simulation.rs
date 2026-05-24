@@ -229,8 +229,8 @@ impl SpanAggregate {
         if chip > self.peak_chip {
             self.peak_chip = chip;
         }
-        if sample.axial_doc_mm > self.peak_doc {
-            self.peak_doc = sample.axial_doc_mm;
+        if sample.axial_engagement_mm > self.peak_doc {
+            self.peak_doc = sample.axial_engagement_mm;
         }
         self.sum_mrr += sample.mrr_mm3_s;
         if sample.mrr_mm3_s > self.peak_mrr {
@@ -446,6 +446,12 @@ pub struct SimulationPlayback {
     pub playing: bool,
     /// Current move index for timeline scrubbing.
     pub current_move: usize,
+    /// Sub-integer move accumulator. Carries the fractional part of
+    /// `speed * dt` across frames so slow playback rates (< 60 mv/s at
+    /// 60 fps) actually run at the requested rate instead of being
+    /// floored to "advance at least one move per frame". Reset to 0
+    /// on scrub / play-pause toggles.
+    pub partial_move: f32,
     /// Playback speed (moves per second).
     pub speed: f32,
     /// Tool position during playback (X, Y, Z).
@@ -563,6 +569,7 @@ impl SimulationState {
             playback: SimulationPlayback {
                 playing: false,
                 current_move: 0,
+                partial_move: 0.0,
                 speed: 500.0,
                 tool_position: None,
                 tool_radius: 0.0,
@@ -749,15 +756,31 @@ impl SimulationState {
     }
 
     /// Advance playback by dt seconds. Returns true if still playing.
+    ///
+    /// Carries the fractional part of `speed * dt` across frames in
+    /// `partial_move` so the requested moves-per-second is honoured even
+    /// when it's less than the frame rate. The old `.max(1)` floor here
+    /// meant any speed below ~60 mv/s (at 60 fps) silently ran at the
+    /// frame rate — making short toolpaths (e.g. an 18-move drill cycle)
+    /// finish in a single frame regardless of the speed slider.
     pub fn advance(&mut self, dt: f32) -> bool {
         let total = self.total_moves();
         if !self.playback.playing || self.playback.current_move >= total {
             return false;
         }
-        let advance = (self.playback.speed * dt) as usize;
-        self.playback.current_move = (self.playback.current_move + advance.max(1)).min(total);
+        self.playback.partial_move += self.playback.speed * dt;
+        // SAFETY: f32 < 4e9 fits usize on every target we care about;
+        // partial_move is clamped to [0, speed * dt] so this can't grow
+        // without bound.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let step = self.playback.partial_move.floor() as usize;
+        if step > 0 {
+            self.playback.partial_move -= step as f32;
+            self.playback.current_move = (self.playback.current_move + step).min(total);
+        }
         if self.playback.current_move >= total {
             self.playback.playing = false;
+            self.playback.partial_move = 0.0;
         }
         true
     }
@@ -2068,6 +2091,7 @@ impl Default for SimulationPlayback {
         Self {
             playing: false,
             current_move: 0,
+            partial_move: 0.0,
             speed: 500.0,
             tool_position: None,
             tool_radius: 0.0,
@@ -2288,6 +2312,8 @@ mod tests {
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 1.0,
+                    axial_engagement_mm: 1.0,
+                    plunge_descent_mm: 0.0,
                     arc_engagement_radians: Some(std::f64::consts::FRAC_PI_2),
                     chipload_mm_per_tooth: 0.0083,
                     effective_chip_thickness_mm: Some(0.0083),
@@ -2311,6 +2337,8 @@ mod tests {
                     spindle_rpm: 18_000,
                     flute_count: 2,
                     axial_doc_mm: 0.4,
+                    axial_engagement_mm: 0.4,
+                    plunge_descent_mm: 0.0,
                     arc_engagement_radians: Some(std::f64::consts::FRAC_PI_2),
                     chipload_mm_per_tooth: 0.0277,
                     effective_chip_thickness_mm: Some(0.0277),

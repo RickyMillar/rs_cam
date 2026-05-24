@@ -1,15 +1,20 @@
+use rs_cam_core::feeds::FeedsResult;
+
 use crate::state::toolpath::{
     CutDirection, HorizontalFinishConfig, RadialFinishConfig, RampFinishConfig, SpiralDirection,
     SpiralFinishConfig,
 };
 
-use super::super::dv;
+use super::super::{dv, dv_pill};
 use super::draw_feed_params;
 
 pub(in crate::ui::properties) fn draw_ramp_finish_params(
     ui: &mut egui::Ui,
     cfg: &mut RampFinishConfig,
+    feeds_result: Option<&FeedsResult>,
 ) {
+    // Ramp finish: max_stepdown is a Z-step (geometry-driven, not LUT
+    // axial DOC). No stepover field. Only feed/plunge/RPM get pills.
     egui::Grid::new("rf_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -56,6 +61,7 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
             dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
             dv(
@@ -80,12 +86,22 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
 pub(in crate::ui::properties) fn draw_spiral_finish_params(
     ui: &mut egui::Ui,
     cfg: &mut SpiralFinishConfig,
+    feeds_result: Option<&FeedsResult>,
 ) {
+    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
     egui::Grid::new("spiral_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
-            dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=20.0);
+            dv_pill(
+                ui,
+                "Stepover:",
+                &mut cfg.stepover,
+                " mm",
+                0.1,
+                0.05..=20.0,
+                stepover_sugg,
+            );
             ui.label("Direction:");
             egui::ComboBox::from_id_salt("spiral_dir")
                 .selected_text(match cfg.direction {
@@ -110,6 +126,7 @@ pub(in crate::ui::properties) fn draw_spiral_finish_params(
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
             dv(
                 ui,
@@ -125,7 +142,10 @@ pub(in crate::ui::properties) fn draw_spiral_finish_params(
 pub(in crate::ui::properties) fn draw_radial_finish_params(
     ui: &mut egui::Ui,
     cfg: &mut RadialFinishConfig,
+    feeds_result: Option<&FeedsResult>,
 ) {
+    // Radial finish uses angular_step + point_spacing — neither maps to a
+    // clearing-style WOC/DOC. Only feed/plunge/RPM get pills.
     egui::Grid::new("radial_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -151,6 +171,7 @@ pub(in crate::ui::properties) fn draw_radial_finish_params(
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
             dv(
                 ui,
@@ -166,7 +187,9 @@ pub(in crate::ui::properties) fn draw_radial_finish_params(
 pub(in crate::ui::properties) fn draw_horizontal_finish_params(
     ui: &mut egui::Ui,
     cfg: &mut HorizontalFinishConfig,
+    feeds_result: Option<&FeedsResult>,
 ) {
+    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
     egui::Grid::new("horiz_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -179,12 +202,21 @@ pub(in crate::ui::properties) fn draw_horizontal_finish_params(
                 1.0,
                 1.0..=30.0,
             );
-            dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=20.0);
+            dv_pill(
+                ui,
+                "Stepover:",
+                &mut cfg.stepover,
+                " mm",
+                0.1,
+                0.05..=20.0,
+                stepover_sugg,
+            );
             draw_feed_params(
                 ui,
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
             dv(
                 ui,

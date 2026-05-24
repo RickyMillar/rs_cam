@@ -1,25 +1,38 @@
+use rs_cam_core::feeds::FeedsResult;
+
 use crate::state::toolpath::{
     Adaptive3dConfig, Adaptive3dEntryStyle, ClearingStrategy, DropCutterConfig, PencilConfig,
     RegionOrdering, ScallopConfig, ScallopDirection, SteepShallowConfig, WaterlineConfig,
 };
 
-use super::super::dv;
+use super::super::{dv, dv_pill};
 use super::draw_feed_params;
 
 pub(in crate::ui::properties) fn draw_dropcutter_params(
     ui: &mut egui::Ui,
     cfg: &mut DropCutterConfig,
+    feeds_result: Option<&FeedsResult>,
 ) {
+    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
     egui::Grid::new("dc_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
-            dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=50.0);
+            dv_pill(
+                ui,
+                "Stepover:",
+                &mut cfg.stepover,
+                " mm",
+                0.1,
+                0.05..=50.0,
+                stepover_sugg,
+            );
             draw_feed_params(
                 ui,
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
             dv(ui, "Min Z:", &mut cfg.min_z, " mm", 0.5, -500.0..=0.0);
             dv(
@@ -37,19 +50,33 @@ pub(in crate::ui::properties) fn draw_dropcutter_params(
 pub(in crate::ui::properties) fn draw_adaptive3d_params(
     ui: &mut egui::Ui,
     cfg: &mut Adaptive3dConfig,
+    feeds_result: Option<&FeedsResult>,
 ) {
+    // Spec: pill stepover + depth_per_pass; leave fine_stepdown alone
+    // (finishing-pass param the LUT doesn't speak to).
+    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
+    let dpp_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
     egui::Grid::new("a3d_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
-            dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=50.0);
-            dv(
+            dv_pill(
+                ui,
+                "Stepover:",
+                &mut cfg.stepover,
+                " mm",
+                0.1,
+                0.05..=50.0,
+                stepover_sugg,
+            );
+            dv_pill(
                 ui,
                 "Depth/Pass:",
                 &mut cfg.depth_per_pass,
                 " mm",
                 0.1,
                 0.1..=50.0,
+                dpp_sugg,
             );
             dv(
                 ui,
@@ -72,6 +99,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
             dv(
                 ui,
@@ -197,13 +225,59 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
             ui.label("Z Blend:");
             ui.checkbox(&mut cfg.z_blend, "");
             ui.end_row();
+            ui.label("Mill Shallow:").on_hover_text(
+                "Insert fine sub-passes on low-slope cells within each \
+                     DPP descent. Steep walls keep the normal DPP cadence; \
+                     shallow areas come off the rough nearly smooth. \
+                     Works with any clearing strategy.",
+            );
+            ui.checkbox(&mut cfg.mill_shallow_areas, "");
+            ui.end_row();
+            if cfg.mill_shallow_areas {
+                let mut angle = cfg.shallow_angle_deg.unwrap_or(30.0);
+                ui.label("Shallow Angle:");
+                ui.horizontal(|ui| {
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut angle)
+                                .speed(1.0)
+                                .range(5.0..=60.0)
+                                .suffix("°"),
+                        )
+                        .changed()
+                    {
+                        cfg.shallow_angle_deg = Some(angle);
+                    }
+                });
+                ui.end_row();
+                let mut step = cfg.shallow_stepdown.unwrap_or(cfg.depth_per_pass * 0.5);
+                ui.label("Shallow Step:");
+                ui.horizontal(|ui| {
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut step)
+                                .speed(0.05)
+                                .range(0.05..=cfg.depth_per_pass.max(0.1))
+                                .suffix(" mm"),
+                        )
+                        .changed()
+                    {
+                        cfg.shallow_stepdown = Some(step);
+                    }
+                });
+                ui.end_row();
+            }
         });
 }
 
 pub(in crate::ui::properties) fn draw_waterline_params(
     ui: &mut egui::Ui,
     cfg: &mut WaterlineConfig,
+    feeds_result: Option<&FeedsResult>,
 ) {
+    // Waterline: z_step is the axial pass spacing, but Step 3 LUT mapping
+    // (axial_depth_mm) is calibrated for clearing DOC, not contour Z-step.
+    // Leave Z Step alone; only feed/plunge/RPM get pills.
     egui::Grid::new("wl_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -219,11 +293,19 @@ pub(in crate::ui::properties) fn draw_waterline_params(
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
         });
 }
 
-pub(in crate::ui::properties) fn draw_pencil_params(ui: &mut egui::Ui, cfg: &mut PencilConfig) {
+pub(in crate::ui::properties) fn draw_pencil_params(
+    ui: &mut egui::Ui,
+    cfg: &mut PencilConfig,
+    feeds_result: Option<&FeedsResult>,
+) {
+    // Pencil's offset_stepover is a parallel-pass spacing, not the same
+    // shape as a clearing radial WOC; leave it alone. Only feed/plunge/RPM
+    // get pills.
     egui::Grid::new("pen_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -272,6 +354,7 @@ pub(in crate::ui::properties) fn draw_pencil_params(ui: &mut egui::Ui, cfg: &mut
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
             dv(
                 ui,
@@ -284,7 +367,13 @@ pub(in crate::ui::properties) fn draw_pencil_params(ui: &mut egui::Ui, cfg: &mut
         });
 }
 
-pub(in crate::ui::properties) fn draw_scallop_params(ui: &mut egui::Ui, cfg: &mut ScallopConfig) {
+pub(in crate::ui::properties) fn draw_scallop_params(
+    ui: &mut egui::Ui,
+    cfg: &mut ScallopConfig,
+    feeds_result: Option<&FeedsResult>,
+) {
+    // Scallop's stepover is computed from scallop_height + tool radius, not
+    // an editable field, so no stepover pill. Only feed/plunge/RPM.
     egui::Grid::new("sc_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -341,6 +430,7 @@ pub(in crate::ui::properties) fn draw_scallop_params(ui: &mut egui::Ui, cfg: &mu
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
             dv(
                 ui,
@@ -356,7 +446,9 @@ pub(in crate::ui::properties) fn draw_scallop_params(ui: &mut egui::Ui, cfg: &mu
 pub(in crate::ui::properties) fn draw_steep_shallow_params(
     ui: &mut egui::Ui,
     cfg: &mut SteepShallowConfig,
+    feeds_result: Option<&FeedsResult>,
 ) {
+    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
     egui::Grid::new("ss_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -388,13 +480,22 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
             ui.label("Steep First:");
             ui.checkbox(&mut cfg.steep_first, "");
             ui.end_row();
-            dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=50.0);
+            dv_pill(
+                ui,
+                "Stepover:",
+                &mut cfg.stepover,
+                " mm",
+                0.1,
+                0.05..=50.0,
+                stepover_sugg,
+            );
             dv(ui, "Z Step:", &mut cfg.z_step, " mm", 0.1, 0.05..=20.0);
             draw_feed_params(
                 ui,
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
             dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
             dv(

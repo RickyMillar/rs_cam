@@ -187,6 +187,7 @@ fn build_core_simulation_request(
                         spindle_rpm: tp.spindle_rpm,
                         metrics_not_applicable: tp.metrics_not_applicable,
                         drill_op: tp.drill_op.clone(),
+                        operation_config_hash: tp.operation_config_hash,
                     }
                 })
                 .collect(),

@@ -1,3 +1,5 @@
+use rs_cam_core::feeds::FeedsResult;
+
 use crate::state::job::ModelId;
 use crate::state::toolpath::{ProjectCurveConfig, ProjectCurveDirection, ProjectCurveSide};
 
@@ -8,7 +10,12 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
     ui: &mut egui::Ui,
     cfg: &mut ProjectCurveConfig,
     models: &[(ModelId, String)],
+    feeds_result: Option<&FeedsResult>,
 ) {
+    // Project-curve is an engraving op (single-line tracing onto a 3D
+    // surface). No stepover/DOC pills — only feed/plunge/RPM via
+    // draw_feed_params.
+
     // Surface model selector — lets the user pick a different model for the 3D surface.
     ui.horizontal(|ui| {
         ui.label("Surface:");
@@ -98,6 +105,7 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
         });
 }

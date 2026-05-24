@@ -920,6 +920,473 @@ impl OperationConfig {
             DepthSemantics::None => 0.0,
         }
     }
+
+    /// Operation params serialized as a plain object, with optional fields
+    /// explicitly present as JSON null instead of omitted by
+    /// `skip_serializing_if = "Option::is_none"`.
+    pub fn params_value_including_nulls(&self) -> serde_json::Value {
+        let mut value = serde_json::to_value(self).unwrap_or_else(|_| serde_json::json!({}));
+        let mut params = value
+            .get_mut("params")
+            .and_then(|v| v.as_object_mut())
+            .cloned()
+            .unwrap_or_default();
+        for def in param_defs_for_type(self.op_type()) {
+            params
+                .entry(def.name.to_owned())
+                .or_insert(serde_json::Value::Null);
+        }
+        serde_json::Value::Object(params)
+    }
+
+    /// Schema hints keyed by param name for this operation kind.
+    pub fn param_schema_hints(&self) -> std::collections::BTreeMap<String, ParamHint> {
+        let defaults = Self::new_default(self.op_type()).params_value_including_nulls();
+        let default_map = defaults.as_object();
+        param_defs_for_type(self.op_type())
+            .iter()
+            .map(|def| {
+                let default = default_map
+                    .and_then(|m| m.get(def.name))
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+                (
+                    def.name.to_owned(),
+                    ParamHint {
+                        type_name: def.type_name.to_owned(),
+                        required: !def.optional,
+                        optional: def.optional,
+                        default,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    /// Return the schema type string for one settable parameter, if known.
+    pub fn param_type_name(&self, param: &str) -> Option<&'static str> {
+        param_defs_for_type(self.op_type())
+            .iter()
+            .find(|def| def.name == param)
+            .map(|def| def.type_name)
+    }
+
+    /// Schema-backed settable param names for this operation.
+    pub fn param_names(&self) -> Vec<&'static str> {
+        Self::param_names_for_type(self.op_type())
+    }
+
+    /// Schema-backed settable param names for an operation type.
+    pub fn param_names_for_type(op_type: OperationType) -> Vec<&'static str> {
+        param_defs_for_type(op_type)
+            .iter()
+            .map(|def| def.name)
+            .collect()
+    }
+
+    /// Full operation schema for clients that need to discover params
+    /// before a toolpath exists.
+    pub fn schema_for_type(op_type: OperationType) -> OperationSchema {
+        let defaults = Self::new_default(op_type).params_value_including_nulls();
+        let default_map = defaults.as_object();
+        let params = param_defs_for_type(op_type)
+            .iter()
+            .map(|def| OperationParamSchema {
+                name: def.name.to_owned(),
+                type_name: def.type_name.to_owned(),
+                optional: def.optional,
+                default: default_map
+                    .and_then(|m| m.get(def.name))
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null),
+                range: None,
+                description: def.description.map(str::to_owned),
+            })
+            .collect();
+        OperationSchema {
+            operation_type: op_type.kind_str().to_owned(),
+            label: op_type.label().to_owned(),
+            params,
+            tool_constraints: tool_constraints_for_type(op_type),
+        }
+    }
+}
+
+/// Lightweight per-field hint included beside `get_toolpath_params`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParamHint {
+    #[serde(rename = "type")]
+    pub type_name: String,
+    pub required: bool,
+    pub optional: bool,
+    pub default: serde_json::Value,
+}
+
+/// One operation parameter entry returned by `operation_schema`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OperationParamSchema {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub type_name: String,
+    pub optional: bool,
+    pub default: serde_json::Value,
+    pub range: Option<serde_json::Value>,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolConstraints {
+    pub required_tool_type: Vec<String>,
+    pub supports_v_bit: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OperationSchema {
+    pub operation_type: String,
+    pub label: String,
+    pub params: Vec<OperationParamSchema>,
+    pub tool_constraints: ToolConstraints,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ParamDef {
+    name: &'static str,
+    type_name: &'static str,
+    optional: bool,
+    description: Option<&'static str>,
+}
+
+impl ParamDef {
+    const fn required(name: &'static str, type_name: &'static str) -> Self {
+        Self {
+            name,
+            type_name,
+            optional: false,
+            description: None,
+        }
+    }
+
+    const fn optional(name: &'static str, type_name: &'static str) -> Self {
+        Self {
+            name,
+            type_name,
+            optional: true,
+            description: None,
+        }
+    }
+
+    const fn optional_desc(
+        name: &'static str,
+        type_name: &'static str,
+        description: &'static str,
+    ) -> Self {
+        Self {
+            name,
+            type_name,
+            optional: true,
+            description: Some(description),
+        }
+    }
+}
+
+fn param_defs_for_type(op_type: OperationType) -> &'static [ParamDef] {
+    use OperationType::{
+        Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,
+        HorizontalFinish, Inlay, Pencil, Pocket, Profile, ProjectCurve, RadialFinish, RampFinish,
+        Rest, Scallop, SpiralFinish, SteepShallow, Trace, VCarve, Waterline, Zigzag,
+    };
+    const FACE: &[ParamDef] = &[
+        ParamDef::required("stepover", "f64"),
+        ParamDef::required("depth", "f64"),
+        ParamDef::required("depth_per_pass", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("stock_offset", "f64"),
+        ParamDef::required("direction", "enum:one_way|zigzag"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const TRACE: &[ParamDef] = &[
+        ParamDef::required("depth", "f64"),
+        ParamDef::required("depth_per_pass", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("compensation", "enum:center|left|right"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const DRILL: &[ParamDef] = &[
+        ParamDef::required("depth", "f64"),
+        ParamDef::required("cycle", "enum:simple|dwell|peck|chip_break"),
+        ParamDef::required("peck_depth", "f64"),
+        ParamDef::required("dwell_time", "f64"),
+        ParamDef::required("retract_amount", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("retract_z", "f64"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const ALIGNMENT_PIN_DRILL: &[ParamDef] = &[
+        ParamDef::required("holes", "array<[f64;2]>"),
+        ParamDef::required("spoilboard_penetration", "f64"),
+        ParamDef::required("cycle", "enum:simple|dwell|peck|chip_break"),
+        ParamDef::required("peck_depth", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("retract_z", "f64"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const CHAMFER: &[ParamDef] = &[
+        ParamDef::required("chamfer_width", "f64"),
+        ParamDef::required("tip_offset", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const POCKET: &[ParamDef] = &[
+        ParamDef::required("stepover", "f64"),
+        ParamDef::required("depth", "f64"),
+        ParamDef::required("depth_per_pass", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("climb", "bool"),
+        ParamDef::required("pattern", "enum:contour|zigzag"),
+        ParamDef::required("angle", "f64"),
+        ParamDef::required("finishing_passes", "usize"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const PROFILE: &[ParamDef] = &[
+        ParamDef::required("side", "enum:on|inside|outside"),
+        ParamDef::required("depth", "f64"),
+        ParamDef::required("depth_per_pass", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("climb", "bool"),
+        ParamDef::required("tab_count", "usize"),
+        ParamDef::required("tab_width", "f64"),
+        ParamDef::required("tab_height", "f64"),
+        ParamDef::required("finishing_passes", "usize"),
+        ParamDef::required("compensation", "enum:in_computer|in_control"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const ADAPTIVE: &[ParamDef] = &[
+        ParamDef::required("stepover", "f64"),
+        ParamDef::required("depth", "f64"),
+        ParamDef::required("depth_per_pass", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("tolerance", "f64"),
+        ParamDef::required("slot_clearing", "bool"),
+        ParamDef::required("min_cutting_radius", "f64"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const VCARVE: &[ParamDef] = &[
+        ParamDef::required("max_depth", "f64"),
+        ParamDef::required("stepover", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("tolerance", "f64"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const REST: &[ParamDef] = &[
+        ParamDef::optional_desc(
+            "prev_tool_id",
+            "option<usize>",
+            "Index of the prior (typically larger) tool used to define rest geometry",
+        ),
+        ParamDef::required("stepover", "f64"),
+        ParamDef::required("depth", "f64"),
+        ParamDef::required("depth_per_pass", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("angle", "f64"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const INLAY: &[ParamDef] = &[
+        ParamDef::required("pocket_depth", "f64"),
+        ParamDef::required("glue_gap", "f64"),
+        ParamDef::required("flat_depth", "f64"),
+        ParamDef::required("boundary_offset", "f64"),
+        ParamDef::required("stepover", "f64"),
+        ParamDef::required("flat_tool_radius", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("tolerance", "f64"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const ZIGZAG: &[ParamDef] = &[
+        ParamDef::required("stepover", "f64"),
+        ParamDef::required("depth", "f64"),
+        ParamDef::required("depth_per_pass", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("angle", "f64"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const DROP_CUTTER: &[ParamDef] = &[
+        ParamDef::required("stepover", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("min_z", "f64"),
+        ParamDef::required("slope_from", "f64"),
+        ParamDef::required("slope_to", "f64"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const ADAPTIVE3D: &[ParamDef] = &[
+        ParamDef::required("stepover", "f64"),
+        ParamDef::required("depth_per_pass", "f64"),
+        ParamDef::required("stock_to_leave_radial", "f64"),
+        ParamDef::required("stock_to_leave_axial", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("tolerance", "f64"),
+        ParamDef::required("min_cutting_radius", "f64"),
+        ParamDef::required("entry_style", "enum:plunge|helix|ramp"),
+        ParamDef::required("ramp_angle_deg", "f64"),
+        ParamDef::required("helix_radius_factor", "f64"),
+        ParamDef::required("helix_pitch", "f64"),
+        ParamDef::required("fine_stepdown", "f64"),
+        ParamDef::required("detect_flat_areas", "bool"),
+        ParamDef::required("region_ordering", "enum:global|by_area"),
+        ParamDef::required(
+            "clearing_strategy",
+            "enum:contour_parallel|adaptive|agent_search",
+        ),
+        ParamDef::required("z_blend", "bool"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+        ParamDef::required("mill_shallow_areas", "bool"),
+        ParamDef::optional("shallow_angle_deg", "option<f64>"),
+        ParamDef::optional("shallow_stepdown", "option<f64>"),
+    ];
+    const WATERLINE: &[ParamDef] = &[
+        ParamDef::required("z_step", "f64"),
+        ParamDef::required("sampling", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("continuous", "bool"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const PENCIL: &[ParamDef] = &[
+        ParamDef::required("bitangency_angle", "f64"),
+        ParamDef::required("min_cut_length", "f64"),
+        ParamDef::required("hookup_distance", "f64"),
+        ParamDef::required("num_offset_passes", "usize"),
+        ParamDef::required("offset_stepover", "f64"),
+        ParamDef::required("sampling", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("stock_to_leave", "f64"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const SCALLOP: &[ParamDef] = &[
+        ParamDef::required("scallop_height", "f64"),
+        ParamDef::required("tolerance", "f64"),
+        ParamDef::required("direction", "enum:x|y"),
+        ParamDef::required("continuous", "bool"),
+        ParamDef::required("slope_from", "f64"),
+        ParamDef::required("slope_to", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("stock_to_leave", "f64"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const STEEP_SHALLOW: &[ParamDef] = &[
+        ParamDef::required("threshold_angle", "f64"),
+        ParamDef::required("overlap_distance", "f64"),
+        ParamDef::required("wall_clearance", "f64"),
+        ParamDef::required("steep_first", "bool"),
+        ParamDef::required("stepover", "f64"),
+        ParamDef::required("z_step", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("sampling", "f64"),
+        ParamDef::required("stock_to_leave", "f64"),
+        ParamDef::required("tolerance", "f64"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const RAMP_FINISH: &[ParamDef] = &[
+        ParamDef::required("max_stepdown", "f64"),
+        ParamDef::required("slope_from", "f64"),
+        ParamDef::required("slope_to", "f64"),
+        ParamDef::required("direction", "enum:climb|conventional"),
+        ParamDef::required("order_bottom_up", "bool"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("sampling", "f64"),
+        ParamDef::required("stock_to_leave", "f64"),
+        ParamDef::required("tolerance", "f64"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const SPIRAL_FINISH: &[ParamDef] = &[
+        ParamDef::required("stepover", "f64"),
+        ParamDef::required("direction", "enum:outward|inward"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("stock_to_leave", "f64"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const RADIAL_FINISH: &[ParamDef] = &[
+        ParamDef::required("angular_step", "f64"),
+        ParamDef::required("point_spacing", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("stock_to_leave", "f64"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const HORIZONTAL_FINISH: &[ParamDef] = &[
+        ParamDef::required("angle_threshold", "f64"),
+        ParamDef::required("stepover", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::required("stock_to_leave", "f64"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+    const PROJECT_CURVE: &[ParamDef] = &[
+        ParamDef::required("depth", "f64"),
+        ParamDef::required("point_spacing", "f64"),
+        ParamDef::required("feed_rate", "f64"),
+        ParamDef::required("plunge_rate", "f64"),
+        ParamDef::optional("surface_model_id", "option<usize>"),
+        ParamDef::required("direction", "enum:from_above|from_below"),
+        ParamDef::required("side", "enum:center|inside|outside"),
+        ParamDef::optional("spindle_rpm", "option<u32>"),
+    ];
+
+    match op_type {
+        Face => FACE,
+        Pocket => POCKET,
+        Profile => PROFILE,
+        Adaptive => ADAPTIVE,
+        VCarve => VCARVE,
+        Rest => REST,
+        Inlay => INLAY,
+        Zigzag => ZIGZAG,
+        Trace => TRACE,
+        Drill => DRILL,
+        Chamfer => CHAMFER,
+        DropCutter => DROP_CUTTER,
+        Adaptive3d => ADAPTIVE3D,
+        Waterline => WATERLINE,
+        Pencil => PENCIL,
+        Scallop => SCALLOP,
+        SteepShallow => STEEP_SHALLOW,
+        RampFinish => RAMP_FINISH,
+        SpiralFinish => SPIRAL_FINISH,
+        RadialFinish => RADIAL_FINISH,
+        HorizontalFinish => HORIZONTAL_FINISH,
+        ProjectCurve => PROJECT_CURVE,
+        AlignmentPinDrill => ALIGNMENT_PIN_DRILL,
+    }
+}
+
+fn tool_constraints_for_type(op_type: OperationType) -> ToolConstraints {
+    let (required, supports_v_bit) = match op_type {
+        OperationType::VCarve | OperationType::Inlay | OperationType::Chamfer => {
+            (vec!["v_bit"], true)
+        }
+        OperationType::Scallop => (vec!["ball_nose", "tapered_ball_nose"], false),
+        _ => (Vec::new(), true),
+    };
+    ToolConstraints {
+        required_tool_type: required.into_iter().map(str::to_owned).collect(),
+        supports_v_bit,
+    }
 }
 
 /// Stock context for [`OperationConfig::new_default_with_ctx`] and
@@ -971,39 +1438,13 @@ impl OperationConfig {
     /// profile / drill / adaptive `depth`. No-op for ops whose default
     /// is already stock-agnostic.
     pub fn apply_stock_defaults(&mut self, ctx: &NewDefaultCtx) {
-        match self {
-            // B.1 — drop_cutter min_z is the absolute Z floor; default
-            // (-50.0) is wrong for any stock that doesn't sit at exactly
-            // that depth. Use the stock bottom so the cutter scans the
-            // whole stock without clipping.
-            OperationConfig::DropCutter(cfg) => {
-                cfg.min_z = ctx.stock_bottom_z;
-            }
-            // B.2 — face depth defaults to 0 (single-pass at stock
-            // top) which produces a do-nothing toolpath. Use the stock
-            // padding (typical stock-top minus model-top margin) or 1mm
-            // as a sensible "skim the surface" depth.
-            OperationConfig::Face(cfg) => {
-                cfg.depth = ctx.stock_padding.max(1.0);
-            }
-            // B.3 — pocket / profile / drill / adaptive get static
-            // depth defaults that are unrelated to stock. Profile and
-            // Drill are typically full-through; Pocket and Adaptive
-            // make more sense at half-stock.
-            OperationConfig::Profile(cfg) => {
-                cfg.depth = ctx.stock_z;
-            }
-            OperationConfig::Drill(cfg) => {
-                cfg.depth = ctx.stock_z;
-            }
-            OperationConfig::Pocket(cfg) => {
-                cfg.depth = (ctx.stock_z * 0.5).min(5.0);
-            }
-            OperationConfig::Adaptive(cfg) => {
-                cfg.depth = ctx.stock_z * 0.5;
-            }
-            _ => {}
-        }
+        let stock_ctx = crate::feeds::suggest::StockContext {
+            stock_top_z: ctx.stock_top_z,
+            stock_bottom_z: ctx.stock_bottom_z,
+            stock_z: ctx.stock_z,
+            stock_padding: ctx.stock_padding,
+        };
+        crate::feeds::suggest::apply_stock_defaults(self, &stock_ctx);
     }
 
     pub fn new_default(op_type: OperationType) -> Self {

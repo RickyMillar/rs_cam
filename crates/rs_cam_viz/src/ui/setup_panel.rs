@@ -46,6 +46,12 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     // Project summary card
     draw_project_summary(ui, state);
 
+    // Project-wide diagnostics card — surfaces collisions, air-cut
+    // outliers, plunge-stress, and generated-empty toolpaths via the
+    // unified diagnostic schema. Hidden when the session has no
+    // findings so a healthy project shows nothing here.
+    draw_project_diagnostics_card(ui, state);
+
     ui.add_space(6.0);
 
     // Setup cards
@@ -263,6 +269,75 @@ fn chip(ui: &mut egui::Ui, key: &str, value: &str, color: egui::Color32) {
 }
 
 /// Compact project summary: ops, tools, estimated time, readiness.
+fn draw_project_diagnostics_card(ui: &mut egui::Ui, state: &AppState) {
+    use rs_cam_core::diagnostics::{Category, Severity};
+
+    // Build the same viz-side evidence the MCP handler uses so the
+    // GUI and MCP report identical project diagnostics.
+    let boundaries: Vec<(usize, usize, usize)> = state
+        .simulation
+        .results
+        .as_ref()
+        .map(|r| {
+            r.boundaries
+                .iter()
+                .map(|b| (b.id.0, b.start_move, b.end_move))
+                .collect()
+        })
+        .unwrap_or_default();
+    let cut_trace = state
+        .simulation
+        .results
+        .as_ref()
+        .and_then(|r| r.cut_trace.as_deref());
+    let evidence = rs_cam_core::session::ProjectEvidence {
+        boundaries,
+        rapid_collisions: &state.simulation.checks.rapid_collisions,
+        rapid_collision_move_indices: &state.simulation.checks.rapid_collision_move_indices,
+        cut_trace,
+    };
+    let diagnostics = state.session.diagnose_project_with_evidence(&evidence);
+    if diagnostics.is_empty() {
+        return;
+    }
+
+    ui.add_space(4.0);
+    egui::Frame::default()
+        .fill(egui::Color32::from_rgb(38, 32, 32))
+        .inner_margin(6.0)
+        .rounding(4.0)
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new("Project findings")
+                    .small()
+                    .strong()
+                    .color(theme::TEXT_DIM),
+            );
+            for d in &diagnostics {
+                let color = match d.severity {
+                    Severity::Blocking | Severity::Critical => {
+                        egui::Color32::from_rgb(220, 100, 80)
+                    }
+                    Severity::Caution => egui::Color32::from_rgb(220, 180, 60),
+                    Severity::Hint | Severity::Info => egui::Color32::from_rgb(140, 180, 220),
+                };
+                let prefix = match d.category {
+                    Category::Safety => "Safety",
+                    Category::Geometry => "Geometry",
+                    Category::ToolLoad => "Tool load",
+                    Category::Quality => "Quality",
+                    Category::Efficiency => "Efficiency",
+                    Category::State => "State",
+                };
+                ui.label(
+                    egui::RichText::new(format!("• {prefix}: {}", d.message))
+                        .small()
+                        .color(color),
+                );
+            }
+        });
+}
+
 fn draw_project_summary(ui: &mut egui::Ui, state: &AppState) {
     let enabled_ops = state
         .session

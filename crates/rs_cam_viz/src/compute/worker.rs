@@ -88,6 +88,12 @@ pub struct SetupSimToolpath {
     /// stamping. Populated by [`crate::controller::events::simulation`]
     /// from the session's cached `ToolpathComputeResult`.
     pub drill_op: Option<Arc<rs_cam_core::drill_op::DrillOp>>,
+    /// Hash of the toolpath's `OperationConfig` at sim-build time.
+    /// Forwarded to `SimToolpathEntry.operation_config_hash` so the
+    /// provenance builder can stamp it without holding the config.
+    /// Lets [`rs_cam_core::gcode::sim_trace_is_fresh`] invalidate
+    /// cached load verdicts on config-only edits like `feed_rate`.
+    pub operation_config_hash: u64,
 }
 
 /// A group of toolpaths from one setup in setup-local coordinates.

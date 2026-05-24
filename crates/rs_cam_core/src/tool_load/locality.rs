@@ -171,6 +171,8 @@ mod tests {
             spindle_rpm: 18000,
             flute_count: 2,
             axial_doc_mm: 1.0,
+            axial_engagement_mm: 1.0,
+            plunge_descent_mm: 0.0,
             arc_engagement_radians: arc,
             chipload_mm_per_tooth: 0.03,
             effective_chip_thickness_mm: None,

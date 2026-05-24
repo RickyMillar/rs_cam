@@ -137,6 +137,21 @@ Visible sources recorded there include:
 
 The manifest includes URLs, titles, coverage notes, and access dates.
 
+### Acceptance benchmark seed sources
+
+`planning/SUGGEST_SIM_OPTIMIZE_ACCEPTANCE.md` and the seed matrix in
+`planning/toolpath_acceptance/` add benchmark/acceptance targets from the
+bundled vendor LUT plus these external reference and community sources:
+
+- Cutter Shop chip-load chart: <https://cutter-shop.com/chip-load-chart/>
+- IDC Woodcraft chipload calculator/chart: <https://idcwoodcraft.com/pages/chipload-calculator>
+- Carbide3D community feeds/speeds discussion: <https://community.carbide3d.com/t/feeds-and-speeds-guide/17048>
+- CutViewer ball-nose stepover/cusp calculator: <https://cutviewer.com/tools/stepover-calculator/>
+- CNC Cookbook deep-hole drilling reference: <https://www.cnccookbook.com/deep-hole-drilling/>
+
+These sources are used as acceptance and sweep-planning benchmarks, not as
+new bundled runtime LUT data.
+
 ### Material-property and force-model references
 
 The integrated feeds/material stack also depends on direct material and formula sources captured during development. The source set currently includes:

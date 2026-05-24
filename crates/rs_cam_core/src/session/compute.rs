@@ -24,9 +24,12 @@ use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder, enri
 use crate::simulation_cut::SimulationMetricOptions;
 use crate::tool::MillingCutter;
 
+use serde::{Deserialize, Serialize};
+
 use super::{
-    ProjectDiagnostics, ProjectSession, SessionError, SimulationOptions, ToolpathComputeResult,
-    ToolpathDiagnostic, Verdict, VerdictEvidence, VerdictKind, VerdictSeverity,
+    ProjectDiagnostics, ProjectEvidence, ProjectSession, SessionError, SimulationOptions,
+    ToolpathComputeResult, ToolpathDiagnostic, Verdict, VerdictEvidence, VerdictKind,
+    VerdictSeverity,
 };
 
 /// Translate a triangle mesh by (dx, dy, dz) and rebuild bbox/faces.
@@ -35,12 +38,90 @@ use super::{
 /// double-encode scalar values (e.g. `"7"` arriving as the literal
 /// 3-char string `"7"`). Returns the input unchanged when there are no
 /// surrounding quotes or when the string isn't long enough to have any.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StaleSet {
+    pub toolpath_indices: Vec<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MutationKind {
+    ToolpathParamChanged { toolpath_index: usize },
+    ToolParamChanged { tool_index: usize },
+    SetupChanged { setup_id: usize },
+    StockChanged,
+    AllToolpaths,
+}
+
+pub fn compute_stale_set(session: &ProjectSession, mutation: MutationKind) -> StaleSet {
+    let mut toolpath_indices: Vec<usize> = match mutation {
+        MutationKind::ToolpathParamChanged { toolpath_index } => (toolpath_index
+            < session.toolpath_count())
+        .then_some(toolpath_index)
+        .into_iter()
+        .collect(),
+        MutationKind::ToolParamChanged { tool_index } => session
+            .tools()
+            .get(tool_index)
+            .map(|tool| {
+                session
+                    .toolpath_configs()
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, tc)| (tc.tool_id == tool.id.0).then_some(index))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        MutationKind::SetupChanged { setup_id } => session
+            .find_setup_by_id(setup_id)
+            .map(|(_, setup)| setup.toolpath_indices.clone())
+            .unwrap_or_default(),
+        MutationKind::StockChanged | MutationKind::AllToolpaths => {
+            (0..session.toolpath_count()).collect()
+        }
+    };
+    toolpath_indices.sort_unstable();
+    toolpath_indices.dedup();
+    StaleSet { toolpath_indices }
+}
+
 pub(crate) fn strip_outer_quotes(s: &str) -> &str {
     if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
         &s[1..s.len() - 1]
     } else {
         s
     }
+}
+
+/// Transform an axis-aligned bbox from world frame into a setup-local
+/// frame defined by `info`. Result remains axis-aligned because all
+/// setup transforms are 90° increments + translation.
+fn transform_bbox_world_to_local(
+    bbox: &crate::geo::BoundingBox3,
+    info: &crate::compute::transform::SetupTransformInfo,
+) -> crate::geo::BoundingBox3 {
+    use crate::geo::P3;
+    let corners = [
+        P3::new(bbox.min.x, bbox.min.y, bbox.min.z),
+        P3::new(bbox.max.x, bbox.min.y, bbox.min.z),
+        P3::new(bbox.min.x, bbox.max.y, bbox.min.z),
+        P3::new(bbox.max.x, bbox.max.y, bbox.min.z),
+        P3::new(bbox.min.x, bbox.min.y, bbox.max.z),
+        P3::new(bbox.max.x, bbox.min.y, bbox.max.z),
+        P3::new(bbox.min.x, bbox.max.y, bbox.max.z),
+        P3::new(bbox.max.x, bbox.max.y, bbox.max.z),
+    ];
+    let mut min = P3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY);
+    let mut max = P3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for c in corners {
+        let p = info.world_to_local(c);
+        min.x = min.x.min(p.x);
+        min.y = min.y.min(p.y);
+        min.z = min.z.min(p.z);
+        max.x = max.x.max(p.x);
+        max.y = max.y.max(p.y);
+        max.z = max.z.max(p.z);
+    }
+    crate::geo::BoundingBox3 { min, max }
 }
 
 fn translate_mesh(mesh: &TriangleMesh, dx: f64, dy: f64, dz: f64) -> TriangleMesh {
@@ -83,6 +164,23 @@ impl ProjectSession {
         let as_number = |v: &serde_json::Value| -> Option<f64> {
             v.as_f64()
                 .or_else(|| v.as_str().and_then(|s| strip_outer_quotes(s).parse().ok()))
+        };
+        let is_integer_param_type = |ty: Option<&str>| -> bool {
+            matches!(ty, Some("usize" | "u32" | "option<usize>" | "option<u32>"))
+        };
+        let number_from_integral_float = |n: &serde_json::Number| -> Option<serde_json::Value> {
+            let f = n.as_f64()?;
+            if !f.is_finite() || f.fract() != 0.0 {
+                return None;
+            }
+            if f < i64::MIN as f64 || f > i64::MAX as f64 {
+                return None;
+            }
+            // SAFETY: finite + integer-valued + i64 range checked above.
+            #[allow(clippy::cast_possible_truncation)]
+            Some(serde_json::Value::Number(serde_json::Number::from(
+                f as i64,
+            )))
         };
 
         match param {
@@ -156,6 +254,7 @@ impl ProjectSession {
             }
             _ => {
                 // Config-specific param: serialize -> merge -> deserialize
+                let target_type = tc.operation.param_type_name(param);
                 let mut json = serde_json::to_value(&tc.operation).map_err(|e| {
                     SessionError::InvalidParam(format!("failed to serialize config: {e}"))
                 })?;
@@ -206,6 +305,32 @@ impl ProjectSession {
                             _ => value,
                         }
                     }
+                    (existing_opt, serde_json::Value::Number(n))
+                        if is_integer_param_type(target_type)
+                            || existing_opt.and_then(|v| v.as_i64()).is_some() =>
+                    {
+                        number_from_integral_float(n).unwrap_or(value)
+                    }
+                    // Some MCP wrappers double-encode strings ("7" arrives
+                    // as the literal 3-char string `"7"`). Strip surrounding
+                    // quotes before parsing so both `"7"` and `"\"7\""`
+                    // arrive as a number. Integer-backed fields must become
+                    // JSON integer numbers (not 1.0), otherwise serde rejects
+                    // them for usize/u32/newtype Option wrappers.
+                    (existing_opt, serde_json::Value::String(s))
+                        if is_integer_param_type(target_type)
+                            || existing_opt.and_then(|v| v.as_i64()).is_some() =>
+                    {
+                        match strip_outer_quotes(s).parse::<i64>() {
+                            Ok(n) => serde_json::Value::Number(serde_json::Number::from(n)),
+                            Err(_) => match strip_outer_quotes(s).parse::<f64>() {
+                                Ok(n) => serde_json::Number::from_f64(n)
+                                    .map(serde_json::Value::Number)
+                                    .unwrap_or(value),
+                                Err(_) => value,
+                            },
+                        }
+                    }
                     (existing_opt, serde_json::Value::String(s))
                         if existing_opt.is_none_or(|v| v.is_number()) =>
                     {
@@ -219,9 +344,18 @@ impl ProjectSession {
                     _ => value,
                 };
                 params_obj.insert(param.to_owned(), value);
+                let valid_params = tc.operation.param_names();
                 let new_op: crate::compute::catalog::OperationConfig = serde_json::from_value(json)
                     .map_err(|e| {
-                        SessionError::InvalidParam(format!("invalid value for '{param}': {e}"))
+                        if !existed && target_type.is_none() {
+                            SessionError::InvalidParam(format!(
+                                "unknown parameter '{param}' for {} operation. Valid parameters: {}",
+                                tc.operation.label(),
+                                valid_params.join(", ")
+                            ))
+                        } else {
+                            SessionError::InvalidParam(format!("invalid value for '{param}': {e}"))
+                        }
                     })?;
                 // Verify the param was actually consumed: re-serialize and check.
                 // Serde ignores unknown fields by default, so a truly unknown param
@@ -239,8 +373,9 @@ impl ProjectSession {
                         .is_some_and(|obj| obj.contains_key(param));
                     if !found {
                         return Err(SessionError::InvalidParam(format!(
-                            "unknown parameter '{param}' for {} operation",
-                            tc.operation.label()
+                            "unknown parameter '{param}' for {} operation. Valid parameters: {}",
+                            tc.operation.label(),
+                            valid_params.join(", ")
                         )));
                     }
                 }
@@ -253,6 +388,29 @@ impl ProjectSession {
         self.simulation = None;
 
         Ok(())
+    }
+
+    /// Return the full parameter schema for an operation kind without
+    /// requiring an existing toolpath.
+    pub fn operation_schema(
+        operation_type: &str,
+    ) -> Result<crate::compute::catalog::OperationSchema, SessionError> {
+        let op_type: crate::compute::catalog::OperationType = serde_json::from_value(
+            serde_json::Value::String(operation_type.to_owned()),
+        )
+        .map_err(|e| {
+            let valid = crate::compute::catalog::OperationType::ALL
+                .iter()
+                .map(|op| op.kind_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            SessionError::InvalidParam(format!(
+                "unknown operation type '{operation_type}': {e}. Valid operation_type values: {valid}"
+            ))
+        })?;
+        Ok(crate::compute::catalog::OperationConfig::schema_for_type(
+            op_type,
+        ))
     }
 
     /// Set a parameter on a tool definition.
@@ -573,6 +731,7 @@ impl ProjectSession {
                 let dressed = crate::compute::execute::apply_dressups(
                     annotated,
                     &tc.dressups,
+                    tc.operation.feed_rate(),
                     tool_def.diameter(),
                     heights.retract_z,
                     // Stock top in the simulator's frame (= the bbox passed to
@@ -967,6 +1126,9 @@ impl ProjectSession {
                         spindle_rpm: tc.operation.spindle_rpm(),
                         metrics_not_applicable,
                         drill_op: result.drill_op().cloned(),
+                        operation_config_hash: crate::compute::simulate::hash_operation_config(
+                            &tc.operation,
+                        ),
                     });
                 }
             }
@@ -1126,14 +1288,30 @@ impl ProjectSession {
         ))
     }
 
-    /// Compute project diagnostics from current results and simulation.
-    ///
-    /// Rapid collision counts come from the simulation result (which checks
-    /// against the actual remaining stock surface). If no simulation has
-    /// been run, rapid collision counts are 0 — we don't fall back to the
-    /// inaccurate original-bbox check.
+    /// Compute project diagnostics from current results and the
+    /// session's cached simulation. Consumers that hold sim evidence
+    /// outside the core session (the GUI keeps it on viz-side state)
+    /// should call [`Self::diagnostics_with_evidence`] instead.
     #[instrument(skip(self))]
     pub fn diagnostics(&self) -> ProjectDiagnostics {
+        let evidence = self
+            .simulation
+            .as_ref()
+            .map(ProjectEvidence::from_simulation)
+            .unwrap_or_default();
+        self.diagnostics_with_evidence(&evidence)
+    }
+
+    /// Same as [`Self::diagnostics`] but takes a borrow view over
+    /// simulation evidence. Used by the GUI MCP handler where the
+    /// active sim lives on viz-side state, not on the core session.
+    ///
+    /// Rapid collision counts come from the supplied evidence (which checks
+    /// against the actual remaining stock surface). If no evidence is
+    /// supplied, rapid collision counts are 0 — we don't fall back to the
+    /// inaccurate original-bbox check.
+    #[instrument(skip_all)]
+    pub fn diagnostics_with_evidence(&self, evidence: &ProjectEvidence<'_>) -> ProjectDiagnostics {
         let mut per_toolpath = Vec::new();
         let mut total_collision_count: usize = 0;
         let mut total_rapid_collision_count: usize = 0;
@@ -1156,30 +1334,31 @@ impl ProjectSession {
         let (rapid_counts_by_boundary, rapid_worst_by_boundary): (
             RapidCountsByBoundary,
             RapidWorstByBoundary,
-        ) = if let Some(sim) = &self.simulation {
-            let counts = sim
+        ) = {
+            let counts = evidence
                 .boundaries
                 .iter()
-                .map(|b| {
-                    let count = sim
+                .map(|&(id, start, end)| {
+                    let count = evidence
                         .rapid_collision_move_indices
                         .iter()
-                        .filter(|&&mi| mi >= b.start_move && mi < b.end_move)
+                        .filter(|&&mi| mi >= start && mi < end)
                         .count();
-                    (b.id, count)
+                    (id, count)
                 })
                 .collect();
 
             // Pick the worst (lowest end.z = deepest descent) rapid collision
             // per boundary so the verdict layer can cite a representative
             // move for the fix hint.
-            let worst = sim
+            let worst = evidence
                 .boundaries
                 .iter()
-                .filter_map(|b| {
-                    sim.rapid_collisions
+                .filter_map(|&(id, start, end)| {
+                    evidence
+                        .rapid_collisions
                         .iter()
-                        .filter(|rc| rc.move_index >= b.start_move && rc.move_index < b.end_move)
+                        .filter(|rc| rc.move_index >= start && rc.move_index < end)
                         .min_by(|a, c| {
                             a.end
                                 .z
@@ -1188,7 +1367,7 @@ impl ProjectSession {
                         })
                         .map(|rc| {
                             (
-                                b.id,
+                                id,
                                 RapidWorst {
                                     move_index: rc.move_index,
                                     z: rc.end.z,
@@ -1199,8 +1378,6 @@ impl ProjectSession {
                 .collect();
 
             (counts, worst)
-        } else {
-            (Vec::new(), Vec::new())
         };
 
         for (idx, tc) in self.toolpath_configs.iter().enumerate() {
@@ -1271,18 +1448,14 @@ impl ProjectSession {
 
         // Extract simulation metrics if available
         let (total_runtime_s, air_cut_percentage, average_engagement) =
-            if let Some(sim) = &self.simulation {
-                if let Some(trace) = &sim.cut_trace {
-                    let summary = &trace.summary;
-                    let air_pct = if summary.total_runtime_s > 0.0 {
-                        summary.air_cut_time_s / summary.total_runtime_s * 100.0
-                    } else {
-                        0.0
-                    };
-                    (summary.total_runtime_s, air_pct, summary.average_engagement)
+            if let Some(trace) = evidence.cut_trace {
+                let summary = &trace.summary;
+                let air_pct = if summary.total_runtime_s > 0.0 {
+                    summary.air_cut_time_s / summary.total_runtime_s * 100.0
                 } else {
-                    (0.0, 0.0, 0.0)
-                }
+                    0.0
+                };
+                (summary.total_runtime_s, air_pct, summary.average_engagement)
             } else {
                 (0.0, 0.0, 0.0)
             };
@@ -1293,10 +1466,8 @@ impl ProjectSession {
         // is intrinsic. Per-TP thresholds live on `OperationType`
         // (see `OperationType::air_cut_high_threshold_pct`).
         // P1 — see planning/P1_AIR_CUT_THRESHOLDS_RCA.md.
-        let air_cut_offenders: Vec<(String, f64)> = self
-            .simulation
-            .as_ref()
-            .and_then(|s| s.cut_trace.as_deref())
+        let air_cut_offenders: Vec<(String, f64)> = evidence
+            .cut_trace
             .map(|trace| {
                 air_cut_offenders_for_toolpaths(&trace.toolpath_summaries, &self.toolpath_configs)
             })
@@ -1515,6 +1686,170 @@ impl ProjectSession {
         crate::gcode::project_load_report(self, sim_trace)
     }
 
+    /// Compute the unified diagnostic list for a single toolpath
+    /// using the session's own cached simulation. Consumers that
+    /// have a sim trace held outside the core session (the GUI
+    /// keeps its trace on the viz-side state) should call
+    /// [`Self::diagnose_toolpath_with_trace`] instead — otherwise
+    /// the load gates will read as `NeedsSimulation` even when a
+    /// fresh trace exists elsewhere.
+    ///
+    /// Returns the list with [`crate::diagnostics::apply_supersession`]
+    /// already applied — heuristic pre-sim hints vanish when sim
+    /// evidence is current.
+    pub fn diagnose_toolpath(
+        &self,
+        index: usize,
+    ) -> Result<Vec<crate::diagnostics::Diagnostic>, SessionError> {
+        let sim_trace = self
+            .simulation
+            .as_ref()
+            .and_then(|sim| sim.cut_trace.as_deref());
+        self.diagnose_toolpath_with_trace(index, sim_trace)
+    }
+
+    /// Same as [`Self::diagnose_toolpath`] but takes an explicit
+    /// sim trace. Used by the GUI MCP handler where the active sim
+    /// trace lives on the viz-side state, not on the core session.
+    ///
+    /// PR-5 polish: computes heights via [`Self::height_context_for_toolpath`]
+    /// and the feeds-calculator result via [`Self::feeds_result_for_toolpath`],
+    /// so MCP consumers see the same heights / pre-sim hint diagnostics the
+    /// GUI panel renders.
+    pub fn diagnose_toolpath_with_trace(
+        &self,
+        index: usize,
+        sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
+    ) -> Result<Vec<crate::diagnostics::Diagnostic>, SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        let tool = self
+            .find_tool_by_raw_id(tc.tool_id)
+            .ok_or(SessionError::ToolNotFound(ToolId(tc.tool_id)))?;
+        let stale_defaults = crate::compute::validate::validate_one_toolpath(
+            tc,
+            Some(tool),
+            &self.stock.material,
+            self.stock_bbox().min.z,
+        );
+        // Build the load report from the *supplied* trace so callers
+        // can plug in viz-side traces. `gcode::project_load_report`
+        // applies its own staleness check via `sim_trace_is_fresh`.
+        let report = crate::gcode::project_load_report(self, sim_trace);
+        let load_verdict = report.per_toolpath.iter().find(|v| v.toolpath_id == tc.id);
+
+        let height_ctx = self.height_context_for_toolpath(tc);
+        let heights =
+            crate::diagnostics::adapters::from_static_checks::ResolvedHeights::from_context(
+                &height_ctx,
+            );
+        let feeds_result = self.feeds_result_for_toolpath(tc, tool);
+
+        let inputs = crate::diagnostics::ToolpathDiagnoseInputs {
+            toolpath_id: tc.id,
+            operation: &tc.operation,
+            tool,
+            heights: Some(&heights),
+            feeds_result: feeds_result.as_ref(),
+            load_verdict,
+            stale_defaults: &stale_defaults,
+        };
+        Ok(crate::diagnostics::diagnose_toolpath_inputs(&inputs))
+    }
+
+    /// Build a [`HeightContext`] for a given toolpath. Mirrors the GUI's
+    /// `height_context_from_session` so MCP consumers see the same heights
+    /// diagnostics the params panel renders.
+    pub fn height_context_for_toolpath(
+        &self,
+        tc: &super::ToolpathConfig,
+    ) -> crate::compute::config::HeightContext {
+        let sb = self.stock.bbox();
+        let raw_mb = self
+            .models
+            .iter()
+            .find(|m| m.id == tc.model_id)
+            .and_then(|m| {
+                m.mesh.as_ref().map(|mesh| mesh.bbox).or_else(|| {
+                    m.polygons
+                        .as_deref()
+                        .and_then(|v| super::mutation::polygons_bbox(v))
+                })
+            });
+        // Apply the setup transform that owns this toolpath so model_top/bottom_z
+        // are in the setup-local frame.
+        let setup = self.setups.iter().find(|s| {
+            s.toolpath_indices
+                .iter()
+                .any(|&i| self.toolpath_configs.get(i).is_some_and(|t| t.id == tc.id))
+        });
+        let mb = match (raw_mb, setup) {
+            (Some(b), Some(s)) => {
+                let info = self.setup_transform_info(s.face_up, s.z_rotation);
+                Some(transform_bbox_world_to_local(&b, &info))
+            }
+            (Some(b), None) => Some(b),
+            _ => None,
+        };
+        let safe_z = crate::compute::config::effective_safe_z(self.post.safe_z, sb.max.z);
+        crate::compute::config::HeightContext {
+            safe_z,
+            op_depth: tc.operation.default_depth_for_heights(),
+            stock_top_z: sb.max.z,
+            stock_bottom_z: sb.min.z,
+            model_top_z: mb.map(|b| b.max.z),
+            model_bottom_z: mb.map(|b| b.min.z),
+        }
+    }
+
+    /// Run the feeds calculator for a single toolpath against the session's
+    /// material/machine/post — used by [`Self::diagnose_toolpath_with_trace`]
+    /// to surface the same feeds warnings + pre-sim heuristic hints the GUI
+    /// params panel emits.
+    ///
+    /// Returns `None` for op kinds whose feeds_style doesn't model cutting
+    /// (e.g. tool-change-only ops), in which case the heuristic hint
+    /// adapter is skipped.
+    pub fn feeds_result_for_toolpath(
+        &self,
+        tc: &super::ToolpathConfig,
+        tool: &ToolConfig,
+    ) -> Option<crate::feeds::FeedsResult> {
+        Some(crate::feeds::suggest::feeds_result_for_operation(
+            &tc.operation,
+            tool,
+            &self.stock.material,
+            &self.machine,
+            self.stock.workholding_rigidity,
+            crate::feeds::embedded_vendor_lut(),
+        ))
+    }
+
+    /// Project-wide diagnostics derived from the
+    /// [`ProjectDiagnostics`] snapshot using the session's cached
+    /// simulation. Consumers with sim evidence outside the session
+    /// (the GUI) should call [`Self::diagnose_project_with_evidence`].
+    pub fn diagnose_project(&self) -> Vec<crate::diagnostics::Diagnostic> {
+        let evidence = self
+            .simulation
+            .as_ref()
+            .map(ProjectEvidence::from_simulation)
+            .unwrap_or_default();
+        self.diagnose_project_with_evidence(&evidence)
+    }
+
+    /// Same as [`Self::diagnose_project`] but takes a borrow view
+    /// over sim evidence. Used by the GUI MCP handler.
+    pub fn diagnose_project_with_evidence(
+        &self,
+        evidence: &ProjectEvidence<'_>,
+    ) -> Vec<crate::diagnostics::Diagnostic> {
+        let diag = self.diagnostics_with_evidence(evidence);
+        crate::diagnostics::diagnose_project_diagnostics(&diag)
+    }
+
     /// Export diagnostics as JSON files to an output directory.
     #[instrument(skip(self))]
     pub fn export_diagnostics_json(&self, output_dir: &Path) -> Result<(), SessionError> {
@@ -1629,7 +1964,7 @@ mod tests {
     use super::*;
     use crate::compute::catalog::OperationConfig;
     use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
-    use crate::compute::operation_configs::PocketConfig;
+    use crate::compute::operation_configs::{DrillConfig, PocketConfig, RestConfig};
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::debug_trace::ToolpathDebugOptions;
     use crate::gcode::CoolantMode;
@@ -1742,6 +2077,129 @@ mod tests {
         }
     }
 
+    fn make_rest_tc(tool_id: usize) -> ToolpathConfig {
+        let mut tc = make_tc(tool_id);
+        tc.operation = OperationConfig::Rest(RestConfig::default());
+        tc
+    }
+
+    fn make_drill_tc(tool_id: usize) -> ToolpathConfig {
+        let mut tc = make_tc(tool_id);
+        tc.operation = OperationConfig::Drill(DrillConfig::default());
+        tc
+    }
+
+    #[test]
+    fn set_toolpath_param_drill_plunge_rate_updates_feed_rate() {
+        let mut s = make_session();
+        s.add_toolpath(0, make_drill_tc(s.tools()[0].id.0)).unwrap();
+        s.set_toolpath_param(0, "plunge_rate", json!(250.0))
+            .unwrap();
+        match &s.toolpath_configs()[0].operation {
+            OperationConfig::Drill(cfg) => assert_eq!(cfg.feed_rate, 250.0),
+            _ => panic!("expected Drill"),
+        }
+    }
+
+    #[test]
+    fn set_toolpath_param_prev_tool_id_accepts_int() {
+        let mut s = make_session();
+        s.add_toolpath(0, make_rest_tc(s.tools()[0].id.0)).unwrap();
+        s.set_toolpath_param(0, "prev_tool_id", json!(1)).unwrap();
+        match &s.toolpath_configs()[0].operation {
+            OperationConfig::Rest(cfg) => assert_eq!(cfg.prev_tool_id, Some(ToolId(1))),
+            _ => panic!("expected Rest"),
+        }
+    }
+
+    #[test]
+    fn set_toolpath_param_prev_tool_id_accepts_string() {
+        let mut s = make_session();
+        s.add_toolpath(0, make_rest_tc(s.tools()[0].id.0)).unwrap();
+        s.set_toolpath_param(0, "prev_tool_id", json!("1")).unwrap();
+        match &s.toolpath_configs()[0].operation {
+            OperationConfig::Rest(cfg) => assert_eq!(cfg.prev_tool_id, Some(ToolId(1))),
+            _ => panic!("expected Rest"),
+        }
+    }
+
+    #[test]
+    fn set_toolpath_param_prev_tool_id_accepts_float_wire_number() {
+        let mut s = make_session();
+        s.add_toolpath(0, make_rest_tc(s.tools()[0].id.0)).unwrap();
+        s.set_toolpath_param(0, "prev_tool_id", json!(1.0)).unwrap();
+        match &s.toolpath_configs()[0].operation {
+            OperationConfig::Rest(cfg) => assert_eq!(cfg.prev_tool_id, Some(ToolId(1))),
+            _ => panic!("expected Rest"),
+        }
+    }
+
+    #[test]
+    fn set_toolpath_param_prev_tool_id_accepts_null_to_clear() {
+        let mut s = make_session();
+        s.add_toolpath(0, make_rest_tc(s.tools()[0].id.0)).unwrap();
+        s.set_toolpath_param(0, "prev_tool_id", json!(1)).unwrap();
+        s.set_toolpath_param(0, "prev_tool_id", serde_json::Value::Null)
+            .unwrap();
+        match &s.toolpath_configs()[0].operation {
+            OperationConfig::Rest(cfg) => assert_eq!(cfg.prev_tool_id, None),
+            _ => panic!("expected Rest"),
+        }
+    }
+
+    #[test]
+    fn get_operation_schema_rest_lists_prev_tool_id() {
+        let schema = ProjectSession::operation_schema("rest").unwrap();
+        let prev = schema
+            .params
+            .iter()
+            .find(|param| param.name == "prev_tool_id")
+            .unwrap();
+        assert_eq!(prev.type_name, "option<usize>");
+        assert!(prev.optional);
+        assert_eq!(prev.default, serde_json::Value::Null);
+    }
+
+    #[test]
+    fn get_operation_schema_unknown_op_returns_error() {
+        let err = ProjectSession::operation_schema("not_real")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Valid operation_type values"));
+        assert!(err.contains("rest"));
+    }
+
+    #[test]
+    fn get_operation_schema_drill_has_drill_specific_fields() {
+        let schema = ProjectSession::operation_schema("drill").unwrap();
+        let names: std::collections::HashSet<_> = schema
+            .params
+            .iter()
+            .map(|param| param.name.as_str())
+            .collect();
+        assert!(names.contains("cycle"));
+        assert!(names.contains("peck_depth"));
+        assert!(names.contains("retract_z"));
+    }
+
+    #[test]
+    fn operation_schema_params_match_params_with_nulls_for_every_op() {
+        for &op_type in crate::compute::catalog::OperationType::ALL {
+            let op = OperationConfig::new_default(op_type);
+            let params = op.params_value_including_nulls();
+            let param_obj = params.as_object().unwrap();
+            let schema = OperationConfig::schema_for_type(op_type);
+            let schema_names: std::collections::HashSet<_> = schema
+                .params
+                .iter()
+                .map(|param| param.name.as_str())
+                .collect();
+            let param_names: std::collections::HashSet<_> =
+                param_obj.keys().map(String::as_str).collect();
+            assert_eq!(schema_names, param_names, "schema mismatch for {op_type:?}");
+        }
+    }
+
     #[test]
     fn set_toolpath_param_wrong_type_errors() {
         let mut s = make_session();
@@ -1755,7 +2213,10 @@ mod tests {
         let mut s = make_session();
         s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
         let result = s.set_toolpath_param(0, "totally_fake_param", json!(42.0));
-        assert!(matches!(result, Err(SessionError::InvalidParam(_))));
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("unknown parameter 'totally_fake_param'"));
+        assert!(err.contains("Valid parameters"));
+        assert!(err.contains("stepover"));
     }
 
     #[test]
@@ -1842,6 +2303,125 @@ mod tests {
     }
 
     // ── set_tool_param ───────────────────────────────────────────
+
+    fn feed_vs_lut_high_recommended_value(s: &ProjectSession) -> f64 {
+        let diagnostics = s.diagnose_toolpath(0).unwrap();
+        let diag = diagnostics
+            .iter()
+            .find(|d| d.id.0 == crate::diagnostics::ids::FEEDS_FEED_VS_LUT_HIGH)
+            .expect("feeds.feed_vs_lut.high diagnostic");
+        match diag.evidence.as_ref().expect("diagnostic evidence") {
+            crate::diagnostics::DiagnosticEvidence::GeometryCompare {
+                rhs_label,
+                rhs_value,
+                ..
+            } => {
+                assert_eq!(rhs_label, "recommended");
+                *rhs_value
+            }
+            other => panic!("unexpected evidence: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn suggest_output_matches_feed_vs_lut_high_diagnostic_recommendation() {
+        let mut s = make_session();
+        let tool = s.tools()[0].clone();
+        let mut tc = make_tc(tool.id.0);
+        let suggested = crate::feeds::suggest::suggest_for_operation(
+            crate::feeds::suggest::SuggestForOperationInput {
+                operation: &tc.operation,
+                tool: &tool,
+                machine: s.machine(),
+                material: &s.stock_config().material,
+                workholding: s.stock_config().workholding_rigidity,
+                lut: crate::feeds::embedded_vendor_lut(),
+            },
+        );
+        tc.operation
+            .set_feed_rate(suggested.feeds_result.feed_rate_mm_min * 3.0);
+        s.add_toolpath(0, tc).unwrap();
+
+        let diagnostic_rec = feed_vs_lut_high_recommended_value(&s);
+        assert!((diagnostic_rec - suggested.feeds_result.feed_rate_mm_min).abs() < 1e-6);
+    }
+
+    #[test]
+    fn workholding_changes_suggest_output_and_diagnostic_baseline_consistently() {
+        fn session_for_workholding(
+            workholding: crate::feeds::WorkholdingRigidity,
+        ) -> (ProjectSession, f64) {
+            let mut s = make_session();
+            let mut stock = s.stock_config().clone();
+            stock.workholding_rigidity = workholding;
+            s.set_stock_config(stock);
+            let tool = s.tools()[0].clone();
+            let mut tc = make_tc(tool.id.0);
+            let suggested = crate::feeds::suggest::suggest_for_operation(
+                crate::feeds::suggest::SuggestForOperationInput {
+                    operation: &tc.operation,
+                    tool: &tool,
+                    machine: s.machine(),
+                    material: &s.stock_config().material,
+                    workholding,
+                    lut: crate::feeds::embedded_vendor_lut(),
+                },
+            );
+            tc.operation
+                .set_feed_rate(suggested.feeds_result.feed_rate_mm_min * 3.0);
+            s.add_toolpath(0, tc).unwrap();
+            (s, suggested.feeds_result.feed_rate_mm_min)
+        }
+
+        let (medium, medium_suggest) =
+            session_for_workholding(crate::feeds::WorkholdingRigidity::Medium);
+        let (high, high_suggest) = session_for_workholding(crate::feeds::WorkholdingRigidity::High);
+
+        let medium_diag = feed_vs_lut_high_recommended_value(&medium);
+        let high_diag = feed_vs_lut_high_recommended_value(&high);
+        assert!(high_suggest > medium_suggest);
+        assert!((medium_diag - medium_suggest).abs() < 1e-6);
+        assert!((high_diag - high_suggest).abs() < 1e-6);
+    }
+
+    #[test]
+    fn compute_stale_set_for_tool_param_returns_referencing_toolpaths() {
+        let mut s = make_session();
+        let tool_id = s.tools()[0].id.0;
+        s.add_toolpath(0, make_tc(tool_id)).unwrap();
+        s.add_toolpath(0, make_drill_tc(tool_id)).unwrap();
+        let stale = compute_stale_set(&s, MutationKind::ToolParamChanged { tool_index: 0 });
+        assert_eq!(stale.toolpath_indices, vec![0, 1]);
+    }
+
+    #[test]
+    fn compute_stale_set_for_toolpath_param_returns_single_toolpath() {
+        let mut s = make_session();
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        let stale = compute_stale_set(&s, MutationKind::ToolpathParamChanged { toolpath_index: 0 });
+        assert_eq!(stale.toolpath_indices, vec![0]);
+    }
+
+    #[test]
+    fn compute_stale_set_for_setup_change_returns_setup_toolpaths() {
+        let mut s = make_session();
+        let tool_id = s.tools()[0].id.0;
+        s.add_toolpath(0, make_tc(tool_id)).unwrap();
+        s.add_toolpath(0, make_tc(tool_id)).unwrap();
+        let setup_id = s.list_setups()[0].id;
+        let stale = compute_stale_set(&s, MutationKind::SetupChanged { setup_id });
+        assert_eq!(stale.toolpath_indices, vec![0, 1]);
+    }
+
+    #[test]
+    fn compute_stale_set_for_stock_change_returns_all_toolpaths() {
+        let mut s = make_session();
+        let tool_id = s.tools()[0].id.0;
+        s.add_toolpath(0, make_tc(tool_id)).unwrap();
+        s.add_toolpath(0, make_drill_tc(tool_id)).unwrap();
+        let stale = compute_stale_set(&s, MutationKind::StockChanged);
+        assert_eq!(stale.toolpath_indices, vec![0, 1]);
+    }
 
     #[test]
     fn set_tool_param_diameter() {
@@ -2229,6 +2809,7 @@ mod tests {
             average_engagement: 0.0,
             peak_chipload_mm_per_tooth: 0.0,
             peak_axial_doc_mm: 0.0,
+            peak_plunge_descent_mm: 0.0,
             total_removed_volume_est_mm3: 0.0,
             average_mrr_mm3_s: 0.0,
             metrics_not_applicable: false,

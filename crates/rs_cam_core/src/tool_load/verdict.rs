@@ -124,8 +124,14 @@ impl ToolpathLoadVerdict {
         self.chipload.is_exceeded() || self.power.is_exceeded() || self.deflection.is_exceeded()
     }
 
-    /// True if any criterion is `Unmodeled`.
+    /// True if any milling criterion is `Unmodeled` and needs operator
+    /// action. Drill cycles carry drill-native gates; when all milling
+    /// criteria are `NotApplicableForOp` and drill gates exist, that is
+    /// neutral rather than scary/missing evidence.
     pub fn any_unmodeled(&self) -> bool {
+        if self.drill_gates.is_some() && all_not_applicable(self) {
+            return false;
+        }
         self.chipload.is_unmodeled() || self.power.is_unmodeled() || self.deflection.is_unmodeled()
     }
 

@@ -15,11 +15,11 @@ use crate::mcp_bridge::{McpRequest, McpRequestKind, ProgressUpdate};
 use rs_cam_mcp::server::{
     AddAlignmentPinParam, AddToolParam, AddToolpathParam, CollisionCheckParam, CutTraceParam,
     ExportParam, GenDebugTraceParam, IndexParam, InspectSpansParam, LoadProjectParam, ModelIdParam,
-    OptimizeToolpathInput, RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam,
-    SaveProjectParam, ScreenshotSimParam, ScreenshotToolpathParam, SetBoundaryConfigParam,
-    SetDressupConfigParam, SetDressupFieldParam, SetStockConfigParam, SetStockSourceParam,
-    SetToolParamInput, SetToolpathEnabledParam, SetToolpathParamInput, SimJumpToMoveParam,
-    SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam,
+    OperationSchemaParam, OptimizeToolpathInput, RemoveAlignmentPinParam, RemoveToolParam,
+    RemoveToolpathParam, SaveProjectParam, ScreenshotSimParam, ScreenshotToolpathParam,
+    SetBoundaryConfigParam, SetDressupConfigParam, SetDressupFieldParam, SetStockConfigParam,
+    SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam, SetToolpathParamInput,
+    SimJumpToMoveParam, SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam,
 };
 
 /// Embedded MCP server that forwards requests to the GUI thread.
@@ -175,6 +175,23 @@ impl EmbeddedCamServer {
     ) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::GetToolpathParams { index })
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "get_operation_schema",
+        description = "Returns the full param schema for one operation kind without needing a toolpath: every settable field with its JSON type, whether it is Optional, the default value, and (when known) the valid range or enum variants. Use this BEFORE `add_toolpath` / `set_toolpath_param` when you are not already familiar with the operation's params. Supported `operation_type` values match `add_toolpath`."
+    )]
+    async fn get_operation_schema(
+        &self,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(OperationSchemaParam { operation_type }): Parameters<
+            OperationSchemaParam,
+        >,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::GetOperationSchema { operation_type })
                 .await,
         )
     }
@@ -488,6 +505,32 @@ impl EmbeddedCamServer {
     )]
     async fn get_tool_load_report(&self) -> String {
         Self::format_result(self.send_request(McpRequestKind::GetToolLoadReport).await)
+    }
+
+    #[tool(
+        name = "get_toolpath_diagnostics",
+        description = "Unified per-toolpath diagnostic list. Returns a Vec<Diagnostic> with severity (info/hint/caution/critical/blocking), category (safety/geometry/tool_load/quality/efficiency/state), confidence (verified/approximate/static/heuristic), state (current/needs_simulation/stale_evidence/not_applicable), source, message, optional evidence (sample range, LUT row, geometric compare), optional fix payload, and supersedes graph. Heuristic pre-sim hints are auto-suppressed when verified sim evidence is current. This is the recommended view — it merges tool-load gates, drill gates, feeds-calculator warnings, stale-default defects, and static config checks into one canonical list."
+    )]
+    async fn get_toolpath_diagnostics(
+        &self,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(OptimizeToolpathInput { index }): Parameters<OptimizeToolpathInput>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::GetToolpathDiagnostics { index })
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "get_project_diagnostics",
+        description = "Project-wide diagnostics (rapid collisions, holder collisions, plunge stress, high air-cut percentage, generated-empty). Returns a Vec<Diagnostic> in the same unified schema as get_toolpath_diagnostics. Pair with get_toolpath_diagnostics for per-toolpath findings."
+    )]
+    async fn get_project_diagnostics(&self) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::GetProjectDiagnostics)
+                .await,
+        )
     }
 
     #[tool(

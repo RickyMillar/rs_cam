@@ -435,16 +435,26 @@ impl TriDexelStock {
                 continue;
             }
             let segment_time_s = (segment_len / params.feed_rate_mm_min.max(1.0)) * 60.0;
-            let (axial_doc_mm, radial_engagement, arc_engagement_radians, removed_volume_est_mm3) =
-                self.estimate_and_stamp_cutting_subsegment(
-                    lut,
-                    radius,
-                    seg_start,
-                    seg_end,
-                    midpoint,
-                    direction,
-                    params.capture_arc_engagement,
-                );
+            let (
+                measured_axial_mm,
+                radial_engagement,
+                arc_engagement_radians,
+                removed_volume_est_mm3,
+            ) = self.estimate_and_stamp_cutting_subsegment(
+                lut,
+                radius,
+                seg_start,
+                seg_end,
+                midpoint,
+                direction,
+                params.capture_arc_engagement,
+            );
+            let (axial_engagement_mm, plunge_descent_mm) =
+                if params.cut_kinematics == CutKinematics::Plunge {
+                    (0.0, measured_axial_mm)
+                } else {
+                    (measured_axial_mm, 0.0)
+                };
 
             *cumulative_time_s += segment_time_s;
             let chipload_mm_per_tooth = chipload_mm_per_tooth(
@@ -454,7 +464,7 @@ impl TriDexelStock {
             );
             let effective_chip_thickness_mm = effective_chip_thickness_mm(
                 cutter,
-                axial_doc_mm,
+                axial_engagement_mm,
                 arc_engagement_radians,
                 chipload_mm_per_tooth,
                 params.flute_count,
@@ -462,7 +472,7 @@ impl TriDexelStock {
             let flute_length = cutter.length().max(1e-9);
             let engagement = crate::simulation_cut::Engagement {
                 radial_woc_fraction: radial_engagement,
-                axial_doc_fraction: (axial_doc_mm / flute_length).clamp(0.0, 1.0),
+                axial_doc_fraction: (axial_engagement_mm / flute_length).clamp(0.0, 1.0),
                 arc_radians: arc_engagement_radians,
                 mean_chip_thickness_mm: Some(chipload_mm_per_tooth),
                 peak_chip_thickness_mm: effective_chip_thickness_mm,
@@ -485,7 +495,9 @@ impl TriDexelStock {
                 feed_rate_mm_min: params.feed_rate_mm_min,
                 spindle_rpm: params.spindle_rpm,
                 flute_count: params.flute_count,
-                axial_doc_mm,
+                axial_doc_mm: axial_engagement_mm,
+                axial_engagement_mm,
+                plunge_descent_mm,
                 arc_engagement_radians,
                 chipload_mm_per_tooth,
                 effective_chip_thickness_mm,
@@ -675,6 +687,61 @@ mod tests {
         // The half-immersion test is unaffected (arccos has a finite slope
         // at radial = 0.5).
         assert!((arc - std::f64::consts::PI).abs() <= 0.5, "arc={arc}");
+    }
+
+    #[test]
+    fn axial_metrics_are_segregated_by_kinematics() {
+        let lateral = simulate_line(
+            -20.0,
+            20.0,
+            P3::new(-10.0, 0.0, -1.0),
+            P3::new(10.0, 0.0, -1.0),
+        );
+        assert!(
+            lateral
+                .iter()
+                .any(|sample| sample.cut_kinematics == CutKinematics::Linear
+                    && sample.axial_engagement_mm > 0.0
+                    && sample.plunge_descent_mm == 0.0),
+            "lateral samples should populate axial engagement only"
+        );
+
+        let bbox = BoundingBox3 {
+            min: P3::new(-5.0, -5.0, -5.0),
+            max: P3::new(5.0, 5.0, 5.0),
+        };
+        let mut stock = TriDexelStock::from_bounds(&bbox, 0.5);
+        let cutter = FlatEndmill::new(3.0, 10.0);
+        let mut toolpath = Toolpath::new();
+        toolpath.rapid_to(P3::new(0.0, 0.0, 5.0));
+        toolpath.feed_to(P3::new(0.0, 0.0, -1.0), 100.0);
+        let never_cancel = || false;
+        let plunge = stock
+            .simulate_toolpath_with_metrics_with_cancel(
+                &toolpath,
+                &cutter,
+                StockCutDirection::FromTop,
+                0,
+                12_000,
+                2,
+                3000.0,
+                1.0,
+                None,
+                &[],
+                &[],
+                true,
+                &never_cancel,
+            )
+            .expect("simulation succeeds");
+        assert!(
+            plunge
+                .iter()
+                .any(|sample| sample.cut_kinematics == CutKinematics::Plunge
+                    && sample.axial_engagement_mm == 0.0
+                    && sample.axial_doc_mm == 0.0
+                    && sample.plunge_descent_mm > 0.0),
+            "plunge samples should populate plunge descent only"
+        );
     }
 
     #[test]

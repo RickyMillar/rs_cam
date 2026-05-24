@@ -1,13 +1,21 @@
+use rs_cam_core::feeds::FeedsResult;
+
 use crate::state::toolpath::{
     AdaptiveConfig, CompensationType, FaceConfig, FaceDirection, InlayConfig, PocketConfig,
     PocketPattern, ProfileConfig, ProfileSide, RestConfig, VCarveConfig, ZigzagConfig,
 };
 
-use super::super::dv;
+use super::super::{dv, dv_pill};
 use super::draw_feed_params;
 use super::draw_tab_diagram;
 
-pub(in crate::ui::properties) fn draw_face_params(ui: &mut egui::Ui, cfg: &mut FaceConfig) {
+pub(in crate::ui::properties) fn draw_face_params(
+    ui: &mut egui::Ui,
+    cfg: &mut FaceConfig,
+    feeds_result: Option<&FeedsResult>,
+) {
+    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
+    let dpp_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
     egui::Grid::new("face_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -23,21 +31,31 @@ pub(in crate::ui::properties) fn draw_face_params(ui: &mut egui::Ui, cfg: &mut F
                     ui.selectable_value(&mut cfg.direction, FaceDirection::Zigzag, "Zigzag");
                 });
             ui.end_row();
-            dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.5, 0.5..=100.0);
+            dv_pill(
+                ui,
+                "Stepover:",
+                &mut cfg.stepover,
+                " mm",
+                0.5,
+                0.5..=100.0,
+                stepover_sugg,
+            );
             dv(ui, "Depth:", &mut cfg.depth, " mm", 0.1, 0.0..=50.0);
-            dv(
+            dv_pill(
                 ui,
                 "Depth/Pass:",
                 &mut cfg.depth_per_pass,
                 " mm",
                 0.1,
                 0.1..=20.0,
+                dpp_sugg,
             );
             draw_feed_params(
                 ui,
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
             dv(
                 ui,
@@ -50,7 +68,13 @@ pub(in crate::ui::properties) fn draw_face_params(ui: &mut egui::Ui, cfg: &mut F
         });
 }
 
-pub(in crate::ui::properties) fn draw_pocket_params(ui: &mut egui::Ui, cfg: &mut PocketConfig) {
+pub(in crate::ui::properties) fn draw_pocket_params(
+    ui: &mut egui::Ui,
+    cfg: &mut PocketConfig,
+    feeds_result: Option<&FeedsResult>,
+) {
+    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
+    let dpp_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
     egui::Grid::new("pocket_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -66,21 +90,31 @@ pub(in crate::ui::properties) fn draw_pocket_params(ui: &mut egui::Ui, cfg: &mut
                     ui.selectable_value(&mut cfg.pattern, PocketPattern::Zigzag, "Zigzag");
                 });
             ui.end_row();
-            dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=50.0);
+            dv_pill(
+                ui,
+                "Stepover:",
+                &mut cfg.stepover,
+                " mm",
+                0.1,
+                0.05..=50.0,
+                stepover_sugg,
+            );
             dv(ui, "Depth:", &mut cfg.depth, " mm", 0.1, 0.1..=100.0);
-            dv(
+            dv_pill(
                 ui,
                 "Depth/Pass:",
                 &mut cfg.depth_per_pass,
                 " mm",
                 0.1,
                 0.1..=50.0,
+                dpp_sugg,
             );
             draw_feed_params(
                 ui,
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
             ui.label("Climb:");
             ui.checkbox(&mut cfg.climb, "");
@@ -101,7 +135,12 @@ pub(in crate::ui::properties) fn draw_pocket_params(ui: &mut egui::Ui, cfg: &mut
         });
 }
 
-pub(in crate::ui::properties) fn draw_profile_params(ui: &mut egui::Ui, cfg: &mut ProfileConfig) {
+pub(in crate::ui::properties) fn draw_profile_params(
+    ui: &mut egui::Ui,
+    cfg: &mut ProfileConfig,
+    feeds_result: Option<&FeedsResult>,
+) {
+    let dpp_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
     egui::Grid::new("profile_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -118,19 +157,21 @@ pub(in crate::ui::properties) fn draw_profile_params(ui: &mut egui::Ui, cfg: &mu
                 });
             ui.end_row();
             dv(ui, "Depth:", &mut cfg.depth, " mm", 0.1, 0.1..=100.0);
-            dv(
+            dv_pill(
                 ui,
                 "Depth/Pass:",
                 &mut cfg.depth_per_pass,
                 " mm",
                 0.1,
                 0.1..=50.0,
+                dpp_sugg,
             );
             draw_feed_params(
                 ui,
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
             ui.label("Climb:");
             ui.checkbox(&mut cfg.climb, "");
@@ -197,26 +238,42 @@ pub(in crate::ui::properties) fn draw_profile_params(ui: &mut egui::Ui, cfg: &mu
         });
 }
 
-pub(in crate::ui::properties) fn draw_adaptive_params(ui: &mut egui::Ui, cfg: &mut AdaptiveConfig) {
+pub(in crate::ui::properties) fn draw_adaptive_params(
+    ui: &mut egui::Ui,
+    cfg: &mut AdaptiveConfig,
+    feeds_result: Option<&FeedsResult>,
+) {
+    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
+    let dpp_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
     egui::Grid::new("adapt_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
-            dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=50.0);
+            dv_pill(
+                ui,
+                "Stepover:",
+                &mut cfg.stepover,
+                " mm",
+                0.1,
+                0.05..=50.0,
+                stepover_sugg,
+            );
             dv(ui, "Depth:", &mut cfg.depth, " mm", 0.1, 0.1..=100.0);
-            dv(
+            dv_pill(
                 ui,
                 "Depth/Pass:",
                 &mut cfg.depth_per_pass,
                 " mm",
                 0.1,
                 0.1..=50.0,
+                dpp_sugg,
             );
             draw_feed_params(
                 ui,
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
             dv(
                 ui,
@@ -240,18 +297,43 @@ pub(in crate::ui::properties) fn draw_adaptive_params(ui: &mut egui::Ui, cfg: &m
         });
 }
 
-pub(in crate::ui::properties) fn draw_vcarve_params(ui: &mut egui::Ui, cfg: &mut VCarveConfig) {
+pub(in crate::ui::properties) fn draw_vcarve_params(
+    ui: &mut egui::Ui,
+    cfg: &mut VCarveConfig,
+    feeds_result: Option<&FeedsResult>,
+) {
+    // V-carve uses `max_depth` as the axial limit and `stepover` as the
+    // lateral step. Map LUT axial → max_depth, radial → stepover.
+    let max_depth_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
+    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
     egui::Grid::new("vcarve_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
-            dv(ui, "Max Depth:", &mut cfg.max_depth, " mm", 0.1, 0.1..=50.0);
-            dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.05, 0.01..=10.0);
+            dv_pill(
+                ui,
+                "Max Depth:",
+                &mut cfg.max_depth,
+                " mm",
+                0.1,
+                0.1..=50.0,
+                max_depth_sugg,
+            );
+            dv_pill(
+                ui,
+                "Stepover:",
+                &mut cfg.stepover,
+                " mm",
+                0.05,
+                0.01..=10.0,
+                stepover_sugg,
+            );
             draw_feed_params(
                 ui,
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
             dv(
                 ui,
@@ -268,7 +350,10 @@ pub(in crate::ui::properties) fn draw_rest_params(
     ui: &mut egui::Ui,
     cfg: &mut RestConfig,
     tools: &[(crate::state::job::ToolId, String, f64)],
+    feeds_result: Option<&FeedsResult>,
 ) {
+    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
+    let dpp_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
     egui::Grid::new("rest_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -290,27 +375,45 @@ pub(in crate::ui::properties) fn draw_rest_params(
                     }
                 });
             ui.end_row();
-            dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=50.0);
+            dv_pill(
+                ui,
+                "Stepover:",
+                &mut cfg.stepover,
+                " mm",
+                0.1,
+                0.05..=50.0,
+                stepover_sugg,
+            );
             dv(ui, "Depth:", &mut cfg.depth, " mm", 0.1, 0.1..=100.0);
-            dv(
+            dv_pill(
                 ui,
                 "Depth/Pass:",
                 &mut cfg.depth_per_pass,
                 " mm",
                 0.1,
                 0.1..=50.0,
+                dpp_sugg,
             );
             draw_feed_params(
                 ui,
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
             dv(ui, "Angle:", &mut cfg.angle, " deg", 1.0, 0.0..=360.0);
         });
 }
 
-pub(in crate::ui::properties) fn draw_inlay_params(ui: &mut egui::Ui, cfg: &mut InlayConfig) {
+pub(in crate::ui::properties) fn draw_inlay_params(
+    ui: &mut egui::Ui,
+    cfg: &mut InlayConfig,
+    feeds_result: Option<&FeedsResult>,
+) {
+    // Spec: only the stepover field maps to LUT radial_width. The other
+    // inlay fields (pocket_depth, glue_gap, flat_depth, boundary_offset,
+    // flat_tool_radius) are geometry-driven, not feeds-driven.
+    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
     egui::Grid::new("inlay_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -340,7 +443,15 @@ pub(in crate::ui::properties) fn draw_inlay_params(ui: &mut egui::Ui, cfg: &mut 
                 0.05,
                 0.0..=10.0,
             );
-            dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=50.0);
+            dv_pill(
+                ui,
+                "Stepover:",
+                &mut cfg.stepover,
+                " mm",
+                0.1,
+                0.05..=50.0,
+                stepover_sugg,
+            );
             dv(
                 ui,
                 "Flat Tool Radius:",
@@ -354,6 +465,7 @@ pub(in crate::ui::properties) fn draw_inlay_params(ui: &mut egui::Ui, cfg: &mut 
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
             dv(
                 ui,
@@ -366,26 +478,42 @@ pub(in crate::ui::properties) fn draw_inlay_params(ui: &mut egui::Ui, cfg: &mut 
         });
 }
 
-pub(in crate::ui::properties) fn draw_zigzag_params(ui: &mut egui::Ui, cfg: &mut ZigzagConfig) {
+pub(in crate::ui::properties) fn draw_zigzag_params(
+    ui: &mut egui::Ui,
+    cfg: &mut ZigzagConfig,
+    feeds_result: Option<&FeedsResult>,
+) {
+    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
+    let dpp_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
     egui::Grid::new("zigzag_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
-            dv(ui, "Stepover:", &mut cfg.stepover, " mm", 0.1, 0.05..=50.0);
+            dv_pill(
+                ui,
+                "Stepover:",
+                &mut cfg.stepover,
+                " mm",
+                0.1,
+                0.05..=50.0,
+                stepover_sugg,
+            );
             dv(ui, "Depth:", &mut cfg.depth, " mm", 0.1, 0.1..=100.0);
-            dv(
+            dv_pill(
                 ui,
                 "Depth/Pass:",
                 &mut cfg.depth_per_pass,
                 " mm",
                 0.1,
                 0.1..=50.0,
+                dpp_sugg,
             );
             draw_feed_params(
                 ui,
                 &mut cfg.feed_rate,
                 &mut cfg.plunge_rate,
                 &mut cfg.spindle_rpm,
+                feeds_result,
             );
             dv(ui, "Angle:", &mut cfg.angle, " deg", 1.0, 0.0..=360.0);
         });
