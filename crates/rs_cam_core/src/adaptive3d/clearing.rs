@@ -761,6 +761,49 @@ pub(super) fn clear_z_level_contour_parallel(
     if cleanup_count > 0 {
         // Raster through remaining material rows.  For each row with material
         // cells, build contiguous runs and emit one cut per run.
+        //
+        // F-029: clamp per-cell cut depth to `depth_per_pass` (plus tolerance)
+        // above the cell's current stock top. Without this, cells where the
+        // stock top is far above `z_level` (e.g. cells outside the mesh XY
+        // footprint, which `SurfaceHeightmap` reports `surf_z = min_z` for
+        // and never get covered by the contour iso-lines because their EDT
+        // is dominated by the boundary) would receive a single cleanup cut
+        // at `z_level` that the simulator faithfully replays as one swept
+        // tube from the virgin stock top down to `z_level` — yielding
+        // axial-engagement readings of ~50 mm on a 3 mm-commanded DPP and
+        // tripping the deflection gate. Padded-grid (row, col) maps to
+        // stock-grid (row-1, col-1); border cells (row=0/cr-1 or
+        // col=0/cc-1) are always false in `cleanup_grid` so the inner
+        // mapping is safe.
+        let z_for_cell = |row: usize, col: usize| -> f64 {
+            let wx = co_x + col as f64 * c_cs;
+            let wy = co_y + row as f64 * c_cs;
+            let surf_z = surface_hm.surface_z_at_world(wx, wy);
+            // Lower bound (the "leave stock above the surface" rule).
+            let lower = if surf_z == f64::NEG_INFINITY {
+                z_level
+            } else {
+                (surf_z + ctx.stock_to_leave).max(z_level)
+            };
+            // Per-cell stock-top clamp. Padded coords (row, col) → stock
+            // coords (row-1, col-1).
+            if row == 0 || col == 0 {
+                return lower;
+            }
+            let s_row = row - 1;
+            let s_col = col - 1;
+            let grid = &material_stock.z_grid;
+            if s_row >= grid.rows || s_col >= grid.cols {
+                return lower;
+            }
+            let stock_top = stock_top_z_at(material_stock, s_row, s_col);
+            // Don't cut more than depth_per_pass + tolerance below the
+            // current stock top in a single pass. Tolerance lets surface-
+            // adjacent cells still bottom out at `lower` without leaving a
+            // sliver.
+            let dpp_clamp = stock_top - ctx.depth_per_pass - ctx.tolerance;
+            lower.max(dpp_clamp)
+        };
         let mut cleanup_pts: Vec<Vec<P3>> = Vec::new();
         for row in 0..cr {
             let mut run_start: Option<usize> = None;
@@ -778,12 +821,7 @@ pub(super) fn clear_z_level_contour_parallel(
                     while c < col {
                         let wx = co_x + c as f64 * c_cs;
                         let wy = co_y + row as f64 * c_cs;
-                        let surf_z = surface_hm.surface_z_at_world(wx, wy);
-                        let z = if surf_z == f64::NEG_INFINITY {
-                            z_level
-                        } else {
-                            (surf_z + ctx.stock_to_leave).max(z_level)
-                        };
+                        let z = z_for_cell(row, c);
                         path.push(P3::new(wx, wy, z));
                         c += 1;
                     }
@@ -799,12 +837,7 @@ pub(super) fn clear_z_level_contour_parallel(
                 while c < cc {
                     let wx = co_x + c as f64 * c_cs;
                     let wy = co_y + row as f64 * c_cs;
-                    let surf_z = surface_hm.surface_z_at_world(wx, wy);
-                    let z = if surf_z == f64::NEG_INFINITY {
-                        z_level
-                    } else {
-                        (surf_z + ctx.stock_to_leave).max(z_level)
-                    };
+                    let z = z_for_cell(row, c);
                     path.push(P3::new(wx, wy, z));
                     c += 1;
                 }
