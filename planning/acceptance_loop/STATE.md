@@ -201,8 +201,8 @@ the last blocker for 7/7.
 
 (implementers append here when they land a PR; auditor moves entries to round directories when verified)
 
-- 2026-05-26 — **F-029 partial landing** (Claude Opus 4.7 pickup of
-  prior session's in-flight work). Landed:
+- 2026-05-26 — **F-029 partial landing** (commit `74d8a7f`, Claude
+  Opus 4.7 pickup of prior session's in-flight work). Landed:
   (1) diagnostic probe `debug_adaptive_3d_segments_for_f029_probe`
       exporting the planner's final per-cell `material_stock` top-z
       (path.rs +37 lines, mod.rs +6 lines re-export);
