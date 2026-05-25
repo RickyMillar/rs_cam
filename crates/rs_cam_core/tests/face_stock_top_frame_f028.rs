@@ -65,12 +65,12 @@ use std::sync::atomic::AtomicBool;
 use rs_cam_core::compute::OperationConfig;
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
-use rs_cam_core::compute::operation_configs::FaceConfig;
+use rs_cam_core::compute::operation_configs::{FaceConfig, PocketConfig, PocketPattern};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::face::FaceDirection;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{ProjectSession, SimulationOptions, ToolpathConfig};
-use rs_cam_core::tool_load::DeflectionVerdict;
+use rs_cam_core::tool_load::{ChiploadVerdict, DeflectionVerdict};
 
 fn ux_step_plate_mdf_path() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -177,12 +177,27 @@ fn as004_face_peak_axial_within_commanded_doc() {
         .expect("toolpath summary for face toolpath");
 
     let peak_axial = summary.peak_axial_doc_mm;
+    // F-028 follow-up (2026-05-25): tighten the upper bound and add a
+    // *lower* bound so a regression that drops peak_axial to 0 (cutter
+    // emitting in the wrong frame and sitting in air) can no longer
+    // trivially satisfy this assertion. Commanded DOC = 0.5 mm; allow
+    // [0.3, 0.6] (0.3 = sanity floor below which the cutter is clearly
+    // not engaging; 0.6 = 0.5 + 0.1 mm grid discretisation margin).
     assert!(
         peak_axial <= 0.6,
         "F-028: AS004 face peak_axial_doc_mm should be <= 0.6 mm (commanded \
          depth_per_pass=0.5 + 0.1 mm margin); got {peak_axial:.4} mm. Pre-fix \
          this read ≈ stock.z - depth_per_pass because face cut at world \
          Z=-0.5 below the dexel grid [0, 15]."
+    );
+    assert!(
+        peak_axial > 0.3,
+        "F-028 follow-up: AS004 face peak_axial_doc_mm should be > 0.3 mm \
+         (commanded DOC 0.5 mm, expect at least 60% of that as a sanity floor); \
+         got {peak_axial:.4} mm. A value at or near 0 indicates the cutter is \
+         emitting in the wrong Z frame and sitting in air above or below the \
+         stock — exactly the regression the original F-028 fix was guarded \
+         against on AS004, and that the follow-up pins for AS001."
     );
 }
 
@@ -275,4 +290,186 @@ fn as004_face_no_rapid_collisions() {
          rapids registered against the dexel grid [0, 15] as collisions.",
         tp_diag.rapid_collision_count
     );
+}
+
+// ---------------------------------------------------------------------------
+// F-028 follow-up: AS001 pocket frame-cross-check (2026-05-25)
+//
+// The original F-028 fix changed `session/compute.rs` to use `self.stock_bbox()`
+// (the *world* bbox) instead of `effective_stock_bbox` (zero-rooted) for
+// HeightContext.stock_top_z on identity setups, and changed `top_z.Auto` to
+// resolve to `ctx.stock_top_z` (was hardcoded `0.0`). The AS004 acceptance
+// test only had an *upper* bound on `peak_axial_doc_mm` (≤ 0.6), which would
+// trivially pass at `peak_axial = 0` — i.e. the cutter sitting in air,
+// removing nothing. A round-07 audit raised the concern that the F-028 fix
+// might have broken AS001-class cases (auto_from_model=false, origin_z=-12,
+// stock top = 0 in world frame) where pre-fix cuts emitted correctly at
+// world Z=[-2,-4,-6].
+//
+// This follow-up test pins the AS001 pocket actually removing material
+// through `ProjectSession::load(ux_2d_pocket.toml)` — i.e. drives the
+// production entry point with the auto_from_model=false convention. With
+// the F-028 fix in place, `self.stock_bbox().max.z = origin_z + z = -12+12 = 0`
+// (the world stock top), heights.top_z resolves to 0, and the pocket cuts
+// at world Z=[-2,-4,-6] as expected. The test passes on commit `bf63d06`,
+// confirming the alleged AS001 regression does not reproduce at the
+// `ProjectSession` API level; it stays in place as a defensive guard so
+// any future change to the identity-setup HeightContext wiring that
+// silently shifts AS001 cuts out of stock is caught immediately.
+// ---------------------------------------------------------------------------
+
+fn ux_2d_pocket_path() -> PathBuf {
+    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    p.push("..");
+    p.push("..");
+    p.push("test_data");
+    p.push("ux_2d_pocket.toml");
+    p
+}
+
+/// Load `ux_2d_pocket.toml` (stock origin_z=-12, stock.z=12, auto_from_model=
+/// false, identity setup) and attach an AS001-shape pocket op using the 6mm
+/// endmill. Drives through `ProjectSession::load` — the production entry
+/// point.
+fn build_as001_pocket_session_from_file() -> ProjectSession {
+    let toml_path = ux_2d_pocket_path();
+    let mut session = ProjectSession::load(&toml_path).expect("load ux_2d_pocket");
+
+    let tool_id = session
+        .tools()
+        .iter()
+        .find(|t| t.name.starts_with("End Mill 6mm"))
+        .map(|t| t.id.0)
+        .expect("ux_2d_pocket has End Mill 6mm");
+
+    let model_id = session
+        .models()
+        .first()
+        .map(|m| m.id)
+        .expect("ux_2d_pocket has at least one model");
+
+    // AS001 pocket params (depth=6, dpp=2, stepover=2.4, feed=900, plunge=350)
+    // from `planning/toolpath_acceptance/cases_agent_smoke.csv`.
+    let pocket = PocketConfig {
+        stepover: 2.4,
+        depth: 6.0,
+        depth_per_pass: 2.0,
+        feed_rate: 900.0,
+        plunge_rate: 350.0,
+        climb: true,
+        pattern: PocketPattern::Contour,
+        angle: 0.0,
+        finishing_passes: 0,
+        spindle_rpm: Some(18_000),
+    };
+
+    let tc = ToolpathConfig {
+        id: 0,
+        name: "Pocket (AS001)".to_owned(),
+        enabled: true,
+        operation: OperationConfig::Pocket(pocket),
+        dressups: DressupConfig::for_op(OperationType::Pocket),
+        heights: HeightsConfig::default(),
+        tool_id,
+        model_id,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: BoundaryConfig::default(),
+        boundary_inherit: true,
+        stock_source: StockSource::default(),
+        coolant: CoolantMode::Off,
+        face_selection: None,
+        debug_options: ToolpathDebugOptions::default(),
+    };
+
+    session
+        .add_toolpath(0, tc)
+        .expect("add pocket toolpath to setup 0");
+
+    session
+}
+
+/// F-028 follow-up cross-check.
+///
+/// AS001 pocket on `ux_2d_pocket.toml` (origin_z=-12, identity setup,
+/// auto_from_model=false, world stock_top = 0) must actually remove stock
+/// material through `ProjectSession::load → generate_toolpath →
+/// run_simulation`. A round-07 concern raised that F-028's switch to
+/// `self.stock_bbox()` for HeightContext on identity setups might have
+/// shifted AS001 cuts out of stock; this test pins the in-stock behaviour.
+///
+/// On commit `bf63d06` actual readings via this path are:
+///   peak_axial_doc_mm ≈ 1.76 mm, total_removed ≈ 20222 mm³, chipload
+///   modeled — i.e. the AS001 pocket emits at world Z=[-2,-4,-6] as
+///   expected. The test passes today and stays in place as a defensive
+///   guard against future regressions of this shape.
+///
+/// Pass criteria:
+///   - peak_axial_doc_mm in a tight band around the commanded 2.0 mm DOC
+///     ([1.5, 3.0]; a regression that put cuts outside stock would read
+///     ≈ 0 or ≈ stock_height)
+///   - total_removed_volume_est_mm3 > 5000 (a regression that put cuts
+///     outside stock would read 0)
+///   - chipload verdict is not `Unmodeled` with the
+///     `all_samples_air_cut_or_rapid` reason
+#[test]
+fn as001_pocket_actually_removes_stock_material_post_f028() {
+    let mut session = build_as001_pocket_session_from_file();
+    let cancel = AtomicBool::new(false);
+    session
+        .generate_toolpath(0, &cancel)
+        .expect("generate pocket toolpath");
+
+    let opts = SimulationOptions {
+        resolution: 1.0,
+        skip_ids: Vec::new(),
+        metrics_enabled: true,
+        auto_resolution: false,
+    };
+    session
+        .run_simulation(&opts, &cancel)
+        .expect("simulation completes");
+
+    let sim = session.simulation_result().expect("simulation result");
+    let cut_trace = sim.cut_trace.as_ref().expect("metric cut trace");
+    let summary = cut_trace
+        .toolpath_summaries
+        .iter()
+        .find(|s| s.toolpath_id == 0)
+        .expect("toolpath summary for pocket toolpath");
+
+    // Bar 1: actually remove material
+    assert!(
+        summary.total_removed_volume_est_mm3 > 5000.0,
+        "F-028 follow-up: AS001 pocket on origin_z=-12 stock must remove > 5000 mm³ \
+         of material; got {:.1} mm³. A reading of 0 would indicate the pocket \
+         emitted at a z_level above the world stock top (Z=0), putting every \
+         sample in air.",
+        summary.total_removed_volume_est_mm3
+    );
+
+    // Bar 2: peak_axial in a tight band around commanded 2.0 mm DOC
+    let peak_axial = summary.peak_axial_doc_mm;
+    assert!(
+        (1.5..=3.0).contains(&peak_axial),
+        "F-028 follow-up: AS001 pocket peak_axial_doc_mm should land in [1.5, 3.0] \
+         (commanded DOC 2.0 mm + grid discretisation slack); got {peak_axial:.4} mm. \
+         A value near 0 would indicate cuts above stock; a value near stock \
+         height (~10-12 mm) would indicate the pre-F-024 frame mismatch."
+    );
+
+    // Bar 3: chipload verdict is not Unmodeled with the air-cut reason
+    let report = session.tool_load_report();
+    let verdict = report
+        .per_toolpath
+        .iter()
+        .find(|v| v.toolpath_id == 0)
+        .expect("verdict for pocket toolpath");
+    if let ChiploadVerdict::Unmodeled { reason } = &verdict.chipload {
+        panic!(
+            "F-028 follow-up: AS001 pocket chipload should be modeled; got \
+             Unmodeled({reason:?}). An `all_samples_air_cut_or_rapid` reason \
+             would indicate the pocket is emitting outside the stock dexel grid."
+        );
+    }
 }
