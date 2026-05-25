@@ -7,7 +7,7 @@
 - **Status:** landed
 - **First found in:** round-05 follow-up investigation (2026-05-25)
 - **Effort:** M
-- **Linked PRs:** (none yet; opened with F-026)
+- **Linked PRs:** commit `b1f17fe` (model-edge band closed; interior-cell residual carved out as F-029)
 - **Source audits:** F-026 implementer's repro of AS013 against
   `test_data/ux_3d_terrain.toml` via `ProjectSession::run_simulation`
   (tests/dexel_stock_z_frame_f026.rs at the implementer's investigation
