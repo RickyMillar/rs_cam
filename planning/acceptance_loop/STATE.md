@@ -84,7 +84,6 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 
 | Finding | Claimed by | PR | Notes |
 |---|---|---|---|
-| F-028 | claude-opus-4-7 | (PR pending) | Face op world-frame Z emission via heights/HeightContext fix |
 
 ## Closed round-02 (2026-05-25)
 
@@ -178,6 +177,23 @@ bar didn't move because the residuals are NOT what F-026 targets.
 ## Implementation log
 
 (implementers append here when they land a PR; auditor moves entries to round directories when verified)
+
+- 2026-05-25 — F-028 landed: face op anchors depth stepping at
+  `heights.top_z` (which now follows `ctx.stock_top_z` under Auto), and
+  `session/compute.rs::compute` carries the world stock bbox into the
+  `HeightContext` for identity setups (mirroring the GUI viz
+  controller's existing pattern). Pre-fix face on
+  `ux_step_plate_mdf.toml` cut at world Z=-0.5 below the dexel grid
+  [0, 15] — peak_axial_doc_mm scaled with stock height (9.14 at
+  stock=12 → 11.42 at stock=15, the F-028 evidence). Post-fix cuts
+  land at world Z=14.5 inside the stock. Acceptance tests
+  (`tests/face_stock_top_frame_f028.rs`):
+  `as004_face_peak_axial_within_commanded_doc`,
+  `as004_face_deflection_within_safe_band`,
+  `as004_face_no_rapid_collisions` — all three drive through
+  `ProjectSession::run_simulation`. F-024's AS001 pocket tests
+  continue to pass (the identity-setup conditional preserves
+  `heights.top_z = 0` when world stock top = 0).
 
 - 2026-05-25 — F-027 landed (scope-trimmed to model-edge band):
   adaptive3d planner stock widened to the world stock XY bbox via a
