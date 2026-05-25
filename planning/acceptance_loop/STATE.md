@@ -11,7 +11,17 @@ and implementer write here.
 
 ## Current round
 
-**round-09** (audit pending — F-030 architecture refactor **VERIFIED through MCP smoke 2026-05-26**; F-031 implementer pickup unblocks 7/7 deflection bar)
+**round-10** (audit pending — F-031 verified through MCP smoke 2026-05-26; F-032 implementer pickup REFRAMED — original hypothesis refuted, real root cause is dexel-vs-flute-length + scallop ring-emission Z=0 sentinels; deflection bar stays 6/7 until F-032 re-audits)
+
+Round-09 closed 2026-05-26. **F-031 verified on AS013**: deflection 0.637 → **0.105 Within**. Collateral 6.4× toolpath reduction (420k → 65k moves — F-031 removed a spurious helix-entry rewrite). **Bar: 5/7 → 6/7.** AS015 unchanged at 0.434; F-031's transit-filter is adaptive3d-scoped and doesn't extend to scallop. Opened **F-032** with concrete hotspot evidence: AS015 reports physically-impossible peak_axial_doc_mm = 25-27 on a 3mm ball nose with avg engagement < 5% (transit-sample contamination, F-031 sibling, S effort).
+
+**F-017 (rapid collisions) implicitly closed.** Every smoke case from AS001 through AS015 reports 0 rapid collisions in round-09. Recommend explicit close in round-10.
+
+Delta: `rounds/round-09-2026-05-26/delta.md`.
+
+Implementer(s) active: **none**. F-032 was claimed by Claude Opus 4.7 on 2026-05-26 but the finding's transit-sample hypothesis was refuted in-flight by a diagnostic probe — see Implementation log. F-032 has been released back to the open queue with a "Round-10 implementer reframe" section in the finding file detailing real triggering-sample evidence and four candidate fix shapes. **Deflection bar stays at 6/7** until a follow-up implementer (likely M-effort, not S) picks up one of the reframed fix shapes.
+
+### Prior round history
 
 Round-07 closed 2026-05-25. **F-027 + F-028 verified.** AS013 + AS015
 collisions 2924/52 → 0 cleanly. AS004 face deflection 0.243 → 0.005
@@ -56,6 +66,8 @@ Implementer(s) active: none. **F-031 is the next pickup** — closes the deflect
 
 ## Last verified baseline
 
+- **round-09 delta** (F-031 verified on AS013, deflection 0.637 → 0.105 Within, AS013 toolpath 6.4× smaller, bar 5/7 → 6/7; F-032 opened for AS015 scallop):
+  `planning/acceptance_loop/rounds/round-09-2026-05-26/delta.md`
 - **round-08 delta** (F-030 architecture refactor verified through MCP smoke; AS001 byte-identical, AS013 collisions 0, deflection still F-031 residual):
   `planning/acceptance_loop/rounds/round-08-2026-05-25/delta.md`
 - **round-07 delta** (F-027 + F-028 verified; F-028 regression cycle absorbed; F-030 opened):
@@ -83,7 +95,8 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 
 | Finding | Title | Stage | Sev | Effort | Status |
 |---|---|---|---|:-:|---|
-| [F-031](findings/F-031-adaptive3d-residual-deep-z-parity.md) | Adaptive3d residual deep-Z planner↔simulator stamp parity gap — F-029 follow-up, was last blocker for 7/7 deflection bar | sim | high | M-L | **landed 2026-05-26** (commit `497a3b2`); awaits round-09 MCP smoke verification |
+| [F-032](findings/F-032-scallop-deflection-transit-sample-contamination.md) | Scallop deflection gate counts transit/entry samples — last 7/7 deflection bar blocker | sim | medium | **M** (re-estimated 2026-05-26 — was S) | **open — hypothesis refuted, needs re-audit**. Round-10 implementer probe found the triggering sample is a steady-state `FinishingCut` (Helix, radial=0.75, axial=17.77 mm on 15 mm flute) inside fresh uncut stock above terrain; F-031's transit-filter predicate is correctly NOT firing on it. Root cause is dexel reporting axial > flute_length (AS015 runs scallop solo without prior roughing) + scallop ring-emission emitting (X=0, Z=0) sentinels for out-of-mesh-footprint points. See finding's "Round-10 implementer reframe" section for candidate fix shapes (A/B/C/D). |
+| [F-031](findings/F-031-adaptive3d-residual-deep-z-parity.md) | Adaptive3d residual deep-Z planner↔simulator stamp parity gap — F-029 follow-up | sim | high | M-L | **verified round-09** (commit `497a3b2`); AS013 deflection 0.637 → 0.105 Within, collateral 6.4× toolpath reduction |
 | [F-029](findings/F-029-adaptive3d-interior-cell-parity.md) | Adaptive3d interior-cell planner↔simulator stamp parity gap — final deflection residual on AS013/AS015 | sim | medium | M | **partial-landing 2026-05-26** — cleanup-raster DPP clamp + diagnostic probe landed; residual interior-cell tracked as F-031 |
 | [F-030](findings/F-030-unify-setup-eval-context.md) | Unify SetupEvalContext across the 5 stock-frame entry points — architecture refactor | substrate | medium | L | **verified round-08** (commit `ba9a8fd`); duplicated-frame pattern retired |
 | [F-020](findings/F-020-optimizer-ranked-bs-path.md) | Optimizer Ranked-outcome BS-stepover path untested | optimize | high | M | open — needs test fixture before fix |
@@ -93,7 +106,7 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 | [F-009](findings/F-009-diagnostic-views-viz-only.md) | Five diagnostic views, only viz emits them | substrate | medium | M | open — partially lands with F-005 |
 | [F-005](findings/F-005-two-mcp-servers.md) | Two MCP server implementations | substrate | medium | XL | deferred — wait for F-001…F-005 of unification to land first |
 | [F-011](findings/F-011-operation-feeds-hints-split-crates.md) | `operation_feeds_hints` split across crates | suggest | low | S | open — lands with F-003 |
-| [F-017](findings/F-017-rapid-collisions-everywhere.md) | Rapid collisions — round-07 confirms AS001/13/15 now 0 collisions; reassess closure after F-031 | sim | low | — | re-evaluate post-F-031 |
+| [F-017](findings/F-017-rapid-collisions-everywhere.md) | Rapid collisions — **implicitly closed round-09**: 0 rapid collisions on every smoke case AS001-AS015 post-F-024+F-026+F-027+F-031 | sim | low | — | close explicitly in round-10 |
 | [F-010](findings/F-010-catalog-six-match-blocks.md) | Catalog has six 23-arm match blocks | substrate | low | M | open — re-evaluate after F-003 lands |
 | [F-019](findings/F-019-stepover-semantic-cardinality.md) | Stepover semantic cardinality across op families | suggest | low | M | deferred — re-evaluate after F-003 |
 | [F-021](findings/F-021-suggest-all-paint-thrash.md) | Suggest All button recomputes LUT every paint | viz | low | S | open |
@@ -103,10 +116,7 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 
 | Finding | Claimed by | PR | Notes |
 |---|---|---|---|
-
-(F-029 landed at partial-landing scope 2026-05-26; F-031 landed
-2026-05-26 in commit `497a3b2`. F-030 implementer brief in
-`handoff_prompts/` has now completed its prerequisite chain.)
+| (none) | — | — | F-032 released back to open queue 2026-05-26; finding hypothesis refuted by implementer probe — see Implementation log |
 
 ## Closed round-02 (2026-05-25)
 
@@ -174,28 +184,88 @@ Round-08 verified F-030 architecture refactor through MCP smoke (AS001 byte-iden
 
 | Bar | Target | Round-07 | Round-08 | Status |
 |---|---:|---|---|---|
-| Suggest first-shot landing rate | ≥ 90% | unmeasured | unmeasured | needs full sweep (round-09) |
-| Sim chipload calibration (3D ops) | ≥ 95% | 2/2 | 1/1 (AS013 re-checked stable) | stable |
-| Sim chipload calibration (2D ops) | ≥ 95% | 4/4 | 1/1 (AS001 re-checked stable) | stable |
-| **Sim deflection calibration** | ≥ 95% | 5/7 Within | **5/7 Within** (AS013/15 F-031 residual; AS001 verified byte-identical) | **F-031 → 7/7** |
+| Suggest first-shot landing rate | ≥ 90% | unmeasured | unmeasured | needs full sweep (round-10) |
+| Sim chipload calibration (3D ops) | ≥ 95% | 1/1 | 2/2 (AS013, AS015) | stable |
+| Sim chipload calibration (2D ops) | ≥ 95% | 1/1 | (not re-tested round-09) | stable |
+| **Sim deflection calibration** | ≥ 95% | 5/7 Within | **6/7 Within** (AS013 verified Within at 0.105; AS015 F-032 residual at 0.434) | **F-032 → 7/7** |
 | Optimizer honest-improvement | ≥ 95% | not re-tested | not re-tested | stable; F-020 still untested |
-| Optimizer refusal correctness | 100% | not re-tested | not re-tested | stable; verify post-F-031 |
+| Optimizer refusal correctness | 100% | not re-tested | not re-tested | stable; verify post-F-032 |
 | Export gate | 100% | not tested | not tested | open |
 
 ## Blockers / questions for the user
 
-- None active. Round-08 closed with F-030 architecture refactor verified through MCP smoke (AS001 byte-identical, AS013 collisions 0). Duplicated-frame pattern retired.
-- Round-09 priorities:
-  - **Spawn F-031 implementer** (adaptive3d residual deep-Z parity, sim-side stamping). The only remaining blocker for the 7/7 deflection bar.
-  - After F-031 lands + MCP rebuild, round-09 smoke must confirm AS013 + AS015 deflection Within (< 0.2 mm). Once 7/7, the loop's deflection acceptance bar is met.
-  - F-020 (optimizer Ranked-BS path) needs a fixture spec first.
-  - F-025 (non-identity setups) — open a smoke probe with `face_up=Bottom` once a fixture exists. F-030's unification should handle non-identity transforms cleanly; this is a verification, not an implementation.
-  - **Acceptance loop is on the edge of closing**: when F-031 lands and 7/7 is confirmed, the active-workstream block in `CLAUDE.md` becomes removable.
+- **F-032 reframed (2026-05-26)**: the round-10 implementer probed
+  AS015 and found the finding's transit-sample hypothesis is wrong.
+  Real root cause is dexel reporting `axial_engagement_mm > flute_length`
+  on a 3D finish op running solo without prior roughing, PLUS a
+  separate scallop-ring-emission bug emitting (X=0, Z=0) sentinels
+  for out-of-mesh-footprint points. **Needs re-audit before any
+  candidate fix lands.** See F-032 finding's "Round-10 implementer
+  reframe" section for evidence + four candidate fix shapes (A/B/C/D).
+  Auditor decision: which fix shape to pursue, and whether AS015 is
+  the right acceptance bar for the deflection 7/7 goal (or whether
+  AS015 should be reframed as a multi-op smoke case with prior
+  roughing).
+- Round-10 priorities (updated):
+  - Auditor re-evaluates F-032's reframed scope. Likely choices:
+    (A) add a prior roughing toolpath to ux_3d_terrain.toml / AS015
+    (smallest blast radius; reframes AS015 as a 2-op smoke);
+    (B) ship a scallop generator hardening for the out-of-mesh ring
+    point cohort (defensive, smaller); (C) clamp `axial_engagement_mm`
+    to `tool.length()` at the dexel-measurement layer (architectural,
+    likely needs fingerprint regen sweep). Implementer suggested A+B
+    as the lowest-effort path to 7/7.
+  - Deflection bar stays at 6/7 until the chosen F-032 fix lands.
+  - **F-017 (rapid collisions) can still be explicitly closed in
+    round-10** — round-09 confirmed every smoke case AS001-AS015 = 0
+    rapid collisions, independent of F-032.
+  - The active-workstream block in `CLAUDE.md` stays until F-032
+    actually closes 7/7 deflection.
+  - Stretch goals: F-020 (optimizer Ranked-BS test fixture), F-025
+    (non-identity setup smoke probe — F-030's unification likely
+    handles this for free, just needs a fixture), F-031 collateral
+    spot-check on AS017/AS018 for analogous dressup-rewrite cruft.
 
 ## Implementation log
 
 (implementers append here when they land a PR; auditor moves entries to round directories when verified)
 
+- 2026-05-26 — **F-032 implementer reframe (NO LAND)**. Round-10
+  implementer (Claude Opus 4.7) probed AS015 through
+  `ProjectSession::run_simulation` and **refuted the finding's
+  transit-sample hypothesis**. The deflection-gate triggering sample
+  is steady-state `MoveIntent::FinishingCut` with `CutKinematics::Helix`,
+  `radial_woc_fraction = 0.75`, `axial_engagement_mm = 17.77 mm` on a
+  15 mm flute, `in_transit_span = false`, `span_path = [Operation,
+  Region("Ring 4")]` — by every signal `is_steady_state_for_gate`
+  reads, it IS a steady-state cut. F-031's predicate is correctly
+  scoping it. Two real root causes identified instead: (1) AS015
+  runs scallop solo on `ux_3d_terrain.toml` (no prior roughing) so
+  the dexel above-terrain bulk material is full uncut stock height
+  (~46 mm) — the cutter at terrain Z=14.59 sees inflated axial
+  engagement (17-47 mm) into stock that's outside its 15 mm flute's
+  reach; (2) `scallop::ring_to_3d` emits ring points at clamped
+  (X=0, Z=0) when outside the mesh footprint, producing samples at
+  Z=0 reading near-full-stock-height axial (~47 mm). Implementer
+  probed two speculative fixes — synthesise `SpanKind::Entry` from
+  `MoveIntent::Entry*` (useful F-031 hardening for other ops, but
+  didn't move AS015 because the triggering sample is `FinishingCut`),
+  and clamp `axial_engagement_mm` to `tool.length()` in the
+  deflection force calc (moved 0.434 → 0.424; trivial because the
+  scallop-ring-emission Z=0 cohort then dominates). Both reverted
+  per implementer-contract's "stop if > 2× S estimate" rule. **F-032
+  finding updated** with "Round-10 implementer reframe" section
+  detailing the real triggering-sample evidence, the
+  scallop-ring-emission Z=0 cohort, and four candidate fix shapes
+  (A: test-data add prior roughing; B: scallop generator culls
+  out-of-mesh ring points; C: dexel measurement clamps axial to
+  flute length; D: op-aware workflow advisory). Effort re-estimated
+  S → M. **F-032 released back to open queue for re-audit**;
+  deflection bar stays 6/7. No source-code change (speculative
+  changes reverted in working tree before commit). No MCP rebuild
+  needed.
+
+- 2026-05-26 — round-09 audit: **F-031 verified through MCP smoke** on AS013. Deflection 0.637 → **0.105 Within** (gate now reads steady-state samples only; the 0.637 still appears in the `entry_spike` informational field, correctly excluded from the gate verdict). Collateral 6.4× toolpath reduction: AS013 went from 420,371 moves / 375k cut / 220k rapid to **65,299 / 219k / 132k** — F-031 removed a spurious multi-pass helix-entry rewrite the dressup was injecting on every plunge. **Bar moved 5/7 → 6/7.** AS015 unchanged at 0.434 — F-031's transit-filter is adaptive3d-scoped; scallop has its own deflection-gate sample selection that doesn't honor it. Opened **F-032** with concrete hotspot evidence (AS015 reports physically-impossible peak_axial_doc_mm = 25-27 mm on a 3mm ball nose at avg engagement < 5% — F-031 sibling, S effort). **F-017 implicitly closed** — all smoke cases AS001-AS015 report 0 rapid collisions post-F-024+F-026+F-027+F-031. Delta: `rounds/round-09-2026-05-26/delta.md`. No code change — audit only.
 - 2026-05-26 — **F-031 landed** (commit `497a3b2`). Root cause: planner-↔-dressup
   helix entry-style parity gap. The planner's
   `stamp_emitted_segment(Adaptive3dSegment::Rapid)` stamps a single
