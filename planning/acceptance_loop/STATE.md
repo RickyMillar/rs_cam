@@ -12,7 +12,9 @@ and implementer write here.
 ## Current round
 
 **round-08** (audit pending — F-029 partial-landed 2026-05-26; F-031
-opened for residual; deflection bar still 5/7; F-030 stands by)
+opened for residual; deflection bar still 5/7; **F-030 architecture
+refactor landed 2026-05-26** against the user's explicit precondition
+override, awaits round-08 MCP smoke verification)
 
 Round-07 closed 2026-05-25. **F-027 + F-028 verified.** AS013 + AS015
 collisions 2924/52 → 0 cleanly. AS004 face deflection 0.243 → 0.005
@@ -35,15 +37,27 @@ at partial-landing scope; F-031 is the new top of the queue for the
 7/7 deflection bar.
 
 **F-030 (architecture refactor, opened round-07)** unifies the
-5 duplicated stock-frame entry points but is **blocked on the
-deflection bar reaching 7/7** (now via F-031) — the acceptance suite is
-its only regression net. Brief at `handoff_prompts/F-030-architecture-brief.md`.
+5 duplicated stock-frame entry points via a new
+`rs_cam_core::session::SetupEvalContext`. Landed 2026-05-26
+(commit pending) against the 5/7 deflection bar with the user's
+explicit precondition override — AS013/AS015 deflection residuals
+are sim-side parity (tracked as F-031), orthogonal to F-030's
+frame-handling scope. The 4 _f024.rs / _f026.rs / _f027.rs /
+_f028.rs acceptance tests + the viz-side controller / worker pins
+(`build_world_stock_bbox_respects_stock_origin_f024`,
+`controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024`,
+`as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028`,
+`as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024`)
+all pass byte-identically; clippy clean. **MCP rebuild required
+before round-08 smoke.** Brief at `handoff_prompts/F-030-architecture-brief.md`.
 
 Delta: `rounds/round-07-2026-05-25/delta.md`.
 
 Implementer(s) active: none. F-031 next. **MCP rebuild required before
 round-08 smoke** — F-029 partial-landing touched
-`crates/rs_cam_core/src/adaptive3d/{clearing,path,mod}.rs`.
+`crates/rs_cam_core/src/adaptive3d/{clearing,path,mod}.rs` and the
+F-030 refactor touched session compute + viz controller / worker
+frame handling.
 
 ## Last verified baseline
 
@@ -74,7 +88,7 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 |---|---|---|---|:-:|---|
 | [F-031](findings/F-031-adaptive3d-residual-deep-z-parity.md) | Adaptive3d residual deep-Z planner↔simulator stamp parity gap — F-029 follow-up, still blocks 7/7 deflection bar | sim | high | M-L | open — **next implementer pickup**; F-029 closed at partial-landing scope |
 | [F-029](findings/F-029-adaptive3d-interior-cell-parity.md) | Adaptive3d interior-cell planner↔simulator stamp parity gap — final deflection residual on AS013/AS015 | sim | medium | M | **partial-landing 2026-05-26** — cleanup-raster DPP clamp + diagnostic probe landed; residual interior-cell tracked as F-031 |
-| [F-030](findings/F-030-unify-setup-eval-context.md) | Unify SetupEvalContext across the 5 stock-frame entry points — architecture refactor | substrate | medium | L | open — **blocked on F-031 + 7/7 deflection bar**; brief at `handoff_prompts/F-030-architecture-brief.md` |
+| [F-030](findings/F-030-unify-setup-eval-context.md) | Unify SetupEvalContext across the 5 stock-frame entry points — architecture refactor | substrate | medium | L | **landed 2026-05-26** (commit pending); awaits round-08 MCP smoke verification |
 | [F-020](findings/F-020-optimizer-ranked-bs-path.md) | Optimizer Ranked-outcome BS-stepover path untested | optimize | high | M | open — needs test fixture before fix |
 | [F-025](findings/F-025-non-identity-setup-z-frame.md) | Z-frame mismatch on non-identity setups (face_up=Bottom etc.) | substrate | medium | S–M | open — stub; possibly subsumed by F-030 |
 | [F-006](findings/F-006-operation-config-three-default-paths.md) | Default `OperationConfig` produced via three paths | suggest | medium | M | open — partially absorbed by F-003 |
@@ -201,6 +215,47 @@ the last blocker for 7/7.
 
 (implementers append here when they land a PR; auditor moves entries to round directories when verified)
 
+- 2026-05-26 — **F-030 architecture refactor landed** (commit pending).
+  Introduces `rs_cam_core::session::SetupEvalContext` — single source
+  of truth for `(world_stock_bbox, local_stock_bbox, local_to_global,
+  heights_stock_bbox, safe_z, face_up, z_rotation)` per (session, setup)
+  tuple. Built once via `SetupEvalContext::build_for_setup`; consumed
+  by every code path that previously derived these ad hoc. The 4
+  duplicated derivation sites (F-024/F-026/F-027/F-028 family) now
+  collapse to one builder:
+  - Site 2 (core compute) — `session::compute::ProjectSession::generate_toolpath`
+    + `run_simulation` per-setup group + `height_context_for_toolpath`
+    diagnostic path all read from a `SetupEvalContext`.
+  - Site 3 (viz worker sim) — `compute::worker::execute::build_core_simulation_request`
+    unchanged shape (still consumes the bare `SetupSimGroup` fields);
+    its identity-setup `(None, None)` semantic preserved.
+  - Site 4 (viz controller sim) — `controller::events::simulation::build_simulation_groups`
+    now builds each `SetupSimGroup` from `SetupEvalContext::build`.
+  - Site 5 (viz controller gen) — `controller::events::compute::submit_toolpath_compute`
+    routes `transform_setup` filter, `stock_bbox`, `safe_z`,
+    `HeightContext`, and `ProjectCurve::setup_z_flipped` through
+    `SetupEvalContext`. F-028's `.filter(|s| s.needs_transform())`
+    pattern is now `transform_setup.filter(|_| ctx.needs_transform())`.
+  - Viz `state::job::height_context_from_session` (Heights diagnostic
+    panel + GPU upload) now also delegates to the context, so the
+    Heights tab numbers match the toolpath generator's frame for
+    non-identity setups (incidental F-025 alignment — does NOT close
+    F-025).
+  Dead helper removed: `ProjectSession::effective_stock_bbox_with_rotation`
+  (callers replaced by `ctx.local_stock_bbox`). F-024 safe_z floor
+  invariant preserved (reads from local bbox max even for identity
+  setups). Site 5's pre-refactor `safe_z = effective_safe_z(raw, world_bbox.max.z)`
+  divergence from site 2's local-bbox floor is now unified on site 2's
+  (F-024-stated) convention — a conservatively-higher floor, never
+  unsafe. Site 1 (load `auto_from_model` re-derivation in
+  `session::project_file`) is left as is — it's the upstream stock-config
+  mutation that feeds `SetupEvalContext::world_stock_bbox`, not a
+  duplicated derivation. Acceptance: 4 F-024/26/27/28 cargo tests
+  pass + 37 viz controller tests + 43 worker tests + 1575 core lib
+  unit tests + 188 viz lib tests; clippy `-D warnings` clean.
+  Auditor verification (round-08 MCP smoke): F-030 does NOT claim
+  verified; the smoke runs first. **MCP rebuild required before
+  round-08 smoke.**
 - 2026-05-26 — **F-029 partial landing** (commit `74d8a7f`, Claude
   Opus 4.7 pickup of prior session's in-flight work). Landed:
   (1) diagnostic probe `debug_adaptive_3d_segments_for_f029_probe`

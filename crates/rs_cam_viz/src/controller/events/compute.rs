@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use rs_cam_core::dexel_stock::TriDexelStock;
-use rs_cam_core::geo::BoundingBox3;
 
 use crate::compute::{ComputeBackend, ComputeError, ComputeMessage, ComputeRequest};
 use crate::state::simulation::{SimulationResults, SimulationRunMeta};
@@ -56,13 +55,18 @@ impl<B: ComputeBackend> AppController<B> {
             }
         }
 
-        // Find the setup that contains this toolpath
+        // Find the setup that contains this toolpath.
+        // F-030: every frame-derived value below (transform, stock bbox,
+        // heights, safe_z) reads from one `SetupEvalContext` so this
+        // controller path can never diverge from `session::compute::compute`.
         let setup_data = self
             .state
             .session
             .list_setups()
             .iter()
             .find(|s| s.toolpath_indices.contains(&tp_idx));
+        let ctx =
+            rs_cam_core::session::SetupEvalContext::build_for_setup(&self.state.session, setup_data);
 
         let mut keep_out_footprints = setup_data
             .map(|setup| {
@@ -95,44 +99,22 @@ impl<B: ComputeBackend> AppController<B> {
             _ => None,
         };
 
-        // F-028 viz-path follow-up (2026-05-25): treat identity setups
-        // (`face_up=Top`, `z_rotation=Deg0`) as "no setup transform" so the
-        // generation pipeline emits cuts in world frame, mirroring
-        // `session::compute::compute`. Pre-fix the viz controller's
-        // `transform_setup.is_some()` branch was taken even for identity
-        // setups, which: (a) shifted polygons by `-stock.origin` into a
-        // zero-rooted setup-local frame, (b) built the `HeightContext` from
-        // the zero-rooted local bbox, and (c) forwarded `stock_bbox=` the
-        // local bbox to the worker. The toolpath generator anchored its
-        // depth stepping at `heights.top_z = local stock_top` (e.g. 12 mm
-        // for AS001 where world stock top sits at Z=0) and emitted cuts at
-        // Z=10, 8, 6. The viz simulation path then dropped
-        // `local_to_global = None` for identity setups (F-024 follow-up),
-        // so the dexel grid was rebuilt in *world* frame — and the
-        // generator's local-frame cuts at Z=10 sat 10 mm above the world
-        // stock top at Z=0. The cutter swept through air the whole run:
-        // `peak_axial_doc_mm = 0`, `total_removed_volume_est_mm3 = 0`,
-        // 96 % air-cut. See round-07 smoke + F-028 follow-up notes.
-        //
-        // Mirroring `session::compute::compute` (commits `e48d7df` site 1):
-        // identity setups skip the geometry transform, use the world stock
-        // bbox for the `HeightContext`, and pass the world bbox through to
-        // the worker. The downstream sim path's "identity setup →
-        // local_to_global = None + dexel grid in world frame" branch then
-        // matches the toolpath frame and engagement reads the commanded DOC.
-        let transform_setup = transform_setup.filter(|s| s.needs_transform());
+        // F-028 viz-path follow-up + F-030: identity setups
+        // (`face_up=Top`, `z_rotation=Deg0`) skip the geometry transform so
+        // the generation pipeline emits cuts in world frame, mirroring
+        // `session::compute::compute`. The `SetupEvalContext::needs_transform()`
+        // predicate is the single source of truth — pre-F-028 the viz path
+        // took the transform branch even for identity setups, which
+        // anchored heights at `local stock_top` (12 mm for AS001) and
+        // emitted cuts at Z=10, 8, 6 while the downstream sim grid sat in
+        // world frame (Z=0 stock top), so the cutter swept through air the
+        // whole run.
+        let transform_setup = transform_setup.filter(|_| ctx.needs_transform());
 
-        // Flag project_curve when the setup Z is already inverted. Single source
-        // of truth: `SetupTransformInfo::is_z_flipped()`.
-        let needs_transform = transform_setup.is_some();
-        let setup_is_z_flipped = setup_data.is_some_and(|s| {
-            self.state
-                .session
-                .setup_transform_info(s.face_up, s.z_rotation)
-                .is_z_flipped()
-        });
         if let OperationConfig::ProjectCurve(ref mut cfg) = operation {
-            cfg.setup_z_flipped = setup_is_z_flipped && needs_transform;
+            // F-030: `is_z_flipped` is false for identity setups, so this
+            // collapses the previous `setup_is_z_flipped && needs_transform`.
+            cfg.setup_z_flipped = ctx.is_z_flipped();
         }
 
         let stock_snapshot = self.state.session.stock_config().clone();
@@ -259,20 +241,13 @@ impl<B: ComputeBackend> AppController<B> {
         rt.semantic_trace = None;
         rt.debug_trace_path = None;
 
-        let raw_safe_z = self.state.gui.post.safe_z;
-
-        // Compute setup-local stock bbox FIRST so heights resolve in the correct frame.
-        let stock_bbox = if let Some(transform_setup) = transform_setup.as_ref() {
-            let (width, depth, height) = transform_setup.effective_stock(&stock_snapshot);
-            BoundingBox3 {
-                min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
-                max: rs_cam_core::geo::P3::new(width, depth, height),
-            }
-        } else {
-            stock_snapshot.bbox()
-        };
-
-        let safe_z = rs_cam_core::compute::config::effective_safe_z(raw_safe_z, stock_bbox.max.z);
+        // F-030: stock bbox + safe_z come from the shared
+        // `SetupEvalContext`. `heights_stock_bbox` is world frame for
+        // identity setups (F-028 invariant) and local zero-rooted for
+        // non-identity setups; `safe_z` is floored at the local stock
+        // top per F-024.
+        let stock_bbox = ctx.heights_stock_bbox;
+        let safe_z = ctx.safe_z;
 
         let model_bb = self
             .state

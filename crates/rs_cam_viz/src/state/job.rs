@@ -479,15 +479,27 @@ fn setup_local_bbox(
 
 /// Build a [`HeightContext`] for a session toolpath config using session data.
 ///
-/// `safe_z` is floored via [`effective_safe_z`] so rapids clear the stock.
-/// Model Z extents are reported in the setup-local frame (accounting for
-/// face-up flip, Z rotation, and stock origin translation) so the Heights tab
-/// references match the frame the toolpath is actually computed in.
+/// F-030: delegates to [`rs_cam_core::session::SetupEvalContext`] so the
+/// Heights diagnostic, the generation path, and the simulator's depth
+/// reference all read from one source of truth. `stock_top_z` /
+/// `stock_bottom_z` come from `ctx.heights_stock_bbox` (world frame for
+/// identity setups, local zero-rooted for non-identity); `safe_z` is the
+/// F-024 floor; model Z extents are reported in the setup-local frame for
+/// non-identity setups so the Heights tab references match the frame the
+/// toolpath is actually computed in.
 pub fn height_context_from_session(
     session: &rs_cam_core::session::ProjectSession,
     tc: &rs_cam_core::session::ToolpathConfig,
 ) -> rs_cam_core::compute::config::HeightContext {
-    let sb = session.stock_config().bbox();
+    let setup = session.list_setups().iter().find(|s| {
+        s.toolpath_indices.iter().any(|&i| {
+            session
+                .toolpath_configs()
+                .get(i)
+                .is_some_and(|t| t.id == tc.id)
+        })
+    });
+    let ctx = rs_cam_core::session::SetupEvalContext::build_for_setup(session, setup);
     let raw_mb = session
         .models()
         .iter()
@@ -498,31 +510,20 @@ pub fn height_context_from_session(
                 .map(|mesh| mesh.bbox)
                 .or_else(|| session_polygons_bbox(m.polygons.as_deref().map(|v| v.as_slice())))
         });
-    // Apply the setup transform that owns this toolpath so model_top/bottom_z
-    // are in the setup-local frame. The raw mesh bbox is in world coords.
-    let setup = session.list_setups().iter().find(|s| {
-        s.toolpath_indices.iter().any(|&i| {
-            session
-                .toolpath_configs()
-                .get(i)
-                .is_some_and(|t| t.id == tc.id)
-        })
-    });
-    let mb = match (raw_mb, setup) {
-        (Some(b), Some(s)) => {
-            let info = session.setup_transform_info(s.face_up, s.z_rotation);
-            Some(setup_local_bbox(&b, &info))
-        }
+    // For non-identity setups, project the raw world-frame model bbox into
+    // the setup-local frame so the Heights tab numbers match the toolpath
+    // generator's frame.
+    let mb = match (raw_mb, ctx.local_to_global.as_ref()) {
+        (Some(b), Some(info)) => Some(setup_local_bbox(&b, info)),
         (Some(b), None) => Some(b),
         _ => None,
     };
-    let safe_z =
-        rs_cam_core::compute::config::effective_safe_z(session.post_config().safe_z, sb.max.z);
+    let heights_bbox = ctx.heights_stock_bbox;
     rs_cam_core::compute::config::HeightContext {
-        safe_z,
+        safe_z: ctx.safe_z,
         op_depth: tc.operation.default_depth_for_heights(),
-        stock_top_z: sb.max.z,
-        stock_bottom_z: sb.min.z,
+        stock_top_z: heights_bbox.max.z,
+        stock_bottom_z: heights_bbox.min.z,
         model_top_z: mb.map(|b| b.max.z),
         model_bottom_z: mb.map(|b| b.min.z),
     }

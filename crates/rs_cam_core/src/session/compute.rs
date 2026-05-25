@@ -15,7 +15,7 @@ use crate::compute::simulate::{
     SimGroupEntry, SimToolpathEntry, SimulationRequest, run_simulation,
 };
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use crate::compute::transform::{FaceUp, ZRotation};
+use crate::compute::transform::FaceUp;
 use crate::debug_trace::ToolpathDebugRecorder;
 use crate::dexel_stock::StockCutDirection;
 use crate::geo::{BoundingBox3, P3};
@@ -554,11 +554,15 @@ impl ProjectSession {
             ));
         }
 
-        // Find the setup for orientation and keep-out info
+        // Find the setup for orientation and keep-out info.
+        // F-030: route every frame-derived value (stock bbox, transform,
+        // safe_z, heights bbox) through a single `SetupEvalContext`. The
+        // 5 historical sites that re-derived these ad hoc are now thin
+        // wrappers over the same builder.
         let setup = self.find_setup_for_toolpath_index(index);
-        let face_up = setup.map(|s| s.face_up).unwrap_or(FaceUp::Top);
-        let z_rotation = setup.map(|s| s.z_rotation).unwrap_or(ZRotation::Deg0);
-        let needs_transform = face_up != FaceUp::Top || z_rotation != ZRotation::Deg0;
+        let ctx = super::SetupEvalContext::build_for_setup(self, setup);
+        let face_up = ctx.face_up;
+        let z_rotation = ctx.z_rotation;
 
         // Collect keep-out footprints from setup fixtures and keep-out zones
         let mut keep_out_footprints: Vec<crate::polygon::Polygon2> = Vec::new();
@@ -582,7 +586,7 @@ impl ProjectSession {
         // When a setup has non-identity face_up or z_rotation, transform
         // mesh and polygons into setup-local coordinates (matching the GUI
         // compute path).
-        if needs_transform {
+        if ctx.needs_transform() {
             if let Some(raw_mesh) = mesh.as_ref() {
                 mesh = Some(Arc::new(
                     self.transform_mesh_to_setup(raw_mesh, face_up, z_rotation),
@@ -602,8 +606,10 @@ impl ProjectSession {
             }
         }
 
-        // Build effective stock bbox in setup-local coordinates
-        let effective_stock_bbox = self.effective_stock_bbox_with_rotation(face_up, z_rotation);
+        // Build effective stock bbox in setup-local coordinates.
+        // F-030: provided by `SetupEvalContext` (zero-rooted local bbox
+        // after face-up + Z-rotation).
+        let effective_stock_bbox = ctx.local_stock_bbox;
 
         // F-028 (2026-05-25): the height context's `stock_top_z` must reflect
         // the frame the toolpath is emitted in. For identity setups
@@ -627,21 +633,19 @@ impl ProjectSession {
         // Non-identity setups continue to use the local (zero-rooted) bbox.
         // Their toolpaths are still emitted in setup-local frame and the
         // session's `local_to_global` transform translates back to world.
-        let heights_stock_bbox = if needs_transform {
-            effective_stock_bbox
-        } else {
-            self.stock_bbox()
-        };
+        //
+        // F-030: provided by `SetupEvalContext::heights_stock_bbox`
+        // (world bbox for identity, local for non-identity).
+        let heights_stock_bbox = ctx.heights_stock_bbox;
 
         // Resolve heights. `effective_safe_z` floors the user-configured
         // `post.safe_z` at `stock_top + clearance` so rapids clear the stock.
-        // Use the local zero-rooted bbox here to preserve the F-024 safe_z
-        // behaviour (a higher floor than strictly needed for identity setups
-        // is conservatively safe — never lower than the world stock top for
-        // identity setups, never lower than the local stock top for
-        // non-identity setups).
-        let safe_z =
-            crate::compute::config::effective_safe_z(self.post.safe_z, effective_stock_bbox.max.z);
+        // F-024 invariant: floor reads from the local zero-rooted bbox even
+        // for identity setups — a conservatively-higher floor (never lower
+        // than the world stock top for identity setups, never lower than the
+        // local stock top for non-identity setups) is always safe. Provided
+        // by `SetupEvalContext::safe_z`.
+        let safe_z = ctx.safe_z;
 
         let model_bbox = mesh.as_ref().map(|m| &m.bbox);
         let height_ctx = HeightContext {
@@ -697,8 +701,10 @@ impl ProjectSession {
         // truth is the setup transform's `is_z_flipped()`.
         let mut operation = tc.operation.clone();
         if let crate::compute::OperationConfig::ProjectCurve(ref mut cfg) = operation {
-            let xform = self.setup_transform_info(face_up, z_rotation);
-            cfg.setup_z_flipped = needs_transform && xform.is_z_flipped();
+            // F-030: `SetupEvalContext::is_z_flipped()` returns false for
+            // identity setups and `xform.is_z_flipped()` otherwise — same
+            // combined predicate as the previous `needs_transform && xform.is_z_flipped()`.
+            cfg.setup_z_flipped = ctx.is_z_flipped();
         }
 
         // Pre-resolve the effective boundary polygon so adaptive3d can
@@ -1190,12 +1196,15 @@ impl ProjectSession {
                 // effective bbox — that path's frame consistency (toolpath
                 // emission, `local_to_global` transform shape) is outside
                 // F-024's scope.
-                let xform = self.setup_transform_info(setup.face_up, setup.z_rotation);
-                let (local_stock_bbox, local_to_global) = if xform.needs_transform() {
-                    (Some(xform.effective_stock_bbox()), Some(xform))
-                } else {
-                    (None, None)
-                };
+                //
+                // F-030: drive these decisions from the shared
+                // `SetupEvalContext`. `sim_local_stock_bbox()` returns
+                // `None` for identity setups (F-024 invariant) and
+                // `Some(local_stock_bbox)` paired with `local_to_global`
+                // for non-identity setups.
+                let setup_ctx = super::SetupEvalContext::build_for_setup(self, Some(setup));
+                let local_stock_bbox = setup_ctx.sim_local_stock_bbox();
+                let local_to_global = setup_ctx.local_to_global.clone();
 
                 groups.push(SimGroupEntry {
                     toolpaths: entries,
@@ -1902,11 +1911,21 @@ impl ProjectSession {
     /// Build a [`HeightContext`] for a given toolpath. Mirrors the GUI's
     /// `height_context_from_session` so MCP consumers see the same heights
     /// diagnostics the params panel renders.
+    ///
+    /// F-030: stock-frame + transform decisions delegate to
+    /// [`super::SetupEvalContext`] so this path and the generation path
+    /// (`generate_toolpath`) share a single source of truth for
+    /// `stock_top_z` / `safe_z` / model-bbox-in-frame.
     pub fn height_context_for_toolpath(
         &self,
         tc: &super::ToolpathConfig,
     ) -> crate::compute::config::HeightContext {
-        let sb = self.stock.bbox();
+        let setup = self.setups.iter().find(|s| {
+            s.toolpath_indices
+                .iter()
+                .any(|&i| self.toolpath_configs.get(i).is_some_and(|t| t.id == tc.id))
+        });
+        let ctx = super::SetupEvalContext::build_for_setup(self, setup);
         let raw_mb = self
             .models
             .iter()
@@ -1918,27 +1937,20 @@ impl ProjectSession {
                         .and_then(|v| super::mutation::polygons_bbox(v))
                 })
             });
-        // Apply the setup transform that owns this toolpath so model_top/bottom_z
-        // are in the setup-local frame.
-        let setup = self.setups.iter().find(|s| {
-            s.toolpath_indices
-                .iter()
-                .any(|&i| self.toolpath_configs.get(i).is_some_and(|t| t.id == tc.id))
-        });
-        let mb = match (raw_mb, setup) {
-            (Some(b), Some(s)) => {
-                let info = self.setup_transform_info(s.face_up, s.z_rotation);
-                Some(transform_bbox_world_to_local(&b, &info))
-            }
+        // Apply the setup transform that owns this toolpath so
+        // model_top/bottom_z are in the setup-local frame for non-identity
+        // setups. Identity setups leave the world bbox untouched.
+        let mb = match (raw_mb, ctx.local_to_global.as_ref()) {
+            (Some(b), Some(info)) => Some(transform_bbox_world_to_local(&b, info)),
             (Some(b), None) => Some(b),
             _ => None,
         };
-        let safe_z = crate::compute::config::effective_safe_z(self.post.safe_z, sb.max.z);
+        let heights_bbox = ctx.heights_stock_bbox;
         crate::compute::config::HeightContext {
-            safe_z,
+            safe_z: ctx.safe_z,
             op_depth: tc.operation.default_depth_for_heights(),
-            stock_top_z: sb.max.z,
-            stock_bottom_z: sb.min.z,
+            stock_top_z: heights_bbox.max.z,
+            stock_bottom_z: heights_bbox.min.z,
             model_top_z: mb.map(|b| b.max.z),
             model_bottom_z: mb.map(|b| b.min.z),
         }

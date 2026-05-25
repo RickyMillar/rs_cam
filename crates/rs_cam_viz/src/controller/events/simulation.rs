@@ -159,21 +159,19 @@ impl<B: ComputeBackend> AppController<B> {
             if !toolpaths.is_empty() {
                 all_toolpaths_flat.extend(toolpaths.clone());
 
-                let xform = self
-                    .state
-                    .session
-                    .setup_transform_info(setup.face_up, setup.z_rotation);
-                let local_stock_bbox = xform.effective_stock_bbox();
-                let local_to_global = if xform.needs_transform() {
-                    Some(xform)
-                } else {
-                    None
-                };
+                // F-030: drive per-setup frame decisions through the shared
+                // `SetupEvalContext` so the viz controller, viz worker, and
+                // core simulate paths can never diverge again.
+                let setup_ctx = rs_cam_core::session::SetupEvalContext::build(
+                    &self.state.session,
+                    setup.face_up,
+                    setup.z_rotation,
+                );
 
                 groups.push(SetupSimGroup {
                     toolpaths,
-                    local_stock_bbox,
-                    local_to_global,
+                    local_stock_bbox: setup_ctx.local_stock_bbox,
+                    local_to_global: setup_ctx.local_to_global,
                 });
             }
 
