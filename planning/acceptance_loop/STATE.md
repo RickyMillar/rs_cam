@@ -178,6 +178,42 @@ bar didn't move because the residuals are NOT what F-026 targets.
 
 (implementers append here when they land a PR; auditor moves entries to round directories when verified)
 
+- 2026-05-25 — F-028 viz-path follow-up landed: the original F-028
+  fix (commit `e48d7df`) only patched `session::compute::compute`
+  (site 1) — the direct `ProjectSession::run_simulation` path. Round-07
+  smoke through the MCP exposed that the viz/MCP/GUI pipeline takes a
+  *different* code path through `AppController::submit_toolpath_compute`
+  (`controller/events/compute.rs`), which (a) shifted polygons by
+  `-stock.origin` into a setup-local frame even for identity setups
+  and (b) built the `HeightContext` from the zero-rooted local bbox.
+  AS001 pocket emitted z_level=10/8/6 (= local stock_top - depth), the
+  downstream sim path dropped `local_to_global=None` and rebuilt the
+  dexel grid in world frame (F-024 follow-up `0c907a6`), and the
+  cutter swept through air 10 mm above the world stock top.
+  Round-07 MCP smoke evidence: peak_axial=0, total_removed=0,
+  chipload=Unmodeled(all_samples_air_cut_or_rapid), air_cut=96 %.
+  Fix mirrors site 1: gate the `transform_setup = Some(...)` branch on
+  `s.needs_transform()` so identity setups fall through to the
+  `transform_setup = None` path and use the world stock bbox for both
+  geometry frame and `HeightContext`. Single-site change in
+  `controller/events/compute.rs` (one filter call + load-bearing
+  comment). Regression test
+  (`controller::tests::as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028`)
+  drives `submit_toolpath_compute` through a CapturingBackend and
+  asserts (a) `heights.top_z == 0` (world stock top for AS001),
+  (b) `heights.bottom_z == -6` (top_z - depth), (c) `stock_bbox.{min,
+  max}` respect `stock.origin_{x,y,z}`. Test fails on master
+  `db1fb69` with `heights.top_z = 12.0`; passes after fix. Existing
+  F-024 viz-path tests
+  (`as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024`,
+  `controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024`,
+  `build_world_stock_bbox_respects_stock_origin_f024`) continue to
+  pass. Full workspace `cargo test -q` + `cargo clippy --workspace
+  --all-targets -- -D warnings` clean. **User must `/mcp` rebuild
+  before the auditor re-verifies through the MCP.** Commit: see git
+  log (fix(F-028): mirror world-frame heights fix into viz worker +
+  controller — follow-up to e48d7df).
+
 - 2026-05-25 — F-028 follow-up cross-check: the round-07 implementer
   brief reported an alleged AS001/AS003 pocket/profile regression
   (z_level shifted from -2/-4/-6 to +10/+8/+6, peak_axial=0,
