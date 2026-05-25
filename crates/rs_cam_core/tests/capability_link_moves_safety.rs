@@ -269,6 +269,7 @@ fn face_link_moves_preserves_material_state() {
             safe_z: 30.0,
             stock_offset: 5.0,
             direction: FaceDirection::Zigzag,
+            stock_top_z: 0.0,
         },
     );
     let cutter = FlatEndmill::new(12.7, 25.0);

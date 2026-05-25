@@ -278,6 +278,7 @@ fn face_op_dressup_pipeline_preserves_invariants() {
         safe_z: 30.0,
         stock_offset: 0.0,
         direction: rs_cam_core::face::FaceDirection::OneWay,
+        stock_top_z: 0.0,
     };
     let raw = face_toolpath(&bbox, &params);
     assert!(!raw.moves.is_empty(), "face fixture should produce moves");

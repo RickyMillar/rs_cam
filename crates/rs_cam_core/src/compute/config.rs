@@ -169,14 +169,31 @@ impl Default for HeightsConfig {
 
 impl HeightsConfig {
     /// Resolve all heights given stock/model/post context.
+    ///
+    /// F-028 (2026-05-25): `top_z` Auto now resolves to `ctx.stock_top_z`
+    /// (the stock top in the operation's emission frame) instead of `0.0`.
+    /// Pre-fix any project where stock top sat at world Z != 0 emitted 2.5D
+    /// cuts at world Z=[-depth, 0] (i.e. below or above the actual stock),
+    /// because face / pocket / profile / etc. fed `heights.top_z = 0` into
+    /// their depth stepping. With the fix the depth stepping anchors to the
+    /// actual stock top in the right frame (`world` for identity setups,
+    /// `local` for non-identity setups — the caller passes the right
+    /// `stock_top_z` per setup; see `session/compute.rs::compute` for the
+    /// identity-vs-non-identity dispatch).
+    ///
+    /// `bottom_z` Auto remains `-op_depth.abs()` so depth-from-top semantics
+    /// keep working for callers that haven't migrated; combining with the
+    /// new `top_z` Auto yields `bottom_z = -op_depth` (unchanged when
+    /// `stock_top_z == 0`, which is the common test/fixture case).
     pub fn resolve(&self, ctx: &HeightContext) -> ResolvedHeights {
         let retract = self.retract_z.resolve_value(ctx.safe_z, ctx);
+        let top_z = self.top_z.resolve_value(ctx.stock_top_z, ctx);
         ResolvedHeights {
             clearance_z: self.clearance_z.resolve_value(retract + 10.0, ctx),
             retract_z: retract,
             feed_z: self.feed_z.resolve_value(retract - 2.0, ctx),
-            top_z: self.top_z.resolve_value(0.0, ctx),
-            bottom_z: self.bottom_z.resolve_value(-ctx.op_depth.abs(), ctx),
+            top_z,
+            bottom_z: self.bottom_z.resolve_value(top_z - ctx.op_depth.abs(), ctx),
         }
     }
 }
@@ -486,7 +503,8 @@ mod tests {
     }
 
     #[test]
-    fn auto_resolve_unchanged() {
+    fn auto_resolve_top_z_follows_ctx_stock_top_z() {
+        // F-028: Auto top_z now anchors to ctx.stock_top_z (was hardcoded 0).
         let cfg = HeightsConfig::default();
         let ctx = test_ctx();
         let h = cfg.resolve(&ctx);
@@ -496,9 +514,21 @@ mod tests {
         assert!((h.clearance_z - 20.0).abs() < 1e-9);
         // feed = retract - 2 = 8
         assert!((h.feed_z - 8.0).abs() < 1e-9);
-        // top = 0
+        // F-028: top_z Auto = ctx.stock_top_z = 25 (was 0 pre-fix)
+        assert!((h.top_z - 25.0).abs() < 1e-9);
+        // F-028: bottom_z Auto = top_z - op_depth = 25 - 5 = 20 (was -5 pre-fix)
+        assert!((h.bottom_z - 20.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn auto_resolve_top_z_zero_when_ctx_stock_top_z_zero() {
+        // Backwards-compat for callers that build `HeightContext::simple` /
+        // pre-F-028 fixtures with `stock_top_z = 0.0`: Auto top_z still
+        // resolves to 0 in that frame, and bottom_z auto = -op_depth.
+        let cfg = HeightsConfig::default();
+        let ctx = HeightContext::simple(10.0, 5.0);
+        let h = cfg.resolve(&ctx);
         assert!((h.top_z - 0.0).abs() < 1e-9);
-        // bottom = -5
         assert!((h.bottom_z - (-5.0)).abs() < 1e-9);
     }
 

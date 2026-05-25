@@ -271,6 +271,11 @@ pub fn execute_operation_annotated(
 
     match op {
         OperationConfig::Face(cfg) => {
+            // F-028: face anchors its depth stepping at `heights.top_z`
+            // (which under Auto follows `ctx.stock_top_z` after F-028 — so
+            // identity setups land at world stock top and non-identity
+            // setups at local stock top, both consistent with the frame
+            // the toolpath gets stamped into).
             let params = crate::face::FaceParams {
                 tool_radius,
                 stepover: cfg.stepover,
@@ -281,6 +286,7 @@ pub fn execute_operation_annotated(
                 safe_z,
                 stock_offset: cfg.stock_offset,
                 direction: cfg.direction,
+                stock_top_z: heights.top_z,
             };
             let generated = generated_with_depth_run_spans(
                 crate::face::face_toolpath(stock_bbox, &params),

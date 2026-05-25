@@ -605,9 +605,41 @@ impl ProjectSession {
         // Build effective stock bbox in setup-local coordinates
         let effective_stock_bbox = self.effective_stock_bbox_with_rotation(face_up, z_rotation);
 
-        // Resolve heights — use the transformed mesh bbox so Z values are in the
-        // setup-local frame. `effective_safe_z` floors the user-configured
+        // F-028 (2026-05-25): the height context's `stock_top_z` must reflect
+        // the frame the toolpath is emitted in. For identity setups
+        // (`face_up=Top`, `z_rotation=Deg0`) no transform is applied to the
+        // toolpath before stamping, so the toolpath effectively lives in the
+        // *world* frame — and `heights.top_z` (which 2D ops consume as the
+        // depth-stepping reference) must therefore be the world stock top
+        // (`stock.origin_z + stock.z`), not the zero-rooted
+        // `effective_stock_bbox.max.z`. Mirrors the GUI viz controller
+        // (`controller/events/compute.rs` ~line 244-246), which already
+        // forwards the world bbox to its `HeightContext` for identity setups.
+        //
+        // Pre-fix the face op (and any 2.5D op using `heights.top_z`) cut at
+        // world Z=[-depth, 0] regardless of where the stock actually sat in
+        // world Z — fine when `stock.origin_z + stock.z == 0` (the AS001
+        // convention, stock top at world Z=0), but on projects with the
+        // *3D* `auto_from_model` convention `origin_z = bbox.min.z` the stock
+        // top sits at world Z=15 (`ux_step_plate_mdf.toml`) and face/pocket
+        // were cutting in air below the stock — see F-028 evidence.
+        //
+        // Non-identity setups continue to use the local (zero-rooted) bbox.
+        // Their toolpaths are still emitted in setup-local frame and the
+        // session's `local_to_global` transform translates back to world.
+        let heights_stock_bbox = if needs_transform {
+            effective_stock_bbox
+        } else {
+            self.stock_bbox()
+        };
+
+        // Resolve heights. `effective_safe_z` floors the user-configured
         // `post.safe_z` at `stock_top + clearance` so rapids clear the stock.
+        // Use the local zero-rooted bbox here to preserve the F-024 safe_z
+        // behaviour (a higher floor than strictly needed for identity setups
+        // is conservatively safe — never lower than the world stock top for
+        // identity setups, never lower than the local stock top for
+        // non-identity setups).
         let safe_z =
             crate::compute::config::effective_safe_z(self.post.safe_z, effective_stock_bbox.max.z);
 
@@ -615,8 +647,8 @@ impl ProjectSession {
         let height_ctx = HeightContext {
             safe_z,
             op_depth: tc.operation.default_depth_for_heights(),
-            stock_top_z: effective_stock_bbox.max.z,
-            stock_bottom_z: effective_stock_bbox.min.z,
+            stock_top_z: heights_stock_bbox.max.z,
+            stock_bottom_z: heights_stock_bbox.min.z,
             model_top_z: model_bbox.map(|b| b.max.z),
             model_bottom_z: model_bbox.map(|b| b.min.z),
         };
