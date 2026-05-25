@@ -2,10 +2,10 @@
 
 - **Stage:** sim (planning/coordinate-frame bug, surfaces through simulator)
 - **Severity:** medium
-- **Status:** landed (commit `e48d7df`, 2026-05-25) + viz-path follow-up (commit pending, 2026-05-25). **Follow-up 2 (viz-path)**: round-07 MCP smoke evidence (AS001 z_level=10/8/6 in viz path, peak_axial=0, air_cut=96 %) **did reproduce** through the GUI/MCP code path — `AppController::submit_toolpath_compute` (`controller/events/compute.rs`) built `HeightContext` from the local zero-rooted bbox even for identity setups. Site-1 fix in `session::compute::compute` only covered the direct `ProjectSession::run_simulation` API; viz/MCP path bypassed it. Single-line fix: gate `transform_setup = Some(...)` on `s.needs_transform()`. Regression test pins `heights.top_z = 0` for AS001 identity setup; pre-fix this read 12.0. Awaiting round-08 MCP smoke verification.
+- **Status:** landed (commit `e48d7df`, 2026-05-25) + viz-path follow-up (commit `c9e203d`, 2026-05-25). **Follow-up 2 (viz-path)**: round-07 MCP smoke evidence (AS001 z_level=10/8/6 in viz path, peak_axial=0, air_cut=96 %) **did reproduce** through the GUI/MCP code path — `AppController::submit_toolpath_compute` (`controller/events/compute.rs`) built `HeightContext` from the local zero-rooted bbox even for identity setups. Site-1 fix in `session::compute::compute` only covered the direct `ProjectSession::run_simulation` API; viz/MCP path bypassed it. Single-line fix: gate `transform_setup = Some(...)` on `s.needs_transform()`. Regression test pins `heights.top_z = 0` for AS001 identity setup; pre-fix this read 12.0. Awaiting round-08 MCP smoke verification.
 - **First found in:** round-05 (suspected); round-06 (confirmed independent of F-026/F-027); viz-path branch found round-07
 - **Effort:** S–M (site 1: ~5 LOC in face/heights config; viz-path follow-up: 1 LOC + comment + regression test)
-- **Linked PRs:** commit `e48d7df` (site 1, core), commit pending (viz-path follow-up — `controller/events/compute.rs`)
+- **Linked PRs:** commit `e48d7df` (site 1, core), commit `c9e203d` (viz-path follow-up — `controller/events/compute.rs`)
 - **Source audits:** round-06 verification of F-026 on AS004
 
 ## Evidence
