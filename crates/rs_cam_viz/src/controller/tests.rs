@@ -1342,3 +1342,226 @@ fn delete_setup_with_selected_keep_out_clears_selection() {
         "Selection should be cleared when setup containing selected keep-out is deleted"
     );
 }
+
+/// F-024 (third-site fix, 2026-05-25): regression test that the controller's
+/// world `stock_bbox` helper respects `StockConfig::origin_{x,y,z}`.
+///
+/// Pre-fix (rounds 03/04 evidence): `build_simulation_groups` constructed the
+/// world `stock_bbox` inline as `(0,0,0)..(stock.x, stock.y, stock.z)` —
+/// dropping the origin. For AS001 (`origin_z=-12`) this sent a bbox of
+/// `(0,0,0)..(100,100,12)` to the worker even though the actual world stock
+/// spans `(-10,-10,-12)..(90,90,0)`. The F-024 viz-worker follow-up
+/// (commit `0c907a6`) made `build_core_simulation_request` forward
+/// `local_stock_bbox = None` for identity setups so the core would fall back
+/// to `request.stock_bbox` — but the fallback bbox itself was the same
+/// broken bbox. Result: toolpath cuts at world Z=-2 still sat below every
+/// dexel ray (which spanned the wrong Z=[0,12] instead of Z=[-12,0]),
+/// `axial_engagement_mm` read the full ray length, and the deflection gate
+/// stayed at ~374 µm — byte-identical to round-02.
+///
+/// Fix: route the world bbox construction through `ProjectSession::
+/// stock_bbox()` (which delegates to `StockConfig::bbox()` and applies the
+/// origin correctly). Exposed via the pure free function
+/// `controller::events::simulation::build_world_stock_bbox` so this test can
+/// exercise it without spinning up a full `AppController<B>`.
+#[test]
+fn build_world_stock_bbox_respects_stock_origin_f024() {
+    use rs_cam_core::compute::stock_config::StockConfig;
+    use rs_cam_core::geo::BoundingBox3;
+    use rs_cam_core::material::{Material, WoodSpecies};
+    use rs_cam_core::session::ProjectSession;
+
+    let mut session = ProjectSession::new_empty();
+    let stock = StockConfig {
+        x: 100.0,
+        y: 100.0,
+        z: 12.0,
+        origin_x: -10.0,
+        origin_y: -10.0,
+        origin_z: -12.0,
+        auto_from_model: false,
+        material: Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        },
+        ..StockConfig::default()
+    };
+    session.set_stock_config(stock);
+
+    let bbox: BoundingBox3 =
+        crate::controller::events::simulation::build_world_stock_bbox(&session);
+
+    assert!(
+        (bbox.min.x - -10.0).abs() < 1e-9,
+        "F-024: world stock bbox min.x must equal stock.origin_x; got {}",
+        bbox.min.x
+    );
+    assert!(
+        (bbox.min.y - -10.0).abs() < 1e-9,
+        "F-024: world stock bbox min.y must equal stock.origin_y; got {}",
+        bbox.min.y
+    );
+    assert!(
+        (bbox.min.z - -12.0).abs() < 1e-9,
+        "F-024: world stock bbox min.z must equal stock.origin_z (= -12 for \
+         AS001); got {}. Pre-fix the controller built bbox.min.z = 0.0 and \
+         the per-setup dexel grid spanned Z=[0, 12] instead of Z=[-12, 0], \
+         so cuts at world Z=-2 sat below every ray and axial_engagement_mm \
+         read the full stock height (12 mm) instead of the commanded DOC.",
+        bbox.min.z
+    );
+    assert!(
+        (bbox.max.x - 90.0).abs() < 1e-9,
+        "F-024: world stock bbox max.x must equal origin_x + stock.x; got {}",
+        bbox.max.x
+    );
+    assert!(
+        (bbox.max.y - 90.0).abs() < 1e-9,
+        "F-024: world stock bbox max.y must equal origin_y + stock.y; got {}",
+        bbox.max.y
+    );
+    assert!(
+        (bbox.max.z - 0.0).abs() < 1e-9,
+        "F-024: world stock bbox max.z must equal origin_z + stock.z (= 0 for \
+         AS001, stock top at world Z=0); got {}",
+        bbox.max.z
+    );
+}
+
+/// F-024 (third-site fix, 2026-05-25): end-to-end regression that the viz
+/// worker simulation, when fed the controller-built world `stock_bbox`,
+/// reports per-sample `axial_engagement_mm` matching the commanded DOC
+/// rather than the full stock height.
+///
+/// This is the controller-path equivalent of
+/// `compute::worker::tests::as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024`
+/// — that test built the world `stock_bbox` by hand. This test builds the
+/// bbox via `build_world_stock_bbox(&session)`, so it fails (per-sample
+/// peak axial = ~12 mm) if the controller-side helper ever regresses to the
+/// pre-fix zero-rooted construction even if the worker-side fix is intact.
+#[test]
+fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024() {
+    use rs_cam_core::compute::stock_config::StockConfig;
+    use rs_cam_core::material::{Material, WoodSpecies};
+    use rs_cam_core::session::ProjectSession;
+    use rs_cam_core::simulation_cut::CutKinematics;
+    use std::sync::atomic::AtomicBool;
+
+    use crate::compute::{
+        SetupSimGroup, SetupSimToolpath, SimulationRequest as VizSimulationRequest,
+    };
+
+    let mut session = ProjectSession::new_empty();
+    let stock = StockConfig {
+        x: 100.0,
+        y: 100.0,
+        z: 12.0,
+        origin_x: -10.0,
+        origin_y: -10.0,
+        origin_z: -12.0,
+        auto_from_model: false,
+        material: Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        },
+        ..StockConfig::default()
+    };
+    session.set_stock_config(stock);
+
+    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    tool.diameter = 6.0;
+    tool.cutting_length = 25.0;
+    tool.shank_diameter = 6.35;
+    tool.shank_length = 20.0;
+    tool.stickout = 45.0;
+    tool.flute_count = 2;
+    tool.name = "End Mill 6mm".to_owned();
+
+    // First-pass-of-pocket-style linear cutting at world Z=-2. Same shape as
+    // the worker-tests F-024 regression so the assertion threshold stays
+    // comparable; the only difference is that we use the controller helper
+    // to build the world `stock_bbox`.
+    let mut tp = Toolpath::new();
+    tp.rapid_to(P3::new(10.0, 30.0, 5.0));
+    tp.feed_to(P3::new(10.0, 30.0, -2.0), 385.0);
+    for i in 0..40 {
+        let x = 10.0 + (i as f64) * 1.5;
+        tp.feed_to(P3::new(x, 30.0, -2.0), 770.0);
+    }
+    tp.rapid_to(P3::new(70.0, 30.0, 5.0));
+
+    // World bbox via the controller helper. With the fix this respects the
+    // stock origin (Z=[-12, 0]); pre-fix it was Z=[0, 12].
+    let world_stock_bbox =
+        crate::controller::events::simulation::build_world_stock_bbox(&session);
+
+    // Identity-setup local bbox shape from `controller::events::simulation`
+    // (always zero-rooted via `xform.effective_stock_bbox()`).
+    let local_stock_bbox = rs_cam_core::geo::BoundingBox3 {
+        min: P3::new(0.0, 0.0, 0.0),
+        max: P3::new(100.0, 100.0, 12.0),
+    };
+
+    let request = VizSimulationRequest {
+        groups: vec![SetupSimGroup {
+            toolpaths: vec![SetupSimToolpath {
+                id: ToolpathId(1),
+                name: "AS001 Pocket Pass 1".to_owned(),
+                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp)),
+                tool,
+                semantic_trace: None,
+                spindle_rpm: Some(18_000),
+                metrics_not_applicable: false,
+                drill_op: None,
+                operation_config_hash: 0,
+            }],
+            local_stock_bbox,
+            local_to_global: None,
+        }],
+        stock_bbox: world_stock_bbox,
+        stock_top_z: world_stock_bbox.max.z,
+        resolution: 1.0,
+        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions {
+            enabled: true,
+            capture_arc_engagement: true,
+        },
+        spindle_rpm: 18_000,
+        rapid_feed_mm_min: 5_000.0,
+        model_mesh: None,
+    };
+
+    let cancel = AtomicBool::new(false);
+    let result = crate::compute::worker::execute::run_simulation_with_phase(
+        &request,
+        &cancel,
+        |_phase| {},
+    )
+    .expect("viz simulation completes");
+
+    let cut_trace = result.cut_trace.as_ref().expect("metric cut trace");
+
+    let mut first_pass_axials: Vec<f64> = cut_trace
+        .samples
+        .iter()
+        .filter(|s| s.is_cutting && s.cut_kinematics == CutKinematics::Linear)
+        .filter(|s| (s.position[2] - (-2.0)).abs() < 0.5)
+        .map(|s| s.axial_engagement_mm)
+        .collect();
+    first_pass_axials.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    assert!(
+        !first_pass_axials.is_empty(),
+        "expected at least one linear cutting sample near Z=-2; got 0"
+    );
+
+    let peak = *first_pass_axials.last().unwrap_or(&0.0);
+    assert!(
+        peak <= 3.0,
+        "F-024 (third site): first-pass axial engagement with controller-built \
+         world bbox should be <= 3.0 mm (commanded 2.0 + grid discretisation \
+         margin); got peak = {peak:.4} mm across {} samples. If this is ~12 mm, \
+         the controller is dropping `stock.origin_z` when constructing the \
+         world bbox passed to the worker — see \
+         `controller::events::simulation::build_world_stock_bbox` and the \
+         F-024 finding notes.",
+        first_pass_axials.len()
+    );
+}

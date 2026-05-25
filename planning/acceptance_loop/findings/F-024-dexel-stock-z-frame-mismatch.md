@@ -2,8 +2,8 @@
 
 - **Stage:** substrate
 - **Severity:** high
-- **Status:** landed
-- **Linked PRs:** commit `d82bd4d` (2026-05-25)
+- **Status:** landed (3 fix sites: core `d82bd4d`, viz-worker `0c907a6`, viz-controller 2026-05-25)
+- **Linked PRs:** commits `d82bd4d` + `0c907a6` + viz-controller third-site (2026-05-25)
 - **First found in:** round-03 (2026-05-25), via F-002 implementer investigation
 - **Effort:** M–L (~200–400 LOC across `compute/simulate.rs`, `compute/transform.rs`, `session/compute.rs` + fingerprint regen)
 - **Linked PRs:** —

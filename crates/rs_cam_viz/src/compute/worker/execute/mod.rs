@@ -295,7 +295,7 @@ fn build_playback_data(req: &SimulationRequest) -> Vec<super::PlaybackToolpath> 
     playback
 }
 
-pub(super) fn run_simulation_with_phase<F>(
+pub(crate) fn run_simulation_with_phase<F>(
     req: &SimulationRequest,
     cancel: &AtomicBool,
     set_phase: F,

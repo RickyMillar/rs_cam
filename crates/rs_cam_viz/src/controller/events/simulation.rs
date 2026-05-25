@@ -104,11 +104,17 @@ impl<B: ComputeBackend> AppController<B> {
         mut include_toolpath: impl FnMut(usize, &ToolpathConfig) -> bool,
         mut stop_after_setup: impl FnMut(usize) -> bool,
     ) -> Option<(Vec<SetupSimGroup>, Vec<SetupSimToolpath>, BoundingBox3)> {
-        let stock = self.state.session.stock_config();
-        let stock_bbox = BoundingBox3 {
-            min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
-            max: rs_cam_core::geo::P3::new(stock.x, stock.y, stock.z),
-        };
+        // F-024 third-site fix: the world `stock_bbox` forwarded to the
+        // worker must respect the stock's origin offset. Previously this
+        // constructed a zero-rooted bbox (`(0,0,0)..(stock.x, stock.y,
+        // stock.z)`), which dropped `stock.origin_{x,y,z}`. For AS001
+        // (`origin_z = -12`) the toolpath cuts at world Z=-2 while the
+        // bbox said the stock spanned Z=[0, 12] — the dexel grid never
+        // matched the toolpath frame and `axial_engagement_mm` read the
+        // full stock height instead of the commanded DOC. `ProjectSession::
+        // stock_bbox()` delegates to `StockConfig::bbox()` which applies
+        // the origin correctly.
+        let stock_bbox = build_world_stock_bbox(&self.state.session);
 
         let mut groups: Vec<SetupSimGroup> = Vec::new();
         let mut all_toolpaths_flat = Vec::new();
@@ -313,6 +319,29 @@ impl<B: ComputeBackend> AppController<B> {
             );
         }
     }
+}
+
+/// Build the world-frame stock bbox for a simulation request.
+///
+/// Delegates to `ProjectSession::stock_bbox()` (which applies
+/// `StockConfig::origin_{x,y,z}`). Factored out as a free function so
+/// the controller's bbox construction can be exercised from unit tests
+/// without needing a full `AppController<B>` instance.
+///
+/// **F-024 third-site fix (2026-05-25)**: the prior inline construction
+/// in `build_simulation_groups` was `(0,0,0)..(stock.x, stock.y, stock.z)`
+/// — it ignored the stock origin. For AS001 (`origin_z = -12`) the world
+/// bbox should be `(-10,-10,-12)..(90, 90, 0)` but was being sent as
+/// `(0,0,0)..(100, 100, 12)`. The viz worker's
+/// `build_core_simulation_request` falls back to `request.stock_bbox`
+/// when `local_to_global` is `None` (the F-024 follow-up landed in commit
+/// `0c907a6`), so the broken bbox was the dexel grid's Z range — toolpath
+/// cuts at world Z=-2 sat below every ray and `axial_engagement_mm` read
+/// the full stock height instead of the commanded DOC.
+pub(crate) fn build_world_stock_bbox(
+    session: &rs_cam_core::session::ProjectSession,
+) -> BoundingBox3 {
+    session.stock_bbox()
 }
 
 /// Auto-resolution calculation.

@@ -1,6 +1,6 @@
 mod compute;
 mod model;
-mod simulation;
+pub(crate) mod simulation;
 mod toolpath;
 mod undo;
 
