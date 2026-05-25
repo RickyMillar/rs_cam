@@ -12,12 +12,14 @@
 //! ```
 
 mod compute;
+mod eval_context;
 mod mutation;
 pub mod project_file;
 mod save;
 pub mod wizard;
 
 pub use compute::{MutationKind, StaleSet, compute_stale_set};
+pub use eval_context::SetupEvalContext;
 pub use wizard::{OutputLayout, WizardState};
 
 // Re-export all public project_file types so external crates see no path change.
@@ -1007,24 +1009,6 @@ impl ProjectSession {
         self.setups
             .iter()
             .find(|s| s.toolpath_indices.contains(&tp_index))
-    }
-
-    /// Compute the stock bounding box in setup-local coordinates, accounting for
-    /// both face-up orientation and Z rotation.
-    pub(crate) fn effective_stock_bbox_with_rotation(
-        &self,
-        face_up: FaceUp,
-        z_rotation: ZRotation,
-    ) -> BoundingBox3 {
-        let (eff_w, eff_d, eff_h) = {
-            let (w, d, h) = face_up.effective_stock(self.stock.x, self.stock.y, self.stock.z);
-            z_rotation.effective_stock(w, d, h)
-        };
-        // Setup-local frame always has origin at (0,0,0).
-        BoundingBox3 {
-            min: P3::new(0.0, 0.0, 0.0),
-            max: P3::new(eff_w, eff_d, eff_h),
-        }
     }
 
     // ── Geometry transforms for setup-local frame ────────────────
