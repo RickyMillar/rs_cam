@@ -197,6 +197,22 @@ Snapshot taken from round-02 delta vs round-01 baseline.
   `crates/rs_cam_core/tests/op_model_ref_static_validation_f023.rs::{pocket_op_with_unresolved_model_id_surfaces_blocking_diagnostic, pocket_op_with_resolved_model_id_emits_no_ref_diagnostic, face_op_with_unresolved_model_id_is_silent}`
   + adapter unit tests at
   `diagnostics::adapters::from_model_refs::tests::*`.
+- 2026-05-25 — F-024 viz-path follow-up landed: round-04 auditor
+  smoke confirmed the original F-024 fix (`d82bd4d`) wasn't taking
+  effect through the production MCP / GUI path because the viz
+  worker's `compute::worker::execute::build_core_simulation_request`
+  was unconditionally wrapping the viz-side zero-rooted
+  `local_stock_bbox` in `Some(...)` — so core's "fall back to world
+  frame when `local_stock_bbox` is None" branch never fired on the
+  viz path (AS001 stayed at `peak_axial_doc_mm = 12.0` /
+  `deflection.peak_mm = 0.374` after d82bd4d). Mirrored the
+  `session/compute.rs` identity-setup conditional in
+  `build_core_simulation_request`: when `local_to_global` is `None`
+  (identity), forward `local_stock_bbox = None` so core falls back to
+  `request.stock_bbox` (world frame). Commit `0c907a6`. Regression
+  test:
+  `crates/rs_cam_viz/src/compute/worker/tests.rs::as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024`
+  (pre-fix peak axial = 9.0 mm; post-fix ≈ 2.0 mm).
 
 ## How to update this file
 
