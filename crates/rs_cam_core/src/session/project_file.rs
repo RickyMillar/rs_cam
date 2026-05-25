@@ -711,7 +711,7 @@ pub(super) fn build_session_from_project(
 ) -> Result<super::ProjectSession, SessionError> {
     validate_looks_like_cam_project(&project, None)?;
 
-    let stock = stock_from_project(&project.job.stock);
+    let mut stock = stock_from_project(&project.job.stock);
 
     // Load tools
     let tools: Vec<ToolConfig> = project
@@ -808,6 +808,64 @@ pub(super) fn build_session_from_project(
                     load_error: Some(e.to_string()),
                 });
             }
+        }
+    }
+
+    // F-026 (2026-05-25): when `stock.auto_from_model = true`, the stock
+    // dimensions on disk may be stale relative to the current model
+    // bbox — the user edited a model externally, or the saved file
+    // pre-dates a mesh edit. The MCP `import_model` path already re-
+    // runs `update_from_bbox` via `add_model`, but the load path was
+    // using the raw TOML values unchanged. For `auto_from_model` projects
+    // where the model has grown above `stock.z` (or shifted in XY), this
+    // produced a stock bbox that didn't enclose the model — the
+    // adaptive3d planner warned about it ("stock_top_z is below mesh
+    // top"), but the simulator's per-setup dexel grid then sat at the
+    // stale Z height while the toolpath cuts ran in the model's frame.
+    // 3D ops like adaptive3d / scallop walk the whole model surface,
+    // and Cut moves into uncleared cells produced full-stock-height
+    // pre-stamp rays that the simulator interpreted as 25-50 mm axial
+    // engagement (single-stamp clearing of virgin stock instead of the
+    // commanded depth_per_pass). Rapids cleared at adaptive3d's
+    // expected safe_z then registered as collisions against the stale
+    // grid Z range.
+    //
+    // Fix: at load time, if `auto_from_model = true` and any loaded
+    // model has a finite bbox, re-derive stock from the union of all
+    // model bboxes (mirrors what `add_model` does at runtime). This
+    // restores the documented invariant — `auto_from_model = true`
+    // means the stock bounds track the model bbox at the time the
+    // session is in memory, regardless of whether the dimensions on
+    // disk match.
+    if stock.auto_from_model {
+        let mut combined: Option<crate::geo::BoundingBox3> = None;
+        for model in &models {
+            let model_bbox = model.mesh.as_ref().map(|mesh| mesh.bbox).or_else(|| {
+                model
+                    .polygons
+                    .as_ref()
+                    .and_then(|polys| crate::session::mutation::polygons_bbox(polys))
+            });
+            if let Some(bb) = model_bbox {
+                combined = Some(match combined {
+                    None => bb,
+                    Some(existing) => crate::geo::BoundingBox3 {
+                        min: crate::geo::P3::new(
+                            existing.min.x.min(bb.min.x),
+                            existing.min.y.min(bb.min.y),
+                            existing.min.z.min(bb.min.z),
+                        ),
+                        max: crate::geo::P3::new(
+                            existing.max.x.max(bb.max.x),
+                            existing.max.y.max(bb.max.y),
+                            existing.max.z.max(bb.max.z),
+                        ),
+                    },
+                });
+            }
+        }
+        if let Some(bb) = combined {
+            stock.update_from_bbox(&bb);
         }
     }
 

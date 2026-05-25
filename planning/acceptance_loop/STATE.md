@@ -11,28 +11,34 @@ and implementer write here.
 
 ## Current round
 
-**round-05** (audit pending — clean stopping point)
+**round-06** (audit pending — F-026 implementer pickup is the priority)
 
-Round-04 closed 2026-05-25. **F-024 fully verified on AS001**:
-deflection.peak_mm dropped 0.374 → 0.076 (Within), collisions 36 → 0,
-air-cut 77 → 37%, per-pass volumes finally plausible. Five
-F-024-related commits across core + viz worker + viz controller
-(`d82bd4d` + `06a9a2a` + `0c907a6` + `56e9ec2` + `67de558`).
+Round-05 closed 2026-05-25 with **F-026 candidate 2 confirmed and
+promoted to high-severity**. Partial sweep (7 of 18 cases) sufficient
+to conclude the diagnosis:
 
-Delta: `rounds/round-04-2026-05-25/delta.md`.
+- F-024 holds cleanly on **all 5 origin_z=-12 cases** (AS001-AS003,
+  AS005, AS006): deflections 0.000-0.076 mm Within, zero collisions,
+  axial DOC matches commanded.
+- AS013 (adaptive3d on terrain) hotspot at cutter Z=32.4 (above
+  stock_top=30) reads `peak_axial_doc_mm = 25.0` while sibling
+  hotspot at Z=23.4 (inside grid) reads 3.0 (commanded).
+- **AS015 (scallop) and AS004 (face)** both exhibit the same
+  signature — auto_from_model with model extending above stock_top_z.
 
-**AS013 unchanged** because its stock has `origin_z = 0` — the
-F-024 frame mismatch doesn't apply. Its 573µm deflection is either
-genuine overload or a different latent bug; flagged for round-05.
+F-026 scope widened from "AS013-only" to "any auto_from_model project
+where model.z > stock.z". F-017 (rapid collisions) now a clean
+duplicate of F-026 and can close once F-026 lands.
 
-Loop learning from round-04: three rebuild cycles burned because
-each implementer's local test passed without exercising the
-production entry point. Worth a contract-doc update next round.
+Delta: `rounds/round-05-2026-05-25/delta.md`.
 
-Implementer(s) active: none.
+Implementer(s) active: none. F-026 is next pickup.
 
 ## Last verified baseline
 
+- **round-05 delta** (F-026 candidate 2 confirmed + widened scope;
+  F-024 holds on all origin_z=-12 cases):
+  `planning/acceptance_loop/rounds/round-05-2026-05-25/delta.md`
 - **round-04 delta** (F-024 three-site fix verified on AS001;
   AS013 unchanged): `planning/acceptance_loop/rounds/round-04-2026-05-25/delta.md`
 - **round-03 delta** (probes verifying F-015 + F-023; F-002 reframe):
@@ -50,14 +56,15 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 
 | Finding | Title | Stage | Sev | Effort | Status |
 |---|---|---|---|:-:|---|
-| [F-020](findings/F-020-optimizer-ranked-bs-path.md) | Optimizer Ranked-outcome BS-stepover path untested | optimize | high | M | open — **next implementer pickup** (needs test fixture before fix) |
+| [F-027](findings/F-027-adaptive3d-edge-clearing-mismatch.md) | Adaptive3d planner stock XY mismatch with simulator stock — model-edge axial spikes | sim | medium | M | open — opened during F-026 landing; deflection residual after F-026's load-time fix |
+| [F-020](findings/F-020-optimizer-ranked-bs-path.md) | Optimizer Ranked-outcome BS-stepover path untested | optimize | high | M | open — needs test fixture before fix |
 | [F-025](findings/F-025-non-identity-setup-z-frame.md) | Z-frame mismatch on non-identity setups (face_up=Bottom etc.) | substrate | medium | S–M | open — stub; revisit when smoke surfaces it |
 | [F-006](findings/F-006-operation-config-three-default-paths.md) | Default `OperationConfig` produced via three paths | suggest | medium | M | open — partially absorbed by F-003 |
 | [F-004](findings/F-004-three-project-loaders.md) | Three project-TOML loaders | substrate | medium | L | open — likely lands with F-005 |
 | [F-009](findings/F-009-diagnostic-views-viz-only.md) | Five diagnostic views, only viz emits them | substrate | medium | M | open — partially lands with F-005 |
 | [F-005](findings/F-005-two-mcp-servers.md) | Two MCP server implementations | substrate | medium | XL | deferred — wait for F-001…F-005 of unification to land first |
 | [F-011](findings/F-011-operation-feeds-hints-split-crates.md) | `operation_feeds_hints` split across crates | suggest | low | S | open — lands with F-003 |
-| [F-017](findings/F-017-rapid-collisions-everywhere.md) | Rapid collisions — reframed: AS001 36→0 via F-024, residual AS013 (844) is auto_from_model-only | sim | low | S–M | reframed round-04; defer until full round-05 sweep confirms scope reduction |
+| [F-017](findings/F-017-rapid-collisions-everywhere.md) | Rapid collisions — **duplicate of F-026** (round-05 confirmed); close after F-026 lands and round-06 verifies | sim | low | — | duplicate-of-F-026 |
 | [F-010](findings/F-010-catalog-six-match-blocks.md) | Catalog has six 23-arm match blocks | substrate | low | M | open — re-evaluate after F-003 lands |
 | [F-019](findings/F-019-stepover-semantic-cardinality.md) | Stepover semantic cardinality across op families | suggest | low | M | deferred — re-evaluate after F-003 |
 | [F-021](findings/F-021-suggest-all-paint-thrash.md) | Suggest All button recomputes LUT every paint | viz | low | S | open |
@@ -131,36 +138,55 @@ Verified by round-02 smoke (`rounds/round-02-2026-05-25/delta.md`):
 
 ## Acceptance bars status
 
-Snapshot taken from round-02 delta vs round-01 baseline.
+Snapshot taken from round-05 partial sweep (7 of 18 cases) vs
+round-04. The deflection-bar move is the headline.
 
-| Bar | Target | Round-01 | Round-02 | Status |
+| Bar | Target | Round-04 | Round-05 | Status |
 |---|---:|---|---|---|
-| Suggest first-shot landing rate | ≥ 90% | unmeasured | unmeasured | needs full sweep |
-| Sim chipload calibration (3D ops) | ≥ 95% | 3/3 fired | 1/1 fired (AS013) | stable |
-| Sim chipload calibration (2D ops) | ≥ 95% | 0/7 (all Unmodeled) | 2/2 fired (AS001/AS002) | **F-001 verified** |
-| Sim deflection calibration | ≥ 95% | 4/13 Within | 0/4 verdict change | **F-024 opened** (root cause isolated; F-002 split was a red herring) |
-| Optimizer honest-improvement | ≥ 95% | 2/2 | 1/1 (AS015) | stable; F-020 still untested |
-| Optimizer refusal correctness | 100% | 2/2 | 1/1 (AS015 byte-identical) | stable |
+| Suggest first-shot landing rate | ≥ 90% | unmeasured | unmeasured | needs full sweep (round-06) |
+| Sim chipload calibration (3D ops) | ≥ 95% | 1/1 (AS013) | 2/2 (AS013, AS015) | stable |
+| Sim chipload calibration (2D ops) | ≥ 95% | 1/1 (AS001) | 5/5 (AS001-AS003, AS005, AS006-Unmodeled-expected) | stable; **F-001 fully fired** |
+| **Sim deflection calibration** | ≥ 95% | 1/4 Within | **5/7 Within** (3 misses all auto_from_model) | **F-026 confirmed; single fix away from full bar** |
+| Optimizer honest-improvement | ≥ 95% | 1/1 (AS015) | not re-tested (skipped optimize call) | stable; F-020 still untested |
+| Optimizer refusal correctness | 100% | 1/1 (AS015 byte-identical round-02) | not re-tested | stable; verify next round |
 | Export gate | 100% | not tested | not tested | open |
 
 ## Blockers / questions for the user
 
-- None active. Round-04 closed cleanly with F-024 smoke-verified on
-  AS001 (deflection 0.374 → 0.076, all collateral metrics moved too).
-- Round-05 candidates when ready:
-  - Re-sweep full AS001-AS018 matrix to update deflection bar
-    properly (was 4/13 Within; AS001 now joins).
-  - Investigate AS013's residual 573µm (origin_z=0 case, F-024
-    doesn't apply) — either open a new finding or close as real overload.
+- None active. Round-05 closed cleanly with F-026 candidate 2
+  confirmed and scope widened. The deflection bar moved from 1/4 to
+  5/7 Within with one underlying fix waiting (F-026).
+- Round-06 priorities:
+  - Spawn F-026 implementer (top of queue, high severity, S–M effort).
+  - After F-026 lands, full round-06 sweep AS001-AS018 to refresh all
+    bars and verify F-026 across deferred cases (AS007-AS012, AS014,
+    AS016-AS018). Round-06 verification doubles as F-017 closure.
   - F-020 (optimizer Ranked-BS path) needs a fixture spec first.
-  - F-017 (rapid collisions) reframe — AS001's 36 collisions
-    vanished with the frame fix; only AS013-class remains.
-  - Doc PR adding the "test through the production entry point"
-    learning to `implementer_contract.md` and `autonomous_auditor.md`.
 
 ## Implementation log
 
 (implementers append here when they land a PR; auditor moves entries to round directories when verified)
+
+- 2026-05-25 — F-026 landed (scope-trimmed): `auto_from_model` stock
+  bbox re-derivation now runs at project load time, mirroring the
+  runtime `add_model` path. `project_file::build_session_from_project`
+  computes the union of all loaded model bboxes and calls
+  `StockConfig::update_from_bbox` when `auto_from_model = true`.
+  Restores the documented invariant that `auto_from_model` means
+  stock bounds track the model bbox in memory, regardless of stale
+  TOML values.
+  Acceptance tests:
+  `crates/rs_cam_core/tests/dexel_stock_z_frame_f026.rs::{auto_from_model_load_grows_stock_z_to_enclose_terrain_mesh, auto_from_model_load_grows_stock_xy_to_enclose_polygon_model}`.
+  Implementer investigation found the round-05 audit's diagnosis
+  ("dexel grid Z range stops at stock_top_z") was the wrong layer —
+  the rapid-collision part of the AS013 signature (844 → 0) is fixed
+  by the load-time stock re-derivation, but the deflection-Exceeds
+  residual (peak axial 30-47 mm at sample positions on the model XY
+  boundary, post-fix) is a separate adaptive3d/simulator XY frame
+  mismatch carved out as **F-027** with concrete repro evidence and
+  fix shape. F-017 (rapid collisions) closes for the AS013 portion
+  when F-026 verifies on round-06; the remaining 3D-op collision
+  surface waits on F-027.
 
 - 2026-05-24 — MCP param UX overhaul shipped (`integer_param_coercion`,
   `mutation_result_envelope`, `operation_schema`, `param_schema_hints`,
@@ -260,6 +286,21 @@ Snapshot taken from round-02 delta vs round-01 baseline.
   note in `audit_runbook.md` Step 1. Encodes the round-04 three-
   rebuild-saga learning (`rounds/round-04-2026-05-25/delta.md`).
   No F-ID — loop-doc work. No acceptance test (docs-only).
+- 2026-05-25 — round-05 audit: partial smoke sweep (AS001-AS006 +
+  AS013 + AS015). **F-026 candidate 2 confirmed and promoted to
+  high-severity, scope widened from AS013-only to all auto_from_model
+  projects where model.z > stock.z.** AS013 hotspot at cutter Z=32.4
+  (above stock_top=30) reads peak_axial_doc_mm=25.0 on a 6 mm endmill;
+  sibling hotspot at Z=23.4 (inside grid) reads 3.0 (commanded).
+  AS015 (scallop on terrain) and AS004 (face on auto_from_model MDF
+  plate) both exhibit the same signature. F-017 (rapid collisions)
+  reframed as duplicate of F-026. F-024 verified stable on all 5
+  origin_z=-12 cases (AS001-AS003, AS005, AS006). Deflection bar
+  moved 1/4→5/7 Within. Delta:
+  `planning/acceptance_loop/rounds/round-05-2026-05-25/delta.md`.
+  Results CSV:
+  `target/acceptance_sweeps/agent_smoke_20260525_round05/results.csv`.
+  No code change — audit only. (No F-ID — audit log entry.)
 - 2026-05-25 — F-018 landed: regenerated `test_data/ux_*.toml`
   templates to match `cases_agent_smoke.csv`. Added `End Mill 3mm` +
   `90deg V-bit 6mm` to `ux_2d_star.toml` (AS007-AS010). Created
