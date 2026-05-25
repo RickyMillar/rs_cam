@@ -1137,12 +1137,32 @@ impl ProjectSession {
             if !entries.is_empty() {
                 // Per-setup local stock bbox and transform info derived from
                 // the shared SetupTransformInfo helper (Phase E/D dedup).
+                //
+                // F-024 (2026-05-25): the per-setup dexel grid MUST span the
+                // same Z range as the toolpath the simulator will stamp into
+                // it. The toolpath generator's auto-default `top_z` is `0.0`
+                // (see `compute/config.rs` `HeightsConfig::resolve`), so the
+                // toolpath emits cut moves at Z=[0, -depth] regardless of
+                // setup orientation. For identity setups (`face_up=Top`,
+                // `z_rotation=Deg0`) no transform is applied to the toolpath
+                // before stamping, so the dexel grid must also be in world
+                // frame (`stock.origin_z..stock.origin_z + stock.z`). Using a
+                // zero-rooted local bbox `(0..stock_z)` here placed the
+                // cutter at world Z=-2 below every dexel ray, which clears
+                // the full ray length and inflates `axial_engagement_mm` to
+                // the full stock height. Falling through to `None` makes
+                // `run_simulation` fall back to `request.stock_bbox` (world
+                // frame) for the per-setup grid, matching the toolpath frame.
+                //
+                // Non-identity setups continue to use the zero-origin
+                // effective bbox — that path's frame consistency (toolpath
+                // emission, `local_to_global` transform shape) is outside
+                // F-024's scope.
                 let xform = self.setup_transform_info(setup.face_up, setup.z_rotation);
-                let local_stock_bbox = Some(xform.effective_stock_bbox());
-                let local_to_global = if xform.needs_transform() {
-                    Some(xform)
+                let (local_stock_bbox, local_to_global) = if xform.needs_transform() {
+                    (Some(xform.effective_stock_bbox()), Some(xform))
                 } else {
-                    None
+                    (None, None)
                 };
 
                 groups.push(SimGroupEntry {
