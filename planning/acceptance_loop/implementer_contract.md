@@ -69,6 +69,31 @@ Constraints:
   authorizes it. If you must, add a `// SAFETY:` comment per the
   CLAUDE.md lint policy.
 
+## Test through the production entry point
+
+The acceptance test in your PR MUST exercise the same entry point
+the user / MCP / smoke takes (MCP → controller → worker → core, or
+CLI → core), not just the implementation-layer function you touched.
+A green test against the layer you patched does not prove the fix
+reaches production — the production path may bypass your layer
+entirely.
+
+Example: F-024 (see `rounds/round-04-2026-05-25/delta.md`,
+"three-rebuild saga") burned three MCP rebuild cycles. Each
+implementer's local test was real and green; each fix was real and
+necessary. None moved the smoke needle alone because the production
+MCP → viz-controller → viz-worker → core path bypassed the patched
+layer until all three sites were fixed.
+
+If reaching the production entry point from a unit/integration test
+requires refactoring (extract a pure helper, bump `pub(crate)`
+visibility for tests, etc.), do it in the same PR — that's in scope.
+
+**Hard stop**: if testing through the production path is genuinely
+infeasible (e.g. GUI thread plumbing can't be driven from a test),
+flag it as a blocker on the finding and stop. Do not declare done on
+an implementation-layer test alone.
+
 ## Don'ts
 
 - **Don't** mark the finding `landed` until the PR is merged.

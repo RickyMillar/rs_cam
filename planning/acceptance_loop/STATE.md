@@ -11,30 +11,35 @@ and implementer write here.
 
 ## Current round
 
-**round-04** (audit in progress — F-024 viz follow-up landed; awaiting
-2nd MCP rebuild for full smoke-verify)
+**round-05** (audit pending — clean stopping point)
 
-- F-024 core fix (`d82bd4d` + `06a9a2a`) landed 2026-05-25.
-  First MCP rebuild done; smoke probe revealed the fix didn't take
-  effect through the production path — auditor diagnosed the viz
-  worker has its own simulation-request builder that constructs
-  `SimGroupEntry` separately from `ProjectSession::run_simulation`.
-- F-024 viz follow-up (`0c907a6` + `56e9ec2`) landed 2026-05-25 —
-  mirrors the identity-setup conditional into
-  `viz::compute::worker::execute::build_core_simulation_request`.
-  New regression test covers the viz path specifically.
-  **Needs a SECOND MCP rebuild** for smoke-verify.
-- F-025 stub opened (non-identity setup Z-frame followup).
-- Implementer(s) active: none.
+Round-04 closed 2026-05-25. **F-024 fully verified on AS001**:
+deflection.peak_mm dropped 0.374 → 0.076 (Within), collisions 36 → 0,
+air-cut 77 → 37%, per-pass volumes finally plausible. Five
+F-024-related commits across core + viz worker + viz controller
+(`d82bd4d` + `06a9a2a` + `0c907a6` + `56e9ec2` + `67de558`).
+
+Delta: `rounds/round-04-2026-05-25/delta.md`.
+
+**AS013 unchanged** because its stock has `origin_z = 0` — the
+F-024 frame mismatch doesn't apply. Its 573µm deflection is either
+genuine overload or a different latent bug; flagged for round-05.
+
+Loop learning from round-04: three rebuild cycles burned because
+each implementer's local test passed without exercising the
+production entry point. Worth a contract-doc update next round.
+
+Implementer(s) active: none.
 
 ## Last verified baseline
 
+- **round-04 delta** (F-024 three-site fix verified on AS001;
+  AS013 unchanged): `planning/acceptance_loop/rounds/round-04-2026-05-25/delta.md`
 - **round-03 delta** (probes verifying F-015 + F-023; F-002 reframe):
   `planning/acceptance_loop/rounds/round-03-2026-05-25/delta.md`
 - **round-02 delta** (5-case focused smoke vs round-01):
   `planning/acceptance_loop/rounds/round-02-2026-05-25/delta.md`
-  (smoke run dir: `target/acceptance_sweeps/agent_smoke_20260525_0957/`)
-- **round-01 baseline** (the agent smoke acceptance):
+- **round-01 baseline**:
   `planning/acceptance_loop/rounds/round-01-2026-05-24/baseline.md`
 - **round-00 baseline** (Tier 0 param sweep, pre-MCP-overhaul):
   `planning/acceptance_loop/rounds/round-00-2026-05-24/baseline.md`
@@ -53,7 +58,7 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 | [F-009](findings/F-009-diagnostic-views-viz-only.md) | Five diagnostic views, only viz emits them | substrate | medium | M | open — partially lands with F-005 |
 | [F-005](findings/F-005-two-mcp-servers.md) | Two MCP server implementations | substrate | medium | XL | deferred — wait for F-001…F-005 of unification to land first |
 | [F-011](findings/F-011-operation-feeds-hints-split-crates.md) | `operation_feeds_hints` split across crates | suggest | low | S | open — lands with F-003 |
-| [F-017](findings/F-017-rapid-collisions-everywhere.md) | Rapid collisions in nearly every op (1041→844 on adaptive3d post-batch; still high) | sim | medium | L | open — improvement noted round-02, separate path-planning investigation |
+| [F-017](findings/F-017-rapid-collisions-everywhere.md) | Rapid collisions — reframed: AS001 36→0 via F-024, residual AS013 (844) is auto_from_model-only | sim | low | S–M | reframed round-04; defer until full round-05 sweep confirms scope reduction |
 | [F-010](findings/F-010-catalog-six-match-blocks.md) | Catalog has six 23-arm match blocks | substrate | low | M | open — re-evaluate after F-003 lands |
 | [F-019](findings/F-019-stepover-semantic-cardinality.md) | Stepover semantic cardinality across op families | suggest | low | M | deferred — re-evaluate after F-003 |
 | [F-021](findings/F-021-suggest-all-paint-thrash.md) | Suggest All button recomputes LUT every paint | viz | low | S | open |
@@ -63,7 +68,7 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 
 | Finding | Claimed by | PR | Notes |
 |---|---|---|---|
-_(none — see Implementation log for F-024 third-site landing 2026-05-25)_
+_(none — see Implementation log for loop-docs landing 2026-05-25)_
 
 ## Closed round-02 (2026-05-25)
 
@@ -141,18 +146,18 @@ Snapshot taken from round-02 delta vs round-01 baseline.
 
 ## Blockers / questions for the user
 
-- **Rebuild rs_cam_viz AGAIN** to pick up F-024 viz follow-up
-  (`0c907a6`). The previous rebuild was too early — only had the
-  core-side fix, which the auditor smoke proved didn't take effect
-  through the production MCP path. Now both paths are patched and
-  the viz-path acceptance test passes (peak axial 9.0 → 2.0 mm). Once
-  rebuilt I'll re-run the AS001 deflection probe — expect
-  `deflection.peak_mm` to finally drop from 374 µm into the
-  < 200 µm Within band (probably < 50 µm).
-- After that final smoke, the remaining high-sev queue item is F-020
-  (optimizer Ranked-outcome BS-stepover path untested) but it needs
-  a test fixture spec before it can be picked up. Worth a planning
-  pass before firing an implementer.
+- None active. Round-04 closed cleanly with F-024 smoke-verified on
+  AS001 (deflection 0.374 → 0.076, all collateral metrics moved too).
+- Round-05 candidates when ready:
+  - Re-sweep full AS001-AS018 matrix to update deflection bar
+    properly (was 4/13 Within; AS001 now joins).
+  - Investigate AS013's residual 573µm (origin_z=0 case, F-024
+    doesn't apply) — either open a new finding or close as real overload.
+  - F-020 (optimizer Ranked-BS path) needs a fixture spec first.
+  - F-017 (rapid collisions) reframe — AS001's 36 collisions
+    vanished with the frame fix; only AS013-class remains.
+  - Doc PR adding the "test through the production entry point"
+    learning to `implementer_contract.md` and `autonomous_auditor.md`.
 
 ## Implementation log
 
@@ -250,6 +255,12 @@ Snapshot taken from round-02 delta vs round-01 baseline.
   (pre-fix peak axial = 9.0 mm; post-fix ≈ 2.0 mm — identical signal
   to the worker-tests F-024 regression but driven through the
   controller helper rather than a hand-built world bbox).
+- 2026-05-25 — loop docs: added "Test through the production entry
+  point" rule to `implementer_contract.md`, matching MUST-bullet in
+  `handoff_prompts/autonomous_auditor.md`, and audit verification
+  note in `audit_runbook.md` Step 1. Encodes the round-04 three-
+  rebuild-saga learning (`rounds/round-04-2026-05-25/delta.md`).
+  No F-ID — loop-doc work. No acceptance test (docs-only).
 
 ## How to update this file
 

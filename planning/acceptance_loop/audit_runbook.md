@@ -7,14 +7,35 @@ write product code.
 
 Read `README.md` first if unfamiliar with the loop.
 
+> **Running the loop without a human in the loop?** Read
+> `handoff_prompts/autonomous_auditor.md`. It extends this runbook
+> with the orchestration rules (spawning implementer agents in
+> background, MCP triage triggers, when to ask the user). This
+> runbook is still the per-round procedure either way.
+
 ## Step 0 — Inventory before you touch anything
 
 1. Read `STATE.md` end-to-end. Note:
    - Current round number
    - In-flight findings and who claimed them
    - Implementation-log entries since the last verified baseline
-2. Confirm the MCP `rs-cam` server is reachable
-   (`project_summary` should return without error).
+2. **MCP triage — DO THIS BEFORE ANYTHING ELSE.** Confirm the MCP
+   `rs-cam` server is reachable:
+   - Check that `mcp__rs-cam__*` tools appear in your available tools.
+   - Call `mcp__rs-cam__project_summary` on a known scratch project.
+   - Call `mcp__rs-cam__get_operation_schema` for `"pocket"`.
+
+   **STOP and ask the user if:**
+   - `rs-cam` tools are missing from the tool list (MCP disconnected).
+   - Any of those calls error or time out.
+   - A previously-clean smoke case (e.g. AS001 from round-01)
+     returns `harness_error` this run with no code change explaining
+     it (stale MCP).
+   - Tool schemas differ from what `STATE.md` or finding files
+     describe (rebuilt MCP with changed schema).
+
+   The user is the only one who can reconnect or rebuild the MCP.
+   When they say it's fixed, **re-run this triage** before continuing.
 3. `git status --short` — note any pre-existing dirty state so you
    don't blame the previous round for it. Do not reset or stash.
 
@@ -37,6 +58,12 @@ finding list (e.g. a new precondition error), don't skip it silently
 If runtime gets pathological (a single op > 5 min sim), record the
 runtime, fail the case as `harness_error`, open a finding, and move
 on. Don't fight the GUI.
+
+When verifying landed findings, prefer running the same smoke probe
+the user-facing surface takes (MCP `run_simulation`, GUI Generate
+button, etc.) — implementation-layer tests can pass even when the
+production path bypasses the fix. See round-04 three-rebuild saga
+in `rounds/round-04-2026-05-25/delta.md`.
 
 ## Step 2 — Diff vs last baseline
 
@@ -125,6 +152,9 @@ a-completed-baseline.
 
 ## When to stop and ask the user
 
+- **MCP unreachable, stale, or rebuilt with a schema change** — see
+  Step 0 triage. The user is the only one who can reconnect/rebuild
+  the MCP. Mark the round partial in STATE.md and stop.
 - A finding's acceptance test, when run, contradicts the smoke evidence
   (means either the test is wrong or the finding's framing is wrong)
 - An implementer marked a finding `landed` but the verifying smoke case
