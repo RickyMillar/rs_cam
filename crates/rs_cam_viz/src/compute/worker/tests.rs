@@ -2040,3 +2040,135 @@ fn simulation_metrics_capture_emits_semantic_cut_summaries() {
         std::fs::remove_file(path).ok();
     }
 }
+
+/// F-024 (viz-path follow-up, 2026-05-25): regression test asserting that
+/// the viz worker's `build_core_simulation_request` path applies the same
+/// "identity setup → drop local_stock_bbox/local_to_global" conditional
+/// that `session::compute::compute_simulation_groups` does. Without this
+/// fix the viz worker forwards a zero-rooted `local_stock_bbox` (Z=[0,
+/// stock_z]) paired with `local_to_global=None`, so the per-setup dexel
+/// grid spans world Z=[0, 12] while the toolpath emits cuts at world
+/// Z=-2. The cutter sits below every dexel ray, `ray_blend_above` clears
+/// the full ray length, and per-sample `axial_engagement_mm` reads the
+/// full stock height instead of the commanded DOC.
+///
+/// AS001-shape: identity setup, hardwood 100x100x12 with origin at
+/// `(-10, -10, -12)` so stock top is at world Z=0. A handful of linear
+/// cutting moves at Z=-2 (the first-pass plane) replays the AS001 pocket
+/// shape without depending on the pocket generator. The viz request
+/// mirrors what `controller::events::simulation` produces for identity
+/// setups: `local_stock_bbox` rooted at zero-local (Z=[0, 12]) and
+/// `local_to_global = None`.
+///
+/// Pre-fix: per-sample `axial_engagement_mm` reads ~12 (full stock
+/// height). Post-fix: reads ~2 (commanded DOC ± grid discretisation).
+#[test]
+fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
+    use rs_cam_core::simulation_cut::CutKinematics;
+
+    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    tool.diameter = 6.0;
+    tool.cutting_length = 25.0;
+    tool.shank_diameter = 6.35;
+    tool.shank_length = 20.0;
+    tool.stickout = 45.0;
+    tool.flute_count = 2;
+    tool.name = "End Mill 6mm".to_owned();
+
+    // World-frame stock: 100x100x12 with origin at (-10, -10, -12) — stock
+    // top at world Z=0, bottom at Z=-12. Matches the AS001 fixture.
+    let world_stock_bbox = BoundingBox3 {
+        min: P3::new(-10.0, -10.0, -12.0),
+        max: P3::new(90.0, 90.0, 0.0),
+    };
+    // Viz-side zero-rooted local bbox (what `effective_stock_bbox()` returns
+    // for any setup, identity or not). Pre-fix this was forwarded to core
+    // wrapped in `Some(...)` even for identity setups, which is the bug.
+    let local_stock_bbox = BoundingBox3 {
+        min: P3::new(0.0, 0.0, 0.0),
+        max: P3::new(100.0, 100.0, 12.0),
+    };
+
+    // First-pass-of-pocket-style linear cutting at world Z=-2. The exact
+    // span shape doesn't matter — what matters is that the toolpath emits
+    // cuts in world frame at Z=-2 while the viz-side local bbox is in
+    // local Z=[0, 12]. With the fix the dexel grid lives in world frame
+    // (via stock_bbox fallback) so the cutter at Z=-2 stamps the ray top
+    // for ~2 mm. Without the fix the cutter sits below every ray and
+    // strips ~12 mm.
+    let mut tp = Toolpath::new();
+    tp.rapid_to(P3::new(10.0, 30.0, 5.0));
+    tp.feed_to(P3::new(10.0, 30.0, -2.0), 385.0);
+    for i in 0..40 {
+        let x = 10.0 + (i as f64) * 1.5;
+        tp.feed_to(P3::new(x, 30.0, -2.0), 770.0);
+    }
+    tp.rapid_to(P3::new(70.0, 30.0, 5.0));
+
+    let request = SimulationRequest {
+        groups: vec![SetupSimGroup {
+            toolpaths: vec![SetupSimToolpath {
+                id: ToolpathId(1),
+                name: "AS001 Pocket Pass 1".to_owned(),
+                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp)),
+                tool,
+                semantic_trace: None,
+                spindle_rpm: Some(18_000),
+                metrics_not_applicable: false,
+                drill_op: None,
+                operation_config_hash: 0,
+            }],
+            // Identity setup shape from controller/events/simulation.rs:
+            // zero-rooted local bbox + `local_to_global = None`.
+            local_stock_bbox,
+            local_to_global: None,
+        }],
+        stock_bbox: world_stock_bbox,
+        stock_top_z: 0.0,
+        resolution: 1.0,
+        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions {
+            enabled: true,
+            capture_arc_engagement: true,
+        },
+        spindle_rpm: 18_000,
+        rapid_feed_mm_min: 5_000.0,
+        model_mesh: None,
+    };
+
+    // Drive the viz production sim entry point directly (the same function
+    // the worker thread calls from `worker.rs:739`).
+    let cancel = AtomicBool::new(false);
+    let result = super::execute::run_simulation_with_phase(&request, &cancel, |_phase| {})
+        .expect("viz simulation completes");
+
+    let cut_trace = result.cut_trace.as_ref().expect("metric cut trace");
+
+    // Filter to non-plunge linear cutting samples on the first-pass Z plane
+    // (Z = -2 ± 0.5). Pre-fix every such sample reads
+    // `axial_engagement_mm` ~= stock_z (= 12.0). Post-fix should report
+    // the commanded ~2.0 mm plus grid discretisation margin.
+    let mut first_pass_axials: Vec<f64> = cut_trace
+        .samples
+        .iter()
+        .filter(|s| s.is_cutting && s.cut_kinematics == CutKinematics::Linear)
+        .filter(|s| (s.position[2] - (-2.0)).abs() < 0.5)
+        .map(|s| s.axial_engagement_mm)
+        .collect();
+    first_pass_axials.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    assert!(
+        !first_pass_axials.is_empty(),
+        "expected at least one linear cutting sample near Z=-2 on the first pass; got 0"
+    );
+
+    let peak = *first_pass_axials.last().unwrap_or(&0.0);
+    assert!(
+        peak <= 3.0,
+        "F-024 viz-path: first-pass axial engagement should be <= 3.0 mm (commanded 2.0 + grid \
+         discretisation margin); got peak = {peak:.4} mm across {} samples. Pre-fix this reads \
+         the full stock height (~12 mm) because the viz worker forwarded the zero-rooted local \
+         bbox to core even for identity setups, so the dexel grid spanned world Z=[0, 12] while \
+         the toolpath cut at world Z=-2.",
+        first_pass_axials.len()
+    );
+}
