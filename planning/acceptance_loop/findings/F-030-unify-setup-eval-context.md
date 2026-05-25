@@ -2,15 +2,15 @@
 
 - **Stage:** substrate / architecture
 - **Severity:** medium (no user-facing bug; closes a class of bug that's surfaced 4× in this loop)
-- **Status:** landed (commit pending) — refactor landed against the 5/7
-  deflection bar with the user's explicit precondition override (the
-  AS013/AS015 residual is sim-side, tracked as F-031, orthogonal to
-  F-030's frame-handling scope). Auditor verification still required
-  through round-08 MCP smoke; **F-030 does not claim `verified` until
-  the smoke runs.**
+- **Status:** landed (commit `ba9a8fd`, 2026-05-26) — refactor landed
+  against the 5/7 deflection bar with the user's explicit precondition
+  override (the AS013/AS015 residual is sim-side, tracked as F-031,
+  orthogonal to F-030's frame-handling scope). Auditor verification
+  still required through round-08 MCP smoke; **F-030 does not claim
+  `verified` until the smoke runs.**
 - **First found in:** round-07 (2026-05-25), pattern recognised after F-028 needed a viz-path follow-up that mirrored the F-024 three-rebuild saga
 - **Effort:** L (multi-file refactor across two crates, but well-bounded by an existing acceptance-bar suite that serves as regression)
-- **Linked PRs:** (commit pending)
+- **Linked PRs:** `ba9a8fd`
 - **Source audits:** round-04 delta (F-024 three-rebuild saga) + round-07 delta (F-028 viz-path follow-up)
 
 ## The pattern

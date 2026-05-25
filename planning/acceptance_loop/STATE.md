@@ -13,7 +13,7 @@ and implementer write here.
 
 **round-08** (audit pending — F-029 partial-landed 2026-05-26; F-031
 opened for residual; deflection bar still 5/7; **F-030 architecture
-refactor landed 2026-05-26** against the user's explicit precondition
+refactor landed 2026-05-26 in commit `ba9a8fd`** against the user's explicit precondition
 override, awaits round-08 MCP smoke verification)
 
 Round-07 closed 2026-05-25. **F-027 + F-028 verified.** AS013 + AS015
@@ -39,7 +39,7 @@ at partial-landing scope; F-031 is the new top of the queue for the
 **F-030 (architecture refactor, opened round-07)** unifies the
 5 duplicated stock-frame entry points via a new
 `rs_cam_core::session::SetupEvalContext`. Landed 2026-05-26
-(commit pending) against the 5/7 deflection bar with the user's
+(commit `ba9a8fd`) against the 5/7 deflection bar with the user's
 explicit precondition override — AS013/AS015 deflection residuals
 are sim-side parity (tracked as F-031), orthogonal to F-030's
 frame-handling scope. The 4 _f024.rs / _f026.rs / _f027.rs /
@@ -88,7 +88,7 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 |---|---|---|---|:-:|---|
 | [F-031](findings/F-031-adaptive3d-residual-deep-z-parity.md) | Adaptive3d residual deep-Z planner↔simulator stamp parity gap — F-029 follow-up, still blocks 7/7 deflection bar | sim | high | M-L | open — **next implementer pickup**; F-029 closed at partial-landing scope |
 | [F-029](findings/F-029-adaptive3d-interior-cell-parity.md) | Adaptive3d interior-cell planner↔simulator stamp parity gap — final deflection residual on AS013/AS015 | sim | medium | M | **partial-landing 2026-05-26** — cleanup-raster DPP clamp + diagnostic probe landed; residual interior-cell tracked as F-031 |
-| [F-030](findings/F-030-unify-setup-eval-context.md) | Unify SetupEvalContext across the 5 stock-frame entry points — architecture refactor | substrate | medium | L | **landed 2026-05-26** (commit pending); awaits round-08 MCP smoke verification |
+| [F-030](findings/F-030-unify-setup-eval-context.md) | Unify SetupEvalContext across the 5 stock-frame entry points — architecture refactor | substrate | medium | L | **landed 2026-05-26** (commit `ba9a8fd`); awaits round-08 MCP smoke verification |
 | [F-020](findings/F-020-optimizer-ranked-bs-path.md) | Optimizer Ranked-outcome BS-stepover path untested | optimize | high | M | open — needs test fixture before fix |
 | [F-025](findings/F-025-non-identity-setup-z-frame.md) | Z-frame mismatch on non-identity setups (face_up=Bottom etc.) | substrate | medium | S–M | open — stub; possibly subsumed by F-030 |
 | [F-006](findings/F-006-operation-config-three-default-paths.md) | Default `OperationConfig` produced via three paths | suggest | medium | M | open — partially absorbed by F-003 |
@@ -215,7 +215,7 @@ the last blocker for 7/7.
 
 (implementers append here when they land a PR; auditor moves entries to round directories when verified)
 
-- 2026-05-26 — **F-030 architecture refactor landed** (commit pending).
+- 2026-05-26 — **F-030 architecture refactor landed** (commit `ba9a8fd`).
   Introduces `rs_cam_core::session::SetupEvalContext` — single source
   of truth for `(world_stock_bbox, local_stock_bbox, local_to_global,
   heights_stock_bbox, safe_z, face_up, z_rotation)` per (session, setup)
