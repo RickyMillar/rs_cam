@@ -2,7 +2,7 @@
 
 - **Stage:** sim (planning/coordinate-frame bug, surfaces through simulator)
 - **Severity:** medium
-- **Status:** landed (commit `e48d7df`, 2026-05-25). Awaiting round-07 smoke verification.
+- **Status:** landed (commit `e48d7df`, 2026-05-25). Awaiting round-07 smoke verification. **Follow-up 2026-05-25**: alleged AS001/AS003 regression from the round-07 implementer brief did **not reproduce** via `ProjectSession::load → generate → run_simulation`. New defensive regression test pins the in-stock behaviour at the ProjectSession API level; existing AS004 test tightened with a lower bound on `peak_axial_doc_mm`. **Flagged for auditor re-investigation** — see STATE.md implementation log.
 - **First found in:** round-05 (suspected); round-06 (confirmed independent of F-026/F-027)
 - **Effort:** S–M (likely a single line in the face op's z_level
   computation; the F-024-class shape suggests grep for the same

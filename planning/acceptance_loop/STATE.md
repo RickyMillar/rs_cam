@@ -178,6 +178,31 @@ bar didn't move because the residuals are NOT what F-026 targets.
 
 (implementers append here when they land a PR; auditor moves entries to round directories when verified)
 
+- 2026-05-25 — F-028 follow-up cross-check: the round-07 implementer
+  brief reported an alleged AS001/AS003 pocket/profile regression
+  (z_level shifted from -2/-4/-6 to +10/+8/+6, peak_axial=0,
+  removed_volume=0, chipload Unmodeled). Wrote a defensive regression
+  test (`tests/face_stock_top_frame_f028.rs::
+  as001_pocket_actually_removes_stock_material_post_f028`) driving
+  `ProjectSession::load(ux_2d_pocket.toml)` → `generate_toolpath` →
+  `run_simulation` and asserting (a) total_removed_volume > 5000 mm³,
+  (b) peak_axial in [1.5, 3.0] mm (tight band around the commanded
+  2.0 mm DOC), (c) chipload verdict not `Unmodeled`. **The test
+  passes on commit `bf63d06`**: actual readings are peak_axial=1.76
+  mm, total_removed=20222 mm³, chipload modeled. AS001 pocket on
+  origin_z=-12 stock cuts at world Z=[-2,-4,-6] as expected — the
+  alleged regression does not reproduce at the `ProjectSession` API
+  level (which is what the auditor's smoke suite ostensibly drives).
+  Hypothesis: the round-07 readings may have come from a stale
+  process / wrong build / different code path; needs auditor
+  re-investigation. **Flagging for auditor review.** Also tightened
+  the existing F-028 face acceptance test
+  (`as004_face_peak_axial_within_commanded_doc`) to assert
+  `peak_axial > 0.3` (lower bound) in addition to `<= 0.6` — closes
+  the "0 trivially passes ≤ 0.6" loophole called out in the brief.
+  AS004 face actual reading on this code: peak_axial=0.4375 mm.
+  No code/product change; tests-only. Commit: see git log.
+
 - 2026-05-25 — F-028 landed: face op anchors depth stepping at
   `heights.top_z` (which now follows `ctx.stock_top_z` under Auto), and
   `session/compute.rs::compute` carries the world stock bbox into the
