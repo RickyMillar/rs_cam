@@ -11,16 +11,20 @@ and implementer write here.
 
 ## Current round
 
-**round-04** (audit pending — F-024 is top of queue)
+**round-04** (audit in progress — F-024 viz follow-up landed; awaiting
+2nd MCP rebuild for full smoke-verify)
 
-- Round-03 closed 2026-05-25; delta:
-  `rounds/round-03-2026-05-25/delta.md`.
-- 3 PRs landed (F-015 / F-014 / F-023), 1 reframe (F-002 closed at
-  split scope), 1 new finding (F-024 — deflection over-fire root cause).
-- F-023 smoke-verified post-rebuild — `ref.model_missing` blocking
-  diagnostic now flows through `diagnostic_delta` + `gui_banners` +
-  `warnings` + `get_toolpath_diagnostics`, with an actionable
-  fix message.
+- F-024 core fix (`d82bd4d` + `06a9a2a`) landed 2026-05-25.
+  First MCP rebuild done; smoke probe revealed the fix didn't take
+  effect through the production path — auditor diagnosed the viz
+  worker has its own simulation-request builder that constructs
+  `SimGroupEntry` separately from `ProjectSession::run_simulation`.
+- F-024 viz follow-up (`0c907a6` + `56e9ec2`) landed 2026-05-25 —
+  mirrors the identity-setup conditional into
+  `viz::compute::worker::execute::build_core_simulation_request`.
+  New regression test covers the viz path specifically.
+  **Needs a SECOND MCP rebuild** for smoke-verify.
+- F-025 stub opened (non-identity setup Z-frame followup).
 - Implementer(s) active: none.
 
 ## Last verified baseline
@@ -41,8 +45,8 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 
 | Finding | Title | Stage | Sev | Effort | Status |
 |---|---|---|---|:-:|---|
-| [F-024](findings/F-024-dexel-stock-z-frame-mismatch.md) | Z-frame mismatch: dexel stock grid rooted at (0,0,0) but toolpath emits stock-top-relative for identity setups → axial engagement reads full stock height | substrate | high | M–L | landed `d82bd4d` — pending audit/smoke verification next round |
-| [F-020](findings/F-020-optimizer-ranked-bs-path.md) | Optimizer Ranked-outcome BS-stepover path untested | optimize | high | M | open (needs test fixture before fix) |
+| [F-020](findings/F-020-optimizer-ranked-bs-path.md) | Optimizer Ranked-outcome BS-stepover path untested | optimize | high | M | open — **next implementer pickup** (needs test fixture before fix) |
+| [F-025](findings/F-025-non-identity-setup-z-frame.md) | Z-frame mismatch on non-identity setups (face_up=Bottom etc.) | substrate | medium | S–M | open — stub; revisit when smoke surfaces it |
 | [F-006](findings/F-006-operation-config-three-default-paths.md) | Default `OperationConfig` produced via three paths | suggest | medium | M | open — partially absorbed by F-003 |
 | [F-004](findings/F-004-three-project-loaders.md) | Three project-TOML loaders | substrate | medium | L | open — likely lands with F-005 |
 | [F-018](findings/F-018-test-data-templates-mismatch.md) | `test_data/ux_*.toml` templates don't match smoke CSV | infra | medium | S | open |
@@ -59,7 +63,7 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 
 | Finding | Claimed by | PR | Notes |
 |---|---|---|---|
-_(none — see Implementation log for F-024 landing 2026-05-25)_
+_(none — see Implementation log for F-024 third-site landing 2026-05-25)_
 
 ## Closed round-02 (2026-05-25)
 
@@ -137,9 +141,18 @@ Snapshot taken from round-02 delta vs round-01 baseline.
 
 ## Blockers / questions for the user
 
-- None active. Round-03 closed cleanly. Next blocker will come when
-  F-024 lands and round-04 smoke needs an MCP rebuild — but F-024 is
-  M–L substrate work, may take a while to land.
+- **Rebuild rs_cam_viz AGAIN** to pick up F-024 viz follow-up
+  (`0c907a6`). The previous rebuild was too early — only had the
+  core-side fix, which the auditor smoke proved didn't take effect
+  through the production MCP path. Now both paths are patched and
+  the viz-path acceptance test passes (peak axial 9.0 → 2.0 mm). Once
+  rebuilt I'll re-run the AS001 deflection probe — expect
+  `deflection.peak_mm` to finally drop from 374 µm into the
+  < 200 µm Within band (probably < 50 µm).
+- After that final smoke, the remaining high-sev queue item is F-020
+  (optimizer Ranked-outcome BS-stepover path untested) but it needs
+  a test fixture spec before it can be picked up. Worth a planning
+  pass before firing an implementer.
 
 ## Implementation log
 
@@ -213,6 +226,30 @@ Snapshot taken from round-02 delta vs round-01 baseline.
   test:
   `crates/rs_cam_viz/src/compute/worker/tests.rs::as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024`
   (pre-fix peak axial = 9.0 mm; post-fix ≈ 2.0 mm).
+- 2026-05-25 — F-024 third-site landed: round-04 auditor smoke after
+  the second MCP rebuild still showed AS001 `deflection.peak_mm = 0.374`
+  byte-identical to round-02. Root cause: even with the core fix
+  (`d82bd4d`) and viz-worker fix (`0c907a6`) in place, the viz
+  controller's `build_simulation_groups` constructed the world
+  `stock_bbox` inline as `(0,0,0)..(stock.x, stock.y, stock.z)` —
+  dropping `stock.origin_{x,y,z}`. For AS001 (`origin_z=-12`) the
+  controller passed bbox `(0,0,0)..(100,100,12)` to the worker. The
+  viz worker's `local_stock_bbox = None` fallback then used this
+  broken `request.stock_bbox` as the dexel grid bounds, so the grid
+  spanned the wrong Z range and the cutter at world Z=-2 again sat
+  below every ray. Fix: replace the inline construction with
+  `ProjectSession::stock_bbox()` (which delegates to
+  `StockConfig::bbox()` and applies the origin correctly), extracted
+  through a pure free function `controller::events::simulation::
+  build_world_stock_bbox` for testability. Bumped
+  `compute::worker::execute` mod and `run_simulation_with_phase`
+  function visibility to `pub(crate)` so the controller-path test
+  can drive the same viz simulation entry point the worker thread
+  uses. Acceptance tests:
+  `crates/rs_cam_viz/src/controller/tests.rs::{build_world_stock_bbox_respects_stock_origin_f024, controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024}`
+  (pre-fix peak axial = 9.0 mm; post-fix ≈ 2.0 mm — identical signal
+  to the worker-tests F-024 regression but driven through the
+  controller helper rather than a hand-built world bbox).
 
 ## How to update this file
 
