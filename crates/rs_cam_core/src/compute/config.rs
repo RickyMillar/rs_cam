@@ -465,16 +465,53 @@ impl DressupConfig {
         }
         // Roadmap B.5 — entry-style overrides per op-type. Drill/Trace
         // can't take any entry style (they're stock-based / single-pass);
-        // Adaptive/Adaptive3d benefit from Helix over Ramp because their
-        // pocketing geometry has natural circular boundaries.
+        // 2D Adaptive benefits from Helix over Ramp because its pocketing
+        // geometry has natural circular boundaries.
+        //
+        // F-031 (2026-05-26): `Adaptive3d` was previously included in the
+        // `prefer_helix` set, but the dressup-level helix replacement creates
+        // a planner↔simulator stamp-parity gap. The planner's
+        // `stamp_emitted_segment(Rapid)` stamps a vertical column at the
+        // entry XY (matching the planner-emitted peck-plunge feeds the
+        // planner believes the toolpath will carry). The dressup
+        // `apply_entry` pass then walks the toolpath and replaces each
+        // plunge with a helix at radius ≈ helix_radius around the entry
+        // XY. The planner's material_stock state is now wrong about the
+        // entry footprint — and subsequent clearing passes that the
+        // planner believes will sweep through cleared air actually bite
+        // into uncut material at the helix's torus boundary, producing
+        // axial-engagement readings of ~44 mm on a 3 mm-commanded DPP and
+        // tripping the deflection gate to Exceeds (0.66 mm on AS013, well
+        // above the 0.2 mm safety band).
+        //
+        // Defaulting `Adaptive3d` to `entry_style = None` keeps the
+        // planner-emitted peck-plunge in the toolpath unchanged, restoring
+        // planner↔simulator parity. The 2D Adaptive case is unaffected:
+        // its planner is the 2D adaptive engine, which doesn't share the
+        // 3D adaptive's `stamp_emitted_segment` semantics. Users who
+        // explicitly want a Helix entry on `Adaptive3d` can either set
+        // `Adaptive3dEntryStyle::Helix` at the planner level (where
+        // `segments_to_toolpath` emits a helix natively and the planner
+        // stamps it) or override `DressupConfig.entry_style` post-construction.
         let force_no_entry = matches!(op, OperationType::Drill | OperationType::Trace);
         if force_no_entry && self.entry_style != DressupEntryStyle::None {
             self.entry_style = DressupEntryStyle::None;
             changed = true;
         }
-        let prefer_helix = matches!(op, OperationType::Adaptive | OperationType::Adaptive3d);
+        let prefer_helix = matches!(op, OperationType::Adaptive);
         if prefer_helix && self.entry_style == DressupEntryStyle::Ramp {
             self.entry_style = DressupEntryStyle::Helix;
+            changed = true;
+        }
+        // F-031: strip the dressup-level entry transformation from
+        // `Adaptive3d`. The planner already emits an entry sequence per
+        // `Adaptive3dParams::entry_style` (Plunge/Helix/Ramp); the dressup
+        // shouldn't override it, because the planner's internal
+        // `material_stock` only mirrors the planner-emitted shape.
+        if matches!(op, OperationType::Adaptive3d)
+            && self.entry_style != DressupEntryStyle::None
+        {
+            self.entry_style = DressupEntryStyle::None;
             changed = true;
         }
         changed

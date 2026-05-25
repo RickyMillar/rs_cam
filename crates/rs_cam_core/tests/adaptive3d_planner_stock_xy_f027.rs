@@ -241,7 +241,16 @@ fn as013_terrain_model_edge_axial_within_commanded_dpp_f027() {
     let mut over_count = 0usize;
     let mut band_sample_count = 0usize;
     for s in &cut_trace.samples {
-        if !s.is_cutting || s.cut_kinematics == CutKinematics::Plunge {
+        // F-031 alignment: skip transit-span samples (Entry / WaterlineCleanup /
+        // LinkBridge). These are routed to the deflection model's `entry_spike`
+        // advisory track and don't drive the steady-state load verdict; F-027's
+        // model-edge gate likewise should only consider steady-state cuts. The
+        // original test predated F-031 and relied on the helix-entry dressup
+        // (which was the default for Adaptive3d) absorbing the entry-plunge
+        // axial spikes via gradual descent. F-031 removed that dressup default,
+        // making entry-plunge transit samples visible — but they're still
+        // semantically "transit", not steady-state cutting.
+        if !s.is_cutting || s.cut_kinematics == CutKinematics::Plunge || s.in_transit_span {
             continue;
         }
         if s.position[1] <= mesh_max_y || s.position[1] > stock_max_y {
@@ -317,7 +326,10 @@ fn as013_terrain_model_edge_band_outlier_count_zero_f027() {
     let outliers_in_band: usize = cut_trace
         .samples
         .iter()
-        .filter(|s| s.is_cutting && s.cut_kinematics != CutKinematics::Plunge)
+        // F-031 alignment: skip transit-span samples; see sibling test.
+        .filter(|s| {
+            s.is_cutting && s.cut_kinematics != CutKinematics::Plunge && !s.in_transit_span
+        })
         .filter(|s| s.position[1] > mesh_max_y && s.position[1] <= stock_max_y)
         .filter(|s| s.axial_engagement_mm > limit)
         .count();
