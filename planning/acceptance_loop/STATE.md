@@ -210,8 +210,8 @@ bar didn't move because the residuals are NOT what F-026 targets.
   `build_world_stock_bbox_respects_stock_origin_f024`) continue to
   pass. Full workspace `cargo test -q` + `cargo clippy --workspace
   --all-targets -- -D warnings` clean. **User must `/mcp` rebuild
-  before the auditor re-verifies through the MCP.** Commit: see git
-  log (fix(F-028): mirror world-frame heights fix into viz worker +
+  before the auditor re-verifies through the MCP.** Commit: `c9e203d`
+  (fix(F-028): mirror world-frame heights fix into viz worker +
   controller — follow-up to e48d7df).
 
 - 2026-05-25 — F-028 follow-up cross-check: the round-07 implementer
