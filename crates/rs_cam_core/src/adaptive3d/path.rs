@@ -160,12 +160,27 @@ pub(super) fn adaptive_3d_segments(
     let tool_radius = params.tool_radius;
     let r = cutter.radius();
 
-    // Grid geometry: expand mesh bbox by cutter radius
+    // Grid geometry: expand mesh bbox by cutter radius. If a world stock
+    // XY bbox is provided (F-027), union it with the mesh-derived bounds
+    // so the planner's internal `material_stock` extends across every
+    // cell the simulator's per-setup dexel grid will look at. Without
+    // this, cells inside the simulator grid but outside the planner grid
+    // never see planner stamps; the simulator carries them as virgin
+    // material across the entire toolpath, and the final pass scrapes
+    // the full pre-stamp ray in one stamp → axial spike → deflection
+    // Exceeds at the model-edge outliers. See finding F-027.
     let bbox = &mesh.bbox;
-    let origin_x = bbox.min.x - r;
-    let origin_y = bbox.min.y - r;
-    let extent_x = bbox.max.x + r;
-    let extent_y = bbox.max.y + r;
+    let (origin_x, origin_y, extent_x, extent_y) =
+        if let Some((wx_min, wy_min, wx_max, wy_max)) = params.world_stock_xy_bbox {
+            (
+                (bbox.min.x - r).min(wx_min),
+                (bbox.min.y - r).min(wy_min),
+                (bbox.max.x + r).max(wx_max),
+                (bbox.max.y + r).max(wy_max),
+            )
+        } else {
+            (bbox.min.x - r, bbox.min.y - r, bbox.max.x + r, bbox.max.y + r)
+        };
     let cell_size = (tool_radius / 6.0).max(params.tolerance);
 
     // Initialize tri-dexel material stock
@@ -258,8 +273,30 @@ pub(super) fn adaptive_3d_segments(
     // "deep material" that the tool can never reach. Mark these as already cleared
     // so the adaptive doesn't waste passes trying to cut in empty space.
     // Only clear cells whose XY center is outside the mesh bbox (with tolerance).
+    //
+    // F-027: when `world_stock_xy_bbox` is supplied, the planner grid was
+    // widened to enclose the world stock footprint (potentially much
+    // larger than `mesh.bbox + tool_radius`). The cells between the mesh
+    // boundary and the world stock boundary are **real stock material**
+    // that the simulator carries from the start of the toolpath — they
+    // sit under workholding / off-model fixturing, not phantom drop-
+    // cutter floor. Pre-fix the planner pre-cleared them (mesh-boundary
+    // condition above) and emitted no cuts to touch them; the simulator
+    // then carried them as virgin material until the cutter's footprint
+    // swept in and the simulator's first stamp removed the full pre-
+    // stamp ray (axial_engagement_mm reading the full stock height →
+    // deflection Exceeds). Treating those cells as already-cleared in
+    // the planner is what causes the planner↔simulator mismatch.
+    //
+    // Fix: only border-clear cells outside the world stock bbox. Cells
+    // inside the world stock bbox keep their planner-side material so
+    // the planner's clearing strategy (region detection + EDT-based
+    // contour parallel / adaptive) plans passes that stamp them down
+    // DPP at a time. The simulator then sees pre-cleared rays at the
+    // boundary cells the same way it does for in-mesh cells.
     let border_scope = debug_ctx.map(|ctx| ctx.start_span("border_clear", "Border clear"));
     let border_margin = r * 0.5;
+    let world_xy = params.world_stock_xy_bbox;
     let mut border_cleared = 0u32;
     for row in 0..material_stock.z_grid.rows {
         if row % 16 == 0 {
@@ -267,17 +304,31 @@ pub(super) fn adaptive_3d_segments(
         }
         for col in 0..material_stock.z_grid.cols {
             let (x, y) = material_stock.z_grid.cell_to_world(row, col);
-            if x < bbox.min.x - border_margin
+            let outside_mesh = x < bbox.min.x - border_margin
                 || x > bbox.max.x + border_margin
                 || y < bbox.min.y - border_margin
-                || y > bbox.max.y + border_margin
-            {
-                // Clear material above the surface Z at this cell
-                let i = row * material_stock.z_grid.cols + col;
-                let clear_z = surface_hm.z_values[i] as f32;
-                ray_subtract_above(material_stock.z_grid.ray_mut(row, col), clear_z);
-                border_cleared += 1;
+                || y > bbox.max.y + border_margin;
+            if !outside_mesh {
+                continue;
             }
+            // F-027 inhibition: keep cells inside the world stock bbox as
+            // material so the planner emits cuts to clear them in step
+            // with the simulator. Outside-world-stock cells are still
+            // border-cleared (they're phantom — neither in the model nor
+            // in the user's stock block).
+            if let Some((wx_min, wy_min, wx_max, wy_max)) = world_xy
+                && x >= wx_min
+                && x <= wx_max
+                && y >= wy_min
+                && y <= wy_max
+            {
+                continue;
+            }
+            // Clear material above the surface Z at this cell
+            let i = row * material_stock.z_grid.cols + col;
+            let clear_z = surface_hm.z_values[i] as f32;
+            ray_subtract_above(material_stock.z_grid.ray_mut(row, col), clear_z);
+            border_cleared += 1;
         }
     }
     if border_cleared > 0 {
@@ -1157,6 +1208,7 @@ mod tests {
             mill_shallow_areas: false,
             shallow_angle_rad: None,
             shallow_stepdown: None,
+            world_stock_xy_bbox: None,
         }
     }
 

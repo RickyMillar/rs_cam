@@ -4,7 +4,7 @@
 - **Severity:** medium (residual after F-026 lands; deflection still
   fires Exceeds on auto_from_model 3D ops at <0.5% of samples, but
   rapid-collision count is fixed)
-- **Status:** open — opened by F-026 implementer during landing
+- **Status:** landed
 - **First found in:** round-05 follow-up investigation (2026-05-25)
 - **Effort:** M
 - **Linked PRs:** (none yet; opened with F-026)

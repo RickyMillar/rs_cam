@@ -677,6 +677,9 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                     mill_shallow_areas: op.mill_shallow_areas.unwrap_or(false),
                     shallow_angle_rad: op.shallow_angle_deg.map(f64::to_radians),
                     shallow_stepdown: op.shallow_stepdown,
+                    // F-027: CLI job path doesn't carry a world stock bbox
+                    // separate from the mesh footprint here; leave `None`.
+                    world_stock_xy_bbox: None,
                 };
 
                 if debug_trace {

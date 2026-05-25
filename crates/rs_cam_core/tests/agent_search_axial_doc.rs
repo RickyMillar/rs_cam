@@ -108,6 +108,7 @@ fn agent_search_axial_doc_diag() {
         mill_shallow_areas: false,
         shallow_angle_rad: None,
         shallow_stepdown: None,
+        world_stock_xy_bbox: None,
     };
 
     let tp = adaptive_3d_toolpath(&mesh, &index, &cutter, &params);
