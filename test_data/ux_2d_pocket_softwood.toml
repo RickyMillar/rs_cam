@@ -2,21 +2,21 @@ format_version = 3
 toolpaths = []
 
 [job]
-name = "UX 3D Terrain (terrain_small.stl)"
+name = "UX 2D Pocket Softwood (demo_pocket.svg)"
 
 [job.stock]
 x = 100.0
 y = 100.0
-z = 30.0
-origin_x = -5.0
-origin_y = -5.0
-origin_z = 0.0
+z = 12.0
+origin_x = -10.0
+origin_y = -10.0
+origin_z = -12.0
 padding = 5.0
 workholding_rigidity = "Medium"
-auto_from_model = true
+auto_from_model = false
 
 [job.stock.material.SolidWood]
-species = "GenericHardwood"
+species = "GenericSoftwood"
 
 [[job.stock.alignment_pins]]
 x = 5.0
@@ -87,13 +87,13 @@ product_id = ""
 
 [[tools]]
 id = 2
-name = "Ball Nose 3mm"
-type = "ball_nose"
+name = "End Mill 3mm"
+type = "end_mill"
 diameter = 3.0
 cutting_length = 15.0
 helix_deg = 30.0
-corner_radius_mm = 1.5
-corner_radius = 1.5
+corner_radius_mm = 0.0
+corner_radius = 0.0
 included_angle = 90.0
 taper_half_angle = 15.0
 shaft_diameter = 3.175
@@ -110,17 +110,8 @@ product_id = ""
 
 [[models]]
 id = 1
-path = "../fixtures/terrain_small.stl"
-name = "terrain_small.stl"
-kind = "stl"
-
-[models.units]
-kind = "millimeters"
-
-[[models]]
-id = 2
-path = "../fixtures/demo_star.svg"
-name = "demo_star.svg"
+path = "../fixtures/demo_pocket.svg"
+name = "demo_pocket.svg"
 kind = "svg"
 
 [models.units]
