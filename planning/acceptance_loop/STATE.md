@@ -11,21 +11,22 @@ and implementer write here.
 
 ## Current round
 
-**round-03** (in progress — F-023 implementer running, F-015 smoke-verified)
+**round-04** (audit pending — F-024 is top of queue)
 
-- Round-02 closed 2026-05-25; delta:
-  `rounds/round-02-2026-05-25/delta.md`. 5-case focused smoke
-  (AS001/AS002/AS011/AS013/AS015) vs round-01 baseline.
-- F-015 landed at `ba3f84d` during round-02; **smoke-verified late
-  in round-02** after user rebuilt MCP. Both rest and project_curve
-  preconditions emit blocking `precondition.*` diagnostics through
-  `diagnostic_delta` + `gui_banners` + `warnings`.
-- F-023 implementer fired 2026-05-25 (background) targeting
-  model_id-ref diagnostic asymmetry; pattern mirrors F-015's
-  `from_preconditions.rs` adapter shape.
+- Round-03 closed 2026-05-25; delta:
+  `rounds/round-03-2026-05-25/delta.md`.
+- 3 PRs landed (F-015 / F-014 / F-023), 1 reframe (F-002 closed at
+  split scope), 1 new finding (F-024 — deflection over-fire root cause).
+- F-023 smoke-verified post-rebuild — `ref.model_missing` blocking
+  diagnostic now flows through `diagnostic_delta` + `gui_banners` +
+  `warnings` + `get_toolpath_diagnostics`, with an actionable
+  fix message.
+- Implementer(s) active: none.
 
 ## Last verified baseline
 
+- **round-03 delta** (probes verifying F-015 + F-023; F-002 reframe):
+  `planning/acceptance_loop/rounds/round-03-2026-05-25/delta.md`
 - **round-02 delta** (5-case focused smoke vs round-01):
   `planning/acceptance_loop/rounds/round-02-2026-05-25/delta.md`
   (smoke run dir: `target/acceptance_sweeps/agent_smoke_20260525_0957/`)
@@ -40,8 +41,7 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 
 | Finding | Title | Stage | Sev | Effort | Status |
 |---|---|---|---|:-:|---|
-| [F-023](findings/F-023-mcp-gui-diagnostic-asymmetry.md) | MCP/GUI diagnostic surface asymmetry: "Selected model missing" + invalid model_id accepted silently | substrate | high | S–M | open — **next implementer pickup**; opened round-02 |
-| [F-002](findings/F-002-axial-doc-mm-two-quantities.md) | `peak_axial_doc_mm` linear-kinematics still over-reads (deflection still over-fires) | sim | high | S | reopened — partial fix landed; need linear-class follow-up |
+| [F-024](findings/F-024-dexel-stock-z-frame-mismatch.md) | Z-frame mismatch: dexel stock grid rooted at (0,0,0) but toolpath emits stock-top-relative for identity setups → axial engagement reads full stock height | substrate | high | M–L | landed `d82bd4d` — pending audit/smoke verification next round |
 | [F-020](findings/F-020-optimizer-ranked-bs-path.md) | Optimizer Ranked-outcome BS-stepover path untested | optimize | high | M | open (needs test fixture before fix) |
 | [F-006](findings/F-006-operation-config-three-default-paths.md) | Default `OperationConfig` produced via three paths | suggest | medium | M | open — partially absorbed by F-003 |
 | [F-004](findings/F-004-three-project-loaders.md) | Three project-TOML loaders | substrate | medium | L | open — likely lands with F-005 |
@@ -59,12 +59,18 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 
 | Finding | Claimed by | PR | Notes |
 |---|---|---|---|
-_(none — see Implementation log for F-023 landing 2026-05-25)_
+_(none — see Implementation log for F-024 landing 2026-05-25)_
 
 ## Closed round-02 (2026-05-25)
 
 Verified by round-02 smoke (`rounds/round-02-2026-05-25/delta.md`):
 
+- **F-002** — `peak_axial_doc_mm` split into `axial_engagement_mm` +
+  `plunge_descent_mm` (landed in `072c11a`; verified at the split
+  scope by round-03 implementer probe). The deflection over-fire
+  observed in round-02 is **not** caused by an incomplete split —
+  it's the F-024 frame-mismatch bug. F-002's split itself is
+  complete and correct.
 - **F-001** — chipload 2D feedopt probe fixed. AS001/AS002 moved from
   `chipload: Unmodeled` to `Exceeds_LOW` with `validated` confidence
   and vendor-LUT bounds.
@@ -88,21 +94,32 @@ Verified by round-02 smoke (`rounds/round-02-2026-05-25/delta.md`):
   existing integration tests.
 - **F-012** — closed as duplicate of F-003.
 
-**Reopened this round:**
-- **F-002** — partial fix landed but smoke acceptance NOT met.
-  Engagement-vector kinematics (arc/helix/plunge) correctly report
-  axial-DOC vs plunge-descent. Linear kinematics still over-reads
-  `peak_axial_doc_mm = 12.0` (full stock height). Deflection gate
-  still over-fires on AS001 (374µm), AS002 (408µm), AS013 (573µm),
-  AS015 (431µm) — identical to round-01.
+**Reframed in round-03 (the round-02 reopen was wrong):**
+- **F-002** — round-02 reopen framing was incorrect (linear-class
+  asymmetry was transit-tag filtering, not a code path bug). The
+  original split into `axial_engagement_mm` + `plunge_descent_mm`
+  DID land correctly in commit `072c11a`. Per-sample
+  `axial_engagement_mm` is correctly populated for non-plunge samples
+  on all four kinematics classes; per-sample `plunge_descent_mm` is
+  correctly populated for plunge samples. F-002 is **landed at the
+  split scope**. The deflection over-fire is a different root cause —
+  see F-024.
 
 **Opened this round:**
-- **F-023** — MCP/GUI diagnostic surface asymmetry: "Selected model
-  missing" surfaces in GUI banner, project loader warnings, and
-  `list_toolpaths.error` / `runtime_errors`, but **not** in
-  `get_toolpath_diagnostics` / `get_project_diagnostics` /
-  `add_toolpath` envelope. `add_toolpath` accepts invalid `model_id`
-  silently.
+- **F-023** (now landed) — MCP/GUI diagnostic surface asymmetry:
+  "Selected model missing" surfaces in GUI banner, project loader
+  warnings, and `list_toolpaths.error` / `runtime_errors`, but
+  previously **not** in `get_toolpath_diagnostics` /
+  `get_project_diagnostics` / `add_toolpath` envelope.
+  `add_toolpath` accepted invalid `model_id` silently. Now surfaced
+  via `ref.model_missing` adapter.
+- **F-024** — Z-frame mismatch in dexel stock grid. Root cause of the
+  deflection over-fire that round-02 attributed (wrongly) to F-002's
+  linear-class path. For identity setups, no local↔global transform
+  is applied; toolpath emits Z stock-top-relative; grid spans
+  Z=[0, stock_z]. Cutter is below the entire ray → full ray cleared →
+  `axial_engagement_mm` reads full stock height instead of commanded
+  DOC. Three candidate fix sites; M–L effort with fingerprint regen.
 
 ## Acceptance bars status
 
@@ -113,17 +130,16 @@ Snapshot taken from round-02 delta vs round-01 baseline.
 | Suggest first-shot landing rate | ≥ 90% | unmeasured | unmeasured | needs full sweep |
 | Sim chipload calibration (3D ops) | ≥ 95% | 3/3 fired | 1/1 fired (AS013) | stable |
 | Sim chipload calibration (2D ops) | ≥ 95% | 0/7 (all Unmodeled) | 2/2 fired (AS001/AS002) | **F-001 verified** |
-| Sim deflection calibration | ≥ 95% | 4/13 Within | 0/4 verdict change | **F-002 reopened** |
+| Sim deflection calibration | ≥ 95% | 4/13 Within | 0/4 verdict change | **F-024 opened** (root cause isolated; F-002 split was a red herring) |
 | Optimizer honest-improvement | ≥ 95% | 2/2 | 1/1 (AS015) | stable; F-020 still untested |
 | Optimizer refusal correctness | 100% | 2/2 | 1/1 (AS015 byte-identical) | stable |
 | Export gate | 100% | not tested | not tested | open |
 
 ## Blockers / questions for the user
 
-- None active. (Round-02 MCP-rebuild blocker resolved: user rebuilt
-  late-round-02 and F-015 was smoke-verified.) Next rebuild trigger
-  will be when F-023 implementer returns and round-03 smoke runs
-  against the new core-side adapter.
+- None active. Round-03 closed cleanly. Next blocker will come when
+  F-024 lands and round-04 smoke needs an MCP rebuild — but F-024 is
+  M–L substrate work, may take a while to land.
 
 ## Implementation log
 
@@ -152,6 +168,20 @@ Snapshot taken from round-02 delta vs round-01 baseline.
   `crates/rs_cam_core/tests/op_precondition_static_validation_f015.rs::{rest_op_without_prior_enabled_tool_surfaces_blocking_diagnostic, rest_op_without_prev_tool_id_surfaces_blocking_diagnostic, rest_op_with_correct_prior_is_silent, project_curve_in_single_model_project_surfaces_blocking_diagnostic, project_curve_without_any_surface_mesh_surfaces_blocking_diagnostic, project_curve_with_curve_and_surface_models_is_silent, drill_op_against_mesh_only_model_surfaces_blocking_diagnostic, drill_op_against_polygon_model_is_silent}`
   + adapter unit tests at
   `diagnostics::adapters::from_preconditions::tests::*`.
+- 2026-05-25 — F-024 landed: dexel stock grid uses world Z frame for
+  identity setups. `session/compute.rs` now returns
+  `local_stock_bbox = None` (and `local_to_global = None`) when the
+  setup is identity, so `run_simulation` falls back to
+  `request.stock_bbox` (world frame). Per-setup grid Z range now
+  matches the toolpath frame; `axial_engagement_mm` reads the
+  commanded DOC instead of the full stock height. Commit `d82bd4d`.
+  Acceptance tests:
+  `crates/rs_cam_core/tests/dexel_stock_z_frame_f024.rs::{as001_pocket_first_pass_axial_engagement_within_commanded_doc, as001_pocket_deflection_gate_within_safe_band}`.
+  CLAUDE.md `Metric caveats` block updated with F-024 follow-up
+  paragraph. Param sweep fingerprints unchanged — the harness uses the
+  lower-level operation kernels directly and doesn't traverse the
+  `ProjectSession` setup-transform path the fix touches; no
+  regen needed.
 - 2026-05-25 — F-023 landed: core-side `from_model_refs` adapter
   surfaces `ref.model_missing` (Severity::Blocking) when a toolpath's
   `model_id` doesn't resolve against the loaded project. Wired into
