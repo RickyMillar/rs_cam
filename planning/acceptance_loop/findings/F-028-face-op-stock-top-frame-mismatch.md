@@ -2,12 +2,12 @@
 
 - **Stage:** sim (planning/coordinate-frame bug, surfaces through simulator)
 - **Severity:** medium
-- **Status:** in_flight (claimed by claude-opus-4-7, 2026-05-25)
+- **Status:** landed (commit `e48d7df`, 2026-05-25). Awaiting round-07 smoke verification.
 - **First found in:** round-05 (suspected); round-06 (confirmed independent of F-026/F-027)
 - **Effort:** S–M (likely a single line in the face op's z_level
   computation; the F-024-class shape suggests grep for the same
   identity-setup conditional and apply analogous fix)
-- **Linked PRs:** —
+- **Linked PRs:** commit `e48d7df`
 - **Source audits:** round-06 verification of F-026 on AS004
 
 ## Evidence
