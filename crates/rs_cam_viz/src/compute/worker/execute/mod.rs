@@ -170,30 +170,62 @@ fn build_core_simulation_request(
     let groups = req
         .groups
         .iter()
-        .map(|group| SimGroupEntry {
-            toolpaths: group
-                .toolpaths
-                .iter()
-                .map(|tp| {
-                    let cutter = build_cutter(&tp.tool);
-                    SimToolpathEntry {
-                        id: tp.id.0,
-                        name: tp.name.clone(),
-                        annotated: Arc::clone(&tp.annotated),
-                        tool: cutter,
-                        flute_count: tp.tool.flute_count,
-                        tool_summary: tp.tool.summary(),
-                        semantic_trace: tp.semantic_trace.clone(),
-                        spindle_rpm: tp.spindle_rpm,
-                        metrics_not_applicable: tp.metrics_not_applicable,
-                        drill_op: tp.drill_op.clone(),
-                        operation_config_hash: tp.operation_config_hash,
-                    }
-                })
-                .collect(),
-            direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
-            local_stock_bbox: Some(group.local_stock_bbox),
-            local_to_global: group.local_to_global.clone(),
+        .map(|group| {
+            // F-024 follow-up (2026-05-25): mirror the
+            // `session::compute::compute_simulation_groups` decision shape so
+            // the viz worker's production simulation path matches the core
+            // `ProjectSession::run_simulation` path. For identity setups
+            // (`face_up=Top`, `z_rotation=Deg0`) the viz controller leaves
+            // `local_to_global = None` and the toolpath emits cut moves in
+            // world frame (Z=[0, -depth], because `HeightsConfig::resolve`
+            // auto-defaults `top_z = 0.0`). The per-setup dexel grid must
+            // therefore also be in world frame. Forwarding the local
+            // zero-rooted `local_stock_bbox` (Z=[0, stock_z]) here placed the
+            // cutter at world Z=-2 below every dexel ray and inflated
+            // `axial_engagement_mm` to the full stock height — which fed the
+            // deflection gate 374-573 µm tip-deflection readings on AS001-
+            // shape pockets that should land well under 50 µm.
+            //
+            // Fix: when `local_to_global` is `None` (identity setup), pass
+            // `local_stock_bbox = None` too. `run_simulation` then falls back
+            // to `request.stock_bbox` (world frame) for the per-setup grid,
+            // matching the toolpath frame.
+            //
+            // Non-identity setups continue to forward the viz-side
+            // zero-rooted `local_stock_bbox` paired with `local_to_global` —
+            // that path is outside F-024's scope (see core finding).
+            let (local_stock_bbox, local_to_global) =
+                if let Some(info) = group.local_to_global.as_ref() {
+                    (Some(group.local_stock_bbox), Some(info.clone()))
+                } else {
+                    (None, None)
+                };
+
+            SimGroupEntry {
+                toolpaths: group
+                    .toolpaths
+                    .iter()
+                    .map(|tp| {
+                        let cutter = build_cutter(&tp.tool);
+                        SimToolpathEntry {
+                            id: tp.id.0,
+                            name: tp.name.clone(),
+                            annotated: Arc::clone(&tp.annotated),
+                            tool: cutter,
+                            flute_count: tp.tool.flute_count,
+                            tool_summary: tp.tool.summary(),
+                            semantic_trace: tp.semantic_trace.clone(),
+                            spindle_rpm: tp.spindle_rpm,
+                            metrics_not_applicable: tp.metrics_not_applicable,
+                            drill_op: tp.drill_op.clone(),
+                            operation_config_hash: tp.operation_config_hash,
+                        }
+                    })
+                    .collect(),
+                direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+                local_stock_bbox,
+                local_to_global,
+            }
         })
         .collect();
 
