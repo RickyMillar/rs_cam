@@ -54,7 +54,6 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 | [F-025](findings/F-025-non-identity-setup-z-frame.md) | Z-frame mismatch on non-identity setups (face_up=Bottom etc.) | substrate | medium | S–M | open — stub; revisit when smoke surfaces it |
 | [F-006](findings/F-006-operation-config-three-default-paths.md) | Default `OperationConfig` produced via three paths | suggest | medium | M | open — partially absorbed by F-003 |
 | [F-004](findings/F-004-three-project-loaders.md) | Three project-TOML loaders | substrate | medium | L | open — likely lands with F-005 |
-| [F-018](findings/F-018-test-data-templates-mismatch.md) | `test_data/ux_*.toml` templates don't match smoke CSV | infra | medium | S | open |
 | [F-009](findings/F-009-diagnostic-views-viz-only.md) | Five diagnostic views, only viz emits them | substrate | medium | M | open — partially lands with F-005 |
 | [F-005](findings/F-005-two-mcp-servers.md) | Two MCP server implementations | substrate | medium | XL | deferred — wait for F-001…F-005 of unification to land first |
 | [F-011](findings/F-011-operation-feeds-hints-split-crates.md) | `operation_feeds_hints` split across crates | suggest | low | S | open — lands with F-003 |
@@ -68,7 +67,7 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 
 | Finding | Claimed by | PR | Notes |
 |---|---|---|---|
-_(none — see Implementation log for loop-docs landing 2026-05-25)_
+_(none)_
 
 ## Closed round-02 (2026-05-25)
 
@@ -261,6 +260,23 @@ Snapshot taken from round-02 delta vs round-01 baseline.
   note in `audit_runbook.md` Step 1. Encodes the round-04 three-
   rebuild-saga learning (`rounds/round-04-2026-05-25/delta.md`).
   No F-ID — loop-doc work. No acceptance test (docs-only).
+- 2026-05-25 — F-018 landed: regenerated `test_data/ux_*.toml`
+  templates to match `cases_agent_smoke.csv`. Added `End Mill 3mm` +
+  `90deg V-bit 6mm` to `ux_2d_star.toml` (AS007-AS010). Created
+  per-material variants `ux_2d_pocket_softwood.toml`,
+  `ux_2d_pocket_mdf.toml`, `ux_step_plate_mdf.toml`. Deleted the
+  broken `Rivers (back) (copy)` toolpath from `ux_3d_terrain.toml`
+  and added the `demo_star.svg` curve model so AS018's
+  `project_curve` has a source curve. CSV updated for AS002 →
+  pocket_softwood, AS004 → plate_mdf, AS005 → pocket_mdf
+  (project_template column only, per auditor restriction).
+  Residual material mismatches on AS011/AS012/AS013/AS017 left as
+  out-of-scope and tolerated by the test's `KNOWN_MATERIAL_MISMATCHES`
+  table for a follow-up finding. Acceptance tests:
+  `crates/rs_cam_core/tests/test_data_smoke_csv_alignment.rs::{all_smoke_cases_reference_existing_templates_and_fixtures, all_smoke_cases_load_via_project_session, all_smoke_cases_have_required_tool_in_template, all_smoke_cases_have_matching_material_family}`.
+  Pre-fix verified failing on `all_smoke_cases_have_required_tool_in_template`
+  (AS007-AS010 missing tools) by stashing `ux_2d_star.toml` and
+  re-running.
 
 ## How to update this file
 

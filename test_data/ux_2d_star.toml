@@ -86,6 +86,29 @@ vendor = ""
 product_id = ""
 
 [[tools]]
+id = 2
+name = "End Mill 3mm"
+type = "end_mill"
+diameter = 3.0
+cutting_length = 15.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 90.0
+taper_half_angle = 15.0
+shaft_diameter = 3.175
+holder_diameter = 25.0
+shank_diameter = 3.175
+shank_length = 20.0
+stickout = 25.0
+flute_count = 2
+tool_number = 2
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
 id = 3
 name = "V-bit 60deg"
 type = "v_bit"
@@ -103,6 +126,29 @@ shank_length = 20.0
 stickout = 30.0
 flute_count = 2
 tool_number = 3
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 4
+name = "90deg V-bit 6mm"
+type = "v_bit"
+diameter = 6.0
+cutting_length = 8.0
+helix_deg = 0.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 90.0
+taper_half_angle = 45.0
+shaft_diameter = 6.35
+holder_diameter = 25.0
+shank_diameter = 6.35
+shank_length = 20.0
+stickout = 30.0
+flute_count = 2
+tool_number = 4
 tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""

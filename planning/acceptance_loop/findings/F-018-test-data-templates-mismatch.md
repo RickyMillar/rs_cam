@@ -2,7 +2,7 @@
 
 - **Stage:** infra (test fixtures)
 - **Severity:** medium
-- **Status:** open
+- **Status:** landed
 - **First found in:** round-01 (2026-05-24)
 - **Effort:** S (~regenerate from CSV)
 - **Linked PRs:** —
