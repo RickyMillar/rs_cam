@@ -95,6 +95,33 @@ impl<B: ComputeBackend> AppController<B> {
             _ => None,
         };
 
+        // F-028 viz-path follow-up (2026-05-25): treat identity setups
+        // (`face_up=Top`, `z_rotation=Deg0`) as "no setup transform" so the
+        // generation pipeline emits cuts in world frame, mirroring
+        // `session::compute::compute`. Pre-fix the viz controller's
+        // `transform_setup.is_some()` branch was taken even for identity
+        // setups, which: (a) shifted polygons by `-stock.origin` into a
+        // zero-rooted setup-local frame, (b) built the `HeightContext` from
+        // the zero-rooted local bbox, and (c) forwarded `stock_bbox=` the
+        // local bbox to the worker. The toolpath generator anchored its
+        // depth stepping at `heights.top_z = local stock_top` (e.g. 12 mm
+        // for AS001 where world stock top sits at Z=0) and emitted cuts at
+        // Z=10, 8, 6. The viz simulation path then dropped
+        // `local_to_global = None` for identity setups (F-024 follow-up),
+        // so the dexel grid was rebuilt in *world* frame — and the
+        // generator's local-frame cuts at Z=10 sat 10 mm above the world
+        // stock top at Z=0. The cutter swept through air the whole run:
+        // `peak_axial_doc_mm = 0`, `total_removed_volume_est_mm3 = 0`,
+        // 96 % air-cut. See round-07 smoke + F-028 follow-up notes.
+        //
+        // Mirroring `session::compute::compute` (commits `e48d7df` site 1):
+        // identity setups skip the geometry transform, use the world stock
+        // bbox for the `HeightContext`, and pass the world bbox through to
+        // the worker. The downstream sim path's "identity setup →
+        // local_to_global = None + dexel grid in world frame" branch then
+        // matches the toolpath frame and engagement reads the commanded DOC.
+        let transform_setup = transform_setup.filter(|s| s.needs_transform());
+
         // Flag project_curve when the setup Z is already inverted. Single source
         // of truth: `SetupTransformInfo::is_z_flipped()`.
         let needs_transform = transform_setup.is_some();

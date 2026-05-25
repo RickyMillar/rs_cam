@@ -1565,3 +1565,251 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
         first_pass_axials.len()
     );
 }
+
+// ---------------------------------------------------------------------------
+// F-028 viz-path follow-up (2026-05-25)
+//
+// The original F-028 fix (commit `e48d7df`) only patched
+// `session::compute::compute_simulation_groups` (site 1). Round-07 smoke
+// verified through the MCP exposed that the viz / MCP / GUI pipeline takes
+// a different path: `AppController::submit_toolpath_compute`
+// (`controller/events/compute.rs`). That path always built the
+// `HeightContext` from the **local zero-rooted** bbox even for identity
+// setups, and ALSO transformed mesh/polygons by `-stock.origin` into a
+// setup-local frame. The toolpath generator then anchored its depth
+// stepping at `heights.top_z = stock.z = 12` (for AS001) and emitted cuts
+// at Z=10, 8, 6 in the setup-local frame.
+//
+// The downstream simulation path, however, drops `local_to_global = None`
+// for identity setups (F-024 follow-up `0c907a6`) — so the dexel grid was
+// rebuilt in *world* frame. The generator's local-frame cuts at Z=10 sat
+// 10 mm above the world stock top at Z=0; the cutter swept through air
+// the whole run. Round-07 MCP smoke evidence:
+//   AS001 pocket: z_level = 10/8/6, peak_axial_doc_mm = 0,
+//   total_removed_volume_est_mm3 = 0, chipload = Unmodeled
+//   (all_samples_air_cut_or_rapid), air_cut_percentage = 96 %, 0 rapid
+//   collisions, 0 sampling errors.
+//
+// The fix mirrors `session::compute::compute` (site 1): identity setups
+// (`face_up = Top`, `z_rotation = Deg0`) skip the geometry transform and
+// build the `HeightContext` + worker `stock_bbox` from the world bbox.
+// The `transform_setup = Some(...)` branch is now gated on
+// `s.needs_transform()` — identity setups fall through to the
+// `transform_setup = None` branch and emit cuts in world frame to match
+// the downstream sim path's world-frame dexel grid.
+//
+// Test design: a `CapturingBackend` records the `ComputeRequest`
+// submitted by `submit_toolpath_compute` so we can pin the heights frame
+// directly. Pre-fix the captured `heights.top_z = 12` and
+// `stock_bbox.max.z = 12` (local). Post-fix both are 0 (world stock top
+// for AS001).
+// ---------------------------------------------------------------------------
+
+/// Capturing backend that records the most recent toolpath `ComputeRequest`.
+/// Used by the F-028 viz-path follow-up regression test to assert that
+/// `submit_toolpath_compute` resolves heights in the world frame for
+/// identity setups.
+#[derive(Default)]
+struct CapturingBackend {
+    captured: Option<ComputeRequest>,
+}
+
+impl crate::compute::ComputeBackend for CapturingBackend {
+    fn submit_toolpath(&mut self, request: ComputeRequest) {
+        self.captured = Some(request);
+    }
+    fn submit_simulation(&mut self, _request: SimulationRequest) {}
+    fn submit_collision(&mut self, _request: CollisionRequest) {}
+    fn submit_optimize(&mut self, _request: OptimizeRequest) {}
+    fn cancel_lane(&mut self, _lane: crate::compute::ComputeLane) {}
+    fn drain_results(&mut self) -> Vec<ComputeMessage> {
+        Vec::new()
+    }
+    fn lane_snapshot(&self, lane: crate::compute::ComputeLane) -> crate::compute::LaneSnapshot {
+        crate::compute::LaneSnapshot::idle(lane)
+    }
+}
+
+/// F-028 viz-path follow-up regression test.
+///
+/// AS001-shape session (stock origin_z=-12, identity setup, auto_from_model
+/// =false, world stock top at Z=0) with a Pocket toolpath on a 2D polygon
+/// model. `submit_toolpath_compute` must build a `HeightContext` from the
+/// **world** stock bbox, so `heights.top_z = 0.0` (world stock top) and the
+/// downstream toolpath generator emits cuts at Z=-2, -4, -6 to match the
+/// downstream sim path's world-frame dexel grid.
+///
+/// Pre-fix readings (commit `db1fb69`): `heights.top_z = 12.0`,
+/// `stock_bbox.max.z = 12.0`, cuts emitted at Z=10, 8, 6 → simulation peak
+/// axial = 0, total removed = 0, air cut = 96 %.
+///
+/// Post-fix: both are 0.0 (world stock top for AS001), cuts emit at
+/// Z=-2, -4, -6, simulation engages stock.
+#[test]
+fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
+    use rs_cam_core::compute::PocketConfig;
+    use rs_cam_core::compute::operation_configs::PocketPattern;
+    use rs_cam_core::compute::stock_config::StockConfig;
+    use rs_cam_core::material::{Material, WoodSpecies};
+    use rs_cam_core::polygon::Polygon2;
+
+    let mut controller = AppController::with_backend(CapturingBackend::default());
+
+    // AS001 stock: origin_z=-12, z=12 → world stock top at Z=0.
+    let stock = StockConfig {
+        x: 100.0,
+        y: 100.0,
+        z: 12.0,
+        origin_x: -10.0,
+        origin_y: -10.0,
+        origin_z: -12.0,
+        auto_from_model: false,
+        material: Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        },
+        ..StockConfig::default()
+    };
+    controller.state.session.set_stock_config(stock);
+
+    // 6 mm endmill matching the AS001 fixture.
+    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    tool.diameter = 6.0;
+    tool.cutting_length = 25.0;
+    tool.shank_diameter = 6.35;
+    tool.shank_length = 20.0;
+    tool.stickout = 45.0;
+    tool.flute_count = 2;
+    tool.name = "End Mill 6mm".to_owned();
+    controller.state.session.tools_mut().push(tool);
+
+    // 2D polygon model (matches the SVG-driven AS001 pocket case).
+    let model_id = controller.state.session.add_model(LoadedModel {
+        id: 0,
+        path: std::path::PathBuf::from("demo_pocket.svg"),
+        name: "demo_pocket".to_owned(),
+        kind: Some(ModelKind::Svg),
+        mesh: None,
+        polygons: Some(Arc::new(vec![Polygon2::rectangle(20.0, 20.0, 80.0, 80.0)])),
+        enriched_mesh: None,
+        units: Some(ModelUnits::Millimeters),
+        winding_report: None,
+        load_error: None,
+    });
+
+    // AS001 pocket params: depth=6, dpp=2, stepover=2.4, feed=900, plunge=350.
+    let pocket = PocketConfig {
+        stepover: 2.4,
+        depth: 6.0,
+        depth_per_pass: 2.0,
+        feed_rate: 900.0,
+        plunge_rate: 350.0,
+        climb: true,
+        pattern: PocketPattern::Contour,
+        angle: 0.0,
+        finishing_passes: 0,
+        spindle_rpm: Some(18_000),
+    };
+
+    let tp_config = ToolpathConfig {
+        id: 0,
+        name: "Pocket (AS001)".to_owned(),
+        enabled: true,
+        operation: OperationConfig::Pocket(pocket),
+        dressups: Default::default(),
+        heights: Default::default(),
+        tool_id: 1,
+        model_id,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: Default::default(),
+        boundary_inherit: true,
+        stock_source: Default::default(),
+        coolant: Default::default(),
+        face_selection: None,
+        debug_options: Default::default(),
+    };
+    let tp_idx = controller
+        .state
+        .session
+        .add_toolpath(0, tp_config)
+        .expect("add pocket to default setup");
+    let tp_id = ToolpathId(
+        controller
+            .state
+            .session
+            .toolpath_configs()
+            .get(tp_idx)
+            .expect("toolpath_configs slot present after add_toolpath")
+            .id,
+    );
+
+    // Drive the production code path. The default setup is identity
+    // (face_up=Top, z_rotation=Deg0).
+    controller.submit_toolpath_compute(tp_id);
+
+    let request = controller
+        .compute
+        .captured
+        .as_ref()
+        .expect("submit_toolpath_compute should have submitted a ComputeRequest");
+
+    let captured_stock_bbox = request
+        .stock_bbox
+        .as_ref()
+        .expect("ComputeRequest::stock_bbox should be Some");
+
+    // The world stock top for AS001 sits at Z=0 (origin_z=-12 + stock.z=12).
+    assert!(
+        (request.heights.top_z - 0.0).abs() < 1e-9,
+        "F-028 viz-path: heights.top_z must resolve to the world stock top \
+         (Z=0 for AS001 identity setup); got {:.6}. Pre-fix this read 12.0 \
+         (the local zero-rooted stock_top), and the toolpath generator \
+         emitted cuts at Z=10, 8, 6 in setup-local frame. The downstream \
+         viz simulation drops `local_to_global = None` for identity setups \
+         (F-024 viz-worker follow-up `0c907a6`) so the dexel grid is rebuilt \
+         in world frame — and the generator's local-frame cuts at Z=10 sat \
+         10 mm above the world stock top at Z=0. Round-07 MCP smoke: \
+         peak_axial=0, total_removed=0, air_cut=96 %.",
+        request.heights.top_z
+    );
+
+    // Bottom of first pass: top_z - depth_per_pass*N or full depth.
+    // With heights.top_z = 0 and depth = 6 (full pocket depth), bottom = -6.
+    assert!(
+        (request.heights.bottom_z - -6.0).abs() < 1e-9,
+        "F-028 viz-path: heights.bottom_z must resolve to top_z - depth = -6 \
+         for the AS001 pocket; got {:.6}. Pre-fix this read 6.0 \
+         (12 - 6 in local frame).",
+        request.heights.bottom_z
+    );
+
+    assert!(
+        (captured_stock_bbox.max.z - 0.0).abs() < 1e-9,
+        "F-028 viz-path: ComputeRequest.stock_bbox.max.z must equal the \
+         world stock top (Z=0 for AS001 identity setup); got {:.6}. Pre-fix \
+         this read 12.0 — the controller built a zero-rooted local bbox \
+         even for identity setups. Downstream `generate_via_core` then \
+         constructed boundary rectangles in the local zero-rooted XY frame, \
+         compounding the frame mismatch.",
+        captured_stock_bbox.max.z
+    );
+
+    assert!(
+        (captured_stock_bbox.min.z - -12.0).abs() < 1e-9,
+        "F-028 viz-path: ComputeRequest.stock_bbox.min.z must equal \
+         stock.origin_z (-12 for AS001 identity setup); got {:.6}. Pre-fix \
+         this read 0.0.",
+        captured_stock_bbox.min.z
+    );
+
+    // XY frame: for identity setups the bbox must respect stock.origin_x/y too.
+    assert!(
+        (captured_stock_bbox.min.x - -10.0).abs() < 1e-9
+            && (captured_stock_bbox.min.y - -10.0).abs() < 1e-9,
+        "F-028 viz-path: ComputeRequest.stock_bbox.min.{{x,y}} must equal \
+         stock.origin_{{x,y}} (-10, -10 for AS001 identity setup); got \
+         ({:.6}, {:.6}).",
+        captured_stock_bbox.min.x,
+        captured_stock_bbox.min.y
+    );
+}
