@@ -3,11 +3,24 @@
 - **Stage:** sim / adaptive3d
 - **Severity:** medium (closes the deflection bar to 7/7 once landed —
   same role F-029 was meant to play)
-- **Status:** open
+- **Status:** landed
 - **First found in:** F-029 implementer pickup, 2026-05-26
 - **Effort:** M-L (investigation-heavy; multiple plausible root causes;
   each sim run is ~60-90 s, slowing the diagnostic loop)
-- **Linked PRs:** (none yet)
+- **Linked PRs:** commit `497a3b2`
+- **Resolution:** Root cause was the planner-↔-dressup helix entry-style
+  parity gap (a hybrid of F-031 hypothesis #4 — frame interaction — but
+  the "frame" turned out to be the planner-emission vs dressup-rewrite
+  axis, not world/local). Fix: narrow the `prefer_helix` override in
+  `DressupConfig::normalize_for_op` to 2D `Adaptive` only; force
+  `entry_style = None` for `Adaptive3d`. Stamp-event diagnostic ruled
+  out hypotheses #1/#2/#3 — planner and simulator share identical
+  grids and stamp functions; only the toolpath shape (planner-emitted
+  plunges vs dressup-rewritten helices) differed. Acceptance tests
+  re-enabled in
+  `crates/rs_cam_core/tests/adaptive3d_interior_cell_parity_f029.rs`
+  (`as013_terrain_whole_toolpath_axial_within_commanded_dpp_f031` +
+  `as013_terrain_deflection_within_safe_band_f031`) pass post-fix.
 - **Source audits:** F-029 implementer's per-cell diagnostic probe
   (`debug_adaptive_3d_segments_for_f029_probe`) on AS013 against
   `test_data/ux_3d_terrain.toml` via `ProjectSession::run_simulation`,
