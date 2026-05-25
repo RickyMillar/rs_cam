@@ -27,7 +27,7 @@ pub struct FaceParams {
     pub tool_radius: f64,
     /// Distance between passes in mm (default: 80% of tool diameter).
     pub stepover: f64,
-    /// Total face depth in mm. 0 = single pass at stock top (Z=0).
+    /// Total face depth in mm. 0 = single pass at stock top.
     pub depth: f64,
     /// Maximum depth per pass in mm.
     pub depth_per_pass: f64,
@@ -41,6 +41,15 @@ pub struct FaceParams {
     pub stock_offset: f64,
     /// Direction of facing passes.
     pub direction: FaceDirection,
+    /// Stock-top Z in the emission frame (F-028). Face cuts at
+    /// `stock_top_z - depth_in_pass`. Pre-F-028 this was implicitly `0.0`
+    /// (face hardcoded `start_z = 0.0`), which only produced cuts inside
+    /// the stock when the world stock top happened to sit at world Z=0.
+    /// Callers should pass `heights.top_z` from the resolved height stack
+    /// (which now follows `ctx.stock_top_z` under Auto, so identity setups
+    /// land at world stock top and non-identity setups land at local
+    /// stock top).
+    pub stock_top_z: f64,
 }
 
 /// Generate a one-way (unidirectional) raster toolpath inside a polygon.
@@ -111,11 +120,11 @@ pub fn face_toolpath(bounds: &BoundingBox3, params: &FaceParams) -> Toolpath {
     };
 
     if params.depth <= 0.0 {
-        // Single pass at Z=0 (stock top)
+        // Single pass at the stock top (F-028: was hardcoded Z=0)
         let zp = ZigzagParams {
             tool_radius: params.tool_radius,
             stepover: params.stepover,
-            cut_depth: 0.0,
+            cut_depth: params.stock_top_z,
             feed_rate: params.feed_rate,
             plunge_rate: params.plunge_rate,
             safe_z: params.safe_z,
@@ -123,10 +132,10 @@ pub fn face_toolpath(bounds: &BoundingBox3, params: &FaceParams) -> Toolpath {
         };
         raster_fn(&rect, &zp)
     } else {
-        // Multi-pass depth stepping
+        // Multi-pass depth stepping anchored at `stock_top_z` (F-028).
         let stepping = DepthStepping {
-            start_z: 0.0,
-            final_z: -params.depth,
+            start_z: params.stock_top_z,
+            final_z: params.stock_top_z - params.depth,
             max_step_down: params.depth_per_pass,
             distribution: DepthDistribution::Even,
             finish_allowance: 0.0,
@@ -173,6 +182,13 @@ mod tests {
             safe_z: 10.0,
             stock_offset: 5.0,
             direction: FaceDirection::Zigzag,
+            // Tests below assert cuts at Z=0 / Z=-2 / Z=-4 / Z=-6 — i.e. they
+            // implicitly assume `stock_top_z = 0` (the AS001 convention). The
+            // params now make this assumption explicit; F-028 adds an
+            // integration test for the `stock_top_z > 0` case via
+            // `ProjectSession::run_simulation` (see
+            // `tests/face_stock_top_z_frame_f028.rs`).
+            stock_top_z: 0.0,
         }
     }
 
