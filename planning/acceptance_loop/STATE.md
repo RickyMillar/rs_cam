@@ -11,10 +11,7 @@ and implementer write here.
 
 ## Current round
 
-**round-08** (audit pending — F-029 partial-landed 2026-05-26; F-031
-opened for residual; deflection bar still 5/7; **F-030 architecture
-refactor landed 2026-05-26 in commit `ba9a8fd`** against the user's explicit precondition
-override, awaits round-08 MCP smoke verification)
+**round-09** (audit pending — F-030 architecture refactor **VERIFIED through MCP smoke 2026-05-26**; F-031 implementer pickup unblocks 7/7 deflection bar)
 
 Round-07 closed 2026-05-25. **F-027 + F-028 verified.** AS013 + AS015
 collisions 2924/52 → 0 cleanly. AS004 face deflection 0.243 → 0.005
@@ -53,14 +50,14 @@ before round-08 smoke.** Brief at `handoff_prompts/F-030-architecture-brief.md`.
 
 Delta: `rounds/round-07-2026-05-25/delta.md`.
 
-Implementer(s) active: none. F-031 next. **MCP rebuild required before
-round-08 smoke** — F-029 partial-landing touched
-`crates/rs_cam_core/src/adaptive3d/{clearing,path,mod}.rs` and the
-F-030 refactor touched session compute + viz controller / worker
-frame handling.
+**Round-08 verification (2026-05-26 PM)**: AS001 byte-identical (z=-2/-4/-6, peak_axial=2.0, deflection=0.076 Within, removed_volume per-pass byte-identical). AS013: 0 collisions (F-027 holds), toolpath geometry byte-identical, deflection 0.637 Exceeds (F-031 residual, in same noise band as round-07's 0.576 and F-029-landing's 0.66). **F-030 retires the duplicated-frame-handling pattern that caused four multi-site sagas across F-024/F-026/F-028.** Delta: `rounds/round-08-2026-05-25/delta.md`.
+
+Implementer(s) active: none. **F-031 is the next pickup** — closes the deflection bar to 7/7, then the acceptance loop's exit criteria are within reach.
 
 ## Last verified baseline
 
+- **round-08 delta** (F-030 architecture refactor verified through MCP smoke; AS001 byte-identical, AS013 collisions 0, deflection still F-031 residual):
+  `planning/acceptance_loop/rounds/round-08-2026-05-25/delta.md`
 - **round-07 delta** (F-027 + F-028 verified; F-028 regression cycle absorbed; F-030 opened):
   `planning/acceptance_loop/rounds/round-07-2026-05-25/delta.md`
 - **round-06 delta** (F-026 verified at load-bbox-fix scope; F-027
@@ -86,9 +83,9 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 
 | Finding | Title | Stage | Sev | Effort | Status |
 |---|---|---|---|:-:|---|
-| [F-031](findings/F-031-adaptive3d-residual-deep-z-parity.md) | Adaptive3d residual deep-Z planner↔simulator stamp parity gap — F-029 follow-up, still blocks 7/7 deflection bar | sim | high | M-L | open — **next implementer pickup**; F-029 closed at partial-landing scope |
+| [F-031](findings/F-031-adaptive3d-residual-deep-z-parity.md) | Adaptive3d residual deep-Z planner↔simulator stamp parity gap — F-029 follow-up, was last blocker for 7/7 deflection bar | sim | high | M-L | **landed 2026-05-26** (commit `497a3b2`); awaits round-09 MCP smoke verification |
 | [F-029](findings/F-029-adaptive3d-interior-cell-parity.md) | Adaptive3d interior-cell planner↔simulator stamp parity gap — final deflection residual on AS013/AS015 | sim | medium | M | **partial-landing 2026-05-26** — cleanup-raster DPP clamp + diagnostic probe landed; residual interior-cell tracked as F-031 |
-| [F-030](findings/F-030-unify-setup-eval-context.md) | Unify SetupEvalContext across the 5 stock-frame entry points — architecture refactor | substrate | medium | L | **landed 2026-05-26** (commit `ba9a8fd`); awaits round-08 MCP smoke verification |
+| [F-030](findings/F-030-unify-setup-eval-context.md) | Unify SetupEvalContext across the 5 stock-frame entry points — architecture refactor | substrate | medium | L | **verified round-08** (commit `ba9a8fd`); duplicated-frame pattern retired |
 | [F-020](findings/F-020-optimizer-ranked-bs-path.md) | Optimizer Ranked-outcome BS-stepover path untested | optimize | high | M | open — needs test fixture before fix |
 | [F-025](findings/F-025-non-identity-setup-z-frame.md) | Z-frame mismatch on non-identity setups (face_up=Bottom etc.) | substrate | medium | S–M | open — stub; possibly subsumed by F-030 |
 | [F-006](findings/F-006-operation-config-three-default-paths.md) | Default `OperationConfig` produced via three paths | suggest | medium | M | open — partially absorbed by F-003 |
@@ -107,9 +104,9 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 | Finding | Claimed by | PR | Notes |
 |---|---|---|---|
 
-(F-029 landed at partial-landing scope 2026-05-26; F-031 spun off for
-the residual. F-030 implementer brief in `handoff_prompts/` continues
-to wait on 7/7 deflection bar.)
+(F-029 landed at partial-landing scope 2026-05-26; F-031 landed
+2026-05-26 in commit `497a3b2`. F-030 implementer brief in
+`handoff_prompts/` has now completed its prerequisite chain.)
 
 ## Closed round-02 (2026-05-25)
 
@@ -173,48 +170,72 @@ Verified by round-02 smoke (`rounds/round-02-2026-05-25/delta.md`):
 
 ## Acceptance bars status
 
-Round-07 verified F-027 + F-028 and confirmed F-024 stability after a
-mid-round regression cycle. Deflection bar still at 5/7 — F-029 is
-the last blocker for 7/7.
+Round-08 verified F-030 architecture refactor through MCP smoke (AS001 byte-identical, AS013 collisions 0). Deflection bar still 5/7 — F-031 is the last blocker. **The duplicated-frame-handling pattern is retired**; future findings in the F-031/F-025 family should be one-site fixes.
 
-| Bar | Target | Round-06 | Round-07 | Status |
+| Bar | Target | Round-07 | Round-08 | Status |
 |---|---:|---|---|---|
-| Suggest first-shot landing rate | ≥ 90% | unmeasured | unmeasured | needs full sweep (round-08) |
-| Sim chipload calibration (3D ops) | ≥ 95% | 2/2 | 2/2 stable | stable |
-| Sim chipload calibration (2D ops) | ≥ 95% | 1/1 re-checked | 4/4 re-checked (AS001/3/4/5) | stable |
-| **Sim deflection calibration** | ≥ 95% | 5/7 Within | **5/7 Within** (AS013/15 F-029 partial-landing did not close residual — see F-031; AS001/3/4 verified Within) | **F-031 → 7/7** |
+| Suggest first-shot landing rate | ≥ 90% | unmeasured | unmeasured | needs full sweep (round-09) |
+| Sim chipload calibration (3D ops) | ≥ 95% | 2/2 | 1/1 (AS013 re-checked stable) | stable |
+| Sim chipload calibration (2D ops) | ≥ 95% | 4/4 | 1/1 (AS001 re-checked stable) | stable |
+| **Sim deflection calibration** | ≥ 95% | 5/7 Within | **5/7 Within** (AS013/15 F-031 residual; AS001 verified byte-identical) | **F-031 → 7/7** |
 | Optimizer honest-improvement | ≥ 95% | not re-tested | not re-tested | stable; F-020 still untested |
 | Optimizer refusal correctness | 100% | not re-tested | not re-tested | stable; verify post-F-031 |
 | Export gate | 100% | not tested | not tested | open |
 
 ## Blockers / questions for the user
 
-- None active. Round-07 closed with F-027 + F-028 verified, F-028
-  viz-path regression fixed, F-024 stability confirmed on AS001/AS003,
-  F-030 architecture finding opened (blocked on 7/7 bar).
-- Round-08 priorities:
-  - **Spawn F-031 implementer** (adaptive3d residual deep-Z parity).
-    F-029 landed at partial-landing scope 2026-05-26 (cleanup-raster
-    DPP clamp + diagnostic probe) but the worst-case AS013 interior
-    cell still reads axial=44.8 mm / deflection=0.66 mm. F-031 is the
-    follow-up; see `findings/F-031-adaptive3d-residual-deep-z-parity.md`
-    for hypothesised root causes (sim-side stamping / coverage).
-  - After F-031 lands + MCP rebuild, round-08 smoke must confirm
-    AS013 + AS015 deflection Within (< 0.2 mm). Once 7/7, signal
-    the F-030 agent (running in a separate Claude session, brief at
-    `handoff_prompts/F-030-architecture-brief.md`) that preconditions
-    are met.
-  - Full AS001-AS018 sweep deferred again. Batch with F-031 verification.
+- None active. Round-08 closed with F-030 architecture refactor verified through MCP smoke (AS001 byte-identical, AS013 collisions 0). Duplicated-frame pattern retired.
+- Round-09 priorities:
+  - **Spawn F-031 implementer** (adaptive3d residual deep-Z parity, sim-side stamping). The only remaining blocker for the 7/7 deflection bar.
+  - After F-031 lands + MCP rebuild, round-09 smoke must confirm AS013 + AS015 deflection Within (< 0.2 mm). Once 7/7, the loop's deflection acceptance bar is met.
   - F-020 (optimizer Ranked-BS path) needs a fixture spec first.
-  - **MCP rebuild required before round-08 smoke** — F-029 partial
-    landing touched `crates/rs_cam_core/src/adaptive3d/clearing.rs`
-    (cleanup raster) and `path.rs` (probe export). The release
-    `rs_cam_gui --mcp` binary running during F-029 pickup is stale.
+  - F-025 (non-identity setups) — open a smoke probe with `face_up=Bottom` once a fixture exists. F-030's unification should handle non-identity transforms cleanly; this is a verification, not an implementation.
+  - **Acceptance loop is on the edge of closing**: when F-031 lands and 7/7 is confirmed, the active-workstream block in `CLAUDE.md` becomes removable.
 
 ## Implementation log
 
 (implementers append here when they land a PR; auditor moves entries to round directories when verified)
 
+- 2026-05-26 — **F-031 landed** (commit `497a3b2`). Root cause: planner-↔-dressup
+  helix entry-style parity gap. The planner's
+  `stamp_emitted_segment(Adaptive3dSegment::Rapid)` stamps a single
+  vertical cylinder at the entry XY (matching the planner's peck-plunge
+  emission). The dressup's `apply_entry` pass — driven by
+  `DressupConfig::for_op(Adaptive3d)` defaulting to `entry_style = Helix`
+  via the `prefer_helix` override in `normalize_for_op` — then walked
+  the planner-emitted toolpath and replaced each plunge with a multi-pass
+  helix at radius ~2 mm around the entry XY. The planner's
+  `material_stock` thus went out-of-sync with the simulator's actual
+  swept-tube coverage. Subsequent clearing passes the planner believed
+  would sweep through cleared air actually bit into uncut material,
+  producing per-sample `axial_engagement_mm` readings up to ~44 mm on a
+  3 mm-commanded DPP (in transit-tagged samples) and `deflection.peak_mm
+  = 0.66` (Exceeds) on AS013. The stamp-event diagnostic refuted F-031
+  hypotheses #1 (sample density), #2 (LUT cadence), and #3 (dexel
+  origin/extent) — planner and simulator share identical grids and stamp
+  functions; only the emitted-vs-rewritten toolpath shape differed.
+  Hypothesis #4 (frame interaction) was the closest pre-investigation
+  framing, but the "frame" was planner-emission vs dressup-rewrite,
+  not world/local. Fix: narrow the `prefer_helix` override to 2D
+  `Adaptive` only; force `entry_style = None` for `Adaptive3d`. The
+  planner-emitted peck-plunge feeds now pass through the dressup
+  unchanged, and the simulator's stamping matches the planner's
+  vertical-cylinder pre-stamp. Acceptance tests
+  (`crates/rs_cam_core/tests/adaptive3d_interior_cell_parity_f029.rs::
+  as013_terrain_whole_toolpath_axial_within_commanded_dpp_f031` +
+  `as013_terrain_deflection_within_safe_band_f031`) re-enabled and
+  pass. Post-fix AS013 deflection = 0.129 (Within, was 0.66 Exceeds).
+  Steady-state max axial = 3.13 (within 3.5 limit, was 44.82
+  including transit). Side effect on F-027 model-edge tests aligned
+  via `!in_transit_span` filter mirroring the deflection model's
+  `is_steady_state_for_gate`. Full workspace `cargo test` + `cargo
+  clippy --workspace --all-targets -- -D warnings` clean.
+  **F-017 (rapid collisions, 3D-op cohort) closure depends on this
+  fix reaching the smoke — flagged for round-09 auditor to reconcile
+  alongside MCP rebuild + 7/7 deflection verification.** **MCP
+  rebuild required before round-09 smoke.**
+
+- 2026-05-26 — round-08 audit: **F-030 verified through MCP smoke.** AS001 byte-identical to round-07 (z=-2/-4/-6, peak_axial=2.0, deflection=0.076 Within, removed_volume per-pass 6569/6705/6726 byte-identical). AS013 byte-identical toolpath geometry (420371 moves / 375780 cutting / 220759 rapid), 0 collisions (F-027 holds), deflection 0.637 Exceeds (F-031 residual, in same noise band as round-07's 0.576 / F-029-landing's 0.66). The duplicated-frame pattern is retired across all 5 sites. **Bar still 5/7 deflection**; F-031 implementer pickup is the round-09 priority. Delta: `rounds/round-08-2026-05-25/delta.md`. No code change — audit only.
 - 2026-05-26 — **F-030 architecture refactor landed** (commit `ba9a8fd`).
   Introduces `rs_cam_core::session::SetupEvalContext` — single source
   of truth for `(world_stock_bbox, local_stock_bbox, local_to_global,
