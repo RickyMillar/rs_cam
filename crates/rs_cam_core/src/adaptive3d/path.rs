@@ -148,6 +148,44 @@ pub(super) struct Adaptive3dSegmentsResult {
     pub surface_heightmap: SurfaceHeightmap,
 }
 
+/// F-029 probe: build the planner-internal segments + final material_stock
+/// for an adaptive3d run with the given params. Exposed so the F-029
+/// acceptance test can compare planner stock state to simulator stock state
+/// at the same cell layout to confirm parity.
+#[doc(hidden)]
+#[allow(clippy::type_complexity)] // diagnostic probe; returns raw cell-grid metadata
+pub fn debug_adaptive_3d_segments_for_f029_probe(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &super::Adaptive3dParams,
+    cancel: &dyn CancelCheck,
+) -> Result<(Vec<f32>, usize, usize, f64, f64, f64, f64, f64), Cancelled> {
+    let res = adaptive_3d_segments(mesh, index, cutter, params, None, cancel)?;
+    let _ = &res.segments;
+    let _ = &res.surface_heightmap;
+    let grid = &res.final_material_stock.z_grid;
+    // Return the ray top z values (using top of last segment) per cell
+    let mut tops = Vec::with_capacity(grid.rows * grid.cols);
+    for row in 0..grid.rows {
+        for col in 0..grid.cols {
+            let ray = grid.ray(row, col);
+            let top = ray.iter().map(|s| s.exit).fold(f32::NEG_INFINITY, f32::max);
+            tops.push(top);
+        }
+    }
+    Ok((
+        tops,
+        grid.rows,
+        grid.cols,
+        grid.cell_size,
+        grid.origin_u,
+        grid.origin_v,
+        res.final_material_stock.stock_bbox.min.z,
+        res.final_material_stock.stock_bbox.max.z,
+    ))
+}
+
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub(super) fn adaptive_3d_segments(
     mesh: &TriangleMesh,
@@ -179,7 +217,12 @@ pub(super) fn adaptive_3d_segments(
                 (bbox.max.y + r).max(wy_max),
             )
         } else {
-            (bbox.min.x - r, bbox.min.y - r, bbox.max.x + r, bbox.max.y + r)
+            (
+                bbox.min.x - r,
+                bbox.min.y - r,
+                bbox.max.x + r,
+                bbox.max.y + r,
+            )
         };
     let cell_size = (tool_radius / 6.0).max(params.tolerance);
 

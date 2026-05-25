@@ -4,10 +4,14 @@
 - **Severity:** medium (residual after F-027 lands; deflection still
   fires Exceeds on AS013 at 0.013% of samples, but the model-edge
   cohort is fully resolved)
-- **Status:** open — opened by F-027 implementer during landing
+- **Status:** partial_landing (defensive cleanup-raster clamp + diagnostic
+  probe landed 2026-05-26; residual tracked as F-031)
 - **First found in:** F-027 implementation verification (2026-05-25)
 - **Effort:** M
-- **Linked PRs:** (none yet; opened with F-027)
+- **Linked PRs:** see commit linked in STATE.md implementation log
+- **Follow-up:** F-031 — residual interior-cell parity gap (planner
+  fully clears the cell but simulator dexel diverges at intermediate Z
+  levels)
 - **Source audits:** F-027 implementer's repro of AS013 against
   `test_data/ux_3d_terrain.toml` via `ProjectSession::run_simulation`,
   after the F-027 widening + border-clear inhibit fix landed.
@@ -95,3 +99,54 @@ infrastructure can be factored out) but enforce the stricter bar:
 - F-017 (rapid collisions) closure depends on this landing — the
   remaining 3D-op collision surface waits on F-029 (similar mechanism).
 - Cross-link: F-027's residual scope note points here.
+
+## Partial-landing log (2026-05-26)
+
+Implementer (Claude Opus 4.7 pickup) landed:
+
+1. **Diagnostic probe** in `crates/rs_cam_core/src/adaptive3d/path.rs`
+   (`debug_adaptive_3d_segments_for_f029_probe`) — exposes the planner's
+   final per-cell `material_stock` top-z so tests can compare planner
+   stock state to simulator stock state at the same cell layout.
+2. **Cleanup-raster per-cell DPP clamp** in
+   `crates/rs_cam_core/src/adaptive3d/clearing.rs`
+   (`clear_z_level_contour_parallel`). The raster previously emitted a
+   single cut at `z = max(surf_z + stock_to_leave, z_level)` for every
+   contiguous run of remaining-material cells, regardless of the cell's
+   current stock top. For cells whose stock top is far above `z_level`
+   (e.g. cells outside the mesh XY footprint where `surf_z = min_z` so
+   the contour iso-lines never cover them), the simulator faithfully
+   replayed that single deep cut as one swept tube and reported the
+   full descent as `axial_engagement_mm`. The clamp limits each cell's
+   cut depth to `stock_top - depth_per_pass - tolerance` so a deep
+   uncleared cell takes at most one DPP of axial per pass.
+3. **F-029 acceptance tests** (`adaptive3d_interior_cell_parity_f029.rs`)
+   landed but **`#[ignore]`d** with `F-031` reference. The cleanup-raster
+   clamp is defensible defensive coding and doesn't regress any other
+   adaptive3d test, but **it does not close the worst-case AS013 cell**
+   (x≈-2.4, y≈18.5): max axial stays at 44.8 mm, deflection at 0.66 mm.
+
+### Why F-029 didn't close fully
+
+The probe shows the planner's final `material_stock` at (-2.5, 18.5)
+reads `top = 0.5` (fully cleared), but the simulator's per-setup dexel
+disagrees. The worst sample arrives at `z = 6.57` on the final pass and
+reads axial ≈ 44.8 mm — implying the simulator's stock at that XY was
+still at ≈ 51.4 (the cell's depth after the **first four passes** only)
+when the deepest pass swept through.
+
+Sample history at the worst XY shows the cell got cuts at z = 54.5,
+51.5, 48.5, 45.6 (the first four passes), **then nothing for 13 Z
+levels**, then a hit at z = 0.5 (final pass). The 13 missed Z levels
+are not a planner cell-coverage gap (the planner correctly stamps them)
+— they're a simulator **sample density / coverage** gap. Either:
+
+- The toolpath emits cuts at those Z levels that pass **near but not
+  over** the cell (within 3.5 mm but not within 2 mm — the sample
+  histogram filter), so no sim sample lands on this XY at those Z
+  levels, OR
+- The simulator's dexel grid resampling at this XY produces a
+  ray-state that the planner's coarser stamp doesn't match.
+
+Tracked as **F-031** (sim-side resampling / coverage parity) — out of
+scope for F-029's "planner-side" boundary.

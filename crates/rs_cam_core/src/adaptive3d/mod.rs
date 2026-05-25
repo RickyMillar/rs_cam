@@ -27,6 +27,12 @@ mod path;
 mod search;
 use path::{adaptive_3d_segments, runtime_annotations_to_labels, segments_to_toolpath};
 
+// F-029 probe: re-export the planner-state probe for the F-029 acceptance
+// test. Internal — hidden from rustdoc. Will be removed once F-029 lands and
+// the parity gap is closed.
+#[doc(hidden)]
+pub use path::debug_adaptive_3d_segments_for_f029_probe;
+
 /// Region ordering strategy for 3D adaptive clearing.
 ///
 /// `Global` clears all areas at each Z level before moving to the next (default).
