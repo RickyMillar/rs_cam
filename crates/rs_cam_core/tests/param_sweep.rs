@@ -970,6 +970,7 @@ fn default_face_params() -> FaceParams {
         safe_z: 10.0,
         stock_offset: 5.0,
         direction: FaceDirection::Zigzag,
+        stock_top_z: 0.0,
     }
 }
 
@@ -1479,6 +1480,7 @@ fn default_adaptive3d_params() -> Adaptive3dParams {
         mill_shallow_areas: false,
         shallow_angle_rad: None,
         shallow_stepdown: None,
+        world_stock_xy_bbox: None,
     }
 }
 

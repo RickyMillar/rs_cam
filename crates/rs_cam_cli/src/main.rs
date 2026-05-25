@@ -2668,6 +2668,10 @@ fn main() -> Result<()> {
                 mill_shallow_areas: false,
                 shallow_angle_rad: None,
                 shallow_stepdown: None,
+                // F-027: CLI strategy harness doesn't carry a world stock
+                // bbox separate from the mesh footprint; leave `None` and
+                // let the planner default to mesh-bbox-only initialization.
+                world_stock_xy_bbox: None,
             };
 
             let start = std::time::Instant::now();

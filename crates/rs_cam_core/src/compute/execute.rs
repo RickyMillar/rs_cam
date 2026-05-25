@@ -925,6 +925,22 @@ pub fn execute_operation_annotated(
                 } else {
                     None
                 },
+                // F-027: forward the world stock XY bounds so the planner's
+                // internal `material_stock` extends to cover every cell the
+                // simulator's per-setup dexel grid will look at. Pre-fix the
+                // planner was bounded by `mesh.bbox + tool_radius`, while the
+                // simulator's grid is bounded by the (auto-grown) world stock
+                // bbox; cells inside the simulator grid but outside the
+                // planner grid were never stamped, so the final pass carved
+                // through the full stock height in one shot at model-edge
+                // cells, blowing up `axial_engagement_mm` and the downstream
+                // deflection gate.
+                world_stock_xy_bbox: Some((
+                    stock_bbox.min.x,
+                    stock_bbox.min.y,
+                    stock_bbox.max.x,
+                    stock_bbox.max.y,
+                )),
             };
             let (tp, annotations) =
                 crate::adaptive3d::adaptive_3d_toolpath_structured_annotated_traced_with_cancel(

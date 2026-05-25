@@ -145,6 +145,21 @@ pub struct Adaptive3dParams {
     /// Should be < `depth_per_pass`; planner ignores the feature when
     /// either is None or when stepdown >= depth_per_pass.
     pub shallow_stepdown: Option<f64>,
+    /// World stock XY bounds the simulator's per-setup dexel grid uses.
+    /// When `Some((x_min, y_min, x_max, y_max))`, the planner's internal
+    /// `material_stock` is widened so its XY extent encloses **both** the
+    /// mesh bbox (+ tool radius) and the world stock bbox. Without this
+    /// the planner's grid is bounded by `mesh.bbox + tool_radius`, while
+    /// the simulator's per-setup dexel grid is bounded by the world stock
+    /// bbox. Cells inside the simulator's grid but outside the planner's
+    /// never see planner stamps and carry virgin material across the
+    /// entire toolpath; the final pass scrapes the full pre-stamp ray in
+    /// one stamp, inflating per-sample axial engagement and the
+    /// downstream deflection gate. See finding F-027.
+    ///
+    /// `None` falls back to the mesh-bbox-only initialization for tests
+    /// and call sites that don't have a world stock bbox handy.
+    pub world_stock_xy_bbox: Option<(f64, f64, f64, f64)>,
 }
 
 // SurfaceHeightmap is now in crate::slope (shared across finishing strategies)
@@ -561,6 +576,7 @@ mod tests {
             mill_shallow_areas: false,
             shallow_angle_rad: None,
             shallow_stepdown: None,
+            world_stock_xy_bbox: None,
         }
     }
 
