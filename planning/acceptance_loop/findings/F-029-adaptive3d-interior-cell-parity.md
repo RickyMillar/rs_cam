@@ -8,7 +8,7 @@
   probe landed 2026-05-26; residual tracked as F-031)
 - **First found in:** F-027 implementation verification (2026-05-25)
 - **Effort:** M
-- **Linked PRs:** see commit linked in STATE.md implementation log
+- **Linked PRs:** commit `74d8a7f` (2026-05-26)
 - **Follow-up:** F-031 — residual interior-cell parity gap (planner
   fully clears the cell but simulator dexel diverges at intermediate Z
   levels)
