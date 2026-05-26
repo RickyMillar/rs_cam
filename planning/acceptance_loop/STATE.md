@@ -110,6 +110,11 @@ Severity ordering: high → medium → low. Within same severity, lower effort f
 
 | Finding | Title | Stage | Sev | Effort | Status |
 |---|---|---|---|:-:|---|
+| **Feed Modulation Workstream** (see [`planning/feed_modulation_roadmap.md`](../feed_modulation_roadmap.md)) | | | | | |
+| [F-037](findings/F-037-smoke-baseline-and-regression-net.md) | Smoke baseline + wanaka regression case + CI gate — protects acceptance-loop calibration from feature-work regressions | process | medium | M | **open — lands first in workstream** |
+| [F-034](findings/F-034-machine-kinematics-cycle-time.md) | Acceleration-aware cycle time estimator — replaces `distance/feed` with kinematics-integrator | sim | medium | S-M | open — depends on F-037 |
+| [F-035](findings/F-035-predicted-feed-in-gates.md) | Predicted-effective-feed in chipload / power / deflection gates — flag-gated | sim | medium | M | open — depends on F-034 + F-037 |
+| [F-036](findings/F-036-per-segment-feed-modulation.md) | Per-segment adaptive feed modulation (Fusion HSM equivalent) — flag-gated, large | post-process | medium | L-XL | open — depends on F-034 + F-035 + F-037 |
 | [F-033](findings/F-033-finishing-op-needs-prior-roughing-advisory.md) | Pre-sim advisory: 3D finishing op without prior roughing pass — UX follow-up to F-032's reframe | suggest | low | M | open — not loop-critical; schedule when UX bandwidth available |
 | [F-032](findings/F-032-scallop-deflection-transit-sample-contamination.md) | Scallop deflection over-fire — **closed round-10 as smoke methodology, not system bug**; system correctly identified dangerous engagement. Methodology: AS015 needs prior roughing pass. F-033 opened for UX advisory. | sim | — | — | **closed round-10** |
 | [F-031](findings/F-031-adaptive3d-residual-deep-z-parity.md) | Adaptive3d residual deep-Z planner↔simulator stamp parity gap — F-029 follow-up | sim | high | M-L | **verified round-09** (commit `497a3b2`); AS013 deflection 0.637 → 0.105 Within, collateral 6.4× toolpath reduction |
