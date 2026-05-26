@@ -2,10 +2,10 @@
 
 - **Stage:** loop machinery / process (foundation for F-034/35/36)
 - **Severity:** medium (preserves the acceptance loop's calibration from feature-work regressions)
-- **Status:** open — **lands first** in the Feed Modulation workstream
+- **Status:** landed 2026-05-26 (PR 1 + 3; PR 2 + CI deferred — see notes)
 - **First found in:** round-10 user discussion (2026-05-26)
 - **Effort:** M
-- **Linked PRs:** —
+- **Linked PRs:** (this commit + the follow-up)
 - **Workstream:** Feed Modulation (see `planning/feed_modulation_roadmap.md`)
 - **Prerequisite for:** F-034, F-035, F-036
 - **Source audits:** round-10 wanaka audit + user discussion
@@ -138,5 +138,38 @@ M.
 - **The baseline is mutable.** When a finding LEGITIMATELY changes a verdict (e.g. F-031 took AS013 deflection 0.637 → 0.105), the baseline gets updated as part of that PR. Implementer contract should specify "baseline updates require a finding-file linkage explaining the verdict change."
 - **Wanaka is a real-world reference.** Other user projects could join the regression net over time. F-037 just sets the pattern; the user can add more projects later.
 - **CI gate is the LAST piece.** Parts A and B (baseline + wanaka in matrix) can land first. Part C (CI) can land in a follow-up PR if the CI infra needs separate work.
+
+## What landed (2026-05-26)
+
+- **PR 1 — baseline + runner.** New `cargo run -p rs_cam_cli -- smoke` subcommand
+  (`crates/rs_cam_cli/src/smoke.rs`) walks `cases_agent_smoke.csv`, generates +
+  simulates each case via `ProjectSession`, and writes per-toolpath verdicts.
+  Captured `planning/toolpath_acceptance/baselines/2026-05-26.csv` (18 rows, 9
+  ok) plus a sidecar `.md` documenting per-case methodology + known limitations.
+  Cross-check against round-10: AS001-005 (2D deflection bar) match within
+  sub-mm. AS013/AS015 differ because the loop's "with prior rough" methodology
+  isn't encoded in the CSV (single-toolpath runner); the round-10 verdicts of
+  0.105 / 0.197 mm were specifically with a prior roughing pass — F-033 territory.
+
+- **PR 3 — smoke-diff CLI + regression rule.** `smoke --diff` subcommand
+  exits non-zero on `within → exceeds`, status regression, or rising rapid
+  collision counts. New cargo acceptance test
+  (`tests/smoke_baseline_regression_f037.rs`, 3 cases) enforces the baseline
+  file exists / parses / holds ≥5 deflection-Within rows.
+  `implementer_contract.md` updated with the "Regression-net rule" pointing
+  at the diff CLI procedure.
+
+## What did NOT land (deferred)
+
+- **PR 2 — wanaka in regression matrix.** Per-user decision (2026-05-26):
+  ship PR 1 first; revisit wanaka licensing / sanitized subset separately.
+  The standalone wanaka acceptance test
+  (`crates/rs_cam_core/tests/wanaka_e2e_chipload_gate.rs`) still gates on the
+  user's local file path; this stays as-is until PR 2.
+
+- **GitHub Actions CI workflow.** Per-user decision: defer the CI gate
+  until the runner's runtime budget and infra are scoped. The `cargo test
+  smoke_baseline_regression_f037` test runs on every workspace test, and the
+  `smoke --diff` CLI is the load-bearing pre-merge check until CI lands.
 </parameter>
 </invoke>
