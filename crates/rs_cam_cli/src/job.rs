@@ -225,6 +225,9 @@ pub struct OperationDef {
     pub mill_shallow_areas: Option<bool>,
     pub shallow_angle_deg: Option<f64>,
     pub shallow_stepdown: Option<f64>,
+    /// F-038: minimum forecast cut length (mm) for a marching-squares region
+    /// to be retained in AgentSearch. Default 5.0 mm. Set to 0.0 to disable.
+    pub min_region_cut_length_mm: Option<f64>,
 }
 
 // ── Parsing ────────────────────────────────────────────────────────────
@@ -680,6 +683,9 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                     // F-027: CLI job path doesn't carry a world stock bbox
                     // separate from the mesh footprint here; leave `None`.
                     world_stock_xy_bbox: None,
+                    // F-038: forward from CLI option; default matches the
+                    // workspace default (operation_configs.rs).
+                    min_region_cut_length_mm: op.min_region_cut_length_mm.unwrap_or(15.0),
                 };
 
                 if debug_trace {

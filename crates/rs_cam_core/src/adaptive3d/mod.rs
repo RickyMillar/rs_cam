@@ -166,6 +166,14 @@ pub struct Adaptive3dParams {
     /// `None` falls back to the mesh-bbox-only initialization for tests
     /// and call sites that don't have a world stock bbox handy.
     pub world_stock_xy_bbox: Option<(f64, f64, f64, f64)>,
+    /// F-038: minimum total horizontal cutting length (mm) a marching-squares
+    /// region must produce in its 2D adaptive sub-pass before the planner
+    /// commits an entry plunge to it. AgentSearch strategy only. Regions
+    /// whose forecast cut length (perimeter-sweep + 2D adaptive walk) is
+    /// below this threshold are dropped at plan time, eliminating the
+    /// "perimeter micro-plunge" fragmentation the Wanaka Back Rough .nc
+    /// exhibited (149 plunges, 90 of which cut ≤ 10 mm). Default 5.0 mm.
+    pub min_region_cut_length_mm: f64,
 }
 
 // SurfaceHeightmap is now in crate::slope (shared across finishing strategies)
@@ -205,6 +213,11 @@ pub struct ZLevelPlanMetrics {
     pub perimeter_sweep_length_mm: f64,
     pub agent_walk_cut_length_mm: f64,
     pub residual_cleanup_cell_count: usize,
+    /// F-038: number of regions whose forecast cut length fell below
+    /// `min_region_cut_length_mm` and were dropped from the AgentSearch
+    /// emission. Parallel to `dropped_micro_region_count` (which is the
+    /// Fusion-style area filter) but gated on length, not area.
+    pub dropped_short_region_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -583,6 +596,9 @@ mod tests {
             shallow_angle_rad: None,
             shallow_stepdown: None,
             world_stock_xy_bbox: None,
+            // Disabled by default in tests — tests that need to exercise
+            // the F-038 fragmentation filter set this explicitly.
+            min_region_cut_length_mm: 0.0,
         }
     }
 

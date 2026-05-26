@@ -540,6 +540,7 @@ fn test_adaptive3d_rapids_lift_before_xy_traverse() {
         shallow_angle_rad: None,
         shallow_stepdown: None,
         world_stock_xy_bbox: None,
+        min_region_cut_length_mm: 0.0,
     };
 
     let tp = adaptive_3d_toolpath(&mesh, &index, &tool, &params);

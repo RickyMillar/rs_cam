@@ -240,6 +240,7 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
         shallow_angle_rad: None,
         shallow_stepdown: None,
         world_stock_xy_bbox: None,
+        min_region_cut_length_mm: 0.0,
     };
 
     // ── Generate (annotated) ──────────────────────────────────────────

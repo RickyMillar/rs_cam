@@ -1253,6 +1253,7 @@ fn param_defs_for_type(op_type: OperationType) -> &'static [ParamDef] {
         ParamDef::required("mill_shallow_areas", "bool"),
         ParamDef::optional("shallow_angle_deg", "option<f64>"),
         ParamDef::optional("shallow_stepdown", "option<f64>"),
+        ParamDef::required("min_region_cut_length_mm", "f64"),
     ];
     const WATERLINE: &[ParamDef] = &[
         ParamDef::required("z_step", "f64"),

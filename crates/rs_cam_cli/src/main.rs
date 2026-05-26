@@ -2727,6 +2727,10 @@ fn main() -> Result<()> {
                 // bbox separate from the mesh footprint; leave `None` and
                 // let the planner default to mesh-bbox-only initialization.
                 world_stock_xy_bbox: None,
+                // F-038: default matches the workspace default; the
+                // strategy harness benchmarks exercise full-region clearing
+                // where micro-fragmentation is not in scope.
+                min_region_cut_length_mm: 15.0,
             };
 
             let start = std::time::Instant::now();
