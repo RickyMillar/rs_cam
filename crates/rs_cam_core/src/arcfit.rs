@@ -260,7 +260,7 @@ fn try_fit_arc(points: &[&P3], tolerance: f64, tool_radius: f64) -> Option<ArcPa
 
     // Least-squares circle fit (Kåsa's algebraic method) for better accuracy
     // on noisy or partial-arc points. Falls back to 3-point if too few points.
-    let (cx, cy, radius) = if points.len() >= 5 {
+    let (cx_raw, cy_raw, _radius_raw) = if points.len() >= 5 {
         circle_from_least_squares(points)?
     } else {
         let p0 = points[0];
@@ -268,6 +268,58 @@ fn try_fit_arc(points: &[&P3], tolerance: f64, tool_radius: f64) -> Option<ArcPa
         let pn = points[points.len() - 1];
         circle_from_3_points(p0.x, p0.y, pm.x, pm.y, pn.x, pn.y)?
     };
+
+    // GRBL endpoint-consistency correction.
+    //
+    // GRBL (and most real controllers) rejects an arc command when the
+    // start radius `hypot(I, J)` and the implied end radius
+    // `hypot(end.x - center.x, end.y - center.y)` differ by more than
+    // `$12` (default 0.010 mm). Kåsa's algebraic LSQ minimises the
+    // collective squared algebraic distance — it does NOT guarantee
+    // that start and end lie exactly equidistant from the recovered
+    // center. The two radii can drift by up to 2 × `tolerance` apart
+    // even when every point passes the per-point tolerance gate.
+    //
+    // Fix: project the LSQ centre onto the perpendicular bisector of
+    // start↔end. The projected centre is the closest point to the LSQ
+    // estimate that is exactly equidistant from start and end, so the
+    // emitted `(I, J)` and the controller-computed end radius agree to
+    // floating-point precision (typ. ~1e-15 mm).
+    //
+    // The projection may push the centre slightly away from the LSQ
+    // optimum; the subsequent tolerance loop re-checks every
+    // intermediate point against the corrected centre and rejects the
+    // fit if any drifts past `tolerance`. So we trade a few rejected
+    // candidates (which fall back to linear segments) for arcs that
+    // every real GRBL build will accept at its default `$12`.
+    let p_start = points[0];
+    let p_end = points[points.len() - 1];
+    let mid_x = 0.5 * (p_start.x + p_end.x);
+    let mid_y = 0.5 * (p_start.y + p_end.y);
+    let chord_dx = p_end.x - p_start.x;
+    let chord_dy = p_end.y - p_start.y;
+    let chord_len_sq = chord_dx * chord_dx + chord_dy * chord_dy;
+    if chord_len_sq < 1e-20 {
+        // Start ≈ end: the run forms (nearly) a closed loop. GRBL needs
+        // the R-form for full circles and we never emit that; fall back
+        // to leaving the source linear segments in place.
+        return None;
+    }
+    let chord_len = chord_len_sq.sqrt();
+    // Perpendicular bisector direction (unit vector).
+    let bisector_x = -chord_dy / chord_len;
+    let bisector_y = chord_dx / chord_len;
+    // Component of (LSQ_centre - midpoint) along the bisector.
+    let v_x = cx_raw - mid_x;
+    let v_y = cy_raw - mid_y;
+    let t = v_x * bisector_x + v_y * bisector_y;
+    let cx = mid_x + t * bisector_x;
+    let cy = mid_y + t * bisector_y;
+    // Recompute radius from the corrected centre. By construction,
+    // `hypot(start - centre) == hypot(end - centre) == radius`.
+    let r_dx = p_start.x - cx;
+    let r_dy = p_start.y - cy;
+    let radius = (r_dx * r_dx + r_dy * r_dy).sqrt();
 
     // Reject degenerate arcs (very large radius = nearly straight line)
     if radius > 1e6 {
@@ -284,7 +336,10 @@ fn try_fit_arc(points: &[&P3], tolerance: f64, tool_radius: f64) -> Option<ArcPa
         return None;
     }
 
-    // Check all intermediate points are within tolerance of the circle
+    // Check all intermediate points are within tolerance of the corrected
+    // circle. Start and end are exactly on the circle by construction;
+    // interior points may have drifted slightly when the centre was
+    // projected onto the bisector — that drift is what this loop guards.
     for &pt in points {
         let ddx = pt.x - cx;
         let ddy = pt.y - cy;
