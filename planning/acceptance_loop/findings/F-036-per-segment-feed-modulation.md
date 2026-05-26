@@ -2,7 +2,7 @@
 
 - **Stage:** toolpath generation + G-code emission (large flag-gated feature)
 - **Severity:** medium (cycle-time / tool-life feature; not a correctness gap)
-- **Status:** open
+- **Status:** **partial-landed 2026-05-26** — Pieces A + B (algorithm + 12 unit tests) landed in `crates/rs_cam_core/src/feed_modulation.rs`. Pieces C (G-code emission), D (flag plumbing + 7 acceptance tests), F (real-machine calibration) deferred to sub-findings F-036a / F-036b / F-036c.
 - **First found in:** round-10 user discussion (2026-05-26)
 - **Effort:** **L-XL** (multi-file feature touching IR, gates, post-processor, optimizer)
 - **Linked PRs:** —
