@@ -322,6 +322,12 @@ pub(crate) fn evaluate_candidate(
         skip_ids: Vec::new(),
         metrics_enabled: true,
         auto_resolution: false,
+        // F-035: the optimizer's candidate-scoring sim runs with
+        // predicted-feed plumbing OFF so the optimizer ranks
+        // candidates against the same commanded-feed gates the
+        // production simulator currently uses. Flipping this on is a
+        // follow-up (F-036 territory).
+        use_predicted_feed_in_gates: false,
     };
     guard.session_mut().run_simulation(&sim_opts, cancel)?;
 

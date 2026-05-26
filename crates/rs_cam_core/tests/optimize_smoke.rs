@@ -135,6 +135,7 @@ fn optimize_toolpath_full_pipeline() {
         skip_ids: Vec::new(),
         metrics_enabled: true,
         auto_resolution: false,
+        use_predicted_feed_in_gates: false,
     };
     let baseline_trace = {
         let sim = session
@@ -241,6 +242,7 @@ fn optimize_project_full_pipeline() {
         skip_ids: Vec::new(),
         metrics_enabled: true,
         auto_resolution: false,
+        use_predicted_feed_in_gates: false,
     };
     let baseline_trace = {
         let sim = session
@@ -290,6 +292,7 @@ fn optimize_toolpath_cancel_returns_quickly() {
         skip_ids: Vec::new(),
         metrics_enabled: true,
         auto_resolution: false,
+        use_predicted_feed_in_gates: false,
     };
     let baseline_trace = {
         let sim = session

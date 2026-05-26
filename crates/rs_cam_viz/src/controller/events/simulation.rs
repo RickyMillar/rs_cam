@@ -210,6 +210,9 @@ impl<B: ComputeBackend> AppController<B> {
             self.state.simulation.metric_options.capture_arc_engagement = true;
         }
 
+        let machine = self.state.session.machine();
+        let max_feed_mm_min = machine.max_feed_mm_min.max(1.0);
+        let kinematics = machine.kinematics;
         self.compute.submit_simulation(SimulationRequest {
             groups,
             stock_bbox,
@@ -220,9 +223,20 @@ impl<B: ComputeBackend> AppController<B> {
             rapid_feed_mm_min: if self.state.gui.post.high_feedrate_mode {
                 self.state.gui.post.high_feedrate.max(1.0)
             } else {
-                self.state.session.machine().max_feed_mm_min.max(1.0)
+                max_feed_mm_min
             },
             model_mesh,
+            // F-035 — forward the active machine kinematics + max feed
+            // so the worker can populate the core
+            // `KinematicsContext`. The GUI doesn't yet expose a
+            // toggle for `use_predicted_feed_in_gates`; the flag
+            // defaults to `false`, preserving pre-F-035 gate
+            // verdicts. When the GUI grows an opt-in (F-036
+            // territory), the toggle reads off the simulation panel
+            // state and threads here.
+            kinematics,
+            use_predicted_feed_in_gates: false,
+            max_feed_mm_min,
         });
     }
 

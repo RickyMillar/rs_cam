@@ -2,13 +2,18 @@
 
 - **Stage:** sim / tool-load gates (flag-gated feature)
 - **Severity:** medium (gate verdicts can be optimistic; hobby machines mis-graded)
-- **Status:** open
+- **Status:** landed (2026-05-26)
 - **First found in:** round-10 wanaka audit (2026-05-26); user-flagged
 - **Effort:** M
-- **Linked PRs:** —
+- **Linked PRs:** (this PR — to be filled at merge)
 - **Workstream:** Feed Modulation (see `planning/feed_modulation_roadmap.md`)
-- **Depends on:** F-034 (machine kinematics model) lands first
+- **Depends on:** F-034 (machine kinematics model) — landed at `ae58f55`
 - **Source audits:** round-10 wanaka verification + user discussion
+- **Acceptance test:** `crates/rs_cam_core/tests/predicted_feed_gates_f035.rs`
+  (`flag_off_byte_identical_to_pre_f035`,
+  `flag_on_corner_decel_drops_chipload_below_band`,
+  `flag_on_straight_line_chipload_unchanged`,
+  `flag_on_extends_existing_f024_test_invariants`)
 
 ## Symptom
 
@@ -145,5 +150,46 @@ M.
 - **Don't conflate with F-036.** F-035 only changes gate evaluation, NOT the emitted G-code. The machine still receives the commanded feed; the gates just grade what the machine ACTUALLY does with it.
 - The flag-on/flag-off duality protects the loop's calibration. The cargo `_f0{24,26,27,28,31}.rs` acceptance tests stay flag-off by default and continue to pass byte-identical.
 - The eventual default flip to `true` is a separate decision, after F-036 lands and the predicted-feed signal is validated against real-machine measurements.
+
+## Implementation log (landed 2026-05-26)
+
+- The chipload gate consumes `predicted_feed` by **scaling**
+  `s.effective_chip_thickness_mm` by `predicted / commanded`. Chip
+  thickness (arc-mean of `feed_per_tooth × geometry_factor`) is
+  linear in feed, so scalar scaling exactly reproduces what
+  re-deriving via `MillingCutter::chip_geometry` would produce —
+  without the gates needing a cutter reference at every sample.
+- The power gate substitutes feed directly into
+  `P = Kc · DOC · WOC · feed / 60M`.
+- The **deflection** gate uses `F = Kc · DOC · WOC` (NO feed term in
+  the cantilever-deflection integral). It is therefore
+  feed-independent and the predicted-feed plumbing is a no-op for
+  it. The four acceptance tests document this with a sanity-check
+  that flag-ON deflection on AS001 still produces a `Within` verdict
+  in the safe band.
+- Predicted feeds are stored on a new
+  `SimulationCutTrace::predicted_feeds: BTreeMap<(toolpath_id,
+  move_index), f64>` field, populated once per simulation when
+  `SimulationOptions::use_predicted_feed_in_gates` is on AND the
+  active `MachineProfile` carries `kinematics`. The field is
+  `#[serde(skip)]` — round-tripping a trace through the JSON debug
+  artifact loses the predicted-feed map and the gates fall back to
+  commanded feed; the map is re-derivable from the toolpath IR +
+  kinematics at any time.
+- The single source-of-truth helper
+  `tool_load::effective_feed_for_sample(sample, &predicted_feeds)`
+  lives at `crates/rs_cam_core/src/tool_load/mod.rs`. Both the
+  chipload gate (`tool_load/chipload.rs`) and the power gate
+  (`tool_load/power.rs`) call it — no duplication. Drift between
+  the two gates would now require editing the helper in one place,
+  catchable by the acceptance test.
+- Viz worker `SimulationRequest` grew three fields (`kinematics`,
+  `use_predicted_feed_in_gates`, `max_feed_mm_min`) and the
+  controller's `run_simulation` event copies them from
+  `self.state.session.machine()`. The GUI doesn't yet expose a
+  toggle for the flag (defaults to `false`); a follow-up under F-036
+  can add the simulation-panel checkbox + wire it up. Both
+  workspaces (core + viz) now drive predicted-feed plumbing through
+  the same code path.
 </parameter>
 </invoke>

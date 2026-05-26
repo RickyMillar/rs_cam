@@ -620,6 +620,9 @@ fn long_simulation_request() -> SimulationRequest {
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
+        kinematics: None,
+        use_predicted_feed_in_gates: false,
+        max_feed_mm_min: 5_000.0,
     }
 }
 
@@ -663,6 +666,9 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
+        kinematics: None,
+        use_predicted_feed_in_gates: false,
+        max_feed_mm_min: 5_000.0,
     }
 }
 
@@ -1605,6 +1611,9 @@ fn multi_setup_top_bottom_simulation() {
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
+        kinematics: None,
+        use_predicted_feed_in_gates: false,
+        max_feed_mm_min: 5_000.0,
     };
 
     let mut backend = ThreadedComputeBackend::new();
@@ -1742,6 +1751,9 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
+        kinematics: None,
+        use_predicted_feed_in_gates: false,
+        max_feed_mm_min: 5_000.0,
     };
 
     let mut backend = ThreadedComputeBackend::new();
@@ -1886,6 +1898,9 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
+        kinematics: None,
+        use_predicted_feed_in_gates: false,
+        max_feed_mm_min: 5_000.0,
     };
 
     let mut backend = ThreadedComputeBackend::new();
@@ -1979,6 +1994,9 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
+        kinematics: None,
+        use_predicted_feed_in_gates: false,
+        max_feed_mm_min: 5_000.0,
     };
 
     let mut backend = ThreadedComputeBackend::new();
@@ -2133,6 +2151,9 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
+        kinematics: None,
+        use_predicted_feed_in_gates: false,
+        max_feed_mm_min: 5_000.0,
     };
 
     // Drive the viz production sim entry point directly (the same function

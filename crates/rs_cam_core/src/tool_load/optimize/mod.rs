@@ -787,6 +787,7 @@ mod orchestration_skip_tests {
             provenance: None,
             drill_samples: Vec::new(),
             drill_summaries: Vec::new(),
+            predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
         }
     }
 
@@ -1135,6 +1136,7 @@ mod project_rollup_tests {
             provenance: None,
             drill_samples: Vec::new(),
             drill_summaries: Vec::new(),
+            predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
         }
     }
 

@@ -131,6 +131,25 @@ pub struct SimulationRequest {
     pub rapid_feed_mm_min: f64,
     /// Optional model mesh for deviation computation (sim_z vs model_z).
     pub model_mesh: Option<Arc<TriangleMesh>>,
+    /// F-035 plumbing — the active `MachineProfile.kinematics` (or
+    /// `None` if the profile carries no kinematics block). The viz
+    /// controller copies this from
+    /// `self.state.session.machine().kinematics` at submit time so
+    /// the worker can forward it into the core
+    /// `SimulationRequest::kinematics`. When `None`, the core path
+    /// keeps `kinematics: None` and runtime + gates stay byte-
+    /// identical to pre-F-034 / pre-F-035.
+    pub kinematics: Option<rs_cam_core::machine_kinematics::MachineKinematics>,
+    /// F-035 — when `true` AND `kinematics` is `Some`, the simulator
+    /// stamps a per-move predicted-feed map on the trace and the
+    /// chipload + power gates consume it. Default `false` keeps the
+    /// GUI's gate verdicts byte-identical to pre-F-035.
+    pub use_predicted_feed_in_gates: bool,
+    /// F-034/F-035 — the machine's `max_feed_mm_min` cap, forwarded
+    /// alongside `kinematics` so the integrator can clamp commanded
+    /// feeds inside the same envelope the controller would. Defaults
+    /// to the same value as `rapid_feed_mm_min` when not specified.
+    pub max_feed_mm_min: f64,
 }
 
 pub struct SimBoundary {

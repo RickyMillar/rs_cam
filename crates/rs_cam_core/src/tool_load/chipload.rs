@@ -414,13 +414,34 @@ pub fn evaluate(
         // are skipped, not fatal. Refuse only if zero steady samples
         // produced a usable chip thickness — that's a real "we can't
         // model this op" rather than a single noisy sample.
-        let Some(cl) = s.effective_chip_thickness_mm else {
+        let Some(cl_raw) = s.effective_chip_thickness_mm else {
             if s.arc_engagement_radians.is_none() {
                 missing_arc_count += 1;
             } else {
                 chip_geometry_unsupported_count += 1;
             }
             continue;
+        };
+        // F-035 — when the trace carries a populated predicted-feed
+        // map and this `(toolpath_id, move_index)` lookup hits, scale
+        // the sample's commanded `effective_chip_thickness_mm` by
+        // `predicted_feed / commanded_feed`. Chip thickness is
+        // arc-mean `(2·feed_per_tooth/arc)·(1 − cos(arc/2))` for flat
+        // endmills (`dexel_stock::effective_chip_thickness_mm`); it
+        // is *linear* in feed_per_tooth and therefore linear in feed.
+        // The scalar correction therefore exactly reproduces what
+        // re-deriving via `MillingCutter::chip_geometry` would
+        // produce, without the gates needing access to a cutter
+        // reference at every sample. When the map is empty or the
+        // sample's move has no predicted entry,
+        // `effective_feed_for_sample` returns commanded feed and the
+        // scale factor is 1.0 — byte-identical to pre-F-035.
+        let cl = if trace.predicted_feeds.is_empty() {
+            cl_raw
+        } else {
+            let predicted = super::effective_feed_for_sample(s, &trace.predicted_feeds);
+            let commanded = s.feed_rate_mm_min.max(1e-9);
+            cl_raw * (predicted / commanded)
         };
         // Normalize this sample to the LUT row's nominal engagement
         // arc. If either side lacks the data, fall back to the raw
@@ -758,6 +779,7 @@ mod tests {
             provenance: None,
             drill_samples: Vec::new(),
             drill_summaries: Vec::new(),
+            predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
         }
     }
 

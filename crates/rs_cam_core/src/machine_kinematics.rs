@@ -43,6 +43,7 @@
 //! gates) and F-036 (per-segment feed modulation).
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 use crate::geo::P3;
 use crate::toolpath::{MoveType, Toolpath};
@@ -230,6 +231,179 @@ pub fn compute_cycle_time(
     total_time_s
 }
 
+/// F-035 — Per-move predicted achieved feed (mm/min) keyed by
+/// `(toolpath_id, move_index)`.
+///
+/// Constructed once per simulation when the
+/// `use_predicted_feed_in_gates` flag is on **and** the active
+/// `MachineProfile` carries kinematics. The chipload and power gates
+/// look up `(sample.toolpath_id, sample.move_index)` to retrieve the
+/// realistic feed the machine reached on that move under accel
+/// limits, instead of trusting the commanded feed the controller was
+/// asked to hit.
+///
+/// Stored as a single flat `BTreeMap` (toolpath_id, move_index) → feed
+/// so a single trace can carry predictions for any mix of toolpaths.
+/// Empty / absent → fall back to commanded feed (pre-F-035 behaviour).
+pub type PredictedFeedMap = BTreeMap<(usize, usize), f64>;
+
+/// F-035 — Compute the per-move predicted achieved feed (mm/min) for a
+/// single toolpath under the given kinematics limits.
+///
+/// Walks the same pairwise integrator F-034's [`compute_cycle_time`]
+/// uses, but instead of accumulating time, records the *peak velocity*
+/// reached on each non-degenerate move. The peak velocity is the
+/// trapezoidal/triangular profile's cruise speed — for long moves
+/// between two junctions with high junction velocity this equals the
+/// commanded feed; for short moves between two tight corners it
+/// drops below the commanded feed because the move runs out of
+/// distance before the accel ramp reaches `v_cmd`.
+///
+/// Out:
+/// * `feeds_mm_min` — entries keyed by **original** `Toolpath::moves`
+///   index. Move 0 (the initial seed `rapid_to`) and zero-length
+///   moves are omitted; the gates skip those samples too (rapids are
+///   `!is_cutting` and zero-length moves emit no samples).
+/// * Returned values are in `mm/min` to match the simulator's
+///   `feed_rate_mm_min` units.
+///
+/// Rapid moves get their commanded `rapid_feed_mm_min` capped by
+/// `max_feed_mm_min` and the same accel-aware peak calculation. They
+/// don't reach the chipload/power gates (which filter
+/// `!is_cutting` samples) but including them in the map keeps the
+/// `(toolpath_id, move_index)` indexing consistent with the
+/// simulator's sample stream.
+pub fn predicted_feeds_for_toolpath(
+    toolpath: &Toolpath,
+    kinematics: &MachineKinematics,
+    max_feed_mm_min: f64,
+    rapid_feed_mm_min: f64,
+) -> BTreeMap<usize, f64> {
+    let mut out = BTreeMap::new();
+    if toolpath.moves.len() < 2 {
+        return out;
+    }
+    let accel = kinematics.acceleration_mm_s2.max(1e-3);
+
+    let max_feed_mm_s = (max_feed_mm_min / 60.0).max(1e-6);
+    let rapid_feed_mm_s = (rapid_feed_mm_min / 60.0).max(max_feed_mm_s);
+
+    // Same digest shape as `compute_cycle_time`, plus the original
+    // toolpath-move index so callers can key the result map by it.
+    struct MoveDigest {
+        source_index: usize,
+        length: f64,
+        dir: [f64; 3],
+        v_cmd_mm_s: f64,
+        is_rapid: bool,
+    }
+
+    let mut digests: Vec<MoveDigest> = Vec::with_capacity(toolpath.moves.len());
+    #[allow(clippy::indexing_slicing)]
+    // SAFETY: bounded by `toolpath.moves.len()`.
+    for i in 1..toolpath.moves.len() {
+        let p0 = &toolpath.moves[i - 1].target;
+        let p1 = &toolpath.moves[i].target;
+        let length = chord_length(p0, p1, toolpath.moves[i].move_type);
+        if length <= 1e-9 {
+            continue;
+        }
+        let dir = unit_vec(p0, p1);
+        let (v_cmd_mm_s, is_rapid) = match toolpath.moves[i].move_type {
+            MoveType::Rapid => (rapid_feed_mm_s, true),
+            MoveType::Linear { feed_rate }
+            | MoveType::ArcCW { feed_rate, .. }
+            | MoveType::ArcCCW { feed_rate, .. } => {
+                let cmd = (feed_rate / 60.0).max(1e-6).min(max_feed_mm_s);
+                (cmd, false)
+            }
+        };
+        digests.push(MoveDigest {
+            source_index: i,
+            length,
+            dir,
+            v_cmd_mm_s,
+            is_rapid,
+        });
+    }
+    if digests.is_empty() {
+        return out;
+    }
+
+    let mut v_in = 0.0;
+    let n = digests.len();
+    #[allow(clippy::indexing_slicing)]
+    // SAFETY: i bounded by digests.len(); i+1 guarded by `i < n - 1`.
+    for i in 0..n {
+        let v_cmd = digests[i].v_cmd_mm_s;
+        let v_out = if i + 1 < n {
+            junction_velocity(
+                &digests[i].dir,
+                &digests[i + 1].dir,
+                v_cmd,
+                digests[i + 1].v_cmd_mm_s,
+                kinematics.max_junction_velocity_mm_min,
+                digests[i].is_rapid || digests[i + 1].is_rapid,
+            )
+        } else {
+            0.0
+        };
+        let v_peak_mm_s = trapezoidal_peak_velocity(digests[i].length, v_in, v_out, v_cmd, accel);
+        out.insert(digests[i].source_index, v_peak_mm_s * 60.0);
+        v_in = v_out;
+    }
+
+    out
+}
+
+/// F-035 — single-move predicted achieved feed (mm/min) given the
+/// move's commanded feed, distance, and junction velocities with
+/// its prev/next neighbours.
+///
+/// Light-weight wrapper around the same trapezoidal peak-velocity
+/// solver [`predicted_feeds_for_toolpath`] uses, exposed for the
+/// synthetic-toolpath acceptance tests which build their inputs
+/// directly without staging a full `Toolpath`.
+pub fn predicted_achieved_feed(
+    length_mm: f64,
+    v_in_mm_min: f64,
+    v_out_mm_min: f64,
+    v_cmd_mm_min: f64,
+    kinematics: &MachineKinematics,
+    max_feed_mm_min: f64,
+) -> f64 {
+    let accel = kinematics.acceleration_mm_s2.max(1e-3);
+    let v_cmd_mm_s = (v_cmd_mm_min / 60.0).max(1e-6).min(max_feed_mm_min / 60.0);
+    let v_in_mm_s = (v_in_mm_min / 60.0).max(0.0);
+    let v_out_mm_s = (v_out_mm_min / 60.0).max(0.0);
+    trapezoidal_peak_velocity(length_mm, v_in_mm_s, v_out_mm_s, v_cmd_mm_s, accel) * 60.0
+}
+
+/// Peak velocity reached on a single trapezoidal/triangular profile
+/// move. Mirrors the regime split in [`trapezoidal_time`] but
+/// returns velocity (mm/s) instead of time.
+///
+/// * Full trapezoid (`d_accel + d_decel ≤ length`) → returns `v_cmd`,
+///   the cruise velocity.
+/// * Triangular profile (move too short for full ramps) → returns the
+///   smaller peak velocity solved from
+///   `v_peak² = a·length + (v_in² + v_out²)/2`, clamped to `v_cmd`.
+fn trapezoidal_peak_velocity(length: f64, v_in: f64, v_out: f64, v_cmd: f64, accel: f64) -> f64 {
+    if length <= 1e-9 || accel <= 1e-9 {
+        return v_cmd.max(0.0);
+    }
+    let v_in = v_in.max(0.0).min(v_cmd);
+    let v_out = v_out.max(0.0).min(v_cmd);
+    let d_accel = (v_cmd * v_cmd - v_in * v_in) / (2.0 * accel);
+    let d_decel = (v_cmd * v_cmd - v_out * v_out) / (2.0 * accel);
+    if d_accel + d_decel <= length {
+        v_cmd
+    } else {
+        let v_peak_sq = accel * length + 0.5 * (v_in * v_in + v_out * v_out);
+        v_peak_sq.max(0.0).sqrt().min(v_cmd)
+    }
+}
+
 /// Chord length between two points. For arcs, the IR doesn't carry
 /// enough information for the integrator's purposes — we approximate
 /// the arc by its chord. This under-estimates corner-heavy arc paths
@@ -333,7 +507,12 @@ fn trapezoidal_time(length: f64, v_in: f64, v_out: f64, v_cmd: f64, accel: f64) 
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
     use crate::toolpath::Toolpath;
@@ -427,6 +606,77 @@ mod tests {
             (t - 0.1265).abs() < 0.01,
             "triangular profile time should be ~0.127 s, got {t}"
         );
+    }
+
+    // ---- F-035 — predicted-feed integrator unit tests --------------
+
+    #[test]
+    fn predicted_feed_long_move_reaches_commanded() {
+        // 200 mm at 3000 mm/min — plenty of distance for the accel
+        // ramp (5 mm) and decel ramp (5 mm) to reach the commanded
+        // 50 mm/s cruise. Predicted feed should equal commanded.
+        let kin = shapeoko();
+        let pf = predicted_achieved_feed(200.0, 0.0, 0.0, 3000.0, &kin, 4000.0);
+        assert!(
+            (pf - 3000.0).abs() < 1e-6,
+            "long move should hit commanded feed exactly, got {pf}"
+        );
+    }
+
+    #[test]
+    fn predicted_feed_short_corner_move_below_commanded() {
+        // 1 mm between two full-stop junctions at 3000 mm/min — the
+        // machine can't reach 50 mm/s in 0.5 mm of accel. Triangular
+        // profile: v_peak = sqrt(a·length) = sqrt(250) ≈ 15.81 mm/s
+        // → 949 mm/min, well below commanded 3000.
+        let kin = shapeoko();
+        let pf = predicted_achieved_feed(1.0, 0.0, 0.0, 3000.0, &kin, 4000.0);
+        assert!(
+            pf < 3000.0,
+            "short move between corners should drop below commanded, got {pf}"
+        );
+        let expected_mm_s = (250.0_f64 * 1.0).sqrt();
+        let expected_mm_min = expected_mm_s * 60.0;
+        assert!(
+            (pf - expected_mm_min).abs() < 1.0,
+            "triangular peak should be {expected_mm_min:.1} mm/min, got {pf:.1}"
+        );
+    }
+
+    #[test]
+    fn predicted_feeds_for_toolpath_keys_match_move_indices() {
+        // Two moves: an initial rapid + one long feed. The map should
+        // carry exactly one entry, keyed by move-index 1 (the feed),
+        // with predicted ≈ commanded.
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 0.0));
+        tp.feed_to(P3::new(200.0, 0.0, 0.0), 3000.0);
+        let map = predicted_feeds_for_toolpath(&tp, &shapeoko(), 4000.0, 5000.0);
+        assert_eq!(map.len(), 1, "expected one entry, got {map:?}");
+        let pf = map.get(&1).copied().expect("move-index 1 should be set");
+        assert!(
+            (pf - 3000.0).abs() < 1e-6,
+            "long feed move should hit commanded 3000 mm/min, got {pf}"
+        );
+    }
+
+    #[test]
+    fn predicted_feeds_for_toolpath_corner_drops_feed() {
+        // Two short reversal moves at 3000 mm/min. Junction is full-
+        // stop (direction reversal), so both feeds should be well
+        // below commanded.
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 0.0));
+        tp.feed_to(P3::new(1.0, 0.0, 0.0), 3000.0);
+        tp.feed_to(P3::new(0.0, 0.0, 0.0), 3000.0);
+        let map = predicted_feeds_for_toolpath(&tp, &shapeoko(), 4000.0, 5000.0);
+        assert_eq!(map.len(), 2);
+        for (k, v) in &map {
+            assert!(
+                *v < 3000.0,
+                "move {k} feed should drop below commanded between corner+endpoint, got {v}"
+            );
+        }
     }
 
     #[test]

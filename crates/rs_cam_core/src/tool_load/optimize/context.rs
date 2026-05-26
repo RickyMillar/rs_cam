@@ -516,6 +516,7 @@ mod restore_guard_tests {
             provenance: None,
             drill_samples: Vec::new(),
             drill_summaries: Vec::new(),
+            predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
         }
     }
 

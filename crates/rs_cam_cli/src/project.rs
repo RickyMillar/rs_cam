@@ -109,6 +109,9 @@ pub fn run_project_command(
         skip_ids: combined_skip.clone(),
         metrics_enabled: true,
         auto_resolution: false,
+        // F-035: predicted-feed plumbing off by default for CLI runs;
+        // protects the smoke baseline from spurious verdict drift.
+        use_predicted_feed_in_gates: false,
     };
     session.run_simulation(&sim_opts, &cancel)?;
 

@@ -1263,6 +1263,13 @@ impl ProjectSession {
                 crate::compute::simulate::KinematicsContext {
                     kinematics: kin,
                     max_feed_mm_min: self.machine.max_feed_mm_min.max(1.0),
+                    // F-035: opt-in predicted-feed plumbing for gates.
+                    // Effective only when the active `MachineProfile`
+                    // also carries `kinematics` (the outer `.map`
+                    // already guarantees that). When `false`, the
+                    // gates see an empty `predicted_feeds` map and
+                    // fall back to commanded feed.
+                    use_predicted_feed_in_gates: opts.use_predicted_feed_in_gates,
                 }
             }),
         };
@@ -1891,14 +1898,14 @@ impl ProjectSession {
             }
         }
 
-        let target_model = self
-            .models
-            .iter()
-            .find(|m| m.id == tc.model_id)
-            .map(|m| TargetModelGeometry {
-                has_polygons: m.polygons.as_ref().is_some_and(|p| !p.is_empty()),
-                has_mesh: m.mesh.is_some(),
-            });
+        let target_model =
+            self.models
+                .iter()
+                .find(|m| m.id == tc.model_id)
+                .map(|m| TargetModelGeometry {
+                    has_polygons: m.polygons.as_ref().is_some_and(|p| !p.is_empty()),
+                    has_mesh: m.mesh.is_some(),
+                });
 
         let any_loaded_model_has_mesh = self.models.iter().any(|m| m.mesh.is_some());
 

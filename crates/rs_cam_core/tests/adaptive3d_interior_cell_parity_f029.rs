@@ -177,6 +177,7 @@ fn run_as013_simulation() -> ProjectSession {
         skip_ids: Vec::new(),
         metrics_enabled: true,
         auto_resolution: false,
+        use_predicted_feed_in_gates: false,
     };
     let cancel2 = AtomicBool::new(false);
     session

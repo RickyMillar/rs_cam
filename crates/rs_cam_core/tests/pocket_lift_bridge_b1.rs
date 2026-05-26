@@ -172,6 +172,7 @@ fn pocket_default_skeleton_emits_no_rapid_collisions() {
         skip_ids: Vec::new(),
         metrics_enabled: true,
         auto_resolution: false,
+        use_predicted_feed_in_gates: false,
     };
     session
         .run_simulation(&opts, &cancel)

@@ -490,6 +490,23 @@ pub struct SimulationCutTrace {
     /// engagement-axis samples.
     #[serde(default)]
     pub drill_summaries: Vec<DrillToolpathSummary>,
+    /// F-035 — per-`(toolpath_id, move_index)` predicted achieved
+    /// feed (mm/min) under the active machine kinematics.
+    ///
+    /// Populated only when `SimulationOptions::use_predicted_feed_in_gates`
+    /// is on **and** the active `MachineProfile` carries
+    /// `kinematics`. When empty (the default), the chipload + power
+    /// gates fall back to each sample's commanded `feed_rate_mm_min` —
+    /// byte-identical to pre-F-035 behaviour.
+    ///
+    /// Tuple-keyed `BTreeMap` does not serialise cleanly through
+    /// `serde_json` (JSON requires string keys), so the field is
+    /// `#[serde(skip)]`: a trace round-tripped through the artifact
+    /// loses its predicted-feed map and the gates fall back to
+    /// commanded feed. This is acceptable for v1 because the map is
+    /// re-derivable from the toolpath IR + kinematics at any time.
+    #[serde(skip)]
+    pub predicted_feeds: crate::machine_kinematics::PredictedFeedMap,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -721,6 +738,7 @@ impl SimulationCutTrace {
             provenance: None,
             drill_samples: Vec::new(),
             drill_summaries: Vec::new(),
+            predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
         }
     }
 

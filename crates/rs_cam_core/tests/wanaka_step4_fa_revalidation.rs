@@ -58,6 +58,7 @@ fn wanaka_step4_back_rough_engagement_in_plausible_range() {
         skip_ids: vec![],
         metrics_enabled: true,
         auto_resolution: false,
+        use_predicted_feed_in_gates: false,
     };
     let result = session.run_simulation(&opts, &cancel).expect("sim");
     let cut_trace = result.cut_trace.as_ref().expect("cut trace");
