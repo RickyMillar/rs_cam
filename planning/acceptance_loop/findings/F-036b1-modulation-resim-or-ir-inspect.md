@@ -2,10 +2,10 @@
 
 - **Stage:** sim ↔ modulation feedback loop
 - **Severity:** low (loop calibration is unaffected; modulator algorithm-layer invariants are already pinned)
-- **Status:** landed 2026-05-26
+- **Status:** landed 2026-05-26 (also fixed a second sequencing bug: kinematics cycle-time integrator now re-runs after modulation; trace's `total_runtime_s` reflects modulated feeds)
 - **First found in:** F-036b implementation session, 2026-05-26
 - **Effort:** S-M
-- **Linked PRs:** (this commit)
+- **Linked PRs:** (cb9d853 + this commit)
 - **Workstream:** Feed Modulation
 - **Depends on:** F-036b landed
 

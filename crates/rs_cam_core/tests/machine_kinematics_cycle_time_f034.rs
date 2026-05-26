@@ -212,56 +212,78 @@ fn cycle_time_matches_naive_for_pure_straight_line() {
 
 /// AB3 — calibration against a real-machine wall-clock measurement.
 ///
-/// **Currently `#[ignore]`d.** When the user has time, they should:
+/// **Wanaka Back Rough on Shapeoko XXL (user-tuned).** Wall-clock 13:47
+/// (827 s) measured 2026-05-26 on Shapeoko XXL dry-run with modulation
+/// **off**. Machine `$$` captured the same day:
 ///
-/// 1. Run `test_data/ux_2d_pocket.toml` (or any small reference job)
-///    on a stock-tuned Shapeoko XXL, recording wall-clock with the
-///    spindle dry-running.
-/// 2. Set `REFERENCE_MEASURED_S` below to the measured value.
-/// 3. Remove the `#[ignore]`.
+///   $110 = $111 = 10000 mm/min   (X/Y max feed)
+///   $112 = 1000  mm/min          (Z max feed)
+///   $120 = $121 = 500 mm/sec²    (X/Y accel)
+///   $122 = 270   mm/sec²         (Z accel)
 ///
-/// The assert is ±15% — slightly looser than the finding's ±10% to
-/// account for the v1 integrator's coarse junction-velocity model
-/// (full-stop on direction reversal; chord-length for arcs). Tighten
-/// in F-035 once the model has more curvature information.
+/// Why Back Rough and not Pin Drill (which we also measured at 1:05):
+/// drill ops bypass `total_runtime_s` (their timing lives in
+/// `DrillToolpathSummary::cycle_time`, accounted separately), so the
+/// F-034 integrator's prediction reads 0 s for any pure-drill reference.
+/// Back Rough is a real 4000+ move adaptive3d toolpath that exercises
+/// the integrator's accel + corner-decel logic end-to-end.
+///
+/// The test loads `/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml`
+/// — a user-local file. On any machine that doesn't have it (CI / other
+/// devs) the test logs `skip:` and returns Ok, matching the pattern
+/// `wanaka_e2e_chipload_gate.rs` uses.
+///
+/// `MachineKinematics::shapeoko_xxl_ricky_tuned()` carries the user's
+/// X/Y accel scalar (500). Z-only motion will be predicted slightly
+/// optimistic until per-axis kinematics lands as a follow-up; Back
+/// Rough is XY-dominated so the impact is small. The ±15 % tolerance
+/// absorbs the remaining model coarseness.
 #[test]
-#[ignore = "F-034: requires real-machine wall-clock measurement on stock Shapeoko XXL — \
-            set REFERENCE_MEASURED_S below from a wall-clocked run and unflag"]
 fn cycle_time_calibrated_against_shapeoko_reference() {
-    // Wall-clock seconds the reference toolpath takes on a stock-tuned
-    // Shapeoko XXL. **PLACEHOLDER** — must be replaced with a real
-    // measurement before unflagging.
-    const REFERENCE_MEASURED_S: f64 = 0.0;
-    // SAFETY: the const is a placeholder until a real wall-clock
-    // measurement lands. Allow the constant-condition assertion so
-    // clippy doesn't trip on the explicit guard.
-    #[allow(clippy::assertions_on_constants)]
-    {
-        assert!(
-            REFERENCE_MEASURED_S > 0.0,
-            "F-034: replace REFERENCE_MEASURED_S placeholder with a real Shapeoko measurement \
-             before unflagging this test"
-        );
+    use std::path::Path;
+    const WANAKA_TOML: &str = "/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml";
+    /// Wall-clock seconds Back Rough (id 4, Setup 1) takes on the
+    /// user's tuned Shapeoko XXL — measured 13:47 (modulation off).
+    const BACK_ROUGH_MEASURED_S: f64 = 827.0;
+    /// Pin Drill also measured at 1:05 (65 s) on the same run — kept
+    /// here as a future reference once per-axis kinematics + drill-op
+    /// runtime accounting land.
+    #[allow(dead_code)]
+    const PIN_DRILL_MEASURED_S: f64 = 65.0;
+    /// Back Rough is the only Setup 1 toolpath we keep; the others get
+    /// skipped by id.
+    const SKIP_IDS: &[usize] = &[14, 5, 6, 7, 10, 11, 12];
+
+    let toml_path = Path::new(WANAKA_TOML);
+    if !toml_path.exists() {
+        eprintln!("skip: {WANAKA_TOML} not present on this machine");
+        return;
     }
 
-    let mut session = build_pocket_session();
+    let mut session = ProjectSession::load(toml_path).expect("load wanaka project");
     let mut machine = session.machine().clone();
-    machine.kinematics = Some(MachineKinematics::shapeoko_xxl_stock());
-    let max_feed = machine.max_feed_mm_min.max(1.0);
+    machine.kinematics = Some(MachineKinematics::shapeoko_xxl_ricky_tuned());
+    machine.max_feed_mm_min = 10_000.0;
+    let max_feed = machine.max_feed_mm_min;
     session.set_machine(machine);
 
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {
         resolution: 0.5,
-        skip_ids: Vec::new(),
+        skip_ids: SKIP_IDS.to_vec(),
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
     };
-    // Generate every toolpath in the project, then simulate.
     let n_toolpaths = session.toolpath_configs().len();
     for i in 0..n_toolpaths {
+        let Some(tc) = session.get_toolpath_config(i) else {
+            continue;
+        };
+        if SKIP_IDS.contains(&tc.id) {
+            continue;
+        }
         session
             .generate_toolpath(i, &cancel)
             .expect("generate toolpath");
@@ -274,12 +296,13 @@ fn cycle_time_calibrated_against_shapeoko_reference() {
     let trace = sim.cut_trace.as_ref().expect("cut trace");
     let model_predicted_s = trace.summary.total_runtime_s;
 
-    let ratio = model_predicted_s / REFERENCE_MEASURED_S;
+    let ratio = model_predicted_s / BACK_ROUGH_MEASURED_S;
     assert!(
         (0.85..=1.15).contains(&ratio),
-        "F-034: model predicted {model_predicted_s:.1}s vs measured {REFERENCE_MEASURED_S:.1}s \
+        "F-034: model predicted {model_predicted_s:.1}s vs measured {BACK_ROUGH_MEASURED_S:.1}s \
          (ratio {ratio:.3}) — outside ±15% calibration tolerance. max_feed used: {max_feed} \
-         mm/min. Refine kinematics constants or look-ahead model before re-running."
+         mm/min. Refine kinematics constants (likely per-axis Z accel + better junction model) \
+         before re-running."
     );
 }
 
