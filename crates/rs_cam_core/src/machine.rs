@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::machine_kinematics::MachineKinematics;
+
 /// Spindle speed control type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SpindleConfig {
@@ -78,6 +80,15 @@ pub struct MachineProfile {
     pub max_shank_mm: f64,
     pub rigidity: RigidityProfile,
     pub safety_factor: f64,
+    /// Linear-axis kinematics limits used by the F-034 cycle-time
+    /// integrator. **`None` for every built-in preset** — the absence
+    /// of kinematics IS the feature flag for F-034. When `Some`, the
+    /// simulator routes `total_runtime_s` through
+    /// [`crate::machine_kinematics::compute_cycle_time`] instead of
+    /// the naive dexel-sample sum. When `None`, behavior is byte-
+    /// identical to pre-F-034.
+    #[serde(default)]
+    pub kinematics: Option<MachineKinematics>,
 }
 
 impl Default for MachineProfile {
@@ -109,6 +120,10 @@ impl MachineProfile {
                 adaptive_woc_factor: 0.20,
             },
             safety_factor: 0.75,
+            // F-034: presets ship with `None` to keep runtime
+            // behavior byte-identical. Callers opt in by setting
+            // this field on the active profile.
+            kinematics: None,
         }
     }
 
@@ -133,6 +148,7 @@ impl MachineProfile {
             max_shank_mm: 7.0,
             rigidity: RigidityProfile::default(),
             safety_factor: 0.80,
+            kinematics: None,
         }
     }
 
@@ -153,6 +169,7 @@ impl MachineProfile {
             max_shank_mm: 6.35,
             rigidity: RigidityProfile::default(),
             safety_factor: 0.80,
+            kinematics: None,
         }
     }
 

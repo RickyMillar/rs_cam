@@ -95,6 +95,23 @@ pub struct SimulationRequest {
     pub rapid_feed_mm_min: f64,
     /// Optional model mesh for deviation computation (sim_z vs model_z).
     pub model_mesh: Option<Arc<TriangleMesh>>,
+    /// F-034: when `Some`, the simulator post-processes the cut trace
+    /// and replaces each toolpath's naive `distance / feed`
+    /// `total_runtime_s` with a kinematics-aware integrator estimate
+    /// (`compute_cycle_time`). When `None`, runtime accounting stays
+    /// byte-identical to pre-F-034. Carries the machine's
+    /// `max_feed_mm_min` cap so the integrator can clamp commanded
+    /// feeds inside the same envelope the controller would.
+    pub kinematics: Option<KinematicsContext>,
+}
+
+/// F-034 cycle-time integrator inputs. Bundles the kinematics limits
+/// with the machine-wide max-feed cap so the integrator has the same
+/// envelope information the controller would.
+#[derive(Debug, Clone, Copy)]
+pub struct KinematicsContext {
+    pub kinematics: crate::machine_kinematics::MachineKinematics,
+    pub max_feed_mm_min: f64,
 }
 
 /// Metadata for one toolpath boundary in the simulation timeline.
@@ -607,6 +624,18 @@ where
         trace.provenance = Some(build_simulation_provenance(request));
         trace.drill_samples = std::mem::take(&mut drill_samples_all);
         trace.drill_summaries = std::mem::take(&mut drill_summaries_all);
+        // F-034: kinematics-aware cycle time override. When the
+        // caller supplied a `KinematicsContext`, recompute each
+        // toolpath's `total_runtime_s` from its IR using the
+        // trapezoidal integrator and resum the project-wide total.
+        // Other fields on the summary (cutting_runtime_s, air_cut_s,
+        // engagement averages …) are left untouched — they're
+        // measured from dexel samples and aren't directly affected
+        // by accel modelling. F-035 will revisit them once predicted
+        // effective feed enters the gates.
+        if let Some(ctx) = request.kinematics {
+            apply_kinematics_cycle_time(&mut trace, request, ctx);
+        }
         Some(Arc::new(trace))
     } else {
         None
@@ -638,6 +667,50 @@ where
         resolution_clamped,
         prior_stocks,
     })
+}
+
+/// F-034: walk every toolpath in the request, recompute its runtime
+/// using [`crate::machine_kinematics::compute_cycle_time`], and rewrite
+/// the per-toolpath + project-wide `total_runtime_s` slots on `trace`.
+///
+/// All other summary fields stay untouched — they're derived from the
+/// dexel-sample stream and aren't sensitive to accel modelling. The
+/// resulting trace therefore mixes a kinematics-aware runtime with
+/// engagement / chipload / DOC metrics that still reflect the naive
+/// segment timing. That's intentional: F-034 is purely additive on
+/// the runtime axis. F-035 (predicted feed in gates) is the
+/// finding that will reconcile the engagement-side metrics with the
+/// kinematics model.
+fn apply_kinematics_cycle_time(
+    trace: &mut SimulationCutTrace,
+    request: &SimulationRequest,
+    ctx: KinematicsContext,
+) {
+    use crate::machine_kinematics::compute_cycle_time;
+
+    let mut per_toolpath_runtime: BTreeMap<usize, f64> = BTreeMap::new();
+    for group in &request.groups {
+        for entry in &group.toolpaths {
+            let t = compute_cycle_time(
+                &entry.annotated.toolpath,
+                &ctx.kinematics,
+                ctx.max_feed_mm_min,
+                request.rapid_feed_mm_min,
+            );
+            per_toolpath_runtime.insert(entry.id, t);
+        }
+    }
+
+    let mut project_total = 0.0;
+    for tp_summary in &mut trace.toolpath_summaries {
+        if let Some(&t) = per_toolpath_runtime.get(&tp_summary.toolpath_id) {
+            tp_summary.total_runtime_s = t;
+            project_total += t;
+        } else {
+            project_total += tp_summary.total_runtime_s;
+        }
+    }
+    trace.summary.total_runtime_s = project_total;
 }
 
 /// Compute per-vertex deviation between simulated stock and a reference model.
@@ -813,6 +886,7 @@ mod tests {
             spindle_rpm: 18000,
             rapid_feed_mm_min: 5000.0,
             model_mesh: None,
+            kinematics: None,
         }
     }
 
@@ -1011,6 +1085,7 @@ mod tests {
             spindle_rpm: 18000,
             rapid_feed_mm_min: 5000.0,
             model_mesh: None,
+            kinematics: None,
         };
 
         let cancel = AtomicBool::new(false);
@@ -1137,6 +1212,7 @@ mod tests {
             spindle_rpm: 18_000,
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
+            kinematics: None,
         };
 
         let cancel = AtomicBool::new(false);

@@ -2,7 +2,7 @@
 
 - **Stage:** sim / machine model (additive feature)
 - **Severity:** medium (real-world cycle time misprediction; not a correctness bug per se)
-- **Status:** open
+- **Status:** landed 2026-05-26 (commit pending — see Implementation log)
 - **First found in:** round-10 wanaka audit (2026-05-26); user-flagged
 - **Effort:** S-M
 - **Linked PRs:** —

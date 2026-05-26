@@ -37,6 +37,7 @@ pub mod inlay;
 pub mod interrupt;
 pub mod io;
 pub mod machine;
+pub mod machine_kinematics;
 pub mod material;
 pub mod mesh;
 pub mod narrate;

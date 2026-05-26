@@ -1254,6 +1254,17 @@ impl ProjectSession {
                     -self.stock.origin_z,
                 ))
             }),
+            // F-034: opt-in kinematics-aware cycle time. Active iff
+            // the machine profile carries a kinematics block; absence
+            // is the flag and every built-in preset defaults to
+            // `None`, so behavior is byte-identical to pre-F-034 for
+            // every default-profile session.
+            kinematics: self.machine.kinematics.map(|kin| {
+                crate::compute::simulate::KinematicsContext {
+                    kinematics: kin,
+                    max_feed_mm_min: self.machine.max_feed_mm_min.max(1.0),
+                }
+            }),
         };
 
         let result = run_simulation(&request, cancel)?;

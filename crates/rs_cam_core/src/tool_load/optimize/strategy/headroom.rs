@@ -444,6 +444,7 @@ mod stage0_solve_tests {
             max_shank_mm: 7.0,
             rigidity: RigidityProfile::default(),
             safety_factor: safety,
+            kinematics: None,
         }
     }
 
