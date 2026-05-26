@@ -238,6 +238,12 @@ fn build_core_simulation_request(
         spindle_rpm: req.spindle_rpm,
         rapid_feed_mm_min: req.rapid_feed_mm_min,
         model_mesh: req.model_mesh.clone(),
+        // F-034: the viz worker doesn't yet carry the active
+        // `MachineProfile.kinematics`. Threading it through is F-035
+        // work (predicted feed in gates needs the same plumbing).
+        // Leaving `None` here keeps the GUI's runtime accounting
+        // byte-identical to pre-F-034 today.
+        kinematics: None,
     }
 }
 
