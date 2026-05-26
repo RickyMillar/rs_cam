@@ -2,12 +2,41 @@
 
 - **Stage:** sim
 - **Severity:** high
-- **Status:** landed
+- **Status:** landed (split achieved); deflection over-fire reframed as F-024
 - **First found in:** round-01 (2026-05-24)
 - **Effort:** M (~150 LOC + fixture refresh)
-- **Linked PRs:** —
-- **Verified in round:** —
-- **Source audits:** unification + smoke-run evidence
+- **Linked PRs:** unification batch `072c11a` (split landed)
+- **Verified in round:** round-03 (2026-05-25, by implementer probe)
+- **Source audits:** unification + smoke-run evidence + round-02 smoke + round-03 implementer investigation
+
+## Round-03 correction (2026-05-25)
+
+The round-02 reopen framing on this finding was wrong. An implementer
+who picked up F-002 in round-03 reproduced the bug end-to-end and
+found that:
+
+1. **The original split DID land** in commit `072c11a`. Per-sample
+   `axial_engagement_mm` (non-plunge) vs `plunge_descent_mm` (plunge)
+   is correctly emitted at `dexel_stock/simulation.rs:452-457`.
+
+2. **The "linear class only" asymmetry I observed in round-02 was
+   transit-tag filtering, not a code asymmetry.** Per-sample
+   `axial_engagement_mm = 12.0` on ALL four kinematics classes
+   (linear/helix/arc/plunge) for a 2mm-DOC pocket pass. Summary
+   reads 0.0 for arc/helix only because `KinematicsAccumulator::observe`
+   filters samples tagged `in_transit_span` (arc/helix in pocket entry
+   are transit-tagged; linear clearing cuts are not).
+
+3. **The deflection over-fire has a different root cause** —
+   a Z-frame mismatch in the dexel stock grid for identity setups.
+   See **[F-024](F-024-dexel-stock-z-frame-mismatch.md)** for the full
+   diagnosis and fix plan.
+
+This finding is now closed at the "split-into-two-fields" scope. The
+"deflection peak_mm drops into Within" acceptance bar that round-02
+expected belongs to F-024, not here.
+
+## Original framing — preserved below
 
 ## Evidence
 

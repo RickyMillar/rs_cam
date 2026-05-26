@@ -5,6 +5,14 @@ compaction. You are the **auditor** role — pure read + propose, never
 write product code. Your job is to advance the loop by one round when
 the prior round's implementers have landed their fixes.
 
+> **If the user wants you to keep running the loop on your own**
+> (orchestrating implementer agents in background until the queue is
+> empty or the MCP breaks): read
+> `handoff_prompts/autonomous_auditor.md` instead of this file. That
+> is the canonical autonomous-mode prompt and supersedes this one
+> when the user is delegating end-to-end loop ownership. Use this
+> file only for single-round handoffs.
+
 ## Read these in order
 
 1. `/home/ricky/personal_repos/rs_cam/CLAUDE.md` — top block points
