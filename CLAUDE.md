@@ -1,38 +1,25 @@
 # rs_cam Agent Notes
 
-> ## 🔴 ACTIVE WORKSTREAM — read this before doing anything
+> ## Acceptance loop status — closed (2026-05-26)
 >
-> This repo is currently in the **acceptance loop** workstream — an
-> audit→fix→re-audit cycle to make the Suggest / Sim / Optimize
-> calculations trustworthy. Any agent landing in this repo for the next
-> few weeks should orient through:
+> The deflection / chipload / rapid-collision acceptance bars are met
+> at **7/7 Within** across the smoke suite. See
+> `planning/acceptance_loop/STATE.md` for the closed-out queue and
+> `planning/acceptance_loop/rounds/round-10-2026-05-26/delta.md` for
+> the final delta + retrospective.
 >
-> 1. **`planning/acceptance_loop/STATE.md`** — single source of truth.
->    Current round, open findings queue, what's claimed, what's landed.
->    **Read first.**
-> 2. **`planning/acceptance_loop/README.md`** — how the loop works
->    (Auditor vs Implementer roles, finding lifecycle, exit criteria).
-> 3. **`planning/acceptance_loop/audit_runbook.md`** — if you are
->    auditing this round.
-> 4. **`planning/acceptance_loop/implementer_contract.md`** — if you
->    are landing a fix this round.
+> The loop's regression net stays live — anything in the F-024/F-026/
+> F-027/F-028/F-031 family that re-surfaces should fail one of the
+> `crates/rs_cam_core/tests/_f0{24,26,27,28,31}.rs` cargo tests before
+> it reaches smoke. Future findings can be added to the queue as
+> normal `F-XXX` entries; the loop docs (audit_runbook, implementer_
+> contract, autonomous_auditor) remain in place for future work in
+> this family.
 >
-> **Implementers**: pull the top unclaimed finding from `STATE.md`'s
-> queue. Each `planning/acceptance_loop/findings/F-XXX-*.md` file is
-> self-contained — evidence, acceptance test, files, fix shape, risk.
->
-> **Auditors**: read `STATE.md`, run the agent smoke acceptance suite
-> (`planning/SUGGEST_SIM_OPTIMIZE_AGENT_RUN_PROMPT.md` for mechanics),
-> diff against the last `rounds/round-NN/baseline.md`, update findings
-> and queue. Do not write product code.
->
-> **The 22 currently open findings span suggest / sim / optimize /
-> substrate.** F-001 (chipload-2D feedopt probe, ~10 LOC, unblocks
-> 7 op kinds) is the single highest-leverage fix.
->
-> When the acceptance bars in
-> `planning/SUGGEST_SIM_OPTIMIZE_ACCEPTANCE.md` are all met, this
-> block can be removed and the repo returns to normal operation.
+> Stretch goals (post-loop, not blocking normal work):
+> F-020 (optimizer Ranked-BS fixture), F-025 (non-identity setup
+> probe), F-033 (workflow advisory). See STATE.md for the full
+> queue.
 
 ## What this repo is
 
