@@ -2,10 +2,10 @@
 
 - **Stage:** sim ↔ modulation feedback loop
 - **Severity:** low (loop calibration is unaffected; modulator algorithm-layer invariants are already pinned)
-- **Status:** open — deferred from F-036b
+- **Status:** landed 2026-05-26
 - **First found in:** F-036b implementation session, 2026-05-26
 - **Effort:** S-M
-- **Linked PRs:** —
+- **Linked PRs:** (this commit)
 - **Workstream:** Feed Modulation
 - **Depends on:** F-036b landed
 
