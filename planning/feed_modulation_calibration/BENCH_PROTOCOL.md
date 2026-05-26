@@ -6,6 +6,11 @@ stock). Goal: wall-clock elapsed for each .nc file.**
 See `RUNBOOK.md` (also in this folder) for the deeper context — this file
 is the short operational checklist.
 
+These three files have been pre-validated by CAMotics 1.2.0 (Docker
+container, GRBL-strict arc tolerance = 0.01 mm) and are clean. Any future
+regeneration should be run through `./validate.sh` before leaving the dev
+machine — see "Pre-flight validation" below.
+
 ---
 
 ## Files in this folder
@@ -15,6 +20,25 @@ is the short operational checklist.
 | `gcode/f034_reference_wanaka_pin_drill.nc` | F-034 cycle-time reference. 6-hole peck drill. | ~60-90 s |
 | `gcode/f036c_wanaka_back_rough_modulation_off.nc` | F-036c baseline. Back Rough at commanded feeds. | ~13-20 min |
 | `gcode/f036c_wanaka_back_rough_modulation_on.nc` | F-036c with adaptive feed modulation. | ~13-20 min |
+| `validate.sh` | Run files through Dockerised CAMotics before sending to the machine. | — |
+| `validator-Dockerfile` | Builds the `camotics-validator:1.2.0` image. | — |
+
+## Pre-flight validation (do this before each USB trip)
+
+```
+cd planning/feed_modulation_calibration
+./validate.sh
+```
+
+Returns exit 0 if all clean, exit 1 if any file flagged with the
+offending line / error message printed to stderr. The validator runs the
+full CAMotics interpreter (not just a lexical scan) so it catches what
+GRBL / gSender would catch on the workshop machine — without requiring
+the trip. Threshold mirrors GRBL's default `$12=0.010 mm`.
+
+If the image is missing (`docker images camotics-validator:1.2.0`
+returns nothing) rebuild it from the Dockerfile in this folder — the
+script will print the command.
 
 ---
 

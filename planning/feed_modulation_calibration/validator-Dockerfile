@@ -1,0 +1,36 @@
+# CAMotics 1.2.0 (2019 release) in a containerised Ubuntu 18.04 so the
+# ancient libv8 3.14.5 / libssl 1.0.0 deps resolve cleanly on modern hosts.
+# Acts as a GRBL-strict pre-flight G-code validator — catches arc-radius
+# mismatches, motion outside soft limits, etc. that gSender / real GRBL
+# would surface at the workshop. Same error class as gSender's pre-flight.
+#
+# Build:
+#   cd planning/feed_modulation_calibration/
+#   wget https://github.com/CauldronDevelopmentLLC/CAMotics/releases/download/v1.2.0/camotics_1.2.0_amd64.deb
+#   docker build -t camotics-validator:1.2.0 -f validator-Dockerfile .
+#
+# Use:
+#   ./validate.sh                  # validates every gcode/*.nc
+#   ./validate.sh path/to/x.nc     # validates one file
+
+FROM ubuntu:18.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libc6 \
+        libglu1-mesa \
+        libv8-3.14.5 \
+        libqt5core5a \
+        libqt5gui5 \
+        libqt5opengl5 \
+        libssl1.0.0 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY camotics_1.2.0_amd64.deb /tmp/camotics.deb
+RUN dpkg -i /tmp/camotics.deb || apt-get install -fy ; rm /tmp/camotics.deb
+
+WORKDIR /work
+ENTRYPOINT ["/usr/bin/gcodetool"]
