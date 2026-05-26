@@ -417,21 +417,28 @@ fn modulated_cycle_time_lower_than_unmodulated() {
 /// AB5.
 ///
 /// The modulator must never emit below the LUT band's `min` — that's
-/// the rubbing / burn protection. Scan the post-sim cut trace for
-/// every sample's commanded chipload and assert it stays above the
-/// band floor (with a small ε for integration noise).
+/// the rubbing / burn protection.
 ///
-/// **Ignored pending F-036b1** — the simulator doesn't re-run after
-/// modulation, so `sample.chipload_mm_per_tooth` reflects the
-/// pre-modulation commanded feed. F-036's unit test
-/// `modulation_never_emits_below_min_chipload` pins the algorithm-layer
-/// invariant correctly; what's missing is either a simulator re-pass
-/// or a rewrite of this test to inspect the modulated toolpath IR
-/// directly (per-move `feed_rate` × RPM × flutes → chipload). See
-/// `planning/acceptance_loop/findings/F-036b1-modulation-resim-or-ir-inspect.md`.
-#[ignore = "F-036b1: validate against IR or re-sim; sample chipload still reflects pre-modulation feed"]
+/// **F-036b1 implementation**: walk the modulated `Toolpath` IR
+/// directly rather than reading post-sim sample chipload. The
+/// simulator doesn't re-run after modulation, so
+/// `sample.chipload_mm_per_tooth` still reflects the pre-modulation
+/// commanded feed — that's the wrong field to read. The IR's
+/// `move_type.feed_rate()` carries the post-modulation feed; chipload
+/// at the move is then `feed / (rpm * flute_count)`.
+///
+/// Filter scope: only moves the modulator **actually touched** — i.e.
+/// moves whose `feed_rate` differs from the toolpath's commanded
+/// feed by more than 0.5 mm/min. Moves the algorithm skipped (zero
+/// aggregated engagement, non-clearing/finishing intent, plunge /
+/// retract / drilling) keep the commanded feed by design; if the
+/// commanded feed itself is below the LUT band, that's a user
+/// parameter choice the modulator doesn't override. The
+/// algorithm-layer floor-clamp on modulated moves is what AB5 pins.
 #[test]
 fn modulated_path_never_emits_below_min_chipload() {
+    use rs_cam_core::toolpath::MoveIntent;
+
     let session = run_session(true, true);
     let trace = session
         .simulation_result()
@@ -443,9 +450,9 @@ fn modulated_path_never_emits_below_min_chipload() {
         Some(trace),
     );
     let Some(band) = envelopes.get(&0) else {
-        // No LUT band → modulator was a no-op. The test is
-        // vacuously satisfied; we still pin that fact so a future
-        // calibration shift doesn't silently downgrade the assertion.
+        // No LUT band → modulator was a no-op. Vacuously satisfied;
+        // pinned here so a future calibration shift doesn't silently
+        // downgrade the assertion.
         eprintln!(
             "F-036b AB5: no LUT chipload band for AS001 pocket — modulator was a no-op. \
              Recalibrate the test fixture if this becomes unintentional."
@@ -453,26 +460,55 @@ fn modulated_path_never_emits_below_min_chipload() {
         return;
     };
 
+    let result = session
+        .get_result(0)
+        .expect("session result for toolpath 0");
+    let toolpath = &result.annotated().toolpath;
+    let tc = session
+        .get_toolpath_config(0)
+        .expect("toolpath config 0");
+    let tool = session
+        .get_tool(rs_cam_core::compute::tool_config::ToolId(tc.tool_id))
+        .expect("tool referenced by toolpath");
+    let rpm = tc
+        .operation
+        .spindle_rpm()
+        .map(f64::from)
+        .unwrap_or(18_000.0);
+    let flutes = f64::from(tool.flute_count.max(1));
+    let commanded_feed = tc.operation.feed_rate();
+
+    let mut modulated_moves = 0usize;
     let mut below_floor = 0usize;
-    let mut worst_below = 0.0_f64;
-    for sample in &trace.samples {
-        if sample.toolpath_id != 0 {
+    let mut worst_below = f64::INFINITY;
+    let floor = band.start * 0.95;
+
+    for mv in &toolpath.moves {
+        if !matches!(
+            mv.intent,
+            MoveIntent::ClearingCut | MoveIntent::FinishingCut
+        ) {
             continue;
         }
-        if !sample.is_cutting || sample.cut_kinematics == CutKinematics::Plunge {
+        let Some(feed) = mv.move_type.feed_rate() else {
+            continue;
+        };
+        // Only check moves the modulator actually touched. Skipped
+        // moves (zero engagement aggregation) keep the commanded feed
+        // by design — if that's below band, it's a user parameter
+        // choice, not a modulator bug.
+        if (feed - commanded_feed).abs() < 0.5 {
             continue;
         }
-        // Skip lead-in / ramp / link transient samples (steady-state
-        // filter): the modulator's per-move feed only governs the
-        // cutting-move steady-state, lead-in feeds inherit from
-        // dressups.
-        if sample.engagement.radial_woc_fraction < 0.05 {
+        modulated_moves += 1;
+        let denom = rpm * flutes;
+        if denom <= 0.0 {
             continue;
         }
-        let chipload = sample.chipload_mm_per_tooth;
-        if chipload < band.start * 0.95 {
+        let chipload = feed / denom;
+        if chipload < floor {
             below_floor += 1;
-            if chipload < worst_below || worst_below == 0.0 {
+            if chipload < worst_below {
                 worst_below = chipload;
             }
         }
@@ -480,10 +516,22 @@ fn modulated_path_never_emits_below_min_chipload() {
 
     assert_eq!(
         below_floor, 0,
-        "F-036b AB5: modulated path has {below_floor} steady-state cutting samples below \
-         the LUT band floor (worst = {worst_below:.4} mm/tooth, band floor = \
-         {:.4} mm/tooth). The modulator's band-floor clamp must hold.",
-        band.start
+        "F-036b AB5: modulated IR has {below_floor} of {modulated_moves} modulated moves \
+         below the LUT band floor (worst = {worst:.4} mm/tooth, band floor = \
+         {floor:.4} mm/tooth, band.start = {start:.4}, commanded feed = {cmd:.0} mm/min). \
+         The modulator's band-floor clamp must hold on every move it touches.",
+        worst = if worst_below.is_finite() { worst_below } else { 0.0 },
+        floor = floor,
+        start = band.start,
+        cmd = commanded_feed
+    );
+    assert!(
+        modulated_moves > 0,
+        "F-036b AB5: modulator made no changes on AS001 pocket. The test fixture must \
+         exercise the band-floor clamp; recalibrate if the commanded feed is now inside \
+         the LUT band (band.start = {:.4} mm/tooth, commanded chipload = {:.4} mm/tooth).",
+        band.start,
+        commanded_feed / (rpm * flutes)
     );
 }
 
