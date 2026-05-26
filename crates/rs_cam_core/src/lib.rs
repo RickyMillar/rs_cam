@@ -25,6 +25,7 @@ pub mod dropcutter;
 pub mod dxf_input;
 pub mod enriched_mesh;
 pub mod face;
+pub mod feed_modulation;
 pub mod feedopt;
 pub mod feeds;
 pub mod fiber;
