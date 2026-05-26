@@ -1275,10 +1275,225 @@ impl ProjectSession {
         };
 
         let result = run_simulation(&request, cancel)?;
+
+        // F-036b — adaptive feed modulation post-pass.
+        //
+        // After the simulator produces the per-sample engagement
+        // record, walk it once per cutting toolpath, aggregate samples
+        // into a `Vec<PerMoveEngagement>` keyed by `move_index`, look
+        // up the vendor LUT's chipload band, and call
+        // [`crate::feed_modulation::adaptive_feed_modulate`] on a
+        // mutable clone of the toolpath. The modulated toolpath replaces
+        // the cached `Arc<AnnotatedToolpath>` in `self.results` so the
+        // downstream G-code emitter
+        // (`crate::gcode::emit_gcode` via `export_gcode_checked`) picks
+        // up the per-move modulated feeds and emits per-move F-words —
+        // F-036a's emitter contract.
+        //
+        // Inert when:
+        //  - `opts.adaptive_feed_modulation == false` (the default; the
+        //    smoke baseline and every legacy test pass with this
+        //    branch skipped, byte-identical).
+        //  - `machine.kinematics.is_none()` (every shipped preset).
+        //  - The vendor LUT has no `chip_load_min_mm` /
+        //    `chip_load_max_mm` row for the active
+        //    `(tool family, material, op family, pass role, diameter)`
+        //    tuple — modulator gets no `ChiploadBand`, the per-toolpath
+        //    call is skipped, the IR is untouched.
+        if opts.adaptive_feed_modulation && self.machine.kinematics.is_some() {
+            self.apply_adaptive_feed_modulation(&result);
+        }
+
         self.simulation = Some(result);
         // SAFETY: we just assigned Some
         #[allow(clippy::unwrap_used)]
         Ok(self.simulation.as_ref().unwrap())
+    }
+
+    /// F-036b — apply the per-move adaptive feed modulator to every
+    /// computed toolpath after `run_simulation` produces its trace.
+    ///
+    /// Walks each toolpath's `SimulationCutSample`s, aggregates them
+    /// time-weighted into a `Vec<PerMoveEngagement>` keyed by
+    /// `move_index`, looks up the vendor LUT chipload band, builds the
+    /// `ModulationContext`, and calls
+    /// [`crate::feed_modulation::adaptive_feed_modulate`] on a `clone`
+    /// of the cached `Arc<AnnotatedToolpath>::toolpath`. When the
+    /// modulator reports any feed change, the `Arc<AnnotatedToolpath>`
+    /// in `self.results` is swapped for a new one wrapping the modulated
+    /// toolpath — `Arc::make_mut` is not used because the trace
+    /// `samples` still hold the legacy `Arc` and we want them to remain
+    /// pinned to the pre-modulation IR for diagnostic continuity.
+    ///
+    /// No-op (silently) when:
+    ///  - The simulation produced no `cut_trace` (`metrics_enabled =
+    ///    false`).
+    ///  - A toolpath has no cut samples (drill-only / all-rapid / etc.).
+    ///  - The vendor LUT has no chipload band for the toolpath.
+    ///  - The modulator returns
+    ///    `ModulationError::EngagementLengthMismatch` (defensive — only
+    ///    fires when the toolpath has been re-generated between sim and
+    ///    modulation; impossible inside `run_simulation`'s single
+    ///    transaction).
+    ///
+    /// The chipload band source is
+    /// [`crate::tool_load::chipload_envelopes_for_session`] — the same
+    /// helper the chipload viewport coloring + timeline envelope readout
+    /// already use, so band semantics match the rest of the load-gates
+    /// surface.
+    fn apply_adaptive_feed_modulation(&mut self, sim_result: &crate::compute::simulate::SimulationResult) {
+        use crate::feed_modulation::{
+            ChiploadBand, ModulationContext, PerMoveEngagement, adaptive_feed_modulate,
+        };
+
+        let Some(cut_trace) = sim_result.cut_trace.as_deref() else {
+            return;
+        };
+        let Some(kinematics) = self.machine.kinematics else {
+            return;
+        };
+        let envelopes = crate::tool_load::chipload_envelopes_for_session(self, Some(cut_trace));
+        if envelopes.is_empty() {
+            return;
+        }
+
+        let max_feed = self.machine.max_feed_mm_min.max(1.0);
+        let rapid_feed = if self.post.high_feedrate_mode {
+            self.post.high_feedrate.max(1.0)
+        } else {
+            max_feed
+        };
+
+        // Toolpath indices to walk: enabled, with a result, with at least
+        // one cut sample in the trace.
+        let candidate_indices: Vec<(usize, usize)> = self
+            .toolpath_configs
+            .iter()
+            .enumerate()
+            .filter(|(idx, tc)| tc.enabled && self.results.contains_key(idx))
+            .map(|(idx, tc)| (idx, tc.id))
+            .collect();
+
+        for (idx, toolpath_id) in candidate_indices {
+            let Some(band_range) = envelopes.get(&toolpath_id) else {
+                continue;
+            };
+            let Some(band) = ChiploadBand::new(band_range.start, band_range.end) else {
+                continue;
+            };
+            let Some(tc) = self.toolpath_configs.get(idx) else {
+                continue;
+            };
+            let Some(tool_cfg) = self.find_tool_by_raw_id(tc.tool_id) else {
+                continue;
+            };
+            let flute_count = tool_cfg.flute_count.max(1);
+            let spindle_rpm = tc.operation.spindle_rpm().unwrap_or(self.post.spindle_speed);
+            if spindle_rpm == 0 {
+                continue;
+            }
+
+            let Some(result) = self.results.get(&idx) else {
+                continue;
+            };
+            let annotated_arc = result.annotated();
+            let move_count = annotated_arc.toolpath.moves.len();
+            if move_count == 0 {
+                continue;
+            }
+
+            // Aggregate per-move engagement (time-weighted mean over the
+            // move's samples). Samples filter on `is_cutting` so air-cut
+            // and rapid moves stay at default `(0.0, 0.0)` engagement —
+            // the modulator skips them via its own `should_skip` /
+            // zero-engagement short-circuits.
+            let mut radial_num = vec![0.0_f64; move_count];
+            let mut axial_num = vec![0.0_f64; move_count];
+            let mut weight_sum = vec![0.0_f64; move_count];
+            for sample in &cut_trace.samples {
+                if sample.toolpath_id != toolpath_id {
+                    continue;
+                }
+                if !sample.is_cutting {
+                    continue;
+                }
+                if sample.move_index >= move_count {
+                    continue;
+                }
+                let w = sample.segment_time_s.max(0.0);
+                if w <= 0.0 {
+                    continue;
+                }
+                #[allow(clippy::indexing_slicing)]
+                // SAFETY: move_index < move_count checked above.
+                {
+                    radial_num[sample.move_index] +=
+                        sample.engagement.radial_woc_fraction.max(0.0) * w;
+                    axial_num[sample.move_index] +=
+                        sample.engagement.axial_doc_fraction.max(0.0) * w;
+                    weight_sum[sample.move_index] += w;
+                }
+            }
+            let engagements: Vec<PerMoveEngagement> = (0..move_count)
+                .map(|i| {
+                    #[allow(clippy::indexing_slicing)]
+                    // SAFETY: i < move_count by construction.
+                    let w = weight_sum[i];
+                    if w <= 0.0 {
+                        PerMoveEngagement::default()
+                    } else {
+                        #[allow(clippy::indexing_slicing)]
+                        // SAFETY: i < move_count by construction.
+                        PerMoveEngagement {
+                            radial_woc_fraction: radial_num[i] / w,
+                            axial_doc_fraction: axial_num[i] / w,
+                        }
+                    }
+                })
+                .collect();
+
+            let ctx = ModulationContext {
+                spindle_rpm: spindle_rpm as f64,
+                flute_count,
+                max_feed_mm_min: max_feed,
+                rapid_feed_mm_min: rapid_feed,
+                chipload_band: band,
+                kinematics: &kinematics,
+            };
+
+            // Clone the toolpath out of its Arc<AnnotatedToolpath> so we
+            // don't mutate the trace's view of the pre-modulation IR.
+            // Swap the result's Arc atomically with a freshly-built
+            // AnnotatedToolpath that carries the modulated Toolpath
+            // (spans + spans_valid preserved from the source).
+            let mut modulated_toolpath = annotated_arc.toolpath.clone();
+            let Ok(changed) =
+                adaptive_feed_modulate(&mut modulated_toolpath, &engagements, &ctx)
+            else {
+                continue;
+            };
+            if changed == 0 {
+                continue;
+            }
+            let new_annotated = crate::toolpath_spans::AnnotatedToolpath {
+                toolpath: modulated_toolpath,
+                spans: annotated_arc.spans.clone(),
+                spans_valid: annotated_arc.spans_valid,
+            };
+            let new_arc = Arc::new(new_annotated);
+            // Rebuild the op_data variant with the swapped Arc.
+            let new_op_data = match &result.op_data {
+                crate::drill_op::OpData::Toolpath(_) => {
+                    crate::drill_op::OpData::Toolpath(new_arc)
+                }
+                crate::drill_op::OpData::DrillOp(drill, _) => {
+                    crate::drill_op::OpData::DrillOp(Arc::clone(drill), new_arc)
+                }
+            };
+            if let Some(slot) = self.results.get_mut(&idx) {
+                slot.op_data = new_op_data;
+            }
+        }
     }
 
     /// Run a collision check for a specific toolpath by index.

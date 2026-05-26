@@ -257,6 +257,7 @@ fn cycle_time_calibrated_against_shapeoko_reference() {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     // Generate every toolpath in the project, then simulate.
     let n_toolpaths = session.toolpath_configs().len();
@@ -304,6 +305,7 @@ fn flag_off_byte_identical_to_pre_f034() {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     let n_toolpaths = session.toolpath_configs().len();
     for i in 0..n_toolpaths {
@@ -368,6 +370,7 @@ fn flag_on_overrides_total_runtime_s() {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
 
     // Helper to load + add a tiny pocket op + simulate; returns total runtime.

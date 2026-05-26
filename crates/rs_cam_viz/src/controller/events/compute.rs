@@ -65,8 +65,10 @@ impl<B: ComputeBackend> AppController<B> {
             .list_setups()
             .iter()
             .find(|s| s.toolpath_indices.contains(&tp_idx));
-        let ctx =
-            rs_cam_core::session::SetupEvalContext::build_for_setup(&self.state.session, setup_data);
+        let ctx = rs_cam_core::session::SetupEvalContext::build_for_setup(
+            &self.state.session,
+            setup_data,
+        );
 
         let mut keep_out_footprints = setup_data
             .map(|setup| {

@@ -219,6 +219,7 @@ fn as013_terrain_model_edge_axial_within_commanded_dpp_f027() {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     session
         .run_simulation(&opts, &cancel)
@@ -316,6 +317,7 @@ fn as013_terrain_model_edge_band_outlier_count_zero_f027() {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     session
         .run_simulation(&opts, &cancel)

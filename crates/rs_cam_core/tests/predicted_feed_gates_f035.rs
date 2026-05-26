@@ -405,6 +405,7 @@ fn flag_off_byte_identical_to_pre_f035() {
             metrics_enabled: true,
             auto_resolution: false,
             use_predicted_feed_in_gates: false,
+            adaptive_feed_modulation: false,
         };
         session
             .run_simulation(&opts, &cancel)
@@ -467,6 +468,7 @@ fn flag_on_extends_existing_f024_test_invariants() {
         auto_resolution: false,
         // The bridge: flag ON.
         use_predicted_feed_in_gates: true,
+        adaptive_feed_modulation: false,
     };
     session
         .run_simulation(&opts, &cancel)

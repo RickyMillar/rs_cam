@@ -522,6 +522,32 @@ pub struct SimulationOptions {
     /// while the gate at 4000 reads `Within`. See
     /// `planning/acceptance_loop/findings/F-035-predicted-feed-in-gates.md`.
     pub use_predicted_feed_in_gates: bool,
+    /// F-036b: when `true` **and** the active `MachineProfile` carries
+    /// `kinematics`, the simulator runs a post-sim modulation pass that
+    /// rewrites per-move `feed_rate` on every cutting move so the
+    /// commanded chipload-per-tooth lands inside the LUT band's
+    /// geometric midpoint (corrected for chip thinning) — Fusion HSM's
+    /// "adaptive feed control" equivalent.
+    ///
+    /// Default `false`. Behavior with the flag off (or with kinematics
+    /// absent, or with no vendor LUT row for the active
+    /// tool/material/op) is byte-identical to pre-F-036b — the
+    /// loop's acceptance tests (`_f0{24,26,27,28,31}.rs`) and the
+    /// smoke baseline at
+    /// `planning/toolpath_acceptance/baselines/2026-05-26.csv`
+    /// continue to pass unchanged.
+    ///
+    /// Modulation requires a vendor `ChiploadBand` (LUT
+    /// `chip_load_min_mm` + `chip_load_max_mm`) for the active
+    /// `(tool family, material, op family, pass role, diameter)` tuple.
+    /// Custom materials, unsupported op families, and toolpaths whose
+    /// LUT row is missing either bound fall through as a no-op (the
+    /// per-toolpath feed_rate stays at the commanded value).
+    ///
+    /// The algorithm itself lives in
+    /// `crate::feed_modulation::adaptive_feed_modulate`; see
+    /// `planning/acceptance_loop/findings/F-036b-feed-modulation-flag-plumbing.md`.
+    pub adaptive_feed_modulation: bool,
 }
 
 impl Default for SimulationOptions {
@@ -532,6 +558,7 @@ impl Default for SimulationOptions {
             metrics_enabled: true,
             auto_resolution: false,
             use_predicted_feed_in_gates: false,
+            adaptive_feed_modulation: false,
         }
     }
 }

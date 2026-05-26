@@ -136,6 +136,7 @@ fn optimize_toolpath_full_pipeline() {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     let baseline_trace = {
         let sim = session
@@ -243,6 +244,7 @@ fn optimize_project_full_pipeline() {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     let baseline_trace = {
         let sim = session
@@ -293,6 +295,7 @@ fn optimize_toolpath_cancel_returns_quickly() {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     let baseline_trace = {
         let sim = session

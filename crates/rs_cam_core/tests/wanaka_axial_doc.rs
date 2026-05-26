@@ -47,6 +47,7 @@ fn wanaka_back_rough_axial_doc() {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
 
     let tp_id = session.list_toolpaths()[1].id;
