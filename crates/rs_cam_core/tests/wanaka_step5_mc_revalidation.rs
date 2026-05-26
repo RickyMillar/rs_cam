@@ -98,6 +98,7 @@ fn wanaka_step5_final_mesh_is_well_formed() {
         metrics_enabled: false,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     let result = session.run_simulation(&opts, &cancel).expect("sim");
 

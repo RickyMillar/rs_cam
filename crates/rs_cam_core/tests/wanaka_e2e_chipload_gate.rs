@@ -91,6 +91,7 @@ fn wanaka_back_rough_chipload_gate_passes_after_auto_fix() {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     session
         .run_simulation(&opts, &cancel)

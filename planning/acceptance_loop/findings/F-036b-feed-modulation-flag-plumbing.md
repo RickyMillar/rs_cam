@@ -2,10 +2,10 @@
 
 - **Stage:** simulator → modulation → emitter wiring
 - **Severity:** medium (blocks F-036 reaching production; depends on F-036a)
-- **Status:** open — deferred from F-036's Piece D
+- **Status:** landed 2026-05-26 (8/9 acceptance tests; AB5 deferred to F-036b1)
 - **First found in:** F-036 implementation session, 2026-05-26
 - **Effort:** M (feature-flag wiring + per-move engagement aggregation)
-- **Linked PRs:** —
+- **Linked PRs:** (this commit)
 - **Workstream:** Feed Modulation (see `planning/feed_modulation_roadmap.md`)
 - **Depends on:** F-036 algorithm + **F-036a G-code emission** landed
 

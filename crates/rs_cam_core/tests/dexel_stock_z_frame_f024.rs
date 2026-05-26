@@ -183,6 +183,7 @@ fn as001_pocket_first_pass_axial_engagement_within_commanded_doc() {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     session
         .run_simulation(&opts, &cancel)
@@ -240,6 +241,7 @@ fn as001_pocket_deflection_gate_within_safe_band() {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     session
         .run_simulation(&opts, &cancel)

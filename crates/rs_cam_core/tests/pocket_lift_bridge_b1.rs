@@ -173,6 +173,7 @@ fn pocket_default_skeleton_emits_no_rapid_collisions() {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     session
         .run_simulation(&opts, &cancel)

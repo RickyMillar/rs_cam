@@ -328,6 +328,13 @@ pub(crate) fn evaluate_candidate(
         // production simulator currently uses. Flipping this on is a
         // follow-up (F-036 territory).
         use_predicted_feed_in_gates: false,
+        // F-036b: optimizer's candidate-scoring sim also runs with
+        // adaptive feed modulation OFF — the optimizer ranks
+        // candidates against the commanded feed in the IR. The
+        // optimizer and the feed modulator are two independent
+        // bridges over the same engagement summary; running them
+        // together would conflate their effects.
+        adaptive_feed_modulation: false,
     };
     guard.session_mut().run_simulation(&sim_opts, cancel)?;
 

@@ -164,6 +164,7 @@ fn as004_face_peak_axial_within_commanded_doc() {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     session
         .run_simulation(&opts, &cancel)
@@ -220,6 +221,7 @@ fn as004_face_deflection_within_safe_band() {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     session
         .run_simulation(&opts, &cancel)
@@ -274,6 +276,7 @@ fn as004_face_no_rapid_collisions() {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     session
         .run_simulation(&opts, &cancel)
@@ -429,6 +432,7 @@ fn as001_pocket_actually_removes_stock_material_post_f028() {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     session
         .run_simulation(&opts, &cancel)

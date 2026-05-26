@@ -397,6 +397,7 @@ fn run_single_case(case: &SmokeCase, resolution: f64) -> BaselineRow {
         // continue exercising commanded-feed gates so the regression
         // diff stays meaningful.
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     if let Err(e) = session.run_simulation(&sim_opts, &cancel) {
         return BaselineRow::failure(

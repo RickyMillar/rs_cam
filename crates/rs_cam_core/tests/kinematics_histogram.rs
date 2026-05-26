@@ -65,6 +65,7 @@ fn kinematics_histogram_wanaka() {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     let samples: Vec<SimulationCutSample> = {
         let sim_result = session.run_simulation(&opts, &cancel).expect("sim");

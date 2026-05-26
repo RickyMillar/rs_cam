@@ -178,6 +178,7 @@ fn run_as013_simulation() -> ProjectSession {
         metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
     };
     let cancel2 = AtomicBool::new(false);
     session
