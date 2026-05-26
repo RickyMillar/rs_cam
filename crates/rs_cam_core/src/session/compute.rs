@@ -1274,7 +1274,7 @@ impl ProjectSession {
             }),
         };
 
-        let result = run_simulation(&request, cancel)?;
+        let mut result = run_simulation(&request, cancel)?;
 
         // F-036b — adaptive feed modulation post-pass.
         //
@@ -1301,7 +1301,7 @@ impl ProjectSession {
         //    tuple — modulator gets no `ChiploadBand`, the per-toolpath
         //    call is skipped, the IR is untouched.
         if opts.adaptive_feed_modulation && self.machine.kinematics.is_some() {
-            self.apply_adaptive_feed_modulation(&result);
+            self.apply_adaptive_feed_modulation(&mut result);
         }
 
         self.simulation = Some(result);
@@ -1341,7 +1341,7 @@ impl ProjectSession {
     /// helper the chipload viewport coloring + timeline envelope readout
     /// already use, so band semantics match the rest of the load-gates
     /// surface.
-    fn apply_adaptive_feed_modulation(&mut self, sim_result: &crate::compute::simulate::SimulationResult) {
+    fn apply_adaptive_feed_modulation(&mut self, sim_result: &mut crate::compute::simulate::SimulationResult) {
         use crate::feed_modulation::{
             ChiploadBand, ModulationContext, PerMoveEngagement, adaptive_feed_modulate,
         };
@@ -1494,6 +1494,45 @@ impl ProjectSession {
                 slot.op_data = new_op_data;
             }
         }
+
+        // F-036b1 sequencing fix: F-034's `apply_kinematics_cycle_time`
+        // runs INSIDE `run_simulation` (before modulation), so the
+        // trace's `total_runtime_s` reflects the pre-modulation
+        // commanded feeds. After modulation rewrites per-move feeds,
+        // re-walk every toolpath through `compute_cycle_time` and update
+        // the trace's per-toolpath + project-total runtime so callers
+        // (F-036c regression test, GUI panel, diagnostics summary) see
+        // the modulated cycle time.
+        let Some(trace_arc) = sim_result.cut_trace.as_mut() else {
+            return;
+        };
+        let trace = Arc::make_mut(trace_arc);
+        let mut project_total = 0.0;
+        for tp_summary in &mut trace.toolpath_summaries {
+            let Some((idx, _)) = self
+                .toolpath_configs
+                .iter()
+                .enumerate()
+                .find(|(_, tc)| tc.id == tp_summary.toolpath_id)
+            else {
+                project_total += tp_summary.total_runtime_s;
+                continue;
+            };
+            let Some(result_slot) = self.results.get(&idx) else {
+                project_total += tp_summary.total_runtime_s;
+                continue;
+            };
+            let toolpath = &result_slot.annotated().toolpath;
+            let t = crate::machine_kinematics::compute_cycle_time(
+                toolpath,
+                &kinematics,
+                max_feed,
+                rapid_feed,
+            );
+            tp_summary.total_runtime_s = t;
+            project_total += t;
+        }
+        trace.summary.total_runtime_s = project_total;
     }
 
     /// Run a collision check for a specific toolpath by index.

@@ -100,6 +100,28 @@ impl MachineKinematics {
             max_junction_velocity_mm_min: None,
         }
     }
+
+    /// Shapeoko XXL with user-tuned (above-stock) accel + travel rates.
+    /// Captured from `$$` on 2026-05-26: `$120 = $121 = 500 mm/s²`
+    /// (X/Y), `$122 = 270 mm/s²` (Z), `$110 = $111 = 10000 mm/min`
+    /// (X/Y), `$112 = 1000 mm/min` (Z).
+    ///
+    /// The scalar `acceleration_mm_s2` uses a **blended 350 mm/s²** —
+    /// not the pure X/Y or Z value. Empirically calibrated against
+    /// wanaka Back Rough wall-clock 827 s (2026-05-26): pure X/Y (500)
+    /// over-predicts speed by 22 %; pure Z (270) under-predicts by
+    /// ~5 %. 350 lands within ±10 % on the mixed-axis adaptive3d
+    /// toolpath. Tuning a per-axis kinematics struct is a F-034
+    /// follow-up; until then this scalar absorbs the geometry mix.
+    /// The `max_feed_mm_min` cap should be set on the `MachineProfile`
+    /// itself to match the user's `$110/$111 = 10000 mm/min`.
+    pub fn shapeoko_xxl_ricky_tuned() -> Self {
+        Self {
+            acceleration_mm_s2: 350.0,
+            jerk_mm_s3: None,
+            max_junction_velocity_mm_min: None,
+        }
+    }
 }
 
 /// Compute the wall-clock cycle time (seconds) the configured machine
