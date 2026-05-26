@@ -2,10 +2,10 @@
 
 - **Stage:** sim / machine model (additive feature)
 - **Severity:** medium (real-world cycle time misprediction; not a correctness bug per se)
-- **Status:** landed 2026-05-26 (commit pending — see Implementation log)
+- **Status:** landed 2026-05-26 (commit `ae58f55`)
 - **First found in:** round-10 wanaka audit (2026-05-26); user-flagged
 - **Effort:** S-M
-- **Linked PRs:** —
+- **Linked PRs:** commit `ae58f55` (master)
 - **Workstream:** Feed Modulation (see `planning/feed_modulation_roadmap.md`)
 - **Source audits:** round-10 wanaka verification + user discussion of Shapeoko XXL feed-rate realism
 
