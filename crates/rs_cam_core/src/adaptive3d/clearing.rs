@@ -268,6 +268,11 @@ pub(super) struct ClearZLevelContext<'a> {
     /// areas" feature to run sub-passes only on low-slope cells without
     /// disturbing the steep-side dexel state.
     pub(super) shallow_mask: Option<&'a [bool]>,
+    /// F-038: minimum forecast horizontal cutting length (mm) a marching-
+    /// squares region must produce in its 2D adaptive sub-pass before the
+    /// AgentSearch dispatch commits an entry plunge to it. Set to 0.0 to
+    /// disable. See `clear_z_level_agent_2d_slice` for the apply site.
+    pub(super) min_region_cut_length_mm: f64,
 }
 
 // ── Contour-parallel clearing ─────────────────────────────────────────
@@ -1398,6 +1403,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
         perimeter_sweep_length_mm: 0.0,
         agent_walk_cut_length_mm: 0.0,
         residual_cleanup_cell_count: 0,
+        dropped_short_region_count: 0,
     };
     let level_marker_index = level_marker.map(|event| {
         segments.push(Adaptive3dSegment::Marker(event));
@@ -1443,6 +1449,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
     //    that retract is correct; the 2D adaptive can't link across regions
     //    because each call sees only its own region's polygon.
     let mut cut_count = 0u32;
+    let mut dropped_short_regions = 0usize;
     let region_total = regions.len();
     for (region_idx, region_polygon) in regions.iter().enumerate() {
         let region_scope = level_ctx.as_ref().map(|debug_ctx| {
@@ -1456,6 +1463,87 @@ pub(super) fn clear_z_level_agent_2d_slice(
                 ),
             )
         });
+
+        // F-038: forecast the region's total cutting length BEFORE emitting
+        // any entry/perimeter/adaptive segments. If the forecast is below
+        // `min_region_cut_length_mm`, skip the region entirely — the entry
+        // plunge + tiny cut + retract would otherwise spend more cycle time
+        // on travel than on material removal. This is the dominant cause of
+        // the Wanaka Back Rough "perimeter micro-plunge" symptom (149 entry
+        // plunges, 90 of which cut ≤ 10 mm before retract). Forecasting is
+        // a dry-run: the 2D adaptive call below does NOT mutate the dexel
+        // stock — it operates on its own internal material grid — so we can
+        // call it twice (here, and again after the perimeter sweep is
+        // emitted) at no risk of state divergence. We accept the doubled
+        // 2D-adaptive cost as the price for the up-front decision.
+        if ctx.min_region_cut_length_mm > 0.0 {
+            const PERIMETER_INSET_MARGIN_MM_FORECAST: f64 = 0.25;
+            let inset_polygons_forecast = crate::polygon::offset_polygon(
+                region_polygon,
+                ctx.tool_radius + PERIMETER_INSET_MARGIN_MM_FORECAST,
+            );
+            let mut forecast_mm: f64 = 0.0;
+            for inset in &inset_polygons_forecast {
+                if inset.exterior.len() >= 3 {
+                    let mut path_2d = inset.exterior.clone();
+                    if path_2d.len() >= 2
+                        && (path_2d[0].x - path_2d[path_2d.len() - 1].x).abs() < 1e-9
+                        && (path_2d[0].y - path_2d[path_2d.len() - 1].y).abs() < 1e-9
+                    {
+                        path_2d.pop();
+                    }
+                    forecast_mm += polyline_xy_length(&path_2d);
+                }
+                for hole in &inset.holes {
+                    if hole.len() < 3 {
+                        continue;
+                    }
+                    let mut path_2d = hole.clone();
+                    if path_2d.len() >= 2
+                        && (path_2d[0].x - path_2d[path_2d.len() - 1].x).abs() < 1e-9
+                        && (path_2d[0].y - path_2d[path_2d.len() - 1].y).abs() < 1e-9
+                    {
+                        path_2d.pop();
+                    }
+                    forecast_mm += polyline_xy_length(&path_2d);
+                }
+            }
+            // Quick exit: if even the perimeter alone clears the bar, skip
+            // the (more expensive) 2D adaptive forecast.
+            if forecast_mm < ctx.min_region_cut_length_mm {
+                let segs_forecast = crate::adaptive::adaptive_segments_with_debug(
+                    region_polygon,
+                    &params_2d,
+                    cancel,
+                    None,
+                )?;
+                for seg in &segs_forecast {
+                    if let crate::adaptive::AdaptiveSegment::Cut(path_2d) = seg {
+                        forecast_mm += polyline_xy_length(path_2d);
+                        if forecast_mm >= ctx.min_region_cut_length_mm {
+                            break;
+                        }
+                    }
+                }
+            }
+            if forecast_mm < ctx.min_region_cut_length_mm {
+                debug!(
+                    z = z_level,
+                    region = region_idx + 1,
+                    region_total,
+                    forecast_mm,
+                    threshold_mm = ctx.min_region_cut_length_mm,
+                    area_mm2 = region_polygon.area().abs(),
+                    "F-038: skipping micro-region (forecast cut length below threshold)"
+                );
+                dropped_short_regions += 1;
+                if let Some(scope) = region_scope.as_ref() {
+                    scope.set_counter("skipped_f038", 1.0);
+                    scope.set_counter("forecast_cut_length_mm", forecast_mm);
+                }
+                continue;
+            }
+        }
 
         // Perimeter sweep: trace the polygon boundary inset by tool_radius.
         //
@@ -1599,12 +1687,94 @@ pub(super) fn clear_z_level_agent_2d_slice(
             }
         }
 
-        let segs_2d = crate::adaptive::adaptive_segments_with_debug(
+        let segs_2d_raw = crate::adaptive::adaptive_segments_with_debug(
             region_polygon,
             &params_2d,
             cancel,
             region_scope.as_ref().map(|s| s.context()).as_ref(),
         )?;
+
+        // F-038: filter out tiny entry-plunge → cut groups before emission.
+        //
+        // The 2D adaptive emits its output as a sequence of segments shaped
+        // like:
+        //
+        //   [Marker?, Rapid(entry), Cut(path), Cut(path), ..., Rapid(entry), ...]
+        //
+        // Each `Rapid` is the start of a new "pass" — downstream this becomes
+        // a retract + rapid-XY + peck-plunge + Cut sequence. On terrain-shaped
+        // models the planner emits many of these passes, and a significant
+        // fraction cut < 5 mm of material before the next retract. On the
+        // Wanaka Back Rough .nc this manifests as 149 F750 entry plunges, 90
+        // of which cut ≤ 10 mm. Each one spends 0.3–0.5 s on retract/plunge
+        // overhead per 100 ms or less of real cutting.
+        //
+        // Group segments by Rapid boundary; if a group's total Cut XY length
+        // is below `min_region_cut_length_mm`, drop the whole group (the
+        // entry Rapid + its Cuts). The cutter never visits that micro-area;
+        // material is left for finishing passes (which is fine — these
+        // micro-bridges are below roughing resolution).
+        //
+        // Always keep the very first group (it provides the region's initial
+        // tool position). Always keep the last group's residual Marker/Link
+        // segments so the per-region debug spans stay coherent.
+        let segs_2d: Vec<crate::adaptive::AdaptiveSegment> =
+            if ctx.min_region_cut_length_mm > 0.0 {
+                let mut groups: Vec<Vec<crate::adaptive::AdaptiveSegment>> = Vec::new();
+                let mut current: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
+                for s in segs_2d_raw {
+                    if matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_))
+                        && !current.is_empty()
+                    {
+                        groups.push(std::mem::take(&mut current));
+                    }
+                    current.push(s);
+                }
+                if !current.is_empty() {
+                    groups.push(current);
+                }
+                let mut kept_segs: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
+                let mut dropped_groups: usize = 0;
+                let group_total = groups.len();
+                for (gi, group) in groups.into_iter().enumerate() {
+                    let mut cut_len = 0.0_f64;
+                    for seg in &group {
+                        if let crate::adaptive::AdaptiveSegment::Cut(path_2d) = seg {
+                            cut_len += polyline_xy_length(path_2d);
+                        }
+                    }
+                    // Always keep the first group — it sets up the region's
+                    // starting position. Drop interior + trailing groups
+                    // below threshold; the trailing group on terrain runs
+                    // is usually a sub-tool residual the finishing pass
+                    // will cover anyway.
+                    let _ = group_total;
+                    let drop = gi > 0
+                        && cut_len < ctx.min_region_cut_length_mm
+                        && group
+                            .iter()
+                            .any(|s| matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_)));
+                    if drop {
+                        dropped_groups += 1;
+                        continue;
+                    }
+                    kept_segs.extend(group);
+                }
+                if dropped_groups > 0 {
+                    debug!(
+                        z = z_level,
+                        region = region_idx + 1,
+                        dropped_groups,
+                        group_total,
+                        threshold_mm = ctx.min_region_cut_length_mm,
+                        "F-038: dropped short cut groups inside 2D adaptive output"
+                    );
+                    dropped_short_regions += dropped_groups;
+                }
+                kept_segs
+            } else {
+                segs_2d_raw
+            };
 
         for seg in segs_2d {
             match seg {
@@ -1678,6 +1848,22 @@ pub(super) fn clear_z_level_agent_2d_slice(
                             i = run_end + 1;
                         }
                     }
+                    // F-038: complementary pass — demote SHORT engaged runs
+                    // to air. The 2D adaptive's path crosses cleared territory
+                    // many times on terrain-shaped models (Wanaka rough: 149
+                    // entry plunges, 90 of which cut <= 10mm before retract).
+                    // Each tiny engaged run gets a full retract+plunge+cut+
+                    // retract cycle that's almost all overhead. Below this
+                    // threshold the cut is roughing-irrelevant — finishing
+                    // passes clean the residual.
+                    //
+                    // Asymmetric with MIN_AIR_RUN_MM on purpose: the air-run
+                    // smoother promotes air → engaged to avoid retract
+                    // overhead on short bridges; this engaged-run filter
+                    // demotes engaged → air to merge the bordering air runs
+                    // into one rapid. Two opposite-direction filters that
+                    // together select for "long engaged runs separated by
+                    // long air runs".
                     if let Some(last) = path_3d.last().copied() {
                         *last_pos = Some(last);
                     }
@@ -1899,6 +2085,39 @@ pub(super) fn clear_z_level_agent_2d_slice(
         }
     }
 
+    // F-038: post-emission coalescing pass.
+    //
+    // The per-region loop above pushes one `Rapid`/`RapidWithFloor` per
+    // 2D-adaptive entry plus one for each engagement transition the lifter
+    // detects. A subset of those entries reach the .nc as full peck-plunges
+    // that cut zero material before the next entry — either because the
+    // engagement subdivider demoted the entire following `Cut` to air (no
+    // engaged sub-runs) or because the entry simply landed on already-
+    // cleared dexel territory.
+    //
+    // Walk the level-marker range and drop any entry-style segment that's
+    // immediately followed by another entry-style segment (no `Cut` or
+    // `Link` in between). The downstream `segments_to_toolpath` would emit
+    // a full retract+rapid+peck-plunge for both — pure overhead on the
+    // first one because its plunge gets re-stamped at the second's XY
+    // before any cutting happens.
+    //
+    // This complements the in-loop group filter: that one drops short-cut
+    // *passes*, this one drops degenerate zero-cut *entries* the lifter
+    // produces after engagement subdivision.
+    let coalesced_entries = if ctx.min_region_cut_length_mm > 0.0 {
+        coalesce_redundant_entries(segments, level_marker_index)
+    } else {
+        0
+    };
+    if coalesced_entries > 0 {
+        debug!(
+            z = z_level,
+            coalesced_entries,
+            "F-038: coalesced redundant back-to-back entries"
+        );
+    }
+    level_metrics.dropped_short_region_count = dropped_short_regions + coalesced_entries;
     if let Some(scope) = level_scope.as_ref() {
         scope.set_counter("cut_segments", cut_count as f64);
         scope.set_counter(
@@ -1909,10 +2128,70 @@ pub(super) fn clear_z_level_agent_2d_slice(
             "agent_walk_cut_length_mm",
             level_metrics.agent_walk_cut_length_mm,
         );
+        scope.set_counter("dropped_short_regions_f038", dropped_short_regions as f64);
+        scope.set_counter("coalesced_entries_f038", coalesced_entries as f64);
     }
     update_level_marker_metrics(segments, level_marker_index, level_metrics);
 
     Ok(())
+}
+
+/// F-038 helper. Walk `segments[start..]` and drop `Rapid`/`RapidWithFloor`
+/// segments whose only successors before the next entry are `Marker` events.
+/// I.e. collapse `[Rapid, (Marker)*, Rapid, ...]` to `[Rapid, ...]` so the
+/// downstream emitter doesn't burn a full retract+plunge cycle on the first
+/// rapid only to immediately retract again for the second.
+///
+/// Returns the number of redundant entries removed.
+fn coalesce_redundant_entries(
+    segments: &mut Vec<Adaptive3dSegment>,
+    level_marker_index: Option<usize>,
+) -> usize {
+    let start = level_marker_index.map(|i| i + 1).unwrap_or(0);
+    if start >= segments.len() {
+        return 0;
+    }
+    let mut removed = 0usize;
+    let mut i = start;
+    while i < segments.len() {
+        let Some(seg_i) = segments.get(i) else {
+            break;
+        };
+        let is_entry_i = matches!(
+            seg_i,
+            Adaptive3dSegment::Rapid(_) | Adaptive3dSegment::RapidWithFloor { .. }
+        );
+        if !is_entry_i {
+            i += 1;
+            continue;
+        }
+        // Scan forward, skipping markers, looking for the next non-marker.
+        let mut j = i + 1;
+        while let Some(seg_j) = segments.get(j) {
+            if matches!(seg_j, Adaptive3dSegment::Marker(_)) {
+                j += 1;
+            } else {
+                break;
+            }
+        }
+        let Some(seg_j) = segments.get(j) else {
+            break;
+        };
+        let next_is_entry = matches!(
+            seg_j,
+            Adaptive3dSegment::Rapid(_) | Adaptive3dSegment::RapidWithFloor { .. }
+        );
+        if next_is_entry {
+            // Drop segment[i]; keep markers (they have annotation value)
+            // and the following entry.
+            segments.remove(i);
+            removed += 1;
+            // Stay at i — the new occupant may itself be a redundant entry.
+            continue;
+        }
+        i += 1;
+    }
+    removed
 }
 
 fn update_level_marker_metrics(
@@ -1926,6 +2205,28 @@ fn update_level_marker_metrics(
     if let Some(Adaptive3dSegment::Marker(event)) = segments.get_mut(index) {
         event.set_z_level_metrics(metrics);
     }
+}
+
+/// F-038: 2D XY polyline length used by the AgentSearch forecaster to decide
+/// whether a marching-squares region's expected cut footprint is large enough
+/// to justify an entry plunge. XY-only on purpose — the 3D-lift later folds
+/// terrain Z in, but for the "is this worth the entry" question only the
+/// horizontal footprint matters (the cutter still descends + retracts even
+/// on flat terrain).
+fn polyline_xy_length(path: &[P2]) -> f64 {
+    path.windows(2)
+        .map(|pair| {
+            let Some(a) = pair.first() else {
+                return 0.0;
+            };
+            let Some(b) = pair.get(1) else {
+                return 0.0;
+            };
+            let dx = b.x - a.x;
+            let dy = b.y - a.y;
+            (dx * dx + dy * dy).sqrt()
+        })
+        .sum()
 }
 
 fn polyline_length_3d(path: &[P3]) -> f64 {

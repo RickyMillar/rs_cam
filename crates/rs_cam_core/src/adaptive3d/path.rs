@@ -570,6 +570,7 @@ pub(super) fn adaptive_3d_segments(
         // Default to no mask. The per-Z-level loop toggles this to
         // Some(&shallow_mask) for the shallow sub-passes only.
         shallow_mask: None,
+        min_region_cut_length_mm: params.min_region_cut_length_mm,
     };
 
     let mut segments = Vec::new();
@@ -1252,6 +1253,7 @@ mod tests {
             shallow_angle_rad: None,
             shallow_stepdown: None,
             world_stock_xy_bbox: None,
+            min_region_cut_length_mm: 0.0,
         }
     }
 

@@ -1481,6 +1481,7 @@ fn default_adaptive3d_params() -> Adaptive3dParams {
         shallow_angle_rad: None,
         shallow_stepdown: None,
         world_stock_xy_bbox: None,
+        min_region_cut_length_mm: 0.0,
     }
 }
 

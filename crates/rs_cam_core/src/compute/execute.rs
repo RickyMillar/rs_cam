@@ -947,6 +947,10 @@ pub fn execute_operation_annotated(
                     stock_bbox.max.x,
                     stock_bbox.max.y,
                 )),
+                // F-038: drop marching-squares regions whose forecast cut
+                // length (perimeter + 2D adaptive walk) is below this floor.
+                // Only honored by the AgentSearch strategy.
+                min_region_cut_length_mm: cfg.min_region_cut_length_mm,
             };
             let (tp, annotations) =
                 crate::adaptive3d::adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
