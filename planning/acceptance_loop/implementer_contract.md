@@ -145,6 +145,45 @@ Linked PRs: #NNN
 - You find a finding that's duplicated or contradicted by another
   finding file — let the auditor reconcile
 
+## Regression-net rule (added by F-037)
+
+PRs touching simulator-adjacent code MUST not regress the smoke baseline at
+`planning/toolpath_acceptance/baselines/2026-05-26.csv`.
+
+Relevant paths (any modification triggers this rule):
+
+- `crates/rs_cam_core/src/{simulation_cut,tool_load,compute,toolpath,dexel*}/`
+- `crates/rs_cam_core/src/{collision,gcode}.rs`
+- `crates/rs_cam_viz/src/compute/`
+- `crates/rs_cam_viz/src/controller/`
+
+Procedure for a covered PR:
+
+1. Re-run smoke locally with the runner the baseline was captured with:
+   ```bash
+   cargo run -p rs_cam_cli --release -- smoke --output /tmp/smoke_current.csv
+   ```
+2. Diff against the baseline:
+   ```bash
+   cargo run -p rs_cam_cli --release -- smoke --diff \
+       --baseline planning/toolpath_acceptance/baselines/2026-05-26.csv \
+       --output /tmp/smoke_current.csv
+   ```
+3. Exit code 0 (no regression) → attach `/tmp/smoke_current.csv` to the PR
+   description with a one-liner ("smoke clean, 18 cases unchanged").
+4. Exit code non-zero (regression detected) → either fix the regression OR
+   justify it in the PR description with a cross-linked finding (e.g. F-031
+   legitimately moved AS013 deflection 0.637 → 0.105 — a regression by the
+   diff's lights but a real improvement). When a verdict change is
+   legitimate, the same PR updates `baselines/<NEW DATE>.csv` and the path
+   reference in this rule + the cargo regression test
+   (`smoke_baseline_regression_f037.rs`).
+
+The cargo test `smoke_baseline_regression_f037.rs` enforces the baseline-
+file invariants (file present, parses cleanly, holds at least 5 deflection-
+Within cases). It does NOT re-run the smoke (too slow for CI); the diff
+above is the load-bearing check.
+
 ## Bonus: per-finding fix prompts
 
 Some findings come with a prebuilt prompt at

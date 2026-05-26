@@ -4,6 +4,7 @@
 mod helpers;
 mod job;
 mod project;
+mod smoke;
 mod sweep;
 
 use anyhow::{Context, Result, bail};
@@ -1210,6 +1211,38 @@ enum Commands {
         /// Print human-readable summary to stderr
         #[arg(long)]
         summary: bool,
+    },
+
+    /// Run the F-037 smoke baseline suite.
+    ///
+    /// Iterates `planning/toolpath_acceptance/cases_agent_smoke.csv`,
+    /// generates + simulates each case, and writes per-toolpath verdicts.
+    /// Use `--diff` to compare a captured run against a checked-in baseline
+    /// (exits non-zero on regression).
+    Smoke {
+        /// Path to the smoke case matrix CSV.
+        #[arg(
+            long,
+            default_value = "planning/toolpath_acceptance/cases_agent_smoke.csv"
+        )]
+        input: PathBuf,
+
+        /// Output baseline CSV (one row per case).
+        #[arg(long)]
+        output: Option<PathBuf>,
+
+        /// Diff mode: compare two baselines. Pass `--baseline` (prior) and
+        /// `--output` (current). Exits non-zero if any verdict regressed.
+        #[arg(long)]
+        diff: bool,
+
+        /// Baseline CSV to diff against (only used with --diff).
+        #[arg(long)]
+        baseline: Option<PathBuf>,
+
+        /// Simulation resolution in mm.
+        #[arg(long, default_value = "0.5")]
+        resolution: f64,
     },
 }
 
@@ -3346,6 +3379,30 @@ fn main() -> Result<()> {
                 resolution,
                 summary,
             )?;
+        }
+        Commands::Smoke {
+            input,
+            output,
+            diff,
+            baseline,
+            resolution,
+        } => {
+            if diff {
+                let baseline_path = baseline
+                    .as_ref()
+                    .context("--diff requires --baseline <path>")?;
+                let current_path = output
+                    .as_ref()
+                    .context("--diff requires --output <path> (the current run)")?;
+                let regressed = smoke::run_diff(baseline_path, current_path)?;
+                if regressed {
+                    std::process::exit(1);
+                }
+            } else {
+                let output_path =
+                    output.context("--output <path> required when not in --diff mode")?;
+                smoke::run_smoke(&input, &output_path, resolution)?;
+            }
         }
     }
 
