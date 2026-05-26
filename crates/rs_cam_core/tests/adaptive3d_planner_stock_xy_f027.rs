@@ -218,6 +218,7 @@ fn as013_terrain_model_edge_axial_within_commanded_dpp_f027() {
         skip_ids: Vec::new(),
         metrics_enabled: true,
         auto_resolution: false,
+        use_predicted_feed_in_gates: false,
     };
     session
         .run_simulation(&opts, &cancel)
@@ -314,6 +315,7 @@ fn as013_terrain_model_edge_band_outlier_count_zero_f027() {
         skip_ids: Vec::new(),
         metrics_enabled: true,
         auto_resolution: false,
+        use_predicted_feed_in_gates: false,
     };
     session
         .run_simulation(&opts, &cancel)
@@ -327,9 +329,7 @@ fn as013_terrain_model_edge_band_outlier_count_zero_f027() {
         .samples
         .iter()
         // F-031 alignment: skip transit-span samples; see sibling test.
-        .filter(|s| {
-            s.is_cutting && s.cut_kinematics != CutKinematics::Plunge && !s.in_transit_span
-        })
+        .filter(|s| s.is_cutting && s.cut_kinematics != CutKinematics::Plunge && !s.in_transit_span)
         .filter(|s| s.position[1] > mesh_max_y && s.position[1] <= stock_max_y)
         .filter(|s| s.axial_engagement_mm > limit)
         .count();

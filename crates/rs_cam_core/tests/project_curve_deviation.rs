@@ -221,6 +221,7 @@ fn live_project_pc6_has_no_phantom_cuts() {
         auto_resolution: true,
         metrics_enabled: false,
         skip_ids: Vec::new(),
+        use_predicted_feed_in_gates: false,
     };
     let _ = session.run_simulation(&sim_opts, &cancel);
     let result = session

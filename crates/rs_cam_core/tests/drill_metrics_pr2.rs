@@ -118,6 +118,7 @@ fn drill_session_produces_drill_summary_with_pecks() {
         skip_ids: Vec::new(),
         metrics_enabled: true,
         auto_resolution: false,
+        use_predicted_feed_in_gates: false,
     };
     session
         .run_simulation(&opts, &cancel)
@@ -217,6 +218,7 @@ fn drill_session_oversize_peck_trips_peck_adequacy_gate() {
         skip_ids: Vec::new(),
         metrics_enabled: true,
         auto_resolution: false,
+        use_predicted_feed_in_gates: false,
     };
     session
         .run_simulation(&opts, &cancel)

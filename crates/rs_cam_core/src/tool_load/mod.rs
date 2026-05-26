@@ -28,6 +28,55 @@ pub mod plunge_stress;
 pub mod power;
 pub mod verdict;
 
+use crate::simulation_cut::SimulationCutSample;
+
+/// F-035 — Single source of truth for "what feed should this sample
+/// be evaluated against?"
+///
+/// Gates (chipload, power, deflection) historically read
+/// `sample.feed_rate_mm_min` — the *commanded* feed from the
+/// toolpath IR. On hobby-class machines the controller's planner
+/// decelerates through corners and the cutter often never reaches
+/// the commanded feed in tight geometry. The chipload gate at
+/// commanded feed reads `Within`; the chipload at the achieved feed
+/// reads `Exceeds_LOW` (rubbing). F-034 introduced
+/// `MachineKinematics` and a per-move predicted-feed integrator;
+/// F-035 plumbs that prediction through to the gates.
+///
+/// When the trace carries a populated
+/// [`crate::simulation_cut::SimulationCutTrace::predicted_feeds`]
+/// map (the simulator stamps it when
+/// `SimulationOptions::use_predicted_feed_in_gates` is on AND the
+/// active `MachineProfile` carries kinematics) **and** the requested
+/// `(toolpath_id, move_index)` lookup hits, the predicted feed
+/// replaces commanded. Otherwise the sample's own
+/// `feed_rate_mm_min` is returned — byte-identical to pre-F-035.
+///
+/// Every per-sample gate (chipload + power) MUST call this helper
+/// rather than reading `feed_rate_mm_min` directly, so the three
+/// gates stay in lockstep. F-024's audit named site-level
+/// duplication as a recurring class of bug.
+///
+/// Note: `deflection::evaluate` uses the
+/// `F = Kc · DOC · WOC` formulation which is feed-independent — the
+/// tip-displacement integral has no feed term — so the deflection
+/// gate doesn't call this helper. The flag's behaviour on the
+/// deflection criterion is "no change", which is asserted by
+/// `tests/predicted_feed_gates_f035.rs::flag_on_extends_existing_f024_test_invariants`.
+#[inline]
+pub fn effective_feed_for_sample(
+    sample: &SimulationCutSample,
+    predicted_feeds: &crate::machine_kinematics::PredictedFeedMap,
+) -> f64 {
+    if predicted_feeds.is_empty() {
+        return sample.feed_rate_mm_min;
+    }
+    predicted_feeds
+        .get(&(sample.toolpath_id, sample.move_index))
+        .copied()
+        .unwrap_or(sample.feed_rate_mm_min)
+}
+
 use crate::compute::catalog::OperationType;
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use crate::material::Material;

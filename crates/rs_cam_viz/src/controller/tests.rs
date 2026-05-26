@@ -1490,8 +1490,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
 
     // World bbox via the controller helper. With the fix this respects the
     // stock origin (Z=[-12, 0]); pre-fix it was Z=[0, 12].
-    let world_stock_bbox =
-        crate::controller::events::simulation::build_world_stock_bbox(&session);
+    let world_stock_bbox = crate::controller::events::simulation::build_world_stock_bbox(&session);
 
     // Identity-setup local bbox shape from `controller::events::simulation`
     // (always zero-rooted via `xform.effective_stock_bbox()`).
@@ -1526,15 +1525,15 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
+        kinematics: None,
+        use_predicted_feed_in_gates: false,
+        max_feed_mm_min: 5_000.0,
     };
 
     let cancel = AtomicBool::new(false);
-    let result = crate::compute::worker::execute::run_simulation_with_phase(
-        &request,
-        &cancel,
-        |_phase| {},
-    )
-    .expect("viz simulation completes");
+    let result =
+        crate::compute::worker::execute::run_simulation_with_phase(&request, &cancel, |_phase| {})
+            .expect("viz simulation completes");
 
     let cut_trace = result.cut_trace.as_ref().expect("metric cut trace");
 

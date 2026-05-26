@@ -163,6 +163,7 @@ fn as004_face_peak_axial_within_commanded_doc() {
         skip_ids: Vec::new(),
         metrics_enabled: true,
         auto_resolution: false,
+        use_predicted_feed_in_gates: false,
     };
     session
         .run_simulation(&opts, &cancel)
@@ -218,6 +219,7 @@ fn as004_face_deflection_within_safe_band() {
         skip_ids: Vec::new(),
         metrics_enabled: true,
         auto_resolution: false,
+        use_predicted_feed_in_gates: false,
     };
     session
         .run_simulation(&opts, &cancel)
@@ -271,6 +273,7 @@ fn as004_face_no_rapid_collisions() {
         skip_ids: Vec::new(),
         metrics_enabled: true,
         auto_resolution: false,
+        use_predicted_feed_in_gates: false,
     };
     session
         .run_simulation(&opts, &cancel)
@@ -425,6 +428,7 @@ fn as001_pocket_actually_removes_stock_material_post_f028() {
         skip_ids: Vec::new(),
         metrics_enabled: true,
         auto_resolution: false,
+        use_predicted_feed_in_gates: false,
     };
     session
         .run_simulation(&opts, &cancel)

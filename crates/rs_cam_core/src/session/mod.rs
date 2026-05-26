@@ -504,6 +504,24 @@ pub struct SimulationOptions {
     /// on the smallest tool radius and the stock footprint (matching the GUI's
     /// auto-resolution logic).
     pub auto_resolution: bool,
+    /// F-035: when `true` **and** the active `MachineProfile` carries
+    /// `kinematics`, the simulator builds a per-move `PredictedFeedMap`
+    /// (peak achievable feed under accel/jerk limits) and the
+    /// chipload + power gates consume that predicted feed instead of
+    /// the commanded `feed_rate_mm_min` on each sample.
+    ///
+    /// Default `false`. With the flag off **or** kinematics absent,
+    /// gate evaluation is byte-identical to pre-F-035 — the loop's
+    /// acceptance tests (`_f0{24,26,27,28,31}.rs`) and the smoke
+    /// baseline at `planning/toolpath_acceptance/baselines/2026-05-26.csv`
+    /// continue to pass unchanged.
+    ///
+    /// The bug this catches: hobby-class controllers decelerate
+    /// through corners. Commanded 4000 mm/min, achieved 2000 mm/min,
+    /// chipload gate at 2000 fires `Exceeds_LOW` (rubbing / burning)
+    /// while the gate at 4000 reads `Within`. See
+    /// `planning/acceptance_loop/findings/F-035-predicted-feed-in-gates.md`.
+    pub use_predicted_feed_in_gates: bool,
 }
 
 impl Default for SimulationOptions {
@@ -513,6 +531,7 @@ impl Default for SimulationOptions {
             skip_ids: Vec::new(),
             metrics_enabled: true,
             auto_resolution: false,
+            use_predicted_feed_in_gates: false,
         }
     }
 }

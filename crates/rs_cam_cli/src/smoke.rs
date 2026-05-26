@@ -207,7 +207,10 @@ pub fn run_diff(baseline_path: &Path, current_path: &Path) -> Result<bool> {
 
     // Cases new to current run are informational, not regressions.
     if regressions.is_empty() {
-        println!("smoke-diff: no regressions ({} cases checked)", baseline.len());
+        println!(
+            "smoke-diff: no regressions ({} cases checked)",
+            baseline.len()
+        );
         Ok(false)
     } else {
         println!("smoke-diff: {} regression(s)", regressions.len());
@@ -390,6 +393,10 @@ fn run_single_case(case: &SmokeCase, resolution: f64) -> BaselineRow {
         skip_ids: Vec::new(),
         metrics_enabled: true,
         auto_resolution: false,
+        // F-035: predicted-feed plumbing off — smoke baseline must
+        // continue exercising commanded-feed gates so the regression
+        // diff stays meaningful.
+        use_predicted_feed_in_gates: false,
     };
     if let Err(e) = session.run_simulation(&sim_opts, &cancel) {
         return BaselineRow::failure(
@@ -412,14 +419,12 @@ fn run_single_case(case: &SmokeCase, resolution: f64) -> BaselineRow {
         .find(|v| v.toolpath_id == toolpath_id_after_add);
 
     let sim_result = session.simulation_result();
-    let summary = sim_result
-        .and_then(|s| s.cut_trace.as_ref())
-        .and_then(|t| {
-            t.toolpath_summaries
-                .iter()
-                .find(|ts| ts.toolpath_id == toolpath_id_after_add)
-                .cloned()
-        });
+    let summary = sim_result.and_then(|s| s.cut_trace.as_ref()).and_then(|t| {
+        t.toolpath_summaries
+            .iter()
+            .find(|ts| ts.toolpath_id == toolpath_id_after_add)
+            .cloned()
+    });
 
     let diag = session.diagnostics();
     let rapid_collision_count = diag
@@ -459,9 +464,10 @@ fn build_ok_row(
             format!("exceeds_{}", side_str(side)),
             format!("{:.6}", triggering.observed_mm_per_tooth),
         ),
-        Some(ChiploadVerdict::Unmodeled { reason }) => {
-            (format!("unmodeled_{:?}", reason).to_lowercase(), String::new())
-        }
+        Some(ChiploadVerdict::Unmodeled { reason }) => (
+            format!("unmodeled_{:?}", reason).to_lowercase(),
+            String::new(),
+        ),
         None => ("missing".to_owned(), String::new()),
     };
 
@@ -493,8 +499,12 @@ fn build_ok_row(
         None => ("missing".to_owned(), String::new()),
     };
 
-    let avg_engagement = summary.map(|s| format!("{:.4}", s.average_engagement)).unwrap_or_default();
-    let peak_axial_doc = summary.map(|s| format!("{:.3}", s.peak_axial_doc_mm)).unwrap_or_default();
+    let avg_engagement = summary
+        .map(|s| format!("{:.4}", s.average_engagement))
+        .unwrap_or_default();
+    let peak_axial_doc = summary
+        .map(|s| format!("{:.3}", s.peak_axial_doc_mm))
+        .unwrap_or_default();
 
     let (drill_chip_welding_kind, drill_chip_welding_observed, drill_peck_kind, drill_plunge_kind) =
         extract_drill_gates(verdict.and_then(|v| v.drill_gates.as_ref()));
@@ -533,17 +543,14 @@ fn side_str(side: &ChipSide) -> &'static str {
     }
 }
 
-fn extract_drill_gates(
-    gates: Option<&DrillGatesVerdict>,
-) -> (String, String, String, String) {
+fn extract_drill_gates(gates: Option<&DrillGatesVerdict>) -> (String, String, String, String) {
     use rs_cam_core::tool_load::drill_gates::DrillGateOutcome;
     fn outcome_kind(o: &DrillGateOutcome) -> String {
         match o {
             DrillGateOutcome::Within { .. } => "within".to_owned(),
-            DrillGateOutcome::Exceeds { severity, .. } => format!(
-                "exceeds_{}",
-                format!("{severity:?}").to_lowercase()
-            ),
+            DrillGateOutcome::Exceeds { severity, .. } => {
+                format!("exceeds_{}", format!("{severity:?}").to_lowercase())
+            }
         }
     }
     let Some(g) = gates else {
@@ -553,7 +560,12 @@ fn extract_drill_gates(
     let chip_welding_observed = format!("{:.3}", g.chip_welding.observed());
     let peck_kind = outcome_kind(&g.peck_adequacy);
     let plunge_kind = outcome_kind(&g.plunge_feed);
-    (chip_welding_kind, chip_welding_observed, peck_kind, plunge_kind)
+    (
+        chip_welding_kind,
+        chip_welding_observed,
+        peck_kind,
+        plunge_kind,
+    )
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -646,4 +658,3 @@ fn material_for_family(family: &str) -> Option<Material> {
         _ => None,
     }
 }
-

@@ -108,10 +108,20 @@ pub struct SimulationRequest {
 /// F-034 cycle-time integrator inputs. Bundles the kinematics limits
 /// with the machine-wide max-feed cap so the integrator has the same
 /// envelope information the controller would.
+///
+/// F-035 extends this with `use_predicted_feed_in_gates`: when set,
+/// the simulator also builds a per-move `PredictedFeedMap` and the
+/// chipload + power gates read predicted feed for each sample instead
+/// of the commanded value. Default `false` keeps the loop's
+/// calibration byte-identical.
 #[derive(Debug, Clone, Copy)]
 pub struct KinematicsContext {
     pub kinematics: crate::machine_kinematics::MachineKinematics,
     pub max_feed_mm_min: f64,
+    /// F-035 — when `true`, additionally stamp predicted achieved
+    /// feeds on the resulting `SimulationCutTrace::predicted_feeds`
+    /// for the chipload/power gates to consume. Default `false`.
+    pub use_predicted_feed_in_gates: bool,
 }
 
 /// Metadata for one toolpath boundary in the simulation timeline.
@@ -686,9 +696,18 @@ fn apply_kinematics_cycle_time(
     request: &SimulationRequest,
     ctx: KinematicsContext,
 ) {
-    use crate::machine_kinematics::compute_cycle_time;
+    use crate::machine_kinematics::{compute_cycle_time, predicted_feeds_for_toolpath};
 
     let mut per_toolpath_runtime: BTreeMap<usize, f64> = BTreeMap::new();
+    // F-035 — when the flag is on, also build a per-(toolpath, move)
+    // predicted-feed map so the gates can read achieved feed rather
+    // than commanded. The same walk that produces cycle time
+    // (`compute_cycle_time`) drives the predicted-feed integrator
+    // (`predicted_feeds_for_toolpath`) — they share `MoveDigest`
+    // construction logic but are intentionally separate functions to
+    // keep the runtime-only override (F-034) and the gate plumbing
+    // (F-035) independently flag-gated.
+    let mut predicted_feeds: crate::machine_kinematics::PredictedFeedMap = BTreeMap::new();
     for group in &request.groups {
         for entry in &group.toolpaths {
             let t = compute_cycle_time(
@@ -698,6 +717,18 @@ fn apply_kinematics_cycle_time(
                 request.rapid_feed_mm_min,
             );
             per_toolpath_runtime.insert(entry.id, t);
+
+            if ctx.use_predicted_feed_in_gates {
+                let per_move = predicted_feeds_for_toolpath(
+                    &entry.annotated.toolpath,
+                    &ctx.kinematics,
+                    ctx.max_feed_mm_min,
+                    request.rapid_feed_mm_min,
+                );
+                for (move_idx, feed) in per_move {
+                    predicted_feeds.insert((entry.id, move_idx), feed);
+                }
+            }
         }
     }
 
@@ -711,6 +742,10 @@ fn apply_kinematics_cycle_time(
         }
     }
     trace.summary.total_runtime_s = project_total;
+
+    if ctx.use_predicted_feed_in_gates && !predicted_feeds.is_empty() {
+        trace.predicted_feeds = predicted_feeds;
+    }
 }
 
 /// Compute per-vertex deviation between simulated stock and a reference model.

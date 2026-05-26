@@ -238,12 +238,21 @@ fn build_core_simulation_request(
         spindle_rpm: req.spindle_rpm,
         rapid_feed_mm_min: req.rapid_feed_mm_min,
         model_mesh: req.model_mesh.clone(),
-        // F-034: the viz worker doesn't yet carry the active
-        // `MachineProfile.kinematics`. Threading it through is F-035
-        // work (predicted feed in gates needs the same plumbing).
-        // Leaving `None` here keeps the GUI's runtime accounting
-        // byte-identical to pre-F-034 today.
-        kinematics: None,
+        // F-035 — the viz `SimulationRequest` now carries the active
+        // `MachineProfile.kinematics` + `max_feed_mm_min` + the
+        // `use_predicted_feed_in_gates` flag. When kinematics is
+        // `Some`, build the core `KinematicsContext` so the
+        // simulator's F-034 cycle-time override and F-035 predicted-
+        // feed plumbing fire in the GUI sim path. When kinematics is
+        // `None` (the default for every shipped preset), this stays
+        // byte-identical to pre-F-034 / pre-F-035.
+        kinematics: req
+            .kinematics
+            .map(|kin| rs_cam_core::compute::simulate::KinematicsContext {
+                kinematics: kin,
+                max_feed_mm_min: req.max_feed_mm_min.max(1.0),
+                use_predicted_feed_in_gates: req.use_predicted_feed_in_gates,
+            }),
     }
 }
 

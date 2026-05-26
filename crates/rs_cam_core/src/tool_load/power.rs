@@ -128,7 +128,16 @@ pub fn evaluate(
         }
 
         // P_kW = Kc × DOC × WOC × feed / (60 * 1e6)
-        let p_kw = kc_eff * s.axial_doc_mm * radial_width * s.feed_rate_mm_min / 60_000_000.0;
+        //
+        // F-035: read the *effective* feed for this sample —
+        // predicted (achieved) when the trace carries a populated
+        // `predicted_feeds` map AND this `(toolpath_id, move_index)`
+        // lookup hits, commanded otherwise. Power is linear in
+        // feed, so the substitution scales the predicted load
+        // proportionally; corner-decel reduction in predicted feed
+        // shows up directly as reduced predicted power.
+        let feed_for_power = super::effective_feed_for_sample(s, &trace.predicted_feeds);
+        let p_kw = kc_eff * s.axial_doc_mm * radial_width * feed_for_power / 60_000_000.0;
         let avail = machine.power_at_rpm(s.spindle_rpm as f64) * machine.safety_factor;
 
         // Route Entry-ancestry samples to the spike track; they don't
@@ -335,6 +344,7 @@ mod tests {
             provenance: None,
             drill_samples: Vec::new(),
             drill_summaries: Vec::new(),
+            predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
         }
     }
 
