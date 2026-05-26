@@ -59,6 +59,7 @@ struct ProjectSummary {
 
 // ── Main entry point ────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_project_command(
     input: &Path,
     output_dir: &Path,
@@ -66,6 +67,9 @@ pub fn run_project_command(
     skip_ids: &[usize],
     resolution: f64,
     summary: bool,
+    emit_gcode: Option<&Path>,
+    adaptive_feed_modulation: bool,
+    inject_shapeoko_kinematics: bool,
 ) -> Result<()> {
     // 1. Load project into a session
     let project_path = input
@@ -73,6 +77,17 @@ pub fn run_project_command(
         .context(format!("Project file not found: {}", input.display()))?;
     let mut session =
         ProjectSession::load(&project_path).context("Failed to load project session")?;
+
+    // F-036c calibration helper: project TOMLs predating F-034 carry
+    // no `kinematics` block, so the modulator + kinematic integrator
+    // are both no-ops. Inject the Shapeoko XXL preset so the user can
+    // compare wall-clock against the integrator's prediction and
+    // exercise modulation end-to-end.
+    if inject_shapeoko_kinematics {
+        session.machine_mut().kinematics =
+            Some(rs_cam_core::machine_kinematics::MachineKinematics::shapeoko_xxl_stock());
+        info!("Injected Shapeoko XXL stock kinematics into MachineProfile");
+    }
 
     info!(
         name = %session.name(),
@@ -112,7 +127,7 @@ pub fn run_project_command(
         // F-035: predicted-feed plumbing off by default for CLI runs;
         // protects the smoke baseline from spurious verdict drift.
         use_predicted_feed_in_gates: false,
-        adaptive_feed_modulation: false,
+        adaptive_feed_modulation,
     };
     session.run_simulation(&sim_opts, &cancel)?;
 
@@ -307,7 +322,29 @@ pub fn run_project_command(
         .context(format!("Failed to write {}", summary_path.display()))?;
     info!(path = %summary_path.display(), "Wrote project summary");
 
-    // 10. Print human-readable summary
+    // 10. Optional G-code emit (F-036c calibration helper)
+    if let Some(gcode_path) = emit_gcode {
+        let trace = session
+            .simulation_result()
+            .and_then(|s| s.cut_trace.as_deref());
+        let policy = rs_cam_core::gcode::ToolLoadExportPolicy {
+            accept_unmodeled: true,
+            accept_exceeded: true,
+        };
+        let gcode = rs_cam_core::gcode::export_gcode_checked(&session, trace, policy)
+            .context("Emit G-code from session")?;
+        std::fs::write(gcode_path, &gcode)
+            .context(format!("Failed to write {}", gcode_path.display()))?;
+        info!(
+            path = %gcode_path.display(),
+            bytes = gcode.len(),
+            modulated = adaptive_feed_modulation,
+            kinematics_injected = inject_shapeoko_kinematics,
+            "Wrote G-code"
+        );
+    }
+
+    // 11. Print human-readable summary
     if summary {
         eprintln!("\n=== Project Diagnostics: {} ===", session.name());
         eprintln!(

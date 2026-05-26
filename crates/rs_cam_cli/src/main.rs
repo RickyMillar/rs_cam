@@ -1211,6 +1211,28 @@ enum Commands {
         /// Print human-readable summary to stderr
         #[arg(long)]
         summary: bool,
+
+        /// F-036c calibration helper: emit G-code (concatenated across
+        /// enabled toolpaths) to this path after simulation. Reads the
+        /// modulated `Toolpath` IR when `--adaptive-feed-modulation`
+        /// is set, so the emitted feeds match what the GUI export
+        /// would produce in the same state.
+        #[arg(long)]
+        emit_gcode: Option<PathBuf>,
+
+        /// Enable F-036's per-segment adaptive feed modulation during
+        /// simulation. Requires `MachineProfile.kinematics` to be set
+        /// — combine with `--inject-shapeoko-kinematics` for projects
+        /// that predate F-034.
+        #[arg(long)]
+        adaptive_feed_modulation: bool,
+
+        /// Inject the Shapeoko XXL stock-kinematics preset
+        /// (250 mm/s² accel, full-stop junction, max-feed cap) into
+        /// the loaded `MachineProfile`. Used for F-036c calibration
+        /// against the user's machine without editing the project file.
+        #[arg(long)]
+        inject_shapeoko_kinematics: bool,
     },
 
     /// Run the F-037 smoke baseline suite.
@@ -3363,6 +3385,9 @@ fn main() -> Result<()> {
             skip,
             resolution,
             summary,
+            emit_gcode,
+            adaptive_feed_modulation,
+            inject_shapeoko_kinematics,
         } => {
             let skip_ids: Vec<usize> = skip
                 .as_deref()
@@ -3378,6 +3403,9 @@ fn main() -> Result<()> {
                 &skip_ids,
                 resolution,
                 summary,
+                emit_gcode.as_deref(),
+                adaptive_feed_modulation,
+                inject_shapeoko_kinematics,
             )?;
         }
         Commands::Smoke {
