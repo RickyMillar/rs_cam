@@ -8,8 +8,8 @@
 use super::material_grid::polygon_bbox;
 use super::search::{find_entry_point, path_bounds, search_direction_with_metrics};
 use super::{
-    AdaptiveParams, AdaptiveRuntimeAnnotation, AdaptiveRuntimeEvent, MaterialGrid, average_angles,
-    blend_corners_to_moves, target_engagement_fraction,
+    AdaptiveParams, AdaptiveRuntimeAnnotation, AdaptiveRuntimeEvent, CleanupStrategy, MaterialGrid,
+    average_angles, blend_corners_to_moves, target_engagement_fraction,
 };
 use crate::adaptive_shared::BlendedMove;
 use crate::debug_trace::{HotspotRecord, ToolpathDebugBounds2, ToolpathDebugContext};
@@ -146,6 +146,31 @@ pub(crate) fn adaptive_segments_with_debug(
 
     // Precompute boundary distance field for wall-tangent bias
     let boundary_distances = grid.compute_boundary_distances();
+
+    // ── Narrow-region gate ───────────────────────────────────────────
+    // For thin ring-shaped pockets (donut-topology with a hole hugging
+    // the bounds, narrow strips), the engagement-target spiral has no
+    // room to swing its ~21-candidate angle search and degenerates
+    // into a sawtooth wiggle. When the largest inscribed disk inside
+    // the machinable region is ≤ 2 × stepover (i.e. the cutter
+    // diameter + a stepover doesn't fit on either side), skip the
+    // spiral entirely and emit concentric contour-parallel offset
+    // loops. See doc on `CleanupStrategy::ContourParallelNarrow`.
+    if matches!(
+        params.cleanup_strategy,
+        CleanupStrategy::ContourParallelNarrow
+    ) && is_narrow_machinable(machinable, tool_radius, stepover)
+    {
+        return contour_parallel_segments(
+            machinable,
+            &mut grid,
+            &machinable_mask,
+            tool_radius,
+            stepover,
+            cell_size,
+            cancel,
+        );
+    }
 
     let target_frac = target_engagement_fraction(stepover, tool_radius);
     let step_len = cell_size * 3.0;
@@ -300,17 +325,23 @@ pub(crate) fn adaptive_segments_with_debug(
         let max_steps = 5000;
         let mut idle_count = 0;
         let mut search_evaluations = 0u32;
-        // Transition-zone ramp for pass 1: for the first N steps, ramp
-        // the engagement target from a low value up to nominal. The
-        // engagement-target jump from "zero contact at entry" to "full
-        // target" in one step is what creates the visible stair-step
-        // wiggle. Ramping smoothly over ~one revolution-worth of steps
-        // lets the search settle in. Reference: Autodesk patent
-        // US7831332 ("transition portion" between initial slot and
-        // steady-state spiral).
+        // CONVERGENCE DETECTOR — disabled, kept here for context.
         //
-        // Only apply on the first pass — subsequent passes get their
-        // engagement from boundary residue, not from a fresh entry.
+        // Two variants tried: engagement-based (exit when engagement <
+        // 0.4–0.7× target for N steps) and angle-oscillation (exit
+        // when |Δangle| > π/2…2.5 for N steps). Both failed because
+        // the visible sawtooth-at-spiral-end is *small-amplitude
+        // continuous noise* (~60° per-step changes that integrate to
+        // a wiggle), not a sharp signal. Engagement stays near target
+        // through the wiggle; per-step angle changes don't exceed
+        // what a tight wrap legitimately needs. Set the threshold
+        // strict enough to catch the wiggle → fragments healthy
+        // spirals; set it loose enough to spare healthy spirals →
+        // wiggle survives.
+        //
+        // Right fix is structural: path-smoothing post-process OR
+        // algorithm-swap to offset-loops when boundary distance gets
+        // tight. Filed as I2-followup.
         for _step_idx in 0..max_steps {
             check_cancel(cancel)?;
             let before = grid.material_count;
@@ -723,6 +754,173 @@ pub(crate) fn mop_residue_into_segments(
         }
     }
     segments
+}
+
+// ── Narrow-region contour-parallel strategy ────────────────────────────
+//
+// When the largest inscribed disk inside the machinable mask is small
+// relative to the stepover (≤ 3 × stepover by default), the engagement-
+// target spiral has no room to settle and produces a per-step sawtooth.
+// For those regions, the planner emits concentric inward offsets of the
+// machinable polygon and walks each contour as one continuous Cut. The
+// final residue mop still runs on the output to catch any leftover
+// strip between concentric loops. See `CleanupStrategy::ContourParallelNarrow`.
+
+/// True when the machinable region is too narrow for the engagement-
+/// target spiral to settle: the largest inscribed disk fits within
+/// 2 × stepover. Implemented by checking that an inward offset of
+/// 2 × stepover collapses the machinable region to empty.
+///
+/// We use a Euclidean offset (via `offset_polygon`) rather than the
+/// Manhattan-grid distance transform on `boundary_distances` because
+/// the Manhattan metric over-estimates depth at corners (e.g. a donut
+/// ring corner reads ~12 mm Manhattan but ~8 mm Euclidean), which
+/// matters for the gate threshold.
+fn is_narrow_machinable(machinable: &Polygon2, tool_radius: f64, stepover: f64) -> bool {
+    // Probe radius: tool_radius + stepover. If the machinable region
+    // inset by this much collapses to nothing or only tiny fragments,
+    // the engagement-target spiral has no room to settle. A "tiny
+    // fragment" is one with area < 2 × (cutter footprint). Donut-
+    // topology rings break into corner residues well below this
+    // threshold; convex pockets (square / rect / circle / L) produce
+    // a single large fragment that exceeds it.
+    let probe = tool_radius + stepover;
+    let result = offset_polygon(machinable, probe);
+    if result.is_empty() {
+        return true;
+    }
+    let cutter_area = std::f64::consts::PI * tool_radius * tool_radius;
+    let min_viable_area = 2.0 * cutter_area;
+    let max_fragment_area = result
+        .iter()
+        .map(|p| p.area())
+        .fold(0.0_f64, f64::max);
+    max_fragment_area < min_viable_area
+}
+
+/// Emit concentric inward-offset loops of `machinable` at stride `stepover`,
+/// clearing the grid along each contour. Adjacent loops (within 6R + clear
+/// path) are connected by Link; gaps across uncut material emit a Rapid.
+/// Stops when `offset_polygon` returns empty or when a loop fails to
+/// reduce material.
+fn contour_parallel_segments(
+    machinable: &Polygon2,
+    grid: &mut MaterialGrid,
+    machinable_mask: &[bool],
+    tool_radius: f64,
+    stepover: f64,
+    cell_size: f64,
+    cancel: &dyn CancelCheck,
+) -> Result<Vec<AdaptiveSegment>, Cancelled> {
+    const MAX_LOOPS: usize = 100;
+    let max_link_dist = tool_radius * 6.0;
+    let mut segments: Vec<AdaptiveSegment> = Vec::new();
+    let mut last_pos: Option<P2> = None;
+
+    for k in 0..MAX_LOOPS {
+        check_cancel(cancel)?;
+        let dist = stepover * (k as f64);
+        let polys: Vec<Polygon2> = if dist <= 1e-9 {
+            vec![machinable.clone()]
+        } else {
+            offset_polygon(machinable, dist)
+        };
+        if polys.is_empty() {
+            break;
+        }
+
+        let material_before = grid.material_count;
+        for poly in &polys {
+            let mut contours: Vec<&Vec<P2>> = Vec::new();
+            if poly.exterior.len() >= 3 {
+                contours.push(&poly.exterior);
+            }
+            for hole in &poly.holes {
+                if hole.len() >= 3 {
+                    contours.push(hole);
+                }
+            }
+
+            for contour in contours {
+                let path = walk_contour_clearing(contour, cell_size, grid, tool_radius);
+                if path.len() < 2 {
+                    continue;
+                }
+                #[allow(clippy::indexing_slicing)] // path.len() >= 2 checked above
+                let entry = path[0];
+                #[allow(clippy::expect_used)]
+                let end = *path.last().expect("path non-empty");
+
+                match last_pos {
+                    None => segments.push(AdaptiveSegment::Rapid(entry)),
+                    Some(prev) => {
+                        let dx = entry.x - prev.x;
+                        let dy = entry.y - prev.y;
+                        let d = (dx * dx + dy * dy).sqrt();
+                        if d < 1e-6 {
+                            // already at entry — no approach needed
+                        } else if d < max_link_dist
+                            && is_clear_path(grid, machinable_mask, prev, entry, tool_radius)
+                        {
+                            segments.push(AdaptiveSegment::Link(entry));
+                        } else {
+                            segments.push(AdaptiveSegment::Rapid(entry));
+                        }
+                    }
+                }
+                segments.push(AdaptiveSegment::Cut(path));
+                last_pos = Some(end);
+            }
+        }
+
+        // If a full pass at this offset couldn't reduce material, stop
+        // (further offsets would just spin).
+        if grid.material_count >= material_before {
+            break;
+        }
+    }
+
+    Ok(segments)
+}
+
+/// Walk a closed contour in world coords, subdividing each edge to
+/// `cell_size * 1.5` and clearing the grid at every step. Returns the
+/// emitted Cut path (start point repeated at the end to close the loop).
+fn walk_contour_clearing(
+    contour: &[P2],
+    cell_size: f64,
+    grid: &mut MaterialGrid,
+    tool_radius: f64,
+) -> Vec<P2> {
+    let mut path = Vec::new();
+    if contour.len() < 2 {
+        return path;
+    }
+    #[allow(clippy::indexing_slicing)] // contour.len() >= 2 checked above
+    let start = contour[0];
+    path.push(start);
+    grid.clear_circle(start.x, start.y, tool_radius);
+
+    let n = contour.len();
+    for i in 0..n {
+        #[allow(clippy::indexing_slicing)] // i, (i+1)%n bounded by contour len
+        let a = contour[i];
+        #[allow(clippy::indexing_slicing)]
+        let b = contour[(i + 1) % n];
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let len = (dx * dx + dy * dy).sqrt();
+        let n_steps = (len / (cell_size * 1.5)).ceil() as usize;
+        let steps = n_steps.max(1);
+        for j in 1..=steps {
+            let t = j as f64 / steps as f64;
+            let x = a.x + t * dx;
+            let y = a.y + t * dy;
+            grid.clear_circle(x, y, tool_radius);
+            path.push(P2::new(x, y));
+        }
+    }
+    path
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
