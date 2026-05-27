@@ -3,6 +3,7 @@
 
 mod helpers;
 mod job;
+mod nc_replay;
 mod project;
 mod smoke;
 mod sweep;
@@ -1280,6 +1281,26 @@ enum Commands {
         /// Simulation resolution in mm.
         #[arg(long, default_value = "0.5")]
         resolution: f64,
+    },
+
+    /// Parse a .nc G-code file and predict cycle time via the F-034
+    /// kinematics integrator. Independent cross-check on the time the
+    /// `project` subcommand printed during generation — useful before a
+    /// bench session to confirm the emitter didn't drop / add moves.
+    NcTime {
+        /// One or more .nc files to analyze.
+        inputs: Vec<PathBuf>,
+
+        /// Maximum feed (mm/min). Default 4000 matches the typical
+        /// MachineProfile cap; override per-file if the project uses
+        /// something else.
+        #[arg(long, default_value_t = 4000.0)]
+        max_feed: f64,
+
+        /// Rapid feed (mm/min) for `G0` moves. Default 10000 matches the
+        /// Shapeoko XXL tuned `$110/$111`.
+        #[arg(long, default_value_t = 10000.0)]
+        rapid_feed: f64,
     },
 }
 
@@ -3465,6 +3486,13 @@ fn main() -> Result<()> {
                     output.context("--output <path> required when not in --diff mode")?;
                 smoke::run_smoke(&input, &output_path, resolution)?;
             }
+        }
+        Commands::NcTime {
+            inputs,
+            max_feed,
+            rapid_feed,
+        } => {
+            nc_replay::run_nc_time(&inputs, max_feed, rapid_feed)?;
         }
     }
 
