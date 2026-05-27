@@ -205,6 +205,82 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::ApplyOptimizeProject => {
                 self.apply_optimize_project();
             }
+
+            // --- Feeds & Speeds modal (redesigned Feeds tab) ---
+            AppEvent::OpenFeedsModal(toolpath_id) => {
+                self.open_feeds_modal(toolpath_id);
+            }
+            AppEvent::CloseFeedsModal => {
+                self.state.feeds_modal = None;
+            }
+            AppEvent::SetFeedsModalMode(mode) => {
+                if let Some(modal) = self.state.feeds_modal.as_mut() {
+                    modal.mode = mode;
+                }
+            }
+            AppEvent::ToggleFeedsProvenance => {
+                if let Some(modal) = self.state.feeds_modal.as_mut() {
+                    modal.show_provenance = !modal.show_provenance;
+                }
+            }
+            AppEvent::ApplyFeedsField { toolpath_id, field } => {
+                self.apply_feeds_field(toolpath_id, field);
+            }
+            AppEvent::ApplyFeedsAll(toolpath_id) => {
+                self.apply_feeds_all(toolpath_id);
+            }
+            AppEvent::ApplyFeedsProject => {
+                self.apply_feeds_project();
+            }
+            AppEvent::ApplyFeedsExplore {
+                toolpath_id,
+                feed_mm_min,
+                rpm,
+            } => {
+                self.apply_feeds_explore(toolpath_id, feed_mm_min, rpm);
+            }
+            AppEvent::SetFeedsProjectSort(sort) => {
+                if let Some(modal) = self.state.feeds_modal.as_mut() {
+                    modal.project_sort = sort;
+                }
+            }
+            AppEvent::SetFeedsExplore(explore) => {
+                if let Some(modal) = self.state.feeds_modal.as_mut() {
+                    modal.explore = explore;
+                }
+            }
+            AppEvent::ToggleFeedsProjectRow(id) => {
+                if let Some(modal) = self.state.feeds_modal.as_mut()
+                    && !modal.project_selected.insert(id)
+                {
+                    modal.project_selected.remove(&id);
+                }
+            }
+            AppEvent::ApplyFeedsProjectSelected => {
+                self.apply_feeds_project_selected();
+            }
+            AppEvent::SetFeedsProjectScatter(show) => {
+                if let Some(modal) = self.state.feeds_modal.as_mut() {
+                    modal.project_show_scatter = show;
+                }
+            }
+            AppEvent::SetFeedsProjectSelectAll(select_all) => {
+                if let Some(modal) = self.state.feeds_modal.as_mut() {
+                    if select_all {
+                        modal.project_selected = self
+                            .state
+                            .session
+                            .toolpath_configs()
+                            .iter()
+                            .filter(|tc| tc.enabled)
+                            .map(|tc| tc.id)
+                            .collect();
+                    } else {
+                        modal.project_selected.clear();
+                    }
+                }
+            }
+
             AppEvent::SetGeneratorTraceCaptureAll(enabled) => {
                 for tc in self.state.session.toolpath_configs_mut() {
                     tc.debug_options.enabled = enabled;
@@ -449,6 +525,253 @@ impl<B: ComputeBackend> AppController<B> {
                 crate::controller::Severity::Info,
             );
         }
+    }
+
+    // ── Feeds & Speeds modal ───────────────────────────────────────
+
+    /// Open the redesigned Feeds & Speeds modal for the given
+    /// toolpath. Idempotent — re-opening for the same toolpath just
+    /// refocuses; opening for a different toolpath swaps the target.
+    /// The modal re-derives `FeedsExplain` every frame, so no payload
+    /// needs to be stashed here.
+    fn open_feeds_modal(&mut self, toolpath_id: crate::state::toolpath::ToolpathId) {
+        // Validate that the toolpath exists. The button that fires
+        // this event should already be hidden when no toolpath is
+        // selected, but a stray automation call could land here.
+        if !self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .any(|tc| tc.id == toolpath_id.0)
+        {
+            self.push_notification(
+                format!("Feeds modal: toolpath id {} not found", toolpath_id.0),
+                crate::controller::Severity::Error,
+            );
+            return;
+        }
+        let existing_mode = self
+            .state
+            .feeds_modal
+            .as_ref()
+            .map(|m| m.mode)
+            .unwrap_or(crate::state::FeedsModalMode::Toolpath);
+        let existing_provenance = self
+            .state
+            .feeds_modal
+            .as_ref()
+            .is_some_and(|m| m.show_provenance);
+        let project_selected = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .filter(|tc| tc.enabled)
+            .map(|tc| tc.id)
+            .collect();
+        self.state.feeds_modal = Some(crate::state::FeedsModalState {
+            toolpath_id: toolpath_id.0,
+            mode: existing_mode,
+            explore: None,
+            show_provenance: existing_provenance,
+            project_sort: crate::state::ProjectFeedsSort::Index,
+            project_selected,
+            project_show_scatter: true,
+        });
+    }
+
+    /// Apply one recommended Feeds field to the given toolpath.
+    fn apply_feeds_field(
+        &mut self,
+        toolpath_id: crate::state::toolpath::ToolpathId,
+        field: crate::ui::FeedsField,
+    ) {
+        let Some(explain) = self.compute_feeds_explain(toolpath_id) else {
+            return;
+        };
+        let Some(idx) = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .position(|tc| tc.id == toolpath_id.0)
+        else {
+            return;
+        };
+        let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx) else {
+            return;
+        };
+        use crate::ui::FeedsField as F;
+        let r = &explain.recommended;
+        match field {
+            F::Rpm => {
+                tc.operation.set_spindle_rpm(Some(r.rpm.round() as u32));
+            }
+            F::Feed => tc.operation.set_feed_rate(r.feed_rate_mm_min),
+            F::Plunge => tc.operation.set_plunge_rate(r.plunge_rate_mm_min),
+            F::Doc => tc.operation.set_depth_per_pass(r.axial_depth_mm),
+            F::Woc => tc.operation.set_stepover(r.radial_width_mm),
+        }
+        self.state.gui.mark_edited();
+        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
+            rt.stale_since = Some(std::time::Instant::now());
+        }
+    }
+
+    /// Apply every recommended Feeds field to the given toolpath in
+    /// one transactional update. Mirrors the historical "Suggest all"
+    /// button in the legacy feeds card.
+    fn apply_feeds_all(&mut self, toolpath_id: crate::state::toolpath::ToolpathId) {
+        let Some(explain) = self.compute_feeds_explain(toolpath_id) else {
+            return;
+        };
+        let Some(idx) = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .position(|tc| tc.id == toolpath_id.0)
+        else {
+            return;
+        };
+        let tool_id_opt = self
+            .state
+            .session
+            .toolpath_configs()
+            .get(idx)
+            .map(|tc| tc.tool_id);
+        let Some(tool_id) = tool_id_opt else {
+            return;
+        };
+        let tool_opt = self
+            .state
+            .session
+            .tools()
+            .iter()
+            .find(|t| t.id == rs_cam_core::compute::ToolId(tool_id))
+            .cloned();
+        let Some(tool) = tool_opt else {
+            return;
+        };
+        let machine = self.state.session.machine().clone();
+        let pass_role = self
+            .state
+            .session
+            .toolpath_configs()
+            .get(idx)
+            .map(|tc| tc.operation.feeds_style().1)
+            .unwrap_or(rs_cam_core::feeds::PassRole::Roughing);
+        let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx) else {
+            return;
+        };
+        let r = &explain.recommended;
+        tc.operation.set_spindle_rpm(Some(r.rpm.round() as u32));
+        rs_cam_core::feeds::suggest::apply_feeds_result_to_op(
+            &mut tc.operation,
+            r,
+            &tool,
+            &machine,
+            pass_role,
+        );
+        self.state.gui.mark_edited();
+        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
+            rt.stale_since = Some(std::time::Instant::now());
+        }
+    }
+
+    /// Apply Feeds recommendations to every toolpath whose row is
+    /// currently checked in the project view.
+    fn apply_feeds_project_selected(&mut self) {
+        let ids: Vec<crate::state::toolpath::ToolpathId> = self
+            .state
+            .feeds_modal
+            .as_ref()
+            .map(|m| {
+                m.project_selected
+                    .iter()
+                    .copied()
+                    .map(crate::state::toolpath::ToolpathId)
+                    .collect()
+            })
+            .unwrap_or_default();
+        for id in ids {
+            self.apply_feeds_all(id);
+        }
+    }
+
+    /// Apply Feeds recommendations across every enabled toolpath
+    /// (Phase 4). Single transactional sweep.
+    fn apply_feeds_project(&mut self) {
+        let ids: Vec<crate::state::toolpath::ToolpathId> = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .filter(|tc| tc.enabled)
+            .map(|tc| crate::state::toolpath::ToolpathId(tc.id))
+            .collect();
+        for id in ids {
+            self.apply_feeds_all(id);
+        }
+    }
+
+    /// Apply a custom (feed, RPM) pair from the Chart C drag-to-explore
+    /// release. Other fields stay as-is.
+    fn apply_feeds_explore(
+        &mut self,
+        toolpath_id: crate::state::toolpath::ToolpathId,
+        feed_mm_min: f64,
+        rpm: f64,
+    ) {
+        let Some(idx) = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .position(|tc| tc.id == toolpath_id.0)
+        else {
+            return;
+        };
+        let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx) else {
+            return;
+        };
+        tc.operation.set_feed_rate(feed_mm_min.max(1.0));
+        tc.operation
+            .set_spindle_rpm(Some(rpm.round().max(1.0) as u32));
+        self.state.gui.mark_edited();
+        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
+            rt.stale_since = Some(std::time::Instant::now());
+        }
+    }
+
+    /// Helper: build a `FeedsExplain` payload for the given toolpath
+    /// from current session state.
+    fn compute_feeds_explain(
+        &self,
+        toolpath_id: crate::state::toolpath::ToolpathId,
+    ) -> Option<rs_cam_core::feeds::FeedsExplain> {
+        let tc = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .find(|tc| tc.id == toolpath_id.0)?;
+        let tool = self
+            .state
+            .session
+            .tools()
+            .iter()
+            .find(|t| t.id == rs_cam_core::compute::ToolId(tc.tool_id))?;
+        let stock = self.state.session.stock_config();
+        Some(rs_cam_core::feeds::suggest::feeds_explain_for_operation(
+            &tc.operation,
+            tool,
+            &stock.material,
+            self.state.session.machine(),
+            stock.workholding_rigidity,
+            rs_cam_core::feeds::embedded_vendor_lut(),
+        ))
     }
 
     /// Open the project-level Optimize rollup. Submits an

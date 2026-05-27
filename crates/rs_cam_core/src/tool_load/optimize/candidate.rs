@@ -335,6 +335,8 @@ pub(crate) fn evaluate_candidate(
         // bridges over the same engagement summary; running them
         // together would conflate their effects.
         adaptive_feed_modulation: false,
+        modulation_strategy: crate::feed_modulation::ModulationStrategy::ConstrainedMax,
+        modulation_aggressiveness: 1.0,
     };
     guard.session_mut().run_simulation(&sim_opts, cancel)?;
 

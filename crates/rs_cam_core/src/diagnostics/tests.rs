@@ -410,6 +410,7 @@ fn tool_load_adapter_drops_milling_na_on_drill_with_drill_gates() {
                 threshold: 100.0,
             },
         }),
+        modulation_summary: None,
     };
     let diags = adapters::from_tool_load::diagnostics_from_load_verdict(&verdict);
     assert_eq!(diags.len(), 3, "drill gates only, no milling N/A noise");
@@ -454,7 +455,7 @@ fn tool_load_adapter_emits_chipload_exceeds_with_evidence() {
             reason: UnmodeledReason::SimulationRequired,
         },
         drill_gates: None,
-    };
+        modulation_summary: None,    };
     let diags = adapters::from_tool_load::diagnostics_from_load_verdict(&verdict);
     let chip = diags
         .iter()
@@ -489,7 +490,7 @@ fn tool_load_adapter_marks_stale_simulation_as_stale_evidence_state() {
             reason: UnmodeledReason::StaleSimulation,
         },
         drill_gates: None,
-    };
+        modulation_summary: None,    };
     let diags = adapters::from_tool_load::diagnostics_from_load_verdict(&verdict);
     assert!(!diags.is_empty());
     for d in &diags {
@@ -522,7 +523,7 @@ fn tool_load_adapter_marks_sim_required_as_needs_simulation_state() {
             reason: UnmodeledReason::SimulationRequired,
         },
         drill_gates: None,
-    };
+        modulation_summary: None,    };
     let diags = adapters::from_tool_load::diagnostics_from_load_verdict(&verdict);
     assert!(!diags.is_empty());
     for d in &diags {
@@ -593,6 +594,7 @@ fn feeds_hint_emits_high_feed_ratio() {
         warnings: vec![],
         vendor_source: None,
         chipload_source: ChiploadSource::FormulaFallback,
+        derates: crate::feeds::FeedsDerates::default(),
     };
     let diags = adapters::from_feeds::heuristic_hints_from_recommendation(
         7, 2500.0, // commanded feed = 2.5× recommended

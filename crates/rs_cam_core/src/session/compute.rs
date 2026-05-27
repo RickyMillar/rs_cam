@@ -1301,7 +1301,7 @@ impl ProjectSession {
         //    tuple — modulator gets no `ChiploadBand`, the per-toolpath
         //    call is skipped, the IR is untouched.
         if opts.adaptive_feed_modulation && self.machine.kinematics.is_some() {
-            self.apply_adaptive_feed_modulation(&mut result);
+            self.apply_adaptive_feed_modulation(&mut result, opts);
         }
 
         self.simulation = Some(result);
@@ -1341,9 +1341,14 @@ impl ProjectSession {
     /// helper the chipload viewport coloring + timeline envelope readout
     /// already use, so band semantics match the rest of the load-gates
     /// surface.
-    fn apply_adaptive_feed_modulation(&mut self, sim_result: &mut crate::compute::simulate::SimulationResult) {
+    fn apply_adaptive_feed_modulation(
+        &mut self,
+        sim_result: &mut crate::compute::simulate::SimulationResult,
+        opts: &super::SimulationOptions,
+    ) {
         use crate::feed_modulation::{
-            ChiploadBand, ModulationContext, PerMoveEngagement, adaptive_feed_modulate,
+            ChiploadBand, DeflectionLimitInputs, ModulationContext, PerMoveEngagement,
+            PowerLimitInputs, adaptive_feed_modulate,
         };
 
         let Some(cut_trace) = sim_result.cut_trace.as_deref() else {
@@ -1356,6 +1361,18 @@ impl ProjectSession {
         if envelopes.is_empty() {
             return;
         }
+
+        // F-039 — accumulator for the per-(toolpath_id, move_index)
+        // `(feed, binding)` map and the per-toolpath
+        // `ModulationSummary`. Stamped onto the cut trace below.
+        let mut modulated_feeds: std::collections::BTreeMap<
+            (usize, usize),
+            (f64, crate::tool_load::BindingConstraint),
+        > = std::collections::BTreeMap::new();
+        let mut modulation_summaries: std::collections::BTreeMap<
+            usize,
+            crate::tool_load::ModulationSummary,
+        > = std::collections::BTreeMap::new();
 
         let max_feed = self.machine.max_feed_mm_min.max(1.0);
         let rapid_feed = if self.post.high_feedrate_mode {
@@ -1452,6 +1469,59 @@ impl ProjectSession {
                 })
                 .collect();
 
+            // F-039 — wire optional deflection + power constraint
+            // inputs. Material + tool data is enough to recover Kc,
+            // stickout, engagement diameter, and Young's modulus; the
+            // machine's `power_at_rpm × safety_factor` gives the
+            // available power.
+            let material = &self.stock.material;
+            let kc = material.kc_n_per_mm2();
+            let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
+            // Use the per-toolpath max axial DOC from the cut trace
+            // as the deflection / power reference; falls back to
+            // diameter when unavailable (no cutting samples → no
+            // constraint active).
+            let max_axial = cut_trace
+                .samples
+                .iter()
+                .filter(|s| s.toolpath_id == toolpath_id && s.is_cutting)
+                .map(|s| s.axial_engagement_mm.max(0.0))
+                .fold(0.0_f64, f64::max);
+            let nominal_axial = if max_axial > 0.0 { max_axial } else { 0.0 };
+            let engagement_dia = tool_def.lookup_diameter_at(max_axial.max(0.0));
+            let stickout = tool_def.stickout.max(0.0);
+            let youngs = tool_def.tool_material.youngs_modulus_n_per_mm2();
+            let deflection_inputs = if kc.is_finite()
+                && kc > 0.0
+                && stickout > 0.0
+                && engagement_dia > 0.0
+                && youngs > 0.0
+            {
+                Some(DeflectionLimitInputs {
+                    kc_n_per_mm2: kc,
+                    stickout_mm: stickout,
+                    engagement_diameter_mm: engagement_dia,
+                    youngs_modulus_n_per_mm2: youngs,
+                    max_tip_deflection_mm:
+                        crate::tool_load::deflection::EXCEEDS_BOUND_MM,
+                })
+            } else {
+                None
+            };
+            let machine_profile = &self.machine;
+            let available_kw =
+                machine_profile.power_at_rpm(spindle_rpm as f64) * machine_profile.safety_factor;
+            let power_inputs = if kc.is_finite() && kc > 0.0 && available_kw > 0.0 {
+                Some(PowerLimitInputs {
+                    // tool_load::power uses 2.5× anisotropy multiplier.
+                    kc_eff_n_per_mm2: 2.5 * kc,
+                    engagement_diameter_mm: engagement_dia,
+                    available_kw,
+                })
+            } else {
+                None
+            };
+
             let ctx = ModulationContext {
                 spindle_rpm: spindle_rpm as f64,
                 flute_count,
@@ -1459,6 +1529,11 @@ impl ProjectSession {
                 rapid_feed_mm_min: rapid_feed,
                 chipload_band: band,
                 kinematics: &kinematics,
+                strategy: opts.modulation_strategy,
+                aggressiveness: opts.modulation_aggressiveness,
+                deflection_inputs,
+                power_inputs,
+                nominal_axial_doc_mm: nominal_axial,
             };
 
             // Clone the toolpath out of its Arc<AnnotatedToolpath> so we
@@ -1467,12 +1542,27 @@ impl ProjectSession {
             // AnnotatedToolpath that carries the modulated Toolpath
             // (spans + spans_valid preserved from the source).
             let mut modulated_toolpath = annotated_arc.toolpath.clone();
-            let Ok(changed) =
+            let commanded_feed_for_summary = tc.operation.feed_rate();
+            let Ok(outcome) =
                 adaptive_feed_modulate(&mut modulated_toolpath, &engagements, &ctx)
             else {
                 continue;
             };
-            if changed == 0 {
+            // Stamp per-move map onto the trace-wide accumulator
+            // (always — even if no feed actually changed, the
+            // diagnostic surface uses this for the "all moves
+            // visited" coverage signal).
+            for (move_idx, value) in &outcome.per_move {
+                modulated_feeds.insert((toolpath_id, *move_idx), *value);
+            }
+            if let Some(summary) = outcome.build_summary(
+                commanded_feed_for_summary,
+                ctx.aggressiveness,
+                ctx.strategy,
+            ) {
+                modulation_summaries.insert(toolpath_id, summary);
+            }
+            if outcome.changed == 0 {
                 continue;
             }
             let new_annotated = crate::toolpath_spans::AnnotatedToolpath {
@@ -1533,6 +1623,12 @@ impl ProjectSession {
             project_total += t;
         }
         trace.summary.total_runtime_s = project_total;
+        // F-039 — stamp the per-move binding map + per-toolpath
+        // modulation summaries onto the trace. Both fields are
+        // `#[serde(skip)]` so artifact round-tripping is unaffected;
+        // the maps are re-derivable when modulation re-runs.
+        trace.modulated_feeds = modulated_feeds;
+        trace.modulation_summaries = modulation_summaries;
     }
 
     /// Run a collision check for a specific toolpath by index.

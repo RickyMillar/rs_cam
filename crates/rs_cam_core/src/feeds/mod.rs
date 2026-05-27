@@ -15,11 +15,13 @@
 //! 9. Apply safety factor
 //! 10. Collect warnings
 
+pub mod explain;
 pub mod geometry;
 pub mod suggest;
 pub mod vendor_lookup;
 pub mod vendor_lut;
 pub mod vendor_normalize;
+pub use explain::{FeedsExplain, MachineEnvelope, explain as explain_feeds};
 pub use vendor_lut::VendorLut;
 
 /// Global embedded vendor LUT, loaded once on first access.
@@ -145,6 +147,85 @@ pub struct FeedsResult {
     /// Observation ID if vendor LUT was used for chipload.
     pub vendor_source: Option<String>,
     pub chipload_source: ChiploadSource,
+    /// Full derate chain that turned the "target" chipload into the
+    /// recommended feed. Lets the UI show *why* the recommended
+    /// operating point sits where it does on the feed-RPM nomogram.
+    pub derates: FeedsDerates,
+}
+
+/// Per-step record of the chipload → feed pipeline. Each multiplier
+/// is positive (no zero divisors); a value of 1.0 means "no effect."
+/// The "effective chipload" the toolpath actually cuts at is
+/// `target_chip_load_mm × every_multiplier_here`.
+///
+/// Derived purely so the UI can render the breakdown — calculate()
+/// applies each factor in place, this struct just captures them.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct FeedsDerates {
+    /// LUT midpoint (or formula chipload) before any multipliers.
+    pub target_chip_load_mm: f64,
+    /// Empirical formula breakdown — populated only when the chipload
+    /// came from [`ChiploadSource::FormulaFallback`] / `EdgeRadiusFloor`.
+    /// `None` when the LUT supplied the value.
+    pub formula: Option<FormulaBreakdown>,
+    /// Radial chip thinning factor (≥ 1.0). At small stepovers the
+    /// chip is thinner per tooth-pass so we feed faster to keep the
+    /// effective chipload constant.
+    pub radial_chip_thinning: f64,
+    /// Axial chip thinning factor for ball/tapered-ball tools at
+    /// shallow DOC.
+    pub axial_chip_thinning: f64,
+    /// Combined chip thinning, clamped to `[1.0, 4.0]`.
+    pub combined_chip_thinning: f64,
+    /// Depth-tier feed derate (≤ 1.0). Deep cuts get slower feed to
+    /// limit deflection.
+    pub depth_tier: f64,
+    /// L/D (tool overhang) derate (≤ 1.0). Long tools deflect more.
+    pub ld_overhang: f64,
+    /// Workholding rigidity factor (0.85 / 1.00 / 1.03 for Low/Med/High).
+    pub workholding: f64,
+    /// Power-limit factor (≤ 1.0). Applied when the calc had to back
+    /// off feed to stay within the spindle's power envelope.
+    pub power_limit: f64,
+    /// Machine-feed-cap factor (≤ 1.0). Applied when the calc hit the
+    /// machine's `max_feed_mm_min`.
+    pub feed_clamp: f64,
+    /// Machine safety factor (0.75–0.80 typical).
+    pub safety_factor: f64,
+}
+
+/// Empirical chipload formula evaluation `K₀ × D^p × (1/H)^q`.
+/// Captured so the UI can show *why* the no-LUT recommendation is what
+/// it is (rather than just "fallback").
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct FormulaBreakdown {
+    pub k0: f64,
+    pub p: f64,
+    pub q: f64,
+    pub diameter_mm: f64,
+    pub hardness_index: f64,
+    pub result_mm_tooth: f64,
+}
+
+impl FeedsDerates {
+    /// Compose every multiplier into a single number. The effective
+    /// chipload (`feed / (RPM × flutes)`) equals
+    /// `target_chip_load_mm × combined_factor()`.
+    pub fn combined_factor(&self) -> f64 {
+        self.combined_chip_thinning
+            * self.depth_tier
+            * self.ld_overhang
+            * self.workholding
+            * self.power_limit
+            * self.feed_clamp
+            * self.safety_factor
+    }
+
+    /// Effective chipload that the toolpath will actually cut at,
+    /// derived from the recommended feed.
+    pub fn effective_chip_load_mm(&self) -> f64 {
+        self.target_chip_load_mm * self.combined_factor()
+    }
 }
 
 /// Warnings generated during calculation.
@@ -315,26 +396,28 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     const LD_MODERATE_THRESHOLD: f64 = 4.0;
     const LD_SEVERE_FACTOR: f64 = 0.75;
     const LD_MODERATE_FACTOR: f64 = 0.88;
-    if let Some(overhang) = input.setup.tool_overhang_mm {
+    let ld_factor = if let Some(overhang) = input.setup.tool_overhang_mm {
         let ld_ratio = overhang / d;
         if ld_ratio > LD_SEVERE_THRESHOLD {
-            raw_feed *= LD_SEVERE_FACTOR;
+            LD_SEVERE_FACTOR
         } else if ld_ratio > LD_MODERATE_THRESHOLD {
-            raw_feed *= LD_MODERATE_FACTOR;
+            LD_MODERATE_FACTOR
+        } else {
+            1.0
         }
-    }
+    } else {
+        1.0
+    };
+    raw_feed *= ld_factor;
     // Workholding rigidity adjustment
     const WORKHOLDING_LOW_FACTOR: f64 = 0.85;
     const WORKHOLDING_HIGH_FACTOR: f64 = 1.03;
-    match input.setup.workholding_rigidity {
-        WorkholdingRigidity::Low => {
-            raw_feed *= WORKHOLDING_LOW_FACTOR;
-        }
-        WorkholdingRigidity::High => {
-            raw_feed *= WORKHOLDING_HIGH_FACTOR;
-        }
-        WorkholdingRigidity::Medium => {}
-    }
+    let workholding_factor = match input.setup.workholding_rigidity {
+        WorkholdingRigidity::Low => WORKHOLDING_LOW_FACTOR,
+        WorkholdingRigidity::High => WORKHOLDING_HIGH_FACTOR,
+        WorkholdingRigidity::Medium => 1.0,
+    };
+    raw_feed *= workholding_factor;
 
     // --- Step 6: Power check ---
     let kc = material.kc_n_per_mm2();
@@ -344,9 +427,10 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let mut power_limited = false;
     let mut feed = raw_feed;
 
+    let mut power_factor = 1.0;
     if required_power > available_power && available_power > 0.0 {
-        let power_ratio = available_power / required_power;
-        feed = raw_feed * power_ratio;
+        power_factor = available_power / required_power;
+        feed = raw_feed * power_factor;
         power_limited = true;
         warnings.push(FeedsWarning::PowerLimited {
             required_kw: required_power,
@@ -355,11 +439,15 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     }
 
     // --- Step 7: Machine feed clamp ---
+    let mut feed_clamp_factor = 1.0;
     if feed > machine.max_feed_mm_min {
         warnings.push(FeedsWarning::FeedRateClamped {
             requested: feed,
             actual: machine.max_feed_mm_min,
         });
+        if feed > 0.0 {
+            feed_clamp_factor = machine.max_feed_mm_min / feed;
+        }
         feed = machine.max_feed_mm_min;
     }
 
@@ -399,6 +487,36 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let actual_power = (kc * ap * ae * feed) / (60.0 * 1_000_000.0);
     let mrr = ap * ae * feed;
 
+    let formula = if matches!(
+        chipload_source,
+        ChiploadSource::FormulaFallback | ChiploadSource::EdgeRadiusFloor
+    ) {
+        Some(FormulaBreakdown {
+            k0: cl.k0,
+            p: cl.p,
+            q: cl.q,
+            diameter_mm: d,
+            hardness_index: hardness,
+            result_mm_tooth: formula_chipload,
+        })
+    } else {
+        None
+    };
+
+    let derates = FeedsDerates {
+        target_chip_load_mm: chip_load,
+        formula,
+        radial_chip_thinning: rctf,
+        axial_chip_thinning: axial_thinning,
+        combined_chip_thinning: chip_thinning,
+        depth_tier,
+        ld_overhang: ld_factor,
+        workholding: workholding_factor,
+        power_limit: power_factor,
+        feed_clamp: feed_clamp_factor,
+        safety_factor: machine.safety_factor,
+    };
+
     FeedsResult {
         rpm,
         chip_load_mm: chip_load,
@@ -414,6 +532,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         warnings,
         vendor_source,
         chipload_source,
+        derates,
     }
 }
 

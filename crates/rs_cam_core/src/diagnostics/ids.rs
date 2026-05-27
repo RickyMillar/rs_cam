@@ -92,8 +92,7 @@ pub const PRECOND_REST_NO_PRIOR: &str = "precondition.rest_no_prior";
 pub const PRECOND_REST_PREV_TOOL_MISSING: &str = "precondition.rest_prev_tool_missing";
 pub const PRECOND_REST_PREV_TOOL_NOT_LARGER: &str = "precondition.rest_prev_tool_not_larger";
 pub const PRECOND_DRILL_NO_HOLES: &str = "precondition.drill_no_holes";
-pub const PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES: &str =
-    "precondition.alignment_pin_drill_no_holes";
+pub const PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES: &str = "precondition.alignment_pin_drill_no_holes";
 pub const PRECOND_PROJECT_CURVE_NO_CURVE: &str = "precondition.project_curve_no_curve";
 pub const PRECOND_PROJECT_CURVE_NO_SURFACE: &str = "precondition.project_curve_no_surface";
 

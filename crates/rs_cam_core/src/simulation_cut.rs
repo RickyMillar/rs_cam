@@ -507,6 +507,28 @@ pub struct SimulationCutTrace {
     /// re-derivable from the toolpath IR + kinematics at any time.
     #[serde(skip)]
     pub predicted_feeds: crate::machine_kinematics::PredictedFeedMap,
+    /// F-039 — per-`(toolpath_id, move_index)` emitted feed
+    /// (mm/min) plus the binding constraint that drove it.
+    /// Populated by `apply_adaptive_feed_modulation` when the
+    /// constrained-max or band-mid strategy ran on this toolpath.
+    /// `#[serde(skip)]` for the same reason as
+    /// [`Self::predicted_feeds`] — re-derivable from the toolpath
+    /// IR + modulation context, and JSON can't serialise tuple keys.
+    #[serde(skip)]
+    pub modulated_feeds: std::collections::BTreeMap<
+        (usize, usize),
+        (f64, crate::tool_load::BindingConstraint),
+    >,
+    /// F-039 — per-toolpath modulation rollup, keyed by
+    /// `toolpath_id`. The [`crate::gcode::project_load_report`]
+    /// builder reads this map and writes the corresponding
+    /// `ModulationSummary` onto each `ToolpathLoadVerdict`.
+    /// `#[serde(skip)]` — derived from the per-move map above.
+    #[serde(skip)]
+    pub modulation_summaries: std::collections::BTreeMap<
+        usize,
+        crate::tool_load::ModulationSummary,
+    >,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -739,6 +761,8 @@ impl SimulationCutTrace {
             drill_samples: Vec::new(),
             drill_summaries: Vec::new(),
             predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
+            modulated_feeds: std::collections::BTreeMap::new(),
+            modulation_summaries: std::collections::BTreeMap::new(),
         }
     }
 

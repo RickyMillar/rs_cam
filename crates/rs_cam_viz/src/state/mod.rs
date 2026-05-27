@@ -75,6 +75,58 @@ pub struct AppState {
     /// without the user having to click Run Simulation manually
     /// (Roadmap F.2). `None` when no per-TP Apply is in flight.
     pub pending_apply_resim: Option<usize>,
+    /// Cached state of the redesigned Feeds & Speeds modal. `None`
+    /// when closed. Built on open by `explain_for_operation`; the
+    /// modal re-derives `FeedsExplain` every frame from session state
+    /// so live param edits are reflected without an extra refresh
+    /// path.
+    pub feeds_modal: Option<FeedsModalState>,
+}
+
+/// Persistent state for the Feeds & Speeds modal. Carries the focused
+/// toolpath plus per-modal UI state (active mode, hover state, "what
+/// if" drag, etc.). The underlying recommendation + chart data is
+/// derived fresh from the session each frame.
+#[derive(Debug, Clone)]
+pub struct FeedsModalState {
+    pub toolpath_id: usize,
+    pub mode: FeedsModalMode,
+    /// Phase 3 — drag-to-explore on the feed-RPM nomogram. `Some` while
+    /// the user is dragging the operating point.
+    pub explore: Option<NomogramExplore>,
+    /// Phase 2 — "How is this calculated?" disclosure expanded.
+    pub show_provenance: bool,
+    /// Phase 4 — sortable column for the All-toolpaths table.
+    pub project_sort: ProjectFeedsSort,
+    /// Phase 4 — set of toolpath IDs whose row checkbox is currently
+    /// ticked. Empty == nothing selected (Apply selected disabled).
+    /// Defaults to every enabled toolpath when project view is opened.
+    pub project_selected: std::collections::BTreeSet<usize>,
+    /// Phase 4 — toggle for the project-view scatter overlay.
+    pub project_show_scatter: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeedsModalMode {
+    /// Single-toolpath view: comparison card + three charts.
+    Toolpath,
+    /// Project rollup: one row per toolpath, sortable.
+    Project,
+}
+
+/// Local UI state for the drag-to-explore interaction on Chart C.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NomogramExplore {
+    /// Currently dragged (rpm, feed) operating point.
+    pub rpm: f64,
+    pub feed_mm_min: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectFeedsSort {
+    Index,
+    Speedup,
+    Name,
 }
 
 /// Persistent state for the per-toolpath Optimize modal. Carries the
@@ -153,6 +205,7 @@ impl AppState {
             is_optimizing: false,
             pending_reconciliation_for_ids: Vec::new(),
             pending_apply_resim: None,
+            feeds_modal: None,
         }
     }
 }

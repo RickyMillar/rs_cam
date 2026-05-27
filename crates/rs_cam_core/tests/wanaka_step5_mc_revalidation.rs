@@ -99,7 +99,8 @@ fn wanaka_step5_final_mesh_is_well_formed() {
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
-    };
+        modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+        modulation_aggressiveness: 1.0,    };
     let result = session.run_simulation(&opts, &cancel).expect("sim");
 
     assert_mesh_well_formed("final mesh", &result.mesh);

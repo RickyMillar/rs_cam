@@ -398,7 +398,8 @@ fn run_single_case(case: &SmokeCase, resolution: f64) -> BaselineRow {
         // diff stays meaningful.
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
-    };
+        modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+        modulation_aggressiveness: 1.0,    };
     if let Err(e) = session.run_simulation(&sim_opts, &cancel) {
         return BaselineRow::failure(
             &case.case_id,
