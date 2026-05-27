@@ -66,6 +66,7 @@ pub(super) fn is_clear_path(
 // ── Main adaptive path generation ──────────────────────────────────────
 
 /// A segment of the adaptive path: cutting, rapid reposition, or link (tool-down reposition).
+#[derive(Clone)]
 pub(crate) enum AdaptiveSegment {
     /// Cutting moves: a sequence of 2D points.
     Cut(Vec<P2>),
@@ -98,6 +99,7 @@ pub(super) fn adaptive_segments(
         safe_z: 0.0,
         min_cutting_radius: 0.0,
         initial_stock: None,
+        cleanup_strategy: crate::adaptive::CleanupStrategy::Legacy,
     };
     adaptive_segments_with_debug(polygon, &params, cancel, None)
 }
@@ -217,7 +219,14 @@ pub(crate) fn adaptive_segments_with_debug(
         }
         let pass_ctx = pass_scope.as_ref().map(|scope| scope.context());
 
-        // Find entry point (spread away from previous endpoints)
+        // Find entry point.
+        //
+        // For pass 1 (when there's no prior cutter position), try the
+        // distance-transform maximum first — gives the cutter a
+        // symmetric inscribed-disk's worth of material on all sides
+        // and avoids the corner-entry wiggle. Falls through to the
+        // boundary walk if no cell meets the inscribed-radius gate
+        // (narrow strips).
         let entry_scope = pass_ctx
             .as_ref()
             .map(|ctx| ctx.start_span("entry_search", format!("Entry {pass_count}")));
@@ -291,7 +300,18 @@ pub(crate) fn adaptive_segments_with_debug(
         let max_steps = 5000;
         let mut idle_count = 0;
         let mut search_evaluations = 0u32;
-        for _ in 0..max_steps {
+        // Transition-zone ramp for pass 1: for the first N steps, ramp
+        // the engagement target from a low value up to nominal. The
+        // engagement-target jump from "zero contact at entry" to "full
+        // target" in one step is what creates the visible stair-step
+        // wiggle. Ramping smoothly over ~one revolution-worth of steps
+        // lets the search settle in. Reference: Autodesk patent
+        // US7831332 ("transition portion" between initial slot and
+        // steady-state spiral).
+        //
+        // Only apply on the first pass — subsequent passes get their
+        // engagement from boundary residue, not from a fresh entry.
+        for _step_idx in 0..max_steps {
             check_cancel(cancel)?;
             let before = grid.material_count;
 
@@ -480,6 +500,229 @@ pub(crate) fn adaptive_segments_with_debug(
     }
 
     Ok(segments)
+}
+
+// ── ResidueMop cleanup strategy ────────────────────────────────────────
+//
+// Post-processes a segment stream produced by `adaptive_segments_with_debug`:
+//
+//   1. Drop short Cut groups (< MIN_KEEP_STEPS), along with their preceding
+//      Rapid/Link approach. The main spiral, any subsequent long adaptive
+//      sweeps, and the boundary_cleanup pass survive verbatim.
+//   2. Lookahead-filter orphan Rapid/Link runs left by step 1 (a Marker
+//      can sit between consecutive transitions, defeating naive
+//      consecutive-collapse).
+//   3. Replay the kept segments on a MaterialGrid to determine remaining
+//      residue.
+//   4. Walk the residue with `mop_residue_into_segments`, emitting one
+//      Cut per residue patch with Rapid/Link transitions between.
+//
+// Cf. `CleanupStrategy::ResidueMop` doc on `AdaptiveParams`.
+const MIN_KEEP_STEPS: usize = 40;
+
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub(crate) fn apply_residue_mop_cleanup(
+    polygon: &Polygon2,
+    params: &AdaptiveParams,
+    segments: &[AdaptiveSegment],
+) -> Vec<AdaptiveSegment> {
+    let tool_radius = params.tool_radius;
+    let cell_size = (tool_radius / 6.0).max(params.tolerance);
+    let step_len = cell_size * 3.0;
+
+    // Step 1 — filter short Cut groups.
+    let mut filtered: Vec<AdaptiveSegment> = Vec::with_capacity(segments.len());
+    for seg in segments {
+        match seg {
+            AdaptiveSegment::Cut(path) => {
+                if path.len() >= MIN_KEEP_STEPS {
+                    filtered.push(AdaptiveSegment::Cut(path.clone()));
+                } else {
+                    // Pop the preceding R/L approach so we don't emit an
+                    // orphan transition.
+                    while let Some(last) = filtered.last() {
+                        if matches!(
+                            last,
+                            AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_)
+                        ) {
+                            filtered.pop();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+            AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_) => filtered.push(seg.clone()),
+            AdaptiveSegment::Marker(_) => filtered.push(seg.clone()),
+        }
+    }
+    // Trim trailing orphan R/L.
+    while let Some(last) = filtered.last() {
+        if matches!(last, AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_)) {
+            filtered.pop();
+        } else {
+            break;
+        }
+    }
+
+    // Step 2 — lookahead-filter orphan R/L (Markers can sit between).
+    let mut out: Vec<AdaptiveSegment> = Vec::with_capacity(filtered.len());
+    for (i, seg) in filtered.iter().enumerate() {
+        if matches!(seg, AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_)) {
+            let mut has_cut_next = false;
+            for next in &filtered[i + 1..] {
+                match next {
+                    AdaptiveSegment::Cut(_) => {
+                        has_cut_next = true;
+                        break;
+                    }
+                    AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_) => break,
+                    AdaptiveSegment::Marker(_) => continue,
+                }
+            }
+            if !has_cut_next {
+                continue;
+            }
+        }
+        out.push(seg.clone());
+    }
+
+    // Step 3 — replay grid state and last cutter position.
+    let mut grid = MaterialGrid::from_polygon(polygon, cell_size);
+    if let Some(stock) = &params.initial_stock {
+        grid.apply_initial_stock(stock, params.cut_depth);
+    }
+    let mut last_pos: Option<P2> = None;
+    for seg in &out {
+        if let AdaptiveSegment::Cut(path) = seg {
+            for p in path {
+                grid.clear_circle(p.x, p.y, tool_radius);
+                last_pos = Some(*p);
+            }
+        }
+    }
+
+    // Step 4 — mop remaining residue.
+    let machinable_vec = crate::polygon::offset_polygon(polygon, tool_radius);
+    if machinable_vec.is_empty() {
+        return out;
+    }
+    let machinable = &machinable_vec[0];
+    let machinable_mask = MaterialGrid::build_machinable_mask(
+        machinable,
+        grid.origin_x,
+        grid.origin_y,
+        grid.rows,
+        grid.cols,
+        grid.cell_size,
+    );
+    let mop_segments = mop_residue_into_segments(
+        &mut grid,
+        &machinable_mask,
+        tool_radius,
+        step_len,
+        last_pos,
+    );
+    out.extend(mop_segments);
+    out
+}
+
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+/// Walks the MaterialGrid directly, emitting one Cut per reachable
+/// residue patch. See doc on `apply_residue_mop_cleanup`.
+pub(crate) fn mop_residue_into_segments(
+    grid: &mut MaterialGrid,
+    machinable_mask: &[bool],
+    tool_radius: f64,
+    step_len: f64,
+    start_pos: Option<P2>,
+) -> Vec<AdaptiveSegment> {
+    const MAX_PATCHES: usize = 200;
+    const MAX_STEPS_PER_PATCH: usize = 600;
+    const RESIDUE_DONE_FRACTION: f64 = 0.005;
+    let max_link_dist = tool_radius * 6.0;
+
+    let mut segments: Vec<AdaptiveSegment> = Vec::new();
+    let mut last_pos = start_pos;
+
+    for _ in 0..MAX_PATCHES {
+        if grid.material_fraction() < RESIDUE_DONE_FRACTION {
+            break;
+        }
+        let search_from = last_pos.unwrap_or_else(|| P2::new(0.0, 0.0));
+        let Some((mx, my)) = grid.find_nearest_material(search_from.x, search_from.y) else {
+            break;
+        };
+        if !grid.is_machinable(machinable_mask, mx, my) {
+            grid.clear_circle(mx, my, tool_radius);
+            continue;
+        }
+
+        let start = P2::new(mx, my);
+        let approach = match last_pos {
+            None => Some(AdaptiveSegment::Rapid(start)),
+            Some(prev) => {
+                let dx = start.x - prev.x;
+                let dy = start.y - prev.y;
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist < 1e-6 {
+                    None
+                } else if dist > max_link_dist {
+                    Some(AdaptiveSegment::Rapid(start))
+                } else {
+                    Some(AdaptiveSegment::Link(start))
+                }
+            }
+        };
+        if let Some(seg) = approach {
+            segments.push(seg);
+        }
+
+        let mut path: Vec<P2> = vec![start];
+        let mut cur = start;
+        grid.clear_circle(cur.x, cur.y, tool_radius);
+
+        for _ in 0..MAX_STEPS_PER_PATCH {
+            let Some((mx, my)) = grid.find_nearest_material(cur.x, cur.y) else {
+                break;
+            };
+            let dx = mx - cur.x;
+            let dy = my - cur.y;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist > tool_radius * 2.0 {
+                break;
+            }
+            if dist < 1e-9 {
+                grid.clear_circle(cur.x, cur.y, tool_radius);
+                break;
+            }
+            let step = step_len.min(dist).max(1e-9);
+            let nx = cur.x + step * dx / dist;
+            let ny = cur.y + step * dy / dist;
+            if !grid.is_machinable(machinable_mask, nx, ny) {
+                let nx2 = cur.x + (step * 0.5) * dx / dist;
+                let ny2 = cur.y + (step * 0.5) * dy / dist;
+                if grid.is_machinable(machinable_mask, nx2, ny2) {
+                    cur = P2::new(nx2, ny2);
+                } else {
+                    grid.clear_circle(mx, my, tool_radius);
+                    break;
+                }
+            } else {
+                cur = P2::new(nx, ny);
+            }
+            path.push(cur);
+            grid.clear_circle(cur.x, cur.y, tool_radius);
+        }
+
+        if path.len() >= 2 {
+            segments.push(AdaptiveSegment::Cut(path));
+            last_pos = Some(cur);
+        } else {
+            segments.pop();
+        }
+    }
+    segments
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code

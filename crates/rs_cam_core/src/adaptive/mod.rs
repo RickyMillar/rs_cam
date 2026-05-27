@@ -20,7 +20,7 @@ mod search;
 
 pub(crate) use material_grid::MaterialGrid;
 pub(crate) use path::{AdaptiveSegment, adaptive_segments_with_debug};
-use path::{runtime_annotations_to_labels, segments_to_toolpath};
+use path::{apply_residue_mop_cleanup, runtime_annotations_to_labels, segments_to_toolpath};
 
 pub(crate) use crate::adaptive_shared::{
     angle_diff, average_angles, blend_corners_to_moves, refine_angle_bracket,
@@ -31,6 +31,26 @@ use crate::dexel_stock::TriDexelStock;
 use crate::interrupt::{CancelCheck, Cancelled};
 use crate::polygon::Polygon2;
 use crate::toolpath::Toolpath;
+
+/// How the planner cleans up residue left by the main adaptive spiral.
+///
+/// - `Legacy`: pre-2026-05 behaviour. After the main spiral, the planner
+///   runs many short cleanup passes (each entered via a fresh boundary
+///   walk) until material is < 1%. Each pass costs a full retract-rapid-
+///   plunge cycle, fragmenting the toolpath visually and producing
+///   dozens of inter-pass Rapids on shapes with patchy residue.
+/// - `ResidueMop`: 2026-05 follow-up. Short cleanup passes are dropped;
+///   instead, after the long adaptive sweeps + boundary cleanup, a
+///   grid-walking mop visits remaining residue patches directly,
+///   feed-linking between adjacent patches and Rapid-ing only when
+///   patches are > 6R apart. Substantially fewer Rapids and arcs;
+///   matches BobCAD/Fusion offset-pocket finisher aesthetic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CleanupStrategy {
+    #[default]
+    Legacy,
+    ResidueMop,
+}
 
 /// Parameters for adaptive clearing.
 pub struct AdaptiveParams {
@@ -51,6 +71,8 @@ pub struct AdaptiveParams {
     /// initialized from the tri-dexel stock so that cells already cleared
     /// by earlier operations are not re-cut.
     pub initial_stock: Option<TriDexelStock>,
+    /// How residue is mopped up after the main spiral. See `CleanupStrategy`.
+    pub cleanup_strategy: CleanupStrategy,
 }
 
 /// A segment of the adaptive path: cutting, rapid reposition, or link (tool-down reposition).
@@ -171,6 +193,10 @@ pub fn adaptive_toolpath_structured_annotated_traced_with_cancel(
     debug: Option<&ToolpathDebugContext>,
 ) -> Result<(Toolpath, Vec<AdaptiveRuntimeAnnotation>), Cancelled> {
     let segments = adaptive_segments_with_debug(polygon, params, cancel, debug)?;
+    let segments = match params.cleanup_strategy {
+        CleanupStrategy::Legacy => segments,
+        CleanupStrategy::ResidueMop => apply_residue_mop_cleanup(polygon, params, &segments),
+    };
     let (tp, annotations) = segments_to_toolpath(&segments, params);
     if let Some(debug_ctx) = debug {
         for annotation in &annotations {
@@ -226,6 +252,7 @@ mod tests {
             slot_clearing: false,
             min_cutting_radius: 0.0,
             initial_stock: None,
+            cleanup_strategy: CleanupStrategy::Legacy,
         }
     }
 
@@ -1278,5 +1305,1420 @@ mod tests {
             tp_stock.moves.len(),
             tp_full.moves.len(),
         );
+    }
+
+    // ── Corner-burrow investigation instrumentation ────────────────────
+    //
+    // Diagnoses the "arcs disappear in the corner" symptom reported on
+    // adaptive3d AgentSearch. Runs the 2D planner on a square (the same
+    // shape the operator clears) and dumps:
+    //   - Cut / Rapid / Link segment counts
+    //   - PassSummary `exit_reason` histogram
+    //   - ForcedClear positions, classified by proximity to a corner
+    //   - Per-pass step / idle / search-evaluation counters
+    //
+    // Hypothesis from the code-read: most passes near the corner exit
+    // via `idle_count > 15`, then `forced_clear` zaps a 2R disc at the
+    // endpoint, and the next entry — picked by walking the *original*
+    // polygon boundary while excluding (3R)² around prior endpoints —
+    // lands far from the residual sliver. Result: many short Cut groups
+    // separated by Rapids, which arcfit cannot bridge.
+    //
+    // Run with `cargo test -p rs_cam_core --lib adaptive::tests::instrument_corner_burrow -- --nocapture`.
+    #[test]
+    #[allow(clippy::print_stderr)]
+    fn instrument_corner_burrow_50mm_square() {
+        // 50mm × 50mm square, 6mm tool (radius 3mm), 50% stepover.
+        // Matches the user's "burrowing into a corner" report shape.
+        let polygon = square_polygon(50.0);
+        let tool_radius = 3.0;
+        let stepover = tool_radius; // 50% stepover (radial WOC = R)
+        let params = AdaptiveParams {
+            slot_clearing: false, // study pure adaptive search (no seed slots)
+            ..default_params(tool_radius, stepover)
+        };
+        let never_cancel = || false;
+        let segments = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None)
+            .expect("adaptive should not cancel");
+
+        let mut cut_count = 0usize;
+        let mut cut_steps_total = 0usize;
+        let mut rapid_count = 0usize;
+        let mut link_count = 0usize;
+        let mut pass_summaries: Vec<(usize, usize, usize, usize, String)> = Vec::new();
+        let mut forced_clears: Vec<(usize, f64, f64)> = Vec::new();
+        let mut boundary_cleanup_contours = 0usize;
+        let mut pass_entries: Vec<(usize, f64, f64)> = Vec::new();
+
+        for seg in &segments {
+            match seg {
+                AdaptiveSegment::Cut(path) => {
+                    cut_count += 1;
+                    cut_steps_total += path.len();
+                }
+                AdaptiveSegment::Rapid(_) => rapid_count += 1,
+                AdaptiveSegment::Link(_) => link_count += 1,
+                AdaptiveSegment::Marker(ev) => match ev {
+                    AdaptiveRuntimeEvent::PassSummary {
+                        pass_index,
+                        step_count,
+                        idle_count,
+                        search_evaluations,
+                        exit_reason,
+                    } => {
+                        pass_summaries.push((
+                            *pass_index,
+                            *step_count,
+                            *idle_count,
+                            *search_evaluations,
+                            exit_reason.clone(),
+                        ));
+                    }
+                    AdaptiveRuntimeEvent::ForcedClear {
+                        pass_index,
+                        center_x,
+                        center_y,
+                        ..
+                    } => {
+                        forced_clears.push((*pass_index, *center_x, *center_y));
+                    }
+                    AdaptiveRuntimeEvent::BoundaryCleanup { .. } => {
+                        boundary_cleanup_contours += 1;
+                    }
+                    AdaptiveRuntimeEvent::PassEntry {
+                        pass_index,
+                        entry_x,
+                        entry_y,
+                    } => {
+                        pass_entries.push((*pass_index, *entry_x, *entry_y));
+                    }
+                    AdaptiveRuntimeEvent::SlotClearing { .. } => {}
+                },
+            }
+        }
+
+        let mut reason_hist: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
+        for (_, _, _, _, r) in &pass_summaries {
+            *reason_hist.entry(r.clone()).or_insert(0) += 1;
+        }
+
+        // Corner-zone classification: machinable region is offset_polygon(square, 3.0),
+        // so its corners are at (±22, ±22). "Near a corner" = within 2 tool diameters
+        // (= 4R = 12mm) of one of those four points.
+        let machinable_corners: [(f64, f64); 4] =
+            [(22.0, 22.0), (22.0, -22.0), (-22.0, 22.0), (-22.0, -22.0)];
+        let near_corner_threshold_sq = (4.0 * tool_radius).powi(2);
+        let in_corner = |x: f64, y: f64| {
+            machinable_corners.iter().any(|(cx, cy)| {
+                let dx = x - cx;
+                let dy = y - cy;
+                dx * dx + dy * dy < near_corner_threshold_sq
+            })
+        };
+
+        let corner_forced_clears = forced_clears
+            .iter()
+            .filter(|(_, x, y)| in_corner(*x, *y))
+            .count();
+        let corner_pass_entries = pass_entries
+            .iter()
+            .filter(|(_, x, y)| in_corner(*x, *y))
+            .count();
+
+        eprintln!();
+        eprintln!("════════════════════════════════════════════════════════════════");
+        eprintln!("Adaptive corner-burrow instrumentation: 50mm square, 6mm tool");
+        eprintln!("════════════════════════════════════════════════════════════════");
+        eprintln!(
+            "Segments: {} Cut groups ({} total cut-step points), {} Rapids, {} Links",
+            cut_count, cut_steps_total, rapid_count, link_count
+        );
+        eprintln!(
+            "Pass count: {} (boundary cleanup contours: {})",
+            pass_summaries.len(),
+            boundary_cleanup_contours
+        );
+        eprintln!("Exit reason histogram:");
+        for (r, c) in &reason_hist {
+            eprintln!("  {:>14} : {}", r, c);
+        }
+        eprintln!(
+            "ForcedClear sites: {} total, {} near a machinable corner (within 4R = 12mm)",
+            forced_clears.len(),
+            corner_forced_clears
+        );
+        eprintln!(
+            "PassEntry sites:   {} total, {} near a machinable corner",
+            pass_entries.len(),
+            corner_pass_entries
+        );
+        eprintln!();
+        eprintln!("Per-pass detail (idx | steps | idle | search-evals | exit):");
+        for (idx, steps, idle, evals, reason) in &pass_summaries {
+            let entry_xy = pass_entries
+                .iter()
+                .find(|(i, _, _)| i == idx)
+                .map(|(_, x, y)| format!("({:>6.2}, {:>6.2})", x, y))
+                .unwrap_or_else(|| "(   ?  ,   ?  )".into());
+            let corner_tag = pass_entries
+                .iter()
+                .find(|(i, _, _)| i == idx)
+                .map(|(_, x, y)| if in_corner(*x, *y) { "CORNER" } else { "" })
+                .unwrap_or("");
+            eprintln!(
+                "  pass {:>3} | steps {:>4} | idle {:>3} | evals {:>5} | exit '{}' | entry {} {}",
+                idx, steps, idle, evals, reason, entry_xy, corner_tag
+            );
+        }
+        eprintln!();
+        eprintln!("Forced-clear positions:");
+        for (idx, x, y) in &forced_clears {
+            let tag = if in_corner(*x, *y) { "CORNER" } else { "" };
+            eprintln!("  pass {:>3} | ({:>7.2}, {:>7.2}) {}", idx, x, y, tag);
+        }
+        eprintln!("════════════════════════════════════════════════════════════════");
+
+        // Sanity bound: the test exists to dump data, not to gate behaviour.
+        // But assert that at least one pass ran so a silent regression
+        // (no passes at all) gets caught.
+        assert!(!pass_summaries.is_empty(), "no adaptive passes ran");
+    }
+
+    // Render the corner-burrow segments as an SVG for visual inspection.
+    // Cut groups in colour-cycled hues (numbered by emission order), Rapids
+    // in dashed red, Links in dashed orange.
+    //
+    // Output: target/adaptive_corner_burrow_50mm.svg (relative to repo root)
+    #[test]
+    #[allow(clippy::print_stderr)]
+    fn render_corner_burrow_svg() {
+        let polygon = square_polygon(50.0);
+        let tool_radius = 3.0;
+        let stepover = tool_radius;
+        let params = AdaptiveParams {
+            slot_clearing: false,
+            ..default_params(tool_radius, stepover)
+        };
+        let never_cancel = || false;
+        let segments = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None)
+            .expect("adaptive should not cancel");
+        write_segments_svg(
+            &segments,
+            &polygon,
+            tool_radius,
+            "adaptive_corner_burrow_50mm.svg",
+            "baseline (current planner)",
+        );
+    }
+
+    // ── Shared SVG renderer ────────────────────────────────────────────
+    //
+    // Writes a 600×600 SVG under <workspace>/target/<filename> showing all
+    // Cut groups in colour-cycled hues, Rapids as dashed red, Links as
+    // dashed orange. Cut groups numbered by emission order. `label`
+    // appears at the top of the legend so different variants are easy
+    // to tell apart in side-by-side viewing.
+    #[allow(clippy::print_stderr)]
+    fn write_segments_svg(
+        segments: &[AdaptiveSegment],
+        polygon: &Polygon2,
+        tool_radius: f64,
+        filename: &str,
+        label: &str,
+    ) {
+        use std::io::Write;
+
+        // Compute polygon bbox for viewBox.
+        let mut min_x = f64::INFINITY;
+        let mut min_y = f64::INFINITY;
+        let mut max_x = f64::NEG_INFINITY;
+        let mut max_y = f64::NEG_INFINITY;
+        for p in &polygon.exterior {
+            min_x = min_x.min(p.x);
+            min_y = min_y.min(p.y);
+            max_x = max_x.max(p.x);
+            max_y = max_y.max(p.y);
+        }
+        let pad = 5.0_f64;
+        let view_min_x = min_x - pad;
+        let view_min_y = min_y - pad;
+        let view_w = (max_x - min_x) + 2.0 * pad;
+        let view_h = (max_y - min_y) + 2.0 * pad;
+        const SCALE: f64 = 10.0;
+        let size_px_w = (view_w * SCALE).round() as i32;
+        let size_px_h = (view_h * SCALE).round() as i32;
+        let view_box = format!(
+            "{} {} {} {}",
+            view_min_x,
+            -(view_min_y + view_h),
+            view_w,
+            view_h
+        );
+
+        let mut svg = String::new();
+        svg.push_str(&format!(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='{}' height='{}' viewBox='{}'>\n",
+            size_px_w, size_px_h, view_box
+        ));
+        svg.push_str("<g transform='scale(1,-1)'>\n");
+
+        svg.push_str(&format!(
+            "<rect x='{}' y='{}' width='{}' height='{}' fill='#fafafa'/>\n",
+            view_min_x, view_min_y, view_w, view_h
+        ));
+
+        // Stock polygon exterior + holes.
+        let ring_to_path = |ring: &[P2]| -> String {
+            if ring.is_empty() {
+                return String::new();
+            }
+            let mut s = format!("M{:.3} {:.3}", ring[0].x, ring[0].y);
+            for p in &ring[1..] {
+                s.push_str(&format!(" L{:.3} {:.3}", p.x, p.y));
+            }
+            s.push_str(" Z");
+            s
+        };
+        svg.push_str(&format!(
+            "<path d='{}' fill='none' stroke='#888' stroke-width='0.15'/>\n",
+            ring_to_path(&polygon.exterior)
+        ));
+        for hole in &polygon.holes {
+            svg.push_str(&format!(
+                "<path d='{}' fill='none' stroke='#888' stroke-width='0.15'/>\n",
+                ring_to_path(hole)
+            ));
+        }
+
+        // Machinable boundary (inset by tool radius).
+        let machinable = crate::polygon::offset_polygon(polygon, tool_radius);
+        for inset in &machinable {
+            svg.push_str(&format!(
+                "<path d='{}' fill='none' stroke='#aaa' stroke-width='0.1' stroke-dasharray='0.5,0.5'/>\n",
+                ring_to_path(&inset.exterior)
+            ));
+            for hole in &inset.holes {
+                svg.push_str(&format!(
+                    "<path d='{}' fill='none' stroke='#aaa' stroke-width='0.1' stroke-dasharray='0.5,0.5'/>\n",
+                    ring_to_path(hole)
+                ));
+            }
+        }
+
+        let mut last_end: Option<P2> = None;
+        let mut pass_counter = 0usize;
+        let mut label_positions: Vec<(usize, P2)> = Vec::new();
+        let mut cut_groups = 0usize;
+        let mut rapid_count = 0usize;
+        let mut link_count = 0usize;
+
+        for seg in segments {
+            match seg {
+                AdaptiveSegment::Cut(path) => {
+                    cut_groups += 1;
+                    pass_counter += 1;
+                    if let Some(first) = path.first() {
+                        label_positions.push((pass_counter, *first));
+                    }
+                    let pts = path
+                        .iter()
+                        .map(|p| format!("{:.3},{:.3}", p.x, p.y))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    let hue = (pass_counter * 47) % 360;
+                    svg.push_str(&format!(
+                        "<polyline points='{}' fill='none' stroke='hsl({},70%,45%)' \
+                         stroke-width='0.4' stroke-linecap='round' stroke-linejoin='round'/>\n",
+                        pts, hue
+                    ));
+                    last_end = path.last().copied();
+                }
+                AdaptiveSegment::Rapid(p) => {
+                    rapid_count += 1;
+                    if let Some(from) = last_end {
+                        svg.push_str(&format!(
+                            "<line x1='{:.3}' y1='{:.3}' x2='{:.3}' y2='{:.3}' \
+                             stroke='#d22' stroke-width='0.25' stroke-dasharray='0.6,0.6'/>\n",
+                            from.x, from.y, p.x, p.y
+                        ));
+                    }
+                    svg.push_str(&format!(
+                        "<circle cx='{:.3}' cy='{:.3}' r='0.4' fill='#d22'/>\n",
+                        p.x, p.y
+                    ));
+                    last_end = Some(*p);
+                }
+                AdaptiveSegment::Link(p) => {
+                    link_count += 1;
+                    if let Some(from) = last_end {
+                        svg.push_str(&format!(
+                            "<line x1='{:.3}' y1='{:.3}' x2='{:.3}' y2='{:.3}' \
+                             stroke='#e80' stroke-width='0.25' stroke-dasharray='0.4,0.4'/>\n",
+                            from.x, from.y, p.x, p.y
+                        ));
+                    }
+                    svg.push_str(&format!(
+                        "<circle cx='{:.3}' cy='{:.3}' r='0.3' fill='#e80'/>\n",
+                        p.x, p.y
+                    ));
+                    last_end = Some(*p);
+                }
+                AdaptiveSegment::Marker(_) => {}
+            }
+        }
+
+        svg.push_str("<g font-family='monospace' font-size='1.5' fill='#222'>\n");
+        for (idx, p) in &label_positions {
+            svg.push_str(&format!(
+                "<text x='{:.3}' y='{:.3}' transform='scale(1,-1)'>{}</text>\n",
+                p.x + 0.5,
+                -(p.y + 0.5),
+                idx
+            ));
+        }
+        svg.push_str("</g>\n");
+
+        svg.push_str("</g>\n");
+        svg.push_str(&format!(
+            "<g font-family='monospace' font-size='1.8' fill='#222' transform='translate({},{})'>\n",
+            view_min_x + 1.0,
+            -(view_min_y + view_h) + 3.0
+        ));
+        svg.push_str(&format!("<text x='0' y='0'>{}</text>\n", label));
+        svg.push_str(&format!(
+            "<text x='0' y='2.2'>cuts {} | rapids {} | links {}</text>\n",
+            cut_groups, rapid_count, link_count
+        ));
+        svg.push_str("<text x='0' y='4.4'>red dashed = Rapid, orange dashed = Link</text>\n");
+        svg.push_str("</g>\n");
+
+        svg.push_str("</svg>\n");
+
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let target_dir = manifest_dir
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("target"))
+            .expect("locate workspace target dir");
+        std::fs::create_dir_all(&target_dir).expect("create target dir");
+        let out = target_dir.join(filename);
+        let mut f = std::fs::File::create(&out).expect("create svg");
+        f.write_all(svg.as_bytes()).expect("write svg");
+        eprintln!("wrote {} ({} cuts / {} rapids / {} links)", out.display(), cut_groups, rapid_count, link_count);
+    }
+
+    // ── Cheap fix: boundary-extension post-process ─────────────────────
+    //
+    // Walks the baseline segments. Wherever we see `Cut → Rapid → Cut` and
+    // the Rapid is short (< 6R, the same 2D-link distance gate) AND the
+    // straight line between the previous Cut endpoint and the Rapid target
+    // both (a) stays inside the machinable region and (b) actually clears
+    // material along the way → absorb the Rapid into the previous Cut group
+    // as a feed extension. Otherwise leave the Rapid alone.
+    //
+    // The 2D planner already does this in spirit at path.rs:248-264, but only
+    // for is_clear_path (≤ 20% material along the line). The "cheap fix"
+    // INVERTS that test: extend when the line DOES cross material, so the
+    // cutter cleans residue along the way instead of skipping over it.
+    #[allow(clippy::print_stderr, dead_code)]
+    fn apply_boundary_extend_fix(
+        polygon: &Polygon2,
+        tool_radius: f64,
+        machinable: &Polygon2,
+        machinable_mask: &[bool],
+        cell_size: f64,
+        step_len: f64,
+        original: &[AdaptiveSegment],
+    ) -> Vec<AdaptiveSegment> {
+        // Run with threshold 20R so we can see whether the post-process
+        // logic itself is doing anything, even though the 2D planner's
+        // gate is 6R. Diagnostic printouts below record what happens.
+        let max_link_dist = tool_radius * 20.0;
+        eprintln!(
+            "cheap-fix: scanning {} segments, link-absorption threshold {:.1}mm",
+            original.len(),
+            max_link_dist
+        );
+        let mut rapid_dists: Vec<f64> = Vec::new();
+        let mut absorbed = 0usize;
+        let mut rejected_too_far = 0usize;
+        let mut rejected_no_clearing = 0usize;
+        let mut rejected_off_machinable = 0usize;
+        let mut grid = MaterialGrid::from_polygon(polygon, cell_size);
+        let mut out: Vec<AdaptiveSegment> = Vec::new();
+        let mut last_cut_end: Option<P2> = None;
+
+        let mut i = 0;
+        while i < original.len() {
+            match &original[i] {
+                AdaptiveSegment::Cut(path) => {
+                    for p in path {
+                        grid.clear_circle(p.x, p.y, tool_radius);
+                    }
+                    last_cut_end = path.last().copied();
+                    out.push(AdaptiveSegment::Cut(path.clone()));
+                    i += 1;
+                }
+                AdaptiveSegment::Rapid(target) => {
+                    let from = last_cut_end;
+                    if let Some(from) = from {
+                        let dx = target.x - from.x;
+                        let dy = target.y - from.y;
+                        let dist = (dx * dx + dy * dy).sqrt();
+                        rapid_dists.push(dist);
+                        if dist >= max_link_dist {
+                            rejected_too_far += 1;
+                        } else if dist > 1e-6 {
+                            let n_steps = (dist / step_len).ceil().max(1.0) as usize;
+                            let mut extension: Vec<P2> = Vec::new();
+                            let mut cleared_any = false;
+                            let mut still_machinable = true;
+                            let mut trial_grid = grid.clone();
+                            for k in 1..=n_steps {
+                                let t = k as f64 / n_steps as f64;
+                                let nx = from.x + t * dx;
+                                let ny = from.y + t * dy;
+                                if !trial_grid.is_machinable(machinable_mask, nx, ny) {
+                                    still_machinable = false;
+                                    break;
+                                }
+                                let before = trial_grid.material_count;
+                                trial_grid.clear_circle(nx, ny, tool_radius);
+                                if trial_grid.material_count != before {
+                                    cleared_any = true;
+                                }
+                                extension.push(P2::new(nx, ny));
+                            }
+                            if !still_machinable {
+                                rejected_off_machinable += 1;
+                            } else if !cleared_any {
+                                rejected_no_clearing += 1;
+                            } else {
+                                grid = trial_grid;
+                                if let Some(AdaptiveSegment::Cut(p)) = out
+                                    .iter_mut()
+                                    .rev()
+                                    .find(|s| matches!(s, AdaptiveSegment::Cut(_)))
+                                {
+                                    p.extend(extension.iter().copied());
+                                }
+                                last_cut_end = extension.last().copied();
+                                absorbed += 1;
+                                i += 1;
+                                continue;
+                            }
+                        }
+                    }
+                    out.push(AdaptiveSegment::Rapid(*target));
+                    last_cut_end = Some(*target);
+                    i += 1;
+                }
+                AdaptiveSegment::Link(target) => {
+                    out.push(AdaptiveSegment::Link(*target));
+                    last_cut_end = Some(*target);
+                    i += 1;
+                }
+                AdaptiveSegment::Marker(m) => {
+                    out.push(AdaptiveSegment::Marker(m.clone()));
+                    i += 1;
+                }
+            }
+        }
+        let _ = machinable; // kept in signature for future extension along contour
+        let mut dists_sorted = rapid_dists.clone();
+        dists_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        eprintln!(
+            "cheap-fix: {} rapids scanned, absorbed {}, too-far {}, no-clearing {}, off-machinable {}",
+            rapid_dists.len(), absorbed, rejected_too_far, rejected_no_clearing, rejected_off_machinable
+        );
+        if !dists_sorted.is_empty() {
+            let median = dists_sorted[dists_sorted.len() / 2];
+            let p90 = dists_sorted[(dists_sorted.len() * 9 / 10).min(dists_sorted.len() - 1)];
+            eprintln!(
+                "  rapid-distance: min {:.1}mm, median {:.1}mm, p90 {:.1}mm, max {:.1}mm",
+                dists_sorted.first().copied().unwrap_or(0.0),
+                median,
+                p90,
+                dists_sorted.last().copied().unwrap_or(0.0)
+            );
+        }
+        out
+    }
+
+    // ── Residue-aware mop helper ───────────────────────────────────────
+    //
+    // Walks the MaterialGrid directly. While significant residue remains:
+    //   1. Find the nearest residue cell from the current cutter position.
+    //   2. Emit a Rapid (far) or Link (close) to reach it.
+    //   3. Walk the residue: at each step, find nearest material within
+    //      `tool_radius * 2` of the current position and step toward it
+    //      (capped at `step_len`). Clear material along the way. Stop
+    //      this patch when no material is reachable within ~2R — then
+    //      look for the next nearest residue patch globally.
+    //
+    // Unlike the offset-mop, this follows the actual residue geometry
+    // instead of tracing precomputed contour lines. Residue patches in
+    // between offset levels get caught.
+    //
+    // Returns (mop_segments, new_last_pos).
+    #[allow(dead_code)]
+    fn mop_residue_into_segments(
+        grid: &mut MaterialGrid,
+        machinable_mask: &[bool],
+        tool_radius: f64,
+        step_len: f64,
+        start_pos: Option<P2>,
+    ) -> (Vec<AdaptiveSegment>, Option<P2>) {
+        const MAX_PATCHES: usize = 200;
+        const MAX_STEPS_PER_PATCH: usize = 600;
+        const RESIDUE_DONE_FRACTION: f64 = 0.005;
+        let max_link_dist = tool_radius * 6.0;
+
+        let mut segments: Vec<AdaptiveSegment> = Vec::new();
+        let mut last_pos = start_pos;
+
+        for _ in 0..MAX_PATCHES {
+            if grid.material_fraction() < RESIDUE_DONE_FRACTION {
+                break;
+            }
+            let search_from = last_pos.unwrap_or(P2::new(0.0, 0.0));
+            let Some((mx, my)) = grid.find_nearest_material(search_from.x, search_from.y)
+            else {
+                break;
+            };
+            // If the nearest material cell is outside the cutter-machinable
+            // region (e.g., snug to a wall), our cutter centre can't reach
+            // that exact point. Force-clear that cell to make progress —
+            // any "residue" here is unreachable noise from the boundary.
+            if !grid.is_machinable(machinable_mask, mx, my) {
+                grid.clear_circle(mx, my, tool_radius);
+                continue;
+            }
+
+            let start = P2::new(mx, my);
+            // Decide approach.
+            let approach = match last_pos {
+                None => Some(AdaptiveSegment::Rapid(start)),
+                Some(prev) => {
+                    let dx = start.x - prev.x;
+                    let dy = start.y - prev.y;
+                    let dist = (dx * dx + dy * dy).sqrt();
+                    if dist < 1e-6 {
+                        None
+                    } else if dist > max_link_dist {
+                        Some(AdaptiveSegment::Rapid(start))
+                    } else {
+                        Some(AdaptiveSegment::Link(start))
+                    }
+                }
+            };
+            if let Some(seg) = approach {
+                segments.push(seg);
+            }
+
+            // Walk this residue patch.
+            let mut path: Vec<P2> = vec![start];
+            let mut cur = start;
+            grid.clear_circle(cur.x, cur.y, tool_radius);
+
+            for _ in 0..MAX_STEPS_PER_PATCH {
+                let Some((mx, my)) = grid.find_nearest_material(cur.x, cur.y) else {
+                    break;
+                };
+                let dx = mx - cur.x;
+                let dy = my - cur.y;
+                let dist = (dx * dx + dy * dy).sqrt();
+                // If residue is more than ~2R away, this patch is done —
+                // we'll start a new one (potentially with a Rapid).
+                if dist > tool_radius * 2.0 {
+                    break;
+                }
+                if dist < 1e-9 {
+                    grid.clear_circle(cur.x, cur.y, tool_radius);
+                    break;
+                }
+                let step = step_len.min(dist).max(1e-9);
+                let nx = cur.x + step * dx / dist;
+                let ny = cur.y + step * dy / dist;
+                if !grid.is_machinable(machinable_mask, nx, ny) {
+                    // Try a smaller step toward the material — sometimes the
+                    // full step leaves the machinable region while a half
+                    // step stays in.
+                    let nx2 = cur.x + (step * 0.5) * dx / dist;
+                    let ny2 = cur.y + (step * 0.5) * dy / dist;
+                    if grid.is_machinable(machinable_mask, nx2, ny2) {
+                        cur = P2::new(nx2, ny2);
+                    } else {
+                        // Can't reach — force-clear the unreachable cell so
+                        // we don't loop forever.
+                        grid.clear_circle(mx, my, tool_radius);
+                        break;
+                    }
+                } else {
+                    cur = P2::new(nx, ny);
+                }
+                path.push(cur);
+                grid.clear_circle(cur.x, cur.y, tool_radius);
+            }
+
+            if path.len() >= 2 {
+                segments.push(AdaptiveSegment::Cut(path));
+                last_pos = Some(cur);
+            } else {
+                // Single-point patch: drop the approach we just added
+                // so the segment stream stays consistent.
+                segments.pop();
+            }
+        }
+        (segments, last_pos)
+    }
+
+    // ── Proper fix: keep meaningful adaptive passes + residue mop ──────
+    //
+    // Drop the baseline's per-residue micro-passes and replace them with
+    // a residue-aware grid-walking mop. Cut groups of >= MIN_KEEP_STEPS
+    // points (the real adaptive sweeps + boundary_cleanup) are preserved
+    // verbatim; everything else is dropped, then mop_residue_into_segments
+    // walks the remaining grid state to emit cleanup arcs.
+    #[allow(clippy::print_stderr, dead_code)]
+    fn apply_offset_mop_fix(
+        polygon: &Polygon2,
+        tool_radius: f64,
+        stepover: f64,
+        machinable: &Polygon2,
+        cell_size: f64,
+        original: &[AdaptiveSegment],
+    ) -> Vec<AdaptiveSegment> {
+        // Keep ALL "meaningful" adaptive passes (Cut groups with ≥
+        // MIN_KEEP_STEPS points) verbatim, with their preceding entry
+        // Rapid/Link. Drop short fragmented cleanup passes — they're
+        // what offset-pocket-mop replaces. For the L-shape this preserves
+        // pass 1 (one arm) AND pass 2 (the other arm) so both get smooth
+        // adaptive treatment.
+        const MIN_KEEP_STEPS: usize = 40;
+        let mut out: Vec<AdaptiveSegment> = Vec::new();
+        let mut kept_cuts = 0usize;
+        let mut dropped_cuts = 0usize;
+        for seg in original {
+            match seg {
+                AdaptiveSegment::Cut(path) => {
+                    if path.len() >= MIN_KEEP_STEPS {
+                        out.push(AdaptiveSegment::Cut(path.clone()));
+                        kept_cuts += 1;
+                    } else {
+                        // Drop this small Cut AND any unmatched Rapid/Link
+                        // that was emitted leading into it.
+                        while let Some(last) = out.last() {
+                            if matches!(
+                                last,
+                                AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_)
+                            ) {
+                                out.pop();
+                            } else {
+                                break;
+                            }
+                        }
+                        dropped_cuts += 1;
+                    }
+                }
+                AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_) => {
+                    out.push(seg.clone());
+                }
+                AdaptiveSegment::Marker(_) => {
+                    out.push(seg.clone());
+                }
+            }
+        }
+        // Trim any trailing Rapid/Link that lost its Cut destination.
+        while let Some(last) = out.last() {
+            if matches!(last, AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_)) {
+                out.pop();
+            } else {
+                break;
+            }
+        }
+        // Normalize: drop "orphan" Rapid/Link segments — those not
+        // followed by a Cut before the next Rapid/Link (skipping
+        // Markers, which can sit between transitions). When small Cuts
+        // get dropped along with their preceding R/L, surviving
+        // PassEntry markers leave behind upstream transitions that no
+        // longer have a target. This lookahead-based filter removes them.
+        let mut normalized: Vec<AdaptiveSegment> = Vec::with_capacity(out.len());
+        for (i, seg) in out.iter().enumerate() {
+            if matches!(seg, AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_)) {
+                let mut has_cut_next = false;
+                for next in &out[i + 1..] {
+                    match next {
+                        AdaptiveSegment::Cut(_) => {
+                            has_cut_next = true;
+                            break;
+                        }
+                        AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_) => break,
+                        AdaptiveSegment::Marker(_) => continue,
+                    }
+                }
+                if !has_cut_next {
+                    continue;
+                }
+            }
+            normalized.push(seg.clone());
+        }
+        let mut out = normalized;
+        let post_keep_cut = out.iter().filter(|s| matches!(s, AdaptiveSegment::Cut(_))).count();
+        let post_keep_rap = out.iter().filter(|s| matches!(s, AdaptiveSegment::Rapid(_))).count();
+        let post_keep_link = out.iter().filter(|s| matches!(s, AdaptiveSegment::Link(_))).count();
+        eprintln!(
+            "offset-mop: kept {} long pass(es), dropped {} short; after keep: {}C/{}R/{}L",
+            kept_cuts, dropped_cuts, post_keep_cut, post_keep_rap, post_keep_link
+        );
+        // Debug: print the segment-type sequence post-keep.
+        let mut seq = String::new();
+        for s in &out {
+            match s {
+                AdaptiveSegment::Cut(p) => seq.push_str(&format!("C({}) ", p.len())),
+                AdaptiveSegment::Rapid(_) => seq.push('R'),
+                AdaptiveSegment::Link(_) => seq.push('L'),
+                AdaptiveSegment::Marker(_) => {}
+            }
+        }
+        eprintln!("  seq: {}", seq);
+
+        // Replay the grid state after just the main spiral so we know
+        // where residue is. Then run inward offsets of `machinable` until
+        // an offset clears no new material.
+        let mut grid = MaterialGrid::from_polygon(polygon, cell_size);
+        let mut last_pos: Option<P2> = None;
+        for seg in &out {
+            if let AdaptiveSegment::Cut(path) = seg {
+                for p in path {
+                    grid.clear_circle(p.x, p.y, tool_radius);
+                    last_pos = Some(*p);
+                }
+            }
+        }
+        eprintln!(
+            "  residue after kept passes: {:.2}% of machinable still material",
+            grid.material_fraction() * 100.0
+        );
+
+        // Replace the original offset-contour mop with the residue-aware
+        // grid-walking mop. The new mop catches residue that falls between
+        // offset levels (which the contour-based version missed — leaving
+        // 2-8% material uncleared on the shape matrix).
+        let step_len = cell_size * 3.0;
+        let machinable_mask = MaterialGrid::build_machinable_mask(
+            machinable,
+            grid.origin_x,
+            grid.origin_y,
+            grid.rows,
+            grid.cols,
+            grid.cell_size,
+        );
+        let (mop_segments, _new_last_pos) = mop_residue_into_segments(
+            &mut grid,
+            &machinable_mask,
+            tool_radius,
+            step_len,
+            last_pos,
+        );
+        let mop_count = mop_segments.iter().filter(|s| matches!(s, AdaptiveSegment::Cut(_))).count();
+        out.extend(mop_segments);
+        eprintln!(
+            "  residue after mop: {:.2}% (mop produced {} patches)",
+            grid.material_fraction() * 100.0,
+            mop_count
+        );
+
+        // Original offset-contour code (now unused but kept for reference):
+        let _stepover = stepover;
+        if false {
+        // I1: material-aware emission. Walk each offset contour sampling
+        // at every cell-size step; record (point, cleared_material) for
+        // each sample. Then break the cyclic sample array into
+        // material-touching arcs — emit each arc as its own Cut. Arcs are
+        // connected to the previous cut via Link when close, Rapid otherwise.
+        let max_iters = 40;
+        let mut produced_loops = 0usize;
+        let mut total_arcs_emitted = 0usize;
+        // Minimum arc length (number of samples) to avoid emitting single-
+        // cell stubs. 3 ≈ ~one cell-size of useful cut at the sample density.
+        const MIN_ARC_SAMPLES: usize = 3;
+        let push_cut_with_entry =
+            |arc: Vec<P2>, out: &mut Vec<AdaptiveSegment>, last_pos: &mut Option<P2>| {
+                if arc.len() < 2 {
+                    return false;
+                }
+                let entry = arc[0];
+                let needs_rapid = match *last_pos {
+                    None => true,
+                    Some(prev) => {
+                        let dx = entry.x - prev.x;
+                        let dy = entry.y - prev.y;
+                        (dx * dx + dy * dy).sqrt() > tool_radius * 6.0
+                    }
+                };
+                if needs_rapid {
+                    out.push(AdaptiveSegment::Rapid(entry));
+                } else {
+                    out.push(AdaptiveSegment::Link(entry));
+                }
+                *last_pos = arc.last().copied();
+                out.push(AdaptiveSegment::Cut(arc));
+                true
+            };
+
+        for iter in 0..max_iters {
+            let offset = iter as f64 * stepover;
+            let inset = if offset < 1e-9 {
+                vec![machinable.clone()]
+            } else {
+                crate::polygon::offset_polygon(machinable, offset)
+            };
+            if inset.is_empty() {
+                break;
+            }
+            let mut iter_cleared_any = false;
+            // For each inset polygon, walk its EXTERIOR + each HOLE.
+            // A donut-topology machinable region has a hole around the
+            // workpiece's hole; that hole's wall accumulates residue
+            // mirror-symmetric to the exterior wall, so it needs the
+            // same cleanup treatment.
+            let mut rings: Vec<&Vec<P2>> = Vec::new();
+            for inset_poly in inset.iter() {
+                rings.push(&inset_poly.exterior);
+                for hole in &inset_poly.holes {
+                    rings.push(hole);
+                }
+            }
+            for exterior in rings {
+                if exterior.len() < 3 {
+                    continue;
+                }
+                // Walk the contour, sample at cell-size intervals, record
+                // (point, cleared) for each sample. Trial-clear on a CLONED
+                // grid first so we know which samples would clear material
+                // BEFORE deciding what to emit; then commit clearing only
+                // for samples we actually keep.
+                let mut samples: Vec<(P2, bool)> = Vec::new();
+                let mut trial = grid.clone();
+                for k in 0..exterior.len() {
+                    let a = exterior[k];
+                    let b = exterior[(k + 1) % exterior.len()];
+                    let dx = b.x - a.x;
+                    let dy = b.y - a.y;
+                    let len = (dx * dx + dy * dy).sqrt();
+                    let n = (len / (cell_size * 1.5)).ceil().max(1.0) as usize;
+                    for j in 0..n {
+                        let t = j as f64 / n as f64;
+                        let x = a.x + t * dx;
+                        let y = a.y + t * dy;
+                        let before = trial.material_count;
+                        trial.clear_circle(x, y, tool_radius);
+                        let cleared = trial.material_count != before;
+                        samples.push((P2::new(x, y), cleared));
+                    }
+                }
+                if samples.is_empty() {
+                    continue;
+                }
+                let any_cleared = samples.iter().any(|(_, c)| *c);
+                if !any_cleared {
+                    continue;
+                }
+                let all_cleared = samples.iter().all(|(_, c)| *c);
+
+                // Commit the trial clearing — we've decided this contour
+                // contributes; emit logic below decides arc shape.
+                grid = trial;
+
+                if all_cleared {
+                    // No air gaps along this contour. Emit closed loop +
+                    // close-back-to-start segment so the final cell is
+                    // also cleared (matches BobCAD closed concentric).
+                    let mut path: Vec<P2> = samples.iter().map(|(p, _)| *p).collect();
+                    if let Some(first) = path.first().copied() {
+                        path.push(first);
+                    }
+                    if push_cut_with_entry(path, &mut out, &mut last_pos) {
+                        iter_cleared_any = true;
+                        produced_loops += 1;
+                        total_arcs_emitted += 1;
+                    }
+                    continue;
+                }
+
+                // Mixed case: walk samples, accumulating arcs across short
+                // air gaps (cheaper to trace through 1-2R of air than to
+                // break + Rapid). Only split arcs when the gap is long
+                // enough that breaking saves travel time.
+                //
+                // Gap budget: 8R of arc-length tolerated. Rough time math:
+                //   feed at cut depth ~30mm/s (F1800), rapid retract+plunge
+                //   cycle ~1-2s + 167mm/s rapid. Air-cut across an X mm
+                //   cleared section costs X/30 s; a Rapid costs ~1.5s + X/167.
+                //   Break-even ~50mm if the alternative is a Rapid; arbitrarily
+                //   close to free if the alternative is a Link.
+                //   8R (~24mm at R=3) splits only on clearly-long cleared
+                //   sections — keeps closed loops on the simple-square /
+                //   continuous-residue case while still breaking on
+                //   L-shape arms where the air section is half the loop.
+                let sample_step = cell_size * 1.5;
+                let gap_tolerance = ((tool_radius * 8.0) / sample_step).ceil() as usize;
+                let n_samples = samples.len();
+
+                // Find the longest consecutive air-gap to use as the
+                // rotation split point. If no gap exceeds the tolerance,
+                // fall back to closed-loop emission.
+                let mut longest_gap_len = 0usize;
+                let mut longest_gap_start = 0usize;
+                let mut cur_gap_len = 0usize;
+                let mut cur_gap_start = 0usize;
+                for i in 0..(2 * n_samples) {
+                    let (_, cleared) = samples[i % n_samples];
+                    if !cleared {
+                        if cur_gap_len == 0 {
+                            cur_gap_start = i % n_samples;
+                        }
+                        cur_gap_len += 1;
+                        if cur_gap_len > longest_gap_len {
+                            longest_gap_len = cur_gap_len;
+                            longest_gap_start = cur_gap_start;
+                        }
+                    } else {
+                        cur_gap_len = 0;
+                    }
+                    if i >= n_samples && cur_gap_len == 0 {
+                        break;
+                    }
+                }
+
+                if longest_gap_len <= gap_tolerance {
+                    // No significant gap → treat as closed loop, tolerating
+                    // the short air sections. Same emission as all_cleared.
+                    let mut path: Vec<P2> = samples.iter().map(|(p, _)| *p).collect();
+                    if let Some(first) = path.first().copied() {
+                        path.push(first);
+                    }
+                    if push_cut_with_entry(path, &mut out, &mut last_pos) {
+                        iter_cleared_any = true;
+                        produced_loops += 1;
+                        total_arcs_emitted += 1;
+                    }
+                    continue;
+                }
+
+                // Rotate so the longest gap is at the end; walk from after
+                // the gap, accumulating arcs and tolerating short gaps.
+                let arc_start = (longest_gap_start + longest_gap_len) % n_samples;
+                let mut current_arc: Vec<P2> = Vec::new();
+                let mut gap_count = 0usize;
+                let mut produced_in_this_loop = false;
+                for i in 0..n_samples {
+                    let (p, cleared) = samples[(arc_start + i) % n_samples];
+                    if cleared {
+                        gap_count = 0;
+                        current_arc.push(p);
+                    } else {
+                        gap_count += 1;
+                        if gap_count <= gap_tolerance {
+                            // Tolerate; keep tracing through short air.
+                            current_arc.push(p);
+                        } else if !current_arc.is_empty() {
+                            // Gap too long → end current arc. Trim the
+                            // trailing tolerated-air samples off the end
+                            // so the cut doesn't run past the last
+                            // material-touching point.
+                            let trim = (gap_count - 1).min(current_arc.len());
+                            let new_len = current_arc.len().saturating_sub(trim);
+                            current_arc.truncate(new_len);
+                            if current_arc.len() >= MIN_ARC_SAMPLES
+                                && push_cut_with_entry(
+                                    std::mem::take(&mut current_arc),
+                                    &mut out,
+                                    &mut last_pos,
+                                )
+                            {
+                                iter_cleared_any = true;
+                                produced_in_this_loop = true;
+                                total_arcs_emitted += 1;
+                            } else {
+                                current_arc.clear();
+                            }
+                        }
+                    }
+                }
+                if current_arc.len() >= MIN_ARC_SAMPLES
+                    && push_cut_with_entry(current_arc, &mut out, &mut last_pos)
+                {
+                    iter_cleared_any = true;
+                    produced_in_this_loop = true;
+                    total_arcs_emitted += 1;
+                }
+                if produced_in_this_loop {
+                    produced_loops += 1;
+                }
+            }
+            if !iter_cleared_any {
+                break;
+            }
+        }
+        eprintln!(
+            "offset-mop: {} cleanup loop iter(s), {} arc(s) emitted",
+            produced_loops, total_arcs_emitted
+        );
+        }
+        out
+    }
+
+    // ── Variant renders ────────────────────────────────────────────────
+
+    #[test]
+    #[allow(clippy::print_stderr)]
+    fn render_corner_burrow_cheap_fix_svg() {
+        let polygon = square_polygon(50.0);
+        let tool_radius = 3.0;
+        let stepover = tool_radius;
+        let params = AdaptiveParams {
+            slot_clearing: false,
+            ..default_params(tool_radius, stepover)
+        };
+        let never_cancel = || false;
+        let baseline = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None)
+            .expect("adaptive should not cancel");
+
+        let machinable = crate::polygon::offset_polygon(&polygon, tool_radius)
+            .into_iter()
+            .next()
+            .expect("machinable region exists");
+        let cell_size = (tool_radius / 6.0).max(params.tolerance);
+        let machinable_mask = MaterialGrid::build_machinable_mask(
+            &machinable,
+            polygon.exterior.iter().map(|p| p.x).fold(f64::INFINITY, f64::min) - 1.0,
+            polygon.exterior.iter().map(|p| p.y).fold(f64::INFINITY, f64::min) - 1.0,
+            ((50.0 + 4.0) / cell_size).ceil() as usize,
+            ((50.0 + 4.0) / cell_size).ceil() as usize,
+            cell_size,
+        );
+        // ^ above mask is approximate (sufficient for in-machinable lookups in the test).
+        let _ = machinable_mask;
+        // Re-derive precisely the same mask the planner used.
+        let test_grid = MaterialGrid::from_polygon(&polygon, cell_size);
+        let mask = MaterialGrid::build_machinable_mask(
+            &machinable,
+            test_grid.origin_x,
+            test_grid.origin_y,
+            test_grid.rows,
+            test_grid.cols,
+            test_grid.cell_size,
+        );
+
+        let step_len = cell_size * 3.0;
+        let fixed = apply_boundary_extend_fix(
+            &polygon,
+            tool_radius,
+            &machinable,
+            &mask,
+            cell_size,
+            step_len,
+            &baseline,
+        );
+
+        write_segments_svg(
+            &fixed,
+            &polygon,
+            tool_radius,
+            "adaptive_corner_burrow_50mm_cheap.svg",
+            "cheap fix (boundary-extension post-process)",
+        );
+    }
+
+    #[test]
+    #[allow(clippy::print_stderr)]
+    fn render_corner_burrow_proper_fix_svg() {
+        let polygon = square_polygon(50.0);
+        let tool_radius = 3.0;
+        let stepover = tool_radius;
+        let params = AdaptiveParams {
+            slot_clearing: false,
+            ..default_params(tool_radius, stepover)
+        };
+        let never_cancel = || false;
+        let baseline = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None)
+            .expect("adaptive should not cancel");
+
+        let machinable = crate::polygon::offset_polygon(&polygon, tool_radius)
+            .into_iter()
+            .next()
+            .expect("machinable region exists");
+        let cell_size = (tool_radius / 6.0).max(params.tolerance);
+
+        let _ = (machinable, cell_size, stepover);
+        let mop_params = AdaptiveParams {
+            cleanup_strategy: CleanupStrategy::ResidueMop,
+            ..default_params(tool_radius, stepover)
+        };
+        let fixed = path::apply_residue_mop_cleanup(&polygon, &mop_params, &baseline);
+        write_segments_svg(
+            &fixed,
+            &polygon,
+            tool_radius,
+            "adaptive_corner_burrow_50mm_proper.svg",
+            "proper fix (planner ResidueMop)",
+        );
+    }
+
+    // ── Shape matrix ───────────────────────────────────────────────────
+    //
+    // Run baseline + offset-pocket-mop on a variety of shapes, render each
+    // pair side-by-side as SVG. Validates that the proper fix doesn't
+    // regress on non-square geometry (circles, concave corners, holes).
+    //
+    // Output: target/adaptive_shape_<name>_{baseline,proper}.svg
+    #[test]
+    #[allow(clippy::print_stderr)]
+    fn render_shape_matrix_svg() {
+        // Shape definitions. Each returns a (name, polygon) pair sized to
+        // ~50mm extent so they're directly comparable to the square test.
+        let shapes: Vec<(&str, Polygon2)> = vec![
+            ("square_50", Polygon2::rectangle(-25.0, -25.0, 25.0, 25.0)),
+            ("rect_60x30", Polygon2::rectangle(-30.0, -15.0, 30.0, 15.0)),
+            ("circle_50", {
+                // 50mm diameter circle, 64-gon approximation
+                let r = 25.0;
+                let n = 64;
+                let pts: Vec<P2> = (0..n)
+                    .map(|i| {
+                        let t = (i as f64 / n as f64) * std::f64::consts::TAU;
+                        P2::new(r * t.cos(), r * t.sin())
+                    })
+                    .collect();
+                Polygon2::new(pts)
+            }),
+            ("l_shape", {
+                // L-shape: 50mm × 50mm with a 25mm × 25mm notch removed
+                // from the top-right corner. Concave inner corner exposes
+                // the offset-polygon arc rounding behaviour.
+                Polygon2::new(vec![
+                    P2::new(-25.0, -25.0),
+                    P2::new(25.0, -25.0),
+                    P2::new(25.0, 0.0),
+                    P2::new(0.0, 0.0),
+                    P2::new(0.0, 25.0),
+                    P2::new(-25.0, 25.0),
+                ])
+            }),
+            ("square_with_hole", {
+                // 50mm × 50mm square with a 15mm × 15mm hole centred at origin.
+                // Hole is CW (opposite winding from exterior).
+                let outer = Polygon2::rectangle(-25.0, -25.0, 25.0, 25.0).exterior;
+                let hole = vec![
+                    P2::new(-7.5, -7.5),
+                    P2::new(-7.5, 7.5),
+                    P2::new(7.5, 7.5),
+                    P2::new(7.5, -7.5),
+                ];
+                Polygon2::with_holes(outer, vec![hole])
+            }),
+        ];
+
+        let tool_radius = 3.0;
+        let stepover = tool_radius;
+        let params = AdaptiveParams {
+            slot_clearing: false,
+            ..default_params(tool_radius, stepover)
+        };
+        let never_cancel = || false;
+
+        eprintln!();
+        eprintln!("══════════════════════════════════════════════════════════════════");
+        eprintln!("Shape matrix — adaptive baseline vs offset-pocket-mop proper fix");
+        eprintln!("══════════════════════════════════════════════════════════════════");
+        eprintln!(
+            "{:>18} | {:>14} | {:>14}",
+            "shape", "baseline", "proper-fix"
+        );
+
+        let count_segs = |segs: &[AdaptiveSegment]| -> (usize, usize, usize) {
+            let mut c = 0;
+            let mut r = 0;
+            let mut l = 0;
+            for s in segs {
+                match s {
+                    AdaptiveSegment::Cut(_) => c += 1,
+                    AdaptiveSegment::Rapid(_) => r += 1,
+                    AdaptiveSegment::Link(_) => l += 1,
+                    AdaptiveSegment::Marker(_) => {}
+                }
+            }
+            (c, r, l)
+        };
+
+        for (name, polygon) in &shapes {
+            let machinable_vec = crate::polygon::offset_polygon(polygon, tool_radius);
+            if machinable_vec.is_empty() {
+                eprintln!("{:>18} | (no machinable region)", name);
+                continue;
+            }
+            let _machinable = machinable_vec[0].clone();
+            let baseline =
+                adaptive_segments_with_debug(polygon, &params, &never_cancel, None)
+                    .expect("adaptive should not cancel");
+            let mop_params = AdaptiveParams {
+                cleanup_strategy: CleanupStrategy::ResidueMop,
+                ..default_params(tool_radius, stepover)
+            };
+            let fixed = path::apply_residue_mop_cleanup(polygon, &mop_params, &baseline);
+            let (bc, br, bl) = count_segs(&baseline);
+            let (fc, fr, fl) = count_segs(&fixed);
+            eprintln!(
+                "{:>18} | {:>2}C {:>2}R {:>2}L | {:>2}C {:>2}R {:>2}L",
+                name, bc, br, bl, fc, fr, fl
+            );
+            write_segments_svg(
+                &baseline,
+                polygon,
+                tool_radius,
+                &format!("adaptive_shape_{}_baseline.svg", name),
+                &format!("{}: baseline", name),
+            );
+            write_segments_svg(
+                &fixed,
+                polygon,
+                tool_radius,
+                &format!("adaptive_shape_{}_proper.svg", name),
+                &format!("{}: offset-pocket mop-up", name),
+            );
+        }
+        eprintln!("══════════════════════════════════════════════════════════════════");
+    }
+
+    // ── Wiggle zoom ────────────────────────────────────────────────────
+    //
+    // Renders just the first ~30 steps of pass 1 at high zoom, with every
+    // step numbered. Lets us see whether the initial direction-search
+    // takes a wandering path before settling into the main spiral.
+    #[test]
+    #[allow(clippy::print_stderr)]
+    fn render_corner_burrow_initial_wiggle_svg() {
+        use std::io::Write;
+
+        let polygon = square_polygon(50.0);
+        let tool_radius = 3.0;
+        let stepover = tool_radius;
+        let params = AdaptiveParams {
+            slot_clearing: false,
+            ..default_params(tool_radius, stepover)
+        };
+        let never_cancel = || false;
+        let segments = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None)
+            .expect("adaptive should not cancel");
+
+        // Find the first Cut group; take its first N points.
+        let first_cut = segments
+            .iter()
+            .find_map(|s| {
+                if let AdaptiveSegment::Cut(p) = s {
+                    Some(p.clone())
+                } else {
+                    None
+                }
+            })
+            .expect("at least one Cut");
+        let n_steps = 40.min(first_cut.len());
+        let head: Vec<P2> = first_cut.iter().take(n_steps).copied().collect();
+
+        // Compute bbox for zoom
+        let mut min_x = f64::INFINITY;
+        let mut min_y = f64::INFINITY;
+        let mut max_x = f64::NEG_INFINITY;
+        let mut max_y = f64::NEG_INFINITY;
+        for p in &head {
+            min_x = min_x.min(p.x);
+            min_y = min_y.min(p.y);
+            max_x = max_x.max(p.x);
+            max_y = max_y.max(p.y);
+        }
+        let pad = 2.0_f64;
+        min_x -= pad;
+        min_y -= pad;
+        max_x += pad;
+        max_y += pad;
+        let width = max_x - min_x;
+        let height = max_y - min_y;
+
+        let svg_size = 800.0;
+        let view_box = format!("{} {} {} {}", min_x, -max_y, width, height);
+        let mut svg = String::new();
+        svg.push_str(&format!(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='{}' height='{}' viewBox='{}'>\n",
+            svg_size, svg_size, view_box
+        ));
+        svg.push_str("<g transform='scale(1,-1)'>\n");
+
+        svg.push_str(&format!(
+            "<rect x='{}' y='{}' width='{}' height='{}' fill='#fafafa'/>\n",
+            min_x, min_y, width, height
+        ));
+
+        // Machinable boundary (inset square corner).
+        let mh = 25.0 - tool_radius;
+        svg.push_str(&format!(
+            "<rect x='-{mh}' y='-{mh}' width='{mw}' height='{mw}' fill='none' \
+             stroke='#aaa' stroke-width='0.04' stroke-dasharray='0.2,0.2'/>\n",
+            mh = mh,
+            mw = mh * 2.0
+        ));
+
+        // Cutter circles at each step (translucent) so the swept area is visible
+        for p in &head {
+            svg.push_str(&format!(
+                "<circle cx='{:.3}' cy='{:.3}' r='{:.3}' fill='#88aaff' fill-opacity='0.08' stroke='none'/>\n",
+                p.x, p.y, tool_radius
+            ));
+        }
+
+        // Polyline through cutter centers
+        let pts = head
+            .iter()
+            .map(|p| format!("{:.3},{:.3}", p.x, p.y))
+            .collect::<Vec<_>>()
+            .join(" ");
+        svg.push_str(&format!(
+            "<polyline points='{}' fill='none' stroke='#1144aa' stroke-width='0.06' \
+             stroke-linecap='round' stroke-linejoin='round'/>\n",
+            pts
+        ));
+
+        // Numbered step markers
+        svg.push_str("<g font-family='monospace' font-size='0.35' fill='#222'>\n");
+        for (i, p) in head.iter().enumerate() {
+            svg.push_str(&format!(
+                "<circle cx='{:.3}' cy='{:.3}' r='0.08' fill='#aa1144'/>\n",
+                p.x, p.y
+            ));
+            svg.push_str(&format!(
+                "<text x='{:.3}' y='{:.3}' transform='scale(1,-1)'>{}</text>\n",
+                p.x + 0.1,
+                -(p.y + 0.1),
+                i
+            ));
+        }
+        svg.push_str("</g>\n");
+
+        svg.push_str("</g>\n");
+        svg.push_str("</svg>\n");
+
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let target_dir = manifest_dir
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("target"))
+            .expect("locate workspace target dir");
+        std::fs::create_dir_all(&target_dir).expect("create target dir");
+        let out = target_dir.join("adaptive_corner_burrow_50mm_wiggle.svg");
+        let mut f = std::fs::File::create(&out).expect("create svg");
+        f.write_all(svg.as_bytes()).expect("write svg");
+        eprintln!("wrote {} (first {} steps of pass 1)", out.display(), n_steps);
     }
 }

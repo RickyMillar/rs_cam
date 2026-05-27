@@ -415,6 +415,77 @@ fn walk_boundary_for_entry(
     best
 }
 
+/// Find an entry point at the largest inscribed circle inside the
+/// machinable region. Returns the cell with the highest boundary-
+/// distance value that's also a local maximum among 8-neighbours and
+/// passes the `min_inscribed_radius` gate.
+///
+/// Used for pass-1 entry on shapes that have an interior open region:
+/// starting at a DT maximum gives the cutter symmetric material on
+/// all sides, eliminating the corner-entry wiggle that plagues
+/// `find_entry_point`'s engagement-ranking approach.
+///
+/// Returns `None` if no cell meets the inscribed-radius gate — caller
+/// should fall back to `find_entry_point` (boundary walk).
+///
+/// Reference: Bieterman & Sandström (Boeing, ~2003), Ren & Bi (Int. J.
+/// Adv. Manuf. Tech., 2014). The "DT max" point is what BobCAD/
+/// Fusion/HSMWorks use as their helical-plunge seed.
+#[allow(clippy::indexing_slicing, dead_code)] // bounded grid indexing; kept for future use
+pub(crate) fn find_entry_via_distance_transform(
+    grid: &MaterialGrid,
+    machinable_mask: &[bool],
+    boundary_distances: &[f64],
+    tool_radius: f64,
+) -> Option<P2> {
+    // Gate: the cell's inscribed-disk radius must be at least 1.1× tool
+    // radius for the helical/center entry to make sense. Below this the
+    // region is "strip-mode" — fall back to boundary entry instead.
+    let min_inscribed = tool_radius * 1.1;
+    let mut best: Option<(f64, P2)> = None;
+
+    for row in 1..grid.rows.saturating_sub(1) {
+        for col in 1..grid.cols.saturating_sub(1) {
+            let idx = row * grid.cols + col;
+            let dt = boundary_distances[idx];
+            if dt < min_inscribed || dt.is_infinite() {
+                continue;
+            }
+            // Local-maximum check across the 8 neighbours (slight
+            // tolerance to handle the discrete grid's plateaus —
+            // require strictly greater than each neighbour, else we
+            // can pick any one cell in a flat plateau).
+            let mut is_max = true;
+            'outer: for dr in [-1i32, 0, 1] {
+                for dc in [-1i32, 0, 1] {
+                    if dr == 0 && dc == 0 {
+                        continue;
+                    }
+                    let nr = (row as i32 + dr) as usize;
+                    let nc = (col as i32 + dc) as usize;
+                    let nidx = nr * grid.cols + nc;
+                    if boundary_distances[nidx] > dt + 1e-9 {
+                        is_max = false;
+                        break 'outer;
+                    }
+                }
+            }
+            if !is_max {
+                continue;
+            }
+            let cx = grid.origin_x + col as f64 * grid.cell_size;
+            let cy = grid.origin_y + row as f64 * grid.cell_size;
+            if !grid.is_machinable(machinable_mask, cx, cy) {
+                continue;
+            }
+            if best.is_none_or(|(b, _)| dt > b) {
+                best = Some((dt, P2::new(cx, cy)));
+            }
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
 /// Find an entry point by walking the machinable boundary contours.
 ///
 /// Uses systematic boundary traversal: walks the machinable polygon

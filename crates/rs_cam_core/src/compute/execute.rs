@@ -422,6 +422,7 @@ pub fn execute_operation_annotated(
                         slot_clearing: cfg.slot_clearing,
                         min_cutting_radius: cfg.min_cutting_radius,
                         initial_stock: initial_stock.cloned(),
+                        cleanup_strategy: crate::adaptive::CleanupStrategy::Legacy,
                     };
                     let (level_tp, mut annotations) =
                         crate::adaptive::adaptive_toolpath_structured_annotated_traced_with_cancel(

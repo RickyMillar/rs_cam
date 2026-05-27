@@ -324,6 +324,7 @@ fn default_adaptive_params() -> AdaptiveParams {
         slot_clearing: true,
         min_cutting_radius: 0.0,
         initial_stock: None,
+        cleanup_strategy: rs_cam_core::adaptive::CleanupStrategy::Legacy,
     }
 }
 
