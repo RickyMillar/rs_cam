@@ -328,6 +328,17 @@ pub struct DressupConfig {
     pub dogbone_angle: f64,
     pub lead_in_out: bool,
     pub lead_radius: f64,
+    /// F-040: Lead-in feed rate (mm/min). When `Some`, lead-in arc moves
+    /// emitted by `apply_lead_in_out` use this rate (typically slower than
+    /// cutting feed for a softer entry / cleaner dwell mark). When `None`,
+    /// lead-in inherits the operation's primary `feed_rate` (pre-F-040
+    /// behaviour). Default `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lead_in_feed_rate: Option<f64>,
+    /// F-040: Lead-out feed rate (mm/min). Same fallback semantics —
+    /// typically faster than cutting feed (chip-clear on exit). Default `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lead_out_feed_rate: Option<f64>,
     pub link_moves: bool,
     pub link_max_distance: f64,
     pub link_feed_rate: f64,
@@ -355,6 +366,8 @@ impl Default for DressupConfig {
             dogbone_angle: 90.0,
             lead_in_out: false,
             lead_radius: 2.0,
+            lead_in_feed_rate: None,
+            lead_out_feed_rate: None,
             link_moves: true,
             link_max_distance: 10.0,
             link_feed_rate: 500.0,

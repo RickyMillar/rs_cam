@@ -314,7 +314,16 @@ fn should_skip_modulation(move_type: MoveType, intent: MoveIntent) -> bool {
     }
     matches!(
         intent,
-        MoveIntent::Retract | MoveIntent::Drilling | MoveIntent::EntryPlunge
+        MoveIntent::Retract
+            | MoveIntent::Drilling
+            | MoveIntent::EntryPlunge
+            // F-040: lead-in / lead-out feeds are operator-tuned (cleaner
+            // entry mark / faster chip-clear on exit). Treat them as
+            // user-tuned and skip modulation — the dressup's
+            // `lead_in_feed_rate` / `lead_out_feed_rate` already carries
+            // the operator's intent for these moves.
+            | MoveIntent::LeadIn
+            | MoveIntent::LeadOut
     )
 }
 

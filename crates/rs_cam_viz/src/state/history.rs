@@ -4,6 +4,13 @@ use rs_cam_core::enriched_mesh::FaceGroupId;
 use rs_cam_core::machine::MachineProfile;
 
 /// A snapshot of undoable state.
+// SAFETY: ToolpathParamChange holds 2× OperationConfig + 2× DressupConfig (≈648
+// bytes) which is intentional — undo/redo needs the full state snapshot. The
+// surrounding code stores UndoAction in a bounded history Vec (not a hot loop),
+// so the per-variant size diff vs simple variants like StockChange is
+// acceptable for the readability win of keeping the variants inline. Boxing
+// the large variant is a possible refactor when memory pressure shows up.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum UndoAction {
     StockChange {

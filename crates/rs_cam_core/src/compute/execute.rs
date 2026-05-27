@@ -1353,7 +1353,7 @@ pub fn apply_dressups(
     semantic_ctx: Option<&ToolpathSemanticContext>,
 ) -> AnnotatedToolpath {
     use crate::dressup::{
-        EntryStyle, LinkMoveParams, apply_dogbones, apply_entry, apply_lead_in_out,
+        EntryStyle, LinkMoveParams, apply_dogbones, apply_entry,
         apply_link_moves,
     };
 
@@ -1484,6 +1484,8 @@ pub fn apply_dressups(
     // 3. Lead in/out
     if cfg.lead_in_out {
         let radius = cfg.lead_radius;
+        let li_feed = cfg.lead_in_feed_rate;
+        let lo_feed = cfg.lead_out_feed_rate;
         current = apply_dressup_traced(
             current,
             debug_ctx,
@@ -1496,8 +1498,14 @@ pub fn apply_dressups(
             },
             |scope| {
                 scope.set_param("radius", radius);
+                if let Some(f) = li_feed {
+                    scope.set_param("lead_in_feed_rate", f);
+                }
+                if let Some(f) = lo_feed {
+                    scope.set_param("lead_out_feed_rate", f);
+                }
             },
-            |at| apply_lead_in_out(at, radius),
+            |at| crate::dressup::apply_lead_in_out_with_feeds(at, radius, li_feed, lo_feed),
         );
     }
 
