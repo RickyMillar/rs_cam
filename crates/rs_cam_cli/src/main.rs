@@ -2365,6 +2365,7 @@ fn main() -> Result<()> {
                             slot_clearing,
                             min_cutting_radius,
                             initial_stock: None,
+                            cleanup_strategy: rs_cam_core::adaptive::CleanupStrategy::Legacy,
                         },
                     )
                 });

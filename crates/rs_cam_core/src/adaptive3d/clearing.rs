@@ -1425,6 +1425,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
         slot_clearing: false,
         min_cutting_radius: 0.0,
         initial_stock: None,
+        cleanup_strategy: crate::adaptive::CleanupStrategy::Legacy,
     };
 
     // 5. Lift 2D points to 3D, respecting terrain peaks above z_level.

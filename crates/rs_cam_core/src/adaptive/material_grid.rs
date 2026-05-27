@@ -8,6 +8,7 @@ use std::collections::VecDeque;
 /// 2D boolean grid tracking material presence for engagement calculation.
 ///
 /// Cell values: 0 = outside polygon (air), 1 = uncut material, 2 = cleared.
+#[derive(Clone)]
 pub(crate) struct MaterialGrid {
     pub cells: Vec<u8>,
     pub rows: usize,
