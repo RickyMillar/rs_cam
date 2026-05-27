@@ -431,7 +431,7 @@ fn walk_boundary_for_entry(
 /// Reference: Bieterman & Sandström (Boeing, ~2003), Ren & Bi (Int. J.
 /// Adv. Manuf. Tech., 2014). The "DT max" point is what BobCAD/
 /// Fusion/HSMWorks use as their helical-plunge seed.
-#[allow(clippy::indexing_slicing, dead_code)] // bounded grid indexing; kept for future use
+#[allow(clippy::indexing_slicing)] // bounded grid indexing
 pub(crate) fn find_entry_via_distance_transform(
     grid: &MaterialGrid,
     machinable_mask: &[bool],
