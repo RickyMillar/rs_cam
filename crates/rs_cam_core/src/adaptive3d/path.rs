@@ -932,10 +932,149 @@ pub(super) fn adaptive_3d_segments(
 
 // ── Public API ────────────────────────────────────────────────────────
 
+/// F-038b: maximum mesh Z along the XY straight line between two points.
+///
+/// Drops a flat-tip probe down at evenly-spaced samples along
+/// `from`→`to` using `crate::dropcutter::point_drop_cutter`. Returns the
+/// maximum Z reported by any sample, or `None` if the cutter never
+/// contacted the mesh along the line (line is entirely off-mesh).
+///
+/// Used by `segments_to_toolpath` to decide whether a `Rapid` / `RapidWithFloor`
+/// transition can be replaced with a keep-tool-down feed link.
+///
+/// Note we use the operative `cutter` so the height respects the tool's
+/// actual contact geometry (ball-tip vs flat-tip vs taper). Sampling
+/// frequency is 10 stations (incl. endpoints) — matches the F-038b spec.
+fn max_mesh_z_along_line(
+    mesh: &crate::mesh::TriangleMesh,
+    index: &crate::mesh::SpatialIndex,
+    cutter: &dyn crate::tool::MillingCutter,
+    from_xy: (f64, f64),
+    to_xy: (f64, f64),
+    samples: usize,
+) -> Option<f64> {
+    let samples = samples.max(2);
+    let mut max_z = f64::NEG_INFINITY;
+    let mut any_contact = false;
+    for i in 0..samples {
+        let t = i as f64 / (samples - 1) as f64;
+        let x = from_xy.0 + t * (to_xy.0 - from_xy.0);
+        let y = from_xy.1 + t * (to_xy.1 - from_xy.1);
+        let cl = crate::dropcutter::point_drop_cutter(x, y, mesh, index, cutter);
+        if cl.contacted && cl.z.is_finite() && cl.z > max_z {
+            max_z = cl.z;
+            any_contact = true;
+        }
+    }
+    if any_contact { Some(max_z) } else { None }
+}
+
+/// F-038b: attempt to emit a keep-tool-down feed link between a previous
+/// tool position and a new entry point. Returns `true` if the link was
+/// emitted (caller skips the retract+rapid+plunge sequence), `false`
+/// otherwise (caller falls back to the legacy retract path).
+///
+/// Algorithm (per F-038b spec):
+///   1. Require previous tool position (`from`); short-circuit if absent.
+///   2. Reject if `xy_distance(from, to) > max_stay_down_distance_mm`.
+///   3. Sample mesh heightfield (`samples` evenly spaced incl. endpoints).
+///   4. `link_z = max(samples_max, from.z, to.z) + clearance_mm`.
+///   5. Reject if `link_z > safe_z` (terrain peak exceeds safe-Z guard).
+///   6. Reject if `link_z > to.z + cutter_length` (shank would enter
+///      uncut material above the new entry point that the tool can't
+///      cut).
+///   7. Emit three feed moves @ feed_rate, all tagged `MoveIntent::Linking`:
+///      (a) ascend at the start XY to link_z, (b) XY traverse at
+///      link_z to the entry XY, (c) descend to the entry point. Each
+///      step is skipped if the start/end Z is already at link_z.
+#[allow(clippy::too_many_arguments)]
+fn try_emit_stay_down_link(
+    tp: &mut Toolpath,
+    from: P3,
+    to: P3,
+    mesh: &crate::mesh::TriangleMesh,
+    index: &crate::mesh::SpatialIndex,
+    cutter: &dyn crate::tool::MillingCutter,
+    max_stay_down_distance_mm: f64,
+    clearance_mm: f64,
+    safe_z: f64,
+    feed_rate: f64,
+) -> bool {
+    if max_stay_down_distance_mm <= 0.0 {
+        return false;
+    }
+    let dx = to.x - from.x;
+    let dy = to.y - from.y;
+    let xy_dist = (dx * dx + dy * dy).sqrt();
+    if xy_dist > max_stay_down_distance_mm {
+        return false;
+    }
+
+    // F-038b spec sample count = 10 (incl. endpoints).
+    let max_mesh = max_mesh_z_along_line(
+        mesh,
+        index,
+        cutter,
+        (from.x, from.y),
+        (to.x, to.y),
+        10,
+    );
+    // If the line is entirely off-mesh, the terrain doesn't constrain
+    // us; fall back to from.z/to.z as the height ceiling.
+    let terrain_max = max_mesh.unwrap_or(f64::NEG_INFINITY);
+    let link_z = terrain_max.max(from.z).max(to.z) + clearance_mm;
+
+    // Safety guard 1: link Z above safe_z means the terrain peak is
+    // above the safe height. Retract is the right answer.
+    if link_z > safe_z + 1e-9 {
+        return false;
+    }
+    // Safety guard 2: the cutter's cutting length bounds how far above
+    // `to.z` the shank can engage material. If the link Z requires the
+    // shank to rise above `to.z + cutter_length`, the un-cuttable shank
+    // would intersect the heightfield-sampled material. Retract.
+    let cutter_length = cutter.length();
+    if cutter_length > 0.0 && link_z > to.z + cutter_length + 1e-9 {
+        return false;
+    }
+
+    use crate::toolpath::MoveIntent;
+    // Step (a): ascend at the current XY to link_z if needed.
+    if link_z > from.z + 1e-9 {
+        tp.feed_to_with_intent(
+            P3::new(from.x, from.y, link_z),
+            feed_rate,
+            MoveIntent::Linking,
+        );
+    }
+    // Step (b): XY traverse at link_z.
+    tp.feed_to_with_intent(
+        P3::new(to.x, to.y, link_z),
+        feed_rate,
+        MoveIntent::Linking,
+    );
+    // Step (c): descend to the entry point.
+    if to.z < link_z - 1e-9 {
+        tp.feed_to_with_intent(to, feed_rate, MoveIntent::Linking);
+    }
+    true
+}
+
 /// Convert segments to a toolpath and collect annotations.
+///
+/// `mesh` + `index` + `cutter` were added in F-038b to enable per-link
+/// mesh-heightfield queries for the keep-tool-down planner. Call sites
+/// that don't have a real mesh handy (pure-unit tests of segment shape)
+/// can still build a trivial flat mesh via `crate::mesh::make_test_flat`
+/// — the F-038b probe is a no-op when `params.max_stay_down_distance_mm`
+/// resolves to 0.0, so the cutter/mesh values don't affect behaviour in
+/// that case.
 pub(super) fn segments_to_toolpath(
     segments: &[Adaptive3dSegment],
     params: &Adaptive3dParams,
+    mesh: &crate::mesh::TriangleMesh,
+    index: &crate::mesh::SpatialIndex,
+    cutter: &dyn crate::tool::MillingCutter,
 ) -> (Toolpath, Vec<Adaptive3dRuntimeAnnotation>) {
     let mut tp = Toolpath::new();
     let mut annotations = Vec::new();
@@ -945,6 +1084,14 @@ pub(super) fn segments_to_toolpath(
     // ordinal in narrate / semantic output and as the structural
     // Entry span's label.
     let mut pass_counter: usize = 0;
+
+    // F-038b: resolve the stay-down distance knob. `None` ⇒ planner
+    // default of 8 × tool diameter (Fusion HSM roughing default). The
+    // operator can override with `Some(x)` (incl. `Some(0.0)` to disable).
+    let stay_down_dist = params
+        .max_stay_down_distance_mm
+        .unwrap_or_else(|| (cutter.radius() * 2.0) * 8.0);
+    let stay_down_clearance = params.stay_down_clearance_mm.max(0.0);
 
     // Lift the tool to safe_z above its current XY before any
     // traverse-then-plunge sequence. Without this, a Rapid segment
@@ -986,6 +1133,46 @@ pub(super) fn segments_to_toolpath(
             }
             Adaptive3dSegment::Rapid(entry) => {
                 let entry_start = tp.moves.len();
+                // F-038b: try a keep-tool-down feed link from the previous
+                // tool position to `entry` before falling back to retract.
+                // Only attempted for Plunge entries — Helix and Ramp have
+                // their own entry geometry and aren't candidates for a
+                // direct feed-to-depth link (the helix/ramp's plunge angle
+                // is what protects the cutter on those styles).
+                let prev_pos = tp.moves.last().map(|m| m.target);
+                let stay_down_used = matches!(params.entry_style, EntryStyle3d::Plunge)
+                    && prev_pos.is_some_and(|from| {
+                        try_emit_stay_down_link(
+                            &mut tp,
+                            from,
+                            *entry,
+                            mesh,
+                            index,
+                            cutter,
+                            stay_down_dist,
+                            stay_down_clearance,
+                            params.safe_z,
+                            params.feed_rate,
+                        )
+                    });
+                if stay_down_used {
+                    let entry_end = tp.moves.len();
+                    if entry_end > entry_start {
+                        annotations.push(Adaptive3dRuntimeAnnotation {
+                            move_index: entry_start,
+                            event: Adaptive3dRuntimeEvent::PassEntry {
+                                pass_index: pass_counter,
+                                entry_x: entry.x,
+                                entry_y: entry.y,
+                                entry_z: entry.z,
+                                entry_end_move_idx: entry_end,
+                                style_label: "keep-down link",
+                            },
+                        });
+                        pass_counter += 1;
+                    }
+                    continue;
+                }
                 match params.entry_style {
                     EntryStyle3d::Plunge => {
                         lift_to_safe_z(&mut tp, params.safe_z);
@@ -1056,6 +1243,46 @@ pub(super) fn segments_to_toolpath(
                 rapid_floor_z,
             } => {
                 let entry_start = tp.moves.len();
+                // F-038b: same keep-tool-down attempt as the plain Rapid
+                // arm above. Only Plunge entries are candidates.
+                let prev_pos = tp.moves.last().map(|m| m.target);
+                let stay_down_used = matches!(params.entry_style, EntryStyle3d::Plunge)
+                    && prev_pos.is_some_and(|from| {
+                        try_emit_stay_down_link(
+                            &mut tp,
+                            from,
+                            *entry,
+                            mesh,
+                            index,
+                            cutter,
+                            stay_down_dist,
+                            stay_down_clearance,
+                            params.safe_z,
+                            params.feed_rate,
+                        )
+                    });
+                if stay_down_used {
+                    let entry_end = tp.moves.len();
+                    if entry_end > entry_start {
+                        annotations.push(Adaptive3dRuntimeAnnotation {
+                            move_index: entry_start,
+                            event: Adaptive3dRuntimeEvent::PassEntry {
+                                pass_index: pass_counter,
+                                entry_x: entry.x,
+                                entry_y: entry.y,
+                                entry_z: entry.z,
+                                entry_end_move_idx: entry_end,
+                                style_label: "keep-down link",
+                            },
+                        });
+                        pass_counter += 1;
+                    }
+                    // Silence the unused-warning for `rapid_floor_z` in
+                    // the stay-down branch — it's only consulted when we
+                    // fall through to the rapid-descent code path below.
+                    let _ = rapid_floor_z;
+                    continue;
+                }
                 match params.entry_style {
                     EntryStyle3d::Plunge => {
                         // Skip the peck-feed through cleared air. The clearing
@@ -1227,6 +1454,20 @@ mod tests {
     use super::*;
     use crate::toolpath::{MoveIntent, MoveType};
 
+    // F-038b: legacy `segments_to_toolpath` tests need a mesh + index +
+    // cutter trio to call the new signature. Since they explicitly
+    // disable the keep-tool-down feature (`max_stay_down_distance_mm:
+    // Some(0.0)` in `minimal_params`), the heightfield never gets
+    // queried — a trivial flat mesh and an arbitrary endmill are fine.
+    fn legacy_test_mesh() -> (crate::mesh::TriangleMesh, crate::mesh::SpatialIndex) {
+        let m = crate::mesh::make_test_flat(100.0);
+        let si = crate::mesh::SpatialIndex::build(&m, 10.0);
+        (m, si)
+    }
+    fn legacy_test_cutter() -> crate::tool::FlatEndmill {
+        crate::tool::FlatEndmill::new(6.35, 25.0)
+    }
+
     fn minimal_params() -> Adaptive3dParams {
         Adaptive3dParams {
             tool_radius: 3.175,
@@ -1254,6 +1495,12 @@ mod tests {
             shallow_stepdown: None,
             world_stock_xy_bbox: None,
             min_region_cut_length_mm: 0.0,
+            // F-038b: legacy `segments_to_toolpath` unit tests expect the
+            // pre-F-038b retract-rapid-plunge sequence between Rapid
+            // segments. Disable stay-down explicitly (Some(0.0)) so those
+            // tests keep their existing structural assertions.
+            max_stay_down_distance_mm: Some(0.0),
+            stay_down_clearance_mm: 0.5,
         }
     }
 
@@ -1264,7 +1511,9 @@ mod tests {
         params.depth_per_pass = 0.5;
 
         let rapid = Adaptive3dSegment::Rapid(P3::new(0.0, 0.0, 0.0));
-        let (tp, _) = segments_to_toolpath(&[rapid], &params);
+        let (mesh, si) = legacy_test_mesh();
+        let cutter = legacy_test_cutter();
+        let (tp, _) = segments_to_toolpath(&[rapid], &params, &mesh, &si, &cutter);
 
         assert!(
             tp.moves.len() <= 6,
@@ -1298,7 +1547,9 @@ mod tests {
         let cut2 =
             Adaptive3dSegment::Cut(vec![P3::new(20.0, 20.0, -2.0), P3::new(25.0, 25.0, -2.0)]);
 
-        let (tp, _) = segments_to_toolpath(&[cut1, rapid, cut2], &params);
+        let (mesh, si) = legacy_test_mesh();
+        let cutter = legacy_test_cutter();
+        let (tp, _) = segments_to_toolpath(&[cut1, rapid, cut2], &params, &mesh, &si, &cutter);
 
         // Sanity: there should be moves.
         assert!(!tp.moves.is_empty());
@@ -1367,7 +1618,9 @@ mod tests {
         // checking that the first move IS the lateral approach rapid
         // to safe_z, not a redundant in-place lift before it.
         let rapid = Adaptive3dSegment::Rapid(P3::new(20.0, 20.0, -2.0));
-        let (tp, _) = segments_to_toolpath(&[rapid], &params);
+        let (mesh, si) = legacy_test_mesh();
+        let cutter = legacy_test_cutter();
+        let (tp, _) = segments_to_toolpath(&[rapid], &params, &mesh, &si, &cutter);
         assert!(
             matches!(tp.moves[0].move_type, MoveType::Rapid),
             "first move should be Rapid, got {:?}",

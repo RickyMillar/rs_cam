@@ -358,6 +358,19 @@ fn rebuild_group(
         let seg = &segments[seg_idx];
 
         if idx == 0 {
+            // F-038b: if the previous group's fast-path appended verbatim
+            // without a trailing retract (e.g. a depth-pass whose internal
+            // transitions used stay-down feed links instead of rapids → one
+            // big segment → fast path), the cutter is still at low Z.
+            // Without this retract, the next single rapid would go diagonally
+            // (current low Z → seg.start.xy, safe_z) — slicing through stock.
+            // Mirror the (idx > 0) branch: vertical retract first, then
+            // horizontal traverse at safe_z.
+            if let Some(last) = result.moves.last()
+                && last.target.z < safe_z
+            {
+                result.rapid_to(P3::new(last.target.x, last.target.y, safe_z));
+            }
             result.rapid_to(P3::new(seg.start.x, seg.start.y, safe_z));
         } else {
             let prev_seg = &segments[order[idx - 1]];

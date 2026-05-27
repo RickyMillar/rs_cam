@@ -1254,6 +1254,9 @@ fn param_defs_for_type(op_type: OperationType) -> &'static [ParamDef] {
         ParamDef::optional("shallow_angle_deg", "option<f64>"),
         ParamDef::optional("shallow_stepdown", "option<f64>"),
         ParamDef::required("min_region_cut_length_mm", "f64"),
+        // F-038b: keep-tool-down link knobs.
+        ParamDef::optional("max_stay_down_distance_mm", "option<f64>"),
+        ParamDef::required("stay_down_clearance_mm", "f64"),
     ];
     const WATERLINE: &[ParamDef] = &[
         ParamDef::required("z_step", "f64"),
