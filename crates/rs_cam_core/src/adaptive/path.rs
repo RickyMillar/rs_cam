@@ -1046,25 +1046,36 @@ fn contour_parallel_segments(
     Ok(segments)
 }
 
-/// True when at least one sample point along the contour lies over an
-/// uncleared (material) grid cell. Used by `contour_parallel_segments`
-/// to skip emitting concentric loops that would cut nothing.
+/// True when a meaningful fraction of the contour lies over uncleared
+/// (material) cells. Samples ~128 points; emits if ≥ 25% are material.
+///
+/// A simple "any material" filter over-emits: the spiral leaves thin
+/// wiggle-slivers between passes, so every inward offset contour
+/// crosses *some* material at a sliver and walks the whole loop just
+/// to clear a 5%-coverage band. The fraction threshold ignores these
+/// tracer-sliver intersections and emits only when the contour covers
+/// substantial residue — typically the outermost band where the
+/// spiral didn't reach, or a residue ring in a narrow strip.
 fn contour_passes_material(contour: &[P2], grid: &MaterialGrid) -> bool {
+    const COVERAGE_THRESHOLD: f64 = 0.25;
     if contour.len() < 3 {
         return false;
     }
-    let n_samples = 64.min(contour.len());
+    let n_samples = 128.min(contour.len());
     let stride = (contour.len() / n_samples).max(1);
+    let mut hits = 0usize;
+    let mut total = 0usize;
     let mut i = 0;
     while i < contour.len() {
         #[allow(clippy::indexing_slicing)] // i < contour.len() bounded above
         let p = contour[i];
         if grid.is_material(p.x, p.y) {
-            return true;
+            hits += 1;
         }
+        total += 1;
         i += stride;
     }
-    false
+    total > 0 && (hits as f64 / total as f64) >= COVERAGE_THRESHOLD
 }
 
 /// Walk a closed contour in world coords, subdividing each edge to

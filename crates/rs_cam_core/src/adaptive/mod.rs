@@ -2546,16 +2546,17 @@ mod tests {
                 Polygon2::with_holes(outer, vec![hole])
             }),
             ("tadpole", {
-                // Wide bulb (r=15mm at x=-10) tangent-merged with a
-                // tail (8mm half-height) extending to x=28. The bulb
-                // is comfortably wide for the spiral; the tail is
-                // wide enough that boundary cleanup leaves a center
-                // band of residue. The Hybrid contour-parallel sweep
-                // handles that residue with smooth offset loops.
-                let cx = -10.0_f64;
-                let r = 15.0_f64;
-                let tail_h = 8.0_f64;
-                let tail_x = 28.0_f64;
+                // Wide bulb (r=30mm at x=-15) tangent-merged with a
+                // narrow tail (4.5mm half-height) extending to x=50.
+                // Bulb is 10 cutter-diameters wide — large enough for
+                // the engagement-target spiral to settle into clean
+                // constant-engagement arcs without convergence
+                // wiggle. Tail is too narrow for the spiral search
+                // ring, so the contour-parallel sweep handles it.
+                let cx = -15.0_f64;
+                let r = 30.0_f64;
+                let tail_h = 4.5_f64;
+                let tail_x = 50.0_f64;
                 let theta_attach = (tail_h / r).asin();
                 let mut pts: Vec<P2> = Vec::new();
                 pts.push(P2::new(tail_x, tail_h));
