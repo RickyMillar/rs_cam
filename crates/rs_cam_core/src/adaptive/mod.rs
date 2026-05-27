@@ -45,11 +45,21 @@ use crate::toolpath::Toolpath;
 ///   feed-linking between adjacent patches and Rapid-ing only when
 ///   patches are > 6R apart. Substantially fewer Rapids and arcs;
 ///   matches BobCAD/Fusion offset-pocket finisher aesthetic.
+/// - `ContourParallelNarrow`: 2026-05-28 follow-up. Same as `ResidueMop`
+///   for regions wider than the engagement-target spiral can stably
+///   handle. For *narrow* regions — where the largest inscribed disk
+///   inside the machinable mask is ≤ 3 × stepover — the engagement
+///   spiral degenerates into a sawtooth wiggle (no room to swing the
+///   ~21-candidate-angle search). For those regions the planner skips
+///   the spiral entirely and emits concentric contour-parallel offset
+///   loops, then runs the standard residue mop. Targets annular /
+///   ring-shaped pockets (donut-topology with a hole near the bounds).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CleanupStrategy {
     #[default]
     Legacy,
     ResidueMop,
+    ContourParallelNarrow,
 }
 
 /// Parameters for adaptive clearing.
@@ -195,7 +205,9 @@ pub fn adaptive_toolpath_structured_annotated_traced_with_cancel(
     let segments = adaptive_segments_with_debug(polygon, params, cancel, debug)?;
     let segments = match params.cleanup_strategy {
         CleanupStrategy::Legacy => segments,
-        CleanupStrategy::ResidueMop => apply_residue_mop_cleanup(polygon, params, &segments),
+        CleanupStrategy::ResidueMop | CleanupStrategy::ContourParallelNarrow => {
+            apply_residue_mop_cleanup(polygon, params, &segments)
+        }
     };
     let (tp, annotations) = segments_to_toolpath(&segments, params);
     if let Some(debug_ctx) = debug {
@@ -2531,12 +2543,18 @@ mod tests {
         let never_cancel = || false;
 
         eprintln!();
-        eprintln!("══════════════════════════════════════════════════════════════════");
-        eprintln!("Shape matrix — adaptive baseline vs offset-pocket-mop proper fix");
-        eprintln!("══════════════════════════════════════════════════════════════════");
         eprintln!(
-            "{:>18} | {:>14} | {:>14}",
-            "shape", "baseline", "proper-fix"
+            "══════════════════════════════════════════════════════════════════════════════════"
+        );
+        eprintln!(
+            "Shape matrix — baseline vs ResidueMop vs ContourParallelNarrow (narrow regions only)"
+        );
+        eprintln!(
+            "══════════════════════════════════════════════════════════════════════════════════"
+        );
+        eprintln!(
+            "{:>18} | {:>14} | {:>14} | {:>14}",
+            "shape", "baseline", "mop", "contour-narrow"
         );
 
         let count_segs = |segs: &[AdaptiveSegment]| -> (usize, usize, usize) {
@@ -2569,11 +2587,27 @@ mod tests {
                 ..default_params(tool_radius, stepover)
             };
             let fixed = path::apply_residue_mop_cleanup(polygon, &mop_params, &baseline);
+            // ContourParallelNarrow: branches inside adaptive_segments_with_debug
+            // based on max-DT-in-mask gate, then runs the residue mop on the
+            // output. For wide regions this should be byte-identical to the
+            // ResidueMop column; for narrow regions (donut) it emits
+            // concentric offset loops instead.
+            let narrow_params = AdaptiveParams {
+                cleanup_strategy: CleanupStrategy::ContourParallelNarrow,
+                slot_clearing: false,
+                ..default_params(tool_radius, stepover)
+            };
+            let narrow_segs =
+                adaptive_segments_with_debug(polygon, &narrow_params, &never_cancel, None)
+                    .expect("adaptive should not cancel");
+            let narrow =
+                path::apply_residue_mop_cleanup(polygon, &narrow_params, &narrow_segs);
             let (bc, br, bl) = count_segs(&baseline);
             let (fc, fr, fl) = count_segs(&fixed);
+            let (nc, nr, nl) = count_segs(&narrow);
             eprintln!(
-                "{:>18} | {:>2}C {:>2}R {:>2}L | {:>2}C {:>2}R {:>2}L",
-                name, bc, br, bl, fc, fr, fl
+                "{:>18} | {:>2}C {:>2}R {:>2}L | {:>2}C {:>2}R {:>2}L | {:>2}C {:>2}R {:>2}L",
+                name, bc, br, bl, fc, fr, fl, nc, nr, nl
             );
             write_segments_svg(
                 &baseline,
@@ -2589,8 +2623,17 @@ mod tests {
                 &format!("adaptive_shape_{}_proper.svg", name),
                 &format!("{}: offset-pocket mop-up", name),
             );
+            write_segments_svg(
+                &narrow,
+                polygon,
+                tool_radius,
+                &format!("adaptive_shape_{}_narrow.svg", name),
+                &format!("{}: contour-parallel narrow", name),
+            );
         }
-        eprintln!("══════════════════════════════════════════════════════════════════");
+        eprintln!(
+            "══════════════════════════════════════════════════════════════════════════════════"
+        );
     }
 
     // ── Wiggle zoom ────────────────────────────────────────────────────

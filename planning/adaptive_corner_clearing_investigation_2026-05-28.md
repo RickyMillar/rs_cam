@@ -212,3 +212,46 @@ cargo test -p rs_cam_core --lib adaptive::tests::render_shape_matrix -- --nocapt
 cargo test -p rs_cam_core --lib adaptive::tests::render_corner_burrow -- --nocapture
 cargo test -p rs_cam_core --lib adaptive::tests::instrument_corner_burrow -- --nocapture
 ```
+
+## Follow-up — #153 ContourParallelNarrow landed (2026-05-28)
+
+After Phase 1 (`CleanupStrategy::ResidueMop`, commit `45d5ce2`) cleaned
+up the gross fragmentation, the donut (`square_with_hole`) still
+showed sawtooth wiggle inside its narrow annular ring — the
+engagement-target spiral has no room to swing inside an 11.5 mm-wide
+ring with a 6 mm cutter. Per-step convergence detectors (engagement
+ratio, angle change, cramped-space, idle tightening) were all proven
+to lack a clean discrimination signal during this session, so the gate
+had to move up a level: per-region, not per-step.
+
+`CleanupStrategy::ContourParallelNarrow` adds a region-level branch
+to `adaptive_segments_with_debug`. Before pass 1 starts, the planner
+asks `offset_polygon(machinable, tool_radius + stepover)`. If the
+result collapses to nothing — or only fragments smaller than 2 ×
+cutter-footprint — the region is too narrow for the spiral to settle,
+and the planner emits concentric inward-offset loops of `machinable`
+instead. The standard residue mop then runs on the output to catch any
+strip between concentric loops. Wide regions keep the original
+spiral path.
+
+`render_shape_matrix_svg` adds a third column / SVG for narrow-region
+output. Donut shape matrix after this PR:
+
+| shape              | baseline    | ResidueMop  | ContourParallelNarrow |
+|--------------------|-------------|-------------|-----------------------|
+| square_50          | 16C/15R/3L  | 3C/3R/0L    | 3C/3R/0L (byte-identical) |
+| rect_60x30         | 17C/15R/2L  | 2C/2R/0L    | 2C/2R/0L (byte-identical) |
+| circle_50          | 19C/20R/3L  | 3C/3R/0L    | 3C/3R/0L (byte-identical) |
+| l_shape            | 18C/15R/3L  | 3C/3R/0L    | 3C/3R/0L (byte-identical) |
+| square_with_hole   | 27C/27R/4L  | 6C/4R/2L    | 8C/6R/2L (clean concentric loops) |
+
+Slightly higher count (8 vs 6) on the donut, but the per-cut quality
+is the win — the gold sawtooth pattern is replaced by smooth nested
+rectangles, which is what an offset-pocket finisher should produce.
+
+Default `CleanupStrategy` stays `Legacy`. `ContourParallelNarrow`
+behaves like `ResidueMop` on every shape except donut-style narrow
+rings, so it's safe to swap in incrementally.
+
+Remaining: #149 (TSP order on cleanup contours), #152 (smoothing the
+spiral wiggle in *convex* pockets — the donut fix doesn't help there).
