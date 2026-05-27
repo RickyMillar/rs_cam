@@ -48,6 +48,13 @@ pub enum MoveIntent {
     Linking,
     /// Lift off material before a rapid (no material removal).
     Retract,
+    /// F-040: lead-in arc / tangent entry before the first cut move of a pass.
+    /// Carries the dressup's `lead_in_feed_rate` (or the operation feed if
+    /// unset). F-039's modulator skips these moves — the operator's lead-in
+    /// feed is treated as user-tuned, not modulated.
+    LeadIn,
+    /// F-040: lead-out arc / tangent exit after the last cut move of a pass.
+    LeadOut,
     /// Fallback for legacy / unaware generators. Deprecation marker.
     #[default]
     Unknown,

@@ -2,7 +2,7 @@
 
 - **Stage:** dressup config + emitter
 - **Severity:** low (finishing-pass quality nice-to-have; not blocking the modulation workstream)
-- **Status:** open — design only
+- **Status:** landed 2026-05-27 (lead-in / lead-out feed override via `DressupConfig` + `MoveIntent::{LeadIn,LeadOut}` + F-039 modulator skip + 4 acceptance tests). Default `None` is byte-identical to pre-F-040.
 - **First found in:** user feedback after F-039 design discussion, 2026-05-27
 - **Effort:** S-M (one new dressup field, two new feed-rate fields, emitter consumes them, modulator respects the new intents)
 - **Linked PRs:** —
@@ -92,3 +92,31 @@ S. Purely additive. Existing toolpaths with default `None` continue using primar
 - Helix entry is a separate concern (currently inherits ramp_feed via `DressupConfig.feed_ramp_rate`; if a future need surfaces, add a `helix_entry_feed_rate` the same way).
 - Arc feed-rate breakout NOT included — the kinematics integrator (F-034) handles arc-deceleration based on radius. A separate arc-feed knob is rarely useful in practice; revisit only if a real complaint surfaces.
 - F-040 unblocks better lead-in tuning for the scallop / drop-cutter quality story but isn't on the modulation workstream's critical path. Pick up when finishing-pass quality is the focus.
+
+## Landing notes (2026-05-27)
+
+Landed as opt-in alongside F-038b + F-039 bench-prep batch.
+
+### Behaviour clarification vs design doc
+
+Doc said: lead-in falls back to "operation's primary feed_rate" when `None`. **Implementation:** falls back to the *plunge* feed of the move it replaces (the descent-to-cut-depth feed), preserving pre-F-040 byte-identical behaviour. Operator who wants lead-in at cut feed sets `lead_in_feed_rate = Some(<cut_feed>)` explicitly. This keeps the F-037 smoke baseline byte-identical and avoids surprising existing finishing ops that have `lead_in_out = true` set.
+
+### Files
+
+- `crates/rs_cam_core/src/toolpath.rs` — `MoveIntent::{LeadIn, LeadOut}` variants
+- `crates/rs_cam_core/src/compute/config.rs` — `DressupConfig.lead_in_feed_rate` + `lead_out_feed_rate` (both `Option<f64>`, default `None`)
+- `crates/rs_cam_core/src/dressup.rs` — new public `apply_lead_in_out_with_feeds`; legacy `apply_lead_in_out` delegates with `None`/`None`
+- `crates/rs_cam_core/src/compute/execute.rs` — pass dressup's overrides into the new variant
+- `crates/rs_cam_core/src/feed_modulation.rs` — `should_skip_modulation` skips `MoveIntent::{LeadIn, LeadOut}`
+- `crates/rs_cam_viz/src/state/history.rs` — `#[allow(clippy::large_enum_variant)]` with SAFETY note (F-040's 16-byte addition to `DressupConfig` tipped the variant-size diff lint; pragmatic allow since `UndoAction` is stored in a bounded history `Vec`)
+- `crates/rs_cam_core/tests/lead_in_out_feed_rates_f040.rs` — 4 acceptance tests
+
+### Validation
+- 4/4 F-040 acceptance tests pass (apply when set, byte-identical fallback when None, lead-out, F-039 modulator skip).
+- F-037 smoke diff: **no regressions** (18 cases byte-identical).
+- Workspace clippy clean.
+- F-024 / F-028 / F-036b / F-038b / F-039 regression nets all green.
+
+### Variant 6 bench fixture
+
+Generated alongside this PR for the bench-batch USB bundle: a small profile fixture with `lead_in_feed_rate = 500.0`, `lead_out_feed_rate = 4500.0` — audible feed transition at entry / exit on the bench machine.

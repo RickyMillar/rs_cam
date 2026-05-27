@@ -550,6 +550,28 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath 
 /// tagged [`SpanKind::LeadOut`].
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn apply_lead_in_out(annotated: AnnotatedToolpath, radius: f64) -> AnnotatedToolpath {
+    apply_lead_in_out_with_feeds(annotated, radius, None, None)
+}
+
+/// F-040: lead-in / lead-out with optional override feed rates.
+///
+/// `lead_in_feed_rate` — when `Some`, lead-in arc moves use this feed
+/// (typically slower than cutting feed for a softer entry). When `None`,
+/// inherits the cut-pass's `feed_rate` (pre-F-040 behaviour).
+///
+/// `lead_out_feed_rate` — same fallback semantics; typically faster than
+/// cutting feed for chip-clear on exit.
+///
+/// Lead-in moves are tagged [`MoveIntent::LeadIn`] and lead-out moves
+/// [`MoveIntent::LeadOut`] so the F-039 modulator (and future analyses)
+/// can treat them as user-tuned rather than modulating them.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub fn apply_lead_in_out_with_feeds(
+    annotated: AnnotatedToolpath,
+    radius: f64,
+    lead_in_feed_rate: Option<f64>,
+    lead_out_feed_rate: Option<f64>,
+) -> AnnotatedToolpath {
     let AnnotatedToolpath {
         toolpath,
         spans,
@@ -600,14 +622,17 @@ pub fn apply_lead_in_out(annotated: AnnotatedToolpath, radius: f64) -> Annotated
                         cut_z,
                     );
 
-                    let feed_rate = match moves[i].move_type {
+                    let cut_feed_rate = match moves[i].move_type {
                         MoveType::Linear { feed_rate } => feed_rate,
                         _ => 500.0,
                     };
+                    // F-040: lead-in uses the dressup's override feed if set,
+                    // otherwise falls back to the cut-pass's feed rate.
+                    let li_feed = lead_in_feed_rate.unwrap_or(cut_feed_rate);
 
                     let entry_start = result.moves.len();
                     // Plunge to lead-in start instead of original plunge point
-                    result.feed_to(lead_start, feed_rate);
+                    result.feed_to_with_intent(lead_start, li_feed, crate::toolpath::MoveIntent::LeadIn);
 
                     // Arc from lead_start to plunge_end (quarter circle)
                     let arc_steps = 8;
@@ -619,7 +644,7 @@ pub fn apply_lead_in_out(annotated: AnnotatedToolpath, radius: f64) -> Annotated
                             - ux * radius * (1.0 - cos_a);
                         let ay = plunge_end.y + perp_y * radius * (1.0 - sin_a)
                             - uy * radius * (1.0 - cos_a);
-                        result.feed_to(P3::new(ax, ay, cut_z), feed_rate);
+                        result.feed_to_with_intent(P3::new(ax, ay, cut_z), li_feed, crate::toolpath::MoveIntent::LeadIn);
                     }
                     let entry_end = result.moves.len();
                     if entry_end > entry_start {
@@ -657,10 +682,13 @@ pub fn apply_lead_in_out(annotated: AnnotatedToolpath, radius: f64) -> Annotated
                     let perp_x = -uy;
                     let perp_y = ux;
 
-                    let feed_rate = match moves[i].move_type {
+                    let cut_feed_rate = match moves[i].move_type {
                         MoveType::Linear { feed_rate } => feed_rate,
                         _ => 1000.0,
                     };
+                    // F-040: lead-out uses the dressup's override feed if set,
+                    // otherwise falls back to the cut-pass's feed rate.
+                    let lo_feed = lead_out_feed_rate.unwrap_or(cut_feed_rate);
 
                     // Emit the original cut endpoint
                     let cut_idx = result.moves.len();
@@ -675,7 +703,7 @@ pub fn apply_lead_in_out(annotated: AnnotatedToolpath, radius: f64) -> Annotated
                         let (sin_a, cos_a) = angle.sin_cos();
                         let ax = cut_end.x + ux * radius * sin_a + perp_x * radius * (1.0 - cos_a);
                         let ay = cut_end.y + uy * radius * sin_a + perp_y * radius * (1.0 - cos_a);
-                        result.feed_to(P3::new(ax, ay, cut_z), feed_rate);
+                        result.feed_to_with_intent(P3::new(ax, ay, cut_z), lo_feed, crate::toolpath::MoveIntent::LeadOut);
                     }
                     let lo_end = result.moves.len();
                     // The old cut-end move covers cut_idx..lo_end (itself plus
