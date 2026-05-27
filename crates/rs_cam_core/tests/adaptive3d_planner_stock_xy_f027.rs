@@ -131,6 +131,8 @@ fn build_as013_terrain_session() -> ProjectSession {
         shallow_stepdown: None,
         spindle_rpm: Some(18_000),
         min_region_cut_length_mm: 0.0,
+        max_stay_down_distance_mm: Some(0.0),
+        stay_down_clearance_mm: 0.5,
     };
 
     let tc = ToolpathConfig {

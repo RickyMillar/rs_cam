@@ -174,6 +174,24 @@ pub struct Adaptive3dParams {
     /// "perimeter micro-plunge" fragmentation the Wanaka Back Rough .nc
     /// exhibited (149 plunges, 90 of which cut ≤ 10 mm). Default 5.0 mm.
     pub min_region_cut_length_mm: f64,
+    /// F-038b: maximum XY distance to attempt a keep-tool-down link
+    /// between cut groups instead of retract-rapid-plunge. `None` means
+    /// "use 8 × tool diameter computed at toolpath build time" — matches
+    /// Fusion HSM's typical "stay down distance" setting for roughing on
+    /// hardwood. `Some(0.0)` disables the feature (every transition becomes
+    /// a retract). Applied in `segments_to_toolpath` against the mesh
+    /// heightfield: each candidate link samples the highest mesh Z along
+    /// the XY straight line and emits a feed-rate stay-down at
+    /// `max(samples, end.z, start.z) + stay_down_clearance_mm` only when
+    /// that link Z stays below `safe_z` AND within the tool's cutting
+    /// length. Falls back to retract on any safety violation.
+    pub max_stay_down_distance_mm: Option<f64>,
+    /// F-038b: vertical clearance added on top of the maximum heightfield
+    /// sample along a stay-down link. 0.5 mm absorbs dexel/mesh
+    /// discretisation noise (~0.5 mm at standard sim resolution) plus a
+    /// hair of safety margin so the rapid step over a low peak doesn't
+    /// scrape the surface. Default 0.5 mm.
+    pub stay_down_clearance_mm: f64,
 }
 
 // SurfaceHeightmap is now in crate::slope (shared across finishing strategies)
@@ -432,7 +450,9 @@ pub fn adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
 ) -> Result<(Toolpath, Vec<Adaptive3dRuntimeAnnotation>), Cancelled> {
     let result = adaptive_3d_segments(mesh, index, cutter, params, debug, cancel)?;
     let segments = result.segments;
-    let (tp, annotations) = segments_to_toolpath(&segments, params);
+    // F-038b: pass mesh + spatial index + cutter so segments_to_toolpath
+    // can query the heightfield along each candidate stay-down link.
+    let (tp, annotations) = segments_to_toolpath(&segments, params, mesh, index, cutter);
     if let Some(debug_ctx) = debug {
         for annotation in &annotations {
             debug_ctx.add_annotation(annotation.move_index, annotation.event.label());
@@ -599,6 +619,11 @@ mod tests {
             // Disabled by default in tests — tests that need to exercise
             // the F-038 fragmentation filter set this explicitly.
             min_region_cut_length_mm: 0.0,
+            // F-038b: tests opt out by default (None ⇒ 8×diam in production,
+            // but the unit-test fixtures here exercise the legacy code path
+            // unless they specifically target the keep-tool-down logic).
+            max_stay_down_distance_mm: Some(0.0),
+            stay_down_clearance_mm: 0.5,
         }
     }
 
@@ -2051,7 +2076,7 @@ mod tests {
         let planner_stock = result.final_material_stock;
         let surface_hm = result.surface_heightmap;
         let segments = result.segments;
-        let (toolpath, _) = segments_to_toolpath(&segments, &params);
+        let (toolpath, _) = segments_to_toolpath(&segments, &params, &mesh, &si, &cutter);
 
         let mut sim_stock = initial_stock;
         sim_stock

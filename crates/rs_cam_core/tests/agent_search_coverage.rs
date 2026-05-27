@@ -241,6 +241,8 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
         shallow_stepdown: None,
         world_stock_xy_bbox: None,
         min_region_cut_length_mm: 0.0,
+        max_stay_down_distance_mm: Some(0.0),
+        stay_down_clearance_mm: 0.5,
     };
 
     // ── Generate (annotated) ──────────────────────────────────────────

@@ -164,6 +164,11 @@ fn make_params(tool_radius: f64, min_region_cut_length_mm: f64) -> Adaptive3dPar
         shallow_stepdown: None,
         world_stock_xy_bbox: None,
         min_region_cut_length_mm,
+        // F-038b: keep the F-038 fixture's pre-F-038b behaviour (every
+        // entry remains a retract/rapid/plunge) so the entry-count
+        // regression net stays comparable across F-038 and F-038b.
+        max_stay_down_distance_mm: Some(0.0),
+        stay_down_clearance_mm: 0.5,
     }
 }
 

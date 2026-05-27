@@ -497,6 +497,26 @@ pub struct Adaptive3dConfig {
     /// the Wanaka Back Rough measurement (90/149 plunges cut ≤ 10 mm pre-fix).
     #[serde(default = "default_min_region_cut_length_mm")]
     pub min_region_cut_length_mm: f64,
+    /// F-038b: maximum XY distance (mm) to attempt a keep-tool-down link
+    /// between cut groups instead of retract-rapid-plunge. `None` falls
+    /// back to a planner-side default of 8 × tool diameter (Fusion HSM's
+    /// typical "stay down distance" for roughing). `Some(0.0)` disables
+    /// the feature.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_stay_down_distance_mm: Option<f64>,
+    /// F-038b: vertical clearance (mm) added on top of the maximum mesh
+    /// heightfield sample along a stay-down link. Default 0.5 mm absorbs
+    /// dexel/mesh discretisation noise.
+    #[serde(default = "default_stay_down_clearance_mm")]
+    pub stay_down_clearance_mm: f64,
+}
+
+fn default_stay_down_clearance_mm() -> f64 {
+    // F-038b: matches dexel cell-height resolution at standard sim
+    // settings (~0.5 mm). Larger values forfeit cycle-time savings on
+    // tight terrain; smaller values risk grazing the surface on
+    // imprecise heightfields.
+    0.5
 }
 
 fn default_min_region_cut_length_mm() -> f64 {
@@ -535,6 +555,11 @@ impl Default for Adaptive3dConfig {
             shallow_angle_deg: None,
             shallow_stepdown: None,
             min_region_cut_length_mm: default_min_region_cut_length_mm(),
+            // F-038b: leave the planner to pick 8×diameter at toolpath
+            // build time (None) unless the operator explicitly overrides
+            // it through the per-op config / CLI flag.
+            max_stay_down_distance_mm: None,
+            stay_down_clearance_mm: default_stay_down_clearance_mm(),
         }
     }
 }

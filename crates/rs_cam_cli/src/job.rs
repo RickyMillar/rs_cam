@@ -228,6 +228,12 @@ pub struct OperationDef {
     /// F-038: minimum forecast cut length (mm) for a marching-squares region
     /// to be retained in AgentSearch. Default 5.0 mm. Set to 0.0 to disable.
     pub min_region_cut_length_mm: Option<f64>,
+    /// F-038b: maximum XY stay-down link distance (mm) between cut groups.
+    /// `None` ⇒ planner defaults to 8 × tool diameter. `Some(0.0)` disables.
+    pub max_stay_down_distance_mm: Option<f64>,
+    /// F-038b: vertical clearance (mm) above the heightfield sample max
+    /// when emitting a keep-tool-down link. Default 0.5 mm.
+    pub stay_down_clearance_mm: Option<f64>,
 }
 
 // ── Parsing ────────────────────────────────────────────────────────────
@@ -686,6 +692,11 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                     // F-038: forward from CLI option; default matches the
                     // workspace default (operation_configs.rs).
                     min_region_cut_length_mm: op.min_region_cut_length_mm.unwrap_or(15.0),
+                    // F-038b: forward keep-tool-down knobs. `None` lets the
+                    // planner pick 8 × tool diameter; the operator can pin
+                    // via `max_stay_down_distance_mm = N` or disable with 0.0.
+                    max_stay_down_distance_mm: op.max_stay_down_distance_mm,
+                    stay_down_clearance_mm: op.stay_down_clearance_mm.unwrap_or(0.5),
                 };
 
                 if debug_trace {

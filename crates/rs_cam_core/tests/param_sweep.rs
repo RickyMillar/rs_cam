@@ -1482,6 +1482,8 @@ fn default_adaptive3d_params() -> Adaptive3dParams {
         shallow_stepdown: None,
         world_stock_xy_bbox: None,
         min_region_cut_length_mm: 0.0,
+        max_stay_down_distance_mm: Some(0.0),
+        stay_down_clearance_mm: 0.5,
     }
 }
 

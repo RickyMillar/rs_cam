@@ -951,6 +951,11 @@ pub fn execute_operation_annotated(
                 // length (perimeter + 2D adaptive walk) is below this floor.
                 // Only honored by the AgentSearch strategy.
                 min_region_cut_length_mm: cfg.min_region_cut_length_mm,
+                // F-038b: keep-tool-down link policy. None lets the planner
+                // default to 8 × tool diameter; Some(0.0) disables the
+                // feature; Some(x) caps stay-down at x mm.
+                max_stay_down_distance_mm: cfg.max_stay_down_distance_mm,
+                stay_down_clearance_mm: cfg.stay_down_clearance_mm,
             };
             let (tp, annotations) =
                 crate::adaptive3d::adaptive_3d_toolpath_structured_annotated_traced_with_cancel(

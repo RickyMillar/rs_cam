@@ -2731,6 +2731,11 @@ fn main() -> Result<()> {
                 // strategy harness benchmarks exercise full-region clearing
                 // where micro-fragmentation is not in scope.
                 min_region_cut_length_mm: 15.0,
+                // F-038b: leave the planner to pick 8 × tool diameter at
+                // build time. CLI strategy benchmarks aren't tuning
+                // keep-tool-down, so we use the production default.
+                max_stay_down_distance_mm: None,
+                stay_down_clearance_mm: 0.5,
             };
 
             let start = std::time::Instant::now();
