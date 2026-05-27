@@ -2845,6 +2845,24 @@ fn draw_toolpath_panel(
                 .map(|(_, t)| (t.diameter, t.tool_type));
             let (tool_diameter, tool_type) =
                 tool_info.unwrap_or((6.0, crate::state::job::ToolType::EndMill));
+            // Redesigned modal entry — pulls open the full chart-driven
+            // view. Stays alongside the legacy feeds card so existing
+            // muscle memory keeps working until the modal is fully
+            // promoted (Phase 4).
+            ui.horizontal(|ui| {
+                if ui
+                    .button("\u{1F4CA} Open Feeds & Speeds modal")
+                    .on_hover_text(
+                        "Open the redesigned Feeds & Speeds view: \
+                         current-vs-recommended comparison, three machinist \
+                         charts, and Apply buttons.",
+                    )
+                    .clicked()
+                {
+                    events.push(AppEvent::OpenFeedsModal(entry.id));
+                }
+            });
+            ui.add_space(4.0);
             if let Some(tool_cfg) = tool_configs
                 .iter()
                 .find(|(id, _)| *id == entry.tool_id)

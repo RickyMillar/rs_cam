@@ -120,7 +120,8 @@ fn drill_session_produces_drill_summary_with_pecks() {
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
-    };
+        modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+        modulation_aggressiveness: 1.0,    };
     session
         .run_simulation(&opts, &cancel)
         .expect("simulation completes");
@@ -221,7 +222,8 @@ fn drill_session_oversize_peck_trips_peck_adequacy_gate() {
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
-    };
+        modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+        modulation_aggressiveness: 1.0,    };
     session
         .run_simulation(&opts, &cancel)
         .expect("simulation completes");

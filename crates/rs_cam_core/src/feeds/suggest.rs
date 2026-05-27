@@ -124,20 +124,22 @@ pub fn suggest_for_operation(input: SuggestForOperationInput<'_>) -> SuggestedPa
     }
 }
 
-/// Run the feeds calculator for an operation and project context without
-/// mutating the operation.
-pub fn feeds_result_for_operation(
+/// Build a [`FeedsInput`] for the given operation. Shared by both
+/// [`feeds_result_for_operation`] and [`feeds_explain_for_operation`]
+/// so the recommendation and the explanation are always derived from
+/// identical inputs.
+fn feeds_input_for_operation<'a>(
     operation: &OperationConfig,
-    tool: &ToolConfig,
-    material: &Material,
-    machine: &MachineProfile,
+    tool: &'a ToolConfig,
+    material: &'a Material,
+    machine: &'a MachineProfile,
     workholding: WorkholdingRigidity,
-    lut: &VendorLut,
-) -> FeedsResult {
+    lut: &'a VendorLut,
+) -> FeedsInput<'a> {
     let (family, role) = operation.feeds_style();
     let (axial_hint, radial_hint, scallop_hint) = operation_feeds_hints(operation);
     let tool_def = build_cutter(tool);
-    let input = FeedsInput {
+    FeedsInput {
         tool_diameter: tool.diameter,
         flute_count: tool.flute_count,
         flute_length: tool.cutting_length,
@@ -155,8 +157,37 @@ pub fn feeds_result_for_operation(
             tool_overhang_mm: Some(tool.stickout),
             workholding_rigidity: workholding,
         },
-    };
+    }
+}
+
+/// Run the feeds calculator for an operation and project context without
+/// mutating the operation.
+pub fn feeds_result_for_operation(
+    operation: &OperationConfig,
+    tool: &ToolConfig,
+    material: &Material,
+    machine: &MachineProfile,
+    workholding: WorkholdingRigidity,
+    lut: &VendorLut,
+) -> FeedsResult {
+    let input = feeds_input_for_operation(operation, tool, material, machine, workholding, lut);
     crate::feeds::calculate(&input)
+}
+
+/// Same inputs as [`feeds_result_for_operation`] but returns the full
+/// [`FeedsExplain`] payload — recommended values plus matched LUT row,
+/// sibling rows, and machine envelope. Used by the redesigned Feeds &
+/// Speeds modal.
+pub fn feeds_explain_for_operation(
+    operation: &OperationConfig,
+    tool: &ToolConfig,
+    material: &Material,
+    machine: &MachineProfile,
+    workholding: WorkholdingRigidity,
+    lut: &VendorLut,
+) -> crate::feeds::FeedsExplain {
+    let input = feeds_input_for_operation(operation, tool, material, machine, workholding, lut);
+    crate::feeds::explain_feeds(&input)
 }
 
 /// Write a [`FeedsResult`] into an [`OperationConfig`] and enforce the canonical

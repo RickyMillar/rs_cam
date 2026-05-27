@@ -2,10 +2,10 @@
 
 - **Stage:** simulator → modulation algorithm + diagnostics surface
 - **Severity:** medium (replaces F-036's "target band-mid" heuristic with the production-CAM-equivalent constrained-optimization framing)
-- **Status:** open — design only
+- **Status:** landed 2026-05-27 (Layers 1 + 3 + algorithm + CLI flags). Layer 2 G-code comments deferred to F-039c.
 - **First found in:** user feedback after F-036c bench results, 2026-05-27
 - **Effort:** L (algorithm rework + per-move binding-constraint tracking + diagnostic surface layers)
-- **Linked PRs:** —
+- **Linked PRs:** landed in commit on master 2026-05-27 (see STATE.md impl log)
 - **Workstream:** Feed Modulation
 - **Depends on:** F-036 / F-036a / F-036b / F-036b1 landed; F-035 predicted-feed plumbing landed
 - **Supersedes (when landed):** F-036's "target band-mid" default behaviour
@@ -170,3 +170,54 @@ L. This rewrites the modulator's central decision logic. Mitigation strategy:
 - F-040 (lead-in / lead-out feed breakout) is conceptually independent — modulation respects whatever feed the dressup put on those moves. F-040 = more knobs; F-039 = better behaviour with existing knobs.
 - F-039a (3D feed heatmap viz) consumes `SimulationCutTrace::modulated_feeds` produced here. Lands after F-039 is settled.
 - The deflection-max + power-max limits already live in `crates/rs_cam_core/src/tool_load/` — F-039 reuses them in the per-move solver. No new physics model needed.
+
+## Landing notes (2026-05-27)
+
+Implementation landed. Pipeline:
+
+1. **Layer 1 — `ModulationSummary` on `ToolpathLoadVerdict`** ✅
+2. **Layer 2 — per-move G-code comments** ❌ deferred to **F-039c** (only a doc-comment stub in `feed_modulation.rs:37` referencing `emit_modulation_comments`). Operator transparency at G-code level still missing.
+3. **Layer 3 — `SimulationCutTrace::modulated_feeds: BTreeMap<(toolpath_id, move_idx), (f64, BindingConstraint)>`** ✅
+4. **CLI flags on `project` subcommand**: `--modulation-strategy {constrained-max,band-mid}` (default `constrained-max`) + `--modulation-aggressiveness <f64>` (default 1.0) ✅
+5. **F-036b's 9 acceptance tests**: kept passing alongside F-039's 6 — both strategies validated. **BandMid was NOT deleted in this PR** (per design doc plan: keep one release cycle as fallback).
+
+### Wanaka full-project sim comparison (resolution 1.0 mm, `--inject-shapeoko-kinematics`)
+
+| Configuration | Predicted runtime | Air% | Notes |
+|---|---|---|---|
+| Unmodulated | 5223 s (1h 27m) | 42.1 % | F-034 kinematics baseline |
+| F-036 BandMid | 9925 s (2h 45m) | 22.1 % | Pre-F-039 default |
+| F-039 ConstrainedMax @ 1.0 | 9915 s (2h 45m) | 22.2 % | ~Identical to BandMid |
+| F-039 ConstrainedMax @ 1.3 | 8935 s (2h 29m) | 24.6 % | Aggressiveness 1.3 trims 16 min |
+
+**Finding:** On wanaka the binding constraint at aggressiveness 1.0 is NOT chipload-max (where BandMid and ConstrainedMax would diverge). The doc's "should be CLOSER to unmodulated 13:47" prediction does not hold — likely deflection-max or kinematic-reach is binding most often instead. F-039's transparency Layer 1 (per-toolpath `binding_constraint_distribution`) will surface which once the GUI panel renders it. Higher aggressiveness (1.3) gives ~10 % cycle-time reduction by pushing past the binding constraint.
+
+**This is informative, not a failure.** F-039's value on wanaka is in the *transparency layers* (operator now sees what's binding) more than in the cycle-time delta. The deflection-binding hypothesis is testable by the GUI ModulationSummary panel — that's why Layer 1 viz integration landed in the same PR.
+
+### Sub-findings opened
+
+- **F-039b** (proposed): Investigate why ConstrainedMax binding distribution on wanaka doesn't favour chipload-max. Hypothesis: deflection-max or kinematic-reach dominates. Action: dump `binding_constraint_distribution` from a wanaka run, compare to expectation. If correct, the doc's "30 % cycle improvement" claim needs revising — F-039's win is transparency, not headline cycle time on this specific project.
+- **F-039c**: Land Layer 2 G-code comment annotation (`(F1500 — chipload-max binds; commanded F4000)`) gated by `gcode.emit_modulation_comments`. Currently only doc-comment stub in `feed_modulation.rs:37`. Required for full operator transparency at the workshop machine.
+
+### Validation
+- Workspace clippy clean (4 `for_kv_map` violations in the new test file caught and fixed post-agent-handover).
+- F-037 smoke diff: **no regressions** (18 cases byte-identical under default ConstrainedMax @ 1.0).
+- F-024 / F-026 / F-028 / F-035 / F-036a / F-036b / F-036b1 / F-036c / F-037 / F-038 / F-038b acceptance tests all green (28 regression-net tests).
+- F-039 acceptance tests: 6/6 pass.
+- TSP unit tests: 10/10 pass.
+- `tool_load` unit tests: 303/303 pass.
+- `feed_modulation` unit tests: 12/12 pass.
+
+### Files touched (post-implementation)
+
+Beyond the doc's listed files, the agent also touched user's in-flight protected files:
+
+- `crates/rs_cam_core/src/feeds/{mod,suggest,vendor_lookup}.rs` — feeds-tab integration of ModulationSummary
+- `crates/rs_cam_core/src/diagnostics/{ids,tests,adapters/from_preconditions}.rs` — required `modulation_summary: None` initialization in `ToolpathLoadVerdict` constructors + new diagnostic ID for modulation
+- `crates/rs_cam_viz/src/{app, controller/events/mod, state/mod, ui/mod, ui/properties/mod}.rs` — Layer 1 viz panel + strategy/aggressiveness event handlers (~455 LOC)
+
+User approved committing these in-line with their other in-flight viz/feeds work per the scope-decision dialog 2026-05-27.
+
+### Bench validation
+
+Deferred until F-038b + F-039 trip — batched to amortize the setup cost. Recommended bench protocol: same wanaka project, three runs — unmodulated baseline, F-036 BandMid (commanded-F4000 → F1500 silent cap), F-039 ConstrainedMax @ 1.0 (binding-constraint surfaced in summary). Compare wall-clock against simulator's 5223 / 9925 / 9915 s predictions.

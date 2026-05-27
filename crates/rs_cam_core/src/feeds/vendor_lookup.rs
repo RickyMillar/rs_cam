@@ -9,6 +9,7 @@ use super::vendor_lut::{
 };
 
 /// Query parameters for LUT lookup.
+#[derive(Debug, Clone)]
 pub struct LookupQuery {
     pub tool_family: ToolFamily,
     pub tool_subfamily: Option<String>,

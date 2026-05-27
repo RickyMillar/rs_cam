@@ -84,8 +84,8 @@ use crate::tool::ToolDefinition;
 use serde::{Deserialize, Serialize};
 
 pub use verdict::{
-    ChiploadVerdict, Confidence, DeflectionVerdict, PowerVerdict, ToolLoadReport,
-    ToolpathLoadVerdict, UnmodeledReason,
+    BindingConstraint, ChiploadVerdict, Confidence, DeflectionVerdict, ModulationStrategyTag,
+    ModulationSummary, PowerVerdict, ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason,
 };
 
 /// Why the optimizer refused to produce a recommendation. Typed
@@ -421,6 +421,7 @@ pub fn evaluate_toolpath(
             tolerance,
         ),
         drill_gates,
+        modulation_summary: None,
     }
 }
 

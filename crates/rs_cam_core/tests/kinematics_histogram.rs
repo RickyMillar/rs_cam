@@ -66,7 +66,8 @@ fn kinematics_histogram_wanaka() {
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
-    };
+        modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+        modulation_aggressiveness: 1.0,    };
     let samples: Vec<SimulationCutSample> = {
         let sim_result = session.run_simulation(&opts, &cancel).expect("sim");
         let cut_trace = sim_result.cut_trace.as_ref().expect("cut trace");

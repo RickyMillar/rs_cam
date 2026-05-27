@@ -1227,6 +1227,21 @@ enum Commands {
         #[arg(long)]
         adaptive_feed_modulation: bool,
 
+        /// F-039 — modulation algorithm: `constrained-max` (default;
+        /// per-move binding-constraint solver) or `band-mid` (F-036's
+        /// "target band-mid" heuristic, kept as a fallback for one
+        /// release cycle).
+        #[arg(long, default_value = "constrained-max")]
+        modulation_strategy: String,
+
+        /// F-039 — modulation aggressiveness scalar (default 1.0 =
+        /// emit at the binding constraint). 0.7 backs off 30 % for
+        /// safety margin; 1.1+ pushes past the limit (chipload-min
+        /// still applies). Ignored under `--modulation-strategy
+        /// band-mid`.
+        #[arg(long, default_value_t = 1.0)]
+        modulation_aggressiveness: f64,
+
         /// Inject the Shapeoko XXL stock-kinematics preset
         /// (250 mm/s² accel, full-stop junction, max-feed cap) into
         /// the loaded `MachineProfile`. Used for F-036c calibration
@@ -3396,6 +3411,8 @@ fn main() -> Result<()> {
             summary,
             emit_gcode,
             adaptive_feed_modulation,
+            modulation_strategy,
+            modulation_aggressiveness,
             inject_shapeoko_kinematics,
         } => {
             let skip_ids: Vec<usize> = skip
@@ -3405,6 +3422,12 @@ fn main() -> Result<()> {
                 .filter(|s| !s.is_empty())
                 .filter_map(|s| s.trim().parse().ok())
                 .collect();
+            let strategy = match modulation_strategy.as_str() {
+                "band-mid" | "bandmid" | "band_mid" => {
+                    rs_cam_core::feed_modulation::ModulationStrategy::BandMid
+                }
+                _ => rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+            };
             project::run_project_command(
                 &input,
                 &output_dir,
@@ -3414,6 +3437,8 @@ fn main() -> Result<()> {
                 summary,
                 emit_gcode.as_deref(),
                 adaptive_feed_modulation,
+                strategy,
+                modulation_aggressiveness,
                 inject_shapeoko_kinematics,
             )?;
         }

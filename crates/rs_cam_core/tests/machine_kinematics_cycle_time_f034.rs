@@ -275,7 +275,8 @@ fn cycle_time_calibrated_against_shapeoko_reference() {
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
-    };
+        modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+        modulation_aggressiveness: 1.0,    };
     let n_toolpaths = session.toolpath_configs().len();
     for i in 0..n_toolpaths {
         let Some(tc) = session.get_toolpath_config(i) else {
@@ -342,7 +343,8 @@ fn flag_off_byte_identical_to_pre_f034() {
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
-    };
+        modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+        modulation_aggressiveness: 1.0,    };
     let n_toolpaths = session.toolpath_configs().len();
     for i in 0..n_toolpaths {
         session
@@ -407,7 +409,8 @@ fn flag_on_overrides_total_runtime_s() {
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
-    };
+        modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+        modulation_aggressiveness: 1.0,    };
 
     // Helper to load + add a tiny pocket op + simulate; returns total runtime.
     let run = |kinematics: Option<MachineKinematics>| -> f64 {

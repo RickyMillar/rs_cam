@@ -461,6 +461,8 @@ pub fn project_load_report(
                 &strict_tolerance,
             ),
             drill_gates,
+            modulation_summary: sim_trace
+                .and_then(|trace| trace.modulation_summaries.get(&tc.id).cloned()),
         });
     }
     // PR-4: if we threw away a stale trace upstream, rewrite the
@@ -1470,7 +1472,7 @@ mod tests {
                 power,
                 deflection,
                 drill_gates: None,
-            }],
+                modulation_summary: None,            }],
         }
     }
 

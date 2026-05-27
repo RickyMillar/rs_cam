@@ -2,6 +2,7 @@
 
 pub mod automation;
 pub mod export_wizard;
+pub mod feeds_modal;
 pub mod menu_bar;
 pub mod optimize_modal;
 pub mod optimize_project;
@@ -27,6 +28,17 @@ use crate::state::job::{FaceUp, FixtureId, KeepOutId, ModelId, SetupId, ToolId, 
 use crate::state::toolpath::{OperationType, ToolpathId};
 use rs_cam_core::enriched_mesh::FaceGroupId;
 use std::path::PathBuf;
+
+/// Recommended-value field that the Feeds modal's per-row Apply
+/// buttons target. Routed via [`AppEvent::ApplyFeedsField`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeedsField {
+    Rpm,
+    Feed,
+    Plunge,
+    Doc,
+    Woc,
+}
 
 /// Events emitted by UI components, processed after the UI pass.
 #[derive(Debug)]
@@ -185,6 +197,55 @@ pub enum AppEvent {
         /// non-baseline candidate.
         candidate_index: usize,
     },
+
+    // Feeds & Speeds modal (Feeds-tab redesign)
+    /// Open the redesigned Feeds & Speeds modal focused on a specific
+    /// toolpath. The modal renders the current/recommended comparison
+    /// card plus three machinist charts; it re-derives the underlying
+    /// `FeedsExplain` from session state every frame.
+    OpenFeedsModal(ToolpathId),
+    /// Close the Feeds & Speeds modal.
+    CloseFeedsModal,
+    /// Toggle between single-toolpath and project-rollup mode within
+    /// the Feeds & Speeds modal.
+    SetFeedsModalMode(crate::state::FeedsModalMode),
+    /// Apply a single recommended value to a toolpath. Field-scoped so
+    /// per-row Apply buttons (RPM, feed, plunge, DOC, WOC) route here.
+    ApplyFeedsField {
+        toolpath_id: ToolpathId,
+        field: FeedsField,
+    },
+    /// Apply every recommended value (RPM, feed, plunge, DOC, WOC) to a
+    /// toolpath in one transactional update. The Apply-all button on
+    /// the comparison card routes here.
+    ApplyFeedsAll(ToolpathId),
+    /// Apply the Feeds recommendation across every selected toolpath
+    /// in project-rollup mode.
+    ApplyFeedsProject,
+    /// Toggle the "How is this calculated?" provenance disclosure.
+    ToggleFeedsProvenance,
+    /// Apply a custom (feed, rpm) pair from the Chart C drag-to-explore
+    /// interaction. Routed only when the user releases the drag inside
+    /// the chart bounds and confirms.
+    ApplyFeedsExplore {
+        toolpath_id: ToolpathId,
+        feed_mm_min: f64,
+        rpm: f64,
+    },
+    /// Change the sort order in the Feeds modal's project-rollup table.
+    SetFeedsProjectSort(crate::state::ProjectFeedsSort),
+    /// Set the drag-to-explore overlay point on the feed-RPM nomogram.
+    /// `None` clears the overlay (reverts the chart marker back to the
+    /// current/recommended pair).
+    SetFeedsExplore(Option<crate::state::NomogramExplore>),
+    /// Toggle a row in the Feeds project-view selection.
+    ToggleFeedsProjectRow(usize),
+    /// Apply Feeds recommendations to every selected (checked) toolpath.
+    ApplyFeedsProjectSelected,
+    /// Set the project-view scatter overlay visibility.
+    SetFeedsProjectScatter(bool),
+    /// Select / deselect every project-view row in one click.
+    SetFeedsProjectSelectAll(bool),
 
     // Optimize project (U3 of OPTIMIZER_UX_PLAN.md)
     /// Open the project-level Optimize rollup. Submits an

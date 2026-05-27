@@ -211,7 +211,7 @@ mod tests {
                 entry_spike: None,
             },
             drill_gates: None,
-        }
+            modulation_summary: None,        }
     }
 
     #[test]

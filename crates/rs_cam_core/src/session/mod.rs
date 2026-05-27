@@ -548,6 +548,29 @@ pub struct SimulationOptions {
     /// `crate::feed_modulation::adaptive_feed_modulate`; see
     /// `planning/acceptance_loop/findings/F-036b-feed-modulation-flag-plumbing.md`.
     pub adaptive_feed_modulation: bool,
+    /// F-039 — which modulation algorithm runs when
+    /// `adaptive_feed_modulation == true`.
+    ///
+    /// `ConstrainedMax` (the new default) solves the per-move
+    /// constrained optimisation problem (chipload-max / deflection-
+    /// max / power-max / machine-max / kinematic-reach / chipload-min)
+    /// and emits at the binding constraint. `BandMid` is the F-036
+    /// "target band-mid" heuristic, kept as a fallback for one
+    /// release cycle. Either way, the modulator only fires when the
+    /// active `MachineProfile` carries `kinematics` and the LUT has
+    /// a chipload band for the toolpath; otherwise both strategies
+    /// short-circuit to a no-op.
+    pub modulation_strategy: crate::feed_modulation::ModulationStrategy,
+    /// F-039 — aggressiveness scalar applied to the constrained-max
+    /// limit before the chipload-min floor.
+    ///
+    /// `1.0` = emit at the binding constraint (production CAM
+    /// default — Fusion HSM 100 %). `0.7` = back off 30 % for
+    /// safety margin. `1.1` = push 10 % past the limit (NOT
+    /// recommended; chipload-min still applies and the diagnostic
+    /// readout flags the over-aggressive setting). Ignored when
+    /// `modulation_strategy == BandMid`.
+    pub modulation_aggressiveness: f64,
 }
 
 impl Default for SimulationOptions {
@@ -559,6 +582,8 @@ impl Default for SimulationOptions {
             auto_resolution: false,
             use_predicted_feed_in_gates: false,
             adaptive_feed_modulation: false,
+            modulation_strategy: crate::feed_modulation::ModulationStrategy::ConstrainedMax,
+            modulation_aggressiveness: 1.0,
         }
     }
 }

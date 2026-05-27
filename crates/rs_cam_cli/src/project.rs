@@ -69,6 +69,8 @@ pub fn run_project_command(
     summary: bool,
     emit_gcode: Option<&Path>,
     adaptive_feed_modulation: bool,
+    modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy,
+    modulation_aggressiveness: f64,
     inject_shapeoko_kinematics: bool,
 ) -> Result<()> {
     // 1. Load project into a session
@@ -128,6 +130,8 @@ pub fn run_project_command(
         // protects the smoke baseline from spurious verdict drift.
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation,
+        modulation_strategy,
+        modulation_aggressiveness,
     };
     session.run_simulation(&sim_opts, &cancel)?;
 

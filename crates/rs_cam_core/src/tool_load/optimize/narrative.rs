@@ -1025,7 +1025,7 @@ mod tests {
             power: within_power(),
             deflection: defl,
             drill_gates: None,
-        }
+            modulation_summary: None,        }
     }
 
     #[test]
@@ -1320,7 +1320,7 @@ mod tests {
                 power: within_power(),
                 deflection: within_deflection(0.030),
                 drill_gates: None,
-            },
+                modulation_summary: None,            },
             None,
         );
         let advisories = entry_advisories_for_verdict(&cand.verdict);

@@ -6,9 +6,112 @@
 //! cannot be evaluated honestly returns `Unmodeled` with a typed reason; it
 //! never silently falls back to a passing or failing value.
 
+use std::collections::BTreeMap;
 use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
+
+/// F-039 — Which physical constraint set the modulated feed for a
+/// single cutting move (constrained-max solver). One of six bound
+/// types: the chipload band's upper edge, the deflection cap, the
+/// power cap, the machine's hard feed cap, the kinematic-reach cap
+/// from the F-034 / F-035 integrator, or the chipload band's lower
+/// edge (rubbing floor, applied last).
+///
+/// The variants are `Ord` so consumer code can build histograms and
+/// `BTreeMap` keyed views without extra glue.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum BindingConstraint {
+    /// Chipload band's upper edge bound the feed (commanded chipload
+    /// would have exceeded `band.max`).
+    ChiploadMax,
+    /// Tip-deflection cap bound the feed (cantilever displacement
+    /// would have exceeded `EXCEEDS_BOUND_MM`).
+    DeflectionMax,
+    /// Spindle power cap bound the feed (`Kc × DOC × WOC × feed`
+    /// would have exceeded `available_kw × safety_factor`).
+    PowerMax,
+    /// Machine's `max_feed_mm_min` hard cap (`$110`/`$111`/`$112`).
+    MachineMaxFeed,
+    /// Kinematic-reach cap from the per-move accel/junction
+    /// integrator (F-034 / F-035) — the move was too short to reach
+    /// the requested feed in the available distance.
+    KinematicReach,
+    /// Chipload band's lower edge bound the feed (rubbing floor —
+    /// applied AFTER aggressiveness scaling so feeds never drop
+    /// below `band.min × rpm × flutes` even at low aggressiveness).
+    ChiploadMin,
+}
+
+impl BindingConstraint {
+    pub fn label(self) -> &'static str {
+        match self {
+            BindingConstraint::ChiploadMax => "chipload-max",
+            BindingConstraint::DeflectionMax => "deflection-max",
+            BindingConstraint::PowerMax => "power-max",
+            BindingConstraint::MachineMaxFeed => "machine-max-feed",
+            BindingConstraint::KinematicReach => "kinematic-reach",
+            BindingConstraint::ChiploadMin => "chipload-min",
+        }
+    }
+}
+
+/// F-039 — Per-toolpath transparency rollup for the constrained-max
+/// modulator. Surfaced on [`ToolpathLoadVerdict::modulation_summary`].
+///
+/// Fields:
+/// - `moves_touched`: number of cutting moves whose `feed_rate` was
+///   actually rewritten by the modulator (skipped intents, rapids,
+///   and no-engagement moves don't count).
+/// - `moves_total`: total cutting-eligible moves the modulator
+///   considered (excludes rapids).
+/// - `median_feed_delta_pct`: median of
+///   `(modulated - commanded) / commanded × 100` across touched
+///   moves. Negative when modulation backed off, positive when it
+///   raised feed.
+/// - `binding_constraint_distribution`: fraction (0.0–1.0) of
+///   touched moves whose binding constraint matched each variant.
+///   Sums to ≤ 1.0 (rounding); variants with zero share are omitted.
+/// - `aggressiveness`: the scalar the run used (1.0 = at-limit;
+///   0.7 = 70 %; etc.).
+/// - `strategy`: which algorithm produced this summary (band-mid or
+///   constrained-max). `BandMid` rolls up `binding_constraint_distribution`
+///   from the same six-variant enum but its bindings collapse to the
+///   single legacy "chipload" clamp band; F-036c-style retro reads
+///   stay possible.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModulationSummary {
+    pub moves_touched: usize,
+    pub moves_total: usize,
+    pub median_feed_delta_pct: f64,
+    pub binding_constraint_distribution: BTreeMap<BindingConstraint, f64>,
+    pub aggressiveness: f64,
+    pub strategy: ModulationStrategyTag,
+}
+
+/// Stable serialised tag for the modulation strategy used. Mirrors
+/// the runtime [`crate::feed_modulation::ModulationStrategy`] enum;
+/// duplicated here to keep `verdict.rs` free of feed-modulation
+/// dependencies (the verdict types live closer to the public
+/// reporting surface).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModulationStrategyTag {
+    BandMid,
+    ConstrainedMax,
+}
 
 /// Why a criterion could not be evaluated. Typed (not free-form strings) so
 /// callers can branch and the UI can localize.
@@ -101,6 +204,14 @@ pub struct ToolpathLoadVerdict {
     /// `Unmodeled(NotApplicableForOp)` for drill ops.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drill_gates: Option<crate::tool_load::drill_gates::DrillGatesVerdict>,
+    /// F-039 — per-toolpath constrained-max modulation rollup.
+    /// `Some` when adaptive feed modulation ran on this toolpath and
+    /// rewrote at least one move's feed; `None` when modulation was
+    /// off, was a no-op (no LUT band / no kinematics / drill cycle),
+    /// or hadn't been computed yet. The field is additive — existing
+    /// consumers that iterate criteria stay byte-stable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modulation_summary: Option<ModulationSummary>,
 }
 
 impl ToolpathLoadVerdict {
@@ -927,7 +1038,7 @@ mod tests {
                 entry_spike: None,
             },
             drill_gates: None,
-        };
+            modulation_summary: None,        };
         assert_eq!(v.modeled_count(), 2);
         assert!(!v.any_exceeded());
         assert!(v.any_unmodeled());
@@ -971,7 +1082,7 @@ mod tests {
                     entry_spike: None,
                 },
                 drill_gates: None,
-            }],
+                modulation_summary: None,            }],
         };
         let v = serde_json::to_value(&r).expect("must round-trip");
         let s = serde_json::to_string(&v).unwrap();
@@ -1014,7 +1125,7 @@ mod tests {
                         confidence: Confidence::Validated,
                     },
                     drill_gates: None,
-                },
+                    modulation_summary: None,                },
                 ToolpathLoadVerdict {
                     toolpath_id: 1,
                     chipload: ChiploadVerdict::Within {
@@ -1046,7 +1157,7 @@ mod tests {
                         entry_spike: None,
                     },
                     drill_gates: None,
-                },
+                    modulation_summary: None,                },
             ],
         };
         assert!(r.any_exceeded());
@@ -1079,7 +1190,7 @@ mod tests {
                         reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
                     },
                     drill_gates: None,
-                },
+                    modulation_summary: None,                },
                 // Sim wasn't run yet — every gate `SimulationRequired`.
                 // Operator action: run the sim.
                 ToolpathLoadVerdict {
@@ -1094,7 +1205,7 @@ mod tests {
                         reason: UnmodeledReason::SimulationRequired,
                     },
                     drill_gates: None,
-                },
+                    modulation_summary: None,                },
                 // Mixed: one gate N/A, one needs sim. Operator still
                 // has an action item, so this rolls up as
                 // `fully_unmodeled` (not `not_applicable`).
@@ -1110,7 +1221,7 @@ mod tests {
                         reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
                     },
                     drill_gates: None,
-                },
+                    modulation_summary: None,                },
             ],
         };
         let s = r.summary(|_| None);
@@ -1164,7 +1275,7 @@ mod tests {
                     entry_spike: None,
                 },
                 drill_gates: None,
-            }],
+                modulation_summary: None,            }],
         };
         // Resolver hit — name flows into the entry.
         let s = r.summary(|id| (id == 42).then(|| "TP3 Adaptive Rough".to_owned()));
@@ -1426,7 +1537,7 @@ mod tests {
                     entry_spike: None,
                 },
                 drill_gates: None,
-            }],
+                modulation_summary: None,            }],
         };
         let s = serde_json::to_string(&r).expect("serialize");
         // Chipload payload — ChipSide + ChiploadStatistic + bounds.
@@ -1491,7 +1602,7 @@ mod tests {
                     entry_spike: None,
                 },
                 drill_gates: None,
-            }],
+                modulation_summary: None,            }],
         };
         let exceeded = r.exceeded_criteria();
         assert_eq!(exceeded.len(), 1);
@@ -1533,7 +1644,7 @@ mod tests {
             },
             deflection: DeflectionVerdict::Unmodeled { reason },
             drill_gates: None,
-        }
+            modulation_summary: None,        }
     }
 
     /// Helper: every gate `Unmodeled(SimulationRequired)` — the
@@ -1551,7 +1662,7 @@ mod tests {
                 reason: UnmodeledReason::SimulationRequired,
             },
             drill_gates: None,
-        }
+            modulation_summary: None,        }
     }
 
     #[test]
@@ -1629,7 +1740,7 @@ mod tests {
                     confidence: Confidence::Validated,
                 },
                 drill_gates: None,
-            }],
+                modulation_summary: None,            }],
         };
         let s = r.summary(|id| {
             if id == 42 {
@@ -1680,7 +1791,7 @@ mod tests {
                     entry_spike: None,
                 },
                 drill_gates: None,
-            }],
+                modulation_summary: None,            }],
         };
         let s = r.summary(|_| None);
         assert_eq!(s.exceeds_breakdown.len(), 1);

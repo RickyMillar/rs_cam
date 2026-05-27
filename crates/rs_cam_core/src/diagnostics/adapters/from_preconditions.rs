@@ -221,10 +221,7 @@ fn drill_checks(scope: &Scope, ctx: &PreconditionContext) -> Vec<Diagnostic> {
     // Drill resolves holes from the target model's polygon centroids.
     // If the target model has no polygons, generation will fail with
     // "No hole positions found (import SVG with circles)".
-    let has_polygons = ctx
-        .target_model
-        .map(|m| m.has_polygons)
-        .unwrap_or(false);
+    let has_polygons = ctx.target_model.map(|m| m.has_polygons).unwrap_or(false);
     if !has_polygons {
         out.push(Diagnostic {
             id: DiagnosticId::from(ids::PRECOND_DRILL_NO_HOLES),
@@ -248,10 +245,7 @@ fn drill_checks(scope: &Scope, ctx: &PreconditionContext) -> Vec<Diagnostic> {
 
 fn project_curve_checks(scope: &Scope, ctx: &PreconditionContext) -> Vec<Diagnostic> {
     let mut out = Vec::new();
-    let target_polys = ctx
-        .target_model
-        .map(|m| m.has_polygons)
-        .unwrap_or(false);
+    let target_polys = ctx.target_model.map(|m| m.has_polygons).unwrap_or(false);
     let target_mesh = ctx.target_model.map(|m| m.has_mesh).unwrap_or(false);
 
     if !target_polys {
@@ -339,10 +333,7 @@ mod tests {
         let ctx = PreconditionContext::default();
         let diags = diagnostics_from_preconditions(0, &rest_op(None), 0, &ctx);
         assert_eq!(diags.len(), 1);
-        assert_eq!(
-            diags[0].id.as_str(),
-            ids::PRECOND_REST_PREV_TOOL_MISSING
-        );
+        assert_eq!(diags[0].id.as_str(), ids::PRECOND_REST_PREV_TOOL_MISSING);
         assert_eq!(diags[0].severity, Severity::Blocking);
     }
 
@@ -566,9 +557,7 @@ mod tests {
     #[test]
     fn non_precondition_ops_emit_nothing() {
         let ctx = PreconditionContext::default();
-        let pocket = OperationConfig::new_default(
-            crate::compute::catalog::OperationType::Pocket,
-        );
+        let pocket = OperationConfig::new_default(crate::compute::catalog::OperationType::Pocket);
         let diags = diagnostics_from_preconditions(0, &pocket, 0, &ctx);
         assert!(diags.is_empty());
     }
