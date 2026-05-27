@@ -36,6 +36,95 @@ fn minimal_profile_toolpath(cut_feed: f64, plunge_feed: f64) -> Toolpath {
 }
 
 #[test]
+fn lead_in_geometry_is_pre_position_then_pure_z_plunge_then_arc() {
+    // F-040a: classic lead-in shape. The first move in the lead-in is a
+    // rapid that pre-positions the cutter above lead_start at safe Z. The
+    // second move is a pure-Z plunge feed (same XY, descending Z). Only
+    // after the cutter is at cut Z does the tangent arc begin.
+    //
+    // Pre-F-040a (the buggy shape) emitted a diagonal feed from
+    // `(cut_start.xy, safe_z)` straight to `(lead_start.xy, cut_z)` —
+    // that's a slanted plunge, not a tangent entry, which is what the
+    // 2026-05-27 bench observed.
+    let cut_feed = 1500.0;
+    let plunge_feed = 300.0;
+    let tp = minimal_profile_toolpath(cut_feed, plunge_feed);
+    let annotated = AnnotatedToolpath::new(tp);
+    let result = apply_lead_in_out_with_feeds(annotated, 2.0, None, None).toolpath;
+
+    // The first lead-in move should be a Rapid (pre-position over lead_start).
+    let lead_in_idx = result
+        .moves
+        .iter()
+        .position(|m| m.intent == MoveIntent::LeadIn)
+        .expect("expected ≥1 LeadIn-tagged move");
+    let first = &result.moves[lead_in_idx];
+    assert!(
+        matches!(first.move_type, MoveType::Rapid),
+        "first LeadIn move should be a Rapid (pre-position above lead_start at safe_z); got {:?}",
+        first.move_type
+    );
+
+    // The next move should be a pure-Z plunge: same XY as `first`, Z descending.
+    let plunge = &result.moves[lead_in_idx + 1];
+    assert!(
+        matches!(plunge.move_type, MoveType::Linear { .. }),
+        "move after pre-position should be Linear plunge; got {:?}",
+        plunge.move_type
+    );
+    assert!(
+        (plunge.target.x - first.target.x).abs() < 1e-6
+            && (plunge.target.y - first.target.y).abs() < 1e-6,
+        "plunge XY ({}, {}) must equal pre-position XY ({}, {}) — pure-Z descent",
+        plunge.target.x,
+        plunge.target.y,
+        first.target.x,
+        first.target.y,
+    );
+    assert!(
+        plunge.target.z < first.target.z,
+        "plunge Z {} must be below pre-position Z {} (descending)",
+        plunge.target.z,
+        first.target.z,
+    );
+
+    // The plunge should carry the plunge feed (not the cut feed and not the lead-in feed).
+    match plunge.move_type {
+        MoveType::Linear { feed_rate } => assert!(
+            (feed_rate - plunge_feed).abs() < 1.0,
+            "plunge feed should be {plunge_feed}, got {feed_rate}"
+        ),
+        _ => unreachable!(),
+    }
+
+    // The arc moves come next: all LeadIn-tagged, all at cut Z, all Linear.
+    let cut_z = plunge.target.z;
+    let arcs: Vec<_> = result
+        .moves
+        .iter()
+        .skip(lead_in_idx + 2)
+        .take_while(|m| m.intent == MoveIntent::LeadIn)
+        .collect();
+    assert!(
+        !arcs.is_empty(),
+        "expected ≥1 LeadIn-tagged arc move after the plunge"
+    );
+    for m in &arcs {
+        assert!(
+            matches!(m.move_type, MoveType::Linear { .. }),
+            "arc move should be Linear; got {:?}",
+            m.move_type
+        );
+        assert!(
+            (m.target.z - cut_z).abs() < 1e-6,
+            "arc move Z {} must equal cut Z {}",
+            m.target.z,
+            cut_z,
+        );
+    }
+}
+
+#[test]
 fn lead_in_feed_rate_applied_when_set() {
     let cut_feed = 1500.0;
     let li_feed = 500.0;
@@ -43,23 +132,27 @@ fn lead_in_feed_rate_applied_when_set() {
     let annotated = AnnotatedToolpath::new(tp);
     let result = apply_lead_in_out_with_feeds(annotated, 2.0, Some(li_feed), None).toolpath;
 
-    let lead_in_moves: Vec<_> = result
+    // F-040a: LeadIn-tagged set includes both the pre-position Rapid and
+    // the tangent-arc Linear moves. Verify the Linear arc moves carry the
+    // override feed.
+    let lead_in_arc_feeds: Vec<f64> = result
         .moves
         .iter()
         .filter(|m| m.intent == MoveIntent::LeadIn)
+        .filter_map(|m| match m.move_type {
+            MoveType::Linear { feed_rate } => Some(feed_rate),
+            _ => None,
+        })
         .collect();
     assert!(
-        !lead_in_moves.is_empty(),
-        "expected ≥1 lead-in-tagged move; got 0"
+        !lead_in_arc_feeds.is_empty(),
+        "expected ≥1 LeadIn Linear arc move; got 0"
     );
-    for m in &lead_in_moves {
-        match m.move_type {
-            MoveType::Linear { feed_rate } => assert!(
-                (feed_rate - li_feed).abs() < 1.0,
-                "lead-in feed should be {li_feed}, got {feed_rate}"
-            ),
-            _ => panic!("lead-in move should be Linear"),
-        }
+    for &fr in &lead_in_arc_feeds {
+        assert!(
+            (fr - li_feed).abs() < 1.0,
+            "lead-in arc feed should be {li_feed}, got {fr}"
+        );
     }
 
     // Cutting moves keep their original feed.
@@ -89,23 +182,27 @@ fn lead_in_falls_back_to_pre_f040_feed_when_none() {
     let annotated = AnnotatedToolpath::new(tp);
     let result = apply_lead_in_out_with_feeds(annotated, 2.0, None, None).toolpath;
 
-    let lead_in_moves: Vec<_> = result
+    // F-040a: LeadIn set includes both the pre-position Rapid and the
+    // tangent-arc Linear moves. With `None` default, the Linear arc moves
+    // fall back to the plunge feed (pre-F-040 behaviour).
+    let lead_in_arc_feeds: Vec<f64> = result
         .moves
         .iter()
         .filter(|m| m.intent == MoveIntent::LeadIn)
+        .filter_map(|m| match m.move_type {
+            MoveType::Linear { feed_rate } => Some(feed_rate),
+            _ => None,
+        })
         .collect();
     assert!(
-        !lead_in_moves.is_empty(),
-        "expected ≥1 lead-in-tagged move even with default feed"
+        !lead_in_arc_feeds.is_empty(),
+        "expected ≥1 LeadIn Linear arc move with default feed"
     );
-    for m in &lead_in_moves {
-        match m.move_type {
-            MoveType::Linear { feed_rate } => assert!(
-                (feed_rate - plunge_feed).abs() < 1.0,
-                "lead-in feed should fall back to plunge feed {plunge_feed} (pre-F-040), got {feed_rate}"
-            ),
-            _ => panic!("lead-in move should be Linear"),
-        }
+    for &fr in &lead_in_arc_feeds {
+        assert!(
+            (fr - plunge_feed).abs() < 1.0,
+            "lead-in arc feed should fall back to plunge feed {plunge_feed}, got {fr}"
+        );
     }
 }
 

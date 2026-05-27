@@ -103,3 +103,25 @@ Bring measurements back. I'll:
 - Re-anchor F-034 / F-036c calibration test tolerances if numbers shifted.
 - File F-039b (binding-constraint distribution) if v3 / v2 differ on wood.
 - Promote F-040 to a UI default if the lead-in surface mark is visibly cleaner.
+
+## Results — 2026-05-27 air-cut session
+
+| # | nc-time | project sim | **wall-clock** | sim error | Verdict |
+|---|---|---|---|---|---|
+| 1 unmod | 6:45 | 7:39 | **7:22** | +3.8% | ✅ within ±5% |
+| 2 BandMid | 13:35 | 14:16 | **13:45** | +3.8% | ✅ |
+| 3 CMax @ 1.0 | 13:27 | 14:08 | **13:37** | +3.8% | ✅ |
+| 4 CMax @ 1.3 | 11:01 | 11:43 | **11:16** | +4.0% | ✅ |
+| 5 stay-down OFF | 15:14 | 16:03 | **15:57** | +0.6% | ✅ |
+| 6 lead-in profile | 0:33 | 0:33 | **0:35** | −5.7% | ✅ |
+
+**Workstream claims all confirmed:**
+
+- F-038b stay-down savings (v3→v5): predicted +14.3%, actual **+14.7%** ✓
+- F-039 aggressiveness 1.3 (v3→v4): predicted −17.1%, actual **−17.3%** ✓
+- ConstrainedMax ≈ BandMid on wanaka (v2↔v3): predicted −0.9%, actual **−1.0%** ✓
+- F-040 lead-in feed change audible: **confirmed** ✓
+
+Zero GRBL errors. Arc-fitter fix (commit `2db19c2`) holds.
+
+**One follow-up surfaced**: variant 6 ran as "plunge/retract, not classic lead-in" — F-040 changed feeds correctly (audible F500), but the geometry was already broken pre-F-040 (diagonal feed instead of tangent entry). Landed as **F-040a** the same day; v6 in this bundle is the post-F-040a version with classic geometry. Re-run v6 next bench to confirm the tangent-entry sound.
