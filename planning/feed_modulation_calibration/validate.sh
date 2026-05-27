@@ -37,7 +37,7 @@ validate_one() {
     base="$(basename "$file")"
     errfile="$(mktemp)"
 
-    docker run --rm -v "$dir":/work:ro "$IMAGE" \
+    docker run --rm --entrypoint /usr/bin/gcodetool -v "$dir":/work:ro "$IMAGE" \
         --max-arc-error "$THRESHOLD" --out=- "/work/$base" \
         > /dev/null 2> "$errfile"
 

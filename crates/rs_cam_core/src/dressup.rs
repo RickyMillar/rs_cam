@@ -622,17 +622,39 @@ pub fn apply_lead_in_out_with_feeds(
                         cut_z,
                     );
 
-                    let cut_feed_rate = match moves[i].move_type {
+                    let plunge_rate = match moves[i].move_type {
                         MoveType::Linear { feed_rate } => feed_rate,
                         _ => 500.0,
                     };
                     // F-040: lead-in uses the dressup's override feed if set,
-                    // otherwise falls back to the cut-pass's feed rate.
-                    let li_feed = lead_in_feed_rate.unwrap_or(cut_feed_rate);
+                    // otherwise falls back to the plunge feed (pre-F-040 default).
+                    let li_feed = lead_in_feed_rate.unwrap_or(plunge_rate);
 
+                    // F-040a: classic lead-in geometry — pre-position rapid
+                    // over `lead_start` at safe-Z (read from the preceding
+                    // rapid's Z), then pure-Z plunge straight down at
+                    // `plunge_rate`, THEN tangent arc into the cut at
+                    // `li_feed`. Pre-F-040a behaviour was a diagonal feed
+                    // from `(cut_start.xy, safe_z)` to `(lead_start.xy, cut_z)`
+                    // followed by the arc — geometrically a slanted plunge,
+                    // not a tangent entry. The classic shape matches
+                    // production CAM (Fusion HSM / Mastercam) and is what
+                    // operators expect when they enable lead_in_out.
+                    let safe_z = moves[i - 1].target.z;
                     let entry_start = result.moves.len();
-                    // Plunge to lead-in start instead of original plunge point
-                    result.feed_to_with_intent(lead_start, li_feed, crate::toolpath::MoveIntent::LeadIn);
+                    // Move 1: pre-position rapid at safe_z above lead_start.
+                    result.rapid_to_with_intent(
+                        P3::new(lead_start.x, lead_start.y, safe_z),
+                        crate::toolpath::MoveIntent::LeadIn,
+                    );
+                    // Move 2: pure-Z plunge down to cut depth. Tagged as
+                    // EntryPlunge so engagement metrics + modulation treat
+                    // it as a plunge, not a lead-in arc.
+                    result.feed_to_with_intent(
+                        lead_start,
+                        plunge_rate,
+                        crate::toolpath::MoveIntent::EntryPlunge,
+                    );
 
                     // Arc from lead_start to plunge_end (quarter circle)
                     let arc_steps = 8;
