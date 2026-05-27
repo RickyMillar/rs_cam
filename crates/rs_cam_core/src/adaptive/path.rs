@@ -6,7 +6,10 @@
 //! final Toolpath with rapids, plunges, feeds, and runtime annotations.
 
 use super::material_grid::polygon_bbox;
-use super::search::{find_entry_point, path_bounds, search_direction_with_metrics};
+use super::search::{
+    find_entry_point, find_entry_via_distance_transform, path_bounds,
+    search_direction_with_metrics,
+};
 use super::{
     AdaptiveParams, AdaptiveRuntimeAnnotation, AdaptiveRuntimeEvent, CleanupStrategy, MaterialGrid,
     average_angles, blend_corners_to_moves, target_engagement_fraction,
@@ -227,6 +230,32 @@ pub(crate) fn adaptive_segments_with_debug(
         }
     }
 
+    // ── Helical starter pocket ────────────────────────────────────────
+    // Pre-clear a 2 × tool_radius disc at the medial-axis maximum so
+    // the engagement-target spiral has full swing room from move 1
+    // and skips the bootstrap convergence wiggle. Gated on a non-
+    // Legacy cleanup strategy — adaptive3d and other downstream
+    // consumers that rely on the original boundary-entry spiral
+    // sweep (for full-coverage guarantees on concave shapes) keep
+    // their current behaviour via the Legacy path. If no DT-max
+    // cell qualifies (≥ 2 × tool_radius clearance), proceed without
+    // a starter pocket — the spiral will bootstrap as before.
+    let helical_entry_pos: Option<P2> =
+        if matches!(params.cleanup_strategy, CleanupStrategy::Legacy) {
+            None
+        } else if let Some((helix_segments, helix_end)) = emit_helical_starter_pocket(
+            &mut grid,
+            &machinable_mask,
+            &boundary_distances,
+            tool_radius,
+        ) {
+            segments.extend(helix_segments);
+            last_pos = Some(helix_end);
+            Some(helix_end)
+        } else {
+            None
+        };
+
     // ── Adaptive passes ───────────────────────────────────────────────
     let max_passes = 500; // safety limit
     let mut pass_count = 0;
@@ -247,23 +276,39 @@ pub(crate) fn adaptive_segments_with_debug(
 
         // Find entry point.
         //
-        // For pass 1 (when there's no prior cutter position), try the
-        // distance-transform maximum first — gives the cutter a
-        // symmetric inscribed-disk's worth of material on all sides
-        // and avoids the corner-entry wiggle. Falls through to the
-        // boundary walk if no cell meets the inscribed-radius gate
-        // (narrow strips).
+        // For pass 1, if a helical starter pocket was emitted upstream
+        // the spiral picks up from the helix end directly — that
+        // already puts the cutter inside a 2 × tool_radius cleared
+        // disc, so the engagement-target search has its full swing
+        // band on move 1 and skips the bootstrap wiggle. Falls
+        // through to the boundary walk otherwise.
         let entry_scope = pass_ctx
             .as_ref()
             .map(|ctx| ctx.start_span("entry_search", format!("Entry {pass_count}")));
-        let Some(entry) = find_entry_point(
-            &grid,
-            &machinable_mask,
-            machinable,
-            tool_radius,
-            last_pos,
-            &pass_endpoints,
-        ) else {
+        let entry = if pass_count == 1 {
+            if let Some(p) = helical_entry_pos {
+                Some(p)
+            } else {
+                find_entry_point(
+                    &grid,
+                    &machinable_mask,
+                    machinable,
+                    tool_radius,
+                    last_pos,
+                    &pass_endpoints,
+                )
+            }
+        } else {
+            find_entry_point(
+                &grid,
+                &machinable_mask,
+                machinable,
+                tool_radius,
+                last_pos,
+                &pass_endpoints,
+            )
+        };
+        let Some(entry) = entry else {
             if let Some(scope) = pass_scope.as_ref() {
                 scope.set_exit_reason("no entry");
                 scope.set_counter("pass_index", pass_count as f64);
@@ -326,6 +371,7 @@ pub(crate) fn adaptive_segments_with_debug(
         let max_steps = 5000;
         let mut idle_count = 0;
         let mut search_evaluations = 0u32;
+        let mut narrow_exit = false;
         // CONVERGENCE DETECTOR — disabled, kept here for context.
         //
         // Two variants tried: engagement-based (exit when engagement <
@@ -396,11 +442,43 @@ pub(crate) fn adaptive_segments_with_debug(
                 idle_count = 0;
             }
 
+            // Narrow-region early exit: when the cutter has spiraled
+            // out from the helical starter pocket and reached a region
+            // where the next stepover step would push past the polygon
+            // boundary, the engagement-target search has no room for a
+            // clean arc — leaving here lets the cleanup phase emit
+            // smooth contour-parallel offsets (or cell-walking mop)
+            // for the strip instead of wiggling through it.
+            //
+            // Gated on (1) non-Legacy strategy, (2) pass 1 only — later
+            // passes enter at the machinable boundary by definition,
+            // where dt_here = tool_radius, so they'd exit immediately
+            // and the spiral would never run, and (3) presence of a
+            // helical entry, since without it pass 1 also starts at
+            // the boundary.
+            if pass_count == 1
+                && helical_entry_pos.is_some()
+                && !matches!(params.cleanup_strategy, CleanupStrategy::Legacy)
+            {
+                let dt_here =
+                    grid.boundary_distance_at(&boundary_distances, cx, cy);
+                if dt_here < tool_radius + stepover {
+                    narrow_exit = true;
+                    break;
+                }
+            }
+
             prev_angle = angle;
         }
 
         let was_idle = idle_count > 15;
-        let exit_reason = if was_idle { "idle" } else { "no direction" };
+        let exit_reason = if narrow_exit {
+            "narrow"
+        } else if was_idle {
+            "idle"
+        } else {
+            "no direction"
+        };
 
         let path_len = path.len();
         let path_debug_bounds = path_bounds(&path);
@@ -562,26 +640,86 @@ pub(crate) fn adaptive_segments_with_debug(
 // Cf. `CleanupStrategy::ResidueMop` doc on `AdaptiveParams`.
 const MIN_KEEP_STEPS: usize = 40;
 
+/// Threshold for keeping an otherwise-short Cut: if at least this
+/// fraction of its sampled path points lies over material that would
+/// not be cleared by the long Cuts alone, the short Cut is kept. The
+/// principle is that *overlap is cheap, travel is expensive* — dropping
+/// a short Cut and re-cleaning the same material via a mop patch
+/// costs an extra Rapid (retract + travel + plunge), which is far
+/// more cycle-time than the small overlap of keeping the short Cut.
+const SHORT_CUT_UNIQUE_FRACTION: f64 = 0.10;
+
+/// Apply the smart short-Cut drop rule on `segments`: returns a
+/// filtered list where Cuts with `len() >= MIN_KEEP_STEPS` are always
+/// kept, and shorter Cuts are kept only if they clear material that
+/// the long Cuts wouldn't (i.e. `unique_fraction >= SHORT_CUT_UNIQUE_FRACTION`).
+/// Preceding Rapid/Link approaches are dropped along with the Cuts
+/// they introduce (consistent with the original blunt filter).
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-pub(crate) fn apply_residue_mop_cleanup(
+fn filter_short_cuts_by_redundancy(
+    segments: &[AdaptiveSegment],
     polygon: &Polygon2,
     params: &AdaptiveParams,
-    segments: &[AdaptiveSegment],
+    cell_size: f64,
 ) -> Vec<AdaptiveSegment> {
     let tool_radius = params.tool_radius;
-    let cell_size = (tool_radius / 6.0).max(params.tolerance);
-    let step_len = cell_size * 3.0;
 
-    // Step 1 — filter short Cut groups.
-    let mut filtered: Vec<AdaptiveSegment> = Vec::with_capacity(segments.len());
+    // Build a grid populated with the cells cleared by the LONG Cuts only.
+    let mut long_grid = MaterialGrid::from_polygon(polygon, cell_size);
+    if let Some(stock) = &params.initial_stock {
+        long_grid.apply_initial_stock(stock, params.cut_depth);
+    }
     for seg in segments {
+        if let AdaptiveSegment::Cut(path) = seg
+            && path.len() >= MIN_KEEP_STEPS
+        {
+            for p in path {
+                long_grid.clear_circle(p.x, p.y, tool_radius);
+            }
+        }
+    }
+
+    // Walk short Cuts in order, accumulating their clearing into the
+    // grid so subsequent short Cuts see each other's contributions.
+    let mut keep_index: Vec<bool> = Vec::with_capacity(segments.len());
+    for seg in segments {
+        if let AdaptiveSegment::Cut(path) = seg {
+            if path.len() >= MIN_KEEP_STEPS {
+                keep_index.push(true);
+                continue;
+            }
+            if path.is_empty() {
+                keep_index.push(false);
+                continue;
+            }
+            // Sample-fraction of points over still-material cells.
+            let unique = path
+                .iter()
+                .filter(|p| long_grid.is_material(p.x, p.y))
+                .count();
+            let frac = unique as f64 / path.len() as f64;
+            if frac >= SHORT_CUT_UNIQUE_FRACTION {
+                keep_index.push(true);
+                for p in path {
+                    long_grid.clear_circle(p.x, p.y, tool_radius);
+                }
+            } else {
+                keep_index.push(false);
+            }
+        } else {
+            keep_index.push(true); // R/L/Marker handled below by orphan trim
+        }
+    }
+
+    // Walk segments, dropping non-kept Cuts and their preceding
+    // contiguous Rapid/Link runs.
+    let mut filtered: Vec<AdaptiveSegment> = Vec::with_capacity(segments.len());
+    for (i, seg) in segments.iter().enumerate() {
         match seg {
-            AdaptiveSegment::Cut(path) => {
-                if path.len() >= MIN_KEEP_STEPS {
-                    filtered.push(AdaptiveSegment::Cut(path.clone()));
+            AdaptiveSegment::Cut(_) => {
+                if keep_index[i] {
+                    filtered.push(seg.clone());
                 } else {
-                    // Pop the preceding R/L approach so we don't emit an
-                    // orphan transition.
                     while let Some(last) = filtered.last() {
                         if matches!(
                             last,
@@ -598,7 +736,6 @@ pub(crate) fn apply_residue_mop_cleanup(
             AdaptiveSegment::Marker(_) => filtered.push(seg.clone()),
         }
     }
-    // Trim trailing orphan R/L.
     while let Some(last) = filtered.last() {
         if matches!(last, AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_)) {
             filtered.pop();
@@ -606,6 +743,23 @@ pub(crate) fn apply_residue_mop_cleanup(
             break;
         }
     }
+    filtered
+}
+
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub(crate) fn apply_residue_mop_cleanup(
+    polygon: &Polygon2,
+    params: &AdaptiveParams,
+    segments: &[AdaptiveSegment],
+) -> Vec<AdaptiveSegment> {
+    let tool_radius = params.tool_radius;
+    let cell_size = (tool_radius / 6.0).max(params.tolerance);
+    let step_len = cell_size * 3.0;
+
+    // Step 1 — smart short-Cut drop. Short Cuts are kept when they
+    // clear material the long Cuts wouldn't (overlap is cheap; travel
+    // is expensive — see `SHORT_CUT_UNIQUE_FRACTION`).
+    let filtered = filter_short_cuts_by_redundancy(segments, polygon, params, cell_size);
 
     // Step 2 — lookahead-filter orphan R/L (Markers can sit between).
     let mut out: Vec<AdaptiveSegment> = Vec::with_capacity(filtered.len());
@@ -691,37 +845,10 @@ pub(crate) fn apply_contour_parallel_residue_cleanup(
     let step_len = cell_size * 3.0;
     let stepover = params.stepover;
 
-    // Step 1 — filter short Cut groups (same as ResidueMop).
-    let mut filtered: Vec<AdaptiveSegment> = Vec::with_capacity(segments.len());
-    for seg in segments {
-        match seg {
-            AdaptiveSegment::Cut(path) => {
-                if path.len() >= MIN_KEEP_STEPS {
-                    filtered.push(AdaptiveSegment::Cut(path.clone()));
-                } else {
-                    while let Some(last) = filtered.last() {
-                        if matches!(
-                            last,
-                            AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_)
-                        ) {
-                            filtered.pop();
-                        } else {
-                            break;
-                        }
-                    }
-                }
-            }
-            AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_) => filtered.push(seg.clone()),
-            AdaptiveSegment::Marker(_) => filtered.push(seg.clone()),
-        }
-    }
-    while let Some(last) = filtered.last() {
-        if matches!(last, AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_)) {
-            filtered.pop();
-        } else {
-            break;
-        }
-    }
+    // Step 1 — smart short-Cut drop. Short Cuts are kept when they
+    // clear material the long Cuts wouldn't (overlap is cheap; travel
+    // is expensive — see `SHORT_CUT_UNIQUE_FRACTION`).
+    let filtered = filter_short_cuts_by_redundancy(segments, polygon, params, cell_size);
 
     // Step 2 — lookahead-filter orphan R/L (Markers can sit between).
     let mut out: Vec<AdaptiveSegment> = Vec::with_capacity(filtered.len());
@@ -929,6 +1056,67 @@ pub(crate) fn mop_residue_into_segments(
 /// the Manhattan metric over-estimates depth at corners (e.g. a donut
 /// ring corner reads ~12 mm Manhattan but ~8 mm Euclidean), which
 /// matters for the gate threshold.
+/// Emit a circular starter pocket centred on the largest inscribed
+/// disk inside `machinable`, returning the cutter end position so the
+/// engagement-target spiral can continue from there with full swing
+/// room from move 1.
+///
+/// The cutter walks a circle of radius `tool_radius` around the
+/// medial-axis maximum, clearing a disc of radius `2 × tool_radius`.
+/// In 3D production this would be a helical plunge; for the 2D
+/// planner it's a single circular pass after a Rapid + Z-plunge.
+///
+/// Returns `None` when no DT-maximum cell with ≥ `2 × tool_radius`
+/// clearance exists (uniformly-narrow regions — the narrow gate
+/// would already have handled those).
+///
+/// Reference: Autodesk patent US7831332 (Fusion HSM transition
+/// portion), Bieterman & Sandström (Boeing, ~2003), Ren & Bi (2014).
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+fn emit_helical_starter_pocket(
+    grid: &mut MaterialGrid,
+    machinable_mask: &[bool],
+    boundary_distances: &[f64],
+    tool_radius: f64,
+) -> Option<(Vec<AdaptiveSegment>, P2)> {
+    let medial = find_entry_via_distance_transform(
+        grid,
+        machinable_mask,
+        boundary_distances,
+        tool_radius,
+    )?;
+    // Need the medial-axis disk to fit the helix (radius `tool_radius`)
+    // plus the cutter (radius `tool_radius`) plus a small safety margin.
+    let dt_at = grid.boundary_distance_at(boundary_distances, medial.x, medial.y);
+    let required = 2.0 * tool_radius;
+    if dt_at < required {
+        return None;
+    }
+
+    let helix_r = tool_radius;
+    let n_steps = 64;
+    let mut segments: Vec<AdaptiveSegment> = Vec::new();
+
+    // Clear the medial cell itself (the Z-plunge centre).
+    grid.clear_circle(medial.x, medial.y, tool_radius);
+
+    let start = P2::new(medial.x + helix_r, medial.y);
+    segments.push(AdaptiveSegment::Rapid(start));
+    grid.clear_circle(start.x, start.y, tool_radius);
+
+    let mut path: Vec<P2> = vec![start];
+    for i in 1..=n_steps {
+        let theta = (i as f64 / n_steps as f64) * std::f64::consts::TAU;
+        let x = medial.x + helix_r * theta.cos();
+        let y = medial.y + helix_r * theta.sin();
+        grid.clear_circle(x, y, tool_radius);
+        path.push(P2::new(x, y));
+    }
+    let end = *path.last()?;
+    segments.push(AdaptiveSegment::Cut(path));
+    Some((segments, end))
+}
+
 fn is_narrow_machinable(machinable: &Polygon2, tool_radius: f64, stepover: f64) -> bool {
     // Probe radius: tool_radius + stepover. If the machinable region
     // inset by this much collapses to nothing or only tiny fragments,
