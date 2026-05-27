@@ -59,6 +59,24 @@ After the run, compare:
 - Docker CAMotics 1.2.0 GRBL-parse: all 6 files clean.
 - Arc-fitter (commit `2db19c2`) included — wanaka Back Rough arcs all pass `$12=0.010` tolerance.
 - F-037 smoke baseline: no regressions in current `master` (commit `77c1101`).
+- **`nc-time` cross-check** — second independent time estimate via parsing the .nc and replaying through F-034:
+
+  ```
+  cargo run -p rs_cam_cli -- nc-time planning/feed_modulation_calibration/bench_batch_2026-05-27/v*.nc
+  ```
+
+  Predicted times (with stock kinematics: 350 mm/s² accel, 4000 mm/min max feed, 10000 mm/min rapid):
+
+  | File | nc-time | project --summary | Note |
+  |---|---|---|---|
+  | v1 | 6m 45s | 7m 39s | -12% (setup overhead delta) |
+  | v2 | 13m 35s | 14m 16s | -5% |
+  | v3 | 13m 27s | 14m 08s | -5% |
+  | v4 | 11m 01s | 11m 43s | -6% |
+  | v5 | 15m 14s | 16m 03s | -5% |
+  | v6 | 0m 33s | 0m 33s | match |
+
+  **Relative deltas between variants agree within 1-2 % between the two estimators** — that's the validation: the emitter didn't drop / add moves between IR and .nc, and the modulator's effect is consistent across both. Absolute offset is M3 spinup / dwell / initial rapid-to-stock the project pipeline tracks that the bare .nc replay skips.
 
 ## Reset between runs
 
