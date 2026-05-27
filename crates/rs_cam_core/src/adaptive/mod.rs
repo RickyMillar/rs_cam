@@ -54,12 +54,22 @@ use crate::toolpath::Toolpath;
 ///   the spiral entirely and emits concentric contour-parallel offset
 ///   loops, then runs the standard residue mop. Targets annular /
 ///   ring-shaped pockets (donut-topology with a hole near the bounds).
+/// - `ContourParallelHybrid`: 2026-05-28 follow-up. Mixes spiral and
+///   contour-parallel per *sub-region*. The whole-region narrow gate
+///   still applies (uniformly narrow regions skip the spiral and use
+///   contour-parallel from the start). For regions that pass the gate
+///   as wide, the engagement-target spiral runs as normal — but the
+///   residue cleanup phase walks `machinable` inward at stepover
+///   offsets and emits only contours that pass through residue. So a
+///   shape with a wide bulb and a narrow tail (tadpole, key) gets a
+///   spiral in the bulb and concentric offset loops in the tail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CleanupStrategy {
     #[default]
     Legacy,
     ResidueMop,
     ContourParallelNarrow,
+    ContourParallelHybrid,
 }
 
 /// Parameters for adaptive clearing.
@@ -207,6 +217,9 @@ pub fn adaptive_toolpath_structured_annotated_traced_with_cancel(
         CleanupStrategy::Legacy => segments,
         CleanupStrategy::ResidueMop | CleanupStrategy::ContourParallelNarrow => {
             apply_residue_mop_cleanup(polygon, params, &segments)
+        }
+        CleanupStrategy::ContourParallelHybrid => {
+            path::apply_contour_parallel_residue_cleanup(polygon, params, &segments)
         }
     };
     let (tp, annotations) = segments_to_toolpath(&segments, params);
@@ -2532,6 +2545,30 @@ mod tests {
                 ];
                 Polygon2::with_holes(outer, vec![hole])
             }),
+            ("tadpole", {
+                // Wide bulb (r=15mm at x=-10) tangent-merged with a
+                // tail (8mm half-height) extending to x=28. The bulb
+                // is comfortably wide for the spiral; the tail is
+                // wide enough that boundary cleanup leaves a center
+                // band of residue. The Hybrid contour-parallel sweep
+                // handles that residue with smooth offset loops.
+                let cx = -10.0_f64;
+                let r = 15.0_f64;
+                let tail_h = 8.0_f64;
+                let tail_x = 28.0_f64;
+                let theta_attach = (tail_h / r).asin();
+                let mut pts: Vec<P2> = Vec::new();
+                pts.push(P2::new(tail_x, tail_h));
+                let n_arc = 48;
+                for i in 0..=n_arc {
+                    let t = i as f64 / n_arc as f64;
+                    let theta = theta_attach
+                        + t * (std::f64::consts::TAU - 2.0 * theta_attach);
+                    pts.push(P2::new(cx + r * theta.cos(), r * theta.sin()));
+                }
+                pts.push(P2::new(tail_x, -tail_h));
+                Polygon2::new(pts)
+            }),
         ];
 
         let tool_radius = 3.0;
@@ -2544,17 +2581,17 @@ mod tests {
 
         eprintln!();
         eprintln!(
-            "══════════════════════════════════════════════════════════════════════════════════"
+            "════════════════════════════════════════════════════════════════════════════════════════════════════════"
         );
         eprintln!(
-            "Shape matrix — baseline vs ResidueMop vs ContourParallelNarrow (narrow regions only)"
+            "Shape matrix — baseline / ResidueMop / ContourParallelNarrow / ContourParallelHybrid"
         );
         eprintln!(
-            "══════════════════════════════════════════════════════════════════════════════════"
+            "════════════════════════════════════════════════════════════════════════════════════════════════════════"
         );
         eprintln!(
-            "{:>18} | {:>14} | {:>14} | {:>14}",
-            "shape", "baseline", "mop", "contour-narrow"
+            "{:>18} | {:>14} | {:>14} | {:>14} | {:>14}",
+            "shape", "baseline", "mop", "contour-narrow", "hybrid"
         );
 
         let count_segs = |segs: &[AdaptiveSegment]| -> (usize, usize, usize) {
@@ -2602,12 +2639,31 @@ mod tests {
                     .expect("adaptive should not cancel");
             let narrow =
                 path::apply_residue_mop_cleanup(polygon, &narrow_params, &narrow_segs);
+            // ContourParallelHybrid: spiral runs on whole machinable
+            // (unless the narrow gate fires for the whole region —
+            // then it also short-circuits to contour-parallel like
+            // Narrow). Cleanup phase uses contour-parallel sweep with
+            // material-presence filter, then cell-walking mop fallback.
+            let hybrid_params = AdaptiveParams {
+                cleanup_strategy: CleanupStrategy::ContourParallelHybrid,
+                slot_clearing: false,
+                ..default_params(tool_radius, stepover)
+            };
+            let hybrid_segs =
+                adaptive_segments_with_debug(polygon, &hybrid_params, &never_cancel, None)
+                    .expect("adaptive should not cancel");
+            let hybrid = path::apply_contour_parallel_residue_cleanup(
+                polygon,
+                &hybrid_params,
+                &hybrid_segs,
+            );
             let (bc, br, bl) = count_segs(&baseline);
             let (fc, fr, fl) = count_segs(&fixed);
             let (nc, nr, nl) = count_segs(&narrow);
+            let (hc, hr, hl) = count_segs(&hybrid);
             eprintln!(
-                "{:>18} | {:>2}C {:>2}R {:>2}L | {:>2}C {:>2}R {:>2}L | {:>2}C {:>2}R {:>2}L",
-                name, bc, br, bl, fc, fr, fl, nc, nr, nl
+                "{:>18} | {:>2}C {:>2}R {:>2}L | {:>2}C {:>2}R {:>2}L | {:>2}C {:>2}R {:>2}L | {:>2}C {:>2}R {:>2}L",
+                name, bc, br, bl, fc, fr, fl, nc, nr, nl, hc, hr, hl
             );
             write_segments_svg(
                 &baseline,
@@ -2630,9 +2686,16 @@ mod tests {
                 &format!("adaptive_shape_{}_narrow.svg", name),
                 &format!("{}: contour-parallel narrow", name),
             );
+            write_segments_svg(
+                &hybrid,
+                polygon,
+                tool_radius,
+                &format!("adaptive_shape_{}_hybrid.svg", name),
+                &format!("{}: contour-parallel hybrid", name),
+            );
         }
         eprintln!(
-            "══════════════════════════════════════════════════════════════════════════════════"
+            "════════════════════════════════════════════════════════════════════════════════════════════════════════"
         );
     }
 

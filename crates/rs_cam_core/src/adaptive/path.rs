@@ -158,7 +158,7 @@ pub(crate) fn adaptive_segments_with_debug(
     // loops. See doc on `CleanupStrategy::ContourParallelNarrow`.
     if matches!(
         params.cleanup_strategy,
-        CleanupStrategy::ContourParallelNarrow
+        CleanupStrategy::ContourParallelNarrow | CleanupStrategy::ContourParallelHybrid
     ) && is_narrow_machinable(machinable, tool_radius, stepover)
     {
         return contour_parallel_segments(
@@ -169,6 +169,7 @@ pub(crate) fn adaptive_segments_with_debug(
             stepover,
             cell_size,
             cancel,
+            None,
         );
     }
 
@@ -481,13 +482,23 @@ pub(crate) fn adaptive_segments_with_debug(
     // Trace ALL machinable boundaries (exterior + hole contours) to sweep
     // any thin strip of material left along the walls. This is the
     // tool-center contour that puts the tool edge right on each wall.
+    //
+    // ContourParallelHybrid mode SKIPS this pass — its post-process
+    // contour-parallel sweep walks the same boundaries and continues
+    // inward at stepover intervals, which subsumes this single-loop
+    // sweep and exposes residue-region differences cleanly.
     let mut contours: Vec<&Vec<P2>> = Vec::new();
-    if machinable.exterior.len() >= 3 {
-        contours.push(&machinable.exterior);
-    }
-    for hole in &machinable.holes {
-        if hole.len() >= 3 {
-            contours.push(hole);
+    if !matches!(
+        params.cleanup_strategy,
+        CleanupStrategy::ContourParallelHybrid
+    ) {
+        if machinable.exterior.len() >= 3 {
+            contours.push(&machinable.exterior);
+        }
+        for hole in &machinable.holes {
+            if hole.len() >= 3 {
+                contours.push(hole);
+            }
         }
     }
 
@@ -658,6 +669,148 @@ pub(crate) fn apply_residue_mop_cleanup(
     out
 }
 
+// ── Hybrid cleanup strategy ────────────────────────────────────────────
+//
+// Same filter/replay as `apply_residue_mop_cleanup`, but the residue
+// phase walks `machinable` inward at stepover offsets (via
+// `contour_parallel_segments`, which skips contours that don't pass
+// through material). After the contour-parallel sweep, any tiny patches
+// the contour walks didn't reach get cleaned up by the cell-walking
+// `mop_residue_into_segments` fallback.
+//
+// On shapes with a wide core and narrow extensions (tadpole, key), the
+// spiral handles the core and the contour-parallel sweep handles the
+// extensions with clean concentric loops. See `CleanupStrategy::ContourParallelHybrid`.
+pub(crate) fn apply_contour_parallel_residue_cleanup(
+    polygon: &Polygon2,
+    params: &AdaptiveParams,
+    segments: &[AdaptiveSegment],
+) -> Vec<AdaptiveSegment> {
+    let tool_radius = params.tool_radius;
+    let cell_size = (tool_radius / 6.0).max(params.tolerance);
+    let step_len = cell_size * 3.0;
+    let stepover = params.stepover;
+
+    // Step 1 — filter short Cut groups (same as ResidueMop).
+    let mut filtered: Vec<AdaptiveSegment> = Vec::with_capacity(segments.len());
+    for seg in segments {
+        match seg {
+            AdaptiveSegment::Cut(path) => {
+                if path.len() >= MIN_KEEP_STEPS {
+                    filtered.push(AdaptiveSegment::Cut(path.clone()));
+                } else {
+                    while let Some(last) = filtered.last() {
+                        if matches!(
+                            last,
+                            AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_)
+                        ) {
+                            filtered.pop();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+            AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_) => filtered.push(seg.clone()),
+            AdaptiveSegment::Marker(_) => filtered.push(seg.clone()),
+        }
+    }
+    while let Some(last) = filtered.last() {
+        if matches!(last, AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_)) {
+            filtered.pop();
+        } else {
+            break;
+        }
+    }
+
+    // Step 2 — lookahead-filter orphan R/L (Markers can sit between).
+    let mut out: Vec<AdaptiveSegment> = Vec::with_capacity(filtered.len());
+    for (i, seg) in filtered.iter().enumerate() {
+        if matches!(seg, AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_)) {
+            let mut has_cut_next = false;
+            #[allow(clippy::indexing_slicing)] // i < filtered.len()
+            for next in &filtered[i + 1..] {
+                match next {
+                    AdaptiveSegment::Cut(_) => {
+                        has_cut_next = true;
+                        break;
+                    }
+                    AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_) => break,
+                    AdaptiveSegment::Marker(_) => continue,
+                }
+            }
+            if !has_cut_next {
+                continue;
+            }
+        }
+        out.push(seg.clone());
+    }
+
+    // Step 3 — replay grid state and last cutter position.
+    let mut grid = MaterialGrid::from_polygon(polygon, cell_size);
+    if let Some(stock) = &params.initial_stock {
+        grid.apply_initial_stock(stock, params.cut_depth);
+    }
+    let mut last_pos: Option<P2> = None;
+    for seg in &out {
+        if let AdaptiveSegment::Cut(path) = seg {
+            for p in path {
+                grid.clear_circle(p.x, p.y, tool_radius);
+                last_pos = Some(*p);
+            }
+        }
+    }
+
+    // Step 4 — contour-parallel sweep of residue (filtered by material
+    // presence; sweeps only the offsets that actually cross residue).
+    let machinable_vec = crate::polygon::offset_polygon(polygon, tool_radius);
+    if machinable_vec.is_empty() {
+        return out;
+    }
+    #[allow(clippy::indexing_slicing)] // machinable_vec non-empty checked above
+    let machinable = &machinable_vec[0];
+    let machinable_mask = MaterialGrid::build_machinable_mask(
+        machinable,
+        grid.origin_x,
+        grid.origin_y,
+        grid.rows,
+        grid.cols,
+        grid.cell_size,
+    );
+    let never_cancel: &dyn CancelCheck = &|| false;
+    if let Ok(contour_segments) = contour_parallel_segments(
+        machinable,
+        &mut grid,
+        &machinable_mask,
+        tool_radius,
+        stepover,
+        cell_size,
+        never_cancel,
+        last_pos,
+    ) {
+        if let Some(last_cut) = contour_segments.iter().rev().find_map(|s| match s {
+            AdaptiveSegment::Cut(p) => p.last().copied(),
+            _ => None,
+        }) {
+            last_pos = Some(last_cut);
+        }
+        out.extend(contour_segments);
+    }
+
+    // Step 5 — tiny-patch fallback. Anything the contour walks missed
+    // (sub-stepover slivers, far-off-axis residue) gets cleaned by the
+    // cell-walking mop.
+    let mop_segments = mop_residue_into_segments(
+        &mut grid,
+        &machinable_mask,
+        tool_radius,
+        step_len,
+        last_pos,
+    );
+    out.extend(mop_segments);
+    out
+}
+
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Walks the MaterialGrid directly, emitting one Cut per reachable
 /// residue patch. See doc on `apply_residue_mop_cleanup`.
@@ -799,10 +952,12 @@ fn is_narrow_machinable(machinable: &Polygon2, tool_radius: f64, stepover: f64) 
 }
 
 /// Emit concentric inward-offset loops of `machinable` at stride `stepover`,
-/// clearing the grid along each contour. Adjacent loops (within 6R + clear
-/// path) are connected by Link; gaps across uncut material emit a Rapid.
-/// Stops when `offset_polygon` returns empty or when a loop fails to
-/// reduce material.
+/// clearing the grid along each contour. Contours that pass through no
+/// remaining material are skipped (no emission) — so a fresh-grid call
+/// emits every loop, but a post-spiral call emits only the loops that
+/// would actually remove residue. Adjacent emitted loops are connected
+/// by Link when within 6R via a clear path, else by Rapid.
+#[allow(clippy::too_many_arguments)]
 fn contour_parallel_segments(
     machinable: &Polygon2,
     grid: &mut MaterialGrid,
@@ -811,14 +966,19 @@ fn contour_parallel_segments(
     stepover: f64,
     cell_size: f64,
     cancel: &dyn CancelCheck,
+    start_pos: Option<P2>,
 ) -> Result<Vec<AdaptiveSegment>, Cancelled> {
     const MAX_LOOPS: usize = 100;
+    const RESIDUE_DONE_FRACTION: f64 = 0.005;
     let max_link_dist = tool_radius * 6.0;
     let mut segments: Vec<AdaptiveSegment> = Vec::new();
-    let mut last_pos: Option<P2> = None;
+    let mut last_pos: Option<P2> = start_pos;
 
     for k in 0..MAX_LOOPS {
         check_cancel(cancel)?;
+        if grid.material_fraction() < RESIDUE_DONE_FRACTION {
+            break;
+        }
         let dist = stepover * (k as f64);
         let polys: Vec<Polygon2> = if dist <= 1e-9 {
             vec![machinable.clone()]
@@ -842,6 +1002,9 @@ fn contour_parallel_segments(
             }
 
             for contour in contours {
+                if !contour_passes_material(contour, grid) {
+                    continue;
+                }
                 let path = walk_contour_clearing(contour, cell_size, grid, tool_radius);
                 if path.len() < 2 {
                     continue;
@@ -881,6 +1044,27 @@ fn contour_parallel_segments(
     }
 
     Ok(segments)
+}
+
+/// True when at least one sample point along the contour lies over an
+/// uncleared (material) grid cell. Used by `contour_parallel_segments`
+/// to skip emitting concentric loops that would cut nothing.
+fn contour_passes_material(contour: &[P2], grid: &MaterialGrid) -> bool {
+    if contour.len() < 3 {
+        return false;
+    }
+    let n_samples = 64.min(contour.len());
+    let stride = (contour.len() / n_samples).max(1);
+    let mut i = 0;
+    while i < contour.len() {
+        #[allow(clippy::indexing_slicing)] // i < contour.len() bounded above
+        let p = contour[i];
+        if grid.is_material(p.x, p.y) {
+            return true;
+        }
+        i += stride;
+    }
+    false
 }
 
 /// Walk a closed contour in world coords, subdividing each edge to
