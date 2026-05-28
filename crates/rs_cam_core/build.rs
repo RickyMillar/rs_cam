@@ -1,18 +1,32 @@
-//! Build script: capture git short-sha, dirty flag, and build timestamp
-//! so the running binary can report exactly which commit it was built
-//! from. Surfaced via `rs_cam_core::build_info`.
+//! Build script: capture git short-sha, dirty flag, and the commit
+//! timestamp so the running binary can report exactly which commit it
+//! was built from. Surfaced via `rs_cam_core::build_info`.
+//!
+//! IMPORTANT — must produce DETERMINISTIC output for a given
+//! (HEAD, dirty) state. cargo recompiles the crate whenever this
+//! script's emitted `rustc-env` values change. An earlier version
+//! embedded the *build* timestamp (`date -u`), which differed on every
+//! run; combined with a `rerun-if-changed` pointing at a path that
+//! resolves relative to the crate dir (where there is no `.git`, so
+//! cargo treated it as perpetually changed), the script reran every
+//! build and forced a full rs_cam_core → mcp → viz recompile each time.
+//! Using the COMMIT timestamp (stable per HEAD) makes reruns idempotent.
 
 use std::process::Command;
 
-fn main() {
-    let sha = Command::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
+fn git(args: &[&str]) -> Option<String> {
+    Command::new("git")
+        .args(args)
         .output()
         .ok()
         .filter(|o| o.status.success())
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.trim().to_owned())
-        .unwrap_or_else(|| "unknown".to_owned());
+        .filter(|s| !s.is_empty())
+}
+
+fn main() {
+    let sha = git(&["rev-parse", "--short", "HEAD"]).unwrap_or_else(|| "unknown".to_owned());
 
     let dirty = Command::new("git")
         .args(["status", "--porcelain"])
@@ -27,26 +41,24 @@ fn main() {
         sha
     };
 
-    let build_ts = Command::new("date")
-        .args(["-u", "+%Y-%m-%dT%H:%M:%SZ"])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_owned())
-        .unwrap_or_else(|| "unknown".to_owned());
+    // Commit timestamp (stable per HEAD), NOT the build wall-clock — see
+    // the module note above on why a volatile value breaks incremental
+    // builds.
+    let commit_ts =
+        git(&["log", "-1", "--format=%cI"]).unwrap_or_else(|| "unknown".to_owned());
 
     println!("cargo:rustc-env=RS_CAM_GIT_DESC={git_desc}");
-    println!("cargo:rustc-env=RS_CAM_BUILD_TS={build_ts}");
+    println!("cargo:rustc-env=RS_CAM_BUILD_TS={commit_ts}");
 
-    // Rerun ONLY when HEAD moves (commit/checkout) or build.rs itself
-    // changes. Deliberately NOT keyed on .git/index: this script runs
-    // `git status`, which refreshes .git/index's stat-cache mtime, and
-    // keying on it created a feedback loop — every build touched the
-    // index, which retriggered the script, which re-emitted a fresh
-    // RS_CAM_BUILD_TS, forcing a full rs_cam_core recompile every time.
-    // The trade-off: the `-dirty` flag and timestamp only refresh when
-    // HEAD moves, not on every uncommitted edit. Acceptable — the
-    // git_desc sha is the load-bearing field and it's correct per commit.
-    println!("cargo:rerun-if-changed=.git/HEAD");
+    // Trigger reruns on real git state changes using ABSOLUTE paths
+    // (the crate-relative default would miss the workspace-root .git).
+    // A commit on the current branch updates the branch ref file but not
+    // HEAD itself, so watch both.
+    if let Some(git_dir) = git(&["rev-parse", "--absolute-git-dir"]) {
+        println!("cargo:rerun-if-changed={git_dir}/HEAD");
+        if let Some(ref_name) = git(&["symbolic-ref", "-q", "HEAD"]) {
+            println!("cargo:rerun-if-changed={git_dir}/{ref_name}");
+        }
+    }
     println!("cargo:rerun-if-changed=build.rs");
 }
