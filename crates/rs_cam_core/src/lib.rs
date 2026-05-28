@@ -40,6 +40,7 @@ pub mod interrupt;
 pub mod io;
 pub mod machine;
 pub mod machine_kinematics;
+pub mod machine_library;
 pub mod material;
 pub mod mesh;
 pub mod narrate;
