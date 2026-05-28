@@ -251,6 +251,32 @@ fn wanaka_back_rough_first_and_last_z_layers() {
         z_partitions.len()
     );
 
+    // Headline travel metric: total rapid distance across the whole
+    // toolpath (matches the MCP rapid_distance_mm). Region ordering
+    // should reduce this without changing cut distance.
+    let mut total_rapid = 0.0_f64;
+    let mut total_cut = 0.0_f64;
+    let mut prev: Option<rs_cam_core::geo::P3> = None;
+    for m in &toolpath.moves {
+        if let Some(p) = prev {
+            let d = ((m.target.x - p.x).powi(2)
+                + (m.target.y - p.y).powi(2)
+                + (m.target.z - p.z).powi(2))
+            .sqrt();
+            match m.move_type {
+                MoveType::Rapid => total_rapid += d,
+                _ => total_cut += d,
+            }
+        }
+        prev = Some(m.target);
+    }
+    eprintln!(
+        "TOTAL: {} moves, cut={:.1}mm, rapid={:.1}mm",
+        toolpath.moves.len(),
+        total_cut,
+        total_rapid
+    );
+
     let first = z_partitions.first().expect("first");
     let last = z_partitions.last().expect("last");
 
