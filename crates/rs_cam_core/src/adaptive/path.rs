@@ -967,9 +967,11 @@ pub(crate) fn mop_residue_into_segments(
     step_len: f64,
     start_pos: Option<P2>,
 ) -> Vec<AdaptiveSegment> {
-    const MAX_PATCHES: usize = 200;
+    const MAX_PATCHES: usize = 400;
     const MAX_STEPS_PER_PATCH: usize = 600;
-    const RESIDUE_DONE_FRACTION: f64 = 0.005;
+    // Lowered from 0.005 → 0.001 so the mop chases thin islands left
+    // between the spiral's outermost reach and the boundary band.
+    const RESIDUE_DONE_FRACTION: f64 = 0.001;
     let max_link_dist = tool_radius * 6.0;
 
     let mut segments: Vec<AdaptiveSegment> = Vec::new();
@@ -1194,8 +1196,12 @@ fn contour_parallel_segments(
     cancel: &dyn CancelCheck,
     start_pos: Option<P2>,
 ) -> Result<Vec<AdaptiveSegment>, Cancelled> {
-    const MAX_LOOPS: usize = 100;
-    const RESIDUE_DONE_FRACTION: f64 = 0.005;
+    const MAX_LOOPS: usize = 120;
+    const RESIDUE_DONE_FRACTION: f64 = 0.001;
+    // Overlap factor < 1.0 makes consecutive offset loops overlap so
+    // thin rings between the spiral's outermost reach and the boundary
+    // band don't survive as uncleared islands. 0.85 → 15% overlap.
+    const OFFSET_OVERLAP: f64 = 0.85;
     let max_link_dist = tool_radius * 6.0;
     let mut segments: Vec<AdaptiveSegment> = Vec::new();
     let mut last_pos: Option<P2> = start_pos;
@@ -1205,7 +1211,7 @@ fn contour_parallel_segments(
         if grid.material_fraction() < RESIDUE_DONE_FRACTION {
             break;
         }
-        let dist = stepover * (k as f64);
+        let dist = stepover * OFFSET_OVERLAP * (k as f64);
         let polys: Vec<Polygon2> = if dist <= 1e-9 {
             vec![machinable.clone()]
         } else {
