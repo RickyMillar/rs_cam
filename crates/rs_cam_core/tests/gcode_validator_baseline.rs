@@ -5,7 +5,8 @@
 //! Phase 4b: dialect set grew from 3 to 4 (added grblHAL) and corpus
 //! grew from 6 to 16 fixtures. grblHAL captures all read 0 findings;
 //! the new fixtures inherit the same per-dialect issues as F1–F6.
-//! Current baseline: 98 findings across 64 captures.
+//! Current baseline: 82 findings across 64 captures (was 98 before the
+//! Grbl post gained explicit G54, clearing 16 MissingWcs findings).
 //!
 //! The goal of subsequent phases is to drive each of these counts to
 //! zero. This test acts as the regression suite: when Phase 2/3 fixes
@@ -75,41 +76,38 @@ struct Expected {
 /// here come from the gap report's "still-pending bugs" list; driving
 /// them to zero is the Phase 2/3 work.
 const BASELINE: &[Expected] = &[
-    // ── Grbl: only need MissingWcs (Grbl post doesn't emit G54), plus
-    //    UnsupportedM6 on the multi-tool fixture. F6 has the same
-    //    no-WCS issue inside its single emitted block.
+    // ── Grbl: now emits explicit G54 (matches grblHAL), so no
+    //    MissingWcs. Only UnsupportedM6 remains, on the multi-tool
+    //    fixtures (F5).
     Expected {
         fixture: "f1_basic_lines",
         dialect: "grbl",
-        findings: &[(FindingKind::MissingWcs, 1)],
+        findings: &[],
     },
     Expected {
         fixture: "f2_arcs_xy",
         dialect: "grbl",
-        findings: &[(FindingKind::MissingWcs, 1)],
+        findings: &[],
     },
     Expected {
         fixture: "f3_helical_ramp",
         dialect: "grbl",
-        findings: &[(FindingKind::MissingWcs, 1)],
+        findings: &[],
     },
     Expected {
         fixture: "f4_profile_multipass",
         dialect: "grbl",
-        findings: &[(FindingKind::MissingWcs, 1)],
+        findings: &[],
     },
     Expected {
         fixture: "f5_two_tool_changes",
         dialect: "grbl",
-        findings: &[
-            (FindingKind::UnsupportedM6, 1),
-            (FindingKind::MissingWcs, 1),
-        ],
+        findings: &[(FindingKind::UnsupportedM6, 1)],
     },
     Expected {
         fixture: "f6_two_setups",
         dialect: "grbl",
-        findings: &[(FindingKind::MissingWcs, 1)],
+        findings: &[],
     },
     // ── grblHAL: emits G54 + supports M6 + M30 program end →
     //    zero findings across the existing F1–F6 corpus.
@@ -242,7 +240,7 @@ const BASELINE: &[Expected] = &[
     Expected {
         fixture: "f7_full_circle",
         dialect: "grbl",
-        findings: &[(FindingKind::MissingWcs, 1)],
+        findings: &[],
     },
     Expected {
         fixture: "f7_full_circle",
@@ -267,7 +265,7 @@ const BASELINE: &[Expected] = &[
     Expected {
         fixture: "f8_x_only_feed",
         dialect: "grbl",
-        findings: &[(FindingKind::MissingWcs, 1)],
+        findings: &[],
     },
     Expected {
         fixture: "f8_x_only_feed",
@@ -292,7 +290,7 @@ const BASELINE: &[Expected] = &[
     Expected {
         fixture: "f9_ramp_into_arc",
         dialect: "grbl",
-        findings: &[(FindingKind::MissingWcs, 1)],
+        findings: &[],
     },
     Expected {
         fixture: "f9_ramp_into_arc",
@@ -317,7 +315,7 @@ const BASELINE: &[Expected] = &[
     Expected {
         fixture: "f10_tiny_arcs",
         dialect: "grbl",
-        findings: &[(FindingKind::MissingWcs, 1)],
+        findings: &[],
     },
     Expected {
         fixture: "f10_tiny_arcs",
@@ -342,7 +340,7 @@ const BASELINE: &[Expected] = &[
     Expected {
         fixture: "f11_depth_step_boundary",
         dialect: "grbl",
-        findings: &[(FindingKind::MissingWcs, 1)],
+        findings: &[],
     },
     Expected {
         fixture: "f11_depth_step_boundary",
@@ -367,10 +365,7 @@ const BASELINE: &[Expected] = &[
     Expected {
         fixture: "f12_tool_change_at_z_zero",
         dialect: "grbl",
-        findings: &[
-            (FindingKind::UnsupportedM6, 1),
-            (FindingKind::MissingWcs, 1),
-        ],
+        findings: &[(FindingKind::UnsupportedM6, 1)],
     },
     Expected {
         fixture: "f12_tool_change_at_z_zero",
@@ -395,7 +390,7 @@ const BASELINE: &[Expected] = &[
     Expected {
         fixture: "f13_climb_vs_conventional",
         dialect: "grbl",
-        findings: &[(FindingKind::MissingWcs, 1)],
+        findings: &[],
     },
     Expected {
         fixture: "f13_climb_vs_conventional",
@@ -423,7 +418,7 @@ const BASELINE: &[Expected] = &[
     Expected {
         fixture: "f14_multi_line_pause_message",
         dialect: "grbl",
-        findings: &[(FindingKind::MissingWcs, 1)],
+        findings: &[],
     },
     Expected {
         fixture: "f14_multi_line_pause_message",
@@ -448,7 +443,7 @@ const BASELINE: &[Expected] = &[
     Expected {
         fixture: "f15_embedded_newline_snippets",
         dialect: "grbl",
-        findings: &[(FindingKind::MissingWcs, 1)],
+        findings: &[],
     },
     Expected {
         fixture: "f15_embedded_newline_snippets",
@@ -473,7 +468,7 @@ const BASELINE: &[Expected] = &[
     Expected {
         fixture: "f16_comp_round_trip",
         dialect: "grbl",
-        findings: &[(FindingKind::MissingWcs, 1)],
+        findings: &[],
     },
     Expected {
         fixture: "f16_comp_round_trip",
