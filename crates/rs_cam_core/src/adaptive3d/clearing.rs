@@ -1425,7 +1425,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
         slot_clearing: false,
         min_cutting_radius: 0.0,
         initial_stock: None,
-        cleanup_strategy: crate::adaptive::CleanupStrategy::Legacy,
+        cleanup_strategy: crate::adaptive::CleanupStrategy::ContourParallelHybrid,
     };
 
     // 5. Lift 2D points to 3D, respecting terrain peaks above z_level.
@@ -1688,12 +1688,84 @@ pub(super) fn clear_z_level_agent_2d_slice(
             }
         }
 
+        // Simplify the per-region polygon to smooth the marching-squares
+        // staircase pattern before the 2D adaptive runs. Two-step:
+        //   1. Inward offset by SIMPLIFY_INSET so the simplified result
+        //      stays inside the original — guarantees we never remove
+        //      more stock than the original polygon allows.
+        //   2. Douglas-Peucker on each contour with SIMPLIFY_TOLERANCE,
+        //      collapsing stair-step vertices into straight lines.
+        // Stock left at the boundary is bounded by SIMPLIFY_INSET +
+        // SIMPLIFY_TOLERANCE ≈ 0.6 mm — well within typical 0.5–1 mm
+        // radial-stock-to-leave allowances for a roughing pass.
+        const SIMPLIFY_INSET: f64 = 0.3;
+        const SIMPLIFY_TOLERANCE: f64 = 0.3;
+        let smoothed_polygons = if !matches!(
+            params_2d.cleanup_strategy,
+            crate::adaptive::CleanupStrategy::Legacy
+        ) {
+            let inset = crate::polygon::offset_polygon(region_polygon, SIMPLIFY_INSET);
+            inset
+                .into_iter()
+                .map(|mut poly| {
+                    poly.exterior = crate::adaptive::path::simplify_path(
+                        &poly.exterior,
+                        SIMPLIFY_TOLERANCE,
+                    );
+                    poly.holes = poly
+                        .holes
+                        .into_iter()
+                        .map(|h| crate::adaptive::path::simplify_path(&h, SIMPLIFY_TOLERANCE))
+                        .filter(|h| h.len() >= 3)
+                        .collect();
+                    poly
+                })
+                .filter(|p| p.exterior.len() >= 3)
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        let polygon_for_adaptive: &crate::polygon::Polygon2 =
+            if smoothed_polygons.is_empty() {
+                region_polygon
+            } else {
+                #[allow(clippy::indexing_slicing)] // checked non-empty above
+                &smoothed_polygons[0]
+            };
+
         let segs_2d_raw = crate::adaptive::adaptive_segments_with_debug(
-            region_polygon,
+            polygon_for_adaptive,
             &params_2d,
             cancel,
             region_scope.as_ref().map(|s| s.context()).as_ref(),
         )?;
+
+        // For non-Legacy cleanup strategies, run the same cleanup
+        // post-process the 2D top-level entry point runs. adaptive3d
+        // calls `adaptive_segments_with_debug` directly (not the
+        // toolpath-level entry), so without this step the new
+        // strategies (helical entry + narrow-exit + cap-pass-1) exit
+        // early and leave residue uncleared — the cleanup catches it
+        // with boundary walks + contour-parallel offsets + mop
+        // patches.
+        let segs_2d_raw = match params_2d.cleanup_strategy {
+            crate::adaptive::CleanupStrategy::Legacy => segs_2d_raw,
+            crate::adaptive::CleanupStrategy::ResidueMop
+            | crate::adaptive::CleanupStrategy::ContourParallelNarrow => {
+                crate::adaptive::path::apply_residue_mop_cleanup(
+                    polygon_for_adaptive,
+                    &params_2d,
+                    &segs_2d_raw,
+                )
+            }
+            crate::adaptive::CleanupStrategy::ContourParallelHybrid => {
+                crate::adaptive::path::apply_contour_parallel_residue_cleanup(
+                    polygon_for_adaptive,
+                    &params_2d,
+                    &segs_2d_raw,
+                )
+            }
+        };
 
         // F-038: filter out tiny entry-plunge → cut groups before emission.
         //
