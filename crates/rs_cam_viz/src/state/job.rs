@@ -688,6 +688,10 @@ pub struct JobState {
     pub tools: Vec<ToolConfig>,
     pub post: PostConfig,
     pub machine: rs_cam_core::machine::MachineProfile,
+    /// Library machine this job references, if any. When set, `machine`
+    /// was resolved from the library on load and is re-saved as a
+    /// fallback alongside the ref.
+    pub machine_ref: Option<String>,
     pub setups: Vec<Setup>,
     /// Monotonic counter incremented on every edit (for staleness detection).
     pub edit_counter: u64,
@@ -710,6 +714,7 @@ impl JobState {
             tools: Vec::new(),
             post: PostConfig::default(),
             machine: rs_cam_core::machine::MachineProfile::default(),
+            machine_ref: None,
             setups: vec![Setup::new(SetupId(0), "Setup 1".into())],
             edit_counter: 0,
             next_model_id: 0,

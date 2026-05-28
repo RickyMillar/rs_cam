@@ -52,6 +52,11 @@ pub enum ProjectLoadWarning {
         face_count: usize,
         invalid_id: u16,
     },
+    /// A `machine_ref` could not be resolved from the library; the
+    /// project's inline machine copy was used instead.
+    MachineRefFallback {
+        detail: String,
+    },
 }
 
 impl ProjectLoadWarning {
@@ -97,6 +102,7 @@ impl ProjectLoadWarning {
                      model with {face_count} faces). Selection was cleared."
                 )
             }
+            ProjectLoadWarning::MachineRefFallback { detail } => detail.clone(),
         }
     }
 }
@@ -127,6 +133,11 @@ pub struct ProjectJobSection {
     pub post: PostConfig,
     #[serde(default)]
     pub machine: rs_cam_core::machine::MachineProfile,
+    /// Optional reference to a library machine (see
+    /// `rs_cam_core::machine_library`). When set, the library file
+    /// overrides `machine` on load; `machine` is kept as a fallback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_ref: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -409,6 +420,7 @@ pub fn save_project(job: &JobState, path: &Path) -> Result<(), crate::error::Viz
             stock: job.stock.clone(),
             post: job.post.clone(),
             machine: job.machine.clone(),
+            machine_ref: job.machine_ref.clone(),
         },
         tools: job
             .tools
@@ -630,7 +642,17 @@ fn load_typed_project(
     job.name = project.job.name;
     job.stock = project.job.stock;
     job.post = project.job.post;
-    job.machine = project.job.machine;
+    // A machine_ref makes the library file authoritative; fall back to
+    // the inline copy (with a warning) when the referenced file is gone.
+    job.machine_ref = project.job.machine_ref.clone();
+    let resolved = rs_cam_core::machine_library::resolve(
+        project.job.machine_ref.as_deref(),
+        project.job.machine,
+    );
+    job.machine = resolved.profile;
+    if let Some(detail) = resolved.warning {
+        warnings.push(ProjectLoadWarning::MachineRefFallback { detail });
+    }
     job.file_path = Some(path.to_path_buf());
     job.dirty = false;
 
