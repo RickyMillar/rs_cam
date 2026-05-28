@@ -35,7 +35,7 @@ These are issues we can identify *without* needing Fusion's actual output, by co
    - LinuxCNC: `G53 G0 Z0` (correct; matches Fusion)
    - Mach3: `G0 Z10.000` followed by `G28 G91 Z0` (mixed/redundant — Fusion does only `G53 Z0` or `G28 Z0`, not both)
 
-6. **`G54` only emitted by LinuxCNC.** Fusion emits the WCS code (`G54..G59`) on every dialect when the toolpath enters its first section. rs_cam emits it only for LinuxCNC. Grbl in particular needs explicit `G54` because some Grbl forks default to `G53` (machine coordinates) on power-on.
+6. **`G54` not emitted by Mach3** (Grbl FIXED 2026-05-29). Fusion emits the WCS code (`G54..G59`) on every dialect when the toolpath enters its first section. rs_cam now emits it for LinuxCNC, grblHAL, **and Grbl** (the Grbl post gained `wcs = "G54"` — defensive against a controller left in G55–G59 by a prior program; cleared 16 `MissingWcs` validator findings, baseline 98→82). Mach3 still relies on the machine default.
 
 7. **Spindle warmup `G4 P2` only on Mach3.** rs_cam's Mach3 post inserts a 2-second dwell after `M3 S<rpm>`. Fusion does NOT do this on any of the three dialects. (It's a sensible safety habit, but it should be a configurable knob, not a hard-coded per-dialect choice.)
 
@@ -226,7 +226,7 @@ Phase 0's stated exit was "we know exactly how far we are." Combining the `.cps`
 
 5. 🟡 Feed decimals reversed for Grbl vs Mach3 vs Fusion convention (we do 0/1, Fusion does 1/0).
 6. 🟡 End-of-program retract is per-dialect ad hoc (Grbl hardcodes Z=10 ignoring safe-Z; Mach3 does both `G0 Z` and `G28 Z` redundantly).
-7. 🟡 `G54` only emitted by LinuxCNC; Grbl/Mach3 silently rely on machine default.
+7. 🟡 `G54` now emitted by LinuxCNC, grblHAL, and Grbl (FIXED 2026-05-29); Mach3 still relies on machine default.
 8. 🟡 Spindle warmup `G4 P2` hardcoded for Mach3 only — should be a per-post knob.
 9. 🟡 `G40 G49 G80` over-emitted in Grbl preamble.
 
