@@ -120,6 +120,54 @@ pub(crate) fn search_direction(
     .map(|result| result.angle)
 }
 
+/// Narrow-strip search: when the cutter is in a region too thin for the
+/// engagement-target search to swing (boundary_distance ≤ tool_radius +
+/// stepover, indicating no room for a stepover step away from any wall),
+/// follow the gradient of the boundary-distance field. Picks the
+/// direction perpendicular to ∇dt (tangent to the iso-distance curve =
+/// the strip's centerline) that's closest to `prev_angle`. The cutter
+/// rides the centerline of the strip with one continuous pass instead
+/// of wiggling between walls.
+///
+/// Returns `None` if the next position would leave the machinable
+/// region; otherwise returns the chosen angle.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn search_direction_gradient(
+    grid: &MaterialGrid,
+    machinable_mask: &[bool],
+    boundary_distances: &[f64],
+    cx: f64,
+    cy: f64,
+    step_len: f64,
+    prev_angle: f64,
+) -> Option<SearchDirectionResult> {
+    let (gx, gy) = grid.boundary_gradient(boundary_distances, cx, cy);
+    let gmag2 = gx * gx + gy * gy;
+    let angle = if gmag2 < 1e-12 {
+        // At a local DT maximum (centerline of a strip with uniform
+        // cross-section): no preferred direction. Continue in
+        // `prev_angle` to keep momentum.
+        prev_angle
+    } else {
+        let grad_angle = gy.atan2(gx);
+        let perp_a = grad_angle + std::f64::consts::FRAC_PI_2;
+        let perp_b = grad_angle - std::f64::consts::FRAC_PI_2;
+        let da = angle_diff(perp_a, prev_angle).abs();
+        let db = angle_diff(perp_b, prev_angle).abs();
+        if da <= db { perp_a } else { perp_b }
+    };
+
+    let nx = cx + step_len * angle.cos();
+    let ny = cy + step_len * angle.sin();
+    if !grid.is_machinable(machinable_mask, nx, ny) {
+        return None;
+    }
+    Some(SearchDirectionResult {
+        angle,
+        evaluations: 1,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn search_direction_with_metrics(
     grid: &MaterialGrid,

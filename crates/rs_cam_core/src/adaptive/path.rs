@@ -8,7 +8,7 @@
 use super::material_grid::polygon_bbox;
 use super::search::{
     find_entry_point, find_entry_via_distance_transform, path_bounds,
-    search_direction_with_metrics,
+    search_direction_gradient, search_direction_with_metrics,
 };
 use super::{
     AdaptiveParams, AdaptiveRuntimeAnnotation, AdaptiveRuntimeEvent, CleanupStrategy, MaterialGrid,
@@ -264,6 +264,20 @@ pub(crate) fn adaptive_segments_with_debug(
         check_cancel(cancel)?;
         pass_count += 1;
 
+        // For non-Legacy strategies: only the helical-entry-driven
+        // pass 1 produces useful spiral arcs. Subsequent passes
+        // would enter at the machinable boundary and run engagement-
+        // target search through whatever remains — which, by
+        // construction, is now narrow strips where the search
+        // degenerates into wiggle. The cleanup phase (boundary
+        // cleanup + contour-parallel sweep + cell-walking mop)
+        // handles those strips with clean boundary walks instead.
+        if pass_count > 1
+            && !matches!(params.cleanup_strategy, CleanupStrategy::Legacy)
+        {
+            break;
+        }
+
         let pass_started = Instant::now();
         let material_before = grid.material_fraction();
         let pass_scope =
@@ -371,7 +385,6 @@ pub(crate) fn adaptive_segments_with_debug(
         let max_steps = 5000;
         let mut idle_count = 0;
         let mut search_evaluations = 0u32;
-        let mut narrow_exit = false;
         // CONVERGENCE DETECTOR — disabled, kept here for context.
         //
         // Two variants tried: engagement-based (exit when engagement <
@@ -400,18 +413,42 @@ pub(crate) fn adaptive_segments_with_debug(
                 prev_angle
             };
 
-            // Search for next direction
-            let Some(search_result) = search_direction_with_metrics(
-                &grid,
-                &machinable_mask,
-                cx,
-                cy,
-                tool_radius,
-                step_len,
-                target_frac,
-                smoothed_angle,
-                &boundary_distances,
-            ) else {
+            // Search for next direction. When the cutter is in a
+            // region too thin for the engagement-target search to
+            // swing (dt_here < tool_radius + stepover), switch to
+            // gradient-following: pick the direction perpendicular
+            // to ∇boundary_distance, riding the strip's centerline.
+            // Single clean pass instead of wiggle.
+            let dt_here =
+                grid.boundary_distance_at(&boundary_distances, cx, cy);
+            let use_gradient = !matches!(
+                params.cleanup_strategy,
+                CleanupStrategy::Legacy
+            ) && dt_here < tool_radius + stepover;
+            let search_result_opt = if use_gradient {
+                search_direction_gradient(
+                    &grid,
+                    &machinable_mask,
+                    &boundary_distances,
+                    cx,
+                    cy,
+                    step_len,
+                    smoothed_angle,
+                )
+            } else {
+                search_direction_with_metrics(
+                    &grid,
+                    &machinable_mask,
+                    cx,
+                    cy,
+                    tool_radius,
+                    step_len,
+                    target_frac,
+                    smoothed_angle,
+                    &boundary_distances,
+                )
+            };
+            let Some(search_result) = search_result_opt else {
                 break;
             };
             search_evaluations += search_result.evaluations;
@@ -442,43 +479,11 @@ pub(crate) fn adaptive_segments_with_debug(
                 idle_count = 0;
             }
 
-            // Narrow-region early exit: when the cutter has spiraled
-            // out from the helical starter pocket and reached a region
-            // where the next stepover step would push past the polygon
-            // boundary, the engagement-target search has no room for a
-            // clean arc — leaving here lets the cleanup phase emit
-            // smooth contour-parallel offsets (or cell-walking mop)
-            // for the strip instead of wiggling through it.
-            //
-            // Gated on (1) non-Legacy strategy, (2) pass 1 only — later
-            // passes enter at the machinable boundary by definition,
-            // where dt_here = tool_radius, so they'd exit immediately
-            // and the spiral would never run, and (3) presence of a
-            // helical entry, since without it pass 1 also starts at
-            // the boundary.
-            if pass_count == 1
-                && helical_entry_pos.is_some()
-                && !matches!(params.cleanup_strategy, CleanupStrategy::Legacy)
-            {
-                let dt_here =
-                    grid.boundary_distance_at(&boundary_distances, cx, cy);
-                if dt_here < tool_radius + stepover {
-                    narrow_exit = true;
-                    break;
-                }
-            }
-
             prev_angle = angle;
         }
 
         let was_idle = idle_count > 15;
-        let exit_reason = if narrow_exit {
-            "narrow"
-        } else if was_idle {
-            "idle"
-        } else {
-            "no direction"
-        };
+        let exit_reason = if was_idle { "idle" } else { "no direction" };
 
         let path_len = path.len();
         let path_debug_bounds = path_bounds(&path);
@@ -978,6 +983,11 @@ pub(crate) fn mop_residue_into_segments(
                 let dist = (dx * dx + dy * dy).sqrt();
                 if dist < 1e-6 {
                     None
+                } else if is_clear_path(grid, machinable_mask, prev, start, tool_radius) {
+                    // Path is over already-cleared cells — tool-down
+                    // traverse is safe regardless of distance. Saves
+                    // the retract + plunge cycle of a Rapid.
+                    Some(AdaptiveSegment::Link(start))
                 } else if dist > max_link_dist {
                     Some(AdaptiveSegment::Rapid(start))
                 } else {
@@ -1000,7 +1010,21 @@ pub(crate) fn mop_residue_into_segments(
             let dx = mx - cur.x;
             let dy = my - cur.y;
             let dist = (dx * dx + dy * dy).sqrt();
-            if dist > tool_radius * 2.0 {
+            // Chain across short cleared gaps: stay tool-down and
+            // walk to the next material as part of the same Cut,
+            // rather than ending this Cut and starting a new one
+            // with its own approach. Each Rapid costs a retract +
+            // plunge cycle, which dominates over the cheap overlap
+            // of walking through cleared cells.
+            if dist > tool_radius * 6.0 {
+                break;
+            }
+            // Refuse the chain hop if it would cross outside the
+            // machinable region (e.g. across a thin neck where
+            // straight-line travel would clip a wall).
+            if dist > tool_radius * 2.0
+                && !is_clear_path(grid, machinable_mask, cur, P2::new(mx, my), tool_radius)
+            {
                 break;
             }
             if dist < 1e-9 {
@@ -1210,9 +1234,18 @@ fn contour_parallel_segments(
                         let d = (dx * dx + dy * dy).sqrt();
                         if d < 1e-6 {
                             // already at entry — no approach needed
-                        } else if d < max_link_dist
-                            && is_clear_path(grid, machinable_mask, prev, entry, tool_radius)
-                        {
+                        } else if is_clear_path(
+                            grid,
+                            machinable_mask,
+                            prev,
+                            entry,
+                            tool_radius,
+                        ) {
+                            // Cleared-cell traverse — Link at any
+                            // distance, saving the retract + plunge
+                            // cycle of a Rapid.
+                            segments.push(AdaptiveSegment::Link(entry));
+                        } else if d < max_link_dist {
                             segments.push(AdaptiveSegment::Link(entry));
                         } else {
                             segments.push(AdaptiveSegment::Rapid(entry));
