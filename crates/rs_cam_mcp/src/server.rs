@@ -424,6 +424,11 @@ pub fn json_str(data: serde_json::Value) -> String {
 pub fn build_info() -> serde_json::Value {
     serde_json::json!({
         "crate_version": env!("CARGO_PKG_VERSION"),
+        "core_version": rs_cam_core::build_info::CORE_VERSION,
+        // git short-sha (with -dirty suffix) of the rs_cam_core build,
+        // captured by its build.rs. Authoritative "which commit is this".
+        "git_desc": rs_cam_core::build_info::GIT_DESC,
+        "build_timestamp": rs_cam_core::build_info::BUILD_TIMESTAMP,
         "git_sha": option_env!("VERGEN_GIT_SHA"),
         "features": [
             "stale_defaults",
@@ -441,6 +446,13 @@ pub fn build_info() -> serde_json::Value {
             "valid_param_error_hints",
             "runtime_error_status_fields",
             "runtime_errors_in_diagnostics",
+            // Adaptive clearing rework (2026-05-28). Probe these to
+            // confirm the running binary has the new toolpaths.
+            "contour_parallel_hybrid",
+            "adaptive3d_hybrid",
+            "helical_starter_pocket",
+            "gradient_follow_narrow_strip",
+            "spiral_cleanup_overlap",
         ],
     })
 }

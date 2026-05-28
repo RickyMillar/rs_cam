@@ -1,5 +1,6 @@
 #![deny(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 #![allow(clippy::print_stderr)] // CLI uses eprintln! for user-facing diagnostic output
+#![allow(clippy::print_stdout)] // CLI `version` prints build info to stdout
 
 mod helpers;
 mod job;
@@ -126,6 +127,8 @@ enum ClearingPattern {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Print build/version info for all workspace crates
+    Version,
     /// Run a TOML job file with multiple tools and operations
     Job {
         /// Path to the .toml job file
@@ -1621,6 +1624,18 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Version => {
+            // Single source of truth for the git desc + build time is
+            // rs_cam_core's build.rs; each crate reports its own semver.
+            println!(
+                "rs_cam_cli {}\nrs_cam_core {}\ngit {}\nbuilt {}",
+                env!("CARGO_PKG_VERSION"),
+                rs_cam_core::build_info::CORE_VERSION,
+                rs_cam_core::build_info::GIT_DESC,
+                rs_cam_core::build_info::BUILD_TIMESTAMP,
+            );
+            return Ok(());
+        }
         Commands::Job {
             input,
             diagnostics,

@@ -6,6 +6,7 @@ pub mod adaptive_shared;
 pub mod arc_util;
 pub mod arcfit;
 pub mod boundary;
+pub mod build_info;
 pub mod chamfer;
 pub mod collision;
 pub mod compute;
