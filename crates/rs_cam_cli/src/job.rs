@@ -549,7 +549,8 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                                 slot_clearing,
                                 min_cutting_radius,
                                 initial_stock: None,
-                                cleanup_strategy: rs_cam_core::adaptive::CleanupStrategy::Legacy,
+                                cleanup_strategy:
+                                    rs_cam_core::adaptive::CleanupStrategy::ContourParallelHybrid,
                             },
                         )
                     });

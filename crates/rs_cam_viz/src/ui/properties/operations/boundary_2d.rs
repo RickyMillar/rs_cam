@@ -294,6 +294,33 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
                 0.1,
                 0.0..=50.0,
             );
+            ui.label("Cleanup:");
+            egui::ComboBox::from_id_salt("adaptive_cleanup_strategy")
+                .selected_text(format!("{:?}", cfg.cleanup_strategy))
+                .show_ui(ui, |ui| {
+                    use rs_cam_core::adaptive::CleanupStrategy;
+                    ui.selectable_value(
+                        &mut cfg.cleanup_strategy,
+                        CleanupStrategy::ContourParallelHybrid,
+                        "ContourParallelHybrid (default)",
+                    );
+                    ui.selectable_value(
+                        &mut cfg.cleanup_strategy,
+                        CleanupStrategy::ContourParallelNarrow,
+                        "ContourParallelNarrow",
+                    );
+                    ui.selectable_value(
+                        &mut cfg.cleanup_strategy,
+                        CleanupStrategy::ResidueMop,
+                        "ResidueMop",
+                    );
+                    ui.selectable_value(
+                        &mut cfg.cleanup_strategy,
+                        CleanupStrategy::Legacy,
+                        "Legacy",
+                    );
+                });
+            ui.end_row();
         });
 }
 
