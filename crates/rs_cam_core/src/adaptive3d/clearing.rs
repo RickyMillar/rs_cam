@@ -1221,6 +1221,50 @@ fn sample_stock_top_at(material_stock: &TriDexelStock, x: f64, y: f64) -> Option
 
 // ── 2.5D slice adaptive (AgentSearch strategy) ─────────────────────────
 
+/// Centroid (vertex average) of a polygon's exterior, as an (x, y)
+/// anchor for region-ordering. Vertex-average, not the area-weighted
+/// centroid — cheaper and adequate as a travel-ordering proxy.
+fn polygon_centroid_xy(poly: &crate::polygon::Polygon2) -> (f64, f64) {
+    let n = poly.exterior.len().max(1) as f64;
+    let (sx, sy) = poly
+        .exterior
+        .iter()
+        .fold((0.0, 0.0), |(ax, ay), p| (ax + p.x, ay + p.y));
+    (sx / n, sy / n)
+}
+
+/// Greedy nearest-neighbor tour over 2D `anchors`, starting from
+/// `start`. Returns the visit order as indices into `anchors`. Used to
+/// order disjoint machinable regions so the cutter hops to the nearest
+/// one next instead of following marching-squares scan order. O(n²),
+/// fine for the handful of regions a Z-level produces.
+#[allow(clippy::indexing_slicing)] // visited/anchors indexed by enumerate idx
+fn nearest_neighbor_order(anchors: &[(f64, f64)], start: (f64, f64)) -> Vec<usize> {
+    let mut visited = vec![false; anchors.len()];
+    let mut order: Vec<usize> = Vec::with_capacity(anchors.len());
+    let mut cur = start;
+    for _ in 0..anchors.len() {
+        let mut best: Option<usize> = None;
+        let mut best_d = f64::INFINITY;
+        for (i, a) in anchors.iter().enumerate() {
+            if visited[i] {
+                continue;
+            }
+            let d = (a.0 - cur.0).powi(2) + (a.1 - cur.1).powi(2);
+            if d < best_d {
+                best_d = d;
+                best = Some(i);
+            }
+        }
+        if let Some(i) = best {
+            visited[i] = true;
+            order.push(i);
+            cur = anchors[i];
+        }
+    }
+    order
+}
+
 /// Signed polygon area via the shoelace formula. Positive = CCW.
 fn polygon_signed_area(points: &[P2]) -> f64 {
     let n = points.len();
@@ -1393,6 +1437,23 @@ pub(super) fn clear_z_level_agent_2d_slice(
     }
     if regions.is_empty() {
         return Ok(());
+    }
+
+    // Nearest-neighbor region ordering. Marching squares yields regions
+    // in scan order (row-major), so the cutter can rapid back and forth
+    // across the stock as it hops between them. Greedily visiting the
+    // nearest unvisited region from the cutter's current XY cuts that
+    // inter-region rapid travel. Pure ordering — it doesn't change which
+    // material each region clears, so coverage is unaffected; safe for
+    // every strategy. Seeded from `last_pos` (the cutter's position
+    // entering this Z-level) or the stock origin on the first pass.
+    if regions.len() > 2 {
+        let start = last_pos.map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
+        let anchors: Vec<(f64, f64)> = regions.iter().map(polygon_centroid_xy).collect();
+        let order = nearest_neighbor_order(&anchors, start);
+        #[allow(clippy::indexing_slicing)] // order entries are valid region indices
+        let reordered: Vec<_> = order.into_iter().map(|i| regions[i].clone()).collect();
+        regions = reordered;
     }
 
     let mut level_metrics = ZLevelPlanMetrics {
@@ -2314,4 +2375,56 @@ fn polyline_length_3d(path: &[P3]) -> f64 {
             (*b - *a).norm()
         })
         .sum()
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+mod region_order_tests {
+    use super::nearest_neighbor_order;
+
+    #[test]
+    fn nn_visits_nearest_first_from_start() {
+        // Four anchors in a row at x = 0,1,2,3 (y=0). Starting at x=10
+        // (right side), the nearest-first tour must be 3,2,1,0.
+        let anchors = [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0)];
+        let order = nearest_neighbor_order(&anchors, (10.0, 0.0));
+        assert_eq!(order, vec![3, 2, 1, 0]);
+    }
+
+    #[test]
+    fn nn_starts_at_closest_to_seed_then_chains() {
+        // Seed near the origin; two clusters. Expect origin cluster
+        // first, then hop to the far cluster and stay local.
+        let anchors = [
+            (0.0, 0.0),   // 0
+            (50.0, 0.0),  // 1 far
+            (1.0, 0.0),   // 2 near 0
+            (51.0, 0.0),  // 3 near 1
+        ];
+        let order = nearest_neighbor_order(&anchors, (0.2, 0.0));
+        // 0 (closest to seed) → 2 (1mm away) → 1 (49mm) → 3 (1mm)
+        assert_eq!(order, vec![0, 2, 1, 3]);
+    }
+
+    #[test]
+    fn nn_handles_empty_and_single() {
+        assert!(nearest_neighbor_order(&[], (0.0, 0.0)).is_empty());
+        assert_eq!(nearest_neighbor_order(&[(5.0, 5.0)], (0.0, 0.0)), vec![0]);
+    }
+
+    #[test]
+    fn nn_is_a_permutation() {
+        // Every index appears exactly once, regardless of layout.
+        let anchors = [
+            (3.0, 7.0),
+            (-2.0, 1.0),
+            (8.0, -4.0),
+            (0.0, 0.0),
+            (5.0, 5.0),
+        ];
+        let mut order = nearest_neighbor_order(&anchors, (1.0, 1.0));
+        assert_eq!(order.len(), anchors.len());
+        order.sort_unstable();
+        assert_eq!(order, vec![0, 1, 2, 3, 4]);
+    }
 }
