@@ -1175,6 +1175,10 @@ fn param_defs_for_type(op_type: OperationType) -> &'static [ParamDef] {
         ParamDef::required("slot_clearing", "bool"),
         ParamDef::required("min_cutting_radius", "f64"),
         ParamDef::optional("spindle_rpm", "option<u32>"),
+        ParamDef::required(
+            "cleanup_strategy",
+            "enum:Legacy|ResidueMop|ContourParallelNarrow|ContourParallelHybrid",
+        ),
     ];
     const VCARVE: &[ParamDef] = &[
         ParamDef::required("max_depth", "f64"),

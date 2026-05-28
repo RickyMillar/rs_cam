@@ -287,6 +287,12 @@ pub struct AdaptiveConfig {
     pub min_cutting_radius: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// Residue cleanup strategy. Defaults to `ContourParallelHybrid`
+    /// (helical starter pocket + concentric spiral + gradient-following
+    /// in narrow strips + contour-parallel residue sweep). Legacy
+    /// behaviour can be restored by setting this to `Legacy`.
+    #[serde(default)]
+    pub cleanup_strategy: crate::adaptive::CleanupStrategy,
 }
 
 impl Default for AdaptiveConfig {
@@ -301,6 +307,7 @@ impl Default for AdaptiveConfig {
             slot_clearing: true,
             min_cutting_radius: 0.0,
             spindle_rpm: None,
+            cleanup_strategy: crate::adaptive::CleanupStrategy::ContourParallelHybrid,
         }
     }
 }

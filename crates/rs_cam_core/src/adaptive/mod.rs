@@ -63,12 +63,14 @@ use crate::toolpath::Toolpath;
 ///   offsets and emits only contours that pass through residue. So a
 ///   shape with a wide bulb and a narrow tail (tadpole, key) gets a
 ///   spiral in the bulb and concentric offset loops in the tail.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize,
+)]
 pub enum CleanupStrategy {
-    #[default]
     Legacy,
     ResidueMop,
     ContourParallelNarrow,
+    #[default]
     ContourParallelHybrid,
 }
 
