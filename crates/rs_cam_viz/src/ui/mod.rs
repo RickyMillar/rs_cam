@@ -24,7 +24,9 @@ pub mod workspace_bar;
 
 use crate::render::camera::ViewPreset;
 use crate::state::Workspace;
-use crate::state::job::{FaceUp, FixtureId, KeepOutId, ModelId, SetupId, ToolId, ToolType};
+use crate::state::job::{
+    FaceUp, FixtureId, KeepOutId, ModelId, SetupId, ToolConfig, ToolId, ToolType,
+};
 use crate::state::toolpath::{OperationType, ToolpathId};
 use rs_cam_core::enriched_mesh::FaceGroupId;
 use std::path::PathBuf;
@@ -72,6 +74,9 @@ pub enum AppEvent {
 
     // Tools
     AddTool(ToolType),
+    /// Add a fully-specified tool copied from a library catalog. The
+    /// session reassigns the id on insert.
+    AddToolFromLibrary(Box<ToolConfig>),
     DuplicateTool(ToolId),
     RemoveTool(ToolId),
 
