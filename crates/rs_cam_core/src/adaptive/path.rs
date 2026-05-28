@@ -1237,7 +1237,20 @@ fn contour_parallel_segments(
                 if !contour_passes_material(contour, grid) {
                     continue;
                 }
-                let path = walk_contour_clearing(contour, cell_size, grid, tool_radius);
+                // Begin walking each closed loop at the vertex nearest the
+                // cutter's previous exit, so the inter-loop hop is as short
+                // as possible. Same cells cleared (identical closed path,
+                // different start vertex) — this only shrinks the link/rapid
+                // travel between concentric offset loops.
+                let walk_owned: Vec<P2>;
+                let walk: &[P2] = match last_pos {
+                    Some(prev) => {
+                        walk_owned = rotate_contour_to_nearest(contour, prev);
+                        &walk_owned
+                    }
+                    None => contour,
+                };
+                let path = walk_contour_clearing(walk, cell_size, grid, tool_radius);
                 if path.len() < 2 {
                     continue;
                 }
@@ -1317,6 +1330,48 @@ fn contour_passes_material(contour: &[P2], grid: &MaterialGrid) -> bool {
         i += stride;
     }
     total > 0 && (hits as f64 / total as f64) >= COVERAGE_THRESHOLD
+}
+
+/// Rotate a closed contour's vertex order so the vertex nearest to
+/// `target` becomes index 0. The loop covers the same cells regardless of
+/// where it starts, so this is a pure travel optimisation: walking begins
+/// at the point closest to the cutter's previous position, minimising the
+/// link/rapid hop between consecutive concentric offset loops.
+///
+/// A trailing duplicate-of-first closing vertex (some offset outputs carry
+/// one) is dropped first so it can't land mid-loop as a zero-length edge.
+fn rotate_contour_to_nearest(contour: &[P2], target: P2) -> Vec<P2> {
+    let mut verts = contour;
+    if verts.len() >= 2 {
+        #[allow(clippy::indexing_slicing)] // len >= 2 checked
+        let (first, last) = (verts[0], verts[verts.len() - 1]);
+        let dx = first.x - last.x;
+        let dy = first.y - last.y;
+        if dx * dx + dy * dy < 1e-18 {
+            #[allow(clippy::indexing_slicing)] // len >= 2 checked
+            let trimmed = &contour[..contour.len() - 1];
+            verts = trimmed;
+        }
+    }
+    if verts.len() < 2 {
+        return verts.to_vec();
+    }
+    let mut best_idx = 0usize;
+    let mut best_d2 = f64::INFINITY;
+    for (i, p) in verts.iter().enumerate() {
+        let dx = p.x - target.x;
+        let dy = p.y - target.y;
+        let d2 = dx * dx + dy * dy;
+        if d2 < best_d2 {
+            best_d2 = d2;
+            best_idx = i;
+        }
+    }
+    #[allow(clippy::indexing_slicing)] // best_idx in 0..verts.len()
+    let mut rotated = verts[best_idx..].to_vec();
+    #[allow(clippy::indexing_slicing)] // best_idx in 0..verts.len()
+    rotated.extend_from_slice(&verts[..best_idx]);
+    rotated
 }
 
 /// Walk a closed contour in world coords, subdividing each edge to
