@@ -55,6 +55,17 @@ impl<B: ComputeBackend> AppController<B> {
         self.state.gui.mark_edited();
     }
 
+    pub(crate) fn handle_add_tool_from_library(&mut self, mut tool: ToolConfig) {
+        // The catalog tool's id is project-irrelevant; the session
+        // reassigns it on insert. Reset to a sentinel first.
+        tool.id = crate::state::job::ToolId(0);
+        let idx = self.state.session.add_tool(tool);
+        if let Some(tool) = self.state.session.tools().get(idx) {
+            self.state.selection = Selection::Tool(tool.id);
+        }
+        self.state.gui.mark_edited();
+    }
+
     pub(crate) fn handle_duplicate_tool(&mut self, tool_id: crate::state::job::ToolId) {
         if let Some(src) = self
             .state

@@ -46,6 +46,7 @@ impl<B: ComputeBackend> AppController<B> {
             // --- Tree / selection events ---
             AppEvent::Select(ref selection) => self.handle_select(selection),
             AppEvent::AddTool(tool_type) => self.handle_add_tool(tool_type),
+            AppEvent::AddToolFromLibrary(tool) => self.handle_add_tool_from_library(*tool),
             AppEvent::DuplicateTool(tool_id) => self.handle_duplicate_tool(tool_id),
             AppEvent::RemoveTool(tool_id) => self.handle_remove_tool(tool_id),
             AppEvent::AddSetup => self.handle_add_setup(),

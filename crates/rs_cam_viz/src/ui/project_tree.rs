@@ -128,6 +128,36 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     ui.close_menu();
                 }
             }
+            let libraries = rs_cam_core::tool_library::list_libraries();
+            if !libraries.is_empty() {
+                ui.separator();
+                ui.menu_button("From library", |ui| {
+                    for lib in &libraries {
+                        ui.menu_button(lib, |ui| {
+                            match rs_cam_core::tool_library::load_library(lib) {
+                                Ok(catalog) if catalog.tools.is_empty() => {
+                                    ui.label("(empty)");
+                                }
+                                Ok(catalog) => {
+                                    for tool in &catalog.tools {
+                                        let label =
+                                            format!("{} — ⌀{:.2}mm", tool.name, tool.diameter);
+                                        if ui.button(label).clicked() {
+                                            events.push(AppEvent::AddToolFromLibrary(Box::new(
+                                                tool.clone(),
+                                            )));
+                                            ui.close_menu();
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    ui.label(format!("load error: {e}"));
+                                }
+                            }
+                        });
+                    }
+                });
+            }
         });
     });
 
