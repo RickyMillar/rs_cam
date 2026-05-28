@@ -63,6 +63,23 @@ pub enum FindingKind {
     MissingProgramBrackets,
     /// No `G54`-`G59` block before the first cutting move.
     MissingWcs,
+
+    // ── Phase 2: machine-safety modal rules (see `validate_machine_safety`).
+    /// A rapid (`G0`) repositioned in X/Y while below the clearance
+    /// plane — the tool traverses through the part / fixturing.
+    RapidBelowClearance,
+    /// A cutting move (`G1`/`G2`/`G3`) is reached with the spindle off.
+    SpindleNotRunningAtCut,
+    /// A commanded Z goes below the program's allowed depth floor
+    /// (runaway plunge past the planned bottom).
+    ZBelowProgramFloor,
+    /// A feed (`F`) word exceeds the machine's maximum feed.
+    FeedExceedsMax,
+    /// The program ends without stopping the spindle (`M5`).
+    SpindleLeftRunning,
+    /// The program ends with the tool below the clearance plane
+    /// (no final retract).
+    ProgramEndsBelowClearance,
 }
 
 /// One validator finding tied to a specific line of g-code.
@@ -414,6 +431,251 @@ fn rule_missing_wcs(
     }
 }
 
+// ── Phase 2: machine-safety modal pass ───────────────────────────────
+//
+// These rules need geometric context — the clearance plane, the depth
+// floor, the machine's max feed — that the post-format `validate` entry
+// doesn't carry, so they live behind a separate entry. The pass walks
+// the program once, tracking the active motion mode, tool position,
+// spindle state and feed. It is the last automated check on the actual
+// bytes that reach the controller, independent of the dexel simulator
+// (which validates the toolpath IR, not the emitted text), so it catches
+// emitter / post bugs the sim can't see.
+//
+// Every rule is deliberately conservative: it fires only on an
+// unambiguous violation, because a false "all clear" on a first real cut
+// is worse than no check at all.
+
+/// Geometric / machine limits the safety pass checks the program
+/// against. Supply these from the post + machine profile at export time.
+#[derive(Debug, Clone, Copy)]
+pub struct MachineSafety {
+    /// Clearance plane Z. A rapid (`G0`) that changes X or Y must stay
+    /// at or above this height for the whole move — no traversing
+    /// through the part. Use the post's safe-Z.
+    pub clearance_z: f64,
+    /// Deepest Z the program may command (a negative value: stock bottom
+    /// minus any allowed spoilboard margin). `None` disables the floor
+    /// check.
+    pub min_z: Option<f64>,
+    /// Maximum feed in mm/min. `F` words above this are flagged (the
+    /// firmware will clamp, but a feed exceeding the machine's
+    /// `$110`/`$111` indicates a planner/post bug). `None` disables.
+    pub max_feed_mm_min: Option<f64>,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Motion {
+    Rapid,
+    Feed,
+    Arc,
+}
+
+/// Parse the signed decimal value of word `<letter>` from a
+/// comment-stripped, upper-cased line. Returns the first occurrence.
+/// Intended for axis / feed words (X/Y/Z/F/S), not integer G/M codes —
+/// use [`has_word_int`] for those.
+fn word_value(cleaned_upper: &str, letter: char) -> Option<f64> {
+    let target = letter.to_ascii_uppercase();
+    let bytes = cleaned_upper.as_bytes();
+    let mut i = 0;
+    while let Some(&b) = bytes.get(i) {
+        if b as char == target {
+            let start = i + 1;
+            let mut j = start;
+            while bytes
+                .get(j)
+                .is_some_and(|c| c.is_ascii_digit() || matches!(*c, b'.' | b'-' | b'+'))
+            {
+                j += 1;
+            }
+            if j > start
+                && let Some(tok) = cleaned_upper.get(start..j)
+                && let Ok(v) = tok.parse::<f64>()
+            {
+                return Some(v);
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Run the machine-safety modal pass over `gcode`. Returns all findings
+/// (possibly empty). Complements [`validate`]: that checks post-format
+/// invariants; this checks motion safety against `cfg`.
+pub fn validate_machine_safety(gcode: &str, cfg: MachineSafety) -> Vec<Finding> {
+    const EPS: f64 = 1e-6;
+    let mut findings = Vec::new();
+
+    let mut motion: Option<Motion> = None;
+    let (mut x, mut y, mut z): (Option<f64>, Option<f64>, Option<f64>) = (None, None, None);
+    let mut spindle_on = false;
+    let mut first_cut_checked = false;
+    let mut feed_flagged = false;
+    let mut floor_flagged = false;
+    let mut last_line_no = 0usize;
+
+    for (idx, raw) in gcode.lines().enumerate() {
+        let line_no = idx + 1;
+        let cleaned = strip_comments(raw).to_uppercase();
+        if cleaned.trim().is_empty() {
+            continue;
+        }
+        last_line_no = line_no;
+
+        // Spindle modal state.
+        if has_word_int(raw, 'M', 3) || has_word_int(raw, 'M', 4) {
+            spindle_on = true;
+        }
+        if has_word_int(raw, 'M', 5) {
+            spindle_on = false;
+        }
+
+        // Motion modal state.
+        if has_word_int(raw, 'G', 0) {
+            motion = Some(Motion::Rapid);
+        } else if has_word_int(raw, 'G', 1) {
+            motion = Some(Motion::Feed);
+        } else if has_word_int(raw, 'G', 2) || has_word_int(raw, 'G', 3) {
+            motion = Some(Motion::Arc);
+        }
+
+        let nx = word_value(&cleaned, 'X');
+        let ny = word_value(&cleaned, 'Y');
+        let nz = word_value(&cleaned, 'Z');
+        let nf = word_value(&cleaned, 'F');
+
+        // Feed ceiling (applies to any F word).
+        if let (Some(f), Some(max)) = (nf, cfg.max_feed_mm_min)
+            && f > max + EPS
+            && !feed_flagged
+        {
+            feed_flagged = true;
+            findings.push(Finding {
+                severity: Severity::Warning,
+                kind: FindingKind::FeedExceedsMax,
+                line: line_no,
+                message: format!(
+                    "Feed F{f:.0} mm/min exceeds the machine maximum {max:.0} mm/min. \
+                     The controller will clamp it, but the planner/post emitted a feed the \
+                     machine can't reach — the cut will run slower than planned."
+                ),
+            });
+        }
+
+        let has_axis = nx.is_some() || ny.is_some() || nz.is_some();
+        if !has_axis {
+            continue;
+        }
+
+        let pre_z = z;
+        let dest_z = nz.or(z);
+        let dx_changed = nx.is_some_and(|v| x.is_none_or(|c| (c - v).abs() > EPS));
+        let dy_changed = ny.is_some_and(|v| y.is_none_or(|c| (c - v).abs() > EPS));
+
+        // Depth floor.
+        if let (Some(cz), Some(min)) = (nz, cfg.min_z)
+            && cz < min - EPS
+            && !floor_flagged
+        {
+            floor_flagged = true;
+            findings.push(Finding {
+                severity: Severity::Error,
+                kind: FindingKind::ZBelowProgramFloor,
+                line: line_no,
+                message: format!(
+                    "Commanded Z{cz:.3} is below the program depth floor {min:.3} — \
+                     runaway plunge past the planned bottom (into spoilboard / table)."
+                ),
+            });
+        }
+
+        match motion {
+            Some(Motion::Rapid) => {
+                if dx_changed || dy_changed {
+                    // The whole rapid must clear the part: check the
+                    // lower of the start and end heights (linear-interp
+                    // controllers sweep XY while descending). Unknown
+                    // start (program origin) is treated as safe.
+                    let lo = match (pre_z, dest_z) {
+                        (Some(a), Some(b)) => a.min(b),
+                        (None, Some(b)) => b,
+                        (Some(a), None) => a,
+                        (None, None) => f64::INFINITY,
+                    };
+                    if lo < cfg.clearance_z - EPS {
+                        findings.push(Finding {
+                            severity: Severity::Error,
+                            kind: FindingKind::RapidBelowClearance,
+                            line: line_no,
+                            message: format!(
+                                "Rapid (G0) repositions in X/Y at Z{lo:.3}, below the clearance \
+                                 plane {:.3}. The tool traverses through the part / fixturing — \
+                                 retract to clearance before any rapid XY move.",
+                                cfg.clearance_z
+                            ),
+                        });
+                    }
+                }
+            }
+            Some(Motion::Feed) | Some(Motion::Arc) => {
+                if !first_cut_checked {
+                    first_cut_checked = true;
+                    if !spindle_on {
+                        findings.push(Finding {
+                            severity: Severity::Error,
+                            kind: FindingKind::SpindleNotRunningAtCut,
+                            line: line_no,
+                            message:
+                                "First cutting move (G1/G2/G3) reached with the spindle off \
+                                 (no preceding M3/M4). Cutting with a stopped spindle stalls \
+                                 the motor or snaps the bit."
+                                    .to_owned(),
+                        });
+                    }
+                }
+            }
+            None => {}
+        }
+
+        if let Some(v) = nx {
+            x = Some(v);
+        }
+        if let Some(v) = ny {
+            y = Some(v);
+        }
+        if let Some(v) = nz {
+            z = Some(v);
+        }
+    }
+
+    if spindle_on {
+        findings.push(Finding {
+            severity: Severity::Error,
+            kind: FindingKind::SpindleLeftRunning,
+            line: last_line_no,
+            message: "Program ends with the spindle still running (no M5).".to_owned(),
+        });
+    }
+    if let Some(final_z) = z
+        && final_z < cfg.clearance_z - EPS
+    {
+        findings.push(Finding {
+            severity: Severity::Warning,
+            kind: FindingKind::ProgramEndsBelowClearance,
+            line: last_line_no,
+            message: format!(
+                "Program ends with the tool at Z{final_z:.3}, below the clearance plane \
+                 {:.3} — no final retract.",
+                cfg.clearance_z
+            ),
+        });
+    }
+
+    findings
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -580,5 +842,115 @@ mod tests {
                 findings
             );
         }
+    }
+
+    // ── machine-safety pass ─────────────────────────────────────────
+
+    fn safety() -> MachineSafety {
+        MachineSafety {
+            clearance_z: 5.0,
+            min_z: Some(-3.0),
+            max_feed_mm_min: Some(1000.0),
+        }
+    }
+
+    /// A well-formed GRBL program: WCS, spindle on, rapid at clearance,
+    /// plunge, cut, retract, spindle off, retract, end.
+    const SAFE_PROG: &str = "\
+(Generated by rs_cam)
+G17 G21 G90
+G54
+M3 S18000
+G0 X0.000 Y0.000 Z5.000
+G1 Z-2.000 F200
+G1 X10.000 Y0.000 F600
+G0 Z5.000
+M5
+G0 Z10.000
+M30
+";
+
+    #[test]
+    fn machine_safety_clean_program_is_silent() {
+        let f = validate_machine_safety(SAFE_PROG, safety());
+        assert!(f.is_empty(), "expected no findings, got: {f:?}");
+    }
+
+    #[test]
+    fn flags_rapid_xy_below_clearance() {
+        // After cutting at Z-2, a G0 repositions in XY without retracting.
+        let prog = "G54\nM3 S1000\nG0 X0 Y0 Z5\nG1 Z-2 F200\nG1 X10 F600\nG0 X20 Y20\nG0 Z10\nM5\nM30\n";
+        let f = validate_machine_safety(prog, safety());
+        assert_eq!(count_kind(&f, FindingKind::RapidBelowClearance), 1);
+    }
+
+    #[test]
+    fn does_not_flag_z_only_retract_or_initial_approach() {
+        // Initial approach (origin unknown → safe) and the Z-only
+        // postamble retract must NOT be flagged.
+        let prog = "G54\nM3 S1000\nG0 X0 Y0 Z5\nG1 Z-2 F200\nG1 X10 F600\nG0 Z5\nG0 X0 Y0\nM5\nG0 Z10\nM30\n";
+        let f = validate_machine_safety(prog, safety());
+        assert_eq!(count_kind(&f, FindingKind::RapidBelowClearance), 0);
+    }
+
+    #[test]
+    fn flags_first_cut_with_spindle_off() {
+        let prog = "G54\nG0 X0 Y0 Z5\nG1 Z-2 F200\nG0 Z10\nM30\n";
+        let f = validate_machine_safety(prog, safety());
+        assert_eq!(count_kind(&f, FindingKind::SpindleNotRunningAtCut), 1);
+    }
+
+    #[test]
+    fn flags_z_below_floor() {
+        let prog = "G54\nM3 S1000\nG0 X0 Y0 Z5\nG1 Z-9 F200\nG0 Z10\nM5\nM30\n";
+        let f = validate_machine_safety(prog, safety());
+        assert_eq!(count_kind(&f, FindingKind::ZBelowProgramFloor), 1);
+    }
+
+    #[test]
+    fn flags_feed_over_max() {
+        let prog = "G54\nM3 S1000\nG0 X0 Y0 Z5\nG1 Z-2 F200\nG1 X10 F5000\nG0 Z10\nM5\nM30\n";
+        let f = validate_machine_safety(prog, safety());
+        assert_eq!(count_kind(&f, FindingKind::FeedExceedsMax), 1);
+    }
+
+    #[test]
+    fn flags_spindle_left_running() {
+        let prog = "G54\nM3 S1000\nG0 X0 Y0 Z5\nG1 Z-2 F200\nG0 Z10\nM30\n";
+        let f = validate_machine_safety(prog, safety());
+        assert_eq!(count_kind(&f, FindingKind::SpindleLeftRunning), 1);
+    }
+
+    #[test]
+    fn flags_program_ending_below_clearance() {
+        // Ends at Z-2 with no retract.
+        let prog = "G54\nM3 S1000\nG0 X0 Y0 Z5\nG1 Z-2 F200\nG1 X10 F600\nM5\nM30\n";
+        let f = validate_machine_safety(prog, safety());
+        assert_eq!(count_kind(&f, FindingKind::ProgramEndsBelowClearance), 1);
+    }
+
+    #[test]
+    fn word_value_parses_signed_decimals() {
+        assert_eq!(word_value("G1 X10.5 Y-2.000 Z-0.25 F600", 'X'), Some(10.5));
+        assert_eq!(word_value("G1 X10.5 Y-2.000 Z-0.25 F600", 'Y'), Some(-2.0));
+        assert_eq!(word_value("G1 X10.5 Y-2.000 Z-0.25 F600", 'Z'), Some(-0.25));
+        assert_eq!(word_value("G1 X10.5 F600", 'Z'), None);
+    }
+
+    #[test]
+    fn machine_safety_clean_on_real_grbl_capture() {
+        // The committed F1 capture (post-G54 fix) must pass the safety
+        // pass with a clearance below its Z5 approach.
+        let cfg = MachineSafety {
+            clearance_z: 5.0,
+            min_z: None,
+            max_feed_mm_min: None,
+        };
+        let prog = "(Generated by rs_cam)\nG17 G21 G90 G40 G49 G80\nG54\nM3 S18000\n\
+                    G0 X0.000 Y0.000 Z5.000\nG1 X0.000 Y0.000 Z-1.000 F200\n\
+                    G1 X10.000 Y0.000 Z-1.000 F400\nG1 X0.000 Y0.000 Z5.000 F1000\n\
+                    M5\nG0 Z10.000\nM30\n";
+        let f = validate_machine_safety(prog, cfg);
+        assert!(f.is_empty(), "expected no findings, got: {f:?}");
     }
 }
