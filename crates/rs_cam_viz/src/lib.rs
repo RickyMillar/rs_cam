@@ -15,10 +15,13 @@ pub mod state;
 pub mod ui;
 
 pub fn run(mcp_mode: bool) -> eframe::Result {
+    // Title carries the git desc so the running build is identifiable
+    // at a glance (e.g. "rs_cam — 3f9a1c2-dirty").
+    let title = format!("rs_cam — {}", rs_cam_core::build_info::GIT_DESC);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1400.0, 900.0])
-            .with_title("rs_cam"),
+            .with_title(&title),
         ..Default::default()
     };
 
