@@ -180,6 +180,13 @@ fn modulated_cycle_time_prediction_within_25_percent_of_machine() {
 
     let mod_predicted = run_back_rough(true);
     let ratio = mod_predicted / MEASURED_MODULATED_S;
+    // Surface the prediction on every run (not just on failure) so the
+    // re-bench (planning/cycle_time_rebench.md) can read the current
+    // model number with `--nocapture`.
+    eprintln!(
+        "F-036c REBENCH: model predicted modulated {mod_predicted:.0}s vs measured \
+         {MEASURED_MODULATED_S:.0}s (ratio {ratio:.3})"
+    );
     // ⚠️ NEEDS RE-MEASURE after F-038 (2026-05-27), F-038b (2026-05-27),
     // and ContourParallelHybrid integration into adaptive3d (2026-05-28).
     // Pre-F-038 ratio sat at ~0.95 against a 1224 s wall-clock. F-038 +
