@@ -264,15 +264,24 @@ pub(crate) fn adaptive_segments_with_debug(
         check_cancel(cancel)?;
         pass_count += 1;
 
-        // For non-Legacy strategies: only the helical-entry-driven
-        // pass 1 produces useful spiral arcs. Subsequent passes
-        // would enter at the machinable boundary and run engagement-
-        // target search through whatever remains — which, by
-        // construction, is now narrow strips where the search
-        // degenerates into wiggle. The cleanup phase (boundary
-        // cleanup + contour-parallel sweep + cell-walking mop)
-        // handles those strips with clean boundary walks instead.
+        // For non-Legacy strategies with a successful helical entry:
+        // only the helical-entry-driven pass 1 produces useful spiral
+        // arcs. Subsequent passes would enter at the machinable
+        // boundary and run engagement-target search through whatever
+        // remains — which, by construction, is now narrow strips
+        // where the search degenerates into wiggle. The cleanup phase
+        // (boundary cleanup + contour-parallel sweep + cell-walking
+        // mop) handles those strips with clean boundary walks
+        // instead.
+        //
+        // When helical entry was skipped (region too small to fit a
+        // 2 × tool_radius starter pocket — common in adaptive3d's
+        // per-region calls), the spiral runs Legacy-style across
+        // multiple passes: we don't have the helical bootstrap to
+        // make a single pass cover the region, so capping it would
+        // leave material uncleared.
         if pass_count > 1
+            && helical_entry_pos.is_some()
             && !matches!(params.cleanup_strategy, CleanupStrategy::Legacy)
         {
             break;
@@ -419,12 +428,17 @@ pub(crate) fn adaptive_segments_with_debug(
             // gradient-following: pick the direction perpendicular
             // to ∇boundary_distance, riding the strip's centerline.
             // Single clean pass instead of wiggle.
+            //
+            // Gated additionally on helical entry having succeeded —
+            // without the bootstrap, the cutter starts at the
+            // boundary with dt_here ≈ tool_radius < threshold, and
+            // we'd switch to gradient mode from step 1 with no
+            // momentum. Better to let engagement-target run.
             let dt_here =
                 grid.boundary_distance_at(&boundary_distances, cx, cy);
-            let use_gradient = !matches!(
-                params.cleanup_strategy,
-                CleanupStrategy::Legacy
-            ) && dt_here < tool_radius + stepover;
+            let use_gradient = helical_entry_pos.is_some()
+                && !matches!(params.cleanup_strategy, CleanupStrategy::Legacy)
+                && dt_here < tool_radius + stepover;
             let search_result_opt = if use_gradient {
                 search_direction_gradient(
                     &grid,

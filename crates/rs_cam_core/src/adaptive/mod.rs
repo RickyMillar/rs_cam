@@ -15,7 +15,7 @@
 //! Reference: research/02_algorithms.md §5
 
 mod material_grid;
-mod path;
+pub(crate) mod path;
 mod search;
 
 pub(crate) use material_grid::MaterialGrid;
