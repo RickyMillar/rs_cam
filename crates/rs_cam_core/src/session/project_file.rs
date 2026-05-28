@@ -54,6 +54,12 @@ pub struct ProjectJobSection {
     pub post: ProjectPostConfig,
     #[serde(default)]
     pub machine: crate::machine::MachineProfile,
+    /// Optional reference to a machine in the per-user library
+    /// (`machine_library`). When set, the library file is the source of
+    /// truth and overrides `machine` on load; `machine` is kept as an
+    /// offline fallback. `None` → the inline `machine` is used directly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_ref: Option<String>,
 }
 
 fn default_job_name() -> String {
@@ -958,11 +964,22 @@ pub(super) fn build_session_from_project(
     let next_setup_id = setups.iter().map(|s| s.id).max().map_or(0, |m| m + 1);
     let next_model_id = models.iter().map(|m| m.id).max().map_or(0, |m| m + 1);
 
+    // Resolve the active machine: a `machine_ref` makes the library file
+    // the source of truth, falling back to the inline copy (with a
+    // warning) when the referenced file is missing.
+    let machine_ref = project.job.machine_ref.clone();
+    let resolved =
+        crate::machine_library::resolve(machine_ref.as_deref(), project.job.machine);
+    if let Some(warning) = resolved.warning {
+        tracing::warn!("{warning}");
+    }
+
     Ok(super::ProjectSession {
         name: project.job.name.clone(),
         stock,
         post: project.job.post,
-        machine: project.job.machine,
+        machine: resolved.profile,
+        machine_ref,
         models,
         tools,
         setups,

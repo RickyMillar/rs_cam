@@ -739,6 +739,10 @@ pub struct ProjectSession {
     pub(crate) stock: StockConfig,
     pub(crate) post: ProjectPostConfig,
     pub(crate) machine: crate::machine::MachineProfile,
+    /// Name of the library machine this project references, if any. When
+    /// set, `machine` was resolved from the library on load and is
+    /// re-persisted as an offline fallback alongside the ref.
+    pub(crate) machine_ref: Option<String>,
 
     // Loaded state
     pub(crate) models: Vec<LoadedModel>,
@@ -770,6 +774,7 @@ impl ProjectSession {
             stock: StockConfig::default(),
             post: ProjectPostConfig::default(),
             machine: crate::machine::MachineProfile::default(),
+            machine_ref: None,
             models: Vec::new(),
             tools: Vec::new(),
             setups: vec![SetupData {
@@ -1347,6 +1352,41 @@ mod tests {
         assert_eq!(tp.operation.op_type(), OperationType::Profile);
         let expected = OperationConfig::new_default(OperationType::Profile);
         assert_eq!(tp.operation.op_type(), expected.op_type());
+    }
+
+    #[test]
+    fn machine_ref_round_trips_through_project_file() {
+        use super::project_file::{ProjectFile, ProjectJobSection};
+        let make = |job: ProjectJobSection| ProjectFile {
+            format_version: 3,
+            job,
+            tools: Vec::new(),
+            models: Vec::new(),
+            setups: Vec::new(),
+            toolpaths: Vec::new(),
+        };
+        // machine_ref set → persists and round-trips.
+        let project = make(ProjectJobSection {
+            name: "Ref Job".to_owned(),
+            machine_ref: Some("shapeoko_pro_xxl".to_owned()),
+            ..ProjectJobSection::default()
+        });
+        let toml_str = toml::to_string_pretty(&project).unwrap();
+        assert!(
+            toml_str.contains("machine_ref = \"shapeoko_pro_xxl\""),
+            "machine_ref should serialize: {toml_str}"
+        );
+        let back: ProjectFile = toml::from_str(&toml_str).unwrap();
+        assert_eq!(back.job.machine_ref.as_deref(), Some("shapeoko_pro_xxl"));
+
+        // No machine_ref → key omitted (skip_serializing_if), so old
+        // projects stay byte-compatible.
+        let plain = make(ProjectJobSection::default());
+        let plain_toml = toml::to_string_pretty(&plain).unwrap();
+        assert!(
+            !plain_toml.contains("machine_ref"),
+            "absent machine_ref should be omitted: {plain_toml}"
+        );
     }
 
     #[test]

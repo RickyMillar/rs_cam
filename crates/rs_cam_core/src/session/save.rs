@@ -99,6 +99,7 @@ impl ProjectSession {
             stock,
             post,
             machine: self.machine.clone(),
+            machine_ref: self.machine_ref.clone(),
         };
 
         // Tools
