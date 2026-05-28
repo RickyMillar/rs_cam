@@ -38,9 +38,15 @@ fn main() {
     println!("cargo:rustc-env=RS_CAM_GIT_DESC={git_desc}");
     println!("cargo:rustc-env=RS_CAM_BUILD_TS={build_ts}");
 
-    // Rerun when HEAD moves (commit/checkout). Uncommitted edits won't
-    // retrigger automatically, but the `-dirty` flag from the last
-    // build still flags that the tree was modified.
+    // Rerun ONLY when HEAD moves (commit/checkout) or build.rs itself
+    // changes. Deliberately NOT keyed on .git/index: this script runs
+    // `git status`, which refreshes .git/index's stat-cache mtime, and
+    // keying on it created a feedback loop — every build touched the
+    // index, which retriggered the script, which re-emitted a fresh
+    // RS_CAM_BUILD_TS, forcing a full rs_cam_core recompile every time.
+    // The trade-off: the `-dirty` flag and timestamp only refresh when
+    // HEAD moves, not on every uncommitted edit. Acceptable — the
+    // git_desc sha is the load-bearing field and it's correct per commit.
     println!("cargo:rerun-if-changed=.git/HEAD");
-    println!("cargo:rerun-if-changed=.git/index");
+    println!("cargo:rerun-if-changed=build.rs");
 }
