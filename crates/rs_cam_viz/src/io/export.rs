@@ -3,7 +3,39 @@ use rs_cam_core::gcode::{
     export_gcode_multi_setup_with_overlay_checked, export_gcode_phases_with_overlay_checked,
     replace_rapids_with_feed,
 };
+use rs_cam_core::gcode_validator::{MachineSafety, Severity, validate_machine_safety};
 use rs_cam_core::session::ProjectSession;
+
+/// Run the machine-safety pass over freshly emitted G-code and log any
+/// findings (non-blocking). Uses the post's safe-Z as the clearance
+/// plane; the depth-floor and feed-cap checks stay off until the machine
+/// profile is plumbed through (turning them on without correct limits
+/// would risk false positives). Runs before any high-feedrate rapid→feed
+/// rewrite so the rapid structure is still intact to check.
+fn log_machine_safety(gcode: &str, safe_z: f64) {
+    let findings = validate_machine_safety(
+        gcode,
+        MachineSafety {
+            clearance_z: safe_z,
+            min_z: None,
+            max_feed_mm_min: None,
+        },
+    );
+    if findings.is_empty() {
+        return;
+    }
+    let errors = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Error)
+        .count();
+    tracing::warn!(
+        total = findings.len(),
+        errors,
+        "g-code machine-safety pass raised findings; first: line {} — {}",
+        findings.first().map(|f| f.line).unwrap_or(0),
+        findings.first().map(|f| f.message.as_str()).unwrap_or(""),
+    );
+}
 
 use crate::state::job::ToolConfig;
 use crate::state::runtime::GuiState;
@@ -128,6 +160,8 @@ pub fn export_gcode_from_session_with_policy(
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
+    log_machine_safety(&gcode, gui.post.safe_z);
+
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate);
     }
@@ -182,6 +216,8 @@ pub fn export_combined_gcode_from_session(
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
+    log_machine_safety(&gcode, gui.post.safe_z);
+
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate);
     }
@@ -229,6 +265,8 @@ pub fn export_single_toolpath_from_session(
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
+    log_machine_safety(&gcode, gui.post.safe_z);
+
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate);
     }
@@ -274,6 +312,8 @@ pub fn export_setup_gcode_from_session(
         &overlay_for(session, gui),
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
+
+    log_machine_safety(&gcode, gui.post.safe_z);
 
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate);
