@@ -926,6 +926,17 @@ impl ProjectSession {
         &self.machine
     }
 
+    /// Name of the library machine this project references, if any.
+    pub fn machine_ref(&self) -> Option<&str> {
+        self.machine_ref.as_deref()
+    }
+
+    /// Set (or clear) the library machine reference. Persisted on save;
+    /// the referenced library file overrides the inline machine on load.
+    pub fn set_machine_ref(&mut self, machine_ref: Option<String>) {
+        self.machine_ref = machine_ref;
+    }
+
     /// All loaded tools.
     pub fn tools(&self) -> &[ToolConfig] {
         &self.tools

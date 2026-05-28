@@ -826,6 +826,113 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, _events: &mut 
     }
 }
 
+/// Machine-library UX: reference a reusable machine file (single source
+/// of truth) or save the current machine into the library. Selecting a
+/// library machine loads its values and links the project to it
+/// (`machine_ref`); the link is persisted on save and the library file
+/// overrides the inline copy on reload.
+fn draw_machine_library_row(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    events: &mut Vec<AppEvent>,
+) {
+    let status_id = egui::Id::new("machine_lib_status");
+    let name_id = egui::Id::new("machine_lib_save_name");
+
+    let machines = rs_cam_core::machine_library::list();
+    let current_ref = state.session.machine_ref().map(str::to_owned);
+
+    ui.horizontal(|ui| {
+        ui.label("Library:");
+        let selected_text = current_ref
+            .clone()
+            .unwrap_or_else(|| "— none (inline copy) —".to_owned());
+        egui::ComboBox::from_id_salt("machine_library_ref")
+            .selected_text(selected_text)
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(current_ref.is_none(), "— none (inline copy) —")
+                    .clicked()
+                {
+                    state.session.set_machine_ref(None);
+                    state.gui.mark_edited();
+                }
+                for name in &machines {
+                    let is_sel = current_ref.as_deref() == Some(name.as_str());
+                    if ui.selectable_label(is_sel, name).clicked() {
+                        match rs_cam_core::machine_library::load(name) {
+                            Ok(profile) => {
+                                *state.session.machine_mut() = profile;
+                                state.session.set_machine_ref(Some(name.clone()));
+                                events.push(AppEvent::MachineChanged);
+                                ui.data_mut(|d| {
+                                    d.insert_temp(
+                                        status_id,
+                                        format!("Loaded '{name}' from library"),
+                                    );
+                                });
+                            }
+                            Err(e) => {
+                                tracing::error!("machine library load failed: {e}");
+                                ui.data_mut(|d| {
+                                    d.insert_temp(status_id, format!("Load failed: {e}"));
+                                });
+                            }
+                        }
+                    }
+                }
+            });
+        if machines.is_empty() {
+            ui.label(egui::RichText::new("(library empty)").small().weak());
+        }
+    });
+
+    ui.horizontal(|ui| {
+        ui.label("Save as:");
+        let mut name: String = ui.data(|d| d.get_temp::<String>(name_id).unwrap_or_default());
+        let resp = ui.add(
+            egui::TextEdit::singleline(&mut name)
+                .desired_width(140.0)
+                .hint_text("machine name"),
+        );
+        if resp.changed() {
+            ui.data_mut(|d| d.insert_temp(name_id, name.clone()));
+        }
+        let trimmed = name.trim().to_owned();
+        if ui
+            .add_enabled(!trimmed.is_empty(), egui::Button::new("Save to library"))
+            .clicked()
+        {
+            match rs_cam_core::machine_library::save(&trimmed, state.session.machine()) {
+                Ok(path) => {
+                    state.session.set_machine_ref(Some(trimmed.clone()));
+                    state.gui.mark_edited();
+                    ui.data_mut(|d| {
+                        d.insert_temp(status_id, format!("Saved to {}", path.display()));
+                    });
+                }
+                Err(e) => {
+                    tracing::error!("machine library save failed: {e}");
+                    ui.data_mut(|d| d.insert_temp(status_id, format!("Save failed: {e}")));
+                }
+            }
+        }
+    });
+
+    if let Some(name) = state.session.machine_ref() {
+        ui.label(
+            egui::RichText::new(format!(
+                "Linked to library '{name}' — edits to the file apply on reload"
+            ))
+            .small()
+            .color(egui::Color32::from_rgb(120, 160, 120)),
+        );
+    }
+    if let Some(msg) = ui.data(|d| d.get_temp::<String>(status_id)) {
+        ui.label(egui::RichText::new(msg).small().weak());
+    }
+}
+
 // SAFETY: selected_idx from position() within presets; i from enumerate over presets
 #[allow(clippy::indexing_slicing)]
 fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
@@ -847,11 +954,16 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
                 for (i, (label, _)) in presets.iter().enumerate() {
                     if ui.selectable_value(&mut selected_idx, i, *label).changed() {
                         *state.session.machine_mut() = presets[i].1.clone();
+                        // Loading a built-in preset breaks any library
+                        // link — the values no longer come from the file.
+                        state.session.set_machine_ref(None);
                         events.push(AppEvent::MachineChanged);
                     }
                 }
             });
     });
+
+    draw_machine_library_row(ui, state, events);
 
     ui.add_space(8.0);
 
