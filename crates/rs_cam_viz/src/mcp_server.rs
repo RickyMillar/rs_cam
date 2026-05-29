@@ -13,7 +13,8 @@ use crate::mcp_bridge::{McpRequest, McpRequestKind, ProgressUpdate};
 
 // Re-use parameter structs from the standalone MCP crate.
 use rs_cam_mcp::server::{
-    AddAlignmentPinParam, AddToolParam, AddToolpathParam, CollisionCheckParam, CutTraceParam,
+    AddAlignmentPinParam, AddToolFromLibraryParam, AddToolParam, AddToolpathParam,
+    CollisionCheckParam, CutTraceParam, ListToolCatalogParam,
     ExportParam, GenDebugTraceParam, IndexParam, InspectSpansParam, LoadProjectParam, ModelIdParam,
     OperationSchemaParam, OptimizeToolpathInput, RemoveAlignmentPinParam, RemoveToolParam,
     RemoveToolpathParam, SaveProjectParam, ScreenshotSimParam, ScreenshotToolpathParam,
@@ -155,6 +156,28 @@ impl EmbeddedCamServer {
     )]
     async fn list_tools(&self) -> String {
         Self::format_result(self.send_request(McpRequestKind::ListTools).await)
+    }
+
+    #[tool(
+        name = "list_tool_library",
+        description = "Top level of the tool-library drill-down: list the reusable catalogs in the user's library (~/.config/rs_cam/tools/*.toml), each with its tool count and the tool types it contains. Cheap and small. Then dig into a catalog with `list_tool_catalog` to see its tools, and import one with `add_tool_from_library`. Does NOT require a loaded project."
+    )]
+    async fn list_tool_library(&self) -> String {
+        Self::format_result(self.send_request(McpRequestKind::ListToolLibrary).await)
+    }
+
+    #[tool(
+        name = "list_tool_catalog",
+        description = "Drill into one tool-library catalog (from `list_tool_library`) and list its tools as compact rows: 0-based `index`, name, type, diameter, flutes, cutting length, relevant angle, and shank diameter. Pick one (check geometry against the model + machine shank limit), then call `add_tool_from_library` with this catalog name and the row's `index`."
+    )]
+    async fn list_tool_catalog(
+        &self,
+        Parameters(ListToolCatalogParam { catalog }): Parameters<ListToolCatalogParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::ListToolCatalog { catalog })
+                .await,
+        )
     }
 
     #[tool(
@@ -651,6 +674,23 @@ impl EmbeddedCamServer {
                 diameter,
             })
             .await,
+        )
+    }
+
+    #[tool(
+        name = "add_tool_from_library",
+        description = "Import a tool from a library catalog into the loaded project as a snapshot (the project keeps its own copy, so later catalog edits don't change it). Identify the tool by `catalog` + `index` from `list_tool_library`. Returns the new project tool index for use with `add_toolpath`."
+    )]
+    async fn add_tool_from_library(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(AddToolFromLibraryParam {
+            catalog,
+            index,
+        }): Parameters<AddToolFromLibraryParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::AddToolFromLibrary { catalog, index })
+                .await,
         )
     }
 

@@ -270,6 +270,23 @@ pub struct RemoveToolParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct ListToolCatalogParam {
+    /// Catalog name (file stem) from `list_tool_library`, e.g.
+    /// "end_mills", "v_bits", "tapered_ball".
+    pub catalog: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct AddToolFromLibraryParam {
+    /// Catalog name (file stem) as returned by `list_tool_library`,
+    /// e.g. "end_mills", "v_bits", "tapered_ball".
+    pub catalog: String,
+    /// 0-based index of the tool within that catalog — use the `index`
+    /// field from `list_tool_library` output.
+    pub index: usize,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SetStockConfigParam {
     /// Stock width (X) in mm
     pub x: f64,
@@ -453,6 +470,10 @@ pub fn build_info() -> serde_json::Value {
             "helical_starter_pocket",
             "gradient_follow_narrow_strip",
             "spiral_cleanup_overlap",
+            // Tool-library MCP surface (2026-05-29): list_tool_library +
+            // add_tool_from_library. Probe to confirm agent-driven tool
+            // selection from the user's catalogs is available.
+            "tool_library_mcp",
         ],
     })
 }

@@ -73,6 +73,14 @@ impl super::RsCamApp {
                 let resp = self.mcp_list_tools();
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::ListToolLibrary => {
+                let resp = self.mcp_list_tool_library();
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::ListToolCatalog { catalog } => {
+                let resp = self.mcp_list_tool_catalog(&catalog);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::ListSetups => {
                 let resp = self.mcp_list_setups();
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
@@ -388,6 +396,14 @@ impl super::RsCamApp {
                 let resp = self.mcp_add_tool(&name, &tool_type, diameter);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::AddToolFromLibrary { catalog, index } => {
+                self.controller.push_notification(
+                    format!("MCP: Imported tool from library '{catalog}' #{index}"),
+                    Severity::Info,
+                );
+                let resp = self.mcp_add_tool_from_library(&catalog, index);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::RemoveTool { index } => {
                 let resp = self.mcp_remove_tool(index);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
@@ -647,6 +663,130 @@ impl super::RsCamApp {
     fn mcp_list_tools(&self) -> String {
         let session = &self.controller.state().session;
         json_str(serde_json::to_value(session.list_tools()).unwrap_or_default())
+    }
+
+    /// Top level of the tool-library drill-down: one small row per
+    /// catalog (name, tool count, the tool types it contains). Cheap —
+    /// no per-tool geometry. Independent of the loaded project.
+    fn mcp_list_tool_library(&self) -> String {
+        use rs_cam_core::tool_library;
+        let mut catalogs = Vec::new();
+        for name in tool_library::list_libraries() {
+            let Ok(catalog) = tool_library::load_library(&name) else {
+                continue;
+            };
+            let mut types: Vec<String> = catalog
+                .tools
+                .iter()
+                .filter_map(|t| {
+                    serde_json::to_value(t.tool_type)
+                        .ok()
+                        .and_then(|v| v.as_str().map(str::to_owned))
+                })
+                .collect();
+            types.sort();
+            types.dedup();
+            catalogs.push(serde_json::json!({
+                "catalog": name,
+                "tool_count": catalog.tools.len(),
+                "tool_types": types,
+            }));
+        }
+        json_str(serde_json::json!({
+            "note": "Dig into a catalog with list_tool_catalog{catalog} to see its tools, \
+                     then import one with add_tool_from_library{catalog, index}.",
+            "catalogs": catalogs,
+        }))
+    }
+
+    /// Drill into one catalog: compact tool rows carrying just the fields
+    /// needed to choose a tool, plus the 0-based `index` that
+    /// `add_tool_from_library` consumes. Full geometry comes across on
+    /// import (the project keeps a snapshot).
+    fn mcp_list_tool_catalog(&self, catalog: &str) -> String {
+        use rs_cam_core::tool_library;
+        let cat = match tool_library::load_library(catalog) {
+            Ok(c) => c,
+            Err(e) => return json_str(serde_json::json!({ "error": e.to_string() })),
+        };
+        let tools: Vec<serde_json::Value> = cat
+            .tools
+            .iter()
+            .enumerate()
+            .map(|(index, t)| {
+                let ttype = serde_json::to_value(t.tool_type)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_owned))
+                    .unwrap_or_default();
+                let mut row = serde_json::json!({
+                    "index": index,
+                    "name": t.name,
+                    "type": ttype,
+                    "diameter_mm": t.diameter,
+                    "flutes": t.flute_count,
+                    "cutting_length_mm": t.cutting_length,
+                    "shank_diameter_mm": t.shank_diameter,
+                });
+                if let Some(obj) = row.as_object_mut() {
+                    use crate::state::job::ToolType;
+                    match t.tool_type {
+                        ToolType::VBit => {
+                            obj.insert("included_angle_deg".to_owned(), serde_json::json!(t.included_angle));
+                        }
+                        ToolType::TaperedBallNose => {
+                            obj.insert("taper_half_angle_deg".to_owned(), serde_json::json!(t.taper_half_angle));
+                            obj.insert("shaft_diameter_mm".to_owned(), serde_json::json!(t.shaft_diameter));
+                        }
+                        _ => {}
+                    }
+                    if !t.vendor.is_empty() {
+                        obj.insert("vendor".to_owned(), serde_json::json!(t.vendor));
+                    }
+                }
+                row
+            })
+            .collect();
+        json_str(serde_json::json!({
+            "catalog": catalog,
+            "tool_count": tools.len(),
+            "tools": tools,
+        }))
+    }
+
+    /// Import a snapshot of a catalog tool into the project. Mirrors the
+    /// GUI's `AddToolFromLibrary` event: the project keeps its own copy
+    /// and the session reassigns the tool id on insert.
+    fn mcp_add_tool_from_library(&mut self, catalog: &str, index: usize) -> String {
+        use rs_cam_core::tool_library;
+        let before = self.mcp_diagnostic_snapshot();
+        let cat = match tool_library::load_library(catalog) {
+            Ok(c) => c,
+            Err(e) => return self.mcp_mutation_error(format!("Error: {e}"), None),
+        };
+        let Some(mut tool) = cat.tools.get(index).cloned() else {
+            return self.mcp_mutation_error(
+                format!(
+                    "Error: catalog '{catalog}' has no tool at index {index} (has {} tools)",
+                    cat.tools.len()
+                ),
+                None,
+            );
+        };
+        let name = tool.name.clone();
+        tool.id = ToolId(0); // session reassigns on insert
+        let idx = self.controller.state_mut().session.add_tool(tool);
+        self.controller.state_mut().gui.mark_edited();
+        self.mcp_mutation_result(
+            format!("Imported '{name}' from {catalog} as tool {idx}"),
+            serde_json::json!({
+                "index": idx,
+                "name": name,
+                "source_catalog": catalog,
+                "source_index": index,
+            }),
+            Vec::new(),
+            &before,
+        )
     }
 
     fn mcp_list_setups(&self) -> String {
