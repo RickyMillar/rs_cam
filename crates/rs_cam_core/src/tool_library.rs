@@ -29,6 +29,8 @@ pub enum ToolLibraryError {
     NoLibraryDir,
     #[error("invalid catalog name {0:?}: must be non-empty and contain no path separators or '..'")]
     InvalidName(String),
+    #[error("catalog {0:?} already exists")]
+    AlreadyExists(String),
     #[error("i/o error for catalog {name:?}: {source}")]
     Io {
         name: String,
@@ -188,6 +190,165 @@ pub fn all_tools() -> Vec<(String, ToolConfig)> {
     out
 }
 
+/// Remove the tool at `index` from catalog `name` in `dir`, then save.
+/// Out-of-range index is a no-op (the catalog is still re-saved). Returns
+/// the resulting catalog.
+pub fn remove_tool_at_in(
+    dir: &Path,
+    name: &str,
+    index: usize,
+) -> Result<ToolCatalog, ToolLibraryError> {
+    let mut catalog = load_from(dir, name)?;
+    if index < catalog.tools.len() {
+        catalog.tools.remove(index);
+    }
+    save_to(dir, name, &catalog)?;
+    Ok(catalog)
+}
+
+/// Remove the tool at `index` from catalog `name` in the resolved dir.
+pub fn remove_tool_at(name: &str, index: usize) -> Result<ToolCatalog, ToolLibraryError> {
+    let dir = library_dir().ok_or(ToolLibraryError::NoLibraryDir)?;
+    remove_tool_at_in(&dir, name, index)
+}
+
+/// Replace the tool at `index` in catalog `name` in `dir`, then save.
+/// Out-of-range index is a no-op. Returns the resulting catalog.
+pub fn update_tool_at_in(
+    dir: &Path,
+    name: &str,
+    index: usize,
+    tool: ToolConfig,
+) -> Result<ToolCatalog, ToolLibraryError> {
+    let mut catalog = load_from(dir, name)?;
+    if let Some(slot) = catalog.tools.get_mut(index) {
+        *slot = tool;
+    }
+    save_to(dir, name, &catalog)?;
+    Ok(catalog)
+}
+
+/// Replace the tool at `index` in catalog `name` in the resolved dir.
+pub fn update_tool_at(
+    name: &str,
+    index: usize,
+    tool: ToolConfig,
+) -> Result<ToolCatalog, ToolLibraryError> {
+    let dir = library_dir().ok_or(ToolLibraryError::NoLibraryDir)?;
+    update_tool_at_in(&dir, name, index, tool)
+}
+
+/// Move the tool at `index` from catalog `from` to catalog `to` in `dir`.
+/// Same-name move and out-of-range index are no-ops. The destination
+/// catalog is created if absent.
+pub fn move_tool_in(
+    dir: &Path,
+    from: &str,
+    index: usize,
+    to: &str,
+) -> Result<(), ToolLibraryError> {
+    if from == to {
+        return Ok(());
+    }
+    let mut src = load_from(dir, from)?;
+    if index >= src.tools.len() {
+        return Ok(());
+    }
+    let tool = src.tools.remove(index);
+    append_to(dir, to, tool)?;
+    save_to(dir, from, &src)?;
+    Ok(())
+}
+
+/// Move a tool between catalogs in the resolved dir.
+pub fn move_tool(from: &str, index: usize, to: &str) -> Result<(), ToolLibraryError> {
+    let dir = library_dir().ok_or(ToolLibraryError::NoLibraryDir)?;
+    move_tool_in(&dir, from, index, to)
+}
+
+/// Delete the whole catalog file `name` in `dir`.
+pub fn delete_from(dir: &Path, name: &str) -> Result<(), ToolLibraryError> {
+    let path = path_in(dir, name)?;
+    std::fs::remove_file(&path).map_err(|source| ToolLibraryError::Io {
+        name: name.to_owned(),
+        source,
+    })?;
+    Ok(())
+}
+
+/// Delete the whole catalog file `name` in the resolved dir.
+pub fn delete_library(name: &str) -> Result<(), ToolLibraryError> {
+    let dir = library_dir().ok_or(ToolLibraryError::NoLibraryDir)?;
+    delete_from(&dir, name)
+}
+
+/// Rename catalog `old` to `new` in `dir`. Errors if `new` already exists.
+pub fn rename_in(dir: &Path, old: &str, new: &str) -> Result<(), ToolLibraryError> {
+    let old_path = path_in(dir, old)?;
+    let new_path = path_in(dir, new)?;
+    if new_path.exists() {
+        return Err(ToolLibraryError::AlreadyExists(new.to_owned()));
+    }
+    std::fs::rename(&old_path, &new_path).map_err(|source| ToolLibraryError::Io {
+        name: old.to_owned(),
+        source,
+    })?;
+    Ok(())
+}
+
+/// Rename a catalog in the resolved dir.
+pub fn rename_library(old: &str, new: &str) -> Result<(), ToolLibraryError> {
+    let dir = library_dir().ok_or(ToolLibraryError::NoLibraryDir)?;
+    rename_in(&dir, old, new)
+}
+
+/// Create an empty catalog `name` in `dir`. Errors if it already exists.
+pub fn create_in(dir: &Path, name: &str) -> Result<PathBuf, ToolLibraryError> {
+    let path = path_in(dir, name)?;
+    if path.exists() {
+        return Err(ToolLibraryError::AlreadyExists(name.to_owned()));
+    }
+    save_to(dir, name, &ToolCatalog::default())
+}
+
+/// Create an empty catalog in the resolved dir.
+pub fn create_library(name: &str) -> Result<PathBuf, ToolLibraryError> {
+    let dir = library_dir().ok_or(ToolLibraryError::NoLibraryDir)?;
+    create_in(&dir, name)
+}
+
+/// Stable equality key for de-duplicating tools within a catalog.
+/// Two tools that share type, diameter, flute count, cutting length,
+/// and the relevant angle fields are treated as the same tool.
+fn dedupe_key(t: &ToolConfig) -> String {
+    format!(
+        "{:?}|{:.3}|{}|{:.3}|{:.2}|{:.2}|{:.3}",
+        t.tool_type,
+        t.diameter,
+        t.flute_count,
+        t.cutting_length,
+        t.taper_half_angle,
+        t.included_angle,
+        t.corner_radius,
+    )
+}
+
+/// Remove duplicate tools (by [`dedupe_key`]) from catalog `name` in
+/// `dir`, keeping the first occurrence, then save. Returns the result.
+pub fn dedupe_in(dir: &Path, name: &str) -> Result<ToolCatalog, ToolLibraryError> {
+    let mut catalog = load_from(dir, name)?;
+    let mut seen = std::collections::HashSet::new();
+    catalog.tools.retain(|t| seen.insert(dedupe_key(t)));
+    save_to(dir, name, &catalog)?;
+    Ok(catalog)
+}
+
+/// De-duplicate a catalog in the resolved dir.
+pub fn dedupe_library(name: &str) -> Result<ToolCatalog, ToolLibraryError> {
+    let dir = library_dir().ok_or(ToolLibraryError::NoLibraryDir)?;
+    dedupe_in(&dir, name)
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -250,6 +411,100 @@ mod tests {
         append_to(&dir, "fresh", tool("only", 8.0)).unwrap();
         let cat = load_from(&dir, "fresh").unwrap();
         assert_eq!(cat.tools.len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn remove_tool_at_drops_the_right_index_and_persists() {
+        let dir = temp_dir("remove_at");
+        append_to(&dir, "endmills", tool("a", 1.0)).unwrap();
+        append_to(&dir, "endmills", tool("b", 2.0)).unwrap();
+        append_to(&dir, "endmills", tool("c", 3.0)).unwrap();
+        let cat = remove_tool_at_in(&dir, "endmills", 1).unwrap();
+        assert_eq!(cat.tools.len(), 2);
+        assert_eq!(cat.tools[0].name, "a");
+        assert_eq!(cat.tools[1].name, "c");
+        // Persisted to disk, not just returned.
+        let reloaded = load_from(&dir, "endmills").unwrap();
+        assert_eq!(reloaded.tools.len(), 2);
+        assert_eq!(reloaded.tools[1].name, "c");
+        // Out-of-range index is a no-op.
+        let same = remove_tool_at_in(&dir, "endmills", 99).unwrap();
+        assert_eq!(same.tools.len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn update_tool_at_replaces_in_place() {
+        let dir = temp_dir("update_at");
+        append_to(&dir, "endmills", tool("a", 1.0)).unwrap();
+        append_to(&dir, "endmills", tool("b", 2.0)).unwrap();
+        let cat = update_tool_at_in(&dir, "endmills", 0, tool("a2", 1.5)).unwrap();
+        assert_eq!(cat.tools[0].name, "a2");
+        assert_eq!(cat.tools[0].diameter, 1.5);
+        assert_eq!(cat.tools[1].name, "b");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn move_tool_transfers_between_catalogs() {
+        let dir = temp_dir("move_tool");
+        append_to(&dir, "src", tool("x", 1.0)).unwrap();
+        append_to(&dir, "src", tool("y", 2.0)).unwrap();
+        move_tool_in(&dir, "src", 0, "dst").unwrap();
+        let src = load_from(&dir, "src").unwrap();
+        let dst = load_from(&dir, "dst").unwrap();
+        assert_eq!(src.tools.len(), 1);
+        assert_eq!(src.tools[0].name, "y");
+        assert_eq!(dst.tools.len(), 1);
+        assert_eq!(dst.tools[0].name, "x");
+        // Same-name move is a no-op.
+        move_tool_in(&dir, "src", 0, "src").unwrap();
+        assert_eq!(load_from(&dir, "src").unwrap().tools.len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn delete_and_rename_catalogs() {
+        let dir = temp_dir("del_rename");
+        append_to(&dir, "old", tool("x", 1.0)).unwrap();
+        rename_in(&dir, "old", "new").unwrap();
+        assert_eq!(list_in(&dir), vec!["new"]);
+        // Rename onto an existing name is rejected.
+        append_to(&dir, "other", tool("z", 2.0)).unwrap();
+        assert!(matches!(
+            rename_in(&dir, "new", "other"),
+            Err(ToolLibraryError::AlreadyExists(_))
+        ));
+        delete_from(&dir, "new").unwrap();
+        assert_eq!(list_in(&dir), vec!["other"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn create_empty_catalog_then_reject_duplicate() {
+        let dir = temp_dir("create_empty");
+        create_in(&dir, "blank").unwrap();
+        assert_eq!(load_from(&dir, "blank").unwrap().tools.len(), 0);
+        assert!(matches!(
+            create_in(&dir, "blank"),
+            Err(ToolLibraryError::AlreadyExists(_))
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dedupe_keeps_first_of_each_identical_tool() {
+        let dir = temp_dir("dedupe");
+        // Two identical geometries (same name irrelevant to the key) plus
+        // one distinct diameter.
+        append_to(&dir, "cat", tool("dup1", 6.0)).unwrap();
+        append_to(&dir, "cat", tool("dup2", 6.0)).unwrap();
+        append_to(&dir, "cat", tool("unique", 8.0)).unwrap();
+        let cat = dedupe_in(&dir, "cat").unwrap();
+        assert_eq!(cat.tools.len(), 2);
+        assert_eq!(cat.tools[0].name, "dup1");
+        assert_eq!(cat.tools[1].name, "unique");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

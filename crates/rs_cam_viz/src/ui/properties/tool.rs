@@ -4,6 +4,54 @@ pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     ui.heading(&tool.name);
     ui.separator();
 
+    draw_tool_fields(ui, tool);
+
+    ui.add_space(8.0);
+    ui.separator();
+    // Save this tool into a reusable library catalog. Importing it later
+    // (Add Tool ▸ From library) copies a fresh snapshot into a project.
+    let name_id = egui::Id::new("tool_lib_save_catalog");
+    let status_id = egui::Id::new("tool_lib_save_status");
+    ui.horizontal(|ui| {
+        ui.label("Save to library:");
+        let mut catalog: String = ui.data(|d| d.get_temp::<String>(name_id).unwrap_or_default());
+        let resp = ui.add(
+            egui::TextEdit::singleline(&mut catalog)
+                .desired_width(120.0)
+                .hint_text("catalog e.g. endmills"),
+        );
+        if resp.changed() {
+            ui.data_mut(|d| d.insert_temp(name_id, catalog.clone()));
+        }
+        let trimmed = catalog.trim().to_owned();
+        if ui
+            .add_enabled(!trimmed.is_empty(), egui::Button::new("Save"))
+            .clicked()
+        {
+            match rs_cam_core::tool_library::append_tool(&trimmed, tool.clone()) {
+                Ok(path) => {
+                    ui.data_mut(|d| {
+                        d.insert_temp(
+                            status_id,
+                            format!("Saved '{}' to {}", tool.name, path.display()),
+                        );
+                    });
+                }
+                Err(e) => {
+                    tracing::error!("tool library save failed: {e}");
+                    ui.data_mut(|d| d.insert_temp(status_id, format!("Save failed: {e}")));
+                }
+            }
+        }
+    });
+    if let Some(msg) = ui.data(|d| d.get_temp::<String>(status_id)) {
+        ui.label(egui::RichText::new(msg).small().weak());
+    }
+}
+
+/// Draw the editable tool fields (name, type, params, preview, holder).
+/// Shared by the properties panel and the Tool Library modal's edit form.
+pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     // Editable name
     ui.horizontal(|ui| {
         ui.label("Name:");
@@ -204,55 +252,13 @@ pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig) {
                 .color(egui::Color32::from_rgb(120, 120, 130)),
         );
     }
-
-    ui.add_space(8.0);
-    ui.separator();
-    // Save this tool into a reusable library catalog. Importing it later
-    // (Add Tool ▸ From library) copies a fresh snapshot into a project.
-    let name_id = egui::Id::new("tool_lib_save_catalog");
-    let status_id = egui::Id::new("tool_lib_save_status");
-    ui.horizontal(|ui| {
-        ui.label("Save to library:");
-        let mut catalog: String = ui.data(|d| d.get_temp::<String>(name_id).unwrap_or_default());
-        let resp = ui.add(
-            egui::TextEdit::singleline(&mut catalog)
-                .desired_width(120.0)
-                .hint_text("catalog e.g. endmills"),
-        );
-        if resp.changed() {
-            ui.data_mut(|d| d.insert_temp(name_id, catalog.clone()));
-        }
-        let trimmed = catalog.trim().to_owned();
-        if ui
-            .add_enabled(!trimmed.is_empty(), egui::Button::new("Save"))
-            .clicked()
-        {
-            match rs_cam_core::tool_library::append_tool(&trimmed, tool.clone()) {
-                Ok(path) => {
-                    ui.data_mut(|d| {
-                        d.insert_temp(
-                            status_id,
-                            format!("Saved '{}' to {}", tool.name, path.display()),
-                        );
-                    });
-                }
-                Err(e) => {
-                    tracing::error!("tool library save failed: {e}");
-                    ui.data_mut(|d| d.insert_temp(status_id, format!("Save failed: {e}")));
-                }
-            }
-        }
-    });
-    if let Some(msg) = ui.data(|d| d.get_temp::<String>(status_id)) {
-        ui.label(egui::RichText::new(msg).small().weak());
-    }
 }
 
 /// Draw a 2D cross-section preview of the full tool assembly.
 ///
 /// Uses `profile_points()` from the `MillingCutter` trait so the preview
 /// automatically matches the actual cutting geometry for any tool type.
-fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
+pub(crate) fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
     use rs_cam_core::tool::MillingCutter;
 
     let desired_size = egui::vec2(ui.available_width().min(240.0), 180.0);

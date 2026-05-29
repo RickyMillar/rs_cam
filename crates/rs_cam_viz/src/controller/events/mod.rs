@@ -49,6 +49,25 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::AddToolFromLibrary(tool) => self.handle_add_tool_from_library(*tool),
             AppEvent::DuplicateTool(tool_id) => self.handle_duplicate_tool(tool_id),
             AppEvent::RemoveTool(tool_id) => self.handle_remove_tool(tool_id),
+
+            // --- Tool Library modal ---
+            AppEvent::OpenToolLibrary => self.open_tool_library(),
+            AppEvent::CloseToolLibrary => self.state.tool_library_modal = None,
+            AppEvent::DeleteLibraryTool { catalog, index } => {
+                self.delete_library_tool(&catalog, index);
+            }
+            AppEvent::UpdateLibraryTool {
+                catalog,
+                index,
+                tool,
+            } => self.update_library_tool(&catalog, index, *tool),
+            AppEvent::MoveLibraryTool { from, index, to } => {
+                self.move_library_tool(&from, index, &to);
+            }
+            AppEvent::CreateToolCatalog(name) => self.create_tool_catalog(&name),
+            AppEvent::DeleteToolCatalog(name) => self.delete_tool_catalog(&name),
+            AppEvent::RenameToolCatalog { old, new } => self.rename_tool_catalog(&old, &new),
+            AppEvent::DedupeToolCatalog(name) => self.dedupe_tool_catalog(&name),
             AppEvent::AddSetup => self.handle_add_setup(),
             AppEvent::SetupTwoSided => self.handle_setup_two_sided(),
             AppEvent::RemoveSetup(setup_id) => self.handle_remove_setup(setup_id),

@@ -66,6 +66,92 @@ impl<B: ComputeBackend> AppController<B> {
         self.state.gui.mark_edited();
     }
 
+    // ── Tool Library modal ──────────────────────────────────────────────
+
+    /// Load a fresh snapshot of every catalog into the modal state. Used
+    /// both to open the modal and to refresh it after a mutation.
+    fn load_tool_library_snapshot(&mut self) {
+        let catalogs = rs_cam_core::tool_library::list_libraries()
+            .into_iter()
+            .filter_map(|name| {
+                rs_cam_core::tool_library::load_library(&name)
+                    .ok()
+                    .map(|catalog| (name, catalog))
+            })
+            .collect();
+        self.state.tool_library_modal = Some(crate::state::ToolLibraryModalState { catalogs });
+    }
+
+    /// Refresh the snapshot only if the modal is open (post-mutation).
+    fn refresh_tool_library_snapshot(&mut self) {
+        if self.state.tool_library_modal.is_some() {
+            self.load_tool_library_snapshot();
+        }
+    }
+
+    pub(crate) fn open_tool_library(&mut self) {
+        self.load_tool_library_snapshot();
+    }
+
+    /// Report a tool-library error to the user, prefixed with context.
+    fn report_tool_library_error(
+        &mut self,
+        context: &str,
+        err: &rs_cam_core::tool_library::ToolLibraryError,
+    ) {
+        tracing::error!("{context}: {err}");
+        self.push_notification(format!("{context}: {err}"), super::super::Severity::Error);
+    }
+
+    pub(crate) fn delete_library_tool(&mut self, catalog: &str, index: usize) {
+        if let Err(e) = rs_cam_core::tool_library::remove_tool_at(catalog, index) {
+            self.report_tool_library_error("Delete tool failed", &e);
+        }
+        self.refresh_tool_library_snapshot();
+    }
+
+    pub(crate) fn update_library_tool(&mut self, catalog: &str, index: usize, tool: ToolConfig) {
+        if let Err(e) = rs_cam_core::tool_library::update_tool_at(catalog, index, tool) {
+            self.report_tool_library_error("Update tool failed", &e);
+        }
+        self.refresh_tool_library_snapshot();
+    }
+
+    pub(crate) fn move_library_tool(&mut self, from: &str, index: usize, to: &str) {
+        if let Err(e) = rs_cam_core::tool_library::move_tool(from, index, to) {
+            self.report_tool_library_error("Move tool failed", &e);
+        }
+        self.refresh_tool_library_snapshot();
+    }
+
+    pub(crate) fn create_tool_catalog(&mut self, name: &str) {
+        if let Err(e) = rs_cam_core::tool_library::create_library(name) {
+            self.report_tool_library_error("Create catalog failed", &e);
+        }
+        self.refresh_tool_library_snapshot();
+    }
+
+    pub(crate) fn delete_tool_catalog(&mut self, name: &str) {
+        if let Err(e) = rs_cam_core::tool_library::delete_library(name) {
+            self.report_tool_library_error("Delete catalog failed", &e);
+        }
+        self.refresh_tool_library_snapshot();
+    }
+
+    pub(crate) fn rename_tool_catalog(&mut self, old: &str, new: &str) {
+        if let Err(e) = rs_cam_core::tool_library::rename_library(old, new) {
+            self.report_tool_library_error("Rename catalog failed", &e);
+        }
+        self.refresh_tool_library_snapshot();
+    }
+
+    pub(crate) fn dedupe_tool_catalog(&mut self, name: &str) {
+        if let Err(e) = rs_cam_core::tool_library::dedupe_library(name) {
+            self.report_tool_library_error("Dedupe catalog failed", &e);
+        }
+        self.refresh_tool_library_snapshot();
+    }
+
     pub(crate) fn handle_duplicate_tool(&mut self, tool_id: crate::state::job::ToolId) {
         if let Some(src) = self
             .state

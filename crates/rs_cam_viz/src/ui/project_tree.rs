@@ -96,6 +96,14 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
     // Tool library
     ui.collapsing("Tool Library", |ui| {
+        if ui
+            .small_button("Manage library…")
+            .on_hover_text("Browse, edit, and organise the reusable tool catalogs.")
+            .clicked()
+        {
+            events.push(AppEvent::OpenToolLibrary);
+        }
+        ui.add_space(4.0);
         if state.session.tools().is_empty() {
             ui.label(
                 egui::RichText::new("No tools defined")

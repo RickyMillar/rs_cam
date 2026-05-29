@@ -17,6 +17,7 @@ pub mod sim_op_list;
 pub mod sim_timeline;
 pub mod status_bar;
 pub mod theme;
+pub mod tool_library_modal;
 pub mod toolpath_panel;
 pub mod toolpath_row_controls;
 pub mod viewport_overlay;
@@ -79,6 +80,43 @@ pub enum AppEvent {
     AddToolFromLibrary(Box<ToolConfig>),
     DuplicateTool(ToolId),
     RemoveTool(ToolId),
+
+    // Tool Library modal
+    /// Open the Tool Library management modal. Loads a snapshot of every
+    /// catalog in the per-user library dir into `tool_library_modal`.
+    OpenToolLibrary,
+    /// Close the Tool Library modal.
+    CloseToolLibrary,
+    /// Delete the tool at `index` in catalog `catalog`, then refresh the
+    /// modal snapshot.
+    DeleteLibraryTool {
+        catalog: String,
+        index: usize,
+    },
+    /// Replace the tool at `index` in catalog `catalog` with an edited
+    /// copy, then refresh the snapshot.
+    UpdateLibraryTool {
+        catalog: String,
+        index: usize,
+        tool: Box<ToolConfig>,
+    },
+    /// Move the tool at `index` from catalog `from` to catalog `to`.
+    MoveLibraryTool {
+        from: String,
+        index: usize,
+        to: String,
+    },
+    /// Create a new empty catalog.
+    CreateToolCatalog(String),
+    /// Delete a whole catalog file.
+    DeleteToolCatalog(String),
+    /// Rename a catalog file.
+    RenameToolCatalog {
+        old: String,
+        new: String,
+    },
+    /// De-duplicate the tools in a catalog (keep first of each geometry).
+    DedupeToolCatalog(String),
 
     // Setups
     AddSetup,
