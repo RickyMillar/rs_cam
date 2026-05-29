@@ -165,6 +165,17 @@ pub enum McpRequestKind {
         param: String,
         value: serde_json::Value,
     },
+    /// Set a toolpath's clearance/retract/feed/top/bottom Z planes.
+    /// Each field is optional; `None` leaves that plane unchanged. A
+    /// `Some(v)` pins the plane to absolute Z `v` (HeightMode::Manual).
+    SetToolpathHeights {
+        index: usize,
+        clearance_z: Option<f64>,
+        retract_z: Option<f64>,
+        feed_z: Option<f64>,
+        top_z: Option<f64>,
+        bottom_z: Option<f64>,
+    },
     AddToolpath {
         setup_index: usize,
         operation_type: String,
