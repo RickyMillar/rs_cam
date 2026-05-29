@@ -84,3 +84,14 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = "symbols"
+
+# Fast-iteration variant of release for GUI/MCP work. Keeps opt-level 3 so the
+# binary behaves like release, but drops whole-program LTO and serialized
+# codegen — the two knobs that dominate link time — for a much faster rebuild.
+# Use `--profile release-fast` (artifacts land in target/release-fast/).
+# NOT for cycle-time measurement: F-034 / F-036c anchors are calibrated against
+# the real `release` profile, so time those on `--release`, not this.
+[profile.release-fast]
+inherits = "release"
+lto = false
+codegen-units = 256
