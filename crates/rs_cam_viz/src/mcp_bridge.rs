@@ -33,6 +33,15 @@ pub enum McpRequestKind {
     ProjectSummary,
     ListToolpaths,
     ListTools,
+    /// Top level of the tool-library drill-down: list catalog names with
+    /// tool counts and the tool types each contains. Independent of the
+    /// loaded project. Dig into one with `ListToolCatalog`.
+    ListToolLibrary,
+    /// Drill into one catalog: compact tool rows with a 0-based `index`
+    /// for `AddToolFromLibrary`.
+    ListToolCatalog {
+        catalog: String,
+    },
     ListSetups,
     GetToolpathParams {
         index: usize,
@@ -170,6 +179,12 @@ pub enum McpRequestKind {
         name: String,
         tool_type: String,
         diameter: f64,
+    },
+    /// Import a snapshot of a catalog tool into the project. Identified
+    /// by catalog name + 0-based index from `ListToolLibrary`.
+    AddToolFromLibrary {
+        catalog: String,
+        index: usize,
     },
     RemoveTool {
         index: usize,
