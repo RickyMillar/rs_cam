@@ -81,6 +81,20 @@ pub struct AppState {
     /// so live param edits are reflected without an extra refresh
     /// path.
     pub feeds_modal: Option<FeedsModalState>,
+    /// Cached state of the Tool Library management modal. `None` when
+    /// closed. Holds a snapshot of every catalog loaded on open; the
+    /// controller refreshes the snapshot after any mutation so the
+    /// modal can render without per-frame disk I/O.
+    pub tool_library_modal: Option<ToolLibraryModalState>,
+}
+
+/// Persistent state for the Tool Library modal. The `catalogs` snapshot
+/// is loaded by the controller when the modal opens and re-loaded after
+/// every mutating action; the modal renders entirely from it. Ephemeral
+/// view state (selection, filter, edit drafts) lives in egui temp memory.
+#[derive(Debug, Clone)]
+pub struct ToolLibraryModalState {
+    pub catalogs: Vec<(String, rs_cam_core::tool_library::ToolCatalog)>,
 }
 
 /// Persistent state for the Feeds & Speeds modal. Carries the focused
@@ -206,6 +220,7 @@ impl AppState {
             pending_reconciliation_for_ids: Vec::new(),
             pending_apply_resim: None,
             feeds_modal: None,
+            tool_library_modal: None,
         }
     }
 }

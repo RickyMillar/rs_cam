@@ -162,6 +162,13 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                 }
             });
 
+            ui.menu_button("Tools", |ui| {
+                if ui.button("Tool Library…").clicked() {
+                    ui.close_menu();
+                    events.push(AppEvent::OpenToolLibrary);
+                }
+            });
+
             ui.menu_button("Workspace", |ui| {
                 if ui.button("Setup").clicked() {
                     ui.close_menu();
