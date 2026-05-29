@@ -317,6 +317,24 @@ impl super::RsCamApp {
                 let resp = self.mcp_set_toolpath_param(index, &param, value);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::SetToolpathHeights {
+                index,
+                clearance_z,
+                retract_z,
+                feed_z,
+                top_z,
+                bottom_z,
+            } => {
+                let resp = self.mcp_set_toolpath_heights(
+                    index,
+                    clearance_z,
+                    retract_z,
+                    feed_z,
+                    top_z,
+                    bottom_z,
+                );
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::SetToolParam {
                 index,
                 param,
@@ -2486,6 +2504,70 @@ impl super::RsCamApp {
                 )
             }
             Err(e) => self.mcp_mutation_error(format!("Error: {e}"), Some(param.to_owned())),
+        }
+    }
+
+    fn mcp_set_toolpath_heights(
+        &mut self,
+        index: usize,
+        clearance_z: Option<f64>,
+        retract_z: Option<f64>,
+        feed_z: Option<f64>,
+        top_z: Option<f64>,
+        bottom_z: Option<f64>,
+    ) -> String {
+        use rs_cam_core::compute::config::HeightMode;
+        let before = self.mcp_diagnostic_snapshot();
+        let Some(mut heights) = self
+            .controller
+            .state()
+            .session
+            .get_toolpath_config(index)
+            .map(|tc| tc.heights.clone())
+        else {
+            return self.mcp_mutation_error(format!("Error: toolpath index {index} not found"), None);
+        };
+        if let Some(v) = clearance_z {
+            heights.clearance_z = HeightMode::Manual(v);
+        }
+        if let Some(v) = retract_z {
+            heights.retract_z = HeightMode::Manual(v);
+        }
+        if let Some(v) = feed_z {
+            heights.feed_z = HeightMode::Manual(v);
+        }
+        if let Some(v) = top_z {
+            heights.top_z = HeightMode::Manual(v);
+        }
+        if let Some(v) = bottom_z {
+            heights.bottom_z = HeightMode::Manual(v);
+        }
+        match self
+            .controller
+            .state_mut()
+            .session
+            .set_heights_config(index, heights)
+        {
+            Ok(()) => {
+                self.controller.state_mut().gui.mark_edited();
+                let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
+                    toolpath_index: index,
+                });
+                self.mcp_mutation_result(
+                    format!("Set toolpath {index} heights. Regenerate to apply."),
+                    serde_json::json!({
+                        "index": index,
+                        "clearance_z": clearance_z,
+                        "retract_z": retract_z,
+                        "feed_z": feed_z,
+                        "top_z": top_z,
+                        "bottom_z": bottom_z,
+                    }),
+                    stale,
+                    &before,
+                )
+            }
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), None),
         }
     }
 

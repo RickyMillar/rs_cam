@@ -139,6 +139,25 @@ pub struct OptimizeToolpathInput {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct SetToolpathHeightsParam {
+    /// Toolpath index (0-based)
+    pub index: usize,
+    /// Clearance plane Z (absolute, in the operation's emission frame —
+    /// for a Top setup the stock top is the high Z). Rapids travel at
+    /// this height; raise it above the tallest uncut feature to avoid
+    /// rapid collisions. Omit to leave unchanged (stays Auto/current).
+    pub clearance_z: Option<f64>,
+    /// Retract plane Z (absolute). Omit to leave unchanged.
+    pub retract_z: Option<f64>,
+    /// Feed (rapid-to-cut transition) plane Z (absolute). Omit to leave unchanged.
+    pub feed_z: Option<f64>,
+    /// Stock-top reference Z (absolute). Omit to leave unchanged.
+    pub top_z: Option<f64>,
+    /// Bottom / lowest-cut reference Z (absolute). Omit to leave unchanged.
+    pub bottom_z: Option<f64>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SetToolParamInput {
     /// Tool index (0-based)
     pub index: usize,

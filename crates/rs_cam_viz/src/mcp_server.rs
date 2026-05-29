@@ -19,7 +19,8 @@ use rs_cam_mcp::server::{
     OperationSchemaParam, OptimizeToolpathInput, RemoveAlignmentPinParam, RemoveToolParam,
     RemoveToolpathParam, SaveProjectParam, ScreenshotSimParam, ScreenshotToolpathParam,
     SetBoundaryConfigParam, SetDressupConfigParam, SetDressupFieldParam, SetStockConfigParam,
-    SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam, SetToolpathParamInput,
+    SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam, SetToolpathHeightsParam,
+    SetToolpathParamInput,
     SimJumpToMoveParam, SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam,
 };
 
@@ -610,6 +611,34 @@ impl EmbeddedCamServer {
                 index,
                 param,
                 value,
+            })
+            .await,
+        )
+    }
+
+    #[tool(
+        name = "set_toolpath_heights",
+        description = "Set a toolpath's clearance/retract/feed/top/bottom Z planes (the heights config that op-specific params don't expose). Each field is optional — omit to leave a plane unchanged; a value pins it to that absolute Z (in the operation's emission frame). Use this to raise the clearance plane above tall uncut features when rapids collide (e.g. a chamfer on a 2D curve over a tall stock rim). Invalidates the toolpath — regenerate to apply."
+    )]
+    async fn set_toolpath_heights(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(SetToolpathHeightsParam {
+            index,
+            clearance_z,
+            retract_z,
+            feed_z,
+            top_z,
+            bottom_z,
+        }): Parameters<SetToolpathHeightsParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::SetToolpathHeights {
+                index,
+                clearance_z,
+                retract_z,
+                feed_z,
+                top_z,
+                bottom_z,
             })
             .await,
         )
