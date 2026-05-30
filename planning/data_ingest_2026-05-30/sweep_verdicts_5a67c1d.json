@@ -1004,23 +1004,7 @@
       "rule": "smaller_stepover_means_more_moves",
       "changed_count": 11,
       "unchanged_count": 12,
-      "summary": "move_count: 26459->67049 (+153.4%); rapid_count: 118->298 (+152.5%); linear_count: 26341->66751 (+153.4%)"
-============================================================
-SWEEP ANALYSIS: 105 variants across 22 operations
-  PASS: 96  FAIL: 0  NO_EFFECT: 9  UNEXPECTED: 0
-
-NO_EFFECT (parameter may be dead code or geometry-insensitive):
-  face/direction=one_way
-  scallop/direction=inside_out
-  profile/climb=False
-  inlay/glue_gap=0.0
-  inlay/glue_gap=0.5
-  pocket/climb=False
-  pencil/num_offset_passes=0.0
-  pencil/num_offset_passes=3.0
-  pencil/bitangency_angle=120.0
-============================================================
-,
+      "summary": "move_count: 26459->67049 (+153.4%); rapid_count: 118->298 (+152.5%); linear_count: 26341->66751 (+153.4%)",
       "issues": [],
       "operation": "vcarve"
     },
