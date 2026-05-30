@@ -1,12 +1,16 @@
-# Feeds/Speeds Data Ingest Consolidation — 2026-05-30 (Phase 1)
+# Feeds/Speeds Data Ingest Consolidation — 2026-05-30 (Phase 1 + 2B + 2C)
 
 This document records Phase 1 of the
-`planning/feeds_data_ingest_2026-05-30_phased_plan.md` execution.
+`planning/feeds_data_ingest_2026-05-30_phased_plan.md` execution
+plus the architectural-correctness Phase 2 work pulled forward into
+the same autonomous session.
 
-Phase 1 ran in a single-owner sequential pass (per the plan's "Why
-sequential"). All five steps completed; the Phase 1 exit gate
-(test+clippy green, validator clean except for the deliberately-
-deferred narrative row) holds.
+Phase 1 + 2B + 2C ran in a single-owner sequential pass (per the
+plan's "Why sequential"). All steps completed; lib + integration
+tests + clippy stay green. Phase 2B's MCP smoke validation
+(AS001–AS015) is a separate operator action item — see the
+`kc_retune_log.md` "Smoke-test coverage NOT executed this round"
+section.
 
 ## Step-by-step record
 
@@ -140,21 +144,83 @@ Regression tests added:
 value (7.0 N/mm²) until Phase 2B revisits all wood Kc values
 systematically. The rename does not change any Kc-derived prediction.
 
-## Carry-forward to Phase 2B + onward
+## Step 2B — Calibrated Kc / grain-anisotropy re-tune (applied)
 
-Phase 1 + 2C changed how plastics/aluminum gates behave (refuse-by-
-default instead of silently fabricating Kc), corrected two Janka
-data points, and split the SYP trade-group into its actual species,
-but did **not** touch any wood/EWP Kc or the `ANISOTROPY_MULTIPLIER`.
-The acceptance smoke suite's wood-path verdicts are unaffected.
+The Phase 2 plan's main physics fix, applied in this same autonomous
+session. Detailed before/after in
+`planning/data_ingest_2026-05-30/kc_retune_log.md`.
 
-**Phase 2B (the calibrated Kc / grain-anisotropy re-tune) is the
-next step but was deliberately not executed in this autonomous
-session.** Phase 2B per the plan needs MCP smoke (AS001–AS015)
-validation that requires the GUI running and live MCP commands —
-not autonomous-runnable here. See
-`planning/data_ingest_2026-05-30/kc_retune_log.md` for the pre-Phase-
-2 baseline already captured.
+- **Rename + value:** `tool_load/power.rs::ANISOTROPY_MULTIPLIER` →
+  `GRAIN_ANISOTROPY_FACTOR`, value 2.5 → 2.0. Citation: Pałubicki
+  2021, *Materials* 14(9):2208, DOI 10.3390/ma14092208 — measured
+  directional spread for particleboard peripheral up-milling.
+  Mirror constants in `session/compute.rs` and `feed_modulation.rs`
+  comment updated to match.
+- **Sheet-good Kc:** moved to measured literature.
+  `SheetGood::Particleboard` 9.0 → 35.0 (Pałubicki midpoint);
+  `SheetGood::Mdf` 10.0 → 31.4 (PMC6315737 round-shape Ks);
+  `SheetGood::Hdf` 12.0 → 36.8 (derived MDF × density ratio, TODO
+  Phase 3 for direct measurement). Combined `Kc × factor` product
+  for sheet goods now 2.5–3.1× the pre-Phase-2B value — closer to
+  the measured peripheral-milling cutting forces and a major safety
+  win on plastic-laminate / particleboard jobs.
+- **Solid wood + plywood Kc unchanged with TODO Phase 3:** no
+  fetched per-species direct Kc measurement exists; current values
+  track shear-parallel-to-grain. Phase 3 beat C (FPL Ch.5 systematic
+  extract) will inform the per-species derivation. The 2.0 × factor
+  alone drops the combined product 20 % on these materials — a
+  small step toward physical correctness.
+- **Deflection bounds unchanged.** `WITHIN_BOUND_MM = 0.050` /
+  `EXCEEDS_BOUND_MM = 0.200` are documented physical safety
+  thresholds, NOT calibration knobs. If MCP smoke shows
+  operator-known-good cuts flipping past 200 µm, that's a
+  deflection-model finding to file (force arm, near-tip
+  integration), NOT a reason to widen the bound.
+
+### Test fixtures updated to match the new physics
+
+- `test_sheet_good_kc_progression` → renamed
+  `test_sheet_good_kc_in_measured_literature_band`. Old `mdf >
+  particle` assertion doesn't survive the measured ordering
+  (Pałubicki PB > PMC MDF). New: band check + HDF on top.
+- `light_cut_is_within_with_available_kw` hand-compute comment:
+  `Kc_eff` 37.5 → 30.0; predicted `P` 0.00198 → 0.00159 kW. Still
+  Within.
+- `vbit_triangular_cross_section_halves_power_vs_flat` expected
+  literal: `37.5 * 0.5 * ...` → `30.0 * 0.5 * ...`. Test passes.
+- `heavy_cut_exceeds_machine_with_available_kw` — no change.
+  Verified by hand: Ipe `Kc_eff` 56, P = 0.711 kW vs 0.568 kW
+  available → still Exceeds.
+- `wanaka_*` deflection tests — deflection uses RAW Kc with no
+  grain factor, so unchanged.
+
+### MCP smoke (AS001–AS015) — operator action item
+
+The MCP smoke suite needs the live GUI + MCP server and was NOT run
+in this autonomous session. Run it manually with the same
+`load_project` + `generate_all` + `run_simulation` recipe used in
+the closed acceptance loop (`planning/acceptance_loop/STATE.md`
+round-10). Record per-case before/after peak µm in
+`kc_retune_log.md`. **Verdict-flip rule** (from the Phase 2 abort
+criteria): flips that match real-world operator experience are
+kept; flips that don't are filed as deflection-model investigations
+— do NOT silently widen `WITHIN_BOUND_MM` / `EXCEEDS_BOUND_MM` or
+back off the Phase 2B values.
+
+## Carry-forward to Phase 3 + onward
+
+Phase 1 + 2B + 2C is the full Phase 2 lift this session can
+execute autonomously. Remaining work (per the plan):
+
+- **MCP smoke validation** (operator action above).
+- **Phase 3 — Parallel data-collection fleet** (8 agents: Amana long
+  tail, Wood Database species sweep, FPL Ch.5 systematic extract,
+  Onsrud OCR specialist, plastics Kc archival, aluminum Kienzle
+  hunt, vendor breadth, hardness fan-out). Not started in this
+  session; the plan's per-beat agent prompt skeleton is at
+  `feeds_data_ingest_2026-05-30_phased_plan.md` Appendix C.
+- **Phase 4 — Verification + promotion gate** for whatever Phase 3
+  produces.
 
 ## Files changed
 

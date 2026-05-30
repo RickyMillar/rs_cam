@@ -293,6 +293,14 @@ impl Material {
     /// validated cutting-force model.
     pub fn kc_n_per_mm2(&self) -> Option<f64> {
         match self {
+            // TODO Phase 3 — per-species solid-wood Kc has no fetched
+            // direct measurement; current values track FPL Ch.5 shear-
+            // parallel-to-grain strength (≈6–16 MPa) rather than
+            // peripheral milling specific cutting force (≈30–40 N/mm²
+            // for boards). Phase 3 beat C will inform a per-species
+            // derivation backbone via the shear-strength × edge-radius
+            // size-effect factor. Until then, kept as-is; the Phase 2B
+            // sheet-good update is the highest-confidence move.
             Material::SolidWood { species } => Some(match species {
                 WoodSpecies::GenericSoftwood => 6.0,
                 WoodSpecies::RadiataPine => 6.0,
@@ -305,15 +313,39 @@ impl Material {
                 WoodSpecies::Jarrah => 19.0,
                 WoodSpecies::Ipe => 28.0,
             }),
+            // TODO Phase 3 — per-grade plywood Kc has no fetched
+            // primary measurement; current values track shear-parallel
+            // shear strength of the dominant veneer rather than peripheral
+            // milling specific cutting force. Phase 3 beat C (FPL Ch.5
+            // systematic extract) will inform a per-species derivation.
             Material::Plywood { grade } => Some(match grade {
                 PlywoodGrade::Softwood => 8.0,
                 PlywoodGrade::BalticBirch => 13.0,
                 PlywoodGrade::HardwoodFaced => 11.0,
             }),
+            // Sheet-good Kc (Phase 2B, 2026-05-30): measured-literature
+            // values from `planning/data_ingest_2026-05-29/kc.md`. The
+            // pre-Phase-2B values (Mdf=10, Hdf=12, Particleboard=9)
+            // tracked shear-parallel-to-grain strength of the substrate
+            // rather than peripheral-milling specific cutting force,
+            // under-predicting force by 3–4× and being absorbed by the
+            // old 2.5× ANISOTROPY_MULTIPLIER. Paired with the
+            // GRAIN_ANISOTROPY_FACTOR drop 2.5 → 2.0 to keep the
+            // physically-meaningful product `Kc × factor` honest.
             Material::SheetGood { kind } => Some(match kind {
-                SheetGoodKind::Mdf => 10.0,
-                SheetGoodKind::Hdf => 12.0,
-                SheetGoodKind::Particleboard => 9.0,
+                // PMC6315737 round-shape Ks for MDF: average 31.44
+                // (SD 2.68; range 25.81–35.58). Isotropic in plane.
+                SheetGoodKind::Mdf => 31.4,
+                // No direct HDF Kc measurement; derived as MDF scaled
+                // by the HDF/MDF density ratio (~880/750 ≈ 1.17×).
+                // TODO Phase 3: replace with fetched HDF cutting-force
+                // measurement.
+                SheetGoodKind::Hdf => 36.8,
+                // Pałubicki 2021 (DOI 10.3390/ma14092208) average of
+                // slow (32.0) and fast (37.6) peripheral up-milling
+                // principal cutting force for particleboard at
+                // vc=40/60 m/s, rake 13°, h up to ~0.31 mm.
+                SheetGoodKind::Particleboard => 35.0,
             }),
             // Per-family plastics — only families with a fetched primary
             // measurement return Some. Others refuse via the gate's
@@ -757,7 +789,18 @@ mod tests {
     }
 
     #[test]
-    fn test_sheet_good_kc_progression() {
+    fn test_sheet_good_kc_in_measured_literature_band() {
+        // Phase 2B replaced the shear-strength-derived Kc constants
+        // (mdf=10 / hdf=12 / particle=9 — pre-Phase-2B) with measured
+        // literature values from peripheral-milling studies
+        // (planning/data_ingest_2026-05-29/kc.md). The post-Phase-2B
+        // ordering (HDF 36.8 > Particleboard 35.0 > MDF 31.4) does NOT
+        // match the old density-derived intuition — Pałubicki 2021's
+        // particleboard measurements run a touch above the PMC6315737
+        // round-shape MDF measurement. The right invariants are:
+        //   - all three sheet-good Kc sit in the literature band
+        //     (~31–37 N/mm² for peripheral milling at low rake)
+        //   - HDF is densest, sits at the top
         let mdf = Material::SheetGood {
             kind: SheetGoodKind::Mdf,
         }
@@ -773,8 +816,14 @@ mod tests {
         }
         .kc_n_per_mm2()
         .unwrap();
-        assert!(hdf > mdf);
-        assert!(mdf > particle);
+        for (label, kc) in [("Mdf", mdf), ("Hdf", hdf), ("Particleboard", particle)] {
+            assert!(
+                (30.0..=40.0).contains(&kc),
+                "{label} Kc {kc} N/mm² must sit in the measured literature band 30–40 N/mm²"
+            );
+        }
+        assert!(hdf >= mdf, "HDF (denser) must not be below MDF");
+        assert!(hdf >= particle, "HDF (densest engineered wood) must top sheet goods");
     }
 
     #[test]

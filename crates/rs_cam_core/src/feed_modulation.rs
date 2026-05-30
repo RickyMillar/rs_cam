@@ -171,7 +171,9 @@ pub struct DeflectionLimitInputs {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PowerLimitInputs {
     /// Effective `Kc` (already multiplied by the anisotropy factor).
-    /// `tool_load::power` uses `2.5 × material.kc_n_per_mm2()`.
+    /// `tool_load::power` uses `2.0 × material.kc_n_per_mm2()` —
+    /// the Phase 2B GRAIN_ANISOTROPY_FACTOR (Pałubicki 2021,
+    /// DOI 10.3390/ma14092208).
     pub kc_eff_n_per_mm2: f64,
     /// Effective diameter at the engagement depth (mm).
     pub engagement_diameter_mm: f64,

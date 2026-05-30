@@ -76,6 +76,94 @@ the MCP up via `cargo run -p rs_cam_viz --bin rs_cam_gui -- --mcp`.
 This log is updated by Step 2B after the change with the new pinned
 values.
 
-## After-change record
+## After-change record (Phase 2B applied 2026-05-30)
 
-(Populated by Step 2B.)
+### Renames + value changes
+
+- `ANISOTROPY_MULTIPLIER` → `GRAIN_ANISOTROPY_FACTOR` in
+  `tool_load/power.rs`, value `2.5` → `2.0`. Citation: Pałubicki 2021,
+  *Materials* 14(9):2208, DOI 10.3390/ma14092208. Mirror constants
+  in `session/compute.rs` and `feed_modulation.rs` comment updated to
+  match.
+
+### Wood/EWP Kc (changed)
+
+| Material | Pre-2B | Post-2B | Source |
+|----------|--------|---------|--------|
+| `SheetGood::Mdf` | 10.0 | 31.4 | PMC6315737 round-shape Ks average |
+| `SheetGood::Hdf` | 12.0 | 36.8 | Derived as MDF × density ratio (HDF/MDF ≈ 1.17); flagged TODO Phase 3 for direct measurement |
+| `SheetGood::Particleboard` | 9.0 | 35.0 | Pałubicki 2021 average of slow (32.0) and fast (37.6) milling |
+
+### Wood/EWP Kc (kept with TODO Phase 3)
+
+| Material | Value (unchanged) | Reason kept |
+|----------|------|-------------|
+| `WoodSpecies::*` (10 species) | 6.0–28.0 | No fetched direct per-species Kc; current values track shear-parallel-to-grain. Phase 3 beat C will fetch the FPL Ch.5 shear-∥ extract that backs a derivation. |
+| `Plywood::*` (3 grades) | 8.0, 11.0, 13.0 | Same — no fetched per-grade Kc. |
+
+### Combined `Kc × factor` product comparison (the physically-meaningful number)
+
+| Material | Pre-2B (Kc × 2.5) | Post-2B (Kc × 2.0) | Ratio |
+|----------|-------------------|---------------------|-------|
+| Particleboard | 9 × 2.5 = 22.5 | 35 × 2.0 = 70.0 | **3.1×** |
+| MDF           | 10 × 2.5 = 25.0 | 31.4 × 2.0 = 62.8 | **2.5×** |
+| HDF           | 12 × 2.5 = 30.0 | 36.8 × 2.0 = 73.6 | **2.5×** |
+| Plywood (Softwood) | 8 × 2.5 = 20.0 | 8 × 2.0 = 16.0 | **0.80×** |
+| Plywood (BalticBirch) | 13 × 2.5 = 32.5 | 13 × 2.0 = 26.0 | **0.80×** |
+| HardMaple (solid) | 15 × 2.5 = 37.5 | 15 × 2.0 = 30.0 | **0.80×** |
+| Ipe (solid) | 28 × 2.5 = 70.0 | 28 × 2.0 = 56.0 | **0.80×** |
+
+Sheet goods are now predicted to need substantially more spindle
+power (2.5–3.1× the pre-Phase-2B value) — closer to the measured
+peripheral-milling cutting forces and a major safety win.
+
+Solid wood / plywood Kc unchanged → product drops 20 % (the
+`2.5 → 2.0` factor) because their Kc constants weren't moved. This
+is a small step toward physical correctness; Phase 3 beat C will
+inform a per-species Kc update that brings the product back up.
+
+### Test fixtures updated
+
+- `test_sheet_good_kc_progression` → renamed to
+  `test_sheet_good_kc_in_measured_literature_band`. The
+  pre-Phase-2B `mdf > particleboard` ordering doesn't survive the
+  measured-literature values (Pałubicki's particleboard runs above
+  PMC6315737's MDF average). New assertions: all sheet-good Kc sit
+  in 30–40 N/mm² band; HDF (densest) tops the bunch.
+- `light_cut_is_within_with_available_kw` comment updated to reflect
+  `Kc_eff = 30.0` (was 37.5). Assertion `peak_kw < 0.01` still
+  holds — actual ≈ 0.00159 (was 0.00198). Within.
+- `vbit_triangular_cross_section_halves_power_vs_flat` hand-compute
+  comment updated to `Kc_eff = 30.0`, expected literal
+  `30.0 * 0.5 * 1.0 * feed / 60_000_000.0` (was 37.5 * ...).
+- `heavy_cut_exceeds_machine_with_available_kw` — no comment change
+  needed; assertion is just `peak > available`. Verified by hand:
+  Ipe Kc=28, Kc_eff=56, P = 56·20·6.35·6000/60e6 = 0.711 kW vs
+  0.568 kW available → still Exceeds (by less, but still by physics
+  margin).
+- `wanaka_*` tests — deflection uses raw Kc with no anisotropy
+  factor, so no change.
+
+### Smoke-test coverage NOT executed this round
+
+The MCP smoke suite (AS001–AS015) requires the live GUI + MCP server
+and was NOT run in this autonomous session. **Operator action item:**
+boot the GUI (`cargo run -p rs_cam_viz --bin rs_cam_gui -- --mcp`),
+re-run the smoke suite, and record per-case before/after peak µm.
+Verdict flips that match real-world operator experience are kept;
+flips that don't match should be filed as deflection-model investigations
+per the plan's abort-criteria — they are NOT to be reverted by
+silently widening `WITHIN_BOUND_MM` / `EXCEEDS_BOUND_MM` or backing
+off the Phase 2B values.
+
+### Deflection bounds — kept as physical safety thresholds
+
+`WITHIN_BOUND_MM = 0.050` (50 µm) and `EXCEEDS_BOUND_MM = 0.200`
+(200 µm) were NOT changed. Per the plan: below 50 µm surface finish
+is negligibly degraded; 50–200 µm visibly degraded but tool/work
+safe; above 200 µm dimensional accuracy compromised AND risk of
+chatter / tool breakage. These are reasonable physical thresholds
+unchanged by the Phase 2B Kc move. If MCP smoke shows any cut
+flipping past 200 µm AND the cut is operator-known-good in
+practice, file a deflection-model finding (force arm, near-tip
+integration) — do NOT widen the bound.
