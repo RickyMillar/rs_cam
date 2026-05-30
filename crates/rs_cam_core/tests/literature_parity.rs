@@ -116,25 +116,31 @@ fn plastics_without_primary_source_refuse_kc() {
 }
 
 #[test]
-fn aluminum_kc_refuses_until_kienzle_pair_promoted() {
-    // Phase 3-F landed a (kc1.1=800, mc=0.25) pair for 6061-T6 and
-    // 7075-T6 via Wayback Machine snapshot of Machining Doctor's VDI
-    // 3323 table. Phase 4 is the gate that promotes that pair into
-    // `Material::Aluminum::kc_n_per_mm2()`. Until then, aluminum
-    // toolpaths must refuse — this test pins the pre-Phase-4 state.
-    //
-    // Once Phase 4 lands the switch, this assertion should be inverted
-    // to check that kc_n_per_mm2 returns
-    // `Some(800.0 * h.powf(-0.25))` at a representative chip thickness
-    // (e.g. h=0.1 mm → ~1423 N/mm²).
+fn aluminum_kc_matches_vdi_3323_group_22_kienzle_pair() {
+    // Phase 4 promoted the Phase 3-F Kienzle pair into
+    // `Material::Aluminum::kc_n_per_mm2()`:
+    //   kc1.1 = 800 N/mm², mc = 0.25 (VDI 3323 group 22).
+    // Evaluated at the representative chip thickness h = 0.1 mm,
+    //   Kc = 800 · 0.1^(-0.25) ≈ 1422.8 N/mm²
+    // Both alloys share the VDI group anchor until per-alloy data
+    // lands.
+    let expected = 800.0 * 0.1_f64.powf(-0.25);
     for alloy in [AluminumAlloy::Alloy6061T6, AluminumAlloy::Alloy7075T6] {
         let m = Material::Aluminum { alloy };
-        assert_eq!(
-            m.kc_n_per_mm2(),
-            None,
-            "{alloy:?}: until Phase 4 promotes the staged Kienzle pair \
-             (planning/data_ingest_2026-05-30/aluminum_kc.md, kc1.1=800 mc=0.25), \
-             kc_n_per_mm2 must return None"
+        let kc = m.kc_n_per_mm2().expect(
+            "Phase 4 enables aluminum Kc — Material::Aluminum::kc_n_per_mm2 must be Some",
+        );
+        within_pct(
+            kc,
+            expected,
+            0.01,
+            "Machining Doctor VDI 3323 group-22 (Wayback 2024-08-13) — \
+             planning/data_ingest_2026-05-30/aluminum_kc.md",
+        );
+        assert!(
+            kc > 1000.0 && kc < 2000.0,
+            "{alloy:?} Kc {kc} must land in the Sandvik aluminium-specific \
+             order-of-magnitude band (350–700 raw, ~1000–2000 once h^-mc scaled)"
         );
     }
 }
