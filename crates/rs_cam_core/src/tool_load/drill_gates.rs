@@ -67,20 +67,13 @@ pub struct DrillGatesVerdict {
     pub plunge_feed: DrillGateOutcome,
 }
 
-/// Material-aware plunge feed-per-diameter envelope (1/min). Above the
-/// max: cutter breakage / stall risk. Below the min: rubbing / burning.
+/// Thin convenience wrapper around
+/// [`Material::drill_plunge_feed_envelope_per_mm`]. Canonical dispatch
+/// lives on `Material` to match the per-material accessor pattern;
+/// see `chip_welding_threshold` in `drill_metrics.rs` for the same
+/// rationale. New code should call the method directly.
 pub fn plunge_feed_envelope(material: &Material) -> (f64, f64) {
-    match material {
-        Material::SolidWood { .. } => (50.0, 400.0),
-        Material::Plywood { .. } | Material::SheetGood { .. } => (40.0, 350.0),
-        Material::Plastic { .. } => (60.0, 500.0),
-        // Aluminum on a wood router is application-edge — conservative
-        // envelope (slower min than wood, lower max than plastic).
-        // Real aluminum drilling should always be vendor-LUT-driven.
-        Material::Aluminum { .. } => (40.0, 250.0),
-        Material::Foam { .. } => (100.0, 1000.0),
-        Material::Custom { .. } => (40.0, 500.0),
-    }
+    material.drill_plunge_feed_envelope_per_mm()
 }
 
 /// Evaluate the three drill gates for a single drilling toolpath.

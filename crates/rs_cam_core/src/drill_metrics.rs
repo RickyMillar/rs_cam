@@ -104,51 +104,22 @@ pub struct DrillToolpathSummary {
     pub avg_chip_evacuation_score: f64,
 }
 
-/// Material-aware threshold (depth-to-diameter ratio) above which
-/// chip welding becomes likely without a pecking cycle.
-///
-/// Rough first-pass values for wood-router materials. Steel / aluminum
-/// would be ~2x and 3x respectively but aren't currently in [`Material`].
+/// Thin convenience wrapper around
+/// [`Material::drill_chip_welding_threshold_dtd`]. The canonical
+/// dispatch lives on `Material` to match the rest of the per-material
+/// accessor pattern (`kc_n_per_mm2`, `hardness_index`, etc.); this
+/// free function exists for the established call-sites in this module
+/// and `tool_load::drill_gates`. New code should call the method
+/// directly.
 pub fn chip_welding_threshold(material: &Material) -> f64 {
-    match material {
-        Material::SolidWood { species } => {
-            // Softer wood evacuates chips better. Use Janka hardness as a proxy.
-            let janka = species.janka_lbf();
-            if janka <= 700.0 {
-                8.0 // softwood
-            } else if janka <= 1500.0 {
-                6.0 // medium hardwood
-            } else {
-                5.0 // dense hardwood
-            }
-        }
-        Material::Plywood { .. } | Material::SheetGood { .. } => 5.0,
-        Material::Plastic { .. } => 4.0,
-        // Aluminum chip welding starts around D/d ≈ 3 (industry rule of
-        // thumb; pecks are mandatory beyond that). Conservative even
-        // for 6061 — the deeper the alloy the lower the safe D/d.
-        Material::Aluminum { .. } => 3.0,
-        Material::Foam { .. } => 12.0,
-        Material::Custom { hardness_index, .. } => {
-            // Scale roughly with hardness — softer materials evacuate better.
-            (8.0 / hardness_index.max(0.5)).clamp(2.0, 12.0)
-        }
-    }
+    material.drill_chip_welding_threshold_dtd()
 }
 
-/// Material-aware per-peck depth-to-diameter ratio. A single peck deeper
-/// than this is likely to trap chips even within a pecking cycle.
+/// Thin convenience wrapper around
+/// [`Material::drill_per_peck_max_dtd`]. See
+/// [`chip_welding_threshold`] for the rationale.
 pub fn per_peck_max_depth_to_diameter(material: &Material) -> f64 {
-    match material {
-        Material::SolidWood { .. } => 2.0,
-        Material::Plywood { .. } | Material::SheetGood { .. } => 1.5,
-        Material::Plastic { .. } => 1.0,
-        // Aluminum per-peck ≤ 1×D is the standard machining-textbook
-        // limit for chip evacuation without through-coolant.
-        Material::Aluminum { .. } => 1.0,
-        Material::Foam { .. } => 4.0,
-        Material::Custom { .. } => 1.5,
-    }
+    material.drill_per_peck_max_dtd()
 }
 
 /// Per-peck chip-evacuation heuristic.
