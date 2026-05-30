@@ -23,6 +23,19 @@ pub enum Vendor {
     /// rows from `harvey_helical_garr.json`. Step 1D of the
     /// `feeds_data_ingest_2026-05-30_phased_plan` ingest.
     Helical,
+    /// Freud — added 2026-05-31 (Phase 4 prerequisite) for the
+    /// Solid Carbide router-bit chart staged in
+    /// `planning/data_ingest_2026-05-30/vendor_breadth.json` (14
+    /// rows: 1/8"–1/2" across hardwood / softwood / MDF / particle /
+    /// plywood / acrylic / aluminum). Grade A.
+    Freud,
+    /// IDC Woodcraft community-aggregated CSV (Millmage database).
+    /// Grade C — not a tool manufacturer, but a curated cross-vendor
+    /// dataset used for sanity-checking the manufacturer rows.
+    /// Added 2026-05-31 (Phase 4 prerequisite) for the 10 staged
+    /// rows in `vendor_breadth.json`. JSON tag: `idcwoodcraft`.
+    #[serde(rename = "idcwoodcraft")]
+    Idcwoodcraft,
 }
 
 /// Evidence quality grade: A = vendor chart, B = derived, C = community.

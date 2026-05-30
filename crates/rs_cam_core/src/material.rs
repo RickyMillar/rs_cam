@@ -401,11 +401,30 @@ impl Material {
                 | PlasticFamily::Delrin
                 | PlasticFamily::Generic => None,
             },
-            // Aluminum refuses by default until Phase 3 beat F lands a
-            // fetched-primary `kc1.1 + mc` Kienzle pair. Switching to
-            // `Some(kc1.1 * h^(-mc))` at a representative chip thickness
-            // is a one-line change once the constants land.
-            Material::Aluminum { .. } => None,
+            // Aluminum Kienzle pair from Machining Doctor's VDI 3323
+            // table (Wayback 2024-08-13 snapshot of
+            // `machiningdoctor.com/specific-cutting-force-chart`),
+            // cross-checked against Sandvik's 2017 EN-GB aluminium
+            // ISO-N page bound of 350–700 N/mm². Both 6061-T6 and
+            // 7075-T6 sit at the same VDI group-22 anchor:
+            //   kc1.1 = 800 N/mm², mc = 0.25
+            // Evaluated at a representative chip thickness h = 0.1 mm:
+            //   Kc = 800 · 0.1^(-0.25) ≈ 1422.8 N/mm²
+            // Citation: planning/data_ingest_2026-05-30/aluminum_kc.md
+            // (Phase 3 beat F result, "Grade A-secondary").
+            //
+            // Per-alloy specialisation: 7075-T6 reads slightly higher
+            // in the Sandvik aluminium-specific band (350–700) than
+            // 6061-T6; until a per-alloy Kienzle pair lands, we use
+            // the shared VDI group-22 value for both. The
+            // documented "Grade A-secondary" qualification is on the
+            // citation in aluminum_kc.md, not on the type.
+            Material::Aluminum { .. } => {
+                const KC11: f64 = 800.0;
+                const MC: f64 = 0.25;
+                const REPRESENTATIVE_H_MM: f64 = 0.1;
+                Some(KC11 * REPRESENTATIVE_H_MM.powf(-MC))
+            }
             Material::Foam { density } => Some(match density {
                 FoamDensity::Low => 1.0,
                 FoamDensity::Medium => 2.0,
@@ -1123,13 +1142,19 @@ mod tests {
     }
 
     #[test]
-    fn aluminum_kc_refuses_until_kienzle_lands() {
+    fn aluminum_kc_computes_from_kienzle_pair() {
+        // Phase 4 enabled the Kienzle pair (kc1.1=800, mc=0.25) for
+        // both 6061-T6 and 7075-T6, evaluated at h=0.1 mm:
+        //   Kc = 800 · 0.1^(-0.25) ≈ 1422.8 N/mm²
+        let expected = 800.0 * 0.1_f64.powf(-0.25);
         for alloy in [AluminumAlloy::Alloy6061T6, AluminumAlloy::Alloy7075T6] {
             let m = Material::Aluminum { alloy };
-            assert_eq!(
-                m.kc_n_per_mm2(),
-                None,
-                "{alloy:?} must refuse Kc until Phase 3 beat F lands kc1.1/mc"
+            let kc = m
+                .kc_n_per_mm2()
+                .expect("aluminum Kc must be Some after Phase 4 promoted the Kienzle pair");
+            assert!(
+                (kc - expected).abs() < 1.0,
+                "{alloy:?} Kc {kc} must match VDI 3323 group-22 kc1.1·h^-mc ({expected})"
             );
         }
     }

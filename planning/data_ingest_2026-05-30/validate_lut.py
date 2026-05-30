@@ -23,7 +23,8 @@ REQUIRED = ["observation_id", "source_id", "source_vendor", "source_title",
             "tool_family", "operation_family", "pass_role", "material_family",
             "material_label", "diameter_mm", "flute_count"]
 VENDORS = {"amana", "onsrud", "harvey", "whiteside", "sandvik", "garr",
-           "autodesk", "carbide3d", "helical"}  # post-Phase 1D
+           "autodesk", "carbide3d", "helical",
+           "freud", "idcwoodcraft"}  # post-Phase 4 prerequisites
 GRADES = {"a", "b", "c"}
 KINDS = {"exact", "derived", "fallback"}
 TFAM = {"flat_end", "ball_nose", "tapered_ball_nose", "bull_nose",
