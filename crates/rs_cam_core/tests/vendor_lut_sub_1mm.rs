@@ -75,7 +75,9 @@ fn embedded_count_matches_after_expansion() {
     let lut = VendorLut::embedded();
     assert_eq!(
         lut.observations.len(),
-        67,
-        "expected 67 embedded observations after Item E expansion (was 61 + 6 new sub-1mm rows)"
+        111,
+        "expected 111 embedded observations (85 + 26 non-wood rows from the \
+         2026-05-30 Phase 1C ingest: onsrud/whiteside/amana plastic + amana ZrN \
+         aluminum + amana V-groove aluminum/acrylic + helical aluminum)"
     );
 }

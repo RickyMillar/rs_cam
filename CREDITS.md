@@ -137,6 +137,28 @@ Visible sources recorded there include:
 
 The manifest includes URLs, titles, coverage notes, and access dates.
 
+2026-05-29 ingest added three Amana charts as bundled runtime rows
+(`amana_vgroove_engraving.json`, `amana_compression.json`): the AMS-159
+V-Groove chart, the Spektra 15/30/45/120° Engraving chart, and the
+Solid-Carbide Compression Spiral chart. Only wood-family rows are bundled;
+plastics/aluminum rows from the same charts (plus Onsrud, Harvey/Helical/Garr,
+and the Kc/hardness research sources) are collected, cited, and staged under
+`planning/data_ingest_2026-05-29/` but NOT yet bundled — they await a
+`Material`-enum extension. See `planning/feeds_data_ingest_consolidation_2026-05-29.md`.
+
+2026-05-30 Phase 1 ingest promoted the staged non-wood rows now that the
+`Material::Plastic { family }` per-family Kc, the new `Material::Aluminum
+{ alloy }` variant, and `Vendor::Helical` have landed. Six new bundled
+runtime files: `amana_plastic_oflute.json`, `amana_zrn_aluminum.json`,
+`amana_vgroove_aluminum_acrylic.json`, `onsrud_plastic.json`,
+`whiteside_rpm_assorted.json`, `helical_aluminum.json`, plus the
+acrylic compression-spiral row appended to `amana_compression.json` (26
+new rows total; bundled count 85 → 111). Source manifest entries added
+for all nine new `source_id`s. See `planning/feeds_data_ingest_consolidation_2026-05-30.md`.
+The Garr aluminum staged rows remain deferred (per-series flute-count
+split + pass_role repair still pending) and are tracked in the
+Phase 3 backlog.
+
 ### Acceptance benchmark seed sources
 
 `planning/SUGGEST_SIM_OPTIMIZE_ACCEPTANCE.md` and the seed matrix in

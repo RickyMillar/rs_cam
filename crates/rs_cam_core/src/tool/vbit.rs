@@ -22,6 +22,10 @@ pub struct VBitEndmill {
     pub included_angle_deg: f64,
     pub cutting_length: f64,
     pub helix_deg: f64,
+    /// Flat-tip diameter (mm). 0.0 = true pointed V-bit; positive models a
+    /// truncated-tip engraving / chamfer bit. Set after construction
+    /// (mirrors `helix_deg`); defaults to 0.0 in [`VBitEndmill::new`].
+    pub tip_diameter: f64,
     // Precomputed trig values
     half_angle_rad: f64,
     tan_half_angle: f64,
@@ -41,6 +45,7 @@ impl VBitEndmill {
             included_angle_deg,
             cutting_length,
             helix_deg: 30.0,
+            tip_diameter: 0.0,
             half_angle_rad,
             tan_half_angle,
         }
@@ -75,7 +80,11 @@ impl MillingCutter for VBitEndmill {
         flute_count: u32,
         _mode: EngagementMode,
     ) -> Result<ChipGeometry, EngagementError> {
-        if axial_doc_mm < 0.05 {
+        // Only a literal zero-depth contact (the geometric tip point) has
+        // no chip. Any positive depth engages a finite cone band of radius
+        // `axial_doc · tan(half_angle)`, so V-carve cusps near boundaries
+        // now produce a small-but-real chip metric instead of an error.
+        if axial_doc_mm <= 0.0 {
             return Err(EngagementError::Unsupported {
                 reason: "tip-only engagement — chip area undefined at single-point contact"
                     .to_owned(),
@@ -93,8 +102,12 @@ impl MillingCutter for VBitEndmill {
     fn geometry_hint(&self) -> crate::feeds::ToolGeometryHint {
         crate::feeds::ToolGeometryHint::VBit {
             included_angle: self.included_angle_deg,
-            tip_diameter: 0.0, // pointed V-bit; flat-tip support is a follow-up
+            tip_diameter: self.tip_diameter,
         }
+    }
+
+    fn flat_tip_diameter(&self) -> f64 {
+        self.tip_diameter
     }
 
     fn height_at_radius(&self, r: f64) -> Option<f64> {
@@ -108,6 +121,14 @@ impl MillingCutter for VBitEndmill {
 
     fn lookup_diameter_at(&self, axial_doc_mm: f64) -> f64 {
         (2.0 * self.engagement_radius(axial_doc_mm)).clamp(0.0, self.diameter())
+    }
+
+    fn mrr_cross_section_mm2(&self, axial_doc_mm: f64, radial_width_mm: f64) -> f64 {
+        // A V-bit removes a triangular groove, not a rectangular slab: the
+        // engaged section narrows linearly from `radial_width` at the cut
+        // floor to a point at the tip. Area = ½ · base · height, half the
+        // rectangular default the power gate would otherwise assume.
+        0.5 * axial_doc_mm * radial_width_mm
     }
 
     fn width_at_height(&self, h: f64) -> f64 {
@@ -340,11 +361,31 @@ mod tests {
     }
 
     #[test]
-    fn chip_geometry_rejects_tip_only_engagement() {
+    fn chip_geometry_returns_small_chip_near_tip() {
+        // A shallow V-carve cusp (0.01 mm depth) engages a finite cone band
+        // and must produce a real, positive chip metric rather than an
+        // error — otherwise the cusp samples are silently dropped from the
+        // chipload gate.
+        let tool = VBitEndmill::new(12.0, 90.0, 25.0);
+        let geom = tool
+            .chip_geometry(
+                0.01,
+                std::f64::consts::FRAC_PI_2,
+                0.03,
+                2,
+                EngagementMode::Climb,
+            )
+            .expect("shallow V-carve cusp produces a small chip");
+        assert!(geom.max_chip_thickness_mm > 0.0);
+    }
+
+    #[test]
+    fn chip_geometry_rejects_zero_depth_tip_point() {
+        // Only the geometric tip point (zero depth) has no chip area.
         let tool = VBitEndmill::new(12.0, 90.0, 25.0);
         assert!(matches!(
             tool.chip_geometry(
-                0.01,
+                0.0,
                 std::f64::consts::FRAC_PI_2,
                 0.03,
                 2,
@@ -352,6 +393,33 @@ mod tests {
             ),
             Err(EngagementError::Unsupported { .. })
         ));
+    }
+
+    #[test]
+    fn flat_tip_diameter_defaults_zero_and_is_settable() {
+        use crate::tool::MillingCutter;
+        let mut tool = VBitEndmill::new(10.0, 90.0, 25.0);
+        assert_eq!(tool.flat_tip_diameter(), 0.0);
+        tool.tip_diameter = 1.5;
+        assert_eq!(tool.flat_tip_diameter(), 1.5);
+        match tool.geometry_hint() {
+            crate::feeds::ToolGeometryHint::VBit { tip_diameter, .. } => {
+                assert!((tip_diameter - 1.5).abs() < 1e-12);
+            }
+            other => panic!("expected VBit hint, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mrr_cross_section_is_triangular_half_of_rectangular() {
+        // V-bit groove cross-section is ½ · base · height, exactly half the
+        // rectangular slab the default trait method assumes.
+        let tool = VBitEndmill::new(12.0, 90.0, 25.0);
+        let doc = 2.0;
+        let woc = 3.0;
+        let area = tool.mrr_cross_section_mm2(doc, woc);
+        assert!((area - 0.5 * doc * woc).abs() < 1e-12);
+        assert!((area - 3.0).abs() < 1e-12);
     }
 
     #[test]

@@ -73,12 +73,15 @@ pub fn evaluate(
         };
     }
 
-    let kc = material.kc_n_per_mm2();
-    if !(kc.is_finite()) || kc <= 0.0 {
+    // Materials without a primary-source Kc (e.g. most plastics, aluminum
+    // pre Phase 3 beat F) return None and refuse here. The type-level
+    // Option encodes "no validated cutting-force model" — no fabricated
+    // constant ever drives a force prediction.
+    let Some(kc) = material.kc_n_per_mm2() else {
         return PowerVerdict::Unmodeled {
             reason: UnmodeledReason::MaterialUnvalidated,
         };
-    }
+    };
     let kc_eff = ANISOTROPY_MULTIPLIER * kc;
 
     // Walk samples for this toolpath.
@@ -137,7 +140,11 @@ pub fn evaluate(
         // proportionally; corner-decel reduction in predicted feed
         // shows up directly as reduced predicted power.
         let feed_for_power = super::effective_feed_for_sample(s, &trace.predicted_feeds);
-        let p_kw = kc_eff * s.axial_doc_mm * radial_width * feed_for_power / 60_000_000.0;
+        // Engaged chip cross-section is shape-dependent: rectangular slab
+        // for endmills, triangular groove for V-bits. The cutter owns that
+        // geometry; the gate owns the material + machine physics.
+        let cross_section_mm2 = tool.mrr_cross_section_mm2(s.axial_doc_mm, radial_width);
+        let p_kw = kc_eff * cross_section_mm2 * feed_for_power / 60_000_000.0;
         let avail = machine.power_at_rpm(s.spindle_rpm as f64) * machine.safety_factor;
 
         // Route Entry-ancestry samples to the spike track; they don't
@@ -268,11 +275,23 @@ mod tests {
     use crate::simulation_cut::{
         CutKinematics, SimulationCutSample, SimulationCutSummary, SimulationCutTrace,
     };
-    use crate::tool::FlatEndmill;
+    use crate::tool::{FlatEndmill, VBitEndmill};
 
     fn tool() -> ToolDefinition {
         ToolDefinition::new(
             Box::new(FlatEndmill::new(6.35, 20.0)),
+            6.35,
+            30.0,
+            20.0,
+            30.0,
+            2,
+            crate::compute::tool_config::ToolMaterial::Carbide,
+        )
+    }
+
+    fn vbit_tool() -> ToolDefinition {
+        ToolDefinition::new(
+            Box::new(VBitEndmill::new(6.35, 90.0, 20.0)),
             6.35,
             30.0,
             20.0,
@@ -397,6 +416,36 @@ mod tests {
     }
 
     #[test]
+    fn plastic_without_validated_kc_refuses_material_unvalidated() {
+        // Acrylic has no fetched primary force study; the gate must
+        // refuse rather than predict force from a fabricated constant.
+        let trace = trace_with(vec![cutting_sample(
+            0,
+            1.0,
+            std::f64::consts::FRAC_PI_2,
+            1000.0,
+        )]);
+        let v = evaluate(
+            0,
+            &tool(),
+            &Material::Plastic {
+                family: crate::material::PlasticFamily::Acrylic,
+            },
+            &shapeoko_makita(),
+            Some(&trace),
+            None,
+            OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        assert!(matches!(
+            v,
+            PowerVerdict::Unmodeled {
+                reason: UnmodeledReason::MaterialUnvalidated
+            }
+        ));
+    }
+
+    #[test]
     fn custom_material_returns_material_unvalidated() {
         let trace = trace_with(vec![cutting_sample(
             0,
@@ -499,6 +548,47 @@ mod tests {
             }
             other => panic!("expected Exceeds, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn vbit_triangular_cross_section_halves_power_vs_flat() {
+        // Same DOC / arc / feed on a 6.35 mm flat vs a 6.35 mm 90° V-bit.
+        // The flat removes a rectangular slab; the V-bit removes a
+        // triangular groove of half the area, so its predicted power must
+        // be ~half. (engagement_radius differs by shape, so we compare the
+        // ratio of peak_kw, which isolates the cross-section model: both
+        // tools see the same radial_width at this DOC because a 90° V-bit's
+        // width_at_height(1.0) = 1.0 ≠ flat's 3.175 — so we instead assert
+        // the V-bit power equals 0.5 · kc_eff · doc · woc_vbit · feed.)
+        let doc = 1.0;
+        let arc = std::f64::consts::FRAC_PI_2;
+        let feed = 1000.0;
+        let trace = trace_with(vec![cutting_sample(0, doc, arc, feed)]);
+        let mat = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let v = evaluate(
+            0,
+            &vbit_tool(),
+            &mat,
+            &shapeoko_makita(),
+            Some(&trace),
+            None,
+            OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        let peak = match v {
+            PowerVerdict::Within { peak_kw, .. } | PowerVerdict::Exceeds { peak_kw, .. } => peak_kw,
+            other => panic!("expected modeled verdict, got {other:?}"),
+        };
+        // Hand compute: engagement_radius(1.0) for 90° V-bit = 1.0 mm;
+        // radial_width = (arc/π)·2·1.0 = 1.0; triangular area = 0.5·1·1 =
+        // 0.5 mm². Kc_eff = 2.5 · 15 = 37.5. P = 37.5·0.5·1000/60e6.
+        let expected = 37.5 * 0.5 * 1.0 * feed / 60_000_000.0;
+        assert!(
+            (peak - expected).abs() / expected < 0.02,
+            "V-bit triangular power {peak} should match {expected}"
+        );
     }
 
     #[test]

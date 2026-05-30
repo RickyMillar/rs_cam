@@ -120,6 +120,11 @@ pub(crate) fn material_to_lut(material: &Material) -> (MaterialFamily, HardnessK
             }
             PlasticFamily::Generic => (MaterialFamily::Acrylic, HardnessKind::ShoreD, 80.0),
         },
+        Material::Aluminum { alloy } => (
+            MaterialFamily::Aluminum,
+            HardnessKind::Hb,
+            alloy.brinell_hb(),
+        ),
         Material::Foam { .. } => {
             // Foam has no LUT data — will fall through to formula
             (MaterialFamily::Softwood, HardnessKind::Janka, 200.0)

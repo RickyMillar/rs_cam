@@ -19,6 +19,10 @@ pub enum Vendor {
     Autodesk,
     #[serde(rename = "carbide3d")]
     Carbide3d,
+    /// Helical Solutions — added 2026-05-30 for 6061-T6 endmill chipload
+    /// rows from `harvey_helical_garr.json`. Step 1D of the
+    /// `feeds_data_ingest_2026-05-30_phased_plan` ingest.
+    Helical,
 }
 
 /// Evidence quality grade: A = vendor chart, B = derived, C = community.
@@ -122,6 +126,18 @@ pub struct VendorObservation {
     pub hardness_kind: Option<HardnessKind>,
     pub hardness_value: Option<f64>,
     pub diameter_mm: f64,
+    /// V-bit / chamfer-bit included (full) angle in degrees. Lets the
+    /// chipload lookup match a V-groove row to the cutter's actual cone
+    /// angle rather than its nominal diameter. `None` for non-cone rows
+    /// and older data that predates the field.
+    #[serde(default)]
+    pub included_angle_deg: Option<f64>,
+    /// Flat-tip diameter (mm) of a truncated-tip V-bit / engraving bit.
+    /// `None` for pointed bits and rows that don't record it. Data slot
+    /// for incoming flat-tip datasets; not yet consumed by matching.
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub tip_diameter_mm: Option<f64>,
     pub flute_count: u32,
     pub rpm_min: Option<f64>,
     pub rpm_max: Option<f64>,
@@ -186,7 +202,20 @@ impl VendorLut {
             include_str!("../../data/vendor_lut/observations/amana_ball_nose.json"),
             include_str!("../../data/vendor_lut/observations/amana_3d_profiling.json"),
             include_str!("../../data/vendor_lut/observations/amana_vbit.json"),
+            include_str!("../../data/vendor_lut/observations/amana_vgroove_engraving.json"),
+            include_str!("../../data/vendor_lut/observations/amana_compression.json"),
             include_str!("../../data/vendor_lut/observations/amana_facing.json"),
+            // 2026-05-30 ingest round (Phase 1C): non-wood rows from the
+            // 2026-05-29 staging — wired live now that Material variants
+            // (per-family plastics + Aluminum) and Vendor::Helical exist.
+            include_str!("../../data/vendor_lut/observations/amana_plastic_oflute.json"),
+            include_str!("../../data/vendor_lut/observations/amana_zrn_aluminum.json"),
+            include_str!(
+                "../../data/vendor_lut/observations/amana_vgroove_aluminum_acrylic.json"
+            ),
+            include_str!("../../data/vendor_lut/observations/onsrud_plastic.json"),
+            include_str!("../../data/vendor_lut/observations/whiteside_rpm_assorted.json"),
+            include_str!("../../data/vendor_lut/observations/helical_aluminum.json"),
         ];
 
         let mut observations = Vec::new();
@@ -228,8 +257,12 @@ mod tests {
         let lut = VendorLut::embedded();
         assert_eq!(
             lut.observations.len(),
-            67,
-            "expected 67 embedded observations"
+            111,
+            "expected 111 embedded observations (85 + 26 from the \
+             2026-05-30 Phase 1C ingest: 9 onsrud_plastic, 4 \
+             whiteside_rpm_assorted, 5 amana_plastic_oflute, 2 \
+             amana_zrn_aluminum, 3 amana_vgroove_aluminum_acrylic, 1 \
+             amana_compression_acrylic, 2 helical_aluminum)"
         );
     }
 
