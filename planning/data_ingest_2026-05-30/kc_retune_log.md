@@ -167,3 +167,99 @@ unchanged by the Phase 2B Kc move. If MCP smoke shows any cut
 flipping past 200 µm AND the cut is operator-known-good in
 practice, file a deflection-model finding (force arm, near-tip
 integration) — do NOT widen the bound.
+
+## Phase A baseline (post-`5a67c1d`) — 2026-05-31
+
+Per `planning/feeds_data_ingest_completion_2026-05-31.md` Phase A,
+this section captures the LUT runtime behavior **after** the Phase 4
+bulk row promotion (111 → 228 embedded rows) and **before** any
+Phase B–E additions land. Used as the empirical baseline that Phase F
+will diff against.
+
+The two-bullet decomposition mirrors the plan's split:
+
+1. **MCP smoke AS001–AS015** — operator-only (requires live GUI +
+   `--mcp`). Fill in this table after running the smoke suite.
+2. **`param_sweep` battery** — autonomous; results captured in
+   `target/sweep_baseline_5a67c1d.log` and snapshotted to
+   `planning/data_ingest_2026-05-30/sweep_snapshot_5a67c1d.tar.gz`.
+   Verdict summary recorded below the smoke table.
+
+### AS001–AS015 smoke (operator)
+
+Boot the GUI with `cargo run -p rs_cam_viz --bin rs_cam_gui -- --mcp`,
+then for each case below: `load_project` → `generate_all` →
+`run_simulation`. Record per-case peak deflection µm, chipload
+verdict, power verdict, rapid-collision count. Compare per-case peak
+µm against the Phase 2B baseline (round-10 STATE.md numbers reproduced
+in the table for convenience).
+
+| Case | Phase 2B peak µm | Phase A peak µm | Δ µm | Chipload verdict | Power verdict | Rapid collisions | Notes |
+|------|------------------|-----------------|------|------------------|---------------|------------------|-------|
+| AS001 | 0.076 | _TODO_ | | | | | |
+| AS002 | 0.053 | _TODO_ | | | | | |
+| AS003 | 0.076 | _TODO_ | | | | | |
+| AS004 | 0.005 | _TODO_ | | | | | |
+| AS005 | 0.051 | _TODO_ | | | | | |
+| AS006 | _n/a_ | _TODO_ | | | | | |
+| AS007 | _n/a_ | _TODO_ | | | | | |
+| AS008 | _n/a_ | _TODO_ | | | | | |
+| AS009 | _n/a_ | _TODO_ | | | | | |
+| AS010 | _n/a_ | _TODO_ | | | | | |
+| AS011 | _n/a_ | _TODO_ | | | | | |
+| AS012 | _n/a_ | _TODO_ | | | | | |
+| AS013 | 0.105 | _TODO_ | | | | | |
+| AS014 | _n/a_ | _TODO_ | | | | | |
+| AS015 | 0.197 | _TODO_ | | | | | |
+
+**Notes column:** record any LUT match displacement (e.g. "now matches
+Onsrud OCR softwood pocket row instead of Amana"), any verdict flip
+(Within ↔ Approximate ↔ Exceeds), or anything that warrants follow-up
+before Phase F.
+
+**Acceptance bar:** no case should regress past 200 µm. A µm increase
+within the Within band is acceptable (the new LUT row often gives a
+better-calibrated chipload). A flip to Exceeds is a finding — file
+under the deflection-model investigation policy, do NOT widen
+`EXCEEDS_BOUND_MM`.
+
+### `param_sweep` battery (autonomous)
+
+Captured 2026-05-31 via
+`cargo test --test param_sweep -- --ignored 2>&1 > target/sweep_baseline_5a67c1d.log`.
+
+| Metric | Value |
+|--------|-------|
+| cargo test result | `ok. 54 passed; 0 failed; 0 ignored` in 41.36s |
+| Total variants analyzed | 105 |
+| PASS | 96 |
+| FAIL | 0 |
+| NO_EFFECT | 9 |
+| UNEXPECTED | 0 |
+| Snapshot path | `planning/data_ingest_2026-05-30/sweep_snapshot_5a67c1d.tar.gz` (22 MB) |
+| Verdicts JSON | `planning/data_ingest_2026-05-30/sweep_verdicts_5a67c1d.json` |
+| Analyzer | `python3 toolpath_stress_test/agents/analyze_sweep.py target/param_sweeps/` |
+
+**NO_EFFECT decomposition (all known-expected, no new findings):**
+
+| Operation | Param | Value | Rule |
+|-----------|-------|-------|------|
+| face | direction | one_way | direction_change_may_not_show_in_aggregates |
+| inlay | glue_gap | 0.0 | affects_male_plug_primarily |
+| inlay | glue_gap | 0.5 | affects_male_plug_primarily |
+| pencil | bitangency_angle | 120.0 | changes_crease_detection |
+| pencil | num_offset_passes | 0.0 | more_passes_means_more_moves_if_creases_exist |
+| pencil | num_offset_passes | 3.0 | more_passes_means_more_moves_if_creases_exist |
+| pocket | climb | false | direction_reversal_may_not_show_in_aggregates |
+| profile | climb | false | direction_reversal_may_not_show_in_aggregates |
+| scallop | direction | inside_out | direction_change_may_not_show_in_aggregates |
+
+These are the same 9 sweeps that surface as NO_EFFECT on every clean
+baseline; the rule column matches `EXPECTED_EFFECTS` in
+`toolpath_stress_test/agents/analyze_sweep.py`. No silent truncation.
+
+Phase F will re-run with identical parameters and diff verdict counts.
+**Acceptance bar:** zero FAIL/UNEXPECTED regressions vs this baseline.
+NO_EFFECTs flipping to PASS (parameter that previously showed no
+effect now responds because a closer Phase B–E LUT row is winning)
+are OK and recorded as wins.
