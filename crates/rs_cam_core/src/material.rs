@@ -455,6 +455,87 @@ impl Material {
         }
     }
 
+    /// Drill-cycle depth-to-diameter ratio above which chip welding
+    /// becomes likely without a pecking cycle. Drilling rule of thumb,
+    /// not derived from `Kc`; the values are application-edge per
+    /// material class. Wood scales by Janka; sheet goods and plywood
+    /// share a single substrate-density-weighted threshold; aluminum
+    /// is the standard ~3×D limit; foam is permissive; Custom scales
+    /// roughly with the user-supplied hardness.
+    ///
+    /// Consumed by `drill_metrics::evaluate_chip_welding_risk` and
+    /// `tool_load::drill_gates::evaluate_chip_welding`. Centralised
+    /// here so adding a `Material` variant is one diff site, not
+    /// two — pre-Phase-1E this was a free function in
+    /// `drill_metrics.rs` and the Aluminum addition had to touch
+    /// that and `drill_gates::plunge_feed_envelope` separately with
+    /// matching values.
+    pub fn drill_chip_welding_threshold_dtd(&self) -> f64 {
+        match self {
+            Material::SolidWood { species } => {
+                let janka = species.janka_lbf();
+                if janka <= 700.0 {
+                    8.0 // softwood
+                } else if janka <= 1500.0 {
+                    6.0 // medium hardwood
+                } else {
+                    5.0 // dense hardwood
+                }
+            }
+            Material::Plywood { .. } | Material::SheetGood { .. } => 5.0,
+            Material::Plastic { .. } => 4.0,
+            // Aluminum chip welding starts around D/d ≈ 3 (industry
+            // rule of thumb; pecks mandatory beyond). Conservative
+            // even for 6061 — denser alloys want lower D/d.
+            Material::Aluminum { .. } => 3.0,
+            Material::Foam { .. } => 12.0,
+            Material::Custom { hardness_index, .. } => {
+                // Softer materials evacuate better. Clamp to the
+                // wood-to-foam range so a degenerate user-supplied
+                // hardness can't blow this open.
+                (8.0 / hardness_index.max(0.5)).clamp(2.0, 12.0)
+            }
+        }
+    }
+
+    /// Drill-cycle per-peck max depth-to-diameter. A single peck
+    /// deeper than this traps chips even within a pecking cycle.
+    ///
+    /// Same rationale + centralisation as
+    /// `drill_chip_welding_threshold_dtd`.
+    pub fn drill_per_peck_max_dtd(&self) -> f64 {
+        match self {
+            Material::SolidWood { .. } => 2.0,
+            Material::Plywood { .. } | Material::SheetGood { .. } => 1.5,
+            Material::Plastic { .. } => 1.0,
+            // Aluminum per-peck ≤ 1×D — standard machining-textbook
+            // limit for chip evacuation without through-coolant.
+            Material::Aluminum { .. } => 1.0,
+            Material::Foam { .. } => 4.0,
+            Material::Custom { .. } => 1.5,
+        }
+    }
+
+    /// Drill plunge feed envelope (mm/min per mm diameter): below the
+    /// min the cutter rubs / burns; above the max it breaks or
+    /// stalls. Same dispatch pattern as the chip-welding methods.
+    ///
+    /// Consumed by `tool_load::drill_gates::evaluate_plunge_feed`.
+    pub fn drill_plunge_feed_envelope_per_mm(&self) -> (f64, f64) {
+        match self {
+            Material::SolidWood { .. } => (50.0, 400.0),
+            Material::Plywood { .. } | Material::SheetGood { .. } => (40.0, 350.0),
+            Material::Plastic { .. } => (60.0, 500.0),
+            // Aluminum on a wood router is application-edge —
+            // conservative envelope (slower than wood min, lower than
+            // plastic max). Real aluminum drilling should always be
+            // vendor-LUT-driven.
+            Material::Aluminum { .. } => (40.0, 250.0),
+            Material::Foam { .. } => (100.0, 1000.0),
+            Material::Custom { .. } => (40.0, 500.0),
+        }
+    }
+
     /// Display label for UI.
     pub fn label(&self) -> String {
         match self {
