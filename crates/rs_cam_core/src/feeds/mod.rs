@@ -54,6 +54,36 @@ pub enum ToolGeometryHint {
     },
 }
 
+impl ToolGeometryHint {
+    /// Engaged chip cross-section (mm²) for the canonical power
+    /// prediction. Mirrors `MillingCutter::mrr_cross_section_mm2` —
+    /// rectangular slab `ap · ae` for endmills, triangular groove
+    /// `½ · ap · ae` for V-bits — so the Suggest path
+    /// (`feeds::calculate`) and the Sim verdict
+    /// (`tool_load::power::evaluate`) agree on what area the
+    /// `predicted_power_kw` formula multiplies by.
+    ///
+    /// The cutter trait method is the canonical source when a full
+    /// `ToolDefinition` is available; this hint-level method is the
+    /// equivalent shape contract for the feeds/calculate path that
+    /// only carries a `ToolGeometryHint`.
+    pub fn mrr_cross_section_mm2(self, axial_doc_mm: f64, radial_width_mm: f64) -> f64 {
+        match self {
+            // V-bit removes a triangular groove — half the rectangular
+            // slab a flat endmill would remove at the same DOC × WOC.
+            ToolGeometryHint::VBit { .. } => 0.5 * axial_doc_mm * radial_width_mm,
+            // Flat / Ball / Bull / TaperedBall: rectangular slab.
+            // Ball/tapered remove slightly less than the full slab at
+            // shallow DOC, but the established approximation is the
+            // same `ap · ae` the trait default uses.
+            ToolGeometryHint::Flat
+            | ToolGeometryHint::Ball
+            | ToolGeometryHint::Bull { .. }
+            | ToolGeometryHint::TaperedBall { .. } => axial_doc_mm * radial_width_mm,
+        }
+    }
+}
+
 /// Which family of operation is being calculated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperationFamily {
@@ -263,7 +293,9 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let (chip_load, vendor_rpm, vendor_source, chipload_source) =
         if let Some(lut) = input.vendor_lut {
             let query = vendor_normalize::to_lookup_query(input);
-            if let Some(result) = vendor_lookup::find_best_row(lut, &query) {
+            if let Some(result) =
+                vendor_lookup::find_best_row_for_geometry(lut, &query, &input.tool_geometry)
+            {
                 let observation_id = result.observation_id;
                 (
                     result.chip_load_mm,
@@ -424,13 +456,23 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // ramp here; downstream tool_load::power refuses with
     // `MaterialUnvalidated` so the user sees the gap explicitly rather
     // than getting a silently-fabricated feed.
+    //
+    // Power prediction routes through the canonical
+    // `tool_load::power::predicted_power_kw` helper so the Suggest path
+    // and the Sim verdict can't diverge. The cross-section uses the
+    // geometry-hint's shape-correct area (V-bit triangular,
+    // flat/ball/bull/tapered rectangular) — same contract as the
+    // cutter trait's `mrr_cross_section_mm2` the Sim verdict reads.
     let available_power = machine.power_at_rpm(rpm);
     let mut power_limited = false;
     let mut feed = raw_feed;
     let mut power_factor = 1.0;
 
     if let Some(kc) = material.kc_n_per_mm2() {
-        let required_power = (kc * ap * ae * raw_feed) / (60.0 * 1_000_000.0);
+        let cross_section =
+            input.tool_geometry.mrr_cross_section_mm2(ap, ae);
+        let required_power =
+            crate::tool_load::power::predicted_power_kw(kc, cross_section, raw_feed);
         if required_power > available_power && available_power > 0.0 {
             power_factor = available_power / required_power;
             feed = raw_feed * power_factor;
@@ -490,8 +532,14 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // Final power at actual feed. Materials without a primary-source Kc
     // report 0.0 — the consumers that need a numeric headroom (charts /
     // diagnostics) treat this as "unmodeled" rather than zero load.
+    // Same canonical helper as Step 6 above so Suggest's reported
+    // power matches the Sim verdict's prediction.
     let actual_power = match material.kc_n_per_mm2() {
-        Some(kc) => (kc * ap * ae * feed) / (60.0 * 1_000_000.0),
+        Some(kc) => {
+            let cross_section =
+                input.tool_geometry.mrr_cross_section_mm2(ap, ae);
+            crate::tool_load::power::predicted_power_kw(kc, cross_section, feed)
+        }
         None => 0.0,
     };
     let mrr = ap * ae * feed;

@@ -42,9 +42,39 @@ use super::verdict::{Confidence, EntrySpike, PowerVerdict, SampleEvidence, Unmod
 /// orientations. The rename from `ANISOTROPY_MULTIPLIER` (pre-Phase-2,
 /// value 2.5) reflects that this is a documented physical factor, not
 /// a knob to tune around under-modeled Kc.
-const GRAIN_ANISOTROPY_FACTOR: f64 = 2.0;
+///
+/// Exposed as `pub(crate)` so every Kc-consuming path
+/// (`session::compute` building `PowerLimitInputs`, the Suggest path
+/// in `feeds::mod`, the constrained-max solver in `feed_modulation`)
+/// references the single source of truth rather than re-encoding the
+/// numeric literal. Bumping this constant should produce one diff
+/// site, not five.
+pub(crate) const GRAIN_ANISOTROPY_FACTOR: f64 = 2.0;
+
+/// Predicted instantaneous spindle power (kW) given a Kc, engaged
+/// chip cross-section, and feed rate. The single canonical formula:
+///
+/// ```text
+/// P_kW = GRAIN_ANISOTROPY_FACTOR · Kc · cross_section_mm² · feed_mm_min / 60 000 000
+/// ```
+///
+/// Both the Sim verdict (`evaluate` below) and the Suggest path
+/// (`feeds::calculate` Step 6 power check) call this so the predicted
+/// numbers can never diverge. The cross-section is the cutter's
+/// shape-correct engaged area at the sample's DOC + WOC
+/// (`MillingCutter::mrr_cross_section_mm2`) — rectangular slab for
+/// endmills, triangular for V-bits.
+///
+/// `kc` is the raw material `Kc(N/mm²)` from `Material::kc_n_per_mm2()`;
+/// this helper applies the `GRAIN_ANISOTROPY_FACTOR` so callers never
+/// have to remember the multiplier. `feed_mm_min` is the per-minute
+/// linear feed (commanded or predicted).
+pub(crate) fn predicted_power_kw(kc: f64, cross_section_mm2: f64, feed_mm_min: f64) -> f64 {
+    GRAIN_ANISOTROPY_FACTOR * kc * cross_section_mm2 * feed_mm_min / 60_000_000.0
+}
 
 #[allow(clippy::too_many_arguments)]
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id, op = ?operation_kind))]
 pub fn evaluate(
     toolpath_id: usize,
     tool: &ToolDefinition,
@@ -60,6 +90,10 @@ pub fn evaluate(
     // engagement to drive a power-vs-RPM curve; the right answer is
     // "doesn't apply" not "arc engagement not captured".
     if is_plunge_only_op(operation_kind) {
+        tracing::debug!(
+            reason = "NotApplicableForOp",
+            "power gate refuses: plunge-only op has no continuous engagement"
+        );
         return PowerVerdict::Unmodeled {
             reason: UnmodeledReason::NotApplicableForOp(
                 "drill cycle — no continuous engagement".to_owned(),
@@ -67,6 +101,10 @@ pub fn evaluate(
         };
     }
     let Some(trace) = sim_trace else {
+        tracing::debug!(
+            reason = "SimulationRequired",
+            "power gate refuses: no simulation trace"
+        );
         return PowerVerdict::Unmodeled {
             reason: UnmodeledReason::SimulationRequired,
         };
@@ -77,6 +115,11 @@ pub fn evaluate(
     // unless a project-level "validated" flag exists, the safest default
     // is to refuse rather than predict force from an unvetted constant.
     if let Material::Custom { .. } = material {
+        tracing::debug!(
+            reason = "MaterialUnvalidated",
+            material = "Custom",
+            "power gate refuses: Custom material has no validated Kc"
+        );
         return PowerVerdict::Unmodeled {
             reason: UnmodeledReason::MaterialUnvalidated,
         };
@@ -87,11 +130,15 @@ pub fn evaluate(
     // Option encodes "no validated cutting-force model" — no fabricated
     // constant ever drives a force prediction.
     let Some(kc) = material.kc_n_per_mm2() else {
+        tracing::debug!(
+            reason = "MaterialUnvalidated",
+            material = %material.label(),
+            "power gate refuses: material has no primary-source Kc"
+        );
         return PowerVerdict::Unmodeled {
             reason: UnmodeledReason::MaterialUnvalidated,
         };
     };
-    let kc_eff = GRAIN_ANISOTROPY_FACTOR * kc;
 
     // Walk samples for this toolpath.
     let mut peak_power: f64 = 0.0;
@@ -139,8 +186,6 @@ pub fn evaluate(
             continue;
         }
 
-        // P_kW = Kc × DOC × WOC × feed / (60 * 1e6)
-        //
         // F-035: read the *effective* feed for this sample —
         // predicted (achieved) when the trace carries a populated
         // `predicted_feeds` map AND this `(toolpath_id, move_index)`
@@ -151,9 +196,11 @@ pub fn evaluate(
         let feed_for_power = super::effective_feed_for_sample(s, &trace.predicted_feeds);
         // Engaged chip cross-section is shape-dependent: rectangular slab
         // for endmills, triangular groove for V-bits. The cutter owns that
-        // geometry; the gate owns the material + machine physics.
+        // geometry; the gate owns the material + machine physics. Route
+        // through the canonical `predicted_power_kw` helper so this gate
+        // and the Suggest path (`feeds::calculate`) can't diverge.
         let cross_section_mm2 = tool.mrr_cross_section_mm2(s.axial_doc_mm, radial_width);
-        let p_kw = kc_eff * cross_section_mm2 * feed_for_power / 60_000_000.0;
+        let p_kw = predicted_power_kw(kc, cross_section_mm2, feed_for_power);
         let avail = machine.power_at_rpm(s.spindle_rpm as f64) * machine.safety_factor;
 
         // Route Entry-ancestry samples to the spike track; they don't
@@ -184,6 +231,10 @@ pub fn evaluate(
     if !any_arc_captured {
         // No samples carried arc data — likely capture_arc_engagement was
         // off when the trace was recorded.
+        tracing::debug!(
+            reason = "ArcEngagementNotCaptured",
+            "power gate refuses: trace lacks arc_engagement_radians on all samples"
+        );
         return PowerVerdict::Unmodeled {
             reason: UnmodeledReason::ArcEngagementNotCaptured,
         };
@@ -225,6 +276,13 @@ pub fn evaluate(
     // behaviour) — see `ToleranceBands::power_breach` doc.
     let power_trigger = peak_available_at_peak * (1.0 + tolerance.power_breach);
     if peak_available_at_peak > 0.0 && peak_power > power_trigger {
+        tracing::warn!(
+            verdict = "Exceeds",
+            peak_kw = peak_power,
+            available_kw = peak_available_at_peak,
+            ratio = peak_power / peak_available_at_peak,
+            "power gate Exceeds: peak instantaneous spindle power exceeds available × safety"
+        );
         return PowerVerdict::Exceeds {
             peak_kw: peak_power,
             available_kw,

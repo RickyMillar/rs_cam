@@ -71,7 +71,12 @@ pub enum PlywoodGrade {
 }
 
 impl PlywoodGrade {
-    fn effective_janka_lbf(self) -> f64 {
+    /// Effective Janka hardness (lbf) for the plywood grade — driven by
+    /// the dominant veneer species. Used by both `hardness_index()`
+    /// (the feed-rate scaling normaliser) and
+    /// `feeds::vendor_normalize::material_to_lut` (the LUT hardness
+    /// query) so the two paths can't drift.
+    pub fn effective_janka_lbf(self) -> f64 {
         match self {
             PlywoodGrade::Softwood => 600.0,
             PlywoodGrade::BalticBirch => 1200.0,
@@ -97,7 +102,13 @@ pub enum SheetGoodKind {
 }
 
 impl SheetGoodKind {
-    fn effective_janka_lbf(self) -> f64 {
+    /// Effective Janka hardness (lbf) for the engineered-wood sheet
+    /// good — used by both `hardness_index()` and the LUT hardness
+    /// query in `feeds::vendor_normalize::material_to_lut`. These
+    /// values are the substrate density proxy; the actual cutting-
+    /// force `Kc` lives on `Material::kc_n_per_mm2()` and is
+    /// independent.
+    pub fn effective_janka_lbf(self) -> f64 {
         match self {
             SheetGoodKind::Mdf => 1100.0,
             SheetGoodKind::Hdf => 1300.0,
@@ -259,28 +270,54 @@ impl Default for Material {
 }
 
 impl Material {
-    /// Normalized hardness index. 1.0 = soft wood baseline (Janka 600 lbf).
-    /// Formula: (Janka / 600)^0.4
+    /// Wood-Janka-normalised hardness index driving feed-rate scaling
+    /// in [`crate::feeds::calculate`]. `1.0 = soft wood baseline (Janka
+    /// 600 lbf)`; formula `(janka / 600)^0.4`.
+    ///
+    /// **Semantics caveat (read before consuming the value):** this is
+    /// a *wood-baseline* normaliser. For materials outside the wood
+    /// regime — plastics, aluminum — the value is a placeholder
+    /// scaling factor with no shared physical meaning across classes:
+    /// - Plastic: hardcoded `0.5` regardless of family (per-family
+    ///   refinement would route through `PlasticFamily::hardness()`).
+    /// - Aluminum: `(brinell / 60)^0.4` — Brinell isn't on the Janka
+    ///   scale; treat the number as a feed-rate placeholder, not a
+    ///   physical hardness.
+    /// - Foam: per-density hardcode (0.15 / 0.25 / 0.40).
+    ///
+    /// The safety-critical force-prediction path
+    /// (`Material::kc_n_per_mm2`) is independent of this and refuses
+    /// cleanly for unmeasured materials.
+    ///
+    /// `Material::Custom { hardness_index, .. }` ignores invalid user
+    /// inputs (NaN / non-positive) and falls back to the softwood
+    /// baseline of 1.0 — keeps downstream `1.0 / hardness` consumers
+    /// out of NaN territory.
     pub fn hardness_index(&self) -> f64 {
         match self {
             Material::SolidWood { species } => (species.janka_lbf() / 600.0).powf(0.4),
             Material::Plywood { grade } => (grade.effective_janka_lbf() / 600.0).powf(0.4),
             Material::SheetGood { kind } => (kind.effective_janka_lbf() / 600.0).powf(0.4),
             Material::Plastic { .. } => 0.5,
-            // Aluminum is well outside wood's Janka baseline; the
-            // hardness_index abstraction is a *wood-baseline* normaliser,
-            // not a metals one. The values below are placeholders that
-            // scale roughly with Brinell so any feed-rate derate that
-            // happens to read hardness_index doesn't return 0. The
-            // safety-critical gates that consume Kc refuse on aluminum
-            // until Phase 3 beat F.
             Material::Aluminum { alloy } => (alloy.brinell_hb() / 60.0).powf(0.4),
             Material::Foam { density } => match density {
                 FoamDensity::Low => 0.15,
                 FoamDensity::Medium => 0.25,
                 FoamDensity::High => 0.40,
             },
-            Material::Custom { hardness_index, .. } => *hardness_index,
+            Material::Custom { hardness_index, .. } => {
+                if hardness_index.is_finite() && *hardness_index > 0.0 {
+                    *hardness_index
+                } else {
+                    // Pre-Phase-1E this returned raw `*hardness_index`,
+                    // propagating NaN / negative values into the
+                    // feed-rate ramp (`1.0 / hardness` → NaN/-inf).
+                    // Fall back to the softwood baseline (1.0) so the
+                    // pipeline never serves an invalid scalar from
+                    // user-typed Custom material data.
+                    1.0
+                }
+            }
         }
     }
 
@@ -867,6 +904,40 @@ mod tests {
             Some(PlasticHardness::RockwellM(v)) if (v - 93.0).abs() < 1e-6
         ));
         assert_eq!(PlasticFamily::Generic.hardness(), None);
+    }
+
+    #[test]
+    fn custom_with_invalid_hardness_falls_back_to_softwood_baseline() {
+        // S3-12 fix: Custom material with NaN / non-positive
+        // hardness_index propagated raw values into `1.0 / hardness`
+        // consumers, producing NaN / -inf. Now coerces to 1.0
+        // (softwood baseline) so the pipeline always has a defined
+        // scalar.
+        let nan = Material::Custom {
+            name: "NaN-hardness".into(),
+            hardness_index: f64::NAN,
+            kc: 10.0,
+        };
+        assert!((nan.hardness_index() - 1.0).abs() < 1e-9);
+        let neg = Material::Custom {
+            name: "negative-hardness".into(),
+            hardness_index: -1.0,
+            kc: 10.0,
+        };
+        assert!((neg.hardness_index() - 1.0).abs() < 1e-9);
+        let zero = Material::Custom {
+            name: "zero-hardness".into(),
+            hardness_index: 0.0,
+            kc: 10.0,
+        };
+        assert!((zero.hardness_index() - 1.0).abs() < 1e-9);
+        // Valid value passes through unchanged.
+        let good = Material::Custom {
+            name: "valid".into(),
+            hardness_index: 1.4,
+            kc: 10.0,
+        };
+        assert!((good.hardness_index() - 1.4).abs() < 1e-9);
     }
 
     #[test]

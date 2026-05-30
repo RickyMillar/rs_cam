@@ -135,6 +135,34 @@ pub fn find_best_vbit_row(
     })
 }
 
+/// Canonical LUT lookup entry point — routes V-bit / chamfer queries
+/// to the angle-aware matcher, everything else to the diameter+
+/// hardness matcher. Use this from every Suggest / Explain / MCP /
+/// gate call site so a 30° V-bit query never silently matches a 90°
+/// row.
+///
+/// Pre-Phase-1E only `tool_load::chipload::evaluate` did the routing
+/// inline; the Suggest path and the GUI feeds modal called
+/// `find_best_row` directly and lost the angle constraint, so a
+/// 30° V-bit toolpath's "recommended chipload" came from whatever
+/// V-bit angle happened to win the diameter score. Centralising the
+/// dispatch here keeps that contract in one place.
+pub fn find_best_row_for_geometry(
+    lut: &VendorLut,
+    criteria: &LookupCriteria,
+    geometry: &crate::feeds::ToolGeometryHint,
+) -> Option<MatchedRow> {
+    match geometry {
+        crate::feeds::ToolGeometryHint::VBit { included_angle, .. } => {
+            find_best_vbit_row(lut, criteria, Some(*included_angle))
+        }
+        crate::feeds::ToolGeometryHint::Flat
+        | crate::feeds::ToolGeometryHint::Ball
+        | crate::feeds::ToolGeometryHint::Bull { .. }
+        | crate::feeds::ToolGeometryHint::TaperedBall { .. } => find_best_row(lut, criteria),
+    }
+}
+
 /// All compatible rows for the given criteria, sorted by composite score
 /// descending. Used by the F&S suggest module to enumerate alternatives —
 /// the gate only needs the best, the suggest module needs to consider
@@ -839,6 +867,49 @@ mod tests {
         let with_none = find_best_vbit_row(&lut, &query, None).expect("angle-less query matches");
         let via_plain = find_best_row(&lut, &query).expect("plain lookup matches");
         assert_eq!(with_none.observation_id, via_plain.observation_id);
+    }
+
+    #[test]
+    fn dispatcher_routes_vbit_to_angle_aware_lookup() {
+        // S1-2 contract: `find_best_row_for_geometry` must route a
+        // V-bit geometry hint to the angle-aware matcher, so a 90°
+        // query never silently lands a 120° row. With dispatcher,
+        // identical to calling find_best_vbit_row directly; without
+        // dispatcher, the plain find_best_row would ignore the angle.
+        let lut = embedded_lut();
+        let query = vbit_query(6.0, MaterialFamily::Hardwood, 1450.0);
+        let geom = crate::feeds::ToolGeometryHint::VBit {
+            included_angle: 90.0,
+            tip_diameter: 0.0,
+        };
+        let via_dispatch = find_best_row_for_geometry(&lut, &query, &geom)
+            .expect("dispatcher must reach the 90° row");
+        let via_direct = find_best_vbit_row(&lut, &query, Some(90.0))
+            .expect("direct angle-aware lookup must reach the 90° row");
+        assert_eq!(via_dispatch.observation_id, via_direct.observation_id);
+    }
+
+    #[test]
+    fn dispatcher_routes_flat_to_plain_lookup() {
+        // Non-V-bit geometry falls through to find_best_row — angle
+        // gate doesn't apply. Identical to calling find_best_row.
+        let lut = embedded_lut();
+        let query = LookupQuery {
+            tool_family: ToolFamily::FlatEnd,
+            tool_subfamily: None,
+            diameter_mm: 6.0,
+            flute_count: 2,
+            material_family: MaterialFamily::Softwood,
+            hardness_kind: Some(HardnessKind::Janka),
+            hardness_value: Some(600.0),
+            operation_family: LutOperationFamily::Adaptive,
+            pass_role: LutPassRole::Roughing,
+        };
+        let geom = crate::feeds::ToolGeometryHint::Flat;
+        let via_dispatch =
+            find_best_row_for_geometry(&lut, &query, &geom).expect("dispatch must match flat");
+        let via_direct = find_best_row(&lut, &query).expect("plain must match flat");
+        assert_eq!(via_dispatch.observation_id, via_direct.observation_id);
     }
 
     #[test]
