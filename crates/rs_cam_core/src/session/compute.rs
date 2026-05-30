@@ -2877,6 +2877,20 @@ mod tests {
             let mut s = make_session();
             let mut stock = s.stock_config().clone();
             stock.workholding_rigidity = workholding;
+            // Use a Custom material so the suggest path takes the
+            // hardness/Kc fallback model rather than a vendor-LUT match.
+            // The 2026-05-31 Phase 4 promotion added Onsrud-grade 6.35 mm
+            // softwood pocket rows whose chipload max saturates the
+            // suggested feed at both rigidity levels — that's correct
+            // behavior for the suggest pipeline but defeats this test's
+            // *intent*, which is to verify rigidity flows consistently
+            // through both `suggest_for_operation` and the diagnostic
+            // baseline. Custom material isolates the rigidity scaler.
+            stock.material = crate::material::Material::Custom {
+                name: "test_workholding_fixture".to_owned(),
+                hardness_index: 1.5,
+                kc: 25.0,
+            };
             s.set_stock_config(stock);
             let tool = s.tools()[0].clone();
             let mut tc = make_tc(tool.id.0);

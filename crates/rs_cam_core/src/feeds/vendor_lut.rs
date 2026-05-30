@@ -207,32 +207,70 @@ pub struct VendorLut {
     pub observations: Vec<VendorObservation>,
 }
 
-impl VendorLut {
-    /// Load from embedded Amana data (compile-time).
-    pub fn embedded() -> Self {
-        let files: &[&str] = &[
-            include_str!("../../data/vendor_lut/observations/amana_flat_end.json"),
-            include_str!("../../data/vendor_lut/observations/amana_ball_nose.json"),
-            include_str!("../../data/vendor_lut/observations/amana_3d_profiling.json"),
-            include_str!("../../data/vendor_lut/observations/amana_vbit.json"),
-            include_str!("../../data/vendor_lut/observations/amana_vgroove_engraving.json"),
-            include_str!("../../data/vendor_lut/observations/amana_compression.json"),
-            include_str!("../../data/vendor_lut/observations/amana_facing.json"),
-            // 2026-05-30 ingest round (Phase 1C): non-wood rows from the
-            // 2026-05-29 staging — wired live now that Material variants
-            // (per-family plastics + Aluminum) and Vendor::Helical exist.
-            include_str!("../../data/vendor_lut/observations/amana_plastic_oflute.json"),
-            include_str!("../../data/vendor_lut/observations/amana_zrn_aluminum.json"),
-            include_str!(
-                "../../data/vendor_lut/observations/amana_vgroove_aluminum_acrylic.json"
-            ),
-            include_str!("../../data/vendor_lut/observations/onsrud_plastic.json"),
-            include_str!("../../data/vendor_lut/observations/whiteside_rpm_assorted.json"),
-            include_str!("../../data/vendor_lut/observations/helical_aluminum.json"),
-        ];
+/// Compile-time list of `(filename, json_contents)` tuples for the
+/// embedded vendor LUT. Shared between the runtime loader and the
+/// strict-parse test so a schema-violating file can't silently drop
+/// rows from the LUT — production parsing stays best-effort (forward
+/// compat for partial schema changes) and the test fails loud with
+/// the offending filename.
+///
+/// Add new sources here; keep `industrial_only/` files OUT — they
+/// document data we deliberately don't load.
+const EMBEDDED_FILES: &[(&str, &str)] = &[
+    ("amana_flat_end.json",
+        include_str!("../../data/vendor_lut/observations/amana_flat_end.json")),
+    ("amana_ball_nose.json",
+        include_str!("../../data/vendor_lut/observations/amana_ball_nose.json")),
+    ("amana_3d_profiling.json",
+        include_str!("../../data/vendor_lut/observations/amana_3d_profiling.json")),
+    ("amana_vbit.json",
+        include_str!("../../data/vendor_lut/observations/amana_vbit.json")),
+    ("amana_vgroove_engraving.json",
+        include_str!("../../data/vendor_lut/observations/amana_vgroove_engraving.json")),
+    ("amana_compression.json",
+        include_str!("../../data/vendor_lut/observations/amana_compression.json")),
+    ("amana_facing.json",
+        include_str!("../../data/vendor_lut/observations/amana_facing.json")),
+    // 2026-05-30 ingest round (Phase 1C): non-wood rows from the
+    // 2026-05-29 staging — wired live now that Material variants
+    // (per-family plastics + Aluminum) and Vendor::Helical exist.
+    ("amana_plastic_oflute.json",
+        include_str!("../../data/vendor_lut/observations/amana_plastic_oflute.json")),
+    ("amana_zrn_aluminum.json",
+        include_str!("../../data/vendor_lut/observations/amana_zrn_aluminum.json")),
+    ("amana_vgroove_aluminum_acrylic.json",
+        include_str!("../../data/vendor_lut/observations/amana_vgroove_aluminum_acrylic.json")),
+    ("onsrud_plastic.json",
+        include_str!("../../data/vendor_lut/observations/onsrud_plastic.json")),
+    ("whiteside_rpm_assorted.json",
+        include_str!("../../data/vendor_lut/observations/whiteside_rpm_assorted.json")),
+    ("helical_aluminum.json",
+        include_str!("../../data/vendor_lut/observations/helical_aluminum.json")),
+    // 2026-05-30 ingest round (Phase 4): bulk LUT row promotion of the
+    // staged data collected by the Phase 3 agent fleet. See
+    // planning/feeds_data_ingest_phase4_2026-05-31.md for per-source
+    // counts and the Freud industrial namespacing decision.
+    ("amana_long_tail.json",
+        include_str!("../../data/vendor_lut/observations/amana_long_tail.json")),
+    ("onsrud_ocr.json",
+        include_str!("../../data/vendor_lut/observations/onsrud_ocr.json")),
+    ("whiteside_fusion360.json",
+        include_str!("../../data/vendor_lut/observations/whiteside_fusion360.json")),
+    ("freud_solid_carbide.json",
+        include_str!("../../data/vendor_lut/observations/freud_solid_carbide.json")),
+    ("idcwoodcraft_millmage.json",
+        include_str!("../../data/vendor_lut/observations/idcwoodcraft_millmage.json")),
+];
 
+impl VendorLut {
+    /// Load from embedded vendor data (compile-time). Best-effort: a file
+    /// that fails to deserialize is silently skipped so a partial schema
+    /// change doesn't crash the runtime. The `test_embedded_strict_parse`
+    /// test exercises the strict path and fails noisily on bad files —
+    /// silent dropouts are a CI failure, not a runtime one.
+    pub fn embedded() -> Self {
         let mut observations = Vec::new();
-        for json in files {
+        for (_name, json) in EMBEDDED_FILES {
             if let Ok(file) = serde_json::from_str::<ObservationFile>(json) {
                 observations.extend(file.observations);
             }
@@ -265,17 +303,30 @@ impl VendorLut {
 mod tests {
     use super::*;
 
+    /// Strict-parse every embedded file individually so a schema
+    /// violation surfaces with the offending filename — `embedded()`
+    /// is intentionally best-effort and would otherwise silently drop
+    /// a broken file's rows (caught only by the count assertion).
+    #[test]
+    fn test_embedded_strict_parse() {
+        for (name, json) in EMBEDDED_FILES {
+            serde_json::from_str::<ObservationFile>(json).unwrap_or_else(|e| {
+                panic!("strict parse failed for {name}: {e}")
+            });
+        }
+    }
+
     #[test]
     fn test_embedded_loads_all_observations() {
         let lut = VendorLut::embedded();
         assert_eq!(
             lut.observations.len(),
-            111,
-            "expected 111 embedded observations (85 + 26 from the \
-             2026-05-30 Phase 1C ingest: 9 onsrud_plastic, 4 \
-             whiteside_rpm_assorted, 5 amana_plastic_oflute, 2 \
-             amana_zrn_aluminum, 3 amana_vgroove_aluminum_acrylic, 1 \
-             amana_compression_acrylic, 2 helical_aluminum)"
+            228,
+            "expected 228 embedded observations (111 baseline + 117 from the \
+             2026-05-30 Phase 4 bulk promotion: 37 amana_long_tail, 47 \
+             onsrud_ocr, 13 whiteside_fusion360, 10 freud_solid_carbide \
+             [hobby only — 4 industrial-only Freud 1/2\" rows live under \
+             industrial_only/ and are not loaded], 10 idcwoodcraft_millmage)"
         );
     }
 
