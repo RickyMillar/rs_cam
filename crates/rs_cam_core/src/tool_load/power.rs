@@ -2,11 +2,15 @@
 //! power × machine safety factor.
 //!
 //! `P_kW = Kc_eff × axial_doc × radial_width × feed / 60_000_000` where:
-//! - `Kc_eff = 2.5 × material.kc_n_per_mm2()` is a worst-case anisotropy
-//!   multiplier. Real wood Kc varies 2-3× with grain direction; we don't
-//!   model grain, so we use the upper bound of the published range.
-//!   Equivalently: any predicted power below 1/2.5 of the machine limit
-//!   is *guaranteed* safe regardless of grain orientation.
+//! - `Kc_eff = GRAIN_ANISOTROPY_FACTOR × material.kc_n_per_mm2()`.
+//!   `GRAIN_ANISOTROPY_FACTOR = 2.0` is the measured directional spread
+//!   of specific cutting force for wood-class materials per Pałubicki
+//!   2021 (DOI 10.3390/ma14092208, particleboard peripheral up-milling
+//!   across grain orientations). Pre-Phase-2 the factor was 2.5 — a
+//!   magic number chosen to absorb under-modeled `Kc`. Phase 2B paired
+//!   the rename + value change with literature-anchored sheet-good Kc
+//!   so the product `Kc × factor` reflects physics rather than the old
+//!   absorption split.
 //! - `radial_width = (arc_engagement_radians / π) × engagement_radius × 2`
 //!   is an arc-length-equivalent slab width. Honest within isotropy
 //!   bounds because Phase 2's arc engagement replaced the old cylinder-
@@ -32,8 +36,13 @@ use crate::toolpath_spans::Span;
 use super::locality::SpanLookup;
 use super::verdict::{Confidence, EntrySpike, PowerVerdict, SampleEvidence, UnmodeledReason};
 
-/// Worst-case anisotropy multiplier on Kc. See module-level doc.
-const ANISOTROPY_MULTIPLIER: f64 = 2.5;
+/// Wood grain anisotropy factor on Kc — Pałubicki 2021 (DOI
+/// 10.3390/ma14092208) measured the directional spread of specific
+/// cutting force for particleboard peripheral up-milling across grain
+/// orientations. The rename from `ANISOTROPY_MULTIPLIER` (pre-Phase-2,
+/// value 2.5) reflects that this is a documented physical factor, not
+/// a knob to tune around under-modeled Kc.
+const GRAIN_ANISOTROPY_FACTOR: f64 = 2.0;
 
 #[allow(clippy::too_many_arguments)]
 pub fn evaluate(
@@ -82,7 +91,7 @@ pub fn evaluate(
             reason: UnmodeledReason::MaterialUnvalidated,
         };
     };
-    let kc_eff = ANISOTROPY_MULTIPLIER * kc;
+    let kc_eff = GRAIN_ANISOTROPY_FACTOR * kc;
 
     // Walk samples for this toolpath.
     let mut peak_power: f64 = 0.0;
@@ -186,7 +195,7 @@ pub fn evaluate(
         )
     } else {
         Confidence::Approximate(
-            "isotropic Kc with 2.5× anisotropy multiplier; no helix/grain decomposition".to_owned(),
+            "isotropic Kc with 2.0× grain anisotropy factor (Pałubicki 2021); no helix/grain decomposition".to_owned(),
         )
     };
 
@@ -481,8 +490,8 @@ mod tests {
         // 1000 mm/min feed:
         //   engagement_radius = 3.175
         //   radial_width = (π/2 / π) × 3.175 × 2 = 3.175
-        //   Kc_eff = 2.5 × 15 = 37.5 N/mm²
-        //   P_kW = 37.5 × 1 × 3.175 × 1000 / 60e6 ≈ 0.00198 kW
+        //   Kc_eff = 2.0 × 15 = 30.0 N/mm² (Phase 2B grain anisotropy)
+        //   P_kW = 30.0 × 1 × 3.175 × 1000 / 60e6 ≈ 0.00159 kW
         // Shapeoko Makita ≈ 0.71 kW × 0.8 safety = 0.568. Within, and the
         // verdict must surface the available headroom for UI rendering.
         let trace = trace_with(vec![cutting_sample(
@@ -583,8 +592,9 @@ mod tests {
         };
         // Hand compute: engagement_radius(1.0) for 90° V-bit = 1.0 mm;
         // radial_width = (arc/π)·2·1.0 = 1.0; triangular area = 0.5·1·1 =
-        // 0.5 mm². Kc_eff = 2.5 · 15 = 37.5. P = 37.5·0.5·1000/60e6.
-        let expected = 37.5 * 0.5 * 1.0 * feed / 60_000_000.0;
+        // 0.5 mm². Kc_eff = 2.0 · 15 = 30.0 (Phase 2B grain anisotropy).
+        // P = 30.0·0.5·1000/60e6.
+        let expected = 30.0 * 0.5 * 1.0 * feed / 60_000_000.0;
         assert!(
             (peak - expected).abs() / expected < 0.02,
             "V-bit triangular power {peak} should match {expected}"

@@ -31,9 +31,10 @@
 //!
 //! ## Modeling assumptions
 //!
-//! - **Raw `Kc(material)`**, no anisotropy multiplier. Static deflection
-//!   responds to sustained mean force, not the transient grain spikes the
-//!   power-safety 2.5× bound is scoped to.
+//! - **Raw `Kc(material)`**, no grain-anisotropy factor. Static
+//!   deflection responds to sustained mean force, not the transient
+//!   grain spikes the power-safety 2.0× factor (Pałubicki 2021,
+//!   `tool_load::power::GRAIN_ANISOTROPY_FACTOR`) is scoped to.
 //! - Force is treated as a point load at the midpoint of axial
 //!   engagement. Distributing along the engaged depth would refine the
 //!   moment integral by under 10 % for fully-engaged flat endmills,

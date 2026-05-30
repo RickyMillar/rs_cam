@@ -1515,8 +1515,10 @@ impl ProjectSession {
                 machine_profile.power_at_rpm(spindle_rpm as f64) * machine_profile.safety_factor;
             let power_inputs = match kc_opt {
                 Some(kc) if available_kw > 0.0 => Some(PowerLimitInputs {
-                    // tool_load::power uses 2.5× anisotropy multiplier.
-                    kc_eff_n_per_mm2: 2.5 * kc,
+                    // Phase 2B (2026-05-30): tool_load::power uses
+                    // GRAIN_ANISOTROPY_FACTOR = 2.0 (Pałubicki 2021,
+                    // DOI 10.3390/ma14092208).
+                    kc_eff_n_per_mm2: 2.0 * kc,
                     engagement_diameter_mm: engagement_dia,
                     available_kw,
                 }),
