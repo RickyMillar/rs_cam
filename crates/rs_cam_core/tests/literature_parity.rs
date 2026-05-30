@@ -272,6 +272,79 @@ fn aluminum_brinell_matches_asm_anchors() {
     );
 }
 
+#[test]
+fn aluminum_brinell_2024_t3_matches_asm_anchor() {
+    // Phase C 2026-05-31. ASM matweb 2024-T3 entry, verbatim
+    // "Hardness, Brinell  120  120  AA; Typical; 500 g load; 10 mm ball".
+    // Source: asm.matweb.com/search/SpecificMaterial.asp?bassnum=ma2024t3
+    // (fetched via curl -sk due to TLS chain; content matches the
+    // public ASM page). See planning/data_ingest_2026-05-30/
+    // hardness_extra.md H.2.
+    within_pct(
+        AluminumAlloy::Alloy2024T3.brinell_hb(),
+        120.0,
+        0.05,
+        "ASM Aerospace Specification Metals 2024-T3 Brinell — hardness_extra.md H.2",
+    );
+}
+
+#[test]
+fn aluminum_brinell_5052_h32_matches_asm_anchor() {
+    // Phase C 2026-05-31. ASM matweb 5052-H32 entry, verbatim
+    // "Hardness, Brinell  60  60  AA; Typical; 500 g load; 10 mm ball".
+    within_pct(
+        AluminumAlloy::Alloy5052H32.brinell_hb(),
+        60.0,
+        0.05,
+        "ASM Aerospace Specification Metals 5052-H32 Brinell — hardness_extra.md H.2",
+    );
+}
+
+#[test]
+fn aluminum_brinell_3003_h14_matches_makeitfrom_anchor() {
+    // Phase C 2026-05-31. MakeItFrom 3003-H14 entry — ASM matweb
+    // returns HTTP 500 for ma3003*, so MakeItFrom is the primary
+    // source. Verbatim "Brinell Hardness    42". ASTM B647 implied
+    // by the Brinell scale name but not echoed on per-alloy page.
+    within_pct(
+        AluminumAlloy::Alloy3003H14.brinell_hb(),
+        42.0,
+        0.05,
+        "MakeItFrom 3003-H14 Brinell — hardness_extra.md H.2 (ASM not hosted)",
+    );
+}
+
+#[test]
+fn aluminum_brinell_1100_o_matches_makeitfrom_anchor() {
+    // Phase C 2026-05-31. MakeItFrom 1100-O entry — like 3003,
+    // ASM matweb returns HTTP 500 for ma1100*. Verbatim
+    // "Brinell Hardness    23". Softest production aluminum
+    // (commercially pure, annealed).
+    within_pct(
+        AluminumAlloy::Alloy1100O.brinell_hb(),
+        23.0,
+        0.05,
+        "MakeItFrom 1100-O Brinell — hardness_extra.md H.2 (ASM not hosted)",
+    );
+}
+
+#[test]
+fn aluminum_brinell_7050_t7651_matches_asm_anchor() {
+    // Phase C 2026-05-31. ASM matweb 7050-T7651 entry, verbatim
+    // "Hardness, Brinell  147  147  500 kg load with 10 mm ball.
+    // Calculated value." Kaiser Aluminum mill datasheet reports
+    // 150 on the same alloy/temper (Mechanical Properties table
+    // Brinell column); 147 vs 150 agree within source rounding.
+    // We use the ASM-calculated 147 to stay consistent with the
+    // matweb-primary pattern used for 6061/7075.
+    within_pct(
+        AluminumAlloy::Alloy7050T7651.brinell_hb(),
+        147.0,
+        0.05,
+        "ASM Aerospace Specification Metals 7050-T7651 Brinell (calc) — hardness_extra.md H.2",
+    );
+}
+
 // ─── Plywood / sheet-good Janka anchors used by vendor_normalize ─────
 
 #[test]
