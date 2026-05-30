@@ -260,6 +260,15 @@ const EMBEDDED_FILES: &[(&str, &str)] = &[
         include_str!("../../data/vendor_lut/observations/freud_solid_carbide.json")),
     ("idcwoodcraft_millmage.json",
         include_str!("../../data/vendor_lut/observations/idcwoodcraft_millmage.json")),
+    // 2026-05-31 (Phase B of the completion plan): Garr Aluminum
+    // Milling Guide rows, split per-series from the staged 2026-05-29
+    // file. Low-Range page (3 chart entries × 242M-2f / 842M-2f / A3-3f
+    // = 9 rows) + High-Range A3-only page (HEM + finish = 2 rows) = 11
+    // rows. Mid-Range 142M/143M rows and General-Purpose rows were
+    // skipped — see planning/feeds_data_ingest_phaseB_2026-05-31.md
+    // for the row-count decomposition and skip rationale.
+    ("garr_aluminum.json",
+        include_str!("../../data/vendor_lut/observations/garr_aluminum.json")),
 ];
 
 impl VendorLut {
@@ -321,12 +330,13 @@ mod tests {
         let lut = VendorLut::embedded();
         assert_eq!(
             lut.observations.len(),
-            228,
-            "expected 228 embedded observations (111 baseline + 117 from the \
-             2026-05-30 Phase 4 bulk promotion: 37 amana_long_tail, 47 \
-             onsrud_ocr, 13 whiteside_fusion360, 10 freud_solid_carbide \
-             [hobby only — 4 industrial-only Freud 1/2\" rows live under \
-             industrial_only/ and are not loaded], 10 idcwoodcraft_millmage)"
+            239,
+            "expected 239 embedded observations (228 post-Phase-4 + 11 Garr \
+             aluminum from Phase B 2026-05-31: Low-Range page split per-series \
+             into 242M-2f / 842M-2f / A3-3f for 3 chart entries = 9 rows, \
+             plus High-Range A3-only HEM + finish = 2 rows; Mid-Range 142M/143M \
+             and General-Purpose rows skipped — see \
+             planning/feeds_data_ingest_phaseB_2026-05-31.md)"
         );
     }
 
