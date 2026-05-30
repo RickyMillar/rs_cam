@@ -38,7 +38,7 @@
 
 use crate::compute::catalog::OperationType;
 use crate::feeds::ToolGeometryHint;
-use crate::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_row};
+use crate::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_row, find_best_vbit_row};
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily};
 use crate::feeds::vendor_normalize::material_to_lut;
 use crate::material::Material;
@@ -88,6 +88,35 @@ fn lut_nominal_arc_rad(row: &LookupResult) -> Option<f64> {
 
 pub(super) fn embedded_lut() -> &'static crate::feeds::VendorLut {
     crate::feeds::embedded_vendor_lut()
+}
+
+/// Cross-vendor DOC-derating rule (Amana + Onsrud, verbatim from both
+/// `amana_compression.json` and `onsrud_plastic.json` rows' `ap_rule`):
+///
+/// > "1×D use recommended chip load; 2×D reduce 25%; 3×D reduce 50%."
+///
+/// Translated to a piecewise linear scale on the vendor-LUT chipload
+/// bounds, clamped at 3×D to keep deeper extrapolations from going
+/// negative. The ratio is the toolpath's peak axial DOC over the
+/// cutter's effective lookup diameter at that depth — the same basis
+/// the LUT lookup uses for diameter matching.
+///
+/// | ratio (DOC/D) | scale  |
+/// |---------------|--------|
+/// | ≤ 1.0         | 1.000  |
+/// | 2.0           | 0.750  |
+/// | 3.0           | 0.500  |
+/// | ≥ 3.0         | 0.500 (clamped)  |
+pub(super) fn doc_derating_scale(ratio: f64) -> f64 {
+    if !ratio.is_finite() || ratio <= 1.0 {
+        1.0
+    } else if ratio <= 2.0 {
+        1.0 - 0.25 * (ratio - 1.0)
+    } else if ratio <= 3.0 {
+        0.75 - 0.25 * (ratio - 2.0)
+    } else {
+        0.5
+    }
 }
 
 use super::verdict::{
@@ -330,7 +359,20 @@ pub fn evaluate(
         operation_family,
         pass_role,
     };
-    let Some(result) = find_best_row(lut, &query) else {
+    // V-bit / chamfer cutters route to the angle-aware lookup so a row is
+    // matched to the cutter's cone angle (when both are known), not just
+    // its engaged diameter. Other families use the diameter/hardness lookup
+    // unchanged.
+    let result = if tool_family == ToolFamily::ChamferVbit {
+        let query_angle = match geometry_hint {
+            ToolGeometryHint::VBit { included_angle, .. } => Some(included_angle),
+            _ => None,
+        };
+        find_best_vbit_row(lut, &query, query_angle)
+    } else {
+        find_best_row(lut, &query)
+    };
+    let Some(result) = result else {
         return ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::NoVendorData,
         };
@@ -347,6 +389,15 @@ pub fn evaluate(
             };
         }
     };
+    // DOC-derating (cross-vendor-confirmed rule). Vendor LUT chipload
+    // bounds are authored at 1×D axial DOC; deeper passes must reduce
+    // chipload to keep chip-evacuation viable. Apply the piecewise
+    // scale once per toolpath using the peak axial DOC, so the
+    // reported bounds match what the trip actually used.
+    let lookup_diameter_at_peak = tool.lookup_diameter_at(lookup_axial_doc_mm).max(1e-9);
+    let doc_ratio = lookup_axial_doc_mm / lookup_diameter_at_peak;
+    let doc_scale = doc_derating_scale(doc_ratio);
+    let (min, max) = (min.map(|m| m * doc_scale), max * doc_scale);
     let bounds = ChipBounds {
         min_mm_per_tooth: min,
         max_mm_per_tooth: max,
@@ -782,6 +833,31 @@ mod tests {
             predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
             modulated_feeds: std::collections::BTreeMap::new(),
             modulation_summaries: std::collections::BTreeMap::new(),        }
+    }
+
+    /// Phase 1E unit tests for the cross-vendor DOC-derating scale
+    /// (Amana + Onsrud verbatim rule: 1×D=1.0, 2×D=0.75, 3×D=0.5,
+    /// clamped at 3×D).
+    #[test]
+    fn doc_derating_unscaled_below_1x_d() {
+        assert!((doc_derating_scale(0.5) - 1.0).abs() < 1e-9);
+        assert!((doc_derating_scale(0.0) - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn doc_derating_25pct_at_2x_d() {
+        assert!((doc_derating_scale(2.0) - 0.75).abs() < 1e-9);
+    }
+
+    #[test]
+    fn doc_derating_50pct_at_3x_d() {
+        assert!((doc_derating_scale(3.0) - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn doc_derating_clamps_at_3x_d() {
+        assert!((doc_derating_scale(5.0) - 0.5).abs() < 1e-9);
+        assert!((doc_derating_scale(100.0) - 0.5).abs() < 1e-9);
     }
 
     #[test]

@@ -61,8 +61,12 @@ pub fn draw(
             ).on_hover_text(
                 "Specific cutting force (N/mm\u{00B2}). Used to calculate spindle load and recommended feed rates. Higher Kc = harder to cut."
             );
+            let kc_text = match stock.material.kc_n_per_mm2() {
+                Some(kc) => format!("{kc:.1} N/mm\u{00B2}"),
+                None => "—".to_owned(),
+            };
             ui.label(
-                egui::RichText::new(format!("{:.1} N/mm\u{00B2}", stock.material.kc_n_per_mm2()))
+                egui::RichText::new(kc_text)
                     .small()
                     .color(egui::Color32::from_rgb(140, 140, 150)),
             );

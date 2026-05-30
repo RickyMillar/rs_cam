@@ -354,9 +354,12 @@ mod tests {
 
     #[test]
     fn fallback_formula_path_is_used_without_matching_lut_row() {
+        // 200 mm exceeds 10x the largest embedded flat-end pocket row
+        // (12.7 mm compression spiral), so no row passes the diameter
+        // sanity floor and the empirical fallback must take over.
         let result = suggest_params(SuggestParamsInput {
             op_type: OperationType::Pocket,
-            tool: &tool(123.0),
+            tool: &tool(200.0),
             machine: &MachineProfile::default(),
             material: &Material::default(),
             workholding: WorkholdingRigidity::Medium,

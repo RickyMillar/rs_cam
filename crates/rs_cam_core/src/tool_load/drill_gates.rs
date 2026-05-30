@@ -74,6 +74,10 @@ pub fn plunge_feed_envelope(material: &Material) -> (f64, f64) {
         Material::SolidWood { .. } => (50.0, 400.0),
         Material::Plywood { .. } | Material::SheetGood { .. } => (40.0, 350.0),
         Material::Plastic { .. } => (60.0, 500.0),
+        // Aluminum on a wood router is application-edge — conservative
+        // envelope (slower min than wood, lower max than plastic).
+        // Real aluminum drilling should always be vendor-LUT-driven.
+        Material::Aluminum { .. } => (40.0, 250.0),
         Material::Foam { .. } => (100.0, 1000.0),
         Material::Custom { .. } => (40.0, 500.0),
     }

@@ -23,7 +23,7 @@ use tracing::info;
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::feeds::embedded_vendor_lut;
 use rs_cam_core::feeds::suggest::{StockContext, SuggestParamsInput, suggest_params};
-use rs_cam_core::material::{Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
+use rs_cam_core::material::{AluminumAlloy, Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
 use rs_cam_core::session::{ProjectSession, SimulationOptions, ToolpathConfig};
 use rs_cam_core::tool_load::drill_gates::DrillGatesVerdict;
 use rs_cam_core::tool_load::verdict::ChipSide;
@@ -656,6 +656,14 @@ fn material_for_family(family: &str) -> Option<Material> {
         }),
         "plywood" => Some(Material::Plywood {
             grade: PlywoodGrade::BalticBirch,
+        }),
+        "aluminum" | "aluminium" | "6061" | "6061_t6" | "6061-t6" => {
+            Some(Material::Aluminum {
+                alloy: AluminumAlloy::Alloy6061T6,
+            })
+        }
+        "7075" | "7075_t6" | "7075-t6" => Some(Material::Aluminum {
+            alloy: AluminumAlloy::Alloy7075T6,
         }),
         _ => None,
     }

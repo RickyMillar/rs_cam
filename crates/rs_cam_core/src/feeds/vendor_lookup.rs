@@ -79,6 +79,62 @@ pub fn find_best_row(lut: &VendorLut, criteria: &LookupCriteria) -> Option<Match
     lookup_best(lut, criteria)
 }
 
+/// Maximum V-bit included-angle mismatch (degrees) tolerated before a
+/// vendor row is rejected for a cone cutter. A 90° bit must not be matched
+/// against a 120° V-groove row — the chip geometry and engaged width at a
+/// given depth differ too much for a chipload envelope to carry over. Rows
+/// that don't record an angle (legacy data) are exempt from the gate and
+/// scored neutrally, so V-bit lookups never regress below `find_best_row`.
+const VBIT_ANGLE_TOLERANCE_DEG: f64 = 20.0;
+
+/// Bonus for an exact V-bit angle match, decaying linearly to 0 at the
+/// tolerance edge. Sized to dominate the diameter-proximity term (≤ 200)
+/// so a same-angle row outranks a closer-diameter wrong-angle row.
+const VBIT_ANGLE_MATCH_BONUS: f64 = 200.0;
+
+/// Angle-aware variant of [`find_best_row`] for V-bit / chamfer cutters.
+///
+/// When both the query and a candidate row carry an included angle, rows
+/// whose angle differs by more than [`VBIT_ANGLE_TOLERANCE_DEG`] are
+/// rejected and closer-angle rows score higher. When either side lacks an
+/// angle the row passes through with neutral scoring, so this never does
+/// worse than `find_best_row` on angle-less legacy data. This is the slot
+/// incoming V-groove datasets plug into: tag a row with `included_angle_deg`
+/// and it becomes selectable only for cutters of that cone angle.
+pub fn find_best_vbit_row(
+    lut: &VendorLut,
+    criteria: &LookupCriteria,
+    query_included_angle_deg: Option<f64>,
+) -> Option<MatchedRow> {
+    let mut best: Option<(i64, i64, usize)> = None;
+    for (i, obs) in lut.observations.iter().enumerate() {
+        if !passes_must_match(criteria, obs) {
+            continue;
+        }
+        let angle_bonus = match (query_included_angle_deg, obs.included_angle_deg) {
+            (Some(q), Some(o)) => {
+                let diff = (q - o).abs();
+                if diff > VBIT_ANGLE_TOLERANCE_DEG {
+                    continue;
+                }
+                ((1.0 - diff / VBIT_ANGLE_TOLERANCE_DEG) * VBIT_ANGLE_MATCH_BONUS) as i64
+            }
+            _ => 0,
+        };
+        let (base_score, diam_score) = score_observation(criteria, obs);
+        let score = base_score + angle_bonus;
+        if best.is_none_or(|(bs, _, _)| score > bs) {
+            best = Some((score, diam_score, i));
+        }
+    }
+    best.map(|(score, diameter_match_score, i)| {
+        // SAFETY: `i` was stored from a valid iteration over `lut.observations`
+        #[allow(clippy::indexing_slicing)]
+        let obs = &lut.observations[i];
+        build_result(obs, criteria, score, diameter_match_score, i)
+    })
+}
+
 /// All compatible rows for the given criteria, sorted by composite score
 /// descending. Used by the F&S suggest module to enumerate alternatives —
 /// the gate only needs the best, the suggest module needs to consider
@@ -465,13 +521,17 @@ mod tests {
     fn test_no_match_returns_none_when_outside_sanity_floor() {
         // Diameter ratio is gated by a generous sanity floor only
         // (`SCALE_CLAMP_LO..=SCALE_CLAMP_HI`, currently 0.1..=10.0). Past
-        // that bound the lookup hard-rejects: matching a 6mm row to a
-        // 60mm tool is well past anything a linear scale can defend.
+        // that bound the lookup hard-rejects.
+        // 2026-05-30: bumped from 100 mm to 200 mm — the Phase 1C
+        // Whiteside RD5218H 12.7 mm row brought the largest hardwood
+        // flat-end adaptive-roughing row into the wood category, so the
+        // old 100 mm probe (100/12.7 = 7.9×) sat inside the sanity
+        // floor. 200 mm restores the >10× margin (200/12.7 = 15.7×).
         let lut = embedded_lut();
         let query = LookupQuery {
             tool_family: ToolFamily::FlatEnd,
             tool_subfamily: None,
-            diameter_mm: 100.0, // 100/6 = 16.7×, outside the sanity floor
+            diameter_mm: 200.0,
             flute_count: 2,
             material_family: MaterialFamily::Softwood,
             hardness_kind: None,
@@ -618,6 +678,31 @@ mod tests {
         assert!((result.chipload_hardness_scale - 1.0).abs() < 1e-6);
     }
 
+    /// Phase 1C smoke — an aluminum query against the embedded LUT
+    /// must now reach a row. Before the 2026-05-30 ingest the LUT
+    /// carried zero `MaterialFamily::Aluminum` rows; after Phase 1C the
+    /// Helical 6061 + Amana ZrN aluminum + Garr (deferred) sources
+    /// land an aluminum-only category at every roughing-class flat-end
+    /// query in the 3–13 mm diameter window.
+    #[test]
+    fn phase_1c_aluminum_query_reaches_a_row() {
+        let lut = embedded_lut();
+        let query = LookupQuery {
+            tool_family: ToolFamily::FlatEnd,
+            tool_subfamily: None,
+            diameter_mm: 6.35,
+            flute_count: 3,
+            material_family: MaterialFamily::Aluminum,
+            hardness_kind: Some(HardnessKind::Hb),
+            hardness_value: Some(95.0),
+            operation_family: LutOperationFamily::Adaptive,
+            pass_role: LutPassRole::Roughing,
+        };
+        let result = lookup_best(&lut, &query)
+            .expect("Phase 1C wires aluminum rows live; an adaptive/roughing flat-end aluminum query must match");
+        assert!(result.chip_load_mm > 0.0);
+    }
+
     #[test]
     fn material_category_hard_filter_blocks_wood_to_metal() {
         // Wood query must not extrapolate from aluminum row even when
@@ -705,5 +790,68 @@ mod tests {
         };
         let result = lookup_best(&lut, &query).expect("should find match for 6mm flat softwood");
         assert_eq!(result.rpm_nominal, Some(18000.0));
+    }
+
+    fn vbit_query(diameter_mm: f64, material: MaterialFamily, janka: f64) -> LookupQuery {
+        LookupQuery {
+            tool_family: ToolFamily::ChamferVbit,
+            tool_subfamily: None,
+            diameter_mm,
+            flute_count: 2,
+            material_family: material,
+            hardness_kind: Some(HardnessKind::Janka),
+            hardness_value: Some(janka),
+            operation_family: LutOperationFamily::Trace,
+            pass_role: LutPassRole::Finish,
+        }
+    }
+
+    #[test]
+    fn vbit_90deg_matches_insert_vgroove_not_120() {
+        // A 90° V-bit must select an Amana insert-vgroove (90°) row and
+        // never the Whiteside 120° row, whose cone angle is 30° away —
+        // past the 20° tolerance.
+        let lut = embedded_lut();
+        let query = vbit_query(6.0, MaterialFamily::Hardwood, 1450.0);
+        let result =
+            find_best_vbit_row(&lut, &query, Some(90.0)).expect("90° V-bit must match a 90° row");
+        assert_eq!(result.observation_id, "amana-vbit-hardwood-trace-6000-2f");
+    }
+
+    #[test]
+    fn vbit_120deg_matches_120_row_not_90() {
+        // A 120° V-bit must select the Whiteside 120° row, not the 90°
+        // Amana rows (30° away, rejected by the tolerance gate).
+        let lut = embedded_lut();
+        let query = vbit_query(12.0, MaterialFamily::Hardwood, 1450.0);
+        let result = find_best_vbit_row(&lut, &query, Some(120.0))
+            .expect("120° V-bit must match the 120° row");
+        assert_eq!(result.observation_id, "whiteside-vbit-hardwood-trace-12000-2f");
+    }
+
+    #[test]
+    fn vbit_no_query_angle_falls_back_to_score_only() {
+        // With no query angle the gate is inert — every angle-compatible
+        // row is eligible and the best-scoring one wins (legacy behaviour,
+        // never worse than find_best_row).
+        let lut = embedded_lut();
+        let query = vbit_query(6.0, MaterialFamily::Hardwood, 1450.0);
+        let with_none = find_best_vbit_row(&lut, &query, None).expect("angle-less query matches");
+        let via_plain = find_best_row(&lut, &query).expect("plain lookup matches");
+        assert_eq!(with_none.observation_id, via_plain.observation_id);
+    }
+
+    #[test]
+    fn vbit_rejects_row_outside_angle_tolerance() {
+        // A 150° bit has no row within 20° (the embedded ladder tops out at
+        // 120°), so the angle-aware lookup refuses rather than returning a
+        // far-angle row. (60° now matches a real 60° V-groove row, so this
+        // probe uses an angle beyond the populated range.)
+        let lut = embedded_lut();
+        let query = vbit_query(6.0, MaterialFamily::Hardwood, 1450.0);
+        assert!(
+            find_best_vbit_row(&lut, &query, Some(150.0)).is_none(),
+            "150° bit must not match any row (nearest is 120°, 30° away)"
+        );
     }
 }

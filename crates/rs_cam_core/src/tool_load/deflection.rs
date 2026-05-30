@@ -89,10 +89,7 @@ pub fn sample_tip_deflection_mm(
     if matches!(material, Material::Custom { .. }) || tool.stickout <= 0.0 {
         return None;
     }
-    let kc = material.kc_n_per_mm2();
-    if !kc.is_finite() || kc <= 0.0 {
-        return None;
-    }
+    let kc = material.kc_n_per_mm2()?;
     let arc = sample.arc_engagement_radians?;
     let engagement_radius =
         crate::tool::MillingCutter::engagement_radius(tool, sample.axial_engagement_mm).max(0.0);
@@ -137,8 +134,9 @@ pub fn evaluate(
             reason: UnmodeledReason::MaterialUnvalidated,
         };
     }
-    let kc = material.kc_n_per_mm2();
-    if !kc.is_finite() || kc <= 0.0 {
+    // Materials without a primary-source Kc refuse here. See power.rs
+    // for the same pattern.
+    if material.kc_n_per_mm2().is_none() {
         return DeflectionVerdict::Unmodeled {
             reason: UnmodeledReason::MaterialUnvalidated,
         };

@@ -420,22 +420,26 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     raw_feed *= workholding_factor;
 
     // --- Step 6: Power check ---
-    let kc = material.kc_n_per_mm2();
+    // Materials without a primary-source Kc skip the power-vs-machine
+    // ramp here; downstream tool_load::power refuses with
+    // `MaterialUnvalidated` so the user sees the gap explicitly rather
+    // than getting a silently-fabricated feed.
     let available_power = machine.power_at_rpm(rpm);
-    let required_power = (kc * ap * ae * raw_feed) / (60.0 * 1_000_000.0);
-
     let mut power_limited = false;
     let mut feed = raw_feed;
-
     let mut power_factor = 1.0;
-    if required_power > available_power && available_power > 0.0 {
-        power_factor = available_power / required_power;
-        feed = raw_feed * power_factor;
-        power_limited = true;
-        warnings.push(FeedsWarning::PowerLimited {
-            required_kw: required_power,
-            available_kw: available_power,
-        });
+
+    if let Some(kc) = material.kc_n_per_mm2() {
+        let required_power = (kc * ap * ae * raw_feed) / (60.0 * 1_000_000.0);
+        if required_power > available_power && available_power > 0.0 {
+            power_factor = available_power / required_power;
+            feed = raw_feed * power_factor;
+            power_limited = true;
+            warnings.push(FeedsWarning::PowerLimited {
+                required_kw: required_power,
+                available_kw: available_power,
+            });
+        }
     }
 
     // --- Step 7: Machine feed clamp ---
@@ -483,8 +487,13 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         }
     }
 
-    // Final power at actual feed
-    let actual_power = (kc * ap * ae * feed) / (60.0 * 1_000_000.0);
+    // Final power at actual feed. Materials without a primary-source Kc
+    // report 0.0 — the consumers that need a numeric headroom (charts /
+    // diagnostics) treat this as "unmodeled" rather than zero load.
+    let actual_power = match material.kc_n_per_mm2() {
+        Some(kc) => (kc * ap * ae * feed) / (60.0 * 1_000_000.0),
+        None => 0.0,
+    };
     let mrr = ap * ae * feed;
 
     let formula = if matches!(

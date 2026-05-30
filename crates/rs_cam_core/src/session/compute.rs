@@ -1475,7 +1475,11 @@ impl ProjectSession {
             // machine's `power_at_rpm × safety_factor` gives the
             // available power.
             let material = &self.stock.material;
-            let kc = material.kc_n_per_mm2();
+            // Materials without a primary-source Kc disable both the
+            // deflection and power constraints in the constrained-max
+            // solver; the solver falls through to chipload + machine +
+            // kinematics caps. See `Material::kc_n_per_mm2`.
+            let kc_opt = material.kc_n_per_mm2();
             let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
             // Use the per-toolpath max axial DOC from the cut trace
             // as the deflection / power reference; falls back to
@@ -1491,35 +1495,32 @@ impl ProjectSession {
             let engagement_dia = tool_def.lookup_diameter_at(max_axial.max(0.0));
             let stickout = tool_def.stickout.max(0.0);
             let youngs = tool_def.tool_material.youngs_modulus_n_per_mm2();
-            let deflection_inputs = if kc.is_finite()
-                && kc > 0.0
-                && stickout > 0.0
-                && engagement_dia > 0.0
-                && youngs > 0.0
-            {
-                Some(DeflectionLimitInputs {
-                    kc_n_per_mm2: kc,
-                    stickout_mm: stickout,
-                    engagement_diameter_mm: engagement_dia,
-                    youngs_modulus_n_per_mm2: youngs,
-                    max_tip_deflection_mm:
-                        crate::tool_load::deflection::EXCEEDS_BOUND_MM,
-                })
-            } else {
-                None
+            let deflection_inputs = match kc_opt {
+                Some(kc)
+                    if stickout > 0.0 && engagement_dia > 0.0 && youngs > 0.0 =>
+                {
+                    Some(DeflectionLimitInputs {
+                        kc_n_per_mm2: kc,
+                        stickout_mm: stickout,
+                        engagement_diameter_mm: engagement_dia,
+                        youngs_modulus_n_per_mm2: youngs,
+                        max_tip_deflection_mm:
+                            crate::tool_load::deflection::EXCEEDS_BOUND_MM,
+                    })
+                }
+                _ => None,
             };
             let machine_profile = &self.machine;
             let available_kw =
                 machine_profile.power_at_rpm(spindle_rpm as f64) * machine_profile.safety_factor;
-            let power_inputs = if kc.is_finite() && kc > 0.0 && available_kw > 0.0 {
-                Some(PowerLimitInputs {
+            let power_inputs = match kc_opt {
+                Some(kc) if available_kw > 0.0 => Some(PowerLimitInputs {
                     // tool_load::power uses 2.5× anisotropy multiplier.
                     kc_eff_n_per_mm2: 2.5 * kc,
                     engagement_diameter_mm: engagement_dia,
                     available_kw,
-                })
-            } else {
-                None
+                }),
+                _ => None,
             };
 
             let ctx = ModulationContext {

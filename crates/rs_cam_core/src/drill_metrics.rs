@@ -124,6 +124,10 @@ pub fn chip_welding_threshold(material: &Material) -> f64 {
         }
         Material::Plywood { .. } | Material::SheetGood { .. } => 5.0,
         Material::Plastic { .. } => 4.0,
+        // Aluminum chip welding starts around D/d ≈ 3 (industry rule of
+        // thumb; pecks are mandatory beyond that). Conservative even
+        // for 6061 — the deeper the alloy the lower the safe D/d.
+        Material::Aluminum { .. } => 3.0,
         Material::Foam { .. } => 12.0,
         Material::Custom { hardness_index, .. } => {
             // Scale roughly with hardness — softer materials evacuate better.
@@ -139,6 +143,9 @@ pub fn per_peck_max_depth_to_diameter(material: &Material) -> f64 {
         Material::SolidWood { .. } => 2.0,
         Material::Plywood { .. } | Material::SheetGood { .. } => 1.5,
         Material::Plastic { .. } => 1.0,
+        // Aluminum per-peck ≤ 1×D is the standard machining-textbook
+        // limit for chip evacuation without through-coolant.
+        Material::Aluminum { .. } => 1.0,
         Material::Foam { .. } => 4.0,
         Material::Custom { .. } => 1.5,
     }
