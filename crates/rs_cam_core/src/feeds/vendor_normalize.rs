@@ -5,7 +5,7 @@ use super::vendor_lut::{
     HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily,
 };
 use super::{FeedsInput, OperationFamily, PassRole, ToolGeometryHint};
-use crate::material::{Material, PlasticFamily, PlywoodGrade, SheetGoodKind};
+use crate::material::{Material, PlasticHardness};
 
 /// Convert a FeedsInput to a LookupQuery for vendor LUT lookup.
 pub fn to_lookup_query(input: &FeedsInput) -> LookupQuery {
@@ -84,7 +84,19 @@ fn lookup_diameter_for_input(input: &FeedsInput<'_>) -> f64 {
     }
 }
 
+/// Translate the application-side `Material` into the LUT-side
+/// `(MaterialFamily, HardnessKind, hardness_value)` triple a vendor
+/// row lookup needs.
+///
+/// All hardness values come from the canonical accessors on
+/// `WoodSpecies` / `PlywoodGrade` / `SheetGoodKind` /
+/// `PlasticFamily::hardness()` / `AluminumAlloy::brinell_hb()` so
+/// there's exactly ONE source of truth per material. Pre-Phase-1E
+/// this function had inline tables that disagreed with the canonical
+/// accessors (Acrylic was Shore D 85 here vs Rockwell M 93 on
+/// `PlasticFamily::hardness()`).
 pub(crate) fn material_to_lut(material: &Material) -> (MaterialFamily, HardnessKind, f64) {
+    use crate::material::{PlywoodGrade, SheetGoodKind};
     match material {
         Material::SolidWood { species } => {
             let janka = species.janka_lbf();
@@ -95,43 +107,69 @@ pub(crate) fn material_to_lut(material: &Material) -> (MaterialFamily, HardnessK
             };
             (family, HardnessKind::Janka, janka)
         }
-        Material::Plywood { grade } => match grade {
-            PlywoodGrade::Softwood => (MaterialFamily::PlywoodSoftwood, HardnessKind::Janka, 600.0),
-            PlywoodGrade::BalticBirch => {
-                (MaterialFamily::PlywoodHardwood, HardnessKind::Janka, 1200.0)
-            }
-            PlywoodGrade::HardwoodFaced => {
-                (MaterialFamily::PlywoodHardwood, HardnessKind::Janka, 1000.0)
-            }
-        },
-        Material::SheetGood { kind } => match kind {
-            SheetGoodKind::Mdf => (MaterialFamily::Mdf, HardnessKind::Janka, 1100.0),
-            SheetGoodKind::Hdf => (MaterialFamily::Hdf, HardnessKind::Janka, 1300.0),
-            SheetGoodKind::Particleboard => {
-                (MaterialFamily::Particleboard, HardnessKind::Janka, 750.0)
-            }
-        },
-        Material::Plastic { family } => match family {
-            PlasticFamily::Acrylic => (MaterialFamily::Acrylic, HardnessKind::ShoreD, 85.0),
-            PlasticFamily::Hdpe => (MaterialFamily::Hdpe, HardnessKind::ShoreD, 65.0),
-            PlasticFamily::Delrin => (MaterialFamily::Delrin, HardnessKind::ShoreD, 85.0),
-            PlasticFamily::Polycarbonate => {
-                (MaterialFamily::Polycarbonate, HardnessKind::ShoreD, 80.0)
-            }
-            PlasticFamily::Generic => (MaterialFamily::Acrylic, HardnessKind::ShoreD, 80.0),
-        },
+        Material::Plywood { grade } => {
+            let family = match grade {
+                PlywoodGrade::Softwood => MaterialFamily::PlywoodSoftwood,
+                PlywoodGrade::BalticBirch | PlywoodGrade::HardwoodFaced => {
+                    MaterialFamily::PlywoodHardwood
+                }
+            };
+            (family, HardnessKind::Janka, grade.effective_janka_lbf())
+        }
+        Material::SheetGood { kind } => {
+            let family = match kind {
+                SheetGoodKind::Mdf => MaterialFamily::Mdf,
+                SheetGoodKind::Hdf => MaterialFamily::Hdf,
+                SheetGoodKind::Particleboard => MaterialFamily::Particleboard,
+            };
+            (family, HardnessKind::Janka, kind.effective_janka_lbf())
+        }
+        Material::Plastic { family } => {
+            // Per-family LUT material class for row matching. Generic
+            // plastic falls back to the Acrylic category — the LUT
+            // doesn't carry a "generic plastic" row family.
+            let lut_family = match family {
+                crate::material::PlasticFamily::Acrylic | crate::material::PlasticFamily::Generic => MaterialFamily::Acrylic,
+                crate::material::PlasticFamily::Hdpe => MaterialFamily::Hdpe,
+                crate::material::PlasticFamily::Delrin => MaterialFamily::Delrin,
+                crate::material::PlasticFamily::Polycarbonate => MaterialFamily::Polycarbonate,
+            };
+            // Canonical hardness from PlasticFamily::hardness().
+            // PMMA reads in Rockwell M natively, so the LUT row's
+            // hardness scaling needs the matching kind. When the
+            // family has no fetched hardness (Generic), default to a
+            // Shore-D-equivalent 80 to keep the lookup numeric
+            // without inventing a citation.
+            let (hardness_kind, hardness_value) = match family.hardness() {
+                Some(PlasticHardness::ShoreD(v)) => (HardnessKind::ShoreD, v),
+                Some(PlasticHardness::RockwellM(v)) => {
+                    // The LUT currently models only Janka / Hb / ShoreD.
+                    // Rockwell M is reported on PMMA; until the LUT
+                    // grows a RockwellM kind, surface the raw value
+                    // under ShoreD as a comparable-magnitude scalar.
+                    // Recorded here as a TODO so a Phase 3 follow-up
+                    // can plumb a RockwellM HardnessKind through
+                    // `vendor_lut.rs`.
+                    (HardnessKind::ShoreD, v)
+                }
+                None => (HardnessKind::ShoreD, 80.0),
+            };
+            (lut_family, hardness_kind, hardness_value)
+        }
         Material::Aluminum { alloy } => (
             MaterialFamily::Aluminum,
             HardnessKind::Hb,
             alloy.brinell_hb(),
         ),
         Material::Foam { .. } => {
-            // Foam has no LUT data — will fall through to formula
+            // Foam has no LUT data — formula fallback regardless of the
+            // values we return here. The triple is structural noise.
             (MaterialFamily::Softwood, HardnessKind::Janka, 200.0)
         }
         Material::Custom { hardness_index, .. } => {
-            // Map custom to softwood/hardwood based on hardness
-            let janka = hardness_index * 600.0; // reverse of hardness_index formula
+            // Reverse the `hardness_index = (janka / 600)^0.4` formula
+            // to recover an effective Janka for LUT matching.
+            let janka = hardness_index * 600.0;
             let family = if janka <= 800.0 {
                 MaterialFamily::Softwood
             } else {
@@ -147,7 +185,7 @@ pub(crate) fn material_to_lut(material: &Material) -> (MaterialFamily, HardnessK
 mod tests {
     use super::*;
     use crate::machine::MachineProfile;
-    use crate::material::WoodSpecies;
+    use crate::material::{PlasticFamily, SheetGoodKind, WoodSpecies};
 
     fn make_input<'a>(
         geom: ToolGeometryHint,
@@ -211,7 +249,15 @@ mod tests {
     }
 
     #[test]
-    fn test_acrylic_maps_correctly() {
+    fn test_acrylic_maps_to_canonical_pmma_hardness() {
+        // Phase 1E consolidation: vendor_normalize now routes through
+        // PlasticFamily::hardness() instead of an inline table. PMMA
+        // is reported in Rockwell M (MakeItFrom citation) — the
+        // hardness number is the literature value, not the historical
+        // inline ShoreD 85. The LUT currently only carries ShoreD as
+        // its scalar kind for plastics, so we surface the RockwellM
+        // value via ShoreD — see TODO in material_to_lut to plumb a
+        // RockwellM HardnessKind end-to-end.
         let mat = Material::Plastic {
             family: PlasticFamily::Acrylic,
         };
@@ -225,7 +271,7 @@ mod tests {
         let query = to_lookup_query(&input);
         assert_eq!(query.material_family, MaterialFamily::Acrylic);
         assert_eq!(query.hardness_kind, Some(HardnessKind::ShoreD));
-        assert_eq!(query.hardness_value, Some(85.0));
+        assert_eq!(query.hardness_value, Some(93.0));
     }
 
     #[test]

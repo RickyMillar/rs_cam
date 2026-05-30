@@ -104,6 +104,7 @@ pub fn sample_tip_deflection_mm(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id, op = ?operation_kind))]
 pub fn evaluate(
     toolpath_id: usize,
     tool: &ToolDefinition,
@@ -118,6 +119,10 @@ pub fn evaluate(
     // metric is meaningless. Return "doesn't apply" rather than the
     // misleading `ArcEngagementNotCaptured`.
     if is_plunge_only_op(operation_kind) {
+        tracing::debug!(
+            reason = "NotApplicableForOp",
+            "deflection gate refuses: plunge-only op has no continuous engagement"
+        );
         return DeflectionVerdict::Unmodeled {
             reason: UnmodeledReason::NotApplicableForOp(
                 "drill cycle — no continuous engagement".to_owned(),
@@ -125,12 +130,21 @@ pub fn evaluate(
         };
     }
     let Some(trace) = sim_trace else {
+        tracing::debug!(
+            reason = "SimulationRequired",
+            "deflection gate refuses: no simulation trace"
+        );
         return DeflectionVerdict::Unmodeled {
             reason: UnmodeledReason::SimulationRequired,
         };
     };
 
     if let Material::Custom { .. } = material {
+        tracing::debug!(
+            reason = "MaterialUnvalidated",
+            material = "Custom",
+            "deflection gate refuses: Custom material has no validated Kc"
+        );
         return DeflectionVerdict::Unmodeled {
             reason: UnmodeledReason::MaterialUnvalidated,
         };
@@ -138,12 +152,21 @@ pub fn evaluate(
     // Materials without a primary-source Kc refuse here. See power.rs
     // for the same pattern.
     if material.kc_n_per_mm2().is_none() {
+        tracing::debug!(
+            reason = "MaterialUnvalidated",
+            material = %material.label(),
+            "deflection gate refuses: material has no primary-source Kc"
+        );
         return DeflectionVerdict::Unmodeled {
             reason: UnmodeledReason::MaterialUnvalidated,
         };
     }
 
     if tool.stickout <= 0.0 {
+        tracing::debug!(
+            reason = "NotImplemented",
+            "deflection gate refuses: tool reports zero stickout"
+        );
         return DeflectionVerdict::Unmodeled {
             reason: UnmodeledReason::NotImplemented("tool reports zero stickout".to_owned()),
         };
@@ -199,6 +222,10 @@ pub fn evaluate(
     }
 
     if !any_arc_captured {
+        tracing::debug!(
+            reason = "ArcEngagementNotCaptured",
+            "deflection gate refuses: trace lacks arc_engagement_radians on all samples"
+        );
         return DeflectionVerdict::Unmodeled {
             reason: UnmodeledReason::ArcEngagementNotCaptured,
         };
@@ -226,6 +253,13 @@ pub fn evaluate(
 
     let exceeds_trigger = EXCEEDS_BOUND_MM * (1.0 + tolerance.deflection_breach);
     if peak_delta_mm > exceeds_trigger {
+        tracing::warn!(
+            verdict = "Exceeds",
+            peak_mm = peak_delta_mm,
+            peak_um = peak_delta_mm * 1000.0,
+            bound_mm = exceeds_trigger,
+            "deflection gate Exceeds: peak tip deflection above the Exceeds safety threshold"
+        );
         return DeflectionVerdict::Exceeds {
             peak_mm: peak_delta_mm,
             bounds,

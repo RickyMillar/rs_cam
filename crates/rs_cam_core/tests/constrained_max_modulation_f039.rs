@@ -210,9 +210,14 @@ fn constrained_max_binds_on_power_for_low_rpm() {
     let k = shapeoko();
     let mut ctx = ctx_basic(&k, band(0.02, 0.08));
     // Very low available power (10 W) with a 6 mm cutter in
-    // hardwood → power binds hard.
+    // hardwood → power binds hard. `kc_eff_n_per_mm2` here is a
+    // fixture value (60 = 2.0 × 30) — same effective product the
+    // production constrained-max solver sees once
+    // `tool_load::power::GRAIN_ANISOTROPY_FACTOR` (2.0 post-Phase-2B)
+    // is applied to a hardwood-class raw Kc of 30 N/mm². Bumped from
+    // the legacy 75 (= 2.5 × 30) at the 2026-05-30 Phase-2B re-tune.
     ctx.power_inputs = Some(PowerLimitInputs {
-        kc_eff_n_per_mm2: 2.5 * 30.0,
+        kc_eff_n_per_mm2: 60.0,
         engagement_diameter_mm: 6.0,
         available_kw: 0.01,
     });

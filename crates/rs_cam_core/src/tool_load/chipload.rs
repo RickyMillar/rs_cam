@@ -38,7 +38,7 @@
 
 use crate::compute::catalog::OperationType;
 use crate::feeds::ToolGeometryHint;
-use crate::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_row, find_best_vbit_row};
+use crate::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_row_for_geometry};
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily};
 use crate::feeds::vendor_normalize::material_to_lut;
 use crate::material::Material;
@@ -263,6 +263,7 @@ pub(crate) fn steady_state_samples_for_toolpath<'a>(
 /// (Adaptive → Pocket so the LUT envelope reflects pocket-style
 /// clearing instead of 2D adaptive HSM — design doc §1.3, §10).
 #[allow(clippy::too_many_arguments)]
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id, op = ?operation_kind))]
 pub fn evaluate(
     toolpath_id: usize,
     tool: &ToolDefinition,
@@ -359,20 +360,21 @@ pub fn evaluate(
         operation_family,
         pass_role,
     };
-    // V-bit / chamfer cutters route to the angle-aware lookup so a row is
-    // matched to the cutter's cone angle (when both are known), not just
-    // its engaged diameter. Other families use the diameter/hardness lookup
-    // unchanged.
-    let result = if tool_family == ToolFamily::ChamferVbit {
-        let query_angle = match geometry_hint {
-            ToolGeometryHint::VBit { included_angle, .. } => Some(included_angle),
-            _ => None,
-        };
-        find_best_vbit_row(lut, &query, query_angle)
-    } else {
-        find_best_row(lut, &query)
-    };
+    // V-bit / chamfer cutters route to the angle-aware lookup; other
+    // families fall through to the diameter/hardness matcher. Centralised
+    // in `find_best_row_for_geometry` so Suggest / Explain / MCP /
+    // chipload-gate dispatch identically.
+    let result = find_best_row_for_geometry(lut, &query, &geometry_hint);
     let Some(result) = result else {
+        tracing::debug!(
+            reason = "NoVendorData",
+            tool_family = ?tool_family,
+            material_family = ?material_family,
+            operation_family = ?operation_family,
+            pass_role = ?pass_role,
+            diameter_mm = query.diameter_mm,
+            "chipload gate refuses: no LUT row matched the (tool, material, op) query"
+        );
         return ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::NoVendorData,
         };
@@ -384,6 +386,11 @@ pub fn evaluate(
         (Some(lo), Some(hi)) if lo > 0.0 && hi >= lo => (Some(lo), hi),
         (None, Some(hi)) if hi > 0.0 => (None, hi),
         _ => {
+            tracing::debug!(
+                reason = "NoVendorData",
+                observation_id = %result.observation_id,
+                "chipload gate refuses: matched row has unusable chipload bounds (max missing or invalid)"
+            );
             return ChiploadVerdict::Unmodeled {
                 reason: UnmodeledReason::NoVendorData,
             };
@@ -590,10 +597,18 @@ pub fn evaluate(
             .and_then(|s| super::locality::classify_sample_locality(s, span_lookup.as_ref()))
     };
     if let Some((dev, idx)) = peak_above {
+        let observed = max + dev;
+        tracing::warn!(
+            verdict = "Exceeds",
+            side = "High",
+            observed_mm_per_tooth = observed,
+            bound_max_mm_per_tooth = max,
+            "chipload gate Exceeds: peak chip thickness above the vendor-derived max → breakage risk"
+        );
         return ChiploadVerdict::Exceeds {
             side: ChipSide::High,
             triggering: ChiploadMetric {
-                observed_mm_per_tooth: max + dev,
+                observed_mm_per_tooth: observed,
                 statistic: ChiploadStatistic::PeakHigh,
                 evidence: SampleEvidence::at_with_stat(idx, ChiploadStatistic::PeakHigh)
                     .with_locality(locality_for(idx)),
@@ -604,6 +619,13 @@ pub fn evaluate(
     }
     if let Some((dev, idx)) = peak_below {
         let observed = min.map(|m| m - dev).unwrap_or_default().max(0.0);
+        tracing::warn!(
+            verdict = "Exceeds",
+            side = "Low",
+            observed_mm_per_tooth = observed,
+            bound_min_mm_per_tooth = min.unwrap_or(f64::NAN),
+            "chipload gate Exceeds: median chip thickness below vendor-derived min → burn / rubbing risk"
+        );
         return ChiploadVerdict::Exceeds {
             side: ChipSide::Low,
             triggering: ChiploadMetric {
