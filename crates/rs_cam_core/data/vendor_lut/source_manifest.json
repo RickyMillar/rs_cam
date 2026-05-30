@@ -279,6 +279,22 @@
       "source_url": "https://www.garrtool.com/doc/pdf/tech/TECH_MILLING_ALUMINUM.pdf",
       "accessed_on": "2026-05-29",
       "coverage_notes": "Bundled 2026-05-31 (Phase B of completion plan). High-Range page of Garr's three-page Aluminum Milling Guide. A3 series only (3-flute, aerospace-grade); no per-series split needed. 2 rows: HEM profiling (adaptive/roughing, 6 mm, CPT 0.120–0.180 mm/tooth) and finishing (contour/finish, 6 mm, CPT 0.060 mm/tooth single value). Includes A3-specific ap/ae rules (HEM Axial=2xD, Radial=30%-40%xD; Finish Radial=2.5%xD)."
+    },
+    {
+      "source_id": "fpl_ch5_2010",
+      "source_vendor": "fpl",
+      "source_title": "USDA Forest Service, Wood Handbook — Wood as an Engineering Material, GTR FPL-GTR-190 (2010), Chapter 5 'Mechanical Properties of Wood' by David E. Kretschmann, Table 5-3a",
+      "source_url": "https://www.precisebits.com/PDF/USFS_mechanical_properties_of_wood.pdf",
+      "accessed_on": "2026-05-30",
+      "coverage_notes": "Phase E (completion plan, 2026-05-31): peer-reviewed Janka side-hardness for ~98 wood species, used as the primary source for `Material::SolidWoodByJanka` library entries via `WOOD_SPECIES_LIBRARY`. Janka values converted from the published Newton column (Table 5-3a 'Side hardness') by `lbf = N / 4.448` rounded to 1 decimal. The 'Green' moisture rows are excluded — only the 12% MC line (kiln-dried, typical workshop stock) is staged. Primary `fpl.fs.usda.gov` URL 403'd on 2026-05-30; the precisebits.com mirror serves the identical 46-page PDF. Touches no live vendor LUT rows — wood Kc lookups remain driven by the in-crate Janka → Kc helper, not by LUT row matching."
+    },
+    {
+      "source_id": "wood_database_2026-05-30",
+      "source_vendor": "wood_database",
+      "source_title": "The Wood Database (https://www.wood-database.com/) — per-species Janka hardness pages, 2026-05-30 snapshot",
+      "source_url": "https://www.wood-database.com/janka-hardness/",
+      "accessed_on": "2026-05-30",
+      "coverage_notes": "Phase E (completion plan, 2026-05-31): single-source per-species Janka pages for ~34 species that FPL Ch.5 Table 5-3a does not cover (typically tropical / specialty species the Wood Database does cover individually). Used as fill-in for `WOOD_SPECIES_LIBRARY` after FPL precedence — entries that appear in both sources prefer the FPL value. Verbatim quote convention: 'Janka Hardness: {N,NNN} lbf ({N,NNN} N)' per the wood-database article on Janka methodology."
     }
   ]
 }

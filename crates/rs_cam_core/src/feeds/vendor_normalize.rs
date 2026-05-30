@@ -107,6 +107,17 @@ pub(crate) fn material_to_lut(material: &Material) -> (MaterialFamily, HardnessK
             };
             (family, HardnessKind::Janka, janka)
         }
+        // Parametric solid-wood — Phase E 2026-05-31. Same softwood/
+        // hardwood split as the enum variant; the LUT row matcher
+        // takes care of band scoring from the actual Janka value.
+        Material::SolidWoodByJanka { janka_lbf, .. } => {
+            let family = if *janka_lbf <= 800.0 {
+                MaterialFamily::Softwood
+            } else {
+                MaterialFamily::Hardwood
+            };
+            (family, HardnessKind::Janka, *janka_lbf)
+        }
         Material::Plywood { grade } => {
             let family = match grade {
                 PlywoodGrade::Softwood => MaterialFamily::PlywoodSoftwood,
