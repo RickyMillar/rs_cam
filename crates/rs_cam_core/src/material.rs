@@ -194,16 +194,51 @@ pub enum AluminumAlloy {
     Alloy6061T6,
     /// 7075-T6 — aerospace alloy, harder. Brinell 150 (ASM, MatWeb).
     Alloy7075T6,
+    /// 2024-T3 — aerospace structural; high strength-to-weight, lower
+    /// corrosion resistance. Brinell 120 (ASM Aerospace Specification
+    /// Metals, MatWeb; 500 g load, 10 mm ball). Added Phase C
+    /// (completion plan 2026-05-31). Source: `planning/data_ingest_
+    /// 2026-05-30/hardness_extra.md` H.2.
+    Alloy2024T3,
+    /// 5052-H32 — marine/sheet alloy, excellent formability and
+    /// corrosion resistance. Brinell 60 (ASM, MatWeb; 500 g, 10 mm).
+    /// Added Phase C 2026-05-31. Source: `hardness_extra.md` H.2.
+    Alloy5052H32,
+    /// 3003-H14 — general-purpose sheet alloy, moderate strength.
+    /// Brinell 42 (MakeItFrom material properties; ASTM not echoed
+    /// on per-alloy page — scale-only). Added Phase C 2026-05-31.
+    /// Source: `hardness_extra.md` H.2.
+    Alloy3003H14,
+    /// 1100-O — commercially pure aluminum, annealed (softest
+    /// production aluminum). Brinell 23 (MakeItFrom; ASTM
+    /// scale-only). Added Phase C 2026-05-31. Source:
+    /// `hardness_extra.md` H.2.
+    Alloy1100O,
+    /// 7050-T7651 — high-strength aerospace plate; T7651 is the
+    /// stress-relieved + over-aged temper for stress-corrosion
+    /// resistance. Brinell 147 (ASM-calculated; Kaiser Aluminum
+    /// mill data reports 150 on the same alloy/temper — both
+    /// consistent within rounding). Added Phase C 2026-05-31.
+    /// Source: `hardness_extra.md` H.2.
+    Alloy7050T7651,
 }
 
 impl AluminumAlloy {
     /// Brinell hardness (HB). Sources: ASM Aerospace Specification
-    /// Metals / MatWeb. These are the standard datapoints used in
-    /// vendor feed/speed lookups for aluminum.
+    /// Metals / MatWeb, with MakeItFrom and Kaiser mill data filling
+    /// in alloys not hosted on `asm.matweb.com`. These are the
+    /// standard datapoints used in vendor feed/speed lookups for
+    /// aluminum. See `planning/data_ingest_2026-05-30/hardness_extra.md`
+    /// H.2 for the verbatim per-alloy quotes.
     pub fn brinell_hb(self) -> f64 {
         match self {
             AluminumAlloy::Alloy6061T6 => 95.0,
             AluminumAlloy::Alloy7075T6 => 150.0,
+            AluminumAlloy::Alloy2024T3 => 120.0,
+            AluminumAlloy::Alloy5052H32 => 60.0,
+            AluminumAlloy::Alloy3003H14 => 42.0,
+            AluminumAlloy::Alloy1100O => 23.0,
+            AluminumAlloy::Alloy7050T7651 => 147.0,
         }
     }
 
@@ -211,6 +246,11 @@ impl AluminumAlloy {
         match self {
             AluminumAlloy::Alloy6061T6 => "Aluminum 6061-T6",
             AluminumAlloy::Alloy7075T6 => "Aluminum 7075-T6",
+            AluminumAlloy::Alloy2024T3 => "Aluminum 2024-T3",
+            AluminumAlloy::Alloy5052H32 => "Aluminum 5052-H32",
+            AluminumAlloy::Alloy3003H14 => "Aluminum 3003-H14",
+            AluminumAlloy::Alloy1100O => "Aluminum 1100-O",
+            AluminumAlloy::Alloy7050T7651 => "Aluminum 7050-T7651",
         }
     }
 }
@@ -708,6 +748,36 @@ impl Material {
                     alloy: AluminumAlloy::Alloy7075T6,
                 },
             ),
+            (
+                "Aluminum 2024-T3",
+                Material::Aluminum {
+                    alloy: AluminumAlloy::Alloy2024T3,
+                },
+            ),
+            (
+                "Aluminum 5052-H32",
+                Material::Aluminum {
+                    alloy: AluminumAlloy::Alloy5052H32,
+                },
+            ),
+            (
+                "Aluminum 3003-H14",
+                Material::Aluminum {
+                    alloy: AluminumAlloy::Alloy3003H14,
+                },
+            ),
+            (
+                "Aluminum 1100-O",
+                Material::Aluminum {
+                    alloy: AluminumAlloy::Alloy1100O,
+                },
+            ),
+            (
+                "Aluminum 7050-T7651",
+                Material::Aluminum {
+                    alloy: AluminumAlloy::Alloy7050T7651,
+                },
+            ),
             // Foam
             (
                 "Foam (Low Density)",
@@ -769,6 +839,11 @@ impl Material {
             Material::Aluminum { alloy } => match alloy {
                 AluminumAlloy::Alloy6061T6 => "aluminum_6061_t6",
                 AluminumAlloy::Alloy7075T6 => "aluminum_7075_t6",
+                AluminumAlloy::Alloy2024T3 => "aluminum_2024_t3",
+                AluminumAlloy::Alloy5052H32 => "aluminum_5052_h32",
+                AluminumAlloy::Alloy3003H14 => "aluminum_3003_h14",
+                AluminumAlloy::Alloy1100O => "aluminum_1100_o",
+                AluminumAlloy::Alloy7050T7651 => "aluminum_7050_t7651",
             }
             .to_owned(),
             Material::Foam { density } => match density {
@@ -861,6 +936,21 @@ impl Material {
             },
             "aluminum_7075_t6" => Material::Aluminum {
                 alloy: AluminumAlloy::Alloy7075T6,
+            },
+            "aluminum_2024_t3" => Material::Aluminum {
+                alloy: AluminumAlloy::Alloy2024T3,
+            },
+            "aluminum_5052_h32" => Material::Aluminum {
+                alloy: AluminumAlloy::Alloy5052H32,
+            },
+            "aluminum_3003_h14" => Material::Aluminum {
+                alloy: AluminumAlloy::Alloy3003H14,
+            },
+            "aluminum_1100_o" => Material::Aluminum {
+                alloy: AluminumAlloy::Alloy1100O,
+            },
+            "aluminum_7050_t7651" => Material::Aluminum {
+                alloy: AluminumAlloy::Alloy7050T7651,
             },
             "foam_low" => Material::Foam {
                 density: FoamDensity::Low,
@@ -1144,10 +1234,21 @@ mod tests {
     #[test]
     fn aluminum_kc_computes_from_kienzle_pair() {
         // Phase 4 enabled the Kienzle pair (kc1.1=800, mc=0.25) for
-        // both 6061-T6 and 7075-T6, evaluated at h=0.1 mm:
+        // all aluminum alloys, evaluated at h=0.1 mm:
         //   Kc = 800 · 0.1^(-0.25) ≈ 1422.8 N/mm²
+        // Per D3 of the completion plan, Kc remains the single shared
+        // Kienzle pair across all alloys (vendor sources don't
+        // differentiate Kc by alloy at our fidelity).
         let expected = 800.0 * 0.1_f64.powf(-0.25);
-        for alloy in [AluminumAlloy::Alloy6061T6, AluminumAlloy::Alloy7075T6] {
+        for alloy in [
+            AluminumAlloy::Alloy6061T6,
+            AluminumAlloy::Alloy7075T6,
+            AluminumAlloy::Alloy2024T3,
+            AluminumAlloy::Alloy5052H32,
+            AluminumAlloy::Alloy3003H14,
+            AluminumAlloy::Alloy1100O,
+            AluminumAlloy::Alloy7050T7651,
+        ] {
             let m = Material::Aluminum { alloy };
             let kc = m
                 .kc_n_per_mm2()
@@ -1161,8 +1262,27 @@ mod tests {
 
     #[test]
     fn aluminum_brinell_matches_asm_anchors() {
-        assert!((AluminumAlloy::Alloy6061T6.brinell_hb() - 95.0).abs() < 1e-9);
-        assert!((AluminumAlloy::Alloy7075T6.brinell_hb() - 150.0).abs() < 1e-9);
+        // Phase C added Alloy2024T3 / 5052H32 / 3003H14 / 1100O /
+        // 7050T7651 per `planning/data_ingest_2026-05-30/hardness_extra.md`
+        // H.2. Sources are mixed (ASM matweb for the heavy hitters,
+        // MakeItFrom for 3003/1100) but every value is read verbatim
+        // from a fetched datasheet — see the per-variant doc comments
+        // and the literature_parity sentries for citations.
+        for (alloy, expected) in [
+            (AluminumAlloy::Alloy6061T6, 95.0),
+            (AluminumAlloy::Alloy7075T6, 150.0),
+            (AluminumAlloy::Alloy2024T3, 120.0),
+            (AluminumAlloy::Alloy5052H32, 60.0),
+            (AluminumAlloy::Alloy3003H14, 42.0),
+            (AluminumAlloy::Alloy1100O, 23.0),
+            (AluminumAlloy::Alloy7050T7651, 147.0),
+        ] {
+            assert!(
+                (alloy.brinell_hb() - expected).abs() < 1e-9,
+                "{alloy:?} Brinell mismatch: got {} want {expected}",
+                alloy.brinell_hb()
+            );
+        }
     }
 
     #[test]

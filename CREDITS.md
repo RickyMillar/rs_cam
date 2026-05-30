@@ -203,6 +203,25 @@ completion plan locked only the Low-Range trio and A3) and GP
 plastics has no `MaterialFamily` enum mapping. See
 `planning/feeds_data_ingest_phaseB_2026-05-31.md`.
 
+2026-05-31 Phase C (completion plan) added 5 new
+`AluminumAlloy` variants to `crates/rs_cam_core/src/material.rs`,
+extending aluminum coverage from 2 alloys (6061-T6, 7075-T6) to 7:
+
+- `Alloy2024T3` — Brinell 120, ASM matweb verbatim
+- `Alloy5052H32` — Brinell 60, ASM matweb verbatim
+- `Alloy3003H14` — Brinell 42, MakeItFrom (ASM not hosted for 3003)
+- `Alloy1100O` — Brinell 23, MakeItFrom (ASM not hosted for 1100)
+- `Alloy7050T7651` — Brinell 147, ASM matweb (calc); Kaiser Aluminum
+  mill datasheet reports 150 on the same alloy/temper (cross-cited)
+
+All values read verbatim from a fetched datasheet — see
+`planning/data_ingest_2026-05-30/hardness_extra.md` H.2 for the
+per-alloy verbatim quotes. Kc remains the shared VDI 3323 group-22
+Kienzle pair across all alloys (vendor sources don't differentiate
+Kc by alloy at our fidelity). Five new `literature_parity` sentries
+pin each Brinell value to its citation. See
+`planning/feeds_data_ingest_phaseC_2026-05-31.md`.
+
 ### Acceptance benchmark seed sources
 
 `planning/SUGGEST_SIM_OPTIMIZE_ACCEPTANCE.md` and the seed matrix in
