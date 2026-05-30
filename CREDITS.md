@@ -222,6 +222,34 @@ Kc by alloy at our fidelity). Five new `literature_parity` sentries
 pin each Brinell value to its citation. See
 `planning/feeds_data_ingest_phaseC_2026-05-31.md`.
 
+2026-05-31 Phase D (completion plan) added 6 new `PlasticFamily`
+variants and a new `PlasticHardness::RockwellR` scale variant to
+`crates/rs_cam_core/src/material.rs`, extending plastic coverage
+from 5 families (Generic / Acrylic / HDPE / Delrin / Polycarbonate)
+to 11:
+
+- `UhmwPe` — Shore D 66 (ASTM D2240), Mitsubishi TIVAR 1000
+- `Polypropylene` — Shore D 70 (ASTM D2240 + ISO 868), SIMONA PP-H +
+  Direct Plastics PP-H two-source corroborated
+- `Nylon66` — Shore D 85 (ASTM D2240), Mitsubishi Nylatron GS
+  (MoS2-filled cast machinable grade; also reports Rockwell M 85 /
+  Rockwell R 115 on the same datasheet)
+- `Abs` — Rockwell R 105 (MakeItFrom range 100-110 midpoint), ASTM
+  D785 implied
+- `Petg` — Rockwell R 115 (ASTM D-785), Plaskolite VIVAK Sheet
+- `RigidPvc` — Shore D 74 (scale-only, ASTM D2240 implicit),
+  Interstate Advanced Materials Type 1 sheet (D-1784 class 12454-B)
+
+All values read verbatim from a fetched datasheet — see
+`planning/data_ingest_2026-05-30/hardness_extra.md` H.1 for
+per-grade verbatim quotes and caveats. None of the new families
+have a fetched milling-regime Kc, so all six return
+`kc_n_per_mm2() = None` per the refusal-first contract; the
+`literature_parity::plastics_without_primary_source_refuse_kc`
+sentry now exercises all 10 None families. Six new
+`literature_parity` sentries pin each new hardness value to its
+citation. See `planning/feeds_data_ingest_phaseD_2026-05-31.md`.
+
 ### Acceptance benchmark seed sources
 
 `planning/SUGGEST_SIM_OPTIMIZE_ACCEPTANCE.md` and the seed matrix in

@@ -93,24 +93,36 @@ fn hdpe_kc_matches_yang_2022_midpoint() {
 #[test]
 fn plastics_without_primary_source_refuse_kc() {
     // The honesty contract: only HDPE has a fetched primary Kc.
-    // PC, PMMA (Acrylic), Delrin, and generic plastic must return
-    // `None` so the gates refuse with MaterialUnvalidated rather than
-    // predict force from a fabricated constant. Drift from this
-    // contract — e.g. someone bumping Acrylic to Some(...) without a
-    // citation — fires this test.
+    // Every other plastic family must return `None` so the gates
+    // refuse with MaterialUnvalidated rather than predict force from
+    // a fabricated constant. Drift from this contract — e.g. someone
+    // bumping Acrylic to Some(...) without a citation — fires this test.
+    //
+    // Phase D 2026-05-31 — six new families joined the refusal set
+    // (UHMW-PE / PP / Nylon 6/6 / ABS / PETG / Rigid PVC). PMMA Round-2
+    // recorded a 276.5 N/mm² nanoscale value (kc_extra.md) with an
+    // explicit "do NOT promote — size-effect inflated" caveat. POM/PC
+    // remain genuine gaps. None of the new families have any primary
+    // milling-regime measurement, so they all refuse.
     for family in [
         PlasticFamily::Polycarbonate,
         PlasticFamily::Acrylic,
         PlasticFamily::Delrin,
         PlasticFamily::Generic,
+        PlasticFamily::UhmwPe,
+        PlasticFamily::Polypropylene,
+        PlasticFamily::Nylon66,
+        PlasticFamily::Abs,
+        PlasticFamily::Petg,
+        PlasticFamily::RigidPvc,
     ] {
         let m = Material::Plastic { family };
         assert_eq!(
             m.kc_n_per_mm2(),
             None,
-            "{family:?}: no primary force study fetched (kc.md / kc_gaps.md). \
-             Until one lands, kc_n_per_mm2() must return None and the gates \
-             must refuse via UnmodeledReason::MaterialUnvalidated."
+            "{family:?}: no primary force study fetched (kc.md / kc_extra.md / \
+             kc_gaps.md). Until one lands, kc_n_per_mm2() must return None and \
+             the gates must refuse via UnmodeledReason::MaterialUnvalidated."
         );
     }
 }
@@ -251,6 +263,111 @@ fn plastic_hardness_preserves_scale_with_citation() {
         PlasticFamily::Generic.hardness(),
         None,
         "Generic plastic has no fetched hardness datum — must be None"
+    );
+}
+
+#[test]
+fn uhmw_pe_hardness_matches_tivar_1000_shore_d_anchor() {
+    // Phase D 2026-05-31. Mitsubishi Chemical TIVAR 1000 Natural Virgin
+    // datasheet, ASTM D2240. Verbatim from `hardness_extra.md` H.1:
+    // "Hardness, Shore D ... 66 ... 66 ... ASTM D2240".
+    assert!(
+        matches!(
+            PlasticFamily::UhmwPe.hardness(),
+            Some(PlasticHardness::ShoreD(v)) if (v - 66.0).abs() < 0.5
+        ),
+        "UHMW-PE must report Shore D 66 per Mitsubishi TIVAR 1000 / ASTM D2240 \
+         (hardness_extra.md H.1). Was: {:?}",
+        PlasticFamily::UhmwPe.hardness()
+    );
+}
+
+#[test]
+fn polypropylene_hardness_matches_simona_shore_d_anchor() {
+    // Phase D 2026-05-31. SIMONA PP-H datasheet (ASTM D2240) +
+    // Direct Plastics PP-H datasheet (ISO 868), both report Shore D 70.
+    // The two-source corroboration is what makes this a Grade A anchor.
+    assert!(
+        matches!(
+            PlasticFamily::Polypropylene.hardness(),
+            Some(PlasticHardness::ShoreD(v)) if (v - 70.0).abs() < 0.5
+        ),
+        "Polypropylene must report Shore D 70 per SIMONA PP-H / ASTM D2240 + \
+         Direct Plastics / ISO 868 corroboration (hardness_extra.md H.1). \
+         Was: {:?}",
+        PlasticFamily::Polypropylene.hardness()
+    );
+}
+
+#[test]
+fn nylon66_hardness_matches_nylatron_gs_shore_d_anchor() {
+    // Phase D 2026-05-31. Mitsubishi Chemical Nylatron GS (MoS2-filled
+    // cast machinable grade — the CAM-relevant nylon form) datasheet:
+    // Shore D 85 / Rockwell M 85 / Rockwell R 115 ALL on the same row
+    // (ASTM D2240 / D785). We surface Shore D 85 because it is the
+    // primary scale shared by the rest of the plastic enum and the
+    // value is corroborated by three independent scales.
+    assert!(
+        matches!(
+            PlasticFamily::Nylon66.hardness(),
+            Some(PlasticHardness::ShoreD(v)) if (v - 85.0).abs() < 0.5
+        ),
+        "Nylon 6/6 must report Shore D 85 per Mitsubishi Nylatron GS / ASTM D2240 \
+         (hardness_extra.md H.1). Was: {:?}",
+        PlasticFamily::Nylon66.hardness()
+    );
+}
+
+#[test]
+fn abs_hardness_matches_makeitfrom_rockwell_r_anchor() {
+    // Phase D 2026-05-31. MakeItFrom material-group page reports a
+    // Rockwell R range "100 to 110". The live accessor returns the
+    // midpoint 105.0. ABS is reported in Rockwell R natively (the
+    // softer R-scale fits softer engineering plastics); a future
+    // drift that silently flipped to Shore D would fail the `matches!`
+    // pattern.
+    assert!(
+        matches!(
+            PlasticFamily::Abs.hardness(),
+            Some(PlasticHardness::RockwellR(v)) if (v - 105.0).abs() < 0.5
+        ),
+        "ABS must report Rockwell R 105 (midpoint of MakeItFrom 100-110 range) \
+         (hardness_extra.md H.1). Was: {:?}",
+        PlasticFamily::Abs.hardness()
+    );
+}
+
+#[test]
+fn petg_hardness_matches_vivak_rockwell_r_anchor() {
+    // Phase D 2026-05-31. Plaskolite VIVAK Sheet (Sheffield Plastics)
+    // datasheet, ASTM D-785. Verbatim from `hardness_extra.md` H.1:
+    // "Rockwell Hardness    115    R Scale    ASTM D-785".
+    assert!(
+        matches!(
+            PlasticFamily::Petg.hardness(),
+            Some(PlasticHardness::RockwellR(v)) if (v - 115.0).abs() < 0.5
+        ),
+        "PETG must report Rockwell R 115 per Plaskolite VIVAK / ASTM D-785 \
+         (hardness_extra.md H.1). Was: {:?}",
+        PlasticFamily::Petg.hardness()
+    );
+}
+
+#[test]
+fn rigid_pvc_hardness_matches_interstate_shore_d_anchor() {
+    // Phase D 2026-05-31. Interstate Advanced Materials White PVC
+    // Sheet product page (ASTM D-1784 class 12454-B): "74 (Shore D)".
+    // Scale-only citation per `hardness_extra.md` H.1 caveat — the
+    // source lists the Shore D value but does NOT echo ASTM D2240
+    // explicitly. D2240 is the universal Shore D method.
+    assert!(
+        matches!(
+            PlasticFamily::RigidPvc.hardness(),
+            Some(PlasticHardness::ShoreD(v)) if (v - 74.0).abs() < 0.5
+        ),
+        "Rigid PVC Type 1 must report Shore D 74 per Interstate AM (scale-only) \
+         (hardness_extra.md H.1). Was: {:?}",
+        PlasticFamily::RigidPvc.hardness()
     );
 }
 

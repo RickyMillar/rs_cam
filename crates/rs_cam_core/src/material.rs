@@ -133,19 +133,56 @@ pub enum PlasticFamily {
     Hdpe,
     Delrin,
     Polycarbonate,
+    /// UHMW-PE (ultra-high-molecular-weight polyethylene).
+    /// Mitsubishi TIVAR 1000, Shore D 66 (ASTM D2240). Added Phase D
+    /// 2026-05-31. Source: `hardness_extra.md` H.1.
+    UhmwPe,
+    /// Polypropylene (homopolymer). Shore D 70 corroborated by SIMONA
+    /// PP-H (ASTM D2240) and Direct Plastics PP-H (ISO 868). Added
+    /// Phase D 2026-05-31. Source: `hardness_extra.md` H.1.
+    Polypropylene,
+    /// Nylon 6/6 (PA66). Anchored to Mitsubishi Nylatron GS
+    /// (MoS2-filled cast machinable grade — the CAM-relevant form):
+    /// Shore D 85, Rockwell M 85, Rockwell R 115 all corroborated on
+    /// one datasheet (ASTM D2240 / D785). Added Phase D 2026-05-31.
+    /// Source: `hardness_extra.md` H.1. The `hardness()` accessor
+    /// returns the Shore D scalar (multi-scale corroborated).
+    Nylon66,
+    /// ABS. Rockwell R 100-110 range (MakeItFrom material-group page;
+    /// ASTM D785 implied by MakeItFrom's house style, not echoed on
+    /// the per-page). Surface hardness reported as Rockwell R 105
+    /// (range midpoint). Added Phase D 2026-05-31. Source:
+    /// `hardness_extra.md` H.1.
+    Abs,
+    /// PETG. Rockwell R 115 (Plaskolite VIVAK datasheet, ASTM D785).
+    /// Added Phase D 2026-05-31. Source: `hardness_extra.md` H.1.
+    Petg,
+    /// Rigid PVC Type 1 sheet (ASTM D-1784 class 12454-B). Shore D 74
+    /// (Interstate AM product page; ASTM D2240 not explicitly echoed
+    /// but is the universal Shore D method — scale-only citation per
+    /// staging doc caveat). Added Phase D 2026-05-31. Source:
+    /// `hardness_extra.md` H.1.
+    RigidPvc,
 }
 
 /// Plastic surface hardness, preserving the original measurement scale.
 ///
-/// Shore D and Rockwell M are not interchangeable — they measure
-/// different things on different ranges — so this enum keeps them
-/// distinct rather than fabricating a cross-scale equivalence.
+/// Shore D, Rockwell M, and Rockwell R are not interchangeable — they
+/// measure different things on different ranges — so this enum keeps
+/// them distinct rather than fabricating a cross-scale equivalence.
 /// Downstream consumers that need a single scalar pick the conversion
 /// appropriate for their use.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum PlasticHardness {
     ShoreD(f64),
     RockwellM(f64),
+    /// Rockwell R scale — used for softer engineering plastics
+    /// (ABS, PETG, Nylon R-scale readings). Added Phase D 2026-05-31
+    /// for the plastic family expansion. The R-scale uses a 1/2"
+    /// ball indenter and a 60 kgf minor + 100 kgf major load — it is
+    /// a *separate* scale from Rockwell M (1/4" ball, 100 kgf major)
+    /// and the two are not interchangeable.
+    RockwellR(f64),
 }
 
 impl PlasticFamily {
@@ -156,18 +193,33 @@ impl PlasticFamily {
             PlasticFamily::Hdpe => "HDPE",
             PlasticFamily::Delrin => "Delrin",
             PlasticFamily::Polycarbonate => "Polycarbonate",
+            PlasticFamily::UhmwPe => "UHMW-PE",
+            PlasticFamily::Polypropylene => "Polypropylene",
+            PlasticFamily::Nylon66 => "Nylon 6/6",
+            PlasticFamily::Abs => "ABS",
+            PlasticFamily::Petg => "PETG",
+            PlasticFamily::RigidPvc => "Rigid PVC",
         }
     }
 
     /// Surface hardness in its measured scale.
     ///
-    /// Citations (per `planning/data_ingest_2026-05-29/hardness.md`):
+    /// Citations (per `planning/data_ingest_2026-05-29/hardness.md`
+    /// and `planning/data_ingest_2026-05-30/hardness_extra.md`):
     /// - HDPE: ISO 868 / Direct Plastics, Shore D 64.0.
     /// - Polycarbonate: ASTM D2240 / Treatstock, Shore D 80.0.
     /// - Delrin (POM-H): ASTM D2240 / Alro, Shore D 86.0.
     /// - Acrylic (PMMA): MakeItFrom, Rockwell M 93.0 — PMMA is
     ///   typically reported in Rockwell M; Shore D is not the standard
     ///   scale for it, so the value is exposed in its native scale.
+    /// - UHMW-PE: ASTM D2240 / Mitsubishi TIVAR 1000, Shore D 66.0.
+    /// - Polypropylene: ASTM D2240 / SIMONA PP-H, Shore D 70.0.
+    /// - Nylon 6/6 (Nylatron GS): ASTM D2240, Shore D 85.0 (also
+    ///   reports Rockwell M 85 / R 115 on the same datasheet).
+    /// - ABS: ASTM D785 / MakeItFrom range 100-110, Rockwell R 105.0
+    ///   (midpoint).
+    /// - PETG: ASTM D785 / Plaskolite VIVAK, Rockwell R 115.0.
+    /// - Rigid PVC Type 1: Shore D 74.0 (Interstate AM; scale-only).
     /// - Generic: no primary hardness datum (returns `None`).
     pub fn hardness(self) -> Option<PlasticHardness> {
         match self {
@@ -175,6 +227,12 @@ impl PlasticFamily {
             PlasticFamily::Polycarbonate => Some(PlasticHardness::ShoreD(80.0)),
             PlasticFamily::Delrin => Some(PlasticHardness::ShoreD(86.0)),
             PlasticFamily::Acrylic => Some(PlasticHardness::RockwellM(93.0)),
+            PlasticFamily::UhmwPe => Some(PlasticHardness::ShoreD(66.0)),
+            PlasticFamily::Polypropylene => Some(PlasticHardness::ShoreD(70.0)),
+            PlasticFamily::Nylon66 => Some(PlasticHardness::ShoreD(85.0)),
+            PlasticFamily::Abs => Some(PlasticHardness::RockwellR(105.0)),
+            PlasticFamily::Petg => Some(PlasticHardness::RockwellR(115.0)),
+            PlasticFamily::RigidPvc => Some(PlasticHardness::ShoreD(74.0)),
             PlasticFamily::Generic => None,
         }
     }
@@ -436,10 +494,25 @@ impl Material {
                 // No fetched primary force study exists for PC, PMMA, or
                 // POM — the historical generic 4.0 was a fabricated
                 // baseline. Until a measurement lands, the gate refuses.
+                // Phase D 2026-05-31 — six new plastic families added
+                // alongside the existing PC/PMMA/POM gap. None have a
+                // fetched milling-regime Kc value (kc_extra.md / Round-2
+                // recorded a PMMA 276.5 N/mm² value but with an explicit
+                // "do NOT promote — size-effect inflated" caveat;
+                // UHMW/PP/Nylon/ABS/PETG/PVC have no primary milling
+                // measurements at all). Refuse-first stays the rule —
+                // the gate refuses via `MaterialUnvalidated` rather
+                // than predicting force from a fabricated constant.
                 PlasticFamily::Polycarbonate
                 | PlasticFamily::Acrylic
                 | PlasticFamily::Delrin
-                | PlasticFamily::Generic => None,
+                | PlasticFamily::Generic
+                | PlasticFamily::UhmwPe
+                | PlasticFamily::Polypropylene
+                | PlasticFamily::Nylon66
+                | PlasticFamily::Abs
+                | PlasticFamily::Petg
+                | PlasticFamily::RigidPvc => None,
             },
             // Aluminum Kienzle pair from Machining Doctor's VDI 3323
             // table (Wayback 2024-08-13 snapshot of
@@ -735,6 +808,42 @@ impl Material {
                     family: PlasticFamily::Polycarbonate,
                 },
             ),
+            (
+                "UHMW-PE",
+                Material::Plastic {
+                    family: PlasticFamily::UhmwPe,
+                },
+            ),
+            (
+                "Polypropylene",
+                Material::Plastic {
+                    family: PlasticFamily::Polypropylene,
+                },
+            ),
+            (
+                "Nylon 6/6",
+                Material::Plastic {
+                    family: PlasticFamily::Nylon66,
+                },
+            ),
+            (
+                "ABS",
+                Material::Plastic {
+                    family: PlasticFamily::Abs,
+                },
+            ),
+            (
+                "PETG",
+                Material::Plastic {
+                    family: PlasticFamily::Petg,
+                },
+            ),
+            (
+                "Rigid PVC",
+                Material::Plastic {
+                    family: PlasticFamily::RigidPvc,
+                },
+            ),
             // Aluminum
             (
                 "Aluminum 6061-T6",
@@ -834,6 +943,12 @@ impl Material {
                 PlasticFamily::Hdpe => "hdpe",
                 PlasticFamily::Delrin => "delrin",
                 PlasticFamily::Polycarbonate => "polycarbonate",
+                PlasticFamily::UhmwPe => "uhmw_pe",
+                PlasticFamily::Polypropylene => "polypropylene",
+                PlasticFamily::Nylon66 => "nylon66",
+                PlasticFamily::Abs => "abs",
+                PlasticFamily::Petg => "petg",
+                PlasticFamily::RigidPvc => "rigid_pvc",
             }
             .to_owned(),
             Material::Aluminum { alloy } => match alloy {
@@ -930,6 +1045,24 @@ impl Material {
             },
             "polycarbonate" => Material::Plastic {
                 family: PlasticFamily::Polycarbonate,
+            },
+            "uhmw_pe" => Material::Plastic {
+                family: PlasticFamily::UhmwPe,
+            },
+            "polypropylene" => Material::Plastic {
+                family: PlasticFamily::Polypropylene,
+            },
+            "nylon66" => Material::Plastic {
+                family: PlasticFamily::Nylon66,
+            },
+            "abs" => Material::Plastic {
+                family: PlasticFamily::Abs,
+            },
+            "petg" => Material::Plastic {
+                family: PlasticFamily::Petg,
+            },
+            "rigid_pvc" => Material::Plastic {
+                family: PlasticFamily::RigidPvc,
             },
             "aluminum_6061_t6" => Material::Aluminum {
                 alloy: AluminumAlloy::Alloy6061T6,
@@ -1059,11 +1192,21 @@ mod tests {
             family: PlasticFamily::Hdpe,
         };
         assert!(matches!(hdpe.kc_n_per_mm2(), Some(v) if (v - 40.0).abs() < 1e-6));
+        // Phase D 2026-05-31 — 6 new families joined the refusal set.
+        // All UHMW/PP/Nylon/ABS/PETG/PVC have NO fetched milling-regime
+        // Kc; refusal-first stays the rule. Updating this list when a
+        // primary Kc value lands is the per-family promotion checklist.
         for family in [
             PlasticFamily::Polycarbonate,
             PlasticFamily::Acrylic,
             PlasticFamily::Delrin,
             PlasticFamily::Generic,
+            PlasticFamily::UhmwPe,
+            PlasticFamily::Polypropylene,
+            PlasticFamily::Nylon66,
+            PlasticFamily::Abs,
+            PlasticFamily::Petg,
+            PlasticFamily::RigidPvc,
         ] {
             let m = Material::Plastic { family };
             assert_eq!(
@@ -1092,6 +1235,35 @@ mod tests {
         assert!(matches!(
             PlasticFamily::Acrylic.hardness(),
             Some(PlasticHardness::RockwellM(v)) if (v - 93.0).abs() < 1e-6
+        ));
+        // Phase D 2026-05-31 — 6 new families. The scale must match the
+        // staged citation (Shore D for polyolefins + PVC + Nylatron GS;
+        // Rockwell R for ABS/PETG). A future drift that silently
+        // converts Rockwell R → Shore D would fail these `matches!`
+        // asserts, not just a numeric tolerance check.
+        assert!(matches!(
+            PlasticFamily::UhmwPe.hardness(),
+            Some(PlasticHardness::ShoreD(v)) if (v - 66.0).abs() < 1e-6
+        ));
+        assert!(matches!(
+            PlasticFamily::Polypropylene.hardness(),
+            Some(PlasticHardness::ShoreD(v)) if (v - 70.0).abs() < 1e-6
+        ));
+        assert!(matches!(
+            PlasticFamily::Nylon66.hardness(),
+            Some(PlasticHardness::ShoreD(v)) if (v - 85.0).abs() < 1e-6
+        ));
+        assert!(matches!(
+            PlasticFamily::Abs.hardness(),
+            Some(PlasticHardness::RockwellR(v)) if (v - 105.0).abs() < 1e-6
+        ));
+        assert!(matches!(
+            PlasticFamily::Petg.hardness(),
+            Some(PlasticHardness::RockwellR(v)) if (v - 115.0).abs() < 1e-6
+        ));
+        assert!(matches!(
+            PlasticFamily::RigidPvc.hardness(),
+            Some(PlasticHardness::ShoreD(v)) if (v - 74.0).abs() < 1e-6
         ));
         assert_eq!(PlasticFamily::Generic.hardness(), None);
     }

@@ -125,31 +125,54 @@ pub(crate) fn material_to_lut(material: &Material) -> (MaterialFamily, HardnessK
             (family, HardnessKind::Janka, kind.effective_janka_lbf())
         }
         Material::Plastic { family } => {
-            // Per-family LUT material class for row matching. Generic
-            // plastic falls back to the Acrylic category — the LUT
-            // doesn't carry a "generic plastic" row family.
+            // Per-family LUT material class for row matching. The LUT's
+            // MaterialFamily enum has only Acrylic / Hdpe /
+            // Polycarbonate / Delrin on the plastic side, so the
+            // Phase D (2026-05-31) UHMW/PP/Nylon/ABS/PETG/PVC additions
+            // bin into the closest available chemistry — these are
+            // best-effort routing hints, not citation-backed mappings.
+            // When no vendor LUT row exists (the common case for the
+            // newer families) the lookup misses cleanly and the
+            // formula fallback takes over, so the binning has
+            // minimal practical impact today. TODO Phase E+: extend
+            // `MaterialFamily` with per-family bins as LUT rows land.
             let lut_family = match family {
-                crate::material::PlasticFamily::Acrylic | crate::material::PlasticFamily::Generic => MaterialFamily::Acrylic,
-                crate::material::PlasticFamily::Hdpe => MaterialFamily::Hdpe,
-                crate::material::PlasticFamily::Delrin => MaterialFamily::Delrin,
+                crate::material::PlasticFamily::Acrylic
+                | crate::material::PlasticFamily::Generic
+                // ABS / PETG / PVC are amorphous rigid sheet plastics
+                // — Acrylic is the LUT's closest "rigid amorphous" bin.
+                | crate::material::PlasticFamily::Abs
+                | crate::material::PlasticFamily::Petg
+                | crate::material::PlasticFamily::RigidPvc => MaterialFamily::Acrylic,
+                // UHMW-PE / PP are polyolefins like HDPE; HDPE is the
+                // LUT's closest polyolefin bin.
+                crate::material::PlasticFamily::Hdpe
+                | crate::material::PlasticFamily::UhmwPe
+                | crate::material::PlasticFamily::Polypropylene => MaterialFamily::Hdpe,
+                // Nylon 6/6 routes to Delrin (the LUT's engineering-
+                // thermoplastic bin — POM and PA are both crystalline
+                // engineering polymers with comparable machining
+                // behaviour).
+                crate::material::PlasticFamily::Delrin
+                | crate::material::PlasticFamily::Nylon66 => MaterialFamily::Delrin,
                 crate::material::PlasticFamily::Polycarbonate => MaterialFamily::Polycarbonate,
             };
             // Canonical hardness from PlasticFamily::hardness().
-            // PMMA reads in Rockwell M natively, so the LUT row's
-            // hardness scaling needs the matching kind. When the
-            // family has no fetched hardness (Generic), default to a
-            // Shore-D-equivalent 80 to keep the lookup numeric
-            // without inventing a citation.
+            // PMMA reads in Rockwell M natively, ABS/PETG read in
+            // Rockwell R — the LUT row's hardness scaling needs the
+            // matching kind. When the family has no fetched hardness
+            // (Generic), default to a Shore-D-equivalent 80 to keep
+            // the lookup numeric without inventing a citation.
             let (hardness_kind, hardness_value) = match family.hardness() {
                 Some(PlasticHardness::ShoreD(v)) => (HardnessKind::ShoreD, v),
-                Some(PlasticHardness::RockwellM(v)) => {
+                Some(PlasticHardness::RockwellM(v)) | Some(PlasticHardness::RockwellR(v)) => {
                     // The LUT currently models only Janka / Hb / ShoreD.
-                    // Rockwell M is reported on PMMA; until the LUT
-                    // grows a RockwellM kind, surface the raw value
-                    // under ShoreD as a comparable-magnitude scalar.
-                    // Recorded here as a TODO so a Phase 3 follow-up
-                    // can plumb a RockwellM HardnessKind through
-                    // `vendor_lut.rs`.
+                    // Rockwell M (PMMA) and Rockwell R (ABS/PETG) are
+                    // both surfaced under ShoreD as comparable-magnitude
+                    // scalars until the LUT grows a Rockwell kind.
+                    // TODO Phase 3+: plumb Rockwell HardnessKind through
+                    // `vendor_lut.rs` (would need per-row Rockwell
+                    // scale annotations on the vendor side too).
                     (HardnessKind::ShoreD, v)
                 }
                 None => (HardnessKind::ShoreD, 80.0),
