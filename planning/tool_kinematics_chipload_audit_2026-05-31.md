@@ -207,3 +207,54 @@ follow-up.
 - The `simulation_cut` sample pipeline — feeds inputs into the gates;
   not part of the kinematics/chipload model itself.
 - GUI presentation of verdicts — separate UX concern.
+
+---
+
+## Completion status (2026-05-31)
+
+| ID | Title | Status | Commit |
+|----|-------|--------|--------|
+| S1-1 | shared `predicted_power_kw` helper | **fixed** | 132e0a8 |
+| S1-2 | `find_best_row_for_geometry` dispatcher | **fixed** | 132e0a8 |
+| S1-3 | plastic hardness duplicate sources | **fixed** | 132e0a8 |
+| S1-4 | stale anisotropy in F-039 fixture | **fixed** | 132e0a8 |
+| S2-5 | inline tables in `material_to_lut` | **fixed** | 132e0a8 |
+| S2-6 | `GRAIN_ANISOTROPY_FACTOR` pub(crate) | **fixed** | 132e0a8 |
+| S2-7 | tracing in gates | **fixed** | 132e0a8 |
+| S2-8 | `hardness_index` semantics | partial — added documentation caveat; full rename deferred (too disruptive for incremental change) | 132e0a8 |
+| S2-9 | leaky `*LimitInputs` shapes | **deferred** — refactor touches `session::compute` and the constrained-max test fixture; small win for cost |
+| S3-10 | `PlasticFamily::hardness()` dead code | **fixed** (now called by `vendor_normalize`) | 132e0a8 |
+| S3-11 | literature_parity test harness | **landed** (11 sentries) | 132e0a8 |
+| S3-12 | Custom material asymmetric validation | **fixed** | 132e0a8 |
+| S3-13 | test fixture clutter | **deferred** — only 7 sites; helper isn't worth the churn |
+| **NEW** | drill thresholds free fns → Material methods | **fixed** | a4c6bfe |
+| **NEW** | aluminum Kc activation (Phase 4 prereq) | **fixed** | 91625d6 |
+| **NEW** | `Vendor::{Freud, Idcwoodcraft}` | **fixed** | 91625d6 |
+| **NEW** | validate_lut.py VENDORS bumped | **fixed** | 91625d6 |
+
+## Carry-forward observations
+
+The bulk Phase 4 promotion (~121 staged rows) is a separate
+review-heavy step intentionally not auto-promoted in this audit
+pass. Key triage findings for the operator's bulk-promote review:
+
+1. **Freud 1/2" rows have chiploads 0.46–0.69 mm/tooth** — verbatim
+   from the Solid Carbide chart but calibrated for industrial CNCs
+   (~10–15 kW spindle). On a Shapeoko-class machine the chipload
+   gate would match these and predict an unreachable feed; the
+   power gate would then catch the breach. Either (a) bump
+   `validate_lut.py`'s `chipload max suspicious` threshold from 0.5
+   to ~0.7 and let the runtime power gate triage, or (b) namespace
+   them under a separate `freud_industrial_*.json` bundle that the
+   embedded loader can opt out of for hobby spindles.
+2. **Garr aluminum rows still staged** (Phase 1C deferred): need
+   per-series flute-count split before they're promotable. The
+   chart shares CPT across 242M (2-flute) / 842M (2-flute) / A3
+   (3-flute) — a single row can't claim one flute count.
+3. **Onsrud OCR rows (47 schema-clean)** ready to promote as-is.
+4. **IDC Woodcraft 10 rows** Grade C — fine as cross-vendor sanity
+   data but should be marked `evidence_grade: c` consistently.
+5. **MCP smoke (AS001–AS015)** is still the operator action item
+   per the Phase 2B re-tune and now the aluminum Kc switch:
+   re-run the smoke suite and record per-case before/after peak µm
+   in `planning/data_ingest_2026-05-30/kc_retune_log.md`.
