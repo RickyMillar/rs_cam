@@ -234,6 +234,14 @@ follow-up.
 
 ## Carry-forward observations
 
+**Phase 4 status (2026-05-31):** bulk promotion landed — 117 rows
+live (228 total), 4 Freud industrial rows namespaced under
+`industrial_only/`. See
+`planning/feeds_data_ingest_phase4_2026-05-31.md` for the per-source
+table, the Freud Option-2 namespacing decision (cleanest data
+hygiene), and the surrounding test updates. The triage findings
+below recorded the open questions that the Phase 4 commit resolved.
+
 The bulk Phase 4 promotion (~121 staged rows) is a separate
 review-heavy step intentionally not auto-promoted in this audit
 pass. Key triage findings for the operator's bulk-promote review:

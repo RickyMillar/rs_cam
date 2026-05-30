@@ -884,17 +884,23 @@ mod tests {
 
     #[test]
     fn project_curve_flat_routes_to_contour_finish() {
-        // 6.35 mm flat tool against the 3.175 mm hardwood `contour/finish`
-        // row diameter-scales chipload bounds by ~2.0×, so the sample
-        // chipload must be in the scaled band (raw 0.018–0.030 → scaled
-        // ≈ 0.032–0.054). The verdict is `Approximate` because the
-        // diameter scale crosses the ±40 % threshold.
-        // The contour-finish row's nominal arc is much narrower than the
-        // pocket-roughing row used by the default `sample()` fixture
-        // (`ae_rule: "2% to 8%D"` → arc ≈ 0.459 rad). Override here so
-        // D9's per-sample normalization is a no-op for this test — the
-        // assertion is about row selection, not engagement geometry.
-        let mut s = sample(0, 0, 0.04, 0.5);
+        // Routing assertion: `OperationType::ProjectCurve` with
+        // `LutOperationFamily::Trace` falls back to a contour/finish
+        // row in the LUT and produces a `Within` verdict when the
+        // sample chipload sits in the matched row's band.
+        //
+        // 2026-05-31 Phase 4 promotion: the Onsrud OCR PDFs added direct
+        // 6.35 mm hardwood contour/finish rows (0.014–0.016 in/tooth =
+        // 0.3556–0.4064 mm/tooth), displacing the older 2× scaled match
+        // from the Amana 3.175 mm row. Sample chipload + confidence
+        // assertion updated to fit the new direct-match band. The test's
+        // *purpose* — ProjectCurve→Trace routing finds a contour/finish
+        // row and gates the sample — is preserved.
+        //
+        // Arc override prevents D9's per-sample normalization from
+        // perturbing row selection (contour-finish rows have narrower
+        // nominal arcs than the pocket-roughing default in `sample()`).
+        let mut s = sample(0, 0, 0.38, 0.5);
         s.arc_engagement_radians = Some(0.459);
         let t = trace(vec![s]);
         let v = evaluate(
@@ -912,14 +918,8 @@ mod tests {
             &crate::tool_load::ToleranceBands::default(),
         );
         assert!(
-            matches!(
-                v,
-                ChiploadVerdict::Within {
-                    confidence: Confidence::Approximate(_),
-                    ..
-                }
-            ),
-            "got {v:?}"
+            matches!(v, ChiploadVerdict::Within { .. }),
+            "expected Within (routing landed in a contour/finish row with sample in band), got {v:?}"
         );
     }
 

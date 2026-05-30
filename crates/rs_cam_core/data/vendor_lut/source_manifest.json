@@ -207,6 +207,62 @@
       "source_url": "https://www.whitesiderouterbits.com/products/ru4000h",
       "accessed_on": "2026-05-29",
       "coverage_notes": "Bundled 2026-05-30 (Phase 1C ingest). RPM-only row, 9.525 mm 3-flute plywood/MDF roughing spiral."
+    },
+    {
+      "source_id": "amana_zrn_3d_profiling_v8",
+      "source_vendor": "amana",
+      "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart (v8)",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart-v8.pdf",
+      "accessed_on": "2026-05-30",
+      "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). v8 revision of the ZrN 3D profiling chart used by amana_long_tail.json — captures diameter / flute-count rows beyond the v7 ball-nose chart's coverage."
+    },
+    {
+      "source_id": "onsrud_hard_wood_cutting_data",
+      "source_vendor": "onsrud",
+      "source_title": "Onsrud Cutting Data — Hard Wood (PDF)",
+      "source_url": "https://www.onsrud.com/images/Hard%20Wood.pdf",
+      "accessed_on": "2026-05-30",
+      "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). Per-material Onsrud cutting-data PDF for hardwood (OCR-extracted into onsrud_ocr.json). Series 64-000 / 65-000 (downcut spiral / compression spiral) and selected straight-flute rows."
+    },
+    {
+      "source_id": "onsrud_soft_wood_cutting_data",
+      "source_vendor": "onsrud",
+      "source_title": "Onsrud Cutting Data — Soft Wood (PDF)",
+      "source_url": "https://www.onsrud.com/images/Soft%20Wood.pdf",
+      "accessed_on": "2026-05-30",
+      "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). Per-material Onsrud cutting-data PDF for softwood (OCR-extracted into onsrud_ocr.json)."
+    },
+    {
+      "source_id": "onsrud_mdf_cutting_data",
+      "source_vendor": "onsrud",
+      "source_title": "Onsrud Cutting Data — MDF (PDF)",
+      "source_url": "https://www.onsrud.com/images/MDF.pdf",
+      "accessed_on": "2026-05-30",
+      "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). Per-material Onsrud cutting-data PDF for MDF (OCR-extracted into onsrud_ocr.json)."
+    },
+    {
+      "source_id": "whiteside_fusion360_tools_2019-10-23",
+      "source_vendor": "whiteside",
+      "source_title": "Whiteside Router Bits — Fusion 360 Tool Library (2019-10-23)",
+      "source_url": "https://www.dropbox.com/s/bqw4gqeggcv30o1/Whiteside-Router-Bits-Fusion360.tools?dl=0",
+      "accessed_on": "2026-05-30",
+      "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). Community-distributed Fusion 360 tool library exported from Whiteside's catalog (2019-10-23 snapshot). Provides chiploads for Whiteside RU1600/RU1800/RU2075 upcut, RD1600/RD1800/RD2075/RD5100 downcut, UD2102 compression, C1072 straight, and the SC ball-nose / conical-ball-nose series. Grade A — verbatim vendor chiploads keyed to Fusion 360 tool definitions."
+    },
+    {
+      "source_id": "freud_router_bit_feed_and_speed_for_cnc_20170822",
+      "source_vendor": "freud",
+      "source_title": "Freud — Router Bit Feed Rates and Speeds for CNC (Solid Carbide chart, 2017-08-22)",
+      "source_url": "https://www.freudtools.com/public/assets/freud/downloadables/freudtools-router-bit-feed-and-speed-for-cnc-20170822.pdf",
+      "accessed_on": "2026-05-30",
+      "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). Freud Solid Carbide chart: 1/8\"–1/2\" across hardwood / softwood / MDF / particleboard / plywood / acrylic / aluminum. Grade A. NOTE: 1/2\" rows quote chiploads 0.46–0.69 mm/tooth (calibrated for industrial 10–15 kW CNC spindles, not Shapeoko-class hobby routers); those 4 rows live under data/vendor_lut/industrial_only/freud_solid_carbide_industrial.json and are intentionally NOT loaded by embedded() until a per-spindle gate exists. See planning/feeds_data_ingest_phase4_2026-05-31.md."
+    },
+    {
+      "source_id": "idcwoodcraft_chipload_csv_2026-05-30",
+      "source_vendor": "idcwoodcraft",
+      "source_title": "IDC Woodcraft / Millmage Community Chipload Database (CSV)",
+      "source_url": "https://feeds-speeds-chipload-api.fly.dev/download-csv",
+      "accessed_on": "2026-05-30",
+      "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). Community-aggregated CSV — Grade C. Not a tool-manufacturer source; used as cross-vendor sanity data, NOT as authoritative feed/chipload anchors. row_kind='derived' across all 10 promoted rows."
     }
   ]
 }

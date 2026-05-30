@@ -40,20 +40,22 @@ fn sub_1mm_tapered_ball_softwood_finish_matches() {
 
 #[test]
 fn sub_1mm_tapered_ball_hardwood_finish_extrapolates_with_scaling() {
-    // Used to be a "documented gap" — the Amana ZrN 3D Profiling chart
-    // conflates softwood/hardwood under one "Wood" row, so no
-    // hardwood-specific sub-1mm row exists. Pre G5+G6+G7 (2026-05-08) the
-    // [0.5, 2.0] hard ratio gate refused on the 3.175 mm rows and the
+    // Used to be a "documented gap" — pre-G5/G6/G7 (2026-05-08) the
+    // [0.5, 2.0] hard ratio gate refused on the larger rows and the
     // lookup returned None. With engaged-edge scaling the lookup now
-    // matches the 3.175 mm hardwood row, scales chipload bounds linearly
-    // by the diameter ratio (0.31×), and flags the result as
-    // extrapolated so verdicts derived from it are reported with
-    // `Approximate` confidence.
+    // matches the closest hardwood tapered-ball row and scales chipload
+    // bounds linearly by the diameter ratio.
+    //
+    // Asserts the *spirit* (closest match + scaling + extrapolation
+    // flag), not a specific row id: Phase 4+ LUT promotions can
+    // legitimately introduce closer matches without invalidating the
+    // property. Query is 0.5 mm — well below every tapered-ball
+    // hardwood row currently in the LUT.
     let lut = VendorLut::embedded();
     let query = LookupQuery {
         tool_family: ToolFamily::TaperedBallNose,
         tool_subfamily: None,
-        diameter_mm: 1.0,
+        diameter_mm: 0.5,
         flute_count: 2,
         material_family: MaterialFamily::Hardwood,
         hardness_kind: Some(HardnessKind::Janka),
@@ -62,12 +64,18 @@ fn sub_1mm_tapered_ball_hardwood_finish_extrapolates_with_scaling() {
         pass_role: LutPassRole::Finish,
     };
     let result = lookup_best(&lut, &query)
-        .expect("1mm hardwood tapered ball should now extrapolate from a 3.175 mm hardwood row");
+        .expect("0.5mm hardwood tapered ball should extrapolate from the closest available row");
     assert!(
         result.is_extrapolated,
-        "1.0 / 3.175 = 0.31× must trip the Approximate threshold"
+        "0.5 mm against any tapered-ball hardwood row in the LUT must trip extrapolation"
     );
-    assert!((result.chipload_diameter_scale - (1.0 / 3.175)).abs() < 1e-6);
+    assert!(
+        result.row_diameter_mm >= 1.0,
+        "expected to scale up from a >=1mm row, got row diameter {}",
+        result.row_diameter_mm
+    );
+    let expected_scale = 0.5 / result.row_diameter_mm;
+    assert!((result.chipload_diameter_scale - expected_scale).abs() < 1e-6);
 }
 
 #[test]
@@ -75,9 +83,9 @@ fn embedded_count_matches_after_expansion() {
     let lut = VendorLut::embedded();
     assert_eq!(
         lut.observations.len(),
-        111,
-        "expected 111 embedded observations (85 + 26 non-wood rows from the \
-         2026-05-30 Phase 1C ingest: onsrud/whiteside/amana plastic + amana ZrN \
-         aluminum + amana V-groove aluminum/acrylic + helical aluminum)"
+        228,
+        "expected 228 embedded observations (111 baseline + 117 from the \
+         2026-05-30 Phase 4 bulk promotion: 37 amana_long_tail, 47 onsrud_ocr, \
+         13 whiteside_fusion360, 10 freud_solid_carbide, 10 idcwoodcraft_millmage)"
     );
 }

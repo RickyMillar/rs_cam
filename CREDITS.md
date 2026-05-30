@@ -159,6 +159,31 @@ The Garr aluminum staged rows remain deferred (per-series flute-count
 split + pass_role repair still pending) and are tracked in the
 Phase 3 backlog.
 
+2026-05-31 Phase 4 bulk LUT row promotion landed 117 new bundled rows
+across five files (bundled count 111 → 228), all from the Phase 3
+agent-fleet staging:
+
+- `amana_long_tail.json` (37 rows) — Spektra Spiral Plunge + ZrN 3D
+  Profiling v8 extensions to the existing Amana coverage
+- `onsrud_ocr.json` (47 rows) — OCR-extracted Hard Wood / Soft Wood /
+  MDF cutting-data PDFs
+- `whiteside_fusion360.json` (13 rows) — Whiteside Fusion 360 tool
+  library (2019-10-23 community export)
+- `freud_solid_carbide.json` (10 rows) — Freud Solid Carbide router-bit
+  chart, 1/8"–3/8" subset (hobby spindle envelope)
+- `idcwoodcraft_millmage.json` (10 rows) — Community Millmage CSV,
+  Grade C cross-vendor sanity data
+
+Seven new `source_id` entries added to `source_manifest.json`. Freud
+1/2" rows (chiploads 0.46–0.69 mm/tooth, calibrated for industrial
+10–15 kW CNC spindles) are split into
+`crates/rs_cam_core/data/vendor_lut/industrial_only/freud_solid_carbide_industrial.json`
+and are intentionally NOT loaded by `embedded()` — the sibling
+directory makes the hobby/industrial boundary explicit at the path
+layer. The Garr aluminum rows remain deferred (per-series flute-count
+split still pending). See
+`planning/feeds_data_ingest_phase4_2026-05-31.md`.
+
 ### Acceptance benchmark seed sources
 
 `planning/SUGGEST_SIM_OPTIMIZE_ACCEPTANCE.md` and the seed matrix in
