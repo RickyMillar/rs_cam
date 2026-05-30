@@ -4,6 +4,8 @@
 //! used by the feeds calculator to determine chip load, feed rate, and power.
 //! Ported from reference/shapeoko_feeds_and_speeds/src/params/mod.rs.
 
+pub mod wood_species_library;
+
 use serde::{Deserialize, Serialize};
 
 /// Wood species with Janka hardness data.
@@ -337,6 +339,32 @@ pub enum Material {
     SolidWood {
         species: WoodSpecies,
     },
+    /// Parametric solid-wood variant — `(janka_lbf, label, source_id)`.
+    /// Lets the GUI surface the broader Wood Database + FPL Ch.5 species
+    /// libraries (~148 species in `WOOD_SPECIES_LIBRARY`) without
+    /// exploding the [`WoodSpecies`] enum to 150+ pattern-match arms.
+    /// Added Phase E (completion plan 2026-05-31).
+    ///
+    /// - `janka_lbf` — Janka hardness in lbf at 12% MC. Must satisfy
+    ///   [`JANKA_CALIBRATED_BAND`] (`200.0..=4000.0`) for the helper
+    ///   `Kc` and `hardness_index` lookups to return finite values;
+    ///   outside the band, `kc_n_per_mm2()` returns `None` and
+    ///   `hardness_index()` falls back to `1.0`.
+    /// - `label` — human-readable species name for GUI display
+    ///   (`"Red Oak (Northern)"`, `"Black Cherry"`).
+    /// - `source_id` — citation key matching an entry in
+    ///   `data/vendor_lut/source_manifest.json` (e.g.
+    ///   `"wood_database_2026-05-30"` or `"fpl_ch5_2010"`).
+    ///
+    /// First-class [`WoodSpecies`] enum variants stay the source of
+    /// truth for the 10 most-tested species (HardMaple, Walnut, Ipe,
+    /// etc.) — they keep their hand-tuned `Kc` values and `Janka`
+    /// anchors. The parametric variant is for the long tail.
+    SolidWoodByJanka {
+        janka_lbf: f64,
+        label: String,
+        source_id: String,
+    },
     Plywood {
         grade: PlywoodGrade,
     },
@@ -357,6 +385,71 @@ pub enum Material {
         hardness_index: f64,
         kc: f64,
     },
+}
+
+/// Calibrated Janka band for the parametric [`Material::SolidWoodByJanka`]
+/// `Kc` helper. Outside this band the `Kc` regression has no
+/// citation-backed validity; the helper returns `None` and gates
+/// refuse via `UnmodeledReason::MaterialUnvalidated`.
+///
+/// The lower bound 200 lbf is well below balsa-class softwoods
+/// (Generic softwood baseline = 600 lbf); the upper bound 4000 lbf
+/// is above Ipe (3510 lbf, the existing per-species ceiling). Both
+/// extremes are well outside the workshop-stock range that informed
+/// the folklore-grade per-species `Kc` table.
+pub const JANKA_CALIBRATED_BAND_LOW_LBF: f64 = 200.0;
+pub const JANKA_CALIBRATED_BAND_HIGH_LBF: f64 = 4000.0;
+
+/// Shared Janka → Kc fallback for parametric wood species.
+///
+/// **Formula:** `Kc = janka_lbf / 100.0`. Folklore-grade — the
+/// existing 10 per-species hardcoded `Kc` values in
+/// [`Material::kc_n_per_mm2`] sit roughly on this line (the table
+/// fits within ±25 % of `janka/100` except for the
+/// `GenericHardwood` and `Walnut` hand-tuned anchors). The literature
+/// has no clean Janka → Kc regression at workshop fidelity; this
+/// formula exists so the parametric variant can supply *something*
+/// finite to the Kc-consuming gates rather than refusing every
+/// library species.
+///
+/// **Returns `None`** outside [`JANKA_CALIBRATED_BAND_LOW_LBF`,
+/// `JANKA_CALIBRATED_BAND_HIGH_LBF`] or for non-finite input. The
+/// 10 first-class [`WoodSpecies`] variants do NOT route through this
+/// helper — their per-species `Kc` constants are the source of truth
+/// for those species.
+///
+/// TODO Phase 3+: replace with a per-species derivation backbone
+/// (FPL Ch.5 shear-parallel-to-grain × edge-radius size-effect, per
+/// the `kc.md` TODO trail).
+pub(crate) fn janka_to_kc_n_per_mm2(janka_lbf: f64) -> Option<f64> {
+    if !janka_lbf.is_finite() {
+        return None;
+    }
+    if !(JANKA_CALIBRATED_BAND_LOW_LBF..=JANKA_CALIBRATED_BAND_HIGH_LBF).contains(&janka_lbf) {
+        return None;
+    }
+    Some(janka_lbf / 100.0)
+}
+
+/// Shared Janka → drill chip-welding D/d threshold band lookup.
+///
+/// Three bands matching the existing `Material::SolidWood` per-species
+/// switch:
+/// - softwood (Janka ≤ 700 lbf) → 8.0
+/// - medium hardwood (700 < Janka ≤ 1500 lbf) → 6.0
+/// - dense hardwood (Janka > 1500 lbf, includes out-of-band & NaN) → 5.0
+///
+/// Out-of-band and non-finite Janka fall into the dense-hardwood
+/// bucket (5.0) — the most conservative choice for chip evacuation
+/// when we don't know what we're drilling.
+fn janka_to_drill_chip_welding_dtd(janka_lbf: f64) -> f64 {
+    if !janka_lbf.is_finite() || janka_lbf > 1500.0 {
+        5.0 // dense hardwood / unknown
+    } else if janka_lbf <= 700.0 {
+        8.0 // softwood
+    } else {
+        6.0 // medium hardwood
+    }
 }
 
 impl Default for Material {
@@ -394,6 +487,18 @@ impl Material {
     pub fn hardness_index(&self) -> f64 {
         match self {
             Material::SolidWood { species } => (species.janka_lbf() / 600.0).powf(0.4),
+            Material::SolidWoodByJanka { janka_lbf, .. } => {
+                if janka_lbf.is_finite()
+                    && (JANKA_CALIBRATED_BAND_LOW_LBF..=JANKA_CALIBRATED_BAND_HIGH_LBF)
+                        .contains(janka_lbf)
+                {
+                    (janka_lbf / 600.0).powf(0.4)
+                } else {
+                    // Out-of-band parametric Janka — same fall-back as
+                    // Custom-with-invalid-hardness: softwood baseline.
+                    1.0
+                }
+            }
             Material::Plywood { grade } => (grade.effective_janka_lbf() / 600.0).powf(0.4),
             Material::SheetGood { kind } => (kind.effective_janka_lbf() / 600.0).powf(0.4),
             Material::Plastic { .. } => 0.5,
@@ -448,6 +553,11 @@ impl Material {
                 WoodSpecies::Jarrah => 19.0,
                 WoodSpecies::Ipe => 28.0,
             }),
+            // Parametric variant — `janka_to_kc_n_per_mm2` returns
+            // `None` outside the calibrated band, propagating to the
+            // gate which refuses via `MaterialUnvalidated` (right
+            // behavior: out-of-band Janka has no citation backing).
+            Material::SolidWoodByJanka { janka_lbf, .. } => janka_to_kc_n_per_mm2(*janka_lbf),
             // TODO Phase 3 — per-grade plywood Kc has no fetched
             // primary measurement; current values track shear-parallel
             // shear strength of the dominant veneer rather than peripheral
@@ -557,7 +667,7 @@ impl Material {
     /// Used to derive initial RPM from tool diameter.
     pub fn base_cutting_speed_m_min(&self) -> f64 {
         match self {
-            Material::SolidWood { .. } => 200.0,
+            Material::SolidWood { .. } | Material::SolidWoodByJanka { .. } => 200.0,
             Material::Plywood { .. } => 180.0,
             Material::SheetGood { .. } => 170.0,
             Material::Plastic { .. } => 250.0,
@@ -576,7 +686,7 @@ impl Material {
     pub fn plunge_rate_base(&self) -> f64 {
         let h = self.hardness_index();
         match self {
-            Material::SolidWood { .. } => 1000.0 / h,
+            Material::SolidWood { .. } | Material::SolidWoodByJanka { .. } => 1000.0 / h,
             Material::Plywood { .. } | Material::SheetGood { .. } => 900.0 / h,
             Material::Plastic { .. } => 1500.0,
             // Conservative placeholder — aluminum plunge guidance
@@ -605,14 +715,13 @@ impl Material {
     pub fn drill_chip_welding_threshold_dtd(&self) -> f64 {
         match self {
             Material::SolidWood { species } => {
-                let janka = species.janka_lbf();
-                if janka <= 700.0 {
-                    8.0 // softwood
-                } else if janka <= 1500.0 {
-                    6.0 // medium hardwood
-                } else {
-                    5.0 // dense hardwood
-                }
+                janka_to_drill_chip_welding_dtd(species.janka_lbf())
+            }
+            // Parametric variant shares the same band lookup; out-of-band
+            // Janka falls into the dense-hardwood (5.0) bucket — most
+            // conservative for chip evacuation.
+            Material::SolidWoodByJanka { janka_lbf, .. } => {
+                janka_to_drill_chip_welding_dtd(*janka_lbf)
             }
             Material::Plywood { .. } | Material::SheetGood { .. } => 5.0,
             Material::Plastic { .. } => 4.0,
@@ -637,7 +746,7 @@ impl Material {
     /// `drill_chip_welding_threshold_dtd`.
     pub fn drill_per_peck_max_dtd(&self) -> f64 {
         match self {
-            Material::SolidWood { .. } => 2.0,
+            Material::SolidWood { .. } | Material::SolidWoodByJanka { .. } => 2.0,
             Material::Plywood { .. } | Material::SheetGood { .. } => 1.5,
             Material::Plastic { .. } => 1.0,
             // Aluminum per-peck ≤ 1×D — standard machining-textbook
@@ -655,7 +764,7 @@ impl Material {
     /// Consumed by `tool_load::drill_gates::evaluate_plunge_feed`.
     pub fn drill_plunge_feed_envelope_per_mm(&self) -> (f64, f64) {
         match self {
-            Material::SolidWood { .. } => (50.0, 400.0),
+            Material::SolidWood { .. } | Material::SolidWoodByJanka { .. } => (50.0, 400.0),
             Material::Plywood { .. } | Material::SheetGood { .. } => (40.0, 350.0),
             Material::Plastic { .. } => (60.0, 500.0),
             // Aluminum on a wood router is application-edge —
@@ -672,6 +781,7 @@ impl Material {
     pub fn label(&self) -> String {
         match self {
             Material::SolidWood { species } => species.label().to_owned(),
+            Material::SolidWoodByJanka { label, .. } => label.clone(),
             Material::Plywood { grade } => grade.label().to_owned(),
             Material::SheetGood { kind } => kind.label().to_owned(),
             Material::Plastic { family } => family.label().to_owned(),
@@ -968,6 +1078,46 @@ impl Material {
             }
             .to_owned(),
             Material::Custom { name, .. } => format!("custom:{name}"),
+            // Parametric variant — emits a key carrying source_id +
+            // janka_lbf so a from_key roundtrip can reconstruct the
+            // variant (the per-species library is consulted at parse
+            // time; if the source_id no longer exists in
+            // `WOOD_SPECIES_LIBRARY` we still recover label + janka
+            // from the key). Format:
+            // `solid_wood_by_janka:{source_id}:{janka_lbf}:{label}`
+            // The trailing label may contain ASCII punctuation
+            // (parens, slashes, dashes) — the parser splits on the
+            // first three `:` only so a label can carry colons too.
+            Material::SolidWoodByJanka {
+                janka_lbf,
+                label,
+                source_id,
+            } => format!("solid_wood_by_janka:{source_id}:{janka_lbf}:{label}"),
+        }
+    }
+
+    /// Test-fixture constructor for `Material::Custom { name, hardness_index,
+    /// kc }` with audit-defaulted scalars (S3-13 from
+    /// `planning/tool_kinematics_chipload_audit_2026-05-31.md`).
+    ///
+    /// `hardness_index = 1.0` (softwood baseline), `kc = 10.0` (mid-MDF
+    /// band) — the same triplet that `tool_load/power.rs:470`,
+    /// `tool_load/deflection.rs:456`, `tool_load/optimize/mod.rs:859`, and
+    /// `compute/validate.rs:538` constructed ad hoc before this helper
+    /// landed. Tests that want different defaults should construct
+    /// `Material::Custom { ... }` directly.
+    ///
+    /// Only compiled under `#[cfg(test)]` so production code can't depend
+    /// on the test helper. Integration tests in `crates/rs_cam_core/tests/`
+    /// that want the same fixture should call `Material::Custom { ... }`
+    /// directly (the helper is intentionally scoped to in-crate tests
+    /// because that's where the audit's 4 call sites live).
+    #[cfg(test)]
+    pub fn test_fixture_custom(name: &str) -> Self {
+        Material::Custom {
+            name: name.to_owned(),
+            hardness_index: 1.0,
+            kc: 10.0,
         }
     }
 
@@ -1094,6 +1244,24 @@ impl Material {
             "foam_high" => Material::Foam {
                 density: FoamDensity::High,
             },
+            // Parametric solid-wood-by-Janka key. See `to_key` for the
+            // emission format. Parses defensively — any malformed
+            // segment falls through to the default.
+            key if key.starts_with("solid_wood_by_janka:") => {
+                let rest = &key["solid_wood_by_janka:".len()..];
+                let mut parts = rest.splitn(3, ':');
+                if let (Some(source_id), Some(janka_str), Some(label)) =
+                    (parts.next(), parts.next(), parts.next())
+                    && let Ok(janka_lbf) = janka_str.parse::<f64>()
+                {
+                    return Material::SolidWoodByJanka {
+                        janka_lbf,
+                        label: label.to_owned(),
+                        source_id: source_id.to_owned(),
+                    };
+                }
+                Material::default()
+            }
             _ => Material::default(),
         }
     }

@@ -250,6 +250,32 @@ sentry now exercises all 10 None families. Six new
 `literature_parity` sentries pin each new hardness value to its
 citation. See `planning/feeds_data_ingest_phaseD_2026-05-31.md`.
 
+2026-05-31 Phase E (completion plan) added a parametric
+`Material::SolidWoodByJanka { janka_lbf, label, source_id }` variant
+plus a curated `WOOD_SPECIES_LIBRARY` const (132 entries) covering
+wood species beyond the 10 first-class `WoodSpecies` enum variants:
+
+- 98 entries from USDA Forest Service, *Wood Handbook — Wood as an
+  Engineering Material* (GTR FPL-GTR-190, 2010), Chapter 5
+  "Mechanical Properties of Wood", Table 5-3a. Side hardness
+  converted from the published Newton values to lbf via
+  `lbf = N / 4.448`.
+- 34 entries from The Wood Database (https://www.wood-database.com/)
+  per-species Janka pages, used as fill-in for species FPL doesn't
+  cover (typically tropical / specialty woods). FPL precedence
+  when both sources list the same common name.
+
+Two `source_id` entries added to `source_manifest.json`
+(`fpl_ch5_2010`, `wood_database_2026-05-30`). The library is wired
+through a shared `janka_to_kc_n_per_mm2(janka_lbf)` fallback helper
+calibrated on `[200, 4000]` lbf — outside the band the helper
+refuses and the parametric variant's Kc gate refuses cleanly. The
+first-class `WoodSpecies` enum variants keep their hand-tuned per-
+species Kc constants (no behavior change). New literature_parity
+sentries pin the helper's output to the LongleafPine enum anchor
+within ±30 % folklore tolerance and to the calibrated-band
+refusal contract. See `planning/feeds_data_ingest_phaseE_2026-05-31.md`.
+
 ### Acceptance benchmark seed sources
 
 `planning/SUGGEST_SIM_OPTIMIZE_ACCEPTANCE.md` and the seed matrix in

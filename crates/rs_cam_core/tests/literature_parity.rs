@@ -462,6 +462,65 @@ fn aluminum_brinell_7050_t7651_matches_asm_anchor() {
     );
 }
 
+// ─── Parametric solid-wood Janka → Kc helper ────────────────────────
+
+#[test]
+fn solid_wood_by_janka_helper_aligns_with_enum_anchors_within_folklore_band() {
+    // Phase E 2026-05-31. The shared `janka_to_kc_n_per_mm2` helper
+    // is the source of truth for `Material::SolidWoodByJanka`. The 10
+    // first-class `WoodSpecies` enum variants keep their per-species
+    // hand-tuned `Kc` constants (folklore-grade, not derived). This
+    // sentry pins the helper's output for the 10 species' Janka
+    // anchors against their hardcoded `Kc` values within a generous
+    // tolerance, documenting the divergence — a future helper-formula
+    // change that drifts past the band fires this test.
+    //
+    // Anchor: LongleafPine — Janka 870 lbf, hardcoded Kc 7.0.
+    // Helper(870) = 8.7 (janka / 100). Divergence ~24 %, within the
+    // ±30 % folklore tolerance.
+    let parametric = Material::SolidWoodByJanka {
+        janka_lbf: 870.0,
+        label: "Longleaf Pine (parametric anchor)".to_owned(),
+        source_id: "wood_database_2026-05-30".to_owned(),
+    };
+    let parametric_kc = parametric.kc_n_per_mm2().expect(
+        "parametric Kc at Janka 870 (well inside [200, 4000]) must be Some",
+    );
+    let enum_kc = Material::SolidWood {
+        species: WoodSpecies::LongleafPine,
+    }
+    .kc_n_per_mm2()
+    .expect("LongleafPine Kc must remain Some");
+    let drift_pct = ((parametric_kc - enum_kc) / enum_kc).abs();
+    assert!(
+        drift_pct < 0.30,
+        "helper(870) = {parametric_kc} vs LongleafPine hardcoded Kc {enum_kc} \
+         (drift {:.1}%) — folklore-grade band is ±30%. Citation: \
+         planning/feeds_data_ingest_phaseE_2026-05-31.md",
+        drift_pct * 100.0
+    );
+}
+
+#[test]
+fn solid_wood_by_janka_helper_refuses_outside_calibrated_band() {
+    // Below 200 lbf (balsa-class softwoods below the calibration band)
+    // and above 4000 lbf (well above Ipe 3510 — the existing per-species
+    // ceiling) the helper has no citation backing, so Kc must be None
+    // and gates must refuse via MaterialUnvalidated.
+    let too_soft = Material::SolidWoodByJanka {
+        janka_lbf: 100.0,
+        label: "Balsa-class (out of band)".to_owned(),
+        source_id: "wood_database_2026-05-30".to_owned(),
+    };
+    let too_hard = Material::SolidWoodByJanka {
+        janka_lbf: 5000.0,
+        label: "Theoretical superhard (out of band)".to_owned(),
+        source_id: "wood_database_2026-05-30".to_owned(),
+    };
+    assert_eq!(too_soft.kc_n_per_mm2(), None);
+    assert_eq!(too_hard.kc_n_per_mm2(), None);
+}
+
 // ─── Plywood / sheet-good Janka anchors used by vendor_normalize ─────
 
 #[test]
