@@ -263,6 +263,22 @@
       "source_url": "https://feeds-speeds-chipload-api.fly.dev/download-csv",
       "accessed_on": "2026-05-30",
       "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). Community-aggregated CSV — Grade C. Not a tool-manufacturer source; used as cross-vendor sanity data, NOT as authoritative feed/chipload anchors. row_kind='derived' across all 10 promoted rows."
+    },
+    {
+      "source_id": "garr_milling_aluminum_low_range",
+      "source_vendor": "garr",
+      "source_title": "Garr Tool Milling Guide for Aluminum (Low-Range HP/Torque) Series 242M/842M/A3 End Mills",
+      "source_url": "https://www.garrtool.com/doc/pdf/tech/TECH_MILLING_ALUMINUM.pdf",
+      "accessed_on": "2026-05-29",
+      "coverage_notes": "Bundled 2026-05-31 (Phase B of completion plan). Low-Range page of Garr's three-page Aluminum Milling Guide. Chart presents one chipload triplet shared across series 242M (2-flute) / 842M (2-flute) / A3 (3-flute); promoted as 9 per-series rows (3 chart entries × 3 series) so per-flute matching gates can dispatch correctly. Diameters covered: 3.0 mm and 6.0 mm; operations slotting (pocket) and profiling (contour). Verbatim metric chiploads from the chart's M/Min table — no inch round-trip. Excluded from this promotion: Mid-Range (142M/143M) and General-Purpose rows — neither had pre-authorized flute counts. See planning/feeds_data_ingest_phaseB_2026-05-31.md."
+    },
+    {
+      "source_id": "garr_milling_aluminum_high_range",
+      "source_vendor": "garr",
+      "source_title": "Garr Tool Milling Guide for Aluminum (High-Range HP/Torque) Series A3 End Mills",
+      "source_url": "https://www.garrtool.com/doc/pdf/tech/TECH_MILLING_ALUMINUM.pdf",
+      "accessed_on": "2026-05-29",
+      "coverage_notes": "Bundled 2026-05-31 (Phase B of completion plan). High-Range page of Garr's three-page Aluminum Milling Guide. A3 series only (3-flute, aerospace-grade); no per-series split needed. 2 rows: HEM profiling (adaptive/roughing, 6 mm, CPT 0.120–0.180 mm/tooth) and finishing (contour/finish, 6 mm, CPT 0.060 mm/tooth single value). Includes A3-specific ap/ae rules (HEM Axial=2xD, Radial=30%-40%xD; Finish Radial=2.5%xD)."
     }
   ]
 }

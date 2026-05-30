@@ -180,9 +180,28 @@ Seven new `source_id` entries added to `source_manifest.json`. Freud
 `crates/rs_cam_core/data/vendor_lut/industrial_only/freud_solid_carbide_industrial.json`
 and are intentionally NOT loaded by `embedded()` — the sibling
 directory makes the hobby/industrial boundary explicit at the path
-layer. The Garr aluminum rows remain deferred (per-series flute-count
-split still pending). See
-`planning/feeds_data_ingest_phase4_2026-05-31.md`.
+layer. See `planning/feeds_data_ingest_phase4_2026-05-31.md`.
+
+2026-05-31 Phase B (completion plan) closed the Garr aluminum
+deferral with a per-series flute split. The Garr Aluminum Milling
+Guide PDF (`TECH_MILLING_ALUMINUM.pdf`) presents one chipload triplet
+shared across each page's series. Promoted as
+`crates/rs_cam_core/data/vendor_lut/observations/garr_aluminum.json`
+(11 rows total, bundled count 228 → 239):
+
+- Low-Range page (3 chart entries × 3 series): 242M (2-flute), 842M
+  (2-flute), A3 (3-flute) end mills, slotting + profiling at 3 mm and
+  6 mm = 9 rows
+- High-Range page (A3 only, 3-flute): HEM profiling + finishing at
+  6 mm = 2 rows
+
+Two `source_id` entries added (`garr_milling_aluminum_low_range`,
+`garr_milling_aluminum_high_range`) to `source_manifest.json`.
+Mid-Range (142M/143M) rows and General-Purpose rows are NOT promoted
+in this round — neither had pre-authorized flute counts (D4 of the
+completion plan locked only the Low-Range trio and A3) and GP
+plastics has no `MaterialFamily` enum mapping. See
+`planning/feeds_data_ingest_phaseB_2026-05-31.md`.
 
 ### Acceptance benchmark seed sources
 

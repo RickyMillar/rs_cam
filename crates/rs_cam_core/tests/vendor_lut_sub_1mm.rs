@@ -83,9 +83,8 @@ fn embedded_count_matches_after_expansion() {
     let lut = VendorLut::embedded();
     assert_eq!(
         lut.observations.len(),
-        228,
-        "expected 228 embedded observations (111 baseline + 117 from the \
-         2026-05-30 Phase 4 bulk promotion: 37 amana_long_tail, 47 onsrud_ocr, \
-         13 whiteside_fusion360, 10 freud_solid_carbide, 10 idcwoodcraft_millmage)"
+        239,
+        "expected 239 embedded observations (228 post-Phase-4 + 11 Garr aluminum \
+         per-series split from Phase B 2026-05-31)"
     );
 }
