@@ -1327,6 +1327,7 @@ fn material_family_label(m: rs_cam_core::feeds::vendor_lut::MaterialFamily) -> &
         MaterialFamily::Polycarbonate => "Polycarbonate",
         MaterialFamily::Delrin => "Delrin",
         MaterialFamily::Aluminum => "Aluminum",
+        MaterialFamily::Fiberglass => "Fiberglass",
     }
 }
 

@@ -83,9 +83,9 @@ fn embedded_count_matches_after_expansion() {
     let lut = VendorLut::embedded();
     assert_eq!(
         lut.observations.len(),
-        251,
-        "expected 251 embedded observations (247 after Phase 4 + 4 Phase 5 \
-         Step 5.2: 3 Amana Spektra engrave + 1 Onsrud polycarbonate window — \
-         see planning/phase_5_schema_unlock_2026-06-01.md)"
+        252,
+        "expected 252 embedded observations (251 after Step 5.2 + 1 Phase 5 \
+         Step 5.3 Garr GP fiberglass row — see \
+         planning/phase_5_schema_unlock_2026-06-01.md)"
     );
 }
