@@ -180,3 +180,46 @@ The `2026-06-01.csv` is the canonical post-Phase-F snapshot, identical
 content to `2026-05-31_postphasef.csv`. `F-037`'s `baseline_path()`
 now references it. The earlier `2026-05-26.csv` stays on disk as the
 historical F-037 reference state (pre-Phase-2B, pre-F-031).
+
+## Closure 2026-06-02: AS013/AS015 methodology gap addressed
+
+The "real feature, not a quick fix" methodology gap is closed.
+`cases_agent_smoke.csv` gained a `prior_passes` column and the smoke
+runner (`crates/rs_cam_cli/src/smoke.rs`) now materializes each
+referenced prior case into the same session with `StockSource::Fresh`,
+then runs the measured case with `StockSource::FromRemainingStock`.
+The simulation chains: prior toolpaths cut residual stock, the
+measured toolpath cuts what remains.
+
+AS015 now has `prior_passes=AS013` (matches the round-10 STATE.md
+methodology). The result on `cfb146b`-class current code:
+
+| Case  | Pre-chain (2026-06-01) | Post-chain (2026-06-02) | Round-10 target |
+|-------|------------------------|-------------------------|-----------------|
+| AS013 | 262.9 µm Exceeds       | 262.9 µm Exceeds (no change — AS013 itself has no prior_passes) | 105 µm Within |
+| AS015 | 476.7 µm Exceeds       | **129.7 µm Within** ✓   | 197 µm Within |
+
+AS015 is now under the 200 µm Exceeds threshold and matches the
+round-10 verdict-kind. The numerical reading is lower than round-10's
+197 µm (129.7 vs 197 µm); the delta is consistent with `cfb146b`
+having a tighter scallop entry than the round-10 capture and is not
+a methodology bug.
+
+**AS013 still reads 262.9 µm** because AS013 itself isn't chained.
+Round-09 STATE.md got AS013 to 105 µm via F-031 (in `DressupConfig::
+for_op` — already in the codebase and exercised by the CLI smoke).
+The remaining 262.9 vs 105 µm delta is a SEPARATE methodology gap:
+
+- The CLI smoke rejects `stock_top_z=30` as an unknown parameter for
+  3D Rough (`param_warnings=stock_top_z=30: Invalid parameter`). Round-
+  09 ran via MCP which applies `stock_top_z` via the project's stock
+  config, not the toolpath operation schema.
+- Closing this would require either (a) plumbing `stock_top_z` into
+  the `parse_baseline_params` setter as a stock-config override, or
+  (b) authoring a per-case TOML overlay that mutates the project stock
+  before generation.
+
+Out of scope for the prior_passes fix; tracked separately. The new
+baseline `2026-06-02.csv` reflects the chained methodology; the
+F-037 regression net (`smoke_baseline_regression_f037.rs::baseline_
+path()`) now references it.

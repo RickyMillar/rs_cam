@@ -77,6 +77,21 @@ struct SmokeCase {
     run_optimizer: String,
     #[serde(default)]
     notes: String,
+    /// Comma-separated list of case_ids whose toolpaths must run first
+    /// against this same project so the measured toolpath cuts from
+    /// already-roughed stock (round-10 STATE.md methodology — AS015
+    /// finishing needs an AS013 roughing pass first or its measured
+    /// deflection reflects fresh-stock contact, not residual-stock
+    /// contact).
+    ///
+    /// When non-empty, the runner adds each prior toolpath with
+    /// `StockSource::Fresh`, generates them, then materializes the
+    /// measured case with `StockSource::FromRemainingStock`. All run
+    /// in a single `run_simulation` call so the dexel state chains.
+    /// Prior-pass verdicts are NOT written to the baseline; only the
+    /// measured case's verdict is.
+    #[serde(default)]
+    prior_passes: String,
 }
 
 /// One row of `baseline.csv` — one per case (one toolpath per case).
@@ -135,7 +150,7 @@ pub fn run_smoke(input_csv: &Path, output: &Path, resolution: f64) -> Result<()>
     let mut rows = Vec::with_capacity(cases.len());
     for case in &cases {
         info!(case_id = %case.case_id, op = %case.operation_kind, "Running smoke case");
-        let row = run_single_case(case, resolution);
+        let row = run_single_case(case, &cases, resolution);
         info!(
             case_id = %case.case_id,
             status = %row.status,
@@ -231,7 +246,124 @@ fn is_exceeds(kind: &str) -> bool {
 
 // ── Case execution ──────────────────────────────────────────────────────
 
-fn run_single_case(case: &SmokeCase, resolution: f64) -> BaselineRow {
+/// Materializes one case's toolpath into an existing session: resolves
+/// op + tool, calls `suggest_params`, adds the `ToolpathConfig` with the
+/// caller-supplied `stock_source`, applies the case's baseline_params,
+/// and generates the toolpath. Used by `run_single_case` for both prior
+/// passes (`StockSource::Fresh`) and the measured case
+/// (`StockSource::FromRemainingStock` when chaining, else `Fresh`).
+///
+/// Returns `(tp_idx, op_type, param_warnings)` on success, or a
+/// `BaselineRow` describing the failure class so callers can short-
+/// circuit with it.
+#[allow(clippy::result_large_err)] // tp_idx tuple is small; failure path is the rare branch
+fn materialize_case_toolpath(
+    session: &mut ProjectSession,
+    case: &SmokeCase,
+    stock_source: rs_cam_core::compute::config::StockSource,
+    name_suffix: &str,
+) -> Result<(usize, OperationType, Vec<String>), BaselineRow> {
+    let Some(op_type) = parse_op_type(&case.operation_kind) else {
+        return Err(BaselineRow::failure(
+            &case.case_id,
+            &case.operation_kind,
+            "harness_error",
+            &format!("unknown operation_kind {}", case.operation_kind),
+        ));
+    };
+
+    let Some(tool_id) = pick_tool(session, &case.tool_name) else {
+        return Err(BaselineRow::failure(
+            &case.case_id,
+            op_type.kind_str(),
+            "harness_error",
+            "no tool available in template",
+        ));
+    };
+
+    let stock_ctx =
+        StockContext::from_stock_bbox(session.stock_bbox(), session.stock_config().padding);
+    let tool = match session.tools().iter().find(|t| t.id.0 == tool_id) {
+        Some(t) => t.clone(),
+        None => {
+            return Err(BaselineRow::failure(
+                &case.case_id,
+                op_type.kind_str(),
+                "harness_error",
+                "tool resolution mismatch",
+            ));
+        }
+    };
+    let machine = session.machine().clone();
+    let material = session.stock_config().material.clone();
+    let workholding = session.stock_config().workholding_rigidity;
+    let operation = suggest_params(SuggestParamsInput {
+        op_type,
+        tool: &tool,
+        machine: &machine,
+        material: &material,
+        workholding,
+        lut: embedded_vendor_lut(),
+        stock_ctx: &stock_ctx,
+    })
+    .operation;
+
+    let model_id = session.models().first().map(|m| m.id).unwrap_or(0);
+
+    let tc = ToolpathConfig {
+        id: 0,
+        name: format!("{} {name_suffix}", op_type.kind_str()),
+        enabled: true,
+        operation,
+        dressups: rs_cam_core::compute::config::DressupConfig::for_op(op_type),
+        heights: rs_cam_core::compute::config::HeightsConfig::default(),
+        tool_id,
+        model_id,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: rs_cam_core::compute::config::BoundaryConfig::default(),
+        boundary_inherit: true,
+        stock_source,
+        coolant: rs_cam_core::gcode::CoolantMode::Off,
+        face_selection: None,
+        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+    };
+
+    let tp_idx = match session.add_toolpath(0, tc) {
+        Ok(i) => i,
+        Err(e) => {
+            return Err(BaselineRow::failure(
+                &case.case_id,
+                op_type.kind_str(),
+                "harness_error",
+                &format!("add_toolpath failed: {e}"),
+            ));
+        }
+    };
+
+    let params = parse_baseline_params(&case.baseline_params);
+    let mut param_warnings = Vec::new();
+    for (key, value) in &params {
+        let json_value = serde_json::Value::String(value.clone());
+        if let Err(e) = session.set_toolpath_param(tp_idx, key, json_value) {
+            param_warnings.push(format!("{key}={value}: {e}"));
+        }
+    }
+
+    let cancel = AtomicBool::new(false);
+    if let Err(e) = session.generate_toolpath(tp_idx, &cancel) {
+        return Err(BaselineRow::failure(
+            &case.case_id,
+            op_type.kind_str(),
+            "generation_failed",
+            &format!("{e}; param_warnings={}", param_warnings.join("|")),
+        ));
+    }
+
+    Ok((tp_idx, op_type, param_warnings))
+}
+
+fn run_single_case(case: &SmokeCase, all_cases: &[SmokeCase], resolution: f64) -> BaselineRow {
     let Some(op_type) = parse_op_type(&case.operation_kind) else {
         return BaselineRow::failure(
             &case.case_id,
@@ -264,112 +396,84 @@ fn run_single_case(case: &SmokeCase, resolution: f64) -> BaselineRow {
         }
     };
 
-    // Override material on stock to match the row's `material_family`. The
-    // template's default material may differ from what the smoke row wants
-    // to test — the goal_id / vendor LUT lookup keys off material.
+    // Override material on stock to match the measured row's
+    // `material_family`. The template's default material may differ
+    // from what the smoke row wants to test — the goal_id / vendor LUT
+    // lookup keys off material. For chained runs, the measured case
+    // drives material so prior passes cut the same physical stock.
     if !case.material_family.is_empty()
         && let Some(material) = material_for_family(&case.material_family)
     {
         session.stock_mut().material = material;
     }
 
-    // Pick a tool by name; fall back to first available.
-    let Some(tool_id) = pick_tool(&session, &case.tool_name) else {
-        return BaselineRow::failure(
-            &case.case_id,
-            op_type.kind_str(),
-            "harness_error",
-            "no tool available in template",
-        );
-    };
-
-    // Build a default operation via suggest_params (same path GUI/MCP uses).
-    let stock_ctx =
-        StockContext::from_stock_bbox(session.stock_bbox(), session.stock_config().padding);
-    let tool = match session.tools().iter().find(|t| t.id.0 == tool_id) {
-        Some(t) => t.clone(),
-        None => {
-            return BaselineRow::failure(
-                &case.case_id,
-                op_type.kind_str(),
-                "harness_error",
-                "tool resolution mismatch",
-            );
-        }
-    };
-    let machine = session.machine().clone();
-    let material = session.stock_config().material.clone();
-    let workholding = session.stock_config().workholding_rigidity;
-    let operation = suggest_params(SuggestParamsInput {
-        op_type,
-        tool: &tool,
-        machine: &machine,
-        material: &material,
-        workholding,
-        lut: embedded_vendor_lut(),
-        stock_ctx: &stock_ctx,
-    })
-    .operation;
-
-    let model_id = session.models().first().map(|m| m.id).unwrap_or(0);
-
-    // Build a ToolpathConfig. Disable any existing toolpaths to keep the
-    // simulation focused on this single op.
+    // Disable any existing toolpaths so simulation only sees what we
+    // explicitly add (prior passes + measured case).
     for tc in session.toolpath_configs_mut().iter_mut() {
         tc.enabled = false;
     }
 
-    let tc = ToolpathConfig {
-        id: 0,
-        name: format!("{} smoke", op_type.kind_str()),
-        enabled: true,
-        operation,
-        dressups: rs_cam_core::compute::config::DressupConfig::for_op(op_type),
-        heights: rs_cam_core::compute::config::HeightsConfig::default(),
-        tool_id,
-        model_id,
-        pre_gcode: None,
-        post_gcode: None,
-        boundary: rs_cam_core::compute::config::BoundaryConfig::default(),
-        boundary_inherit: true,
-        stock_source: rs_cam_core::compute::config::StockSource::Fresh,
-        coolant: rs_cam_core::gcode::CoolantMode::Off,
-        face_selection: None,
-        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
-    };
+    // Resolve prior_passes: each id must reference a case earlier in
+    // the suite. Prior passes share the measured case's project + stock
+    // material — they're a residual-stock setup, not standalone runs.
+    let prior_ids: Vec<&str> = case
+        .prior_passes
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
 
-    let tp_idx = match session.add_toolpath(0, tc) {
-        Ok(i) => i,
-        Err(e) => {
+    let mut combined_param_warnings: Vec<String> = Vec::new();
+    for prior_id in &prior_ids {
+        let Some(prior_case) = all_cases.iter().find(|c| c.case_id == *prior_id) else {
             return BaselineRow::failure(
                 &case.case_id,
                 op_type.kind_str(),
                 "harness_error",
-                &format!("add_toolpath failed: {e}"),
+                &format!("prior_passes references unknown case_id {prior_id}"),
             );
+        };
+        match materialize_case_toolpath(
+            &mut session,
+            prior_case,
+            rs_cam_core::compute::config::StockSource::Fresh,
+            &format!("prior:{prior_id}"),
+        ) {
+            Ok((_, _, warns)) => {
+                for w in warns {
+                    combined_param_warnings.push(format!("prior[{prior_id}]: {w}"));
+                }
+            }
+            Err(mut row) => {
+                // Surface prior-pass failures as harness_error against
+                // the measured case so the regression diff still sees
+                // a stable row for this case_id.
+                row.case_id.clone_from(&case.case_id);
+                row.op_kind = op_type.kind_str().to_owned();
+                row.notes = format!("prior[{prior_id}] failed: {}", row.notes);
+                return row;
+            }
         }
+    }
+
+    let measured_stock_source = if prior_ids.is_empty() {
+        rs_cam_core::compute::config::StockSource::Fresh
+    } else {
+        rs_cam_core::compute::config::StockSource::FromRemainingStock
     };
 
-    // Apply baseline_params (semicolon-separated k=v pairs).
-    let params = parse_baseline_params(&case.baseline_params);
-    let mut param_warnings = Vec::new();
-    for (key, value) in &params {
-        let json_value = serde_json::Value::String(value.clone());
-        if let Err(e) = session.set_toolpath_param(tp_idx, key, json_value) {
-            param_warnings.push(format!("{key}={value}: {e}"));
-        }
-    }
+    let (tp_idx, op_type, mut param_warnings) =
+        match materialize_case_toolpath(&mut session, case, measured_stock_source, "smoke") {
+            Ok(triple) => triple,
+            Err(row) => return row,
+        };
 
-    // Generate + simulate.
+    param_warnings.extend(combined_param_warnings);
+
+    // Simulation runs all enabled toolpaths in sequence; the dexel
+    // state carries from each prior toolpath into the measured one
+    // because `stock_source: FromRemainingStock` is set on the latter.
     let cancel = AtomicBool::new(false);
-    if let Err(e) = session.generate_toolpath(tp_idx, &cancel) {
-        return BaselineRow::failure(
-            &case.case_id,
-            op_type.kind_str(),
-            "generation_failed",
-            &format!("{e}; param_warnings={}", param_warnings.join("|")),
-        );
-    }
 
     // Confirm non-empty toolpath
     let move_count = session

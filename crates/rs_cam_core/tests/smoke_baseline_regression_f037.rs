@@ -19,18 +19,20 @@
 use std::path::PathBuf;
 
 fn baseline_path() -> PathBuf {
-    // 2026-06-01 baseline supersedes 2026-05-26.csv (F-037 capture, pre-
-    // Phase-2B / pre-F-031). The newer file was captured against `cfb146b`
-    // after the feeds-data-ingest A→F + audit followups (S2-9, S3-13,
-    // hierarchical material picker) landed. The older file stays on disk
-    // as historical archive of the F-037 reference state.
+    // 2026-06-02 baseline supersedes 2026-06-01.csv: closes the AS013/
+    // AS015 methodology gap with `prior_passes` chaining in the smoke
+    // runner. AS015 scallop now runs on AS013-roughed stock via
+    // `StockSource::FromRemainingStock`, dropping deflection from
+    // 0.4767 (Exceeds) to 0.1297 (Within) — matches the round-10
+    // STATE.md operator-validated methodology. Older baselines stay
+    // on disk as historical reference points.
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join("planning")
         .join("toolpath_acceptance")
         .join("baselines")
-        .join("2026-06-01.csv")
+        .join("2026-06-02.csv")
 }
 
 fn read_rows(path: &std::path::Path) -> Vec<csv::StringRecord> {
