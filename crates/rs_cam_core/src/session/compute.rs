@@ -2888,7 +2888,7 @@ mod tests {
             // baseline. Custom material isolates the rigidity scaler.
             stock.material = crate::material::Material::Custom {
                 name: "test_workholding_fixture".to_owned(),
-                hardness_index: 1.5,
+                feed_scale_factor: 1.5,
                 kc: 25.0,
             };
             s.set_stock_config(stock);

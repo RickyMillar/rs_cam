@@ -233,7 +233,11 @@ pub struct FormulaBreakdown {
     pub p: f64,
     pub q: f64,
     pub diameter_mm: f64,
-    pub hardness_index: f64,
+    /// Renamed from `hardness_index` in S2-8 Option B (2026-06-01) —
+    /// the field always held [`Material::feed_scale_factor`]'s output,
+    /// not a wood-Janka hardness. See the accessor's doc for the
+    /// per-class semantics.
+    pub feed_scale_factor: f64,
     pub result_mm_tooth: f64,
 }
 
@@ -286,9 +290,9 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let mut rpm = machine.clamp_rpm(ideal_rpm);
 
     // --- Step 2: Chip load — vendor LUT first, formula fallback ---
-    let hardness = material.hardness_index();
+    let feed_scale = material.feed_scale_factor();
     let cl = &machine.chip_load;
-    let formula_chipload = cl.k0 * d.powf(cl.p) * (1.0 / hardness).powf(cl.q);
+    let formula_chipload = cl.k0 * d.powf(cl.p) * (1.0 / feed_scale).powf(cl.q);
 
     let (chip_load, vendor_rpm, vendor_source, chipload_source) =
         if let Some(lut) = input.vendor_lut {
@@ -553,7 +557,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             p: cl.p,
             q: cl.q,
             diameter_mm: d,
-            hardness_index: hardness,
+            feed_scale_factor: feed_scale,
             result_mm_tooth: formula_chipload,
         })
     } else {
@@ -724,15 +728,17 @@ fn default_engagement(
                 ae_factor *= 0.85;
             }
 
-            // Hardness-dependent adaptive derates
-            let hardness = input.material.hardness_index();
-            if hardness > 1.40 {
+            // Feed-scale-dependent adaptive derates — harder materials
+            // (higher factor) want shallower ap/ae; softer materials
+            // can take a slightly more aggressive bite.
+            let feed_scale = input.material.feed_scale_factor();
+            if feed_scale > 1.40 {
                 ap_factor *= 0.80;
                 ae_factor *= 0.90;
-            } else if hardness > 1.15 {
+            } else if feed_scale > 1.15 {
                 ap_factor *= 0.90;
                 ae_factor *= 0.95;
-            } else if hardness < 0.85 {
+            } else if feed_scale < 0.85 {
                 ap_factor *= 1.05;
                 ae_factor *= 1.05;
             }
@@ -866,7 +872,7 @@ mod tests {
         let h = Material::SolidWood {
             species: WoodSpecies::GenericSoftwood,
         }
-        .hardness_index();
+        .feed_scale_factor();
         let cl = machine.chip_load.k0
             * d.powf(machine.chip_load.p)
             * (1.0 / h).powf(machine.chip_load.q);
@@ -880,7 +886,7 @@ mod tests {
         let h = Material::SolidWood {
             species: WoodSpecies::HardMaple,
         }
-        .hardness_index();
+        .feed_scale_factor();
         let cl = machine.chip_load.k0
             * d.powf(machine.chip_load.p)
             * (1.0 / h).powf(machine.chip_load.q);

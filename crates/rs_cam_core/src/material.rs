@@ -74,7 +74,7 @@ pub enum PlywoodGrade {
 
 impl PlywoodGrade {
     /// Effective Janka hardness (lbf) for the plywood grade — driven by
-    /// the dominant veneer species. Used by both `hardness_index()`
+    /// the dominant veneer species. Used by both `feed_scale_factor()`
     /// (the feed-rate scaling normaliser) and
     /// `feeds::vendor_normalize::material_to_lut` (the LUT hardness
     /// query) so the two paths can't drift.
@@ -105,7 +105,7 @@ pub enum SheetGoodKind {
 
 impl SheetGoodKind {
     /// Effective Janka hardness (lbf) for the engineered-wood sheet
-    /// good — used by both `hardness_index()` and the LUT hardness
+    /// good — used by both `feed_scale_factor()` and the LUT hardness
     /// query in `feeds::vendor_normalize::material_to_lut`. These
     /// values are the substrate density proxy; the actual cutting-
     /// force `Kc` lives on `Material::kc_n_per_mm2()` and is
@@ -406,9 +406,9 @@ pub enum Material {
     ///
     /// - `janka_lbf` — Janka hardness in lbf at 12% MC. Must satisfy
     ///   [`JANKA_CALIBRATED_BAND`] (`200.0..=4000.0`) for the helper
-    ///   `Kc` and `hardness_index` lookups to return finite values;
+    ///   `Kc` and `feed_scale_factor` lookups to return finite values;
     ///   outside the band, `kc_n_per_mm2()` returns `None` and
-    ///   `hardness_index()` falls back to `1.0`.
+    ///   `feed_scale_factor()` falls back to `1.0`.
     /// - `label` — human-readable species name for GUI display
     ///   (`"Red Oak (Northern)"`, `"Black Cherry"`).
     /// - `source_id` — citation key matching an entry in
@@ -441,7 +441,20 @@ pub enum Material {
     },
     Custom {
         name: String,
-        hardness_index: f64,
+        /// Feed-rate scaling factor with softwood as the baseline (1.0 =
+        /// generic softwood; > 1 harder, < 1 softer). Renamed from
+        /// `hardness_index` in S2-8 Option B because the previous name
+        /// implied a wood-Janka normalised hardness, but the consumers
+        /// use it as a *general feed derate* scalar (the `(1.0 / x)^q`
+        /// chipload formula, the adaptive ap/ae bracketed derates).
+        /// For non-wood materials there is no shared physical meaning —
+        /// plastics/aluminum/foam supply per-family placeholders that
+        /// drive the same feed math, not a Janka-equivalent hardness.
+        ///
+        /// Validation rules unchanged from the old field: non-finite or
+        /// non-positive values fall through to the softwood baseline
+        /// (1.0) in [`Material::feed_scale_factor`].
+        feed_scale_factor: f64,
         kc: f64,
     },
 }
@@ -524,10 +537,22 @@ impl Material {
     /// in [`crate::feeds::calculate`]. `1.0 = soft wood baseline (Janka
     /// 600 lbf)`; formula `(janka / 600)^0.4`.
     ///
-    /// **Semantics caveat (read before consuming the value):** this is
-    /// a *wood-baseline* normaliser. For materials outside the wood
-    /// regime — plastics, aluminum — the value is a placeholder
-    /// scaling factor with no shared physical meaning across classes:
+    /// **Renamed from `hardness_index` in S2-8 Option B (2026-06-01).**
+    /// The previous name implied a Janka-normalised hardness, but the
+    /// per-material-class values are not physically commensurable
+    /// (plastics get a hardcoded 0.5, aluminum derives from Brinell,
+    /// foam from density). The honest name is "feed scale factor" —
+    /// the consumers (`feeds::calculate`, the adaptive ap/ae bracketed
+    /// derates) treat this as a per-class scalar driving feed math,
+    /// not as a hardness in the physical sense.
+    ///
+    /// For the wood-class branches the value still equals
+    /// `(janka_lbf / 600)^0.4`. Callers that genuinely need the Janka
+    /// number — wood-class LUT row hardness matching, drill chip-
+    /// welding band lookup — should use [`wood_hardness_lbf`] instead
+    /// and receive `None` for non-wood materials.
+    ///
+    /// **Per-class semantics:**
     /// - Plastic: hardcoded `0.5` regardless of family (per-family
     ///   refinement would route through `PlasticFamily::hardness()`).
     /// - Aluminum: `(brinell / 60)^0.4` — Brinell isn't on the Janka
@@ -539,11 +564,13 @@ impl Material {
     /// (`Material::kc_n_per_mm2`) is independent of this and refuses
     /// cleanly for unmeasured materials.
     ///
-    /// `Material::Custom { hardness_index, .. }` ignores invalid user
-    /// inputs (NaN / non-positive) and falls back to the softwood
+    /// `Material::Custom { feed_scale_factor, .. }` ignores invalid
+    /// user inputs (NaN / non-positive) and falls back to the softwood
     /// baseline of 1.0 — keeps downstream `1.0 / hardness` consumers
     /// out of NaN territory.
-    pub fn hardness_index(&self) -> f64 {
+    ///
+    /// [`wood_hardness_lbf`]: Self::wood_hardness_lbf
+    pub fn feed_scale_factor(&self) -> f64 {
         match self {
             Material::SolidWood { species } => (species.janka_lbf() / 600.0).powf(0.4),
             Material::SolidWoodByJanka { janka_lbf, .. } => {
@@ -554,7 +581,7 @@ impl Material {
                     (janka_lbf / 600.0).powf(0.4)
                 } else {
                     // Out-of-band parametric Janka — same fall-back as
-                    // Custom-with-invalid-hardness: softwood baseline.
+                    // Custom-with-invalid-factor: softwood baseline.
                     1.0
                 }
             }
@@ -567,19 +594,57 @@ impl Material {
                 FoamDensity::Medium => 0.25,
                 FoamDensity::High => 0.40,
             },
-            Material::Custom { hardness_index, .. } => {
-                if hardness_index.is_finite() && *hardness_index > 0.0 {
-                    *hardness_index
+            Material::Custom {
+                feed_scale_factor, ..
+            } => {
+                if feed_scale_factor.is_finite() && *feed_scale_factor > 0.0 {
+                    *feed_scale_factor
                 } else {
-                    // Pre-Phase-1E this returned raw `*hardness_index`,
+                    // Pre-Phase-1E this returned raw `*feed_scale_factor`,
                     // propagating NaN / negative values into the
-                    // feed-rate ramp (`1.0 / hardness` → NaN/-inf).
+                    // feed-rate ramp (`1.0 / x` → NaN/-inf).
                     // Fall back to the softwood baseline (1.0) so the
                     // pipeline never serves an invalid scalar from
                     // user-typed Custom material data.
                     1.0
                 }
             }
+        }
+    }
+
+    /// Janka hardness in lbf for wood-class materials. Returns `None`
+    /// for plastics, aluminum, foam, and Custom — those materials have
+    /// no Janka reading and the alternative metrics (Brinell, Shore-D,
+    /// density) live on per-family accessors instead.
+    ///
+    /// Added in S2-8 Option B (2026-06-01) so wood-specific LUT row
+    /// matching can fetch a real Janka value without going through the
+    /// inverse-formula hack
+    /// (`janka ≈ feed_scale_factor * 600`) that the Custom branch in
+    /// `vendor_normalize` previously used. Wood-class branches
+    /// (`SolidWood`, `SolidWoodByJanka`, `Plywood`, `SheetGood`) all
+    /// return `Some(janka)`; the parametric branch returns `None` for
+    /// out-of-band Janka inputs to match `feed_scale_factor`'s
+    /// fallback policy.
+    pub fn wood_hardness_lbf(&self) -> Option<f64> {
+        match self {
+            Material::SolidWood { species } => Some(species.janka_lbf()),
+            Material::SolidWoodByJanka { janka_lbf, .. } => {
+                if janka_lbf.is_finite()
+                    && (JANKA_CALIBRATED_BAND_LOW_LBF..=JANKA_CALIBRATED_BAND_HIGH_LBF)
+                        .contains(janka_lbf)
+                {
+                    Some(*janka_lbf)
+                } else {
+                    None
+                }
+            }
+            Material::Plywood { grade } => Some(grade.effective_janka_lbf()),
+            Material::SheetGood { kind } => Some(kind.effective_janka_lbf()),
+            Material::Plastic { .. }
+            | Material::Aluminum { .. }
+            | Material::Foam { .. }
+            | Material::Custom { .. } => None,
         }
     }
 
@@ -741,9 +806,10 @@ impl Material {
     }
 
     /// Base plunge feed rate estimate in mm/min.
-    /// Material-dependent; divided by hardness for wood-like materials.
+    /// Material-dependent; divided by the feed-scale factor for
+    /// wood-like materials.
     pub fn plunge_rate_base(&self) -> f64 {
-        let h = self.hardness_index();
+        let h = self.feed_scale_factor();
         match self {
             Material::SolidWood { .. } | Material::SolidWoodByJanka { .. } => 1000.0 / h,
             Material::Plywood { .. } | Material::SheetGood { .. } => 900.0 / h,
@@ -789,11 +855,13 @@ impl Material {
             // even for 6061 — denser alloys want lower D/d.
             Material::Aluminum { .. } => 3.0,
             Material::Foam { .. } => 12.0,
-            Material::Custom { hardness_index, .. } => {
+            Material::Custom {
+                feed_scale_factor, ..
+            } => {
                 // Softer materials evacuate better. Clamp to the
                 // wood-to-foam range so a degenerate user-supplied
-                // hardness can't blow this open.
-                (8.0 / hardness_index.max(0.5)).clamp(2.0, 12.0)
+                // factor can't blow this open.
+                (8.0 / feed_scale_factor.max(0.5)).clamp(2.0, 12.0)
             }
         }
     }
@@ -1301,16 +1369,16 @@ impl Material {
         }
     }
 
-    /// Test-fixture constructor for `Material::Custom { name, hardness_index,
-    /// kc }` with audit-defaulted scalars (S3-13 from
-    /// `planning/tool_kinematics_chipload_audit_2026-05-31.md`).
+    /// Test-fixture constructor for `Material::Custom { name,
+    /// feed_scale_factor, kc }` with audit-defaulted scalars (S3-13
+    /// from `planning/tool_kinematics_chipload_audit_2026-05-31.md`).
     ///
-    /// `hardness_index = 1.0` (softwood baseline), `kc = 10.0` (mid-MDF
-    /// band) — the same triplet that `tool_load/power.rs:470`,
-    /// `tool_load/deflection.rs:456`, `tool_load/optimize/mod.rs:859`, and
-    /// `compute/validate.rs:538` constructed ad hoc before this helper
-    /// landed. Tests that want different defaults should construct
-    /// `Material::Custom { ... }` directly.
+    /// `feed_scale_factor = 1.0` (softwood baseline), `kc = 10.0`
+    /// (mid-MDF band) — the same triplet that `tool_load/power.rs:470`,
+    /// `tool_load/deflection.rs:456`, `tool_load/optimize/mod.rs:859`,
+    /// and `compute/validate.rs:538` constructed ad hoc before this
+    /// helper landed. Tests that want different defaults should
+    /// construct `Material::Custom { ... }` directly.
     ///
     /// Only compiled under `#[cfg(test)]` so production code can't depend
     /// on the test helper. Integration tests in `crates/rs_cam_core/tests/`
@@ -1321,7 +1389,7 @@ impl Material {
     pub fn test_fixture_custom(name: &str) -> Self {
         Material::Custom {
             name: name.to_owned(),
-            hardness_index: 1.0,
+            feed_scale_factor: 1.0,
             kc: 10.0,
         }
     }
@@ -1478,15 +1546,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_softwood_baseline_hardness_is_one() {
+    fn test_softwood_baseline_feed_scale_is_one() {
         let m = Material::SolidWood {
             species: WoodSpecies::GenericSoftwood,
         };
-        assert!((m.hardness_index() - 1.0).abs() < 0.01);
+        assert!((m.feed_scale_factor() - 1.0).abs() < 0.01);
     }
 
     #[test]
-    fn test_hardness_index_ordering() {
+    fn test_feed_scale_factor_ordering() {
         let soft = Material::SolidWood {
             species: WoodSpecies::GenericSoftwood,
         };
@@ -1496,8 +1564,8 @@ mod tests {
         let ipe = Material::SolidWood {
             species: WoodSpecies::Ipe,
         };
-        assert!(soft.hardness_index() < hard.hardness_index());
-        assert!(hard.hardness_index() < ipe.hardness_index());
+        assert!(soft.feed_scale_factor() < hard.feed_scale_factor());
+        assert!(hard.feed_scale_factor() < ipe.feed_scale_factor());
     }
 
     #[test]
@@ -1642,56 +1710,56 @@ mod tests {
     }
 
     #[test]
-    fn custom_with_invalid_hardness_falls_back_to_softwood_baseline() {
+    fn custom_with_invalid_factor_falls_back_to_softwood_baseline() {
         // S3-12 fix: Custom material with NaN / non-positive
-        // hardness_index propagated raw values into `1.0 / hardness`
+        // feed_scale_factor propagated raw values into `1.0 / x`
         // consumers, producing NaN / -inf. Now coerces to 1.0
         // (softwood baseline) so the pipeline always has a defined
         // scalar.
         let nan = Material::Custom {
-            name: "NaN-hardness".into(),
-            hardness_index: f64::NAN,
+            name: "NaN-factor".into(),
+            feed_scale_factor: f64::NAN,
             kc: 10.0,
         };
-        assert!((nan.hardness_index() - 1.0).abs() < 1e-9);
+        assert!((nan.feed_scale_factor() - 1.0).abs() < 1e-9);
         let neg = Material::Custom {
-            name: "negative-hardness".into(),
-            hardness_index: -1.0,
+            name: "negative-factor".into(),
+            feed_scale_factor: -1.0,
             kc: 10.0,
         };
-        assert!((neg.hardness_index() - 1.0).abs() < 1e-9);
+        assert!((neg.feed_scale_factor() - 1.0).abs() < 1e-9);
         let zero = Material::Custom {
-            name: "zero-hardness".into(),
-            hardness_index: 0.0,
+            name: "zero-factor".into(),
+            feed_scale_factor: 0.0,
             kc: 10.0,
         };
-        assert!((zero.hardness_index() - 1.0).abs() < 1e-9);
+        assert!((zero.feed_scale_factor() - 1.0).abs() < 1e-9);
         // Valid value passes through unchanged.
         let good = Material::Custom {
             name: "valid".into(),
-            hardness_index: 1.4,
+            feed_scale_factor: 1.4,
             kc: 10.0,
         };
-        assert!((good.hardness_index() - 1.4).abs() < 1e-9);
+        assert!((good.feed_scale_factor() - 1.4).abs() < 1e-9);
     }
 
     #[test]
     fn custom_with_invalid_kc_returns_none() {
         let bad = Material::Custom {
             name: "Bad".into(),
-            hardness_index: 1.0,
+            feed_scale_factor: 1.0,
             kc: -1.0,
         };
         assert_eq!(bad.kc_n_per_mm2(), None);
         let nan = Material::Custom {
             name: "NaN".into(),
-            hardness_index: 1.0,
+            feed_scale_factor: 1.0,
             kc: f64::NAN,
         };
         assert_eq!(nan.kc_n_per_mm2(), None);
         let good = Material::Custom {
             name: "OK".into(),
-            hardness_index: 1.0,
+            feed_scale_factor: 1.0,
             kc: 15.0,
         };
         assert_eq!(good.kc_n_per_mm2(), Some(15.0));
@@ -1705,7 +1773,79 @@ mod tests {
         let soft_wood = Material::SolidWood {
             species: WoodSpecies::GenericSoftwood,
         };
-        assert!(foam.hardness_index() < soft_wood.hardness_index());
+        assert!(foam.feed_scale_factor() < soft_wood.feed_scale_factor());
+    }
+
+    #[test]
+    fn wood_hardness_lbf_returns_some_for_wood_class_only() {
+        // S2-8 Option B: wood_hardness_lbf() returns Some(Janka) for
+        // wood / plywood / sheet-good and None for everything else.
+        assert_eq!(
+            Material::SolidWood {
+                species: WoodSpecies::GenericSoftwood,
+            }
+            .wood_hardness_lbf(),
+            Some(600.0)
+        );
+        assert!(
+            Material::SolidWoodByJanka {
+                janka_lbf: 1450.0,
+                label: "Hard Maple".into(),
+                source_id: "test".into(),
+            }
+            .wood_hardness_lbf()
+            .is_some()
+        );
+        // Out-of-band parametric Janka returns None (matches the
+        // calibrated-band policy in feed_scale_factor / kc_n_per_mm2).
+        assert_eq!(
+            Material::SolidWoodByJanka {
+                janka_lbf: 100.0,
+                label: "below band".into(),
+                source_id: "test".into(),
+            }
+            .wood_hardness_lbf(),
+            None
+        );
+        assert!(
+            Material::Plywood {
+                grade: PlywoodGrade::BalticBirch,
+            }
+            .wood_hardness_lbf()
+            .is_some()
+        );
+        assert!(
+            Material::SheetGood {
+                kind: SheetGoodKind::Mdf,
+            }
+            .wood_hardness_lbf()
+            .is_some()
+        );
+        assert_eq!(
+            Material::Plastic {
+                family: PlasticFamily::Hdpe,
+            }
+            .wood_hardness_lbf(),
+            None
+        );
+        assert_eq!(
+            Material::Aluminum {
+                alloy: AluminumAlloy::Alloy6061T6,
+            }
+            .wood_hardness_lbf(),
+            None
+        );
+        assert_eq!(
+            Material::Foam {
+                density: FoamDensity::Medium,
+            }
+            .wood_hardness_lbf(),
+            None
+        );
+        assert_eq!(
+            Material::test_fixture_custom("custom").wood_hardness_lbf(),
+            None
+        );
     }
 
     #[test]
@@ -1840,11 +1980,11 @@ mod tests {
     }
 
     #[test]
-    fn test_hard_maple_hardness_matches_reference() {
+    fn test_hard_maple_feed_scale_factor_matches_reference() {
         // Reference: (1450/600)^0.4 ≈ 1.425
         let m = Material::SolidWood {
             species: WoodSpecies::HardMaple,
         };
-        assert!((m.hardness_index() - 1.425).abs() < 0.01);
+        assert!((m.feed_scale_factor() - 1.425).abs() < 0.01);
     }
 }
