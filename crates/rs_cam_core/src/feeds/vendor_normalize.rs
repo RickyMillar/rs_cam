@@ -200,10 +200,26 @@ pub(crate) fn material_to_lut(material: &Material) -> (MaterialFamily, HardnessK
             // values we return here. The triple is structural noise.
             (MaterialFamily::Softwood, HardnessKind::Janka, 200.0)
         }
-        Material::Custom { hardness_index, .. } => {
-            // Reverse the `hardness_index = (janka / 600)^0.4` formula
-            // to recover an effective Janka for LUT matching.
-            let janka = hardness_index * 600.0;
+        Material::Custom {
+            feed_scale_factor, ..
+        } => {
+            // `Material::Custom` is the user-typed escape hatch — it
+            // carries no true Janka reading. For LUT matching we need
+            // *some* `(MaterialFamily, HardnessKind, value)` triple,
+            // so we heuristically project `feed_scale_factor` onto a
+            // wood-equivalent Janka by inverting the wood-class
+            // `factor = (janka / 600)^0.4` formula.
+            //
+            // This is documented as a heuristic, not a physical
+            // hardness — the alternative (refusing the lookup) would
+            // silently break the vendor LUT fallback that every Custom
+            // user depends on.
+            //
+            // S2-8 Option B note: `Material::wood_hardness_lbf()`
+            // correctly returns `None` for `Custom`; this heuristic
+            // Janka is local to the LUT matcher and does NOT round-trip
+            // back through the material API.
+            let janka = feed_scale_factor * 600.0;
             let family = if janka <= 800.0 {
                 MaterialFamily::Softwood
             } else {

@@ -34,10 +34,10 @@ pub fn draw(
                     .small()
                     .color(egui::Color32::from_rgb(140, 140, 150)),
             ).on_hover_text(
-                "Relative material hardness (0-1). Higher values reduce recommended feed rates and depths of cut."
+                "Per-material feed-rate scaling factor (softwood baseline = 1.0). Higher values reduce recommended feed rates and depths of cut."
             );
             ui.label(
-                egui::RichText::new(format!("{:.2}", stock.material.hardness_index()))
+                egui::RichText::new(format!("{:.2}", stock.material.feed_scale_factor()))
                     .small()
                     .color(egui::Color32::from_rgb(140, 140, 150)),
             );
