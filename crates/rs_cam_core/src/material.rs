@@ -333,6 +333,65 @@ impl FoamDensity {
     }
 }
 
+/// Top-level material category for the hierarchical GUI picker.
+///
+/// Separates the *enum-shape* of [`Material`] (whose variants are
+/// implementation detail driven by the per-class accessors) from the
+/// *user-facing classification* a CAM operator browses by ("Wood →
+/// Hardwood → Hard Maple"). The GUI's nested menu walks these.
+///
+/// Wood splits into Softwood / Hardwood by Janka — see
+/// [`Material::category`] for the cutoff.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MaterialCategory {
+    Softwood,
+    Hardwood,
+    Plywood,
+    SheetGood,
+    Plastic,
+    Aluminum,
+    Foam,
+    Custom,
+}
+
+impl MaterialCategory {
+    /// Display label for the category header in the GUI menu.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Softwood => "Softwood",
+            Self::Hardwood => "Hardwood",
+            Self::Plywood => "Plywood",
+            Self::SheetGood => "Sheet Goods",
+            Self::Plastic => "Plastic",
+            Self::Aluminum => "Aluminum",
+            Self::Foam => "Foam",
+            Self::Custom => "Custom",
+        }
+    }
+
+    /// All categories in display order — drives the order of entries
+    /// in the GUI's top-level material menu.
+    pub fn all() -> &'static [MaterialCategory] {
+        &[
+            Self::Softwood,
+            Self::Hardwood,
+            Self::Plywood,
+            Self::SheetGood,
+            Self::Plastic,
+            Self::Aluminum,
+            Self::Foam,
+            Self::Custom,
+        ]
+    }
+
+    /// Whether this category groups under a "Wood" parent menu in the
+    /// hierarchical picker. The GUI nests Softwood + Hardwood under
+    /// Wood ▶ so the operator drills `Wood → Softwood → species`.
+    pub fn is_wood(self) -> bool {
+        matches!(self, Self::Softwood | Self::Hardwood)
+    }
+}
+
 /// Material being cut. Determines chip load scaling and power requirements.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Material {
@@ -791,6 +850,41 @@ impl Material {
         }
     }
 
+    /// Display category for the hierarchical material picker. Maps
+    /// the flat `Material` enum (whose variant shape is implementation
+    /// detail) to user-facing groupings the GUI's nested menu walks
+    /// (`Wood → Softwood/Hardwood`, `Plywood`, `Sheet Goods`,
+    /// `Plastic`, `Aluminum`, `Foam`, `Custom`).
+    ///
+    /// Wood split: < 900 lbf Janka = softwood, ≥ 900 lbf = hardwood
+    /// (the conventional rule-of-thumb cutoff; finer than the
+    /// botanical gymnosperm/angiosperm distinction but more useful
+    /// for CAM since users look in "Hardwood" for hard species).
+    pub fn category(&self) -> MaterialCategory {
+        match self {
+            Material::SolidWood { species } => {
+                if species.janka_lbf() < 900.0 {
+                    MaterialCategory::Softwood
+                } else {
+                    MaterialCategory::Hardwood
+                }
+            }
+            Material::SolidWoodByJanka { janka_lbf, .. } => {
+                if *janka_lbf < 900.0 {
+                    MaterialCategory::Softwood
+                } else {
+                    MaterialCategory::Hardwood
+                }
+            }
+            Material::Plywood { .. } => MaterialCategory::Plywood,
+            Material::SheetGood { .. } => MaterialCategory::SheetGood,
+            Material::Plastic { .. } => MaterialCategory::Plastic,
+            Material::Aluminum { .. } => MaterialCategory::Aluminum,
+            Material::Foam { .. } => MaterialCategory::Foam,
+            Material::Custom { .. } => MaterialCategory::Custom,
+        }
+    }
+
     /// Catalog of common materials for UI dropdowns.
     pub fn catalog() -> Vec<(&'static str, Material)> {
         vec![
@@ -1017,6 +1111,117 @@ impl Material {
                 },
             ),
         ]
+    }
+
+    /// Selectable materials grouped by [`MaterialCategory`] for the
+    /// hierarchical GUI picker. Merges the curated [`Material::catalog`]
+    /// entries with the parametric [`wood_species_library::WOOD_SPECIES_LIBRARY`]
+    /// so the picker has one entry point for everything.
+    ///
+    /// Dedup policy: when a library species shares a Janka anchor
+    /// (within ±2 lbf) with a first-class `WoodSpecies` catalog entry,
+    /// the catalog entry wins and the library duplicate is dropped —
+    /// the curated species has the hand-tuned per-species `Kc` constant,
+    /// the library would only give the folklore-grade `janka/100`
+    /// approximation. This replaces the brittle alias-string dedup the
+    /// initial GUI implementation used.
+    ///
+    /// Sort order within each category:
+    /// - Softwood / Hardwood: by Janka ascending (softest first)
+    /// - All others: by display label
+    ///
+    /// Custom is omitted — it isn't user-selectable from the picker
+    /// (the GUI handles Custom via a separate "advanced" path).
+    pub fn materials_by_category() -> Vec<(MaterialCategory, Vec<(String, Material)>)> {
+        use wood_species_library::WOOD_SPECIES_LIBRARY;
+
+        // Internal builder type keeps the sort_key alongside the entry
+        // until the final strip. Aliased to keep clippy's
+        // `type_complexity` lint happy.
+        type BuilderEntry = (String, Material, Option<f64>);
+        type BuilderBucket = (MaterialCategory, Vec<BuilderEntry>);
+
+        let mut groups: Vec<BuilderBucket> = MaterialCategory::all()
+            .iter()
+            .filter(|c| !matches!(c, MaterialCategory::Custom))
+            .map(|c| (*c, Vec::new()))
+            .collect();
+
+        // Helper: push into the bucket matching a material's category.
+        let push = |groups: &mut Vec<BuilderBucket>,
+                    label: String,
+                    mat: Material,
+                    sort_key: Option<f64>| {
+            let cat = mat.category();
+            if let Some(g) = groups.iter_mut().find(|(c, _)| *c == cat) {
+                g.1.push((label, mat, sort_key));
+            }
+        };
+
+        // 1. Curated catalog first — first-class species win on ties.
+        for (label, mat) in Self::catalog() {
+            let sort_key = match &mat {
+                Material::SolidWood { species } => Some(species.janka_lbf()),
+                _ => None,
+            };
+            push(&mut groups, label.to_owned(), mat, sort_key);
+        }
+
+        // 2. Wood library — skip any species whose Janka matches a
+        //    curated first-class wood (±2 lbf tolerance; tighter than
+        //    the literature's measurement spread but loose enough to
+        //    absorb integer rounding).
+        let curated_jankas: Vec<f64> = Self::catalog()
+            .into_iter()
+            .filter_map(|(_, mat)| {
+                if let Material::SolidWood { species } = mat {
+                    Some(species.janka_lbf())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for entry in WOOD_SPECIES_LIBRARY {
+            let already_curated = curated_jankas
+                .iter()
+                .any(|j| (j - entry.janka_lbf).abs() <= 2.0);
+            if already_curated {
+                continue;
+            }
+            let label = match entry.scientific_name {
+                Some(sci) => format!(
+                    "{}  ·  {}  ·  {} lbf",
+                    entry.display_name, sci, entry.janka_lbf as i64
+                ),
+                None => format!("{}  ·  {} lbf", entry.display_name, entry.janka_lbf as i64),
+            };
+            let mat = Material::SolidWoodByJanka {
+                janka_lbf: entry.janka_lbf,
+                label: entry.display_name.to_owned(),
+                source_id: entry.source_id.to_owned(),
+            };
+            push(&mut groups, label, mat, Some(entry.janka_lbf));
+        }
+
+        // 3. Sort within each category.
+        for (cat, entries) in groups.iter_mut() {
+            if cat.is_wood() {
+                entries.sort_by(|a, b| {
+                    a.2.partial_cmp(&b.2)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then(a.0.cmp(&b.0))
+                });
+            } else {
+                entries.sort_by(|a, b| a.0.cmp(&b.0));
+            }
+        }
+
+        // Strip the sort_key.
+        groups
+            .into_iter()
+            .map(|(c, e)| (c, e.into_iter().map(|(l, m, _)| (l, m)).collect()))
+            .collect()
     }
 
     /// Serialization key for TOML project files.
