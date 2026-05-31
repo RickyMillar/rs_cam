@@ -19,20 +19,20 @@
 use std::path::PathBuf;
 
 fn baseline_path() -> PathBuf {
-    // 2026-06-02 baseline supersedes 2026-06-01.csv: closes the AS013/
-    // AS015 methodology gap with `prior_passes` chaining in the smoke
-    // runner. AS015 scallop now runs on AS013-roughed stock via
-    // `StockSource::FromRemainingStock`, dropping deflection from
-    // 0.4767 (Exceeds) to 0.1297 (Within) — matches the round-10
-    // STATE.md operator-validated methodology. Older baselines stay
-    // on disk as historical reference points.
+    // 2026-06-03 baseline supersedes 2026-06-02.csv: Phase 5 Step 5.1
+    // closes the AS013 `stock_top_z` methodology gap by routing
+    // `stock_*` baseline_params to `session.stock_mut()` instead of
+    // the toolpath operation schema. AS013 deflection drops from
+    // 0.2629 (Exceeds) to 0.1090 (Within) — matches round-09
+    // STATE.md's operator-validated ~105 µm result. All other rows
+    // unchanged. Older baselines stay on disk as historical reference.
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join("planning")
         .join("toolpath_acceptance")
         .join("baselines")
-        .join("2026-06-02.csv")
+        .join("2026-06-03.csv")
 }
 
 fn read_rows(path: &std::path::Path) -> Vec<csv::StringRecord> {
