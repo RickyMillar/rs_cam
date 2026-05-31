@@ -35,6 +35,16 @@ pub fn draw(
             });
     });
 
+    // Wood species library picker — surfaces the 132-entry
+    // WOOD_SPECIES_LIBRARY (FPL Ch.5 + Wood Database) for species the
+    // curated Material::catalog() doesn't cover. Selection writes
+    // Material::SolidWoodByJanka and replaces whatever was in the main
+    // Material dropdown above.
+    if draw_wood_species_picker(ui, stock) {
+        changed = true;
+        events.push(AppEvent::StockMaterialChanged);
+    }
+
     // Show material properties (read-only)
     egui::Grid::new("material_info")
         .num_columns(2)
@@ -552,6 +562,140 @@ fn pins_are_symmetric(pins: &[AlignmentPin], axis: FlipAxis, stock_x: f64, stock
         }
     }
     true
+}
+
+/// Searchable picker for `WOOD_SPECIES_LIBRARY` (132 entries from FPL
+/// Ch.5 + The Wood Database — the long tail beyond the 10 first-class
+/// `WoodSpecies` enum variants curated in `Material::catalog()`).
+///
+/// Sits below the main Material dropdown so users picking a common
+/// material from the catalog never have to engage with it. When the
+/// current `stock.material` already is a `SolidWoodByJanka`, the
+/// combo's selected text shows the species name + Janka so the user
+/// can see what's selected without opening the picker.
+///
+/// Returns `true` if a selection was made this frame (caller pushes
+/// `StockMaterialChanged`).
+fn draw_wood_species_picker(
+    ui: &mut egui::Ui,
+    stock: &mut crate::state::job::StockConfig,
+) -> bool {
+    use rs_cam_core::material::Material;
+    use rs_cam_core::material::wood_species_library::{WOOD_SPECIES_LIBRARY, WoodSpeciesEntry};
+
+    let mut selected_entry: Option<&'static WoodSpeciesEntry> = None;
+
+    let selected_text = match &stock.material {
+        Material::SolidWoodByJanka {
+            label, janka_lbf, ..
+        } => format!("{label}  ({janka_lbf:.0} lbf)"),
+        _ => "— browse 132 species —".to_owned(),
+    };
+
+    let filter_id = egui::Id::new("wood_species_filter");
+
+    ui.horizontal(|ui| {
+        ui.label("Wood species:")
+            .on_hover_text(
+                "Browse the extended wood species library (132 entries from \
+                 USDA FPL Ch.5 + The Wood Database). Selecting an entry sets \
+                 the material to a parametric SolidWoodByJanka — Kc is \
+                 approximated via janka/100 (folklore-grade band).",
+            );
+        egui::ComboBox::from_id_salt("wood_species_library")
+            .selected_text(&selected_text)
+            .width(260.0)
+            .show_ui(ui, |ui| {
+                let mut filter: String =
+                    ui.data(|d| d.get_temp(filter_id).unwrap_or_default());
+
+                ui.horizontal(|ui| {
+                    ui.label("🔍");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut filter)
+                            .hint_text("Filter by name / scientific")
+                            .desired_width(220.0),
+                    );
+                });
+                ui.add_space(2.0);
+
+                let filter_lc = filter.to_lowercase();
+                let matches: Vec<&WoodSpeciesEntry> = WOOD_SPECIES_LIBRARY
+                    .iter()
+                    .filter(|e| {
+                        if filter_lc.is_empty() {
+                            return true;
+                        }
+                        e.display_name.to_lowercase().contains(&filter_lc)
+                            || e
+                                .scientific_name
+                                .map(|s| s.to_lowercase().contains(&filter_lc))
+                                .unwrap_or(false)
+                    })
+                    .collect();
+
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} of {}",
+                        matches.len(),
+                        WOOD_SPECIES_LIBRARY.len()
+                    ))
+                    .small()
+                    .color(egui::Color32::from_rgb(140, 140, 150)),
+                );
+                ui.separator();
+
+                let is_current = |e: &WoodSpeciesEntry| -> bool {
+                    matches!(
+                        &stock.material,
+                        Material::SolidWoodByJanka { source_id, label, janka_lbf }
+                            if source_id == e.source_id
+                                && label == e.display_name
+                                && (janka_lbf - e.janka_lbf).abs() < 1e-6
+                    )
+                };
+
+                egui::ScrollArea::vertical()
+                    .max_height(240.0)
+                    .show(ui, |ui| {
+                        for entry in &matches {
+                            let label = match entry.scientific_name {
+                                Some(sci) => {
+                                    format!("{}  ·  {}  ·  {} lbf", entry.display_name, sci, entry.janka_lbf as i64)
+                                }
+                                None => format!(
+                                    "{}  ·  {} lbf",
+                                    entry.display_name, entry.janka_lbf as i64
+                                ),
+                            };
+                            if ui.selectable_label(is_current(entry), label).clicked() {
+                                selected_entry = Some(entry);
+                            }
+                        }
+                        if matches.is_empty() {
+                            ui.label(
+                                egui::RichText::new("no matches")
+                                    .small()
+                                    .italics()
+                                    .color(egui::Color32::from_rgb(140, 140, 150)),
+                            );
+                        }
+                    });
+
+                ui.data_mut(|d| d.insert_temp(filter_id, filter));
+            });
+    });
+
+    if let Some(entry) = selected_entry {
+        stock.material = Material::SolidWoodByJanka {
+            janka_lbf: entry.janka_lbf,
+            label: entry.display_name.to_owned(),
+            source_id: entry.source_id.to_owned(),
+        };
+        true
+    } else {
+        false
+    }
 }
 
 #[cfg(test)]
