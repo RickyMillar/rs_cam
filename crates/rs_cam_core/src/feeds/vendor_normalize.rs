@@ -195,6 +195,16 @@ pub(crate) fn material_to_lut(material: &Material) -> (MaterialFamily, HardnessK
             HardnessKind::Hb,
             alloy.brinell_hb(),
         ),
+        Material::Fiberglass { .. } => {
+            // Fiber-reinforced composites — own MaterialFamily +
+            // material_category (3) in vendor_lookup. No fetched
+            // hardness measurement on the wood / metal scale; emit
+            // ShoreD as a structural placeholder so the lookup is
+            // numerically defined (LUT row scoring against this
+            // value contributes 0 since no Fiberglass rows currently
+            // carry a hardness annotation).
+            (MaterialFamily::Fiberglass, HardnessKind::ShoreD, 110.0)
+        }
         Material::Foam { .. } => {
             // Foam has no LUT data — formula fallback regardless of the
             // values we return here. The triple is structural noise.

@@ -333,6 +333,34 @@ impl FoamDensity {
     }
 }
 
+/// Fiber-reinforced composite grade for [`Material::Fiberglass`].
+///
+/// Added Phase 5 Step 5.3 (2026-06-01) for the staged Garr
+/// Fiberglass/Plastics/G10 row promotion (which collapsed three
+/// material classes onto one chart entry — only G10/FR4 is
+/// confidently routed; the other two would need separate variants
+/// when LUT data lands).
+///
+/// `G10Fr4` is the canonical electrical-grade woven glass-epoxy
+/// laminate (NEMA G-10 / FR-4 spec). `Generic` covers other
+/// glass-resin composites (chopped strand, glass-polyester) at lower
+/// confidence — the vendor LUT row matching collapses both onto
+/// `MaterialFamily::Fiberglass` until per-grade LUT data exists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FiberglassGrade {
+    G10Fr4,
+    Generic,
+}
+
+impl FiberglassGrade {
+    pub fn label(self) -> &'static str {
+        match self {
+            FiberglassGrade::G10Fr4 => "G10 / FR-4 (glass-epoxy)",
+            FiberglassGrade::Generic => "Generic Fiberglass",
+        }
+    }
+}
+
 /// Top-level material category for the hierarchical GUI picker.
 ///
 /// Separates the *enum-shape* of [`Material`] (whose variants are
@@ -350,6 +378,7 @@ pub enum MaterialCategory {
     SheetGood,
     Plastic,
     Aluminum,
+    Composite,
     Foam,
     Custom,
 }
@@ -364,6 +393,7 @@ impl MaterialCategory {
             Self::SheetGood => "Sheet Goods",
             Self::Plastic => "Plastic",
             Self::Aluminum => "Aluminum",
+            Self::Composite => "Composite",
             Self::Foam => "Foam",
             Self::Custom => "Custom",
         }
@@ -379,6 +409,7 @@ impl MaterialCategory {
             Self::SheetGood,
             Self::Plastic,
             Self::Aluminum,
+            Self::Composite,
             Self::Foam,
             Self::Custom,
         ]
@@ -438,6 +469,22 @@ pub enum Material {
     },
     Foam {
         density: FoamDensity,
+    },
+    /// Fiber-reinforced composites (G10/FR4 glass-epoxy, generic
+    /// glass-resin laminates). Added Phase 5 Step 5.3 (2026-06-01) to
+    /// unlock the staged Garr GP-plastics row that collapsed
+    /// "Fiberglass/Plastics/G10" under one chart entry. Distinct from
+    /// `Material::Plastic` because the cutting class is abrasive +
+    /// fiber-reinforced — tool wear and delamination considerations
+    /// don't map onto polymers.
+    ///
+    /// Refuses Kc — no fetched primary measurement available yet; the
+    /// gate refuses via `MaterialUnvalidated` rather than predicting
+    /// force from a fabricated constant. Plunge / drill / feed
+    /// envelopes are conservative carbide-tool placeholders pending
+    /// bench validation.
+    Fiberglass {
+        grade: FiberglassGrade,
     },
     Custom {
         name: String,
@@ -594,6 +641,12 @@ impl Material {
                 FoamDensity::Medium => 0.25,
                 FoamDensity::High => 0.40,
             },
+            // Fiberglass: harder to feed than hardwood (abrasive, fiber
+            // pullout / delamination risk). 1.3 sits above the
+            // hardwood baseline (factor ≈ 1.0–1.4 across the Janka
+            // range) but below aluminum. Placeholder pending bench
+            // validation — refine when real-cut data lands.
+            Material::Fiberglass { .. } => 1.3,
             Material::Custom {
                 feed_scale_factor, ..
             } => {
@@ -644,6 +697,7 @@ impl Material {
             Material::Plastic { .. }
             | Material::Aluminum { .. }
             | Material::Foam { .. }
+            | Material::Fiberglass { .. }
             | Material::Custom { .. } => None,
         }
     }
@@ -777,6 +831,14 @@ impl Material {
                 FoamDensity::Medium => 2.0,
                 FoamDensity::High => 3.0,
             }),
+            // Fiberglass Kc — no fetched primary measurement available
+            // (Phase 5 Step 5.3, 2026-06-01). Refuse-first: the gate
+            // refuses via `MaterialUnvalidated` rather than fabricating
+            // a constant. Bench validation is needed to seed a real
+            // value; G10/FR4 typical machining-handbook quotes range
+            // 100–150 N/mm² but none are workshop-fidelity peripheral
+            // milling measurements.
+            Material::Fiberglass { .. } => None,
             Material::Custom { kc, .. } => {
                 if kc.is_finite() && *kc > 0.0 {
                     Some(*kc)
@@ -801,6 +863,12 @@ impl Material {
             // from the vendor LUT for aluminum operations.
             Material::Aluminum { .. } => 100.0,
             Material::Foam { .. } => 300.0,
+            // Fiberglass cutting speed — conservative placeholder.
+            // Vendor Garr GP-plastics row indicates SMM 79–157 m/min
+            // for the composite line. Pick the midpoint as the
+            // formula fallback SFM; real fiberglass jobs should
+            // route through the LUT.
+            Material::Fiberglass { .. } => 120.0,
             Material::Custom { .. } => 200.0,
         }
     }
@@ -818,6 +886,9 @@ impl Material {
             // should come from the vendor LUT, not this default.
             Material::Aluminum { .. } => 250.0 / h,
             Material::Foam { .. } => 2000.0,
+            // Fiberglass plunge — slower than wood to avoid
+            // delamination on tool entry. Conservative placeholder.
+            Material::Fiberglass { .. } => 200.0 / h,
             Material::Custom { .. } => 800.0 / h,
         }
     }
@@ -855,6 +926,10 @@ impl Material {
             // even for 6061 — denser alloys want lower D/d.
             Material::Aluminum { .. } => 3.0,
             Material::Foam { .. } => 12.0,
+            // Fiberglass drilling — chips evacuate well (dust, not
+            // long chips) but tool wear is severe; conservative
+            // threshold sits between plastic and aluminum.
+            Material::Fiberglass { .. } => 3.0,
             Material::Custom {
                 feed_scale_factor, ..
             } => {
@@ -880,6 +955,9 @@ impl Material {
             // limit for chip evacuation without through-coolant.
             Material::Aluminum { .. } => 1.0,
             Material::Foam { .. } => 4.0,
+            // Fiberglass per-peck — same as aluminum (textbook 1×D
+            // limit for abrasive composites).
+            Material::Fiberglass { .. } => 1.0,
             Material::Custom { .. } => 1.5,
         }
     }
@@ -900,6 +978,10 @@ impl Material {
             // vendor-LUT-driven.
             Material::Aluminum { .. } => (40.0, 250.0),
             Material::Foam { .. } => (100.0, 1000.0),
+            // Fiberglass plunge envelope — sub-aluminum (slower max
+            // to limit delamination, lower min because abrasion
+            // doesn't reward dwelling at the cut face).
+            Material::Fiberglass { .. } => (40.0, 200.0),
             Material::Custom { .. } => (40.0, 500.0),
         }
     }
@@ -914,6 +996,7 @@ impl Material {
             Material::Plastic { family } => family.label().to_owned(),
             Material::Aluminum { alloy } => alloy.label().to_owned(),
             Material::Foam { density } => format!("Foam ({})", density.label()),
+            Material::Fiberglass { grade } => grade.label().to_owned(),
             Material::Custom { name, .. } => name.clone(),
         }
     }
@@ -949,6 +1032,7 @@ impl Material {
             Material::Plastic { .. } => MaterialCategory::Plastic,
             Material::Aluminum { .. } => MaterialCategory::Aluminum,
             Material::Foam { .. } => MaterialCategory::Foam,
+            Material::Fiberglass { .. } => MaterialCategory::Composite,
             Material::Custom { .. } => MaterialCategory::Custom,
         }
     }
@@ -1178,6 +1262,19 @@ impl Material {
                     density: FoamDensity::High,
                 },
             ),
+            // Composite (Phase 5 Step 5.3)
+            (
+                "G10 / FR-4",
+                Material::Fiberglass {
+                    grade: FiberglassGrade::G10Fr4,
+                },
+            ),
+            (
+                "Fiberglass (Generic)",
+                Material::Fiberglass {
+                    grade: FiberglassGrade::Generic,
+                },
+            ),
         ]
     }
 
@@ -1350,6 +1447,11 @@ impl Material {
                 FoamDensity::High => "foam_high",
             }
             .to_owned(),
+            Material::Fiberglass { grade } => match grade {
+                FiberglassGrade::G10Fr4 => "fiberglass_g10_fr4",
+                FiberglassGrade::Generic => "fiberglass_generic",
+            }
+            .to_owned(),
             Material::Custom { name, .. } => format!("custom:{name}"),
             // Parametric variant — emits a key carrying source_id +
             // janka_lbf so a from_key roundtrip can reconstruct the
@@ -1516,6 +1618,12 @@ impl Material {
             },
             "foam_high" => Material::Foam {
                 density: FoamDensity::High,
+            },
+            "fiberglass_g10_fr4" => Material::Fiberglass {
+                grade: FiberglassGrade::G10Fr4,
+            },
+            "fiberglass_generic" => Material::Fiberglass {
+                grade: FiberglassGrade::Generic,
             },
             // Parametric solid-wood-by-Janka key. See `to_key` for the
             // emission format. Parses defensively — any malformed

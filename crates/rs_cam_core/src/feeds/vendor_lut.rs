@@ -104,6 +104,16 @@ pub enum MaterialFamily {
     Polycarbonate,
     Delrin,
     Aluminum,
+    /// Fiber-reinforced composites — G10/FR4 glass-epoxy, generic
+    /// glass-resin laminates. Added Phase 5 Step 5.3 (2026-06-01) to
+    /// unlock the staged Garr GP-plastics row (which collapsed
+    /// "Fiberglass/Plastics/G10" under one vendor chart entry). These
+    /// materials are abrasive (carbide tool wear is faster than for
+    /// wood / acrylic) and fiber-reinforced (delamination risk on
+    /// uncoated cutters). Vendor chiploads tend to track wood/acrylic
+    /// magnitudes (0.03–0.05 mm/tooth at 6 mm) but the tool-life
+    /// envelope is much tighter — treat as its own LUT category.
+    Fiberglass,
 }
 
 /// Hardness measurement kind.
@@ -279,6 +289,12 @@ const EMBEDDED_FILES: &[(&str, &str)] = &[
     // for the row-count decomposition and skip rationale.
     ("garr_aluminum.json",
         include_str!("../../data/vendor_lut/observations/garr_aluminum.json")),
+    // 2026-06-01 (Phase 5 Step 5.3): Garr GP composite (non-ISO) row —
+    // fiberglass / G10 / plastics consolidated under
+    // material_family=fiberglass. 1 row, 6 mm 2-flute, CPT 0.030–0.051
+    // mm/tooth.
+    ("garr_fiberglass.json",
+        include_str!("../../data/vendor_lut/observations/garr_fiberglass.json")),
 ];
 
 impl VendorLut {
@@ -340,12 +356,11 @@ mod tests {
         let lut = VendorLut::embedded();
         assert_eq!(
             lut.observations.len(),
-            251,
-            "expected 251 embedded observations (247 after Phase 4 + 4 net-new \
-             Phase 5 Step 5.2 2026-06-01: 3 Amana Spektra engrave rows \
-             (30°/30°/45° softwood-hardwood) + 1 Onsrud polycarbonate article \
-             window row, all with diameter_mm=None per the Step 5.2 schema \
-             relaxation. See planning/phase_5_schema_unlock_2026-06-01.md.)"
+            252,
+            "expected 252 embedded observations (251 after Phase 5 Step 5.2 + \
+             1 net-new Phase 5 Step 5.3 2026-06-01: Garr GP composite \
+             (fiberglass / G10) 6 mm 2-flute row, material_family=fiberglass — \
+             see planning/phase_5_schema_unlock_2026-06-01.md)"
         );
     }
 

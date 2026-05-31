@@ -263,6 +263,37 @@ count: **247 → 251**. See
 `planning/phase_5_schema_unlock_2026-06-01.md` and the consolidation
 report once Step 5.5 lands.
 
+2026-06-01 Phase 5 Step 5.3 (Fiberglass material class) added
+`MaterialFamily::Fiberglass` to
+`crates/rs_cam_core/src/feeds/vendor_lut.rs` and the matching
+`Material::Fiberglass { grade: FiberglassGrade }` lifecycle to
+`crates/rs_cam_core/src/material.rs` (`FiberglassGrade::{G10Fr4,
+Generic}`). Composites are abrasive + fiber-reinforced — their
+cutting class doesn't map onto polymers or metals, so the LUT
+matcher assigns Fiberglass its own `material_category` (3) and
+never extrapolates a fiberglass query onto plastic/aluminum rows.
+
+`Material::Fiberglass::kc_n_per_mm2()` returns `None` (refuse-first;
+no fetched primary measurement available — G10/FR4 machining
+handbook quotes range 100–150 N/mm² but none are workshop-fidelity
+peripheral-milling measurements). Other accessors carry conservative
+carbide-tool placeholders pending bench validation:
+`feed_scale_factor=1.3`, `base_cutting_speed_m_min=120`,
+`drill_chip_welding_threshold_dtd=3.0`, `drill_per_peck_max_dtd=1.0`,
+`drill_plunge_feed_envelope_per_mm=(40, 200)`.
+
+One vendor row promoted (the previously schema-blocked
+`garr-gp-fiberglass-6000-2f-flat`) — Garr GP composite (non-ISO)
+6 mm 2-flute, CPT 0.030–0.051 mm/tooth at 4180–8350 RPM, SMM
+79–157 m/min. Garr's chart collapses Fiberglass + Plastics + G10
+onto one row; we promote only the high-confidence fiberglass
+interpretation. Bundled count: **251 → 252**.
+
+GUI catalog: `G10 / FR-4` and `Fiberglass (Generic)` entries appear
+under a new `MaterialCategory::Composite` group in the hierarchical
+material picker. See
+`planning/phase_5_schema_unlock_2026-06-01.md` Step 5.3.
+
 2026-05-31 Phase C (completion plan) added 5 new
 `AluminumAlloy` variants to `crates/rs_cam_core/src/material.rs`,
 extending aluminum coverage from 2 alloys (6061-T6, 7075-T6) to 7:

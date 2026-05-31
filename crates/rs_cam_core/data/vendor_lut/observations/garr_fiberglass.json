@@ -1,0 +1,28 @@
+{
+  "observations": [
+    {
+      "observation_id": "garr-gp-fiberglass-6000-2f-flat",
+      "source_id": "garr_general_purpose_milling",
+      "source_vendor": "garr",
+      "source_title": "Garr Tool General Purpose Milling Chart — Composite (non-ISO) row: Fiberglass / Plastics / G10",
+      "source_url": "https://www.garrtool.com/wp-content/uploads/2018/11/TECHNICAL.pdf",
+      "accessed_on": "2026-05-29",
+      "evidence_grade": "a",
+      "row_kind": "exact",
+      "tool_family": "flat_end",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "fiberglass",
+      "material_label": "Fiberglass / G10 (Garr GP composite non-ISO row)",
+      "diameter_mm": 6.0,
+      "rpm_min": 4180.0,
+      "rpm_max": 8350.0,
+      "chipload_min_mm_tooth": 0.03,
+      "chipload_max_mm_tooth": 0.051,
+      "ap_rule": "20% of diameter for basic engagement parameters; drop feed ~50% when plunging into solid",
+      "ae_rule": "20% of diameter for basic engagement parameters",
+      "machine_assumption": "general purpose; SMM 79-157 m/min. Garr's chart collapses Fiberglass + Plastics + G10 onto one row — promoted under material_family=fiberglass because the abrasive + fiber-reinforced cutting class dominates the chipload envelope. Phase 5 Step 5.2 promotion (2026-06-01).",
+      "flute_count": 2
+    }
+  ]
+}

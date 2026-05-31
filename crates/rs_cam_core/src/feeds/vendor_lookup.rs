@@ -309,6 +309,10 @@ fn material_category(family: MaterialFamily) -> u8 {
         | MaterialFamily::Polycarbonate
         | MaterialFamily::Delrin => 1,
         MaterialFamily::Aluminum => 2,
+        // Fiberglass / fiber-reinforced composites — separate category.
+        // Abrasive + fiber-reinforced cutting behaviour doesn't map onto
+        // polymers or metals; never extrapolate across.
+        MaterialFamily::Fiberglass => 3,
     }
 }
 
@@ -1004,6 +1008,32 @@ mod tests {
                 result.chipload_diameter_scale,
             );
         }
+    }
+
+    #[test]
+    fn fiberglass_category_does_not_extrapolate_to_polymer_or_metal() {
+        // Phase 5 Step 5.3: MaterialFamily::Fiberglass is its own
+        // material_category (3) — a fiberglass query must NOT match
+        // a polymer/aluminum row even when all other axes line up.
+        let lut = embedded_lut();
+        let query = LookupQuery {
+            tool_family: ToolFamily::FlatEnd,
+            tool_subfamily: None,
+            diameter_mm: 6.0,
+            flute_count: 2,
+            material_family: MaterialFamily::Fiberglass,
+            hardness_kind: None,
+            hardness_value: None,
+            operation_family: LutOperationFamily::Pocket,
+            pass_role: LutPassRole::Roughing,
+        };
+        let result = lookup_best(&lut, &query)
+            .expect("Garr GP fiberglass row must be reachable for a fiberglass query");
+        assert_eq!(
+            result.observation_id, "garr-gp-fiberglass-6000-2f-flat",
+            "fiberglass query must select the Garr fiberglass row, not a \
+             polymer/aluminum row that would otherwise match on diameter+op"
+        );
     }
 
     #[test]
