@@ -122,10 +122,34 @@ The audit deferrals folded into Phases D / E:
 
 - **S2-9 (leaky LimitInputs):** NOT folded into Phase D — the code
   paths don't actually overlap with plastic Kc, per `phaseD_2026-05-31.md`
-  "explicit non-fold" section. Deferred to its own surgical commit.
+  "explicit non-fold" section. **Closed 2026-05-31 in commit `933b2a1`**
+  as a standalone surgical refactor: `PowerLimitInputs.kc_eff_n_per_mm2`
+  → `kc_n_per_mm2` (raw), with the canonical
+  `GRAIN_ANISOTROPY_FACTOR` applied at the consumer in
+  `feed_modulation.rs::adaptive_feed_modulate_inner`. Audit doc
+  proposed a `<'a>` lifetime + `&Material` + `&ToolDefinition`
+  shape; on inspection the leak is purely the pre-multiplication
+  so the field rename is the cleaner fix. F-039 pinned numerics
+  held bit-exactly (`2.0 × 30 = 60`).
 - **S3-13 (test fixture clutter):** `Material::test_fixture_custom()`
-  helper landed in Phase E; the 4 ad-hoc call sites the audit cites
-  are unchanged in this round — trivial follow-up substitution.
+  helper landed in Phase E. **Closed 2026-05-31 in commit `78f53ac`**:
+  all 4 audit-cited ad-hoc `Material::Custom { name, hardness_index,
+  kc }` constructions substituted. Initial assessment said "3 of 4
+  fit" but on inspection all 4 sites are variant-gated (`is_wood_class()`
+  / `matches!(.., Custom { .. })` only check the tag, not the
+  scalars) and substitute cleanly with clarifying comments where
+  the original scalars were decorative.
+
+**Post-completion follow-ups also shipped this session:**
+
+- **GUI wood-species library picker** — commit `111b4dd` in
+  `crates/rs_cam_viz/src/ui/properties/stock.rs`. Searchable
+  ComboBox below the existing Material dropdown surfaces
+  `WOOD_SPECIES_LIBRARY` (132 entries) with a 🔍 text filter
+  matching against display_name + scientific_name. Selection
+  constructs `Material::SolidWoodByJanka { ... }` and routes
+  through the existing `StockMaterialChanged` event. Closes the
+  only real gap from the post-completion GUI audit.
 
 ## Explicit out-of-scope items (per completion plan, not regressed)
 
@@ -140,16 +164,17 @@ The audit deferrals folded into Phases D / E:
 
 ## Resume note
 
-The completion-plan-scoped work is closed. Future sessions can pick
-up the deferred items independently:
+The completion-plan-scoped work is closed AND the post-completion
+audit follow-ups (S2-9, S3-13, wood-species GUI picker) are closed
+too. Single remaining item:
 
-- Operator: run AS001-AS015 MCP smoke and fill the `kc_retune_log.md`
-  Phase A + Phase F sections.
-- GUI: wire `material::wood_species_library::WOOD_SPECIES_LIBRARY`
-  into the rs_cam_viz material picker (searchable dropdown below
-  the curated `Material::catalog()` entries).
-- Audit cleanup: S2-9 `LimitInputs` shape refactor;
-  `Material::test_fixture_custom()` call-site sweep.
+- **Operator** — run AS001-AS015 MCP smoke and fill the
+  `kc_retune_log.md` Phase A + Phase F sections. Requires the
+  live GUI via `cargo run -p rs_cam_viz --bin rs_cam_gui -- --mcp`.
+  Not blocking on any further code change.
 
-All other completion-plan deliverables are landed and locked behind
-literature_parity sentries + provenance gates.
+All other completion-plan deliverables AND all audit follow-ups
+are landed and locked behind literature_parity sentries +
+provenance gates. Final ledger: **10 commits this session, zero
+regressions, 1668 lib + 1859 integration + 24 literature_parity
+tests green, clippy clean across all phases.**
