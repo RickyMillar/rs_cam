@@ -222,11 +222,11 @@ follow-up.
 | S2-6 | `GRAIN_ANISOTROPY_FACTOR` pub(crate) | **fixed** | 132e0a8 |
 | S2-7 | tracing in gates | **fixed** | 132e0a8 |
 | S2-8 | `hardness_index` semantics | partial — added documentation caveat; full rename deferred (too disruptive for incremental change) | 132e0a8 |
-| S2-9 | leaky `*LimitInputs` shapes | **deferred** — refactor touches `session::compute` and the constrained-max test fixture; small win for cost |
+| S2-9 | leaky `*LimitInputs` shapes | **fixed** — field rename `kc_eff_n_per_mm2` → `kc_n_per_mm2` (raw); solver applies `GRAIN_ANISOTROPY_FACTOR` internally. F-039 numerics held bit-exactly | 933b2a1 |
 | S3-10 | `PlasticFamily::hardness()` dead code | **fixed** (now called by `vendor_normalize`) | 132e0a8 |
-| S3-11 | literature_parity test harness | **landed** (11 sentries) | 132e0a8 |
+| S3-11 | literature_parity test harness | **landed** (24 sentries: 11 → +5 aluminum → +6 plastic → +2 SolidWoodByJanka) | 132e0a8 / 1ebf55e / 16eb650 / 20cc4ed |
 | S3-12 | Custom material asymmetric validation | **fixed** | 132e0a8 |
-| S3-13 | test fixture clutter | **deferred** — only 7 sites; helper isn't worth the churn |
+| S3-13 | test fixture clutter | **fixed** — `Material::test_fixture_custom()` helper + 4-site substitution (all variant-gated, scalars were decorative) | 20cc4ed + 78f53ac |
 | **NEW** | drill thresholds free fns → Material methods | **fixed** | a4c6bfe |
 | **NEW** | aluminum Kc activation (Phase 4 prereq) | **fixed** | 91625d6 |
 | **NEW** | `Vendor::{Freud, Idcwoodcraft}` | **fixed** | 91625d6 |

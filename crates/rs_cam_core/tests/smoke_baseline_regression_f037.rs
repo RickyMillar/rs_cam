@@ -19,13 +19,18 @@
 use std::path::PathBuf;
 
 fn baseline_path() -> PathBuf {
+    // 2026-06-01 baseline supersedes 2026-05-26.csv (F-037 capture, pre-
+    // Phase-2B / pre-F-031). The newer file was captured against `cfb146b`
+    // after the feeds-data-ingest A→F + audit followups (S2-9, S3-13,
+    // hierarchical material picker) landed. The older file stays on disk
+    // as historical archive of the F-037 reference state.
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join("planning")
         .join("toolpath_acceptance")
         .join("baselines")
-        .join("2026-05-26.csv")
+        .join("2026-06-01.csv")
 }
 
 fn read_rows(path: &std::path::Path) -> Vec<csv::StringRecord> {

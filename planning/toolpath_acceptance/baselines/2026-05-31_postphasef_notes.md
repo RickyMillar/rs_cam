@@ -122,3 +122,61 @@ manual smoke used.
 - If the AS005 +120 µm shift on MDF is real-world-not-actually-burning,
   file a deflection-model finding rather than widening the gate.
 - New baseline at `planning/toolpath_acceptance/baselines/2026-05-31_postphasef.csv`.
+
+## Follow-up 2026-06-01: AS005 model audit closed; methodology gap documented
+
+**AS005 +120 µm investigated** (sim-diagnostics agent, 2026-06-01).
+Verdict: **the 176 µm reading is arithmetically exact, no model bug.**
+The 3.14× deflection ratio is exactly the raw MDF Kc ratio
+(31.4 / 10.0 = 3.14×), not the 2.5× power-gate `Kc × factor` product
+ratio recorded in `kc_retune_log.md`. The deflection gate
+intentionally consumes raw Kc without the anisotropy factor (see
+`tool_load/deflection.rs:37-38` design rationale), so for materials
+where Phase 2B changed raw Kc significantly (sheet goods) the
+deflection-gate scaling and power-gate scaling diverge:
+
+| Gate         | Pre-2B → Post-2B factor for MDF | Reason                              |
+|--------------|---------------------------------|-------------------------------------|
+| Power gate   | 25.0 → 62.8 (×2.5)              | `Kc × factor` product                |
+| Deflection   | 10.0 → 31.4 (×3.14)             | raw Kc only, no anisotropy multiplier |
+
+The asymmetry is by design (the anisotropy factor models grain-
+direction force spread which is wood-specific, not material-class-
+specific) — for solid wood / plywood, both gates see proportional
+changes because raw Kc didn't move in Phase 2B. For sheet goods only
+the raw Kc moved, so the deflection gate absorbed the full retune
+while the power gate was buffered by the factor drop. Documented for
+future deflection-model calibration work; no code change.
+
+## Follow-up: AS013 / AS015 methodology gap is a real feature, not a
+quick fix
+
+The round-10 STATE.md methodology for AS013/AS015 (per F-032 closure)
+requires AS015 to run on stock that has already been roughed by an
+AS013-style pass. The current CLI smoke runner
+(`crates/rs_cam_cli/src/smoke.rs:316-320, 335`) **disables all
+existing toolpaths** and sets the new toolpath's
+`stock_source: StockSource::Fresh` for every case — there's no way to
+express a prior pass via the CSV today.
+
+Closing the gap requires:
+
+1. A new CSV column (e.g. `prior_passes`) for AS015 → `AS013`.
+2. Smoke runner change: when `prior_passes` is non-empty, look up
+   each prior case_id, build + add its toolpath to the same session
+   (do NOT disable), then add the measured case with
+   `stock_source: StockSource::FromRemainingStock` instead of `Fresh`.
+3. Re-run smoke and re-compare AS013 / AS015 against round-10
+   (should drop to ~105 µm and ~197 µm respectively).
+
+Estimated effort: 45–90 min. Out of "quick win" scope — flagged for a
+follow-up session. Until then, AS013 / AS015 in the CLI smoke baseline
+are the **pre-F-031 / pre-F-032 numbers** and that's the honest
+methodology limitation, not a regression.
+
+## Baseline rename 2026-06-01
+
+The `2026-06-01.csv` is the canonical post-Phase-F snapshot, identical
+content to `2026-05-31_postphasef.csv`. `F-037`'s `baseline_path()`
+now references it. The earlier `2026-05-26.csv` stays on disk as the
+historical F-037 reference state (pre-Phase-2B, pre-F-031).
