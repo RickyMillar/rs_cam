@@ -1189,13 +1189,13 @@ impl Material {
             if already_curated {
                 continue;
             }
-            let label = match entry.scientific_name {
-                Some(sci) => format!(
-                    "{}  ·  {}  ·  {} lbf",
-                    entry.display_name, sci, entry.janka_lbf as i64
-                ),
-                None => format!("{}  ·  {} lbf", entry.display_name, entry.janka_lbf as i64),
-            };
+            // Compact dropdown label — `{display_name}  ({janka} lbf)`.
+            // The scientific name is still searchable via the picker's
+            // filter (the GUI indexes both `display_name` and
+            // `scientific_name` on the `WoodSpeciesEntry`); dropping
+            // it from the visible line keeps the menu narrow without
+            // losing find-by-binomial.
+            let label = format!("{}  ({} lbf)", entry.display_name, entry.janka_lbf as i64);
             let mat = Material::SolidWoodByJanka {
                 janka_lbf: entry.janka_lbf,
                 label: entry.display_name.to_owned(),
