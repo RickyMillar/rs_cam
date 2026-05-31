@@ -170,16 +170,21 @@ pub struct DeflectionLimitInputs {
 /// disables the power constraint.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PowerLimitInputs {
-    /// Effective `Kc` (already multiplied by the anisotropy factor).
-    /// `tool_load::power` uses `2.0 × material.kc_n_per_mm2()` —
-    /// the Phase 2B GRAIN_ANISOTROPY_FACTOR (Pałubicki 2021,
-    /// DOI 10.3390/ma14092208).
-    pub kc_eff_n_per_mm2: f64,
+    /// Raw material `Kc` in `N/mm²` — the value
+    /// [`crate::material::Material::kc_n_per_mm2`] returns directly.
+    /// The constrained-max solver applies
+    /// [`crate::tool_load::power::GRAIN_ANISOTROPY_FACTOR`] internally
+    /// so callers don't pre-multiply — see S2-9 in
+    /// `planning/tool_kinematics_chipload_audit_2026-05-31.md` for
+    /// the rationale (pre-S2-9 callers passed `2.0 × kc` and any
+    /// future change to the anisotropy factor required N diffs).
+    pub kc_n_per_mm2: f64,
     /// Effective diameter at the engagement depth (mm).
     pub engagement_diameter_mm: f64,
     /// Available spindle power × safety factor at the running RPM
     /// (kW). The constrained-max solver caps the feed so predicted
-    /// `P = Kc × DOC × WOC × feed / 60_000_000` stays inside this.
+    /// `P = GRAIN_ANISOTROPY_FACTOR × Kc × DOC × WOC × feed / 60_000_000`
+    /// stays inside this.
     pub available_kw: f64,
 }
 
@@ -414,8 +419,13 @@ fn max_safe_feed_for_move(
         if axial_mm > 0.0 && woc_eff > 0.0 {
             let radial_width = woc_eff * pow.engagement_diameter_mm.max(0.0);
             if radial_width > 0.0 {
+                // Apply the canonical anisotropy factor at the consumer
+                // (S2-9): callers pass raw Kc, the solver multiplies
+                // here so any future change to GRAIN_ANISOTROPY_FACTOR
+                // is one diff, not N.
+                let kc_eff = crate::tool_load::power::GRAIN_ANISOTROPY_FACTOR * pow.kc_n_per_mm2;
                 let pow_cap =
-                    pow.available_kw * 60_000_000.0 / (pow.kc_eff_n_per_mm2 * axial_mm * radial_width);
+                    pow.available_kw * 60_000_000.0 / (kc_eff * axial_mm * radial_width);
                 if pow_cap.is_finite() {
                     limits.push((pow_cap, BindingConstraint::PowerMax));
                 }
