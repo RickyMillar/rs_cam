@@ -1426,8 +1426,14 @@ fn draw_vendor_lut_viewer(
                     ui.end_row();
 
                     for obs in &matching {
-                        // Highlight rows matching the current tool diameter (within 0.1mm)
-                        let is_diameter_match = (obs.diameter_mm - tool_diameter).abs() < 0.1;
+                        // Highlight rows matching the current tool diameter (within 0.1mm).
+                        // Rows with `diameter_mm = None` (v-bit charts, diameter-window
+                        // articles) are never highlighted as exact-diameter matches —
+                        // their match criterion is angle / material, not diameter.
+                        let is_diameter_match = match obs.diameter_mm {
+                            Some(d) => (d - tool_diameter).abs() < 0.1,
+                            None => false,
+                        };
                         let row_color = if is_diameter_match { highlight } else { val };
 
                         // Material
@@ -1437,9 +1443,13 @@ fn draw_vendor_lut_viewer(
                                 .color(row_color),
                         );
 
-                        // Diameter
+                        // Diameter (— if the row has no diameter anchor)
+                        let diameter_text = match obs.diameter_mm {
+                            Some(d) => format!("{:.1}", d),
+                            None => "—".to_owned(),
+                        };
                         ui.label(
-                            egui::RichText::new(format!("{:.1}", obs.diameter_mm))
+                            egui::RichText::new(diameter_text)
                                 .font(body_font.clone())
                                 .color(row_color),
                         );

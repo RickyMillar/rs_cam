@@ -197,6 +197,26 @@
       "chipload_max_mm_tooth": 0.2032,
       "ap_rule": "cut depth per pass = cutting edge diameter (1xD); 2xD reduce chip load 25%; 3xD reduce chip load 50%",
       "source_page": "121"
+    },
+    {
+      "observation_id": "onsrud-article-polycarbonate-optimum-chipload-window",
+      "source_id": "onsrud_routing_polycarbonate_article",
+      "source_vendor": "onsrud",
+      "source_title": "LMT Onsrud Article: Routing Polycarbonate Material",
+      "source_url": "https://www.onsrud.com/articles/Routing-Polycarbonate-Material.asp",
+      "accessed_on": "2026-05-29",
+      "evidence_grade": "a",
+      "row_kind": "exact",
+      "tool_family": "flat_end",
+      "tool_subfamily": "o_flute_upcut",
+      "operation_family": "contour",
+      "pass_role": "finish",
+      "material_family": "polycarbonate",
+      "material_label": "polycarbonate (article optimum finish window, diameter-independent)",
+      "flute_count": 1,
+      "chipload_min_mm_tooth": 0.1016,
+      "chipload_max_mm_tooth": 0.3048,
+      "ap_rule": "side-entry or ramp entry required (no straight plunge); upcut O-flute for chip evacuation. Phase 5 promotion (2026-06-01) — diameter_mm omitted; article publishes one chipload window across the upcut O-flute line."
     }
   ]
 }

@@ -237,6 +237,32 @@ deferred row's data matches its source — the blocker is purely
 schema (Phase 5 work). See
 `planning/feeds_data_ingest_consolidation_2026-06-01.md`.
 
+2026-06-01 Phase 5 Step 5.2 (V-bit schema relaxation) promoted 4
+net-new vendor LUT rows after relaxing `VendorObservation::
+diameter_mm` from `f64` to `Option<f64>` (`crates/rs_cam_core/src/
+feeds/vendor_lut.rs`). The matcher's `passes_must_match`,
+`score_observation`, and `diameter_scale_factor` paths now skip
+diameter scoring / scaling when the row has no anchor diameter —
+v-bit charts (angle-driven) and diameter-window articles can be
+matched honestly. Promoted rows:
+
+- 3 Amana Spektra engrave rows (30°/30°/45° softwood-hardwood) from
+  `amana_spektra_engraving_v4` (no new source — same PDF as the
+  Spektra 15°/120° rows already bundled).
+- 1 Onsrud polycarbonate article window row from
+  `onsrud_routing_polycarbonate_article` (new source_id added to
+  `source_manifest.json`; 0.1016–0.3048 mm/tooth across the upcut
+  O-flute polycarbonate-routing line, no per-diameter anchor).
+
+The other 11 staged v-bit rows (Amana AMS-159 v-groove series at
+18°/30°/45°/60°/90° in softwood/hardwood/acrylic/aluminum) were
+already present in the live LUT under the `amana-vgroove-*` naming
+with a synthetic `diameter_mm = 6.35`; they were not re-promoted
+under the `amana-vbit-*` naming to avoid LUT duplication. Bundled
+count: **247 → 251**. See
+`planning/phase_5_schema_unlock_2026-06-01.md` and the consolidation
+report once Step 5.5 lands.
+
 2026-05-31 Phase C (completion plan) added 5 new
 `AluminumAlloy` variants to `crates/rs_cam_core/src/material.rs`,
 extending aluminum coverage from 2 alloys (6061-T6, 7075-T6) to 7:

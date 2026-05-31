@@ -138,7 +138,17 @@ pub struct VendorObservation {
     pub material_label: String,
     pub hardness_kind: Option<HardnessKind>,
     pub hardness_value: Option<f64>,
-    pub diameter_mm: f64,
+    /// Calibrated cutter diameter (mm) for the vendor row. `None` for
+    /// rows whose source publishes a diameter-independent chipload
+    /// envelope — e.g. v-bit/chamfer charts (where engaged diameter is
+    /// a function of depth) and material-routing articles that quote
+    /// one chipload window across a polymer/composite line. None-rows
+    /// are matched by `(tool_family, included_angle_deg)` for v-bits
+    /// or by `(tool_family, material_family, op_family)` for window
+    /// rows; the matcher's diameter-scaling pipeline is skipped and
+    /// chipload bounds carry through unscaled.
+    #[serde(default)]
+    pub diameter_mm: Option<f64>,
     /// V-bit / chamfer-bit included (full) angle in degrees. Lets the
     /// chipload lookup match a V-groove row to the cutter's actual cone
     /// angle rather than its nominal diameter. `None` for non-cone rows
@@ -330,13 +340,12 @@ mod tests {
         let lut = VendorLut::embedded();
         assert_eq!(
             lut.observations.len(),
-            247,
-            "expected 247 embedded observations (228 post-informal-promotion + \
-             11 Garr aluminum from Phase B 2026-05-31 Low-Range/High-Range \
-             pages + 4 Garr 142M / GP from Phase 4 2026-06-01 \
-             (planning/phase_4_promotion_plan_2026-06-01.md) + 4 Freud 1/2-inch \
-             solid-carbide rows from Phase 4 verifier-confirmed 2026-06-01 — \
-             see planning/data_ingest_2026-05-30/verification_report_2026-06-01.md)"
+            251,
+            "expected 251 embedded observations (247 after Phase 4 + 4 net-new \
+             Phase 5 Step 5.2 2026-06-01: 3 Amana Spektra engrave rows \
+             (30°/30°/45° softwood-hardwood) + 1 Onsrud polycarbonate article \
+             window row, all with diameter_mm=None per the Step 5.2 schema \
+             relaxation. See planning/phase_5_schema_unlock_2026-06-01.md.)"
         );
     }
 
@@ -402,7 +411,7 @@ mod tests {
             .iter()
             .find(|o| o.observation_id == "amana-flat-softwood-adaptive-6000-2f")
             .expect("should find amana 6mm flat softwood adaptive");
-        assert_eq!(obs.diameter_mm, 6.0);
+        assert_eq!(obs.diameter_mm, Some(6.0));
         assert_eq!(obs.flute_count, 2);
         assert!(
             (obs.chipload_min_mm_tooth

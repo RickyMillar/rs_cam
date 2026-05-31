@@ -305,6 +305,14 @@
       "coverage_notes": "Phase E (completion plan, 2026-05-31): peer-reviewed Janka side-hardness for ~98 wood species, used as the primary source for `Material::SolidWoodByJanka` library entries via `WOOD_SPECIES_LIBRARY`. Janka values converted from the published Newton column (Table 5-3a 'Side hardness') by `lbf = N / 4.448` rounded to 1 decimal. The 'Green' moisture rows are excluded — only the 12% MC line (kiln-dried, typical workshop stock) is staged. Primary `fpl.fs.usda.gov` URL 403'd on 2026-05-30; the precisebits.com mirror serves the identical 46-page PDF. Touches no live vendor LUT rows — wood Kc lookups remain driven by the in-crate Janka → Kc helper, not by LUT row matching."
     },
     {
+      "source_id": "onsrud_routing_polycarbonate_article",
+      "source_vendor": "onsrud",
+      "source_title": "LMT Onsrud Article: Routing Polycarbonate Material",
+      "source_url": "https://www.onsrud.com/articles/Routing-Polycarbonate-Material.asp",
+      "accessed_on": "2026-05-29",
+      "coverage_notes": "Bundled 2026-06-01 (Phase 5 Step 5.2 — V-bit schema relaxation). Article publishes a diameter-independent chipload window (0.004-0.012 in/tooth = 0.1016-0.3048 mm/tooth) for upcut O-flute routing of polycarbonate, plus operational guidance (side-entry / ramp required, no straight plunge). One observation row, `diameter_mm` omitted (None) — matched by tool_family + material + operation."
+    },
+    {
       "source_id": "wood_database_2026-05-30",
       "source_vendor": "wood_database",
       "source_title": "The Wood Database (https://www.wood-database.com/) — per-species Janka hardness pages, 2026-05-30 snapshot",
