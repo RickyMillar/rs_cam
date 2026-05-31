@@ -566,7 +566,21 @@ fn draw_hierarchical_material_picker(
     let mut changed = false;
     let current_label = stock.material.label();
     let current_category = stock.material.category();
-    let menu_text = format!("{}  ▼", current_label);
+
+    // Janka indicator on the button — visual consistency between the
+    // curated `Material::SolidWood { species }` and parametric
+    // `Material::SolidWoodByJanka` variants (the parametric variant
+    // gets the lbf annotation uniformly with curated species rather
+    // than only showing it in the menu-item line).
+    let janka_suffix = match &stock.material {
+        Material::SolidWood { species } => Some(species.janka_lbf() as i64),
+        Material::SolidWoodByJanka { janka_lbf, .. } => Some(*janka_lbf as i64),
+        _ => None,
+    };
+    let menu_text = match janka_suffix {
+        Some(j) => format!("{current_label}  ({j} lbf)  ▼"),
+        None => format!("{current_label}  ▼"),
+    };
 
     let groups = Material::materials_by_category();
 
