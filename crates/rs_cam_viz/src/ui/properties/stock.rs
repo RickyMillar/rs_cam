@@ -12,35 +12,14 @@ pub fn draw(
 
     let mut changed = false;
 
-    // Material picker
+    // Material picker — hierarchical menu so the backend enum shape
+    // (flat list of variants) doesn't leak into the UX. Drills
+    // Wood ▶ → Softwood/Hardwood ▶ → species; flat leaves for
+    // Plywood / Sheet / Plastic / Aluminum / Foam. Wood category
+    // merges curated WoodSpecies + WOOD_SPECIES_LIBRARY (132
+    // additional species, FPL Ch.5 + Wood Database).
     ui.add_space(4.0);
-    let catalog = rs_cam_core::material::Material::catalog();
-    let current_label = stock.material.label();
-
-    ui.horizontal(|ui| {
-        ui.label("Material:");
-        egui::ComboBox::from_id_salt("stock_material")
-            .selected_text(&current_label)
-            .show_ui(ui, |ui| {
-                for (label, mat) in &catalog {
-                    if ui
-                        .selectable_label(stock.material == *mat, *label)
-                        .clicked()
-                    {
-                        stock.material = mat.clone();
-                        changed = true;
-                        events.push(AppEvent::StockMaterialChanged);
-                    }
-                }
-            });
-    });
-
-    // Wood species library picker — surfaces the 132-entry
-    // WOOD_SPECIES_LIBRARY (FPL Ch.5 + Wood Database) for species the
-    // curated Material::catalog() doesn't cover. Selection writes
-    // Material::SolidWoodByJanka and replaces whatever was in the main
-    // Material dropdown above.
-    if draw_wood_species_picker(ui, stock) {
+    if draw_hierarchical_material_picker(ui, stock) {
         changed = true;
         events.push(AppEvent::StockMaterialChanged);
     }
@@ -564,188 +543,143 @@ fn pins_are_symmetric(pins: &[AlignmentPin], axis: FlipAxis, stock_x: f64, stock
     true
 }
 
-/// Species in `WOOD_SPECIES_LIBRARY` that are already represented as
-/// first-class `WoodSpecies` variants in the curated Material catalog
-/// dropdown above. Filtered OUT of the sub-picker to avoid showing
-/// the same wood twice (a UX complaint from the first GUI smoke at
-/// the bench, 2026-05-31). Matching is on `display_name` (case-
-/// insensitive substring), case-tolerant for FPL's "Maple, sugar" vs
-/// catalog's "Hard Maple" naming conventions.
+/// Hierarchical material picker: drills `Category ▶ → species`. Wood
+/// nests one level deeper (`Wood ▶ → Softwood/Hardwood ▶ → species`).
+/// Replaces the pre-2026-05-31 flat ComboBox + separate wood sub-picker
+/// — the previous shape leaked the backend `Material` enum's flat
+/// variant list into the UX as a 33+ entry dropdown that mixed all
+/// classes together. UX complaint from the first bench smoke.
 ///
-/// Edit this list if `Material::catalog()` adds or removes a wood
-/// species variant.
-const FIRST_CLASS_WOOD_ALIASES: &[&str] = &[
-    "softwood",       // GenericSoftwood — synthetic, FPL won't have
-    "radiata pine",   // RadiataPine
-    "longleaf pine",  // LongleafPine
-    "pine, longleaf", // FPL ordering
-    "hardwood",       // GenericHardwood — synthetic
-    "hard maple",     // HardMaple
-    "sugar maple",    // FPL Acer saccharum = Hard Maple
-    "maple, sugar",   // FPL ordering
-    "black walnut",   // Walnut = Juglans nigra in the catalog (Janka 1010)
-    "walnut, black",  // FPL ordering of the same species
-    "yellow birch",   // Birch (FPL anchor: Betula alleghaniensis)
-    "birch, yellow",  // FPL ordering
-    // NOTE: do NOT add "white oak" — FPL labels Bur/Chestnut/Overcup/
-    // Post/Swamp Chestnut oaks with a "(white oak group)" qualifier,
-    // and a bare substring would over-filter those separate species.
-    "oak, white",     // FPL ordering for Quercus alba specifically
-    "jarrah",         // Jarrah
-    "ipe",            // Ipe
-];
-
-fn library_entry_is_already_curated(
-    entry: &rs_cam_core::material::wood_species_library::WoodSpeciesEntry,
-) -> bool {
-    let name_lc = entry.display_name.to_lowercase();
-    FIRST_CLASS_WOOD_ALIASES
-        .iter()
-        .any(|alias| name_lc.contains(alias))
-}
-
-/// Searchable picker for `WOOD_SPECIES_LIBRARY` (132 entries from FPL
-/// Ch.5 + The Wood Database — the long tail beyond the 10 first-class
-/// `WoodSpecies` enum variants curated in `Material::catalog()`).
-///
-/// Sits below the main Material dropdown so users picking a common
-/// material from the catalog never have to engage with it. When the
-/// current `stock.material` already is a `SolidWoodByJanka`, the
-/// combo's selected text shows the species name + Janka so the user
-/// can see what's selected without opening the picker.
+/// Backed by [`rs_cam_core::material::Material::materials_by_category`],
+/// which merges the curated catalog with `WOOD_SPECIES_LIBRARY` and
+/// dedups by Janka anchor. Per-leaf filter for the long Softwood /
+/// Hardwood lists (each has ~60+ species after dedup).
 ///
 /// Returns `true` if a selection was made this frame (caller pushes
 /// `StockMaterialChanged`).
-fn draw_wood_species_picker(
+fn draw_hierarchical_material_picker(
     ui: &mut egui::Ui,
     stock: &mut crate::state::job::StockConfig,
 ) -> bool {
-    use rs_cam_core::material::Material;
-    use rs_cam_core::material::wood_species_library::{WOOD_SPECIES_LIBRARY, WoodSpeciesEntry};
+    use rs_cam_core::material::{Material, MaterialCategory};
 
-    let mut selected_entry: Option<&'static WoodSpeciesEntry> = None;
+    let mut changed = false;
+    let current_label = stock.material.label();
+    let current_category = stock.material.category();
+    let menu_text = format!("{}  ▼", current_label);
 
-    // The visible (deduped) library — excludes species already in the
-    // top Material dropdown so "Hard Maple" doesn't appear twice.
-    let extended: Vec<&'static WoodSpeciesEntry> = WOOD_SPECIES_LIBRARY
-        .iter()
-        .filter(|e| !library_entry_is_already_curated(e))
-        .collect();
-
-    let selected_text = match &stock.material {
-        Material::SolidWoodByJanka {
-            label, janka_lbf, ..
-        } => format!("{label}  ({janka_lbf:.0} lbf)"),
-        _ => format!("— browse {} extended species —", extended.len()),
-    };
-
-    let filter_id = egui::Id::new("wood_species_filter");
+    let groups = Material::materials_by_category();
 
     ui.horizontal(|ui| {
-        ui.label("More wood species:")
-            .on_hover_text(
-                "Extended wood species library — only species NOT already in \
-                 the Material dropdown above (FPL Ch.5 + The Wood Database, \
-                 deduped against the 10 curated first-class species). \
-                 Selecting an entry sets the material to a parametric \
-                 SolidWoodByJanka — Kc is approximated via janka/100 \
-                 (folklore-grade band).",
-            );
-        egui::ComboBox::from_id_salt("wood_species_library")
-            .selected_text(&selected_text)
-            .width(260.0)
-            .show_ui(ui, |ui| {
-                let mut filter: String =
-                    ui.data(|d| d.get_temp(filter_id).unwrap_or_default());
-
-                ui.horizontal(|ui| {
-                    ui.label("🔍");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut filter)
-                            .hint_text("Filter by name / scientific")
-                            .desired_width(220.0),
-                    );
-                });
-                ui.add_space(2.0);
-
-                let filter_lc = filter.to_lowercase();
-                let matches: Vec<&WoodSpeciesEntry> = extended
-                    .iter()
-                    .copied()
-                    .filter(|e| {
-                        if filter_lc.is_empty() {
-                            return true;
-                        }
-                        e.display_name.to_lowercase().contains(&filter_lc)
-                            || e
-                                .scientific_name
-                                .map(|s| s.to_lowercase().contains(&filter_lc))
-                                .unwrap_or(false)
-                    })
-                    .collect();
-
-                ui.label(
-                    egui::RichText::new(format!(
-                        "{} of {} extended",
-                        matches.len(),
-                        extended.len()
-                    ))
-                    .small()
-                    .color(egui::Color32::from_rgb(140, 140, 150)),
-                );
-                ui.separator();
-
-                let is_current = |e: &WoodSpeciesEntry| -> bool {
-                    matches!(
-                        &stock.material,
-                        Material::SolidWoodByJanka { source_id, label, janka_lbf }
-                            if source_id == e.source_id
-                                && label == e.display_name
-                                && (janka_lbf - e.janka_lbf).abs() < 1e-6
-                    )
-                };
-
-                egui::ScrollArea::vertical()
-                    .max_height(240.0)
-                    .show(ui, |ui| {
-                        for entry in &matches {
-                            let label = match entry.scientific_name {
-                                Some(sci) => {
-                                    format!("{}  ·  {}  ·  {} lbf", entry.display_name, sci, entry.janka_lbf as i64)
-                                }
-                                None => format!(
-                                    "{}  ·  {} lbf",
-                                    entry.display_name, entry.janka_lbf as i64
-                                ),
-                            };
-                            if ui.selectable_label(is_current(entry), label).clicked() {
-                                selected_entry = Some(entry);
-                            }
-                        }
-                        if matches.is_empty() {
-                            ui.label(
-                                egui::RichText::new("no matches")
-                                    .small()
-                                    .italics()
-                                    .color(egui::Color32::from_rgb(140, 140, 150)),
-                            );
-                        }
-                    });
-
-                ui.data_mut(|d| d.insert_temp(filter_id, filter));
+        ui.label("Material:");
+        let response = ui.menu_button(menu_text, |ui| {
+            // Wood ▶ nests Softwood + Hardwood. Other categories
+            // render as direct leaves with their species list.
+            let mut wood_buckets: Vec<&(MaterialCategory, Vec<(String, Material)>)> = groups
+                .iter()
+                .filter(|(c, _)| c.is_wood())
+                .collect();
+            wood_buckets.sort_by_key(|(c, _)| match c {
+                MaterialCategory::Softwood => 0,
+                _ => 1,
             });
+
+            if !wood_buckets.is_empty() {
+                ui.menu_button("Wood  ▶", |ui| {
+                    for (cat, entries) in &wood_buckets {
+                        if draw_wood_subcategory(ui, *cat, entries, stock) {
+                            changed = true;
+                            ui.close_menu();
+                        }
+                    }
+                });
+            }
+
+            for (cat, entries) in &groups {
+                if cat.is_wood() || entries.is_empty() {
+                    continue;
+                }
+                ui.menu_button(format!("{}  ▶", cat.label()), |ui| {
+                    for (label, mat) in entries {
+                        let selected = stock.material == *mat;
+                        if ui.selectable_label(selected, label).clicked() {
+                            stock.material = mat.clone();
+                            changed = true;
+                            ui.close_menu();
+                        }
+                    }
+                });
+            }
+        });
+        response
+            .response
+            .on_hover_text(format!("Current: {} ({})", current_label, current_category.label()));
     });
 
-    if let Some(entry) = selected_entry {
-        stock.material = Material::SolidWoodByJanka {
-            janka_lbf: entry.janka_lbf,
-            label: entry.display_name.to_owned(),
-            source_id: entry.source_id.to_owned(),
-        };
-        true
-    } else {
-        false
-    }
+    changed
+}
+
+/// Render one Softwood/Hardwood submenu with a search filter. After
+/// the Phase E library merge the Hardwood leaf alone has ~65 species
+/// (60+ FPL + 7 curated), too long to scan without filtering.
+/// Flat-leaf categories (plastic, aluminum, foam) stay short and
+/// don't need a filter.
+fn draw_wood_subcategory(
+    ui: &mut egui::Ui,
+    cat: rs_cam_core::material::MaterialCategory,
+    entries: &[(String, rs_cam_core::material::Material)],
+    stock: &mut crate::state::job::StockConfig,
+) -> bool {
+    let mut changed = false;
+    let label = cat.label();
+    let filter_id = egui::Id::new(("wood_subcategory_filter", label));
+    ui.menu_button(format!("{}  ▶", label), |ui| {
+        let mut filter: String = ui.data(|d| d.get_temp(filter_id).unwrap_or_default());
+        ui.horizontal(|ui| {
+            ui.label("🔍");
+            ui.add(
+                egui::TextEdit::singleline(&mut filter)
+                    .hint_text("Filter")
+                    .desired_width(180.0),
+            );
+        });
+        ui.add_space(2.0);
+
+        let filter_lc = filter.to_lowercase();
+        let visible: Vec<&(String, rs_cam_core::material::Material)> = entries
+            .iter()
+            .filter(|(l, _)| filter_lc.is_empty() || l.to_lowercase().contains(&filter_lc))
+            .collect();
+
+        ui.label(
+            egui::RichText::new(format!("{} of {}", visible.len(), entries.len()))
+                .small()
+                .color(egui::Color32::from_rgb(140, 140, 150)),
+        );
+        ui.separator();
+
+        egui::ScrollArea::vertical()
+            .max_height(280.0)
+            .show(ui, |ui| {
+                for (entry_label, mat) in &visible {
+                    let selected = stock.material == *mat;
+                    if ui.selectable_label(selected, entry_label.as_str()).clicked() {
+                        stock.material = mat.clone();
+                        changed = true;
+                    }
+                }
+                if visible.is_empty() {
+                    ui.label(
+                        egui::RichText::new("no matches")
+                            .small()
+                            .italics()
+                            .color(egui::Color32::from_rgb(140, 140, 150)),
+                    );
+                }
+            });
+        ui.data_mut(|d| d.insert_temp(filter_id, filter));
+    });
+    changed
 }
 
 #[cfg(test)]
