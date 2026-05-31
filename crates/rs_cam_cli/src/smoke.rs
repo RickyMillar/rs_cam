@@ -344,6 +344,12 @@ fn materialize_case_toolpath(
     let params = parse_baseline_params(&case.baseline_params);
     let mut param_warnings = Vec::new();
     for (key, value) in &params {
+        // stock_* keys are routed to session.stock_mut() up front via
+        // apply_stock_overrides; skip them here so they don't pollute
+        // param_warnings with "unknown parameter" noise.
+        if key.starts_with("stock_") {
+            continue;
+        }
         let json_value = serde_json::Value::String(value.clone());
         if let Err(e) = session.set_toolpath_param(tp_idx, key, json_value) {
             param_warnings.push(format!("{key}={value}: {e}"));
@@ -406,6 +412,14 @@ fn run_single_case(case: &SmokeCase, all_cases: &[SmokeCase], resolution: f64) -
     {
         session.stock_mut().material = material;
     }
+
+    // Apply any stock_* prefixed params from the measured case's
+    // baseline_params to the stock config (rather than the toolpath
+    // operation schema, which rejects them as unknown). Round-09's
+    // MCP workflow did this implicitly via project setup; round-10+
+    // CLI smoke needs to route them here. See planning/phase_5_*.
+    // The measured case drives stock geometry for chained runs.
+    apply_stock_overrides(&mut session, &case.baseline_params, &case.case_id);
 
     // Disable any existing toolpaths so simulation only sees what we
     // explicitly add (prior passes + measured case).
@@ -745,6 +759,49 @@ fn pick_tool(session: &ProjectSession, tool_name: &str) -> Option<usize> {
         return Some(t.id.0);
     }
     session.tools().first().map(|t| t.id.0)
+}
+
+/// Route any `stock_*` prefixed params in `baseline_params` to
+/// `session.stock_mut()` field mutations. The toolpath operation
+/// schema rejects these as unknown params, but the test author's
+/// intent is to constrain stock geometry — pre-CLI, round-09 set
+/// stock_top_z via the project file directly.
+///
+/// Currently supports `stock_top_z=N` (sets stock top to absolute Z=N,
+/// preserving `origin_z`, by adjusting `stock.z = N - origin_z`).
+/// Also disables `auto_from_model` so subsequent re-derivation can't
+/// undo the override. Unknown stock_* keys are logged but ignored.
+fn apply_stock_overrides(session: &mut ProjectSession, baseline_params: &str, case_id: &str) {
+    for (key, value) in parse_baseline_params(baseline_params) {
+        if !key.starts_with("stock_") {
+            continue;
+        }
+        match key.as_str() {
+            "stock_top_z" => match value.parse::<f64>() {
+                Ok(top_z) => {
+                    let stock = session.stock_mut();
+                    let new_z = top_z - stock.origin_z;
+                    if new_z <= 0.0 {
+                        info!(
+                            case_id,
+                            top_z, origin_z = stock.origin_z,
+                            "stock_top_z would yield non-positive thickness; ignored"
+                        );
+                        continue;
+                    }
+                    stock.z = new_z;
+                    stock.auto_from_model = false;
+                    info!(case_id, top_z, stock_z = stock.z, "applied stock_top_z");
+                }
+                Err(e) => {
+                    info!(case_id, %value, "stock_top_z parse failed: {e}; ignored");
+                }
+            },
+            other => {
+                info!(case_id, key = other, %value, "unknown stock_* param; ignored");
+            }
+        }
+    }
 }
 
 fn material_for_family(family: &str) -> Option<Material> {
