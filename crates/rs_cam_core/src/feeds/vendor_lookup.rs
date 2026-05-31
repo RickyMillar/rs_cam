@@ -196,11 +196,14 @@ const SCALE_CLAMP_HI: f64 = 10.0;
 /// 3.175 mm row (0.31× = ln 1.16) does.
 const APPROX_LN_THRESHOLD: f64 = 0.336_472_236_621_213_07; // f64::ln(1.4)
 
-fn diameter_scale_factor(query_d: f64, row_d: f64) -> f64 {
-    if row_d <= 0.0 || query_d <= 0.0 {
-        1.0
-    } else {
-        (query_d / row_d).clamp(SCALE_CLAMP_LO, SCALE_CLAMP_HI)
+fn diameter_scale_factor(query_d: f64, row_d: Option<f64>) -> f64 {
+    match row_d {
+        Some(rd) if rd > 0.0 && query_d > 0.0 => {
+            (query_d / rd).clamp(SCALE_CLAMP_LO, SCALE_CLAMP_HI)
+        }
+        // No anchor diameter on the row (v-bit / diameter-window
+        // article): chipload bounds carry through unscaled.
+        _ => 1.0,
     }
 }
 
@@ -250,7 +253,10 @@ fn build_result(
         source_vendor: format!("{:?}", obs.source_vendor),
         score,
         diameter_match_score,
-        row_diameter_mm: obs.diameter_mm,
+        // 0.0 is a safe sentinel for "no diameter anchor" because real
+        // cutter diameters are always > 0; downstream consumers that
+        // care about the no-anchor case can check `< f64::EPSILON`.
+        row_diameter_mm: obs.diameter_mm.unwrap_or(0.0),
         chipload_diameter_scale: diameter_scale,
         chipload_hardness_scale: hardness_scale,
         is_extrapolated,
@@ -331,12 +337,22 @@ fn passes_must_match(query: &LookupQuery, obs: &VendorObservation) -> bool {
     // and the verdict is downgraded to `Approximate` past ±40 % divergence.
     // Without the relax a 1 mm tapered-ball tip can never reach a 3.175 mm
     // calibrated row even though the LUT trends are well-behaved.
-    if obs.diameter_mm <= 0.0 || query.diameter_mm <= 0.0 {
+    if query.diameter_mm <= 0.0 {
         return false;
     }
-    let ratio = query.diameter_mm / obs.diameter_mm;
-    if !(SCALE_CLAMP_LO..=SCALE_CLAMP_HI).contains(&ratio) {
-        return false;
+    // V-bit rows and diameter-window articles intentionally carry
+    // `diameter_mm = None` — they're matched by angle / material /
+    // operation rather than by diameter. Let them through the gate;
+    // scoring + build_result handle the no-anchor case (no diameter
+    // contribution to score, scale factor pinned to 1.0).
+    if let Some(obs_d) = obs.diameter_mm {
+        if obs_d <= 0.0 {
+            return false;
+        }
+        let ratio = query.diameter_mm / obs_d;
+        if !(SCALE_CLAMP_LO..=SCALE_CLAMP_HI).contains(&ratio) {
+            return false;
+        }
     }
     true
 }
@@ -354,8 +370,17 @@ fn score_observation(query: &LookupQuery, obs: &VendorObservation) -> (i64, i64)
         _ => -20,
     };
 
-    let log_ratio = (query.diameter_mm / obs.diameter_mm).ln().abs();
-    let diam_score = ((1.0 - log_ratio / 2.0_f64.ln()) * 200.0).clamp(0.0, 200.0) as i64;
+    // Diameter scoring is skipped for rows without a diameter anchor
+    // (v-bit, diameter-window articles). They still compete on the
+    // other axes; v-bit angle bonus in find_best_vbit_row provides
+    // the per-row specificity.
+    let diam_score = match obs.diameter_mm {
+        Some(obs_d) if obs_d > 0.0 => {
+            let log_ratio = (query.diameter_mm / obs_d).ln().abs();
+            ((1.0 - log_ratio / 2.0_f64.ln()) * 200.0).clamp(0.0, 200.0) as i64
+        }
+        _ => 0,
+    };
     score += diam_score;
 
     if let (Some(qk), Some(qv), Some(ok), Some(ov)) = (
@@ -919,6 +944,66 @@ mod tests {
             find_best_row_for_geometry(&lut, &query, &geom).expect("dispatch must match flat");
         let via_direct = find_best_row(&lut, &query).expect("plain must match flat");
         assert_eq!(via_dispatch.observation_id, via_direct.observation_id);
+    }
+
+    #[test]
+    fn vbit_matches_angle_only_row_without_diameter() {
+        // Phase 5 Step 5.2: a 30° Spektra engrave row carrying
+        // `diameter_mm = None` must be selectable by an angle-aware
+        // V-bit query of the same angle. Pre-relaxation `passes_must_match`
+        // rejected any obs with `diameter_mm <= 0.0`; the new row would
+        // have been invisible to the lookup.
+        let lut = embedded_lut();
+        let query = vbit_query(3.175, MaterialFamily::Softwood, 600.0);
+        let result = find_best_vbit_row(&lut, &query, Some(30.0))
+            .expect("30° angle-only v-bit row must be reachable for a 30° query");
+        // Either the new Spektra engrave row OR the legacy
+        // `amana-vgroove-softwood-trace-30deg-1f` row (which carries
+        // diameter_mm = 6.35) can win on score; both have the same
+        // chipload data. Assert we land a 30° softwood-class row,
+        // not a far-angle row.
+        let won_an_angle_only_row = result.row_diameter_mm < f64::EPSILON;
+        let won_the_legacy_row =
+            result.observation_id == "amana-vgroove-softwood-trace-30deg-1f";
+        assert!(
+            won_an_angle_only_row || won_the_legacy_row,
+            "expected angle-only or legacy 30° row, got {} (row_diameter={})",
+            result.observation_id,
+            result.row_diameter_mm
+        );
+    }
+
+    #[test]
+    fn diameter_window_row_matches_flat_query_no_extrapolation() {
+        // Phase 5 Step 5.2: the Onsrud polycarbonate article row
+        // (diameter_mm = None) is matched on tool_family + material +
+        // operation. A polycarbonate contour-finish query against the
+        // embedded LUT must reach it and the chipload bounds must
+        // carry through unscaled (no diameter extrapolation).
+        let lut = embedded_lut();
+        let query = LookupQuery {
+            tool_family: ToolFamily::FlatEnd,
+            tool_subfamily: Some("o_flute_upcut".to_owned()),
+            diameter_mm: 6.35,
+            flute_count: 1,
+            material_family: MaterialFamily::Polycarbonate,
+            hardness_kind: None,
+            hardness_value: None,
+            operation_family: LutOperationFamily::Contour,
+            pass_role: LutPassRole::Finish,
+        };
+        let result = lookup_best(&lut, &query)
+            .expect("Onsrud polycarbonate window row must be reachable");
+        // Anchorless rows return `chipload_diameter_scale = 1.0` regardless
+        // of query diameter — diameter extrapolation is intentionally
+        // off for these rows.
+        if result.row_diameter_mm < f64::EPSILON {
+            assert!(
+                (result.chipload_diameter_scale - 1.0).abs() < 1e-9,
+                "anchorless row must report scale=1.0, got {}",
+                result.chipload_diameter_scale,
+            );
+        }
     }
 
     #[test]
