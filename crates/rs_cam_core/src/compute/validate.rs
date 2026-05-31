@@ -533,11 +533,12 @@ mod tests {
     fn rule_silent_on_metal_with_narrow_stepover() {
         let mut s = ProjectSession::new_empty();
         let mut stock = s.stock_config().clone();
-        stock.material = Material::Custom {
-            name: "Aluminium 6061".to_owned(),
-            hardness_index: 3.0,
-            kc: 2500.0,
-        };
+        // The rule's wood-class gate (`is_wood_class`) tests the
+        // variant tag only, so any Custom material exercises the
+        // "metal / non-wood" branch identically — the helper's
+        // (hardness=1, kc=10) defaults work just as well as the
+        // aluminum-flavoured (3.0, 2500.0) the pre-S3-13 fixture used.
+        stock.material = Material::test_fixture_custom("Aluminium 6061");
         s.set_stock_config(stock);
         s.add_tool(flat_em(6.0));
         let mut cfg = Adaptive3dConfig::default();

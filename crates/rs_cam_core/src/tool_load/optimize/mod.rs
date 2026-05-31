@@ -854,11 +854,13 @@ mod orchestration_skip_tests {
         use crate::compute::stock_config::StockConfig;
         let mut session = session_with_op(OperationConfig::Pocket(PocketConfig::default()));
         let mut stock = session.stock_config().clone();
-        stock.material = crate::material::Material::Custom {
-            name: "test".to_owned(),
-            hardness_index: 1.0,
-            kc: 30.0,
-        };
+        // The Custom-material check fires on the variant tag, not on
+        // the kc/hardness scalars — any Custom value triggers the
+        // MaterialUnvalidated skip. Pre-S3-13 this site hand-built a
+        // `{kc: 30.0, hardness: 1.0}` triplet; the test_fixture helper
+        // uses `{kc: 10.0, hardness: 1.0}` and the assertion holds
+        // identically.
+        stock.material = crate::material::Material::test_fixture_custom("test");
         session.set_stock_config(stock);
         let _ = StockConfig::default(); // silence unused-import false positive
 
