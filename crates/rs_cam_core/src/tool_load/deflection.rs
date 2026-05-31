@@ -485,11 +485,7 @@ mod tests {
         let v = evaluate(
             0,
             &carbide_flat(6.0, 45.0),
-            &Material::Custom {
-                name: "Mystery".into(),
-                hardness_index: 1.0,
-                kc: 10.0,
-            },
+            &Material::test_fixture_custom("Mystery"),
             Some(&trace),
             None,
             OperationType::Pocket,

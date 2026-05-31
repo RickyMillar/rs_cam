@@ -523,11 +523,7 @@ mod tests {
         let v = evaluate(
             0,
             &tool(),
-            &Material::Custom {
-                name: "Mystery".into(),
-                hardness_index: 1.0,
-                kc: 10.0,
-            },
+            &Material::test_fixture_custom("Mystery"),
             &shapeoko_makita(),
             Some(&trace),
             None,
