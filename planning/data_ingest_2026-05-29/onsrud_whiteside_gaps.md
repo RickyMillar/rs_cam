@@ -54,3 +54,21 @@ invented to fill these.
   count for these two V-groove bits. flute_count=2 was recorded as an inference
   (the related #1541 is noted 3-flute "for improved veining", implying the
   standard models are 2-flute). Flagged in provenance as inference, not quote.
+
+## Phase 4 promotion deferral (2026-06-01)
+
+**`onsrud-article-polycarbonate-optimum-chipload-window`** — cannot
+be promoted to live LUT because the row lacks `diameter_mm`. The
+Onsrud polycarbonate optimum-chipload-window article reports a
+chipload range (0.1016 – 0.3048 mm/tooth) that applies across all
+diameters in their polycarbonate routing line; the article itself
+does not anchor on a specific diameter.
+
+**Two paths to promote in a follow-up round:**
+1. Pick a representative diameter (Onsrud's 1/4" / 6.35 mm is the
+   most common polycarbonate routing diameter) and create three
+   diameter-anchored rows (3.175, 6.35, 12.7 mm) all citing the
+   same source.
+2. Extend `VendorObservation` schema to allow `diameter_mm: Option<f64>`
+   with explicit "applies to diameter range X-Y" annotation — bigger
+   schema change, defer to Phase 5.
