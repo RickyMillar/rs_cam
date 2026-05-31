@@ -564,6 +564,46 @@ fn pins_are_symmetric(pins: &[AlignmentPin], axis: FlipAxis, stock_x: f64, stock
     true
 }
 
+/// Species in `WOOD_SPECIES_LIBRARY` that are already represented as
+/// first-class `WoodSpecies` variants in the curated Material catalog
+/// dropdown above. Filtered OUT of the sub-picker to avoid showing
+/// the same wood twice (a UX complaint from the first GUI smoke at
+/// the bench, 2026-05-31). Matching is on `display_name` (case-
+/// insensitive substring), case-tolerant for FPL's "Maple, sugar" vs
+/// catalog's "Hard Maple" naming conventions.
+///
+/// Edit this list if `Material::catalog()` adds or removes a wood
+/// species variant.
+const FIRST_CLASS_WOOD_ALIASES: &[&str] = &[
+    "softwood",       // GenericSoftwood — synthetic, FPL won't have
+    "radiata pine",   // RadiataPine
+    "longleaf pine",  // LongleafPine
+    "pine, longleaf", // FPL ordering
+    "hardwood",       // GenericHardwood — synthetic
+    "hard maple",     // HardMaple
+    "sugar maple",    // FPL Acer saccharum = Hard Maple
+    "maple, sugar",   // FPL ordering
+    "black walnut",   // Walnut = Juglans nigra in the catalog (Janka 1010)
+    "walnut, black",  // FPL ordering of the same species
+    "yellow birch",   // Birch (FPL anchor: Betula alleghaniensis)
+    "birch, yellow",  // FPL ordering
+    // NOTE: do NOT add "white oak" — FPL labels Bur/Chestnut/Overcup/
+    // Post/Swamp Chestnut oaks with a "(white oak group)" qualifier,
+    // and a bare substring would over-filter those separate species.
+    "oak, white",     // FPL ordering for Quercus alba specifically
+    "jarrah",         // Jarrah
+    "ipe",            // Ipe
+];
+
+fn library_entry_is_already_curated(
+    entry: &rs_cam_core::material::wood_species_library::WoodSpeciesEntry,
+) -> bool {
+    let name_lc = entry.display_name.to_lowercase();
+    FIRST_CLASS_WOOD_ALIASES
+        .iter()
+        .any(|alias| name_lc.contains(alias))
+}
+
 /// Searchable picker for `WOOD_SPECIES_LIBRARY` (132 entries from FPL
 /// Ch.5 + The Wood Database — the long tail beyond the 10 first-class
 /// `WoodSpecies` enum variants curated in `Material::catalog()`).
@@ -585,22 +625,31 @@ fn draw_wood_species_picker(
 
     let mut selected_entry: Option<&'static WoodSpeciesEntry> = None;
 
+    // The visible (deduped) library — excludes species already in the
+    // top Material dropdown so "Hard Maple" doesn't appear twice.
+    let extended: Vec<&'static WoodSpeciesEntry> = WOOD_SPECIES_LIBRARY
+        .iter()
+        .filter(|e| !library_entry_is_already_curated(e))
+        .collect();
+
     let selected_text = match &stock.material {
         Material::SolidWoodByJanka {
             label, janka_lbf, ..
         } => format!("{label}  ({janka_lbf:.0} lbf)"),
-        _ => "— browse 132 species —".to_owned(),
+        _ => format!("— browse {} extended species —", extended.len()),
     };
 
     let filter_id = egui::Id::new("wood_species_filter");
 
     ui.horizontal(|ui| {
-        ui.label("Wood species:")
+        ui.label("More wood species:")
             .on_hover_text(
-                "Browse the extended wood species library (132 entries from \
-                 USDA FPL Ch.5 + The Wood Database). Selecting an entry sets \
-                 the material to a parametric SolidWoodByJanka — Kc is \
-                 approximated via janka/100 (folklore-grade band).",
+                "Extended wood species library — only species NOT already in \
+                 the Material dropdown above (FPL Ch.5 + The Wood Database, \
+                 deduped against the 10 curated first-class species). \
+                 Selecting an entry sets the material to a parametric \
+                 SolidWoodByJanka — Kc is approximated via janka/100 \
+                 (folklore-grade band).",
             );
         egui::ComboBox::from_id_salt("wood_species_library")
             .selected_text(&selected_text)
@@ -620,8 +669,9 @@ fn draw_wood_species_picker(
                 ui.add_space(2.0);
 
                 let filter_lc = filter.to_lowercase();
-                let matches: Vec<&WoodSpeciesEntry> = WOOD_SPECIES_LIBRARY
+                let matches: Vec<&WoodSpeciesEntry> = extended
                     .iter()
+                    .copied()
                     .filter(|e| {
                         if filter_lc.is_empty() {
                             return true;
@@ -636,9 +686,9 @@ fn draw_wood_species_picker(
 
                 ui.label(
                     egui::RichText::new(format!(
-                        "{} of {}",
+                        "{} of {} extended",
                         matches.len(),
-                        WOOD_SPECIES_LIBRARY.len()
+                        extended.len()
                     ))
                     .small()
                     .color(egui::Color32::from_rgb(140, 140, 150)),
