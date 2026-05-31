@@ -330,13 +330,13 @@ mod tests {
         let lut = VendorLut::embedded();
         assert_eq!(
             lut.observations.len(),
-            239,
-            "expected 239 embedded observations (228 post-Phase-4 + 11 Garr \
-             aluminum from Phase B 2026-05-31: Low-Range page split per-series \
-             into 242M-2f / 842M-2f / A3-3f for 3 chart entries = 9 rows, \
-             plus High-Range A3-only HEM + finish = 2 rows; Mid-Range 142M/143M \
-             and General-Purpose rows skipped — see \
-             planning/feeds_data_ingest_phaseB_2026-05-31.md)"
+            247,
+            "expected 247 embedded observations (228 post-informal-promotion + \
+             11 Garr aluminum from Phase B 2026-05-31 Low-Range/High-Range \
+             pages + 4 Garr 142M / GP from Phase 4 2026-06-01 \
+             (planning/phase_4_promotion_plan_2026-06-01.md) + 4 Freud 1/2-inch \
+             solid-carbide rows from Phase 4 verifier-confirmed 2026-06-01 — \
+             see planning/data_ingest_2026-05-30/verification_report_2026-06-01.md)"
         );
     }
 

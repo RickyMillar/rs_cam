@@ -92,3 +92,32 @@ source of 10 of the 12 rows — no gap there.
 | Garr aluminum %-of-diameter + ap=.5x/1xD + ae=.5xD | CAPTURED — exact metric mm chiploads + ap/ae rules. |
 | Chip-thinning RDOC<50% rule (Helical p.22 + Garr) | CAPTURED as rule text + formula in provenance. |
 | Plastics (specific polymers: acrylic/HDPE/PC/Delrin) | PARTIAL — only Garr's coarse "Fiberglass/Plastics/G10" non-ISO bucket (1 generic plastic row). No per-polymer Harvey/Helical/Garr data was readable. |
+
+## Phase 4 promotion deferral (2026-06-01)
+
+**`garr-gp-plastics-6000-flat`** — the one Garr "Fiberglass/Plastics/
+G10" row cannot be promoted to the live LUT because its
+`material_family: plastic` does not match any variant of the
+`MaterialFamily` enum
+(`{Softwood, Hardwood, PlywoodSoftwood, PlywoodHardwood, Mdf, Hdf,
+  Particleboard, Acrylic, Hdpe, Polycarbonate, Delrin, Aluminum}`).
+Fiberglass / G10 is a fundamentally different cutting class
+(abrasive, fiber-reinforced) and warrants its own enum variant
+rather than collapsing to one of the existing polymer entries.
+
+**Follow-up:** add `MaterialFamily::Fiberglass` (or
+`CompositeFiberReinforced`) in a Phase 5 schema bump. Until then
+the row stays in this staged JSON unpromoted.
+
+## Phase 4 promotion success (2026-06-01)
+
+Successfully promoted to `crates/rs_cam_core/data/vendor_lut/
+observations/garr_aluminum.json`:
+- garr-142m-alum-slot-6000-flat-2f (was -flat, +flute_count=2)
+- garr-142m-alum-profile-6000-flat-2f (was -flat, +flute_count=2)
+- garr-gp-alum-6000-flat-2f (was -flat, +flute_count=2)
+- garr-gp-alum-3000-flat-2f (was -flat, +flute_count=2)
+
+`pass_role` typo `"rough"` → `"roughing"` fixed in-place in the
+staged JSON file (matches the Rust ROLE enum variant
+`PassRole::Roughing`).

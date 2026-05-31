@@ -57,3 +57,32 @@ from the same family; ingesting again would duplicate:
   `ap_min/max_mm` and `ae_*` are null on those rows; only `ap_rule` is set.
 - The **60°/90° V-groove** and all **compression** cells are single values (no
   range), so `chipload_min == chipload_max` on those rows.
+
+## Phase 4 promotion deferral (2026-06-01)
+
+The 15 net-new Amana v-bit and engrave rows from this file
+(`amana_ams159_vgroove_v2` + `amana_spektra_engraving_v4` source_ids)
+**cannot be promoted to the live LUT this round** because they lack
+`diameter_mm`. The Rust `VendorObservation` struct requires
+`diameter_mm: f64` (not Optional), and AMS-159 / Spektra V4 source
+PDFs list these tools as a single chart row per angle rather than
+per body diameter.
+
+**Affected rows:**
+- amana-vbit-{softwood,hardwood}-trace-{18,30,45,60}deg-{1,2}f
+- amana-vbit-{softwood,hardwood,acrylic,aluminum}-trace-{30,45}deg-1f
+- amana-vbit-softwood-trace-90deg-2f-ams159
+- amana-engrave-{softwood,hardwood,hardplastic}-trace-{30,45}deg-1f
+
+**Two paths to promote in a follow-up round:**
+1. Source the body diameter for each AMS-159 / Spektra V4 SKU from
+   the Amana product pages and add `diameter_mm` to each staged row.
+2. Relax the `VendorObservation::diameter_mm` field to `Option<f64>`
+   for `tool_family: chamfer_vbit | v_bit` and update
+   `vendor_lookup::find_best_row_for_geometry` to fall back on
+   `included_angle_deg` + `tool_family` match when diameter is None.
+
+Path 2 is the more correct schema fix — v-bits are angle-driven, not
+diameter-driven — but it crosses into Phase 5 territory (schema
+change). Path 1 is the quick fix if the Amana PDFs surface body
+diameters on close reading.

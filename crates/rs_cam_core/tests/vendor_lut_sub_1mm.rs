@@ -83,8 +83,9 @@ fn embedded_count_matches_after_expansion() {
     let lut = VendorLut::embedded();
     assert_eq!(
         lut.observations.len(),
-        239,
-        "expected 239 embedded observations (228 post-Phase-4 + 11 Garr aluminum \
-         per-series split from Phase B 2026-05-31)"
+        247,
+        "expected 247 embedded observations (228 post-informal-promotion + \
+         11 Garr aluminum from Phase B + 4 Garr 142M/GP + 4 Freud 1/2-inch \
+         from Phase 4 2026-06-01 — see planning/phase_4_promotion_plan_2026-06-01.md)"
     );
 }

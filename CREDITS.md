@@ -203,6 +203,40 @@ completion plan locked only the Low-Range trio and A3) and GP
 plastics has no `MaterialFamily` enum mapping. See
 `planning/feeds_data_ingest_phaseB_2026-05-31.md`.
 
+2026-06-01 Phase 4 (verifier-gated promotion) added 8 net-new rows
+to the vendor LUT after the Phase 4 plan's verifier agent confirmed
+all candidate rows against their source URLs (14/14 CONFIRMED, 0
+MISMATCH — see
+`planning/data_ingest_2026-05-30/verification_report_2026-06-01.md`):
+
+- **4 Garr aluminum** completing the Mid-Range and General-Purpose
+  deferral from Phase B — 142M slot+profile at 6 mm (CPT 0.090–0.150
+  mm/tooth), GP aluminum slot at 3 mm and 6 mm (CPT 0.015–0.051
+  mm/tooth). Two new `source_id` entries
+  (`garr_milling_aluminum_mid_range`, `garr_general_purpose_milling`)
+  added to `source_manifest.json`. Appended to
+  `crates/rs_cam_core/data/vendor_lut/observations/garr_aluminum.json`
+  (now 15 rows total).
+- **4 Freud 1/2-inch solid carbide** — the Freud "Router Bit Feed
+  and Speed for CNC" 2017-08-22 PDF row for 1/2-inch bits across
+  hardwood, softwood, MDF/particle, and plywood-hardwood. The
+  validator initially flagged the chiploads (0.46–0.69 mm/tooth) as
+  suspicious; the verifier confirmed they are correct Freud
+  publishing values at the 1xD-DOC reference condition (the 25%/50%
+  derate rule for deeper DOC is captured in `ap_rule`). Appended to
+  `crates/rs_cam_core/data/vendor_lut/observations/freud_solid_carbide.json`
+  (now 14 rows total). No new `source_id` — reuses the existing
+  `freud_router_bit_feed_and_speed_for_cnc_20170822` entry.
+
+Bundled count: **239 → 247**. The Phase 4 plan's other deferrals
+(15 Amana v-bits and 1 Onsrud polycarbonate article — both missing
+`diameter_mm`; 1 Garr fiberglass/G10 — invalid `material_family`)
+remain in staging with documented follow-up paths in their
+respective `_gaps.md` files. The verifier audit confirmed each
+deferred row's data matches its source — the blocker is purely
+schema (Phase 5 work). See
+`planning/feeds_data_ingest_consolidation_2026-06-01.md`.
+
 2026-05-31 Phase C (completion plan) added 5 new
 `AluminumAlloy` variants to `crates/rs_cam_core/src/material.rs`,
 extending aluminum coverage from 2 alloys (6061-T6, 7075-T6) to 7:

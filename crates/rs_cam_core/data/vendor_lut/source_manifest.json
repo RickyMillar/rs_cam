@@ -281,6 +281,22 @@
       "coverage_notes": "Bundled 2026-05-31 (Phase B of completion plan). High-Range page of Garr's three-page Aluminum Milling Guide. A3 series only (3-flute, aerospace-grade); no per-series split needed. 2 rows: HEM profiling (adaptive/roughing, 6 mm, CPT 0.120–0.180 mm/tooth) and finishing (contour/finish, 6 mm, CPT 0.060 mm/tooth single value). Includes A3-specific ap/ae rules (HEM Axial=2xD, Radial=30%-40%xD; Finish Radial=2.5%xD)."
     },
     {
+      "source_id": "garr_milling_aluminum_mid_range",
+      "source_vendor": "garr",
+      "source_title": "Garr Tool Milling Guide for Aluminum (Mid-Range HP/Torque) Series 142M End Mills",
+      "source_url": "https://www.garrtool.com/doc/pdf/tech/TECH_MILLING_ALUMINUM.pdf",
+      "accessed_on": "2026-05-29",
+      "coverage_notes": "Bundled 2026-06-01 (Phase 4 promotion — planning/phase_4_promotion_plan_2026-06-01.md). Mid-Range page of Garr's three-page Aluminum Milling Guide. 142M series (2-flute square endmill). 2 rows: slotting and profiling at 6 mm CPT 0.090–0.150 mm/tooth. Verifier-confirmed 2026-06-01 (verification_report_2026-06-01.md): chipload, diameter, RPM, flute count, material mapping, ap/ae rules all match source."
+    },
+    {
+      "source_id": "garr_general_purpose_milling",
+      "source_vendor": "garr",
+      "source_title": "Garr Tool General Purpose Milling Chart — Aluminum Section",
+      "source_url": "https://www.garrtool.com/wp-content/uploads/2018/11/TECHNICAL.pdf",
+      "accessed_on": "2026-05-29",
+      "coverage_notes": "Bundled 2026-06-01 (Phase 4 promotion). General-Purpose milling chart aluminum entries; default 2-flute aluminum endmills. 2 rows: 3 mm (CPT 0.015–0.025 mm/tooth) and 6 mm (CPT 0.030–0.051 mm/tooth). Companion plastic/fiberglass row (garr-gp-plastics-6000-flat) NOT bundled — collapsed Garr's 'Fiberglass/Plastics/G10' grouping onto material_family='plastic' which is not a valid MaterialFamily enum variant; tracked in planning/data_ingest_2026-05-29/harvey_helical_garr_gaps.md for a Phase 5 schema bump (add MaterialFamily::Fiberglass or CompositeFiberReinforced)."
+    },
+    {
       "source_id": "fpl_ch5_2010",
       "source_vendor": "fpl",
       "source_title": "USDA Forest Service, Wood Handbook — Wood as an Engineering Material, GTR FPL-GTR-190 (2010), Chapter 5 'Mechanical Properties of Wood' by David E. Kretschmann, Table 5-3a",
