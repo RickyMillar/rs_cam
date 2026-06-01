@@ -177,6 +177,18 @@ pub fn export_gcode_checked(
         .enumerate()
         .filter_map(|(idx, tc)| {
             let result = project.get_result(idx)?;
+            // Pull the tool_number from the matching tool config so the
+            // emitter can insert M6 T{n} between toolpaths that use
+            // different tools. The modal layer suppresses duplicate
+            // M6 commands for consecutive same-tool phases, so this is
+            // always safe to populate. Pre-Phase-5 this was hardcoded
+            // to `None`, suppressing all tool changes (including the
+            // M6 between Wanaka's End Mill and 20° V-bit operations).
+            let tool_number = project
+                .tools()
+                .iter()
+                .find(|t| t.id.0 == tc.tool_id)
+                .map(|t| t.tool_number);
             Some(GcodePhase {
                 toolpath: result.toolpath(),
                 spindle_rpm: effective_spindle_rpm(
@@ -184,7 +196,7 @@ pub fn export_gcode_checked(
                     project.post_config().spindle_speed,
                 ),
                 label: &tc.name,
-                tool_number: None,
+                tool_number,
                 coolant: CoolantMode::Off,
                 pre_gcode: tc.pre_gcode.as_deref(),
                 post_gcode: tc.post_gcode.as_deref(),
