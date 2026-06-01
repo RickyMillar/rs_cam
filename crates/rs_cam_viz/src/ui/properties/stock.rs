@@ -609,7 +609,7 @@ fn draw_hierarchical_material_picker(
                 });
             }
 
-            for (cat, entries) in &groups {
+            for (cat, entries) in groups {
                 if cat.is_wood() || entries.is_empty() {
                     continue;
                 }

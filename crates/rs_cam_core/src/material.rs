@@ -7,6 +7,7 @@
 pub mod wood_species_library;
 
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 
 /// Wood species with Janka hardness data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -578,6 +579,20 @@ impl Default for Material {
         }
     }
 }
+
+/// Type alias for the cached material picker structure — keeps clippy's
+/// `type_complexity` lint quiet without sprinkling `#[allow]`.
+type MaterialPickerBuckets = Vec<(MaterialCategory, Vec<(String, Material)>)>;
+
+/// Process-lifetime cache for [`Material::materials_by_category`]. The
+/// merge of [`Material::catalog`] + [`wood_species_library::WOOD_SPECIES_LIBRARY`]
+/// is fully static — recomputing it per GUI frame was the dominant
+/// cost on the setup page (~148 species × dedup walk × ~30 String
+/// allocations, all of which the GUI doesn't need until the menu is
+/// open). One-shot at first access, then handed out as a `&'static`
+/// slice.
+static MATERIALS_BY_CATEGORY: LazyLock<MaterialPickerBuckets> =
+    LazyLock::new(Material::build_materials_by_category);
 
 impl Material {
     /// Wood-Janka-normalised hardness index driving feed-rate scaling
@@ -1330,7 +1345,20 @@ impl Material {
     ///
     /// Custom is omitted — it isn't user-selectable from the picker
     /// (the GUI handles Custom via a separate "advanced" path).
-    pub fn materials_by_category() -> Vec<(MaterialCategory, Vec<(String, Material)>)> {
+    ///
+    /// **Performance:** the underlying merge is computed exactly once
+    /// on first call and cached for the process lifetime via
+    /// [`MATERIALS_BY_CATEGORY`]. The catalog + library are both static
+    /// data — the result never changes — so we don't re-walk
+    /// `WOOD_SPECIES_LIBRARY` (~148 entries) per frame. Before the
+    /// cache landed the GUI's setup page rebuilt this every frame in
+    /// the hierarchical material picker; after Phase E added the
+    /// library, that re-allocation became visible as setup-page lag.
+    pub fn materials_by_category() -> &'static [(MaterialCategory, Vec<(String, Material)>)] {
+        &MATERIALS_BY_CATEGORY
+    }
+
+    fn build_materials_by_category() -> Vec<(MaterialCategory, Vec<(String, Material)>)> {
         use wood_species_library::WOOD_SPECIES_LIBRARY;
 
         // Internal builder type keeps the sort_key alongside the entry
