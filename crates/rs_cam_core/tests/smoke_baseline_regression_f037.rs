@@ -19,20 +19,23 @@
 use std::path::PathBuf;
 
 fn baseline_path() -> PathBuf {
-    // 2026-06-03 baseline supersedes 2026-06-02.csv: Phase 5 Step 5.1
-    // closes the AS013 `stock_top_z` methodology gap by routing
-    // `stock_*` baseline_params to `session.stock_mut()` instead of
-    // the toolpath operation schema. AS013 deflection drops from
-    // 0.2629 (Exceeds) to 0.1090 (Within) — matches round-09
-    // STATE.md's operator-validated ~105 µm result. All other rows
-    // unchanged. Older baselines stay on disk as historical reference.
+    // 2026-06-04 baseline supersedes 2026-06-03.csv: Phase 5 Step 5.4
+    // pins per-species `Material::SolidWood::kc_n_per_mm2()` values
+    // to FPL Ch.5 Table 5-3a shear-parallel-to-grain (12% MC), closing
+    // the folklore-Kc TODO. Wood Kc shifts:
+    //   GenericSoftwood 6.0 → 6.5 (+8%), GenericHardwood 14.0 → 13.0
+    //   (-7%), HardMaple 15.0 → 16.0 (+7%), Walnut 12.0 → 9.5 (-21%),
+    //   LongleafPine 7.0 → 10.4 (+48%). Smoke cases use only Generic*
+    //   so ±7-8% deflection shifts ripple through AS001/AS002/AS003/
+    //   AS013/AS015 — all stay Within. Derivation:
+    //   planning/data_ingest_2026-05-30/wood_kc_derivation.md.
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join("planning")
         .join("toolpath_acceptance")
         .join("baselines")
-        .join("2026-06-03.csv")
+        .join("2026-06-04.csv")
 }
 
 fn read_rows(path: &std::path::Path) -> Vec<csv::StringRecord> {

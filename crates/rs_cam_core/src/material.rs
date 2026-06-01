@@ -711,24 +711,57 @@ impl Material {
     /// validated cutting-force model.
     pub fn kc_n_per_mm2(&self) -> Option<f64> {
         match self {
-            // TODO Phase 3 — per-species solid-wood Kc has no fetched
-            // direct measurement; current values track FPL Ch.5 shear-
-            // parallel-to-grain strength (≈6–16 MPa) rather than
-            // peripheral milling specific cutting force (≈30–40 N/mm²
-            // for boards). Phase 3 beat C will inform a per-species
-            // derivation backbone via the shear-strength × edge-radius
-            // size-effect factor. Until then, kept as-is; the Phase 2B
-            // sheet-good update is the highest-confidence move.
+            // Phase 5 Step 5.4 (2026-06-01): per-species values now
+            // pinned to FPL Ch.5 Table 5-3a shear-parallel-to-grain
+            // (12% MC) rows. Source: USDA Forest Service Wood
+            // Handbook FPL-GTR-190 (2010), Chapter 5 (Kretschmann),
+            // Table 5-3a. Per-species rationale + Δ-from-folklore
+            // table at planning/data_ingest_2026-05-30/
+            // wood_kc_derivation.md.
+            //
+            // SCOPE NOTE: values stay in the shear-parallel regime
+            // (~6–16 N/mm² for North American species, ~28 for Ipe).
+            // The literature delta between shear-block testing and
+            // peripheral milling Kc (a 3–5× size-effect multiplier)
+            // is NOT applied here — that requires a coordinated
+            // anisotropy-factor retune (analog to Phase 2B for sheet
+            // goods) and bench validation, both of which are Phase
+            // 6+ scope. What this step buys: every value now ties
+            // back to a specific FPL Table 5-3a row with a verbatim
+            // citation, closing the folklore TODO that had carried
+            // since Phase 2B.
+            //
+            // TODO Phase 6+: absolute-Kc calibration via
+            // shear × edge-radius size-effect factor + coordinated
+            // anisotropy retune. Will shift smoke baselines; needs
+            // operator field validation.
             Material::SolidWood { species } => Some(match species {
-                WoodSpecies::GenericSoftwood => 6.0,
+                // Mid-band of common low-density softwoods (Pondersa
+                // pine 7.8, white spruce 6.7, western redcedar 6.8).
+                WoodSpecies::GenericSoftwood => 6.5,
+                // NZ/AU species, not in FPL Ch.5 — folklore retained.
+                // TODO: source from CSIRO or FRI publications.
                 WoodSpecies::RadiataPine => 6.0,
-                WoodSpecies::LongleafPine => 7.0,
-                WoodSpecies::GenericHardwood => 14.0,
-                WoodSpecies::HardMaple => 15.0,
-                WoodSpecies::Walnut => 12.0,
+                // FPL: "Longleaf 12% ... 10,400" (kPa shear ∥).
+                WoodSpecies::LongleafPine => 10.4,
+                // Mid-band of common North American hardwoods (Beech
+                // American 13.9, Red Maple 12.8, Northern Red Oak
+                // 12.3).
+                WoodSpecies::GenericHardwood => 13.0,
+                // FPL: "Sugar 12% ... 16,100" (kPa shear ∥).
+                WoodSpecies::HardMaple => 16.0,
+                // FPL: "Walnut, black 12% ... 9,400" (kPa shear ∥).
+                WoodSpecies::Walnut => 9.5,
+                // FPL: "Yellow 12% ... 13,000" (kPa shear ∥).
                 WoodSpecies::Birch => 13.0,
-                WoodSpecies::WhiteOak => 14.0,
+                // FPL: "White 12% 0.68 ... 13,800" (kPa shear ∥;
+                // Quercus alba primary row in the white-oak group).
+                WoodSpecies::WhiteOak => 13.8,
+                // AU species, not in FPL Ch.5 — folklore retained.
+                // TODO: source from CSIRO publications.
                 WoodSpecies::Jarrah => 19.0,
+                // Brazilian species, not in FPL Ch.5 — folklore
+                // retained. TODO: source from EMBRAPA / IPT.
                 WoodSpecies::Ipe => 28.0,
             }),
             // Parametric variant — `janka_to_kc_n_per_mm2` returns
