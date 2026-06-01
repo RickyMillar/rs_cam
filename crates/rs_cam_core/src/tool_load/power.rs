@@ -646,9 +646,10 @@ mod tests {
         };
         // Hand compute: engagement_radius(1.0) for 90° V-bit = 1.0 mm;
         // radial_width = (arc/π)·2·1.0 = 1.0; triangular area = 0.5·1·1 =
-        // 0.5 mm². Kc_eff = 2.0 · 15 = 30.0 (Phase 2B grain anisotropy).
-        // P = 30.0·0.5·1000/60e6.
-        let expected = 30.0 * 0.5 * 1.0 * feed / 60_000_000.0;
+        // 0.5 mm². Kc_eff = 2.0 · 16 = 32.0 (Phase 2B grain anisotropy ×
+        // HardMaple Kc 16 N/mm² after Phase 5 Step 5.4 FPL Ch.5 pin —
+        // Sugar maple shear ∥ grain). P = 32.0·0.5·1000/60e6.
+        let expected = 32.0 * 0.5 * 1.0 * feed / 60_000_000.0;
         assert!(
             (peak - expected).abs() / expected < 0.02,
             "V-bit triangular power {peak} should match {expected}"

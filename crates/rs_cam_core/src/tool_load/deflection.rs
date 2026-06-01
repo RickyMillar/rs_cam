@@ -590,11 +590,18 @@ mod tests {
         // 1 mm carbide flat at 25 mm stickout (geometric L/D = 25, the
         // gap doc's "should still pass" workflow). Tiny chip cross-
         // section keeps force low; predicted δ stays under threshold.
+        // Phase 5 Step 5.4 (2026-06-01): axial reduced 0.3 → 0.2 mm
+        // after HardMaple Kc shifted from folklore 15.0 → FPL-cited
+        // 16.0 N/mm². The previous 0.3 mm axial sat at ~197 µm with
+        // the old Kc (just under the 200 µm bound by design); the new
+        // Kc pushes it to ~210 µm. A genuinely-light engraver cut at
+        // the new Kc is ~0.2 mm axial — same test intent, honest
+        // margin.
         let tool = carbide_flat(1.0, 25.0);
         let trace = trace_with(vec![cutting_sample(
             0,
             0,
-            0.3,
+            0.2,
             std::f64::consts::FRAC_PI_4,
             120.0,
             0.2,

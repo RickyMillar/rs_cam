@@ -294,6 +294,33 @@ under a new `MaterialCategory::Composite` group in the hierarchical
 material picker. See
 `planning/phase_5_schema_unlock_2026-06-01.md` Step 5.3.
 
+2026-06-01 Phase 5 Step 5.4 (per-species wood Kc from FPL Ch.5)
+pinned `Material::SolidWood::kc_n_per_mm2()` per-species values to
+FPL-GTR-190 Ch.5 Table 5-3a shear-parallel-to-grain (12% MC) rows,
+closing the folklore-Kc TODO that had carried since Phase 2B.
+
+Per-species Kc shifts (folklore → FPL-cited): GenericSoftwood
+6.0 → 6.5; LongleafPine 7.0 → 10.4; GenericHardwood 14.0 → 13.0;
+HardMaple 15.0 → 16.0; Walnut 12.0 → 9.5; Birch 13.0; WhiteOak
+13.8. Three species (RadiataPine, Jarrah, Ipe) are not in FPL
+Ch.5; folklore values retained with TODO markers pointing at
+CSIRO / EMBRAPA / IPT as future sources.
+
+Values stay in the FPL shear-parallel regime (6–28 N/mm²) — a true
+peripheral-milling Kc would multiply by a 3–5× edge-radius size-
+effect factor, but that requires a coordinated anisotropy retune
+(analog to Phase 2B sheet goods) and bench validation, both Phase
+6+ scope. What Step 5.4 buys: every value ties back to a specific
+FPL row with verbatim quote, citation chain ends at
+`source_manifest.json::fpl_ch5_2010` (added Phase E). Derivation
+table + per-case smoke deflection shifts (±7-8%, all stay Within)
+in `planning/data_ingest_2026-05-30/wood_kc_derivation.md` and
+the new baseline notes
+`planning/toolpath_acceptance/baselines/2026-06-04_notes.md`.
+
+Bundled vendor LUT count unchanged (252); the change is purely on
+the material-side Kc accessor.
+
 2026-05-31 Phase C (completion plan) added 5 new
 `AluminumAlloy` variants to `crates/rs_cam_core/src/material.rs`,
 extending aluminum coverage from 2 alloys (6061-T6, 7075-T6) to 7:
