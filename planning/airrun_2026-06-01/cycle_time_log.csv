@@ -1,0 +1,7 @@
+phase,predicted_min,actual_min,notes
+marker_star,0.47,,
+wanaka_setup1_endmill_phases,32.0,,Pin Drill + Back Rough + Holes + Rivers (back) — runs before M6 T11
+wanaka_setup1_vbit_phase,9.7,,Lakes (back inside) — after M6 T11 V-bit change
+wanaka_setup2_endmill_phase,10.0,,3D Rough 6 — before M6 T2
+wanaka_setup2_taperedball_phase,28.5,,3D Finish 6 — after M6 T2 Tapered Ball change
+TOTALS,80.6,,Sum of phase predictions (excluding marker test)

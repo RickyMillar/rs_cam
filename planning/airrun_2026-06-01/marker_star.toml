@@ -1,0 +1,159 @@
+format_version = 3
+toolpaths = []
+
+[job]
+name = "Air-Run Marker Test (demo_star.svg)"
+
+# Stock = paper. Top at Z=0 (operator touches off marker tip onto
+# paper surface). 0.5 mm "thickness" so the trace operation's
+# depth=0.5 sinks the marker tip just under paper level for a
+# clean line. Hardwood material is structural noise — there's no
+# real material; the trace op doesn't compute force.
+[job.stock]
+x = 120.0
+y = 120.0
+z = 0.5
+origin_x = -10.0
+origin_y = -10.0
+origin_z = -0.5
+padding = 5.0
+workholding_rigidity = "Medium"
+auto_from_model = false
+
+[job.stock.material.SolidWood]
+species = "GenericHardwood"
+
+[job.post]
+format = "grbl"
+spindle_speed = 0
+safe_z = 5.0
+high_feedrate_mode = false
+high_feedrate = 3000.0
+
+[job.machine]
+name = "Shapeoko Pro XXL (air-run profile)"
+max_feed_mm_min = 4000.0
+max_shank_mm = 6.35
+safety_factor = 0.75
+
+[job.machine.spindle.Variable]
+min_rpm = 8000.0
+max_rpm = 24000.0
+
+[job.machine.power.ConstantPower]
+power_kw = 0.8
+
+[job.machine.chip_load]
+k0 = 0.024
+p = 0.61
+q = 1.26
+
+[job.machine.rigidity]
+doc_roughing_factor = 0.2
+doc_finishing_factor = 0.08
+woc_roughing_factor = 0.7
+woc_roughing_max_mm = 5.0
+woc_finishing_mm = 0.5
+adaptive_doc_factor = 1.5
+adaptive_woc_factor = 0.2
+
+# 1 mm endmill — small radius so trace path stays close to SVG outline
+# even with cutter compensation off (which traces the tool centerline
+# exactly on the polygon edge).
+[[tools]]
+id = 1
+name = "Marker (1mm endmill profile)"
+type = "end_mill"
+diameter = 1.0
+cutting_length = 8.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 90.0
+taper_half_angle = 15.0
+shaft_diameter = 3.175
+holder_diameter = 25.0
+shank_diameter = 3.175
+shank_length = 20.0
+stickout = 25.0
+flute_count = 2
+tool_number = 1
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[models]]
+id = 1
+path = "../../fixtures/demo_star.svg"
+name = "demo_star.svg"
+kind = "svg"
+
+[models.units]
+kind = "millimeters"
+
+[[setups]]
+id = 0
+name = "Setup 1"
+face_up = "top"
+z_rotation = "0"
+fixtures = []
+keep_out_zones = []
+
+[[setups.toolpaths]]
+id = 1
+name = "Marker Star Trace"
+type = "trace"
+enabled = true
+tool_id = 1
+model_id = 1
+boundary_inherit = false
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "trace"
+
+[setups.toolpaths.operation.params]
+depth = 0.5
+depth_per_pass = 0.5
+feed_rate = 800.0
+plunge_rate = 400.0
+compensation = "none"
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 1.0
+helix_pitch = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 1.0
+lead_in_feed_rate = 400.0
+lead_out_feed_rate = 800.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 400.0
+arc_fitting = false
+arc_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = false
+retract_strategy = "full"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
