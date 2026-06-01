@@ -1252,6 +1252,17 @@ enum Commands {
         /// against the user's machine without editing the project file.
         #[arg(long)]
         inject_shapeoko_kinematics: bool,
+
+        /// Apply LUT-suggested feeds/speeds to every enabled toolpath
+        /// before generation. Replaces each operation's feed_rate,
+        /// plunge_rate, stepover, depth_per_pass, and spindle_rpm
+        /// with feeds::suggest_for_operation output (vendor-LUT-driven,
+        /// machine-aware). Project file on disk is unchanged; only
+        /// the in-memory session before generate + emit. Pairs with
+        /// --emit-gcode for "what would suggest produce" without
+        /// editing the .toml.
+        #[arg(long)]
+        apply_suggest: bool,
     },
 
     /// Run the F-037 smoke baseline suite.
@@ -3452,6 +3463,7 @@ fn main() -> Result<()> {
             modulation_strategy,
             modulation_aggressiveness,
             inject_shapeoko_kinematics,
+            apply_suggest,
         } => {
             let skip_ids: Vec<usize> = skip
                 .as_deref()
@@ -3478,6 +3490,7 @@ fn main() -> Result<()> {
                 strategy,
                 modulation_aggressiveness,
                 inject_shapeoko_kinematics,
+                apply_suggest,
             )?;
         }
         Commands::Smoke {

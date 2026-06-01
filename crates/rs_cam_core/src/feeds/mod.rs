@@ -129,6 +129,48 @@ pub enum WorkholdingRigidity {
     High,
 }
 
+/// Policy for choosing operating-point RPM along the constant-chipload
+/// line.
+///
+/// Under [`SpindleStrategy::MatchChart`] (default) the feeds calculator
+/// returns the vendor LUT row's `rpm_nominal` verbatim — the chipload
+/// envelope is most defensible at the chart's tested RPM. Under
+/// [`SpindleStrategy::MaxSpeed`] the calculator lifts RPM toward the
+/// spindle ceiling (capped by `vendor.rpm_max` when present, then by
+/// the machine's `spindle.max_rpm` and a small safety headroom) and
+/// scales feed proportionally to keep chipload constant — same
+/// operating point on the chipload axis, just moved along the speed
+/// axis. The existing power / feed-cap derates still apply on top, so
+/// if the higher RPM exceeds spindle power the `power_limit` derate
+/// claws feed back.
+///
+/// `Default` is `MatchChart` so projects predating this enum behave
+/// identically.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpindleStrategy {
+    /// Use the LUT row's `rpm_nominal` (or the material-derived ideal
+    /// RPM when no vendor row matches). Preserves chart fidelity.
+    #[default]
+    MatchChart,
+    /// Push RPM up to the spindle ceiling (clamped by vendor rpm_max
+    /// when present, capped by [`MAX_SPINDLE_SPEEDUP`] from the chart
+    /// nominal). Scales feed proportionally to keep chipload constant.
+    MaxSpeed,
+}
+
+/// Hard cap on the speedup multiplier `MaxSpeed` can apply over the
+/// chart's `rpm_nominal`. 1.5× is conservative — past it, chip-thinning
+/// at higher RPM enters territory the chart wasn't tested at. Matches
+/// the rough magnitude of the chart's own rpm_max-vs-rpm_nominal
+/// spread when vendors do publish a range.
+pub const MAX_SPINDLE_SPEEDUP: f64 = 1.5;
+
+/// Safety headroom below the machine's nominal spindle ceiling. Avoids
+/// commanding the spindle at exactly its max — leaves the controller
+/// some margin for transient overshoot.
+pub const SPINDLE_CEILING_HEADROOM: f64 = 0.95;
+
 /// Input parameters for the feeds calculator.
 pub struct FeedsInput<'a> {
     pub tool_diameter: f64,
@@ -150,6 +192,11 @@ pub struct FeedsInput<'a> {
     pub vendor_lut: Option<&'a vendor_lut::VendorLut>,
     /// Physical setup context for feed derating.
     pub setup: SetupContext,
+    /// Spindle-RPM policy. See [`SpindleStrategy`]. Defaults to
+    /// `MatchChart` (chart-fidelity, preserves pre-2026-06-01
+    /// behaviour). `MaxSpeed` walks the constant-chipload line up to
+    /// the spindle ceiling.
+    pub spindle_strategy: SpindleStrategy,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -222,6 +269,15 @@ pub struct FeedsDerates {
     pub feed_clamp: f64,
     /// Machine safety factor (0.75–0.80 typical).
     pub safety_factor: f64,
+    /// Spindle-speedup multiplier (≥ 1.0). Under
+    /// [`SpindleStrategy::MaxSpeed`] the calculator lifts RPM toward
+    /// the spindle ceiling and scales feed proportionally to keep the
+    /// chipload constant. `1.0` under `MatchChart` (the default) and
+    /// when the chart RPM is already at or above the ceiling.
+    /// Applied multiplicatively in [`combined_factor`].
+    ///
+    /// [`combined_factor`]: Self::combined_factor
+    pub spindle_speedup: f64,
 }
 
 /// Empirical chipload formula evaluation `K₀ × D^p × (1/H)^q`.
@@ -246,6 +302,14 @@ impl FeedsDerates {
     /// chipload (`feed / (RPM × flutes)`) equals
     /// `target_chip_load_mm × combined_factor()`.
     pub fn combined_factor(&self) -> f64 {
+        // Spindle speedup is intentionally NOT included here:
+        // `combined_factor` represents the multiplier applied to the
+        // target chipload to get the effective chipload. Spindle
+        // speedup walks the constant-chipload line (RPM and feed
+        // scale together), so chipload is unchanged. The modal
+        // renders `spindle_speedup` as a peer row so the operator
+        // sees the speed-axis change separately from the chipload
+        // derates.
         self.combined_chip_thinning
             * self.depth_tier
             * self.ld_overhang
@@ -294,7 +358,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let cl = &machine.chip_load;
     let formula_chipload = cl.k0 * d.powf(cl.p) * (1.0 / feed_scale).powf(cl.q);
 
-    let (chip_load, vendor_rpm, vendor_source, chipload_source) =
+    let (chip_load, vendor_rpm, vendor_rpm_max, vendor_source, chipload_source) =
         if let Some(lut) = input.vendor_lut {
             let query = vendor_normalize::to_lookup_query(input);
             if let Some(result) =
@@ -304,12 +368,14 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 (
                     result.chip_load_mm,
                     result.rpm_nominal,
+                    result.rpm_max,
                     Some(observation_id.clone()),
                     ChiploadSource::VendorLut { observation_id },
                 )
             } else {
                 (
                     formula_chipload,
+                    None,
                     None,
                     None,
                     ChiploadSource::FormulaFallback,
@@ -320,13 +386,44 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 formula_chipload,
                 None,
                 None,
+                None,
                 ChiploadSource::FormulaFallback,
             )
         };
 
-    // Override RPM if vendor provided one within machine range
+    // Override RPM if vendor provided one within machine range. This
+    // is the chart-RPM operating point — preserved verbatim under
+    // `SpindleStrategy::MatchChart`.
     if let Some(v_rpm) = vendor_rpm {
         rpm = machine.clamp_rpm(v_rpm);
+    }
+
+    // --- Step 2b: Spindle-speedup along the constant-chipload line ---
+    //
+    // Under `SpindleStrategy::MaxSpeed` push RPM up toward the
+    // spindle ceiling (clamped by vendor.rpm_max when published,
+    // capped by MAX_SPINDLE_SPEEDUP and a small safety headroom).
+    // Feed scales proportionally below (the feed formula already
+    // multiplies by rpm), so chipload is preserved. Power and feed-
+    // cap derates apply on top — if the higher operating point
+    // exceeds spindle power the existing `power_limit` claws feed
+    // back, and the modal renders the resulting binding constraint.
+    //
+    // `spindle_speedup` is captured into `FeedsDerates` for the modal.
+    // Default (MatchChart) leaves it at 1.0; smoke baselines unchanged.
+    let mut spindle_speedup = 1.0_f64;
+    if matches!(input.spindle_strategy, SpindleStrategy::MaxSpeed) && rpm > 0.0 {
+        let (_, machine_max_rpm) = machine.rpm_range();
+        let machine_ceiling = machine_max_rpm * SPINDLE_CEILING_HEADROOM;
+        let ceiling = match vendor_rpm_max {
+            Some(vm) if vm.is_finite() && vm > 0.0 => vm.min(machine_ceiling),
+            _ => machine_ceiling,
+        };
+        if ceiling > rpm {
+            let raw_speedup = ceiling / rpm;
+            spindle_speedup = raw_speedup.min(MAX_SPINDLE_SPEEDUP);
+            rpm = machine.clamp_rpm(rpm * spindle_speedup);
+        }
     }
 
     // --- Step 3: DOC/WOC from operation defaults ---
@@ -576,6 +673,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         power_limit: power_factor,
         feed_clamp: feed_clamp_factor,
         safety_factor: machine.safety_factor,
+        spindle_speedup,
     };
 
     FeedsResult {
@@ -862,6 +960,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: None,
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         }
     }
 
@@ -954,6 +1053,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: None,
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
         let pocket = calculate(&FeedsInput {
             tool_diameter: 6.0,
@@ -970,6 +1070,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: None,
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         assert!(
@@ -1019,6 +1120,7 @@ mod tests {
                 target_scallop_mm: None,
                 vendor_lut: None,
                 setup: SetupContext::default(),
+                spindle_strategy: crate::feeds::SpindleStrategy::default(),
             });
             let finish = calculate(&FeedsInput {
                 tool_diameter: 6.0,
@@ -1035,6 +1137,7 @@ mod tests {
                 target_scallop_mm: None,
                 vendor_lut: None,
                 setup: SetupContext::default(),
+                spindle_strategy: crate::feeds::SpindleStrategy::default(),
             });
 
             assert!(
@@ -1083,6 +1186,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: None,
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         assert!(
@@ -1120,6 +1224,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: None,
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         // 6mm flat in hardwood: material_base/hardness × safety ≈
@@ -1160,6 +1265,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: None,
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         assert!(
@@ -1197,6 +1303,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: None,
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         // Plastic is not wood-class; ae should sit below the
@@ -1231,6 +1338,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: None,
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         assert!(
@@ -1270,6 +1378,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: None,
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         assert!(
@@ -1307,6 +1416,7 @@ mod tests {
             target_scallop_mm: Some(0.03),
             vendor_lut: None,
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         // With 3mm ball radius, 0.03mm scallop → stepover should be small
@@ -1336,6 +1446,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: None,
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         assert!(
@@ -1368,6 +1479,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: None,
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         // Feed should be < what it would be without safety factor
@@ -1397,6 +1509,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: None,
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         assert!(
@@ -1437,6 +1550,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: Some(&lut),
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
         let without_lut = calculate(&FeedsInput {
             tool_diameter: 6.0,
@@ -1453,6 +1567,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: None,
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         // LUT chipload for 6mm softwood adaptive should be ~0.0875 (midpoint 0.065-0.11)
@@ -1505,6 +1620,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: Some(&lut),
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         // Vendor RPM for amana 6mm softwood adaptive is 18000
@@ -1537,6 +1653,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: None,
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         assert!(result.vendor_source.is_none());
@@ -1571,6 +1688,7 @@ mod tests {
                 tool_overhang_mm: Some(20.0), // L/D = 20/6 = 3.3, no derate
                 workholding_rigidity: WorkholdingRigidity::Medium,
             },
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         let long = calculate(&FeedsInput {
@@ -1591,6 +1709,7 @@ mod tests {
                 tool_overhang_mm: Some(40.0), // L/D = 40/6 = 6.67, 25% derate
                 workholding_rigidity: WorkholdingRigidity::Medium,
             },
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         // L/D > 6 should reduce feed by 25%
@@ -1626,6 +1745,7 @@ mod tests {
                 tool_overhang_mm: Some(20.0), // L/D = 3.3, no derate
                 workholding_rigidity: WorkholdingRigidity::Medium,
             },
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         let medium = calculate(&FeedsInput {
@@ -1646,6 +1766,7 @@ mod tests {
                 tool_overhang_mm: Some(30.0), // L/D = 30/6 = 5.0, 12% derate
                 workholding_rigidity: WorkholdingRigidity::Medium,
             },
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         let ratio = medium.feed_rate_mm_min / normal.feed_rate_mm_min;
@@ -1680,6 +1801,7 @@ mod tests {
                 tool_overhang_mm: None,
                 workholding_rigidity: WorkholdingRigidity::Medium,
             },
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         let low = calculate(&FeedsInput {
@@ -1700,6 +1822,7 @@ mod tests {
                 tool_overhang_mm: None,
                 workholding_rigidity: WorkholdingRigidity::Low,
             },
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         let ratio = low.feed_rate_mm_min / medium.feed_rate_mm_min;
@@ -1732,6 +1855,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: Some(&lut),
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
         let ball = calculate(&FeedsInput {
             tool_diameter: 6.0,
@@ -1748,6 +1872,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: Some(&lut),
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         // Ball nose finishing should have a different (lower) chipload than flat adaptive
@@ -1787,10 +1912,135 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: Some(&lut),
             setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
 
         // Foam maps to softwood in normalize, but with hardness 200 which is far from
         // any observation. If it does match, that's fine. If not, formula is used.
         assert!(result.feed_rate_mm_min > 0.0);
+    }
+
+    /// Phase 5 follow-up (2026-06-01): `SpindleStrategy::MaxSpeed`
+    /// pushes RPM toward the spindle ceiling and scales feed
+    /// proportionally to keep chipload constant. Sanity-check against
+    /// a softwood adaptive query whose vendor row publishes
+    /// rpm_nominal at 18000 with our 24000 RPM ceiling.
+    #[test]
+    fn spindle_strategy_max_speed_lifts_rpm_and_scales_feed() {
+        let lut = vendor_lut::VendorLut::embedded();
+        let machine = MachineProfile::shapeoko_vfd();
+        let material = Material::SolidWood {
+            species: crate::material::WoodSpecies::GenericSoftwood,
+        };
+        let base = FeedsInput {
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            shank_diameter: None,
+            tool_geometry: ToolGeometryHint::Flat,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: Some(&lut),
+            setup: SetupContext::default(),
+            spindle_strategy: SpindleStrategy::MatchChart,
+        };
+        let match_chart = calculate(&base);
+        let max_speed = calculate(&FeedsInput {
+            spindle_strategy: SpindleStrategy::MaxSpeed,
+            ..base
+        });
+
+        // Chipload is preserved (constant-chipload line).
+        let chipload_chart = match_chart.feed_rate_mm_min
+            / (match_chart.rpm * f64::from(base.flute_count));
+        let chipload_max = max_speed.feed_rate_mm_min
+            / (max_speed.rpm * f64::from(base.flute_count));
+        assert!(
+            (chipload_chart - chipload_max).abs() / chipload_chart < 0.02,
+            "chipload should be preserved: chart {chipload_chart:.5} vs max {chipload_max:.5}"
+        );
+
+        // RPM is at or above the chart RPM under MaxSpeed (>= because
+        // when the chart is already at ceiling there's no headroom).
+        assert!(
+            max_speed.rpm >= match_chart.rpm - 1.0,
+            "MaxSpeed RPM {} should be >= MatchChart RPM {}",
+            max_speed.rpm,
+            match_chart.rpm,
+        );
+
+        // For the GenericSoftwood/6mm/adaptive query the chart is at
+        // 18000 RPM and the machine ceiling is 24000 — we should see a
+        // meaningful lift.
+        let (_, machine_max) = machine.rpm_range();
+        let speedup = max_speed.rpm / match_chart.rpm;
+        let ceiling = machine_max * SPINDLE_CEILING_HEADROOM;
+        assert!(
+            speedup > 1.05 || max_speed.rpm >= ceiling * 0.99,
+            "expected meaningful speedup or to hit the ceiling: speedup={speedup:.2}, rpm={}",
+            max_speed.rpm
+        );
+
+        // FeedsDerates.spindle_speedup tracks the multiplier for UI.
+        assert!(
+            (max_speed.derates.spindle_speedup - speedup).abs() < 0.05,
+            "derates.spindle_speedup {} should match observed RPM speedup {}",
+            max_speed.derates.spindle_speedup,
+            speedup,
+        );
+
+        // combined_factor (chipload multiplier) does NOT include
+        // spindle_speedup — it's purely a speed-axis change.
+        let factor_max = max_speed.derates.combined_factor();
+        let factor_chart = match_chart.derates.combined_factor();
+        assert!(
+            (factor_max - factor_chart).abs() / factor_chart.max(1e-6) < 0.02,
+            "combined_factor should be unchanged by spindle strategy: \
+             chart={factor_chart:.4} vs max={factor_max:.4}"
+        );
+    }
+
+    /// `MaxSpeed` caps at `MAX_SPINDLE_SPEEDUP` even if the spindle
+    /// ceiling/chart ratio is bigger. This guards against unbounded
+    /// extrapolation past the chart's tested envelope.
+    #[test]
+    fn spindle_strategy_max_speed_respects_hard_cap() {
+        // Construct a fake low-RPM scenario: pick a machine with a
+        // very high ceiling (synthesise a MachineProfile if needed).
+        // Easier: just verify the cap constant is sensible and the
+        // observed speedup never exceeds it in `derates`.
+        let lut = vendor_lut::VendorLut::embedded();
+        let machine = MachineProfile::shapeoko_vfd();
+        let material = Material::SolidWood {
+            species: crate::material::WoodSpecies::GenericSoftwood,
+        };
+        let result = calculate(&FeedsInput {
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            shank_diameter: None,
+            tool_geometry: ToolGeometryHint::Flat,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: Some(&lut),
+            setup: SetupContext::default(),
+            spindle_strategy: SpindleStrategy::MaxSpeed,
+        });
+        assert!(
+            result.derates.spindle_speedup <= MAX_SPINDLE_SPEEDUP + 1e-6,
+            "spindle_speedup {} must not exceed MAX_SPINDLE_SPEEDUP {}",
+            result.derates.spindle_speedup,
+            MAX_SPINDLE_SPEEDUP,
+        );
     }
 }

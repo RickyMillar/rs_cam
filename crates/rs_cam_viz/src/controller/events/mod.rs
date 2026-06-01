@@ -238,6 +238,18 @@ impl<B: ComputeBackend> AppController<B> {
                     modal.mode = mode;
                 }
             }
+            AppEvent::SetSpindleStrategy(strategy) => {
+                // Project-level setting; updates both the session
+                // post (persisted to TOML on save) and the viz post
+                // mirror (drives the modal's preview values on next
+                // frame). Invalidates Suggest's cached output via the
+                // existing dirty-tracking hooks.
+                if self.state.session.post_config().spindle_strategy != strategy {
+                    self.state.session.post_mut().spindle_strategy = strategy;
+                    self.state.gui.post.spindle_strategy = strategy;
+                    self.state.gui.mark_edited();
+                }
+            }
             AppEvent::ToggleFeedsProvenance => {
                 if let Some(modal) = self.state.feeds_modal.as_mut() {
                     modal.show_provenance = !modal.show_provenance;
@@ -791,6 +803,7 @@ impl<B: ComputeBackend> AppController<B> {
             self.state.session.machine(),
             stock.workholding_rigidity,
             rs_cam_core::feeds::embedded_vendor_lut(),
+            self.state.session.post_config().spindle_strategy,
         ))
     }
 

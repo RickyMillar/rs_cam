@@ -268,6 +268,7 @@ mod tests {
             target_scallop_mm: None,
             vendor_lut: None,
             setup: Default::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         }
     }
 

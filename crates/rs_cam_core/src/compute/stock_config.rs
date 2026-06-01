@@ -80,6 +80,12 @@ pub struct PostConfig {
     /// Convert G0 rapids to G1 at high feedrate (for machines with unpredictable rapid behavior).
     pub high_feedrate_mode: bool,
     pub high_feedrate: f64,
+    /// Project-level spindle policy used by Suggest. `MatchChart`
+    /// (default) preserves chart RPM. `MaxSpeed` walks the constant-
+    /// chipload line up to the spindle ceiling, scaling feed
+    /// proportionally. See [`crate::feeds::SpindleStrategy`].
+    #[serde(default)]
+    pub spindle_strategy: crate::feeds::SpindleStrategy,
 }
 
 impl Default for PostConfig {
@@ -90,6 +96,7 @@ impl Default for PostConfig {
             safe_z: 10.0,
             high_feedrate_mode: false,
             high_feedrate: 5000.0,
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         }
     }
 }

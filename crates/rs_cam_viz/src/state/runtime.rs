@@ -305,6 +305,7 @@ impl GuiState {
             safe_z: session_post.safe_z,
             high_feedrate_mode: session_post.high_feedrate_mode,
             high_feedrate: session_post.high_feedrate,
+            spindle_strategy: session_post.spindle_strategy,
         }
     }
 
@@ -322,6 +323,7 @@ impl GuiState {
             safe_z: post.safe_z,
             high_feedrate_mode: post.high_feedrate_mode,
             high_feedrate: post.high_feedrate,
+            spindle_strategy: post.spindle_strategy,
         }
     }
 
