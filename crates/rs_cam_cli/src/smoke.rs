@@ -305,6 +305,7 @@ fn materialize_case_toolpath(
         workholding,
         lut: embedded_vendor_lut(),
         stock_ctx: &stock_ctx,
+        spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
     })
     .operation;
 

@@ -435,6 +435,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     &material,
                     &machine,
                     workholding,
+                    state.session.post_config().spindle_strategy,
                     model_has_enriched,
                     model_is_step_missing_brep,
                     height_ctx.as_ref(),
@@ -1090,6 +1091,7 @@ fn calculate_and_apply_feeds(
     material: &rs_cam_core::material::Material,
     machine: &rs_cam_core::machine::MachineProfile,
     workholding: rs_cam_core::feeds::WorkholdingRigidity,
+    spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
 ) {
     let result = rs_cam_core::feeds::suggest::feeds_result_for_operation(
         &entry.operation,
@@ -1098,6 +1100,7 @@ fn calculate_and_apply_feeds(
         machine,
         workholding,
         rs_cam_core::feeds::embedded_vendor_lut(),
+        spindle_strategy,
     );
     entry.feeds_result = Some(result);
     draw_feeds_card(ui, entry, tool, machine);
@@ -2467,6 +2470,7 @@ fn draw_toolpath_panel(
     material: &rs_cam_core::material::Material,
     machine: &rs_cam_core::machine::MachineProfile,
     workholding: rs_cam_core::feeds::WorkholdingRigidity,
+    spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
     model_has_enriched: bool,
     model_is_step_missing_brep: bool,
     height_ctx: Option<&HeightContext>,
@@ -2797,6 +2801,7 @@ fn draw_toolpath_panel(
                     machine,
                     workholding,
                     rs_cam_core::feeds::embedded_vendor_lut(),
+                    spindle_strategy,
                 );
                 ui.horizontal(|ui| {
                     if ui
@@ -2991,7 +2996,15 @@ fn draw_toolpath_panel(
                 .find(|(id, _)| *id == entry.tool_id)
                 .map(|(_, t)| t)
             {
-                calculate_and_apply_feeds(ui, entry, tool_cfg, material, machine, workholding);
+                calculate_and_apply_feeds(
+                    ui,
+                    entry,
+                    tool_cfg,
+                    material,
+                    machine,
+                    workholding,
+                    spindle_strategy,
+                );
             }
             if let Some(result) = &entry.feeds_result {
                 // Formula breakdown — always visible, the key teaching tool

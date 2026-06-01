@@ -252,6 +252,12 @@ pub enum AppEvent {
     /// Toggle between single-toolpath and project-rollup mode within
     /// the Feeds & Speeds modal.
     SetFeedsModalMode(crate::state::FeedsModalMode),
+    /// Set the project-level spindle policy (chart-fidelity vs
+    /// max-speed). Persists into `ProjectPostConfig.spindle_strategy`.
+    /// All Suggest calls and the Feeds modal use the new policy on the
+    /// next frame. Re-emit per change since the strategy alters every
+    /// toolpath's recommendation simultaneously.
+    SetSpindleStrategy(rs_cam_core::feeds::SpindleStrategy),
     /// Apply a single recommended value to a toolpath. Field-scoped so
     /// per-row Apply buttons (RPM, feed, plunge, DOC, WOC) route here.
     ApplyFeedsField {

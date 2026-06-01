@@ -91,6 +91,7 @@ impl ProjectSession {
             safe_z: self.post.safe_z,
             high_feedrate_mode: self.post.high_feedrate_mode,
             high_feedrate: self.post.high_feedrate,
+            spindle_strategy: self.post.spindle_strategy,
         };
 
         // Job

@@ -134,6 +134,7 @@ fn calculator_and_gate_match_same_observation_id() {
             target_scallop_mm: None,
             vendor_lut: Some(&lut),
             setup: SetupContext::default(),
+            spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
         };
         let calc_query = vendor_normalize::to_lookup_query(&input);
         let calc_result = find_best_row(&lut, &calc_query);

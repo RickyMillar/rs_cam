@@ -140,6 +140,13 @@ pub struct ProjectPostConfig {
     pub high_feedrate_mode: bool,
     #[serde(default = "default_high_feedrate")]
     pub high_feedrate: f64,
+    /// Project-level spindle policy used by the Feeds & Speeds
+    /// suggest path. `MatchChart` (default) uses the vendor LUT row's
+    /// `rpm_nominal` verbatim — chart fidelity. `MaxSpeed` walks the
+    /// constant-chipload line up to the spindle ceiling, scaling feed
+    /// proportionally. See [`crate::feeds::SpindleStrategy`].
+    #[serde(default)]
+    pub spindle_strategy: crate::feeds::SpindleStrategy,
 }
 
 impl Default for ProjectPostConfig {
@@ -150,6 +157,7 @@ impl Default for ProjectPostConfig {
             safe_z: 10.0,
             high_feedrate_mode: false,
             high_feedrate: 5000.0,
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         }
     }
 }

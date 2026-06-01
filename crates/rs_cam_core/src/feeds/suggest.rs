@@ -68,6 +68,11 @@ pub struct SuggestParamsInput<'a> {
     pub workholding: WorkholdingRigidity,
     pub lut: &'a VendorLut,
     pub stock_ctx: &'a StockContext,
+    /// Spindle-RPM policy. See [`crate::feeds::SpindleStrategy`].
+    /// Defaults to `MatchChart` if the caller doesn't care about the
+    /// distinction. `MaxSpeed` walks the constant-chipload line up to
+    /// the spindle ceiling, capped by vendor.rpm_max when published.
+    pub spindle_strategy: crate::feeds::SpindleStrategy,
 }
 
 /// Input for [`suggest_for_operation`].
@@ -79,6 +84,8 @@ pub struct SuggestForOperationInput<'a> {
     pub material: &'a Material,
     pub workholding: WorkholdingRigidity,
     pub lut: &'a VendorLut,
+    /// Spindle-RPM policy. See [`crate::feeds::SpindleStrategy`].
+    pub spindle_strategy: crate::feeds::SpindleStrategy,
 }
 
 /// Construct a default operation for `op_type`, apply stock-aware defaults, run
@@ -94,6 +101,7 @@ pub fn suggest_params(input: SuggestParamsInput<'_>) -> SuggestedParams {
         material: input.material,
         workholding: input.workholding,
         lut: input.lut,
+        spindle_strategy: input.spindle_strategy,
     })
 }
 
@@ -108,6 +116,7 @@ pub fn suggest_for_operation(input: SuggestForOperationInput<'_>) -> SuggestedPa
         input.machine,
         input.workholding,
         input.lut,
+        input.spindle_strategy,
     );
     let mut operation = input.operation.clone();
     let warnings = apply_feeds_result_to_op(
@@ -135,6 +144,7 @@ fn feeds_input_for_operation<'a>(
     machine: &'a MachineProfile,
     workholding: WorkholdingRigidity,
     lut: &'a VendorLut,
+    spindle_strategy: crate::feeds::SpindleStrategy,
 ) -> FeedsInput<'a> {
     let (family, role) = operation.feeds_style();
     let (axial_hint, radial_hint, scallop_hint) = operation_feeds_hints(operation);
@@ -157,6 +167,7 @@ fn feeds_input_for_operation<'a>(
             tool_overhang_mm: Some(tool.stickout),
             workholding_rigidity: workholding,
         },
+        spindle_strategy,
     }
 }
 
@@ -169,8 +180,17 @@ pub fn feeds_result_for_operation(
     machine: &MachineProfile,
     workholding: WorkholdingRigidity,
     lut: &VendorLut,
+    spindle_strategy: crate::feeds::SpindleStrategy,
 ) -> FeedsResult {
-    let input = feeds_input_for_operation(operation, tool, material, machine, workholding, lut);
+    let input = feeds_input_for_operation(
+        operation,
+        tool,
+        material,
+        machine,
+        workholding,
+        lut,
+        spindle_strategy,
+    );
     crate::feeds::calculate(&input)
 }
 
@@ -185,8 +205,17 @@ pub fn feeds_explain_for_operation(
     machine: &MachineProfile,
     workholding: WorkholdingRigidity,
     lut: &VendorLut,
+    spindle_strategy: crate::feeds::SpindleStrategy,
 ) -> crate::feeds::FeedsExplain {
-    let input = feeds_input_for_operation(operation, tool, material, machine, workholding, lut);
+    let input = feeds_input_for_operation(
+        operation,
+        tool,
+        material,
+        machine,
+        workholding,
+        lut,
+        spindle_strategy,
+    );
     crate::feeds::explain_feeds(&input)
 }
 
@@ -345,6 +374,7 @@ mod tests {
             workholding: WorkholdingRigidity::Medium,
             lut: &EMBEDDED_LUT,
             stock_ctx: &stock_ctx(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
         assert!(matches!(
             result.feeds_result.chipload_source,
@@ -365,6 +395,7 @@ mod tests {
             workholding: WorkholdingRigidity::Medium,
             lut: &EMBEDDED_LUT,
             stock_ctx: &stock_ctx(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
         assert_eq!(
             result.feeds_result.chipload_source,

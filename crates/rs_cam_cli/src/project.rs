@@ -72,6 +72,7 @@ pub fn run_project_command(
     modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy,
     modulation_aggressiveness: f64,
     inject_shapeoko_kinematics: bool,
+    apply_suggest: bool,
 ) -> Result<()> {
     // 1. Load project into a session
     let project_path = input
@@ -114,6 +115,16 @@ pub fn run_project_command(
                 debug!(setup = %setup.name, "Skipping setup (filter)");
             }
         }
+    }
+
+    // 2b. Optionally apply LUT-suggested feeds/speeds to every
+    // enabled toolpath before generation. Replaces feed_rate /
+    // plunge_rate / stepover / depth_per_pass via
+    // `apply_feeds_result_to_op` and writes spindle_rpm from the
+    // suggest result. Mutates the in-memory session only; the
+    // project TOML on disk stays unchanged.
+    if apply_suggest {
+        apply_suggested_feeds_to_session(&mut session)?;
     }
 
     // 3. Generate all toolpaths
@@ -383,4 +394,124 @@ pub fn run_project_command(
     }
 
     Ok(())
+}
+
+/// Iterate every enabled toolpath in the session, run
+/// `feeds::suggest_for_operation`, and replace the operation's
+/// feed_rate / plunge_rate / stepover / depth_per_pass / spindle_rpm
+/// with the suggested values. Mutates the session in place; does NOT
+/// write back to the project file. Prints a before→after table to
+/// stderr so the operator can see what shifted.
+fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> {
+    use rs_cam_core::feeds::{embedded_vendor_lut, suggest::{SuggestForOperationInput, suggest_for_operation}};
+
+    // Snapshot inputs needed for suggest. We need to borrow `tools()`,
+    // `machine()`, `stock_config()` immutably while we mutate
+    // `toolpath_configs_mut()` — so clone the immutable view up front.
+    let tools_snapshot: Vec<_> = session.tools().to_vec();
+    let machine = session.machine().clone();
+    let material = session.stock_config().material.clone();
+    let workholding = session.stock_config().workholding_rigidity;
+    let lut = embedded_vendor_lut();
+
+    eprintln!("\n=== Applying LUT-suggested feeds/speeds ===");
+    eprintln!(
+        "{:<3} {:<32} {:>10} {:>10} {:>10} {:>10} {:>8}",
+        "id", "name", "feed", "plunge", "stepover", "dpp", "rpm"
+    );
+
+    for tc in session.toolpath_configs_mut().iter_mut() {
+        if !tc.enabled {
+            continue;
+        }
+        let Some(tool) = tools_snapshot.iter().find(|t| t.id.0 == tc.tool_id) else {
+            warn!(toolpath_id = tc.id, tool_id = tc.tool_id, "Tool not found, skipping suggest");
+            continue;
+        };
+
+        // Capture before values for the table.
+        let feed_before = tc.operation.feed_rate();
+        let plunge_before = tc.operation.plunge_rate();
+        let stepover_before = tc.operation.stepover();
+        let dpp_before = tc.operation.depth_per_pass();
+        let rpm_before = tc.operation.spindle_rpm();
+
+        let suggested = suggest_for_operation(SuggestForOperationInput {
+            operation: &tc.operation,
+            tool,
+            machine: &machine,
+            material: &material,
+            workholding,
+            lut,
+            spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
+        });
+
+        // Replace operation with the suggested one (feed/plunge/
+        // stepover/dpp already written by apply_feeds_result_to_op).
+        tc.operation = suggested.operation;
+        // Suggest doesn't write spindle_rpm into the operation; the
+        // RPM lives in `feeds_result.rpm`. Apply it explicitly so the
+        // emitted M3 line matches the calculator's recommendation.
+        let suggested_rpm = suggested.feeds_result.rpm;
+        if suggested_rpm.is_finite() && suggested_rpm > 0.0 {
+            tc.operation.set_spindle_rpm(Some(suggested_rpm.round() as u32));
+        }
+
+        let feed_after = tc.operation.feed_rate();
+        let plunge_after = tc.operation.plunge_rate();
+        let stepover_after = tc.operation.stepover();
+        let dpp_after = tc.operation.depth_per_pass();
+        let rpm_after = tc.operation.spindle_rpm();
+
+        eprintln!(
+            "{:<3} {:<32} {:>10} {:>10} {:>10} {:>10} {:>8}",
+            tc.id,
+            truncate(&tc.name, 32),
+            format!("{:.0}→{:.0}", feed_before, feed_after),
+            format!("{:.0}→{:.0}", plunge_before, plunge_after),
+            format!(
+                "{}→{}",
+                fmt_opt(stepover_before, 2),
+                fmt_opt(stepover_after, 2)
+            ),
+            format!(
+                "{}→{}",
+                fmt_opt(dpp_before, 2),
+                fmt_opt(dpp_after, 2)
+            ),
+            format!(
+                "{}→{}",
+                fmt_opt_u32(rpm_before),
+                fmt_opt_u32(rpm_after)
+            ),
+        );
+
+        // No cache invalidation needed — apply runs before
+        // generate_all, which always computes from current configs.
+    }
+    eprintln!();
+    Ok(())
+}
+
+fn truncate(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        s.to_owned()
+    } else {
+        let cut: String = s.chars().take(n.saturating_sub(1)).collect();
+        format!("{cut}…")
+    }
+}
+
+fn fmt_opt(v: Option<f64>, p: usize) -> String {
+    match v {
+        Some(x) => format!("{:.*}", p, x),
+        None => "-".to_owned(),
+    }
+}
+
+fn fmt_opt_u32(v: Option<u32>) -> String {
+    match v {
+        Some(x) => x.to_string(),
+        None => "-".to_owned(),
+    }
 }
