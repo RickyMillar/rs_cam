@@ -72,3 +72,23 @@ does not anchor on a specific diameter.
 2. Extend `VendorObservation` schema to allow `diameter_mm: Option<f64>`
    with explicit "applies to diameter range X-Y" annotation — bigger
    schema change, defer to Phase 5.
+
+---
+
+## Status (2026-06-01, Phase 5 Step 5.2)
+
+**CLOSED — schema-side blocker eliminated.** Took Path 2.
+`VendorObservation::diameter_mm` is now `Option<f64>` (commit
+`6901795`). The Onsrud polycarbonate article row promoted live as
+`onsrud-article-polycarbonate-optimum-chipload-window` in
+`onsrud_plastic.json`. New `source_id`
+`onsrud_routing_polycarbonate_article` added to the manifest.
+
+Anchorless rows skip the diameter-ratio gate and return
+`chipload_diameter_scale = 1.0` from the matcher — no extrapolation
+math runs on them. Focused test
+`diameter_window_row_matches_flat_query_no_extrapolation` pins
+this contract.
+
+Consolidation report:
+`planning/feeds_phase5_consolidation_2026-06-01.md`.
