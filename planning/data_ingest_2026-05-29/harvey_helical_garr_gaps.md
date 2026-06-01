@@ -109,6 +109,30 @@ rather than collapsing to one of the existing polymer entries.
 `CompositeFiberReinforced`) in a Phase 5 schema bump. Until then
 the row stays in this staged JSON unpromoted.
 
+---
+
+### Status (2026-06-01, Phase 5 Step 5.3) — CLOSED
+
+`MaterialFamily::Fiberglass` added to `vendor_lut.rs` and
+`Material::Fiberglass { grade: FiberglassGrade }` lifecycle added
+to `material.rs` (commit `6c56b95`). Fiberglass gets its own
+`material_category` (3) in the matcher — never extrapolates onto
+polymer / metal rows.
+
+The deferred row promoted live as `garr-gp-fiberglass-6000-2f-flat`
+in new file `garr_fiberglass.json`. Renamed from the staged
+`-plastics-` ID to reflect the high-confidence interpretation
+(Garr's chart collapses Fiberglass + Plastics + G10 onto one row;
+we promote only the fiberglass class). Material handbook quotes
+for G10 Kc (~100-150 N/mm²) are NOT seeded into
+`Material::Fiberglass::kc_n_per_mm2()` — that returns `None`
+(refuse-first; no workshop-fidelity peripheral-milling measurement
+available). Other accessors carry conservative carbide-tool
+placeholders.
+
+Consolidation report:
+`planning/feeds_phase5_consolidation_2026-06-01.md`.
+
 ## Phase 4 promotion success (2026-06-01)
 
 Successfully promoted to `crates/rs_cam_core/data/vendor_lut/

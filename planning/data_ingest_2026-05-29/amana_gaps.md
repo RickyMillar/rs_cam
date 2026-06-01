@@ -86,3 +86,26 @@ Path 2 is the more correct schema fix — v-bits are angle-driven, not
 diameter-driven — but it crosses into Phase 5 territory (schema
 change). Path 1 is the quick fix if the Amana PDFs surface body
 diameters on close reading.
+
+---
+
+## Status (2026-06-01, Phase 5 Step 5.2)
+
+**CLOSED — schema-side blocker eliminated.** Took Path 2.
+`VendorObservation::diameter_mm` is now `Option<f64>` (commit
+`6901795`). The matcher's `passes_must_match`, `score_observation`,
+and `build_result` paths handle `None` cleanly — anchorless rows
+match on angle / material / op without diameter extrapolation.
+
+3 net-new Amana Spektra engrave rows promoted live:
+- `amana-engrave-{softwood,hardwood}-trace-30deg-1f`
+- `amana-engrave-softwood-trace-45deg-1f`
+
+The 11 staged `amana-vbit-*` AMS-159 rows were NOT re-promoted —
+content-aware dedup found them data-equivalent (identical chiploads
+verbatim) to the live `amana-vgroove-*` series, which already
+carries them under a synthetic `diameter_mm = 6.35`. Re-promotion
+under the `-vbit-` naming would duplicate without adding signal.
+
+Consolidation report:
+`planning/feeds_phase5_consolidation_2026-06-01.md`.
