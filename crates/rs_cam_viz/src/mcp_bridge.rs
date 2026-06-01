@@ -229,6 +229,12 @@ pub enum McpRequestKind {
         index: usize,
         source: String,
     },
+    /// Set the project-level spindle policy ("match_chart" or
+    /// "max_speed"). See [`rs_cam_core::feeds::SpindleStrategy`].
+    /// Mirrors the GUI's Feeds & Speeds modal radio toggle.
+    SetSpindleStrategy {
+        strategy: String,
+    },
 
     // ── Compute (async — response sent when compute finishes) ────────
     GenerateToolpath {
