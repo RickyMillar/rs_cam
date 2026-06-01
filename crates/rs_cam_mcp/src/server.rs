@@ -368,6 +368,17 @@ pub struct SetStockSourceParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct SetSpindleStrategyParam {
+    /// Project-level spindle policy. Either "match_chart" (default —
+    /// use vendor LUT row's chart-published RPM verbatim) or
+    /// "max_speed" (push RPM up the constant-chipload line toward
+    /// the spindle ceiling, scaling feed proportionally). Affects
+    /// every Suggest call across the project. See
+    /// `rs_cam_core::feeds::SpindleStrategy`.
+    pub strategy: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SaveProjectParam {
     /// File path to save the project TOML to (required)
     pub path: String,

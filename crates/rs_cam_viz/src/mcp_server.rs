@@ -18,7 +18,8 @@ use rs_cam_mcp::server::{
     ExportParam, GenDebugTraceParam, IndexParam, InspectSpansParam, LoadProjectParam, ModelIdParam,
     OperationSchemaParam, OptimizeToolpathInput, RemoveAlignmentPinParam, RemoveToolParam,
     RemoveToolpathParam, SaveProjectParam, ScreenshotSimParam, ScreenshotToolpathParam,
-    SetBoundaryConfigParam, SetDressupConfigParam, SetDressupFieldParam, SetStockConfigParam,
+    SetBoundaryConfigParam, SetDressupConfigParam, SetDressupFieldParam,
+    SetSpindleStrategyParam, SetStockConfigParam,
     SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam, SetToolpathHeightsParam,
     SetToolpathParamInput,
     SimJumpToMoveParam, SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam,
@@ -839,6 +840,21 @@ impl EmbeddedCamServer {
     ) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::SetStockSource { index, source })
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "set_spindle_strategy",
+        description = "Set the project-level spindle policy that drives the Feeds & Speeds Suggest path. Accepts 'match_chart' (default — use the vendor LUT row's chart-published RPM verbatim) or 'max_speed' (push RPM up the constant-chipload line toward the spindle ceiling and scale feed proportionally). Affects every Suggest call across the project on the next frame; existing toolpath param values are NOT mutated by this call — invoke get_toolpath_params or run Suggest to see the new recommendations. Mirrors the GUI's Feeds & Speeds modal radio toggle."
+    )]
+    async fn set_spindle_strategy(
+        &self,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(SetSpindleStrategyParam { strategy }): Parameters<SetSpindleStrategyParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::SetSpindleStrategy { strategy })
                 .await,
         )
     }

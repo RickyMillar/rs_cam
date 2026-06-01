@@ -73,6 +73,7 @@ pub fn run_project_command(
     modulation_aggressiveness: f64,
     inject_shapeoko_kinematics: bool,
     apply_suggest: bool,
+    spindle_strategy_override: Option<rs_cam_core::feeds::SpindleStrategy>,
 ) -> Result<()> {
     // 1. Load project into a session
     let project_path = input
@@ -90,6 +91,16 @@ pub fn run_project_command(
         session.machine_mut().kinematics =
             Some(rs_cam_core::machine_kinematics::MachineKinematics::shapeoko_xxl_stock());
         info!("Injected Shapeoko XXL stock kinematics into MachineProfile");
+    }
+
+    if let Some(strategy) = spindle_strategy_override {
+        let prev = session.post_config().spindle_strategy;
+        session.post_mut().spindle_strategy = strategy;
+        info!(
+            previous = ?prev,
+            applied = ?strategy,
+            "Overrode project spindle policy from CLI flag"
+        );
     }
 
     info!(

@@ -472,6 +472,10 @@ impl super::RsCamApp {
                 let resp = self.mcp_set_stock_source(index, &source);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::SetSpindleStrategy { strategy } => {
+                let resp = self.mcp_set_spindle_strategy(&strategy);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
 
             // ── Compute operations (async — store oneshot) ───────────
             McpRequestKind::GenerateToolpath { index } => {
@@ -3022,6 +3026,56 @@ impl super::RsCamApp {
             }
             Err(e) => self.mcp_mutation_error(format!("Error: {e}"), None),
         }
+    }
+
+    fn mcp_set_spindle_strategy(&mut self, strategy: &str) -> String {
+        let before = self.mcp_diagnostic_snapshot();
+        let parsed = match strategy {
+            "match_chart" | "MatchChart" | "matchchart" => {
+                rs_cam_core::feeds::SpindleStrategy::MatchChart
+            }
+            "max_speed" | "MaxSpeed" | "maxspeed" => {
+                rs_cam_core::feeds::SpindleStrategy::MaxSpeed
+            }
+            other => {
+                return self.mcp_mutation_error(
+                    format!(
+                        "Error: unknown spindle_strategy '{other}'. Expected 'match_chart' or 'max_speed'."
+                    ),
+                    Some("spindle_strategy".to_owned()),
+                );
+            }
+        };
+        if self.controller.state().session.post_config().spindle_strategy == parsed {
+            return self.mcp_mutation_result(
+                format!("Spindle policy already set to '{strategy}'; no change."),
+                serde_json::json!({ "spindle_strategy": strategy, "changed": false }),
+                Vec::new(),
+                &before,
+            );
+        }
+        self.controller
+            .state_mut()
+            .session
+            .post_mut()
+            .spindle_strategy = parsed;
+        self.controller
+            .state_mut()
+            .gui
+            .post
+            .spindle_strategy = parsed;
+        self.controller.state_mut().gui.mark_edited();
+        // Suggest is the read-side consumer — no toolpaths go stale
+        // from this change. Operator/agent runs get_toolpath_params
+        // or re-suggests to see new recommendations.
+        self.mcp_mutation_result(
+            format!(
+                "Spindle policy set to '{strategy}'. Run Suggest (per toolpath or project-wide) to see new recommended feeds/RPMs."
+            ),
+            serde_json::json!({ "spindle_strategy": strategy, "changed": true }),
+            Vec::new(),
+            &before,
+        )
     }
 
     // ── Compute operations ───────────────────────────────────────────

@@ -1263,6 +1263,15 @@ enum Commands {
         /// editing the .toml.
         #[arg(long)]
         apply_suggest: bool,
+
+        /// Override the project's spindle policy for this run.
+        /// "match_chart" (default in code; preserved when unset) uses
+        /// the vendor LUT row's chart RPM verbatim. "max_speed" walks
+        /// the constant-chipload line up to the spindle ceiling and
+        /// scales feed proportionally. When unset, the strategy from
+        /// the loaded project's ProjectPostConfig is used.
+        #[arg(long, value_parser = ["match_chart", "max_speed"])]
+        spindle_strategy: Option<String>,
     },
 
     /// Run the F-037 smoke baseline suite.
@@ -3464,6 +3473,7 @@ fn main() -> Result<()> {
             modulation_aggressiveness,
             inject_shapeoko_kinematics,
             apply_suggest,
+            spindle_strategy,
         } => {
             let skip_ids: Vec<usize> = skip
                 .as_deref()
@@ -3478,6 +3488,11 @@ fn main() -> Result<()> {
                 }
                 _ => rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
             };
+            let spindle_strat_override = spindle_strategy.as_deref().and_then(|s| match s {
+                "match_chart" => Some(rs_cam_core::feeds::SpindleStrategy::MatchChart),
+                "max_speed" => Some(rs_cam_core::feeds::SpindleStrategy::MaxSpeed),
+                _ => None,
+            });
             project::run_project_command(
                 &input,
                 &output_dir,
@@ -3491,6 +3506,7 @@ fn main() -> Result<()> {
                 modulation_aggressiveness,
                 inject_shapeoko_kinematics,
                 apply_suggest,
+                spindle_strat_override,
             )?;
         }
         Commands::Smoke {
