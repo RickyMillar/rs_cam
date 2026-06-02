@@ -92,3 +92,13 @@ covers = ["flat", "ball", "vbit"]
 ops = ["pocket", "profile", "vcarve"]
 materials = ["hardwood", "softwood", "plywood", "mdf"]
 notes = "Plunge-feed ratio source (0.30-0.50× feed)."
+
+[shaw_metal_cutting]
+name = "Shaw, Metal Cutting Principles, 2nd ed., ch. 20"
+citation_url = "https://global.oup.com/academic/product/metal-cutting-principles-9780195142068"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["flat", "ball", "vbit"]
+ops = ["all"]
+materials = ["all"]
+notes = "Empirical minimum-chip-thickness / rubbing-threshold reference (~0.025 mm/tooth for typical carbide endmill edge radii). Physics backstop for chipload floor invariants."

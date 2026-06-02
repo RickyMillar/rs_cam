@@ -58,7 +58,11 @@ sources = ["shapeoko_wiki", "vectric_default"]
 [[cell.invariants]]
 name = "chipload_above_rubbing_floor"
 expr = "feed_rate / (rpm * flutes)"
-floor = 0.035
+# Shaw 2005 ch.20 empirical minimum-chip-thickness for carbide endmills
+# in this geometry class. Same value gates `chipload_below_rubbing_floor`
+# below — the two used to disagree (0.035 vs 0.025); aligned 2026-06-03.
+floor = 0.025
+sources = ["shaw_metal_cutting"]
 unit = "mm/tooth"
 severity_on_fail = "critical"
 
@@ -73,7 +77,12 @@ severity_on_fail = "moderate"
 name = "envelope_pocket"
 type = "convex_hull"
 vars = ["woc_over_d", "doc_over_d"]
-vertices = [[0.40, 0.25], [0.75, 0.25], [0.75, 0.75], [0.40, 0.75]]
+# WOC floor 0.30×D and ceiling 0.75×D per Amana Spektra v24 hardwood pocket
+# guidance (seed_goal_matrix `amana-flat-plywood-hardwood-pocket-6000-2f`:
+# "0.3xD to 0.7xD"; softwood row :49 goes to 0.8×D). DOC floor 0.25×D /
+# ceiling 0.75×D bracket Onsrud + Shapeoko hobby-derate pocket DOC band.
+vertices = [[0.30, 0.25], [0.75, 0.25], [0.75, 0.75], [0.30, 0.75]]
+sources = ["amana_spektra", "onsrud_doc_rule"]
 severity_on_fail = "minor"
 
 [[cell.anti_patterns]]
