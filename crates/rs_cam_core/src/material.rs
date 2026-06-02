@@ -595,6 +595,28 @@ static MATERIALS_BY_CATEGORY: LazyLock<MaterialPickerBuckets> =
     LazyLock::new(Material::build_materials_by_category);
 
 impl Material {
+    /// Whether this material is in the "wood class" — solid wood
+    /// (either curated species or species-aware Janka variant),
+    /// plywood, or other sheet goods. Used by feeds/load logic that
+    /// applies wood-router-specific engagement floors and band
+    /// shapes regardless of which `Material` variant the project
+    /// happens to use.
+    ///
+    /// **Why a helper, not a match arm at each call site:** new
+    /// wood-class variants (e.g. species-aware `SolidWoodByJanka`
+    /// when FPL Ch.5 lands) are easy to miss when match arms enumerate
+    /// `SolidWood | Plywood | SheetGood` inline — exactly the BUG 2
+    /// pattern from the 2026-06-02 feeds-pipeline audit.
+    pub fn is_wood_class(&self) -> bool {
+        matches!(
+            self,
+            Material::SolidWood { .. }
+                | Material::SolidWoodByJanka { .. }
+                | Material::Plywood { .. }
+                | Material::SheetGood { .. }
+        )
+    }
+
     /// Wood-Janka-normalised hardness index driving feed-rate scaling
     /// in [`crate::feeds::calculate`]. `1.0 = soft wood baseline (Janka
     /// 600 lbf)`; formula `(janka / 600)^0.4`.
