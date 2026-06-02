@@ -9,7 +9,8 @@ use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::{
-    FeedsInput, FeedsResult, PassRole, SetupContext, VendorLut, WorkholdingRigidity,
+    FeedsInput, FeedsResult, OperationFamily as FeedsOperationFamily, PassRole, SetupContext,
+    VendorLut, WorkholdingRigidity,
 };
 use crate::machine::MachineProfile;
 use crate::material::Material;
@@ -314,7 +315,25 @@ fn enforce_invariants(
     if let Some(dpp) = operation.depth_per_pass() {
         let mut current = dpp;
         if matches!(pass_role, PassRole::Roughing) {
-            let cap = machine.rigidity.doc_roughing_factor * tool.diameter;
+            // Adaptive ops are a "deep, narrow" engagement strategy —
+            // low radial WOC lets the cutter take a high axial DOC the
+            // conventional roughing factor doesn't allow. Pre-2026-06-02
+            // the clamp used `doc_roughing_factor` uniformly, stripping
+            // the upstream adaptive ap (computed via
+            // `adaptive_doc_factor` at feeds/mod.rs:913) back down to
+            // the conventional ceiling — defeating the adaptive
+            // paradigm. The clamp now branches on feeds family.
+            //
+            // Audit finding: BUG 1 — "Adaptive DOC clamped by
+            // conventional-roughing factor" (workflow `w39ma2j1y`).
+            let is_adaptive_family = operation.op_type().spec().feeds_family
+                == FeedsOperationFamily::Adaptive;
+            let factor = if is_adaptive_family {
+                machine.rigidity.adaptive_doc_factor
+            } else {
+                machine.rigidity.doc_roughing_factor
+            };
+            let cap = factor * tool.diameter;
             if current.is_finite() && cap.is_finite() && cap > 0.0 && current > cap {
                 operation.set_depth_per_pass(cap);
                 warnings.push(SuggestWarning::RoughingDepthClampedToRigidity {
@@ -528,6 +547,84 @@ mod tests {
             warnings
                 .iter()
                 .any(|w| matches!(w, SuggestWarning::DepthClampedToCuttingLength { .. }))
+        );
+    }
+
+    /// Bug 1 (2026-06-02 audit, workflow `w39ma2j1y`): adaptive ops
+    /// use `adaptive_doc_factor` (deep+narrow), not the
+    /// conventional `doc_roughing_factor`. For a 6 mm bit on a wood
+    /// router with `doc_roughing_factor=0.20` and
+    /// `adaptive_doc_factor=1.50`, an Adaptive3d op with DOC=6 mm
+    /// must not be clamped. Pre-fix the clamp stripped it to 1.2 mm,
+    /// erasing the upstream `adaptive_doc_factor` floor and turning
+    /// adaptive into "shallow conventional".
+    #[test]
+    fn adaptive_op_uses_adaptive_doc_factor_not_doc_roughing_factor() {
+        use crate::compute::operation_configs::Adaptive3dConfig;
+        let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
+            feed_rate: 1000.0,
+            plunge_rate: 500.0,
+            stepover: 0.88,
+            depth_per_pass: 6.0,
+            ..Adaptive3dConfig::default()
+        });
+        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        tool.diameter = 6.0;
+        tool.cutting_length = 25.0;
+        let mut machine = MachineProfile::default();
+        machine.rigidity.doc_roughing_factor = 0.20; // conventional
+        machine.rigidity.adaptive_doc_factor = 1.50; // adaptive can go deep
+
+        let warnings = enforce_invariants(&mut op, &tool, &machine, PassRole::Roughing);
+
+        // DOC=6 mm is under adaptive_doc_factor*D=9 mm and under
+        // cutting_length=25 mm — should NOT clamp.
+        assert_eq!(
+            op.depth_per_pass(),
+            Some(6.0),
+            "Adaptive3d DOC=6 mm on 6 mm bit must not clamp (adaptive_doc_factor=1.5)"
+        );
+        assert!(
+            !warnings
+                .iter()
+                .any(|w| matches!(w, SuggestWarning::RoughingDepthClampedToRigidity { .. })),
+            "Adaptive3d DOC=6 mm must not trigger RoughingDepthClampedToRigidity \
+             (was Bug 1 — adaptive ops clamped by conventional factor)"
+        );
+    }
+
+    /// Bug 1 counter-test: conventional Pocket op DOES still clamp to
+    /// `doc_roughing_factor` — the fix is selective on feeds family,
+    /// not a blanket relaxation.
+    #[test]
+    fn conventional_op_still_clamps_by_doc_roughing_factor() {
+        let mut op = OperationConfig::Pocket(PocketConfig {
+            feed_rate: 1000.0,
+            plunge_rate: 500.0,
+            stepover: 3.0,
+            depth_per_pass: 6.0,
+            ..PocketConfig::default()
+        });
+        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        tool.diameter = 6.0;
+        tool.cutting_length = 25.0;
+        let mut machine = MachineProfile::default();
+        machine.rigidity.doc_roughing_factor = 0.20;
+        machine.rigidity.adaptive_doc_factor = 1.50;
+
+        let warnings = enforce_invariants(&mut op, &tool, &machine, PassRole::Roughing);
+
+        // Pocket on 6 mm bit: doc_roughing_factor*D = 1.2 mm cap.
+        let dpp = op.depth_per_pass().expect("dpp set after clamp");
+        assert!(
+            (dpp - 1.2).abs() < 1e-6,
+            "Pocket DOC must still clamp to doc_roughing_factor*D (1.2), got {dpp}"
+        );
+        assert!(
+            warnings
+                .iter()
+                .any(|w| matches!(w, SuggestWarning::RoughingDepthClampedToRigidity { .. })),
+            "Pocket DOC over conventional ceiling must still warn"
         );
     }
 }
