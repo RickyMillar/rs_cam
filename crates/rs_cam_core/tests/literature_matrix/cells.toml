@@ -1,0 +1,82 @@
+## Literature Matrix — Cell Definitions
+##
+## Phase 0 scaffold: one normal-use cell. Phase 1 expands to the starter 12.
+## See planning/feeds_literature_matrix_2026-06-03.md.
+
+[[cell]]
+id = "flat_6mm_pocket_oak"
+category = "normal-use"
+description = "6mm 2F flat in red oak, conventional pocket"
+rationale = "Anchors hardwood pocket band; catches LUT/unit errors"
+profile_tag = "either"
+
+[cell.inputs]
+tool_class = "flat"
+diameter_mm = 6.0
+flute_count = 2
+flute_length_mm = 22.0
+stickout_mm = 25.0
+operation = "pocket"
+material = "oak_red"
+material_class = "hardwood"
+janka_lbf = 1290
+machine_class = "shapeoko_xxl"
+
+[cell.fixed_inputs]
+woc_mm = "free"
+doc_mm = "free"
+
+[cell.expected.rpm]
+min = 16000
+max = 20000
+mode = "band"
+unit = "rpm"
+sources = ["onsrud_hwood", "amana_spektra", "gwizard_hwood", "shopbot"]
+
+[cell.expected.feed_per_tooth]
+min = 0.028   # 0.04 raw × 0.7 hobby derate
+max = 0.070   # 0.10 raw × 0.7 hobby derate
+mode = "band"
+unit = "mm/tooth"
+hobby_derate = 0.7
+sources = ["onsrud_hwood", "cutter_shop", "toolgrit"]
+
+[cell.expected.axial_doc]
+min = 0.75   # 1.5 raw × 0.5 hobby derate
+max = 2.25   # 4.5 raw × 0.5 hobby derate
+mode = "band"
+unit = "mm"
+hobby_derate = 0.5
+sources = ["onsrud_doc_rule", "shapeoko_wiki"]
+
+[cell.expected.plunge_feed]
+min_fraction_of_feed = 0.30
+max_fraction_of_feed = 0.50
+mode = "fraction"
+sources = ["shapeoko_wiki", "vectric_default"]
+
+[[cell.invariants]]
+name = "chipload_above_rubbing_floor"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.035
+unit = "mm/tooth"
+severity_on_fail = "critical"
+
+[[cell.invariants]]
+name = "mrr_under_power"
+expr = "doc * woc * feed_rate / 60000"
+ceiling = 0.20   # hardwood 1kW × 0.6 eff / 30 J/mm^3
+unit = "cm^3/s"
+severity_on_fail = "moderate"
+
+[[cell.invariants]]
+name = "envelope_pocket"
+type = "convex_hull"
+vars = ["woc_over_d", "doc_over_d"]
+vertices = [[0.40, 0.25], [0.75, 0.25], [0.75, 0.75], [0.40, 0.75]]
+severity_on_fail = "minor"
+
+[[cell.anti_patterns]]
+name = "chipload_below_rubbing_floor"
+expr = "feed_rate / (rpm * flutes) < 0.025"
+severity = "critical"
