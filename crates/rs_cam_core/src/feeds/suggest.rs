@@ -268,6 +268,10 @@ pub fn operation_feeds_hints(
 ) -> (Option<f64>, Option<f64>, Option<f64>) {
     match operation {
         OperationConfig::Scallop(cfg) => (None, None, Some(cfg.scallop_height)),
+        // DropCutter (the "3D Finish" parallel-raster op) optionally
+        // derives stepover from a scallop target the same way Scallop
+        // does. `None` keeps the legacy `ae_factor × diameter` stepover.
+        OperationConfig::DropCutter(cfg) => (None, None, cfg.scallop_height),
         OperationConfig::Waterline(cfg) => (Some(cfg.z_step), None, None),
         OperationConfig::SteepShallow(cfg) => (Some(cfg.z_step), None, None),
         OperationConfig::VCarve(cfg) => (Some(cfg.max_depth), None, None),
@@ -344,9 +348,92 @@ pub fn round_suggestion_value(value: f64, step: f64) -> f64 {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use crate::compute::operation_configs::PocketConfig;
+    use crate::compute::operation_configs::{DropCutterConfig, PocketConfig};
     use crate::compute::tool_config::{ToolId, ToolType};
     use crate::feeds::{ChiploadSource, EMBEDDED_LUT};
+
+    /// Ball-nose tool of the given diameter (tip radius = diameter / 2).
+    fn ball_tool(diameter: f64) -> ToolConfig {
+        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::BallNose);
+        tool.diameter = diameter;
+        tool.cutting_length = 25.0;
+        tool
+    }
+
+    /// DropCutter (3D Finish) operation with an optional scallop target.
+    fn dropcutter_op(scallop_height: Option<f64>) -> OperationConfig {
+        OperationConfig::DropCutter(DropCutterConfig {
+            scallop_height,
+            ..DropCutterConfig::default()
+        })
+    }
+
+    /// Run the canonical feeds path for a DropCutter op + tool and return
+    /// the suggested radial stepover (mm).
+    fn dropcutter_stepover(op: &OperationConfig, tool: &ToolConfig) -> f64 {
+        feeds_result_for_operation(
+            op,
+            tool,
+            &Material::default(),
+            &MachineProfile::default(),
+            WorkholdingRigidity::Medium,
+            &EMBEDDED_LUT,
+            crate::feeds::SpindleStrategy::default(),
+        )
+        .radial_width_mm
+    }
+
+    /// S1: a scallop target on DropCutter overrides the `ae_factor`
+    /// formula stepover with the chord-height geometry stepover. A 10 μm
+    /// scallop on a 1 mm ball (tip r = 0.5 mm) gives
+    /// `2·√(2·0.5·0.010 − 0.010²) ≈ 0.199 mm` — practical wood finish —
+    /// instead of the sub-micron formula value.
+    #[test]
+    fn scallop_height_some_overrides_default_ae_factor() {
+        let stepover = dropcutter_stepover(&dropcutter_op(Some(0.010)), &ball_tool(1.0));
+        let expected = 2.0 * (2.0 * 0.5 * 0.010 - 0.010_f64.powi(2)).sqrt();
+        assert!(
+            (stepover - expected).abs() < 1e-6,
+            "scallop stepover {stepover} should match chord-height {expected}"
+        );
+        assert!(
+            (0.198..0.200).contains(&stepover),
+            "10 μm scallop on a 1 mm ball should give ~0.199 mm, got {stepover}"
+        );
+    }
+
+    /// S1: with no scallop target the legacy formula-based stepover is
+    /// preserved — the scallop override must not engage, so the result
+    /// stays the tiny `ae_factor`-derived value (well under the scallop
+    /// path's 0.199 mm). Guards the F-037 smoke baseline.
+    #[test]
+    fn scallop_height_none_preserves_legacy_ae() {
+        let stepover = dropcutter_stepover(&dropcutter_op(None), &ball_tool(1.0));
+        assert!(
+            stepover > 0.0 && stepover < 0.05,
+            "legacy DropCutter stepover on a 1 mm ball should stay small \
+             (formula-based), got {stepover}"
+        );
+    }
+
+    /// S1: a tapered ball cuts the same cusp curve as a true ball of the
+    /// same tip radius — the scallop stepover is determined by the
+    /// spherical tip only. A tapered ball with tip radius 0.5 mm
+    /// (diameter 1.0 mm) must produce the same stepover as a 1 mm true
+    /// ball for the same scallop target.
+    #[test]
+    fn scallop_height_uses_tip_radius_for_tapered_ball() {
+        let mut tapered = ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose);
+        tapered.diameter = 1.0; // tip diameter → tip radius 0.5 mm
+        tapered.cutting_length = 25.0;
+        let tapered_step = dropcutter_stepover(&dropcutter_op(Some(0.010)), &tapered);
+        let ball_step = dropcutter_stepover(&dropcutter_op(Some(0.010)), &ball_tool(1.0));
+        assert!(
+            (tapered_step - ball_step).abs() < 1e-9,
+            "tapered ball (tip r=0.5) stepover {tapered_step} should equal \
+             1 mm true ball stepover {ball_step}"
+        );
+    }
 
     fn stock_ctx() -> StockContext {
         StockContext {

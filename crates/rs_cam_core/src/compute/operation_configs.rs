@@ -432,6 +432,16 @@ pub struct DropCutterConfig {
     pub slope_to: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// Target scallop (cusp) height in mm for the Suggest pipeline. When
+    /// `Some(h)`, the feeds calculator derives `stepover` from the tool's
+    /// ball/tapered-ball tip radius via the chord-height formula instead
+    /// of the `ae_factor × diameter` default — letting the operator dial a
+    /// finish quality directly (e.g. 10 μm scallop → ~0.18 mm step on a
+    /// 1 mm ball) rather than a sub-micron formula stepover. `None`
+    /// preserves the legacy formula-based stepover and the F-037 smoke
+    /// baseline. Has no effect on flat/bull tools (no spherical tip).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scallop_height: Option<f64>,
 }
 
 impl Default for DropCutterConfig {
@@ -444,6 +454,7 @@ impl Default for DropCutterConfig {
             slope_from: 0.0,
             slope_to: 90.0,
             spindle_rpm: None,
+            scallop_height: None,
         }
     }
 }
@@ -1296,6 +1307,12 @@ impl OperationParams for DropCutterConfig {
     }
     fn set_stepover(&mut self, value: f64) {
         self.stepover = value;
+    }
+    fn scallop_height(&self) -> Option<f64> {
+        self.scallop_height
+    }
+    fn set_scallop_height(&mut self, value: f64) {
+        self.scallop_height = Some(value);
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::DerivedStockTop(self.min_z.abs())
