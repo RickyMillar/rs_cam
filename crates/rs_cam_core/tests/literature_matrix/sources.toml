@@ -1,0 +1,94 @@
+## Literature Matrix — Source Registry
+##
+## Each cell's `sources = [...]` keys are looked up here. Phase 0 ships only
+## the entries the one cell references. Phase 2 fills out the rest.
+
+[onsrud_hwood]
+name = "Onsrud Cutter Hardwood Feed Chart"
+citation_url = "https://www.onsrud.com/files/pdf/series_70_85.pdf"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["flat", "ball", "vbit"]
+ops = ["pocket", "profile", "adaptive2d", "vcarve"]
+materials = ["hardwood", "softwood", "plywood"]
+notes = "De-facto wood-router standard. Industrial spindle assumed; apply hobby derate."
+
+[amana_spektra]
+name = "Amana Tool / Spektra Wood-Router Chipload Chart"
+citation_url = "https://www.amanatool.com/cnc-feeds-and-speeds-calculator"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["flat", "ball", "vbit", "compression"]
+ops = ["pocket", "profile", "adaptive2d"]
+materials = ["hardwood", "softwood", "plywood", "mdf"]
+notes = "Vendor chart; industrial spindle baseline."
+
+[gwizard_hwood]
+name = "GWizard Wood Cutting Speed / Chipload Tables"
+citation_url = "https://www.cnccookbook.com/feeds-speeds-wood/"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["flat", "ball", "vbit"]
+ops = ["pocket", "profile", "adaptive2d"]
+materials = ["hardwood", "softwood", "plywood"]
+notes = "Computed chart; well-cited; hobby-derate aware."
+
+[shopbot]
+name = "ShopBot Recommended Cutting Parameters"
+citation_url = "https://www.shopbottools.com/ShopBotDocs/files/CuttingParameters.pdf"
+authority_tier = "community"
+last_verified = "2026-06-03"
+covers = ["flat", "ball"]
+ops = ["pocket", "profile"]
+materials = ["hardwood", "softwood", "plywood"]
+notes = "Community-grade hobby-machine reference."
+
+[cutter_shop]
+name = "Cutter Shop Chipload Reference"
+citation_url = "https://thecuttershop.com/chiplaod-charts/"
+authority_tier = "community"
+last_verified = "2026-06-03"
+covers = ["flat", "ball"]
+ops = ["pocket", "profile"]
+materials = ["hardwood", "softwood"]
+notes = "Online retailer chart; representative of community practice."
+
+[toolgrit]
+name = "ToolGrit Feeds & Speeds Calculator"
+citation_url = "https://toolgrit.com/feeds-speeds-calculator"
+authority_tier = "community"
+last_verified = "2026-06-03"
+covers = ["flat"]
+ops = ["pocket", "profile"]
+materials = ["hardwood", "softwood"]
+notes = "Hobby-oriented online calculator."
+
+[onsrud_doc_rule]
+name = "Onsrud DOC Rule (1.5-4.5x tool diameter pre-derate)"
+citation_url = "https://www.onsrud.com/files/pdf/series_70_85.pdf"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["flat"]
+ops = ["pocket", "adaptive2d"]
+materials = ["hardwood", "softwood"]
+notes = "Derived rule of thumb; pre-derate."
+
+[shapeoko_wiki]
+name = "Shapeoko Community Wiki — Feeds & Speeds"
+citation_url = "https://wiki.shapeoko.com/index.php/Materials"
+authority_tier = "community"
+last_verified = "2026-06-03"
+covers = ["flat", "ball", "vbit"]
+ops = ["pocket", "profile", "vcarve"]
+materials = ["hardwood", "softwood", "plywood", "mdf"]
+notes = "Hobby-machine specific values; baseline for shapeoko_xxl class."
+
+[vectric_default]
+name = "Vectric VCarve/Aspire Default Feeds"
+citation_url = "https://docs.vectric.com/"
+authority_tier = "community"
+last_verified = "2026-06-03"
+covers = ["flat", "ball", "vbit"]
+ops = ["pocket", "profile", "vcarve"]
+materials = ["hardwood", "softwood", "plywood", "mdf"]
+notes = "Plunge-feed ratio source (0.30-0.50× feed)."
