@@ -89,3 +89,980 @@ severity_on_fail = "minor"
 name = "chipload_below_rubbing_floor"
 expr = "feed_rate / (rpm * flutes) < 0.025"
 severity = "critical"
+
+## --- Phase 1 cells (added 2026-06-03) ---
+
+[[cell]]
+id = "flat_6mm_adaptive2d_birchply"
+category = "normal-use"
+description = "6mm 2F flat in baltic birch plywood, adaptive2d roughing at low WOC"
+rationale = "RCTF chip-thinning at woc/d=0.10 — engine must compensate fpt upward; catches flat (non-RCTF) chipload bugs and deep-DOC envelope violations"
+profile_tag = "either"
+
+[cell.inputs]
+tool_class = "flat"
+diameter_mm = 6.0
+flute_count = 2
+flute_length_mm = 22.0
+stickout_mm = 25.0
+operation = "adaptive2d"
+material = "baltic_birch"
+material_class = "plywood"
+machine_class = "shapeoko_xxl"
+
+[cell.fixed_inputs]
+woc_mm = 0.6
+doc_mm = "free"
+
+[cell.expected.rpm]
+min = 16000
+max = 20000
+mode = "band"
+unit = "rpm"
+sources = ["onsrud_plywood", "amana_spektra", "gwizard_plywood"]
+
+[cell.expected.feed_per_tooth]
+min = 0.034
+max = 0.093
+mode = "band"
+unit = "mm/tooth"
+hobby_derate = 0.7
+sources = ["onsrud_plywood", "dapra_rctf", "gwizard_plywood"]
+
+[cell.expected.axial_doc]
+min = 4.0
+max = 8.0
+mode = "band"
+unit = "mm"
+hobby_derate = 0.5
+sources = ["onsrud_doc_rule", "dapra_rctf", "shapeoko_wiki"]
+
+[cell.expected.radial_woc]
+min = 0.6
+max = 1.0
+mode = "band"
+unit = "mm"
+sources = ["dapra_rctf", "amana_spektra", "shapeoko_wiki"]
+
+[cell.expected.plunge_feed]
+min_fraction_of_feed = 0.30
+max_fraction_of_feed = 0.50
+mode = "fraction"
+sources = ["shapeoko_wiki", "vectric_default"]
+
+[[cell.invariants]]
+name = "rctf_compensation_applied"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.048
+unit = "mm/tooth"
+sources = ["dapra_rctf"]
+severity_on_fail = "moderate"
+
+[[cell.invariants]]
+name = "chipload_above_rubbing_floor"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.025
+unit = "mm/tooth"
+sources = ["shaw_metal_cutting"]
+severity_on_fail = "critical"
+
+[[cell.invariants]]
+name = "mrr_under_power"
+expr = "doc * woc * feed_rate / 60000"
+ceiling = 0.24
+unit = "cm^3/s"
+sources = ["fpl_wood_handbook", "shaw_chipload"]
+severity_on_fail = "moderate"
+
+[[cell.invariants]]
+name = "envelope_adaptive2d"
+type = "convex_hull"
+vars = ["woc_over_d", "doc_over_d"]
+vertices = [[0.05, 0.50], [0.20, 0.50], [0.20, 1.50], [0.05, 1.50]]
+sources = ["dapra_rctf", "amana_spektra"]
+severity_on_fail = "minor"
+
+[[cell.anti_patterns]]
+name = "chipload_below_rubbing_floor"
+expr = "feed_rate / (rpm * flutes) < 0.025"
+severity = "critical"
+
+[[cell.anti_patterns]]
+name = "adaptive_shallow_doc_pocket_style"
+expr = "doc_over_d < 0.4"
+severity = "moderate"
+
+
+[[cell]]
+id = "ball_6mm_scallop_maple"
+category = "normal-use"
+description = "6mm 2F ball in hard maple, scallop finish at 0.05mm scallop height"
+rationale = "Scallop stepover geometrically pinned by 2*sqrt(2*r*h - h^2); catches stepover-decoupled-from-scallop bugs and finish-pass chipload regressions"
+profile_tag = "either"
+
+[cell.inputs]
+tool_class = "ball"
+diameter_mm = 6.0
+flute_count = 2
+flute_length_mm = 22.0
+stickout_mm = 25.0
+operation = "scallop"
+material = "maple_sugar"
+material_class = "hardwood"
+janka_lbf = 1450
+machine_class = "shapeoko_xxl"
+scallop_height_mm = 0.05
+
+[cell.expected.rpm]
+min = 18000
+max = 22000
+mode = "band"
+unit = "rpm"
+sources = ["onsrud_hwood", "amana_spektra", "gwizard_hwood"]
+
+[cell.expected.feed_per_tooth]
+min = 0.035
+max = 0.070
+mode = "band"
+unit = "mm/tooth"
+hobby_derate = 0.7
+sources = ["onsrud_hwood", "cutter_shop", "vectric_default"]
+
+[cell.expected.radial_woc]
+min = 0.98
+max = 1.20
+mode = "band"
+unit = "mm"
+sources = ["onsrud_hwood", "vectric_default", "shapeoko_wiki"]
+
+[cell.expected.axial_doc]
+min = 0.0
+max = 0.0
+mode = "na"
+unit = "mm"
+sources = ["onsrud_hwood", "vectric_default", "shapeoko_wiki"]
+
+[cell.expected.plunge_feed]
+min_fraction_of_feed = 0.30
+max_fraction_of_feed = 0.50
+mode = "fraction"
+sources = ["shapeoko_wiki", "vectric_default"]
+
+[[cell.invariants]]
+name = "scallop_geometric_stepover"
+expr = "woc"
+floor = 0.98
+unit = "mm"
+sources = ["vectric_default", "onsrud_hwood"]
+severity_on_fail = "major"
+
+[[cell.invariants]]
+name = "scallop_stepover_ceiling"
+expr = "woc"
+ceiling = 1.20
+unit = "mm"
+sources = ["vectric_default", "shapeoko_wiki"]
+severity_on_fail = "major"
+
+[[cell.invariants]]
+name = "chipload_above_rubbing_floor"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.025
+unit = "mm/tooth"
+sources = ["shaw_metal_cutting"]
+severity_on_fail = "critical"
+
+[[cell.anti_patterns]]
+name = "chipload_below_rubbing_floor"
+expr = "feed_rate / (rpm * flutes) < 0.025"
+severity = "critical"
+
+[[cell.anti_patterns]]
+name = "scallop_stepover_decoupled"
+expr = "woc > 2.18"
+severity = "major"
+
+
+[[cell]]
+id = "vbit_60deg_vcarve_mdf"
+category = "normal-use"
+description = "60deg V-bit (0.1mm tip) v-carving MDF to 3mm depth"
+rationale = "Engaged-D RPM: at 3mm depth, engaged_d ~ 2*3*tan(30) ~ 3.46mm; engine must scale RPM by engaged-D, NOT nominal shank D. Catches v-bit SFM bugs."
+profile_tag = "either"
+
+[cell.inputs]
+tool_class = "vbit"
+diameter_mm = 6.35
+flute_count = 2
+flute_length_mm = 12.0
+stickout_mm = 20.0
+operation = "vcarve"
+material = "mdf"
+material_class = "plastic"
+machine_class = "shapeoko_xxl"
+included_angle_deg = 60.0
+tip_diameter_mm = 0.1
+max_depth_mm = 3.0
+
+[cell.fixed_inputs]
+doc_mm = 3.0
+woc_mm = "free"
+
+[cell.expected.rpm]
+min = 18000
+max = 24000
+mode = "band"
+unit = "rpm"
+sources = ["amana_vbit", "onsrud_plastic", "vectric_default"]
+
+[cell.expected.feed_per_tooth]
+min = 0.014
+max = 0.040
+mode = "band"
+unit = "mm/tooth"
+hobby_derate = 0.7
+sources = ["amana_vbit", "onsrud_plastic", "vectric_default"]
+
+[cell.expected.axial_doc]
+min = 3.0
+max = 3.0
+mode = "band"
+unit = "mm"
+sources = ["amana_vbit", "vectric_default", "shopbot"]
+
+[cell.expected.plunge_feed]
+min_fraction_of_feed = 0.30
+max_fraction_of_feed = 0.50
+mode = "fraction"
+sources = ["shapeoko_wiki", "vectric_default", "cutter_shop"]
+
+[[cell.invariants]]
+name = "engaged_diameter_sfm_above_floor"
+expr = "rpm"
+floor = 5520
+unit = "rpm"
+sources = ["amana_vbit", "shopbot", "cutter_shop"]
+severity_on_fail = "moderate"
+
+[[cell.invariants]]
+name = "rpm_above_engaged_d_floor"
+expr = "rpm"
+floor = 16000
+unit = "rpm"
+sources = ["amana_vbit", "onsrud_plastic", "vectric_default"]
+severity_on_fail = "minor"
+
+[[cell.invariants]]
+name = "chipload_above_rubbing_floor"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.010
+unit = "mm/tooth"
+sources = ["shaw_metal_cutting"]
+severity_on_fail = "critical"
+
+[[cell.anti_patterns]]
+name = "nominal_d_sfm_overspeed"
+expr = "rpm < 12000"
+severity = "major"
+
+[[cell.anti_patterns]]
+name = "chipload_below_rubbing_floor"
+expr = "feed_rate / (rpm * flutes) < 0.010"
+severity = "critical"
+
+
+[[cell]]
+id = "flat_3mm_drill_oak"
+category = "normal-use"
+description = "3mm 2F flat used as drill in red oak; tests Drill OperationFamily routing"
+rationale = "Drill family must clamp RPM 8-14k, bump chipload ~2.5x (drill-mode), and emit peck cycles. Catches missing-routing where pocket-class params leak into drill ops."
+profile_tag = "either"
+
+[cell.inputs]
+tool_class = "flat"
+diameter_mm = 3.0
+flute_count = 2
+flute_length_mm = 12.0
+stickout_mm = 18.0
+operation = "drill"
+material = "oak_red"
+material_class = "hardwood"
+janka_lbf = 1290
+machine_class = "shapeoko_xxl"
+drill_depth_mm = 15.0
+
+[cell.expected.rpm]
+min = 8000
+max = 14000
+mode = "band"
+unit = "rpm"
+sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
+
+[cell.expected.feed_per_tooth]
+min = 0.08
+max = 0.18
+mode = "band"
+unit = "mm/tooth"
+sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+
+[cell.expected.axial_doc]
+min = 0.0
+max = 0.0
+mode = "na"
+unit = "mm"
+sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
+
+[cell.expected.plunge_feed]
+min_fraction_of_feed = 0.40
+max_fraction_of_feed = 0.70
+mode = "fraction"
+sources = ["onsrud_drill", "vectric_drill_default", "shapeoko_wiki"]
+
+[[cell.invariants]]
+name = "drill_rpm_floor"
+expr = "rpm"
+floor = 8000
+unit = "rpm"
+sources = ["onsrud_drill", "amana_spektra"]
+severity_on_fail = "critical"
+
+[[cell.invariants]]
+name = "drill_rpm_ceiling"
+expr = "rpm"
+ceiling = 14000
+unit = "rpm"
+sources = ["onsrud_drill", "vectric_drill_default"]
+severity_on_fail = "critical"
+
+[[cell.invariants]]
+name = "peck_depth_under_hardwood_max"
+expr = "peck_depth"
+ceiling = 15.0
+unit = "mm"
+sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+severity_on_fail = "major"
+
+[[cell.invariants]]
+name = "peck_over_d_hardwood"
+expr = "peck_over_d"
+ceiling = 5.0
+unit = ""
+sources = ["onsrud_drill", "fpl_wood_handbook", "amana_spektra"]
+severity_on_fail = "major"
+
+[[cell.anti_patterns]]
+name = "drill_uses_peripheral_rpm"
+expr = "rpm > 14500"
+severity = "critical"
+
+[[cell.anti_patterns]]
+name = "drill_no_peck_cycle"
+expr = "peck_depth >= drill_depth"
+severity = "major"
+
+
+[[cell]]
+id = "flat_1p5mm_pocket_oak_clamp"
+category = "extreme-size"
+description = "1.5mm 2F flat in red oak, pocket — tests sub-2mm RPM ceiling clamp + tiny-tool deflection"
+rationale = "Catches RPM clamp bugs (engine should saturate at spindle max ~24k for tiny tools), chipload floor scaling for micro-tools, and deflection-driven DOC limits on long-slender cutters"
+profile_tag = "either"
+
+[cell.inputs]
+tool_class = "flat"
+diameter_mm = 1.5
+flute_count = 2
+flute_length_mm = 6.0
+stickout_mm = 10.0
+operation = "pocket"
+material = "oak_red"
+material_class = "hardwood"
+janka_lbf = 1290
+machine_class = "shapeoko_xxl"
+
+[cell.fixed_inputs]
+woc_mm = "free"
+doc_mm = "free"
+
+[cell.expected.rpm]
+min = 22000
+max = 24000
+mode = "ceiling"
+unit = "rpm"
+sources = ["onsrud_hwood", "amana_spektra", "gwizard_hwood", "shapeoko_wiki"]
+
+[cell.expected.feed_per_tooth]
+min = 0.008
+max = 0.025
+mode = "band"
+unit = "mm/tooth"
+hobby_derate = 0.7
+sources = ["onsrud_hwood", "amana_spektra", "gwizard_hwood", "shaw_chipload"]
+
+[cell.expected.axial_doc]
+min = 0.20
+max = 0.50
+mode = "band"
+unit = "mm"
+hobby_derate = 0.5
+sources = ["onsrud_doc_rule", "shapeoko_wiki", "amana_spektra"]
+
+[cell.expected.plunge_feed]
+min_fraction_of_feed = 0.30
+max_fraction_of_feed = 0.50
+mode = "fraction"
+sources = ["shapeoko_wiki", "vectric_default", "onsrud_hwood"]
+
+[[cell.invariants]]
+name = "chipload_above_rubbing_floor"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.008
+sources = ["shaw_metal_cutting", "shaw_chipload"]
+unit = "mm/tooth"
+severity_on_fail = "critical"
+
+[[cell.invariants]]
+name = "deflection_proxy_stickout_ratio"
+expr = "doc * woc"
+ceiling = 0.30
+unit = "mm^2"
+sources = ["shapeoko_wiki", "onsrud_doc_rule"]
+severity_on_fail = "major"
+
+[[cell.invariants]]
+name = "envelope_pocket_microtool"
+type = "convex_hull"
+vars = ["woc_over_d", "doc_over_d"]
+vertices = [[0.30, 0.13], [0.50, 0.13], [0.50, 0.33], [0.30, 0.33]]
+sources = ["amana_spektra", "shapeoko_wiki"]
+severity_on_fail = "minor"
+
+[[cell.anti_patterns]]
+name = "chipload_below_micro_rubbing_floor"
+expr = "feed_rate / (rpm * flutes) < 0.008"
+severity = "critical"
+
+[[cell.anti_patterns]]
+name = "rpm_below_micro_threshold"
+expr = "rpm < 18000"
+severity = "moderate"
+
+
+[[cell]]
+id = "flat_12mm_adaptive2d_oak_power"
+category = "extreme-size"
+description = "12mm 4F flat in red oak, adaptive2d — tests 1kW spindle power ceiling"
+rationale = "Generic wood-router profile is ~1kW. A 12mm tool running adaptive2d at full LUT chipload and 1.5xD axial DOC will blow past power. Cell expects engine to either derate (DOC, feed) or warn explicitly."
+profile_tag = "either"
+
+[cell.inputs]
+tool_class = "flat"
+diameter_mm = 12.0
+flute_count = 4
+flute_length_mm = 38.0
+stickout_mm = 45.0
+operation = "adaptive2d"
+material = "oak_red"
+material_class = "hardwood"
+janka_lbf = 1290
+machine_class = "shapeoko_xxl"
+
+[cell.fixed_inputs]
+woc_mm = "free"
+doc_mm = "free"
+
+[cell.expected.rpm]
+min = 10000
+max = 14000
+mode = "band"
+unit = "rpm"
+sources = ["onsrud_hwood", "amana_spektra", "gwizard_hwood", "shopbot"]
+
+[cell.expected.feed_per_tooth]
+min = 0.070
+max = 0.140
+mode = "band"
+unit = "mm/tooth"
+hobby_derate = 0.7
+sources = ["onsrud_hwood", "amana_spektra", "gwizard_hwood"]
+
+[cell.expected.axial_doc]
+min = 4.0
+max = 9.0
+mode = "band"
+unit = "mm"
+hobby_derate = 0.5
+sources = ["onsrud_doc_rule", "shapeoko_wiki", "amana_spektra"]
+
+[cell.expected.radial_woc]
+min = 1.2
+max = 2.4
+mode = "band"
+unit = "mm"
+sources = ["dapra_rctf", "amana_spektra", "onsrud_doc_rule"]
+
+[cell.expected.plunge_feed]
+min_fraction_of_feed = 0.30
+max_fraction_of_feed = 0.50
+mode = "fraction"
+sources = ["shapeoko_wiki", "vectric_default", "onsrud_hwood"]
+
+[[cell.invariants]]
+name = "chipload_above_rubbing_floor"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.025
+sources = ["shaw_metal_cutting", "shaw_chipload"]
+unit = "mm/tooth"
+severity_on_fail = "critical"
+
+[[cell.invariants]]
+name = "mrr_under_power"
+expr = "doc * woc * feed_rate"
+ceiling = 1200.0
+unit = "mm^3/min"
+sources = ["fpl_wood_handbook", "shopbot", "shapeoko_wiki"]
+severity_on_fail = "major"
+
+[[cell.invariants]]
+name = "envelope_adaptive2d_large"
+type = "convex_hull"
+vars = ["woc_over_d", "doc_over_d"]
+vertices = [[0.08, 0.33], [0.25, 0.33], [0.25, 0.75], [0.08, 0.75]]
+sources = ["dapra_rctf", "amana_spektra", "onsrud_doc_rule"]
+severity_on_fail = "minor"
+
+[[cell.anti_patterns]]
+name = "chipload_below_rubbing_floor"
+expr = "feed_rate / (rpm * flutes) < 0.025"
+severity = "critical"
+
+[[cell.anti_patterns]]
+name = "mrr_double_power_budget"
+expr = "doc * woc * feed_rate > 2400"
+severity = "major"
+
+[cell.expected_behaviour]
+mode = "values"
+expected_warning_pattern = "power"
+
+
+[[cell]]
+id = "vbit_60deg_pocket_oak_unadvised"
+category = "wrong-tool"
+description = "60deg V-bit attempting POCKET on red oak (idiomatic op is vcarve)"
+rationale = "V-bits CAN cut a pocket (flat tip + flank), but it's not idiomatic. Catches engine routing — should either derate aggressively or warn. Bands here are loose; verdict capped at Minor."
+profile_tag = "either"
+
+[cell.inputs]
+tool_class = "vbit"
+diameter_mm = 12.7
+tip_diameter_mm = 0.2
+flute_count = 2
+flute_length_mm = 12.0
+stickout_mm = 25.0
+included_angle_deg = 60.0
+operation = "pocket"
+material = "oak_red"
+material_class = "hardwood"
+janka_lbf = 1290
+machine_class = "shapeoko_xxl"
+
+[cell.fixed_inputs]
+woc_mm = "free"
+doc_mm = "free"
+
+[cell.expected.rpm]
+min = 18000
+max = 24000
+mode = "band"
+unit = "rpm"
+sources = ["amana_vbit", "vectric_default", "shapeoko_wiki", "cutter_shop"]
+
+[cell.expected.feed_per_tooth]
+min = 0.015
+max = 0.040
+mode = "band"
+unit = "mm/tooth"
+hobby_derate = 0.7
+sources = ["amana_vbit", "vectric_default", "shapeoko_wiki"]
+
+[cell.expected.axial_doc]
+min = 0.3
+max = 1.5
+mode = "band"
+unit = "mm"
+sources = ["amana_vbit", "vectric_default", "shapeoko_wiki"]
+
+[cell.expected.plunge_feed]
+min_fraction_of_feed = 0.20
+max_fraction_of_feed = 0.50
+mode = "fraction"
+sources = ["vectric_default", "shapeoko_wiki", "amana_vbit"]
+
+[[cell.invariants]]
+name = "chipload_above_rubbing_floor"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.012
+sources = ["shaw_metal_cutting", "shaw_chipload"]
+unit = "mm/tooth"
+severity_on_fail = "moderate"
+
+[[cell.invariants]]
+name = "vbit_doc_below_half_diameter"
+expr = "doc"
+ceiling = 3.0
+unit = "mm"
+sources = ["amana_vbit", "vectric_default"]
+severity_on_fail = "moderate"
+
+[[cell.anti_patterns]]
+name = "vbit_doc_overruns_apex_geometry"
+expr = "doc > 6.0"
+severity = "moderate"
+
+[cell.expected_behaviour]
+mode = "unadvised"
+expected_derate = 0.5
+expected_warning_pattern = "v.?bit|vcarve|pocket"
+
+
+[[cell]]
+id = "flat_6mm_scallop_oak_unusable"
+category = "wrong-tool"
+description = "6mm FLAT endmill assigned to a SCALLOP toolpath — scallop math requires a curved tip"
+rationale = "Scallop height = R - sqrt(R^2 - (stepover/2)^2) is undefined for a flat tool (R = infinity, equivalently no spherical cap). Engine MUST refuse. If it silently produces values, that's a critical schema/routing bug."
+profile_tag = "either"
+
+[cell.inputs]
+tool_class = "flat"
+diameter_mm = 6.0
+flute_count = 2
+flute_length_mm = 22.0
+stickout_mm = 25.0
+operation = "scallop"
+material = "oak_red"
+material_class = "hardwood"
+janka_lbf = 1290
+machine_class = "shapeoko_xxl"
+scallop_height_mm = 0.02
+
+[cell.fixed_inputs]
+woc_mm = "free"
+doc_mm = "free"
+
+[[cell.invariants]]
+name = "scallop_requires_curved_tip"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.025
+sources = ["shaw_metal_cutting", "shaw_chipload"]
+unit = "mm/tooth"
+severity_on_fail = "critical"
+
+[[cell.anti_patterns]]
+name = "non_curved_tool_for_scallop"
+expr = "rpm > 0"
+severity = "critical"
+
+[cell.expected_behaviour]
+mode = "unusable"
+expected_refuse_pattern = "scallop.*(requires|expects|needs).*(ball|tapered|bull|curved)|flat.*not.*(supported|allowed).*scallop"
+
+
+[[cell]]
+id = "ball_6mm_adaptive2d_oak_unadvised"
+category = "wrong-tool"
+description = "6mm BALL nose attempting ADAPTIVE2D roughing in red oak (idiomatic: ball=finish, flat=rough)"
+rationale = "Ball nose CAN rough but the engaged geometry is poor — chipload concentrates near the tip. Engine should derate axial DOC to <=0.4xD and chipload to ~0.5x of flat-equivalent. Cell expects values; verdict capped at Minor."
+profile_tag = "either"
+
+[cell.inputs]
+tool_class = "ball"
+diameter_mm = 6.0
+tip_radius_mm = 3.0
+flute_count = 2
+flute_length_mm = 22.0
+stickout_mm = 25.0
+operation = "adaptive2d"
+material = "oak_red"
+material_class = "hardwood"
+janka_lbf = 1290
+machine_class = "shapeoko_xxl"
+
+[cell.fixed_inputs]
+woc_mm = "free"
+doc_mm = "free"
+
+[cell.expected.rpm]
+min = 14000
+max = 20000
+mode = "band"
+unit = "rpm"
+sources = ["onsrud_hwood", "amana_spektra", "gwizard_hwood", "shapeoko_wiki"]
+
+[cell.expected.feed_per_tooth]
+min = 0.014
+max = 0.050
+mode = "band"
+unit = "mm/tooth"
+hobby_derate = 0.7
+sources = ["onsrud_hwood", "amana_spektra", "gwizard_hwood"]
+
+[cell.expected.axial_doc]
+min = 0.3
+max = 1.8
+mode = "ceiling"
+unit = "mm"
+hobby_derate = 0.5
+sources = ["onsrud_hwood", "shapeoko_wiki", "amana_spektra"]
+
+[cell.expected.radial_woc]
+min = 0.6
+max = 1.8
+mode = "band"
+unit = "mm"
+sources = ["dapra_rctf", "amana_spektra", "onsrud_doc_rule"]
+
+[cell.expected.plunge_feed]
+min_fraction_of_feed = 0.20
+max_fraction_of_feed = 0.50
+mode = "fraction"
+sources = ["shapeoko_wiki", "vectric_default", "onsrud_hwood"]
+
+[[cell.invariants]]
+name = "chipload_above_rubbing_floor"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.025
+sources = ["shaw_metal_cutting", "shaw_chipload"]
+unit = "mm/tooth"
+severity_on_fail = "critical"
+
+[[cell.invariants]]
+name = "ball_roughing_doc_capped"
+expr = "doc / D"
+ceiling = 0.4
+unit = ""
+sources = ["onsrud_hwood", "shapeoko_wiki"]
+severity_on_fail = "major"
+
+[[cell.invariants]]
+name = "envelope_adaptive2d_ball_rough"
+type = "convex_hull"
+vars = ["woc_over_d", "doc_over_d"]
+vertices = [[0.08, 0.05], [0.30, 0.05], [0.30, 0.30], [0.08, 0.30]]
+sources = ["amana_spektra", "onsrud_doc_rule", "dapra_rctf"]
+severity_on_fail = "minor"
+
+[[cell.anti_patterns]]
+name = "ball_roughing_doc_over_half_d"
+expr = "doc > 3.0"
+severity = "major"
+
+[[cell.anti_patterns]]
+name = "chipload_below_rubbing_floor"
+expr = "feed_rate / (rpm * flutes) < 0.025"
+severity = "critical"
+
+[cell.expected_behaviour]
+mode = "unadvised"
+expected_derate = 0.5
+expected_warning_pattern = "ball|rough|adaptive"
+
+
+[[cell]]
+id = "flat_6mm_pocket_ipe_hardness"
+category = "material-edge"
+description = "6mm 2F flat in Ipe (Janka ~3510), conventional pocket"
+rationale = "Tests whether Janka-based hardwood scaling actually moves recommendations vs the white-oak baseline; catches material-class collapse where extreme-density hardwoods get the same band as a mid-density oak."
+profile_tag = "either"
+
+[cell.inputs]
+tool_class = "flat"
+diameter_mm = 6.0
+flute_count = 2
+flute_length_mm = 22.0
+stickout_mm = 25.0
+operation = "pocket"
+material = "ipe"
+material_class = "hardwood"
+janka_lbf = 3510
+machine_class = "shapeoko_xxl"
+
+[cell.fixed_inputs]
+woc_mm = "free"
+doc_mm = "free"
+
+[cell.expected.rpm]
+min = 14000
+max = 18000
+mode = "band"
+unit = "rpm"
+sources = ["onsrud_hwood", "gwizard_hwood", "fpl_wood_handbook"]
+
+[cell.expected.feed_per_tooth]
+min = 0.020
+max = 0.045
+mode = "band"
+unit = "mm/tooth"
+hobby_derate = 0.7
+sources = ["onsrud_hwood", "gwizard_hwood", "fpl_wood_handbook"]
+
+[cell.expected.axial_doc]
+min = 0.5
+max = 1.5
+mode = "band"
+unit = "mm"
+hobby_derate = 0.5
+sources = ["onsrud_doc_rule", "fpl_wood_handbook", "shapeoko_wiki"]
+
+[cell.expected.radial_woc]
+min = 1.5
+max = 2.4
+mode = "band"
+unit = "mm"
+sources = ["amana_spektra", "onsrud_hwood", "gwizard_hwood"]
+
+[cell.expected.plunge_feed]
+min_fraction_of_feed = 0.30
+max_fraction_of_feed = 0.50
+mode = "fraction"
+sources = ["shapeoko_wiki", "vectric_default"]
+
+[[cell.invariants]]
+name = "chipload_above_rubbing_floor"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.025
+sources = ["shaw_metal_cutting"]
+unit = "mm/tooth"
+severity_on_fail = "critical"
+
+[[cell.invariants]]
+name = "mrr_under_power"
+expr = "doc * woc * feed_rate / 60000"
+ceiling = 0.12
+unit = "cm^3/s"
+severity_on_fail = "moderate"
+sources = ["fpl_wood_handbook", "shaw_metal_cutting"]
+
+[[cell.invariants]]
+name = "envelope_pocket"
+type = "convex_hull"
+vars = ["woc_over_d", "doc_over_d"]
+vertices = [[0.25, 0.20], [0.60, 0.20], [0.60, 0.60], [0.25, 0.60]]
+sources = ["amana_spektra", "fpl_wood_handbook", "onsrud_doc_rule"]
+severity_on_fail = "minor"
+
+[[cell.anti_patterns]]
+name = "chipload_below_rubbing_floor"
+expr = "feed_rate / (rpm * flutes) < 0.025"
+severity = "critical"
+
+[[cell.anti_patterns]]
+name = "ipe_matches_oak_baseline_chipload"
+expr = "feed_rate / (rpm * flutes) > 0.045"
+severity = "critical"
+
+
+[[cell]]
+id = "flat_6mm_pocket_hdpe_thermal"
+category = "material-edge"
+description = "6mm 2F flat in HDPE, conventional pocket — ductile thermoplastic"
+rationale = "Tests plastic-class differentiation: HDPE wants high RPM + low-to-moderate chipload to evacuate chips before melt-welding. If the engine returns the same numbers it would for acrylic or generic wood, that surfaces a plastic-class collapse."
+profile_tag = "either"
+
+[cell.inputs]
+tool_class = "flat"
+diameter_mm = 6.0
+flute_count = 2
+flute_length_mm = 22.0
+stickout_mm = 25.0
+operation = "pocket"
+material = "hdpe"
+material_class = "plastic_ductile"
+machine_class = "shapeoko_xxl"
+
+[cell.fixed_inputs]
+woc_mm = "free"
+doc_mm = "free"
+
+[cell.expected.rpm]
+min = 18000
+max = 24000
+mode = "band"
+unit = "rpm"
+sources = ["onsrud_plastic", "vectric_default", "cutter_shop"]
+
+[cell.expected.feed_per_tooth]
+min = 0.025
+max = 0.060
+mode = "band"
+unit = "mm/tooth"
+hobby_derate = 0.7
+sources = ["onsrud_plastic", "vectric_default", "cutter_shop"]
+
+[cell.expected.axial_doc]
+min = 0.5
+max = 1.5
+mode = "band"
+unit = "mm"
+hobby_derate = 0.5
+sources = ["onsrud_plastic", "vectric_default", "shapeoko_wiki"]
+
+[cell.expected.radial_woc]
+min = 1.5
+max = 3.0
+mode = "band"
+unit = "mm"
+sources = ["onsrud_plastic", "vectric_default", "cutter_shop"]
+
+[cell.expected.plunge_feed]
+min_fraction_of_feed = 0.30
+max_fraction_of_feed = 0.50
+mode = "fraction"
+sources = ["shapeoko_wiki", "vectric_default"]
+
+[[cell.invariants]]
+name = "chipload_above_rubbing_floor"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.025
+sources = ["shaw_metal_cutting", "onsrud_plastic"]
+unit = "mm/tooth"
+severity_on_fail = "critical"
+
+[[cell.invariants]]
+name = "hdpe_chipload_below_ductile_max"
+expr = "feed_rate / (rpm * flutes)"
+ceiling = 0.070
+sources = ["onsrud_plastic", "vectric_default", "cutter_shop"]
+unit = "mm/tooth"
+severity_on_fail = "critical"
+
+[[cell.invariants]]
+name = "mrr_under_power"
+expr = "doc * woc * feed_rate / 60000"
+ceiling = 0.50
+unit = "cm^3/s"
+severity_on_fail = "moderate"
+sources = ["onsrud_plastic", "shaw_metal_cutting"]
+
+[[cell.invariants]]
+name = "envelope_pocket"
+type = "convex_hull"
+vars = ["woc_over_d", "doc_over_d"]
+vertices = [[0.25, 0.10], [0.50, 0.10], [0.50, 0.50], [0.25, 0.50]]
+sources = ["onsrud_plastic", "vectric_default", "cutter_shop"]
+severity_on_fail = "minor"
+
+[[cell.anti_patterns]]
+name = "chipload_below_rubbing_floor"
+expr = "feed_rate / (rpm * flutes) < 0.025"
+severity = "critical"
+
+[[cell.anti_patterns]]
+name = "hdpe_chipload_welds_chips"
+expr = "feed_rate / (rpm * flutes) > 0.070"
+severity = "critical"
+
+[[cell.anti_patterns]]
+name = "hdpe_rpm_too_low_for_thermal"
+expr = "rpm < 14000"
+severity = "critical"
