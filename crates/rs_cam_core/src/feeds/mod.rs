@@ -857,13 +857,17 @@ fn default_engagement(
         // cycle time without improving safety. See
         // `planning/PRE_OPTIMIZE_DEFAULTS_AUDIT.md` Fix 1.
         ap_factor = ap_factor.max(machine.rigidity.adaptive_doc_factor * profile.ap_factor / 1.5);
-        let wood_class_flat_tool = matches!(
-            input.material,
-            Material::SolidWood { .. } | Material::Plywood { .. } | Material::SheetGood { .. }
-        ) && matches!(
-            input.tool_geometry,
-            ToolGeometryHint::Flat | ToolGeometryHint::Bull { .. }
-        );
+        // Wood-class match goes through Material::is_wood_class() so that
+        // species-aware variants (SolidWoodByJanka — FPL Ch.5 species
+        // library) qualify for the wood-router adaptive WOC floor.
+        // Pre-2026-06-02 this was an inline arm that omitted
+        // SolidWoodByJanka, dropping ae_factor from 0.20×D back to
+        // 0.14×D for any species-aware wood project (audit bug 2).
+        let wood_class_flat_tool = input.material.is_wood_class()
+            && matches!(
+                input.tool_geometry,
+                ToolGeometryHint::Flat | ToolGeometryHint::Bull { .. }
+            );
         if wood_class_flat_tool {
             ae_factor = ae_factor.max(machine.rigidity.adaptive_woc_factor);
         }
@@ -1313,6 +1317,48 @@ mod tests {
             "non-wood adaptive WOC {} should stay below machine factor {}",
             result.radial_width_mm,
             machine_factor_ae
+        );
+    }
+
+    /// Bug 2 (2026-06-02 audit): the species-aware `SolidWoodByJanka`
+    /// variant must qualify for the wood adaptive WOC floor — same as
+    /// `SolidWood`. Eastern White Pine (Janka 382.2, used in Wanaka)
+    /// should give ae = `adaptive_woc_factor × D` = 1.2 mm on a 6 mm
+    /// flat, not the 0.88 mm (= 0.147 × D) that the bug produced.
+    #[test]
+    fn test_wood_adaptive_stepover_solid_wood_by_janka_eastern_white_pine() {
+        let material = Material::SolidWoodByJanka {
+            janka_lbf: 382.2,
+            label: "Pine, eastern white".to_owned(),
+            source_id: "fpl_ch5_2010".to_owned(),
+        };
+        let machine = MachineProfile::shapeoko_vfd();
+        let target = machine.rigidity.adaptive_woc_factor * 6.0;
+
+        let result = calculate(&FeedsInput {
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        });
+
+        assert!(
+            (result.radial_width_mm - target).abs() < 1e-6,
+            "SolidWoodByJanka adaptive WOC {} should match \
+             machine.adaptive_woc_factor × D = {} (Bug 2 fix)",
+            result.radial_width_mm,
+            target
         );
     }
 
