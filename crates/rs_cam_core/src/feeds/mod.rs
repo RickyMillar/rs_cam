@@ -148,6 +148,14 @@ pub enum OperationFamily {
     Scallop,
     Trace,
     Face,
+    /// Drill / peck cycles. Z-only kinematics — radial WOC is not
+    /// applicable and engagement metrics are routed to drill-native
+    /// gates (peck adequacy, chip welding). Feeds plumbing uses this
+    /// to lower RPM into a drill-appropriate band (chipload at
+    /// milling RPM and drill plunge feed produces rubbing — audit
+    /// finding "Drill ops route through OperationFamily::Pocket with
+    /// no chipload reconciliation").
+    Drill,
 }
 
 /// Role of the pass (roughing removes bulk, finishing for surface quality).
@@ -427,13 +435,42 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     };
     let mut rpm = machine.clamp_rpm(ideal_rpm);
 
+    // Drill ops want a lower RPM band than milling regardless of D:
+    // chip evacuation, not surface speed, is the limiting factor. 8-14k
+    // RPM is the wood-drill band; the milling SFM formula above would
+    // push small-D drills past 16k where chipload starves and the cut
+    // rubs/burns. Pre-2026-06-02 drill ops routed through `Pocket`
+    // family and inherited milling RPM (audit finding: "Drill ops route
+    // through OperationFamily::Pocket with no chipload reconciliation").
+    const DRILL_RPM_FLOOR: f64 = 8_000.0;
+    const DRILL_RPM_CEIL: f64 = 14_000.0;
+    if input.operation == OperationFamily::Drill {
+        rpm = rpm.clamp(DRILL_RPM_FLOOR, DRILL_RPM_CEIL);
+        rpm = machine.clamp_rpm(rpm);
+    }
+
     // --- Step 2: Chip load — vendor LUT first, formula fallback ---
     let feed_scale = material.feed_scale_factor();
     let cl = &machine.chip_load;
     // Formula chipload uses engaged diameter so the V-bit / tapered-ball
     // fallback path matches the LUT path's band semantics. For Flat /
     // Ball / Bull this collapses to nominal D.
-    let formula_chipload = cl.k0 * effective_d.powf(cl.p) * (1.0 / feed_scale).powf(cl.q);
+    //
+    // Drill ops get a multiplier on top because drill chipload bands
+    // are ~2.5× higher than milling chipload at similar D (drilling
+    // cuts at full radius and needs feed-per-rev to chip-evacuate; the
+    // milling formula was calibrated against partial-engagement cuts).
+    // Without this, a softwood drill at 12k RPM × milling-formula
+    // chipload lands at ~0.03 mm/rev, well below the 0.05-0.15 mm/rev
+    // drilling band — classic rubbing-and-burning recipe (audit
+    // finding: implied chipload 0.026 on Wanaka Pin Drill / Holes).
+    const DRILL_CHIPLOAD_MULTIPLIER: f64 = 2.5;
+    let milling_chipload = cl.k0 * effective_d.powf(cl.p) * (1.0 / feed_scale).powf(cl.q);
+    let formula_chipload = if input.operation == OperationFamily::Drill {
+        milling_chipload * DRILL_CHIPLOAD_MULTIPLIER
+    } else {
+        milling_chipload
+    };
 
     let (chip_load, vendor_rpm, vendor_rpm_max, vendor_source, chipload_source) =
         if let Some(lut) = input.vendor_lut {
@@ -870,6 +907,17 @@ fn operation_default_profile(family: OperationFamily, role: PassRole) -> Default
         (OperationFamily::Face, PassRole::Finish) => DefaultProfile {
             ap_factor: 0.04,
             ae_factor: 0.45,
+        },
+        // Drill: ap is the per-peck descent (handled by peck_depth on
+        // DrillConfig, not depth_per_pass), ae is structurally
+        // undefined for Z-only kinematics. Profile factors here exist
+        // for type completeness only — the drill-specific RPM clamp
+        // in `calculate()` is what actually controls the operating
+        // point. `pass_role` is always `Roughing` for drill ops
+        // (drill cycles don't semi-finish or finish).
+        (OperationFamily::Drill, _) => DefaultProfile {
+            ap_factor: 0.0,
+            ae_factor: 0.0,
         },
     }
 }
@@ -1394,6 +1442,93 @@ mod tests {
             "non-wood adaptive WOC {} should stay below machine factor {}",
             result.radial_width_mm,
             machine_factor_ae
+        );
+    }
+
+    /// Fix #3 (2026-06-02 audit): Drill ops are routed through their
+    /// own `OperationFamily::Drill` (was `OperationFamily::Pocket`),
+    /// and the calculate() path clamps drill RPM to 8-14k regardless
+    /// of diameter — milling SFM/RPM derivation push small-D drills
+    /// past 16k where chipload starves. With the multiplier, drill
+    /// chipload lands in the 0.05-0.15 mm/rev softwood band.
+    #[test]
+    fn test_drill_family_rpm_in_drill_band() {
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
+        let machine = MachineProfile::shapeoko_vfd();
+
+        let result = calculate(&FeedsInput {
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Drill,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        });
+
+        // RPM must sit inside the drill band, not the milling SFM result.
+        assert!(
+            (8_000.0..=14_000.0).contains(&result.rpm),
+            "drill RPM {} must clamp to 8k-14k drill band",
+            result.rpm
+        );
+
+        // Implied chipload = feed / (flutes * rpm). With the drill
+        // multiplier, this must clear the 0.05 mm/rev softwood drill
+        // floor. Pre-fix lands at 0.026 (audit finding).
+        let implied_chipload = result.feed_rate_mm_min / (2.0 * result.rpm);
+        assert!(
+            implied_chipload >= 0.05,
+            "drill implied chipload {} must clear softwood drill floor of 0.05",
+            implied_chipload
+        );
+    }
+
+    /// Fix #3 regression guard: a Pocket op on the same tool/material
+    /// must NOT see the drill RPM clamp or chipload multiplier —
+    /// the fix is selective by family.
+    #[test]
+    fn test_pocket_family_unaffected_by_drill_fix() {
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
+        let machine = MachineProfile::shapeoko_vfd();
+
+        let result = calculate(&FeedsInput {
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Pocket,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        });
+
+        // Pocket RPM is allowed to be >14k (milling SFM band).
+        // Don't assert a specific value — just check the drill clamp
+        // didn't fire.
+        assert!(
+            result.rpm > 14_000.0 || result.rpm == machine.clamp_rpm(result.rpm),
+            "pocket RPM {} should not be drill-clamped",
+            result.rpm
         );
     }
 

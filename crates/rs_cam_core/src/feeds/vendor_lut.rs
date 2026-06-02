@@ -205,6 +205,13 @@ pub enum LutOperationFamily {
     Scallop,
     Trace,
     Face,
+    /// Drill / peck cycles. Mirrors `OperationFamily::Drill`; LUT
+    /// rows tagged `drill` apply to peck cycles. Pre-2026-06-02 the
+    /// drill ops mapped to `Pocket` for LUT queries, producing
+    /// milling-style chipload at milling RPM (audit finding —
+    /// "Nominal-D leakage" and "Drill ops have no dedicated family
+    /// branch").
+    Drill,
 }
 
 /// Pass role as used in vendor LUT JSON.
