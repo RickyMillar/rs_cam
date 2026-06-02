@@ -70,6 +70,22 @@ pub struct CellInputs {
     pub janka_lbf: Option<f64>,
     #[serde(default)]
     pub machine_class: Option<String>,
+    /// Target scallop cusp height (mm) for scallop / drop-cutter cells.
+    /// When set, the shim plumbs this through to `ScallopConfig` /
+    /// `DropCutterConfig` so the Suggest path derives stepover via the
+    /// chord-height formula instead of the legacy `ae_factor × D`.
+    #[serde(default)]
+    pub scallop_height_mm: Option<f64>,
+    /// Maximum cut depth (mm) for v-carve cells. Feeds the engaged-D
+    /// calculation in the V-bit feeds path (engaged D = 2 × max_depth ×
+    /// tan(included_angle/2)).
+    #[serde(default)]
+    pub max_depth_mm: Option<f64>,
+    /// Total drill-through depth (mm) for drill cells. When absent the
+    /// drill shim falls back to a `5 × diameter` heuristic so drill
+    /// cycles aren't accidentally shallow.
+    #[serde(default)]
+    pub drill_depth_mm: Option<f64>,
 }
 
 #[derive(Debug, Deserialize, Default)]

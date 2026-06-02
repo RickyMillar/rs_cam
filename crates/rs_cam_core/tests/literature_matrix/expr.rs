@@ -162,9 +162,7 @@ fn tokenize(src: &str) -> Result<Vec<Tok>, EvalError> {
             }
             _ if b.is_ascii_alphabetic() || b == b'_' => {
                 let start = i;
-                while i < bytes.len()
-                    && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_')
-                {
+                while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
                     i += 1;
                 }
                 let ident = &src[start..i];

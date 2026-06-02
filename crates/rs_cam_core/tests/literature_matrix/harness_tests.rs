@@ -124,13 +124,7 @@ fn expr_check_floor_form() {
     // chipload above 0.035 rubbing floor
     let b = bindings(&[("rpm", 18000.0), ("flutes", 2.0), ("feed_rate", 2520.0)]);
     // feed / (rpm * flutes) = 0.07
-    let d = expr_check(
-        "feed_rate / (rpm * flutes)",
-        &b,
-        Some(0.035),
-        None,
-        0.10,
-    );
+    let d = expr_check("feed_rate / (rpm * flutes)", &b, Some(0.035), None, 0.10);
     assert_eq!(d.verdict, SubVerdict::Within, "{}", d.reason);
 
     // below floor

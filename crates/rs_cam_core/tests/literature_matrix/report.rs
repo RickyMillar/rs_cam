@@ -5,7 +5,7 @@ use super::verdict::CellVerdict;
 
 pub fn render_text(verdict: &CellVerdict, snapshot: Option<&ShimSnapshot>) -> String {
     let mut s = String::new();
-    s.push_str(&format!("cell: {}\n", verdict.cell_id));
+    s.push_str(&format!("cell: {} [{}]\n", verdict.cell_id, verdict.mode));
     if let Some(snap) = snapshot {
         s.push_str(&format!(
             "  rpm:        {:>8.0}    feed: {:>8.1} mm/min   fpt: {:>6.4} mm/tooth\n",
@@ -46,6 +46,10 @@ pub fn render_json(verdict: &CellVerdict, snapshot: Option<&ShimSnapshot>) -> St
         "summary".into(),
         serde_json::Value::String(verdict.summary.clone()),
     );
+    obj.insert(
+        "mode".into(),
+        serde_json::Value::String(verdict.mode.clone()),
+    );
     if let Some(snap) = snapshot {
         let mut sn = serde_json::Map::new();
         sn.insert("rpm".into(), serde_json::json!(snap.rpm));
@@ -57,10 +61,7 @@ pub fn render_json(verdict: &CellVerdict, snapshot: Option<&ShimSnapshot>) -> St
             "effective_chip_load_mm".into(),
             serde_json::json!(snap.effective_chip_load_mm),
         );
-        sn.insert(
-            "axial_doc_mm".into(),
-            serde_json::json!(snap.axial_doc_mm),
-        );
+        sn.insert("axial_doc_mm".into(), serde_json::json!(snap.axial_doc_mm));
         sn.insert(
             "radial_woc_mm".into(),
             serde_json::json!(snap.radial_woc_mm),
