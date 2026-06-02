@@ -70,6 +70,11 @@ pub(crate) fn bipolar_prescription(op_kind: OperationType, op_family: OperationF
         OperationFamily::Adaptive | OperationFamily::Pocket => {
             "lower stepover or raise depth-per-pass to reduce engagement variance"
         }
+        OperationFamily::Drill => {
+            "drill ops have no lateral engagement variance — bipolar verdicts here \
+             indicate a tool/material mismatch (wrong tool for the hole, or material \
+             not suited to drilling with this cutter)"
+        }
     };
     format!(
         "steady-state chipload samples straddle the LUT chipload range \

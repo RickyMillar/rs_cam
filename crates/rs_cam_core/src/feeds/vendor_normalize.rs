@@ -27,6 +27,7 @@ pub fn to_lookup_query(input: &FeedsInput) -> LookupQuery {
         OperationFamily::Scallop => LutOperationFamily::Scallop,
         OperationFamily::Trace => LutOperationFamily::Trace,
         OperationFamily::Face => LutOperationFamily::Face,
+        OperationFamily::Drill => LutOperationFamily::Drill,
     };
 
     let pass_role = match input.pass_role {

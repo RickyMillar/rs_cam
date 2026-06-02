@@ -235,6 +235,7 @@ pub fn chipload_envelopes_for_session(
             crate::feeds::OperationFamily::Scallop => LutOperationFamily::Scallop,
             crate::feeds::OperationFamily::Trace => LutOperationFamily::Trace,
             crate::feeds::OperationFamily::Face => LutOperationFamily::Face,
+            crate::feeds::OperationFamily::Drill => LutOperationFamily::Drill,
         };
         let lut_pass_role = match spec.feeds_pass_role {
             crate::feeds::PassRole::Roughing => LutPassRole::Roughing,

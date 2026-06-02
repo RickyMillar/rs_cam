@@ -296,7 +296,7 @@ impl OperationType {
                 default_auto_regen: true,
                 ui_family: UiOperationFamily::Pocket,
                 ui_process_role: UiProcessRole::Roughing,
-                feeds_family: FeedsOperationFamily::Pocket,
+                feeds_family: FeedsOperationFamily::Drill,
                 feeds_pass_role: PassRole::Roughing,
             },
             OperationType::Chamfer => OperationSpec {
@@ -439,7 +439,7 @@ impl OperationType {
                 default_auto_regen: true,
                 ui_family: UiOperationFamily::Pocket,
                 ui_process_role: UiProcessRole::Roughing,
-                feeds_family: FeedsOperationFamily::Pocket,
+                feeds_family: FeedsOperationFamily::Drill,
                 feeds_pass_role: PassRole::Roughing,
             },
         }

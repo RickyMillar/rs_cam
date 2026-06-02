@@ -408,6 +408,7 @@ pub fn project_load_report(
             OperationFamily::Scallop => LutOperationFamily::Scallop,
             OperationFamily::Trace => LutOperationFamily::Trace,
             OperationFamily::Face => LutOperationFamily::Face,
+            OperationFamily::Drill => LutOperationFamily::Drill,
         };
         let lut_pass = match spec.feeds_pass_role {
             PassRole::Roughing => LutPassRole::Roughing,

@@ -154,6 +154,7 @@ pub(crate) fn lut_op_family_from(family: OperationFamily) -> LutOperationFamily 
         OperationFamily::Scallop => LutOperationFamily::Scallop,
         OperationFamily::Trace => LutOperationFamily::Trace,
         OperationFamily::Face => LutOperationFamily::Face,
+        OperationFamily::Drill => LutOperationFamily::Drill,
     }
 }
 
