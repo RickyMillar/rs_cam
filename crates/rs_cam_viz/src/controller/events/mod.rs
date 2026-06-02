@@ -261,6 +261,9 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::ApplyFeedsAll(toolpath_id) => {
                 self.apply_feeds_all(toolpath_id);
             }
+            AppEvent::SetDropCutterScallopHeight { toolpath_id, value } => {
+                self.set_drop_cutter_scallop_height(toolpath_id, value);
+            }
             AppEvent::ApplyFeedsProject => {
                 self.apply_feeds_project();
             }
@@ -706,6 +709,40 @@ impl<B: ComputeBackend> AppController<B> {
             &machine,
             pass_role,
         );
+        self.state.gui.mark_edited();
+        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
+            rt.stale_since = Some(std::time::Instant::now());
+        }
+    }
+
+    /// S1 — set or clear the scallop-driven-stepover target on a
+    /// DropCutter toolpath. `None` restores the formula-based stepover.
+    /// No-op when the toolpath isn't a DropCutter.
+    fn set_drop_cutter_scallop_height(
+        &mut self,
+        toolpath_id: crate::state::toolpath::ToolpathId,
+        value: Option<f64>,
+    ) {
+        let Some(idx) = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .position(|tc| tc.id == toolpath_id.0)
+        else {
+            return;
+        };
+        let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx) else {
+            return;
+        };
+        if let rs_cam_core::compute::catalog::OperationConfig::DropCutter(cfg) = &mut tc.operation {
+            if cfg.scallop_height == value {
+                return;
+            }
+            cfg.scallop_height = value;
+        } else {
+            return;
+        }
         self.state.gui.mark_edited();
         if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
             rt.stale_since = Some(std::time::Instant::now());

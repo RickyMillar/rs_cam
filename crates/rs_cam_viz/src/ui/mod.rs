@@ -268,6 +268,14 @@ pub enum AppEvent {
     /// toolpath in one transactional update. The Apply-all button on
     /// the comparison card routes here.
     ApplyFeedsAll(ToolpathId),
+    /// S1 — set (or clear) the scallop-driven-stepover target on a
+    /// DropCutter toolpath. `Some(h)` switches WOC to be derived from
+    /// the cusp height + tool tip radius; `None` restores the formula
+    /// stepover. No-op for operations that don't carry the field.
+    SetDropCutterScallopHeight {
+        toolpath_id: ToolpathId,
+        value: Option<f64>,
+    },
     /// Apply the Feeds recommendation across every selected toolpath
     /// in project-rollup mode.
     ApplyFeedsProject,
