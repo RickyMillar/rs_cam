@@ -127,6 +127,7 @@ pub fn suggest_for_operation(input: SuggestForOperationInput<'_>) -> SuggestedPa
         input.machine,
         input.operation.feeds_style().1,
     );
+    apply_drill_defaults(&mut operation, input.tool, input.material);
     SuggestedParams {
         operation,
         feeds_result,
@@ -235,6 +236,37 @@ pub fn apply_feeds_result_to_op(
     operation.set_stepover(round_suggestion_value(result.radial_width_mm, 0.001));
     operation.set_depth_per_pass(round_suggestion_value(result.axial_depth_mm, 0.001));
     enforce_invariants(operation, tool, machine, pass_role)
+}
+
+/// Apply drill-cycle defaults that depend on tool diameter + material —
+/// specifically `peck_depth`, which gets overwritten with
+/// `material.drill_default_peck_depth_mm(tool.diameter)`.
+///
+/// Pre-2026-06-02 `DrillConfig::default()` hardcoded `peck_depth = 3.0`
+/// regardless of cutter diameter or material; for a 3 mm bit that's a
+/// full-diameter peck (unsafe), for a 12 mm bit that's 0.25×D
+/// (trivially shallow). The Suggest path now overwrites the value
+/// every time it runs, so the operating point auto-scales with tool
+/// diameter and material per-peck threshold (audit finding "peck_depth
+/// is a hardcoded constant with no diameter/material scaling",
+/// workflow `w39ma2j1y`, fix #6).
+///
+/// Non-drill ops are untouched.
+pub fn apply_drill_defaults(
+    operation: &mut OperationConfig,
+    tool: &ToolConfig,
+    material: &Material,
+) {
+    let d = tool.diameter;
+    if !d.is_finite() || d <= 0.0 {
+        return;
+    }
+    let peck = material.drill_default_peck_depth_mm(d);
+    match operation {
+        OperationConfig::Drill(cfg) => cfg.peck_depth = peck,
+        OperationConfig::AlignmentPinDrill(cfg) => cfg.peck_depth = peck,
+        _ => {}
+    }
 }
 
 /// Apply stock-aware overrides to defaults that require stock context.
@@ -547,6 +579,75 @@ mod tests {
             warnings
                 .iter()
                 .any(|w| matches!(w, SuggestWarning::DepthClampedToCuttingLength { .. }))
+        );
+    }
+
+    /// Fix #6 (2026-06-02 audit): `peck_depth` is overwritten by
+    /// `material.drill_default_peck_depth_mm(D)` when the Suggest
+    /// path runs. For a 6 mm bit in softwood (max per-peck factor
+    /// 2.0×D, default factor 0.5×D × 2.0 = 1.0×D) the result is
+    /// 0.5 × 6 = 3.0 mm — coincidentally what the old hardcode
+    /// produced — and for a 3 mm bit it's 1.5 mm (vs the unsafe
+    /// 3.0 mm hardcode that would have meant full-diameter peck).
+    #[test]
+    fn drill_peck_depth_scales_with_diameter_and_material() {
+        use crate::compute::operation_configs::{DrillConfig, DrillCycleType};
+        use crate::material::Material;
+
+        let material = Material::SolidWood {
+            species: crate::material::WoodSpecies::GenericSoftwood,
+        };
+
+        // 3 mm bit — pre-fix would have left peck_depth=3.0 = full D.
+        let mut op_3mm = OperationConfig::Drill(DrillConfig {
+            cycle: DrillCycleType::Peck,
+            peck_depth: 3.0, // pre-fix hardcode value
+            ..DrillConfig::default()
+        });
+        let mut tool_3mm = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        tool_3mm.diameter = 3.0;
+
+        apply_drill_defaults(&mut op_3mm, &tool_3mm, &material);
+
+        let peck_3mm = match &op_3mm {
+            OperationConfig::Drill(cfg) => cfg.peck_depth,
+            _ => panic!("expected Drill"),
+        };
+        assert!(
+            (peck_3mm - 3.0).abs() < 1e-6,
+            "3 mm bit softwood peck depth should be 0.5×max×D = 0.5×2.0×3.0 = 3.0 mm (the default factor), \
+             got {peck_3mm}"
+        );
+
+        // 12 mm bit — pre-fix would have left peck_depth=3.0 = 0.25×D,
+        // far below the 2.0×D max. Now scales to 12.0 mm = 1.0×D.
+        let mut op_12mm = OperationConfig::Drill(DrillConfig {
+            cycle: DrillCycleType::Peck,
+            peck_depth: 3.0, // pre-fix hardcode value
+            ..DrillConfig::default()
+        });
+        let mut tool_12mm = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        tool_12mm.diameter = 12.0;
+
+        apply_drill_defaults(&mut op_12mm, &tool_12mm, &material);
+
+        let peck_12mm = match &op_12mm {
+            OperationConfig::Drill(cfg) => cfg.peck_depth,
+            _ => panic!("expected Drill"),
+        };
+        assert!(
+            peck_12mm > 6.0,
+            "12 mm bit softwood peck depth should scale up beyond the old 3.0 mm hardcode, got {peck_12mm}"
+        );
+
+        // Non-drill op: untouched.
+        let mut op_pocket = OperationConfig::Pocket(PocketConfig::default());
+        let pocket_before = format!("{op_pocket:?}");
+        apply_drill_defaults(&mut op_pocket, &tool_3mm, &material);
+        assert_eq!(
+            format!("{op_pocket:?}"),
+            pocket_before,
+            "apply_drill_defaults must be a no-op for non-drill ops"
         );
     }
 

@@ -713,7 +713,11 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     }
 
     // --- Step 8: Plunge rate ---
-    let plunge = material.plunge_rate_base();
+    // Diameter-aware plunge baseline (fix #7) — a 3 mm bit no longer
+    // gets the same plunge envelope as a 12 mm bit. The 6 mm baseline
+    // is preserved, other diameters scale linearly with the audit
+    // rule-of-thumb (150-300 mm/min per mm of diameter for wood).
+    let plunge = material.plunge_rate_base(d);
 
     // Ramp feed: capped at 1.5× plunge rate (reference calcs.rs convention)
     let ramp_feed = (feed * 0.5).max(plunge).min(plunge * 1.5);
@@ -1442,6 +1446,55 @@ mod tests {
             "non-wood adaptive WOC {} should stay below machine factor {}",
             result.radial_width_mm,
             machine_factor_ae
+        );
+    }
+
+    /// Fix #7 (2026-06-02 audit): `Material::plunge_rate_base()`
+    /// scales linearly with tool diameter. A 6 mm bit gets the
+    /// preserved baseline; a 3 mm bit gets half, a 12 mm bit gets
+    /// double (within the [0.25×, 3×] clamp). Pre-fix a 3 mm bit
+    /// inherited the 6 mm plunge envelope, plunging 2× too fast.
+    #[test]
+    fn test_plunge_rate_base_scales_with_diameter() {
+        use crate::material::Material;
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
+
+        let plunge_3mm = material.plunge_rate_base(3.0);
+        let plunge_6mm = material.plunge_rate_base(6.0);
+        let plunge_12mm = material.plunge_rate_base(12.0);
+
+        // 6 mm baseline preserved (matches pre-fix material-only value).
+        let h = material.feed_scale_factor();
+        let expected_6mm = 1000.0 / h;
+        assert!(
+            (plunge_6mm - expected_6mm).abs() < 1e-6,
+            "6 mm plunge {plunge_6mm} should preserve pre-fix value {expected_6mm}"
+        );
+
+        // 3 mm = half of 6 mm.
+        assert!(
+            (plunge_3mm - plunge_6mm * 0.5).abs() < 1e-6,
+            "3 mm plunge {plunge_3mm} should be 0.5 × 6 mm plunge {plunge_6mm}"
+        );
+
+        // 12 mm = double of 6 mm.
+        assert!(
+            (plunge_12mm - plunge_6mm * 2.0).abs() < 1e-6,
+            "12 mm plunge {plunge_12mm} should be 2.0 × 6 mm plunge {plunge_6mm}"
+        );
+
+        // Clamps: very small / very large tools don't run away.
+        let plunge_tiny = material.plunge_rate_base(1.0);
+        assert!(
+            plunge_tiny >= plunge_6mm * 0.25 - 1e-6,
+            "tiny-tool plunge {plunge_tiny} should clamp to 0.25 × baseline floor"
+        );
+        let plunge_huge = material.plunge_rate_base(25.0);
+        assert!(
+            plunge_huge <= plunge_6mm * 3.0 + 1e-6,
+            "huge-tool plunge {plunge_huge} should clamp to 3.0 × baseline ceiling"
         );
     }
 
