@@ -14,15 +14,17 @@
 use super::cell::LiteratureCell;
 use super::expr::Bindings;
 use rs_cam_core::compute::OperationConfig;
+use rs_cam_core::compute::build_cutter;
 use rs_cam_core::compute::operation_configs::{
     AdaptiveConfig, DrillConfig, PocketConfig, ScallopConfig, VCarveConfig,
 };
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::{
-    apply_drill_defaults, apply_feeds_result_to_op, feeds_result_for_operation,
+    apply_drill_defaults, apply_feeds_result_to_op, operation_feeds_hints,
 };
 use rs_cam_core::feeds::{
-    self, FeedsResult, OperationFamily, PassRole, SpindleStrategy, WorkholdingRigidity,
+    self, FeedsInput, FeedsResult, OperationFamily, PassRole, SetupContext, SpindleStrategy,
+    WorkholdingRigidity,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::Material;
@@ -263,24 +265,60 @@ pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
     let tool = build_tool(cell, tool_type);
     let operation = build_operation(cell, op_family)?;
 
-    // Run the engine through the production suggest path. Literature
-    // bands are spindle-agnostic; `MaxSpeed` honours the vendor
-    // `rpm_max` ceiling without imposing a chassis-specific clamp.
-    let result = feeds_result_for_operation(
-        &operation,
-        &tool,
-        &material,
-        &machine,
-        WorkholdingRigidity::Medium,
-        lut,
-        SpindleStrategy::MaxSpeed,
-    );
+    // If the cell pins DOC and/or WOC, thread them into the feeds
+    // calculator as input hints so the engine evaluates power, RCTF,
+    // MRR, and chipload at the cell's intended operating point —
+    // otherwise `feeds_result_for_operation` reads only what
+    // `operation_feeds_hints` exposes (which for Pocket/Adaptive is
+    // `(None, None, None)`), and the post-clamp `set_stepover` /
+    // `set_depth_per_pass` calls silently overwrite the pins with the
+    // engine's free-run values before the snapshot is taken. See
+    // shim docs above + Phase 1 fix group G1-shim-pinned-inputs.
+    let pinned_doc = cell.fixed_inputs.as_ref().and_then(|f| f.doc_pinned_mm());
+    let pinned_woc = cell.fixed_inputs.as_ref().and_then(|f| f.woc_pinned_mm());
+
+    let tool_def = build_cutter(&tool);
+    let (auto_axial, auto_radial, auto_scallop) = operation_feeds_hints(&operation);
+    let feeds_input = FeedsInput {
+        tool_diameter: tool.diameter,
+        flute_count: tool.flute_count,
+        flute_length: tool.cutting_length,
+        shank_diameter: Some(tool.shank_diameter),
+        tool_geometry: tool_def.to_geometry_hint(),
+        material: &material,
+        machine: &machine,
+        operation: op_family,
+        pass_role,
+        axial_depth_mm: pinned_doc.or(auto_axial),
+        radial_width_mm: pinned_woc.or(auto_radial),
+        target_scallop_mm: auto_scallop,
+        vendor_lut: Some(lut),
+        setup: SetupContext {
+            tool_overhang_mm: Some(tool.stickout),
+            workholding_rigidity: WorkholdingRigidity::Medium,
+        },
+        spindle_strategy: SpindleStrategy::MaxSpeed,
+    };
+    let result = feeds::calculate(&feeds_input);
 
     // Apply the same post-clamp the GUI applies via Suggest so the
     // snapshot matches production output exactly (rigidity clamp on
     // DOC, plunge-to-feed clamp, stepover-to-diameter clamp).
     let mut op_clamped = operation;
     let _warnings = apply_feeds_result_to_op(&mut op_clamped, &result, &tool, &machine, pass_role);
+
+    // Defend the pins against `apply_feeds_result_to_op`'s
+    // unconditional `set_stepover` / `set_depth_per_pass` writes: if
+    // the cell pinned DOC/WOC, restore those values so the snapshot
+    // reflects the cell's operating point. The engine still
+    // calculated RPM / chipload / power / MRR at the pinned operating
+    // point above; we're just keeping the geometry consistent.
+    if let Some(w) = pinned_woc {
+        op_clamped.set_stepover(w);
+    }
+    if let Some(d) = pinned_doc {
+        op_clamped.set_depth_per_pass(d);
+    }
     // Drill ops still need their material-aware peck-depth fill-in;
     // `apply_feeds_result_to_op` doesn't touch `peck_depth`, only the
     // generic feed/RPM/DOC fields. The GUI calls this via
