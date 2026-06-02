@@ -26,7 +26,7 @@ invariants, not values the engine happens to produce.
 | Source set | Onsrud, Amana, GWizard, Shapeoko wiki, DAPRA/Kennametal, FPL Wood Handbook (6 gold sources) |
 | Engine output surface | Adapter shim emits whatever machinist convention names (fpt, peck depth, SFM at engaged D); new engine APIs only if a real cell can't run without one |
 | Hobby derate | 0.7× chipload, 0.5× DOC, applied at band-construction with both raw + derated stored |
-| Rubbing-floor anti-pattern | 0.035 mm/tooth (midpoint of Shaw's 0.025 and community 0.05) |
+| Rubbing-floor anti-pattern | 0.025 mm/tooth (Shaw 2005 ch.20 empirical min-chip-thickness; community 0.05 is a conservative working bound, not the physics floor) |
 | Wrong-tool policy | Warn, with `unusable` vs `unadvised` discriminator (see schema below) |
 | Envelope vertices | Hand-pick in Phase 2; switch to derived in Phase 5 if maintenance hurts |
 
