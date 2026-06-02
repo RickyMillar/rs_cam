@@ -57,6 +57,28 @@ pub struct CellVerdict {
     pub rows: Vec<SubVerdictRow>,
     pub overall: Severity,
     pub summary: String,
+    /// Wrong-tool category for this cell (`"values"` for normal-use,
+    /// `"unadvised"`, `"unusable"`, or `"refuse"`). Surfaced in the
+    /// report so a reader knows the verdict cap that was applied. See
+    /// the plan §"Wrong-tool discrimination".
+    pub mode: String,
+}
+
+impl CellVerdict {
+    /// Cap the overall severity at the given ceiling. Used for
+    /// `unadvised` cells where any sub-verdict failure must not block
+    /// CI — the row-level reasons are preserved (the operator/agent
+    /// still sees them), but the rolled-up severity caps out at Minor.
+    pub fn cap_overall(&mut self, ceiling: Severity) {
+        if self.overall > ceiling {
+            self.overall = ceiling;
+            self.summary = format!(
+                "{} (capped — {} rows present)",
+                ceiling.as_str(),
+                self.rows.len()
+            );
+        }
+    }
 }
 
 /// Roll up a list of sub-verdict rows into a cell verdict.
@@ -99,6 +121,7 @@ pub fn rollup(cell_id: &str, rows: Vec<SubVerdictRow>) -> CellVerdict {
         rows,
         overall,
         summary,
+        mode: "values".to_owned(),
     }
 }
 

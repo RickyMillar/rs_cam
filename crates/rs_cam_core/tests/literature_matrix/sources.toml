@@ -102,3 +102,120 @@ covers = ["flat", "ball", "vbit"]
 ops = ["all"]
 materials = ["all"]
 notes = "Empirical minimum-chip-thickness / rubbing-threshold reference (~0.025 mm/tooth for typical carbide endmill edge radii). Physics backstop for chipload floor invariants."
+
+## --- Phase 1 additions ---
+## All entries below were added during the Phase 1 shim/runner expansion
+## (2026-06-03). Cell drafters reference these by key. Tighten the
+## citation_url + notes when Phase 2 lands the actual cells that use
+## them; the placeholders here are the well-known vendor / textbook URLs
+## the literature trail already points to.
+
+[shaw_chipload]
+name = "Shaw, Metal Cutting Principles — rubbing-floor (alias of shaw_metal_cutting)"
+citation_url = "https://global.oup.com/academic/product/metal-cutting-principles-9780195142068"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["flat", "ball", "vbit"]
+ops = ["all"]
+materials = ["all"]
+notes = "Convenience alias used in Phase 1 cells that want a literal `shaw_chipload` key for the 0.025 mm/tooth rubbing floor. Same primary source as `shaw_metal_cutting`."
+
+[onsrud_swood]
+name = "Onsrud Cutter — Series 60/85 Softwood Feed Chart"
+citation_url = "https://www.onsrud.com/files/pdf/series_60_softwood.pdf"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["flat", "ball"]
+ops = ["pocket", "profile", "adaptive2d"]
+materials = ["softwood"]
+notes = "Onsrud softwood chart — chipload/SFM by tool series + diameter. Industrial spindle baseline; hobby derate applies."
+
+[onsrud_plywood]
+name = "Onsrud Cutter — Plywood / Composite Feed Chart"
+citation_url = "https://www.onsrud.com/files/pdf/series_70_plywood.pdf"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["flat", "compression"]
+ops = ["pocket", "profile", "adaptive2d"]
+materials = ["plywood", "mdf"]
+notes = "Onsrud plywood chart — covers cabinet-grade & birch plywood. Compression cutters dominate; flat router-bit values are conservative."
+
+[onsrud_plastic]
+name = "Onsrud Cutter — Plastics Feed Chart (HDPE / acrylic / phenolic)"
+citation_url = "https://www.onsrud.com/files/pdf/plastic_chart.pdf"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["flat", "o-flute"]
+ops = ["pocket", "profile", "adaptive2d"]
+materials = ["hdpe", "acrylic", "abs", "polycarbonate"]
+notes = "Plastics class — feed/RPM windows are *narrow* (chip welding above, rubbing/melting below). O-flute geometry is the working default for thermoplastics."
+
+[onsrud_drill]
+name = "Onsrud Drill / Spur-Point Feed Defaults"
+citation_url = "https://www.onsrud.com/files/pdf/drill_chart.pdf"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["drill", "brad-point"]
+ops = ["drill"]
+materials = ["hardwood", "softwood", "plywood"]
+notes = "Drill IPR / peck guidance. Plunge feed is the same as drill feed (vertical-only kinematics)."
+
+[amana_vbit]
+name = "Amana Tool — V-Bit / Engraving Feed Chart"
+citation_url = "https://www.amanatool.com/cnc-feeds-and-speeds-calculator"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["vbit"]
+ops = ["vcarve", "engrave"]
+materials = ["hardwood", "softwood", "plywood", "mdf"]
+notes = "Vendor chart — engaged-D varies with cut depth. SFM is computed at the engaged diameter, not the nominal cutter D."
+
+[gwizard_swood]
+name = "GWizard Softwood Feeds & Speeds"
+citation_url = "https://www.cnccookbook.com/feeds-speeds-wood/"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["flat", "ball"]
+ops = ["pocket", "profile", "adaptive2d"]
+materials = ["softwood"]
+notes = "Computed chart for softwoods; well-cited."
+
+[gwizard_plywood]
+name = "GWizard Plywood Feeds & Speeds"
+citation_url = "https://www.cnccookbook.com/feeds-speeds-wood/"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["flat", "ball", "compression"]
+ops = ["pocket", "profile", "adaptive2d"]
+materials = ["plywood", "mdf"]
+notes = "Computed chart for plywoods (birch ply, cabinet ply, MDF cross-listed)."
+
+[dapra_rctf]
+name = "DAPRA / Kennametal — Radial Chip-Thinning Factor (RCTF)"
+citation_url = "https://www.kennametal.com/us/en/resources/calculators.html"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["flat", "bull"]
+ops = ["adaptive2d", "pocket"]
+materials = ["all"]
+notes = "Closed-form chip-thinning correction RCTF = D / (2 × sqrt(ae × (D - ae))) for ae < D/2 (Kennametal/DAPRA notation). Cells that pin a small WOC compare effective chipload after RCTF against the rubbing floor."
+
+[fpl_wood_handbook]
+name = "USDA Forest Products Lab — Wood Handbook, FPL-GTR-282 (2021)"
+citation_url = "https://www.fpl.fs.fed.us/documnts/fplgtr/fpl_gtr282.pdf"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["all"]
+ops = ["all"]
+materials = ["hardwood", "softwood", "tropical"]
+notes = "Janka, specific gravity, MOE, Kc (specific cutting energy) by species. Source of truth for material-edge cells (Janka 3680 ipe vs 1290 oak scaling)."
+
+[vectric_drill_default]
+name = "Vectric VCarve / Aspire — Drill Toolpath Defaults"
+citation_url = "https://docs.vectric.com/"
+authority_tier = "community"
+last_verified = "2026-06-03"
+covers = ["drill"]
+ops = ["drill"]
+materials = ["hardwood", "softwood", "plywood", "mdf"]
+notes = "Drill peck and plunge defaults representative of community CAM practice. Plunge-feed defaults track Vectric tool database."

@@ -14,9 +14,13 @@
 use super::cell::LiteratureCell;
 use super::expr::Bindings;
 use rs_cam_core::compute::OperationConfig;
-use rs_cam_core::compute::operation_configs::PocketConfig;
+use rs_cam_core::compute::operation_configs::{
+    AdaptiveConfig, DrillConfig, PocketConfig, ScallopConfig, VCarveConfig,
+};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::feeds::suggest::{apply_feeds_result_to_op, feeds_result_for_operation};
+use rs_cam_core::feeds::suggest::{
+    apply_drill_defaults, apply_feeds_result_to_op, feeds_result_for_operation,
+};
 use rs_cam_core::feeds::{
     self, FeedsResult, OperationFamily, PassRole, SpindleStrategy, WorkholdingRigidity,
 };
@@ -65,8 +69,8 @@ pub struct ShimSnapshot {
 /// `UnknownMaterial` rather than a silent miscount.
 fn resolve_material(key: &str) -> Result<Material, ShimError> {
     let alias = match key {
-        "oak_red" => "white_oak",         // closest hardwood proxy; Janka ~1290 vs 1360
-        "maple_sugar" => "hard_maple",    // Phase 1 cell anchor
+        "oak_red" => "white_oak", // closest hardwood proxy; Janka ~1290 vs 1360
+        "maple_sugar" => "hard_maple", // Phase 1 cell anchor
         "pine_eastern_white" => "softwood",
         "al6061" => "aluminum_6061_t6",
         _ => key,
@@ -95,9 +99,7 @@ fn resolve_material(key: &str) -> Result<Material, ShimError> {
 /// recognised by [`MachineProfile::from_key`].
 fn resolve_machine(key: Option<&str>) -> MachineProfile {
     match key {
-        None | Some("shapeoko_xxl") | Some("generic") => {
-            MachineProfile::generic_wood_router()
-        }
+        None | Some("shapeoko_xxl") | Some("generic") => MachineProfile::generic_wood_router(),
         Some(other) => MachineProfile::from_key(other),
     }
 }
@@ -154,6 +156,13 @@ fn build_tool(cell: &LiteratureCell, tool_type: ToolType) -> ToolConfig {
 /// Build an [`OperationConfig`] from the cell inputs, honouring pinned
 /// DOC/WOC when present so the Suggest path's rigidity clamp evaluates
 /// against the cell-fixed operating point.
+///
+/// `family` is the [`OperationFamily`] resolved from the cell's
+/// `operation` string. The constructor branches on it to pick the right
+/// `*Config` variant; cell inputs (scallop height, max depth, drill
+/// depth) flow into the appropriate fields. The full Suggest pipeline
+/// then computes feed/RPM/DOC/WOC and writes them back via
+/// [`apply_feeds_result_to_op`].
 fn build_operation(
     cell: &LiteratureCell,
     family: OperationFamily,
@@ -168,6 +177,7 @@ fn build_operation(
         .as_ref()
         .and_then(|f| f.woc_pinned_mm())
         .unwrap_or(0.0);
+    let inputs = &cell.inputs;
 
     match family {
         OperationFamily::Pocket => Ok(OperationConfig::Pocket(PocketConfig {
@@ -175,6 +185,47 @@ fn build_operation(
             stepover: pinned_woc,
             ..PocketConfig::default()
         })),
+        OperationFamily::Adaptive => Ok(OperationConfig::Adaptive(AdaptiveConfig {
+            depth_per_pass: pinned_doc,
+            stepover: pinned_woc,
+            ..AdaptiveConfig::default()
+        })),
+        OperationFamily::Scallop => {
+            // ScallopConfig::scallop_height is non-optional (f64). Honour
+            // the cell's `scallop_height_mm` input when present;
+            // otherwise leave the default (0.1 mm, the engine default).
+            let mut cfg = ScallopConfig::default();
+            if let Some(h) = inputs.scallop_height_mm {
+                cfg.scallop_height = h;
+            }
+            Ok(OperationConfig::Scallop(cfg))
+        }
+        OperationFamily::Trace => {
+            // V-carve maps to the Trace operation family at the feeds
+            // layer. `max_depth_mm` controls engaged-D in the V-bit
+            // SFM calculation (engaged D = 2 × max_depth × tan(half_angle)).
+            let mut cfg = VCarveConfig::default();
+            if let Some(d) = inputs.max_depth_mm {
+                cfg.max_depth = d;
+            }
+            Ok(OperationConfig::VCarve(cfg))
+        }
+        OperationFamily::Drill => {
+            // Engine's `apply_drill_defaults` fills in peck_depth from
+            // (tool diameter × material per-peck rule) — leave the
+            // default and let the production path overwrite it. The
+            // cell's drill depth dictates total hole depth.
+            let depth = inputs
+                .drill_depth_mm
+                .unwrap_or(inputs.diameter_mm * 5.0)
+                .max(0.0);
+            Ok(OperationConfig::Drill(DrillConfig {
+                depth,
+                ..DrillConfig::default()
+            }))
+        }
+        // Contour / Parallel / Face are reachable via other op strings
+        // but no Phase 1 cell needs them yet.
         _ => Err(ShimError::UnsupportedOperation(format!("{family:?}"))),
     }
 }
@@ -182,12 +233,18 @@ fn build_operation(
 fn resolve_operation(op: &str) -> Result<(OperationFamily, PassRole), ShimError> {
     Ok(match op {
         "pocket" => (OperationFamily::Pocket, PassRole::Roughing),
-        // Phase 1 expansion targets — currently stubbed.
-        // TODO(phase1): wire these once the starter-12 cells land.
-        "adaptive2d" => return Err(ShimError::UnsupportedOperation(op.into())),
-        "scallop" => return Err(ShimError::UnsupportedOperation(op.into())),
-        "vcarve" => return Err(ShimError::UnsupportedOperation(op.into())),
-        "drill" => return Err(ShimError::UnsupportedOperation(op.into())),
+        // 2D adaptive (a.k.a. HSM / trochoidal). Roughing role — adaptive
+        // is by definition a high-DOC, low-WOC clearing strategy.
+        "adaptive2d" => (OperationFamily::Adaptive, PassRole::Roughing),
+        // Scallop is a 3D finishing op (cusp-driven stepover from a
+        // ball/tapered-ball tip). Finish role.
+        "scallop" => (OperationFamily::Scallop, PassRole::Finish),
+        // V-carve is the "Trace" feeds family — engaged-D is computed
+        // from the V-bit included angle + cut depth.
+        "vcarve" => (OperationFamily::Trace, PassRole::Finish),
+        // Drill / peck cycle. Z-only kinematics; engagement metrics
+        // are routed to drill-native gates by the engine.
+        "drill" => (OperationFamily::Drill, PassRole::Roughing),
         other => return Err(ShimError::UnsupportedOperation(other.to_owned())),
     })
 }
@@ -223,8 +280,13 @@ pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
     // snapshot matches production output exactly (rigidity clamp on
     // DOC, plunge-to-feed clamp, stepover-to-diameter clamp).
     let mut op_clamped = operation;
-    let _warnings =
-        apply_feeds_result_to_op(&mut op_clamped, &result, &tool, &machine, pass_role);
+    let _warnings = apply_feeds_result_to_op(&mut op_clamped, &result, &tool, &machine, pass_role);
+    // Drill ops still need their material-aware peck-depth fill-in;
+    // `apply_feeds_result_to_op` doesn't touch `peck_depth`, only the
+    // generic feed/RPM/DOC fields. The GUI calls this via
+    // `suggest_for_operation`; the shim opts into the same step so
+    // drill cells see the same peck depth a user would.
+    apply_drill_defaults(&mut op_clamped, &tool, &material);
 
     let snapshot = snapshot_from_clamped(cell, &result, &op_clamped);
     Ok(snapshot)
@@ -258,10 +320,7 @@ fn snapshot_from_clamped(
     bindings.insert("woc".into(), final_woc);
     bindings.insert("D".into(), cell.inputs.diameter_mm);
     bindings.insert("flutes".into(), cell.inputs.flute_count as f64);
-    bindings.insert(
-        "stickout".into(),
-        cell.inputs.stickout_mm.unwrap_or(0.0),
-    );
+    bindings.insert("stickout".into(), cell.inputs.stickout_mm.unwrap_or(0.0));
     bindings.insert("plunge_rate".into(), final_plunge);
     bindings.insert("power_kw".into(), r.power_kw);
     bindings.insert("mrr_mm3_min".into(), r.mrr_mm3_min);
@@ -271,6 +330,35 @@ fn snapshot_from_clamped(
     let d = cell.inputs.diameter_mm.max(f64::EPSILON);
     bindings.insert("woc_over_d".into(), final_woc / d);
     bindings.insert("doc_over_d".into(), final_doc / d);
+
+    // Op-specific values cells may bind invariants against. Pull from
+    // the clamped operation so we surface whatever the engine actually
+    // wrote back (e.g. peck_depth after `apply_drill_defaults`).
+    match op {
+        OperationConfig::Drill(cfg) => {
+            bindings.insert("peck_depth".into(), cfg.peck_depth);
+            bindings.insert("drill_depth".into(), cfg.depth);
+            bindings.insert("peck_over_d".into(), cfg.peck_depth / d);
+            bindings.insert("depth_over_d".into(), cfg.depth / d);
+        }
+        OperationConfig::VCarve(cfg) => {
+            bindings.insert("max_depth".into(), cfg.max_depth);
+        }
+        OperationConfig::Scallop(cfg) => {
+            bindings.insert("scallop_height".into(), cfg.scallop_height);
+        }
+        _ => {}
+    }
+    // Geometry-specific tool inputs cells may invariant against.
+    if let Some(a) = cell.inputs.included_angle_deg {
+        bindings.insert("included_angle".into(), a);
+    }
+    if let Some(cr) = cell.inputs.corner_radius_mm {
+        bindings.insert("corner_radius".into(), cr);
+    }
+    if let Some(h) = cell.inputs.scallop_height_mm {
+        bindings.insert("scallop_height_target".into(), h);
+    }
 
     ShimSnapshot {
         rpm: r.rpm,

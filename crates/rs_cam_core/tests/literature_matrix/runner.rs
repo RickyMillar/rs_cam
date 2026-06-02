@@ -21,15 +21,15 @@ const EDGE_FRACTION: f64 = 0.10;
 pub fn run(cells_path: &Path, sources_path: &Path) {
     let cells_src = std::fs::read_to_string(cells_path)
         .unwrap_or_else(|e| panic!("read cells.toml at {}: {e}", cells_path.display()));
-    let parsed: CellsFile = toml::from_str(&cells_src)
-        .unwrap_or_else(|e| panic!("parse cells.toml: {e}"));
+    let parsed: CellsFile =
+        toml::from_str(&cells_src).unwrap_or_else(|e| panic!("parse cells.toml: {e}"));
 
     // Sources file is parsed lazily for now (Phase 0 doesn't dereference
     // citations, only validates the file is well-formed TOML).
     let sources_src = std::fs::read_to_string(sources_path)
         .unwrap_or_else(|e| panic!("read sources.toml at {}: {e}", sources_path.display()));
-    let _sources: BTreeMap<String, toml::Value> = toml::from_str(&sources_src)
-        .unwrap_or_else(|e| panic!("parse sources.toml: {e}"));
+    let _sources: BTreeMap<String, toml::Value> =
+        toml::from_str(&sources_src).unwrap_or_else(|e| panic!("parse sources.toml: {e}"));
 
     println!("=== literature_matrix: {} cell(s) ===", parsed.cells.len());
 
@@ -57,29 +57,156 @@ pub fn run(cells_path: &Path, sources_path: &Path) {
 }
 
 pub fn evaluate_cell(cell: &LiteratureCell) -> (CellVerdict, Option<ShimSnapshot>) {
-    let snapshot = match shim::run_cell(cell) {
-        Ok(s) => s,
-        Err(e) => {
+    // Resolve the cell's wrong-tool mode up front. Default is `values`
+    // (normal-use) for cells that omit the [cell.expected_behaviour]
+    // table entirely. The mode determines how shim errors are scored
+    // (in `unusable` / `refuse` modes a refusal is a *pass*, not a
+    // failure) and whether the final verdict is capped (in `unadvised`
+    // the cell is warn-only).
+    let mode = cell
+        .expected_behaviour
+        .as_ref()
+        .map(|b| b.mode.to_lowercase())
+        .unwrap_or_else(|| "values".to_owned());
+
+    let snapshot_result = shim::run_cell(cell);
+
+    match (mode.as_str(), snapshot_result) {
+        // --- mode = "unusable" | "refuse": engine MUST refuse ---
+        ("unusable" | "refuse", Err(e)) => {
+            // Engine correctly refused — the cell passes. Record the
+            // refusal as a Within row carrying the error message so the
+            // operator can see what the refusal looked like. If
+            // `expected_refuse_pattern` is set, sanity-check it; mismatch
+            // is reported as Edge (informational only — the refusal
+            // itself is what matters).
+            let mut rows: Vec<SubVerdictRow> = Vec::new();
+            let err_text = format!("{e}");
+            let pattern_ok = cell
+                .expected_behaviour
+                .as_ref()
+                .and_then(|b| b.expected_refuse_pattern.as_ref())
+                .map(|p| substring_match(p, &err_text));
+            let reason = format!("engine refused as expected: {err_text}");
+            let detail = match pattern_ok {
+                Some(true) | None => SubVerdictDetail::within(reason),
+                Some(false) => SubVerdictDetail::edge(format!(
+                    "{reason} (pattern `{}` did not match)",
+                    cell.expected_behaviour
+                        .as_ref()
+                        .and_then(|b| b.expected_refuse_pattern.as_deref())
+                        .unwrap_or("")
+                )),
+            };
+            rows.push(SubVerdictRow {
+                label: "wrong_tool.refusal".into(),
+                detail,
+                severity_on_fail: Severity::Minor,
+            });
+            let mut v = rollup(&cell.id, rows);
+            v.mode = mode;
+            (v, None)
+        }
+        ("unusable" | "refuse", Ok(snapshot)) => {
+            // Engine accepted values for an unusable input — this is the
+            // bug class the cell exists to catch. Surface a critical row
+            // so the cell blocks CI.
+            let mut rows: Vec<SubVerdictRow> = Vec::new();
+            rows.push(SubVerdictRow {
+                label: "wrong_tool.unusable_accepted".into(),
+                detail: SubVerdictDetail::outside(
+                    "engine accepted values for unusable input (should have refused)",
+                ),
+                severity_on_fail: Severity::Critical,
+            });
+            // Still attach the band/invariant rows so the operator can
+            // see the values the engine produced.
+            eval_bands(&cell.expected, &snapshot, &mut rows);
+            eval_invariants(&cell.invariants, &snapshot, &mut rows);
+            eval_anti_patterns(&cell.anti_patterns, &snapshot, &mut rows);
+            let mut v = rollup(&cell.id, rows);
+            v.mode = mode;
+            (v, Some(snapshot))
+        }
+        // --- mode = "values" | "unadvised": engine SHOULD return values ---
+        (_, Err(e)) => {
             // Unsupported tool/op/material — produce an NA-only verdict so
-            // the runner can still emit a row. This is Phase 0 behaviour;
-            // Phase 1 will grow the shim to handle the starter 12.
+            // the runner can still emit a row. Shim coverage gaps surface
+            // as NA, not failures.
             let detail = SubVerdictDetail::na(format!("shim: {e}"));
             let rows = vec![SubVerdictRow {
                 label: "shim".into(),
                 detail,
                 severity_on_fail: Severity::Minor,
             }];
-            return (rollup(&cell.id, rows), None);
+            let mut v = rollup(&cell.id, rows);
+            v.mode = mode;
+            (v, None)
         }
-    };
+        (m, Ok(snapshot)) => {
+            let mut rows: Vec<SubVerdictRow> = Vec::new();
+            eval_bands(&cell.expected, &snapshot, &mut rows);
+            eval_invariants(&cell.invariants, &snapshot, &mut rows);
+            eval_anti_patterns(&cell.anti_patterns, &snapshot, &mut rows);
 
-    let mut rows: Vec<SubVerdictRow> = Vec::new();
-    eval_bands(&cell.expected, &snapshot, &mut rows);
-    eval_invariants(&cell.invariants, &snapshot, &mut rows);
-    eval_anti_patterns(&cell.anti_patterns, &snapshot, &mut rows);
+            // For unadvised cells, optionally pattern-match the engine
+            // warnings against `expected_warning_pattern`. Missing
+            // warning is informational — DO NOT fail the cell on it in
+            // Phase 1 (the engine's warning surface is still maturing).
+            if m == "unadvised"
+                && let Some(pattern) = cell
+                    .expected_behaviour
+                    .as_ref()
+                    .and_then(|b| b.expected_warning_pattern.as_ref())
+            {
+                let any_match = snapshot
+                    .warnings
+                    .iter()
+                    .any(|w| substring_match(pattern, w));
+                let detail = if any_match {
+                    SubVerdictDetail::within(format!(
+                        "engine emitted matching warning for `{pattern}`"
+                    ))
+                } else {
+                    // Informational only. Severity Cosmetic so a
+                    // missing warning never contributes to rollup.
+                    SubVerdictDetail::edge(format!(
+                        "no engine warning matched `{pattern}` (informational)"
+                    ))
+                };
+                rows.push(SubVerdictRow {
+                    label: "wrong_tool.warning_pattern".into(),
+                    detail,
+                    severity_on_fail: Severity::Cosmetic,
+                });
+                // TODO(phase2): if `expected_derate` is present, compare
+                // engine output magnitude against (derate × reference)
+                // for the matched normal-use cell. Tracked in plan.
+            }
 
-    let verdict = rollup(&cell.id, rows);
-    (verdict, Some(snapshot))
+            let mut verdict = rollup(&cell.id, rows);
+            verdict.mode = m.to_owned();
+
+            // unadvised cells warn but never block CI — cap the overall
+            // at Minor so even an Outside band can only ever raise a
+            // Minor severity (which doesn't trip `blocks_ci`).
+            if m == "unadvised" {
+                verdict.cap_overall(Severity::Minor);
+            }
+
+            (verdict, Some(snapshot))
+        }
+    }
+}
+
+/// Cheap substring/case-insensitive match. We deliberately do NOT pull
+/// in a regex dependency for Phase 1 — `expected_warning_pattern` and
+/// `expected_refuse_pattern` are documented as substring patterns at the
+/// schema level and Phase-1 cells stay within that.
+fn substring_match(pattern: &str, haystack: &str) -> bool {
+    let p = pattern.to_lowercase();
+    let h = haystack.to_lowercase();
+    h.contains(&p)
 }
 
 fn eval_bands(expected: &ExpectedBands, snap: &ShimSnapshot, rows: &mut Vec<SubVerdictRow>) {
@@ -148,11 +275,7 @@ fn push_plunge_band_row(band: &Band, snap: &ShimSnapshot, rows: &mut Vec<SubVerd
     });
 }
 
-fn eval_invariants(
-    invariants: &[Invariant],
-    snap: &ShimSnapshot,
-    rows: &mut Vec<SubVerdictRow>,
-) {
+fn eval_invariants(invariants: &[Invariant], snap: &ShimSnapshot, rows: &mut Vec<SubVerdictRow>) {
     for inv in invariants {
         let sev = Severity::parse(&inv.severity_on_fail);
         let detail = match inv.r#type.as_deref() {
@@ -160,9 +283,10 @@ fn eval_invariants(
                 if inv.vars.len() != 2 || inv.vertices.len() < 3 {
                     SubVerdictDetail::na("convex_hull needs 2 vars + ≥3 vertices")
                 } else {
-                    let (Some(&x), Some(&y)) =
-                        (snap.bindings.get(&inv.vars[0]), snap.bindings.get(&inv.vars[1]))
-                    else {
+                    let (Some(&x), Some(&y)) = (
+                        snap.bindings.get(&inv.vars[0]),
+                        snap.bindings.get(&inv.vars[1]),
+                    ) else {
                         rows.push(SubVerdictRow {
                             label: format!("invariant.{}", inv.name),
                             detail: SubVerdictDetail::na(format!(

@@ -219,10 +219,7 @@ fn on_segment(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> bool {
 
 /// Convex-hull / point-in-polygon invariant. Returns `Within` if the
 /// 2D point is inside (or on) the polygon, `Outside` otherwise.
-pub fn convex_hull_check(
-    vars_xy: (f64, f64),
-    vertices: &[[f64; 2]],
-) -> SubVerdictDetail {
+pub fn convex_hull_check(vars_xy: (f64, f64), vertices: &[[f64; 2]]) -> SubVerdictDetail {
     if point_in_polygon(vars_xy, vertices) {
         SubVerdictDetail::within(format!(
             "({:.4}, {:.4}) inside envelope ({} vertices)",
