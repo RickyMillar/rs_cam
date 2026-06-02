@@ -82,6 +82,60 @@ impl ToolGeometryHint {
             | ToolGeometryHint::TaperedBall { .. } => axial_doc_mm * radial_width_mm,
         }
     }
+
+    /// Effective cutting (engaged) diameter at a given axial depth of
+    /// cut (mm).
+    ///
+    /// For tapered-ball and V-bit tools the engaged diameter grows with
+    /// DOC as the cone shoulder comes into the cut, so the published tip
+    /// diameter understates what is actually cutting. Flat / ball / bull
+    /// tools engage at their nominal diameter regardless of DOC.
+    ///
+    /// `tool_diameter_mm` is the nominal (tip, for tapered/V) diameter;
+    /// `shank_diameter_mm` caps the tapered-ball growth at the shank.
+    /// This is the same calculation the vendor-LUT lookup uses to pick
+    /// the chipload row, so the band shown in the UI applies to the
+    /// returned diameter — not the tool tip.
+    pub fn engaged_diameter_at_doc(
+        self,
+        axial_doc_mm: f64,
+        tool_diameter_mm: f64,
+        shank_diameter_mm: f64,
+    ) -> f64 {
+        let axial_doc = axial_doc_mm.max(0.0);
+        match self {
+            ToolGeometryHint::TaperedBall {
+                tip_radius,
+                taper_angle_deg,
+            } => {
+                let alpha = taper_angle_deg.to_radians();
+                let sin_alpha = alpha.sin();
+                let cos_alpha = alpha.cos();
+                let tan_alpha = alpha.tan();
+                if tip_radius <= 0.0 || tan_alpha <= 0.0 {
+                    return tool_diameter_mm;
+                }
+                let h_contact = tip_radius * (1.0 - sin_alpha);
+                let r_contact = tip_radius * cos_alpha;
+                let cone_offset = h_contact - r_contact / tan_alpha;
+                let radius = if axial_doc <= h_contact {
+                    (2.0 * tip_radius * axial_doc - axial_doc * axial_doc)
+                        .max(0.0)
+                        .sqrt()
+                } else {
+                    (axial_doc - cone_offset) * tan_alpha
+                };
+                (2.0 * radius).clamp(0.0, shank_diameter_mm)
+            }
+            ToolGeometryHint::VBit { included_angle, .. } => {
+                let half = (included_angle * 0.5).to_radians();
+                (2.0 * axial_doc * half.tan()).clamp(0.0, tool_diameter_mm)
+            }
+            ToolGeometryHint::Flat | ToolGeometryHint::Ball | ToolGeometryHint::Bull { .. } => {
+                tool_diameter_mm
+            }
+        }
+    }
 }
 
 /// Which family of operation is being calculated.
@@ -344,10 +398,30 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let material = input.material;
     let d = input.tool_diameter;
 
+    // Engaged diameter at the operation's commanded DOC. For VBit and
+    // TaperedBall geometries the *cutting* circle is the cone-shoulder
+    // diameter at this DOC — not the published tip. Flat / Ball / Bull
+    // tools engage at nominal D regardless of DOC, so `effective_d == d`
+    // there.
+    //
+    // This mirrors `vendor_normalize::lookup_diameter_for_input` so the
+    // SFM/RPM derivation and formula-chipload fallback below stay
+    // symmetric with the vendor-LUT query path. Pre-2026-06-02 the
+    // formula path used nominal D, producing wrong-low RPM for V-bits
+    // (e.g. a 5.5 mm-tip 20° V-bit at DOC=0.5 saw SFM derived from
+    // 5.5 mm instead of the ~0.18 mm engaged tip) — audit finding
+    // "nominal-D leakage through formula path".
+    let axial_doc_for_eff_d = input.axial_depth_mm.unwrap_or(d).max(0.0);
+    let effective_d = input.tool_geometry.engaged_diameter_at_doc(
+        axial_doc_for_eff_d,
+        d,
+        input.shank_diameter.unwrap_or(d),
+    );
+
     // --- Step 1: RPM ---
     const FALLBACK_RPM: f64 = 18000.0;
-    let ideal_rpm = if d > 0.0 {
-        (material.base_cutting_speed_m_min() * 1000.0) / (std::f64::consts::PI * d)
+    let ideal_rpm = if effective_d > 0.0 {
+        (material.base_cutting_speed_m_min() * 1000.0) / (std::f64::consts::PI * effective_d)
     } else {
         FALLBACK_RPM
     };
@@ -356,7 +430,10 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // --- Step 2: Chip load — vendor LUT first, formula fallback ---
     let feed_scale = material.feed_scale_factor();
     let cl = &machine.chip_load;
-    let formula_chipload = cl.k0 * d.powf(cl.p) * (1.0 / feed_scale).powf(cl.q);
+    // Formula chipload uses engaged diameter so the V-bit / tapered-ball
+    // fallback path matches the LUT path's band semantics. For Flat /
+    // Ball / Bull this collapses to nominal D.
+    let formula_chipload = cl.k0 * effective_d.powf(cl.p) * (1.0 / feed_scale).powf(cl.q);
 
     let (chip_load, vendor_rpm, vendor_rpm_max, vendor_source, chipload_source) =
         if let Some(lut) = input.vendor_lut {
@@ -1317,6 +1394,102 @@ mod tests {
             "non-wood adaptive WOC {} should stay below machine factor {}",
             result.radial_width_mm,
             machine_factor_ae
+        );
+    }
+
+    /// Fix #4 (2026-06-02 audit): RPM for a V-bit must be derived from
+    /// the engaged tip diameter at DOC, not the nominal shank diameter.
+    /// A 20° V-bit at shallow DOC has near-zero engaged D → SFM-derived
+    /// RPM should hit the machine ceiling (the rule of thumb says V-bit
+    /// wants high RPM because effective SFM at the tip is essentially
+    /// zero). The pre-fix path used nominal D=5.5 mm and produced ~11.5k
+    /// RPM regardless of DOC.
+    #[test]
+    fn test_vbit_rpm_uses_engaged_diameter() {
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
+        let machine = MachineProfile::shapeoko_vfd();
+        let machine_max_rpm = match &machine.spindle {
+            crate::machine::SpindleConfig::Variable { max_rpm, .. } => *max_rpm,
+            _ => panic!("expected variable spindle on shapeoko_vfd"),
+        };
+
+        // 20° V-bit, 5.5 mm shank, at 0.5 mm DOC. Engaged tip diameter
+        // = 2 * 0.5 * tan(10°) ≈ 0.176 mm — small enough that SFM-derived
+        // ideal RPM exceeds the machine ceiling, so the result clamps
+        // to machine max.
+        let result = calculate(&FeedsInput {
+            tool_diameter: 5.5,
+            flute_count: 2,
+            flute_length: 12.0,
+            tool_geometry: ToolGeometryHint::VBit {
+                included_angle: 20.0,
+                tip_diameter: 0.0,
+            },
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Trace,
+            pass_role: PassRole::Finish,
+            axial_depth_mm: Some(0.5),
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        });
+
+        assert!(
+            result.rpm >= machine_max_rpm * 0.99,
+            "20° V-bit at DOC=0.5 mm should clamp to spindle max ({}), \
+             got {} — engaged-D pipeline likely not firing",
+            machine_max_rpm,
+            result.rpm
+        );
+    }
+
+    /// Fix #4 regression guard: Flat tools must produce the same RPM
+    /// and chipload before/after the engaged-D switch — `engaged_diameter_at_doc`
+    /// returns nominal D for Flat geometry, so all Flat-tool feeds
+    /// stay byte-identical.
+    #[test]
+    fn test_flat_tool_rpm_chipload_unchanged_by_engaged_d() {
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        };
+        let machine = MachineProfile::shapeoko_vfd();
+        let d = 6.0;
+        // Baseline: what the formula path produced via nominal D.
+        let baseline_rpm =
+            (material.base_cutting_speed_m_min() * 1000.0 / (std::f64::consts::PI * d)).round();
+
+        let result = calculate(&FeedsInput {
+            tool_diameter: d,
+            flute_count: 2,
+            flute_length: 18.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Adaptive,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: Some(3.0), // DOC doesn't matter for Flat
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        });
+
+        // Allow the machine-clamp the formula was about to be passed
+        // through (so we compare clamp(baseline) ≈ result.rpm).
+        let clamped_baseline = machine.clamp_rpm(baseline_rpm);
+        assert!(
+            (result.rpm - clamped_baseline).abs() < 1.0,
+            "Flat-tool RPM should be unchanged by engaged-D switch \
+             (baseline {clamped_baseline}, got {})",
+            result.rpm
         );
     }
 
