@@ -943,12 +943,20 @@ impl Material {
         }
     }
 
-    /// Base plunge feed rate estimate in mm/min.
-    /// Material-dependent; divided by the feed-scale factor for
-    /// wood-like materials.
-    pub fn plunge_rate_base(&self) -> f64 {
+    /// Base plunge feed rate estimate in mm/min, scaled by tool
+    /// diameter. Material-dependent baseline (calibrated against a
+    /// 6 mm reference cutter) × diameter scale.
+    ///
+    /// Pre-2026-06-02 this returned a material-only constant, so a
+    /// 3 mm bit got the same plunge envelope as a 12 mm bit — too
+    /// fast on the small end, too slow on the large end (audit
+    /// finding "Plunge envelope does not scale with tool diameter",
+    /// workflow `w39ma2j1y`, fix #7). The 6 mm value is preserved
+    /// exactly to keep existing recommendations stable; other
+    /// diameters scale linearly.
+    pub fn plunge_rate_base(&self, tool_diameter_mm: f64) -> f64 {
         let h = self.feed_scale_factor();
-        match self {
+        let baseline_at_6mm = match self {
             Material::SolidWood { .. } | Material::SolidWoodByJanka { .. } => 1000.0 / h,
             Material::Plywood { .. } | Material::SheetGood { .. } => 900.0 / h,
             Material::Plastic { .. } => 1500.0,
@@ -960,7 +968,9 @@ impl Material {
             // delamination on tool entry. Conservative placeholder.
             Material::Fiberglass { .. } => 200.0 / h,
             Material::Custom { .. } => 800.0 / h,
-        }
+        };
+        let d_scale = (tool_diameter_mm.max(0.1) / 6.0).clamp(0.25, 3.0);
+        baseline_at_6mm * d_scale
     }
 
     /// Drill-cycle depth-to-diameter ratio above which chip welding
@@ -1030,6 +1040,24 @@ impl Material {
             Material::Fiberglass { .. } => 1.0,
             Material::Custom { .. } => 1.5,
         }
+    }
+
+    /// Recommended default peck depth (mm) for the Suggest pipeline.
+    /// Half the material-specific per-peck max — leaves a safety
+    /// margin against the chip-welding ceiling and gives the operator
+    /// headroom to raise the value manually if they want fewer pecks.
+    ///
+    /// Used by `feeds::suggest::apply_drill_defaults` to overwrite
+    /// `DrillConfig::peck_depth` when the user runs Suggest. Before
+    /// 2026-06-02 the default was hardcoded at 3.0 mm regardless of
+    /// tool diameter or material — safe for a 6 mm bit in softwood by
+    /// coincidence, unsafe for 3 mm bits, and trivially shallow for
+    /// 12 mm bits (audit finding "peck_depth is a hardcoded constant
+    /// with no diameter/material scaling").
+    pub fn drill_default_peck_depth_mm(&self, tool_diameter_mm: f64) -> f64 {
+        let max_factor = self.drill_per_peck_max_dtd();
+        let default_factor = max_factor * 0.5;
+        (default_factor * tool_diameter_mm.max(0.0)).max(0.1)
     }
 
     /// Drill plunge feed envelope (mm/min per mm diameter): below the
