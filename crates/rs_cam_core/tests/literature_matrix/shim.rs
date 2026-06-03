@@ -151,17 +151,37 @@ fn resolve_tool_type(cell: &LiteratureCell) -> Result<ToolType, ShimError> {
 /// Build a [`ToolConfig`] populated from the cell inputs so the
 /// production Suggest pipeline sees the same tool the literature
 /// recommendation was written for.
+///
+/// **TaperedBallNose convention**: for tapered-ball tools, the engine
+/// treats `t.diameter` as the *ball-tip* diameter (the radius the
+/// scallop / drop-cutter math actually engages with), not the shank
+/// diameter. When a cell distinguishes the two via `tip_diameter_mm`
+/// or `tip_radius_mm`, route the tip value into `t.diameter` and keep
+/// the shank/shaft at `diameter_mm`. Without this, a cell that
+/// describes a 6 mm-shank tool with a 2 mm tip ball ends up with the
+/// engine computing scallop stepover from a 3 mm radius — exactly the
+/// `scallop_uses_shank_radius_not_tip` anti-pattern the literature
+/// matrix tracks (R4 C_tapered_scallop).
 fn build_tool(cell: &LiteratureCell, tool_type: ToolType) -> ToolConfig {
     let i = &cell.inputs;
     let mut t = ToolConfig::new_default(ToolId(0), tool_type);
-    t.diameter = i.diameter_mm;
+    let tip_d = match tool_type {
+        ToolType::TaperedBallNose => i
+            .tip_diameter_mm
+            .or(i.tip_radius_mm.map(|r| 2.0 * r))
+            .unwrap_or(i.diameter_mm),
+        _ => i.diameter_mm,
+    };
+    t.diameter = tip_d;
     t.flute_count = i.flute_count;
     t.cutting_length = i.flute_length_mm.unwrap_or(20.0);
     if let Some(stickout) = i.stickout_mm {
         t.stickout = stickout;
     }
-    // Default shank to tool diameter when the cell doesn't specify; keeps
-    // the rigidity model honest for small-shank cutters.
+    // Default shank to the cell's diameter (shank for tapered cases,
+    // tool diameter otherwise) — keeps the rigidity model honest for
+    // small-shank cutters and preserves the shank context for tapered
+    // tools where `t.diameter` was redirected to the tip above.
     t.shank_diameter = i.diameter_mm;
     t.shaft_diameter = i.diameter_mm;
     if let Some(cr) = i.corner_radius_mm {
