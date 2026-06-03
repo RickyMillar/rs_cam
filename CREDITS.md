@@ -510,5 +510,6 @@ Those viewer templates should be considered part of the third-party runtime surf
 - `FEATURE_CATALOG.md`
 - `architecture/high_level_design.md`
 - `crates/rs_cam_core/src/feeds/INTEGRATION.md`
+- `crates/rs_cam_core/tests/literature_matrix/sources.toml` — citation registry for the feeds validation suite; freshness-reported and citation-audited
 
 When new external datasets, formulas, or reference implementations are added, update this file and the relevant source manifests in the same change.

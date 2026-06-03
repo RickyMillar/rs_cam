@@ -109,6 +109,11 @@ Feeds/speeds are computed in `rs_cam_core::feeds` from:
 
 The GUI stores auto/manual toggles per field and writes calculated values back into the live operation config.
 
+Two notes on the current engine state:
+
+- **engine maturity** — engaged-D scaling on chipload, diameter-tiered RPM ceilings, Janka-band drill plunge envelopes, rubbing-floor clamp, and Drill as a first-class `OperationFamily` with peck cycles and drill-native metrics
+- **correctness contract** — the literature-matrix validation suite (`crates/rs_cam_core/tests/literature_matrix/cells.toml` + invariant sentries) is the canonical engine gate; new feeds work must keep it green
+
 ### Simulation and collision
 
 Simulation uses a tri-dexel volumetric representation (`TriDexelStock`) with three orthogonal dexel grids (Z, X, Y). Each grid cell stores a sorted list of material segments (`DexelRay`) rather than a single height value, enabling correct material removal from all six cardinal directions (top, bottom, front, back, left, right). The Z-grid is always present; X and Y grids are created lazily for side-face cuts.

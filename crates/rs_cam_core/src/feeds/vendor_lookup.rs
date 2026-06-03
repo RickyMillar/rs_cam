@@ -75,6 +75,13 @@ pub struct LookupResult {
     pub is_extrapolated: bool,
 }
 
+/// Diameter + hardness-scored LUT lookup for non-angle-aware cutters.
+///
+/// Thin wrapper around `lookup_best`; kept as a named entry point so
+/// call sites read as "find the best vendor row" rather than "look up
+/// best". Angle-aware (V-bit / chamfer) queries should use
+/// [`find_best_vbit_row`] or the canonical [`find_best_row_for_geometry`]
+/// which routes by cutter class.
 pub fn find_best_row(lut: &VendorLut, criteria: &LookupCriteria) -> Option<MatchedRow> {
     lookup_best(lut, criteria)
 }

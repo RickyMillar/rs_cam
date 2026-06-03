@@ -8,10 +8,13 @@
 > `planning/acceptance_loop/rounds/round-10-2026-05-26/delta.md` for
 > the final delta + retrospective.
 >
-> The loop's regression net stays live — anything in the F-024/F-026/
-> F-027/F-028/F-031 family that re-surfaces should fail one of the
-> `crates/rs_cam_core/tests/_f0{24,26,27,28,31}.rs` cargo tests before
-> it reaches smoke. Future findings can be added to the queue as
+> The loop's regression net stays live — anything in the F-024..F-040
+> family that re-surfaces should fail a sentry test under
+> `crates/rs_cam_core/tests/` (e.g. `dexel_stock_z_frame_f024.rs`,
+> `adaptive_feed_modulation_pipeline_f036b.rs`,
+> `lead_in_out_feed_rates_f040.rs`) plus the `_litmatrix_*.rs`
+> feeds-validation suite. Run `ls crates/rs_cam_core/tests/` for the
+> full inventory. Future findings can be added to the queue as
 > normal `F-XXX` entries; the loop docs (audit_runbook, implementer_
 > contract, autonomous_auditor) remain in place for future work in
 > this family.
@@ -25,11 +28,12 @@
 
 `rs_cam` is a Rust CAM workspace for 3-axis wood routers.
 
-It has three product layers:
+It has four crates:
 
 - `crates/rs_cam_core`: CAM engine and shared data model
 - `crates/rs_cam_cli`: batch CLI
 - `crates/rs_cam_viz`: desktop CAM app (`rs_cam_gui`)
+- `crates/rs_cam_mcp`: shared MCP parameter struct library consumed by the GUI-embedded MCP server
 
 ## Architecture guardrails
 
