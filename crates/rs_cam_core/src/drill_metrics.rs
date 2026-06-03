@@ -420,13 +420,14 @@ mod tests {
 
     #[test]
     fn peck_pattern_inadequate_when_single_peck_too_deep() {
-        // Ø2 tool, single peck depth 6 mm → d/D = 3.0, threshold = 2.0 → inadequate.
-        let op = op_with(DrillCycle::Peck(6.0), 2.0, 6.0, Material::default());
+        // Ø2 tool, single peck depth 14 mm → d/D = 7.0, softwood
+        // threshold = 6.0 (Janka-banded, 2026-06-03) → inadequate.
+        let op = op_with(DrillCycle::Peck(14.0), 2.0, 14.0, Material::default());
         let samples = emit_drill_samples(0, &op);
         let summary = build_drill_toolpath_summary(0, &op, &samples);
         assert!(
             !summary.peck_pattern_adequate,
-            "single peck of d/D = 3.0 should be flagged inadequate"
+            "single peck of d/D = 7.0 should be flagged inadequate vs softwood 6.0 threshold"
         );
     }
 
