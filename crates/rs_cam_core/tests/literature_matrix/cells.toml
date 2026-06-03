@@ -2327,14 +2327,9 @@ max_fraction_of_feed = 0.50
 mode = "fraction"
 sources = ["shapeoko_wiki", "vectric_default"]
 
-[[cell.invariants]]
-name = "scallop_geometric_stepover"
-expr = "woc"
-floor = 0.50
-unit = "mm"
-sources = ["vectric_default", "onsrud_hwood"]
-severity_on_fail = "major"
-
+# scallop_geometric_stepover floor removed: duplicated radial_woc band
+# (engine output matches geometric chord 2*sqrt(2*r*h - h*h) and sits inside
+# the radial_woc [0.50, 0.65] band; band+anti-pattern still bracket the value).
 [[cell.invariants]]
 name = "chipload_above_rubbing_floor"
 expr = "feed_rate / (rpm * flutes)"
@@ -2413,14 +2408,9 @@ max_fraction_of_feed = 0.50
 mode = "fraction"
 sources = ["shapeoko_wiki", "vectric_default"]
 
-[[cell.invariants]]
-name = "scallop_geometric_stepover"
-expr = "woc"
-floor = 0.70
-unit = "mm"
-sources = ["vectric_default", "onsrud_swood"]
-severity_on_fail = "major"
-
+# scallop_geometric_stepover floor removed: duplicated radial_woc band
+# (engine output matches geometric chord 2*sqrt(2*r*h - h*h) and sits inside
+# the radial_woc [0.70, 0.85] band; band+anti-pattern still bracket the value).
 [[cell.invariants]]
 name = "chipload_above_rubbing_floor"
 expr = "feed_rate / (rpm * flutes)"
