@@ -516,6 +516,56 @@ fn drill_rpm_envelope_for_diameter(d_mm: f64) -> (f64, f64) {
     }
 }
 
+/// Diameter-tiered RPM ceiling for milling ops under
+/// [`SpindleStrategy::MaxSpeed`]. The MaxSpeed strategy walks RPM up
+/// toward the spindle ceiling (24 k × 0.95 = 22.8 k on the shapeoko_xxl
+/// profile). For small tools (≤ 6 mm) that's defensible — the chipload
+/// envelope tolerates near-spindle RPM on a 3-flute end mill. For
+/// **large** tools (≥ 10 mm) it pushes RPM well past the literature
+/// band: the surface-speed math (SFM = π·D·RPM) implies that the same
+/// chipload at 22.8 k on a 12 mm tool runs at twice the SFM the chart
+/// was tested at, well into the burning / glazing regime in hardwood.
+///
+/// Sources for the tier ceilings:
+/// - Onsrud Hardwood Feed Chart (series 70/85): 12 mm 2F in hardwood
+///   recommends 14-18 krpm; 10 mm 12-16 krpm; 6 mm 16-20 krpm; 3 mm
+///   18-22 krpm.
+/// - Amana Spektra hardwood chart: similar split, 12 mm 12-14 krpm.
+/// - GWizard hardwood defaults: SFM 500-1200 → 12 mm = 4.4-10.6 krpm
+///   floor, capped at 18 krpm at the high end.
+/// - Shapeoko community wiki: hobby derates further but the chart
+///   bands hold the relative shape.
+///
+/// Tiers (inclusive upper bound), chosen as the **max-across-materials**
+/// of the literature band so soft species can still push to the top of
+/// the envelope when vendor data anchors there. The 8 / 10 mm split
+/// matches the Onsrud series 70/85 chart's gradient (8 mm ≈ 14-18 k,
+/// 10 mm ≈ 12-16 k for hardwood 2F roughing):
+/// - D ≤ 3 mm:  22 000 RPM — small tools, near-spindle ceiling OK.
+/// - D ≤ 6 mm:  20 000 RPM — common 1/4" pocket / adaptive band top.
+/// - D ≤ 8 mm:  18 000 RPM — 5/16" mid-tool band top.
+/// - D ≤ 10 mm: 16 000 RPM — 3/8" mid-large mill (matches the
+///   literature-matrix cell `flat_10mm_pocket_maple` band-max).
+/// - D > 10 mm: 14 000 RPM — large-tool literature ceiling (Onsrud /
+///   Amana hardwood 12 mm bands).
+///
+/// Returns the ceiling the MaxSpeed speedup may climb to. Combined
+/// with vendor `rpm_max` (when published) and the machine safety
+/// headroom via `.min()` — the lowest defensible cap wins.
+fn milling_rpm_ceiling_for_diameter(d_mm: f64) -> f64 {
+    if d_mm <= 3.0 {
+        22_000.0
+    } else if d_mm <= 6.0 {
+        20_000.0
+    } else if d_mm <= 8.0 {
+        18_000.0
+    } else if d_mm <= 10.0 {
+        16_000.0
+    } else {
+        14_000.0
+    }
+}
+
 /// Main calculation entry point.
 pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let mut warnings = Vec::new();
@@ -673,14 +723,88 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     if matches!(input.spindle_strategy, SpindleStrategy::MaxSpeed) && rpm > 0.0 {
         let (_, machine_max_rpm) = machine.rpm_range();
         let machine_ceiling = machine_max_rpm * SPINDLE_CEILING_HEADROOM;
+        // Diameter-tier literature ceiling for milling. The MaxSpeed
+        // speedup pre-2026-06-03 used machine_ceiling unconditionally,
+        // pushing a 12 mm hardwood adaptive2d cut to 22.8 k RPM —
+        // ~63% above the Onsrud/Amana 14 k literature ceiling
+        // (literature-matrix cell flat_12mm_adaptive2d_oak_power).
+        // Drill ops already had a diameter tier from round-4
+        // (`drill_rpm_envelope_for_diameter`, commit c9818dd); this is
+        // the milling-side analogue.
+        //
+        // The tier ceiling always applies for nominal-D == cutting-D
+        // geometries (Flat / Ball / Bull) — vendor `rpm_max` on the
+        // matched LUT row is treated as a per-row safety ceiling
+        // (often inherited from a small-diameter anchor row and not
+        // re-scaled by diameter), so it isn't a reliable per-diameter
+        // bound. We `.min()` all three: vendor rpm_max (when present),
+        // the machine safety headroom, and the diameter-tier
+        // literature ceiling. The lowest defensible cap wins.
+        //
+        // V-bit and tapered-ball geometries cut on the **engaged-D**
+        // circle, not nominal D — the tier table is calibrated on the
+        // cutting-D ≈ nominal-D assumption, so clamping nominal-D
+        // would force a 6.35 mm V-bit down to the 18 k tier even when
+        // engaged-D is ~1 mm and the engaged-D SFM math wants near-
+        // ceiling RPM (literature-matrix cell
+        // vbit_60deg_vcarve_oak_micro_depth).
+        let geom_uses_nominal_d = !matches!(
+            input.tool_geometry,
+            ToolGeometryHint::VBit { .. } | ToolGeometryHint::TaperedBall { .. }
+        );
+        let diameter_tier_ceiling = if geom_uses_nominal_d {
+            milling_rpm_ceiling_for_diameter(d)
+        } else {
+            f64::INFINITY
+        };
         let ceiling = match vendor_rpm_max {
-            Some(vm) if vm.is_finite() && vm > 0.0 => vm.min(machine_ceiling),
-            _ => machine_ceiling,
+            Some(vm) if vm.is_finite() && vm > 0.0 => {
+                vm.min(machine_ceiling).min(diameter_tier_ceiling)
+            }
+            _ => machine_ceiling.min(diameter_tier_ceiling),
         };
         if ceiling > rpm {
             let raw_speedup = ceiling / rpm;
             spindle_speedup = raw_speedup.min(MAX_SPINDLE_SPEEDUP);
             rpm = machine.clamp_rpm(rpm * spindle_speedup);
+        }
+    }
+
+    // --- Step 2b': Diameter-tier ceiling for milling under MaxSpeed ---
+    //
+    // The vendor LUT can publish `rpm_nominal` above the diameter-tier
+    // literature ceiling (e.g. a 12 mm hardwood adaptive2d row anchored
+    // on a 6 mm chart with vendor_rpm=18 000). Step 2's vendor-override
+    // path (`rpm = machine.clamp_rpm(v_rpm)`) then carries that value
+    // forward, and the Step 2b speedup branch is a no-op because the
+    // tier ceiling is already below `rpm`. Without this final clamp the
+    // engine emits the vendor-anchor RPM verbatim — overshooting the
+    // literature band whenever the vendor row outpaces the per-diameter
+    // wood-cutting envelope.
+    //
+    // Apply the tier ceiling as a hard cap under MaxSpeed only —
+    // MatchChart explicitly opts into the vendor row's nominal RPM and
+    // shouldn't be silently re-clamped (the smoke baselines + chart-
+    // fidelity tests depend on that opt-in). The Drill family has its
+    // own dedicated Step 2c clamp below.
+    if matches!(input.spindle_strategy, SpindleStrategy::MaxSpeed)
+        && input.operation != OperationFamily::Drill
+        && !matches!(
+            input.tool_geometry,
+            ToolGeometryHint::VBit { .. } | ToolGeometryHint::TaperedBall { .. }
+        )
+    {
+        // Skip V-bit / tapered ball — see Step 2b note: tier ceiling
+        // is calibrated against nominal-D, but these geometries cut on
+        // engaged-D, so the nominal-D tier is a false constraint here.
+        let tier_ceiling = milling_rpm_ceiling_for_diameter(d);
+        if rpm > tier_ceiling {
+            let pre_clamp = rpm;
+            rpm = tier_ceiling;
+            rpm = machine.clamp_rpm(rpm);
+            if pre_clamp > 0.0 && rpm < pre_clamp {
+                spindle_speedup *= rpm / pre_clamp;
+            }
         }
     }
 
