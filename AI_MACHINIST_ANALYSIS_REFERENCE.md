@@ -323,6 +323,30 @@ python3 toolpath_stress_test/agents/analyze_sweep.py target/param_sweeps/
 
 ---
 
+## 8.5 Literature-Matrix Feeds Validation
+
+**Source:** `crates/rs_cam_core/tests/literature_matrix/` (`cells.toml`, `sources.toml`) and the `_litmatrix_*.rs` sentry tests.
+
+The literature-matrix is the canonical correctness gate for the feeds engine. Each row in `cells.toml` is a cited (material, tool, operation, vendor-or-handbook) cell; the suite cross-checks engine output against the cited band and emits a per-cell verdict.
+
+### Verdict bands
+
+| Verdict | Meaning |
+|---------|---------|
+| Within | Engine output lies inside the cited vendor / handbook envelope |
+| Edge | Output sits on the band boundary (within tolerance) |
+| Exceeds | Output is outside the cited band — engine bug or stale citation |
+
+### Invariants exercised (19 across 56 cells)
+
+Covers: chipload scaling with diameter and hardness, RPM-tiered diameter ceilings, Janka-band drill plunge envelopes, scallop tool-class refusal, rubbing-floor clamps, vendor-LUT-only RPM rows, drill plunge-feed sanity, and feed-modulation bounds.
+
+### Provenance maintenance
+
+`sources.toml` is the citation registry. The source-freshness reporter flags warn/stale vendor URLs; the `/refresh-lit-matrix` skill walks through stale rows and re-verifies or replaces them. New engine work that touches feeds output must keep the matrix green (`cargo test -p rs_cam_core --test literature_matrix`).
+
+---
+
 ## 9. Wood Routing Thresholds
 
 Reference benchmarks for 3-axis wood router analysis.
@@ -381,7 +405,7 @@ Use this checklist when analyzing a toolpath program:
 - [ ] **Feed rate consistency**: Stable chipload through varying engagement?
 
 ### Parameter Validation
-- [ ] **Tool-operation compatibility**: Ball nose on pocket? End mill on scallop?
+- [ ] **Tool-operation compatibility** — note: the feeds engine refuses non-curved tools on Scallop and refuses tool-class × operation mismatches at the suggest path; expect a `FeedsError`, not a silent miscompute.
 - [ ] **Stepover vs diameter**: Stepover > 50% on finish pass?
 - [ ] **Heights cross-check**: bottom < top? feed_z above stock top? retract > clearance?
 - [ ] **Feed math**: RPM x flutes x chipload = reasonable feed rate?

@@ -1,3 +1,24 @@
+//! `rs_cam_core` — the CAM engine and shared data model.
+//!
+//! The crate is layered roughly in this order:
+//!
+//! 1. **Import** — STL / SVG / DXF / STEP into geometry primitives
+//! 2. **Tool model** — cutter geometry, holder/shank envelope, vendor metadata
+//! 3. **Operations** — 2.5D + 3D toolpath generation (`adaptive`, `pocket`,
+//!    `dropcutter`, `waterline`, `drill`, etc.) emitting the shared
+//!    `Toolpath` IR
+//! 4. **Dressups** — entry strategies, leads, dogbones, arc fitting,
+//!    feed optimization, TSP rapid ordering
+//! 5. **Simulation** — tri-dexel volumetric stock, cut-trace metrics,
+//!    collision checks
+//! 6. **Export** — G-code (`gcode`), SVG/HTML preview (`viz`),
+//!    fingerprints
+//!
+//! The `Toolpath` IR is the boundary between planning and post / output;
+//! GUI and CLI consumers depend only on the public surface of this crate.
+//! See `FEATURE_CATALOG.md` and `architecture/` at the repo root for the
+//! product surface and design rationale.
+
 pub mod adaptive;
 pub mod adaptive3d;
 pub mod adaptive_shared;

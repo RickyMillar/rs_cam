@@ -432,6 +432,11 @@ fn enforce_invariants(
     warnings
 }
 
+/// Round a suggestion value to the nearest multiple of `step`.
+///
+/// Used by the Suggest path to produce UI-friendly numbers before
+/// clamping (e.g. round chipload to 0.005 mm, RPM to 100). When
+/// `step <= 0.0` the value is returned unchanged.
 pub fn round_suggestion_value(value: f64, step: f64) -> f64 {
     if step <= 0.0 {
         return value;

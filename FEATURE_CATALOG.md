@@ -25,7 +25,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 | 2.5D | Inlay | `inlay.rs` | Yes | Yes | Shipped |
 | 2.5D | Zigzag | `zigzag.rs` | Yes | No | Shipped |
 | 2.5D | Trace | `trace.rs` | Yes | No | Shipped |
-| 2.5D | Drill | `drill.rs` | Yes | No | Shipped |
+| 2.5D | Drill | `drill.rs` | Yes | No | Shipped — first-class `OperationFamily` with peck cycles, diameter-scaled `peck_depth` / `plunge_rate_base`, and drill-native metrics (`DrillToolpathSummary` + `drill_gates`) in place of engagement axes |
 | 2.5D | Chamfer | `chamfer.rs` | Yes | No | Shipped |
 | 3D | 3D Finish | `dropcutter.rs` | Yes | Yes | Shipped |
 | 3D | 3D Rough | `adaptive3d.rs` | Yes | Yes | Shipped |
@@ -114,6 +114,13 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 - tool visualization during playback
 - holder/shank collision checks
 - deterministic renderless GUI regression harness with stable automation IDs
+- literature-matrix feeds validation suite — 56 cited cells × 19 invariants exercising the feeds engine against vendor / handbook chipload, RPM, and drill envelopes (`crates/rs_cam_core/tests/literature_matrix/` plus the `_litmatrix_*` sentries)
+- drill ops produce drill-native verification (`DrillToolpathSummary`, `drill_gates` for chip welding / peck adequacy / plunge feed sanity) instead of engagement metrics, which don't apply to Z-only kinematics
+
+### Provenance gates
+
+- source-freshness reporter — flags warn/stale vendor citations in `crates/rs_cam_core/tests/literature_matrix/sources.toml`
+- `/refresh-lit-matrix` skill — guided re-verification or replacement of stale citations
 
 ## Known partial areas
 

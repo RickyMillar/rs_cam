@@ -11,7 +11,7 @@
 - Verification: tri-dexel volumetric stock simulation (Z/X/Y grids, 6 cardinal cut directions), playback, and holder/shank collision checks
 - Responsive compute: separate toolpath and analysis lanes with explicit queue/cancel state
 - Automation: direct CLI commands plus TOML-driven job execution
-- Feeds and speeds: machine + material models with vendor-LUT-assisted recommendations
+- Feeds and speeds: machine + material models with vendor-LUT-assisted recommendations, plus a literature-matrix validation suite (56 cited cells × 19 invariants) that pins engine output to vendor and handbook bands, and a citation-freshness reporter for ongoing source maintenance
 - Internal architecture: controller-first GUI shell, canonical operation metadata, and shared adaptive support code across 2D/3D adaptive
 
 ## Workspace layout
