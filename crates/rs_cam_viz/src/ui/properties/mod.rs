@@ -1302,6 +1302,12 @@ fn draw_feeds_card(
                     rs_cam_core::feeds::FeedsWarning::ShankTooLarge { shank_mm, max_mm } => {
                         format!("Shank {shank_mm:.1}mm exceeds max {max_mm:.1}mm")
                     }
+                    rs_cam_core::feeds::FeedsWarning::ChiploadClampedToFloor {
+                        requested,
+                        floor,
+                    } => format!(
+                        "Chipload below rubbing floor: {requested:.3} -> {floor:.3}mm/tooth"
+                    ),
                 };
                 ui.label(
                     egui::RichText::new(format!("! {text}"))
