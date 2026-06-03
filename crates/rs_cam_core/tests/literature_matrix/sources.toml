@@ -239,3 +239,99 @@ covers = ["flat", "o-flute"]
 ops = ["pocket", "profile", "adaptive2d"]
 materials = ["hdpe", "uhmw", "polypropylene", "polyethylene"]
 notes = "Onsrud SP series soft-plastic chart. 65-200B 2F 1/4in HDPE finish row: 0.0762-0.127 mm/tooth. 2F geometry runs lower chiploads than O-flute because the second flute restricts chip evacuation."
+
+## --- Phase 2 additions (2026-06-03) ---
+## Seeded for the 44-cell expansion. citation_url marked "(pending)" where the
+## drafter still needs to attach the verbatim PDF / wiki URL. covers/ops/materials
+## reflect the source's actual scope honestly — cells that reach outside that
+## scope should pick a different source.
+
+[whiteside_wood]
+name = "Whiteside Machine Co. — Router Bit Feed & Speed Recommendations"
+citation_url = "(pending)"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["flat", "ball", "vbit", "bull"]
+ops = ["pocket", "profile", "adaptive2d", "vcarve"]
+materials = ["hardwood", "softwood", "plywood", "mdf"]
+notes = "US router-bit manufacturer (Claremont NC). Hand-ground carbide; recommendations skew to single-pass hobby/pro woodshop use. Vendor chart authority tier."
+
+[whiteside_chipload]
+name = "Whiteside Machine Co. — Chipload reference card"
+citation_url = "(pending)"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["flat", "ball"]
+ops = ["pocket", "profile", "adaptive2d"]
+materials = ["hardwood", "softwood", "plywood"]
+notes = "Companion chipload table to whiteside_wood. Per-diameter chipload windows in inch-units; convert to mm/tooth in cell notes."
+
+[kennametal_metals]
+name = "Kennametal — Metal Machining Speeds & Feeds Calculator"
+citation_url = "https://www.kennametal.com/us/en/resources/calculators.html"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["flat", "ball", "bull"]
+ops = ["pocket", "profile", "adaptive2d"]
+materials = ["aluminum_6061_t6", "aluminum_7075_t6", "steel", "stainless"]
+notes = "Industrial machining reference. Aluminum values assume rigid spindle + flood coolant — apply substantial derate for hobby wood-router context. Pair with `dapra_rctf` for chip-thinning corrections."
+
+[kennametal_chipload]
+name = "Kennametal — Chipload / Feed-per-Tooth Tables"
+citation_url = "https://www.kennametal.com/us/en/resources/calculators.html"
+authority_tier = "gold"
+last_verified = "2026-06-03"
+covers = ["flat", "ball", "bull"]
+ops = ["pocket", "profile", "adaptive2d"]
+materials = ["aluminum_6061_t6", "aluminum_7075_t6"]
+notes = "Per-diameter chipload windows for aluminum. Industrial baseline; hobby-spindle derate required."
+
+[woodweb]
+name = "WoodWeb — Practitioner Forum / Knowledge Base"
+citation_url = "https://www.woodweb.com/knowledge_base/"
+authority_tier = "community"
+last_verified = "2026-06-03"
+covers = ["flat", "ball", "vbit", "compression", "drill"]
+ops = ["pocket", "profile", "adaptive2d", "vcarve", "drill"]
+materials = ["hardwood", "softwood", "plywood", "mdf"]
+notes = "Practitioner forum aggregating shop-floor recommendations. Variance is high — treat individual posts as community-tier anchors, not gold."
+
+[fanuc_kc_table]
+name = "Fanuc — Specific Cutting Force (Kc) Tables"
+citation_url = "(pending)"
+authority_tier = "engineering"
+last_verified = "2026-06-03"
+covers = ["flat", "ball", "bull"]
+ops = ["all"]
+materials = ["aluminum_6061_t6", "aluminum_7075_t6", "steel", "stainless", "plastic"]
+notes = "Kienzle-form Kc1.1 + mc pairs in the Fanuc machining-data appendix. Engineering-tier source for power gates; cross-check against `dapra_rctf` / VDI 3323. Aluminum group sits at Kc1.1 ≈ 800, mc ≈ 0.25 — same anchor `Material::kc_n_per_mm2` uses for the Aluminum arm."
+
+[ineos_hdpe_machining]
+name = "INEOS — HDPE Machining Guide"
+citation_url = "(pending)"
+authority_tier = "engineering"
+last_verified = "2026-06-03"
+covers = ["flat", "o-flute", "drill"]
+ops = ["pocket", "profile", "adaptive2d", "drill"]
+materials = ["hdpe"]
+notes = "Polymer producer machining guide. Thermal-window guidance (chip welding above feed-rate ceiling, melting / gumming below) — anchors HDPE narrow-window invariants."
+
+[plastic_machining_guide]
+name = "Generic Plastic Machining Guide (consolidated polymer-producer literature)"
+citation_url = "(pending)"
+authority_tier = "engineering"
+last_verified = "2026-06-03"
+covers = ["flat", "o-flute", "drill", "ball"]
+ops = ["pocket", "profile", "adaptive2d", "drill", "vcarve"]
+materials = ["hdpe", "acrylic", "polycarbonate", "delrin", "uhmw", "polypropylene", "abs", "petg", "rigid_pvc", "nylon66"]
+notes = "Composite reference (INEOS + Curbell + Boedeker datasheet style). Use when a cell's recommendation can't be pinned to a single vendor. Engineering-tier because the guidance is consolidated polymer-producer technical bulletins, not a single primary chart."
+
+[aluminum_machining_guide]
+name = "Generic Aluminum Machining Guide (consolidated SECO / Sandvik / Kennametal)"
+citation_url = "(pending)"
+authority_tier = "engineering"
+last_verified = "2026-06-03"
+covers = ["flat", "ball", "bull", "drill"]
+ops = ["pocket", "profile", "adaptive2d", "drill"]
+materials = ["aluminum_6061_t6", "aluminum_7075_t6", "aluminum_2024_t3"]
+notes = "Composite reference. Industrial baseline; substantial hobby-wood-router derate required. Pair with `dapra_rctf` for chip-thinning corrections on small WOC."
