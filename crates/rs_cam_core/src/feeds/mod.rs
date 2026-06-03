@@ -397,7 +397,23 @@ pub enum FeedsWarning {
     DocExceedsFlute { requested: f64, capped: f64 },
     SlottingDetected { doc_reduced_to: f64 },
     ScallopInvalid { target: f64, max_possible: f64 },
+    /// Vendor-LUT or formula chipload derated below the rubbing
+    /// floor (typically extreme-Janka hardwoods scaling an oak-anchored
+    /// LUT row down). The engine clamps to `RUBBING_FLOOR_MM_TOOTH`
+    /// and emits this so the operator sees the honest derate instead
+    /// of a silent ploughing recipe.
+    ChiploadClampedToFloor { requested: f64, floor: f64 },
 }
+
+/// Minimum chip thickness below which cutting becomes ploughing /
+/// rubbing (heat, burn, edge wear). 0.025 mm/tooth is the canonical
+/// wood-router floor (Onsrud min-chip-thickness rule, GWizard
+/// "minimum chipload", FPL Wood Handbook chip-formation regime). Any
+/// vendor-LUT or formula chipload that derates below this floor —
+/// typically very hard species (Janka >> the matched row's anchor) or
+/// extreme diameter shrinkage — is clamped up and a
+/// `FeedsWarning::ChiploadClampedToFloor` warning is emitted.
+const RUBBING_FLOOR_MM_TOOTH: f64 = 0.025;
 
 /// Main calculation entry point.
 pub fn calculate(input: &FeedsInput) -> FeedsResult {
@@ -787,6 +803,56 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         let cap = 150.0 * tip_d;
         if plunge_rate > cap {
             plunge_rate = cap;
+        }
+    }
+
+    // --- Step 9b: Rubbing-floor clamp on final feed ---
+    //
+    // Guarantee the commanded feed-per-tooth (`feed / (rpm * flutes)`)
+    // never falls below the chip-formation threshold. Two paths can
+    // push it under:
+    //   1. Vendor-LUT scaling for extreme-Janka hardwoods
+    //      (e.g. Ipe 3510 lbf vs an oak-anchored 1290 lbf row scales
+    //      chipload by 0.367 via `vendor_lookup::hardness_scale_factor`),
+    //      producing a 0.0124 mm/tooth target before any feed derates.
+    //   2. Post-clamp derates (safety factor 0.75-0.80, LD overhang,
+    //      power-limit) compounding a low-but-above-floor target down
+    //      past the floor at the final feed step.
+    //
+    // Pre-fix the engine had no floor enforcement here:
+    // `LookupResult::chip_load_min_mm` was populated but never
+    // consulted. Standard machinist convention is "clamp + warn, never
+    // serve a rubbing recipe" — raising the final feed to the floor
+    // overrides the safety-factor / LD derate that produced the rub,
+    // which is the right tradeoff: those derates exist to *protect the
+    // tool*, but a chipload below 0.025 mm/tooth heats the edge and
+    // burns the work — the cure is worse than the disease.
+    //
+    // The machine feed cap (Step 7) is treated as a hard physical
+    // limit: if lifting feed to the floor would exceed
+    // `machine.max_feed_mm_min × safety_factor`, we leave feed at the
+    // cap and still emit the warning. In that situation the user must
+    // either drop RPM (so floor × rpm × flutes fits under the cap) or
+    // accept the rubbing recipe — the engine surfaces the conflict
+    // rather than silently violating either constraint.
+    //
+    // The `> 0.0` guard intentionally lets the RPM-only-LUT-row
+    // formula-fallback path (Step 2, lines 482-508) surface its own
+    // bug if it ever regresses to zero feed — we don't want this
+    // floor silently masking a zero-chipload regression.
+    // (Literature-matrix cell flat_6mm_pocket_ipe_hardness.)
+    let fpt_divisor = rpm * input.flute_count as f64;
+    if fpt_divisor > 0.0 {
+        let commanded_fpt = feed / fpt_divisor;
+        if commanded_fpt > 0.0 && commanded_fpt < RUBBING_FLOOR_MM_TOOTH {
+            warnings.push(FeedsWarning::ChiploadClampedToFloor {
+                requested: commanded_fpt,
+                floor: RUBBING_FLOOR_MM_TOOTH,
+            });
+            let machine_max_feed_after_safety =
+                machine.max_feed_mm_min * machine.safety_factor;
+            let target_feed = RUBBING_FLOOR_MM_TOOTH * fpt_divisor;
+            feed = target_feed.min(machine_max_feed_after_safety);
         }
     }
 
