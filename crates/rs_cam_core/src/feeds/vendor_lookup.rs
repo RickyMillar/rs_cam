@@ -207,6 +207,36 @@ fn diameter_scale_factor(query_d: f64, row_d: Option<f64>) -> f64 {
     }
 }
 
+/// Family-default Janka anchor used when a wood-family vendor row
+/// carries no per-row `hardness_value`. Picked to match the typical
+/// species/grade the vendor preset was tuned against (red oak for
+/// hardwood, SPF for softwood, panel medians for engineered sheet
+/// goods).
+///
+/// Without this fallback the LUT's hardness-scaling pipeline silently
+/// degrades to identity (scale = 1.0) for the ~dozen Whiteside
+/// Fusion360 rows that ship with `material_family = hardwood` but no
+/// per-row hardness reading. Consequence: an extreme hardwood (Ipe,
+/// Janka 3510) query matched against one of those rows would inherit
+/// the row's full chipload target unscaled — driving fpt 2–3× above
+/// the rubbing-floor / safety envelope without any compensating
+/// derate. See `planning/feeds_literature_matrix_2026-06-03.md`
+/// (round 4 D_ipe_chipload finding).
+fn family_default_janka(family: MaterialFamily) -> Option<f64> {
+    match family {
+        MaterialFamily::Softwood => Some(500.0), // SPF / pine baseline
+        MaterialFamily::Hardwood => Some(1290.0), // red oak baseline
+        MaterialFamily::PlywoodSoftwood => Some(550.0),
+        MaterialFamily::PlywoodHardwood => Some(1100.0),
+        MaterialFamily::Mdf => Some(700.0),
+        MaterialFamily::Hdf => Some(900.0),
+        MaterialFamily::Particleboard => Some(600.0),
+        // Plastics / aluminum / fiberglass have no canonical "family
+        // Janka" — fall through to identity scaling for those rows.
+        _ => None,
+    }
+}
+
 fn hardness_scale_factor(query: &LookupQuery, obs: &VendorObservation) -> f64 {
     match (
         query.hardness_kind,
@@ -221,6 +251,20 @@ fn hardness_scale_factor(query: &LookupQuery, obs: &VendorObservation) -> f64 {
             // softwood query (qv < ov) returns a *higher* scale (more
             // chipload allowed), and vice versa.
             (ov / qv).clamp(SCALE_CLAMP_LO, SCALE_CLAMP_HI)
+        }
+        // Row carries no per-row hardness annotation. If the query is
+        // Janka-tagged (every wood-class query is) and the row's
+        // `material_family` has a canonical family anchor, scale
+        // against that anchor instead of silently returning identity.
+        // This restores Janka-inverse chipload scaling for the
+        // Whiteside Fusion360 wood rows (`material_family = hardwood`
+        // without `hardness_value`) so extreme hardwoods like Ipe
+        // (Janka 3510) derate below oak's chipload baseline.
+        (Some(HardnessKind::Janka), Some(qv), _, _) if qv > 0.0 => {
+            match family_default_janka(obs.material_family) {
+                Some(ov) => (ov / qv).clamp(SCALE_CLAMP_LO, SCALE_CLAMP_HI),
+                None => 1.0,
+            }
         }
         _ => 1.0,
     }
