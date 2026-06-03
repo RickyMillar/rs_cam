@@ -897,10 +897,21 @@ mod tests {
         // *purpose* — ProjectCurve→Trace routing finds a contour/finish
         // row and gates the sample — is preserved.
         //
+        // 2026-06-03 family-default Janka anchor (151c7b5): the Onsrud
+        // 6.35 mm hardwood row carries no per-row `hardness_value`, so
+        // `hardness_scale_factor` previously degraded to identity for
+        // any hardwood query. After 151c7b5 it scales against the
+        // hardwood family anchor (Janka 1290, red oak). HardMaple's
+        // Janka is 1450, so the matched band derates by 1290/1450 ≈
+        // 0.8896 → effective band 0.3164–0.3616 mm/tooth. Sample
+        // re-centred to 0.34 mm/tooth so it lands inside the derated
+        // band. Routing assertion (ProjectCurve→Trace → contour/finish
+        // row) is unchanged.
+        //
         // Arc override prevents D9's per-sample normalization from
         // perturbing row selection (contour-finish rows have narrower
         // nominal arcs than the pocket-roughing default in `sample()`).
-        let mut s = sample(0, 0, 0.38, 0.5);
+        let mut s = sample(0, 0, 0.34, 0.5);
         s.arc_engagement_radians = Some(0.459);
         let t = trace(vec![s]);
         let v = evaluate(
