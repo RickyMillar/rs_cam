@@ -540,6 +540,28 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         }
     }
 
+    // --- Step 2c: Re-apply the Drill RPM clamp ---
+    //
+    // Both the vendor-RPM override (Step 2) and the MaxSpeed speedup
+    // (Step 2b) can lift RPM above the drill ceiling. Chip evacuation
+    // is the binding constraint for drill ops regardless of spindle
+    // headroom or chart RPM — pushing past 14k starves chipload below
+    // the rubbing floor (literature-matrix cell flat_3mm_drill_oak:
+    // MaxSpeed lifted clamped 14000 → 14000 × MAX_SPINDLE_SPEEDUP =
+    // 21000, +50% over the 8-14k wood-drill band).
+    //
+    // We also roll `spindle_speedup` back proportionally so the modal
+    // reports the actual speedup the engine kept, not the requested
+    // one it then undid.
+    if input.operation == OperationFamily::Drill {
+        let pre_clamp = rpm;
+        rpm = rpm.clamp(DRILL_RPM_FLOOR, DRILL_RPM_CEIL);
+        rpm = machine.clamp_rpm(rpm);
+        if pre_clamp > 0.0 && rpm < pre_clamp {
+            spindle_speedup *= rpm / pre_clamp;
+        }
+    }
+
     // --- Step 3: DOC/WOC from operation defaults ---
     let profile = operation_default_profile(input.operation, input.pass_role);
     let (mut ap, mut ae) = default_engagement(d, &profile, input, machine);
