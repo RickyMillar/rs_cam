@@ -317,7 +317,18 @@ max = 0.040
 mode = "band"
 unit = "mm/tooth"
 hobby_derate = 0.7
-sources = ["amana_vbit", "onsrud_plastic", "vectric_default"]
+# Note: amana_vbit AMS-159 chart publishes 0.0762 mm/tooth for the
+# 12.7 mm 60deg v-groove row; engine scales this linearly to the
+# engaged-D (3.464 mm @ 3 mm DOC) -> 0.0208 mm/tooth target.
+# After RCTF chip-thinning compensation (~2.66x) and safety (0.75)
+# the visible fpt = 0.0415. Band max stays at hobby-derated 0.040;
+# the +3.7% overshoot is documented as engine-defensible. Only
+# amana_vbit supports values above 0.040; vectric_default and
+# shapeoko_wiki actively support keeping the ceiling tight, so the
+# >=3-source widening rule is not met. onsrud_plastic (previously
+# cited) does not cover MDF v-bits per sources.toml:143-151 and was
+# replaced with shapeoko_wiki to fix the audit trail.
+sources = ["amana_vbit", "vectric_default", "shapeoko_wiki"]
 
 [cell.expected.axial_doc]
 min = 3.0
