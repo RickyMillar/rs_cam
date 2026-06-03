@@ -5,3 +5,4 @@ demos/
 reference/
 fixtures/debug_adaptive/wanaka_diag.json
 EEPROM.DAT
+diagnostics/
