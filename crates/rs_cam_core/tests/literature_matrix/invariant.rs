@@ -82,8 +82,40 @@ impl BandMode {
     }
 }
 
+/// Floating-point tolerance for "engine output landed exactly at the
+/// clamp value". When the engine deliberately clamps (e.g. drill RPM
+/// ceiling at 14 k, rubbing-floor chipload at 0.025), the output sits
+/// at the clamp by design — that's success, not Edge. We treat any
+/// value within `CLAMP_EPSILON` (relative) of the band edge as
+/// equal-to-clamp and verdict `Within`.
+///
+/// 1e-6 absorbs the float wobble we observe in practice (engine work
+/// in mm/min, the verdict path divides through several rates) while
+/// being orders of magnitude tighter than the `edge_fraction` (default
+/// 0.10) Edge zone, so the two never overlap meaningfully.
+const CLAMP_EPSILON: f64 = 1e-6;
+
+/// True when `value` is at-or-essentially-at `edge` (within
+/// `CLAMP_EPSILON` relative tolerance, plus an absolute floor for
+/// tiny edges). Used to suppress Edge verdicts when the engine
+/// deliberately clamped onto the edge.
+fn at_clamp(value: f64, edge: f64) -> bool {
+    let tol = (edge.abs() * CLAMP_EPSILON).max(CLAMP_EPSILON);
+    (value - edge).abs() <= tol
+}
+
 /// Band check on a single value. `edge_fraction` is the proximity to a band
 /// edge that counts as `Edge` (plan default 0.10 = 10%).
+///
+/// Edge semantics are **asymmetric around a clamp**: landing exactly at
+/// the ceiling/floor (within `CLAMP_EPSILON`) is `Within` — that's the
+/// engine's clamp doing its job, not a danger signal. The Edge zone is
+/// the strictly-inside proximity to that edge (e.g. ceiling 14 k → Edge
+/// is `(14 k * 0.9, 14 k)` open interval; landing at 14 k or above 14 k
+/// is Outside-or-Within depending on which side). The same rule applies
+/// to band-mode min/max edges, so engine outputs that land precisely on
+/// a literature band edge (vendor LUT max RPM = 20 k → engine RPM = 20 k)
+/// don't get penalised as Edge.
 pub fn band_check(
     value: f64,
     min: Option<f64>,
@@ -109,6 +141,10 @@ pub fn band_check(
                     "{value:.4} > ceiling {hi:.4} (+{:.1}%)",
                     100.0 * (value - hi) / hi.abs().max(f64::EPSILON)
                 ))
+            } else if at_clamp(value, hi) {
+                // Engine landed *exactly* at the ceiling — that's the
+                // clamp doing its job, not a danger signal.
+                SubVerdictDetail::within(format!("{value:.4} ≤ {hi:.4} (at clamp)"))
             } else if value > hi * (1.0 - edge_fraction) {
                 SubVerdictDetail::edge(format!(
                     "{value:.4} within {:.0}% of ceiling {hi:.4}",
@@ -127,6 +163,10 @@ pub fn band_check(
                     "{value:.4} < floor {lo:.4} (-{:.1}%)",
                     100.0 * (lo - value) / lo.abs().max(f64::EPSILON)
                 ))
+            } else if at_clamp(value, lo) {
+                // Engine clamped to the floor (e.g. rubbing-floor chipload
+                // 0.025 mm/tooth on hard-Janka species). Success path.
+                SubVerdictDetail::within(format!("{value:.4} ≥ {lo:.4} (at clamp)"))
             } else if value < lo * (1.0 + edge_fraction) {
                 SubVerdictDetail::edge(format!(
                     "{value:.4} within {:.0}% of floor {lo:.4}",
@@ -156,6 +196,11 @@ fn inside_band(value: f64, lo: f64, hi: f64, edge_fraction: f64) -> SubVerdictDe
             "{value:.4} > max {hi:.4} (+{:.1}%)",
             100.0 * (value - hi) / hi.abs().max(f64::EPSILON)
         ))
+    } else if at_clamp(value, lo) || at_clamp(value, hi) {
+        // Engine output landed precisely on a band edge — vendor LUT or
+        // physical clamp explanation, not a "close call" warning. See
+        // `band_check`'s rustdoc on asymmetric clamp semantics.
+        SubVerdictDetail::within(format!("{value:.4} ∈ [{:.4}, {:.4}] (at edge)", lo, hi))
     } else {
         let span = (hi - lo).abs().max(f64::EPSILON);
         let lower_margin = (value - lo) / span;
