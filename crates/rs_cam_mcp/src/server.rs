@@ -445,19 +445,25 @@ pub struct SimJumpToToolpathBoundaryParam {
 /// Parse a string into an `OperationType` (snake_case).
 pub fn parse_operation_type(s: &str) -> Result<OperationType, String> {
     serde_json::from_value(serde_json::Value::String(s.to_owned()))
-        .map_err(|_| format!("Unknown operation type '{s}'. Valid types: face, pocket, profile, adaptive, v_carve, rest, inlay, zigzag, trace, drill, chamfer, drop_cutter, adaptive3d, waterline, pencil, scallop, steep_shallow, ramp_finish, spiral_finish, radial_finish, horizontal_finish, project_curve, alignment_pin_drill"))
+        .map_err(|e| format!("Unknown operation type '{s}' ({e}). Valid types: face, pocket, profile, adaptive, v_carve, rest, inlay, zigzag, trace, drill, chamfer, drop_cutter, adaptive3d, waterline, pencil, scallop, steep_shallow, ramp_finish, spiral_finish, radial_finish, horizontal_finish, project_curve, alignment_pin_drill"))
 }
 
 /// Parse a string into a `ToolType` (snake_case).
 pub fn parse_tool_type(s: &str) -> Result<ToolType, String> {
     serde_json::from_value(serde_json::Value::String(s.to_owned()))
-        .map_err(|_| format!("Unknown tool type '{s}'. Valid types: end_mill, ball_nose, bull_nose, v_bit, tapered_ball_nose"))
+        .map_err(|e| format!("Unknown tool type '{s}' ({e}). Valid types: end_mill, ball_nose, bull_nose, v_bit, tapered_ball_nose"))
 }
 
 pub fn text(msg: impl Into<String>) -> String {
     msg.into()
 }
 
+// SAFETY: callers consistently pass owned `serde_json::Value` built inline
+// via `serde_json::json!{...}` or `serde_json::to_value(...)`, so taking by
+// value avoids forcing every caller to bind a temporary just to borrow it.
+// Switching to `&Value` would cascade across ~30 call sites in rs_cam_viz
+// without functional benefit. Tracked for a future refactor batch.
+#[allow(clippy::needless_pass_by_value)]
 pub fn json_str(data: serde_json::Value) -> String {
     serde_json::to_string_pretty(&data).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}"))
 }
