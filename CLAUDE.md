@@ -197,6 +197,7 @@ Project-level Claude Code customizations in `.claude/`:
 | `skills/dev/SKILL.md` | `/dev` | Build, test, run, and module quick reference |
 | `skills/sim-analysis/SKILL.md` | `/sim-analysis` | Simulation diagnostic interpretation guide |
 | `skills/lint-fix/SKILL.md` | `/lint-fix` | Fix clippy lint violations with approved patterns |
+| `skills/refresh-lit-matrix/SKILL.md` | `/refresh-lit-matrix` | Re-verify or replace stale literature-matrix sources |
 | `agents/cam-navigator.md` | Agent | Codebase navigation: find operations, trace pipelines |
 | `agents/sim-diagnostics.md` | Agent | Simulation diagnostic analysis and interpretation |
 
