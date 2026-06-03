@@ -490,6 +490,32 @@ pub fn validate_tool_for_operation(input: &FeedsInput) -> Result<(), FeedsError>
 /// `FeedsWarning::ChiploadClampedToFloor` warning is emitted.
 const RUBBING_FLOOR_MM_TOOTH: f64 = 0.025;
 
+/// Diameter-tiered RPM envelope for wood-drilling ops. The drill RPM
+/// band narrows and drops as diameter grows: chip evacuation scales
+/// with chip volume per revolution, which grows roughly with D², so
+/// big drills need *fewer* revolutions per second to clear chips than
+/// small drills. Sources: Onsrud wood-drilling bulletin (3-8k for
+/// 10-13 mm drills in hardwood), Vectric default drill cycle, FPL
+/// Wood Handbook Ch.19 (drilling), Sandvik Coromant rotating-tools
+/// handbook.
+///
+/// Tiers (inclusive upper bound):
+/// - D ≤ 6 mm:  (8000, 14000) — small drills, milling-formula RPM is
+///   already in band; floor keeps SFM-derived RPM from dropping below
+///   the rubbing-onset RPM.
+/// - D ≤ 10 mm: (6000, 10000) — mid drills.
+/// - D > 10 mm: (4000, 8000) — big drills; the 8 kRPM ceiling matches
+///   the literature-matrix `flat_12mm_drill_oak_big` cell.
+fn drill_rpm_envelope_for_diameter(d_mm: f64) -> (f64, f64) {
+    if d_mm <= 6.0 {
+        (8_000.0, 14_000.0)
+    } else if d_mm <= 10.0 {
+        (6_000.0, 10_000.0)
+    } else {
+        (4_000.0, 8_000.0)
+    }
+}
+
 /// Main calculation entry point.
 pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let mut warnings = Vec::new();
@@ -527,16 +553,23 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let mut rpm = machine.clamp_rpm(ideal_rpm);
 
     // Drill ops want a lower RPM band than milling regardless of D:
-    // chip evacuation, not surface speed, is the limiting factor. 8-14k
-    // RPM is the wood-drill band; the milling SFM formula above would
-    // push small-D drills past 16k where chipload starves and the cut
-    // rubs/burns. Pre-2026-06-02 drill ops routed through `Pocket`
-    // family and inherited milling RPM (audit finding: "Drill ops route
-    // through OperationFamily::Pocket with no chipload reconciliation").
-    const DRILL_RPM_FLOOR: f64 = 8_000.0;
-    const DRILL_RPM_CEIL: f64 = 14_000.0;
+    // chip evacuation, not surface speed, is the limiting factor. The
+    // wood-drill band tightens as diameter grows — small drills (≤6 mm)
+    // tolerate 8-14k, mid drills (≤10 mm) cap around 10k, and big
+    // drills (>10 mm) cap around 6-8k (Onsrud wood-drilling bulletin,
+    // Vectric default drill cycle, FPL Wood Handbook Ch.19, Sandvik
+    // Coromant rotating-tools handbook). The milling SFM formula above
+    // would push small-D drills past 16k where chipload starves and
+    // the cut rubs/burns. Pre-2026-06-02 drill ops routed through
+    // `Pocket` family and inherited milling RPM (audit finding: "Drill
+    // ops route through OperationFamily::Pocket with no chipload
+    // reconciliation"). Pre-2026-06-03 the clamp was diameter-
+    // independent at 8-14k, letting 12 mm hardwood drills emit 12k RPM
+    // — well above the 3-8k band (literature-matrix cell
+    // flat_12mm_drill_oak_big: ceiling 8000, emitted 12000, +50%).
     if input.operation == OperationFamily::Drill {
-        rpm = rpm.clamp(DRILL_RPM_FLOOR, DRILL_RPM_CEIL);
+        let (floor, ceil) = drill_rpm_envelope_for_diameter(d);
+        rpm = rpm.clamp(floor, ceil);
         rpm = machine.clamp_rpm(rpm);
     }
 
@@ -665,8 +698,9 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // reports the actual speedup the engine kept, not the requested
     // one it then undid.
     if input.operation == OperationFamily::Drill {
+        let (floor, ceil) = drill_rpm_envelope_for_diameter(d);
         let pre_clamp = rpm;
-        rpm = rpm.clamp(DRILL_RPM_FLOOR, DRILL_RPM_CEIL);
+        rpm = rpm.clamp(floor, ceil);
         rpm = machine.clamp_rpm(rpm);
         if pre_clamp > 0.0 && rpm < pre_clamp {
             spindle_speedup *= rpm / pre_clamp;
