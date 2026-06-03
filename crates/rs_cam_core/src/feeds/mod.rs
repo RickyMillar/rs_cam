@@ -479,13 +479,33 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 vendor_lookup::find_best_row_for_geometry(lut, &query, &input.tool_geometry)
             {
                 let observation_id = result.observation_id;
-                (
-                    result.chip_load_mm,
-                    result.rpm_nominal,
-                    result.rpm_max,
-                    Some(observation_id.clone()),
-                    ChiploadSource::VendorLut { observation_id },
-                )
+                // RPM-only vendor rows (e.g. whiteside-rd5218h-roughing-down-
+                // spiral-3f-rpm) publish rpm_nominal/rpm_max as anchors but
+                // leave chipload_min/max unset — `chipload_midpoint` then
+                // returns 0.0. Trusting that 0.0 collapses
+                // `raw_feed = rpm × chipload × flutes` to zero, producing a
+                // silent "do not cut" recipe with no diagnostic
+                // (literature-matrix cell flat_12mm_adaptive2d_oak_power:
+                // chipload=0.0000 / mrr=0 / power=0). Keep the vendor RPM
+                // anchor but fall back to formula_chipload when the row
+                // publishes none.
+                if result.chip_load_mm > 0.0 {
+                    (
+                        result.chip_load_mm,
+                        result.rpm_nominal,
+                        result.rpm_max,
+                        Some(observation_id.clone()),
+                        ChiploadSource::VendorLut { observation_id },
+                    )
+                } else {
+                    (
+                        formula_chipload,
+                        result.rpm_nominal,
+                        result.rpm_max,
+                        Some(observation_id),
+                        ChiploadSource::FormulaFallback,
+                    )
+                }
             } else {
                 (
                     formula_chipload,
