@@ -6,6 +6,10 @@
 //! overall verdict reaches `major` or `critical` (per plan §"CI policy").
 
 use super::cell::{AntiPattern, Band, CellsFile, ExpectedBands, Invariant, LiteratureCell};
+use super::freshness::{
+    audit_citations, build_freshness_report, decay_fail_enabled, render_citation_audit_text,
+    render_freshness_json, render_freshness_text,
+};
 use super::invariant::{
     BandMode, SubVerdict, SubVerdictDetail, anti_pattern_check, band_check, convex_hull_check,
     expr_check,
@@ -24,11 +28,11 @@ pub fn run(cells_path: &Path, sources_path: &Path) {
     let parsed: CellsFile =
         toml::from_str(&cells_src).unwrap_or_else(|e| panic!("parse cells.toml: {e}"));
 
-    // Sources file is parsed lazily for now (Phase 0 doesn't dereference
-    // citations, only validates the file is well-formed TOML).
+    // Phase 5 (2026-06-03): the sources map now feeds both the
+    // freshness report and the citation audit below.
     let sources_src = std::fs::read_to_string(sources_path)
         .unwrap_or_else(|e| panic!("read sources.toml at {}: {e}", sources_path.display()));
-    let _sources: BTreeMap<String, toml::Value> =
+    let sources: BTreeMap<String, toml::Value> =
         toml::from_str(&sources_src).unwrap_or_else(|e| panic!("parse sources.toml: {e}"));
 
     println!("=== literature_matrix: {} cell(s) ===", parsed.cells.len());
@@ -47,11 +51,45 @@ pub fn run(cells_path: &Path, sources_path: &Path) {
         }
     }
 
+    // --- Phase 5: source freshness + citation audit ---
+    let freshness = build_freshness_report(&sources);
+    println!("{}", render_freshness_text(&freshness));
+    println!(
+        "--- JSON (freshness) ---\n{}\n",
+        render_freshness_json(&freshness)
+    );
+
+    let citation = audit_citations(&parsed, &sources);
+    println!("{}", render_citation_audit_text(&citation));
+
+    let mut maintenance_failures: Vec<String> = Vec::new();
+    if !citation.missing.is_empty() {
+        maintenance_failures.push(format!(
+            "{} cell citation(s) reference unknown sources",
+            citation.missing.len()
+        ));
+    }
+    let stale = freshness.stale_keys();
+    if !stale.is_empty() && decay_fail_enabled() {
+        maintenance_failures.push(format!(
+            "{} stale source(s) (LIT_MATRIX_DECAY_FAIL=1): {}",
+            stale.len(),
+            stale.join(", "),
+        ));
+    }
+
     if !blocking.is_empty() {
         panic!(
             "literature_matrix: {} cell(s) reached major+ severity:\n  - {}",
             blocking.len(),
             blocking.join("\n  - "),
+        );
+    }
+
+    if !maintenance_failures.is_empty() {
+        panic!(
+            "literature_matrix: maintenance check failed:\n  - {}",
+            maintenance_failures.join("\n  - "),
         );
     }
 }

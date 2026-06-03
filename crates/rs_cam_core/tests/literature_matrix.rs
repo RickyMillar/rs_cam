@@ -24,6 +24,8 @@
 mod cell;
 #[path = "literature_matrix/expr.rs"]
 mod expr;
+#[path = "literature_matrix/freshness.rs"]
+mod freshness;
 #[path = "literature_matrix/invariant.rs"]
 mod invariant;
 #[path = "literature_matrix/report.rs"]
