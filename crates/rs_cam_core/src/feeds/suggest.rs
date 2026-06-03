@@ -9,8 +9,8 @@ use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::{
-    FeedsInput, FeedsResult, OperationFamily as FeedsOperationFamily, PassRole, SetupContext,
-    VendorLut, WorkholdingRigidity,
+    FeedsError, FeedsInput, FeedsResult, OperationFamily as FeedsOperationFamily, PassRole,
+    SetupContext, VendorLut, WorkholdingRigidity,
 };
 use crate::machine::MachineProfile;
 use crate::material::Material;
@@ -92,7 +92,14 @@ pub struct SuggestForOperationInput<'a> {
 /// Construct a default operation for `op_type`, apply stock-aware defaults, run
 /// the feeds calculator, write recommendations into the operation, and enforce
 /// cross-field invariants before returning.
-pub fn suggest_params(input: SuggestParamsInput<'_>) -> SuggestedParams {
+///
+/// Returns `Err(FeedsError)` when the tool × operation combination is
+/// physically unrunnable (e.g. flat endmill assigned to a Scallop
+/// op). Callers that want the legacy "always produce something"
+/// behaviour should `.unwrap_or_else(|_| _)` or fall back to a default,
+/// but the GUI / CLI / MCP Suggest buttons should surface the refusal
+/// to the user instead of writing a meaningless recipe into the op.
+pub fn suggest_params(input: SuggestParamsInput<'_>) -> Result<SuggestedParams, FeedsError> {
     let mut operation = OperationConfig::new_default(input.op_type);
     apply_stock_defaults(&mut operation, input.stock_ctx);
     suggest_for_operation(SuggestForOperationInput {
@@ -109,7 +116,13 @@ pub fn suggest_params(input: SuggestParamsInput<'_>) -> SuggestedParams {
 /// Run the canonical suggestion path for an existing operation. Operation fields
 /// that act as feed-calculator hints (for example scallop height) are read from
 /// `operation`; suggested feed/plunge/stepover/depth are written into a clone.
-pub fn suggest_for_operation(input: SuggestForOperationInput<'_>) -> SuggestedParams {
+///
+/// Returns `Err(FeedsError)` for physically-unrunnable
+/// tool × operation combinations — see [`suggest_params`] for the
+/// rationale.
+pub fn suggest_for_operation(
+    input: SuggestForOperationInput<'_>,
+) -> Result<SuggestedParams, FeedsError> {
     let feeds_result = feeds_result_for_operation(
         input.operation,
         input.tool,
@@ -118,7 +131,7 @@ pub fn suggest_for_operation(input: SuggestForOperationInput<'_>) -> SuggestedPa
         input.workholding,
         input.lut,
         input.spindle_strategy,
-    );
+    )?;
     let mut operation = input.operation.clone();
     let warnings = apply_feeds_result_to_op(
         &mut operation,
@@ -128,11 +141,11 @@ pub fn suggest_for_operation(input: SuggestForOperationInput<'_>) -> SuggestedPa
         input.operation.feeds_style().1,
     );
     apply_drill_defaults(&mut operation, input.tool, input.material);
-    SuggestedParams {
+    Ok(SuggestedParams {
         operation,
         feeds_result,
         warnings,
-    }
+    })
 }
 
 /// Build a [`FeedsInput`] for the given operation. Shared by both
@@ -175,6 +188,13 @@ fn feeds_input_for_operation<'a>(
 
 /// Run the feeds calculator for an operation and project context without
 /// mutating the operation.
+///
+/// Returns `Err(FeedsError)` when the tool × operation pairing is
+/// physically unrunnable — see [`crate::feeds::validate_tool_for_operation`]
+/// for the predicate. Existing callers that just want the numbers can
+/// `.unwrap_or_else(|_| FeedsResult::default())`; the GUI Suggest path
+/// (properties/feeds modal) should propagate the refusal so the user
+/// sees why the recipe was withheld.
 pub fn feeds_result_for_operation(
     operation: &OperationConfig,
     tool: &ToolConfig,
@@ -183,7 +203,7 @@ pub fn feeds_result_for_operation(
     workholding: WorkholdingRigidity,
     lut: &VendorLut,
     spindle_strategy: crate::feeds::SpindleStrategy,
-) -> FeedsResult {
+) -> Result<FeedsResult, FeedsError> {
     let input = feeds_input_for_operation(
         operation,
         tool,
@@ -193,7 +213,8 @@ pub fn feeds_result_for_operation(
         lut,
         spindle_strategy,
     );
-    crate::feeds::calculate(&input)
+    crate::feeds::validate_tool_for_operation(&input)?;
+    Ok(crate::feeds::calculate(&input))
 }
 
 /// Same inputs as [`feeds_result_for_operation`] but returns the full
@@ -431,6 +452,7 @@ mod tests {
             &EMBEDDED_LUT,
             crate::feeds::SpindleStrategy::default(),
         )
+        .expect("dropcutter stepover should not be refused for ball tool")
         .radial_width_mm
     }
 
@@ -513,7 +535,8 @@ mod tests {
             lut: &EMBEDDED_LUT,
             stock_ctx: &stock_ctx(),
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        });
+        })
+        .expect("pocket + flat is not a refused combination");
         assert!(matches!(
             result.feeds_result.chipload_source,
             ChiploadSource::VendorLut { .. }
@@ -534,7 +557,8 @@ mod tests {
             lut: &EMBEDDED_LUT,
             stock_ctx: &stock_ctx(),
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        });
+        })
+        .expect("pocket + flat is not a refused combination");
         assert_eq!(
             result.feeds_result.chipload_source,
             ChiploadSource::FormulaFallback

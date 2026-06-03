@@ -2655,7 +2655,7 @@ impl super::RsCamApp {
             return self
                 .mcp_mutation_error(format!("Error: Tool index {tool_index} not found"), None);
         };
-        let op_config = rs_cam_core::feeds::suggest::suggest_params(
+        let op_config = match rs_cam_core::feeds::suggest::suggest_params(
             rs_cam_core::feeds::suggest::SuggestParamsInput {
                 op_type,
                 tool,
@@ -2666,8 +2666,15 @@ impl super::RsCamApp {
                 stock_ctx: &stock_ctx,
                 spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
             },
-        )
-        .operation;
+        ) {
+            Ok(s) => s.operation,
+            Err(e) => {
+                return self.mcp_mutation_error(
+                    format!("Cannot add toolpath: {e}"),
+                    None,
+                );
+            }
+        };
 
         // Roadmap B.7 — boundary auto-enable for 3D ops on mesh models.
         let has_mesh = session.models().iter().any(|m| m.mesh.is_some());

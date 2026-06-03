@@ -405,6 +405,81 @@ pub enum FeedsWarning {
     ChiploadClampedToFloor { requested: f64, floor: f64 },
 }
 
+/// Hard refusal from the Suggest pipeline — the operation × tool
+/// combination is geometrically or physically unrunnable, so no
+/// numeric recipe is meaningful. Distinct from `FeedsWarning`, which
+/// flags a degraded-but-still-usable cut.
+///
+/// Returned from [`suggest::suggest_for_operation`] /
+/// [`suggest::feeds_result_for_operation`] / [`suggest::suggest_params`]
+/// (the production Suggest entry points). The infallible
+/// [`calculate`] function is preserved for the explain-modal path
+/// (which displays a "would-have-produced" preview); call
+/// [`validate_tool_for_operation`] alongside `calculate` if you need
+/// the refusal signal in a path that doesn't go through `suggest::*`.
+#[derive(Debug, Clone)]
+pub enum FeedsError {
+    /// Tool geometry can't physically produce the operation's intended
+    /// cut. Today fires for `Scallop` (and `DropCutter` when a scallop
+    /// height is set) with `Flat` or `VBit` geometry — both have zero
+    /// tip radius so the scallop-stepover formula
+    /// `2·√(2·R·h − h²)` is undefined.
+    WrongToolForOperation {
+        operation: OperationFamily,
+        actual_geometry: ToolGeometryHint,
+        required: &'static str,
+    },
+}
+
+impl std::fmt::Display for FeedsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FeedsError::WrongToolForOperation {
+                operation,
+                actual_geometry,
+                required,
+            } => write!(
+                f,
+                "scallop requires curved tip (need {required}; got {actual_geometry:?} on {operation:?})",
+            ),
+        }
+    }
+}
+
+impl std::error::Error for FeedsError {}
+
+/// Validate that the input's tool geometry is physically compatible
+/// with its operation family. Returns `Ok(())` for combinations
+/// `calculate` can produce a meaningful recipe for; `Err(FeedsError)`
+/// for combinations where the engine should refuse rather than emit a
+/// numeric-looking recipe that would produce ploughing / rubbing /
+/// undefined geometry.
+///
+/// Today this fires on Scallop + Flat|VBit (no tip radius — the
+/// `R - √(R² - (s/2)²)` scallop formula is undefined) and on
+/// DropCutter + Flat|VBit when `target_scallop_mm.is_some()` (the
+/// DropCutter scallop hint routes through the same scallop-stepover
+/// block in `calculate`, so the same geometry constraint applies).
+pub fn validate_tool_for_operation(input: &FeedsInput) -> Result<(), FeedsError> {
+    let scallop_relevant = input.operation == OperationFamily::Scallop
+        || (input.operation == OperationFamily::Parallel && input.target_scallop_mm.is_some());
+    if scallop_relevant {
+        match input.tool_geometry {
+            ToolGeometryHint::Ball
+            | ToolGeometryHint::Bull { .. }
+            | ToolGeometryHint::TaperedBall { .. } => {}
+            ToolGeometryHint::Flat | ToolGeometryHint::VBit { .. } => {
+                return Err(FeedsError::WrongToolForOperation {
+                    operation: input.operation,
+                    actual_geometry: input.tool_geometry,
+                    required: "ball|bull|tapered_ball",
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Minimum chip thickness below which cutting becomes ploughing /
 /// rubbing (heat, burn, edge wear). 0.025 mm/tooth is the canonical
 /// wood-router floor (Onsrud min-chip-thickness rule, GWizard

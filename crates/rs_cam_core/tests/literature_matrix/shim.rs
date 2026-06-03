@@ -34,6 +34,11 @@ pub enum ShimError {
     UnsupportedTool(String),
     UnsupportedOperation(String),
     UnknownMaterial(String),
+    /// Engine refused the cell's tool × operation pairing (e.g. flat
+    /// endmill on a Scallop op). The runner treats this as a *pass*
+    /// for cells in `unusable` / `refuse` mode and as an NA for
+    /// `values` cells.
+    EngineRefused(String),
 }
 
 impl std::fmt::Display for ShimError {
@@ -42,6 +47,7 @@ impl std::fmt::Display for ShimError {
             ShimError::UnsupportedTool(s) => write!(f, "unsupported tool_class: {s}"),
             ShimError::UnsupportedOperation(s) => write!(f, "unsupported operation: {s}"),
             ShimError::UnknownMaterial(s) => write!(f, "unknown material key: {s}"),
+            ShimError::EngineRefused(s) => write!(f, "engine refused: {s}"),
         }
     }
 }
@@ -299,6 +305,16 @@ pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
         },
         spindle_strategy: SpindleStrategy::MaxSpeed,
     };
+    // Run the engine's refusal check FIRST so this shim matches the
+    // production Suggest paths (`suggest_for_operation` /
+    // `feeds_result_for_operation`), which now validate before
+    // calling `calculate`. Without this, the shim would silently
+    // accept a flat endmill on a Scallop op and produce a
+    // numeric-looking-but-meaningless recipe — exactly the bug class
+    // the `flat_6mm_scallop_oak_unusable` cell exists to catch.
+    if let Err(e) = feeds::validate_tool_for_operation(&feeds_input) {
+        return Err(ShimError::EngineRefused(format!("{e}")));
+    }
     let result = feeds::calculate(&feeds_input);
 
     // Apply the same post-clamp the GUI applies via Suggest so the
