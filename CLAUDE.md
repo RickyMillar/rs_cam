@@ -121,7 +121,7 @@ All 16 clippy lints below are **deny** at workspace level (`Cargo.toml`). Clippy
 |------|---------|
 | Run GUI | `cargo run -p rs_cam_viz --bin rs_cam_gui` |
 | Run CLI | `cargo run -p rs_cam_cli -- <subcommand>` |
-| Test all | `cargo test -q` |
+| Test (per-crate) | `cargo test -p rs_cam_core -q` (also `-p rs_cam_cli`, `-p rs_cam_viz`, `-p rs_cam_mcp`) — avoid workspace-wide `cargo test`, it can loop on this repo |
 | Lint | `cargo clippy --workspace --all-targets -- -D warnings` |
 | Format | `cargo fmt --check` |
 | Bench | `cargo bench -p rs_cam_core` |
