@@ -129,6 +129,24 @@ fn feeds_warning_to_diagnostic(tp_id: usize, w: &FeedsWarning) -> Diagnostic {
             supersedes: vec![],
             suppressed_diagnostics: vec![],
         },
+        FeedsWarning::ChiploadClampedToFloor { requested, floor } => Diagnostic {
+            id: DiagnosticId::from(ids::FEEDS_CHIPLOAD_CLAMPED_TO_FLOOR),
+            scope: Scope::Toolpath { id: tp_id },
+            category: Category::ToolLoad,
+            severity: Severity::Caution,
+            confidence: Confidence::Static,
+            state: DiagnosticState::Current,
+            source: Source::FeedsCalculator,
+            message: format!(
+                "Chipload clamped to rubbing floor: {requested:.4} → {floor:.4} mm/tooth \
+                 (post-derate chipload below chip-formation threshold; \
+                 expect honest output above floor instead of ploughing recipe)"
+            ),
+            evidence: None,
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        },
     }
 }
 
