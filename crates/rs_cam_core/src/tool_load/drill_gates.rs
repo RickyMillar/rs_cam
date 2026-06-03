@@ -263,9 +263,11 @@ mod tests {
 
     #[test]
     fn oversize_peck_fails_peck_adequacy() {
-        // Ø3 hole, 10 mm deep softwood, Peck(8): peck/diameter = 2.67
-        // vs softwood threshold 2.0 → Critical.
-        let v = evaluate_one(&op(DrillCycle::Peck(8.0), 3.0, 10.0, 300.0));
+        // Ø3 hole softwood Peck. Post-2026-06-03 Janka-banded
+        // `drill_per_peck_max_dtd` raised the softwood threshold from
+        // 2.0 to 6.0×D; trip the gate with a 22 mm peck (peck/D ≈
+        // 7.33 > 6.0).
+        let v = evaluate_one(&op(DrillCycle::Peck(22.0), 3.0, 25.0, 300.0));
         assert!(v.peck_adequacy.is_exceeded());
     }
 

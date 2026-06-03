@@ -284,10 +284,33 @@ pub fn apply_drill_defaults(
     }
     let peck = material.drill_default_peck_depth_mm(d);
     match operation {
-        OperationConfig::Drill(cfg) => cfg.peck_depth = peck,
+        OperationConfig::Drill(cfg) => {
+            // Clamp peck so the cycle still pecks at least once
+            // (peck must be strictly less than hole depth). With the
+            // Janka-banded per-peck max introduced 2026-06-03, a
+            // softwood Suggest default of 3×D can exceed shallow
+            // drill_depth values (e.g. 12 mm bit + 25 mm hole gives
+            // 36 mm peck before clamping). Without this guard the
+            // matrix `drill_no_peck_cycle` anti-pattern fires.
+            cfg.peck_depth = clamp_peck_to_depth(peck, cfg.depth);
+        }
         OperationConfig::AlignmentPinDrill(cfg) => cfg.peck_depth = peck,
         _ => {}
     }
+}
+
+/// Ensure the Suggest-default peck depth still produces a real peck
+/// cycle. If `peck >= depth` the operator gets a single-shot drill
+/// with no chip evacuation; clamp to a fixed fraction of the hole
+/// depth so the cycle always pecks at least twice. Chosen factor:
+/// 0.75 — keeps the peck count low (2 pecks for typical holes) while
+/// staying strictly below `drill_depth`.
+fn clamp_peck_to_depth(peck: f64, drill_depth: f64) -> f64 {
+    if !drill_depth.is_finite() || drill_depth <= 0.0 {
+        return peck;
+    }
+    let ceiling = drill_depth * 0.75;
+    peck.min(ceiling)
 }
 
 /// Apply stock-aware overrides to defaults that require stock context.
@@ -608,11 +631,17 @@ mod tests {
 
     /// Fix #6 (2026-06-02 audit): `peck_depth` is overwritten by
     /// `material.drill_default_peck_depth_mm(D)` when the Suggest
-    /// path runs. For a 6 mm bit in softwood (max per-peck factor
-    /// 2.0×D, default factor 0.5×D × 2.0 = 1.0×D) the result is
-    /// 0.5 × 6 = 3.0 mm — coincidentally what the old hardcode
-    /// produced — and for a 3 mm bit it's 1.5 mm (vs the unsafe
-    /// 3.0 mm hardcode that would have meant full-diameter peck).
+    /// path runs.
+    ///
+    /// **Updated 2026-06-03 (P5 lit-matrix fix):** softwood per-peck
+    /// max is now Janka-banded at 6.0×D (was a flat 2.0 for every
+    /// wood). Softwood Suggest default is therefore 0.5 × 6.0 × D =
+    /// 3.0×D — inside the matrix band 3–8×D — instead of the old
+    /// 1.0×D that matched dense hardwood. `apply_drill_defaults`
+    /// additionally clamps the result to `0.75 × drill_depth` so
+    /// even shallow holes still peck at least twice. For the test's
+    /// default `DrillConfig` (`depth = 10 mm`) the clamp ceiling is
+    /// 7.5 mm.
     #[test]
     fn drill_peck_depth_scales_with_diameter_and_material() {
         use crate::compute::operation_configs::{DrillConfig, DrillCycleType};
@@ -622,7 +651,9 @@ mod tests {
             species: crate::material::WoodSpecies::GenericSoftwood,
         };
 
-        // 3 mm bit — pre-fix would have left peck_depth=3.0 = full D.
+        // 3 mm bit — pre-2026-06-03 result was 3.0 mm (1.0×D, matched
+        // hardwood). Janka-banded softwood now defaults to 0.5×6.0×D
+        // = 9.0 mm, then clamps to 0.75 × default depth (10 mm) = 7.5 mm.
         let mut op_3mm = OperationConfig::Drill(DrillConfig {
             cycle: DrillCycleType::Peck,
             peck_depth: 3.0, // pre-fix hardcode value
@@ -638,13 +669,13 @@ mod tests {
             _ => panic!("expected Drill"),
         };
         assert!(
-            (peck_3mm - 3.0).abs() < 1e-6,
-            "3 mm bit softwood peck depth should be 0.5×max×D = 0.5×2.0×3.0 = 3.0 mm (the default factor), \
-             got {peck_3mm}"
+            (peck_3mm - 7.5).abs() < 1e-6,
+            "3 mm bit softwood peck depth should be min(0.5×6.0×3.0, 0.75×10.0) = 7.5 mm \
+             (Janka-banded softwood clamped to 0.75×depth), got {peck_3mm}"
         );
 
-        // 12 mm bit — pre-fix would have left peck_depth=3.0 = 0.25×D,
-        // far below the 2.0×D max. Now scales to 12.0 mm = 1.0×D.
+        // 12 mm bit — softwood Janka band gives 0.5×6.0×12 = 36.0 mm,
+        // clamped to 0.75 × 10 mm = 7.5 mm by the default depth.
         let mut op_12mm = OperationConfig::Drill(DrillConfig {
             cycle: DrillCycleType::Peck,
             peck_depth: 3.0, // pre-fix hardcode value
@@ -672,6 +703,114 @@ mod tests {
             format!("{op_pocket:?}"),
             pocket_before,
             "apply_drill_defaults must be a no-op for non-drill ops"
+        );
+    }
+
+    /// P5 (2026-06-03 literature-matrix triage): softwood Suggest
+    /// per-peck must exceed dense-hardwood Suggest per-peck. Before
+    /// the Janka-banded `drill_per_peck_max_dtd` patch, every wood
+    /// species returned a flat 2.0 max → 1.0×D default, so softwood
+    /// pecks collapsed to the same value as ipe (Janka 3510). That
+    /// triggered the matrix anti-pattern
+    /// `softwood_drill_matches_hardwood_peck` (`peck_over_d < 3.0`)
+    /// on `flat_3mm_drill_softwood`.
+    ///
+    /// Sources for the 3–8×D softwood band: Onsrud Drill Chart, FPL
+    /// Wood Handbook §3.7, Vectric drill defaults, Amana Spektra.
+    /// Hardwood ceiling of 5×D is the matrix invariant for white oak
+    /// in `flat_3mm_drill_oak`.
+    #[test]
+    fn drill_peck_depth_softwood_exceeds_hardwood() {
+        use crate::compute::operation_configs::{DrillConfig, DrillCycleType};
+        use crate::material::{Material, WoodSpecies};
+
+        let pine = Material::SolidWood {
+            species: WoodSpecies::RadiataPine, // Janka 710 → just above 700 cutoff;
+                                               // use GenericSoftwood for true softwood
+        };
+        let generic_softwood = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood, // Janka 600
+        };
+        let white_oak = Material::SolidWood {
+            species: WoodSpecies::WhiteOak, // Janka 1360 (medium hardwood)
+        };
+        let ipe = Material::SolidWood {
+            species: WoodSpecies::Ipe, // Janka 3510 (dense hardwood / unknown bucket)
+        };
+
+        let diameter = 6.0_f64;
+        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        tool.diameter = diameter;
+
+        // Use a deep hole so the per-material Suggest defaults stay
+        // below the 0.75 × drill_depth clamp; otherwise all materials
+        // saturate at the same ceiling and the ordering can't be
+        // tested. 50 mm hole → 37.5 mm clamp ceiling, well above any
+        // 6 mm-diameter Suggest result.
+        let drill_depth = 50.0_f64;
+
+        let peck_for = |material: &Material| -> f64 {
+            let mut op = OperationConfig::Drill(DrillConfig {
+                cycle: DrillCycleType::Peck,
+                peck_depth: 3.0,
+                depth: drill_depth,
+                ..DrillConfig::default()
+            });
+            apply_drill_defaults(&mut op, &tool, material);
+            match &op {
+                OperationConfig::Drill(cfg) => cfg.peck_depth,
+                _ => panic!("expected Drill"),
+            }
+        };
+
+        let pine_peck = peck_for(&pine);
+        let generic_softwood_peck = peck_for(&generic_softwood);
+        let oak_peck = peck_for(&white_oak);
+        let ipe_peck = peck_for(&ipe);
+
+        let pine_over_d = pine_peck / diameter;
+        let softwood_over_d = generic_softwood_peck / diameter;
+        let oak_over_d = oak_peck / diameter;
+        let ipe_over_d = ipe_peck / diameter;
+
+        // Softwood must clear the matrix floor (3×D) for
+        // `softwood_drill_matches_hardwood_peck` (peck_over_d < 3.0).
+        assert!(
+            softwood_over_d >= 3.0,
+            "generic softwood peck must be ≥ 3×D (matrix band floor for `flat_3mm_drill_softwood`), \
+             got {softwood_over_d:.3}×D"
+        );
+        // RadiataPine is right at the 700 Janka softwood cutoff (710);
+        // it falls into the medium-hardwood band by design — assert it
+        // at least beats the dense bucket.
+        assert!(
+            pine_over_d >= 2.5,
+            "radiata pine peck should be ≥ 2.5×D (sits at softwood/medium boundary), \
+             got {pine_over_d:.3}×D"
+        );
+        // Softwood < 8×D ceiling.
+        assert!(
+            softwood_over_d <= 8.0,
+            "softwood peck must stay ≤ 8×D (Onsrud/FPL upper band), got {softwood_over_d:.3}×D"
+        );
+        // Hardwood ceiling (matrix `peck_over_d_hardwood` invariant: 5×D).
+        assert!(
+            oak_over_d <= 5.0,
+            "white oak peck must stay ≤ 5×D (matrix hardwood ceiling), got {oak_over_d:.3}×D"
+        );
+        assert!(
+            ipe_over_d <= 5.0,
+            "ipe peck must stay ≤ 5×D (matrix hardwood ceiling), got {ipe_over_d:.3}×D"
+        );
+
+        // Ordering: softwood > oak > ipe (matches density / Janka).
+        assert!(
+            softwood_over_d > oak_over_d,
+            "softwood ({softwood_over_d:.3}×D) must exceed white oak ({oak_over_d:.3}×D)"
+        );
+        assert!(
+            oak_over_d > ipe_over_d,
+            "white oak ({oak_over_d:.3}×D) must exceed ipe ({ipe_over_d:.3}×D)"
         );
     }
 

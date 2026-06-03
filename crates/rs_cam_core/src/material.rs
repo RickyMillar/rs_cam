@@ -572,6 +572,37 @@ fn janka_to_drill_chip_welding_dtd(janka_lbf: f64) -> f64 {
     }
 }
 
+/// Shared Janka → drill *per-peck* max D/d band lookup.
+///
+/// Wood-fiber pecking tolerance scales with density the same way
+/// chip-welding tolerance does: softwoods clear long, fluffy chips
+/// readily and tolerate deep individual pecks; dense exotics trap
+/// shorter, harder chips and require shallow pecks even within a
+/// pecking cycle. Pre-2026-06-03 this accessor returned a flat 2.0
+/// for every wood species, collapsing softwood pecks (literature
+/// 3–8×D — Onsrud Drill Chart, FPL Wood Handbook §3.7, Vectric drill
+/// defaults) to the same 1.0×D Suggest default as dense hardwood.
+///
+/// Three bands, mirroring `janka_to_drill_chip_welding_dtd`:
+/// - softwood (Janka ≤ 700 lbf) → 6.0  → Suggest default 3.0×D
+/// - medium hardwood (700 < Janka ≤ 1500 lbf) → 5.0  → 2.5×D default
+/// - dense hardwood (Janka > 1500 lbf, includes out-of-band & NaN) → 4.0 → 2.0×D default
+///
+/// All three sit safely below the matching chip-welding ceilings
+/// (8/6/5), preserving headroom for the operator to raise peck depth
+/// manually. Out-of-band and non-finite Janka fall into the
+/// dense-hardwood bucket — the most conservative choice when we
+/// don't know what we're drilling.
+fn janka_to_drill_per_peck_max_dtd(janka_lbf: f64) -> f64 {
+    if !janka_lbf.is_finite() || janka_lbf > 1500.0 {
+        4.0 // dense hardwood / unknown
+    } else if janka_lbf <= 700.0 {
+        6.0 // softwood
+    } else {
+        5.0 // medium hardwood
+    }
+}
+
 impl Default for Material {
     fn default() -> Self {
         Material::SolidWood {
@@ -1028,7 +1059,17 @@ impl Material {
     /// `drill_chip_welding_threshold_dtd`.
     pub fn drill_per_peck_max_dtd(&self) -> f64 {
         match self {
-            Material::SolidWood { .. } | Material::SolidWoodByJanka { .. } => 2.0,
+            // Wood species — Janka-banded per-peck max. Pre-2026-06-03
+            // this returned a flat 2.0 for every wood, which collapsed
+            // softwood Suggest pecks to 1.0×D (matrix band 3–8×D) and
+            // matched dense hardwood. See `janka_to_drill_per_peck_max_dtd`
+            // for the band rationale and sources.
+            Material::SolidWood { species } => {
+                janka_to_drill_per_peck_max_dtd(species.janka_lbf())
+            }
+            Material::SolidWoodByJanka { janka_lbf, .. } => {
+                janka_to_drill_per_peck_max_dtd(*janka_lbf)
+            }
             Material::Plywood { .. } | Material::SheetGood { .. } => 1.5,
             Material::Plastic { .. } => 1.0,
             // Aluminum per-peck ≤ 1×D — standard machining-textbook
