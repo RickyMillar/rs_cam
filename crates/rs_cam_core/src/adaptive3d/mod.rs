@@ -2166,32 +2166,6 @@ mod tests {
         )
     }
 
-    /// Hypothesis 2 check: count divergent cells whose CELL CENTER is
-    /// inside the mesh footprint (so boundary pre-clear cells don't
-    /// inflate the number). Returns the interior-only count.
-    #[allow(dead_code)]
-    fn count_interior_divergence(
-        violations: &[(usize, usize, f64, f64, f64, f64)],
-        mesh: &TriangleMesh,
-        grid_origin_u: f64,
-        grid_origin_v: f64,
-        cell_size: f64,
-    ) -> usize {
-        let bbox = &mesh.bbox;
-        violations
-            .iter()
-            .filter(|(row, col, _, _, _, _)| {
-                let x = grid_origin_u + (*col as f64) * cell_size;
-                let y = grid_origin_v + (*row as f64) * cell_size;
-                // "Interior" = comfortably inside the mesh XY bbox
-                x > bbox.min.x + 1.0
-                    && x < bbox.max.x - 1.0
-                    && y > bbox.min.y + 1.0
-                    && y < bbox.max.y - 1.0
-            })
-            .count()
-    }
-
     #[test]
     #[ignore = "Probe: emitted Cut path point spacing on AgentSearch flat — distinguishes \
                 spacing-too-coarse vs stamp-at-wrong-location"]
