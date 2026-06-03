@@ -989,11 +989,11 @@ sources = ["onsrud_plastic", "vectric_default", "cutter_shop"]
 
 [cell.expected.feed_per_tooth]
 min = 0.025
-max = 0.060
+max = 0.127  # Onsrud SP 65-200B 6.35mm 2F upper anchor (onsrud_plastic.json:43)
 mode = "band"
 unit = "mm/tooth"
 hobby_derate = 0.7
-sources = ["onsrud_plastic", "vectric_default", "cutter_shop"]
+sources = ["onsrud_plastic", "amana_plastic_oflute", "onsrud_soft_plastic_cutting_data"]
 
 [cell.expected.axial_doc]
 min = 0.5
@@ -1027,8 +1027,8 @@ severity_on_fail = "critical"
 [[cell.invariants]]
 name = "hdpe_chipload_below_ductile_max"
 expr = "feed_rate / (rpm * flutes)"
-ceiling = 0.070
-sources = ["onsrud_plastic", "vectric_default", "cutter_shop"]
+ceiling = 0.150  # 18% headroom above Onsrud SP 2F max 0.127; still well below 1F/O-flute regimes (Amana O-flute reaches 0.305)
+sources = ["onsrud_plastic", "amana_plastic_oflute", "onsrud_soft_plastic_cutting_data"]
 unit = "mm/tooth"
 severity_on_fail = "critical"
 
@@ -1055,7 +1055,7 @@ severity = "critical"
 
 [[cell.anti_patterns]]
 name = "hdpe_chipload_welds_chips"
-expr = "feed_rate / (rpm * flutes) > 0.070"
+expr = "feed_rate / (rpm * flutes) > 0.150"
 severity = "critical"
 
 [[cell.anti_patterns]]
