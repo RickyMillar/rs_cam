@@ -219,3 +219,23 @@ covers = ["drill"]
 ops = ["drill"]
 materials = ["hardwood", "softwood", "plywood", "mdf"]
 notes = "Drill peck and plunge defaults representative of community CAM practice. Plunge-feed defaults track Vectric tool database."
+
+[amana_plastic_oflute]
+name = "Amana Solid Carbide Plastic Cutting Spiral Single O-Flute Speed Chart v2"
+citation_url = "https://www.amanatool.com/pub/media/productattachments/Plastic-O-Flute-Speed-Chart-v2.pdf"
+authority_tier = "gold"
+last_verified = "2026-05-29"
+covers = ["flat", "o-flute"]
+ops = ["pocket", "profile", "adaptive2d"]
+materials = ["hdpe", "acrylic", "abs", "polycarbonate", "polypropylene", "uhmw"]
+notes = "Single O-flute plastics chart. 1/4in (6.35mm) 1F HDPE row: 0.2032-0.3048 mm/tooth at 18000 rpm. O-flute geometry runs hotter chiploads than 2F because the single flute clears chips better."
+
+[onsrud_soft_plastic_cutting_data]
+name = "LMT Onsrud Soft Plastic Cutting Data Recommendations (SP class)"
+citation_url = "https://www.onsrud.com/images/Soft%20Plastic.pdf"
+authority_tier = "gold"
+last_verified = "2026-05-29"
+covers = ["flat", "o-flute"]
+ops = ["pocket", "profile", "adaptive2d"]
+materials = ["hdpe", "uhmw", "polypropylene", "polyethylene"]
+notes = "Onsrud SP series soft-plastic chart. 65-200B 2F 1/4in HDPE finish row: 0.0762-0.127 mm/tooth. 2F geometry runs lower chiploads than O-flute because the second flute restricts chip evacuation."
