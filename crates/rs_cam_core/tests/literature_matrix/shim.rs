@@ -254,6 +254,46 @@ fn build_operation(
     }
 }
 
+/// Refuse cell-level (tool_class × operation) combinations that the
+/// user-facing GUI / CLI / MCP tool-picker would never allow. This is
+/// a defence-in-depth layer above the engine-side
+/// `validate_tool_for_operation` check — the latter operates on
+/// `ToolGeometryHint` and cannot distinguish a drill bit from a flat
+/// endmill (drill bits collapse to `ToolType::EndMill` in
+/// `resolve_tool_type`, since engine routing keys off
+/// `OperationFamily::Drill` rather than the tool type). Encoding the
+/// matrix here mirrors the production tool-picker contract and routes
+/// to `ShimError::EngineRefused`, which the runner treats as a pass
+/// for `unusable` cells and as `NA` for `values` cells.
+fn validate_tool_class_for_operation(
+    tool_class: &str,
+    operation: &str,
+) -> Result<(), ShimError> {
+    let ok = match (tool_class, operation) {
+        // Drill bits: only valid on drill ops.
+        ("drill", "drill") => true,
+        ("drill", _) => false,
+        // V-carve: only V-bits (tapered_ball is arguable but no cell
+        // exercises that pairing yet — keep conservative).
+        (_, "vcarve") => matches!(tool_class, "vbit"),
+        // Scallop: only curved tips. The engine-side refusal also
+        // catches this via `validate_tool_for_operation` — keep the
+        // shim check as defence in depth and so failure attribution
+        // lands here for cells that hand off raw tool_class strings.
+        (_, "scallop") => matches!(tool_class, "ball" | "bull" | "tapered_ball"),
+        // Everything else: permit (pocket / adaptive2d / drill when
+        // matched above are geometrically OK for non-drill tools).
+        _ => true,
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(ShimError::EngineRefused(format!(
+            "tool_class={tool_class} not valid for operation={operation}"
+        )))
+    }
+}
+
 fn resolve_operation(op: &str) -> Result<(OperationFamily, PassRole), ShimError> {
     Ok(match op {
         "pocket" => (OperationFamily::Pocket, PassRole::Roughing),
@@ -278,6 +318,10 @@ fn resolve_operation(op: &str) -> Result<(OperationFamily, PassRole), ShimError>
 /// rigidity clamps (`enforce_invariants`), drill defaults, and the
 /// `apply_feeds_result_to_op` write-back all participate.
 pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
+    // Validate user-facing tool_class × operation pairing first, before
+    // the shim flattens tool_class into ToolType (which loses the drill
+    // identity). Matches the GUI / CLI / MCP tool-picker contract.
+    validate_tool_class_for_operation(&cell.inputs.tool_class, &cell.inputs.operation)?;
     let tool_type = resolve_tool_type(cell)?;
     let (op_family, pass_role) = resolve_operation(&cell.inputs.operation)?;
     let material = resolve_material(&cell.inputs.material)?;
