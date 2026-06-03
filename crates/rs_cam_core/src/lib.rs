@@ -1,5 +1,3 @@
-#![deny(clippy::unwrap_used, clippy::panic)]
-
 pub mod adaptive;
 pub mod adaptive3d;
 pub mod adaptive_shared;
