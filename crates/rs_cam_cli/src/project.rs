@@ -447,7 +447,7 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
         let dpp_before = tc.operation.depth_per_pass();
         let rpm_before = tc.operation.spindle_rpm();
 
-        let suggested = suggest_for_operation(SuggestForOperationInput {
+        let suggested = match suggest_for_operation(SuggestForOperationInput {
             operation: &tc.operation,
             tool,
             machine: &machine,
@@ -455,7 +455,18 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
             workholding,
             lut,
             spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-        });
+        }) {
+            Ok(s) => s,
+            Err(e) => {
+                warn!(
+                    toolpath_id = tc.id,
+                    tool_id = tc.tool_id,
+                    error = %e,
+                    "Suggest refused tool × operation combination, leaving existing values"
+                );
+                continue;
+            }
+        };
 
         // Replace operation with the suggested one (feed/plunge/
         // stepover/dpp already written by apply_feeds_result_to_op).

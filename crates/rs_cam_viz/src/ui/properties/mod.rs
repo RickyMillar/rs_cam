@@ -1093,7 +1093,7 @@ fn calculate_and_apply_feeds(
     workholding: rs_cam_core::feeds::WorkholdingRigidity,
     spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
 ) {
-    let result = rs_cam_core::feeds::suggest::feeds_result_for_operation(
+    match rs_cam_core::feeds::suggest::feeds_result_for_operation(
         &entry.operation,
         tool,
         material,
@@ -1101,9 +1101,24 @@ fn calculate_and_apply_feeds(
         workholding,
         rs_cam_core::feeds::embedded_vendor_lut(),
         spindle_strategy,
-    );
-    entry.feeds_result = Some(result);
-    draw_feeds_card(ui, entry, tool, machine);
+    ) {
+        Ok(result) => {
+            entry.feeds_result = Some(result);
+            draw_feeds_card(ui, entry, tool, machine);
+        }
+        Err(e) => {
+            // Engine refused — the tool × operation combination is
+            // physically unrunnable. Clear any stale cache and show
+            // the refusal in place of the feeds card so the user sees
+            // why no recipe is offered.
+            entry.feeds_result = None;
+            ui.add_space(8.0);
+            ui.colored_label(
+                egui::Color32::from_rgb(220, 80, 80),
+                format!("Feeds unavailable: {e}"),
+            );
+        }
+    }
 }
 
 fn draw_feeds_card(
@@ -2794,7 +2809,7 @@ fn draw_toolpath_panel(
                 .find(|(id, _)| *id == entry.tool_id)
                 .map(|(_, t)| t)
             {
-                let result = rs_cam_core::feeds::suggest::feeds_result_for_operation(
+                match rs_cam_core::feeds::suggest::feeds_result_for_operation(
                     &entry.operation,
                     tool_cfg,
                     material,
@@ -2802,46 +2817,61 @@ fn draw_toolpath_panel(
                     workholding,
                     rs_cam_core::feeds::embedded_vendor_lut(),
                     spindle_strategy,
-                );
-                ui.horizontal(|ui| {
-                    if ui
-                        .button("\u{26A1} Suggest all (LUT)")
-                        .on_hover_text(format!(
-                            "Overwrite feed ({:.0}), plunge ({:.0}), depth-per-pass ({:.2}), \
-                             stepover ({:.2}), and RPM ({:.0}) from the LUT. \
-                             See the Feeds tab for the formula breakdown and per-field Suggest buttons.",
-                            result.feed_rate_mm_min,
-                            result.plunge_rate_mm_min,
-                            result.axial_depth_mm,
-                            result.radial_width_mm,
-                            result.rpm,
-                        ))
-                        .clicked()
-                    {
-                        let pass_role = entry.operation.feeds_style().1;
-                        rs_cam_core::feeds::suggest::apply_feeds_result_to_op(
-                            &mut entry.operation,
-                            &result,
-                            tool_cfg,
-                            machine,
-                            pass_role,
-                        );
-                        entry.stale_since = Some(std::time::Instant::now());
+                ) {
+                    Ok(result) => {
+                        ui.horizontal(|ui| {
+                            if ui
+                                .button("\u{26A1} Suggest all (LUT)")
+                                .on_hover_text(format!(
+                                    "Overwrite feed ({:.0}), plunge ({:.0}), depth-per-pass ({:.2}), \
+                                     stepover ({:.2}), and RPM ({:.0}) from the LUT. \
+                                     See the Feeds tab for the formula breakdown and per-field Suggest buttons.",
+                                    result.feed_rate_mm_min,
+                                    result.plunge_rate_mm_min,
+                                    result.axial_depth_mm,
+                                    result.radial_width_mm,
+                                    result.rpm,
+                                ))
+                                .clicked()
+                            {
+                                let pass_role = entry.operation.feeds_style().1;
+                                rs_cam_core::feeds::suggest::apply_feeds_result_to_op(
+                                    &mut entry.operation,
+                                    &result,
+                                    tool_cfg,
+                                    machine,
+                                    pass_role,
+                                );
+                                entry.stale_since = Some(std::time::Instant::now());
+                            }
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "\u{2192} feed {:.0}, plunge {:.0}, DOC {:.2}, WOC {:.2}",
+                                    result.feed_rate_mm_min,
+                                    result.plunge_rate_mm_min,
+                                    result.axial_depth_mm,
+                                    result.radial_width_mm,
+                                ))
+                                .small()
+                                .color(egui::Color32::from_rgb(140, 160, 180)),
+                            );
+                        });
+                        entry.feeds_result = Some(result);
+                        ui.add_space(4.0);
                     }
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "\u{2192} feed {:.0}, plunge {:.0}, DOC {:.2}, WOC {:.2}",
-                            result.feed_rate_mm_min,
-                            result.plunge_rate_mm_min,
-                            result.axial_depth_mm,
-                            result.radial_width_mm,
-                        ))
-                        .small()
-                        .color(egui::Color32::from_rgb(140, 160, 180)),
-                    );
-                });
-                entry.feeds_result = Some(result);
-                ui.add_space(4.0);
+                    Err(e) => {
+                        // Engine refused — tool × operation pairing
+                        // is physically unrunnable. Clear stale cache
+                        // and surface the refusal so the user knows
+                        // why no Suggest button is shown.
+                        entry.feeds_result = None;
+                        ui.colored_label(
+                            egui::Color32::from_rgb(220, 80, 80),
+                            format!("Feeds unavailable: {e}"),
+                        );
+                        ui.add_space(4.0);
+                    }
+                }
             }
 
             // Operation description from spec (consistent across all operations)

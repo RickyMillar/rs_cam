@@ -2340,7 +2340,11 @@ impl ProjectSession {
         tc: &super::ToolpathConfig,
         tool: &ToolConfig,
     ) -> Option<crate::feeds::FeedsResult> {
-        Some(crate::feeds::suggest::feeds_result_for_operation(
+        // A refused tool × operation pairing (e.g. flat endmill on a
+        // Scallop op) maps to `None` here — the diagnostics layer
+        // treats "no recipe available" the same as "feeds_style
+        // doesn't model cutting".
+        crate::feeds::suggest::feeds_result_for_operation(
             &tc.operation,
             tool,
             &self.stock.material,
@@ -2348,7 +2352,8 @@ impl ProjectSession {
             self.stock.workholding_rigidity,
             crate::feeds::embedded_vendor_lut(),
             self.post.spindle_strategy,
-        ))
+        )
+        .ok()
     }
 
     /// Project-wide diagnostics derived from the
@@ -2862,7 +2867,8 @@ mod tests {
                 lut: crate::feeds::embedded_vendor_lut(),
                 spindle_strategy: crate::feeds::SpindleStrategy::default(),
             },
-        );
+        )
+        .expect("test fixture pairs a flat endmill with a Pocket op — not a refused combination");
         tc.operation
             .set_feed_rate(suggested.feeds_result.feed_rate_mm_min * 3.0);
         s.add_toolpath(0, tc).unwrap();
@@ -2906,6 +2912,9 @@ mod tests {
                     lut: crate::feeds::embedded_vendor_lut(),
                     spindle_strategy: crate::feeds::SpindleStrategy::default(),
                 },
+            )
+            .expect(
+                "test fixture pairs a flat endmill with a Pocket op — not a refused combination",
             );
             tc.operation
                 .set_feed_rate(suggested.feeds_result.feed_rate_mm_min * 3.0);

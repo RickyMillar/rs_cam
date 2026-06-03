@@ -70,7 +70,7 @@ impl<B: ComputeBackend> AppController<B> {
             );
             return;
         };
-        let operation = rs_cam_core::feeds::suggest::suggest_params(
+        let operation = match rs_cam_core::feeds::suggest::suggest_params(
             rs_cam_core::feeds::suggest::SuggestParamsInput {
                 op_type,
                 tool,
@@ -81,8 +81,20 @@ impl<B: ComputeBackend> AppController<B> {
                 stock_ctx: &stock_ctx,
                 spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
             },
-        )
-        .operation;
+        ) {
+            Ok(s) => s.operation,
+            Err(e) => {
+                // Engine refused the tool × operation combination
+                // (e.g. flat endmill on a Scallop op — no tip radius
+                // means the scallop-stepover formula is undefined).
+                // Surface the refusal to the user and bail; the
+                // toolpath is not added.
+                let msg = format!("Cannot add toolpath: {e}");
+                tracing::warn!("{msg}");
+                self.push_notification(msg, super::super::Severity::Warning);
+                return;
+            }
+        };
         // Capture is_3d before `operation` moves into the toolpath
         // config below — used by the boundary auto-enable (B.7).
         let op_is_3d = operation.is_3d();

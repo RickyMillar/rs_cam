@@ -297,7 +297,7 @@ fn materialize_case_toolpath(
     let machine = session.machine().clone();
     let material = session.stock_config().material.clone();
     let workholding = session.stock_config().workholding_rigidity;
-    let operation = suggest_params(SuggestParamsInput {
+    let operation = match suggest_params(SuggestParamsInput {
         op_type,
         tool: &tool,
         machine: &machine,
@@ -306,8 +306,17 @@ fn materialize_case_toolpath(
         lut: embedded_vendor_lut(),
         stock_ctx: &stock_ctx,
         spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-    })
-    .operation;
+    }) {
+        Ok(s) => s.operation,
+        Err(e) => {
+            return Err(BaselineRow::failure(
+                &case.case_id,
+                op_type.kind_str(),
+                "suggest_refused",
+                &format!("{e}"),
+            ));
+        }
+    };
 
     let model_id = session.models().first().map(|m| m.id).unwrap_or(0);
 
