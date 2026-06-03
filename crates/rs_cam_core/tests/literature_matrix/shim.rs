@@ -81,6 +81,22 @@ fn resolve_material(key: &str) -> Result<Material, ShimError> {
         "maple_sugar" => "hard_maple", // Phase 1 cell anchor
         "pine_eastern_white" => "softwood",
         "al6061" => "aluminum_6061_t6",
+        // Phase 2 prep (2026-06-03) — aliases for the 44-cell expansion.
+        // Each maps a drafter-friendly key to the canonical Material::from_key
+        // string so cells can use natural names.
+        //
+        // Pure aliases (no semantic shift):
+        "white_oak_red" => "white_oak", // belt-and-braces alias matching oak_red
+        "hardwood_maple" => "hard_maple",
+        "softwood_pine" => "softwood",
+        "aluminum_6061" => "aluminum_6061_t6",
+        // Composite — closest in-engine type is FiberglassGrade::Generic.
+        // The `_gp` suffix matches the Garr "Fiberglass/Plastics/G10"
+        // chart row that motivated MaterialFamily::Fiberglass. Phase 3
+        // candidate for a dedicated grade when per-grade LUT data lands;
+        // for now both `fiberglass_gp` and the canonical
+        // `fiberglass_generic` key resolve to the same variant.
+        "fiberglass_gp" => "fiberglass_generic",
         _ => key,
     };
     let m = Material::from_key(alias);
