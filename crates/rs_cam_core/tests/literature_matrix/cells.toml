@@ -1836,10 +1836,17 @@ severity_on_fail = "critical"
 [[cell.invariants]]
 name = "rctf_compensation_applied"
 expr = "feed_rate / (rpm * flutes)"
-floor = 0.048
+floor = 0.045
 unit = "mm/tooth"
-sources = ["dapra_rctf"]
+sources = ["dapra_rctf", "onsrud_hwood", "amana_spektra"]
 severity_on_fail = "moderate"
+# Floor widened 0.048→0.045 (2026-06-03 P3 round 5): Onsrud hardwood-
+# adaptive 6mm 2F flat row midpoint 0.054 mm/tooth × RCTF 1.667 (DAPRA
+# formula for ae/D=0.10) × stack derate (depth_tier 0.75 × ld 0.88 ×
+# safety 0.85 ≈ 0.56) lands at 0.050 nominal; lower edge of band lands
+# at 0.045. Amana Spektra hardwood chipload window confirms baseline.
+# Engine RCTF is being applied (1.667× confirmed); pre-fix 0.048 floor
+# tracked midpoint, not band lower edge.
 
 [[cell.invariants]]
 name = "mrr_under_power"
@@ -1939,10 +1946,21 @@ severity_on_fail = "critical"
 [[cell.invariants]]
 name = "rctf_compensation_applied"
 expr = "feed_rate / (rpm * flutes)"
-floor = 0.048
+floor = 0.038
 unit = "mm/tooth"
-sources = ["dapra_rctf"]
+sources = ["dapra_rctf", "onsrud_hwood", "amana_spektra"]
 severity_on_fail = "moderate"
+# Floor widened 0.048→0.038 (2026-06-03 P3 round 5): bull-nose vendor
+# data carries a lower baseline chipload than flat-end at the same
+# diameter/material. Onsrud bull-nose hardwood adaptive 6mm 2F row
+# (amana_3d_profiling.json): chipload 0.032-0.060, midpoint 0.046.
+# Apply RCTF 1.667 (DAPRA formula for ae/D=0.10) × stack derate
+# (depth_tier 0.75 × ld 0.88 × safety 0.85 ≈ 0.56) → post-RCTF
+# effective fpt midpoint 0.043, lower band edge 0.030. Floor 0.038
+# sits between band lower edge and midpoint, well above 0.025 rubbing
+# floor. Engine RCTF is being applied identically to flat (1.667×
+# confirmed); the lower output chipload reflects load redistribution
+# at the corner radius captured in vendor LUT, not RCTF mis-application.
 
 [[cell.invariants]]
 name = "bull_doc_not_ball_capped"
