@@ -594,6 +594,9 @@ fn feeds_hint_emits_high_feed_ratio() {
         warnings: vec![],
         vendor_source: None,
         chipload_source: ChiploadSource::FormulaFallback,
+        chipload_bounds: None,
+        matched_lut_row: None,
+        effective_diameter_mm: 6.0,
         derates: crate::feeds::FeedsDerates::default(),
     };
     let diags = adapters::from_feeds::heuristic_hints_from_recommendation(

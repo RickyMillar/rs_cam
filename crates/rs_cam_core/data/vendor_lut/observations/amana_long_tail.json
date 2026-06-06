@@ -22,7 +22,8 @@
       "chipload_min_mm_tooth": 0.0254,
       "chipload_max_mm_tooth": 0.0254,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; chart prints single CPT per cell (0.0010 in = 0.0254 mm); WARNING: sub-1/16 dia bits not guaranteed against breakage per source"
+      "machine_assumption": "chart at 18000 rpm; chart prints single CPT per cell (0.0010 in = 0.0254 mm); WARNING: sub-1/16 dia bits not guaranteed against breakage per source",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-mdf-pocket-0794-2f-spektra",
@@ -46,7 +47,8 @@
       "chipload_min_mm_tooth": 0.0508,
       "chipload_max_mm_tooth": 0.0508,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT per cell (0.0020 in = 0.0508 mm); sub-1/16 dia breakage warning per source"
+      "machine_assumption": "chart at 18000 rpm; single CPT per cell (0.0020 in = 0.0508 mm); sub-1/16 dia breakage warning per source",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-softwood-pocket-1500-2f-spektra",
@@ -70,7 +72,8 @@
       "chipload_min_mm_tooth": 0.0508,
       "chipload_max_mm_tooth": 0.0508,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0020 in = 0.0508 mm; sub-1/16 dia breakage warning per source"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0020 in = 0.0508 mm; sub-1/16 dia breakage warning per source",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-mdf-pocket-1500-2f-spektra",
@@ -94,7 +97,8 @@
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.0762,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0030 in = 0.0762 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0030 in = 0.0762 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-softwood-pocket-1587-2f-spektra",
@@ -118,7 +122,8 @@
       "chipload_min_mm_tooth": 0.0508,
       "chipload_max_mm_tooth": 0.0508,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0020 in = 0.0508 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0020 in = 0.0508 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-mdf-pocket-1587-2f-spektra",
@@ -142,7 +147,8 @@
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.0762,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0030 in = 0.0762 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0030 in = 0.0762 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-softwood-pocket-2381-2f-spektra",
@@ -166,7 +172,8 @@
       "chipload_min_mm_tooth": 0.05842,
       "chipload_max_mm_tooth": 0.05842,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0023 in = 0.05842 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0023 in = 0.05842 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-mdf-pocket-2381-2f-spektra",
@@ -190,7 +197,8 @@
       "chipload_min_mm_tooth": 0.11684,
       "chipload_max_mm_tooth": 0.11684,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0046 in = 0.11684 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0046 in = 0.11684 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-softwood-pocket-3000-2f-spektra",
@@ -214,7 +222,8 @@
       "chipload_min_mm_tooth": 0.1016,
       "chipload_max_mm_tooth": 0.1016,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0040 in = 0.1016 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0040 in = 0.1016 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-mdf-pocket-3000-2f-spektra",
@@ -238,7 +247,8 @@
       "chipload_min_mm_tooth": 0.127,
       "chipload_max_mm_tooth": 0.127,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0050 in = 0.127 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0050 in = 0.127 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-softwood-pocket-4763-2f-spektra",
@@ -262,7 +272,8 @@
       "chipload_min_mm_tooth": 0.127,
       "chipload_max_mm_tooth": 0.127,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0050 in = 0.127 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0050 in = 0.127 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-mdf-pocket-4763-2f-spektra",
@@ -286,7 +297,8 @@
       "chipload_min_mm_tooth": 0.1524,
       "chipload_max_mm_tooth": 0.1524,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0060 in = 0.1524 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0060 in = 0.1524 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-softwood-pocket-5000-2f-spektra",
@@ -310,7 +322,8 @@
       "chipload_min_mm_tooth": 0.127,
       "chipload_max_mm_tooth": 0.127,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0050 in = 0.127 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0050 in = 0.127 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-mdf-pocket-5000-2f-spektra",
@@ -334,7 +347,8 @@
       "chipload_min_mm_tooth": 0.1524,
       "chipload_max_mm_tooth": 0.1524,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0060 in = 0.1524 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0060 in = 0.1524 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-softwood-pocket-9525-2f-spektra",
@@ -358,7 +372,8 @@
       "chipload_min_mm_tooth": 0.16256,
       "chipload_max_mm_tooth": 0.16256,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0064 in = 0.16256 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0064 in = 0.16256 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-mdf-pocket-9525-2f-spektra",
@@ -382,7 +397,8 @@
       "chipload_min_mm_tooth": 0.27432,
       "chipload_max_mm_tooth": 0.27432,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0108 in = 0.27432 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0108 in = 0.27432 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-softwood-pocket-12000-2f-spektra",
@@ -406,7 +422,8 @@
       "chipload_min_mm_tooth": 0.14478,
       "chipload_max_mm_tooth": 0.14478,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0057 in = 0.14478 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0057 in = 0.14478 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-mdf-pocket-12000-2f-spektra",
@@ -430,7 +447,8 @@
       "chipload_min_mm_tooth": 0.24384,
       "chipload_max_mm_tooth": 0.24384,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0096 in = 0.24384 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0096 in = 0.24384 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-softwood-pocket-12700-2f-spektra",
@@ -454,7 +472,8 @@
       "chipload_min_mm_tooth": 0.14478,
       "chipload_max_mm_tooth": 0.14478,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0057 in = 0.14478 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0057 in = 0.14478 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-mdf-pocket-12700-2f-spektra",
@@ -478,7 +497,8 @@
       "chipload_min_mm_tooth": 0.24384,
       "chipload_max_mm_tooth": 0.24384,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0096 in = 0.24384 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0096 in = 0.24384 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-softwood-pocket-9525-3f-spektra",
@@ -502,7 +522,8 @@
       "chipload_min_mm_tooth": 0.16256,
       "chipload_max_mm_tooth": 0.16256,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0064 in = 0.16256 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0064 in = 0.16256 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-mdf-pocket-9525-3f-spektra",
@@ -526,7 +547,8 @@
       "chipload_min_mm_tooth": 0.27432,
       "chipload_max_mm_tooth": 0.27432,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0108 in = 0.27432 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0108 in = 0.27432 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-softwood-pocket-12700-3f-spektra",
@@ -550,7 +572,8 @@
       "chipload_min_mm_tooth": 0.14478,
       "chipload_max_mm_tooth": 0.14478,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0057 in = 0.14478 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0057 in = 0.14478 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-mdf-pocket-12700-3f-spektra",
@@ -574,7 +597,8 @@
       "chipload_min_mm_tooth": 0.24384,
       "chipload_max_mm_tooth": 0.24384,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0096 in = 0.24384 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0096 in = 0.24384 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-softwood-pocket-19050-3f-spektra",
@@ -598,7 +622,8 @@
       "chipload_min_mm_tooth": 0.2286,
       "chipload_max_mm_tooth": 0.2286,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0090 in = 0.2286 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0090 in = 0.2286 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-flat-mdf-pocket-19050-3f-spektra",
@@ -622,7 +647,8 @@
       "chipload_min_mm_tooth": 0.254,
       "chipload_max_mm_tooth": 0.254,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; single CPT 0.0100 in = 0.254 mm"
+      "machine_assumption": "chart at 18000 rpm; single CPT 0.0100 in = 0.254 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-zrn-flat-aluminum-pocket-3175-2f",
@@ -648,7 +674,8 @@
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.127,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm, 1xD DOC; CPT range 0.003-0.005 in = 0.0762-0.127 mm; hardness=95 HB representative of aluminum 6061-T6"
+      "machine_assumption": "chart at 18000 rpm, 1xD DOC; CPT range 0.003-0.005 in = 0.0762-0.127 mm; hardness=95 HB representative of aluminum 6061-T6",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-zrn-flat-acrylic-pocket-3175-2f",
@@ -672,7 +699,8 @@
       "chipload_min_mm_tooth": 0.0508,
       "chipload_max_mm_tooth": 0.1016,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm, 1xD DOC; CPT range 0.002-0.004 in = 0.0508-0.1016 mm"
+      "machine_assumption": "chart at 18000 rpm, 1xD DOC; CPT range 0.002-0.004 in = 0.0508-0.1016 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-zrn-flat-softwood-pocket-3175-2f",
@@ -698,7 +726,8 @@
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.127,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm, 1xD DOC; CPT range 0.003-0.005 in = 0.0762-0.127 mm"
+      "machine_assumption": "chart at 18000 rpm, 1xD DOC; CPT range 0.003-0.005 in = 0.0762-0.127 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-zrn-flat-mdf-pocket-3175-2f",
@@ -724,7 +753,8 @@
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.127,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm, 1xD DOC; CPT range 0.003-0.005 in = 0.0762-0.127 mm"
+      "machine_assumption": "chart at 18000 rpm, 1xD DOC; CPT range 0.003-0.005 in = 0.0762-0.127 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-zrn-flat-aluminum-pocket-6000-2f",
@@ -750,7 +780,8 @@
       "chipload_min_mm_tooth": 0.1016,
       "chipload_max_mm_tooth": 0.1524,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; CPT range 0.004-0.006 in = 0.1016-0.1524 mm"
+      "machine_assumption": "chart at 18000 rpm; CPT range 0.004-0.006 in = 0.1016-0.1524 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-zrn-flat-acrylic-pocket-6000-2f",
@@ -774,7 +805,8 @@
       "chipload_min_mm_tooth": 0.1016,
       "chipload_max_mm_tooth": 0.1524,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; CPT range 0.004-0.006 in = 0.1016-0.1524 mm"
+      "machine_assumption": "chart at 18000 rpm; CPT range 0.004-0.006 in = 0.1016-0.1524 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-zrn-flat-softwood-pocket-6000-2f",
@@ -800,7 +832,8 @@
       "chipload_min_mm_tooth": 0.1778,
       "chipload_max_mm_tooth": 0.2286,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; CPT range 0.007-0.009 in = 0.1778-0.2286 mm"
+      "machine_assumption": "chart at 18000 rpm; CPT range 0.007-0.009 in = 0.1778-0.2286 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-zrn-flat-aluminum-pocket-6350-2f",
@@ -826,7 +859,8 @@
       "chipload_min_mm_tooth": 0.127,
       "chipload_max_mm_tooth": 0.1778,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; CPT range 0.005-0.007 in = 0.127-0.1778 mm"
+      "machine_assumption": "chart at 18000 rpm; CPT range 0.005-0.007 in = 0.127-0.1778 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-zrn-flat-softwood-pocket-6350-2f",
@@ -852,7 +886,8 @@
       "chipload_min_mm_tooth": 0.1524,
       "chipload_max_mm_tooth": 0.2032,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm; CPT range 0.006-0.008 in = 0.1524-0.2032 mm"
+      "machine_assumption": "chart at 18000 rpm; CPT range 0.006-0.008 in = 0.1524-0.2032 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-zrn-ball-softwood-parallel-9525-3f",
@@ -879,7 +914,8 @@
       "chipload_max_mm_tooth": 0.2032,
       "ap_rule": "1xD per chart; 3D-finish DOC unspecified by source",
       "ae_rule": "scallop driven; not specified by source",
-      "machine_assumption": "chart at 18000 rpm; CPT range 0.006-0.008 in = 0.1524-0.2032 mm"
+      "machine_assumption": "chart at 18000 rpm; CPT range 0.006-0.008 in = 0.1524-0.2032 mm",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-zrn-ball-softwood-parallel-12700-3f",
@@ -906,7 +942,8 @@
       "chipload_max_mm_tooth": 0.2286,
       "ap_rule": "1xD per chart; 3D-finish DOC unspecified by source",
       "ae_rule": "scallop driven; not specified by source",
-      "machine_assumption": "chart at 18000 rpm; CPT range 0.007-0.009 in = 0.1778-0.2286 mm"
+      "machine_assumption": "chart at 18000 rpm; CPT range 0.007-0.009 in = 0.1778-0.2286 mm",
+      "ap_max_factor": 1.0
     }
   ]
 }

@@ -87,10 +87,6 @@ pub fn sample_tip_deflection_mm(
     {
         return None;
     }
-    if matches!(material, Material::Custom { .. }) || tool.stickout <= 0.0 {
-        return None;
-    }
-    let kc = material.kc_n_per_mm2()?;
     let arc = sample.arc_engagement_radians?;
     let engagement_radius =
         crate::tool::MillingCutter::engagement_radius(tool, sample.axial_engagement_mm).max(0.0);
@@ -98,9 +94,15 @@ pub fn sample_tip_deflection_mm(
     if radial_width <= 0.0 {
         return None;
     }
-    let force_n = kc * sample.axial_engagement_mm * radial_width;
-    let e = tool.tool_material.youngs_modulus_n_per_mm2();
-    Some(tool.tip_deflection_mm(force_n, sample.axial_engagement_mm, e))
+    // Canonical force + cantilever model lives in `feeds::predict` so
+    // the pre-sim cutter-axial-constraints envelope and this post-sim
+    // gate cannot drift apart.
+    crate::feeds::predict::tip_deflection_from_engagement(
+        tool,
+        material,
+        sample.axial_engagement_mm,
+        radial_width,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -203,8 +205,16 @@ pub fn evaluate(
             continue;
         };
 
-        // Route Entry-ancestry samples to the spike track.
-        if !super::locality::is_steady_state_for_gate(s, span_lookup.as_ref()) {
+        // Finding 3 split (2026-06-04): phantom-transit samples
+        // (WaterlineCleanup / LinkBridge / LeadOut / DressupArtifact)
+        // carry inflated dexel axial_engagement, so the computed tip
+        // deflection is phantom — drop them entirely. Configured Entry
+        // samples (real plunge / ramp / helix transients) still route
+        // to the entry_spike advisory.
+        if super::locality::is_phantom_transit(s, span_lookup.as_ref()) {
+            continue;
+        }
+        if super::locality::is_configured_entry(s, span_lookup.as_ref()) {
             if delta_mm > entry_peak_delta_mm {
                 entry_peak_delta_mm = delta_mm;
                 entry_peak_idx = Some(i);
@@ -743,6 +753,102 @@ mod tests {
     /// gates: drill cycles have no continuous engagement, so the
     /// cantilever-deflection metric has no meaning. Refuse with
     /// `NotApplicableForOp` even on a fully-engaged sample stream.
+    /// Finding 3 split sentry (2026-06-04): phantom-transit samples
+    /// must NOT surface as an `entry_spike` — their dexel-inflated
+    /// axial_engagement produces a phantom deflection that misleads
+    /// the operator. The wanaka Back Rough symptom was a 608 µm
+    /// "waterline cleanup" entry_spike alongside a healthy 165 µm
+    /// steady-state peak.
+    ///
+    /// Mirror the structure here: one steady-state sample with
+    /// realistic engagement, plus one WaterlineCleanup-ancestry
+    /// sample with deeply-inflated engagement. Pre-fix the inflated
+    /// sample routed to entry_spike with phantom-large delta. Post-fix
+    /// it's dropped, entry_spike is `None`, steady-state peak is what
+    /// the verdict reports.
+    #[test]
+    fn phantom_waterline_cleanup_does_not_surface_as_entry_spike() {
+        use crate::toolpath_spans::Span;
+        use std::borrow::Cow;
+
+        let tool = carbide_flat(6.0, 45.0);
+        // Steady-state sample: in DepthPass, healthy 2 mm axial DOC.
+        let mut steady = cutting_sample(0, 0, 2.0, std::f64::consts::PI, 1500.0, 1.0);
+        steady.span_path = vec![
+            crate::toolpath_spans::SpanId(0), // Operation
+            crate::toolpath_spans::SpanId(1), // DepthPass
+        ];
+        // Phantom sample: WaterlineCleanup ancestor, 20 mm "axial DOC"
+        // (dexel bridge artifact). 10× the steady sample → would
+        // produce a deflection ~10× larger if not filtered.
+        let mut phantom = cutting_sample(0, 1, 20.0, std::f64::consts::PI, 1500.0, 1.0);
+        phantom.span_path = vec![
+            crate::toolpath_spans::SpanId(0), // Operation
+            crate::toolpath_spans::SpanId(2), // WaterlineCleanup
+        ];
+        phantom.in_transit_span = true;
+
+        let spans = vec![
+            Span {
+                start_move: 0,
+                end_move: 2,
+                kind: crate::toolpath_spans::SpanKind::Operation,
+                label: Cow::Borrowed("op"),
+                payload: None,
+            },
+            Span {
+                start_move: 0,
+                end_move: 1,
+                kind: crate::toolpath_spans::SpanKind::DepthPass,
+                label: Cow::Borrowed("pass"),
+                payload: None,
+            },
+            Span {
+                start_move: 1,
+                end_move: 2,
+                kind: crate::toolpath_spans::SpanKind::WaterlineCleanup,
+                label: Cow::Borrowed("cleanup"),
+                payload: None,
+            },
+        ];
+
+        let trace = trace_with(vec![steady, phantom]);
+        let v = evaluate(
+            0,
+            &tool,
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&trace),
+            Some(&spans),
+            OperationType::Adaptive3d,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        match v {
+            DeflectionVerdict::Within {
+                entry_spike, peak_mm, ..
+            } => {
+                assert!(
+                    entry_spike.is_none(),
+                    "phantom WaterlineCleanup must NOT surface as entry_spike, got {entry_spike:?}"
+                );
+                // Sanity: peak comes from the 2 mm steady sample, not
+                // the 20 mm phantom. Tip deflection scales linearly
+                // with axial engagement → if the phantom leaked into
+                // the steady-state track, peak would be ~10× the
+                // steady-only value (roughly 1.5 mm for these inputs).
+                // The realistic 2 mm-axial slot peak for a 6 mm carbide
+                // flat at 1500 mm/min in HardMaple lands around 148 µm.
+                assert!(
+                    peak_mm < 0.5,
+                    "steady-state peak should reflect the 2 mm steady sample (~150 µm), \
+                     got {peak_mm} mm — phantom 20 mm sample leaked into peak",
+                );
+            }
+            other => panic!("expected Within, got {other:?}"),
+        }
+    }
+
     #[test]
     fn drill_op_routes_to_not_applicable() {
         let tool = carbide_flat(6.0, 45.0);

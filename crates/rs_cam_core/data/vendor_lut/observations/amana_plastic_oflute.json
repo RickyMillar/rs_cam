@@ -20,7 +20,8 @@
       "chipload_min_mm_tooth": 0.1016,
       "chipload_max_mm_tooth": 0.1524,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; chart SFM 500-1200; single plastic column applies to all plastics; 1/8 in row"
+      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; chart SFM 500-1200; single plastic column applies to all plastics; 1/8 in row",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-plastic-oflute-hdpe-pocket-3175-1f",
@@ -42,7 +43,8 @@
       "chipload_min_mm_tooth": 0.1016,
       "chipload_max_mm_tooth": 0.1524,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; chart SFM 500-1200; single plastic column applies to all plastics; 1/8 in row"
+      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; chart SFM 500-1200; single plastic column applies to all plastics; 1/8 in row",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-plastic-oflute-polycarbonate-pocket-3175-1f",
@@ -64,7 +66,8 @@
       "chipload_min_mm_tooth": 0.1016,
       "chipload_max_mm_tooth": 0.1524,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; chart SFM 500-1200; single plastic column applies to all plastics; 1/8 in row"
+      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; chart SFM 500-1200; single plastic column applies to all plastics; 1/8 in row",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-plastic-oflute-acrylic-pocket-6350-1f",
@@ -86,7 +89,8 @@
       "chipload_min_mm_tooth": 0.2032,
       "chipload_max_mm_tooth": 0.3048,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; chart SFM 500-1200; single plastic column applies to all plastics; 1/4 in row"
+      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; chart SFM 500-1200; single plastic column applies to all plastics; 1/4 in row",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-plastic-oflute-hdpe-pocket-6350-1f",
@@ -108,7 +112,8 @@
       "chipload_min_mm_tooth": 0.2032,
       "chipload_max_mm_tooth": 0.3048,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; chart SFM 500-1200; single plastic column applies to all plastics; 1/4 in row"
+      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; chart SFM 500-1200; single plastic column applies to all plastics; 1/4 in row",
+      "ap_max_factor": 1.0
     }
   ]
 }

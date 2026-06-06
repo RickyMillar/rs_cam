@@ -15,13 +15,18 @@
 //! 9. Apply safety factor
 //! 10. Collect warnings
 
+pub mod cutter_constraints;
 pub mod explain;
 pub mod geometry;
+pub mod geometry_class;
+pub mod predict;
+pub mod rationale;
 pub mod suggest;
 pub mod vendor_lookup;
 pub mod vendor_lut;
 pub mod vendor_normalize;
 pub use explain::{FeedsExplain, MachineEnvelope, explain as explain_feeds};
+pub use predict::{DeflectionBreakdown, DeflectionPrediction, predict_peak_deflection_um};
 pub use vendor_lut::VendorLut;
 
 /// Global embedded vendor LUT, loaded once on first access.
@@ -268,6 +273,33 @@ pub enum ChiploadSource {
     EdgeRadiusFloor,
 }
 
+/// LUT-derived chipload band for the matched vendor row, scaled by the
+/// diameter/hardness factors that `vendor_lookup::lookup_best` applies.
+///
+/// Populated only when the calculator found a matching vendor row that
+/// publishes a chipload range — RPM-only rows and formula-fallback paths
+/// leave this `None`. Consumers (Suggest v2 step 2 feed-up recalibration,
+/// post-sim chipload gate narrative) use this band's bounds as the
+/// targets the predicted observed chipload should land within.
+///
+/// v3.0a (2026-06-04) re-added `max_mm_per_tooth` after the v2.1 polish
+/// dropped it: v3's `SuggestAggressiveness` enum needs both bounds to
+/// compute the targeted operating point (LUT min / median / max). v2.1's
+/// recalibration only consulted `min`, so the field was unused at the
+/// time; v3.0b makes it load-bearing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ChiploadBounds {
+    /// LUT-row chipload lower bound, post diameter/hardness scaling
+    /// (mm/tooth). Suggest's feed-up loop uses this as the
+    /// `SuggestAggressiveness::Conservative` target.
+    pub min_mm_per_tooth: f64,
+    /// LUT-row chipload upper bound, post diameter/hardness scaling
+    /// (mm/tooth). Suggest's feed-up loop uses this as the
+    /// `SuggestAggressiveness::Speed` target; the midpoint is the
+    /// `SuggestAggressiveness::Default` (median) target.
+    pub max_mm_per_tooth: f64,
+}
+
 /// Result of the feeds calculation.
 #[derive(Debug, Clone)]
 pub struct FeedsResult {
@@ -286,6 +318,26 @@ pub struct FeedsResult {
     /// Observation ID if vendor LUT was used for chipload.
     pub vendor_source: Option<String>,
     pub chipload_source: ChiploadSource,
+    /// LUT-derived chipload band for the matched vendor row, when the
+    /// match supplied one. `None` for formula-fallback / RPM-only LUT
+    /// rows / edge-radius-floor paths. Consumed by Suggest v2 step 2
+    /// (chipload-aware feed-up recalibration) — see
+    /// [`crate::feeds::predict::predict_observed_chipload_mm`] for the
+    /// other half of that loop.
+    pub chipload_bounds: Option<ChiploadBounds>,
+    /// Matched vendor row (post-scaling) from the LUT lookup, when one
+    /// was found. Cloned through so the Suggest orchestrator's axial-DOC
+    /// envelope pass ([`crate::feeds::cutter_constraints`]) and the
+    /// chipload-bounds re-derivation step in `enforce_invariants` can
+    /// reach the row without re-querying.
+    pub matched_lut_row: Option<vendor_lookup::LookupResult>,
+    /// Cutter-shape effective diameter at the calculator's commanded
+    /// axial DOC (mm). The doc-derating scale that produced
+    /// `chipload_bounds` is `geometry::doc_derating_scale(dpp /
+    /// effective_diameter_mm)`. Carried on the result so the axial-DOC
+    /// envelope pass can re-derive bounds after mutating DPP without
+    /// re-walking the chip-geometry pipeline.
+    pub effective_diameter_mm: f64,
     /// Full derate chain that turned the "target" chipload into the
     /// recommended feed. Lets the UI show *why* the recommended
     /// operating point sits where it does on the feed-RPM nomogram.
@@ -646,13 +698,69 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         milling_chipload
     };
 
-    let (chip_load, vendor_rpm, vendor_rpm_max, vendor_source, chipload_source) =
+    // Sidecar: when the LUT lookup returns a match, stash the row so
+    // FeedsResult can propagate it to the Suggest orchestrator's
+    // axial-DOC envelope pass (see `feeds/cutter_constraints.rs`). The
+    // existing tuple destructuring below consumes per-field values, so
+    // the row clone lives here separately.
+    let mut matched_lut_row: Option<vendor_lookup::LookupResult> = None;
+    let (chip_load, vendor_rpm, vendor_rpm_max, vendor_source, chipload_source, chipload_bounds) =
         if let Some(lut) = input.vendor_lut {
             let query = vendor_normalize::to_lookup_query(input);
             if let Some(result) =
                 vendor_lookup::find_best_row_for_geometry(lut, &query, &input.tool_geometry)
             {
+                matched_lut_row = Some(result.clone());
                 let observation_id = result.observation_id;
+                // Capture the LUT-derived chipload band (post diameter
+                // /hardness scaling) for Suggest v2 step 2's feed-up
+                // recalibration loop. Only populated when the row
+                // publishes both bounds — partial-band rows (one side
+                // only) leave it None so the loop doesn't fire on an
+                // ambiguous target.
+                //
+                // DOC derating (2026-06-04): the post-sim chipload gate
+                // scales the matched row's bounds by
+                // `geometry::doc_derating_scale(peak_axial_DOC /
+                // effective_d)`. Apply the same scale here using the
+                // commanded axial DPP so `SuggestAggressiveness::target_chipload`
+                // (median / max / min) aims at a value the gate will
+                // accept at this DOC ratio. Without this, v3.0c median
+                // targeting on high-DOC ops (e.g. wanaka Back Rough at
+                // ~3×D) lands above the gate's derated max and trips
+                // `Exceeds(High)` despite the toolpath being healthy.
+                //
+                // Drill ops are excluded because the post-sim gate
+                // short-circuits drill ops with `NotApplicableForOp` —
+                // the chip-evacuation rule that motivates DOC derating
+                // for milling doesn't apply to drill bands (peck depth,
+                // not engagement). Mirroring the gate's exclusion here
+                // keeps the two paths aligned for the cases where the
+                // gate actually fires.
+                let chipload_doc_scale = if input.operation == OperationFamily::Drill {
+                    1.0
+                } else {
+                    let doc_ratio = if effective_d > 0.0 {
+                        axial_doc_for_eff_d / effective_d
+                    } else {
+                        0.0
+                    };
+                    geometry::doc_derating_scale(doc_ratio)
+                };
+                let bounds = match (result.chip_load_min_mm, result.chip_load_max_mm) {
+                    (Some(min), Some(max))
+                        if min.is_finite()
+                            && max.is_finite()
+                            && min > 0.0
+                            && max >= min =>
+                    {
+                        Some(ChiploadBounds {
+                            min_mm_per_tooth: min * chipload_doc_scale,
+                            max_mm_per_tooth: max * chipload_doc_scale,
+                        })
+                    }
+                    _ => None,
+                };
                 // RPM-only vendor rows (e.g. whiteside-rd5218h-roughing-down-
                 // spiral-3f-rpm) publish rpm_nominal/rpm_max as anchors but
                 // leave chipload_min/max unset — `chipload_midpoint` then
@@ -670,6 +778,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                         result.rpm_max,
                         Some(observation_id.clone()),
                         ChiploadSource::VendorLut { observation_id },
+                        bounds,
                     )
                 } else {
                     (
@@ -678,6 +787,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                         result.rpm_max,
                         Some(observation_id),
                         ChiploadSource::FormulaFallback,
+                        bounds,
                     )
                 }
             } else {
@@ -687,6 +797,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                     None,
                     None,
                     ChiploadSource::FormulaFallback,
+                    None,
                 )
             }
         } else {
@@ -696,6 +807,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 None,
                 None,
                 ChiploadSource::FormulaFallback,
+                None,
             )
         };
 
@@ -1150,6 +1262,9 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         warnings,
         vendor_source,
         chipload_source,
+        chipload_bounds,
+        matched_lut_row,
+        effective_diameter_mm: effective_d,
         derates,
     }
 }
@@ -2343,6 +2458,112 @@ mod tests {
         ));
         assert!(without_lut.vendor_source.is_none());
         assert_eq!(without_lut.chipload_source, ChiploadSource::FormulaFallback);
+    }
+
+    /// Finding 1 (2026-06-04): Suggest's `ChiploadBounds` must mirror
+    /// the post-sim chipload gate's DOC-derated envelope so
+    /// `SuggestAggressiveness::target_chipload(bounds)` aims at a value
+    /// the gate will accept. Without derating, v3.0c median targeting
+    /// on high-DOC milling ops (e.g. wanaka Back Rough at ~3×D) lands
+    /// above the gate's derated max and trips `Exceeds(High)`.
+    ///
+    /// This test pins the derating contract on a 3×D hardwood pocket-
+    /// roughing case: bounds at axial_depth=D get the 1.0 scale (no
+    /// change), bounds at axial_depth=3D get the 0.5 scale.
+    #[test]
+    fn chipload_bounds_derate_with_doc_ratio_for_milling() {
+        let lut = vendor_lut::VendorLut::embedded();
+        let material = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let machine = MachineProfile::shapeoko_vfd();
+        let mut input = FeedsInput {
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 24.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Pocket,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: Some(6.0), // 1×D ratio → scale 1.0
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: Some(&lut),
+            setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        };
+        let at_1x = calculate(&input);
+        input.axial_depth_mm = Some(18.0); // 3×D ratio → scale 0.5
+        let at_3x = calculate(&input);
+
+        // LUT 6 mm hardwood pocket-roughing row publishes both bounds,
+        // so the orchestrator must produce `Some(ChiploadBounds)` here.
+        let b1 = at_1x.chipload_bounds.unwrap();
+        let b3 = at_3x.chipload_bounds.unwrap();
+        let scale_min = b3.min_mm_per_tooth / b1.min_mm_per_tooth;
+        let scale_max = b3.max_mm_per_tooth / b1.max_mm_per_tooth;
+        assert!(
+            (scale_min - 0.5).abs() < 1e-6,
+            "min should derate to 0.5× at 3×D, got scale {scale_min} ({} → {})",
+            b1.min_mm_per_tooth,
+            b3.min_mm_per_tooth,
+        );
+        assert!(
+            (scale_max - 0.5).abs() < 1e-6,
+            "max should derate to 0.5× at 3×D, got scale {scale_max} ({} → {})",
+            b1.max_mm_per_tooth,
+            b3.max_mm_per_tooth,
+        );
+    }
+
+    /// Drill ops are explicitly excluded from chipload-bounds DOC
+    /// derating: the post-sim chipload gate short-circuits drill ops
+    /// (`NotApplicableForOp`), and the chip-evacuation rule that
+    /// motivates derating in milling doesn't apply to drill bands
+    /// (peck depth, not engagement). Bounds for a deep-peck drill cycle
+    /// must equal the bounds at shallow peck.
+    #[test]
+    fn chipload_bounds_skip_doc_derating_for_drill_ops() {
+        let lut = vendor_lut::VendorLut::embedded();
+        let material = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let machine = MachineProfile::shapeoko_vfd();
+        let mut input = FeedsInput {
+            tool_diameter: 6.0,
+            flute_count: 2,
+            flute_length: 30.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Drill,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: Some(6.0),
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: Some(&lut),
+            setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        };
+        let shallow = calculate(&input);
+        input.axial_depth_mm = Some(18.0);
+        let deep = calculate(&input);
+        if let (Some(s), Some(d)) = (shallow.chipload_bounds, deep.chipload_bounds) {
+            assert!(
+                (s.min_mm_per_tooth - d.min_mm_per_tooth).abs() < 1e-9,
+                "drill bounds.min must not derate with peck depth",
+            );
+            assert!(
+                (s.max_mm_per_tooth - d.max_mm_per_tooth).abs() < 1e-9,
+                "drill bounds.max must not derate with peck depth",
+            );
+        }
+        // If the LUT doesn't publish drill chipload bounds (None on either
+        // depth), the test is moot — derating exclusion is what we care
+        // about and both being None already satisfies the contract.
     }
 
     #[test]

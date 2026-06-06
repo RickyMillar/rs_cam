@@ -2365,6 +2365,8 @@ mod stage1_grid_tests {
             rpm_max: Some(16_000.0),
             ap_min_mm: ap_min,
             ap_max_mm: ap_max,
+            ap_min_factor: None,
+            ap_max_factor: None,
             ae_min_mm: None,
             ae_max_mm: None,
             observation_id: "synthetic".to_owned(),

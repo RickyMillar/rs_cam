@@ -20,7 +20,8 @@
       "chipload_min_mm_tooth": 0.2032,
       "chipload_max_mm_tooth": 0.3048,
       "ap_rule": "cut depth per pass = cutting edge diameter (1xD); 2xD reduce chip load 25%; 3xD reduce chip load 50%",
-      "source_page": "120"
+      "source_page": "120",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "onsrud-soft-plastic-hdpe-65200b-quarter-finish",
@@ -42,7 +43,8 @@
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.127,
       "ap_rule": "cut depth per pass = cutting edge diameter (1xD); 2xD reduce chip load 25%; 3xD reduce chip load 50%",
-      "source_page": "120"
+      "source_page": "120",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "onsrud-soft-plastic-hdpe-52600-half-singlepass",
@@ -64,7 +66,8 @@
       "chipload_min_mm_tooth": 0.3048,
       "chipload_max_mm_tooth": 0.3556,
       "ap_rule": "cut depth per pass = cutting edge diameter (1xD); 2xD reduce chip load 25%; 3xD reduce chip load 50%",
-      "source_page": "120"
+      "source_page": "120",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "onsrud-soft-plastic-hdpe-60000-half-roughing",
@@ -86,7 +89,8 @@
       "chipload_min_mm_tooth": 0.1524,
       "chipload_max_mm_tooth": 0.2032,
       "ap_rule": "cut depth per pass = cutting edge diameter (1xD); 2xD reduce chip load 25%; 3xD reduce chip load 50%",
-      "source_page": "120"
+      "source_page": "120",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "onsrud-hard-plastic-acrylic-63700-1f-quarter-singlepass",
@@ -108,7 +112,8 @@
       "chipload_min_mm_tooth": 0.254,
       "chipload_max_mm_tooth": 0.3048,
       "ap_rule": "cut depth per pass = cutting edge diameter (1xD); 2xD reduce chip load 25%; 3xD reduce chip load 50%",
-      "source_page": "121"
+      "source_page": "121",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "onsrud-hard-plastic-polycarbonate-63700-1f-quarter-singlepass",
@@ -130,7 +135,8 @@
       "chipload_min_mm_tooth": 0.254,
       "chipload_max_mm_tooth": 0.3048,
       "ap_rule": "cut depth per pass = cutting edge diameter (1xD); 2xD reduce chip load 25%; 3xD reduce chip load 50%",
-      "source_page": "121"
+      "source_page": "121",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "onsrud-hard-plastic-delrin-56000p-quarter-singlepass",
@@ -152,7 +158,8 @@
       "chipload_min_mm_tooth": 0.1016,
       "chipload_max_mm_tooth": 0.1524,
       "ap_rule": "cut depth per pass = cutting edge diameter (1xD); 2xD reduce chip load 25%; 3xD reduce chip load 50%",
-      "source_page": "121"
+      "source_page": "121",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "onsrud-hard-plastic-acrylic-60200-half-finish",
@@ -174,7 +181,8 @@
       "chipload_min_mm_tooth": 0.1524,
       "chipload_max_mm_tooth": 0.254,
       "ap_rule": "cut depth per pass = cutting edge diameter (1xD); 2xD reduce chip load 25%; 3xD reduce chip load 50%",
-      "source_page": "121"
+      "source_page": "121",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "onsrud-hard-plastic-polycarbonate-60000-half-roughing",
@@ -196,7 +204,8 @@
       "chipload_min_mm_tooth": 0.1524,
       "chipload_max_mm_tooth": 0.2032,
       "ap_rule": "cut depth per pass = cutting edge diameter (1xD); 2xD reduce chip load 25%; 3xD reduce chip load 50%",
-      "source_page": "121"
+      "source_page": "121",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "onsrud-article-polycarbonate-optimum-chipload-window",

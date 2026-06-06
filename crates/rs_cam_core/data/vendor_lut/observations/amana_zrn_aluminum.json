@@ -20,7 +20,8 @@
       "chipload_min_mm_tooth": 0.0508,
       "chipload_max_mm_tooth": 0.1016,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce feed rate 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; chart SFM 600-1000; 1/8 in row"
+      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; chart SFM 600-1000; 1/8 in row",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-zrn-alum-oflute-aluminum-adaptive-6350-1f",
@@ -42,7 +43,8 @@
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.1524,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce feed rate 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; chart SFM 600-1000; 1/4 in row"
+      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; chart SFM 600-1000; 1/4 in row",
+      "ap_max_factor": 1.0
     }
   ]
 }
