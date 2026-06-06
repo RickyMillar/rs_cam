@@ -5,7 +5,32 @@
 **Status:** Architecture sketch, revised after an 8-area adversarially-verified investigation wave over the v1 sketch (`architectural_refactor_2026-06-06.md`, original). This is **not** an implementation spec; it is a scaffold for the implementation wave, with every v1 factual claim re-checked against the live working tree.
 **Companion:** `planning/cutter_axial_constraints_2026-06-06.md` (Phase 0). That doc carries its own rev-2 review fixes that this v2 folds in (see Phase 0).
 
-> **Working-tree caveat (active flux during analysis).** This plan was synthesized while a concurrent agent was editing the working tree. Several files central to Phases 1/3/4 are NEW/uncommitted and may still shift: `feeds/predict.rs`, `feeds/rationale.rs`, `feeds/explain.rs`, `feeds/geometry_class.rs`, `tests/wanaka_suggest_integration.rs`, `ui/feeds_modal.rs`, plus modified `feeds/suggest.rs`, `feeds/geometry.rs`, `feeds/mod.rs`, `session/compute.rs`, `tool_load/*.rs`. Notably, the `ap_min_factor`/`ap_max_factor` vendor-LUT schema fields the companion Phase-0 doc calls "NEW" are **already present** in the tree (`vendor_lut.rs:188,192`, `vendor_lookup.rs:55,59,310-311`) — Phase 1's schema-addition is partially landed. **Re-verify all line numbers at implementation time.**
+> **Working-tree caveat — RESOLVED 2026-06-07.** This plan was synthesized while a concurrent agent was editing the working tree. That flux has landed: commits `14fd789` (planning docs), `d928fed` (viz/CLI/session surface), and `7d01311` (cutter-axial-constraints envelope + Findings 1-3 + combined-Suggest v3 backbone: `feeds/cutter_constraints.rs`, `predict.rs`, `explain.rs`, `rationale.rs`, `geometry_class.rs`, `tests/wanaka_suggest_integration.rs`, LUT `ap_*_factor` migration). **Phase 0 is DONE** (tracker below). Line numbers in this doc predate those commits — **re-verify with `rg` before editing.**
+
+---
+
+## 0. Status tracker
+
+> **Protocol:** the implementation orchestrator updates this table (and ONLY this table — the body sections stay as decided) after every landed PR. States: `TODO` / `IN PROGRESS (who)` / `BLOCKED (on what)` / `DONE (commit)`. A phase is DONE only when its §9-Q9 parity gate passed. Add rows for discovered work; never delete rows — mark them `DROPPED (why)`.
+
+| # | Work item | Phase | Status | Gate / evidence |
+|---|---|---|---|---|
+| T0 | Axial-constraint envelope (companion doc rev 3, items 1-3: LUT schema+migration, calculator, Suggest consumers) | 0 | **DONE (`7d01311`, 2026-06-07)** | `cutter_constraints.rs` w/ binary-search `invert_deflection` over `tip_deflection_from_engagement` + roundtrip tests; `feeds_family` routing (no `is_finish_3d` invented); `apply_axial_envelope` policy C; 4 warning variants; chipload-bounds re-derivation landed; LUT `ap_*_factor` migrated |
+| T1 | PRE-Phase-1 feeds-hints coverage net (guard `suggest.rs` `(None,None,None)` wildcard) | pre-1 | TODO | new test: every op's hints are an explicit decision |
+| T2 | §7.2 serde/schema parity freeze test set | pre-1 | TODO | tests pinning TOML `{kind,params}`, snake_case reprs, both `ProjectToolSection` shapes, MCP `build_info.features`, named system-only partition |
+| T3 | Phase 1 data-only `OpRegistryEntry` (all 23 ops, one PR) + kill `tool_constraints_for_type` wildcard | 1 | TODO | extend catalog.rs roundtrip + schema-parity tests; 19-op constraint-unchanged test |
+| T4 | Phase 1 drill-family predicate consolidation (`is_plunge_only()`, ≥4 open-coded sites) | 1 | TODO | helper-vs-sites agreement test |
+| T5 | Phase 1 dressup/entry-style policy registry field (replaces `normalize_for_op` 5 predicates + viz dup table) | 1 | TODO | core/viz tables read one source |
+| T6 | Phase 2 `for_each_op!` X-macro (pure lists: enum, ALL, op_type, new_default, as_params, category) | 2 | TODO | param_sweep `--ignored` fingerprints byte-identical; 3-way partition test |
+| T7 | Phase 3 `CutterKind` + dedup `ToolGeometryHint→ToolFamily` maps + fold predict.rs raw-ToolType matches | 3 | TODO | per-crate suites + scallop-refuses-flat litmatrix |
+| T8 | Phase 3 tool-type parser unification (4 parsers → core `parse_lenient`, warn-and-default) | 3 | TODO | round-trip tests across all 4 mechanisms; re-baseline session/mod.rs parse pin deliberately |
+| T9 | CLI cull: retire job.rs router, migrate sweep onto `OperationConfig`, generic registry-driven subcommand | post-1, pre-5 | TODO | sweep never down during a cutover phase; check `toolpath_stress_test/agents/` callers first |
+| T10 | Phase 4 `CutterOpProfile` aggregation + two-caller `SuggestContext` dedup | 4 | TODO | `wanaka_suggest_integration.rs` is THE gate; preserve `enforce_invariants` pass order |
+| T11 | Phase 5 behavior adapters (one family at a time; drill-conversion dedup; cancellation regression test first) | 5 | TODO | param_sweep fingerprints + end_to_end + family sentries |
+| T12 | Phase 6 (6A): `MetricContext` into gates, collapse two assembly sites, `criteria()` slice, gating derives from criteria() | 6 | TODO | tool_load sentries + MCP serde tests |
+| T13 | narrate.rs: label-string routing → typed `feeds_pass_role` (before any Phase-1/2 label change) | consumer | TODO | narrate output parity on wanaka project |
+
+**Sequencing constraints:** T1+T2 before T3. T3 before T6 (macro needs frozen registry shape). T3 before T9 (generic CLI needs ParamDef table). T9 before T11 (2 production drivers, not 3, during cutover). T13 before any change to `OperationSpec.label`. T4/T5 ride with T3 or immediately after.
 
 ---
 
