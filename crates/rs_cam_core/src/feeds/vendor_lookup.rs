@@ -48,6 +48,15 @@ pub struct LookupResult {
     pub rpm_max: Option<f64>,
     pub ap_min_mm: Option<f64>,
     pub ap_max_mm: Option<f64>,
+    /// Diameter-scaling lower bound for axial DOC (× cutter diameter).
+    /// Carried through from `VendorObservation::ap_min_factor`. Combined
+    /// with `ap_min_mm` in `feeds::cutter_constraints` via
+    /// `max(factor × diameter, absolute_mm)` for the tighter floor.
+    pub ap_min_factor: Option<f64>,
+    /// Diameter-scaling upper bound for axial DOC (× cutter diameter).
+    /// Carried through from `VendorObservation::ap_max_factor`. Combined
+    /// with `ap_max_mm` via `min(factor × diameter, absolute_mm)`.
+    pub ap_max_factor: Option<f64>,
     pub ae_min_mm: Option<f64>,
     pub ae_max_mm: Option<f64>,
     pub observation_id: String,
@@ -298,6 +307,8 @@ fn build_result(
         rpm_max: obs.rpm_max,
         ap_min_mm: obs.ap_min_mm,
         ap_max_mm: obs.ap_max_mm,
+        ap_min_factor: obs.ap_min_factor,
+        ap_max_factor: obs.ap_max_factor,
         ae_min_mm: obs.ae_min_mm,
         ae_max_mm: obs.ae_max_mm,
         observation_id: obs.observation_id.clone(),

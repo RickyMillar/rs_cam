@@ -90,34 +90,11 @@ pub(super) fn embedded_lut() -> &'static crate::feeds::VendorLut {
     crate::feeds::embedded_vendor_lut()
 }
 
-/// Cross-vendor DOC-derating rule (Amana + Onsrud, verbatim from both
-/// `amana_compression.json` and `onsrud_plastic.json` rows' `ap_rule`):
-///
-/// > "1×D use recommended chip load; 2×D reduce 25%; 3×D reduce 50%."
-///
-/// Translated to a piecewise linear scale on the vendor-LUT chipload
-/// bounds, clamped at 3×D to keep deeper extrapolations from going
-/// negative. The ratio is the toolpath's peak axial DOC over the
-/// cutter's effective lookup diameter at that depth — the same basis
-/// the LUT lookup uses for diameter matching.
-///
-/// | ratio (DOC/D) | scale  |
-/// |---------------|--------|
-/// | ≤ 1.0         | 1.000  |
-/// | 2.0           | 0.750  |
-/// | 3.0           | 0.500  |
-/// | ≥ 3.0         | 0.500 (clamped)  |
-pub(super) fn doc_derating_scale(ratio: f64) -> f64 {
-    if !ratio.is_finite() || ratio <= 1.0 {
-        1.0
-    } else if ratio <= 2.0 {
-        1.0 - 0.25 * (ratio - 1.0)
-    } else if ratio <= 3.0 {
-        0.75 - 0.25 * (ratio - 2.0)
-    } else {
-        0.5
-    }
-}
+// Cross-vendor DOC-derating rule lives in `feeds::geometry` so the
+// feeds calculator can apply it to the LUT chipload bounds at the same
+// scale this gate uses. The single canonical home prevents the two
+// paths from drifting (see `feeds::geometry::doc_derating_scale`).
+pub(super) use crate::feeds::geometry::doc_derating_scale;
 
 use super::verdict::{
     ChipBounds, ChipBoundsSource, ChipSide, ChiploadMetric, ChiploadStatistic, ChiploadVerdict,
@@ -334,8 +311,23 @@ pub fn evaluate(
     }
 
     // 4. Look up the vendor envelope. If no row matches, refuse.
+    //
+    // The LUT diameter query and the DOC-derating ratio below both
+    // depend on `lookup_axial_doc_mm`. Folding over every steady-state
+    // sample (including transit-style samples whose dexel reading
+    // captures `stock_top − cutter_z` over neighbouring stock — see
+    // P3_TRANSIT_PEAK_DOC_RCA.md) silently inflates this metric and
+    // pushes the derating ratio past the 3×D cliff on toolpaths whose
+    // only "deep" reading is a phantom waterline-cleanup or link-bridge
+    // sample. Filter through the canonical
+    // [`super::locality::is_steady_state_for_gate`] predicate (which
+    // consults `in_transit_span` plus the Entry / WaterlineCleanup
+    // ancestor check), so the LUT lookup and the trip decision below
+    // measure the same population of samples.
+    let span_lookup = spans.map(SpanLookup::new);
     let lookup_axial_doc_mm = steady_samples
         .iter()
+        .filter(|(_, s)| super::locality::is_steady_state_for_gate(s, span_lookup.as_ref()))
         .map(|(_, s)| s.axial_doc_mm.max(0.0))
         .fold(0.0_f64, f64::max);
     let lut = embedded_lut();
@@ -444,8 +436,8 @@ pub fn evaluate(
     // ramp entries laid down by D4 / D5) are kept out of the
     // steady-state trip set and surfaced separately as `entry_spikes`
     // on the `Within` arm. Replaces the C1 kinematics filter reverted
-    // in D3 (commit `8e2a7fc`).
-    let span_lookup = spans.map(SpanLookup::new);
+    // in D3 (commit `8e2a7fc`). `span_lookup` was constructed alongside
+    // `lookup_axial_doc_mm` above.
     // Worst Entry-ancestry over-max sample (largest cl_normalized > max).
     let mut entry_high: Option<(f64, usize)> = None;
     // Worst Entry-ancestry under-min sample (smallest cl_normalized < min).
@@ -516,10 +508,17 @@ pub fn evaluate(
             _ => cl,
         };
         valid_count += 1;
-        // D7 split: Entry-ancestry samples bypass the trip decision
-        // (they're transient and run at non-commanded feeds) but are
-        // still tracked for the `entry_spikes` advisory.
-        if !super::locality::is_steady_state_for_gate(s, span_lookup.as_ref()) {
+        // Finding 3 split (2026-06-04): phantom-transit samples
+        // (WaterlineCleanup / LinkBridge / LeadOut / DressupArtifact)
+        // carry phantom-deep dexel readings and must not surface as
+        // entry_spikes (the inflated chip-thickness misleads the
+        // operator). Configured Entry samples (real plunge / ramp /
+        // helix transients) still route to the entry_spikes advisory.
+        // Both bypass the steady-state trip set.
+        if super::locality::is_phantom_transit(s, span_lookup.as_ref()) {
+            continue;
+        }
+        if super::locality::is_configured_entry(s, span_lookup.as_ref()) {
             if cl_normalized > max && entry_high.is_none_or(|(prev, _)| cl_normalized > prev) {
                 entry_high = Some((cl_normalized, i));
             }
@@ -1341,6 +1340,58 @@ mod tests {
                 }
             ),
             "Helix high sample must trip Exceeds post-revert, got {v:?}"
+        );
+    }
+
+    /// Finding 3 regression sentry (2026-06-04): a phantom-deep
+    /// transit sample (e.g. a WaterlineCleanup sample whose dexel reads
+    /// `stock_top − cutter_z` over neighbouring uncleared stock, not
+    /// the cutter's real engagement) must NOT inflate
+    /// `lookup_axial_doc_mm`. Without the in_transit_span filter, the
+    /// LUT row's chipload envelope derates by `doc_derating_scale(ratio)`
+    /// down to 0.5× at 3×D, and well-behaved steady-state samples land
+    /// above the phantom-derated max → false `Exceeds(High)`.
+    ///
+    /// Setup mirrors the wanaka Back Rough symptom: two healthy 0.04
+    /// chipload samples at commanded DPP ≈ 0.6×D, plus one phantom
+    /// transit sample carrying axial_doc_mm = 30 mm (≫ 3×D). Verdict
+    /// must remain Within because the phantom sample is filtered out
+    /// of the DOC-derating ratio computation.
+    #[test]
+    fn phantom_transit_sample_does_not_inflate_doc_ratio() {
+        // Two healthy steady-state samples: 4 mm axial DOC on a 6.35 mm
+        // tool (ratio ≈ 0.63 → scale 1.0, no derating). Chipload 0.04
+        // lands inside the LUT band.
+        let mut healthy_a = sample(0, 0, 0.04, 0.5);
+        healthy_a.axial_doc_mm = 4.0;
+        let mut healthy_b = sample(0, 1, 0.04, 0.5);
+        healthy_b.axial_doc_mm = 4.0;
+        // Phantom transit sample: lift-bridge over uncleared stock, the
+        // dexel reads 30 mm "axial DOC" though the cutter isn't actually
+        // engaged that deeply. Pre-fix this drove lookup_axial_doc_mm to
+        // 30 → ratio ~4.7 → scale 0.5 → bounds halve → healthy_a/b's
+        // 0.04 chipload now sits above the 0.5× max ≈ 0.0275 → Exceeds.
+        let mut phantom = sample(0, 2, 0.04, 0.5);
+        phantom.axial_doc_mm = 30.0;
+        phantom.in_transit_span = true;
+        let t = trace(vec![healthy_a, healthy_b, phantom]);
+        let v = evaluate(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            None,
+            LutOperationFamily::Pocket,
+            LutPassRole::Roughing,
+            1000.0,
+            OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        assert!(
+            matches!(v, ChiploadVerdict::Within { .. }),
+            "phantom-transit sample must not inflate DOC-derating ratio, got {v:?}"
         );
     }
 

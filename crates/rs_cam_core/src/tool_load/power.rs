@@ -203,10 +203,16 @@ pub fn evaluate(
         let p_kw = predicted_power_kw(kc, cross_section_mm2, feed_for_power);
         let avail = machine.power_at_rpm(s.spindle_rpm as f64) * machine.safety_factor;
 
-        // Route Entry-ancestry samples to the spike track; they don't
-        // drive the steady-state trip but `any_slot`/`last_available_kw`
-        // are bookkeeping that still applies.
-        if !super::locality::is_steady_state_for_gate(s, span_lookup.as_ref()) {
+        // Finding 3 split (2026-06-04): phantom-transit samples
+        // (WaterlineCleanup / LinkBridge / LeadOut / DressupArtifact)
+        // carry inflated dexel axial_doc, so the predicted cutting
+        // power is phantom — drop them entirely. Configured Entry
+        // samples (real plunge / ramp / helix transients) still route
+        // to the entry_spike advisory.
+        if super::locality::is_phantom_transit(s, span_lookup.as_ref()) {
+            continue;
+        }
+        if super::locality::is_configured_entry(s, span_lookup.as_ref()) {
             if p_kw > entry_peak_power {
                 entry_peak_power = p_kw;
                 entry_peak_idx = Some(i);

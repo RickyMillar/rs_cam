@@ -179,6 +179,17 @@ pub struct VendorObservation {
     pub chipload_max_mm_tooth: Option<f64>,
     pub ap_min_mm: Option<f64>,
     pub ap_max_mm: Option<f64>,
+    /// Diameter-scaling lower bound for axial DOC: `ap_min = factor × diameter`.
+    /// Optional so existing JSON parses unchanged; the cutter-axial-constraints
+    /// calculator combines this with `ap_min_mm` per the
+    /// `min(factor × diameter, absolute_mm)` rule. Populated by the
+    /// `migrate_ap_rule` binary from the row's `ap_rule` prose.
+    #[serde(default)]
+    pub ap_min_factor: Option<f64>,
+    /// Diameter-scaling upper bound for axial DOC: `ap_max = factor × diameter`.
+    /// See `ap_min_factor`.
+    #[serde(default)]
+    pub ap_max_factor: Option<f64>,
     pub ae_min_mm: Option<f64>,
     pub ae_max_mm: Option<f64>,
     #[allow(dead_code)]
@@ -404,6 +415,53 @@ mod tests {
                 .iter()
                 .any(|o| o.tool_family == ToolFamily::FacingBit)
         );
+    }
+
+    /// Phase 1 LUT migration invariant
+    /// (`planning/cutter_axial_constraints_2026-06-06.md`).
+    ///
+    /// Every row that carries an `ap_rule` prose string must also have a
+    /// structured axial-DOC bound — either `ap_min_factor` / `ap_max_factor`
+    /// (proportional rule) or `ap_min_mm` / `ap_max_mm` (absolute cap) —
+    /// EXCEPT for the documented label-only rules that the source doesn't
+    /// quantify. The migration binary (`migrate_ap_rule` example) keeps
+    /// these in sync; this test fires when a new ingest adds an `ap_rule`
+    /// the binary's mapping doesn't recognise.
+    const LABEL_ONLY_AP_RULES: &[&str] = &[
+        "tip depth dependent",
+        "3d profiling finish",
+        "3d finishing",
+        "light finishing",
+        "3d profiling semi",
+        "semi-finish",
+        "Finishing Axial = Max LOC",
+        // upcut O-flute single-window row — chip-evacuation prose only.
+        "side-entry or ramp entry required (no straight plunge); upcut \
+         O-flute for chip evacuation. Phase 5 promotion (2026-06-01) — \
+         diameter_mm omitted; article publishes one chipload window \
+         across the upcut O-flute line.",
+    ];
+
+    #[test]
+    fn test_ap_rule_rows_have_structured_bound() {
+        let lut = VendorLut::embedded();
+        for obs in &lut.observations {
+            let Some(rule) = &obs.ap_rule else { continue };
+            let has_factor = obs.ap_min_factor.is_some() || obs.ap_max_factor.is_some();
+            let has_absolute = obs.ap_min_mm.is_some() || obs.ap_max_mm.is_some();
+            if has_factor || has_absolute {
+                continue;
+            }
+            assert!(
+                LABEL_ONLY_AP_RULES.contains(&rule.as_str()),
+                "{}: ap_rule {rule:?} has no structured ap bound (factor or \
+                 absolute mm) and is not in the documented label-only set — \
+                 add an entry to `examples/migrate_ap_rule.rs` and re-run \
+                 the migration, or extend `LABEL_ONLY_AP_RULES` if the rule \
+                 is truly label-only",
+                obs.observation_id
+            );
+        }
     }
 
     #[test]

@@ -20,7 +20,8 @@
       "chipload_min_mm_tooth": 0.0787,
       "chipload_max_mm_tooth": 0.0787,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; 1/4in 2-flute, single 110 IPM / 0.0031in chipload (verified)"
+      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; 1/4in 2-flute, single 110 IPM / 0.0031in chipload (verified)",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-compression-mdf-pocket-6350-2f",
@@ -42,7 +43,8 @@
       "chipload_min_mm_tooth": 0.1549,
       "chipload_max_mm_tooth": 0.1549,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; 1/4in 2-flute, single 220 IPM / 0.0061in chipload"
+      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; 1/4in 2-flute, single 220 IPM / 0.0061in chipload",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-compression-plywood-hardwood-pocket-6350-2f",
@@ -64,7 +66,8 @@
       "chipload_min_mm_tooth": 0.0787,
       "chipload_max_mm_tooth": 0.0787,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; 1/4in 2-flute, single 110 IPM / 0.0031in chipload"
+      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; 1/4in 2-flute, single 110 IPM / 0.0031in chipload",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-compression-wood-pocket-12700-2f",
@@ -86,7 +89,8 @@
       "chipload_min_mm_tooth": 0.1956,
       "chipload_max_mm_tooth": 0.1956,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; 1/2in 2-flute, single 280 IPM / 0.0077in chipload"
+      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; 1/2in 2-flute, single 280 IPM / 0.0077in chipload",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-compression-mdf-pocket-12700-2f",
@@ -108,7 +112,8 @@
       "chipload_min_mm_tooth": 0.2819,
       "chipload_max_mm_tooth": 0.2819,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; 1/2in 2-flute, single 400 IPM / 0.0111in chipload (verified)"
+      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; 1/2in 2-flute, single 400 IPM / 0.0111in chipload (verified)",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-compression-acrylic-pocket-6350-2f",
@@ -130,7 +135,8 @@
       "chipload_min_mm_tooth": 0.0787,
       "chipload_max_mm_tooth": 0.0787,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
-      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; chart column labeled 'Plastic'; 1/4 in 2-flute, single 110 IPM / 0.0031 in chipload value"
+      "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; chart column labeled 'Plastic'; 1/4 in 2-flute, single 110 IPM / 0.0031 in chipload value",
+      "ap_max_factor": 1.0
     }
   ]
 }

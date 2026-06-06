@@ -365,7 +365,8 @@
       "chipload_min_mm_tooth": 0.01905,
       "chipload_max_mm_tooth": 0.0508,
       "ap_rule": "1xD per chart; 3D-finish DOC unspecified by source",
-      "ae_rule": "scallop driven; not specified by source"
+      "ae_rule": "scallop driven; not specified by source",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-ball-mdf-parallel-1000-2f-zrn",
@@ -391,7 +392,8 @@
       "chipload_min_mm_tooth": 0.01905,
       "chipload_max_mm_tooth": 0.0508,
       "ap_rule": "1xD per chart; 3D-finish DOC unspecified by source",
-      "ae_rule": "scallop driven; not specified by source"
+      "ae_rule": "scallop driven; not specified by source",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-ball-softwood-parallel-1587-2f-zrn",
@@ -417,7 +419,8 @@
       "chipload_min_mm_tooth": 0.0388,
       "chipload_max_mm_tooth": 0.0635,
       "ap_rule": "1xD per chart; 3D-finish DOC unspecified by source",
-      "ae_rule": "scallop driven; not specified by source"
+      "ae_rule": "scallop driven; not specified by source",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-ball-softwood-parallel-0794-3f-zrn",
@@ -443,7 +446,8 @@
       "chipload_min_mm_tooth": 0.01905,
       "chipload_max_mm_tooth": 0.0508,
       "ap_rule": "1xD per chart; 3D-finish DOC unspecified by source",
-      "ae_rule": "scallop driven; not specified by source"
+      "ae_rule": "scallop driven; not specified by source",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-ball-mdf-parallel-0794-3f-zrn",
@@ -469,7 +473,8 @@
       "chipload_min_mm_tooth": 0.01905,
       "chipload_max_mm_tooth": 0.0508,
       "ap_rule": "1xD per chart; 3D-finish DOC unspecified by source",
-      "ae_rule": "scallop driven; not specified by source"
+      "ae_rule": "scallop driven; not specified by source",
+      "ap_max_factor": 1.0
     },
     {
       "observation_id": "amana-ball-softwood-parallel-1500-4f-zrn",
@@ -495,7 +500,8 @@
       "chipload_min_mm_tooth": 0.0127,
       "chipload_max_mm_tooth": 0.01651,
       "ap_rule": "1xD per chart; 3D-finish DOC unspecified by source",
-      "ae_rule": "scallop driven; not specified by source"
+      "ae_rule": "scallop driven; not specified by source",
+      "ap_max_factor": 1.0
     }
   ]
 }

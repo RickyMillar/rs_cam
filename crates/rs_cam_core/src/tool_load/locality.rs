@@ -127,22 +127,101 @@ pub fn classify_sample_locality(
 ///   reports the engagement faithfully but it's not a steady-state
 ///   condition the operator dialed in via feeds & speeds (Roadmap
 ///   F.3).
+/// - All other transit-style spans tracked by the dexel stamper —
+///   `SpanKind::{LinkBridge, LeadOut, DressupArtifact}` (any span the
+///   stamper marks `in_transit_span = true`). Dexel readings at these
+///   samples report `stock_top − cutter_z` over *neighbouring* stock
+///   rather than steady-state engagement, so feeding them into any
+///   peak/LUT-lookup metric (e.g. `lookup_axial_doc_mm` for chipload
+///   DOC derating) silently inflates the gate's view of cutter
+///   engagement (P3_TRANSIT_PEAK_DOC_RCA.md).
 ///
-/// When `span_lookup` is `None` (no annotated toolpath plumbed), the
-/// predicate returns `true` — conservatively treating every sample as
-/// steady-state preserves the pre-D7 trip behaviour for legacy callers
-/// rather than silently dropping samples from the gate.
+/// Consulting `sample.in_transit_span` first makes this the canonical
+/// gate-side predicate — callers don't need to know whether they have
+/// span_lookup plumbed; the dexel-stamper-set flag covers every transit
+/// span the simulator marks.
+///
+/// When `span_lookup` is `None` and the trace predates `in_transit_span`
+/// (the field defaults to `false` on deserialize of older traces),
+/// the predicate returns `true` — conservatively treating every sample
+/// as steady-state preserves the pre-D7 trip behaviour for legacy
+/// callers rather than silently dropping samples from the gate.
 pub fn is_steady_state_for_gate(
+    sample: &SimulationCutSample,
+    span_lookup: Option<&SpanLookup<'_>>,
+) -> bool {
+    !is_phantom_transit(sample, span_lookup) && !is_configured_entry(sample, span_lookup)
+}
+
+/// Phantom-transit predicate: returns `true` when the sample sits in a
+/// transit-style span whose dexel reading does **not** reflect real
+/// cutter engagement.
+///
+/// Specifically: `LeadOut`, `LinkBridge`, `DressupArtifact`,
+/// `WaterlineCleanup`. The dexel reads `stock_top − cutter_z` over
+/// *neighbouring* uncleared stock the bridge crosses; any peak /
+/// extreme-value gate metric (LUT lookup, entry_spike report, trip
+/// decision) must drop these samples entirely — surfacing the inflated
+/// value as an `entry_spike` advisory misleads the operator
+/// (P3_TRANSIT_PEAK_DOC_RCA.md).
+///
+/// `Entry` is **not** phantom-transit even though it's also marked
+/// `in_transit_span = true`: a configured plunge / ramp / helix entry
+/// IS a real engagement transient the operator can dial in, and the
+/// entry_spike report on those samples is actionable. Use
+/// [`is_configured_entry`] for that branch.
+///
+/// When `span_lookup` is `None`, the predicate falls back to the
+/// `sample.in_transit_span` flag and assumes the worst (returns `true`
+/// for any in_transit sample). This is conservative: we'd rather drop
+/// a real Entry transient from the spike report than let a phantom
+/// reading slip through. Callers that need the precise Entry/phantom
+/// split must thread spans into the gate.
+pub fn is_phantom_transit(
     sample: &SimulationCutSample,
     span_lookup: Option<&SpanLookup<'_>>,
 ) -> bool {
     match span_lookup {
         Some(lookup) => {
-            !lookup.ancestors_contain_kind(&sample.span_path, SpanKind::Entry)
-                && !lookup.ancestors_contain_kind(&sample.span_path, SpanKind::WaterlineCleanup)
+            // With spans, we can split phantom from configured-entry
+            // precisely. A sample is phantom iff any non-Entry transit
+            // kind appears in its ancestry.
+            lookup.ancestors_contain_kind(&sample.span_path, SpanKind::WaterlineCleanup)
+                || lookup.ancestors_contain_kind(&sample.span_path, SpanKind::LinkBridge)
+                || lookup.ancestors_contain_kind(&sample.span_path, SpanKind::LeadOut)
+                || lookup.ancestors_contain_kind(&sample.span_path, SpanKind::DressupArtifact)
         }
-        None => true,
+        // No span info → fall back to the conservative
+        // `in_transit_span` flag and treat anything in_transit as
+        // phantom (Entry transients lose their entry_spike report
+        // until spans are wired). Safer than letting phantoms surface.
+        None => sample.in_transit_span,
     }
+}
+
+/// Configured-entry predicate: returns `true` when the sample sits in
+/// an `Entry` span (the configured plunge / ramp / helix entry the
+/// operation generator emitted).
+///
+/// Gates use this to route Entry-ancestry samples to their
+/// `entry_spike` reporting track — distinct from steady-state trip
+/// decisions (which exclude them) and from phantom transit samples
+/// (which are dropped entirely; see [`is_phantom_transit`]).
+///
+/// When `span_lookup` is `None`, no split is possible — returns
+/// `false`. Combined with [`is_phantom_transit`]'s conservative
+/// fallback above, this means a no-span trace will route every
+/// in_transit sample to "drop", never to entry_spike. Surface fewer
+/// false-positive advisories at the cost of a true-positive Entry
+/// spike going unreported. Most production traces have spans plumbed.
+pub fn is_configured_entry(
+    sample: &SimulationCutSample,
+    span_lookup: Option<&SpanLookup<'_>>,
+) -> bool {
+    let Some(lookup) = span_lookup else {
+        return false;
+    };
+    lookup.ancestors_contain_kind(&sample.span_path, SpanKind::Entry)
 }
 
 #[cfg(test)]

@@ -111,6 +111,42 @@ pub fn axial_chip_thinning_factor_for_ball(nominal_d: f64, effective_d: f64) -> 
     (nominal_d / effective_d).clamp(1.0, 4.0)
 }
 
+/// Cross-vendor DOC-derating scale for the chipload envelope.
+///
+/// Verbatim from both `amana_compression.json` and `onsrud_plastic.json`
+/// rows' `ap_rule`:
+///
+/// > "1×D use recommended chip load; 2×D reduce 25%; 3×D reduce 50%."
+///
+/// Piecewise linear; clamped at 3×D ratio to keep extrapolation finite.
+/// Shared between the feeds calculator (which applies this to the LUT
+/// chipload bounds returned to Suggest so `target_chipload` aims at a
+/// value the post-sim gate will accept) and the post-sim chipload gate
+/// in `tool_load::chipload` (which applies it to the matched LUT row
+/// using measured peak axial DOC). Keeping a single canonical
+/// implementation prevents the two paths from drifting out of phase —
+/// the earlier `tool_load::chipload::doc_derating_scale` was a
+/// pub(super) copy and that drift is what caused the v3.0c Wanaka
+/// Back Rough false-Exceeds(High).
+///
+/// | ratio (DOC/D) | scale  |
+/// |---------------|--------|
+/// | ≤ 1.0         | 1.000  |
+/// | 2.0           | 0.750  |
+/// | 3.0           | 0.500  |
+/// | ≥ 3.0         | 0.500 (clamped)  |
+pub fn doc_derating_scale(ratio: f64) -> f64 {
+    if !ratio.is_finite() || ratio <= 1.0 {
+        1.0
+    } else if ratio <= 2.0 {
+        1.0 - 0.25 * (ratio - 1.0)
+    } else if ratio <= 3.0 {
+        0.75 - 0.25 * (ratio - 2.0)
+    } else {
+        0.5
+    }
+}
+
 /// Depth tier feed multiplier.
 ///
 /// When axial depth exceeds tool diameter, feed should be derated to avoid

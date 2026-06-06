@@ -483,6 +483,8 @@ mod tests {
             rpm_max: rpm.map(|x| x.1),
             ap_min_mm: ap.map(|x| x.0),
             ap_max_mm: ap.map(|x| x.1),
+            ap_min_factor: None,
+            ap_max_factor: None,
             ae_min_mm: ae.map(|x| x.0),
             ae_max_mm: ae.map(|x| x.1),
             observation_id: "test-row".to_owned(),
