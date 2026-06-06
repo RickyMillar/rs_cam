@@ -265,6 +265,12 @@ impl OperationType {
     /// True for op kinds whose kinematics are Z-only (peck-plunge drilling).
     /// Used by the verdict layer to suppress rapid:cut-ratio and engagement
     /// signals that don't apply to drilling — see fix-plan §1 A12.
+    ///
+    /// THE canonical drill-family predicate (Phase 1 T4 consolidated the
+    /// open-coded `Drill | AlignmentPinDrill` matches in the chipload /
+    /// power / deflection gates, the optimizer skip, and the narrate
+    /// `is_drill_cycle` flag onto this). The membership set is pinned by
+    /// `drill_kinematics_set_is_pinned`; extend it deliberately.
     pub fn is_drill_kinematics(self) -> bool {
         matches!(self, Self::Drill | Self::AlignmentPinDrill)
     }
@@ -1954,6 +1960,25 @@ mod tests {
         assert_eq!(
             unrestricted, 19,
             "unrestricted-op count changed — decide deliberately"
+        );
+    }
+
+    /// Phase 1 T4: the drill-family membership behind the canonical
+    /// [`OperationType::is_drill_kinematics`] predicate, pinned exactly.
+    /// Every gate/optimizer/narrate consumer now routes through the
+    /// helper, so growing this set is a single deliberate edit — and
+    /// this pin makes that edit loud.
+    #[test]
+    fn drill_kinematics_set_is_pinned() {
+        let drills: Vec<_> = OperationType::ALL
+            .iter()
+            .copied()
+            .filter(|op| op.is_drill_kinematics())
+            .collect();
+        assert_eq!(
+            drills,
+            [OperationType::Drill, OperationType::AlignmentPinDrill],
+            "drill-kinematics membership changed — update the pin deliberately"
         );
     }
 

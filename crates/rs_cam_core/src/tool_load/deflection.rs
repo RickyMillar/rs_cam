@@ -51,7 +51,6 @@ use crate::tool::ToolDefinition;
 use crate::toolpath_spans::Span;
 
 use super::locality::SpanLookup;
-use super::power::is_plunge_only_op;
 use super::verdict::{
     Confidence, DeflectionBounds, DeflectionVerdict, EntrySpike, SampleEvidence, UnmodeledReason,
 };
@@ -120,7 +119,7 @@ pub fn evaluate(
     // have no continuous engagement, so the cantilever-deflection
     // metric is meaningless. Return "doesn't apply" rather than the
     // misleading `ArcEngagementNotCaptured`.
-    if is_plunge_only_op(operation_kind) {
+    if operation_kind.is_drill_kinematics() {
         tracing::debug!(
             reason = "NotApplicableForOp",
             "deflection gate refuses: plunge-only op has no continuous engagement"
