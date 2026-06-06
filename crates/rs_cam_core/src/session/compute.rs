@@ -1698,11 +1698,7 @@ impl ProjectSession {
                     .unwrap_or(self.post.spindle_speed),
             ),
             flute_count: Some(tool.flute_count),
-            is_drill_cycle: matches!(
-                tc.operation.op_type(),
-                crate::compute::catalog::OperationType::Drill
-                    | crate::compute::catalog::OperationType::AlignmentPinDrill
-            ),
+            is_drill_cycle: tc.operation.op_type().is_drill_kinematics(),
             material: Some(&self.stock.material),
         };
 

@@ -89,7 +89,7 @@ pub fn evaluate(
     // the op is geometrically plunge-only. Drilling has no continuous
     // engagement to drive a power-vs-RPM curve; the right answer is
     // "doesn't apply" not "arc engagement not captured".
-    if is_plunge_only_op(operation_kind) {
+    if operation_kind.is_drill_kinematics() {
         tracing::debug!(
             reason = "NotApplicableForOp",
             "power gate refuses: plunge-only op has no continuous engagement"
@@ -322,16 +322,6 @@ pub fn evaluate(
         confidence,
         entry_spike,
     }
-}
-
-/// Roadmap F.8 — operation kinds whose geometry is plunge-only. The
-/// three load gates (chipload, power, deflection) all need the same
-/// short-circuit, so the predicate lives in one place.
-pub(super) fn is_plunge_only_op(op_kind: OperationType) -> bool {
-    matches!(
-        op_kind,
-        OperationType::Drill | OperationType::AlignmentPinDrill
-    )
 }
 
 #[cfg(test)]

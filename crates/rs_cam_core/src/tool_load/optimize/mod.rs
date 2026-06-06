@@ -25,7 +25,9 @@ use std::sync::atomic::AtomicBool;
 
 use serde::{Deserialize, Serialize};
 
-use crate::compute::catalog::{OperationConfig, OperationType};
+use crate::compute::catalog::OperationConfig;
+#[cfg(test)]
+use crate::compute::catalog::OperationType;
 use crate::feeds::vendor_lookup::MatchedRow;
 use crate::machine::MachineProfile;
 use crate::session::ProjectSession;
@@ -144,10 +146,7 @@ pub fn optimize_toolpath(
 
     // 2. Skip op kinds the gate can't model. Drill cycles are pure
     //    plunge — no chipload measurement to compare against.
-    if matches!(
-        ctx.operation_kind,
-        OperationType::Drill | OperationType::AlignmentPinDrill
-    ) {
+    if ctx.operation_kind.is_drill_kinematics() {
         return OptimizeOutcome::skipped(RefuseReason::SteadyStateSamplesNotPresent);
     }
 

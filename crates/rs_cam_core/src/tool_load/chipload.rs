@@ -257,7 +257,7 @@ pub fn evaluate(
     // plunge-only. Drill cycles have no continuous chipload to
     // compare against an LUT envelope; the right answer is "doesn't
     // apply" not "samples not in steady state" or "no vendor data".
-    if super::power::is_plunge_only_op(operation_kind) {
+    if operation_kind.is_drill_kinematics() {
         return ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::NotApplicableForOp(
                 "drill cycle — no continuous engagement".to_owned(),
