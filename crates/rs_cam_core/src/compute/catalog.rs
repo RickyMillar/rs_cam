@@ -102,63 +102,97 @@ impl OperationTransformCapabilities {
     }
 }
 
-/// Operation type for creating new toolpaths.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OperationType {
-    Face,
-    Pocket,
-    Profile,
-    Adaptive,
-    VCarve,
-    Rest,
-    Inlay,
-    Zigzag,
-    Trace,
-    Drill,
-    Chamfer,
-    DropCutter,
-    Adaptive3d,
-    Waterline,
-    Pencil,
-    Scallop,
-    SteepShallow,
-    RampFinish,
-    SpiralFinish,
-    RadialFinish,
-    HorizontalFinish,
-    ProjectCurve,
-    /// Auto-generated drilling operation for stock alignment pin holes.
-    AlignmentPinDrill,
+// ── Phase 2 operation X-macro (architectural refactor 2026-06-06) ─────
+//
+// THE single authoritative operation list. Every row carries
+// `(Variant, ConfigType, Category)`; the callback macros below generate
+// the pure-list surfaces (`OperationType` decl, `ALL`, `category()`,
+// and the `OperationConfig` dispatch in the next section). Adding an
+// operation = adding ONE row here (plus its registry entry and config
+// struct — both compile-enforced).
+//
+// Deliberately NOT generated (plan §3.4): `spec()` bodies, `ParamDef`
+// arrays, `OperationConfig` itself (serde-attribute regression risk),
+// and execute.rs arms. `ALL_2D`/`ALL_3D` stay hand-written below and
+// are sync-tested against the category tokens.
+//
+// Category tokens are `OpCategory` variant names: `Menu2d` / `Menu3d` /
+// `SystemOnly`. A typo'd token fails with E0599 pointing at the row.
+macro_rules! for_each_op {
+    ($m:ident) => {
+        $m! {
+            //  variant            config type                category
+            (Face,               FaceConfig,                Menu2d),
+            (Pocket,             PocketConfig,              Menu2d),
+            (Profile,            ProfileConfig,             Menu2d),
+            (Adaptive,           AdaptiveConfig,            Menu2d),
+            (VCarve,             VCarveConfig,              Menu2d),
+            (Rest,               RestConfig,                Menu2d),
+            (Inlay,              InlayConfig,               Menu2d),
+            (Zigzag,             ZigzagConfig,              Menu2d),
+            (Trace,              TraceConfig,               Menu2d),
+            (Drill,              DrillConfig,               Menu2d),
+            (Chamfer,            ChamferConfig,             Menu2d),
+            (DropCutter,         DropCutterConfig,          Menu3d),
+            (Adaptive3d,         Adaptive3dConfig,          Menu3d),
+            (Waterline,          WaterlineConfig,           Menu3d),
+            (Pencil,             PencilConfig,              Menu3d),
+            (Scallop,            ScallopConfig,             Menu3d),
+            (SteepShallow,       SteepShallowConfig,        Menu3d),
+            (RampFinish,         RampFinishConfig,          Menu3d),
+            (SpiralFinish,       SpiralFinishConfig,        Menu3d),
+            (RadialFinish,       RadialFinishConfig,        Menu3d),
+            (HorizontalFinish,   HorizontalFinishConfig,    Menu3d),
+            (ProjectCurve,       ProjectCurveConfig,        Menu3d),
+            // Auto-generated drilling operation for stock alignment pin
+            // holes — in `ALL`, in neither user menu.
+            (AlignmentPinDrill,  AlignmentPinDrillConfig,   SystemOnly),
+        }
+    };
 }
 
-impl OperationType {
-    pub const ALL: &[OperationType] = &[
-        OperationType::Face,
-        OperationType::Pocket,
-        OperationType::Profile,
-        OperationType::Adaptive,
-        OperationType::VCarve,
-        OperationType::Rest,
-        OperationType::Inlay,
-        OperationType::Zigzag,
-        OperationType::Trace,
-        OperationType::Drill,
-        OperationType::Chamfer,
-        OperationType::DropCutter,
-        OperationType::Adaptive3d,
-        OperationType::Waterline,
-        OperationType::Pencil,
-        OperationType::Scallop,
-        OperationType::SteepShallow,
-        OperationType::RampFinish,
-        OperationType::SpiralFinish,
-        OperationType::RadialFinish,
-        OperationType::HorizontalFinish,
-        OperationType::ProjectCurve,
-        OperationType::AlignmentPinDrill,
-    ];
+/// Menu placement category, generated per op from the X-macro row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpCategory {
+    /// Listed in the 2D operations menu (`OperationType::ALL_2D`).
+    Menu2d,
+    /// Listed in the 3D operations menu (`OperationType::ALL_3D`).
+    Menu3d,
+    /// In `OperationType::ALL` but in neither user menu (system-generated).
+    SystemOnly,
+}
 
+macro_rules! define_operation_type {
+    ($( ($variant:ident, $config:ident, $cat:ident) ),+ $(,)?) => {
+        /// Operation type for creating new toolpaths.
+        ///
+        /// GENERATED from the `for_each_op!` list — edit the list, not
+        /// this block.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        pub enum OperationType {
+            $($variant,)+
+        }
+
+        impl OperationType {
+            /// Every operation, in canonical (list) order. GENERATED.
+            pub const ALL: &[OperationType] = &[$(OperationType::$variant,)+];
+
+            /// Menu placement for this op, from the X-macro category
+            /// token. `ALL_2D`/`ALL_3D` stay hand-written and are
+            /// sync-tested against this in
+            /// `operation_partitions_cover_all_variants_once`.
+            pub const fn category(self) -> OpCategory {
+                match self {
+                    $(OperationType::$variant => OpCategory::$cat,)+
+                }
+            }
+        }
+    };
+}
+for_each_op!(define_operation_type);
+
+impl OperationType {
     pub const ALL_2D: &[OperationType] = &[
         OperationType::Face,
         OperationType::Pocket,
@@ -2120,6 +2154,32 @@ mod tests {
             union, all,
             "ALL_2D ∪ ALL_3D ∪ SYSTEM_ONLY must equal OperationType::ALL exactly \
              — place every new op in a menu sublist or name it system-only"
+        );
+
+        // Phase 2 X-macro sync: the hand-written menu consts must agree
+        // with the per-row category tokens in `for_each_op!` — order
+        // included (both follow canonical ALL order).
+        let by_cat = |cat: OpCategory| -> Vec<OperationType> {
+            OperationType::ALL
+                .iter()
+                .copied()
+                .filter(|op| op.category() == cat)
+                .collect()
+        };
+        assert_eq!(
+            by_cat(OpCategory::Menu2d),
+            OperationType::ALL_2D,
+            "ALL_2D out of sync with for_each_op! Menu2d tokens"
+        );
+        assert_eq!(
+            by_cat(OpCategory::Menu3d),
+            OperationType::ALL_3D,
+            "ALL_3D out of sync with for_each_op! Menu3d tokens"
+        );
+        assert_eq!(
+            by_cat(OpCategory::SystemOnly),
+            SYSTEM_ONLY,
+            "system-only set out of sync with for_each_op! SystemOnly tokens"
         );
     }
 
