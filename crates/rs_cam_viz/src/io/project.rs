@@ -1495,6 +1495,40 @@ mod tests {
         tool
     }
 
+    /// Parity freeze (architectural refactor §7.2): the VIZ project-file
+    /// tool section serializes its tool type under the TOML key `type`
+    /// (serde rename) as a serde-direct [`ToolType`] — strict snake_case
+    /// (unknown values are a hard parse error, unlike the core loader's
+    /// lenient String field), defaulting a missing key to `EndMill`. A
+    /// registry/X-macro change must not silently alter this shape.
+    #[test]
+    fn project_tool_section_type_key_shape_frozen() {
+        // `type` key round-trips into the serde-direct enum field.
+        let section: ProjectToolSection = toml::from_str(r#"type = "ball_nose""#).unwrap();
+        assert_eq!(section.tool_type, ToolType::BallNose);
+
+        // Strict layer: unknown tool types are a parse error here.
+        assert!(
+            toml::from_str::<ProjectToolSection>(r#"type = "definitely_not_a_tool""#).is_err(),
+            "viz serde-direct ToolType must reject unknown names"
+        );
+
+        // Missing key defaults to EndMill.
+        let defaulted: ProjectToolSection = toml::from_str("").unwrap();
+        assert_eq!(defaulted.tool_type, ToolType::EndMill);
+
+        // Serialization emits `type`, never the field name `tool_type`.
+        let out = toml::to_string(&section).unwrap();
+        assert!(
+            out.contains("type = \"ball_nose\""),
+            "expected renamed `type` key, got:\n{out}"
+        );
+        assert!(
+            !out.contains("tool_type"),
+            "field name `tool_type` must not leak into TOML:\n{out}"
+        );
+    }
+
     #[test]
     fn round_trip_persists_editable_2d_state() {
         let temp_dir = unique_temp_dir();

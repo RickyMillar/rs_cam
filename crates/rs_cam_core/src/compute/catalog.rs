@@ -1597,24 +1597,145 @@ mod tests {
         }
     }
 
+    /// Parity freeze (architectural refactor §7.2): `ALL` is exactly the
+    /// disjoint union of `ALL_2D`, `ALL_3D`, and the NAMED system-only
+    /// set. A new op added to `ALL` without being placed in a menu
+    /// sublist (or explicitly listed as system-only here) fails this
+    /// test — placement is a recorded decision, not an accident.
     #[test]
     fn operation_partitions_cover_all_variants_once() {
         use std::collections::HashSet;
+
+        // The ops deliberately absent from both user menus. Keep this
+        // list in sync with intent, not convenience.
+        const SYSTEM_ONLY: &[OperationType] = &[OperationType::AlignmentPinDrill];
+
         let all: HashSet<_> = OperationType::ALL.iter().collect();
+        assert_eq!(
+            all.len(),
+            OperationType::ALL.len(),
+            "OperationType::ALL contains duplicates"
+        );
+
         let twod: HashSet<_> = OperationType::ALL_2D.iter().collect();
         let threed: HashSet<_> = OperationType::ALL_3D.iter().collect();
-        // 2D and 3D must not overlap
+        let system: HashSet<_> = SYSTEM_ONLY.iter().collect();
         assert!(twod.is_disjoint(&threed), "ALL_2D and ALL_3D overlap");
-        // Both must be subsets of ALL
-        assert!(twod.is_subset(&all), "ALL_2D contains items not in ALL");
-        assert!(threed.is_subset(&all), "ALL_3D contains items not in ALL");
-        // System-only ops (not in user menus) are the difference
-        let menu_ops: HashSet<_> = twod.union(&threed).collect();
-        let system_only = all.len() - menu_ops.len();
+        assert!(system.is_disjoint(&twod), "system-only op listed in ALL_2D");
         assert!(
-            system_only > 0,
-            "Expected at least AlignmentPinDrill as system-only"
+            system.is_disjoint(&threed),
+            "system-only op listed in ALL_3D"
         );
+
+        let union: HashSet<_> = twod
+            .union(&threed)
+            .copied()
+            .collect::<HashSet<_>>()
+            .union(&system)
+            .copied()
+            .collect();
+        assert_eq!(
+            union, all,
+            "ALL_2D ∪ ALL_3D ∪ SYSTEM_ONLY must equal OperationType::ALL exactly \
+             — place every new op in a menu sublist or name it system-only"
+        );
+    }
+
+    /// Parity freeze (architectural refactor §7.2): the externally-tagged
+    /// `{kind, params}` serde shape of [`OperationConfig`]. The MCP
+    /// `set_toolpath_param` round-trip depends on `params` being a
+    /// mutable object and `kind` being the snake_case op name; project
+    /// TOML on disk depends on the same shape. A careless registry /
+    /// X-macro change that alters this breaks saved projects and the MCP
+    /// surface silently — this test makes it loud.
+    #[test]
+    fn operation_config_serde_shape_is_kind_params() {
+        for &op_type in OperationType::ALL {
+            let config = OperationConfig::new_default(op_type);
+
+            // JSON view (MCP surface).
+            let json = serde_json::to_value(&config).expect("serialize op config to JSON");
+            let obj = json.as_object().expect("op config must be a JSON object");
+            assert_eq!(
+                obj.keys().collect::<Vec<_>>(),
+                ["kind", "params"],
+                "{op_type:?}: serde shape must be exactly {{kind, params}}"
+            );
+            assert_eq!(
+                obj.get("kind").and_then(|k| k.as_str()),
+                Some(op_type.kind_str()),
+                "{op_type:?}: `kind` tag must equal kind_str()"
+            );
+            assert!(
+                obj.get("params").is_some_and(serde_json::Value::is_object),
+                "{op_type:?}: `params` must be a mutable JSON object"
+            );
+
+            // TOML view (project files on disk) — must round-trip.
+            let toml_str = toml::to_string(&config).expect("serialize op config to TOML");
+            assert!(
+                toml_str.contains("kind = "),
+                "{op_type:?}: TOML must carry the `kind` tag"
+            );
+            let back: OperationConfig =
+                toml::from_str(&toml_str).expect("round-trip op config from TOML");
+            assert_eq!(
+                back.op_type(),
+                op_type,
+                "{op_type:?}: TOML round-trip changed the operation kind"
+            );
+        }
+    }
+
+    /// Parity freeze (architectural refactor §7.2): the snake_case serde
+    /// repr of every [`OperationType`] — these strings are canonical in
+    /// project TOML, the MCP wire format, and MCP error messages. Pinned
+    /// as literals (not derived) so a rename anywhere fails here first.
+    #[test]
+    fn operation_type_serde_repr_pinned() {
+        const PINNED: &[(&str, OperationType)] = &[
+            ("face", OperationType::Face),
+            ("pocket", OperationType::Pocket),
+            ("profile", OperationType::Profile),
+            ("adaptive", OperationType::Adaptive),
+            ("v_carve", OperationType::VCarve),
+            ("rest", OperationType::Rest),
+            ("inlay", OperationType::Inlay),
+            ("zigzag", OperationType::Zigzag),
+            ("trace", OperationType::Trace),
+            ("drill", OperationType::Drill),
+            ("chamfer", OperationType::Chamfer),
+            ("drop_cutter", OperationType::DropCutter),
+            ("adaptive3d", OperationType::Adaptive3d),
+            ("waterline", OperationType::Waterline),
+            ("pencil", OperationType::Pencil),
+            ("scallop", OperationType::Scallop),
+            ("steep_shallow", OperationType::SteepShallow),
+            ("ramp_finish", OperationType::RampFinish),
+            ("spiral_finish", OperationType::SpiralFinish),
+            ("radial_finish", OperationType::RadialFinish),
+            ("horizontal_finish", OperationType::HorizontalFinish),
+            ("project_curve", OperationType::ProjectCurve),
+            ("alignment_pin_drill", OperationType::AlignmentPinDrill),
+        ];
+        assert_eq!(PINNED.len(), OperationType::ALL.len());
+
+        for &(repr, op_type) in PINNED {
+            assert_eq!(
+                serde_json::to_value(op_type).expect("serialize op type"),
+                serde_json::Value::String(repr.to_owned()),
+                "{op_type:?}: serde repr drifted from the pinned canonical name"
+            );
+            assert_eq!(
+                op_type.kind_str(),
+                repr,
+                "{op_type:?}: kind_str() disagrees with the serde repr"
+            );
+            let parsed: OperationType =
+                serde_json::from_value(serde_json::Value::String(repr.to_owned()))
+                    .expect("canonical name must deserialize");
+            assert_eq!(parsed, op_type);
+        }
     }
 
     #[test]
