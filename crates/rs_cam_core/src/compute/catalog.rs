@@ -192,6 +192,40 @@ macro_rules! define_operation_type {
 }
 for_each_op!(define_operation_type);
 
+macro_rules! define_operation_config_dispatch {
+    ($( ($variant:ident, $config:ident, $cat:ident) ),+ $(,)?) => {
+        /// Per-variant dispatch surfaces. GENERATED from `for_each_op!`
+        /// — edit the list, not this block.
+        impl OperationConfig {
+            pub fn op_type(&self) -> OperationType {
+                match self {
+                    $(OperationConfig::$variant(_) => OperationType::$variant,)+
+                }
+            }
+
+            pub fn new_default(op_type: OperationType) -> Self {
+                match op_type {
+                    $(OperationType::$variant =>
+                        OperationConfig::$variant(<$config>::default()),)+
+                }
+            }
+
+            pub fn as_params(&self) -> &dyn OperationParams {
+                match self {
+                    $(OperationConfig::$variant(c) => c,)+
+                }
+            }
+
+            pub fn as_params_mut(&mut self) -> &mut dyn OperationParams {
+                match self {
+                    $(OperationConfig::$variant(c) => c,)+
+                }
+            }
+        }
+    };
+}
+for_each_op!(define_operation_config_dispatch);
+
 impl OperationType {
     pub const ALL_2D: &[OperationType] = &[
         OperationType::Face,
@@ -549,34 +583,6 @@ impl OperationConfig {
         }
     }
 
-    pub fn op_type(&self) -> OperationType {
-        match self {
-            OperationConfig::Face(_) => OperationType::Face,
-            OperationConfig::Pocket(_) => OperationType::Pocket,
-            OperationConfig::Profile(_) => OperationType::Profile,
-            OperationConfig::Adaptive(_) => OperationType::Adaptive,
-            OperationConfig::VCarve(_) => OperationType::VCarve,
-            OperationConfig::Rest(_) => OperationType::Rest,
-            OperationConfig::Inlay(_) => OperationType::Inlay,
-            OperationConfig::Zigzag(_) => OperationType::Zigzag,
-            OperationConfig::Trace(_) => OperationType::Trace,
-            OperationConfig::Drill(_) => OperationType::Drill,
-            OperationConfig::Chamfer(_) => OperationType::Chamfer,
-            OperationConfig::DropCutter(_) => OperationType::DropCutter,
-            OperationConfig::Adaptive3d(_) => OperationType::Adaptive3d,
-            OperationConfig::Waterline(_) => OperationType::Waterline,
-            OperationConfig::Pencil(_) => OperationType::Pencil,
-            OperationConfig::Scallop(_) => OperationType::Scallop,
-            OperationConfig::SteepShallow(_) => OperationType::SteepShallow,
-            OperationConfig::RampFinish(_) => OperationType::RampFinish,
-            OperationConfig::SpiralFinish(_) => OperationType::SpiralFinish,
-            OperationConfig::RadialFinish(_) => OperationType::RadialFinish,
-            OperationConfig::HorizontalFinish(_) => OperationType::HorizontalFinish,
-            OperationConfig::ProjectCurve(_) => OperationType::ProjectCurve,
-            OperationConfig::AlignmentPinDrill(_) => OperationType::AlignmentPinDrill,
-        }
-    }
-
     pub fn spec(&self) -> OperationSpec {
         self.op_type().spec()
     }
@@ -621,62 +627,6 @@ impl OperationConfig {
 
     pub fn needs_both(&self) -> bool {
         self.geometry_requirement() == GeometryRequirement::Both
-    }
-
-    pub fn as_params(&self) -> &dyn OperationParams {
-        match self {
-            OperationConfig::Face(c) => c,
-            OperationConfig::Pocket(c) => c,
-            OperationConfig::Profile(c) => c,
-            OperationConfig::Adaptive(c) => c,
-            OperationConfig::VCarve(c) => c,
-            OperationConfig::Rest(c) => c,
-            OperationConfig::Inlay(c) => c,
-            OperationConfig::Zigzag(c) => c,
-            OperationConfig::Trace(c) => c,
-            OperationConfig::Drill(c) => c,
-            OperationConfig::Chamfer(c) => c,
-            OperationConfig::DropCutter(c) => c,
-            OperationConfig::Adaptive3d(c) => c,
-            OperationConfig::Waterline(c) => c,
-            OperationConfig::Pencil(c) => c,
-            OperationConfig::Scallop(c) => c,
-            OperationConfig::SteepShallow(c) => c,
-            OperationConfig::RampFinish(c) => c,
-            OperationConfig::SpiralFinish(c) => c,
-            OperationConfig::RadialFinish(c) => c,
-            OperationConfig::HorizontalFinish(c) => c,
-            OperationConfig::ProjectCurve(c) => c,
-            OperationConfig::AlignmentPinDrill(c) => c,
-        }
-    }
-
-    pub fn as_params_mut(&mut self) -> &mut dyn OperationParams {
-        match self {
-            OperationConfig::Face(c) => c,
-            OperationConfig::Pocket(c) => c,
-            OperationConfig::Profile(c) => c,
-            OperationConfig::Adaptive(c) => c,
-            OperationConfig::VCarve(c) => c,
-            OperationConfig::Rest(c) => c,
-            OperationConfig::Inlay(c) => c,
-            OperationConfig::Zigzag(c) => c,
-            OperationConfig::Trace(c) => c,
-            OperationConfig::Drill(c) => c,
-            OperationConfig::Chamfer(c) => c,
-            OperationConfig::DropCutter(c) => c,
-            OperationConfig::Adaptive3d(c) => c,
-            OperationConfig::Waterline(c) => c,
-            OperationConfig::Pencil(c) => c,
-            OperationConfig::Scallop(c) => c,
-            OperationConfig::SteepShallow(c) => c,
-            OperationConfig::RampFinish(c) => c,
-            OperationConfig::SpiralFinish(c) => c,
-            OperationConfig::RadialFinish(c) => c,
-            OperationConfig::HorizontalFinish(c) => c,
-            OperationConfig::ProjectCurve(c) => c,
-            OperationConfig::AlignmentPinDrill(c) => c,
-        }
     }
 
     pub fn feed_rate(&self) -> f64 {
@@ -1897,46 +1847,6 @@ impl OperationConfig {
             stock_padding: ctx.stock_padding,
         };
         crate::feeds::suggest::apply_stock_defaults(self, &stock_ctx);
-    }
-
-    pub fn new_default(op_type: OperationType) -> Self {
-        match op_type {
-            OperationType::Face => OperationConfig::Face(FaceConfig::default()),
-            OperationType::Pocket => OperationConfig::Pocket(PocketConfig::default()),
-            OperationType::Profile => OperationConfig::Profile(ProfileConfig::default()),
-            OperationType::Adaptive => OperationConfig::Adaptive(AdaptiveConfig::default()),
-            OperationType::VCarve => OperationConfig::VCarve(VCarveConfig::default()),
-            OperationType::Rest => OperationConfig::Rest(RestConfig::default()),
-            OperationType::Inlay => OperationConfig::Inlay(InlayConfig::default()),
-            OperationType::Zigzag => OperationConfig::Zigzag(ZigzagConfig::default()),
-            OperationType::Trace => OperationConfig::Trace(TraceConfig::default()),
-            OperationType::Drill => OperationConfig::Drill(DrillConfig::default()),
-            OperationType::Chamfer => OperationConfig::Chamfer(ChamferConfig::default()),
-            OperationType::DropCutter => OperationConfig::DropCutter(DropCutterConfig::default()),
-            OperationType::Adaptive3d => OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
-            OperationType::Waterline => OperationConfig::Waterline(WaterlineConfig::default()),
-            OperationType::Pencil => OperationConfig::Pencil(PencilConfig::default()),
-            OperationType::Scallop => OperationConfig::Scallop(ScallopConfig::default()),
-            OperationType::SteepShallow => {
-                OperationConfig::SteepShallow(SteepShallowConfig::default())
-            }
-            OperationType::RampFinish => OperationConfig::RampFinish(RampFinishConfig::default()),
-            OperationType::SpiralFinish => {
-                OperationConfig::SpiralFinish(SpiralFinishConfig::default())
-            }
-            OperationType::RadialFinish => {
-                OperationConfig::RadialFinish(RadialFinishConfig::default())
-            }
-            OperationType::HorizontalFinish => {
-                OperationConfig::HorizontalFinish(HorizontalFinishConfig::default())
-            }
-            OperationType::ProjectCurve => {
-                OperationConfig::ProjectCurve(ProjectCurveConfig::default())
-            }
-            OperationType::AlignmentPinDrill => {
-                OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default())
-            }
-        }
     }
 
     /// Pre-compute Z levels for depth stepping (top -> bottom).
