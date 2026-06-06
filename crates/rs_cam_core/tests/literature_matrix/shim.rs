@@ -285,10 +285,7 @@ fn build_operation(
 /// matrix here mirrors the production tool-picker contract and routes
 /// to `ShimError::EngineRefused`, which the runner treats as a pass
 /// for `unusable` cells and as `NA` for `values` cells.
-fn validate_tool_class_for_operation(
-    tool_class: &str,
-    operation: &str,
-) -> Result<(), ShimError> {
+fn validate_tool_class_for_operation(tool_class: &str, operation: &str) -> Result<(), ShimError> {
     let ok = match (tool_class, operation) {
         // Drill bits: only valid on drill ops.
         ("drill", "drill") => true,

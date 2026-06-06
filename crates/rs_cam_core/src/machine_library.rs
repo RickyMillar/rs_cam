@@ -23,7 +23,9 @@ use crate::machine::MachineProfile;
 /// Errors from machine-library file operations.
 #[derive(Debug, thiserror::Error)]
 pub enum MachineLibraryError {
-    #[error("machine library directory could not be determined (no RS_CAM_MACHINE_DIR, XDG_CONFIG_HOME, or HOME)")]
+    #[error(
+        "machine library directory could not be determined (no RS_CAM_MACHINE_DIR, XDG_CONFIG_HOME, or HOME)"
+    )]
     NoLibraryDir,
     #[error("invalid machine name {0:?}: must be non-empty and contain no path separators or '..'")]
     InvalidName(String),
@@ -102,9 +104,7 @@ pub fn list_in(dir: &Path) -> Vec<String> {
             if path.extension().and_then(|s| s.to_str()) != Some("toml") {
                 return None;
             }
-            path.file_stem()
-                .and_then(|s| s.to_str())
-                .map(str::to_owned)
+            path.file_stem().and_then(|s| s.to_str()).map(str::to_owned)
         })
         .collect();
     names.sort();
@@ -146,8 +146,8 @@ pub fn save_to(
         name: name.to_owned(),
         source,
     })?;
-    let text =
-        toml::to_string_pretty(profile).map_err(|e| MachineLibraryError::Serialize(name.to_owned(), e))?;
+    let text = toml::to_string_pretty(profile)
+        .map_err(|e| MachineLibraryError::Serialize(name.to_owned(), e))?;
     std::fs::write(&path, text).map_err(|source| MachineLibraryError::Io {
         name: name.to_owned(),
         source,

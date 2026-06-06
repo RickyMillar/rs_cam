@@ -139,9 +139,9 @@ fn aluminum_kc_matches_vdi_3323_group_22_kienzle_pair() {
     let expected = 800.0 * 0.1_f64.powf(-0.25);
     for alloy in [AluminumAlloy::Alloy6061T6, AluminumAlloy::Alloy7075T6] {
         let m = Material::Aluminum { alloy };
-        let kc = m.kc_n_per_mm2().expect(
-            "Phase 4 enables aluminum Kc — Material::Aluminum::kc_n_per_mm2 must be Some",
-        );
+        let kc = m
+            .kc_n_per_mm2()
+            .expect("Phase 4 enables aluminum Kc — Material::Aluminum::kc_n_per_mm2 must be Some");
         within_pct(
             kc,
             expected,
@@ -483,9 +483,9 @@ fn solid_wood_by_janka_helper_aligns_with_enum_anchors_within_folklore_band() {
         label: "Longleaf Pine (parametric anchor)".to_owned(),
         source_id: "wood_database_2026-05-30".to_owned(),
     };
-    let parametric_kc = parametric.kc_n_per_mm2().expect(
-        "parametric Kc at Janka 870 (well inside [200, 4000]) must be Some",
-    );
+    let parametric_kc = parametric
+        .kc_n_per_mm2()
+        .expect("parametric Kc at Janka 870 (well inside [200, 4000]) must be Some");
     let enum_kc = Material::SolidWood {
         species: WoodSpecies::LongleafPine,
     }

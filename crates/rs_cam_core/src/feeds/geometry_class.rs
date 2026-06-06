@@ -68,10 +68,7 @@ pub enum GeometryClass {
 /// argument (carrying STL slope histogram, STEP face-type histogram)
 /// that lets the 3D branch distinguish `ShallowTerrain` /
 /// `SteepTerrain` from `MixedTerrain`.
-pub fn classify(
-    op_type: OperationType,
-    model_bbox: Option<&BoundingBox3>,
-) -> GeometryClass {
+pub fn classify(op_type: OperationType, model_bbox: Option<&BoundingBox3>) -> GeometryClass {
     use OperationType::*;
     match op_type {
         // Feature-driven: input geometry IS the path, no terrain
@@ -80,14 +77,10 @@ pub fn classify(
             GeometryClass::FeatureDriven
         }
         // 2D / pocket-like: planar engagement, strategy auto-pick moot.
-        Pocket | Rest | Profile | Chamfer | Face | Pencil | Adaptive => {
-            GeometryClass::PocketLike
-        }
+        Pocket | Rest | Profile | Chamfer | Face | Pencil | Adaptive => GeometryClass::PocketLike,
         // 3D ops fall through to terrain-aware classification.
-        Adaptive3d | DropCutter | Scallop | Waterline | HorizontalFinish
-        | SteepShallow | SpiralFinish | RadialFinish | Zigzag | RampFinish => {
-            classify_3d_terrain(model_bbox)
-        }
+        Adaptive3d | DropCutter | Scallop | Waterline | HorizontalFinish | SteepShallow
+        | SpiralFinish | RadialFinish | Zigzag | RampFinish => classify_3d_terrain(model_bbox),
     }
 }
 

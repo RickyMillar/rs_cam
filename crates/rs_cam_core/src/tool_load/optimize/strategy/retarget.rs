@@ -319,7 +319,8 @@ mod tests {
             power: within_power(0.4),
             deflection: within_deflection(0.020),
             drill_gates: None,
-            modulation_summary: None,        };
+            modulation_summary: None,
+        };
         assert!(strat.candidates(&view, &verdict).is_empty());
     }
 
@@ -342,7 +343,8 @@ mod tests {
             power: within_power(0.4),
             deflection: within_deflection(0.020),
             drill_gates: None,
-            modulation_summary: None,        };
+            modulation_summary: None,
+        };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 1);
         assert_eq!(cps[0].strategy, CHIPLOAD_SUB);
@@ -367,7 +369,8 @@ mod tests {
             power: exceeds_power(1.5),
             deflection: within_deflection(0.020),
             drill_gates: None,
-            modulation_summary: None,        };
+            modulation_summary: None,
+        };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 2);
         assert_eq!(cps[0].strategy, CHIPLOAD_SUB);
@@ -393,7 +396,8 @@ mod tests {
             power: exceeds_power(1.5),
             deflection: exceeds_deflection(0.32),
             drill_gates: None,
-            modulation_summary: None,        };
+            modulation_summary: None,
+        };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 3);
         assert_eq!(cps[0].strategy, CHIPLOAD_SUB);
@@ -422,7 +426,8 @@ mod tests {
             power: within_power(0.4),
             deflection: within_deflection(0.020),
             drill_gates: None,
-            modulation_summary: None,        };
+            modulation_summary: None,
+        };
         assert!(strat.candidates(&view, &verdict).is_empty());
     }
 
@@ -447,7 +452,8 @@ mod tests {
             power: within_power(0.4),
             deflection: within_deflection(0.020),
             drill_gates: None,
-            modulation_summary: None,        };
+            modulation_summary: None,
+        };
         assert!(strat.candidates(&view, &burn).is_empty());
 
         let breakage = ToolpathLoadVerdict {
@@ -456,7 +462,8 @@ mod tests {
             power: within_power(0.4),
             deflection: within_deflection(0.020),
             drill_gates: None,
-            modulation_summary: None,        };
+            modulation_summary: None,
+        };
         let cps = strat.candidates(&view, &breakage);
         assert_eq!(cps.len(), 1);
         assert_eq!(cps[0].strategy, CHIPLOAD_SUB);
@@ -485,7 +492,8 @@ mod tests {
             power: within_power(0.4),
             deflection: within_deflection(0.020),
             drill_gates: None,
-            modulation_summary: None,        };
+            modulation_summary: None,
+        };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 1);
         let primary = cps[0]

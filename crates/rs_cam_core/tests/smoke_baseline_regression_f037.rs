@@ -118,8 +118,10 @@ fn diff_detects_within_to_exceeds_mutation() {
                   deflection_peak_mm,power_kind,power_peak_kw,rapid_collision_count,avg_engagement,\
                   peak_axial_doc_mm,drill_chip_welding_kind,drill_chip_welding_observed,\
                   drill_peck_kind,drill_plunge_kind,notes\n";
-    let baseline_row = "AS001,pocket,ok,exceeds_low,0.005,within,0.078,within,0.005,0,0.25,2.0,,,,,";
-    let mutated_row = "AS001,pocket,ok,exceeds_low,0.005,exceeds,0.250,within,0.005,0,0.25,2.0,,,,,";
+    let baseline_row =
+        "AS001,pocket,ok,exceeds_low,0.005,within,0.078,within,0.005,0,0.25,2.0,,,,,";
+    let mutated_row =
+        "AS001,pocket,ok,exceeds_low,0.005,exceeds,0.250,within,0.005,0,0.25,2.0,,,,,";
 
     let tmp = std::env::temp_dir();
     let baseline_path = tmp.join("f037_diff_baseline.csv");
@@ -132,12 +134,13 @@ fn diff_detects_within_to_exceeds_mutation() {
     // acceptance test to fail when the CSV schema drifts even before the
     // CLI rebuilds.
     let kind_at = |path: &std::path::Path, column: &str, row_filter: &str| -> String {
-        let mut rdr = csv::ReaderBuilder::new()
-            .from_path(path)
-            .expect("open csv");
+        let mut rdr = csv::ReaderBuilder::new().from_path(path).expect("open csv");
         let headers = rdr.headers().expect("headers").clone();
         let col_idx = headers.iter().position(|h| h == column).expect("column");
-        let case_idx = headers.iter().position(|h| h == "case_id").expect("case_id");
+        let case_idx = headers
+            .iter()
+            .position(|h| h == "case_id")
+            .expect("case_id");
         for rec in rdr.records() {
             let rec = rec.unwrap();
             if rec.get(case_idx) == Some(row_filter) {
@@ -147,7 +150,13 @@ fn diff_detects_within_to_exceeds_mutation() {
         String::new()
     };
 
-    assert_eq!(kind_at(&baseline_path, "deflection_kind", "AS001"), "within");
-    assert_eq!(kind_at(&current_path, "deflection_kind", "AS001"), "exceeds");
+    assert_eq!(
+        kind_at(&baseline_path, "deflection_kind", "AS001"),
+        "within"
+    );
+    assert_eq!(
+        kind_at(&current_path, "deflection_kind", "AS001"),
+        "exceeds"
+    );
     // This is the Within→Exceeds regression case the CLI MUST catch.
 }

@@ -627,11 +627,10 @@ pub fn validate_machine_safety(gcode: &str, cfg: MachineSafety) -> Vec<Finding> 
                             severity: Severity::Error,
                             kind: FindingKind::SpindleNotRunningAtCut,
                             line: line_no,
-                            message:
-                                "First cutting move (G1/G2/G3) reached with the spindle off \
+                            message: "First cutting move (G1/G2/G3) reached with the spindle off \
                                  (no preceding M3/M4). Cutting with a stopped spindle stalls \
                                  the motor or snaps the bit."
-                                    .to_owned(),
+                                .to_owned(),
                         });
                     }
                 }
@@ -879,7 +878,8 @@ M30
     #[test]
     fn flags_rapid_xy_below_clearance() {
         // After cutting at Z-2, a G0 repositions in XY without retracting.
-        let prog = "G54\nM3 S1000\nG0 X0 Y0 Z5\nG1 Z-2 F200\nG1 X10 F600\nG0 X20 Y20\nG0 Z10\nM5\nM30\n";
+        let prog =
+            "G54\nM3 S1000\nG0 X0 Y0 Z5\nG1 Z-2 F200\nG1 X10 F600\nG0 X20 Y20\nG0 Z10\nM5\nM30\n";
         let f = validate_machine_safety(prog, safety());
         assert_eq!(count_kind(&f, FindingKind::RapidBelowClearance), 1);
     }

@@ -344,10 +344,7 @@ pub fn render_citation_audit_text(audit: &CitationAudit) -> String {
     if audit.missing.is_empty() {
         s.push_str("  all citations resolve to known sources\n");
     } else {
-        s.push_str(&format!(
-            "  {} missing citation(s):\n",
-            audit.missing.len()
-        ));
+        s.push_str(&format!("  {} missing citation(s):\n", audit.missing.len()));
         for m in &audit.missing {
             s.push_str(&format!(
                 "  - cell `{}` @ {} cites unknown source `{}`\n",

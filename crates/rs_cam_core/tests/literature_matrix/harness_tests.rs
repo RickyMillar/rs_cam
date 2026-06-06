@@ -67,27 +67,65 @@ fn band_check_ceiling_floor_modes() {
 fn band_check_at_clamp_is_within_not_edge() {
     // Ceiling-mode: engine clamped RPM to 14_000 (drill rpm ceiling).
     let drill_rpm = band_check(14_000.0, None, Some(14_000.0), BandMode::Ceiling, 0.10);
-    assert_eq!(drill_rpm.verdict, SubVerdict::Within, "{}", drill_rpm.reason);
+    assert_eq!(
+        drill_rpm.verdict,
+        SubVerdict::Within,
+        "{}",
+        drill_rpm.reason
+    );
     // Approaching the ceiling but not at it — still Edge.
     let near_ceiling = band_check(13_500.0, None, Some(14_000.0), BandMode::Ceiling, 0.10);
-    assert_eq!(near_ceiling.verdict, SubVerdict::Edge, "{}", near_ceiling.reason);
+    assert_eq!(
+        near_ceiling.verdict,
+        SubVerdict::Edge,
+        "{}",
+        near_ceiling.reason
+    );
 
     // Floor-mode: engine clamped chipload to 0.025 mm/tooth (rubbing floor).
     let rubbing = band_check(0.025, Some(0.025), None, BandMode::Floor, 0.10);
     assert_eq!(rubbing.verdict, SubVerdict::Within, "{}", rubbing.reason);
     // Slightly above floor — still Edge.
     let near_floor = band_check(0.026, Some(0.025), None, BandMode::Floor, 0.10);
-    assert_eq!(near_floor.verdict, SubVerdict::Edge, "{}", near_floor.reason);
+    assert_eq!(
+        near_floor.verdict,
+        SubVerdict::Edge,
+        "{}",
+        near_floor.reason
+    );
 
     // Band-mode: engine RPM 20_000 inside literature band [16_000, 20_000]
     // (vendor LUT max coincides with band top → at-edge is success).
-    let band_top = band_check(20_000.0, Some(16_000.0), Some(20_000.0), BandMode::Band, 0.10);
+    let band_top = band_check(
+        20_000.0,
+        Some(16_000.0),
+        Some(20_000.0),
+        BandMode::Band,
+        0.10,
+    );
     assert_eq!(band_top.verdict, SubVerdict::Within, "{}", band_top.reason);
-    let band_bot = band_check(16_000.0, Some(16_000.0), Some(20_000.0), BandMode::Band, 0.10);
+    let band_bot = band_check(
+        16_000.0,
+        Some(16_000.0),
+        Some(20_000.0),
+        BandMode::Band,
+        0.10,
+    );
     assert_eq!(band_bot.verdict, SubVerdict::Within, "{}", band_bot.reason);
     // 1% inside the upper edge — still Edge.
-    let inside_upper = band_check(19_800.0, Some(16_000.0), Some(20_000.0), BandMode::Band, 0.10);
-    assert_eq!(inside_upper.verdict, SubVerdict::Edge, "{}", inside_upper.reason);
+    let inside_upper = band_check(
+        19_800.0,
+        Some(16_000.0),
+        Some(20_000.0),
+        BandMode::Band,
+        0.10,
+    );
+    assert_eq!(
+        inside_upper.verdict,
+        SubVerdict::Edge,
+        "{}",
+        inside_upper.reason
+    );
 }
 
 #[test]

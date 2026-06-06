@@ -93,7 +93,8 @@ fn wanaka_back_rough_chipload_gate_passes_after_auto_fix() {
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,    };
+        modulation_aggressiveness: 1.0,
+    };
     session
         .run_simulation(&opts, &cancel)
         .expect("simulation runs");

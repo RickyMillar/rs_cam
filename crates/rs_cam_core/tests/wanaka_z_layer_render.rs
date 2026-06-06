@@ -129,9 +129,7 @@ fn render_layer_svg(
                     rapid_count += 1;
                     ("red", " stroke-dasharray='0.5,0.5'")
                 }
-                MoveType::Linear { .. }
-                | MoveType::ArcCW { .. }
-                | MoveType::ArcCCW { .. } => {
+                MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
                     cut_count += 1;
                     ("green", "")
                 }
@@ -191,9 +189,12 @@ fn wanaka_back_rough_first_and_last_z_layers() {
     let stock_bottom_z: f64 = mesh_bbox.min.z;
     eprintln!(
         "Wanaka mesh bbox: x=[{:.2}..{:.2}] y=[{:.2}..{:.2}] z=[{:.2}..{:.2}]",
-        mesh_bbox.min.x, mesh_bbox.max.x,
-        mesh_bbox.min.y, mesh_bbox.max.y,
-        mesh_bbox.min.z, mesh_bbox.max.z,
+        mesh_bbox.min.x,
+        mesh_bbox.max.x,
+        mesh_bbox.min.y,
+        mesh_bbox.max.y,
+        mesh_bbox.min.z,
+        mesh_bbox.max.z,
     );
 
     // Override stock_to_leave from the project's 4mm down to 0.5mm so
@@ -243,7 +244,13 @@ fn wanaka_back_rough_first_and_last_z_layers() {
     let z_partitions = partition_by_z_level(&annotations);
     eprintln!("Z partitions ({} layers):", z_partitions.len());
     for (z, start, end) in &z_partitions {
-        eprintln!("  Z={:.2}  moves [{}..{}]  count={}", z, start, end, end - start);
+        eprintln!(
+            "  Z={:.2}  moves [{}..{}]  count={}",
+            z,
+            start,
+            end,
+            end - start
+        );
     }
     assert!(
         z_partitions.len() >= 2,
@@ -281,7 +288,10 @@ fn wanaka_back_rough_first_and_last_z_layers() {
     let last = z_partitions.last().expect("last");
 
     let bbox = (
-        mesh_bbox.min.x, mesh_bbox.min.y, mesh_bbox.max.x, mesh_bbox.max.y,
+        mesh_bbox.min.x,
+        mesh_bbox.min.y,
+        mesh_bbox.max.x,
+        mesh_bbox.max.y,
     );
 
     let svg_first = render_layer_svg(

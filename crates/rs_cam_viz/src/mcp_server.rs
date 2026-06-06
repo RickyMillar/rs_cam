@@ -14,15 +14,14 @@ use crate::mcp_bridge::{McpRequest, McpRequestKind, ProgressUpdate};
 // Re-use parameter structs from the standalone MCP crate.
 use rs_cam_mcp::server::{
     AddAlignmentPinParam, AddToolFromLibraryParam, AddToolParam, AddToolpathParam,
-    CollisionCheckParam, CutTraceParam, ListToolCatalogParam,
-    ExportParam, GenDebugTraceParam, IndexParam, InspectSpansParam, LoadProjectParam, ModelIdParam,
-    OperationSchemaParam, OptimizeToolpathInput, RemoveAlignmentPinParam, RemoveToolParam,
-    RemoveToolpathParam, SaveProjectParam, ScreenshotSimParam, ScreenshotToolpathParam,
-    SetBoundaryConfigParam, SetDressupConfigParam, SetDressupFieldParam,
-    SetSpindleStrategyParam, SetStockConfigParam,
+    CollisionCheckParam, CutTraceParam, ExportParam, GenDebugTraceParam, IndexParam,
+    InspectSpansParam, ListToolCatalogParam, LoadProjectParam, ModelIdParam, OperationSchemaParam,
+    OptimizeToolpathInput, RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam,
+    SaveProjectParam, ScreenshotSimParam, ScreenshotToolpathParam, SetBoundaryConfigParam,
+    SetDressupConfigParam, SetDressupFieldParam, SetSpindleStrategyParam, SetStockConfigParam,
     SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam, SetToolpathHeightsParam,
-    SetToolpathParamInput,
-    SimJumpToMoveParam, SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam,
+    SetToolpathParamInput, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam,
+    SimScrubToolpathParam, SimulationParam,
 };
 
 /// Embedded MCP server that forwards requests to the GUI thread.
@@ -727,10 +726,10 @@ impl EmbeddedCamServer {
     )]
     async fn add_tool_from_library(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(AddToolFromLibraryParam {
-            catalog,
-            index,
-        }): Parameters<AddToolFromLibraryParam>,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(AddToolFromLibraryParam { catalog, index }): Parameters<
+            AddToolFromLibraryParam,
+        >,
     ) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::AddToolFromLibrary { catalog, index })
@@ -865,7 +864,9 @@ impl EmbeddedCamServer {
     async fn set_spindle_strategy(
         &self,
         #[allow(clippy::needless_pass_by_value)]
-        Parameters(SetSpindleStrategyParam { strategy }): Parameters<SetSpindleStrategyParam>,
+        Parameters(SetSpindleStrategyParam { strategy }): Parameters<
+            SetSpindleStrategyParam,
+        >,
     ) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::SetSpindleStrategy { strategy })

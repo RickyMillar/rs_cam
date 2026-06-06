@@ -138,7 +138,8 @@ fn optimize_toolpath_full_pipeline() {
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,    };
+        modulation_aggressiveness: 1.0,
+    };
     let baseline_trace = {
         let sim = session
             .run_simulation(&opts, &cancel)
@@ -247,7 +248,8 @@ fn optimize_project_full_pipeline() {
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,    };
+        modulation_aggressiveness: 1.0,
+    };
     let baseline_trace = {
         let sim = session
             .run_simulation(&opts, &cancel)
@@ -299,7 +301,8 @@ fn optimize_toolpath_cancel_returns_quickly() {
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,    };
+        modulation_aggressiveness: 1.0,
+    };
     let baseline_trace = {
         let sim = session
             .run_simulation(&opts, &cancel_off)

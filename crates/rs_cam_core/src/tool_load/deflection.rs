@@ -434,7 +434,8 @@ mod tests {
             drill_summaries: Vec::new(),
             predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
             modulated_feeds: std::collections::BTreeMap::new(),
-            modulation_summaries: std::collections::BTreeMap::new(),        }
+            modulation_summaries: std::collections::BTreeMap::new(),
+        }
     }
 
     #[test]
@@ -826,7 +827,9 @@ mod tests {
         );
         match v {
             DeflectionVerdict::Within {
-                entry_spike, peak_mm, ..
+                entry_spike,
+                peak_mm,
+                ..
             } => {
                 assert!(
                     entry_spike.is_none(),

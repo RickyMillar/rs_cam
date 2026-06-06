@@ -589,10 +589,8 @@ fn draw_hierarchical_material_picker(
         let response = ui.menu_button(menu_text, |ui| {
             // Wood ▶ nests Softwood + Hardwood. Other categories
             // render as direct leaves with their species list.
-            let mut wood_buckets: Vec<&(MaterialCategory, Vec<(String, Material)>)> = groups
-                .iter()
-                .filter(|(c, _)| c.is_wood())
-                .collect();
+            let mut wood_buckets: Vec<&(MaterialCategory, Vec<(String, Material)>)> =
+                groups.iter().filter(|(c, _)| c.is_wood()).collect();
             wood_buckets.sort_by_key(|(c, _)| match c {
                 MaterialCategory::Softwood => 0,
                 _ => 1,
@@ -625,9 +623,11 @@ fn draw_hierarchical_material_picker(
                 });
             }
         });
-        response
-            .response
-            .on_hover_text(format!("Current: {} ({})", current_label, current_category.label()));
+        response.response.on_hover_text(format!(
+            "Current: {} ({})",
+            current_label,
+            current_category.label()
+        ));
     });
 
     changed
@@ -677,7 +677,10 @@ fn draw_wood_subcategory(
             .show(ui, |ui| {
                 for (entry_label, mat) in &visible {
                     let selected = stock.material == *mat;
-                    if ui.selectable_label(selected, entry_label.as_str()).clicked() {
+                    if ui
+                        .selectable_label(selected, entry_label.as_str())
+                        .clicked()
+                    {
                         stock.material = mat.clone();
                         changed = true;
                     }

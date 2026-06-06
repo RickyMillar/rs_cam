@@ -25,7 +25,9 @@ use crate::compute::tool_config::ToolConfig;
 /// Errors from tool-library file operations.
 #[derive(Debug, thiserror::Error)]
 pub enum ToolLibraryError {
-    #[error("tool library directory could not be determined (no RS_CAM_TOOL_DIR, XDG_CONFIG_HOME, or HOME)")]
+    #[error(
+        "tool library directory could not be determined (no RS_CAM_TOOL_DIR, XDG_CONFIG_HOME, or HOME)"
+    )]
     NoLibraryDir,
     #[error("invalid catalog name {0:?}: must be non-empty and contain no path separators or '..'")]
     InvalidName(String),
@@ -102,9 +104,7 @@ pub fn list_in(dir: &Path) -> Vec<String> {
             if path.extension().and_then(|s| s.to_str()) != Some("toml") {
                 return None;
             }
-            path.file_stem()
-                .and_then(|s| s.to_str())
-                .map(str::to_owned)
+            path.file_stem().and_then(|s| s.to_str()).map(str::to_owned)
         })
         .collect();
     names.sort();
@@ -401,7 +401,10 @@ mod tests {
             save_to(&dir, "../escape", &ToolCatalog::default()),
             Err(ToolLibraryError::InvalidName(_))
         ));
-        assert!(matches!(path_in(&dir, ""), Err(ToolLibraryError::InvalidName(_))));
+        assert!(matches!(
+            path_in(&dir, ""),
+            Err(ToolLibraryError::InvalidName(_))
+        ));
     }
 
     #[test]

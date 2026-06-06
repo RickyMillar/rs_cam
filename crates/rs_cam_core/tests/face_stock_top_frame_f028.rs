@@ -166,7 +166,8 @@ fn as004_face_peak_axial_within_commanded_doc() {
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,    };
+        modulation_aggressiveness: 1.0,
+    };
     session
         .run_simulation(&opts, &cancel)
         .expect("simulation completes");
@@ -224,7 +225,8 @@ fn as004_face_deflection_within_safe_band() {
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,    };
+        modulation_aggressiveness: 1.0,
+    };
     session
         .run_simulation(&opts, &cancel)
         .expect("simulation completes");
@@ -280,7 +282,8 @@ fn as004_face_no_rapid_collisions() {
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,    };
+        modulation_aggressiveness: 1.0,
+    };
     session
         .run_simulation(&opts, &cancel)
         .expect("simulation completes");
@@ -437,7 +440,8 @@ fn as001_pocket_actually_removes_stock_material_post_f028() {
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,    };
+        modulation_aggressiveness: 1.0,
+    };
     session
         .run_simulation(&opts, &cancel)
         .expect("simulation completes");

@@ -873,8 +873,9 @@ mod tests {
             operation_family: LutOperationFamily::Parallel,
             pass_role: LutPassRole::Finish,
         };
-        let result = lookup_best(&lut, &query)
-            .expect("0.5mm hardwood tapered ball should extrapolate from the closest available row");
+        let result = lookup_best(&lut, &query).expect(
+            "0.5mm hardwood tapered ball should extrapolate from the closest available row",
+        );
         assert!(
             result.is_extrapolated,
             "0.5mm against any tapered-ball hardwood row in the LUT must trip extrapolation"
@@ -954,7 +955,10 @@ mod tests {
         let query = vbit_query(12.0, MaterialFamily::Hardwood, 1450.0);
         let result = find_best_vbit_row(&lut, &query, Some(120.0))
             .expect("120° V-bit must match the 120° row");
-        assert_eq!(result.observation_id, "whiteside-vbit-hardwood-trace-12000-2f");
+        assert_eq!(
+            result.observation_id,
+            "whiteside-vbit-hardwood-trace-12000-2f"
+        );
     }
 
     #[test]
@@ -1029,8 +1033,7 @@ mod tests {
         // chipload data. Assert we land a 30° softwood-class row,
         // not a far-angle row.
         let won_an_angle_only_row = result.row_diameter_mm < f64::EPSILON;
-        let won_the_legacy_row =
-            result.observation_id == "amana-vgroove-softwood-trace-30deg-1f";
+        let won_the_legacy_row = result.observation_id == "amana-vgroove-softwood-trace-30deg-1f";
         assert!(
             won_an_angle_only_row || won_the_legacy_row,
             "expected angle-only or legacy 30° row, got {} (row_diameter={})",
@@ -1058,8 +1061,8 @@ mod tests {
             operation_family: LutOperationFamily::Contour,
             pass_role: LutPassRole::Finish,
         };
-        let result = lookup_best(&lut, &query)
-            .expect("Onsrud polycarbonate window row must be reachable");
+        let result =
+            lookup_best(&lut, &query).expect("Onsrud polycarbonate window row must be reachable");
         // Anchorless rows return `chipload_diameter_scale = 1.0` regardless
         // of query diameter — diameter extrapolation is intentionally
         // off for these rows.

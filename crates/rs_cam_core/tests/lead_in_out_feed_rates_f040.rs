@@ -166,7 +166,10 @@ fn lead_in_feed_rate_applied_when_set() {
         })
         .filter(|&f| (f - cut_feed).abs() < 1.0)
         .collect();
-    assert!(!cutting.is_empty(), "cutting moves should still carry F1500");
+    assert!(
+        !cutting.is_empty(),
+        "cutting moves should still carry F1500"
+    );
 }
 
 #[test]

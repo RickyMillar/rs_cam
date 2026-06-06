@@ -224,7 +224,8 @@ fn live_project_pc6_has_no_phantom_cuts() {
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,    };
+        modulation_aggressiveness: 1.0,
+    };
     let _ = session.run_simulation(&sim_opts, &cancel);
     let result = session
         .generate_toolpath(pc6_idx, &cancel)

@@ -757,11 +757,20 @@ impl super::RsCamApp {
                     use crate::state::job::ToolType;
                     match t.tool_type {
                         ToolType::VBit => {
-                            obj.insert("included_angle_deg".to_owned(), serde_json::json!(t.included_angle));
+                            obj.insert(
+                                "included_angle_deg".to_owned(),
+                                serde_json::json!(t.included_angle),
+                            );
                         }
                         ToolType::TaperedBallNose => {
-                            obj.insert("taper_half_angle_deg".to_owned(), serde_json::json!(t.taper_half_angle));
-                            obj.insert("shaft_diameter_mm".to_owned(), serde_json::json!(t.shaft_diameter));
+                            obj.insert(
+                                "taper_half_angle_deg".to_owned(),
+                                serde_json::json!(t.taper_half_angle),
+                            );
+                            obj.insert(
+                                "shaft_diameter_mm".to_owned(),
+                                serde_json::json!(t.shaft_diameter),
+                            );
                         }
                         _ => {}
                     }
@@ -983,12 +992,7 @@ impl super::RsCamApp {
                 "error": format!("Toolpath index {index} not found")
             }));
         };
-        let Some(tool) = state
-            .session
-            .tools()
-            .iter()
-            .find(|t| t.id.0 == tc.tool_id)
-        else {
+        let Some(tool) = state.session.tools().iter().find(|t| t.id.0 == tc.tool_id) else {
             return json_str(serde_json::json!({
                 "error": format!("Tool {} for toolpath {} not found", tc.tool_id, tc.id)
             }));
@@ -2605,7 +2609,8 @@ impl super::RsCamApp {
             .get_toolpath_config(index)
             .map(|tc| tc.heights.clone())
         else {
-            return self.mcp_mutation_error(format!("Error: toolpath index {index} not found"), None);
+            return self
+                .mcp_mutation_error(format!("Error: toolpath index {index} not found"), None);
         };
         if let Some(v) = clearance_z {
             heights.clearance_z = HeightMode::Manual(v);
@@ -2749,10 +2754,7 @@ impl super::RsCamApp {
         ) {
             Ok(s) => s.operation,
             Err(e) => {
-                return self.mcp_mutation_error(
-                    format!("Cannot add toolpath: {e}"),
-                    None,
-                );
+                return self.mcp_mutation_error(format!("Cannot add toolpath: {e}"), None);
             }
         };
 
@@ -3121,9 +3123,7 @@ impl super::RsCamApp {
             "match_chart" | "MatchChart" | "matchchart" => {
                 rs_cam_core::feeds::SpindleStrategy::MatchChart
             }
-            "max_speed" | "MaxSpeed" | "maxspeed" => {
-                rs_cam_core::feeds::SpindleStrategy::MaxSpeed
-            }
+            "max_speed" | "MaxSpeed" | "maxspeed" => rs_cam_core::feeds::SpindleStrategy::MaxSpeed,
             other => {
                 return self.mcp_mutation_error(
                     format!(
@@ -3133,7 +3133,14 @@ impl super::RsCamApp {
                 );
             }
         };
-        if self.controller.state().session.post_config().spindle_strategy == parsed {
+        if self
+            .controller
+            .state()
+            .session
+            .post_config()
+            .spindle_strategy
+            == parsed
+        {
             return self.mcp_mutation_result(
                 format!("Spindle policy already set to '{strategy}'; no change."),
                 serde_json::json!({ "spindle_strategy": strategy, "changed": false }),
@@ -3146,11 +3153,7 @@ impl super::RsCamApp {
             .session
             .post_mut()
             .spindle_strategy = parsed;
-        self.controller
-            .state_mut()
-            .gui
-            .post
-            .spindle_strategy = parsed;
+        self.controller.state_mut().gui.post.spindle_strategy = parsed;
         self.controller.state_mut().gui.mark_edited();
         // Suggest is the read-side consumer — no toolpaths go stale
         // from this change. Operator/agent runs get_toolpath_params

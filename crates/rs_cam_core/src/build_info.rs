@@ -19,7 +19,5 @@ pub const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// One-line human summary, e.g. `rs_cam_core 0.1.0 (3f9a1c2-dirty, built 2026-05-28T20:10:00Z)`.
 pub fn summary() -> String {
-    format!(
-        "rs_cam_core {CORE_VERSION} ({GIT_DESC}, built {BUILD_TIMESTAMP})"
-    )
+    format!("rs_cam_core {CORE_VERSION} ({GIT_DESC}, built {BUILD_TIMESTAMP})")
 }

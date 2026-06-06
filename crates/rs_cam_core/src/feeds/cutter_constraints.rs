@@ -258,12 +258,9 @@ fn invert_deflection(
     let lower = tool.stickout * BINSEARCH_LOWER_FRACTION;
     let upper = tool.stickout * BINSEARCH_UPPER_FRACTION;
     // Sanity: lower bracket already over limit → no axial is safe.
-    let Some(d_lo) = super::predict::tip_deflection_from_engagement(
-        tool,
-        material,
-        lower,
-        radial_woc_mm,
-    ) else {
+    let Some(d_lo) =
+        super::predict::tip_deflection_from_engagement(tool, material, lower, radial_woc_mm)
+    else {
         // tip_deflection_from_engagement refused (material/Custom/stickout
         // edge case) — the gate would also refuse for any sample, so the
         // bound is "no signal". Return the upper bracket so deflection
@@ -273,12 +270,9 @@ fn invert_deflection(
     if d_lo > limit_mm {
         return 0.0;
     }
-    let Some(d_hi) = super::predict::tip_deflection_from_engagement(
-        tool,
-        material,
-        upper,
-        radial_woc_mm,
-    ) else {
+    let Some(d_hi) =
+        super::predict::tip_deflection_from_engagement(tool, material, upper, radial_woc_mm)
+    else {
         return upper;
     };
     if d_hi <= limit_mm {
@@ -552,10 +546,9 @@ mod tests {
         let mat = hardwood();
         let radial = 1.0_f64;
         let probe_axial = 2.5_f64;
-        let forward = super::super::predict::tip_deflection_from_engagement(
-            &tool, &mat, probe_axial, radial,
-        )
-        .expect("forward deflection");
+        let forward =
+            super::super::predict::tip_deflection_from_engagement(&tool, &mat, probe_axial, radial)
+                .expect("forward deflection");
         let limit_um = forward * 1000.0;
         let inverted = invert_deflection(&tool, &mat, radial, limit_um);
         let err = (inverted - probe_axial).abs();
@@ -595,12 +588,12 @@ mod tests {
         let h = 0.025_f64;
         let r = 1.5_f64;
         let expected = 2.0 * (2.0 * r * h - h * h).sqrt();
-        let got = max_doc_scallop(
-            ToolGeometryHint::Bull { corner_radius: r },
-            25.0,
-        )
-        .expect("populated bound");
-        assert!((got - expected).abs() < 1e-9, "got {got} expected {expected}");
+        let got = max_doc_scallop(ToolGeometryHint::Bull { corner_radius: r }, 25.0)
+            .expect("populated bound");
+        assert!(
+            (got - expected).abs() < 1e-9,
+            "got {got} expected {expected}"
+        );
     }
 
     #[test]
@@ -619,7 +612,10 @@ mod tests {
             25.0,
         )
         .expect("populated bound");
-        assert!((got - expected).abs() < 1e-9, "got {got} expected {expected}");
+        assert!(
+            (got - expected).abs() < 1e-9,
+            "got {got} expected {expected}"
+        );
     }
 
     #[test]
@@ -643,15 +639,8 @@ mod tests {
         // Vendor cap 1.5 mm forces VendorAp binding.
         let tool = carbide_flat(6.0, 45.0);
         let row = lut_row(None, Some(0.25), None, None, None); // 0.25 × 6 = 1.5 mm
-        let env = cutter_axial_constraints(
-            &tool,
-            &hardwood(),
-            1.0,
-            0.05,
-            Some(&row),
-            None,
-            Some(200.0),
-        );
+        let env =
+            cutter_axial_constraints(&tool, &hardwood(), 1.0, 0.05, Some(&row), None, Some(200.0));
         assert_eq!(env.binding_constraint, AxialBindingConstraint::VendorAp);
         assert!((env.safe_max_doc_mm() - 1.5).abs() < 1e-6);
         assert!(env.safe_band_is_empty().is_none());
@@ -724,8 +713,8 @@ mod tests {
             None,
             None,
             None,
-            Some(0.05),       // vendor caps at 0.05 mm
-            Some(0.08),       // chipload_min 0.08 mm/tooth
+            Some(0.05), // vendor caps at 0.05 mm
+            Some(0.08), // chipload_min 0.08 mm/tooth
         );
         let env = cutter_axial_constraints(
             &tool,
@@ -742,7 +731,10 @@ mod tests {
         // SafeBandEmpty in the latter case.
         match env.safe_band_is_empty() {
             Some(true) => {
-                assert_eq!(env.binding_constraint, AxialBindingConstraint::SafeBandEmpty);
+                assert_eq!(
+                    env.binding_constraint,
+                    AxialBindingConstraint::SafeBandEmpty
+                );
             }
             Some(false) | None => {
                 // Either band exists or no floor was derivable — both
@@ -757,15 +749,8 @@ mod tests {
     fn chipload_floor_none_for_flat_endmill() {
         let tool = carbide_flat(6.0, 30.0);
         let row = lut_row(None, None, None, None, Some(0.08));
-        let env = cutter_axial_constraints(
-            &tool,
-            &hardwood(),
-            1.0,
-            0.05,
-            Some(&row),
-            None,
-            Some(200.0),
-        );
+        let env =
+            cutter_axial_constraints(&tool, &hardwood(), 1.0, 0.05, Some(&row), None, Some(200.0));
         assert!(
             env.min_doc_chipload_floor_mm.is_none(),
             "flat endmill chipload should have no axial floor"
