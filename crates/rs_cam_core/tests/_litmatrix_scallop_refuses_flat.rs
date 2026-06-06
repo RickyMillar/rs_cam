@@ -76,8 +76,9 @@ fn scallop_refuses_flat_endmill() {
         ToolGeometryHint::Flat,
         Some(0.02),
     );
-    let err = validate_tool_for_operation(&input)
-        .expect_err("Scallop + Flat should be refused — no tip radius means scallop math is undefined");
+    let err = validate_tool_for_operation(&input).expect_err(
+        "Scallop + Flat should be refused — no tip radius means scallop math is undefined",
+    );
     let msg = format!("{err}");
     assert!(
         msg.contains("scallop") && msg.contains("curved"),

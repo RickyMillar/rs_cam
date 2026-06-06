@@ -184,9 +184,7 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
             reason: RationaleReason::PlungeEntryUnstable,
             from_value: None,
             to_value: None,
-            headline: format!(
-                "Plunge entry unstable at DPP {dpp_mm:.2} mm / Ø{diameter_mm:.2} mm"
-            ),
+            headline: format!("Plunge entry unstable at DPP {dpp_mm:.2} mm / Ø{diameter_mm:.2} mm"),
             detail: Some(format!(
                 "Entry style '{entry_style}' likely to spike deflection on plunge; switch to helix/ramp or reduce DPP"
             )),
@@ -220,9 +218,7 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
             reason: RationaleReason::RuntimeFloor,
             from_value: Some(*requested_mm),
             to_value: Some(*raised_mm),
-            headline: format!(
-                "Stepover raised to {raised_mm:.3} mm (runtime sanity)"
-            ),
+            headline: format!("Stepover raised to {raised_mm:.3} mm (runtime sanity)"),
             detail: Some(format!(
                 "Predicted {predicted_moves_at_requested} moves at {requested_mm:.3} mm; {predicted_moves_at_raised} after {iterations} raises"
             )),
@@ -247,9 +243,7 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                 reason: RationaleReason::ChiploadTarget,
                 from_value: Some(*requested_mm_per_min),
                 to_value: Some(*raised_mm_per_min),
-                headline: format!(
-                    "Feed raised to {raised_mm_per_min:.0} mm/min{cap_note}"
-                ),
+                headline: format!("Feed raised to {raised_mm_per_min:.0} mm/min{cap_note}"),
                 detail: Some(format!(
                     "Chipload {predicted_observed_chipload_before:.4} → {predicted_observed_chipload_after:.4} mm/tooth (LUT target {lut_target_mm_per_tooth:.4})"
                 )),
@@ -270,9 +264,7 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                 reason: RationaleReason::ChiploadCapBound,
                 from_value: None,
                 to_value: Some(*feed_at_termination_mm_per_min),
-                headline: format!(
-                    "Chipload still low after recal — bound by {cap_label}"
-                ),
+                headline: format!("Chipload still low after recal — bound by {cap_label}"),
                 detail: Some(format!(
                     "Observed {predicted_observed_mm_per_tooth:.4} mm/tooth vs LUT target {lut_target_mm_per_tooth:.4} at feed {feed_at_termination_mm_per_min:.0} mm/min"
                 )),
@@ -341,9 +333,7 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                 "{op_kind} {param_name} clamped {commanded_mm:.2} → \
                  {clamped_mm:.2} mm ({binding})"
             ),
-            detail: Some(format!(
-                "Cutter axial envelope binding: {binding}"
-            )),
+            detail: Some(format!("Cutter axial envelope binding: {binding}")),
         },
         SuggestWarning::AxialDocBelowBurnFloor {
             op_kind,
@@ -394,9 +384,7 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
             reason: RationaleReason::DeflectionPredict,
             from_value: None,
             to_value: None,
-            headline: format!(
-                "{op_kind} envelope max DOC {max_safe_doc_mm:.2} mm ({binding})"
-            ),
+            headline: format!("{op_kind} envelope max DOC {max_safe_doc_mm:.2} mm ({binding})"),
             detail: Some(format!(
                 "Coordinate rough's stock_to_leave so the finish per-pass \
                  DOC sits below {max_safe_doc_mm:.2} mm; automatic \
@@ -701,8 +689,7 @@ mod tests {
             capped: 600.0,
         }]);
         let json = serde_json::to_string(&r).expect("serialize");
-        let back: SuggestRationale =
-            serde_json::from_str(&json).expect("deserialize");
+        let back: SuggestRationale = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(r, back);
     }
 }

@@ -832,11 +832,7 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, _events: &mut 
 /// library machine loads its values and links the project to it
 /// (`machine_ref`); the link is persisted on save and the library file
 /// overrides the inline copy on reload.
-fn draw_machine_library_row(
-    ui: &mut egui::Ui,
-    state: &mut AppState,
-    events: &mut Vec<AppEvent>,
-) {
+fn draw_machine_library_row(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
     let status_id = egui::Id::new("machine_lib_status");
     let name_id = egui::Id::new("machine_lib_save_name");
 

@@ -20,18 +20,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// The variants are `Ord` so consumer code can build histograms and
 /// `BTreeMap` keyed views without extra glue.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BindingConstraint {
     /// Chipload band's upper edge bound the feed (commanded chipload
@@ -1038,7 +1027,8 @@ mod tests {
                 entry_spike: None,
             },
             drill_gates: None,
-            modulation_summary: None,        };
+            modulation_summary: None,
+        };
         assert_eq!(v.modeled_count(), 2);
         assert!(!v.any_exceeded());
         assert!(v.any_unmodeled());
@@ -1082,7 +1072,8 @@ mod tests {
                     entry_spike: None,
                 },
                 drill_gates: None,
-                modulation_summary: None,            }],
+                modulation_summary: None,
+            }],
         };
         let v = serde_json::to_value(&r).expect("must round-trip");
         let s = serde_json::to_string(&v).unwrap();
@@ -1125,7 +1116,8 @@ mod tests {
                         confidence: Confidence::Validated,
                     },
                     drill_gates: None,
-                    modulation_summary: None,                },
+                    modulation_summary: None,
+                },
                 ToolpathLoadVerdict {
                     toolpath_id: 1,
                     chipload: ChiploadVerdict::Within {
@@ -1157,7 +1149,8 @@ mod tests {
                         entry_spike: None,
                     },
                     drill_gates: None,
-                    modulation_summary: None,                },
+                    modulation_summary: None,
+                },
             ],
         };
         assert!(r.any_exceeded());
@@ -1190,7 +1183,8 @@ mod tests {
                         reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
                     },
                     drill_gates: None,
-                    modulation_summary: None,                },
+                    modulation_summary: None,
+                },
                 // Sim wasn't run yet — every gate `SimulationRequired`.
                 // Operator action: run the sim.
                 ToolpathLoadVerdict {
@@ -1205,7 +1199,8 @@ mod tests {
                         reason: UnmodeledReason::SimulationRequired,
                     },
                     drill_gates: None,
-                    modulation_summary: None,                },
+                    modulation_summary: None,
+                },
                 // Mixed: one gate N/A, one needs sim. Operator still
                 // has an action item, so this rolls up as
                 // `fully_unmodeled` (not `not_applicable`).
@@ -1221,7 +1216,8 @@ mod tests {
                         reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
                     },
                     drill_gates: None,
-                    modulation_summary: None,                },
+                    modulation_summary: None,
+                },
             ],
         };
         let s = r.summary(|_| None);
@@ -1275,7 +1271,8 @@ mod tests {
                     entry_spike: None,
                 },
                 drill_gates: None,
-                modulation_summary: None,            }],
+                modulation_summary: None,
+            }],
         };
         // Resolver hit — name flows into the entry.
         let s = r.summary(|id| (id == 42).then(|| "TP3 Adaptive Rough".to_owned()));
@@ -1537,7 +1534,8 @@ mod tests {
                     entry_spike: None,
                 },
                 drill_gates: None,
-                modulation_summary: None,            }],
+                modulation_summary: None,
+            }],
         };
         let s = serde_json::to_string(&r).expect("serialize");
         // Chipload payload — ChipSide + ChiploadStatistic + bounds.
@@ -1602,7 +1600,8 @@ mod tests {
                     entry_spike: None,
                 },
                 drill_gates: None,
-                modulation_summary: None,            }],
+                modulation_summary: None,
+            }],
         };
         let exceeded = r.exceeded_criteria();
         assert_eq!(exceeded.len(), 1);
@@ -1644,7 +1643,8 @@ mod tests {
             },
             deflection: DeflectionVerdict::Unmodeled { reason },
             drill_gates: None,
-            modulation_summary: None,        }
+            modulation_summary: None,
+        }
     }
 
     /// Helper: every gate `Unmodeled(SimulationRequired)` — the
@@ -1662,7 +1662,8 @@ mod tests {
                 reason: UnmodeledReason::SimulationRequired,
             },
             drill_gates: None,
-            modulation_summary: None,        }
+            modulation_summary: None,
+        }
     }
 
     #[test]
@@ -1740,7 +1741,8 @@ mod tests {
                     confidence: Confidence::Validated,
                 },
                 drill_gates: None,
-                modulation_summary: None,            }],
+                modulation_summary: None,
+            }],
         };
         let s = r.summary(|id| {
             if id == 42 {
@@ -1791,7 +1793,8 @@ mod tests {
                     entry_spike: None,
                 },
                 drill_gates: None,
-                modulation_summary: None,            }],
+                modulation_summary: None,
+            }],
         };
         let s = r.summary(|_| None);
         assert_eq!(s.exceeds_breakdown.len(), 1);

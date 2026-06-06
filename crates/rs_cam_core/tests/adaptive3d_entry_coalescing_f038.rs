@@ -94,7 +94,11 @@ fn micro_peak_terrain() -> TriangleMesh {
     for k in 0..PERIMETER_BUMPS {
         let theta = (k as f64) * std::f64::consts::TAU / (PERIMETER_BUMPS as f64);
         let r = SIZE * 0.42;
-        pad_centres.push((centre + r * theta.cos(), centre + r * theta.sin(), PERIMETER_BUMP_RADIUS));
+        pad_centres.push((
+            centre + r * theta.cos(),
+            centre + r * theta.sin(),
+            PERIMETER_BUMP_RADIUS,
+        ));
     }
 
     // Sample on a fine grid; emit triangles that connect adjacent samples.

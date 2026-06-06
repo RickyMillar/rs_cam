@@ -289,14 +289,8 @@ fn wanaka_suggest_baseline() {
             "{ctx}: capped DPP must land near 3.69 mm (regression baseline), got {capped_dpp}"
         );
 
-        let (
-            feed_before,
-            feed_after,
-            obs_before,
-            obs_after,
-            lut_target,
-            cap_hit,
-        ) = assert_has_feed_raised(&suggested.warnings, &ctx);
+        let (feed_before, feed_after, obs_before, obs_after, lut_target, cap_hit) =
+            assert_has_feed_raised(&suggested.warnings, &ctx);
         assert!(
             feed_after > feed_before,
             "{ctx}: feed must rise from {feed_before} to satisfy chipload, got {feed_after}"
@@ -368,9 +362,9 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
                 | SuggestWarning::StrategyRewrote { .. }
                 | SuggestWarning::AxialDocClampedByEnvelope { .. } => {}
-                other => panic!(
-                    "{ctx}: unexpected SuggestWarning variant slipped through: {other:?}"
-                ),
+                other => {
+                    panic!("{ctx}: unexpected SuggestWarning variant slipped through: {other:?}")
+                }
             }
         }
     }
@@ -394,7 +388,10 @@ fn wanaka_suggest_baseline() {
                 _ => None,
             })
             .unwrap_or_else(|| {
-                panic!("{ctx}: AxialDocClampedByEnvelope must fire on Adaptive3d, got {:?}", suggested.warnings)
+                panic!(
+                    "{ctx}: AxialDocClampedByEnvelope must fire on Adaptive3d, got {:?}",
+                    suggested.warnings
+                )
             });
         assert!(
             (envelope_commanded - 9.0).abs() < 1e-6,
@@ -505,10 +502,10 @@ fn wanaka_suggest_baseline() {
         assert_no_feed_raised(&suggested.warnings, &ctx);
         assert_no_dpp_capped(&suggested.warnings, &ctx);
         assert!(
-            !suggested.warnings.iter().any(|w| matches!(
-                w,
-                SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-            )),
+            !suggested
+                .warnings
+                .iter()
+                .any(|w| matches!(w, SuggestWarning::ChiploadStillLowAfterRecalibration { .. })),
             "{ctx}: ChiploadStillLowAfterRecalibration must NOT fire on drill, got {:?}",
             suggested.warnings
         );
@@ -572,11 +569,10 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::AxialDocClampedByEnvelope { .. }
                 | SuggestWarning::AxialDocBelowBurnFloor { .. }
                 | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-                | SuggestWarning::FinishEnvelopeAdvisory { .. } => {}
-                // No `_` arm — adding a new variant to the enum will
-                // force this match to be updated, which forces the
-                // baseline owner to decide whether the variant should
-                // ever fire on Wanaka.
+                | SuggestWarning::FinishEnvelopeAdvisory { .. } => {} // No `_` arm — adding a new variant to the enum will
+                                                                      // force this match to be updated, which forces the
+                                                                      // baseline owner to decide whether the variant should
+                                                                      // ever fire on Wanaka.
             }
             // Print a one-line breadcrumb when the catch-all fires
             // anything unexpected via the explicit-arms form above.

@@ -515,20 +515,16 @@ pub struct SimulationCutTrace {
     /// [`Self::predicted_feeds`] — re-derivable from the toolpath
     /// IR + modulation context, and JSON can't serialise tuple keys.
     #[serde(skip)]
-    pub modulated_feeds: std::collections::BTreeMap<
-        (usize, usize),
-        (f64, crate::tool_load::BindingConstraint),
-    >,
+    pub modulated_feeds:
+        std::collections::BTreeMap<(usize, usize), (f64, crate::tool_load::BindingConstraint)>,
     /// F-039 — per-toolpath modulation rollup, keyed by
     /// `toolpath_id`. The [`crate::gcode::project_load_report`]
     /// builder reads this map and writes the corresponding
     /// `ModulationSummary` onto each `ToolpathLoadVerdict`.
     /// `#[serde(skip)]` — derived from the per-move map above.
     #[serde(skip)]
-    pub modulation_summaries: std::collections::BTreeMap<
-        usize,
-        crate::tool_load::ModulationSummary,
-    >,
+    pub modulation_summaries:
+        std::collections::BTreeMap<usize, crate::tool_load::ModulationSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

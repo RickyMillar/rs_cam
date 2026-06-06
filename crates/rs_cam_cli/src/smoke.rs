@@ -528,7 +528,8 @@ fn run_single_case(case: &SmokeCase, all_cases: &[SmokeCase], resolution: f64) -
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,    };
+        modulation_aggressiveness: 1.0,
+    };
     if let Err(e) = session.run_simulation(&sim_opts, &cancel) {
         return BaselineRow::failure(
             &case.case_id,
@@ -795,7 +796,8 @@ fn apply_stock_overrides(session: &mut ProjectSession, baseline_params: &str, ca
                     if new_z <= 0.0 {
                         info!(
                             case_id,
-                            top_z, origin_z = stock.origin_z,
+                            top_z,
+                            origin_z = stock.origin_z,
                             "stock_top_z would yield non-positive thickness; ignored"
                         );
                         continue;
@@ -829,11 +831,9 @@ fn material_for_family(family: &str) -> Option<Material> {
         "plywood" => Some(Material::Plywood {
             grade: PlywoodGrade::BalticBirch,
         }),
-        "aluminum" | "aluminium" | "6061" | "6061_t6" | "6061-t6" => {
-            Some(Material::Aluminum {
-                alloy: AluminumAlloy::Alloy6061T6,
-            })
-        }
+        "aluminum" | "aluminium" | "6061" | "6061_t6" | "6061-t6" => Some(Material::Aluminum {
+            alloy: AluminumAlloy::Alloy6061T6,
+        }),
         "7075" | "7075_t6" | "7075-t6" => Some(Material::Aluminum {
             alloy: AluminumAlloy::Alloy7075T6,
         }),

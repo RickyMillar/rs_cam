@@ -192,7 +192,10 @@ pub fn predict_peak_deflection_um(
     }
 
     let Some(axial_doc_mm) = operation.depth_per_pass() else {
-        tracing::debug!(reason = "no_dpp", "predictor returns 0 µm — operation has no DPP");
+        tracing::debug!(
+            reason = "no_dpp",
+            "predictor returns 0 µm — operation has no DPP"
+        );
         return DeflectionPrediction {
             predicted_um: 0.0,
             breakdown: breakdown_zero,

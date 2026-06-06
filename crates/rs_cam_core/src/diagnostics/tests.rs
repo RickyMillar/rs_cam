@@ -455,7 +455,8 @@ fn tool_load_adapter_emits_chipload_exceeds_with_evidence() {
             reason: UnmodeledReason::SimulationRequired,
         },
         drill_gates: None,
-        modulation_summary: None,    };
+        modulation_summary: None,
+    };
     let diags = adapters::from_tool_load::diagnostics_from_load_verdict(&verdict);
     let chip = diags
         .iter()
@@ -490,7 +491,8 @@ fn tool_load_adapter_marks_stale_simulation_as_stale_evidence_state() {
             reason: UnmodeledReason::StaleSimulation,
         },
         drill_gates: None,
-        modulation_summary: None,    };
+        modulation_summary: None,
+    };
     let diags = adapters::from_tool_load::diagnostics_from_load_verdict(&verdict);
     assert!(!diags.is_empty());
     for d in &diags {
@@ -523,7 +525,8 @@ fn tool_load_adapter_marks_sim_required_as_needs_simulation_state() {
             reason: UnmodeledReason::SimulationRequired,
         },
         drill_gates: None,
-        modulation_summary: None,    };
+        modulation_summary: None,
+    };
     let diags = adapters::from_tool_load::diagnostics_from_load_verdict(&verdict);
     assert!(!diags.is_empty());
     for d in &diags {

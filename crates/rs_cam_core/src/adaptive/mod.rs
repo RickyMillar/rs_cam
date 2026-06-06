@@ -63,9 +63,7 @@ use crate::toolpath::Toolpath;
 ///   offsets and emits only contours that pass through residue. So a
 ///   shape with a wide bulb and a narrow tail (tadpole, key) gets a
 ///   spiral in the bulb and concentric offset loops in the tail.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum CleanupStrategy {
     Legacy,
     ResidueMop,
@@ -1732,7 +1730,13 @@ mod tests {
         let out = target_dir.join(filename);
         let mut f = std::fs::File::create(&out).expect("create svg");
         f.write_all(svg.as_bytes()).expect("write svg");
-        eprintln!("wrote {} ({} cuts / {} rapids / {} links)", out.display(), cut_groups, rapid_count, link_count);
+        eprintln!(
+            "wrote {} ({} cuts / {} rapids / {} links)",
+            out.display(),
+            cut_groups,
+            rapid_count,
+            link_count
+        );
     }
 
     // ── Cheap fix: boundary-extension post-process ─────────────────────
@@ -1857,7 +1861,11 @@ mod tests {
         dists_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         eprintln!(
             "cheap-fix: {} rapids scanned, absorbed {}, too-far {}, no-clearing {}, off-machinable {}",
-            rapid_dists.len(), absorbed, rejected_too_far, rejected_no_clearing, rejected_off_machinable
+            rapid_dists.len(),
+            absorbed,
+            rejected_too_far,
+            rejected_no_clearing,
+            rejected_off_machinable
         );
         if !dists_sorted.is_empty() {
             let median = dists_sorted[dists_sorted.len() / 2];
@@ -1896,8 +1904,18 @@ mod tests {
         let cell_size = (tool_radius / 6.0).max(params.tolerance);
         let machinable_mask = MaterialGrid::build_machinable_mask(
             &machinable,
-            polygon.exterior.iter().map(|p| p.x).fold(f64::INFINITY, f64::min) - 1.0,
-            polygon.exterior.iter().map(|p| p.y).fold(f64::INFINITY, f64::min) - 1.0,
+            polygon
+                .exterior
+                .iter()
+                .map(|p| p.x)
+                .fold(f64::INFINITY, f64::min)
+                - 1.0,
+            polygon
+                .exterior
+                .iter()
+                .map(|p| p.y)
+                .fold(f64::INFINITY, f64::min)
+                - 1.0,
             ((50.0 + 4.0) / cell_size).ceil() as usize,
             ((50.0 + 4.0) / cell_size).ceil() as usize,
             cell_size,
@@ -2040,8 +2058,7 @@ mod tests {
                 let n_arc = 48;
                 for i in 0..=n_arc {
                     let t = i as f64 / n_arc as f64;
-                    let theta = theta_attach
-                        + t * (std::f64::consts::TAU - 2.0 * theta_attach);
+                    let theta = theta_attach + t * (std::f64::consts::TAU - 2.0 * theta_attach);
                     pts.push(P2::new(cx + r * theta.cos(), r * theta.sin()));
                 }
                 pts.push(P2::new(tail_x, -tail_h));
@@ -2094,9 +2111,8 @@ mod tests {
                 continue;
             }
             let _machinable = machinable_vec[0].clone();
-            let baseline =
-                adaptive_segments_with_debug(polygon, &params, &never_cancel, None)
-                    .expect("adaptive should not cancel");
+            let baseline = adaptive_segments_with_debug(polygon, &params, &never_cancel, None)
+                .expect("adaptive should not cancel");
             let mop_params = AdaptiveParams {
                 cleanup_strategy: CleanupStrategy::ResidueMop,
                 ..default_params(tool_radius, stepover)
@@ -2115,8 +2131,7 @@ mod tests {
             let narrow_segs =
                 adaptive_segments_with_debug(polygon, &narrow_params, &never_cancel, None)
                     .expect("adaptive should not cancel");
-            let narrow =
-                path::apply_residue_mop_cleanup(polygon, &narrow_params, &narrow_segs);
+            let narrow = path::apply_residue_mop_cleanup(polygon, &narrow_params, &narrow_segs);
             // ContourParallelHybrid: spiral runs on whole machinable
             // (unless the narrow gate fires for the whole region —
             // then it also short-circuits to contour-parallel like
@@ -2130,11 +2145,8 @@ mod tests {
             let hybrid_segs =
                 adaptive_segments_with_debug(polygon, &hybrid_params, &never_cancel, None)
                     .expect("adaptive should not cancel");
-            let hybrid = path::apply_contour_parallel_residue_cleanup(
-                polygon,
-                &hybrid_params,
-                &hybrid_segs,
-            );
+            let hybrid =
+                path::apply_contour_parallel_residue_cleanup(polygon, &hybrid_params, &hybrid_segs);
             let (bc, br, bl) = count_segs(&baseline);
             let (fc, fr, fl) = count_segs(&fixed);
             let (nc, nr, nl) = count_segs(&narrow);
@@ -2303,6 +2315,10 @@ mod tests {
         let out = target_dir.join("adaptive_corner_burrow_50mm_wiggle.svg");
         let mut f = std::fs::File::create(&out).expect("create svg");
         f.write_all(svg.as_bytes()).expect("write svg");
-        eprintln!("wrote {} (first {} steps of pass 1)", out.display(), n_steps);
+        eprintln!(
+            "wrote {} (first {} steps of pass 1)",
+            out.display(),
+            n_steps
+        );
     }
 }

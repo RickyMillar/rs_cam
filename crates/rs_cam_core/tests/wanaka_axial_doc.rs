@@ -49,7 +49,8 @@ fn wanaka_back_rough_axial_doc() {
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,    };
+        modulation_aggressiveness: 1.0,
+    };
 
     let tp_id = session.list_toolpaths()[1].id;
     let result = session.run_simulation(&opts, &cancel).expect("sim");

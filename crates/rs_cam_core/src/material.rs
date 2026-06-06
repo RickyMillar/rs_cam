@@ -1021,9 +1021,7 @@ impl Material {
     /// matching values.
     pub fn drill_chip_welding_threshold_dtd(&self) -> f64 {
         match self {
-            Material::SolidWood { species } => {
-                janka_to_drill_chip_welding_dtd(species.janka_lbf())
-            }
+            Material::SolidWood { species } => janka_to_drill_chip_welding_dtd(species.janka_lbf()),
             // Parametric variant shares the same band lookup; out-of-band
             // Janka falls into the dense-hardwood (5.0) bucket — most
             // conservative for chip evacuation.
@@ -1064,9 +1062,7 @@ impl Material {
             // softwood Suggest pecks to 1.0×D (matrix band 3–8×D) and
             // matched dense hardwood. See `janka_to_drill_per_peck_max_dtd`
             // for the band rationale and sources.
-            Material::SolidWood { species } => {
-                janka_to_drill_per_peck_max_dtd(species.janka_lbf())
-            }
+            Material::SolidWood { species } => janka_to_drill_per_peck_max_dtd(species.janka_lbf()),
             Material::SolidWoodByJanka { janka_lbf, .. } => {
                 janka_to_drill_per_peck_max_dtd(*janka_lbf)
             }
@@ -1884,7 +1880,10 @@ mod tests {
             );
         }
         assert!(hdf >= mdf, "HDF (denser) must not be below MDF");
-        assert!(hdf >= particle, "HDF (densest engineered wood) must top sheet goods");
+        assert!(
+            hdf >= particle,
+            "HDF (densest engineered wood) must top sheet goods"
+        );
     }
 
     #[test]

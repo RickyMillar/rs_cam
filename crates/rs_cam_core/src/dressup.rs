@@ -666,7 +666,11 @@ pub fn apply_lead_in_out_with_feeds(
                             - ux * radius * (1.0 - cos_a);
                         let ay = plunge_end.y + perp_y * radius * (1.0 - sin_a)
                             - uy * radius * (1.0 - cos_a);
-                        result.feed_to_with_intent(P3::new(ax, ay, cut_z), li_feed, crate::toolpath::MoveIntent::LeadIn);
+                        result.feed_to_with_intent(
+                            P3::new(ax, ay, cut_z),
+                            li_feed,
+                            crate::toolpath::MoveIntent::LeadIn,
+                        );
                     }
                     let entry_end = result.moves.len();
                     if entry_end > entry_start {
@@ -725,7 +729,11 @@ pub fn apply_lead_in_out_with_feeds(
                         let (sin_a, cos_a) = angle.sin_cos();
                         let ax = cut_end.x + ux * radius * sin_a + perp_x * radius * (1.0 - cos_a);
                         let ay = cut_end.y + uy * radius * sin_a + perp_y * radius * (1.0 - cos_a);
-                        result.feed_to_with_intent(P3::new(ax, ay, cut_z), lo_feed, crate::toolpath::MoveIntent::LeadOut);
+                        result.feed_to_with_intent(
+                            P3::new(ax, ay, cut_z),
+                            lo_feed,
+                            crate::toolpath::MoveIntent::LeadOut,
+                        );
                     }
                     let lo_end = result.moves.len();
                     // The old cut-end move covers cut_idx..lo_end (itself plus

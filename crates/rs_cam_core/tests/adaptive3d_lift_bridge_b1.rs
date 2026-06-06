@@ -164,7 +164,8 @@ fn adaptive3d_default_skeleton_emits_no_rapid_collisions() {
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,    };
+        modulation_aggressiveness: 1.0,
+    };
     session
         .run_simulation(&opts, &cancel)
         .expect("simulation completes");

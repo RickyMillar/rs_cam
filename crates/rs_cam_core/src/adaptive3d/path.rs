@@ -1011,14 +1011,7 @@ fn try_emit_stay_down_link(
     }
 
     // F-038b spec sample count = 10 (incl. endpoints).
-    let max_mesh = max_mesh_z_along_line(
-        mesh,
-        index,
-        cutter,
-        (from.x, from.y),
-        (to.x, to.y),
-        10,
-    );
+    let max_mesh = max_mesh_z_along_line(mesh, index, cutter, (from.x, from.y), (to.x, to.y), 10);
     // If the line is entirely off-mesh, the terrain doesn't constrain
     // us; fall back to from.z/to.z as the height ceiling.
     let terrain_max = max_mesh.unwrap_or(f64::NEG_INFINITY);
@@ -1048,11 +1041,7 @@ fn try_emit_stay_down_link(
         );
     }
     // Step (b): XY traverse at link_z.
-    tp.feed_to_with_intent(
-        P3::new(to.x, to.y, link_z),
-        feed_rate,
-        MoveIntent::Linking,
-    );
+    tp.feed_to_with_intent(P3::new(to.x, to.y, link_z), feed_rate, MoveIntent::Linking);
     // Step (c): descend to the entry point.
     if to.z < link_z - 1e-9 {
         tp.feed_to_with_intent(to, feed_rate, MoveIntent::Linking);

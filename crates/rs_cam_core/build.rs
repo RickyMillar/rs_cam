@@ -35,17 +35,12 @@ fn main() {
         .map(|o| !o.stdout.is_empty())
         .unwrap_or(false);
 
-    let git_desc = if dirty {
-        format!("{sha}-dirty")
-    } else {
-        sha
-    };
+    let git_desc = if dirty { format!("{sha}-dirty") } else { sha };
 
     // Commit timestamp (stable per HEAD), NOT the build wall-clock — see
     // the module note above on why a volatile value breaks incremental
     // builds.
-    let commit_ts =
-        git(&["log", "-1", "--format=%cI"]).unwrap_or_else(|| "unknown".to_owned());
+    let commit_ts = git(&["log", "-1", "--format=%cI"]).unwrap_or_else(|| "unknown".to_owned());
 
     println!("cargo:rustc-env=RS_CAM_GIT_DESC={git_desc}");
     println!("cargo:rustc-env=RS_CAM_BUILD_TS={commit_ts}");

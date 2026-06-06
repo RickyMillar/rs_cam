@@ -285,12 +285,7 @@ fn project_curve_with_curve_and_surface_models_is_silent() {
     let idx = session
         .add_toolpath(
             0,
-            make_tp(
-                "pc_happy",
-                OperationConfig::ProjectCurve(cfg),
-                0,
-                curve_id,
-            ),
+            make_tp("pc_happy", OperationConfig::ProjectCurve(cfg), 0, curve_id),
         )
         .unwrap();
 

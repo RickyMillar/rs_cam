@@ -789,7 +789,8 @@ mod orchestration_skip_tests {
             drill_summaries: Vec::new(),
             predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
             modulated_feeds: std::collections::BTreeMap::new(),
-            modulation_summaries: std::collections::BTreeMap::new(),        }
+            modulation_summaries: std::collections::BTreeMap::new(),
+        }
     }
 
     fn make_tc(operation: OperationConfig, tool_id: usize) -> ToolpathConfig {
@@ -1141,7 +1142,8 @@ mod project_rollup_tests {
             drill_summaries: Vec::new(),
             predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
             modulated_feeds: std::collections::BTreeMap::new(),
-            modulation_summaries: std::collections::BTreeMap::new(),        }
+            modulation_summaries: std::collections::BTreeMap::new(),
+        }
     }
 
     fn summary_for(toolpath_id: usize, runtime_s: f64) -> SimulationToolpathCutSummary {
@@ -1575,7 +1577,8 @@ mod tests {
             power: within_power_verdict(),
             deflection: within_deflection_verdict(0.030),
             drill_gates: None,
-            modulation_summary: None,        }
+            modulation_summary: None,
+        }
     }
 
     fn exceeds_chipload_verdict() -> ToolpathLoadVerdict {
@@ -1585,7 +1588,8 @@ mod tests {
             power: within_power_verdict(),
             deflection: within_deflection_verdict(0.030),
             drill_gates: None,
-            modulation_summary: None,        }
+            modulation_summary: None,
+        }
     }
 
     fn ranked_test(candidates: Vec<OptimizeCandidate>) -> OptimizeOutcome {
@@ -1724,7 +1728,8 @@ mod tests {
                 power: within_power_verdict(),
                 deflection: within_deflection_verdict(0.030),
                 drill_gates: None,
-                modulation_summary: None,            }
+                modulation_summary: None,
+            }
         };
         // Faster but parked at LUT max (chipload 0.07 → distance 1.0
         // from midpoint 0.054 → penalty 5.0 at α=5.0).
@@ -2098,7 +2103,8 @@ mod tests {
             power: within_power_verdict(),
             deflection: within_deflection_verdict(0.030),
             drill_gates: None,
-            modulation_summary: None,        }
+            modulation_summary: None,
+        }
     }
 
     #[test]

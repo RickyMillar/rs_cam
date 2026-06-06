@@ -301,7 +301,8 @@ mod tests {
             power: within_power(0.4),
             deflection: within_deflection(0.020),
             drill_gates: None,
-            modulation_summary: None,        };
+            modulation_summary: None,
+        };
 
         let candidates = strategy.candidates(&view, &verdict);
         assert_eq!(candidates.len(), 1, "expected one headroom candidate");
@@ -351,7 +352,8 @@ mod tests {
             power: within_power(0.4),
             deflection: within_deflection(0.020),
             drill_gates: None,
-            modulation_summary: None,        };
+            modulation_summary: None,
+        };
         assert!(strategy.candidates(&view, &verdict).is_empty());
     }
 
@@ -377,7 +379,8 @@ mod tests {
             power: within_power(0.4),
             deflection: within_deflection(0.020),
             drill_gates: None,
-            modulation_summary: None,        };
+            modulation_summary: None,
+        };
         assert_eq!(strategy.candidates(&view, &verdict).len(), 1);
     }
 
@@ -404,7 +407,8 @@ mod tests {
             power: within_power(0.4),
             deflection: within_deflection(0.020),
             drill_gates: None,
-            modulation_summary: None,        };
+            modulation_summary: None,
+        };
         assert!(strategy.candidates(&view, &verdict).is_empty());
     }
 }

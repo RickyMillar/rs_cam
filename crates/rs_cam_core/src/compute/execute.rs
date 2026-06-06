@@ -1354,8 +1354,7 @@ pub fn apply_dressups(
     semantic_ctx: Option<&ToolpathSemanticContext>,
 ) -> AnnotatedToolpath {
     use crate::dressup::{
-        EntryStyle, LinkMoveParams, apply_dogbones, apply_entry,
-        apply_link_moves,
+        EntryStyle, LinkMoveParams, apply_dogbones, apply_entry, apply_link_moves,
     };
 
     // Capability gate: barriered TSP only fires when the input has barriers.

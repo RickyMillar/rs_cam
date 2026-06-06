@@ -1769,10 +1769,8 @@ pub(super) fn clear_z_level_agent_2d_slice(
             inset
                 .into_iter()
                 .map(|mut poly| {
-                    poly.exterior = crate::adaptive::path::simplify_path(
-                        &poly.exterior,
-                        SIMPLIFY_TOLERANCE,
-                    );
+                    poly.exterior =
+                        crate::adaptive::path::simplify_path(&poly.exterior, SIMPLIFY_TOLERANCE);
                     poly.holes = poly
                         .holes
                         .into_iter()
@@ -1786,13 +1784,12 @@ pub(super) fn clear_z_level_agent_2d_slice(
         } else {
             Vec::new()
         };
-        let polygon_for_adaptive: &crate::polygon::Polygon2 =
-            if smoothed_polygons.is_empty() {
-                region_polygon
-            } else {
-                #[allow(clippy::indexing_slicing)] // checked non-empty above
-                &smoothed_polygons[0]
-            };
+        let polygon_for_adaptive: &crate::polygon::Polygon2 = if smoothed_polygons.is_empty() {
+            region_polygon
+        } else {
+            #[allow(clippy::indexing_slicing)] // checked non-empty above
+            &smoothed_polygons[0]
+        };
 
         let segs_2d_raw = crate::adaptive::adaptive_segments_with_debug(
             polygon_for_adaptive,
@@ -1852,63 +1849,60 @@ pub(super) fn clear_z_level_agent_2d_slice(
         // Always keep the very first group (it provides the region's initial
         // tool position). Always keep the last group's residual Marker/Link
         // segments so the per-region debug spans stay coherent.
-        let segs_2d: Vec<crate::adaptive::AdaptiveSegment> =
-            if ctx.min_region_cut_length_mm > 0.0 {
-                let mut groups: Vec<Vec<crate::adaptive::AdaptiveSegment>> = Vec::new();
-                let mut current: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
-                for s in segs_2d_raw {
-                    if matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_))
-                        && !current.is_empty()
-                    {
-                        groups.push(std::mem::take(&mut current));
+        let segs_2d: Vec<crate::adaptive::AdaptiveSegment> = if ctx.min_region_cut_length_mm > 0.0 {
+            let mut groups: Vec<Vec<crate::adaptive::AdaptiveSegment>> = Vec::new();
+            let mut current: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
+            for s in segs_2d_raw {
+                if matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_)) && !current.is_empty() {
+                    groups.push(std::mem::take(&mut current));
+                }
+                current.push(s);
+            }
+            if !current.is_empty() {
+                groups.push(current);
+            }
+            let mut kept_segs: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
+            let mut dropped_groups: usize = 0;
+            let group_total = groups.len();
+            for (gi, group) in groups.into_iter().enumerate() {
+                let mut cut_len = 0.0_f64;
+                for seg in &group {
+                    if let crate::adaptive::AdaptiveSegment::Cut(path_2d) = seg {
+                        cut_len += polyline_xy_length(path_2d);
                     }
-                    current.push(s);
                 }
-                if !current.is_empty() {
-                    groups.push(current);
+                // Always keep the first group — it sets up the region's
+                // starting position. Drop interior + trailing groups
+                // below threshold; the trailing group on terrain runs
+                // is usually a sub-tool residual the finishing pass
+                // will cover anyway.
+                let _ = group_total;
+                let drop = gi > 0
+                    && cut_len < ctx.min_region_cut_length_mm
+                    && group
+                        .iter()
+                        .any(|s| matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_)));
+                if drop {
+                    dropped_groups += 1;
+                    continue;
                 }
-                let mut kept_segs: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
-                let mut dropped_groups: usize = 0;
-                let group_total = groups.len();
-                for (gi, group) in groups.into_iter().enumerate() {
-                    let mut cut_len = 0.0_f64;
-                    for seg in &group {
-                        if let crate::adaptive::AdaptiveSegment::Cut(path_2d) = seg {
-                            cut_len += polyline_xy_length(path_2d);
-                        }
-                    }
-                    // Always keep the first group — it sets up the region's
-                    // starting position. Drop interior + trailing groups
-                    // below threshold; the trailing group on terrain runs
-                    // is usually a sub-tool residual the finishing pass
-                    // will cover anyway.
-                    let _ = group_total;
-                    let drop = gi > 0
-                        && cut_len < ctx.min_region_cut_length_mm
-                        && group
-                            .iter()
-                            .any(|s| matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_)));
-                    if drop {
-                        dropped_groups += 1;
-                        continue;
-                    }
-                    kept_segs.extend(group);
-                }
-                if dropped_groups > 0 {
-                    debug!(
-                        z = z_level,
-                        region = region_idx + 1,
-                        dropped_groups,
-                        group_total,
-                        threshold_mm = ctx.min_region_cut_length_mm,
-                        "F-038: dropped short cut groups inside 2D adaptive output"
-                    );
-                    dropped_short_regions += dropped_groups;
-                }
-                kept_segs
-            } else {
-                segs_2d_raw
-            };
+                kept_segs.extend(group);
+            }
+            if dropped_groups > 0 {
+                debug!(
+                    z = z_level,
+                    region = region_idx + 1,
+                    dropped_groups,
+                    group_total,
+                    threshold_mm = ctx.min_region_cut_length_mm,
+                    "F-038: dropped short cut groups inside 2D adaptive output"
+                );
+                dropped_short_regions += dropped_groups;
+            }
+            kept_segs
+        } else {
+            segs_2d_raw
+        };
 
         for seg in segs_2d {
             match seg {
@@ -2247,8 +2241,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
     if coalesced_entries > 0 {
         debug!(
             z = z_level,
-            coalesced_entries,
-            "F-038: coalesced redundant back-to-back entries"
+            coalesced_entries, "F-038: coalesced redundant back-to-back entries"
         );
     }
     level_metrics.dropped_short_region_count = dropped_short_regions + coalesced_entries;
@@ -2396,10 +2389,10 @@ mod region_order_tests {
         // Seed near the origin; two clusters. Expect origin cluster
         // first, then hop to the far cluster and stay local.
         let anchors = [
-            (0.0, 0.0),   // 0
-            (50.0, 0.0),  // 1 far
-            (1.0, 0.0),   // 2 near 0
-            (51.0, 0.0),  // 3 near 1
+            (0.0, 0.0),  // 0
+            (50.0, 0.0), // 1 far
+            (1.0, 0.0),  // 2 near 0
+            (51.0, 0.0), // 3 near 1
         ];
         let order = nearest_neighbor_order(&anchors, (0.2, 0.0));
         // 0 (closest to seed) → 2 (1mm away) → 1 (49mm) → 3 (1mm)
@@ -2415,13 +2408,7 @@ mod region_order_tests {
     #[test]
     fn nn_is_a_permutation() {
         // Every index appears exactly once, regardless of layout.
-        let anchors = [
-            (3.0, 7.0),
-            (-2.0, 1.0),
-            (8.0, -4.0),
-            (0.0, 0.0),
-            (5.0, 5.0),
-        ];
+        let anchors = [(3.0, 7.0), (-2.0, 1.0), (8.0, -4.0), (0.0, 0.0), (5.0, 5.0)];
         let mut order = nearest_neighbor_order(&anchors, (1.0, 1.0));
         assert_eq!(order.len(), anchors.len());
         order.sort_unstable();

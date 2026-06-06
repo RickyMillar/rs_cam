@@ -520,7 +520,8 @@ impl MillingCutter for ToolDefinition {
         self.cutter.lookup_diameter_at(axial_doc_mm)
     }
     fn mrr_cross_section_mm2(&self, axial_doc_mm: f64, radial_width_mm: f64) -> f64 {
-        self.cutter.mrr_cross_section_mm2(axial_doc_mm, radial_width_mm)
+        self.cutter
+            .mrr_cross_section_mm2(axial_doc_mm, radial_width_mm)
     }
     fn flat_tip_diameter(&self) -> f64 {
         self.cutter.flat_tip_diameter()

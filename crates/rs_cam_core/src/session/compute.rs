@@ -1405,7 +1405,10 @@ impl ProjectSession {
                 continue;
             };
             let flute_count = tool_cfg.flute_count.max(1);
-            let spindle_rpm = tc.operation.spindle_rpm().unwrap_or(self.post.spindle_speed);
+            let spindle_rpm = tc
+                .operation
+                .spindle_rpm()
+                .unwrap_or(self.post.spindle_speed);
             if spindle_rpm == 0 {
                 continue;
             }
@@ -1496,16 +1499,13 @@ impl ProjectSession {
             let stickout = tool_def.stickout.max(0.0);
             let youngs = tool_def.tool_material.youngs_modulus_n_per_mm2();
             let deflection_inputs = match kc_opt {
-                Some(kc)
-                    if stickout > 0.0 && engagement_dia > 0.0 && youngs > 0.0 =>
-                {
+                Some(kc) if stickout > 0.0 && engagement_dia > 0.0 && youngs > 0.0 => {
                     Some(DeflectionLimitInputs {
                         kc_n_per_mm2: kc,
                         stickout_mm: stickout,
                         engagement_diameter_mm: engagement_dia,
                         youngs_modulus_n_per_mm2: youngs,
-                        max_tip_deflection_mm:
-                            crate::tool_load::deflection::EXCEEDS_BOUND_MM,
+                        max_tip_deflection_mm: crate::tool_load::deflection::EXCEEDS_BOUND_MM,
                     })
                 }
                 _ => None,
@@ -1546,8 +1546,7 @@ impl ProjectSession {
             // (spans + spans_valid preserved from the source).
             let mut modulated_toolpath = annotated_arc.toolpath.clone();
             let commanded_feed_for_summary = tc.operation.feed_rate();
-            let Ok(outcome) =
-                adaptive_feed_modulate(&mut modulated_toolpath, &engagements, &ctx)
+            let Ok(outcome) = adaptive_feed_modulate(&mut modulated_toolpath, &engagements, &ctx)
             else {
                 continue;
             };
@@ -1558,11 +1557,9 @@ impl ProjectSession {
             for (move_idx, value) in &outcome.per_move {
                 modulated_feeds.insert((toolpath_id, *move_idx), *value);
             }
-            if let Some(summary) = outcome.build_summary(
-                commanded_feed_for_summary,
-                ctx.aggressiveness,
-                ctx.strategy,
-            ) {
+            if let Some(summary) =
+                outcome.build_summary(commanded_feed_for_summary, ctx.aggressiveness, ctx.strategy)
+            {
                 modulation_summaries.insert(toolpath_id, summary);
             }
             if outcome.changed == 0 {
@@ -1576,9 +1573,7 @@ impl ProjectSession {
             let new_arc = Arc::new(new_annotated);
             // Rebuild the op_data variant with the swapped Arc.
             let new_op_data = match &result.op_data {
-                crate::drill_op::OpData::Toolpath(_) => {
-                    crate::drill_op::OpData::Toolpath(new_arc)
-                }
+                crate::drill_op::OpData::Toolpath(_) => crate::drill_op::OpData::Toolpath(new_arc),
                 crate::drill_op::OpData::DrillOp(drill, _) => {
                     crate::drill_op::OpData::DrillOp(Arc::clone(drill), new_arc)
                 }

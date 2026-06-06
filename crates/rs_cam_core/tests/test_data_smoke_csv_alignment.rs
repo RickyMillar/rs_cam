@@ -94,8 +94,7 @@ fn split_csv_line(line: &str) -> Vec<String> {
 }
 
 fn load_cases() -> Vec<CaseRow> {
-    let content =
-        std::fs::read_to_string(csv_path()).expect("cases_agent_smoke.csv readable");
+    let content = std::fs::read_to_string(csv_path()).expect("cases_agent_smoke.csv readable");
     let mut lines = content.lines();
     let header = lines.next().expect("CSV header present");
     let header_fields: Vec<&str> = header.split(',').collect();
@@ -209,10 +208,7 @@ fn all_smoke_cases_have_required_tool_in_template() {
         let Ok(session) = ProjectSession::load(&template) else {
             continue; // surfaced by the loader test
         };
-        let has_tool = session
-            .list_tools()
-            .iter()
-            .any(|t| t.name == row.tool_name);
+        let has_tool = session.list_tools().iter().any(|t| t.name == row.tool_name);
         if !has_tool {
             let available: Vec<String> = session
                 .list_tools()
@@ -247,11 +243,13 @@ fn all_smoke_cases_have_matching_material_family() {
             continue;
         }
         // Tolerate documented residual mismatches.
-        let is_known = KNOWN_MATERIAL_MISMATCHES.iter().any(|(case, csv_mat, tpl_mat)| {
-            *case == row.case_id
-                && *csv_mat == row.material_family.as_str()
-                && *tpl_mat == template_key.as_str()
-        });
+        let is_known = KNOWN_MATERIAL_MISMATCHES
+            .iter()
+            .any(|(case, csv_mat, tpl_mat)| {
+                *case == row.case_id
+                    && *csv_mat == row.material_family.as_str()
+                    && *tpl_mat == template_key.as_str()
+            });
         if is_known {
             continue;
         }

@@ -372,10 +372,9 @@ fn max_safe_feed_for_move(
     if let Some(defl) = ctx.deflection_inputs {
         let axial_mm = effective_axial_mm(engagement, ctx);
         if axial_mm > 0.0 && woc_eff > 0.0 {
-            let radial_width =
-                (woc_eff * std::f64::consts::PI).min(std::f64::consts::PI)
-                    / std::f64::consts::PI
-                    * defl.engagement_diameter_mm.max(0.0);
+            let radial_width = (woc_eff * std::f64::consts::PI).min(std::f64::consts::PI)
+                / std::f64::consts::PI
+                * defl.engagement_diameter_mm.max(0.0);
             // Reference force at this engagement geometry.
             let ref_force_n = defl.kc_n_per_mm2 * axial_mm * radial_width.max(1e-6);
             if ref_force_n > 0.0 {
@@ -424,8 +423,7 @@ fn max_safe_feed_for_move(
                 // here so any future change to GRAIN_ANISOTROPY_FACTOR
                 // is one diff, not N.
                 let kc_eff = crate::tool_load::power::GRAIN_ANISOTROPY_FACTOR * pow.kc_n_per_mm2;
-                let pow_cap =
-                    pow.available_kw * 60_000_000.0 / (kc_eff * axial_mm * radial_width);
+                let pow_cap = pow.available_kw * 60_000_000.0 / (kc_eff * axial_mm * radial_width);
                 if pow_cap.is_finite() {
                     limits.push((pow_cap, BindingConstraint::PowerMax));
                 }
@@ -603,9 +601,19 @@ pub fn adaptive_feed_modulate(
     let mut probe = toolpath.clone();
     for m in probe.moves.iter_mut() {
         m.move_type = match m.move_type {
-            MoveType::Linear { .. } => MoveType::Linear { feed_rate: probe_feed },
-            MoveType::ArcCW { i, j, .. } => MoveType::ArcCW { i, j, feed_rate: probe_feed },
-            MoveType::ArcCCW { i, j, .. } => MoveType::ArcCCW { i, j, feed_rate: probe_feed },
+            MoveType::Linear { .. } => MoveType::Linear {
+                feed_rate: probe_feed,
+            },
+            MoveType::ArcCW { i, j, .. } => MoveType::ArcCW {
+                i,
+                j,
+                feed_rate: probe_feed,
+            },
+            MoveType::ArcCCW { i, j, .. } => MoveType::ArcCCW {
+                i,
+                j,
+                feed_rate: probe_feed,
+            },
             MoveType::Rapid => MoveType::Rapid,
         };
     }
@@ -640,9 +648,7 @@ pub fn adaptive_feed_modulate(
                 band_mid_feed_for_move(commanded, engagement, predicted_cap, ctx)
             }
             ModulationStrategy::ConstrainedMax => {
-                if engagement.radial_woc_fraction <= 1e-6
-                    && engagement.axial_doc_fraction <= 1e-6
-                {
+                if engagement.radial_woc_fraction <= 1e-6 && engagement.axial_doc_fraction <= 1e-6 {
                     // No engagement — leave the commanded feed
                     // alone. Record the per-move entry so the
                     // diagnostic surface can still see it.
@@ -656,13 +662,19 @@ pub fn adaptive_feed_modulate(
         outcome.per_move.insert(i, (new_feed, binding));
         if (new_feed - commanded).abs() > 1e-6 {
             let new_move_type = match move_type {
-                MoveType::Linear { .. } => MoveType::Linear { feed_rate: new_feed },
-                MoveType::ArcCW { i: ai, j: aj, .. } => {
-                    MoveType::ArcCW { i: ai, j: aj, feed_rate: new_feed }
-                }
-                MoveType::ArcCCW { i: ai, j: aj, .. } => {
-                    MoveType::ArcCCW { i: ai, j: aj, feed_rate: new_feed }
-                }
+                MoveType::Linear { .. } => MoveType::Linear {
+                    feed_rate: new_feed,
+                },
+                MoveType::ArcCW { i: ai, j: aj, .. } => MoveType::ArcCW {
+                    i: ai,
+                    j: aj,
+                    feed_rate: new_feed,
+                },
+                MoveType::ArcCCW { i: ai, j: aj, .. } => MoveType::ArcCCW {
+                    i: ai,
+                    j: aj,
+                    feed_rate: new_feed,
+                },
                 MoveType::Rapid => MoveType::Rapid,
             };
             toolpath.moves[i].move_type = new_move_type;
@@ -713,11 +725,7 @@ mod tests {
         tp.rapid_to(P3::new(0.0, 0.0, 0.0));
         for i in 0..n_cuts {
             let x = (i + 1) as f64 * 50.0;
-            tp.feed_to_with_intent(
-                P3::new(x, 0.0, -2.0),
-                feed_mm_min,
-                MoveIntent::ClearingCut,
-            );
+            tp.feed_to_with_intent(P3::new(x, 0.0, -2.0), feed_mm_min, MoveIntent::ClearingCut);
         }
         tp
     }
@@ -733,11 +741,7 @@ mod tests {
             } else {
                 y += 2.0;
             }
-            tp.feed_to_with_intent(
-                P3::new(x, y, -2.0),
-                feed_mm_min,
-                MoveIntent::ClearingCut,
-            );
+            tp.feed_to_with_intent(P3::new(x, y, -2.0), feed_mm_min, MoveIntent::ClearingCut);
         }
         tp
     }
@@ -795,7 +799,10 @@ mod tests {
     /// triggered). Invariant for both strategies.
     #[test]
     fn zero_engagement_leaves_feed_unchanged() {
-        for strategy in [ModulationStrategy::BandMid, ModulationStrategy::ConstrainedMax] {
+        for strategy in [
+            ModulationStrategy::BandMid,
+            ModulationStrategy::ConstrainedMax,
+        ] {
             let mut tp = straight_toolpath(4, 1500.0);
             let engagements = vec![PerMoveEngagement::default(); tp.moves.len()];
             let k = shapeoko();
@@ -828,9 +835,18 @@ mod tests {
         tp.feed_to_with_intent(P3::new(0.0, 0.0, 5.0), 1500.0, MoveIntent::Retract);
         let engagements = vec![
             PerMoveEngagement::default(),
-            PerMoveEngagement { radial_woc_fraction: 1.0, axial_doc_fraction: 1.0 },
-            PerMoveEngagement { radial_woc_fraction: 1.0, axial_doc_fraction: 1.0 },
-            PerMoveEngagement { radial_woc_fraction: 1.0, axial_doc_fraction: 1.0 },
+            PerMoveEngagement {
+                radial_woc_fraction: 1.0,
+                axial_doc_fraction: 1.0,
+            },
+            PerMoveEngagement {
+                radial_woc_fraction: 1.0,
+                axial_doc_fraction: 1.0,
+            },
+            PerMoveEngagement {
+                radial_woc_fraction: 1.0,
+                axial_doc_fraction: 1.0,
+            },
         ];
         let k = shapeoko();
         let ctx = make_ctx(&k, band());
@@ -847,9 +863,18 @@ mod tests {
         let mut tp = straight_toolpath(3, 1500.0);
         let engagements = vec![
             PerMoveEngagement::default(),
-            PerMoveEngagement { radial_woc_fraction: 1.0, axial_doc_fraction: 1.0 },
-            PerMoveEngagement { radial_woc_fraction: 1.0, axial_doc_fraction: 1.0 },
-            PerMoveEngagement { radial_woc_fraction: 1.0, axial_doc_fraction: 1.0 },
+            PerMoveEngagement {
+                radial_woc_fraction: 1.0,
+                axial_doc_fraction: 1.0,
+            },
+            PerMoveEngagement {
+                radial_woc_fraction: 1.0,
+                axial_doc_fraction: 1.0,
+            },
+            PerMoveEngagement {
+                radial_woc_fraction: 1.0,
+                axial_doc_fraction: 1.0,
+            },
         ];
         let k = shapeoko();
         let mut ctx = make_ctx(&k, band());
@@ -871,8 +896,14 @@ mod tests {
         let mut tp = straight_toolpath(2, 1500.0);
         let engagements = vec![
             PerMoveEngagement::default(),
-            PerMoveEngagement { radial_woc_fraction: 0.1, axial_doc_fraction: 1.0 },
-            PerMoveEngagement { radial_woc_fraction: 0.1, axial_doc_fraction: 1.0 },
+            PerMoveEngagement {
+                radial_woc_fraction: 0.1,
+                axial_doc_fraction: 1.0,
+            },
+            PerMoveEngagement {
+                radial_woc_fraction: 0.1,
+                axial_doc_fraction: 1.0,
+            },
         ];
         let k = shapeoko();
         let mut ctx = make_ctx(&k, band());
@@ -880,7 +911,10 @@ mod tests {
         adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap();
         let f = tp.moves[1].move_type.feed_rate().unwrap();
         // 0.08 × 18000 × 2 = 2880.
-        assert!((f - 2880.0).abs() < 5.0, "expected band ceiling 2880, got {f}");
+        assert!(
+            (f - 2880.0).abs() < 5.0,
+            "expected band ceiling 2880, got {f}"
+        );
     }
 
     /// machine-max-feed cap wins.
@@ -889,8 +923,14 @@ mod tests {
         let mut tp = straight_toolpath(2, 1500.0);
         let engagements = vec![
             PerMoveEngagement::default(),
-            PerMoveEngagement { radial_woc_fraction: 0.1, axial_doc_fraction: 1.0 },
-            PerMoveEngagement { radial_woc_fraction: 0.1, axial_doc_fraction: 1.0 },
+            PerMoveEngagement {
+                radial_woc_fraction: 0.1,
+                axial_doc_fraction: 1.0,
+            },
+            PerMoveEngagement {
+                radial_woc_fraction: 0.1,
+                axial_doc_fraction: 1.0,
+            },
         ];
         let k = shapeoko();
         let mut ctx = make_ctx(&k, band());
@@ -910,9 +950,18 @@ mod tests {
         let mut tp = straight_toolpath(3, 4000.0);
         let engagements = vec![
             PerMoveEngagement::default(),
-            PerMoveEngagement { radial_woc_fraction: 1.0, axial_doc_fraction: 1.0 },
-            PerMoveEngagement { radial_woc_fraction: 1.0, axial_doc_fraction: 1.0 },
-            PerMoveEngagement { radial_woc_fraction: 1.0, axial_doc_fraction: 1.0 },
+            PerMoveEngagement {
+                radial_woc_fraction: 1.0,
+                axial_doc_fraction: 1.0,
+            },
+            PerMoveEngagement {
+                radial_woc_fraction: 1.0,
+                axial_doc_fraction: 1.0,
+            },
+            PerMoveEngagement {
+                radial_woc_fraction: 1.0,
+                axial_doc_fraction: 1.0,
+            },
         ];
         let k = shapeoko();
         let degenerate = ChiploadBand::new(0.05, 0.05).unwrap();
@@ -950,9 +999,8 @@ mod tests {
             }
             let f = m.move_type.feed_rate().unwrap();
             if let Some(&cap) = predicted_pre.get(&idx) {
-                let band_floor = ctx.chipload_band.min_mm_per_tooth
-                    * ctx.spindle_rpm
-                    * ctx.flute_count as f64;
+                let band_floor =
+                    ctx.chipload_band.min_mm_per_tooth * ctx.spindle_rpm * ctx.flute_count as f64;
                 let effective_cap = cap.max(band_floor);
                 assert!(
                     f <= effective_cap + 1.0,
@@ -966,16 +1014,25 @@ mod tests {
     /// path has ≥ 2 distinct feeds under heterogeneous engagement.
     #[test]
     fn modulation_produces_per_segment_feed_variation() {
-        for strategy in [ModulationStrategy::BandMid, ModulationStrategy::ConstrainedMax] {
+        for strategy in [
+            ModulationStrategy::BandMid,
+            ModulationStrategy::ConstrainedMax,
+        ] {
             let mut tp = corner_heavy_toolpath(2000.0);
             let engagements: Vec<_> = (0..tp.moves.len())
                 .map(|i| {
                     if matches!(tp.moves[i].move_type, MoveType::Rapid) {
                         PerMoveEngagement::default()
                     } else if i % 2 == 0 {
-                        PerMoveEngagement { radial_woc_fraction: 1.0, axial_doc_fraction: 1.0 }
+                        PerMoveEngagement {
+                            radial_woc_fraction: 1.0,
+                            axial_doc_fraction: 1.0,
+                        }
                     } else {
-                        PerMoveEngagement { radial_woc_fraction: 0.2, axial_doc_fraction: 1.0 }
+                        PerMoveEngagement {
+                            radial_woc_fraction: 0.2,
+                            axial_doc_fraction: 1.0,
+                        }
                     }
                 })
                 .collect();

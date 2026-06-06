@@ -1485,7 +1485,8 @@ mod tests {
                 power,
                 deflection,
                 drill_gates: None,
-                modulation_summary: None,            }],
+                modulation_summary: None,
+            }],
         }
     }
 

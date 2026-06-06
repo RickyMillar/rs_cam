@@ -433,10 +433,8 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
     // Build per-toolpath SuggestContext slots that depend on the
     // session up front so the mutating loop below doesn't reborrow
     // `session` while it holds `toolpath_configs_mut()`.
-    let stock_ctx = StockContext::from_stock_bbox(
-        session.stock_bbox(),
-        session.stock_config().padding,
-    );
+    let stock_ctx =
+        StockContext::from_stock_bbox(session.stock_bbox(), session.stock_config().padding);
     // Per-toolpath model bbox lookup. `ToolpathConfig.model_id` defaults
     // to 0 when unspecified, so reuse the first model as the fallback
     // (matches `project_file.rs::634`).
@@ -453,7 +451,11 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
             continue;
         }
         let Some(tool) = tools_snapshot.iter().find(|t| t.id.0 == tc.tool_id) else {
-            warn!(toolpath_id = tc.id, tool_id = tc.tool_id, "Tool not found, skipping suggest");
+            warn!(
+                toolpath_id = tc.id,
+                tool_id = tc.tool_id,
+                "Tool not found, skipping suggest"
+            );
             continue;
         };
 
@@ -508,7 +510,8 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
         // emitted M3 line matches the calculator's recommendation.
         let suggested_rpm = suggested.feeds_result.rpm;
         if suggested_rpm.is_finite() && suggested_rpm > 0.0 {
-            tc.operation.set_spindle_rpm(Some(suggested_rpm.round() as u32));
+            tc.operation
+                .set_spindle_rpm(Some(suggested_rpm.round() as u32));
         }
 
         let feed_after = tc.operation.feed_rate();
@@ -528,16 +531,8 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
                 fmt_opt(stepover_before, 2),
                 fmt_opt(stepover_after, 2)
             ),
-            format!(
-                "{}→{}",
-                fmt_opt(dpp_before, 2),
-                fmt_opt(dpp_after, 2)
-            ),
-            format!(
-                "{}→{}",
-                fmt_opt_u32(rpm_before),
-                fmt_opt_u32(rpm_after)
-            ),
+            format!("{}→{}", fmt_opt(dpp_before, 2), fmt_opt(dpp_after, 2)),
+            format!("{}→{}", fmt_opt_u32(rpm_before), fmt_opt_u32(rpm_after)),
         );
 
         // No cache invalidation needed — apply runs before

@@ -105,13 +105,13 @@ fn main() -> Result<()> {
             truncate(&tc.name, 32),
             format!("{feed_before:.0} -> {feed_after:.0}"),
             format!("{plunge_before:.0} -> {plunge_after:.0}"),
-            format!("{} -> {}", fmt_opt(stepover_before), fmt_opt(stepover_after)),
-            format!("{} -> {}", fmt_opt(dpp_before), fmt_opt(dpp_after)),
             format!(
                 "{} -> {}",
-                fmt_opt_u32(rpm_before),
-                fmt_opt_u32(rpm_after)
+                fmt_opt(stepover_before),
+                fmt_opt(stepover_after)
             ),
+            format!("{} -> {}", fmt_opt(dpp_before), fmt_opt(dpp_after)),
+            format!("{} -> {}", fmt_opt_u32(rpm_before), fmt_opt_u32(rpm_after)),
         );
     }
 

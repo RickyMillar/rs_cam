@@ -18,13 +18,13 @@
 //! - Phase 4: project-rollup mode (per-toolpath table)
 
 use egui_plot::{Line, MarkerShape, Plot, PlotPoints, Points, Polygon};
-use rs_cam_core::feeds::{
-    FeedsExplain, ToolGeometryHint, vendor_lut::HardnessKind, vendor_lut::MaterialFamily,
-    vendor_lut::ToolFamily,
-};
 use rs_cam_core::feeds::rationale::{RationaleEntry, SuggestRationale};
 use rs_cam_core::feeds::suggest::{
     StockContext, SuggestContext, SuggestForOperationInput, suggest_for_operation,
+};
+use rs_cam_core::feeds::{
+    FeedsExplain, ToolGeometryHint, vendor_lut::HardnessKind, vendor_lut::MaterialFamily,
+    vendor_lut::ToolFamily,
 };
 
 use super::{AppEvent, FeedsField, theme};
@@ -457,10 +457,7 @@ fn compute_explain(state: &AppState, toolpath_id: usize) -> Option<FeedsExplain>
 /// rationale (rendered as nothing) when the Suggest call refuses
 /// (unmatched tool × op, etc.) — the user has no information they need
 /// to act on in that case.
-fn compute_suggest_rationale(
-    state: &AppState,
-    toolpath_id: usize,
-) -> SuggestRationale {
+fn compute_suggest_rationale(state: &AppState, toolpath_id: usize) -> SuggestRationale {
     let Some(tc) = state
         .session
         .toolpath_configs()

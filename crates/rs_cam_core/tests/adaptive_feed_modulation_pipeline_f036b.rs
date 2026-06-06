@@ -363,11 +363,11 @@ fn modulated_gates_within_constant_chipload_band() {
     let chipload = &verdict.chipload;
     use rs_cam_core::tool_load::ChiploadVerdict;
     match chipload {
-        ChiploadVerdict::Within { .. } => {} // canonical pass
+        ChiploadVerdict::Within { .. } => {}    // canonical pass
         ChiploadVerdict::Unmodeled { .. } => {} // no LUT band → no modulation, no failure
-        other => panic!(
-            "F-036b AB3: modulated chipload must stay inside the LUT band; got {other:?}"
-        ),
+        other => {
+            panic!("F-036b AB3: modulated chipload must stay inside the LUT band; got {other:?}")
+        }
     }
 }
 
@@ -447,10 +447,7 @@ fn modulated_path_never_emits_below_min_chipload() {
         .and_then(|s| s.cut_trace.as_ref())
         .expect("cut trace flag-on");
 
-    let envelopes = rs_cam_core::tool_load::chipload_envelopes_for_session(
-        &session,
-        Some(trace),
-    );
+    let envelopes = rs_cam_core::tool_load::chipload_envelopes_for_session(&session, Some(trace));
     let Some(band) = envelopes.get(&0) else {
         // No LUT band → modulator was a no-op. Vacuously satisfied;
         // pinned here so a future calibration shift doesn't silently
@@ -466,9 +463,7 @@ fn modulated_path_never_emits_below_min_chipload() {
         .get_result(0)
         .expect("session result for toolpath 0");
     let toolpath = &result.annotated().toolpath;
-    let tc = session
-        .get_toolpath_config(0)
-        .expect("toolpath config 0");
+    let tc = session.get_toolpath_config(0).expect("toolpath config 0");
     let tool = session
         .get_tool(rs_cam_core::compute::tool_config::ToolId(tc.tool_id))
         .expect("tool referenced by toolpath");
@@ -517,12 +512,17 @@ fn modulated_path_never_emits_below_min_chipload() {
     }
 
     assert_eq!(
-        below_floor, 0,
+        below_floor,
+        0,
         "F-036b AB5: modulated IR has {below_floor} of {modulated_moves} modulated moves \
          below the LUT band floor (worst = {worst:.4} mm/tooth, band floor = \
          {floor:.4} mm/tooth, band.start = {start:.4}, commanded feed = {cmd:.0} mm/min). \
          The modulator's band-floor clamp must hold on every move it touches.",
-        worst = if worst_below.is_finite() { worst_below } else { 0.0 },
+        worst = if worst_below.is_finite() {
+            worst_below
+        } else {
+            0.0
+        },
         floor = floor,
         start = band.start,
         cmd = commanded_feed
@@ -607,10 +607,7 @@ fn fixture_sanity_lut_band_resolves_for_as001() {
         .simulation_result()
         .and_then(|s| s.cut_trace.as_ref())
         .expect("cut trace");
-    let envelopes = rs_cam_core::tool_load::chipload_envelopes_for_session(
-        &session,
-        Some(trace),
-    );
+    let envelopes = rs_cam_core::tool_load::chipload_envelopes_for_session(&session, Some(trace));
     assert!(
         envelopes.contains_key(&0),
         "F-036b sanity: AS001 pocket must resolve a vendor LUT chipload band so the \

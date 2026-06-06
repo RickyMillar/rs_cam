@@ -72,11 +72,7 @@ fn straight_toolpath(n_cuts: usize, feed_mm_min: f64) -> Toolpath {
     tp.rapid_to(P3::new(0.0, 0.0, 0.0));
     for i in 0..n_cuts {
         let x = (i + 1) as f64 * 50.0;
-        tp.feed_to_with_intent(
-            P3::new(x, 0.0, -2.0),
-            feed_mm_min,
-            MoveIntent::ClearingCut,
-        );
+        tp.feed_to_with_intent(P3::new(x, 0.0, -2.0), feed_mm_min, MoveIntent::ClearingCut);
     }
     tp
 }
@@ -91,7 +87,10 @@ fn constrained_max_emits_max_feed_when_chipload_max_binds() {
             if matches!(tp.moves[i].move_type, MoveType::Rapid) {
                 PerMoveEngagement::default()
             } else {
-                PerMoveEngagement { radial_woc_fraction: 1.0, axial_doc_fraction: 1.0 }
+                PerMoveEngagement {
+                    radial_woc_fraction: 1.0,
+                    axial_doc_fraction: 1.0,
+                }
             }
         })
         .collect();
@@ -127,7 +126,10 @@ fn constrained_max_raises_feed_when_under_band_on_light_engagement() {
             if matches!(tp.moves[i].move_type, MoveType::Rapid) {
                 PerMoveEngagement::default()
             } else {
-                PerMoveEngagement { radial_woc_fraction: 0.25, axial_doc_fraction: 1.0 }
+                PerMoveEngagement {
+                    radial_woc_fraction: 0.25,
+                    axial_doc_fraction: 1.0,
+                }
             }
         })
         .collect();
@@ -160,7 +162,10 @@ fn constrained_max_binds_on_deflection_for_long_tool() {
             if matches!(tp.moves[i].move_type, MoveType::Rapid) {
                 PerMoveEngagement::default()
             } else {
-                PerMoveEngagement { radial_woc_fraction: 1.0, axial_doc_fraction: 1.0 }
+                PerMoveEngagement {
+                    radial_woc_fraction: 1.0,
+                    axial_doc_fraction: 1.0,
+                }
             }
         })
         .collect();
@@ -203,7 +208,10 @@ fn constrained_max_binds_on_power_for_low_rpm() {
             if matches!(tp.moves[i].move_type, MoveType::Rapid) {
                 PerMoveEngagement::default()
             } else {
-                PerMoveEngagement { radial_woc_fraction: 1.0, axial_doc_fraction: 1.0 }
+                PerMoveEngagement {
+                    radial_woc_fraction: 1.0,
+                    axial_doc_fraction: 1.0,
+                }
             }
         })
         .collect();
@@ -258,7 +266,10 @@ fn aggressiveness_below_one_emits_proportional_feed() {
             if matches!(tp_a.moves[i].move_type, MoveType::Rapid) {
                 PerMoveEngagement::default()
             } else {
-                PerMoveEngagement { radial_woc_fraction: 1.0, axial_doc_fraction: 1.0 }
+                PerMoveEngagement {
+                    radial_woc_fraction: 1.0,
+                    axial_doc_fraction: 1.0,
+                }
             }
         })
         .collect();
@@ -288,9 +299,15 @@ fn modulation_summary_matches_per_move_binding_distribution() {
             if matches!(tp.moves[i].move_type, MoveType::Rapid) {
                 PerMoveEngagement::default()
             } else if i % 2 == 0 {
-                PerMoveEngagement { radial_woc_fraction: 1.0, axial_doc_fraction: 1.0 }
+                PerMoveEngagement {
+                    radial_woc_fraction: 1.0,
+                    axial_doc_fraction: 1.0,
+                }
             } else {
-                PerMoveEngagement { radial_woc_fraction: 0.3, axial_doc_fraction: 1.0 }
+                PerMoveEngagement {
+                    radial_woc_fraction: 0.3,
+                    axial_doc_fraction: 1.0,
+                }
             }
         })
         .collect();

@@ -438,7 +438,8 @@ mod tests {
             drill_summaries: Vec::new(),
             predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
             modulated_feeds: std::collections::BTreeMap::new(),
-            modulation_summaries: std::collections::BTreeMap::new(),        }
+            modulation_summaries: std::collections::BTreeMap::new(),
+        }
     }
 
     #[test]

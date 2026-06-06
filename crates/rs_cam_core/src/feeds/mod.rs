@@ -443,18 +443,38 @@ impl FeedsDerates {
 /// Warnings generated during calculation.
 #[derive(Debug, Clone)]
 pub enum FeedsWarning {
-    FeedRateClamped { requested: f64, actual: f64 },
-    PowerLimited { required_kw: f64, available_kw: f64 },
-    ShankTooLarge { shank_mm: f64, max_mm: f64 },
-    DocExceedsFlute { requested: f64, capped: f64 },
-    SlottingDetected { doc_reduced_to: f64 },
-    ScallopInvalid { target: f64, max_possible: f64 },
+    FeedRateClamped {
+        requested: f64,
+        actual: f64,
+    },
+    PowerLimited {
+        required_kw: f64,
+        available_kw: f64,
+    },
+    ShankTooLarge {
+        shank_mm: f64,
+        max_mm: f64,
+    },
+    DocExceedsFlute {
+        requested: f64,
+        capped: f64,
+    },
+    SlottingDetected {
+        doc_reduced_to: f64,
+    },
+    ScallopInvalid {
+        target: f64,
+        max_possible: f64,
+    },
     /// Vendor-LUT or formula chipload derated below the rubbing
     /// floor (typically extreme-Janka hardwoods scaling an oak-anchored
     /// LUT row down). The engine clamps to `RUBBING_FLOOR_MM_TOOTH`
     /// and emits this so the operator sees the honest derate instead
     /// of a silent ploughing recipe.
-    ChiploadClampedToFloor { requested: f64, floor: f64 },
+    ChiploadClampedToFloor {
+        requested: f64,
+        floor: f64,
+    },
 }
 
 /// Hard refusal from the Suggest pipeline — the operation × tool
@@ -749,10 +769,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 };
                 let bounds = match (result.chip_load_min_mm, result.chip_load_max_mm) {
                     (Some(min), Some(max))
-                        if min.is_finite()
-                            && max.is_finite()
-                            && min > 0.0
-                            && max >= min =>
+                        if min.is_finite() && max.is_finite() && min > 0.0 && max >= min =>
                     {
                         Some(ChiploadBounds {
                             min_mm_per_tooth: min * chipload_doc_scale,
@@ -1087,8 +1104,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let mut power_factor = 1.0;
 
     if let Some(kc) = material.kc_n_per_mm2() {
-        let cross_section =
-            input.tool_geometry.mrr_cross_section_mm2(ap, ae);
+        let cross_section = input.tool_geometry.mrr_cross_section_mm2(ap, ae);
         let required_power =
             crate::tool_load::power::predicted_power_kw(kc, cross_section, raw_feed);
         if required_power > available_power && available_power > 0.0 {
@@ -1194,8 +1210,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 requested: commanded_fpt,
                 floor: RUBBING_FLOOR_MM_TOOTH,
             });
-            let machine_max_feed_after_safety =
-                machine.max_feed_mm_min * machine.safety_factor;
+            let machine_max_feed_after_safety = machine.max_feed_mm_min * machine.safety_factor;
             let target_feed = RUBBING_FLOOR_MM_TOOTH * fpt_divisor;
             feed = target_feed.min(machine_max_feed_after_safety);
         }
@@ -1208,8 +1223,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // power matches the Sim verdict's prediction.
     let actual_power = match material.kc_n_per_mm2() {
         Some(kc) => {
-            let cross_section =
-                input.tool_geometry.mrr_cross_section_mm2(ap, ae);
+            let cross_section = input.tool_geometry.mrr_cross_section_mm2(ap, ae);
             crate::tool_load::power::predicted_power_kw(kc, cross_section, feed)
         }
         None => 0.0,
@@ -2925,10 +2939,10 @@ mod tests {
         });
 
         // Chipload is preserved (constant-chipload line).
-        let chipload_chart = match_chart.feed_rate_mm_min
-            / (match_chart.rpm * f64::from(base.flute_count));
-        let chipload_max = max_speed.feed_rate_mm_min
-            / (max_speed.rpm * f64::from(base.flute_count));
+        let chipload_chart =
+            match_chart.feed_rate_mm_min / (match_chart.rpm * f64::from(base.flute_count));
+        let chipload_max =
+            max_speed.feed_rate_mm_min / (max_speed.rpm * f64::from(base.flute_count));
         assert!(
             (chipload_chart - chipload_max).abs() / chipload_chart < 0.02,
             "chipload should be preserved: chart {chipload_chart:.5} vs max {chipload_max:.5}"

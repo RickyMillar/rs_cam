@@ -853,7 +853,8 @@ mod tests {
             drill_summaries: Vec::new(),
             predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
             modulated_feeds: std::collections::BTreeMap::new(),
-            modulation_summaries: std::collections::BTreeMap::new(),        }
+            modulation_summaries: std::collections::BTreeMap::new(),
+        }
     }
 
     /// Phase 1E unit tests for the cross-vendor DOC-derating scale

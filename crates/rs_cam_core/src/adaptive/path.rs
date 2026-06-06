@@ -7,8 +7,8 @@
 
 use super::material_grid::polygon_bbox;
 use super::search::{
-    find_entry_point, find_entry_via_distance_transform, path_bounds,
-    search_direction_gradient, search_direction_with_metrics,
+    find_entry_point, find_entry_via_distance_transform, path_bounds, search_direction_gradient,
+    search_direction_with_metrics,
 };
 use super::{
     AdaptiveParams, AdaptiveRuntimeAnnotation, AdaptiveRuntimeEvent, CleanupStrategy, MaterialGrid,
@@ -434,8 +434,7 @@ pub(crate) fn adaptive_segments_with_debug(
             // boundary with dt_here ≈ tool_radius < threshold, and
             // we'd switch to gradient mode from step 1 with no
             // momentum. Better to let engagement-target run.
-            let dt_here =
-                grid.boundary_distance_at(&boundary_distances, cx, cy);
+            let dt_here = grid.boundary_distance_at(&boundary_distances, cx, cy);
             let use_gradient = helical_entry_pos.is_some()
                 && !matches!(params.cleanup_strategy, CleanupStrategy::Legacy)
                 && dt_here < tool_radius + stepover;
@@ -740,10 +739,7 @@ fn filter_short_cuts_by_redundancy(
                     filtered.push(seg.clone());
                 } else {
                     while let Some(last) = filtered.last() {
-                        if matches!(
-                            last,
-                            AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_)
-                        ) {
+                        if matches!(last, AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_)) {
                             filtered.pop();
                         } else {
                             break;
@@ -831,13 +827,8 @@ pub(crate) fn apply_residue_mop_cleanup(
         grid.cols,
         grid.cell_size,
     );
-    let mop_segments = mop_residue_into_segments(
-        &mut grid,
-        &machinable_mask,
-        tool_radius,
-        step_len,
-        last_pos,
-    );
+    let mop_segments =
+        mop_residue_into_segments(&mut grid, &machinable_mask, tool_radius, step_len, last_pos);
     out.extend(mop_segments);
     out
 }
@@ -946,13 +937,8 @@ pub(crate) fn apply_contour_parallel_residue_cleanup(
     // Step 5 — tiny-patch fallback. Anything the contour walks missed
     // (sub-stepover slivers, far-off-axis residue) gets cleaned by the
     // cell-walking mop.
-    let mop_segments = mop_residue_into_segments(
-        &mut grid,
-        &machinable_mask,
-        tool_radius,
-        step_len,
-        last_pos,
-    );
+    let mop_segments =
+        mop_residue_into_segments(&mut grid, &machinable_mask, tool_radius, step_len, last_pos);
     out.extend(mop_segments);
     out
 }
@@ -1119,12 +1105,8 @@ fn emit_helical_starter_pocket(
     boundary_distances: &[f64],
     tool_radius: f64,
 ) -> Option<(Vec<AdaptiveSegment>, P2)> {
-    let medial = find_entry_via_distance_transform(
-        grid,
-        machinable_mask,
-        boundary_distances,
-        tool_radius,
-    )?;
+    let medial =
+        find_entry_via_distance_transform(grid, machinable_mask, boundary_distances, tool_radius)?;
     // Need the medial-axis disk to fit the helix (radius `tool_radius`)
     // plus the cutter (radius `tool_radius`) plus a small safety margin.
     let dt_at = grid.boundary_distance_at(boundary_distances, medial.x, medial.y);
@@ -1172,10 +1154,7 @@ fn is_narrow_machinable(machinable: &Polygon2, tool_radius: f64, stepover: f64) 
     }
     let cutter_area = std::f64::consts::PI * tool_radius * tool_radius;
     let min_viable_area = 2.0 * cutter_area;
-    let max_fragment_area = result
-        .iter()
-        .map(|p| p.area())
-        .fold(0.0_f64, f64::max);
+    let max_fragment_area = result.iter().map(|p| p.area()).fold(0.0_f64, f64::max);
     max_fragment_area < min_viable_area
 }
 
@@ -1267,13 +1246,7 @@ fn contour_parallel_segments(
                         let d = (dx * dx + dy * dy).sqrt();
                         if d < 1e-6 {
                             // already at entry — no approach needed
-                        } else if is_clear_path(
-                            grid,
-                            machinable_mask,
-                            prev,
-                            entry,
-                            tool_radius,
-                        ) {
+                        } else if is_clear_path(grid, machinable_mask, prev, entry, tool_radius) {
                             // Cleared-cell traverse — Link at any
                             // distance, saving the retract + plunge
                             // cycle of a Rapid.

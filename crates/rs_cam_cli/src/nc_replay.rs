@@ -40,16 +40,16 @@ pub fn run_nc_time(inputs: &[PathBuf], max_feed: f64, rapid_feed: f64) -> Result
         max_feed, rapid_feed,
     );
     println!();
-    println!("{:>10}  {:>8}  {:>8}  {:<}", "time", "moves", "size_kb", "file");
+    println!(
+        "{:>10}  {:>8}  {:>8}  {:<}",
+        "time", "moves", "size_kb", "file"
+    );
     println!("{}", "-".repeat(60));
     for path in inputs {
         let (toolpath, total_lines) =
             parse_nc(path).with_context(|| format!("failed to parse {}", path.display()))?;
         let time_s = compute_cycle_time(&toolpath, &kinematics, max_feed, rapid_feed);
-        let size_kb = path
-            .metadata()
-            .map(|m| m.len() / 1024)
-            .unwrap_or(0);
+        let size_kb = path.metadata().map(|m| m.len() / 1024).unwrap_or(0);
         let mins = (time_s / 60.0).floor() as u32;
         let secs = (time_s - f64::from(mins) * 60.0).round() as u32;
         println!(
@@ -137,9 +137,8 @@ fn parse_nc(path: &Path) -> Result<(Toolpath, usize)> {
 
         // No motion word AND no XYZ delta → modal-only update (e.g.
         // standalone `F1500` to set feed). Don't emit a move.
-        let xyz_changed = (new_x - x).abs() > 1e-9
-            || (new_y - y).abs() > 1e-9
-            || (new_z - z).abs() > 1e-9;
+        let xyz_changed =
+            (new_x - x).abs() > 1e-9 || (new_y - y).abs() > 1e-9 || (new_z - z).abs() > 1e-9;
         if motion_kind.is_none() && !xyz_changed {
             continue;
         }

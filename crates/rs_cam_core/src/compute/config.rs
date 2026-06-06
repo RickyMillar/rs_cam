@@ -521,9 +521,7 @@ impl DressupConfig {
         // `Adaptive3dParams::entry_style` (Plunge/Helix/Ramp); the dressup
         // shouldn't override it, because the planner's internal
         // `material_stock` only mirrors the planner-emitted shape.
-        if matches!(op, OperationType::Adaptive3d)
-            && self.entry_style != DressupEntryStyle::None
-        {
+        if matches!(op, OperationType::Adaptive3d) && self.entry_style != DressupEntryStyle::None {
             self.entry_style = DressupEntryStyle::None;
             changed = true;
         }

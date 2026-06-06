@@ -75,7 +75,10 @@ fn find_by_display_name_is_case_insensitive() {
     let upper = find_by_display_name("RED OAK (NORTHERN)");
     let lower = find_by_display_name("red oak (northern)");
     let mixed = find_by_display_name("Red Oak (Northern)");
-    assert!(upper.is_some(), "uppercase variant of a known entry must match");
+    assert!(
+        upper.is_some(),
+        "uppercase variant of a known entry must match"
+    );
     assert_eq!(upper, lower);
     assert_eq!(lower, mixed);
 }
