@@ -16,8 +16,8 @@
 | # | Work item | Phase | Status | Gate / evidence |
 |---|---|---|---|---|
 | T0 | Axial-constraint envelope (companion doc rev 3, items 1-3: LUT schema+migration, calculator, Suggest consumers) | 0 | **DONE (`7d01311`, 2026-06-07)** | `cutter_constraints.rs` w/ binary-search `invert_deflection` over `tip_deflection_from_engagement` + roundtrip tests; `feeds_family` routing (no `is_finish_3d` invented); `apply_axial_envelope` policy C; 4 warning variants; chipload-bounds re-derivation landed; LUT `ap_*_factor` migrated |
-| T1 | PRE-Phase-1 feeds-hints coverage net (guard `suggest.rs` `(None,None,None)` wildcard) | pre-1 | TODO | new test: every op's hints are an explicit decision |
-| T2 | §7.2 serde/schema parity freeze test set | pre-1 | TODO | tests pinning TOML `{kind,params}`, snake_case reprs, both `ProjectToolSection` shapes, MCP `build_info.features`, named system-only partition |
+| T1 | PRE-Phase-1 feeds-hints coverage net (guard `suggest.rs` `(None,None,None)` wildcard) | pre-1 | **DONE (`39eec99`, 2026-06-07)** | `operation_feeds_hints_is_an_explicit_per_op_decision` (feeds/suggest.rs tests): exhaustive no-wildcard `OperationConfig` match over all 23 ops — new op fails to compile until hints are a recorded decision. core suite 1766 passed |
+| T2 | §7.2 serde/schema parity freeze test set | pre-1 | **DONE (`39eec99`, 2026-06-07)** | All 5 surfaces: `operation_config_serde_shape_is_kind_params` + `operation_type_serde_repr_pinned` (catalog.rs); `tool_type_serde_repr_pinned` (tool_config.rs); `project_tool_section_type_key_shape_frozen` ×2 (core session/project_file.rs lenient-String + viz io/project.rs serde-direct); `build_info_published_capability_flags_frozen` + `mcp_parse_helpers_accept_all_canonical_names` (rs_cam_mcp); partition test strengthened to exact `ALL_2D ∪ ALL_3D ∪ {AlignmentPinDrill} == ALL`. Suites: core 1766 / viz 189 / mcp 2 pass; clippy `-D warnings` + fmt clean. Note: `3de69b3` restored the fmt gate (7d01311 landed unformatted code) |
 | T3 | Phase 1 data-only `OpRegistryEntry` (all 23 ops, one PR) + kill `tool_constraints_for_type` wildcard | 1 | TODO | extend catalog.rs roundtrip + schema-parity tests; 19-op constraint-unchanged test |
 | T4 | Phase 1 drill-family predicate consolidation (`is_plunge_only()`, ≥4 open-coded sites) | 1 | TODO | helper-vs-sites agreement test |
 | T5 | Phase 1 dressup/entry-style policy registry field (replaces `normalize_for_op` 5 predicates + viz dup table) | 1 | TODO | core/viz tables read one source |
@@ -544,8 +544,8 @@ Do **not** launch a big-bang rewrite. Do:
 - [x] `MillingCutter` externally implementable — **DECIDED internal-only, not sealed.**
 - [x] New dependencies — **DECIDED: none (reject strum/enum_dispatch, defer bon).**
 - [x] Phase 1 registry shape — **DECIDED: data-only A/B hybrid.**
-- [ ] Land the PRE-Phase-1 feeds-hints coverage net (does not exist today).
-- [ ] Define the §7.2 serde/schema parity freeze test set.
+- [x] Land the PRE-Phase-1 feeds-hints coverage net — **DONE 2026-06-07 (`39eec99`, tracker T1).**
+- [x] Define the §7.2 serde/schema parity freeze test set — **DONE 2026-06-07 (`39eec99`, tracker T2).**
 - [x] User decisions — **ALL RESOLVED 2026-06-06** (§9 resolution table): CLI cull-path/migrate-harness; metric tier derived from `criteria()`; ALL_2D/ALL_3D consts kept + partition-checked; MillingCutter documented internal-only, sealed opportunistically.
 - [ ] Check `toolpath_stress_test/agents/` scripts for per-op CLI subcommand callers before removal (§7.1 step 3).
 
