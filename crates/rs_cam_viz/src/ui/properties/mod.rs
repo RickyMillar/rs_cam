@@ -3532,16 +3532,14 @@ fn draw_dressup_params(
     // hundreds of raster segments — a ramp entry / lead-in / link-move at
     // each one produces diagonal trenches carving through the stock). Grey
     // those controls out so the UI reflects what compute actually does.
-    // Must match `DressupConfig::normalize_for_op` in rs_cam_core.
-    let op_incompatible_msg: Option<&str> = match entry.operation {
-        crate::state::toolpath::OperationConfig::ProjectCurve(_) => {
-            Some("Incompatible with Project Curve: each ring would get a phantom diagonal cut.")
-        }
-        crate::state::toolpath::OperationConfig::DropCutter(_) => Some(
-            "Incompatible with 3D Finish: each raster segment's ramp entry would carve a diagonal trench across the stock.",
-        ),
-        _ => None,
-    };
+    // Read from the SAME registry policy `DressupConfig::normalize_for_op`
+    // applies (Phase 1 T5) — no hand-synced duplicate table.
+    let op_incompatible_msg: Option<&str> = entry
+        .operation
+        .op_type()
+        .registry_entry()
+        .dressup_policy
+        .strip_all_reason;
     let cfg = &mut entry.dressups;
     let section_color = egui::Color32::from_rgb(150, 155, 170);
 

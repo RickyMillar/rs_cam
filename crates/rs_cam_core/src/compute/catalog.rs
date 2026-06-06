@@ -920,6 +920,59 @@ impl ToolConstraintsDef {
     }
 }
 
+/// Entry-style coercion applied by `DressupConfig::normalize_for_op`
+/// (and mirrored by the viz dressup panel) for one operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntryStylePolicy {
+    /// Any configured entry style is accepted as-is.
+    AnyEntry,
+    /// Entry styles are meaningless or harmful for this op (stock-based /
+    /// single-pass / planner-emitted entries) — always coerce to `None`.
+    ForceNone,
+    /// `Ramp` is upgraded to `Helix` (the op's pocketing geometry has
+    /// natural circular boundaries); other styles pass through.
+    PreferHelix,
+}
+
+/// Per-op dressup policy (Phase 1 registry field). ONE source for both
+/// `DressupConfig::normalize_for_op` in compute and the viz dressup
+/// panel's grey-out/tooltip — pre-registry these were two hand-synced
+/// tables (compute/config.rs predicates + ui/properties/mod.rs match).
+#[derive(Debug, Clone, Copy)]
+pub struct DressupPolicy {
+    /// `Some(reason)` ⇒ entry ramps, lead-in/out, AND link moves are
+    /// geometrically incompatible with this op: compute strips them all
+    /// and the UI greys the controls, showing this user-facing reason.
+    pub strip_all_reason: Option<&'static str>,
+    /// Entry-style coercion applied after (and independent of) stripping.
+    pub entry: EntryStylePolicy,
+}
+
+impl DressupPolicy {
+    /// Named "no restriction" policy: all dressups available as configured.
+    pub const ANY_DRESSUP: Self = Self {
+        strip_all_reason: None,
+        entry: EntryStylePolicy::AnyEntry,
+    };
+    /// Entry style forced to `None`; lead-in/out and link moves untouched.
+    pub const FORCE_NO_ENTRY: Self = Self {
+        strip_all_reason: None,
+        entry: EntryStylePolicy::ForceNone,
+    };
+    /// `Ramp` upgraded to `Helix`; everything else untouched.
+    pub const PREFER_HELIX: Self = Self {
+        strip_all_reason: None,
+        entry: EntryStylePolicy::PreferHelix,
+    };
+    /// All topology-altering dressups stripped, with the user-facing reason.
+    pub const fn strip_all(reason: &'static str) -> Self {
+        Self {
+            strip_all_reason: Some(reason),
+            entry: EntryStylePolicy::AnyEntry,
+        }
+    }
+}
+
 /// One row of the Phase 1 operation registry. Data only — no behavior
 /// function pointers until the Phase 5 adapters.
 #[derive(Debug, Clone, Copy)]
@@ -928,6 +981,7 @@ pub struct OpRegistryEntry {
     pub spec: OperationSpec,
     pub param_defs: &'static [ParamDef],
     pub tool_constraints: ToolConstraintsDef,
+    pub dressup_policy: DressupPolicy,
 }
 
 const FACE_PARAMS: &[ParamDef] = &[
@@ -1228,6 +1282,7 @@ static REG_FACE: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: FACE_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
 };
 
 static REG_POCKET: OpRegistryEntry = OpRegistryEntry {
@@ -1245,6 +1300,7 @@ static REG_POCKET: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: POCKET_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
 };
 
 static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
@@ -1262,6 +1318,7 @@ static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: PROFILE_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
 };
 
 static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
@@ -1279,6 +1336,9 @@ static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: ADAPTIVE_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    // Roadmap B.5 — 2D adaptive pocketing has natural circular
+    // boundaries, so Ramp upgrades to Helix.
+    dressup_policy: DressupPolicy::PREFER_HELIX,
 };
 
 static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
@@ -1299,6 +1359,7 @@ static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
         required_tool_type: &["v_bit"],
         supports_v_bit: true,
     },
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
 };
 
 static REG_REST: OpRegistryEntry = OpRegistryEntry {
@@ -1316,6 +1377,7 @@ static REG_REST: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: REST_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
 };
 
 static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
@@ -1336,6 +1398,7 @@ static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
         required_tool_type: &["v_bit"],
         supports_v_bit: true,
     },
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
 };
 
 static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {
@@ -1353,6 +1416,7 @@ static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: ZIGZAG_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
 };
 
 static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
@@ -1370,6 +1434,8 @@ static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: TRACE_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    // Roadmap B.5 — single-pass engraving: no entry style applies.
+    dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
 };
 
 static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
@@ -1387,6 +1453,8 @@ static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: DRILL_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    // Roadmap B.5 — stock-based peck cycle: no entry style applies.
+    dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
 };
 
 static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
@@ -1407,6 +1475,7 @@ static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
         required_tool_type: &["v_bit"],
         supports_v_bit: true,
     },
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
 };
 
 static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
@@ -1424,6 +1493,13 @@ static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: DROP_CUTTER_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    // Each raster segment that starts with a Ramp entry would cut a
+    // diagonal line from safe_z down to the mesh surface — hundreds per
+    // 3D finish, covering the stock in angled trenches. Lead-in/out add
+    // arc transitions that produce more diagonals on a zigzag raster.
+    dressup_policy: DressupPolicy::strip_all(
+        "Incompatible with 3D Finish: each raster segment's ramp entry would carve a diagonal trench across the stock.",
+    ),
 };
 
 static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
@@ -1441,6 +1517,13 @@ static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: ADAPTIVE3D_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    // F-031 (2026-05-26): the planner already emits its entry sequence
+    // per `Adaptive3dParams::entry_style` and stamps it into its
+    // internal material_stock. A dressup-level helix/ramp replacement
+    // breaks planner↔simulator stamp parity (observed: ~44 mm axial
+    // engagement on a 3 mm-commanded DPP, deflection gate Exceeds).
+    // Users who want a Helix entry set it at the planner level.
+    dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
 };
 
 static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
@@ -1458,6 +1541,7 @@ static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: WATERLINE_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
 };
 
 static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
@@ -1475,6 +1559,7 @@ static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: PENCIL_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
 };
 
 static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
@@ -1495,6 +1580,7 @@ static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
         required_tool_type: &["ball_nose", "tapered_ball_nose"],
         supports_v_bit: false,
     },
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
 };
 
 static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
@@ -1512,6 +1598,7 @@ static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: STEEP_SHALLOW_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
 };
 
 static REG_RAMP_FINISH: OpRegistryEntry = OpRegistryEntry {
@@ -1529,6 +1616,7 @@ static REG_RAMP_FINISH: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: RAMP_FINISH_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
 };
 
 static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
@@ -1546,6 +1634,7 @@ static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: SPIRAL_FINISH_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
 };
 
 static REG_RADIAL_FINISH: OpRegistryEntry = OpRegistryEntry {
@@ -1563,6 +1652,7 @@ static REG_RADIAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: RADIAL_FINISH_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
 };
 
 static REG_HORIZONTAL_FINISH: OpRegistryEntry = OpRegistryEntry {
@@ -1580,6 +1670,7 @@ static REG_HORIZONTAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: HORIZONTAL_FINISH_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
 };
 
 static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
@@ -1597,6 +1688,11 @@ static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: PROJECT_CURVE_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    // Entry ramps, lead-in/out, and link moves produce phantom
+    // lateral cuts on multi-ring DXFs.
+    dressup_policy: DressupPolicy::strip_all(
+        "Incompatible with Project Curve: each ring would get a phantom diagonal cut.",
+    ),
 };
 
 static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
@@ -1614,6 +1710,7 @@ static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: ALIGNMENT_PIN_DRILL_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
 };
 
 fn param_defs_for_type(op_type: OperationType) -> &'static [ParamDef] {

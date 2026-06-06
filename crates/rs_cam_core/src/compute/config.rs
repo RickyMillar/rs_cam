@@ -450,19 +450,16 @@ impl DressupConfig {
     /// Returns `true` if anything changed, `false` if the config was already
     /// consistent.
     pub fn normalize_for_op(&mut self, op: super::catalog::OperationType) -> bool {
-        use super::catalog::OperationType;
+        use super::catalog::EntryStylePolicy;
+        // Phase 1 (architectural refactor T5): the per-op decisions live
+        // in the registry's `dressup_policy` field — ONE source shared
+        // with the viz dressup panel. The op-specific rationale (phantom
+        // diagonals on ProjectCurve/DropCutter, Roadmap B.5 entry
+        // overrides, F-031 Adaptive3d planner↔simulator stamp parity)
+        // is documented on the registry entries in compute/catalog.rs.
+        let policy = op.registry_entry().dressup_policy;
         let mut changed = false;
-        // ProjectCurve: entry ramps, lead-in/out, and link moves produce
-        // phantom lateral cuts on multi-ring DXFs.
-        // DropCutter (3D finish): same dressups are also geometrically
-        // incompatible. Each raster segment that starts with a Ramp entry
-        // would cut a diagonal line from safe_z down to the mesh surface
-        // — there can be hundreds of those per 3D finish, covering the
-        // stock in angled trenches. Lead-in/out add arc transitions
-        // tangent to the segment start, which on a zigzag raster produce
-        // more diagonals.
-        let strip_entry = matches!(op, OperationType::ProjectCurve | OperationType::DropCutter);
-        if strip_entry {
+        if policy.strip_all_reason.is_some() {
             if self.entry_style != DressupEntryStyle::None {
                 self.entry_style = DressupEntryStyle::None;
                 changed = true;
@@ -476,54 +473,20 @@ impl DressupConfig {
                 changed = true;
             }
         }
-        // Roadmap B.5 — entry-style overrides per op-type. Drill/Trace
-        // can't take any entry style (they're stock-based / single-pass);
-        // 2D Adaptive benefits from Helix over Ramp because its pocketing
-        // geometry has natural circular boundaries.
-        //
-        // F-031 (2026-05-26): `Adaptive3d` was previously included in the
-        // `prefer_helix` set, but the dressup-level helix replacement creates
-        // a planner↔simulator stamp-parity gap. The planner's
-        // `stamp_emitted_segment(Rapid)` stamps a vertical column at the
-        // entry XY (matching the planner-emitted peck-plunge feeds the
-        // planner believes the toolpath will carry). The dressup
-        // `apply_entry` pass then walks the toolpath and replaces each
-        // plunge with a helix at radius ≈ helix_radius around the entry
-        // XY. The planner's material_stock state is now wrong about the
-        // entry footprint — and subsequent clearing passes that the
-        // planner believes will sweep through cleared air actually bite
-        // into uncut material at the helix's torus boundary, producing
-        // axial-engagement readings of ~44 mm on a 3 mm-commanded DPP and
-        // tripping the deflection gate to Exceeds (0.66 mm on AS013, well
-        // above the 0.2 mm safety band).
-        //
-        // Defaulting `Adaptive3d` to `entry_style = None` keeps the
-        // planner-emitted peck-plunge in the toolpath unchanged, restoring
-        // planner↔simulator parity. The 2D Adaptive case is unaffected:
-        // its planner is the 2D adaptive engine, which doesn't share the
-        // 3D adaptive's `stamp_emitted_segment` semantics. Users who
-        // explicitly want a Helix entry on `Adaptive3d` can either set
-        // `Adaptive3dEntryStyle::Helix` at the planner level (where
-        // `segments_to_toolpath` emits a helix natively and the planner
-        // stamps it) or override `DressupConfig.entry_style` post-construction.
-        let force_no_entry = matches!(op, OperationType::Drill | OperationType::Trace);
-        if force_no_entry && self.entry_style != DressupEntryStyle::None {
-            self.entry_style = DressupEntryStyle::None;
-            changed = true;
-        }
-        let prefer_helix = matches!(op, OperationType::Adaptive);
-        if prefer_helix && self.entry_style == DressupEntryStyle::Ramp {
-            self.entry_style = DressupEntryStyle::Helix;
-            changed = true;
-        }
-        // F-031: strip the dressup-level entry transformation from
-        // `Adaptive3d`. The planner already emits an entry sequence per
-        // `Adaptive3dParams::entry_style` (Plunge/Helix/Ramp); the dressup
-        // shouldn't override it, because the planner's internal
-        // `material_stock` only mirrors the planner-emitted shape.
-        if matches!(op, OperationType::Adaptive3d) && self.entry_style != DressupEntryStyle::None {
-            self.entry_style = DressupEntryStyle::None;
-            changed = true;
+        match policy.entry {
+            EntryStylePolicy::ForceNone => {
+                if self.entry_style != DressupEntryStyle::None {
+                    self.entry_style = DressupEntryStyle::None;
+                    changed = true;
+                }
+            }
+            EntryStylePolicy::PreferHelix => {
+                if self.entry_style == DressupEntryStyle::Ramp {
+                    self.entry_style = DressupEntryStyle::Helix;
+                    changed = true;
+                }
+            }
+            EntryStylePolicy::AnyEntry => {}
         }
         changed
     }
@@ -703,5 +666,94 @@ mod tests {
             HeightReference::ALL.len(),
             "HeightReference::ALL has duplicates"
         );
+    }
+
+    /// Phase 1 T5: the per-op dressup policy table, pinned. The registry
+    /// field forces every NEW op to decide its policy at compile time;
+    /// this pin makes changing an EXISTING op's policy loud. Mirrors the
+    /// pre-registry predicates exactly (no behavior change).
+    #[test]
+    fn dressup_policy_table_is_pinned() {
+        use super::super::catalog::{EntryStylePolicy, OperationType};
+        for &op in OperationType::ALL {
+            let policy = op.registry_entry().dressup_policy;
+            match op {
+                OperationType::ProjectCurve | OperationType::DropCutter => {
+                    assert!(policy.strip_all_reason.is_some(), "{op:?}: strip-all");
+                    assert_eq!(policy.entry, EntryStylePolicy::AnyEntry);
+                }
+                OperationType::Drill | OperationType::Trace | OperationType::Adaptive3d => {
+                    assert!(policy.strip_all_reason.is_none(), "{op:?}");
+                    assert_eq!(policy.entry, EntryStylePolicy::ForceNone, "{op:?}");
+                }
+                OperationType::Adaptive => {
+                    assert!(policy.strip_all_reason.is_none());
+                    assert_eq!(policy.entry, EntryStylePolicy::PreferHelix);
+                }
+                _ => {
+                    // Pre-registry these fell through the predicate
+                    // matches untouched.
+                    assert!(
+                        policy.strip_all_reason.is_none(),
+                        "{op:?}: expected ANY_DRESSUP"
+                    );
+                    assert_eq!(policy.entry, EntryStylePolicy::AnyEntry, "{op:?}");
+                }
+            }
+        }
+    }
+
+    /// Phase 1 T5: normalize_for_op applies the registry policy with the
+    /// pre-registry semantics — strip-all clears entry+lead+link;
+    /// force-no-entry clears entry ONLY; prefer-helix upgrades Ramp and
+    /// leaves Helix/None alone; unrestricted ops pass through untouched.
+    #[test]
+    fn normalize_for_op_applies_registry_policy() {
+        use super::super::catalog::OperationType;
+
+        let dirty = || DressupConfig {
+            entry_style: DressupEntryStyle::Ramp,
+            lead_in_out: true,
+            link_moves: true,
+            ..DressupConfig::default()
+        };
+
+        // Strip-all: ProjectCurve/DropCutter clear all three.
+        for op in [OperationType::ProjectCurve, OperationType::DropCutter] {
+            let mut cfg = dirty();
+            assert!(cfg.normalize_for_op(op));
+            assert_eq!(cfg.entry_style, DressupEntryStyle::None, "{op:?}");
+            assert!(!cfg.lead_in_out, "{op:?}");
+            assert!(!cfg.link_moves, "{op:?}");
+            // Idempotent.
+            assert!(!cfg.normalize_for_op(op));
+        }
+
+        // Force-no-entry: entry cleared, lead/link untouched.
+        for op in [
+            OperationType::Drill,
+            OperationType::Trace,
+            OperationType::Adaptive3d,
+        ] {
+            let mut cfg = dirty();
+            assert!(cfg.normalize_for_op(op));
+            assert_eq!(cfg.entry_style, DressupEntryStyle::None, "{op:?}");
+            assert!(cfg.lead_in_out, "{op:?}: lead-in/out must survive");
+            assert!(cfg.link_moves, "{op:?}: link moves must survive");
+        }
+
+        // Prefer-helix: Ramp upgrades, Helix and None pass through.
+        let mut cfg = dirty();
+        assert!(cfg.normalize_for_op(OperationType::Adaptive));
+        assert_eq!(cfg.entry_style, DressupEntryStyle::Helix);
+        assert!(!cfg.normalize_for_op(OperationType::Adaptive));
+        cfg.entry_style = DressupEntryStyle::None;
+        assert!(!cfg.normalize_for_op(OperationType::Adaptive));
+
+        // Unrestricted op: nothing changes.
+        let mut cfg = dirty();
+        assert!(!cfg.normalize_for_op(OperationType::Pocket));
+        assert_eq!(cfg.entry_style, DressupEntryStyle::Ramp);
+        assert!(cfg.lead_in_out && cfg.link_moves);
     }
 }
