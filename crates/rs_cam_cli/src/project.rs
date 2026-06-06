@@ -414,7 +414,13 @@ pub fn run_project_command(
 /// write back to the project file. Prints a before→after table to
 /// stderr so the operator can see what shifted.
 fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> {
-    use rs_cam_core::feeds::{embedded_vendor_lut, suggest::{SuggestForOperationInput, suggest_for_operation}};
+    use rs_cam_core::feeds::{
+        embedded_vendor_lut,
+        suggest::{
+            StockContext, SuggestContext, SuggestForOperationInput, SuggestPolicy,
+            suggest_for_operation,
+        },
+    };
 
     // Snapshot inputs needed for suggest. We need to borrow `tools()`,
     // `machine()`, `stock_config()` immutably while we mutate
@@ -424,6 +430,17 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
     let material = session.stock_config().material.clone();
     let workholding = session.stock_config().workholding_rigidity;
     let lut = embedded_vendor_lut();
+    // Build per-toolpath SuggestContext slots that depend on the
+    // session up front so the mutating loop below doesn't reborrow
+    // `session` while it holds `toolpath_configs_mut()`.
+    let stock_ctx = StockContext::from_stock_bbox(
+        session.stock_bbox(),
+        session.stock_config().padding,
+    );
+    // Per-toolpath model bbox lookup. `ToolpathConfig.model_id` defaults
+    // to 0 when unspecified, so reuse the first model as the fallback
+    // (matches `project_file.rs::634`).
+    let model_bboxes = session.collect_model_bboxes();
 
     eprintln!("\n=== Applying LUT-suggested feeds/speeds ===");
     eprintln!(
@@ -447,6 +464,20 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
         let dpp_before = tc.operation.depth_per_pass();
         let rpm_before = tc.operation.spindle_rpm();
 
+        let model_bbox = model_bboxes
+            .iter()
+            .find(|(id, _)| *id == tc.model_id)
+            .map(|(_, b)| b);
+        let context = SuggestContext {
+            model_bbox,
+            stock: Some(&stock_ctx),
+            upstream_leftover_stock_mm: None,
+            neighboring_strategy_hint: None,
+            chipload_bounds: None,
+            matched_lut_row: None,
+            effective_diameter_mm: 0.0,
+            policy: SuggestPolicy::default(),
+        };
         let suggested = match suggest_for_operation(SuggestForOperationInput {
             operation: &tc.operation,
             tool,
@@ -455,6 +486,7 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
             workholding,
             lut,
             spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
+            context,
         }) {
             Ok(s) => s,
             Err(e) => {

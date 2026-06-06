@@ -401,7 +401,15 @@ pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
     // snapshot matches production output exactly (rigidity clamp on
     // DOC, plunge-to-feed clamp, stepover-to-diameter clamp).
     let mut op_clamped = operation;
-    let _warnings = apply_feeds_result_to_op(&mut op_clamped, &result, &tool, &machine, pass_role);
+    let _warnings = apply_feeds_result_to_op(
+        &mut op_clamped,
+        &result,
+        &tool,
+        &machine,
+        &material,
+        pass_role,
+        rs_cam_core::feeds::suggest::SuggestContext::default(),
+    );
 
     // Defend the pins against `apply_feeds_result_to_op`'s
     // unconditional `set_stepover` / `set_depth_per_pass` writes: if

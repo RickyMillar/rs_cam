@@ -137,6 +137,10 @@ impl super::RsCamApp {
                 let resp = self.mcp_narrate_toolpath(index);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::GetSuggestRationale { index } => {
+                let resp = self.mcp_get_suggest_rationale(index);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::InspectModel => {
                 let resp = self.mcp_inspect_model();
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
@@ -960,6 +964,78 @@ impl super::RsCamApp {
             &tool,
             &context,
         )
+    }
+
+    /// v3.2 (2026-06-04): Combined-Suggest rationale for the toolpath
+    /// at `index`. Returns a [`rs_cam_core::feeds::rationale::SuggestRationale`]
+    /// payload as JSON describing every pass the orchestrator ran and
+    /// why each parameter landed where it did (DPP back-off,
+    /// chipload-target feed lift, runtime-stepover floor, etc.).
+    ///
+    /// Mirrors the GUI feeds modal's `compute_suggest_rationale` so
+    /// the agent and the operator see the same surface. Does *not*
+    /// mutate the project — the agent decides whether to follow up
+    /// with `set_toolpath_param`.
+    fn mcp_get_suggest_rationale(&self, index: usize) -> String {
+        let state = self.controller.state();
+        let Some(tc) = state.session.get_toolpath_config(index) else {
+            return json_str(serde_json::json!({
+                "error": format!("Toolpath index {index} not found")
+            }));
+        };
+        let Some(tool) = state
+            .session
+            .tools()
+            .iter()
+            .find(|t| t.id.0 == tc.tool_id)
+        else {
+            return json_str(serde_json::json!({
+                "error": format!("Tool {} for toolpath {} not found", tc.tool_id, tc.id)
+            }));
+        };
+        let stock = state.session.stock_config();
+        let stock_ctx = rs_cam_core::feeds::suggest::StockContext::from_stock_bbox(
+            state.session.stock_bbox(),
+            stock.padding,
+        );
+        let model_bboxes = state.session.collect_model_bboxes();
+        let model_bbox = model_bboxes
+            .iter()
+            .find(|(id, _)| *id == tc.model_id)
+            .map(|(_, b)| b);
+        let context = rs_cam_core::feeds::suggest::SuggestContext {
+            model_bbox,
+            stock: Some(&stock_ctx),
+            ..rs_cam_core::feeds::suggest::SuggestContext::default()
+        };
+        match rs_cam_core::feeds::suggest::suggest_for_operation(
+            rs_cam_core::feeds::suggest::SuggestForOperationInput {
+                operation: &tc.operation,
+                tool,
+                machine: state.session.machine(),
+                material: &stock.material,
+                workholding: stock.workholding_rigidity,
+                lut: rs_cam_core::feeds::embedded_vendor_lut(),
+                spindle_strategy: state.session.post_config().spindle_strategy,
+                context,
+            },
+        ) {
+            Ok(suggested) => {
+                let rationale = rs_cam_core::feeds::rationale::SuggestRationale::from_warnings(
+                    &suggested.warnings,
+                );
+                json_str(serde_json::json!({
+                    "toolpath_id": tc.id,
+                    "toolpath_name": tc.name,
+                    "rationale": serde_json::to_value(&rationale).unwrap_or_default(),
+                }))
+            }
+            Err(e) => json_str(serde_json::json!({
+                "toolpath_id": tc.id,
+                "toolpath_name": tc.name,
+                "error": format!("Suggest refused: {e}"),
+            })),
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2665,6 +2741,10 @@ impl super::RsCamApp {
                 lut: rs_cam_core::feeds::embedded_vendor_lut(),
                 stock_ctx: &stock_ctx,
                 spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
+                // TODO(v1.2): wire model_bbox once add_toolpath via MCP
+                // takes an explicit model_id; today the model is picked
+                // post-creation.
+                context: rs_cam_core::feeds::suggest::SuggestContext::default(),
             },
         ) {
             Ok(s) => s.operation,

@@ -2866,6 +2866,7 @@ mod tests {
                 workholding: s.stock_config().workholding_rigidity,
                 lut: crate::feeds::embedded_vendor_lut(),
                 spindle_strategy: crate::feeds::SpindleStrategy::default(),
+                context: crate::feeds::suggest::SuggestContext::default(),
             },
         )
         .expect("test fixture pairs a flat endmill with a Pocket op — not a refused combination");
@@ -2911,6 +2912,7 @@ mod tests {
                     workholding,
                     lut: crate::feeds::embedded_vendor_lut(),
                     spindle_strategy: crate::feeds::SpindleStrategy::default(),
+                    context: crate::feeds::suggest::SuggestContext::default(),
                 },
             )
             .expect(
