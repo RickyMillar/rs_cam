@@ -32,7 +32,13 @@ const MAX_ANOMALY_LINES: usize = 8;
 pub struct ToolpathNarrationContext<'a> {
     pub toolpath_id: Option<usize>,
     pub toolpath_name: Option<&'a str>,
+    /// Human label, used for DISPLAY only. All routing decisions key on
+    /// [`Self::operation_kind`] (Phase 1 T13) so label edits can never
+    /// silently change which narration branch fires.
     pub operation_label: Option<&'a str>,
+    /// Typed operation kind for narration routing (threshold phrasing,
+    /// air-cut hints). `None` falls back to the generic phrasing.
+    pub operation_kind: Option<crate::compute::catalog::OperationType>,
     pub depth_per_pass_mm: Option<f64>,
     pub stepover_mm: Option<f64>,
     pub tool_diameter_mm: Option<f64>,
@@ -939,16 +945,26 @@ fn append_peak_doc_anomaly(
         .map(|mv| move_type_label(mv.move_type))
         .unwrap_or("unknown move");
     let threshold_text = context.depth_per_pass_mm.map_or_else(
-        || match context.operation_label {
-            Some("3D Finish") => "this op follows surface heights — no commanded DOC".to_owned(),
-            Some("Project Curve") => {
-                "this op follows the curve at a fixed surface offset — no commanded DOC".to_owned()
+        || {
+            use crate::compute::catalog::OperationType;
+            match context.operation_kind {
+                Some(OperationType::DropCutter) => {
+                    "this op follows surface heights — no commanded DOC".to_owned()
+                }
+                Some(OperationType::ProjectCurve) => {
+                    "this op follows the curve at a fixed surface offset — no commanded DOC"
+                        .to_owned()
+                }
+                Some(OperationType::Drill | OperationType::AlignmentPinDrill) => {
+                    "this op advances by peck depth — no continuous DOC".to_owned()
+                }
+                Some(OperationType::VCarve) => {
+                    "this op cuts to a target V-bit depth — no commanded DOC".to_owned()
+                }
+                // Generic phrasing for every other kind (and for callers
+                // that did not supply a kind).
+                _ => "commanded depth_per_pass is unknown".to_owned(),
             }
-            Some("Drill") | Some("Pin Drill") => {
-                "this op advances by peck depth — no continuous DOC".to_owned()
-            }
-            Some("VCarve") => "this op cuts to a target V-bit depth — no commanded DOC".to_owned(),
-            _ => "commanded depth_per_pass is unknown".to_owned(),
         },
         |depth| format!("commanded depth_per_pass = {:.2}mm", depth),
     );
@@ -1071,25 +1087,33 @@ fn append_air_cut_anomaly(
     } else {
         "ℹ"
     };
-    let hint = match context.operation_label {
-        Some("3D Rough") | Some("Adaptive") | Some("Rest Machining") => {
-            " High values on roughing ops usually mean boundary/stepover tuning or stale remaining-stock assumptions."
+    let hint = {
+        use crate::compute::catalog::OperationType;
+        match context.operation_kind {
+            Some(OperationType::Adaptive3d | OperationType::Adaptive | OperationType::Rest) => {
+                " High values on roughing ops usually mean boundary/stepover tuning or stale remaining-stock assumptions."
+            }
+            Some(
+                OperationType::DropCutter
+                | OperationType::Scallop
+                | OperationType::Waterline
+                | OperationType::Pencil
+                | OperationType::SteepShallow
+                | OperationType::RampFinish
+                | OperationType::SpiralFinish
+                | OperationType::RadialFinish
+                | OperationType::HorizontalFinish,
+            ) => {
+                " For finishing ops, air-cut% is dominated by surface terrain — relative comparison across runs is more useful than the absolute number."
+            }
+            Some(OperationType::ProjectCurve | OperationType::VCarve | OperationType::Trace) => {
+                " Curve-following ops cut along a single path; air-cut% mostly reflects rapids and approach segments rather than wasted cutting."
+            }
+            // No specialised hint for the remaining kinds (Face, Pocket,
+            // Profile, Zigzag, Inlay, Chamfer, Drill, AlignmentPinDrill)
+            // or for callers without a kind.
+            _ => "",
         }
-        Some("3D Finish")
-        | Some("Scallop Finish")
-        | Some("Waterline")
-        | Some("Pencil Finish")
-        | Some("Steep/Shallow")
-        | Some("Ramp Finish")
-        | Some("Spiral Finish")
-        | Some("Radial Finish")
-        | Some("Horizontal Finish") => {
-            " For finishing ops, air-cut% is dominated by surface terrain — relative comparison across runs is more useful than the absolute number."
-        }
-        Some("Project Curve") | Some("VCarve") | Some("Trace") => {
-            " Curve-following ops cut along a single path; air-cut% mostly reflects rapids and approach segments rather than wasted cutting."
-        }
-        _ => "",
     };
     anomalies.push(format!(
         "{marker} {:.1}% of cutting time is air-cut; average engagement {:.3}.{}",
@@ -1196,6 +1220,7 @@ mod tests {
             toolpath_id: Some(7),
             toolpath_name: Some("Back Rough"),
             operation_label: Some("adaptive3d"),
+            operation_kind: Some(crate::compute::catalog::OperationType::Adaptive3d),
             depth_per_pass_mm: Some(3.0),
             stepover_mm: Some(0.84),
             tool_diameter_mm: Some(6.0),
