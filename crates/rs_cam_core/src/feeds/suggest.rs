@@ -802,21 +802,20 @@ pub fn apply_stock_defaults(operation: &mut OperationConfig, ctx: &StockContext)
 
 /// Extract operation-specific hints for the feeds calculator.
 /// Returns `(axial_depth_hint, radial_width_hint, scallop_hint)`.
+///
+/// Thin tuple adapter over the registry-layer
+/// [`OperationConfig::feeds_hints`] accessor (Phase 1, architectural
+/// refactor T3) — the per-op decision table lives there as an exhaustive
+/// match; the old `_ => (None, None, None)` wildcard is gone.
 pub fn operation_feeds_hints(
     operation: &OperationConfig,
 ) -> (Option<f64>, Option<f64>, Option<f64>) {
-    match operation {
-        OperationConfig::Scallop(cfg) => (None, None, Some(cfg.scallop_height)),
-        // DropCutter (the "3D Finish" parallel-raster op) optionally
-        // derives stepover from a scallop target the same way Scallop
-        // does. `None` keeps the legacy `ae_factor × diameter` stepover.
-        OperationConfig::DropCutter(cfg) => (None, None, cfg.scallop_height),
-        OperationConfig::Waterline(cfg) => (Some(cfg.z_step), None, None),
-        OperationConfig::SteepShallow(cfg) => (Some(cfg.z_step), None, None),
-        OperationConfig::VCarve(cfg) => (Some(cfg.max_depth), None, None),
-        OperationConfig::RampFinish(cfg) => (Some(cfg.max_stepdown), None, None),
-        _ => (None, None, None),
-    }
+    let hints = operation.feeds_hints();
+    (
+        hints.axial_depth_mm,
+        hints.radial_width_mm,
+        hints.target_scallop_mm,
+    )
 }
 
 /// Combined deflection ceiling (µm) used by both the v1.1 DPP back-off
@@ -4200,9 +4199,12 @@ mod tests {
     }
 
     /// PRE-Phase-1 coverage net (architectural refactor T1): every
-    /// operation's feeds hints must be an *explicit decision*, never an
-    /// unintended fall-through of the `_ => (None, None, None)` wildcard
-    /// in [`operation_feeds_hints`].
+    /// operation's feeds hints must be an *explicit decision*. The
+    /// implementation now lives in the registry-layer
+    /// [`OperationConfig::feeds_hints`] exhaustive match (T3 replaced
+    /// the old `_ => (None, None, None)` wildcard here); this net stays
+    /// as the independent baseline guarding both the table and the tuple
+    /// adapter.
     ///
     /// The expected table below is an exhaustive match over
     /// `OperationConfig` with **no wildcard arm** — adding a new
