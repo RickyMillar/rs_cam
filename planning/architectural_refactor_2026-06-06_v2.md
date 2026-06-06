@@ -28,7 +28,7 @@
 | T10 | Phase 4 `CutterOpProfile` aggregation + two-caller `SuggestContext` dedup | 4 | TODO | `wanaka_suggest_integration.rs` is THE gate; preserve `enforce_invariants` pass order |
 | T11 | Phase 5 behavior adapters (one family at a time; drill-conversion dedup; cancellation regression test first) | 5 | TODO | param_sweep fingerprints + end_to_end + family sentries |
 | T12 | Phase 6 (6A): `MetricContext` into gates, collapse two assembly sites, `criteria()` slice, gating derives from criteria() | 6 | TODO | tool_load sentries + MCP serde tests |
-| T13 | narrate.rs: label-string routing → typed `feeds_pass_role` (before any Phase-1/2 label change) | consumer | TODO | narrate output parity on wanaka project |
+| T13 | narrate.rs: label-string routing → typed `feeds_pass_role` (before any Phase-1/2 label change) | consumer | **DONE (`3c0ff1f`, 2026-06-07)** | Routed on a new `ToolpathNarrationContext.operation_kind: Option<OperationType>` (typed op match, not `feeds_pass_role` — preserves the exact pre-existing op groupings incl. curve-family hints that role routing would have changed). Labels demoted to display-only. Strings copied verbatim → output parity by construction; both production constructors populate the kind. core 1770 + viz 189 pass |
 
 **Sequencing constraints:** T1+T2 before T3. T3 before T6 (macro needs frozen registry shape). T3 before T9 (generic CLI needs ParamDef table). T9 before T11 (2 production drivers, not 3, during cutover). T13 before any change to `OperationSpec.label`. T4/T5 ride with T3 or immediately after.
 
