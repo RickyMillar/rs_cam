@@ -187,261 +187,42 @@ impl OperationType {
         OperationType::ProjectCurve,
     ];
 
-    pub fn spec(self) -> OperationSpec {
+    pub const fn spec(self) -> OperationSpec {
+        self.registry_entry().spec
+    }
+
+    /// Phase 1 registry accessor (architectural refactor 2026-06-06):
+    /// THE single place to ask "what is this operation?". Exhaustive
+    /// match — adding an `OperationType` variant does not compile until
+    /// it has a registry entry, and an entry cannot be written without
+    /// explicitly deciding its spec, settable-param schema, and tool
+    /// constraints. Behavior (generation) stays in `compute::execute`
+    /// until the Phase 5 adapters.
+    pub const fn registry_entry(self) -> &'static OpRegistryEntry {
         match self {
-            OperationType::Face => OperationSpec {
-                label: "Face",
-                description: "Level the stock top surface",
-                family: OperationFamily::TwoPointFiveD,
-                geometry: GeometryRequirement::Stock,
-                default_auto_regen: true,
-                ui_family: UiOperationFamily::Pocket,
-                ui_process_role: UiProcessRole::Roughing,
-                feeds_family: FeedsOperationFamily::Pocket,
-                feeds_pass_role: PassRole::Roughing,
-            },
-            OperationType::Pocket => OperationSpec {
-                label: "Pocket",
-                description: "Clear material inside a closed region",
-                family: OperationFamily::TwoPointFiveD,
-                geometry: GeometryRequirement::Polygons,
-                default_auto_regen: true,
-                ui_family: UiOperationFamily::Pocket,
-                ui_process_role: UiProcessRole::Roughing,
-                feeds_family: FeedsOperationFamily::Pocket,
-                feeds_pass_role: PassRole::Roughing,
-            },
-            OperationType::Profile => OperationSpec {
-                label: "Profile",
-                description: "Cut along the outside or inside of a boundary",
-                family: OperationFamily::TwoPointFiveD,
-                geometry: GeometryRequirement::Polygons,
-                default_auto_regen: true,
-                ui_family: UiOperationFamily::Contour,
-                ui_process_role: UiProcessRole::Roughing,
-                feeds_family: FeedsOperationFamily::Contour,
-                feeds_pass_role: PassRole::Roughing,
-            },
-            OperationType::Adaptive => OperationSpec {
-                label: "Adaptive",
-                description: "Constant-engagement rough clearing",
-                family: OperationFamily::TwoPointFiveD,
-                geometry: GeometryRequirement::Polygons,
-                default_auto_regen: true,
-                ui_family: UiOperationFamily::Pocket,
-                ui_process_role: UiProcessRole::Roughing,
-                feeds_family: FeedsOperationFamily::Adaptive,
-                feeds_pass_role: PassRole::Roughing,
-            },
-            OperationType::VCarve => OperationSpec {
-                label: "VCarve",
-                description: "V-bit engraving with variable depth",
-                family: OperationFamily::TwoPointFiveD,
-                geometry: GeometryRequirement::Polygons,
-                default_auto_regen: true,
-                ui_family: UiOperationFamily::Trace,
-                ui_process_role: UiProcessRole::Finish,
-                feeds_family: FeedsOperationFamily::Trace,
-                feeds_pass_role: PassRole::Finish,
-            },
-            OperationType::Rest => OperationSpec {
-                label: "Rest Machining",
-                description: "Clean up areas a larger tool couldn\u{2019}t reach",
-                family: OperationFamily::TwoPointFiveD,
-                geometry: GeometryRequirement::Polygons,
-                default_auto_regen: true,
-                ui_family: UiOperationFamily::Pocket,
-                ui_process_role: UiProcessRole::Roughing,
-                feeds_family: FeedsOperationFamily::Pocket,
-                feeds_pass_role: PassRole::Roughing,
-            },
-            OperationType::Inlay => OperationSpec {
-                label: "Inlay",
-                description: "V-bit pocket and plug for inlay work",
-                family: OperationFamily::TwoPointFiveD,
-                geometry: GeometryRequirement::Polygons,
-                default_auto_regen: true,
-                ui_family: UiOperationFamily::Trace,
-                ui_process_role: UiProcessRole::Finish,
-                feeds_family: FeedsOperationFamily::Trace,
-                feeds_pass_role: PassRole::Finish,
-            },
-            OperationType::Zigzag => OperationSpec {
-                label: "Zigzag",
-                description: "Back-and-forth raster clearing at an angle",
-                family: OperationFamily::TwoPointFiveD,
-                geometry: GeometryRequirement::Polygons,
-                default_auto_regen: true,
-                ui_family: UiOperationFamily::Pocket,
-                ui_process_role: UiProcessRole::Roughing,
-                feeds_family: FeedsOperationFamily::Pocket,
-                feeds_pass_role: PassRole::Roughing,
-            },
-            OperationType::Trace => OperationSpec {
-                label: "Trace",
-                description: "Follow a path exactly for engraving or scoring",
-                family: OperationFamily::TwoPointFiveD,
-                geometry: GeometryRequirement::Polygons,
-                default_auto_regen: true,
-                ui_family: UiOperationFamily::Trace,
-                ui_process_role: UiProcessRole::Finish,
-                feeds_family: FeedsOperationFamily::Trace,
-                feeds_pass_role: PassRole::Finish,
-            },
-            OperationType::Drill => OperationSpec {
-                label: "Drill",
-                description: "Drill holes from SVG circle positions",
-                family: OperationFamily::TwoPointFiveD,
-                geometry: GeometryRequirement::Polygons,
-                default_auto_regen: true,
-                ui_family: UiOperationFamily::Pocket,
-                ui_process_role: UiProcessRole::Roughing,
-                feeds_family: FeedsOperationFamily::Drill,
-                feeds_pass_role: PassRole::Roughing,
-            },
-            OperationType::Chamfer => OperationSpec {
-                label: "Chamfer",
-                description: "Bevel edges with a V-bit",
-                family: OperationFamily::TwoPointFiveD,
-                geometry: GeometryRequirement::Polygons,
-                default_auto_regen: true,
-                ui_family: UiOperationFamily::Trace,
-                ui_process_role: UiProcessRole::Finish,
-                feeds_family: FeedsOperationFamily::Trace,
-                feeds_pass_role: PassRole::Finish,
-            },
-            OperationType::DropCutter => OperationSpec {
-                label: "3D Finish",
-                description: "Parallel raster passes following the surface",
-                family: OperationFamily::ThreeD,
-                geometry: GeometryRequirement::Mesh,
-                default_auto_regen: false,
-                ui_family: UiOperationFamily::Parallel,
-                ui_process_role: UiProcessRole::Finish,
-                feeds_family: FeedsOperationFamily::Parallel,
-                feeds_pass_role: PassRole::Finish,
-            },
-            OperationType::Adaptive3d => OperationSpec {
-                label: "3D Rough",
-                description: "Load-limiting rough mill on a 3D surface",
-                family: OperationFamily::ThreeD,
-                geometry: GeometryRequirement::Mesh,
-                default_auto_regen: false,
-                ui_family: UiOperationFamily::Pocket,
-                ui_process_role: UiProcessRole::Roughing,
-                feeds_family: FeedsOperationFamily::Adaptive,
-                feeds_pass_role: PassRole::Roughing,
-            },
-            OperationType::Waterline => OperationSpec {
-                label: "Waterline",
-                description: "Horizontal contours at constant Z levels",
-                family: OperationFamily::ThreeD,
-                geometry: GeometryRequirement::Mesh,
-                default_auto_regen: false,
-                ui_family: UiOperationFamily::Contour,
-                ui_process_role: UiProcessRole::SemiFinish,
-                feeds_family: FeedsOperationFamily::Contour,
-                feeds_pass_role: PassRole::SemiFinish,
-            },
-            OperationType::Pencil => OperationSpec {
-                label: "Pencil Finish",
-                description: "Trace concave edges and creases on the surface",
-                family: OperationFamily::ThreeD,
-                geometry: GeometryRequirement::Mesh,
-                default_auto_regen: false,
-                ui_family: UiOperationFamily::Trace,
-                ui_process_role: UiProcessRole::Finish,
-                feeds_family: FeedsOperationFamily::Trace,
-                feeds_pass_role: PassRole::Finish,
-            },
-            OperationType::Scallop => OperationSpec {
-                label: "Scallop Finish",
-                description: "Variable stepover for constant scallop height",
-                family: OperationFamily::ThreeD,
-                geometry: GeometryRequirement::Mesh,
-                default_auto_regen: false,
-                ui_family: UiOperationFamily::Scallop,
-                ui_process_role: UiProcessRole::Finish,
-                feeds_family: FeedsOperationFamily::Scallop,
-                feeds_pass_role: PassRole::Finish,
-            },
-            OperationType::SteepShallow => OperationSpec {
-                label: "Steep/Shallow",
-                description: "Waterline on steep areas, raster on shallow",
-                family: OperationFamily::ThreeD,
-                geometry: GeometryRequirement::Mesh,
-                default_auto_regen: false,
-                ui_family: UiOperationFamily::Contour,
-                ui_process_role: UiProcessRole::Finish,
-                feeds_family: FeedsOperationFamily::Contour,
-                feeds_pass_role: PassRole::Finish,
-            },
-            OperationType::RampFinish => OperationSpec {
-                label: "Ramp Finish",
-                description: "Continuous Z descent along contours, no retract",
-                family: OperationFamily::ThreeD,
-                geometry: GeometryRequirement::Mesh,
-                default_auto_regen: false,
-                ui_family: UiOperationFamily::Parallel,
-                ui_process_role: UiProcessRole::Finish,
-                feeds_family: FeedsOperationFamily::Parallel,
-                feeds_pass_role: PassRole::Finish,
-            },
-            OperationType::SpiralFinish => OperationSpec {
-                label: "Spiral Finish",
-                description: "Archimedean spiral passes over the surface",
-                family: OperationFamily::ThreeD,
-                geometry: GeometryRequirement::Mesh,
-                default_auto_regen: false,
-                ui_family: UiOperationFamily::Scallop,
-                ui_process_role: UiProcessRole::Finish,
-                feeds_family: FeedsOperationFamily::Scallop,
-                feeds_pass_role: PassRole::Finish,
-            },
-            OperationType::RadialFinish => OperationSpec {
-                label: "Radial Finish",
-                description: "Spoke-pattern passes radiating from center",
-                family: OperationFamily::ThreeD,
-                geometry: GeometryRequirement::Mesh,
-                default_auto_regen: false,
-                ui_family: UiOperationFamily::Parallel,
-                ui_process_role: UiProcessRole::Finish,
-                feeds_family: FeedsOperationFamily::Parallel,
-                feeds_pass_role: PassRole::Finish,
-            },
-            OperationType::HorizontalFinish => OperationSpec {
-                label: "Horizontal Finish",
-                description: "Finish only flat areas of the surface",
-                family: OperationFamily::ThreeD,
-                geometry: GeometryRequirement::Mesh,
-                default_auto_regen: false,
-                ui_family: UiOperationFamily::Parallel,
-                ui_process_role: UiProcessRole::Finish,
-                feeds_family: FeedsOperationFamily::Parallel,
-                feeds_pass_role: PassRole::Finish,
-            },
-            OperationType::ProjectCurve => OperationSpec {
-                label: "Project Curve",
-                description: "Project 2D curves onto a 3D mesh surface",
-                family: OperationFamily::ThreeD,
-                geometry: GeometryRequirement::Both,
-                default_auto_regen: false,
-                ui_family: UiOperationFamily::Trace,
-                ui_process_role: UiProcessRole::Finish,
-                feeds_family: FeedsOperationFamily::Trace,
-                feeds_pass_role: PassRole::Finish,
-            },
-            OperationType::AlignmentPinDrill => OperationSpec {
-                label: "Pin Drill",
-                description: "Drill alignment pin holes through stock",
-                family: OperationFamily::TwoPointFiveD,
-                geometry: GeometryRequirement::Stock,
-                default_auto_regen: true,
-                ui_family: UiOperationFamily::Pocket,
-                ui_process_role: UiProcessRole::Roughing,
-                feeds_family: FeedsOperationFamily::Drill,
-                feeds_pass_role: PassRole::Roughing,
-            },
+            OperationType::Face => &REG_FACE,
+            OperationType::Pocket => &REG_POCKET,
+            OperationType::Profile => &REG_PROFILE,
+            OperationType::Adaptive => &REG_ADAPTIVE,
+            OperationType::VCarve => &REG_VCARVE,
+            OperationType::Rest => &REG_REST,
+            OperationType::Inlay => &REG_INLAY,
+            OperationType::Zigzag => &REG_ZIGZAG,
+            OperationType::Trace => &REG_TRACE,
+            OperationType::Drill => &REG_DRILL,
+            OperationType::Chamfer => &REG_CHAMFER,
+            OperationType::DropCutter => &REG_DROP_CUTTER,
+            OperationType::Adaptive3d => &REG_ADAPTIVE3D,
+            OperationType::Waterline => &REG_WATERLINE,
+            OperationType::Pencil => &REG_PENCIL,
+            OperationType::Scallop => &REG_SCALLOP,
+            OperationType::SteepShallow => &REG_STEEP_SHALLOW,
+            OperationType::RampFinish => &REG_RAMP_FINISH,
+            OperationType::SpiralFinish => &REG_SPIRAL_FINISH,
+            OperationType::RadialFinish => &REG_RADIAL_FINISH,
+            OperationType::HorizontalFinish => &REG_HORIZONTAL_FINISH,
+            OperationType::ProjectCurve => &REG_PROJECT_CURVE,
+            OperationType::AlignmentPinDrill => &REG_ALIGNMENT_PIN_DRILL,
         }
     }
 
@@ -1049,11 +830,11 @@ pub struct OperationSchema {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ParamDef {
-    name: &'static str,
-    type_name: &'static str,
-    optional: bool,
-    description: Option<&'static str>,
+pub struct ParamDef {
+    pub name: &'static str,
+    pub type_name: &'static str,
+    pub optional: bool,
+    pub description: Option<&'static str>,
 }
 
 impl ParamDef {
@@ -1089,312 +870,752 @@ impl ParamDef {
     }
 }
 
-fn param_defs_for_type(op_type: OperationType) -> &'static [ParamDef] {
-    use OperationType::{
-        Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,
-        HorizontalFinish, Inlay, Pencil, Pocket, Profile, ProjectCurve, RadialFinish, RampFinish,
-        Rest, Scallop, SpiralFinish, SteepShallow, Trace, VCarve, Waterline, Zigzag,
-    };
-    const FACE: &[ParamDef] = &[
-        ParamDef::required("stepover", "f64"),
-        ParamDef::required("depth", "f64"),
-        ParamDef::required("depth_per_pass", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("stock_offset", "f64"),
-        ParamDef::required("direction", "enum:one_way|zigzag"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const TRACE: &[ParamDef] = &[
-        ParamDef::required("depth", "f64"),
-        ParamDef::required("depth_per_pass", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("compensation", "enum:center|left|right"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const DRILL: &[ParamDef] = &[
-        ParamDef::required("depth", "f64"),
-        ParamDef::required("cycle", "enum:simple|dwell|peck|chip_break"),
-        ParamDef::required("peck_depth", "f64"),
-        ParamDef::required("dwell_time", "f64"),
-        ParamDef::required("retract_amount", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("retract_z", "f64"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const ALIGNMENT_PIN_DRILL: &[ParamDef] = &[
-        ParamDef::required("holes", "array<[f64;2]>"),
-        ParamDef::required("spoilboard_penetration", "f64"),
-        ParamDef::required("cycle", "enum:simple|dwell|peck|chip_break"),
-        ParamDef::required("peck_depth", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("retract_z", "f64"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const CHAMFER: &[ParamDef] = &[
-        ParamDef::required("chamfer_width", "f64"),
-        ParamDef::required("tip_offset", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const POCKET: &[ParamDef] = &[
-        ParamDef::required("stepover", "f64"),
-        ParamDef::required("depth", "f64"),
-        ParamDef::required("depth_per_pass", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("climb", "bool"),
-        ParamDef::required("pattern", "enum:contour|zigzag"),
-        ParamDef::required("angle", "f64"),
-        ParamDef::required("finishing_passes", "usize"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const PROFILE: &[ParamDef] = &[
-        ParamDef::required("side", "enum:on|inside|outside"),
-        ParamDef::required("depth", "f64"),
-        ParamDef::required("depth_per_pass", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("climb", "bool"),
-        ParamDef::required("tab_count", "usize"),
-        ParamDef::required("tab_width", "f64"),
-        ParamDef::required("tab_height", "f64"),
-        ParamDef::required("finishing_passes", "usize"),
-        ParamDef::required("compensation", "enum:in_computer|in_control"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const ADAPTIVE: &[ParamDef] = &[
-        ParamDef::required("stepover", "f64"),
-        ParamDef::required("depth", "f64"),
-        ParamDef::required("depth_per_pass", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("tolerance", "f64"),
-        ParamDef::required("slot_clearing", "bool"),
-        ParamDef::required("min_cutting_radius", "f64"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-        ParamDef::required(
-            "cleanup_strategy",
-            "enum:Legacy|ResidueMop|ContourParallelNarrow|ContourParallelHybrid",
-        ),
-    ];
-    const VCARVE: &[ParamDef] = &[
-        ParamDef::required("max_depth", "f64"),
-        ParamDef::required("stepover", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("tolerance", "f64"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const REST: &[ParamDef] = &[
-        ParamDef::optional_desc(
-            "prev_tool_id",
-            "option<usize>",
-            "Index of the prior (typically larger) tool used to define rest geometry",
-        ),
-        ParamDef::required("stepover", "f64"),
-        ParamDef::required("depth", "f64"),
-        ParamDef::required("depth_per_pass", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("angle", "f64"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const INLAY: &[ParamDef] = &[
-        ParamDef::required("pocket_depth", "f64"),
-        ParamDef::required("glue_gap", "f64"),
-        ParamDef::required("flat_depth", "f64"),
-        ParamDef::required("boundary_offset", "f64"),
-        ParamDef::required("stepover", "f64"),
-        ParamDef::required("flat_tool_radius", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("tolerance", "f64"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const ZIGZAG: &[ParamDef] = &[
-        ParamDef::required("stepover", "f64"),
-        ParamDef::required("depth", "f64"),
-        ParamDef::required("depth_per_pass", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("angle", "f64"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const DROP_CUTTER: &[ParamDef] = &[
-        ParamDef::required("stepover", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("min_z", "f64"),
-        ParamDef::required("slope_from", "f64"),
-        ParamDef::required("slope_to", "f64"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const ADAPTIVE3D: &[ParamDef] = &[
-        ParamDef::required("stepover", "f64"),
-        ParamDef::required("depth_per_pass", "f64"),
-        ParamDef::required("stock_to_leave_radial", "f64"),
-        ParamDef::required("stock_to_leave_axial", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("tolerance", "f64"),
-        ParamDef::required("min_cutting_radius", "f64"),
-        ParamDef::required("entry_style", "enum:plunge|helix|ramp"),
-        ParamDef::required("ramp_angle_deg", "f64"),
-        ParamDef::required("helix_radius_factor", "f64"),
-        ParamDef::required("helix_pitch", "f64"),
-        ParamDef::required("fine_stepdown", "f64"),
-        ParamDef::required("detect_flat_areas", "bool"),
-        ParamDef::required("region_ordering", "enum:global|by_area"),
-        ParamDef::required(
-            "clearing_strategy",
-            "enum:contour_parallel|adaptive|agent_search",
-        ),
-        ParamDef::required("z_blend", "bool"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-        ParamDef::required("mill_shallow_areas", "bool"),
-        ParamDef::optional("shallow_angle_deg", "option<f64>"),
-        ParamDef::optional("shallow_stepdown", "option<f64>"),
-        ParamDef::required("min_region_cut_length_mm", "f64"),
-        // F-038b: keep-tool-down link knobs.
-        ParamDef::optional("max_stay_down_distance_mm", "option<f64>"),
-        ParamDef::required("stay_down_clearance_mm", "f64"),
-    ];
-    const WATERLINE: &[ParamDef] = &[
-        ParamDef::required("z_step", "f64"),
-        ParamDef::required("sampling", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("continuous", "bool"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const PENCIL: &[ParamDef] = &[
-        ParamDef::required("bitangency_angle", "f64"),
-        ParamDef::required("min_cut_length", "f64"),
-        ParamDef::required("hookup_distance", "f64"),
-        ParamDef::required("num_offset_passes", "usize"),
-        ParamDef::required("offset_stepover", "f64"),
-        ParamDef::required("sampling", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("stock_to_leave", "f64"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const SCALLOP: &[ParamDef] = &[
-        ParamDef::required("scallop_height", "f64"),
-        ParamDef::required("tolerance", "f64"),
-        ParamDef::required("direction", "enum:x|y"),
-        ParamDef::required("continuous", "bool"),
-        ParamDef::required("slope_from", "f64"),
-        ParamDef::required("slope_to", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("stock_to_leave", "f64"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const STEEP_SHALLOW: &[ParamDef] = &[
-        ParamDef::required("threshold_angle", "f64"),
-        ParamDef::required("overlap_distance", "f64"),
-        ParamDef::required("wall_clearance", "f64"),
-        ParamDef::required("steep_first", "bool"),
-        ParamDef::required("stepover", "f64"),
-        ParamDef::required("z_step", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("sampling", "f64"),
-        ParamDef::required("stock_to_leave", "f64"),
-        ParamDef::required("tolerance", "f64"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const RAMP_FINISH: &[ParamDef] = &[
-        ParamDef::required("max_stepdown", "f64"),
-        ParamDef::required("slope_from", "f64"),
-        ParamDef::required("slope_to", "f64"),
-        ParamDef::required("direction", "enum:climb|conventional"),
-        ParamDef::required("order_bottom_up", "bool"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("sampling", "f64"),
-        ParamDef::required("stock_to_leave", "f64"),
-        ParamDef::required("tolerance", "f64"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const SPIRAL_FINISH: &[ParamDef] = &[
-        ParamDef::required("stepover", "f64"),
-        ParamDef::required("direction", "enum:outward|inward"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("stock_to_leave", "f64"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const RADIAL_FINISH: &[ParamDef] = &[
-        ParamDef::required("angular_step", "f64"),
-        ParamDef::required("point_spacing", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("stock_to_leave", "f64"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const HORIZONTAL_FINISH: &[ParamDef] = &[
-        ParamDef::required("angle_threshold", "f64"),
-        ParamDef::required("stepover", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::required("stock_to_leave", "f64"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
-    const PROJECT_CURVE: &[ParamDef] = &[
-        ParamDef::required("depth", "f64"),
-        ParamDef::required("point_spacing", "f64"),
-        ParamDef::required("feed_rate", "f64"),
-        ParamDef::required("plunge_rate", "f64"),
-        ParamDef::optional("surface_model_id", "option<usize>"),
-        ParamDef::required("direction", "enum:from_above|from_below"),
-        ParamDef::required("side", "enum:center|inside|outside"),
-        ParamDef::optional("spindle_rpm", "option<u32>"),
-    ];
+// ── Phase 1 operation registry (architectural refactor 2026-06-06) ────
+//
+// Data-only per-operation metadata table. Each entry pairs the
+// operation's `OperationSpec`, its settable-param schema, and its tool
+// constraints in one place. `OperationType::registry_entry` is the
+// exhaustive accessor; the public helpers below delegate to it. There
+// are deliberately NO wildcard fallbacks here — every field of every
+// entry is an explicit decision ("miss nothing, or don't compile").
 
-    match op_type {
-        Face => FACE,
-        Pocket => POCKET,
-        Profile => PROFILE,
-        Adaptive => ADAPTIVE,
-        VCarve => VCARVE,
-        Rest => REST,
-        Inlay => INLAY,
-        Zigzag => ZIGZAG,
-        Trace => TRACE,
-        Drill => DRILL,
-        Chamfer => CHAMFER,
-        DropCutter => DROP_CUTTER,
-        Adaptive3d => ADAPTIVE3D,
-        Waterline => WATERLINE,
-        Pencil => PENCIL,
-        Scallop => SCALLOP,
-        SteepShallow => STEEP_SHALLOW,
-        RampFinish => RAMP_FINISH,
-        SpiralFinish => SPIRAL_FINISH,
-        RadialFinish => RADIAL_FINISH,
-        HorizontalFinish => HORIZONTAL_FINISH,
-        ProjectCurve => PROJECT_CURVE,
-        AlignmentPinDrill => ALIGNMENT_PIN_DRILL,
+/// Static-friendly tool-constraint data for a registry entry.
+/// Materialized into the serde-facing [`ToolConstraints`] by
+/// [`Self::to_schema`].
+#[derive(Debug, Clone, Copy)]
+pub struct ToolConstraintsDef {
+    /// Tool types (snake_case serde reprs) the operation requires; empty
+    /// means any tool geometry is accepted.
+    pub required_tool_type: &'static [&'static str],
+    /// Whether a V-bit can run this operation at all.
+    pub supports_v_bit: bool,
+}
+
+impl ToolConstraintsDef {
+    /// Named "no restriction" policy: any tool geometry, V-bit included.
+    /// Referenced explicitly by every unrestricted entry so the
+    /// unrestricted set is a recorded decision, not a wildcard fallback.
+    pub const ANY_TOOL: Self = Self {
+        required_tool_type: &[],
+        supports_v_bit: true,
+    };
+
+    /// Materialize the serde-facing [`ToolConstraints`].
+    pub fn to_schema(&self) -> ToolConstraints {
+        ToolConstraints {
+            required_tool_type: self
+                .required_tool_type
+                .iter()
+                .copied()
+                .map(str::to_owned)
+                .collect(),
+            supports_v_bit: self.supports_v_bit,
+        }
     }
 }
 
+/// One row of the Phase 1 operation registry. Data only — no behavior
+/// function pointers until the Phase 5 adapters.
+#[derive(Debug, Clone, Copy)]
+pub struct OpRegistryEntry {
+    pub op_type: OperationType,
+    pub spec: OperationSpec,
+    pub param_defs: &'static [ParamDef],
+    pub tool_constraints: ToolConstraintsDef,
+}
+
+const FACE_PARAMS: &[ParamDef] = &[
+    ParamDef::required("stepover", "f64"),
+    ParamDef::required("depth", "f64"),
+    ParamDef::required("depth_per_pass", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("stock_offset", "f64"),
+    ParamDef::required("direction", "enum:one_way|zigzag"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const POCKET_PARAMS: &[ParamDef] = &[
+    ParamDef::required("stepover", "f64"),
+    ParamDef::required("depth", "f64"),
+    ParamDef::required("depth_per_pass", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("climb", "bool"),
+    ParamDef::required("pattern", "enum:contour|zigzag"),
+    ParamDef::required("angle", "f64"),
+    ParamDef::required("finishing_passes", "usize"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const PROFILE_PARAMS: &[ParamDef] = &[
+    ParamDef::required("side", "enum:on|inside|outside"),
+    ParamDef::required("depth", "f64"),
+    ParamDef::required("depth_per_pass", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("climb", "bool"),
+    ParamDef::required("tab_count", "usize"),
+    ParamDef::required("tab_width", "f64"),
+    ParamDef::required("tab_height", "f64"),
+    ParamDef::required("finishing_passes", "usize"),
+    ParamDef::required("compensation", "enum:in_computer|in_control"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const ADAPTIVE_PARAMS: &[ParamDef] = &[
+    ParamDef::required("stepover", "f64"),
+    ParamDef::required("depth", "f64"),
+    ParamDef::required("depth_per_pass", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("tolerance", "f64"),
+    ParamDef::required("slot_clearing", "bool"),
+    ParamDef::required("min_cutting_radius", "f64"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+    ParamDef::required(
+        "cleanup_strategy",
+        "enum:Legacy|ResidueMop|ContourParallelNarrow|ContourParallelHybrid",
+    ),
+];
+
+const VCARVE_PARAMS: &[ParamDef] = &[
+    ParamDef::required("max_depth", "f64"),
+    ParamDef::required("stepover", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("tolerance", "f64"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const REST_PARAMS: &[ParamDef] = &[
+    ParamDef::optional_desc(
+        "prev_tool_id",
+        "option<usize>",
+        "Index of the prior (typically larger) tool used to define rest geometry",
+    ),
+    ParamDef::required("stepover", "f64"),
+    ParamDef::required("depth", "f64"),
+    ParamDef::required("depth_per_pass", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("angle", "f64"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const INLAY_PARAMS: &[ParamDef] = &[
+    ParamDef::required("pocket_depth", "f64"),
+    ParamDef::required("glue_gap", "f64"),
+    ParamDef::required("flat_depth", "f64"),
+    ParamDef::required("boundary_offset", "f64"),
+    ParamDef::required("stepover", "f64"),
+    ParamDef::required("flat_tool_radius", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("tolerance", "f64"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const ZIGZAG_PARAMS: &[ParamDef] = &[
+    ParamDef::required("stepover", "f64"),
+    ParamDef::required("depth", "f64"),
+    ParamDef::required("depth_per_pass", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("angle", "f64"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const TRACE_PARAMS: &[ParamDef] = &[
+    ParamDef::required("depth", "f64"),
+    ParamDef::required("depth_per_pass", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("compensation", "enum:center|left|right"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const DRILL_PARAMS: &[ParamDef] = &[
+    ParamDef::required("depth", "f64"),
+    ParamDef::required("cycle", "enum:simple|dwell|peck|chip_break"),
+    ParamDef::required("peck_depth", "f64"),
+    ParamDef::required("dwell_time", "f64"),
+    ParamDef::required("retract_amount", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("retract_z", "f64"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const CHAMFER_PARAMS: &[ParamDef] = &[
+    ParamDef::required("chamfer_width", "f64"),
+    ParamDef::required("tip_offset", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const DROP_CUTTER_PARAMS: &[ParamDef] = &[
+    ParamDef::required("stepover", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("min_z", "f64"),
+    ParamDef::required("slope_from", "f64"),
+    ParamDef::required("slope_to", "f64"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const ADAPTIVE3D_PARAMS: &[ParamDef] = &[
+    ParamDef::required("stepover", "f64"),
+    ParamDef::required("depth_per_pass", "f64"),
+    ParamDef::required("stock_to_leave_radial", "f64"),
+    ParamDef::required("stock_to_leave_axial", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("tolerance", "f64"),
+    ParamDef::required("min_cutting_radius", "f64"),
+    ParamDef::required("entry_style", "enum:plunge|helix|ramp"),
+    ParamDef::required("ramp_angle_deg", "f64"),
+    ParamDef::required("helix_radius_factor", "f64"),
+    ParamDef::required("helix_pitch", "f64"),
+    ParamDef::required("fine_stepdown", "f64"),
+    ParamDef::required("detect_flat_areas", "bool"),
+    ParamDef::required("region_ordering", "enum:global|by_area"),
+    ParamDef::required(
+        "clearing_strategy",
+        "enum:contour_parallel|adaptive|agent_search",
+    ),
+    ParamDef::required("z_blend", "bool"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+    ParamDef::required("mill_shallow_areas", "bool"),
+    ParamDef::optional("shallow_angle_deg", "option<f64>"),
+    ParamDef::optional("shallow_stepdown", "option<f64>"),
+    ParamDef::required("min_region_cut_length_mm", "f64"),
+    // F-038b: keep-tool-down link knobs.
+    ParamDef::optional("max_stay_down_distance_mm", "option<f64>"),
+    ParamDef::required("stay_down_clearance_mm", "f64"),
+];
+
+const WATERLINE_PARAMS: &[ParamDef] = &[
+    ParamDef::required("z_step", "f64"),
+    ParamDef::required("sampling", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("continuous", "bool"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const PENCIL_PARAMS: &[ParamDef] = &[
+    ParamDef::required("bitangency_angle", "f64"),
+    ParamDef::required("min_cut_length", "f64"),
+    ParamDef::required("hookup_distance", "f64"),
+    ParamDef::required("num_offset_passes", "usize"),
+    ParamDef::required("offset_stepover", "f64"),
+    ParamDef::required("sampling", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("stock_to_leave", "f64"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const SCALLOP_PARAMS: &[ParamDef] = &[
+    ParamDef::required("scallop_height", "f64"),
+    ParamDef::required("tolerance", "f64"),
+    ParamDef::required("direction", "enum:x|y"),
+    ParamDef::required("continuous", "bool"),
+    ParamDef::required("slope_from", "f64"),
+    ParamDef::required("slope_to", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("stock_to_leave", "f64"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const STEEP_SHALLOW_PARAMS: &[ParamDef] = &[
+    ParamDef::required("threshold_angle", "f64"),
+    ParamDef::required("overlap_distance", "f64"),
+    ParamDef::required("wall_clearance", "f64"),
+    ParamDef::required("steep_first", "bool"),
+    ParamDef::required("stepover", "f64"),
+    ParamDef::required("z_step", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("sampling", "f64"),
+    ParamDef::required("stock_to_leave", "f64"),
+    ParamDef::required("tolerance", "f64"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const RAMP_FINISH_PARAMS: &[ParamDef] = &[
+    ParamDef::required("max_stepdown", "f64"),
+    ParamDef::required("slope_from", "f64"),
+    ParamDef::required("slope_to", "f64"),
+    ParamDef::required("direction", "enum:climb|conventional"),
+    ParamDef::required("order_bottom_up", "bool"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("sampling", "f64"),
+    ParamDef::required("stock_to_leave", "f64"),
+    ParamDef::required("tolerance", "f64"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const SPIRAL_FINISH_PARAMS: &[ParamDef] = &[
+    ParamDef::required("stepover", "f64"),
+    ParamDef::required("direction", "enum:outward|inward"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("stock_to_leave", "f64"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const RADIAL_FINISH_PARAMS: &[ParamDef] = &[
+    ParamDef::required("angular_step", "f64"),
+    ParamDef::required("point_spacing", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("stock_to_leave", "f64"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const HORIZONTAL_FINISH_PARAMS: &[ParamDef] = &[
+    ParamDef::required("angle_threshold", "f64"),
+    ParamDef::required("stepover", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::required("stock_to_leave", "f64"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const PROJECT_CURVE_PARAMS: &[ParamDef] = &[
+    ParamDef::required("depth", "f64"),
+    ParamDef::required("point_spacing", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional("surface_model_id", "option<usize>"),
+    ParamDef::required("direction", "enum:from_above|from_below"),
+    ParamDef::required("side", "enum:center|inside|outside"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const ALIGNMENT_PIN_DRILL_PARAMS: &[ParamDef] = &[
+    ParamDef::required("holes", "array<[f64;2]>"),
+    ParamDef::required("spoilboard_penetration", "f64"),
+    ParamDef::required("cycle", "enum:simple|dwell|peck|chip_break"),
+    ParamDef::required("peck_depth", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("retract_z", "f64"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+static REG_FACE: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::Face,
+    spec: OperationSpec {
+        label: "Face",
+        description: "Level the stock top surface",
+        family: OperationFamily::TwoPointFiveD,
+        geometry: GeometryRequirement::Stock,
+        default_auto_regen: true,
+        ui_family: UiOperationFamily::Pocket,
+        ui_process_role: UiProcessRole::Roughing,
+        feeds_family: FeedsOperationFamily::Pocket,
+        feeds_pass_role: PassRole::Roughing,
+    },
+    param_defs: FACE_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+static REG_POCKET: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::Pocket,
+    spec: OperationSpec {
+        label: "Pocket",
+        description: "Clear material inside a closed region",
+        family: OperationFamily::TwoPointFiveD,
+        geometry: GeometryRequirement::Polygons,
+        default_auto_regen: true,
+        ui_family: UiOperationFamily::Pocket,
+        ui_process_role: UiProcessRole::Roughing,
+        feeds_family: FeedsOperationFamily::Pocket,
+        feeds_pass_role: PassRole::Roughing,
+    },
+    param_defs: POCKET_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::Profile,
+    spec: OperationSpec {
+        label: "Profile",
+        description: "Cut along the outside or inside of a boundary",
+        family: OperationFamily::TwoPointFiveD,
+        geometry: GeometryRequirement::Polygons,
+        default_auto_regen: true,
+        ui_family: UiOperationFamily::Contour,
+        ui_process_role: UiProcessRole::Roughing,
+        feeds_family: FeedsOperationFamily::Contour,
+        feeds_pass_role: PassRole::Roughing,
+    },
+    param_defs: PROFILE_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::Adaptive,
+    spec: OperationSpec {
+        label: "Adaptive",
+        description: "Constant-engagement rough clearing",
+        family: OperationFamily::TwoPointFiveD,
+        geometry: GeometryRequirement::Polygons,
+        default_auto_regen: true,
+        ui_family: UiOperationFamily::Pocket,
+        ui_process_role: UiProcessRole::Roughing,
+        feeds_family: FeedsOperationFamily::Adaptive,
+        feeds_pass_role: PassRole::Roughing,
+    },
+    param_defs: ADAPTIVE_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::VCarve,
+    spec: OperationSpec {
+        label: "VCarve",
+        description: "V-bit engraving with variable depth",
+        family: OperationFamily::TwoPointFiveD,
+        geometry: GeometryRequirement::Polygons,
+        default_auto_regen: true,
+        ui_family: UiOperationFamily::Trace,
+        ui_process_role: UiProcessRole::Finish,
+        feeds_family: FeedsOperationFamily::Trace,
+        feeds_pass_role: PassRole::Finish,
+    },
+    param_defs: VCARVE_PARAMS,
+    tool_constraints: ToolConstraintsDef {
+        required_tool_type: &["v_bit"],
+        supports_v_bit: true,
+    },
+};
+
+static REG_REST: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::Rest,
+    spec: OperationSpec {
+        label: "Rest Machining",
+        description: "Clean up areas a larger tool couldn\u{2019}t reach",
+        family: OperationFamily::TwoPointFiveD,
+        geometry: GeometryRequirement::Polygons,
+        default_auto_regen: true,
+        ui_family: UiOperationFamily::Pocket,
+        ui_process_role: UiProcessRole::Roughing,
+        feeds_family: FeedsOperationFamily::Pocket,
+        feeds_pass_role: PassRole::Roughing,
+    },
+    param_defs: REST_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::Inlay,
+    spec: OperationSpec {
+        label: "Inlay",
+        description: "V-bit pocket and plug for inlay work",
+        family: OperationFamily::TwoPointFiveD,
+        geometry: GeometryRequirement::Polygons,
+        default_auto_regen: true,
+        ui_family: UiOperationFamily::Trace,
+        ui_process_role: UiProcessRole::Finish,
+        feeds_family: FeedsOperationFamily::Trace,
+        feeds_pass_role: PassRole::Finish,
+    },
+    param_defs: INLAY_PARAMS,
+    tool_constraints: ToolConstraintsDef {
+        required_tool_type: &["v_bit"],
+        supports_v_bit: true,
+    },
+};
+
+static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::Zigzag,
+    spec: OperationSpec {
+        label: "Zigzag",
+        description: "Back-and-forth raster clearing at an angle",
+        family: OperationFamily::TwoPointFiveD,
+        geometry: GeometryRequirement::Polygons,
+        default_auto_regen: true,
+        ui_family: UiOperationFamily::Pocket,
+        ui_process_role: UiProcessRole::Roughing,
+        feeds_family: FeedsOperationFamily::Pocket,
+        feeds_pass_role: PassRole::Roughing,
+    },
+    param_defs: ZIGZAG_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::Trace,
+    spec: OperationSpec {
+        label: "Trace",
+        description: "Follow a path exactly for engraving or scoring",
+        family: OperationFamily::TwoPointFiveD,
+        geometry: GeometryRequirement::Polygons,
+        default_auto_regen: true,
+        ui_family: UiOperationFamily::Trace,
+        ui_process_role: UiProcessRole::Finish,
+        feeds_family: FeedsOperationFamily::Trace,
+        feeds_pass_role: PassRole::Finish,
+    },
+    param_defs: TRACE_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::Drill,
+    spec: OperationSpec {
+        label: "Drill",
+        description: "Drill holes from SVG circle positions",
+        family: OperationFamily::TwoPointFiveD,
+        geometry: GeometryRequirement::Polygons,
+        default_auto_regen: true,
+        ui_family: UiOperationFamily::Pocket,
+        ui_process_role: UiProcessRole::Roughing,
+        feeds_family: FeedsOperationFamily::Drill,
+        feeds_pass_role: PassRole::Roughing,
+    },
+    param_defs: DRILL_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::Chamfer,
+    spec: OperationSpec {
+        label: "Chamfer",
+        description: "Bevel edges with a V-bit",
+        family: OperationFamily::TwoPointFiveD,
+        geometry: GeometryRequirement::Polygons,
+        default_auto_regen: true,
+        ui_family: UiOperationFamily::Trace,
+        ui_process_role: UiProcessRole::Finish,
+        feeds_family: FeedsOperationFamily::Trace,
+        feeds_pass_role: PassRole::Finish,
+    },
+    param_defs: CHAMFER_PARAMS,
+    tool_constraints: ToolConstraintsDef {
+        required_tool_type: &["v_bit"],
+        supports_v_bit: true,
+    },
+};
+
+static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::DropCutter,
+    spec: OperationSpec {
+        label: "3D Finish",
+        description: "Parallel raster passes following the surface",
+        family: OperationFamily::ThreeD,
+        geometry: GeometryRequirement::Mesh,
+        default_auto_regen: false,
+        ui_family: UiOperationFamily::Parallel,
+        ui_process_role: UiProcessRole::Finish,
+        feeds_family: FeedsOperationFamily::Parallel,
+        feeds_pass_role: PassRole::Finish,
+    },
+    param_defs: DROP_CUTTER_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::Adaptive3d,
+    spec: OperationSpec {
+        label: "3D Rough",
+        description: "Load-limiting rough mill on a 3D surface",
+        family: OperationFamily::ThreeD,
+        geometry: GeometryRequirement::Mesh,
+        default_auto_regen: false,
+        ui_family: UiOperationFamily::Pocket,
+        ui_process_role: UiProcessRole::Roughing,
+        feeds_family: FeedsOperationFamily::Adaptive,
+        feeds_pass_role: PassRole::Roughing,
+    },
+    param_defs: ADAPTIVE3D_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::Waterline,
+    spec: OperationSpec {
+        label: "Waterline",
+        description: "Horizontal contours at constant Z levels",
+        family: OperationFamily::ThreeD,
+        geometry: GeometryRequirement::Mesh,
+        default_auto_regen: false,
+        ui_family: UiOperationFamily::Contour,
+        ui_process_role: UiProcessRole::SemiFinish,
+        feeds_family: FeedsOperationFamily::Contour,
+        feeds_pass_role: PassRole::SemiFinish,
+    },
+    param_defs: WATERLINE_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::Pencil,
+    spec: OperationSpec {
+        label: "Pencil Finish",
+        description: "Trace concave edges and creases on the surface",
+        family: OperationFamily::ThreeD,
+        geometry: GeometryRequirement::Mesh,
+        default_auto_regen: false,
+        ui_family: UiOperationFamily::Trace,
+        ui_process_role: UiProcessRole::Finish,
+        feeds_family: FeedsOperationFamily::Trace,
+        feeds_pass_role: PassRole::Finish,
+    },
+    param_defs: PENCIL_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::Scallop,
+    spec: OperationSpec {
+        label: "Scallop Finish",
+        description: "Variable stepover for constant scallop height",
+        family: OperationFamily::ThreeD,
+        geometry: GeometryRequirement::Mesh,
+        default_auto_regen: false,
+        ui_family: UiOperationFamily::Scallop,
+        ui_process_role: UiProcessRole::Finish,
+        feeds_family: FeedsOperationFamily::Scallop,
+        feeds_pass_role: PassRole::Finish,
+    },
+    param_defs: SCALLOP_PARAMS,
+    tool_constraints: ToolConstraintsDef {
+        required_tool_type: &["ball_nose", "tapered_ball_nose"],
+        supports_v_bit: false,
+    },
+};
+
+static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::SteepShallow,
+    spec: OperationSpec {
+        label: "Steep/Shallow",
+        description: "Waterline on steep areas, raster on shallow",
+        family: OperationFamily::ThreeD,
+        geometry: GeometryRequirement::Mesh,
+        default_auto_regen: false,
+        ui_family: UiOperationFamily::Contour,
+        ui_process_role: UiProcessRole::Finish,
+        feeds_family: FeedsOperationFamily::Contour,
+        feeds_pass_role: PassRole::Finish,
+    },
+    param_defs: STEEP_SHALLOW_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+static REG_RAMP_FINISH: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::RampFinish,
+    spec: OperationSpec {
+        label: "Ramp Finish",
+        description: "Continuous Z descent along contours, no retract",
+        family: OperationFamily::ThreeD,
+        geometry: GeometryRequirement::Mesh,
+        default_auto_regen: false,
+        ui_family: UiOperationFamily::Parallel,
+        ui_process_role: UiProcessRole::Finish,
+        feeds_family: FeedsOperationFamily::Parallel,
+        feeds_pass_role: PassRole::Finish,
+    },
+    param_defs: RAMP_FINISH_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::SpiralFinish,
+    spec: OperationSpec {
+        label: "Spiral Finish",
+        description: "Archimedean spiral passes over the surface",
+        family: OperationFamily::ThreeD,
+        geometry: GeometryRequirement::Mesh,
+        default_auto_regen: false,
+        ui_family: UiOperationFamily::Scallop,
+        ui_process_role: UiProcessRole::Finish,
+        feeds_family: FeedsOperationFamily::Scallop,
+        feeds_pass_role: PassRole::Finish,
+    },
+    param_defs: SPIRAL_FINISH_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+static REG_RADIAL_FINISH: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::RadialFinish,
+    spec: OperationSpec {
+        label: "Radial Finish",
+        description: "Spoke-pattern passes radiating from center",
+        family: OperationFamily::ThreeD,
+        geometry: GeometryRequirement::Mesh,
+        default_auto_regen: false,
+        ui_family: UiOperationFamily::Parallel,
+        ui_process_role: UiProcessRole::Finish,
+        feeds_family: FeedsOperationFamily::Parallel,
+        feeds_pass_role: PassRole::Finish,
+    },
+    param_defs: RADIAL_FINISH_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+static REG_HORIZONTAL_FINISH: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::HorizontalFinish,
+    spec: OperationSpec {
+        label: "Horizontal Finish",
+        description: "Finish only flat areas of the surface",
+        family: OperationFamily::ThreeD,
+        geometry: GeometryRequirement::Mesh,
+        default_auto_regen: false,
+        ui_family: UiOperationFamily::Parallel,
+        ui_process_role: UiProcessRole::Finish,
+        feeds_family: FeedsOperationFamily::Parallel,
+        feeds_pass_role: PassRole::Finish,
+    },
+    param_defs: HORIZONTAL_FINISH_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::ProjectCurve,
+    spec: OperationSpec {
+        label: "Project Curve",
+        description: "Project 2D curves onto a 3D mesh surface",
+        family: OperationFamily::ThreeD,
+        geometry: GeometryRequirement::Both,
+        default_auto_regen: false,
+        ui_family: UiOperationFamily::Trace,
+        ui_process_role: UiProcessRole::Finish,
+        feeds_family: FeedsOperationFamily::Trace,
+        feeds_pass_role: PassRole::Finish,
+    },
+    param_defs: PROJECT_CURVE_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::AlignmentPinDrill,
+    spec: OperationSpec {
+        label: "Pin Drill",
+        description: "Drill alignment pin holes through stock",
+        family: OperationFamily::TwoPointFiveD,
+        geometry: GeometryRequirement::Stock,
+        default_auto_regen: true,
+        ui_family: UiOperationFamily::Pocket,
+        ui_process_role: UiProcessRole::Roughing,
+        feeds_family: FeedsOperationFamily::Drill,
+        feeds_pass_role: PassRole::Roughing,
+    },
+    param_defs: ALIGNMENT_PIN_DRILL_PARAMS,
+    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+};
+
+fn param_defs_for_type(op_type: OperationType) -> &'static [ParamDef] {
+    op_type.registry_entry().param_defs
+}
+
 fn tool_constraints_for_type(op_type: OperationType) -> ToolConstraints {
-    let (required, supports_v_bit) = match op_type {
-        OperationType::VCarve | OperationType::Inlay | OperationType::Chamfer => {
-            (vec!["v_bit"], true)
-        }
-        OperationType::Scallop => (vec!["ball_nose", "tapered_ball_nose"], false),
-        _ => (Vec::new(), true),
-    };
-    ToolConstraints {
-        required_tool_type: required.into_iter().map(str::to_owned).collect(),
-        supports_v_bit,
-    }
+    op_type.registry_entry().tool_constraints.to_schema()
 }
 
 /// Stock context for [`OperationConfig::new_default_with_ctx`] and
@@ -1594,7 +1815,60 @@ mod tests {
             let config = OperationConfig::new_default(op_type);
             assert_eq!(config.op_type(), op_type);
             assert_eq!(config.label(), op_type.label());
+
+            // Phase 1 registry self-consistency: one entry per op, and
+            // the entry agrees with the op it claims to describe.
+            let entry = op_type.registry_entry();
+            assert_eq!(entry.op_type, op_type, "registry entry op_type mismatch");
+            assert_eq!(entry.spec.label, op_type.label());
+            assert!(
+                !entry.param_defs.is_empty(),
+                "{op_type:?}: registry entry has no settable params — \
+                 every op exposes at least one"
+            );
         }
+    }
+
+    /// Phase 1 wildcard kill (architectural refactor T3): tool
+    /// constraints are now an explicit per-entry registry field. This
+    /// pins (a) the four restricted ops exactly, and (b) that the 19
+    /// previously-wildcard-defaulted ops still resolve to the named
+    /// `ANY_TOOL` policy — proving the consolidation changed no
+    /// behavior. A new op must reference a policy explicitly; there is
+    /// no fallback arm left to inherit silently.
+    #[test]
+    fn tool_constraints_are_an_explicit_per_op_decision() {
+        let mut unrestricted = 0;
+        for &op_type in OperationType::ALL {
+            let tc = op_type.registry_entry().tool_constraints;
+            match op_type {
+                OperationType::VCarve | OperationType::Inlay | OperationType::Chamfer => {
+                    assert_eq!(tc.required_tool_type, ["v_bit"], "{op_type:?}");
+                    assert!(tc.supports_v_bit, "{op_type:?}");
+                }
+                OperationType::Scallop => {
+                    assert_eq!(tc.required_tool_type, ["ball_nose", "tapered_ball_nose"]);
+                    assert!(!tc.supports_v_bit);
+                }
+                _ => {
+                    // Pre-registry these 19 fell through `_ => (Vec::new(), true)`.
+                    assert!(
+                        tc.required_tool_type.is_empty(),
+                        "{op_type:?}: expected the ANY_TOOL policy"
+                    );
+                    assert!(tc.supports_v_bit, "{op_type:?}");
+                    unrestricted += 1;
+                }
+            }
+            // The serde-facing materialization agrees with the def.
+            let schema = tc.to_schema();
+            assert_eq!(schema.required_tool_type, tc.required_tool_type);
+            assert_eq!(schema.supports_v_bit, tc.supports_v_bit);
+        }
+        assert_eq!(
+            unrestricted, 19,
+            "unrestricted-op count changed — decide deliberately"
+        );
     }
 
     /// Parity freeze (architectural refactor §7.2): `ALL` is exactly the
