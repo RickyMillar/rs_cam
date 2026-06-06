@@ -518,3 +518,101 @@ pub fn build_info() -> serde_json::Value {
 pub fn no_project_error() -> String {
     json_str(serde_json::json!({"error": "No project loaded. Call load_project first."}))
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    /// Parity freeze (architectural refactor §7.2): the `build_info`
+    /// capability surface that agents probe. Removing a published
+    /// feature flag or a top-level key breaks agents silently — this
+    /// pins every flag shipped to date as REQUIRED (adding new flags is
+    /// fine; this is a superset assertion, not exact-set).
+    #[test]
+    fn build_info_published_capability_flags_frozen() {
+        let info = build_info();
+        let obj = info.as_object().expect("build_info must be an object");
+        for key in [
+            "crate_version",
+            "core_version",
+            "git_desc",
+            "build_timestamp",
+            "git_sha",
+            "features",
+        ] {
+            assert!(
+                obj.contains_key(key),
+                "build_info lost top-level key `{key}`"
+            );
+        }
+
+        let features: Vec<&str> = obj
+            .get("features")
+            .and_then(|f| f.as_array())
+            .expect("features must be an array")
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        for flag in [
+            "stale_defaults",
+            "drill_summaries",
+            "drill_gates",
+            "transit_span_doc",
+            "air_cut_op_kind_aware",
+            "plunge_stress_gate",
+            "verdict_list",
+            "operation_schema",
+            "param_schema_hints",
+            "param_schema_optional_nulls",
+            "integer_param_coercion",
+            "mutation_result_envelope",
+            "valid_param_error_hints",
+            "runtime_error_status_fields",
+            "runtime_errors_in_diagnostics",
+            "contour_parallel_hybrid",
+            "adaptive3d_hybrid",
+            "helical_starter_pocket",
+            "gradient_follow_narrow_strip",
+            "spiral_cleanup_overlap",
+            "tool_library_mcp",
+        ] {
+            assert!(
+                features.contains(&flag),
+                "build_info dropped published feature flag `{flag}` — agents probe these"
+            );
+        }
+    }
+
+    /// Parity freeze (architectural refactor §7.2): the MCP parse
+    /// helpers accept every canonical snake_case name — the same reprs
+    /// pinned in core's `operation_type_serde_repr_pinned` /
+    /// `tool_type_serde_repr_pinned`. A core serde rename that misses
+    /// this surface fails here.
+    #[test]
+    fn mcp_parse_helpers_accept_all_canonical_names() {
+        for &op_type in OperationType::ALL {
+            let parsed = parse_operation_type(op_type.kind_str())
+                .expect("canonical op name must parse on the MCP surface");
+            assert_eq!(parsed, op_type);
+        }
+        for &tool_type in ToolType::ALL {
+            let repr = serde_json::to_value(tool_type).expect("serialize tool type");
+            let repr = repr.as_str().expect("tool type serializes to a string");
+            let parsed =
+                parse_tool_type(repr).expect("canonical tool name must parse on the MCP surface");
+            assert_eq!(parsed, tool_type);
+        }
+        // Unknown names stay loud errors that list the valid vocabulary.
+        let err = parse_operation_type("definitely_not_an_op").unwrap_err();
+        assert!(
+            err.contains("alignment_pin_drill"),
+            "error must list valid types: {err}"
+        );
+        let err = parse_tool_type("definitely_not_a_tool").unwrap_err();
+        assert!(
+            err.contains("tapered_ball_nose"),
+            "error must list valid types: {err}"
+        );
+    }
+}

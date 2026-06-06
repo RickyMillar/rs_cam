@@ -220,6 +220,34 @@ impl ToolConfig {
 mod tests {
     use super::*;
 
+    /// Parity freeze (architectural refactor §7.2): the snake_case serde
+    /// repr of every [`ToolType`] — canonical in project TOML, the MCP
+    /// wire format, MCP error messages, and the viz legacy tool-type
+    /// maps. Pinned as literals so a rename anywhere fails here first.
+    #[test]
+    fn tool_type_serde_repr_pinned() {
+        const PINNED: &[(&str, ToolType)] = &[
+            ("end_mill", ToolType::EndMill),
+            ("ball_nose", ToolType::BallNose),
+            ("bull_nose", ToolType::BullNose),
+            ("v_bit", ToolType::VBit),
+            ("tapered_ball_nose", ToolType::TaperedBallNose),
+        ];
+        assert_eq!(PINNED.len(), ToolType::ALL.len());
+
+        for &(repr, tool_type) in PINNED {
+            assert_eq!(
+                serde_json::to_value(tool_type).expect("serialize tool type"),
+                serde_json::Value::String(repr.to_owned()),
+                "{tool_type:?}: serde repr drifted from the pinned canonical name"
+            );
+            let parsed: ToolType =
+                serde_json::from_value(serde_json::Value::String(repr.to_owned()))
+                    .expect("canonical name must deserialize");
+            assert_eq!(parsed, tool_type);
+        }
+    }
+
     #[test]
     fn youngs_modulus_matches_canonical_values() {
         assert_eq!(ToolMaterial::Carbide.youngs_modulus_n_per_mm2(), 600_000.0);

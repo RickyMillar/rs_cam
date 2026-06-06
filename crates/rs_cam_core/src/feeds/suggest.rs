@@ -177,10 +177,22 @@ pub struct SuggestContext<'a> {
 /// Warnings emitted while applying suggestions to an operation.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SuggestWarning {
-    PlungeClampedToFeed { requested: f64, capped: f64 },
-    StepoverClampedToToolDiameter { requested: f64, capped: f64 },
-    RoughingDepthClampedToRigidity { requested: f64, capped: f64 },
-    DepthClampedToCuttingLength { requested: f64, capped: f64 },
+    PlungeClampedToFeed {
+        requested: f64,
+        capped: f64,
+    },
+    StepoverClampedToToolDiameter {
+        requested: f64,
+        capped: f64,
+    },
+    RoughingDepthClampedToRigidity {
+        requested: f64,
+        capped: f64,
+    },
+    DepthClampedToCuttingLength {
+        requested: f64,
+        capped: f64,
+    },
     /// v1.3 combined-Suggest: the LUT + rigidity-clamp combo wrote a
     /// roughing DPP that exceeds the safe envelope for a plunge entry
     /// on an Adaptive-family op. The entry planner can't engage at
@@ -1063,7 +1075,8 @@ fn pick_axial_envelope(
                 Some(crate::feeds::cutter_constraints::DEFAULT_ROUGH_DEFLECTION_LIMIT_UM),
             );
             let commanded = cfg.depth_per_pass;
-            let (new_dpp, ws) = apply_axial_envelope(commanded, &env, "adaptive3d", "depth_per_pass");
+            let (new_dpp, ws) =
+                apply_axial_envelope(commanded, &env, "adaptive3d", "depth_per_pass");
             warnings.extend(ws);
             if (new_dpp - commanded).abs() > 1.0e-6 {
                 cfg.depth_per_pass = new_dpp;
@@ -1124,10 +1137,16 @@ fn pick_axial_envelope(
             let safe_max = env.safe_max_doc_mm();
             if cfg.depth > safe_max && safe_max > 0.0 {
                 let binding_str = match env.binding_constraint {
-                    crate::feeds::cutter_constraints::AxialBindingConstraint::Deflection => "deflection",
-                    crate::feeds::cutter_constraints::AxialBindingConstraint::VendorAp => "vendor_ap",
+                    crate::feeds::cutter_constraints::AxialBindingConstraint::Deflection => {
+                        "deflection"
+                    }
+                    crate::feeds::cutter_constraints::AxialBindingConstraint::VendorAp => {
+                        "vendor_ap"
+                    }
                     crate::feeds::cutter_constraints::AxialBindingConstraint::Scallop => "scallop",
-                    crate::feeds::cutter_constraints::AxialBindingConstraint::SafeBandEmpty => "safe_band_empty",
+                    crate::feeds::cutter_constraints::AxialBindingConstraint::SafeBandEmpty => {
+                        "safe_band_empty"
+                    }
                 };
                 warnings.push(SuggestWarning::ProjectCurveDepthInfeasible {
                     commanded_mm: cfg.depth,
@@ -1165,10 +1184,14 @@ fn pick_axial_envelope(
                 Some(crate::feeds::cutter_constraints::DEFAULT_FINISH_DEFLECTION_LIMIT_UM),
             );
             let binding_str = match env.binding_constraint {
-                crate::feeds::cutter_constraints::AxialBindingConstraint::Deflection => "deflection",
+                crate::feeds::cutter_constraints::AxialBindingConstraint::Deflection => {
+                    "deflection"
+                }
                 crate::feeds::cutter_constraints::AxialBindingConstraint::VendorAp => "vendor_ap",
                 crate::feeds::cutter_constraints::AxialBindingConstraint::Scallop => "scallop",
-                crate::feeds::cutter_constraints::AxialBindingConstraint::SafeBandEmpty => "safe_band_empty",
+                crate::feeds::cutter_constraints::AxialBindingConstraint::SafeBandEmpty => {
+                    "safe_band_empty"
+                }
             };
             // Only emit the advisory when the envelope actually carries a
             // meaningful bound (safe max under 5×D is the sniff test —
@@ -1221,7 +1244,8 @@ fn recompute_chipload_bounds_for_dpp(
     // `feeds::calculate` (same path), so leave bounds at the raw
     // LUT values for them.
     let op_family = operation.feeds_style().0;
-    let scale = if matches!(op_family, FeedsOperationFamily::Drill) || effective_diameter_mm <= 0.0 {
+    let scale = if matches!(op_family, FeedsOperationFamily::Drill) || effective_diameter_mm <= 0.0
+    {
         1.0
     } else {
         let ratio = new_dpp_mm / effective_diameter_mm;
@@ -1260,9 +1284,7 @@ fn enforce_invariants(
         pick_axial_envelope(operation, tool, material, working_context);
     let mut warnings = Vec::new();
     warnings.extend(axial_envelope_warnings);
-    if dpp_mutated
-        && let Some(new_dpp) = operation.depth_per_pass()
-    {
+    if dpp_mutated && let Some(new_dpp) = operation.depth_per_pass() {
         let fresh_bounds = recompute_chipload_bounds_for_dpp(
             working_context.matched_lut_row,
             working_context.effective_diameter_mm,
@@ -1285,10 +1307,14 @@ fn enforce_invariants(
     // rewrite changes Plunge → Ramp and the downstream warning then
     // finds nothing to flag. Under scope = FeedsWithGates the rewrite
     // short-circuits and the warning still fires for the operator.
-    warnings.extend(pick_adaptive3d_entry_style(operation, tool, pass_role, context));
+    warnings.extend(pick_adaptive3d_entry_style(
+        operation, tool, pass_role, context,
+    ));
     // v3.3c: clearing-strategy recommendation is warn-only (auto-rewrite
     // deferred to v4 pending classifier calibration) — reads, never writes.
-    warnings.extend(pick_adaptive3d_clearing_strategy(operation, pass_role, context));
+    warnings.extend(pick_adaptive3d_clearing_strategy(
+        operation, pass_role, context,
+    ));
     warnings.extend(check_plunge_entry_stability(operation, tool, pass_role));
     warnings.extend(recalibrate_feed_for_chipload(
         operation, tool, material, machine, context,
@@ -1382,11 +1408,8 @@ fn backoff_stepover_for_runtime(
                 }
                 current_so = raised;
                 operation.set_stepover(current_so);
-                current_moves = crate::feeds::predict::predict_move_count(
-                    operation,
-                    context.model_bbox,
-                    tool,
-                );
+                current_moves =
+                    crate::feeds::predict::predict_move_count(operation, context.model_bbox, tool);
                 iterations = iterations.saturating_add(1);
             }
 
@@ -1883,20 +1906,17 @@ fn recalibrate_feed_for_chipload(
                 cap_hit = Some(FeedRecalibrationCap::DeflectionThreshold);
             }
 
-            let pred_after =
-                crate::feeds::predict::predict_observed_chipload_mm(operation, tool);
+            let pred_after = crate::feeds::predict::predict_observed_chipload_mm(operation, tool);
 
             let feed_moved = (new_feed - initial_feed).abs() > 0.5;
-            let reverted_on_deflection =
-                cap_hit == Some(FeedRecalibrationCap::DeflectionThreshold);
+            let reverted_on_deflection = cap_hit == Some(FeedRecalibrationCap::DeflectionThreshold);
 
             if feed_moved || reverted_on_deflection {
                 tracing::debug!(
                     requested_mm_per_min = initial_feed,
                     raised_mm_per_min = new_feed,
                     predicted_observed_chipload_before = initial_observed,
-                    predicted_observed_chipload_after =
-                        pred_after.observed_median_mm_per_tooth,
+                    predicted_observed_chipload_after = pred_after.observed_median_mm_per_tooth,
                     lut_target_mm_per_tooth = target,
                     ?cap_hit,
                     "Suggest chipload-aware feed recalibration (single-shot)"
@@ -1905,8 +1925,7 @@ fn recalibrate_feed_for_chipload(
                     requested_mm_per_min: initial_feed,
                     raised_mm_per_min: new_feed,
                     predicted_observed_chipload_before: initial_observed,
-                    predicted_observed_chipload_after: pred_after
-                        .observed_median_mm_per_tooth,
+                    predicted_observed_chipload_after: pred_after.observed_median_mm_per_tooth,
                     lut_target_mm_per_tooth: target,
                     cap_hit,
                 });
@@ -2125,7 +2144,14 @@ mod tests {
         let mut machine = MachineProfile::default();
         machine.rigidity.doc_roughing_factor = 0.25;
 
-        let warnings = enforce_invariants(&mut op, &tool, &machine, &Material::default(), PassRole::Roughing, SuggestContext::default());
+        let warnings = enforce_invariants(
+            &mut op,
+            &tool,
+            &machine,
+            &Material::default(),
+            PassRole::Roughing,
+            SuggestContext::default(),
+        );
 
         assert_eq!(op.plunge_rate(), 100.0);
         assert_eq!(op.stepover(), Some(6.0));
@@ -2362,7 +2388,14 @@ mod tests {
         machine.rigidity.doc_roughing_factor = 0.20; // conventional
         machine.rigidity.adaptive_doc_factor = 1.50; // adaptive can go deep
 
-        let warnings = enforce_invariants(&mut op, &tool, &machine, &Material::default(), PassRole::Roughing, SuggestContext::default());
+        let warnings = enforce_invariants(
+            &mut op,
+            &tool,
+            &machine,
+            &Material::default(),
+            PassRole::Roughing,
+            SuggestContext::default(),
+        );
 
         // DOC=6 mm is under adaptive_doc_factor*D=9 mm and under
         // cutting_length=25 mm — should NOT clamp.
@@ -2530,7 +2563,14 @@ mod tests {
                 entry_style: style,
                 ..Adaptive3dConfig::default()
             });
-            let warnings = enforce_invariants(&mut op, &tool, &machine, &Material::default(), PassRole::Roughing, SuggestContext::default());
+            let warnings = enforce_invariants(
+                &mut op,
+                &tool,
+                &machine,
+                &Material::default(),
+                PassRole::Roughing,
+                SuggestContext::default(),
+            );
             assert!(
                 !warnings
                     .iter()
@@ -2560,7 +2600,14 @@ mod tests {
         machine.rigidity.doc_roughing_factor = 0.20;
         machine.rigidity.adaptive_doc_factor = 1.50;
 
-        let warnings = enforce_invariants(&mut op, &tool, &machine, &Material::default(), PassRole::Roughing, SuggestContext::default());
+        let warnings = enforce_invariants(
+            &mut op,
+            &tool,
+            &machine,
+            &Material::default(),
+            PassRole::Roughing,
+            SuggestContext::default(),
+        );
 
         // Pocket on 6 mm bit: doc_roughing_factor*D = 1.2 mm cap.
         let dpp = op.depth_per_pass().expect("dpp set after clamp");
@@ -2616,18 +2663,23 @@ mod tests {
             species: WoodSpecies::HardMaple,
         };
 
-        let warnings =
-            enforce_invariants(&mut op, &tool, &machine, &material, PassRole::Roughing, SuggestContext::default());
+        let warnings = enforce_invariants(
+            &mut op,
+            &tool,
+            &machine,
+            &material,
+            PassRole::Roughing,
+            SuggestContext::default(),
+        );
 
         let dpp_after = op.depth_per_pass().expect("dpp set");
         assert!(
             dpp_after < 9.0,
             "deflection back-off must drop DPP below the 9 mm starting point, got {dpp_after}"
         );
-        let predicted_after = crate::feeds::predict::predict_peak_deflection_um(
-            &op, &tool, &material, &machine,
-        )
-        .predicted_um;
+        let predicted_after =
+            crate::feeds::predict::predict_peak_deflection_um(&op, &tool, &material, &machine)
+                .predicted_um;
         assert!(
             predicted_after <= DEFLECTION_BACKOFF_TARGET_UM,
             "post-back-off prediction must clear 200 µm, got {predicted_after:.1} µm at DPP={dpp_after} mm"
@@ -2707,8 +2759,14 @@ mod tests {
             species: WoodSpecies::HardMaple,
         };
 
-        let warnings =
-            enforce_invariants(&mut op, &tool, &machine, &material, PassRole::Finish, SuggestContext::default());
+        let warnings = enforce_invariants(
+            &mut op,
+            &tool,
+            &machine,
+            &material,
+            PassRole::Finish,
+            SuggestContext::default(),
+        );
 
         assert_eq!(
             op.depth_per_pass(),
@@ -2776,23 +2834,19 @@ mod tests {
         .expect("pocket + flat is not a refused combination");
 
         assert_eq!(
-            baseline.feeds_result.feed_rate_mm_min,
-            with_ctx.feeds_result.feed_rate_mm_min,
+            baseline.feeds_result.feed_rate_mm_min, with_ctx.feeds_result.feed_rate_mm_min,
             "populated SuggestContext must not perturb feed_rate in v1.1"
         );
         assert_eq!(
-            baseline.feeds_result.plunge_rate_mm_min,
-            with_ctx.feeds_result.plunge_rate_mm_min,
+            baseline.feeds_result.plunge_rate_mm_min, with_ctx.feeds_result.plunge_rate_mm_min,
             "populated SuggestContext must not perturb plunge_rate in v1.1"
         );
         assert_eq!(
-            baseline.feeds_result.radial_width_mm,
-            with_ctx.feeds_result.radial_width_mm,
+            baseline.feeds_result.radial_width_mm, with_ctx.feeds_result.radial_width_mm,
             "populated SuggestContext must not perturb stepover in v1.1"
         );
         assert_eq!(
-            baseline.feeds_result.axial_depth_mm,
-            with_ctx.feeds_result.axial_depth_mm,
+            baseline.feeds_result.axial_depth_mm, with_ctx.feeds_result.axial_depth_mm,
             "populated SuggestContext must not perturb DPP in v1.1"
         );
         assert_eq!(
@@ -2855,8 +2909,14 @@ mod tests {
             species: WoodSpecies::HardMaple,
         };
 
-        let warnings =
-            enforce_invariants(&mut op, &tool, &machine, &material, PassRole::Roughing, SuggestContext::default());
+        let warnings = enforce_invariants(
+            &mut op,
+            &tool,
+            &machine,
+            &material,
+            PassRole::Roughing,
+            SuggestContext::default(),
+        );
 
         // Phase 3 (Pass 0, axial-DOC envelope): the cutter-axial-constraints
         // calculator runs the canonical deflection model via binary search,
@@ -2928,8 +2988,14 @@ mod tests {
             ..SuggestContext::default()
         };
 
-        let warnings =
-            enforce_invariants(&mut op, &tool, &machine, &material, PassRole::Finish, context);
+        let warnings = enforce_invariants(
+            &mut op,
+            &tool,
+            &machine,
+            &material,
+            PassRole::Finish,
+            context,
+        );
 
         let stepover_after = op.stepover().expect("stepover must remain set");
         assert!(
@@ -2943,8 +3009,7 @@ mod tests {
         );
         // The final predicted move count must come down below the
         // 500 k target (the back-off converged before the ceiling).
-        let moves_after =
-            crate::feeds::predict::predict_move_count(&op, Some(&bbox), &tool);
+        let moves_after = crate::feeds::predict::predict_move_count(&op, Some(&bbox), &tool);
         assert!(
             moves_after <= STEPOVER_BACKOFF_TARGET_MOVES,
             "post-back-off move count must clear {STEPOVER_BACKOFF_TARGET_MOVES}, got {moves_after}"
@@ -3021,8 +3086,14 @@ mod tests {
         // predictor's 0 return.
         let context = SuggestContext::default();
 
-        let warnings =
-            enforce_invariants(&mut op, &tool, &machine, &material, PassRole::Finish, context);
+        let warnings = enforce_invariants(
+            &mut op,
+            &tool,
+            &machine,
+            &material,
+            PassRole::Finish,
+            context,
+        );
 
         assert_eq!(
             op.stepover(),
@@ -3080,8 +3151,14 @@ mod tests {
             ..SuggestContext::default()
         };
 
-        let warnings =
-            enforce_invariants(&mut op, &tool, &machine, &material, PassRole::Finish, context);
+        let warnings = enforce_invariants(
+            &mut op,
+            &tool,
+            &machine,
+            &material,
+            PassRole::Finish,
+            context,
+        );
 
         let stepover_after = op.stepover().expect("stepover must be set");
         let ceiling = tool.diameter * STEPOVER_BACKOFF_DIAMETER_FRACTION;
@@ -3165,9 +3242,8 @@ mod tests {
         });
 
         let initial_feed = op.feed_rate();
-        let initial_observed =
-            crate::feeds::predict::predict_observed_chipload_mm(&op, &tool)
-                .observed_median_mm_per_tooth;
+        let initial_observed = crate::feeds::predict::predict_observed_chipload_mm(&op, &tool)
+            .observed_median_mm_per_tooth;
 
         let warnings = enforce_invariants(
             &mut op,
@@ -3320,12 +3396,10 @@ mod tests {
         // Sanity: confirm the pre-loop deflection sits in the
         // (190, 200) µm window. If this changes (e.g. Kc/HardMaple
         // calibration shifts), retune `tool.stickout`.
-        let pre_predicted = crate::feeds::predict::predict_peak_deflection_um(
-            &op, &tool, &material, &machine,
-        )
-        .predicted_um;
-        let refusal_um =
-            DEFLECTION_BACKOFF_TARGET_UM - FEED_RAISE_DEFLECTION_RECAL_HEADROOM_UM;
+        let pre_predicted =
+            crate::feeds::predict::predict_peak_deflection_um(&op, &tool, &material, &machine)
+                .predicted_um;
+        let refusal_um = DEFLECTION_BACKOFF_TARGET_UM - FEED_RAISE_DEFLECTION_RECAL_HEADROOM_UM;
         assert!(
             (refusal_um..DEFLECTION_BACKOFF_TARGET_UM).contains(&pre_predicted),
             "test setup: pre-loop predicted deflection ({pre_predicted:.1} µm) must sit in \
@@ -3355,11 +3429,7 @@ mod tests {
                 raised_mm_per_min,
                 cap_hit,
                 ..
-            } => Some((
-                *requested_mm_per_min,
-                *raised_mm_per_min,
-                *cap_hit,
-            )),
+            } => Some((*requested_mm_per_min, *raised_mm_per_min, *cap_hit)),
             _ => None,
         });
         let (requested_mm_per_min, raised_mm_per_min, raised_cap) = raised.expect(
@@ -3394,9 +3464,7 @@ mod tests {
             _ => None,
         });
         let (still_low_observed, still_low_target, still_low_feed, blocking_cap) = still_low
-            .expect(
-                "ChiploadStillLowAfterRecalibration must fire when deflection cap binds",
-            );
+            .expect("ChiploadStillLowAfterRecalibration must fire when deflection cap binds");
         assert_eq!(
             blocking_cap,
             FeedRecalibrationCap::DeflectionThreshold,
@@ -3471,12 +3539,10 @@ mod tests {
             max_mm_per_tooth: band_max,
         });
 
-        let pre_predicted = crate::feeds::predict::predict_peak_deflection_um(
-            &op, &tool, &material, &machine,
-        )
-        .predicted_um;
-        let refusal_um =
-            DEFLECTION_BACKOFF_TARGET_UM - FEED_RAISE_DEFLECTION_RECAL_HEADROOM_UM;
+        let pre_predicted =
+            crate::feeds::predict::predict_peak_deflection_um(&op, &tool, &material, &machine)
+                .predicted_um;
+        let refusal_um = DEFLECTION_BACKOFF_TARGET_UM - FEED_RAISE_DEFLECTION_RECAL_HEADROOM_UM;
         assert!(
             (refusal_um..DEFLECTION_BACKOFF_TARGET_UM).contains(&pre_predicted),
             "test setup: pre-loop predicted deflection ({pre_predicted:.1} µm) must sit in \
@@ -3600,9 +3666,9 @@ mod tests {
         );
 
         let still_low = warnings.iter().find_map(|w| match w {
-            SuggestWarning::ChiploadStillLowAfterRecalibration {
-                blocking_cap, ..
-            } => Some(*blocking_cap),
+            SuggestWarning::ChiploadStillLowAfterRecalibration { blocking_cap, .. } => {
+                Some(*blocking_cap)
+            }
             _ => None,
         });
         assert_eq!(
@@ -3701,10 +3767,9 @@ mod tests {
             "FeedRaisedForChipload must not fire when initial observed ≥ LUT min, got {warnings:?}"
         );
         assert!(
-            !warnings.iter().any(|w| matches!(
-                w,
-                SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-            )),
+            !warnings
+                .iter()
+                .any(|w| matches!(w, SuggestWarning::ChiploadStillLowAfterRecalibration { .. })),
             "ChiploadStillLowAfterRecalibration must not fire when initial observed ≥ LUT min, got {warnings:?}"
         );
     }
@@ -3859,17 +3924,19 @@ mod tests {
         assert!(
             warnings.iter().any(|w| matches!(
                 w,
-                SuggestWarning::StrategyRewrote { param: "entry_style", .. }
+                SuggestWarning::StrategyRewrote {
+                    param: "entry_style",
+                    ..
+                }
             )),
             "StrategyRewrote warning must fire, got {warnings:?}"
         );
         // v1.3 PlungeEntryUnstableAtDpp must NOT fire — the rewrite
         // already handled it.
         assert!(
-            !warnings.iter().any(|w| matches!(
-                w,
-                SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-            )),
+            !warnings
+                .iter()
+                .any(|w| matches!(w, SuggestWarning::PlungeEntryUnstableAtDpp { .. })),
             "PlungeEntryUnstableAtDpp must not fire after auto-rewrite, got {warnings:?}"
         );
 
@@ -3905,10 +3972,9 @@ mod tests {
             "FeedsWithGates must leave Plunge untouched"
         );
         assert!(
-            warnings2.iter().any(|w| matches!(
-                w,
-                SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-            )),
+            warnings2
+                .iter()
+                .any(|w| matches!(w, SuggestWarning::PlungeEntryUnstableAtDpp { .. })),
             "PlungeEntryUnstableAtDpp must fire under FeedsWithGates, got {warnings2:?}"
         );
     }
@@ -3971,7 +4037,10 @@ mod tests {
             assert!(
                 !warnings.iter().any(|w| matches!(
                     w,
-                    SuggestWarning::StrategyRewrote { param: "entry_style", .. }
+                    SuggestWarning::StrategyRewrote {
+                        param: "entry_style",
+                        ..
+                    }
                 )),
                 "no StrategyRewrote for entry_style when user-pinned {pinned:?}, got {warnings:?}"
             );
@@ -4096,10 +4165,9 @@ mod tests {
 
         let no_recommendation = |warnings: &[SuggestWarning], ctx: &str| {
             assert!(
-                !warnings.iter().any(|w| matches!(
-                    w,
-                    SuggestWarning::StrategyRecommendedNotApplied { .. }
-                )),
+                !warnings
+                    .iter()
+                    .any(|w| matches!(w, SuggestWarning::StrategyRecommendedNotApplied { .. })),
                 "{ctx}: recommendation must not fire, got {warnings:?}"
             );
         };
@@ -4129,5 +4197,66 @@ mod tests {
             ),
             "missing model bbox",
         );
+    }
+
+    /// PRE-Phase-1 coverage net (architectural refactor T1): every
+    /// operation's feeds hints must be an *explicit decision*, never an
+    /// unintended fall-through of the `_ => (None, None, None)` wildcard
+    /// in [`operation_feeds_hints`].
+    ///
+    /// The expected table below is an exhaustive match over
+    /// `OperationConfig` with **no wildcard arm** — adding a new
+    /// operation fails to compile here, forcing the author to decide
+    /// (and record) what hints the new op feeds the calculator. Changing
+    /// an existing op's hint plumbing fails the assert instead of
+    /// silently rerouting the feeds suggestion.
+    #[test]
+    fn operation_feeds_hints_is_an_explicit_per_op_decision() {
+        use crate::compute::catalog::OperationType;
+
+        for &op_type in OperationType::ALL {
+            let config = OperationConfig::new_default(op_type);
+            let actual = operation_feeds_hints(&config);
+
+            #[allow(clippy::match_same_arms)] // one arm per op = the point
+            let expected: (Option<f64>, Option<f64>, Option<f64>) = match &config {
+                // Ops that feed operation-specific hints into the
+                // calculator (axial, radial, scallop):
+                OperationConfig::Scallop(cfg) => (None, None, Some(cfg.scallop_height)),
+                OperationConfig::DropCutter(cfg) => (None, None, cfg.scallop_height),
+                OperationConfig::Waterline(cfg) => (Some(cfg.z_step), None, None),
+                OperationConfig::SteepShallow(cfg) => (Some(cfg.z_step), None, None),
+                OperationConfig::VCarve(cfg) => (Some(cfg.max_depth), None, None),
+                OperationConfig::RampFinish(cfg) => (Some(cfg.max_stepdown), None, None),
+                // Ops that have explicitly DECIDED to provide no hints —
+                // the calculator falls back to LUT/diameter-factor
+                // defaults. Listed individually (not `_`) so each is a
+                // recorded decision:
+                OperationConfig::Face(_) => (None, None, None),
+                OperationConfig::Pocket(_) => (None, None, None),
+                OperationConfig::Profile(_) => (None, None, None),
+                OperationConfig::Adaptive(_) => (None, None, None),
+                OperationConfig::Rest(_) => (None, None, None),
+                OperationConfig::Inlay(_) => (None, None, None),
+                OperationConfig::Zigzag(_) => (None, None, None),
+                OperationConfig::Trace(_) => (None, None, None),
+                OperationConfig::Drill(_) => (None, None, None),
+                OperationConfig::Chamfer(_) => (None, None, None),
+                OperationConfig::Adaptive3d(_) => (None, None, None),
+                OperationConfig::Pencil(_) => (None, None, None),
+                OperationConfig::SpiralFinish(_) => (None, None, None),
+                OperationConfig::RadialFinish(_) => (None, None, None),
+                OperationConfig::HorizontalFinish(_) => (None, None, None),
+                OperationConfig::ProjectCurve(_) => (None, None, None),
+                OperationConfig::AlignmentPinDrill(_) => (None, None, None),
+            };
+
+            assert_eq!(
+                actual, expected,
+                "{op_type:?}: operation_feeds_hints changed — update \
+                 operation_feeds_hints AND this expected table deliberately \
+                 (this net guards the suggest.rs (None,None,None) wildcard)"
+            );
+        }
     }
 }

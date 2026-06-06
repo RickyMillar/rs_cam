@@ -976,8 +976,7 @@ pub(super) fn build_session_from_project(
     // the source of truth, falling back to the inline copy (with a
     // warning) when the referenced file is missing.
     let machine_ref = project.job.machine_ref.clone();
-    let resolved =
-        crate::machine_library::resolve(machine_ref.as_deref(), project.job.machine);
+    let resolved = crate::machine_library::resolve(machine_ref.as_deref(), project.job.machine);
     if let Some(warning) = resolved.warning {
         tracing::warn!("{warning}");
     }
@@ -1000,4 +999,47 @@ pub(super) fn build_session_from_project(
         next_setup_id,
         next_model_id,
     })
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    /// Parity freeze (architectural refactor §7.2): the CORE project-file
+    /// tool section serializes its tool type under the TOML key `type`
+    /// (serde rename), holds it as a lenient **String** (unknown values
+    /// are accepted here and resolved later by the lenient parser), and
+    /// defaults a missing key to `"end_mill"`. The viz loader has a
+    /// parallel `ProjectToolSection` with the same rename but a
+    /// serde-direct `ToolType` — a registry/X-macro change must not
+    /// silently alter either shape.
+    #[test]
+    fn project_tool_section_type_key_shape_frozen() {
+        // `type` key round-trips into the String field.
+        let section: ProjectToolSection =
+            toml::from_str(r#"type = "ball_nose""#).expect("parse tool section");
+        assert_eq!(section.tool_type, "ball_nose");
+
+        // Lenient layer: unknown tool types are accepted as-is here
+        // (resolution to ToolType happens later, warn-and-default).
+        let weird: ProjectToolSection =
+            toml::from_str(r#"type = "definitely_not_a_tool""#).expect("lenient parse");
+        assert_eq!(weird.tool_type, "definitely_not_a_tool");
+
+        // Missing key defaults to end_mill.
+        let defaulted: ProjectToolSection = toml::from_str("").expect("parse empty section");
+        assert_eq!(defaulted.tool_type, "end_mill");
+
+        // Serialization emits `type`, never the field name `tool_type`.
+        let out = toml::to_string(&section).expect("serialize tool section");
+        assert!(
+            out.contains("type = \"ball_nose\""),
+            "expected renamed `type` key, got:\n{out}"
+        );
+        assert!(
+            !out.contains("tool_type"),
+            "field name `tool_type` must not leak into TOML:\n{out}"
+        );
+    }
 }
