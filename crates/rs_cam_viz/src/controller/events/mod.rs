@@ -690,6 +690,7 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         };
         let machine = self.state.session.machine().clone();
+        let material = self.state.session.stock_config().material.clone();
         let pass_role = self
             .state
             .session
@@ -707,7 +708,9 @@ impl<B: ComputeBackend> AppController<B> {
             r,
             &tool,
             &machine,
+            &material,
             pass_role,
+            rs_cam_core::feeds::suggest::SuggestContext::default(),
         );
         self.state.gui.mark_edited();
         if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {

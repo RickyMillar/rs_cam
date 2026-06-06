@@ -1104,7 +1104,7 @@ fn calculate_and_apply_feeds(
     ) {
         Ok(result) => {
             entry.feeds_result = Some(result);
-            draw_feeds_card(ui, entry, tool, machine);
+            draw_feeds_card(ui, entry, tool, machine, material);
         }
         Err(e) => {
             // Engine refused — the tool × operation combination is
@@ -1126,6 +1126,7 @@ fn draw_feeds_card(
     entry: &mut ToolpathEntry,
     tool: &crate::state::job::ToolConfig,
     machine: &rs_cam_core::machine::MachineProfile,
+    material: &rs_cam_core::material::Material,
 ) {
     ui.add_space(8.0);
     ui.collapsing("Feeds & Speeds", |ui| {
@@ -1241,7 +1242,9 @@ fn draw_feeds_card(
                     &result,
                     tool,
                     machine,
+                    material,
                     pass_role,
+                    rs_cam_core::feeds::suggest::SuggestContext::default(),
                 );
                 entry.stale_since = Some(std::time::Instant::now());
             }
@@ -2846,7 +2849,9 @@ fn draw_toolpath_panel(
                                     &result,
                                     tool_cfg,
                                     machine,
+                                    material,
                                     pass_role,
+                                    rs_cam_core::feeds::suggest::SuggestContext::default(),
                                 );
                                 entry.stale_since = Some(std::time::Instant::now());
                             }

@@ -947,6 +947,17 @@ impl ProjectSession {
         &self.models
     }
 
+    /// Per-model `(model_id, bbox)` lookup table for callers that need
+    /// to build a `SuggestContext::model_bbox` per toolpath without
+    /// re-walking the model list each iteration. Skips models with no
+    /// finite bbox (placeholder rows).
+    pub fn collect_model_bboxes(&self) -> Vec<(usize, BoundingBox3)> {
+        self.models
+            .iter()
+            .filter_map(|m| m.bbox().map(|b| (m.id, b)))
+            .collect()
+    }
+
     /// All toolpath configurations.
     pub fn toolpath_configs(&self) -> &[ToolpathConfig] {
         &self.toolpath_configs

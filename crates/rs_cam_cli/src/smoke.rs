@@ -306,6 +306,7 @@ fn materialize_case_toolpath(
         lut: embedded_vendor_lut(),
         stock_ctx: &stock_ctx,
         spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
+        context: rs_cam_core::feeds::suggest::SuggestContext::default(),
     }) {
         Ok(s) => s.operation,
         Err(e) => {

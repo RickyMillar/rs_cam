@@ -244,6 +244,20 @@ impl EmbeddedCamServer {
     }
 
     #[tool(
+        name = "get_suggest_rationale",
+        description = "Run combined-Suggest against the toolpath at `index` and return the structured rationale tree explaining every parameter the orchestrator backed off or rewrote: DPP deflection back-off, runtime stepover floor, plunge-entry warnings, chipload-target feed lift, etc. Each entry carries param + reason + from/to values + a human-readable headline. Read this before set_toolpath_param when you want to know why Suggest chose a value. Does not mutate the project."
+    )]
+    async fn get_suggest_rationale(
+        &self,
+        Parameters(IndexParam { index }): Parameters<IndexParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::GetSuggestRationale { index })
+                .await,
+        )
+    }
+
+    #[tool(
         name = "get_cut_trace",
         description = "Get simulation cut trace data: semantic summaries, structural span summaries, hotspots, issues, and (for drill toolpaths) drill_summaries. Run simulation first. Filter to a single toolpath via toolpath_id, or to a structural span via span_kind (e.g. \"depth_pass\"), span_id (from inspect_spans), or pass_index (DepthPass payload, 0-based). Set include_drill_samples=true to also include the per-peck DrillSample stream (can be verbose)."
     )]

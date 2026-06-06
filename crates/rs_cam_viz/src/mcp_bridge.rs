@@ -90,6 +90,14 @@ pub enum McpRequestKind {
     NarrateToolpath {
         index: usize,
     },
+    /// v3.2 (2026-06-04): Run the combined-Suggest orchestrator
+    /// against the toolpath at `index` and return the
+    /// [`rs_cam_core::feeds::rationale::SuggestRationale`] tree as JSON.
+    /// The agent can read why Suggest would back off a value before
+    /// accepting / rejecting individual parameter changes.
+    GetSuggestRationale {
+        index: usize,
+    },
 
     InspectModel,
     InspectStock,

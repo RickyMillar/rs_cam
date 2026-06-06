@@ -80,6 +80,11 @@ impl<B: ComputeBackend> AppController<B> {
                 lut: rs_cam_core::feeds::embedded_vendor_lut(),
                 stock_ctx: &stock_ctx,
                 spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
+                // TODO(v1.2): populate model_bbox + upstream leftover so
+                // the GUI Suggest button benefits from runtime-sanity
+                // floor; needs per-tool model lookup at "add toolpath"
+                // time (model_id is selected later by the user).
+                context: rs_cam_core::feeds::suggest::SuggestContext::default(),
             },
         ) {
             Ok(s) => s.operation,
