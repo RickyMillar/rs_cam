@@ -1618,6 +1618,92 @@ fn tool_constraints_for_type(op_type: OperationType) -> ToolConstraints {
     op_type.registry_entry().tool_constraints.to_schema()
 }
 
+/// Operation-specific hints handed to the feeds calculator (registry
+/// companion to [`OpRegistryEntry`]). Hints depend on live config values
+/// (z-step, scallop target, …), so this is an accessor on
+/// [`OperationConfig`] rather than static registry data — see
+/// [`OperationConfig::feeds_hints`].
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct FeedsHints {
+    /// Operation-imposed axial depth (mm) the calculator must respect
+    /// (e.g. a waterline z-step) instead of choosing its own DOC.
+    pub axial_depth_mm: Option<f64>,
+    /// Operation-imposed radial width (mm); none of the current ops set
+    /// this, but the slot is part of the calculator contract.
+    pub radial_width_mm: Option<f64>,
+    /// Scallop-height target (mm) for stepover-from-chord-geometry ops.
+    pub target_scallop_mm: Option<f64>,
+}
+
+impl FeedsHints {
+    /// Named "no hints" policy — the calculator falls back to LUT /
+    /// diameter-factor defaults. Referenced explicitly per op so the
+    /// no-hint set is a recorded decision, not a wildcard fallback.
+    pub const NONE: Self = Self {
+        axial_depth_mm: None,
+        radial_width_mm: None,
+        target_scallop_mm: None,
+    };
+}
+
+impl OperationConfig {
+    /// Extract this operation's feeds-calculator hints. Exhaustive match
+    /// — adding an operation does not compile until it decides its hints
+    /// (the pre-registry `_ => (None, None, None)` wildcard in
+    /// `feeds::suggest::operation_feeds_hints` is gone; that function now
+    /// delegates here).
+    pub fn feeds_hints(&self) -> FeedsHints {
+        match self {
+            OperationConfig::Scallop(cfg) => FeedsHints {
+                target_scallop_mm: Some(cfg.scallop_height),
+                ..FeedsHints::NONE
+            },
+            // DropCutter (the "3D Finish" parallel-raster op) optionally
+            // derives stepover from a scallop target the same way Scallop
+            // does. `None` keeps the legacy `ae_factor × diameter` stepover.
+            OperationConfig::DropCutter(cfg) => FeedsHints {
+                target_scallop_mm: cfg.scallop_height,
+                ..FeedsHints::NONE
+            },
+            OperationConfig::Waterline(cfg) => FeedsHints {
+                axial_depth_mm: Some(cfg.z_step),
+                ..FeedsHints::NONE
+            },
+            OperationConfig::SteepShallow(cfg) => FeedsHints {
+                axial_depth_mm: Some(cfg.z_step),
+                ..FeedsHints::NONE
+            },
+            OperationConfig::VCarve(cfg) => FeedsHints {
+                axial_depth_mm: Some(cfg.max_depth),
+                ..FeedsHints::NONE
+            },
+            OperationConfig::RampFinish(cfg) => FeedsHints {
+                axial_depth_mm: Some(cfg.max_stepdown),
+                ..FeedsHints::NONE
+            },
+            // Explicit no-hint decisions — the calculator falls back to
+            // LUT / diameter-factor defaults for these:
+            OperationConfig::Face(_)
+            | OperationConfig::Pocket(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::Rest(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_)
+            | OperationConfig::ProjectCurve(_)
+            | OperationConfig::AlignmentPinDrill(_) => FeedsHints::NONE,
+        }
+    }
+}
+
 /// Stock context for [`OperationConfig::new_default_with_ctx`] and
 /// [`OperationConfig::apply_stock_defaults`]. Carries the few stock
 /// dimensions a sensible per-op depth default needs to know about.
