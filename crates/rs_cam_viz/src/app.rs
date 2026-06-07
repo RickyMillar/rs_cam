@@ -200,7 +200,12 @@ impl RsCamApp {
                 });
             });
 
-        let col_count = self.controller.collision_positions().len();
+        let col_count = self
+            .controller
+            .state()
+            .simulation
+            .checks
+            .total_collision_count();
         let lane_snapshots = self.controller.lane_snapshots();
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             crate::ui::status_bar::draw(ui, self.controller.state(), col_count, &lane_snapshots);
@@ -244,7 +249,12 @@ impl RsCamApp {
                 });
             });
 
-        let col_count = self.controller.collision_positions().len();
+        let col_count = self
+            .controller
+            .state()
+            .simulation
+            .checks
+            .total_collision_count();
         let lane_snapshots = self.controller.lane_snapshots();
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             crate::ui::status_bar::draw(ui, self.controller.state(), col_count, &lane_snapshots);

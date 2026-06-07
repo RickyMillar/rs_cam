@@ -6,7 +6,7 @@ use crate::state::simulation::{ActiveSemanticItem, SimulationAnalyticsTab, Simul
 use egui_plot::{Line, Plot, PlotPoints, Polygon};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::simulation_cut::SimulationCutSample;
-use rs_cam_core::tool_load::{Confidence, ToolLoadReport};
+use rs_cam_core::tool_load::ToolLoadReport;
 
 /// Per-toolpath line in the signal plot: a colour plus a sequence of
 /// `(global_move_index, [x, y])` points decimated for the current X span.
@@ -90,23 +90,24 @@ fn draw_verdict_hud(
 ) {
     let issue_count = sim.issues(gui, max_feed).len();
 
-    let (ok, warn, bad, unmodeled, collision_count, trace_count) = {
-        let counts = verdict_counts(load_report);
-        let collision_count = sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
-        let trace_count = gui
-            .toolpath_rt
-            .values()
-            .filter(|rt| rt.debug_trace.is_some() || rt.semantic_trace.is_some())
-            .count();
-        (
-            counts.0,
-            counts.1,
-            counts.2,
-            counts.3,
-            collision_count,
-            trace_count,
-        )
-    };
+    // W0.4 — read the same per-toolpath rollup the Inspector overview uses
+    // (`ToolLoadReport::summary()`) so the two project rollups can't print
+    // different numbers for the same load concept. The HUD previously folded
+    // per-(toolpath × gate) criteria, which is irreconcilable with the
+    // Inspector's per-toolpath counts and mislabeled them as "Toolpaths".
+    let summary = load_report.summary(|_| None);
+    let (ok, bad, unmodeled, total_tp) = (
+        summary.within,
+        summary.exceeds,
+        summary.fully_unmodeled,
+        summary.total_toolpaths,
+    );
+    let collision_count = sim.checks.total_collision_count();
+    let trace_count = gui
+        .toolpath_rt
+        .values()
+        .filter(|rt| rt.debug_trace.is_some() || rt.semantic_trace.is_some())
+        .count();
 
     egui::Frame::default()
         .fill(egui::Color32::from_rgb(30, 32, 42))
@@ -116,27 +117,21 @@ fn draw_verdict_hud(
             ui.horizontal_wrapped(|ui| {
                 info_pill(
                     ui,
-                    format!("✓ load {ok}"),
+                    format!("✓ load {ok}/{total_tp}"),
                     egui::Color32::from_rgb(85, 180, 110),
-                    "Toolpaths within modeled load limits.",
+                    "Toolpaths within modeled load limits (of total modeled).",
                 );
                 info_pill(
                     ui,
-                    format!("⚠ unmodeled {unmodeled}"),
-                    egui::Color32::from_rgb(210, 170, 80),
-                    "Load criteria the gate could not model (drill cycles, no vendor data, etc.).",
-                );
-                info_pill(
-                    ui,
-                    format!("✕ exceeds {bad}"),
+                    format!("✕ exceeds {bad}/{total_tp}"),
                     egui::Color32::from_rgb(220, 90, 90),
-                    "Load-limit exceedances. Click the red lines on the boundary timeline below to navigate.",
+                    "Toolpaths exceeding a modeled load limit. Click the red lines on the boundary timeline below to navigate.",
                 );
                 info_pill(
                     ui,
-                    format!("~ approx {warn}"),
-                    egui::Color32::from_rgb(120, 150, 220),
-                    "Approximate or advisory verdicts.",
+                    format!("⚠ unmodeled {unmodeled}/{total_tp}"),
+                    egui::Color32::from_rgb(210, 170, 80),
+                    "Toolpaths the gate could not model (drill cycles, no vendor data, etc.).",
                 );
                 let collision_color = if collision_count == 0 {
                     egui::Color32::from_rgb(120, 210, 140)
@@ -163,31 +158,6 @@ fn draw_verdict_hud(
                 );
             });
         });
-}
-
-fn verdict_counts(report: &ToolLoadReport) -> (usize, usize, usize, usize) {
-    use rs_cam_core::tool_load::verdict::LoadState;
-    let mut ok = 0;
-    let mut warn = 0;
-    let mut bad = 0;
-    let mut unmodeled = 0;
-    for tp in &report.per_toolpath {
-        for (state, confidence) in [
-            (tp.chipload.state(), tp.chipload.confidence()),
-            (tp.power.state(), tp.power.confidence()),
-            (tp.deflection.state(), tp.deflection.confidence()),
-        ] {
-            match state {
-                LoadState::Within => ok += 1,
-                LoadState::Unmodeled => unmodeled += 1,
-                LoadState::Exceeds => bad += 1,
-            }
-            if matches!(confidence, Some(Confidence::Approximate(_))) {
-                warn += 1;
-            }
-        }
-    }
-    (ok, warn, bad, unmodeled)
 }
 
 fn info_pill(ui: &mut egui::Ui, text: String, color: egui::Color32, hover: &str) {
