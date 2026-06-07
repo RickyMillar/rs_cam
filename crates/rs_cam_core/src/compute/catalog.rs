@@ -1584,7 +1584,7 @@ static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
     param_defs: PENCIL_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_pencil),
 };
 
 static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
@@ -1606,7 +1606,7 @@ static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
         supports_v_bit: false,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_scallop),
 };
 
 static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
@@ -1625,7 +1625,7 @@ static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
     param_defs: STEEP_SHALLOW_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_steep_shallow),
 };
 
 static REG_RAMP_FINISH: OpRegistryEntry = OpRegistryEntry {
@@ -1644,7 +1644,7 @@ static REG_RAMP_FINISH: OpRegistryEntry = OpRegistryEntry {
     param_defs: RAMP_FINISH_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_ramp_finish),
 };
 
 static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
@@ -2054,6 +2054,13 @@ mod tests {
                 | OperationType::SpiralFinish
                 | OperationType::RadialFinish
                 | OperationType::HorizontalFinish
+                // Pencil/Scallop/SteepShallow/RampFinish — migrated
+                // 2026-06-07 (T11 PR 12; scallop's registry-driven
+                // ball-tip refusal moved in-adapter intact).
+                | OperationType::Pencil
+                | OperationType::Scallop
+                | OperationType::SteepShallow
+                | OperationType::RampFinish
             );
             assert_eq!(
                 migrated, expected,
