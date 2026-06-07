@@ -101,7 +101,10 @@ struct PencilPath {
 }
 
 /// A single mesh edge identified by sorted vertex indices.
-#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
+/// `Ord` so order-sensitive consumers can sort collections that were
+/// built via `HashMap` iteration — see `compute_shared_edges` /
+/// `chain_concave_edges` (T14 determinism fix).
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, PartialOrd, Ord)]
 struct EdgeKey(u32, u32);
 
 impl EdgeKey {
@@ -193,6 +196,15 @@ fn compute_shared_edges(
         });
     }
 
+    // T14 — `edge_map` is a `HashMap`, so the loop above visits edges in
+    // RandomState order (different every run). Everything downstream is
+    // order-sensitive: the chain walker's adjacency lists are built by
+    // pushing in this Vec's order, and at degenerate bitangency angles
+    // (~175°) junction-heavy graphs chain differently per visit order —
+    // observed as 7404-vs-7350-move toolpaths from the same build. Sort
+    // by edge key so the pipeline is a pure function of the mesh.
+    shared.sort_unstable_by_key(|e| e.key);
+
     shared
 }
 
@@ -235,10 +247,15 @@ fn chain_concave_edges(
         })
         .copied()
         .collect();
+    // T14 — `adj.keys()` iterates in HashMap RandomState order; walk
+    // priority decides how junction-heavy graphs split into chains.
+    // Sort so the start order is a pure function of the mesh.
+    start_vertices.sort_unstable();
 
-    // If no endpoints found (all closed loops), pick any unvisited vertex
+    // If no endpoints found (all closed loops), pick the smallest vertex
+    // (deterministic — `.next()` on a HashMap varies per run, T14)
     if start_vertices.is_empty()
-        && let Some(&v) = adj.keys().next()
+        && let Some(&v) = adj.keys().min()
     {
         start_vertices.push(v);
     }
@@ -297,11 +314,14 @@ fn chain_concave_edges(
 
     // Also find any remaining closed loops (all edges visited by endpoints check above
     // may miss pure loops)
-    let unvisited_starts: Vec<EdgeKey> = visited_edges
+    let mut unvisited_starts: Vec<EdgeKey> = visited_edges
         .iter()
         .filter(|&(_, v)| !v)
         .map(|(&k, _)| k)
         .collect();
+    // T14 — same HashMap-order leak as above: which edge seeds a loop
+    // walk decides where closed loops are split open.
+    unvisited_starts.sort_unstable();
 
     for edge_key in unvisited_starts {
         if visited_edges.get(&edge_key) == Some(&true) {
