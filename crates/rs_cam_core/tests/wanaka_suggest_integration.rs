@@ -47,10 +47,10 @@ use std::path::PathBuf;
 
 use rs_cam_core::compute::tool_config::ToolId;
 use rs_cam_core::feeds::{
-    SpindleStrategy, embedded_vendor_lut,
+    embedded_vendor_lut,
     suggest::{
         FeedRecalibrationCap, StockContext, SuggestContext, SuggestForOperationInput,
-        SuggestPolicy, SuggestWarning, SuggestedParams, suggest_for_operation,
+        SuggestWarning, SuggestedParams, suggest_for_operation,
     },
 };
 use rs_cam_core::session::ProjectSession;
@@ -68,60 +68,48 @@ fn wanaka_project_path() -> PathBuf {
         .join("wanaka.toml")
 }
 
-/// Run `suggest_for_operation` for every enabled toolpath using the
-/// exact context construction the CLI's `--apply-suggest` path uses
-/// (see `crates/rs_cam_cli/src/project.rs::apply_suggested_feeds_to_session`).
+/// Run Suggest for every enabled toolpath through the canonical
+/// `ProjectSession::cutter_op_profile` — the same assembly the GUI
+/// Suggest button, the MCP rationale endpoint, and (post-T16) the CLI
+/// `--apply-suggest` path use. Pre-T16 this helper mirrored the CLI's
+/// hand-rolled context with `SpindleStrategy::default()`; all surfaces
+/// now read `post_config().spindle_strategy`. Wanaka carries no
+/// explicit strategy (defaults to `MatchChart`), so the baseline
+/// numbers asserted below are unchanged by the rerouting.
 ///
 /// Returns `(toolpath_id, toolpath_name, suggested)` tuples in
 /// session order so individual assertions can find their case by id.
 fn run_suggest_for_enabled(session: &ProjectSession) -> Vec<(usize, String, SuggestedParams)> {
-    let lut = embedded_vendor_lut();
-    let machine = session.machine().clone();
-    let material = session.stock_config().material.clone();
-    let workholding = session.stock_config().workholding_rigidity;
-    let stock_ctx =
-        StockContext::from_stock_bbox(session.stock_bbox(), session.stock_config().padding);
-    let model_bboxes = session.collect_model_bboxes();
-
     let mut out = Vec::new();
     for tc in session.toolpath_configs() {
         if !tc.enabled {
             continue;
         }
-        let tool = session
-            .get_tool(ToolId(tc.tool_id))
+        let profile = session
+            .cutter_op_profile(tc)
             .unwrap_or_else(|| panic!("Tool {} missing for toolpath {}", tc.tool_id, tc.id));
-        let model_bbox = model_bboxes
-            .iter()
-            .find(|(id, _)| *id == tc.model_id)
-            .map(|(_, b)| b);
-        let context = SuggestContext {
-            model_bbox,
-            stock: Some(&stock_ctx),
-            upstream_leftover_stock_mm: None,
-            neighboring_strategy_hint: None,
-            chipload_bounds: None,
-            matched_lut_row: None,
-            effective_diameter_mm: 0.0,
-            policy: SuggestPolicy::default(),
-        };
-        let suggested = suggest_for_operation(SuggestForOperationInput {
-            operation: &tc.operation,
-            tool,
-            machine: &machine,
-            material: &material,
-            workholding,
-            lut,
-            spindle_strategy: SpindleStrategy::default(),
-            context,
-        })
-        .unwrap_or_else(|e| {
+        if let Err(e) = &profile.feasibility {
             panic!(
                 "Suggest refused enabled toolpath {} ({}): {e:?}",
                 tc.id, tc.name
-            )
-        });
-        out.push((tc.id, tc.name.clone(), suggested));
+            );
+        }
+        // Feasibility Ok ⟺ both Some (`CutterOpProfile::for_combo`).
+        let operation = profile
+            .suggested_operation
+            .unwrap_or_else(|| panic!("feasible combo without suggested operation, tp {}", tc.id));
+        let feeds_result = profile
+            .feeds
+            .unwrap_or_else(|| panic!("feasible combo without feeds result, tp {}", tc.id));
+        out.push((
+            tc.id,
+            tc.name.clone(),
+            SuggestedParams {
+                operation,
+                feeds_result,
+                warnings: profile.warnings,
+            },
+        ));
     }
     out
 }
