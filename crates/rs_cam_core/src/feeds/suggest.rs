@@ -948,12 +948,7 @@ fn apply_axial_envelope(
     let mut warnings = Vec::new();
     let mut new_val = commanded_mm;
 
-    let binding_str = match envelope.binding_constraint {
-        AxialBindingConstraint::Deflection => "deflection",
-        AxialBindingConstraint::VendorAp => "vendor_ap",
-        AxialBindingConstraint::Scallop => "scallop",
-        AxialBindingConstraint::SafeBandEmpty => "safe_band_empty",
-    };
+    let binding_str = axial_binding_str(envelope.binding_constraint);
 
     if matches!(
         envelope.binding_constraint,
@@ -1015,41 +1010,52 @@ fn apply_axial_envelope(
     (new_val, warnings)
 }
 
-/// Pass 0 of [`enforce_invariants`] — unified axial-DOC envelope per
-/// `planning/cutter_axial_constraints_2026-06-06.md` §5.
+/// Stable string token for an [`AxialBindingConstraint`] — used in
+/// `SuggestWarning` payloads (and from there the rationale tree), so
+/// the mapping is pinned in one place.
+fn axial_binding_str(
+    binding: crate::feeds::cutter_constraints::AxialBindingConstraint,
+) -> &'static str {
+    use crate::feeds::cutter_constraints::AxialBindingConstraint;
+    match binding {
+        AxialBindingConstraint::Deflection => "deflection",
+        AxialBindingConstraint::VendorAp => "vendor_ap",
+        AxialBindingConstraint::Scallop => "scallop",
+        AxialBindingConstraint::SafeBandEmpty => "safe_band_empty",
+    }
+}
+
+/// Construct the axial-DOC constraint envelope for an operation at its
+/// current operating point (feed / RPM / stepover as configured), or
+/// `None` for ops outside the envelope routing.
 ///
-/// Routes by `OperationConfig` variant:
-/// - `Adaptive3d` — picks `depth_per_pass` via policy C against the
-///   envelope. Mutates DPP when the commanded value is above
-///   `safe_max_doc_mm`.
-/// - `VCarve` — clamps `cfg.max_depth` via policy C. The V-bit
-///   engaged width at the candidate depth is the radial WOC.
-/// - `ProjectCurve` — warning-only feasibility check on `cfg.depth`.
+/// This is the env-construction half of [`pick_axial_envelope`] —
+/// extracted so [`crate::feeds::profile::CutterOpProfile`] surfaces the
+/// SAME envelope Suggest's pass 0 enforces, with per-op radial-WOC /
+/// finish-target / deflection-limit derivation in exactly one place.
+///
+/// Routing (mirrors planning §5):
+/// - `Adaptive3d` — rough limit, radial WOC = stepover (default 0.4·D).
+/// - `VCarve` — rough limit, radial WOC = ½ engaged width at
+///   `max_depth` ([`crate::feeds::geometry::vbit_width_at_depth`]).
+/// - `ProjectCurve` — rough limit, radial WOC = 0.2·D.
 /// - Finish-3D (Scallop / DropCutter / Waterline / SteepShallow /
-///   SpiralFinish / RadialFinish / HorizontalFinish) — emits
-///   `FinishEnvelopeAdvisory`; automatic `stock_to_leave` mutation is
-///   deferred until in-process stock at gen time lands (planning
-///   §5.1.1).
-///
-/// Returns `(warnings, dpp_mutated)` so `enforce_invariants` can run
-/// the chipload-bounds re-derivation step in §5.3 only when needed.
-fn pick_axial_envelope(
-    operation: &mut OperationConfig,
+///   SpiralFinish / RadialFinish / HorizontalFinish) — finish limit +
+///   default scallop target, radial WOC = stepover (default 0.15·D).
+/// - Everything else — `None` (2D pocket/contour/drill etc.; the
+///   envelope adds nothing the other invariant passes don't cover).
+pub(crate) fn axial_envelope_for_operation(
+    operation: &OperationConfig,
     tool: &ToolConfig,
     material: &Material,
-    context: SuggestContext<'_>,
-) -> (Vec<SuggestWarning>, bool) {
+    matched_lut_row: Option<&crate::feeds::vendor_lookup::LookupResult>,
+) -> Option<crate::feeds::cutter_constraints::CutterAxialConstraints> {
     use crate::compute::cutter::build_cutter;
-    use crate::feeds::cutter_constraints::cutter_axial_constraints;
+    use crate::feeds::cutter_constraints::{
+        DEFAULT_FINISH_DEFLECTION_LIMIT_UM, DEFAULT_ROUGH_DEFLECTION_LIMIT_UM,
+        DEFAULT_SCALLOP_TARGET_UM, cutter_axial_constraints,
+    };
 
-    let mut warnings = Vec::new();
-    let mut dpp_mutated = false;
-
-    // Cheap precondition: skip when the calculator never published a
-    // matched row AND we have no chipload bands either — the envelope
-    // can still bind via deflection, but without an op-kind to drive
-    // we'd skip anyway. The op-specific match below handles "no LUT row"
-    // gracefully (vendor / chipload bounds become None).
     let tool_def = build_cutter(tool);
     let radial = operation.stepover();
     let feed = operation.feed_rate();
@@ -1062,25 +1068,17 @@ fn pick_axial_envelope(
     };
 
     match operation {
-        OperationConfig::Adaptive3d(cfg) => {
+        OperationConfig::Adaptive3d(_) => {
             let radial_woc = radial.unwrap_or(tool.diameter * 0.4).max(1.0e-3);
-            let env = cutter_axial_constraints(
+            Some(cutter_axial_constraints(
                 &tool_def,
                 material,
                 radial_woc,
                 feed_per_tooth_mm,
-                context.matched_lut_row,
+                matched_lut_row,
                 None,
-                Some(crate::feeds::cutter_constraints::DEFAULT_ROUGH_DEFLECTION_LIMIT_UM),
-            );
-            let commanded = cfg.depth_per_pass;
-            let (new_dpp, ws) =
-                apply_axial_envelope(commanded, &env, "adaptive3d", "depth_per_pass");
-            warnings.extend(ws);
-            if (new_dpp - commanded).abs() > 1.0e-6 {
-                cfg.depth_per_pass = new_dpp;
-                dpp_mutated = true;
-            }
+                Some(DEFAULT_ROUGH_DEFLECTION_LIMIT_UM),
+            ))
         }
         OperationConfig::VCarve(cfg) => {
             // V-bit radial WOC at the commanded depth is the engaged
@@ -1103,15 +1101,101 @@ fn pick_axial_envelope(
                 }
                 _ => (tool.diameter * 0.2).max(1.0e-3),
             };
-            let env = cutter_axial_constraints(
+            Some(cutter_axial_constraints(
                 &tool_def,
                 material,
                 radial_woc,
                 feed_per_tooth_mm,
-                context.matched_lut_row,
+                matched_lut_row,
                 None,
-                Some(crate::feeds::cutter_constraints::DEFAULT_ROUGH_DEFLECTION_LIMIT_UM),
-            );
+                Some(DEFAULT_ROUGH_DEFLECTION_LIMIT_UM),
+            ))
+        }
+        OperationConfig::ProjectCurve(_) => {
+            let radial_woc = (tool.diameter * 0.2).max(1.0e-3);
+            Some(cutter_axial_constraints(
+                &tool_def,
+                material,
+                radial_woc,
+                feed_per_tooth_mm,
+                matched_lut_row,
+                None,
+                Some(DEFAULT_ROUGH_DEFLECTION_LIMIT_UM),
+            ))
+        }
+        // Finish-3D family — finish deflection limit + scallop target.
+        OperationConfig::Scallop(_)
+        | OperationConfig::DropCutter(_)
+        | OperationConfig::Waterline(_)
+        | OperationConfig::SteepShallow(_)
+        | OperationConfig::SpiralFinish(_)
+        | OperationConfig::RadialFinish(_)
+        | OperationConfig::HorizontalFinish(_) => {
+            let radial_woc = radial.unwrap_or(tool.diameter * 0.15).max(1.0e-3);
+            Some(cutter_axial_constraints(
+                &tool_def,
+                material,
+                radial_woc,
+                feed_per_tooth_mm,
+                matched_lut_row,
+                Some(DEFAULT_SCALLOP_TARGET_UM),
+                Some(DEFAULT_FINISH_DEFLECTION_LIMIT_UM),
+            ))
+        }
+        // Non-axial-envelope ops (2D pocket, contour, drill, etc.) —
+        // the envelope adds nothing the existing passes don't already
+        // cover (rigidity / cutting-length / deflection backoff).
+        _ => None,
+    }
+}
+
+/// Pass 0 of [`enforce_invariants`] — unified axial-DOC envelope per
+/// `planning/cutter_axial_constraints_2026-06-06.md` §5.
+///
+/// Envelope construction (per-op radial WOC / target / limit routing)
+/// lives in [`axial_envelope_for_operation`]; this pass applies the
+/// policy to the operation:
+/// - `Adaptive3d` — picks `depth_per_pass` via policy C against the
+///   envelope. Mutates DPP when the commanded value is above
+///   `safe_max_doc_mm`.
+/// - `VCarve` — clamps `cfg.max_depth` via policy C. The V-bit
+///   engaged width at the candidate depth is the radial WOC.
+/// - `ProjectCurve` — warning-only feasibility check on `cfg.depth`.
+/// - Finish-3D (Scallop / DropCutter / Waterline / SteepShallow /
+///   SpiralFinish / RadialFinish / HorizontalFinish) — emits
+///   `FinishEnvelopeAdvisory`; automatic `stock_to_leave` mutation is
+///   deferred until in-process stock at gen time lands (planning
+///   §5.1.1).
+///
+/// Returns `(warnings, dpp_mutated)` so `enforce_invariants` can run
+/// the chipload-bounds re-derivation step in §5.3 only when needed.
+fn pick_axial_envelope(
+    operation: &mut OperationConfig,
+    tool: &ToolConfig,
+    material: &Material,
+    context: SuggestContext<'_>,
+) -> (Vec<SuggestWarning>, bool) {
+    let mut warnings = Vec::new();
+    let mut dpp_mutated = false;
+
+    let Some(env) =
+        axial_envelope_for_operation(operation, tool, material, context.matched_lut_row)
+    else {
+        return (warnings, dpp_mutated);
+    };
+
+    match operation {
+        OperationConfig::Adaptive3d(cfg) => {
+            let commanded = cfg.depth_per_pass;
+            let (new_dpp, ws) =
+                apply_axial_envelope(commanded, &env, "adaptive3d", "depth_per_pass");
+            warnings.extend(ws);
+            if (new_dpp - commanded).abs() > 1.0e-6 {
+                cfg.depth_per_pass = new_dpp;
+                dpp_mutated = true;
+            }
+        }
+        OperationConfig::VCarve(cfg) => {
             let commanded = cfg.max_depth;
             let (new_depth, ws) = apply_axial_envelope(commanded, &env, "vcarve", "max_depth");
             warnings.extend(ws);
@@ -1123,34 +1207,12 @@ fn pick_axial_envelope(
             }
         }
         OperationConfig::ProjectCurve(cfg) => {
-            let radial_woc = (tool.diameter * 0.2).max(1.0e-3);
-            let env = cutter_axial_constraints(
-                &tool_def,
-                material,
-                radial_woc,
-                feed_per_tooth_mm,
-                context.matched_lut_row,
-                None,
-                Some(crate::feeds::cutter_constraints::DEFAULT_ROUGH_DEFLECTION_LIMIT_UM),
-            );
             let safe_max = env.safe_max_doc_mm();
             if cfg.depth > safe_max && safe_max > 0.0 {
-                let binding_str = match env.binding_constraint {
-                    crate::feeds::cutter_constraints::AxialBindingConstraint::Deflection => {
-                        "deflection"
-                    }
-                    crate::feeds::cutter_constraints::AxialBindingConstraint::VendorAp => {
-                        "vendor_ap"
-                    }
-                    crate::feeds::cutter_constraints::AxialBindingConstraint::Scallop => "scallop",
-                    crate::feeds::cutter_constraints::AxialBindingConstraint::SafeBandEmpty => {
-                        "safe_band_empty"
-                    }
-                };
                 warnings.push(SuggestWarning::ProjectCurveDepthInfeasible {
                     commanded_mm: cfg.depth,
                     max_safe_mm: safe_max,
-                    binding: binding_str,
+                    binding: axial_binding_str(env.binding_constraint),
                 });
             }
         }
@@ -1172,26 +1234,7 @@ fn pick_axial_envelope(
                 OperationConfig::HorizontalFinish(_) => "horizontal_finish",
                 _ => "finish_3d",
             };
-            let radial_woc = radial.unwrap_or(tool.diameter * 0.15).max(1.0e-3);
-            let env = cutter_axial_constraints(
-                &tool_def,
-                material,
-                radial_woc,
-                feed_per_tooth_mm,
-                context.matched_lut_row,
-                Some(crate::feeds::cutter_constraints::DEFAULT_SCALLOP_TARGET_UM),
-                Some(crate::feeds::cutter_constraints::DEFAULT_FINISH_DEFLECTION_LIMIT_UM),
-            );
-            let binding_str = match env.binding_constraint {
-                crate::feeds::cutter_constraints::AxialBindingConstraint::Deflection => {
-                    "deflection"
-                }
-                crate::feeds::cutter_constraints::AxialBindingConstraint::VendorAp => "vendor_ap",
-                crate::feeds::cutter_constraints::AxialBindingConstraint::Scallop => "scallop",
-                crate::feeds::cutter_constraints::AxialBindingConstraint::SafeBandEmpty => {
-                    "safe_band_empty"
-                }
-            };
+            let binding_str = axial_binding_str(env.binding_constraint);
             // Only emit the advisory when the envelope actually carries a
             // meaningful bound (safe max under 5×D is the sniff test —
             // anything looser is "no binding" noise).
@@ -1211,9 +1254,10 @@ fn pick_axial_envelope(
                 });
             }
         }
-        // Non-axial-envelope ops (2D pocket, contour, drill, etc.) —
-        // the envelope adds nothing the existing passes don't already
-        // cover (rigidity / cutting-length / deflection backoff).
+        // Unreachable in practice: `axial_envelope_for_operation`
+        // returns `None` for every other variant, so we never get here
+        // with an envelope. Kept as an explicit no-op rather than
+        // `unreachable!` so routing changes fail soft.
         _ => {}
     }
 
