@@ -6,6 +6,7 @@ mod helpers;
 mod job;
 mod nc_replay;
 mod project;
+mod run;
 mod smoke;
 mod sweep;
 
@@ -1159,6 +1160,68 @@ enum Commands {
         /// Tool stickout length (mm)
         #[arg(long, default_value = "0.0")]
         stickout: f64,
+    },
+
+    /// Run any operation through the registry-driven session pipeline
+    ///
+    /// ONE generic subcommand for all operations: parameters come from the
+    /// operation registry (`run <op> --list-params`), values apply through the
+    /// same validation path the GUI/MCP use, and execution routes through the
+    /// session compute pipeline. New operations appear here automatically.
+    Run {
+        /// Operation kind (snake_case, e.g. pocket, profile, adaptive3d).
+        /// See `run --list-ops` for the full set.
+        op: Option<String>,
+
+        /// List all operations with labels and menu categories, then exit
+        #[arg(long)]
+        list_ops: bool,
+
+        /// List this operation's settable parameters, then exit
+        #[arg(long)]
+        list_params: bool,
+
+        /// Input model file (.stl, .svg, .dxf, .step)
+        #[arg(long)]
+        input: Option<PathBuf>,
+
+        /// Model units: mm, cm, m, inch, or a numeric scale factor
+        #[arg(long, default_value = "mm")]
+        units: String,
+
+        /// Tool spec `type:diameter`, e.g. end_mill:6.35, ball_nose:6.0
+        #[arg(long)]
+        tool: Option<String>,
+
+        /// Tool parameter override `key=value` (repeatable), e.g.
+        /// --tool-set corner_radius=1.0 --tool-set flute_count=2
+        #[arg(long = "tool-set")]
+        tool_set: Vec<String>,
+
+        /// Operation parameter `key=value` (repeatable; names from
+        /// --list-params), e.g. --set depth=6.0 --set stepover=2.0
+        #[arg(long = "set")]
+        set: Vec<String>,
+
+        /// Output G-code file
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Optional SVG toolpath preview
+        #[arg(long)]
+        svg: Option<PathBuf>,
+
+        /// Post-processor: grbl, linuxcnc, mach3
+        #[arg(long, default_value = "grbl")]
+        post: String,
+
+        /// Safe Z height for rapid moves
+        #[arg(long, default_value = "10.0")]
+        safe_z: f64,
+
+        /// Spindle speed in RPM
+        #[arg(long, default_value = "18000")]
+        spindle_speed: u32,
     },
 
     /// Run a parameter sweep on a TOML job file
@@ -3445,6 +3508,38 @@ fn main() -> Result<()> {
                 sim_resolution,
                 mesh.bbox.max.z,
             )?;
+        }
+
+        Commands::Run {
+            op,
+            list_ops,
+            list_params,
+            input,
+            units,
+            tool,
+            tool_set,
+            set,
+            output,
+            svg,
+            post,
+            safe_z,
+            spindle_speed,
+        } => {
+            run::run_generic(&run::RunArgs {
+                op,
+                list_ops,
+                list_params,
+                input,
+                units,
+                tool,
+                tool_set,
+                set,
+                output,
+                svg,
+                post,
+                safe_z,
+                spindle_speed,
+            })?;
         }
 
         Commands::Sweep {

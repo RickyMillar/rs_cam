@@ -176,6 +176,54 @@ pub struct LoadedModel {
 }
 
 impl LoadedModel {
+    /// Load a model directly from a file path, using the SAME geometry
+    /// pipeline as the project loader (STL/SVG/DXF/STEP dispatch, unit
+    /// scaling, BREP enrichment) — added for the registry-driven CLI
+    /// `run` subcommand (T9). One-off model loads should come through
+    /// here rather than re-rolling the format dispatch.
+    ///
+    /// `kind`/`units` of `None` infer from the file extension / assume
+    /// millimeters, matching the project loader's defaults. Relative
+    /// paths resolve against `base_dir`.
+    pub fn from_file(
+        id: usize,
+        name: &str,
+        path: &std::path::Path,
+        kind: Option<ModelKind>,
+        units: Option<ModelUnits>,
+        base_dir: &std::path::Path,
+    ) -> Result<Self, SessionError> {
+        let section = project_file::ProjectModelSection {
+            id: Some(id),
+            path: path.to_string_lossy().into_owned(),
+            name: name.to_owned(),
+            kind,
+            units,
+        };
+        let resolved_kind = kind.or_else(|| project_file::infer_model_kind(path));
+        let geometry = project_file::load_model_geometry(&section, base_dir)?;
+        let (mesh, polygons, enriched_mesh) = match geometry {
+            LoadedGeometry::Mesh(mesh) => (Some(Arc::new(mesh)), None, None),
+            LoadedGeometry::Polygons(polys) => (None, Some(Arc::new(polys)), None),
+            LoadedGeometry::Enriched(enriched) => {
+                let mesh_arc = Arc::clone(&enriched.mesh);
+                (Some(mesh_arc), None, Some(Arc::new(enriched)))
+            }
+        };
+        Ok(Self {
+            id,
+            name: name.to_owned(),
+            mesh,
+            polygons,
+            path: path.to_path_buf(),
+            kind: resolved_kind,
+            units,
+            enriched_mesh,
+            winding_report: None,
+            load_error: None,
+        })
+    }
+
     /// Construct a placeholder model for a file that failed to load.
     ///
     /// The path, name, kind, and units are preserved so the broken reference
