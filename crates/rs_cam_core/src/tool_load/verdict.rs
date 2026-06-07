@@ -206,22 +206,17 @@ pub struct ToolpathLoadVerdict {
 impl ToolpathLoadVerdict {
     /// Count criteria with a non-`Unmodeled` verdict (i.e. actually evaluated).
     pub fn modeled_count(&self) -> usize {
-        let mut n = 0;
-        if !self.chipload.is_unmodeled() {
-            n += 1;
-        }
-        if !self.power.is_unmodeled() {
-            n += 1;
-        }
-        if !self.deflection.is_unmodeled() {
-            n += 1;
-        }
-        n
+        self.criteria()
+            .iter()
+            .filter(|s| s.state != LoadState::Unmodeled)
+            .count()
     }
 
     /// True if any criterion is `Exceeds`.
     pub fn any_exceeded(&self) -> bool {
-        self.chipload.is_exceeded() || self.power.is_exceeded() || self.deflection.is_exceeded()
+        self.criteria()
+            .iter()
+            .any(|s| s.state == LoadState::Exceeds)
     }
 
     /// True if any milling criterion is `Unmodeled` and needs operator
@@ -232,14 +227,25 @@ impl ToolpathLoadVerdict {
         if self.drill_gates.is_some() && all_not_applicable(self) {
             return false;
         }
-        self.chipload.is_unmodeled() || self.power.is_unmodeled() || self.deflection.is_unmodeled()
+        self.criteria()
+            .iter()
+            .any(|s| s.state == LoadState::Unmodeled)
     }
 
     /// Generic per-criterion summaries — chipload, power, deflection in
     /// that order. Lets UI / export / timeline iterate over the gates
     /// without knowing each typed verdict's internals.
-    pub fn criteria(&self) -> [CriterionStatus<'_>; 3] {
-        [
+    ///
+    /// Returns `Vec` rather than a fixed-arity array (Phase 6 task 4)
+    /// so a future fourth gate extends the list without breaking
+    /// `for status in verdict.criteria()` consumers. This is **the**
+    /// single inclusion point for the gating tier: `modeled_count`,
+    /// `any_exceeded`, `any_unmodeled`, `exceeded_criteria` (and through
+    /// it `enforce_load_policy` + the summary breakdown) all derive from
+    /// this list, so a gate added here automatically participates in
+    /// export gating — a forgotten gate is structurally impossible.
+    pub fn criteria(&self) -> Vec<CriterionStatus<'_>> {
+        vec![
             self.chipload.as_criterion_status(),
             self.power.as_criterion_status(),
             self.deflection.as_criterion_status(),
@@ -247,22 +253,14 @@ impl ToolpathLoadVerdict {
     }
 
     /// Per-criterion exceedance labels for this toolpath. Empty when no
-    /// criterion is `Exceeds`. Used by the export gate.
+    /// criterion is `Exceeds`. Used by the export gate. Derived from
+    /// `criteria()` (Phase 6 task 5) — each gate's `as_criterion_status`
+    /// carries its own typed `ExceededCriterion` on `Exceeds`.
     pub fn exceeded_criteria(&self) -> Vec<ExceededCriterion> {
-        let mut out = Vec::new();
-        if let ChiploadVerdict::Exceeds { side, .. } = &self.chipload {
-            out.push(match side {
-                ChipSide::Low => ExceededCriterion::chipload_burn(),
-                ChipSide::High => ExceededCriterion::chipload_breakage(),
-            });
-        }
-        if self.power.is_exceeded() {
-            out.push(ExceededCriterion::power());
-        }
-        if self.deflection.is_exceeded() {
-            out.push(ExceededCriterion::deflection());
-        }
-        out
+        self.criteria()
+            .into_iter()
+            .filter_map(|s| s.exceeded)
+            .collect()
     }
 }
 
@@ -383,34 +381,16 @@ impl ToolLoadReport {
                 within += 1;
             }
             let name = name_for(v.toolpath_id).unwrap_or_default();
-            if let ChiploadVerdict::Exceeds { side, .. } = &v.chipload {
+            // Derived from `criteria()` via `exceeded_criteria()` (Phase 6
+            // task 5) — a gate included in `criteria()` automatically
+            // appears in the breakdown; order stays chipload, power,
+            // deflection.
+            for ec in v.exceeded_criteria() {
                 exceeds_breakdown.push(ExceedsEntry {
                     toolpath_id: v.toolpath_id,
                     toolpath_name: name.clone(),
-                    gate: "chipload".to_owned(),
-                    side: Some(
-                        match side {
-                            ChipSide::Low => "low",
-                            ChipSide::High => "high",
-                        }
-                        .to_owned(),
-                    ),
-                });
-            }
-            if v.power.is_exceeded() {
-                exceeds_breakdown.push(ExceedsEntry {
-                    toolpath_id: v.toolpath_id,
-                    toolpath_name: name.clone(),
-                    gate: "power".to_owned(),
-                    side: None,
-                });
-            }
-            if v.deflection.is_exceeded() {
-                exceeds_breakdown.push(ExceedsEntry {
-                    toolpath_id: v.toolpath_id,
-                    toolpath_name: name,
-                    gate: "deflection".to_owned(),
-                    side: None,
+                    gate: ec.label.to_owned(),
+                    side: ec.side_label().map(str::to_owned),
                 });
             }
         }
@@ -430,9 +410,9 @@ impl ToolLoadReport {
 /// to the op type (drill cycles, alignment-pin drills). Used by
 /// `summary()` to partition `fully_unmodeled` from `not_applicable`.
 fn all_not_applicable(v: &ToolpathLoadVerdict) -> bool {
-    is_not_applicable(v.chipload.unmodeled_reason())
-        && is_not_applicable(v.power.unmodeled_reason())
-        && is_not_applicable(v.deflection.unmodeled_reason())
+    v.criteria()
+        .iter()
+        .all(|s| is_not_applicable(s.unmodeled_reason))
 }
 
 fn is_not_applicable(reason: Option<&UnmodeledReason>) -> bool {
@@ -496,6 +476,13 @@ pub struct CriterionStatus<'a> {
     pub sample_range: Option<Range<usize>>,
     pub display_peak: Option<f64>,
     pub unit: &'static str,
+    /// `Some` iff `state == Exceeds` — the typed exceedance label for
+    /// this gate, set by each verdict's `as_criterion_status`. The
+    /// gating tier (`exceeded_criteria`, `enforce_load_policy`, the
+    /// summary breakdown) derives from this field, so including a gate
+    /// in `criteria()` is the one decision that makes it gate g-code
+    /// export (Phase 6 task 5).
+    pub exceeded: Option<ExceededCriterion>,
 }
 
 /// Sample-range evidence behind a peak metric. Empty range (`0..0`)
@@ -714,20 +701,27 @@ impl ChiploadVerdict {
     }
 
     pub fn as_criterion_status(&self) -> CriterionStatus<'_> {
-        let (state, peak, range) = match self {
+        let (state, peak, range, exceeded) = match self {
             ChiploadVerdict::Within {
                 approach_to_max, ..
             } => (
                 LoadState::Within,
                 Some(approach_to_max.observed_mm_per_tooth),
                 option_range(&approach_to_max.evidence.sample_range),
+                None,
             ),
-            ChiploadVerdict::Exceeds { triggering, .. } => (
+            ChiploadVerdict::Exceeds {
+                triggering, side, ..
+            } => (
                 LoadState::Exceeds,
                 Some(triggering.observed_mm_per_tooth),
                 option_range(&triggering.evidence.sample_range),
+                Some(match side {
+                    ChipSide::Low => ExceededCriterion::chipload_burn(),
+                    ChipSide::High => ExceededCriterion::chipload_breakage(),
+                }),
             ),
-            ChiploadVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None),
+            ChiploadVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None, None),
         };
         CriterionStatus {
             kind: CriterionKind::Chipload,
@@ -737,6 +731,7 @@ impl ChiploadVerdict {
             sample_range: range,
             display_peak: peak,
             unit: CriterionKind::Chipload.unit(),
+            exceeded,
         }
     }
 }
@@ -826,6 +821,7 @@ impl PowerVerdict {
             sample_range: range,
             display_peak: peak,
             unit: CriterionKind::Power.unit(),
+            exceeded: (state == LoadState::Exceeds).then(ExceededCriterion::power),
         }
     }
 }
@@ -927,6 +923,7 @@ impl DeflectionVerdict {
             sample_range: range,
             display_peak: peak,
             unit: CriterionKind::Deflection.unit(),
+            exceeded: (state == LoadState::Exceeds).then(ExceededCriterion::deflection),
         }
     }
 }
@@ -972,6 +969,19 @@ impl ExceededCriterion {
             kind: CriterionKind::Deflection,
             label: "deflection",
             reason_label: "stiffness",
+        }
+    }
+
+    /// `"low"` / `"high"` for the chipload burn / breakage sides,
+    /// `None` for the single-sided gates. Feeds `ExceedsEntry.side`
+    /// in the report summary.
+    pub fn side_label(&self) -> Option<&'static str> {
+        if *self == Self::chipload_burn() {
+            Some("low")
+        } else if *self == Self::chipload_breakage() {
+            Some("high")
+        } else {
+            None
         }
     }
 }
@@ -1623,6 +1633,73 @@ mod tests {
         );
         assert_eq!(ExceededCriterion::power().reason_label, "spindle power");
         assert_eq!(ExceededCriterion::deflection().reason_label, "stiffness");
+    }
+
+    #[test]
+    fn side_label_maps_chipload_sides_only() {
+        assert_eq!(ExceededCriterion::chipload_burn().side_label(), Some("low"));
+        assert_eq!(
+            ExceededCriterion::chipload_breakage().side_label(),
+            Some("high")
+        );
+        assert_eq!(ExceededCriterion::power().side_label(), None);
+        assert_eq!(ExceededCriterion::deflection().side_label(), None);
+    }
+
+    /// Phase 6 task 5 sentry — the gating tier derives from
+    /// `criteria()`: every `CriterionStatus` carries `exceeded: Some`
+    /// exactly when its state is `Exceeds`, and `exceeded_criteria()`
+    /// is precisely the `Some`s in criteria order. If a gate ever sets
+    /// `Exceeds` without an `exceeded` label (or vice versa), export
+    /// gating silently diverges from the displayed state — fail here.
+    #[test]
+    fn gating_tier_derives_from_criteria() {
+        let v = ToolpathLoadVerdict {
+            toolpath_id: 7,
+            chipload: ChiploadVerdict::Exceeds {
+                side: ChipSide::Low,
+                triggering: ChiploadMetric {
+                    observed_mm_per_tooth: 0.01,
+                    statistic: ChiploadStatistic::MedianLow,
+                    evidence: SampleEvidence::at(3),
+                    bounds: ChipBounds {
+                        min_mm_per_tooth: Some(0.038),
+                        max_mm_per_tooth: 0.07,
+                        source: ChipBoundsSource::VendorLut,
+                    },
+                },
+                confidence: Confidence::Validated,
+            },
+            power: PowerVerdict::Exceeds {
+                peak_kw: 2.5,
+                available_kw: 1.5,
+                evidence: SampleEvidence::at(4),
+                confidence: Confidence::Validated,
+            },
+            deflection: DeflectionVerdict::Unmodeled {
+                reason: UnmodeledReason::SimulationRequired,
+            },
+            drill_gates: None,
+            modulation_summary: None,
+        };
+        for status in v.criteria() {
+            assert_eq!(
+                status.exceeded.is_some(),
+                status.state == LoadState::Exceeds,
+                "criterion {:?}: exceeded label must track Exceeds state",
+                status.kind
+            );
+            if let Some(ec) = &status.exceeded {
+                assert_eq!(ec.kind, status.kind);
+            }
+        }
+        assert_eq!(
+            v.exceeded_criteria(),
+            vec![
+                ExceededCriterion::chipload_burn(),
+                ExceededCriterion::power()
+            ]
+        );
     }
 
     // ── F.8 + F.11 — summary() bucketing and name resolution ────────
