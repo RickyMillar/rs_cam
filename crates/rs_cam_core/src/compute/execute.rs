@@ -292,6 +292,50 @@ pub(crate) fn generate_alignment_pin_drill(
     Ok(generated)
 }
 
+/// Waterline family adapter. Cancellable: the cooperative cancel
+/// closure is rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
+pub(crate) fn generate_waterline(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::Waterline(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_waterline received a non-Waterline config".into(),
+        ));
+    };
+    let m = require_mesh(ctx.mesh)?;
+    let idx = ctx
+        .index
+        .ok_or_else(|| OperationError::Other("Waterline requires a spatial index".into()))?;
+    let params = crate::waterline::WaterlineParams {
+        sampling: cfg.sampling,
+        feed_rate: op.feed_rate(),
+        plunge_rate: op.plunge_rate(),
+        safe_z: ctx.heights.retract_z,
+    };
+    let tp = crate::waterline::waterline_toolpath_with_cancel(
+        m,
+        idx,
+        ctx.tool_def,
+        ctx.heights.top_z,
+        ctx.heights.bottom_z,
+        cfg.z_step,
+        &params,
+        &(|| ctx.cancel.load(Ordering::SeqCst)),
+    )
+    .map_err(|_e| OperationError::Cancelled)?;
+    let generated = generated_with_depth_run_spans(tp, &[]);
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_depth_run_spans(
+            &generated.spans,
+            &generated.toolpath,
+            sem,
+        );
+    }
+    Ok(generated)
+}
+
 // ── Public API ────────────────────────────────────────────────────────
 
 /// Execute a single operation, producing a raw toolpath.
@@ -1026,38 +1070,9 @@ pub fn execute_operation_annotated(
             );
             Ok(generated_with_spans(tp, spans))
         }
-        OperationConfig::Waterline(cfg) => {
-            let m = require_mesh(mesh)?;
-            let idx = index.ok_or_else(|| {
-                OperationError::Other("Waterline requires a spatial index".into())
-            })?;
-            let params = crate::waterline::WaterlineParams {
-                sampling: cfg.sampling,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-            };
-            let tp = crate::waterline::waterline_toolpath_with_cancel(
-                m,
-                idx,
-                tool_def,
-                heights.top_z,
-                heights.bottom_z,
-                cfg.z_step,
-                &params,
-                &(|| cancel.load(Ordering::SeqCst)),
-            )
-            .map_err(|_e| OperationError::Cancelled)?;
-            let generated = generated_with_depth_run_spans(tp, &[]);
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_depth_run_spans(
-                    &generated.spans,
-                    &generated.toolpath,
-                    ctx,
-                );
-            }
-            Ok(generated)
-        }
+        // Migrated to the registry GenerateFn (T11); arm kept for the
+        // exhaustiveness net and delegates to the same adapter.
+        OperationConfig::Waterline(_) => generate_waterline(&ctx, op),
         OperationConfig::Pencil(cfg) => {
             let m = require_mesh(mesh)?;
             let idx = index
