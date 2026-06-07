@@ -741,6 +741,226 @@ pub(crate) fn generate_face(
     Ok(generated)
 }
 
+/// Adaptive (2D) family adapter. Cancellable; per-level annotation
+/// move_index offsetting reproduced verbatim (annotate_adaptive2d
+/// consumes the combined-toolpath indices).
+pub(crate) fn generate_adaptive(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::Adaptive(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_adaptive received a non-Adaptive config".into(),
+        ));
+    };
+    let polys = require_polygons(ctx.polygons)?;
+    let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
+    let safe_z = ctx.heights.retract_z;
+    let mut combined = Toolpath::new();
+    let mut all_annotations = Vec::new();
+    for poly in polys {
+        for (level_i, &z) in levels.iter().enumerate() {
+            let params = crate::adaptive::AdaptiveParams {
+                tool_radius: ctx.tool_def.radius(),
+                stepover: cfg.stepover,
+                cut_depth: z,
+                feed_rate: op.feed_rate(),
+                plunge_rate: op.plunge_rate(),
+                safe_z,
+                tolerance: cfg.tolerance,
+                slot_clearing: cfg.slot_clearing,
+                min_cutting_radius: cfg.min_cutting_radius,
+                initial_stock: ctx.initial_stock.cloned(),
+                cleanup_strategy: cfg.cleanup_strategy,
+            };
+            let (level_tp, mut annotations) =
+                crate::adaptive::adaptive_toolpath_structured_annotated_traced_with_cancel(
+                    poly,
+                    &params,
+                    &cancel_fn,
+                    ctx.debug_ctx,
+                )
+                .map_err(|_cancelled| OperationError::Cancelled)?;
+            if level_tp.moves.is_empty() {
+                continue;
+            }
+            // Inter-level retract (matching toolpath_at_levels behaviour)
+            if level_i > 0 {
+                let offset_before = combined.moves.len();
+                combined.final_retract(safe_z);
+                // Account for any retract moves added
+                let retract_added = combined.moves.len() - offset_before;
+                // Offset annotation move_index values
+                let offset = offset_before + retract_added;
+                for ann in &mut annotations {
+                    ann.move_index += offset;
+                }
+            } else {
+                let offset = combined.moves.len();
+                for ann in &mut annotations {
+                    ann.move_index += offset;
+                }
+            }
+            all_annotations.extend(annotations);
+            combined.moves.extend(level_tp.moves);
+        }
+    }
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_adaptive2d(&all_annotations, &combined, sem);
+    }
+    let generated = generated_with_depth_run_spans(combined, &levels);
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_depth_run_spans(
+            &generated.spans,
+            &generated.toolpath,
+            sem,
+        );
+    }
+    Ok(generated)
+}
+
+/// Adaptive3d family adapter. Cancellable; consumes `ctx.boundary`
+/// (F-027 world-stock XY bounds + machining-boundary pre-clear) and
+/// `ctx.initial_stock`; spans come from
+/// `spans_from_adaptive3d_annotations` + annotate_adaptive3d.
+pub(crate) fn generate_adaptive3d(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::Adaptive3d(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_adaptive3d received a non-Adaptive3d config"
+                .into(),
+        ));
+    };
+    let m = require_mesh(ctx.mesh)?;
+    let idx = ctx
+        .index
+        .ok_or_else(|| OperationError::Other("Adaptive3D requires a spatial index".into()))?;
+
+    let entry_style = match cfg.entry_style {
+        crate::compute::operation_configs::Adaptive3dEntryStyle::Plunge => {
+            crate::adaptive3d::EntryStyle3d::Plunge
+        }
+        crate::compute::operation_configs::Adaptive3dEntryStyle::Ramp => {
+            crate::adaptive3d::EntryStyle3d::Ramp {
+                max_angle_deg: cfg.ramp_angle_deg,
+            }
+        }
+        crate::compute::operation_configs::Adaptive3dEntryStyle::Helix => {
+            crate::adaptive3d::EntryStyle3d::Helix {
+                radius: ctx.tool_def.diameter() * cfg.helix_radius_factor,
+                pitch: cfg.helix_pitch,
+            }
+        }
+    };
+    let region_ordering = match cfg.region_ordering {
+        crate::compute::operation_configs::RegionOrdering::Global => {
+            crate::adaptive3d::RegionOrdering::Global
+        }
+        crate::compute::operation_configs::RegionOrdering::ByArea => {
+            crate::adaptive3d::RegionOrdering::ByArea
+        }
+    };
+    let clearing_strategy = match cfg.clearing_strategy {
+        crate::compute::operation_configs::ClearingStrategy::ContourParallel => {
+            crate::adaptive3d::ClearingStrategy3d::ContourParallel
+        }
+        crate::compute::operation_configs::ClearingStrategy::Adaptive => {
+            crate::adaptive3d::ClearingStrategy3d::Adaptive
+        }
+        crate::compute::operation_configs::ClearingStrategy::AgentSearch => {
+            crate::adaptive3d::ClearingStrategy3d::AgentSearch
+        }
+    };
+    // Adaptive3d spaces passes by the tool's *engagement* radius at
+    // the depth-of-cut, not the envelope radius — for tapered tools
+    // these differ a lot. Floor at 0.01mm to keep stepover math safe
+    // for degenerate (zero-tip) geometry.
+    let engagement_radius = ctx.tool_def.engagement_radius(cfg.depth_per_pass).max(0.01);
+    let params = crate::adaptive3d::Adaptive3dParams {
+        tool_radius: engagement_radius,
+        envelope_radius: ctx.tool_def.radius(),
+        stepover: cfg.stepover,
+        depth_per_pass: cfg.depth_per_pass,
+        stock_to_leave: cfg.stock_to_leave_axial.max(cfg.stock_to_leave_radial),
+        feed_rate: op.feed_rate(),
+        plunge_rate: op.plunge_rate(),
+        tolerance: cfg.tolerance,
+        min_cutting_radius: cfg.min_cutting_radius,
+        stock_top_z: ctx.stock_bbox.max.z,
+        entry_style,
+        fine_stepdown: if cfg.fine_stepdown > 0.0 {
+            Some(cfg.fine_stepdown)
+        } else {
+            None
+        },
+        detect_flat_areas: cfg.detect_flat_areas,
+        max_stay_down_dist: None,
+        region_ordering,
+        initial_stock: ctx.initial_stock.cloned(),
+        safe_z: ctx.heights.retract_z,
+        clearing_strategy,
+        z_blend: cfg.z_blend,
+        boundary: ctx.boundary.cloned(),
+        mill_shallow_areas: cfg.mill_shallow_areas,
+        shallow_angle_rad: if cfg.mill_shallow_areas {
+            Some(cfg.shallow_angle_deg.unwrap_or(30.0).to_radians())
+        } else {
+            None
+        },
+        shallow_stepdown: if cfg.mill_shallow_areas {
+            cfg.shallow_stepdown
+                .or(Some(cfg.depth_per_pass * 0.5))
+                .filter(|&s| s > 0.0 && s < cfg.depth_per_pass)
+        } else {
+            None
+        },
+        // F-027: forward the world stock XY bounds so the planner's
+        // internal `material_stock` extends to cover every cell the
+        // simulator's per-setup dexel grid will look at. Pre-fix the
+        // planner was bounded by `mesh.bbox + tool_radius`, while the
+        // simulator's grid is bounded by the (auto-grown) world stock
+        // bbox; cells inside the simulator grid but outside the
+        // planner grid were never stamped, so the final pass carved
+        // through the full stock height in one shot at model-edge
+        // cells, blowing up `axial_engagement_mm` and the downstream
+        // deflection gate.
+        world_stock_xy_bbox: Some((
+            ctx.stock_bbox.min.x,
+            ctx.stock_bbox.min.y,
+            ctx.stock_bbox.max.x,
+            ctx.stock_bbox.max.y,
+        )),
+        // F-038: drop marching-squares regions whose forecast cut
+        // length (perimeter + 2D adaptive walk) is below this floor.
+        // Only honored by the AgentSearch strategy.
+        min_region_cut_length_mm: cfg.min_region_cut_length_mm,
+        // F-038b: keep-tool-down link policy. None lets the planner
+        // default to 8 × tool diameter; Some(0.0) disables the
+        // feature; Some(x) caps stay-down at x mm.
+        max_stay_down_distance_mm: cfg.max_stay_down_distance_mm,
+        stay_down_clearance_mm: cfg.stay_down_clearance_mm,
+    };
+    let (tp, annotations) =
+        crate::adaptive3d::adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
+            m,
+            idx,
+            ctx.tool_def,
+            &params,
+            &(|| ctx.cancel.load(Ordering::SeqCst)),
+            ctx.debug_ctx,
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_adaptive3d(&annotations, &tp, sem);
+    }
+    let spans =
+        crate::compute::spans::spans_from_adaptive3d_annotations(&annotations, tp.moves.len());
+    Ok(generated_with_spans(tp, spans))
+}
+
 /// ProjectCurve family adapter. Builds its own cutter from
 /// `tool_cfg` (generator API takes the boxed cutter); reads
 /// `cfg.setup_z_flipped`, which the session/viz drivers pre-set on the
@@ -1378,69 +1598,9 @@ pub fn execute_operation_annotated(
         // Migrated to the registry GenerateFn (T11); arm kept for the
         // exhaustiveness net and delegates to the same adapter.
         OperationConfig::Profile(_) => generate_profile(&ctx, op),
-        OperationConfig::Adaptive(cfg) => {
-            let polys = require_polygons(polygons)?;
-            let levels = effective_levels(cutting_levels, heights, cfg.depth_per_pass);
-            let cancel_fn = || cancel.load(Ordering::SeqCst);
-            let mut combined = Toolpath::new();
-            let mut all_annotations = Vec::new();
-            for poly in polys {
-                for (level_i, &z) in levels.iter().enumerate() {
-                    let params = crate::adaptive::AdaptiveParams {
-                        tool_radius,
-                        stepover: cfg.stepover,
-                        cut_depth: z,
-                        feed_rate,
-                        plunge_rate,
-                        safe_z,
-                        tolerance: cfg.tolerance,
-                        slot_clearing: cfg.slot_clearing,
-                        min_cutting_radius: cfg.min_cutting_radius,
-                        initial_stock: initial_stock.cloned(),
-                        cleanup_strategy: cfg.cleanup_strategy,
-                    };
-                    let (level_tp, mut annotations) =
-                        crate::adaptive::adaptive_toolpath_structured_annotated_traced_with_cancel(
-                            poly, &params, &cancel_fn, debug_ctx,
-                        )
-                        .map_err(|_cancelled| OperationError::Cancelled)?;
-                    if level_tp.moves.is_empty() {
-                        continue;
-                    }
-                    // Inter-level retract (matching toolpath_at_levels behaviour)
-                    if level_i > 0 {
-                        let offset_before = combined.moves.len();
-                        combined.final_retract(safe_z);
-                        // Account for any retract moves added
-                        let retract_added = combined.moves.len() - offset_before;
-                        // Offset annotation move_index values
-                        let offset = offset_before + retract_added;
-                        for ann in &mut annotations {
-                            ann.move_index += offset;
-                        }
-                    } else {
-                        let offset = combined.moves.len();
-                        for ann in &mut annotations {
-                            ann.move_index += offset;
-                        }
-                    }
-                    all_annotations.extend(annotations);
-                    combined.moves.extend(level_tp.moves);
-                }
-            }
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_adaptive2d(&all_annotations, &combined, ctx);
-            }
-            let generated = generated_with_depth_run_spans(combined, &levels);
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_depth_run_spans(
-                    &generated.spans,
-                    &generated.toolpath,
-                    ctx,
-                );
-            }
-            Ok(generated)
-        }
+        // Migrated to the registry GenerateFn (T11); arm kept for the
+        // exhaustiveness net and delegates to the same adapter.
+        OperationConfig::Adaptive(_) => generate_adaptive(&ctx, op),
         // Migrated to the registry GenerateFn (T11); arms kept for the
         // exhaustiveness net and delegate to the same adapters.
         OperationConfig::Zigzag(_) => generate_zigzag(&ctx, op),
@@ -1466,135 +1626,9 @@ pub fn execute_operation_annotated(
         // Migrated to the registry GenerateFn (T11); arm kept for the
         // exhaustiveness net and delegates to the same adapter.
         OperationConfig::DropCutter(_) => generate_drop_cutter(&ctx, op),
-        OperationConfig::Adaptive3d(cfg) => {
-            let m = require_mesh(mesh)?;
-            let idx = index.ok_or_else(|| {
-                OperationError::Other("Adaptive3D requires a spatial index".into())
-            })?;
-
-            let entry_style = match cfg.entry_style {
-                crate::compute::operation_configs::Adaptive3dEntryStyle::Plunge => {
-                    crate::adaptive3d::EntryStyle3d::Plunge
-                }
-                crate::compute::operation_configs::Adaptive3dEntryStyle::Ramp => {
-                    crate::adaptive3d::EntryStyle3d::Ramp {
-                        max_angle_deg: cfg.ramp_angle_deg,
-                    }
-                }
-                crate::compute::operation_configs::Adaptive3dEntryStyle::Helix => {
-                    crate::adaptive3d::EntryStyle3d::Helix {
-                        radius: tool_def.diameter() * cfg.helix_radius_factor,
-                        pitch: cfg.helix_pitch,
-                    }
-                }
-            };
-            let region_ordering = match cfg.region_ordering {
-                crate::compute::operation_configs::RegionOrdering::Global => {
-                    crate::adaptive3d::RegionOrdering::Global
-                }
-                crate::compute::operation_configs::RegionOrdering::ByArea => {
-                    crate::adaptive3d::RegionOrdering::ByArea
-                }
-            };
-            let clearing_strategy = match cfg.clearing_strategy {
-                crate::compute::operation_configs::ClearingStrategy::ContourParallel => {
-                    crate::adaptive3d::ClearingStrategy3d::ContourParallel
-                }
-                crate::compute::operation_configs::ClearingStrategy::Adaptive => {
-                    crate::adaptive3d::ClearingStrategy3d::Adaptive
-                }
-                crate::compute::operation_configs::ClearingStrategy::AgentSearch => {
-                    crate::adaptive3d::ClearingStrategy3d::AgentSearch
-                }
-            };
-            // Adaptive3d spaces passes by the tool's *engagement* radius at
-            // the depth-of-cut, not the envelope radius — for tapered tools
-            // these differ a lot. Floor at 0.01mm to keep stepover math safe
-            // for degenerate (zero-tip) geometry.
-            let engagement_radius = tool_def.engagement_radius(cfg.depth_per_pass).max(0.01);
-            let params = crate::adaptive3d::Adaptive3dParams {
-                tool_radius: engagement_radius,
-                envelope_radius: tool_radius,
-                stepover: cfg.stepover,
-                depth_per_pass: cfg.depth_per_pass,
-                stock_to_leave: cfg.stock_to_leave_axial.max(cfg.stock_to_leave_radial),
-                feed_rate,
-                plunge_rate,
-                tolerance: cfg.tolerance,
-                min_cutting_radius: cfg.min_cutting_radius,
-                stock_top_z: stock_bbox.max.z,
-                entry_style,
-                fine_stepdown: if cfg.fine_stepdown > 0.0 {
-                    Some(cfg.fine_stepdown)
-                } else {
-                    None
-                },
-                detect_flat_areas: cfg.detect_flat_areas,
-                max_stay_down_dist: None,
-                region_ordering,
-                initial_stock: initial_stock.cloned(),
-                safe_z,
-                clearing_strategy,
-                z_blend: cfg.z_blend,
-                boundary: boundary.cloned(),
-                mill_shallow_areas: cfg.mill_shallow_areas,
-                shallow_angle_rad: if cfg.mill_shallow_areas {
-                    Some(cfg.shallow_angle_deg.unwrap_or(30.0).to_radians())
-                } else {
-                    None
-                },
-                shallow_stepdown: if cfg.mill_shallow_areas {
-                    cfg.shallow_stepdown
-                        .or(Some(cfg.depth_per_pass * 0.5))
-                        .filter(|&s| s > 0.0 && s < cfg.depth_per_pass)
-                } else {
-                    None
-                },
-                // F-027: forward the world stock XY bounds so the planner's
-                // internal `material_stock` extends to cover every cell the
-                // simulator's per-setup dexel grid will look at. Pre-fix the
-                // planner was bounded by `mesh.bbox + tool_radius`, while the
-                // simulator's grid is bounded by the (auto-grown) world stock
-                // bbox; cells inside the simulator grid but outside the
-                // planner grid were never stamped, so the final pass carved
-                // through the full stock height in one shot at model-edge
-                // cells, blowing up `axial_engagement_mm` and the downstream
-                // deflection gate.
-                world_stock_xy_bbox: Some((
-                    stock_bbox.min.x,
-                    stock_bbox.min.y,
-                    stock_bbox.max.x,
-                    stock_bbox.max.y,
-                )),
-                // F-038: drop marching-squares regions whose forecast cut
-                // length (perimeter + 2D adaptive walk) is below this floor.
-                // Only honored by the AgentSearch strategy.
-                min_region_cut_length_mm: cfg.min_region_cut_length_mm,
-                // F-038b: keep-tool-down link policy. None lets the planner
-                // default to 8 × tool diameter; Some(0.0) disables the
-                // feature; Some(x) caps stay-down at x mm.
-                max_stay_down_distance_mm: cfg.max_stay_down_distance_mm,
-                stay_down_clearance_mm: cfg.stay_down_clearance_mm,
-            };
-            let (tp, annotations) =
-                crate::adaptive3d::adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
-                    m,
-                    idx,
-                    tool_def,
-                    &params,
-                    &(|| cancel.load(Ordering::SeqCst)),
-                    debug_ctx,
-                )
-                .map_err(|_e| OperationError::Cancelled)?;
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_adaptive3d(&annotations, &tp, ctx);
-            }
-            let spans = crate::compute::spans::spans_from_adaptive3d_annotations(
-                &annotations,
-                tp.moves.len(),
-            );
-            Ok(generated_with_spans(tp, spans))
-        }
+        // Migrated to the registry GenerateFn (T11); arm kept for the
+        // exhaustiveness net and delegates to the same adapter.
+        OperationConfig::Adaptive3d(_) => generate_adaptive3d(&ctx, op),
         // Migrated to the registry GenerateFn (T11); arm kept for the
         // exhaustiveness net and delegates to the same adapter.
         OperationConfig::Waterline(_) => generate_waterline(&ctx, op),
