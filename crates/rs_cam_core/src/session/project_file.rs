@@ -517,7 +517,7 @@ fn parse_cut_direction(s: &str) -> crate::compute::tool_config::BitCutDirection 
     }
 }
 
-fn infer_model_kind(path: &Path) -> Option<ModelKind> {
+pub(crate) fn infer_model_kind(path: &Path) -> Option<ModelKind> {
     path.extension()
         .and_then(|ext| ext.to_str())
         .and_then(|ext| match ext.to_ascii_lowercase().as_str() {
