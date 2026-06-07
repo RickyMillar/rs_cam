@@ -276,6 +276,38 @@ impl ProjectOptimizeReport {
             })
             .map(|(i, _)| i)
     }
+
+    /// Estimated project cycle time if the operator applied exactly the
+    /// rows flagged `true` in `selected` (parallel to `per_toolpath`;
+    /// missing trailing entries are treated as unselected).
+    ///
+    /// Computed as the true project baseline **minus** the realized
+    /// per-row savings, rather than re-summing per-row baselines. Only a
+    /// selected `Ranked` row with a recommended faster candidate
+    /// (`first_safe`) contributes a saving; every other row keeps its
+    /// real cost in the total — including `Skipped` rows, which carry no
+    /// candidate cycle at all and so can't be re-summed honestly. The
+    /// pre-W0.2 header re-summed per-row baselines and folded refused /
+    /// skipped rows to `0.0`, understating the optimized time and
+    /// inflating the headline savings on every such row (OPT-001).
+    pub fn optimized_cycle_time_s(&self, selected: &[bool]) -> f64 {
+        let total_saving: f64 = self
+            .per_toolpath
+            .iter()
+            .zip(selected.iter().chain(std::iter::repeat(&false)))
+            .filter_map(|((_, outcome), &sel)| {
+                if !sel {
+                    return None;
+                }
+                // `first_safe` only resolves for `Ranked` outcomes faster
+                // than baseline, so non-applicable rows contribute nothing.
+                let baseline = outcome.candidates.first()?.cycle_time_s;
+                let improved = outcome.first_safe()?.cycle_time_s;
+                Some((baseline - improved).max(0.0))
+            })
+            .sum();
+        (self.baseline_cycle_time_s - total_saving).max(0.0)
+    }
 }
 
 /// Build an `OptimizeOutcome` from a baseline candidate and the
@@ -436,4 +468,55 @@ pub(crate) fn build_outcome(
         .unwrap_or_default();
     narrative.explanation = explanation;
     OptimizeOutcome::no_safe_improvement(attempted, RefuseReason::NoImprovementFound, narrative)
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+
+    fn report_with(baseline_s: f64, outcomes: Vec<OptimizeOutcome>) -> ProjectOptimizeReport {
+        ProjectOptimizeReport {
+            baseline_cycle_time_s: baseline_s,
+            bottleneck_index: None,
+            per_toolpath: outcomes.into_iter().enumerate().collect(),
+        }
+    }
+
+    #[test]
+    fn skipped_and_refused_rows_do_not_deflate_optimized_total() {
+        // Two rows the optimizer can't improve: a Skipped drill (no
+        // candidates at all) and a NoSafeImprovement. Neither has a
+        // recommended faster candidate, so the optimized estimate must
+        // equal the baseline. The pre-W0.2 header folded these to zero,
+        // understating optimized time and inflating the savings %.
+        let report = report_with(
+            120.0,
+            vec![
+                OptimizeOutcome::skipped(RefuseReason::NoImprovementFound),
+                OptimizeOutcome::no_safe_improvement(
+                    Vec::new(),
+                    RefuseReason::NoImprovementFound,
+                    OutcomeNarrative::default(),
+                ),
+            ],
+        );
+        // Even with both rows checked, nothing is applicable → no saving.
+        assert_eq!(report.optimized_cycle_time_s(&[true, true]), 120.0);
+    }
+
+    #[test]
+    fn empty_selection_returns_exact_baseline() {
+        let report = report_with(
+            80.0,
+            vec![OptimizeOutcome::skipped(RefuseReason::NoImprovementFound)],
+        );
+        // No selection slice at all — missing entries treated unselected.
+        assert_eq!(report.optimized_cycle_time_s(&[]), 80.0);
+    }
 }

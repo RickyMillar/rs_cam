@@ -512,7 +512,7 @@ fn draw_project_overview(
             .map(|tc| tc.name.clone())
     });
     let (ok, bad, unmodeled) = (summary.within, summary.exceeds, summary.fully_unmodeled);
-    let collision_count = sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
+    let collision_count = sim.checks.total_collision_count();
 
     // ─── Global stats ───
     ui.label(
