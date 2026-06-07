@@ -1541,6 +1541,7 @@ mod tests {
             sample_range: None,
             display_peak: None,
             unit: "mm/tooth",
+            exceeded: None,
         };
         let tooltip = verdict_tooltip(&status, None, false);
         assert!(tooltip.contains("Cut Metrics"));
