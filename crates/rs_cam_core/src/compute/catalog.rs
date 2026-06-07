@@ -1374,7 +1374,7 @@ static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
         supports_v_bit: true,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_vcarve),
 };
 
 static REG_REST: OpRegistryEntry = OpRegistryEntry {
@@ -1496,7 +1496,7 @@ static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
         supports_v_bit: true,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_chamfer),
 };
 
 static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
@@ -2037,6 +2037,10 @@ mod tests {
                 // trace pins its family-specific annotate_trace_spans).
                 | OperationType::Zigzag
                 | OperationType::Trace
+                // VCarve + Chamfer — migrated 2026-06-07 (T11 PR 8;
+                // V-bit InvalidTool refusals preserved in-adapter).
+                | OperationType::VCarve
+                | OperationType::Chamfer
             );
             assert_eq!(
                 migrated, expected,

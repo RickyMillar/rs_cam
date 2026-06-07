@@ -292,6 +292,100 @@ pub(crate) fn generate_alignment_pin_drill(
     Ok(generated)
 }
 
+/// VCarve family adapter. Cut-run spans labeled "V-carve run"; refusal
+/// for non-V-bit tools preserved verbatim.
+pub(crate) fn generate_vcarve(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::VCarve(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_vcarve received a non-VCarve config".into(),
+        ));
+    };
+    let polys = require_polygons(ctx.polygons)?;
+    let ha = match ctx.tool_cfg.tool_type {
+        ToolType::VBit => (ctx.tool_cfg.included_angle / 2.0).to_radians(),
+        _ => {
+            return Err(OperationError::InvalidTool(
+                "VCarve requires V-Bit tool".into(),
+            ));
+        }
+    };
+    let safe_z = ctx.heights.retract_z;
+    let mut combined = Toolpath::new();
+    for poly in polys {
+        let tp = crate::vcarve::vcarve_toolpath(
+            poly,
+            &crate::vcarve::VCarveParams {
+                half_angle: ha,
+                max_depth: cfg.max_depth,
+                stepover: cfg.stepover,
+                feed_rate: op.feed_rate(),
+                plunge_rate: op.plunge_rate(),
+                safe_z,
+                tolerance: cfg.tolerance,
+            },
+        );
+        combined.moves.extend(tp.moves);
+    }
+    let generated = generated_with_cut_run_spans(combined, "V-carve run");
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_depth_run_spans(
+            &generated.spans,
+            &generated.toolpath,
+            sem,
+        );
+    }
+    Ok(generated)
+}
+
+/// Chamfer family adapter. Cut-run spans labeled "Chamfer run"; refusal
+/// for non-V-bit tools preserved verbatim.
+pub(crate) fn generate_chamfer(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::Chamfer(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_chamfer received a non-Chamfer config".into(),
+        ));
+    };
+    let polys = require_polygons(ctx.polygons)?;
+    let ha = match ctx.tool_cfg.tool_type {
+        ToolType::VBit => (ctx.tool_cfg.included_angle / 2.0).to_radians(),
+        _ => {
+            return Err(OperationError::InvalidTool(
+                "Chamfer requires V-Bit tool".into(),
+            ));
+        }
+    };
+    let safe_z = ctx.heights.retract_z;
+    let mut combined = Toolpath::new();
+    for poly in polys {
+        let params = crate::chamfer::ChamferParams {
+            chamfer_width: cfg.chamfer_width,
+            tip_offset: cfg.tip_offset,
+            tool_half_angle: ha,
+            tool_radius: ctx.tool_def.radius(),
+            feed_rate: op.feed_rate(),
+            plunge_rate: op.plunge_rate(),
+            safe_z,
+        };
+        let tp = crate::chamfer::chamfer_toolpath(poly, &params);
+        combined.moves.extend(tp.moves);
+    }
+    let generated = generated_with_cut_run_spans(combined, "Chamfer run");
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_depth_run_spans(
+            &generated.spans,
+            &generated.toolpath,
+            sem,
+        );
+    }
+    Ok(generated)
+}
+
 /// Zigzag family adapter.
 pub(crate) fn generate_zigzag(
     ctx: &ExecutionContext<'_>,
@@ -767,42 +861,9 @@ pub fn execute_operation_annotated(
         // exhaustiveness net and delegate to the same adapters.
         OperationConfig::Zigzag(_) => generate_zigzag(&ctx, op),
         OperationConfig::Trace(_) => generate_trace(&ctx, op),
-        OperationConfig::VCarve(cfg) => {
-            let polys = require_polygons(polygons)?;
-            let ha = match tool_cfg.tool_type {
-                ToolType::VBit => (tool_cfg.included_angle / 2.0).to_radians(),
-                _ => {
-                    return Err(OperationError::InvalidTool(
-                        "VCarve requires V-Bit tool".into(),
-                    ));
-                }
-            };
-            let mut combined = Toolpath::new();
-            for poly in polys {
-                let tp = crate::vcarve::vcarve_toolpath(
-                    poly,
-                    &crate::vcarve::VCarveParams {
-                        half_angle: ha,
-                        max_depth: cfg.max_depth,
-                        stepover: cfg.stepover,
-                        feed_rate,
-                        plunge_rate,
-                        safe_z,
-                        tolerance: cfg.tolerance,
-                    },
-                );
-                combined.moves.extend(tp.moves);
-            }
-            let generated = generated_with_cut_run_spans(combined, "V-carve run");
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_depth_run_spans(
-                    &generated.spans,
-                    &generated.toolpath,
-                    ctx,
-                );
-            }
-            Ok(generated)
-        }
+        // Migrated to the registry GenerateFn (T11); arm kept for the
+        // exhaustiveness net and delegates to the same adapter.
+        OperationConfig::VCarve(_) => generate_vcarve(&ctx, op),
         OperationConfig::Rest(cfg) => {
             let polys = require_polygons(polygons)?;
             let ptr = prev_tool_radius.ok_or_else(|| {
@@ -888,40 +949,9 @@ pub fn execute_operation_annotated(
         // Migrated to the registry GenerateFn (T11); arm kept for the
         // exhaustiveness net and delegates to the same adapter.
         OperationConfig::Drill(_) => generate_drill(&ctx, op),
-        OperationConfig::Chamfer(cfg) => {
-            let polys = require_polygons(polygons)?;
-            let ha = match tool_cfg.tool_type {
-                ToolType::VBit => (tool_cfg.included_angle / 2.0).to_radians(),
-                _ => {
-                    return Err(OperationError::InvalidTool(
-                        "Chamfer requires V-Bit tool".into(),
-                    ));
-                }
-            };
-            let mut combined = Toolpath::new();
-            for poly in polys {
-                let params = crate::chamfer::ChamferParams {
-                    chamfer_width: cfg.chamfer_width,
-                    tip_offset: cfg.tip_offset,
-                    tool_half_angle: ha,
-                    tool_radius,
-                    feed_rate,
-                    plunge_rate,
-                    safe_z,
-                };
-                let tp = crate::chamfer::chamfer_toolpath(poly, &params);
-                combined.moves.extend(tp.moves);
-            }
-            let generated = generated_with_cut_run_spans(combined, "Chamfer run");
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_depth_run_spans(
-                    &generated.spans,
-                    &generated.toolpath,
-                    ctx,
-                );
-            }
-            Ok(generated)
-        }
+        // Migrated to the registry GenerateFn (T11); arm kept for the
+        // exhaustiveness net and delegates to the same adapter.
+        OperationConfig::Chamfer(_) => generate_chamfer(&ctx, op),
         // Migrated to the registry GenerateFn (T11); arm kept for the
         // exhaustiveness net and delegates to the same adapter.
         OperationConfig::AlignmentPinDrill(_) => generate_alignment_pin_drill(&ctx, op),
