@@ -423,60 +423,35 @@ pub fn project_load_report(
         // gcode export keeps strict LUT/machine-ceiling behaviour — only
         // the optimizer routes wider tolerance bands. See `ToleranceBands`.
         let strict_tolerance = crate::tool_load::ToleranceBands::default();
-        // §6.E / Step 3 PR2: when the toolpath is a drill op, evaluate
-        // drill-specific gates from the `DrillOp` payload. The existing
-        // chipload / power / deflection gates remain
-        // `Unmodeled(NotApplicableForOp)` for these toolpaths — drill
-        // gates supplement, not replace, that signal.
-        let drill_gates = project
-            .get_result(idx)
-            .and_then(|r| r.drill_op().cloned())
-            .map(|drill_op_arc| {
-                let samples = crate::drill_metrics::emit_drill_samples(tc.id, &drill_op_arc);
-                let summary = crate::drill_metrics::build_drill_toolpath_summary(
-                    tc.id,
-                    &drill_op_arc,
-                    &samples,
-                );
-                crate::tool_load::drill_gates::evaluate(&drill_op_arc, &summary)
-            });
-        per_toolpath.push(crate::tool_load::ToolpathLoadVerdict {
+        // §6.E / Step 3 PR2: when the toolpath is a drill op, thread the
+        // `DrillOp` payload into the context so `evaluate_toolpath` runs
+        // the drill-specific gates. The existing chipload / power /
+        // deflection gates remain `Unmodeled(NotApplicableForOp)` for
+        // these toolpaths — drill gates supplement, not replace, that
+        // signal.
+        let drill_op = project.get_result(idx).and_then(|r| r.drill_op());
+        // Phase 6 task 2: delegate verdict assembly to
+        // `tool_load::evaluate_toolpath` — the single assembly site
+        // shared with the optimizer — instead of re-assembling the
+        // struct inline (the inline copy had already diverged on
+        // `modulation_summary`).
+        let load_ctx = crate::tool_load::ToolpathLoadContext {
             toolpath_id: tc.id,
-            chipload: crate::tool_load::chipload::evaluate(
-                tc.id,
-                &tool_def,
-                material,
-                sim_trace,
-                spans,
-                lut_op,
-                lut_pass,
-                operation_feed_rate_mm_min,
-                tc.operation.op_type(),
-                &strict_tolerance,
-            ),
-            power: crate::tool_load::power::evaluate(
-                tc.id,
-                &tool_def,
-                material,
-                machine,
-                sim_trace,
-                spans,
-                tc.operation.op_type(),
-                &strict_tolerance,
-            ),
-            deflection: crate::tool_load::deflection::evaluate(
-                tc.id,
-                &tool_def,
-                material,
-                sim_trace,
-                spans,
-                tc.operation.op_type(),
-                &strict_tolerance,
-            ),
-            drill_gates,
-            modulation_summary: sim_trace
-                .and_then(|trace| trace.modulation_summaries.get(&tc.id).cloned()),
-        });
+            tool: &tool_def,
+            material,
+            operation_family: lut_op,
+            pass_role: lut_pass,
+            operation_feed_rate_mm_min,
+            operation_kind: tc.operation.op_type(),
+            spans,
+            drill_op: drill_op.map(|arc| arc.as_ref()),
+        };
+        per_toolpath.push(crate::tool_load::evaluate_toolpath(
+            &load_ctx,
+            sim_trace,
+            Some(machine),
+            &strict_tolerance,
+        ));
     }
     // PR-4: if we threw away a stale trace upstream, rewrite the
     // resulting `SimulationRequired` verdicts to `StaleSimulation`

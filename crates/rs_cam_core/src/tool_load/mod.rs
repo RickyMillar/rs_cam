@@ -363,6 +363,11 @@ pub struct ToolpathLoadContext<'a> {
 ///
 /// `tolerance` widens the gate triggers per `ToleranceBands`; pass
 /// `&ToleranceBands::default()` for strict LUT/machine-ceiling behaviour.
+///
+/// This is the **single** `ToolpathLoadVerdict` assembly site (Phase 6
+/// task 2) — `gcode::project_load_report` and the optimizer both call
+/// it, so per-field population (incl. `modulation_summary`, which the
+/// two sites had silently diverged on pre-Phase-6) cannot drift again.
 pub fn evaluate_toolpath(
     ctx: &ToolpathLoadContext<'_>,
     sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
@@ -422,7 +427,12 @@ pub fn evaluate_toolpath(
             tolerance,
         ),
         drill_gates,
-        modulation_summary: None,
+        // Feed-modulation rollup captured by the simulator for this
+        // toolpath, when the trace carries one. Populated here (not at
+        // the call sites) so every report path agrees — this field is
+        // the one that diverged when gcode re-assembled verdicts inline.
+        modulation_summary: sim_trace
+            .and_then(|trace| trace.modulation_summaries.get(&ctx.toolpath_id).cloned()),
     }
 }
 
