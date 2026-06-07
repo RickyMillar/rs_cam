@@ -1331,7 +1331,7 @@ static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
     param_defs: PROFILE_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_profile),
 };
 
 static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
@@ -2031,6 +2031,8 @@ mod tests {
                 | OperationType::Face
                 // Pocket — migrated 2026-06-07 (T11 PR 5).
                 | OperationType::Pocket
+                // Profile — migrated 2026-06-07 (T11 PR 6).
+                | OperationType::Profile
             );
             assert_eq!(
                 migrated, expected,

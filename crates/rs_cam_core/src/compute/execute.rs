@@ -292,6 +292,72 @@ pub(crate) fn generate_alignment_pin_drill(
     Ok(generated)
 }
 
+/// Profile family adapter (per-level passes; tabs on the final level).
+pub(crate) fn generate_profile(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::Profile(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_profile received a non-Profile config".into(),
+        ));
+    };
+    let polys = require_polygons(ctx.polygons)?;
+    let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
+    let final_z = levels
+        .last()
+        .copied()
+        .unwrap_or(ctx.heights.top_z - cfg.depth);
+    let tool_radius = ctx.tool_def.radius();
+    let safe_z = ctx.heights.retract_z;
+    let mut combined = Toolpath::new();
+    for poly in polys {
+        for (level_idx, &z) in levels.iter().enumerate() {
+            let pass_tp = crate::profile::profile_toolpath(
+                poly,
+                &crate::profile::ProfileParams {
+                    tool_radius,
+                    side: cfg.side,
+                    cut_depth: z,
+                    feed_rate: op.feed_rate(),
+                    plunge_rate: op.plunge_rate(),
+                    safe_z,
+                    climb: cfg.climb,
+                    compensate_in_controller: cfg.compensation
+                        == crate::compute::CompensationType::InControl,
+                },
+            );
+            if pass_tp.moves.is_empty() {
+                continue;
+            }
+            // Retract between levels (not before first)
+            if level_idx > 0 && !combined.moves.is_empty() {
+                combined.final_retract(safe_z);
+            }
+            let is_final = (z - final_z).abs() < 1e-9;
+            if cfg.tab_count > 0 && is_final {
+                let tabbed = crate::dressup::apply_tabs(
+                    pass_tp,
+                    &crate::dressup::even_tabs(cfg.tab_count, cfg.tab_width, cfg.tab_height),
+                    z,
+                );
+                combined.moves.extend(tabbed.moves);
+            } else {
+                combined.moves.extend(pass_tp.moves);
+            }
+        }
+    }
+    let generated = generated_with_depth_run_spans(combined, &levels);
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_depth_run_spans(
+            &generated.spans,
+            &generated.toolpath,
+            sem,
+        );
+    }
+    Ok(generated)
+}
+
 /// Pocket family adapter (contour / zigzag pattern per config).
 pub(crate) fn generate_pocket(
     ctx: &ExecutionContext<'_>,
@@ -549,61 +615,9 @@ pub fn execute_operation_annotated(
         // Migrated to the registry GenerateFn (T11); arm kept for the
         // exhaustiveness net and delegates to the same adapter.
         OperationConfig::Pocket(_) => generate_pocket(&ctx, op),
-        OperationConfig::Profile(cfg) => {
-            let polys = require_polygons(polygons)?;
-            let levels = effective_levels(cutting_levels, heights, cfg.depth_per_pass);
-            let final_z = levels.last().copied().unwrap_or(heights.top_z - cfg.depth);
-            let mut combined = Toolpath::new();
-            for poly in polys {
-                for (level_idx, &z) in levels.iter().enumerate() {
-                    let pass_tp = crate::profile::profile_toolpath(
-                        poly,
-                        &crate::profile::ProfileParams {
-                            tool_radius,
-                            side: cfg.side,
-                            cut_depth: z,
-                            feed_rate,
-                            plunge_rate,
-                            safe_z,
-                            climb: cfg.climb,
-                            compensate_in_controller: cfg.compensation
-                                == crate::compute::CompensationType::InControl,
-                        },
-                    );
-                    if pass_tp.moves.is_empty() {
-                        continue;
-                    }
-                    // Retract between levels (not before first)
-                    if level_idx > 0 && !combined.moves.is_empty() {
-                        combined.final_retract(safe_z);
-                    }
-                    let is_final = (z - final_z).abs() < 1e-9;
-                    if cfg.tab_count > 0 && is_final {
-                        let tabbed = crate::dressup::apply_tabs(
-                            pass_tp,
-                            &crate::dressup::even_tabs(
-                                cfg.tab_count,
-                                cfg.tab_width,
-                                cfg.tab_height,
-                            ),
-                            z,
-                        );
-                        combined.moves.extend(tabbed.moves);
-                    } else {
-                        combined.moves.extend(pass_tp.moves);
-                    }
-                }
-            }
-            let generated = generated_with_depth_run_spans(combined, &levels);
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_depth_run_spans(
-                    &generated.spans,
-                    &generated.toolpath,
-                    ctx,
-                );
-            }
-            Ok(generated)
-        }
+        // Migrated to the registry GenerateFn (T11); arm kept for the
+        // exhaustiveness net and delegates to the same adapter.
+        OperationConfig::Profile(_) => generate_profile(&ctx, op),
         OperationConfig::Adaptive(cfg) => {
             let polys = require_polygons(polygons)?;
             let levels = effective_levels(cutting_levels, heights, cfg.depth_per_pass);
