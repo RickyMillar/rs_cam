@@ -741,6 +741,103 @@ pub(crate) fn generate_face(
     Ok(generated)
 }
 
+/// DropCutter family adapter. Cancellable: the cooperative cancel
+/// closure is rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
+pub(crate) fn generate_drop_cutter(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::DropCutter(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_drop_cutter received a non-DropCutter config"
+                .into(),
+        ));
+    };
+    let m = require_mesh(ctx.mesh)?;
+    let idx = ctx
+        .index
+        .ok_or_else(|| OperationError::Other("DropCutter requires a spatial index".into()))?;
+    // Floor the drop-cutter min_z to the mesh bottom. A 3D finish
+    // should only tip-track the mesh surface — anything lower is either
+    // a non-contact clamp or the tool's taper forcing the tip below
+    // the real surface (which would gouge). We also enforce the
+    // stock-bottom floor as a safety check.
+    let effective_min_z = cfg
+        .min_z
+        .max(m.bbox.min.z - 0.1)
+        .max(ctx.stock_bbox.min.z - 1.0);
+    let mut grid = crate::dropcutter::batch_drop_cutter_with_cancel(
+        m,
+        idx,
+        ctx.tool_def,
+        cfg.stepover,
+        0.0,
+        effective_min_z,
+        &(|| ctx.cancel.load(Ordering::SeqCst)),
+    )
+    .map_err(|_e| OperationError::Cancelled)?;
+    // Drop grid points whose vertical ray misses every triangle
+    // in the mesh. `point_drop_cutter` marks `contacted = true`
+    // whenever the cutter (which has radius) touches ANY nearby
+    // triangle — including the rim of a mesh that doesn't cover
+    // that XY. Without this check the tool rides the edge and
+    // carves a trench around the part.
+    for pt in &mut grid.points {
+        let mut over = false;
+        for &tri_idx in &idx.query(pt.x, pt.y, 0.0) {
+            #[allow(clippy::indexing_slicing)]
+            let tri = &m.faces[tri_idx];
+            if tri.contains_point_xy(pt.x, pt.y) {
+                over = true;
+                break;
+            }
+        }
+        if !over {
+            pt.z = effective_min_z;
+            pt.contacted = false;
+        }
+    }
+    // Non-contacted grid points get clamped to effective_min_z (floored
+    // at the mesh bottom). Filter them so the finish never cuts past
+    // the mesh boundary.
+    let min_z_filter = Some(effective_min_z);
+    let slope_filter_active = cfg.slope_from > 0.01 || cfg.slope_to < 89.99;
+    let feed_rate = op.feed_rate();
+    let plunge_rate = op.plunge_rate();
+    let safe_z = ctx.heights.retract_z;
+    let tp = if slope_filter_active {
+        let slope_angles = crate::dropcutter::compute_grid_slopes(&grid);
+        crate::toolpath::raster_toolpath_from_grid_with_slope_filter(
+            &grid,
+            &slope_angles,
+            cfg.slope_from,
+            cfg.slope_to,
+            feed_rate,
+            plunge_rate,
+            safe_z,
+            min_z_filter,
+        )
+    } else {
+        crate::toolpath::raster_toolpath_from_grid(
+            &grid,
+            feed_rate,
+            plunge_rate,
+            safe_z,
+            min_z_filter,
+        )
+    };
+    let generated = generated_with_cut_run_spans(tp, "Raster row");
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_depth_run_spans(
+            &generated.spans,
+            &generated.toolpath,
+            sem,
+        );
+    }
+    Ok(generated)
+}
+
 /// Waterline family adapter. Cancellable: the cooperative cancel
 /// closure is rebuilt from `ctx.cancel` (pinned by
 /// `cancellable_families_honour_a_preset_cancel_flag`).
@@ -986,87 +1083,9 @@ pub fn execute_operation_annotated(
         OperationConfig::AlignmentPinDrill(_) => generate_alignment_pin_drill(&ctx, op),
 
         // ── 3D operations ────────────────────────────────────────────
-        OperationConfig::DropCutter(cfg) => {
-            let m = require_mesh(mesh)?;
-            let idx = index.ok_or_else(|| {
-                OperationError::Other("DropCutter requires a spatial index".into())
-            })?;
-            // Floor the drop-cutter min_z to the mesh bottom. A 3D finish
-            // should only tip-track the mesh surface — anything lower is either
-            // a non-contact clamp or the tool's taper forcing the tip below
-            // the real surface (which would gouge). We also enforce the
-            // stock-bottom floor as a safety check.
-            let effective_min_z = cfg
-                .min_z
-                .max(m.bbox.min.z - 0.1)
-                .max(stock_bbox.min.z - 1.0);
-            let mut grid = crate::dropcutter::batch_drop_cutter_with_cancel(
-                m,
-                idx,
-                tool_def,
-                cfg.stepover,
-                0.0,
-                effective_min_z,
-                &(|| cancel.load(Ordering::SeqCst)),
-            )
-            .map_err(|_e| OperationError::Cancelled)?;
-            // Drop grid points whose vertical ray misses every triangle
-            // in the mesh. `point_drop_cutter` marks `contacted = true`
-            // whenever the cutter (which has radius) touches ANY nearby
-            // triangle — including the rim of a mesh that doesn't cover
-            // that XY. Without this check the tool rides the edge and
-            // carves a trench around the part.
-            for pt in &mut grid.points {
-                let mut over = false;
-                for &tri_idx in &idx.query(pt.x, pt.y, 0.0) {
-                    #[allow(clippy::indexing_slicing)]
-                    let tri = &m.faces[tri_idx];
-                    if tri.contains_point_xy(pt.x, pt.y) {
-                        over = true;
-                        break;
-                    }
-                }
-                if !over {
-                    pt.z = effective_min_z;
-                    pt.contacted = false;
-                }
-            }
-            // Non-contacted grid points get clamped to effective_min_z (floored
-            // at the mesh bottom). Filter them so the finish never cuts past
-            // the mesh boundary.
-            let min_z_filter = Some(effective_min_z);
-            let slope_filter_active = cfg.slope_from > 0.01 || cfg.slope_to < 89.99;
-            let tp = if slope_filter_active {
-                let slope_angles = crate::dropcutter::compute_grid_slopes(&grid);
-                crate::toolpath::raster_toolpath_from_grid_with_slope_filter(
-                    &grid,
-                    &slope_angles,
-                    cfg.slope_from,
-                    cfg.slope_to,
-                    feed_rate,
-                    plunge_rate,
-                    safe_z,
-                    min_z_filter,
-                )
-            } else {
-                crate::toolpath::raster_toolpath_from_grid(
-                    &grid,
-                    feed_rate,
-                    plunge_rate,
-                    safe_z,
-                    min_z_filter,
-                )
-            };
-            let generated = generated_with_cut_run_spans(tp, "Raster row");
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_depth_run_spans(
-                    &generated.spans,
-                    &generated.toolpath,
-                    ctx,
-                );
-            }
-            Ok(generated)
-        }
+        // Migrated to the registry GenerateFn (T11); arm kept for the
+        // exhaustiveness net and delegates to the same adapter.
+        OperationConfig::DropCutter(_) => generate_drop_cutter(&ctx, op),
         OperationConfig::Adaptive3d(cfg) => {
             let m = require_mesh(mesh)?;
             let idx = index.ok_or_else(|| {

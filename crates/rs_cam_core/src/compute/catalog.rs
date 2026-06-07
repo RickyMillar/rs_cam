@@ -1521,7 +1521,7 @@ static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
     dressup_policy: DressupPolicy::strip_all(
         "Incompatible with 3D Finish: each raster segment's ramp entry would carve a diagonal trench across the stock.",
     ),
-    generate: None,
+    generate: Some(crate::compute::execute::generate_drop_cutter),
 };
 
 static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
@@ -2045,6 +2045,9 @@ mod tests {
                 // prev_tool_radius requirement / V-bit refusal kept).
                 | OperationType::Rest
                 | OperationType::Inlay
+                // DropCutter — migrated 2026-06-07 (T11 PR 10;
+                // cancellable, slope filter + rim-trench guard kept).
+                | OperationType::DropCutter
             );
             assert_eq!(
                 migrated, expected,
