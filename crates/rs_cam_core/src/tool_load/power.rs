@@ -26,12 +26,8 @@
 //! `Approximate(SlotEngagement)` because chip-distribution between climb
 //! and conventional sides differs there and we don't decompose.
 
-use crate::compute::catalog::OperationType;
-use crate::machine::MachineProfile;
 use crate::material::Material;
-use crate::simulation_cut::SimulationCutTrace;
-use crate::tool::{MillingCutter, ToolDefinition};
-use crate::toolpath_spans::Span;
+use crate::tool::MillingCutter;
 
 use super::locality::SpanLookup;
 use super::verdict::{Confidence, EntrySpike, PowerVerdict, SampleEvidence, UnmodeledReason};
@@ -73,18 +69,32 @@ pub(crate) fn predicted_power_kw(kc: f64, cross_section_mm2: f64, feed_mm_min: f
     GRAIN_ANISOTROPY_FACTOR * kc * cross_section_mm2 * feed_mm_min / 60_000_000.0
 }
 
-#[allow(clippy::too_many_arguments)]
-#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id, op = ?operation_kind))]
-pub fn evaluate(
-    toolpath_id: usize,
-    tool: &ToolDefinition,
-    material: &Material,
-    machine: &MachineProfile,
-    sim_trace: Option<&SimulationCutTrace>,
-    spans: Option<&[Span]>,
-    operation_kind: OperationType,
-    tolerance: &super::ToleranceBands,
-) -> PowerVerdict {
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id, op = ?ctx.operation_kind))]
+pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) -> PowerVerdict {
+    let &super::ToolpathLoadContext {
+        toolpath_id,
+        tool,
+        material,
+        operation_kind,
+        spans,
+        ..
+    } = ctx;
+    let &super::GateEnv {
+        sim_trace,
+        machine,
+        tolerance,
+    } = env;
+    // The power gate is the only one that reads a machine profile.
+    // Checked first (before the drill short-circuit) to preserve the
+    // pre-Phase-6 behaviour, where `evaluate_toolpath` routed a missing
+    // machine to this refusal without ever entering the gate.
+    let Some(machine) = machine else {
+        return PowerVerdict::Unmodeled {
+            reason: UnmodeledReason::NotImplemented(
+                "machine profile not provided to evaluator".to_owned(),
+            ),
+        };
+    };
     // Roadmap F.8 — short-circuit before any gate-input checks when
     // the op is geometrically plunge-only. Drilling has no continuous
     // engagement to drive a power-vs-RPM curve; the right answer is
@@ -333,11 +343,46 @@ pub fn evaluate(
 )]
 mod tests {
     use super::*;
+    use crate::compute::catalog::OperationType;
     use crate::machine::MachineProfile;
     use crate::material::WoodSpecies;
     use crate::simulation_cut::{
         CutKinematics, SimulationCutSample, SimulationCutSummary, SimulationCutTrace,
     };
+    use crate::tool::ToolDefinition;
+
+    /// Adapts this module's legacy positional-arg test calls to the
+    /// Phase 6 `(ctx, env)` gate signature.
+    #[allow(clippy::too_many_arguments)]
+    fn evaluate_args(
+        toolpath_id: usize,
+        tool: &crate::tool::ToolDefinition,
+        material: &crate::material::Material,
+        machine: &crate::machine::MachineProfile,
+        sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
+        spans: Option<&[crate::toolpath_spans::Span]>,
+        operation_kind: crate::compute::catalog::OperationType,
+        tolerance: &crate::tool_load::ToleranceBands,
+    ) -> PowerVerdict {
+        evaluate(
+            &crate::tool_load::ToolpathLoadContext {
+                toolpath_id,
+                tool,
+                material,
+                operation_family: crate::feeds::vendor_lut::LutOperationFamily::Pocket,
+                pass_role: crate::feeds::vendor_lut::LutPassRole::Roughing,
+                operation_feed_rate_mm_min: 0.0,
+                operation_kind,
+                spans,
+                drill_op: None,
+            },
+            &crate::tool_load::GateEnv {
+                sim_trace,
+                machine: Some(machine),
+                tolerance,
+            },
+        )
+    }
     use crate::tool::{FlatEndmill, VBitEndmill};
 
     fn tool() -> ToolDefinition {
@@ -434,7 +479,7 @@ mod tests {
 
     #[test]
     fn no_trace_returns_simulation_required() {
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -459,7 +504,7 @@ mod tests {
         let mut s = cutting_sample(0, 1.0, std::f64::consts::FRAC_PI_2, 1000.0);
         s.arc_engagement_radians = None;
         let trace = trace_with(vec![s]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -489,7 +534,7 @@ mod tests {
             std::f64::consts::FRAC_PI_2,
             1000.0,
         )]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::Plastic {
@@ -517,7 +562,7 @@ mod tests {
             std::f64::consts::FRAC_PI_2,
             1000.0,
         )]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::test_fixture_custom("Mystery"),
@@ -551,7 +596,7 @@ mod tests {
             std::f64::consts::FRAC_PI_2,
             1000.0,
         )]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -585,7 +630,7 @@ mod tests {
         // vs available × safety = 0.568 kW. Exceeds, and the verdict
         // must carry both peak_kw and available_kw.
         let trace = trace_with(vec![cutting_sample(0, 20.0, std::f64::consts::PI, 6000.0)]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -627,7 +672,7 @@ mod tests {
         let mat = Material::SolidWood {
             species: WoodSpecies::HardMaple,
         };
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &vbit_tool(),
             &mat,
@@ -656,7 +701,7 @@ mod tests {
     #[test]
     fn slot_annotates_approximate() {
         let trace = trace_with(vec![cutting_sample(0, 1.0, std::f64::consts::PI, 1000.0)]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -688,7 +733,7 @@ mod tests {
             power_breach: 1.0, // widen by 100 % so the heavy-cut probe lands Within
             ..crate::tool_load::ToleranceBands::default()
         };
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -714,7 +759,7 @@ mod tests {
     #[test]
     fn drill_op_routes_to_not_applicable_regardless_of_trace() {
         let trace = trace_with(vec![cutting_sample(0, 20.0, std::f64::consts::PI, 6000.0)]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -748,7 +793,7 @@ mod tests {
             std::f64::consts::FRAC_PI_2,
             1000.0,
         )]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {

@@ -44,11 +44,9 @@
 //!   not translate the tip — only rotates it. The "tip-wander" metric
 //!   this gate predicts therefore ignores torsion.
 
-use crate::compute::catalog::OperationType;
 use crate::material::Material;
-use crate::simulation_cut::{SimulationCutSample, SimulationCutTrace};
+use crate::simulation_cut::SimulationCutSample;
 use crate::tool::ToolDefinition;
-use crate::toolpath_spans::Span;
 
 use super::locality::SpanLookup;
 use super::verdict::{
@@ -104,17 +102,24 @@ pub fn sample_tip_deflection_mm(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
-#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id, op = ?operation_kind))]
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id, op = ?ctx.operation_kind))]
 pub fn evaluate(
-    toolpath_id: usize,
-    tool: &ToolDefinition,
-    material: &Material,
-    sim_trace: Option<&SimulationCutTrace>,
-    spans: Option<&[Span]>,
-    operation_kind: OperationType,
-    tolerance: &super::ToleranceBands,
+    ctx: &super::ToolpathLoadContext<'_>,
+    env: &super::GateEnv<'_>,
 ) -> DeflectionVerdict {
+    let &super::ToolpathLoadContext {
+        toolpath_id,
+        tool,
+        material,
+        operation_kind,
+        spans,
+        ..
+    } = ctx;
+    let &super::GateEnv {
+        sim_trace,
+        tolerance,
+        ..
+    } = env;
     // Roadmap F.8 — same short-circuit as power/chipload: drill cycles
     // have no continuous engagement, so the cantilever-deflection
     // metric is meaningless. Return "doesn't apply" rather than the
@@ -322,11 +327,44 @@ pub fn evaluate(
 )]
 mod tests {
     use super::*;
+    use crate::compute::catalog::OperationType;
     use crate::compute::tool_config::ToolMaterial;
     use crate::material::WoodSpecies;
     use crate::simulation_cut::{
         CutKinematics, SimulationCutSample, SimulationCutSummary, SimulationCutTrace,
     };
+
+    /// Adapts this module's legacy positional-arg test calls to the
+    /// Phase 6 `(ctx, env)` gate signature.
+    #[allow(clippy::too_many_arguments)]
+    fn evaluate_args(
+        toolpath_id: usize,
+        tool: &crate::tool::ToolDefinition,
+        material: &crate::material::Material,
+        sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
+        spans: Option<&[crate::toolpath_spans::Span]>,
+        operation_kind: crate::compute::catalog::OperationType,
+        tolerance: &crate::tool_load::ToleranceBands,
+    ) -> DeflectionVerdict {
+        evaluate(
+            &crate::tool_load::ToolpathLoadContext {
+                toolpath_id,
+                tool,
+                material,
+                operation_family: crate::feeds::vendor_lut::LutOperationFamily::Pocket,
+                pass_role: crate::feeds::vendor_lut::LutPassRole::Roughing,
+                operation_feed_rate_mm_min: 0.0,
+                operation_kind,
+                spans,
+                drill_op: None,
+            },
+            &crate::tool_load::GateEnv {
+                sim_trace,
+                machine: None,
+                tolerance,
+            },
+        )
+    }
     use crate::tool::{FlatEndmill, TaperedBallEndmill};
 
     fn carbide_flat(diameter_mm: f64, stickout_mm: f64) -> ToolDefinition {
@@ -439,7 +477,7 @@ mod tests {
 
     #[test]
     fn no_trace_returns_simulation_required() {
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &carbide_flat(6.0, 45.0),
             &Material::SolidWood {
@@ -463,7 +501,7 @@ mod tests {
         let mut s = cutting_sample(0, 0, 3.0, std::f64::consts::FRAC_PI_2, 1500.0, 0.5);
         s.arc_engagement_radians = None;
         let trace = trace_with(vec![s]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &carbide_flat(6.0, 45.0),
             &Material::SolidWood {
@@ -492,7 +530,7 @@ mod tests {
             1500.0,
             0.5,
         )]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &carbide_flat(6.0, 45.0),
             &Material::test_fixture_custom("Mystery"),
@@ -528,7 +566,7 @@ mod tests {
             1500.0,
             1.0,
         )]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &carbide_flat(6.0, 45.0),
             &Material::SolidWood {
@@ -572,7 +610,7 @@ mod tests {
             800.0,
             0.15,
         )]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &wanaka_tapered_ball(),
             &Material::SolidWood {
@@ -616,7 +654,7 @@ mod tests {
             120.0,
             0.2,
         )]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool,
             &Material::SolidWood {
@@ -674,7 +712,7 @@ mod tests {
             1000.0,
             1.0,
         )]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool,
             &Material::SolidWood {
@@ -714,7 +752,7 @@ mod tests {
             1000.0,
             0.4,
         )]);
-        let strict = evaluate(
+        let strict = evaluate_args(
             0,
             &tool,
             &Material::SolidWood {
@@ -725,7 +763,7 @@ mod tests {
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
-        let widened = evaluate(
+        let widened = evaluate_args(
             0,
             &tool,
             &Material::SolidWood {
@@ -813,7 +851,7 @@ mod tests {
         ];
 
         let trace = trace_with(vec![steady, phantom]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool,
             &Material::SolidWood {
@@ -862,7 +900,7 @@ mod tests {
             1500.0,
             1.0,
         )]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool,
             &Material::SolidWood {

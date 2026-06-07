@@ -177,19 +177,28 @@ fn empty_trace(samples: Vec<SimulationCutSample>) -> SimulationCutTrace {
 }
 
 fn evaluate_chipload(trace: &SimulationCutTrace) -> ChiploadVerdict {
+    let tool = make_endmill_6mm_carbide();
+    let material = Material::SolidWood {
+        species: WoodSpecies::HardMaple,
+    };
+    let tolerance = ToleranceBands::default();
     chipload::evaluate(
-        0,
-        &make_endmill_6mm_carbide(),
-        &Material::SolidWood {
-            species: WoodSpecies::HardMaple,
+        &rs_cam_core::tool_load::ToolpathLoadContext {
+            toolpath_id: 0,
+            tool: &tool,
+            material: &material,
+            operation_family: LutOperationFamily::Pocket,
+            pass_role: LutPassRole::Roughing,
+            operation_feed_rate_mm_min: 1000.0,
+            operation_kind: OperationType::Pocket,
+            spans: None,
+            drill_op: None,
         },
-        Some(trace),
-        None,
-        LutOperationFamily::Pocket,
-        LutPassRole::Roughing,
-        1000.0,
-        OperationType::Pocket,
-        &ToleranceBands::default(),
+        &rs_cam_core::tool_load::GateEnv {
+            sim_trace: Some(trace),
+            machine: None,
+            tolerance: &tolerance,
+        },
     )
 }
 

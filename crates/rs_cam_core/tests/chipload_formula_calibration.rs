@@ -260,19 +260,27 @@ fn lut_nominal_engagement_sample_within_published_envelope_passes() {
     };
     let trace = trace(vec![sample]);
 
+    let material = Material::SolidWood {
+        species: WoodSpecies::HardMaple,
+    };
+    let tolerance = rs_cam_core::tool_load::ToleranceBands::default();
     let verdict = chipload::evaluate(
-        0,
-        &tool,
-        &Material::SolidWood {
-            species: WoodSpecies::HardMaple,
+        &rs_cam_core::tool_load::ToolpathLoadContext {
+            toolpath_id: 0,
+            tool: &tool,
+            material: &material,
+            operation_family: LutOperationFamily::Pocket,
+            pass_role: LutPassRole::Roughing,
+            operation_feed_rate_mm_min: 1000.0,
+            operation_kind: OperationType::Pocket,
+            spans: None,
+            drill_op: None,
         },
-        Some(&trace),
-        None,
-        LutOperationFamily::Pocket,
-        LutPassRole::Roughing,
-        1000.0,
-        OperationType::Pocket,
-        &rs_cam_core::tool_load::ToleranceBands::default(),
+        &rs_cam_core::tool_load::GateEnv {
+            sim_trace: Some(&trace),
+            machine: None,
+            tolerance: &tolerance,
+        },
     );
 
     match verdict {
@@ -345,19 +353,27 @@ fn slot_engagement_sample_at_safe_feed_passes_after_d9_normalization() {
     };
     let trace = trace(vec![sample]);
 
+    let material = Material::SolidWood {
+        species: WoodSpecies::HardMaple,
+    };
+    let tolerance = rs_cam_core::tool_load::ToleranceBands::default();
     let verdict = chipload::evaluate(
-        0,
-        &tool,
-        &Material::SolidWood {
-            species: WoodSpecies::HardMaple,
+        &rs_cam_core::tool_load::ToolpathLoadContext {
+            toolpath_id: 0,
+            tool: &tool,
+            material: &material,
+            operation_family: LutOperationFamily::Pocket,
+            pass_role: LutPassRole::Roughing,
+            operation_feed_rate_mm_min: 1000.0,
+            operation_kind: OperationType::Pocket,
+            spans: None,
+            drill_op: None,
         },
-        Some(&trace),
-        None,
-        LutOperationFamily::Pocket,
-        LutPassRole::Roughing,
-        1000.0,
-        OperationType::Pocket,
-        &rs_cam_core::tool_load::ToleranceBands::default(),
+        &rs_cam_core::tool_load::GateEnv {
+            sim_trace: Some(&trace),
+            machine: None,
+            tolerance: &tolerance,
+        },
     );
 
     match verdict {
