@@ -741,6 +741,73 @@ pub(crate) fn generate_face(
     Ok(generated)
 }
 
+/// ProjectCurve family adapter. Builds its own cutter from
+/// `tool_cfg` (generator API takes the boxed cutter); reads
+/// `cfg.setup_z_flipped`, which the session/viz drivers pre-set on the
+/// config BEFORE dispatch (caller-side mutation preserved — plan
+/// §Phase-5 task 4).
+pub(crate) fn generate_project_curve(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::ProjectCurve(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_project_curve received a non-ProjectCurve config"
+                .into(),
+        ));
+    };
+    let polys = require_polygons(ctx.polygons)?;
+    let m = require_mesh(ctx.mesh)?;
+    let idx = ctx
+        .index
+        .ok_or_else(|| OperationError::Other("ProjectCurve requires a spatial index".into()))?;
+    let cutter = build_cutter(ctx.tool_cfg);
+    let direction = match cfg.direction {
+        crate::compute::operation_configs::ProjectCurveDirection::FromAbove => {
+            crate::project_curve::ProjectDirection::FromAbove
+        }
+        crate::compute::operation_configs::ProjectCurveDirection::FromBelow => {
+            crate::project_curve::ProjectDirection::FromBelow
+        }
+    };
+    let side = match cfg.side {
+        crate::compute::operation_configs::ProjectCurveSide::Center => {
+            crate::project_curve::ProjectSide::Center
+        }
+        crate::compute::operation_configs::ProjectCurveSide::Inside => {
+            crate::project_curve::ProjectSide::Inside
+        }
+        crate::compute::operation_configs::ProjectCurveSide::Outside => {
+            crate::project_curve::ProjectSide::Outside
+        }
+    };
+    let params = crate::project_curve::ProjectCurveParams {
+        depth: cfg.depth,
+        point_spacing: cfg.point_spacing,
+        feed_rate: op.feed_rate(),
+        plunge_rate: op.plunge_rate(),
+        safe_z: ctx.heights.retract_z,
+        direction,
+        tool_radius: ctx.tool_def.radius(),
+        side,
+        setup_z_flipped: cfg.setup_z_flipped,
+    };
+    let mut combined = Toolpath::new();
+    for poly in polys {
+        let tp = crate::project_curve::project_curve_toolpath(poly, m, idx, &cutter, &params);
+        combined.moves.extend(tp.moves);
+    }
+    let generated = generated_with_cut_run_spans(combined, "Projected curve");
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_depth_run_spans(
+            &generated.spans,
+            &generated.toolpath,
+            sem,
+        );
+    }
+    Ok(generated)
+}
+
 /// Pencil family adapter (labeled-event spans + annotate_pencil).
 pub(crate) fn generate_pencil(
     ctx: &ExecutionContext<'_>,
@@ -1542,59 +1609,9 @@ pub fn execute_operation_annotated(
         OperationConfig::SpiralFinish(_) => generate_spiral_finish(&ctx, op),
         OperationConfig::RadialFinish(_) => generate_radial_finish(&ctx, op),
         OperationConfig::HorizontalFinish(_) => generate_horizontal_finish(&ctx, op),
-        OperationConfig::ProjectCurve(cfg) => {
-            let polys = require_polygons(polygons)?;
-            let m = require_mesh(mesh)?;
-            let idx = index.ok_or_else(|| {
-                OperationError::Other("ProjectCurve requires a spatial index".into())
-            })?;
-            let cutter = build_cutter(tool_cfg);
-            let direction = match cfg.direction {
-                crate::compute::operation_configs::ProjectCurveDirection::FromAbove => {
-                    crate::project_curve::ProjectDirection::FromAbove
-                }
-                crate::compute::operation_configs::ProjectCurveDirection::FromBelow => {
-                    crate::project_curve::ProjectDirection::FromBelow
-                }
-            };
-            let side = match cfg.side {
-                crate::compute::operation_configs::ProjectCurveSide::Center => {
-                    crate::project_curve::ProjectSide::Center
-                }
-                crate::compute::operation_configs::ProjectCurveSide::Inside => {
-                    crate::project_curve::ProjectSide::Inside
-                }
-                crate::compute::operation_configs::ProjectCurveSide::Outside => {
-                    crate::project_curve::ProjectSide::Outside
-                }
-            };
-            let params = crate::project_curve::ProjectCurveParams {
-                depth: cfg.depth,
-                point_spacing: cfg.point_spacing,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-                direction,
-                tool_radius,
-                side,
-                setup_z_flipped: cfg.setup_z_flipped,
-            };
-            let mut combined = Toolpath::new();
-            for poly in polys {
-                let tp =
-                    crate::project_curve::project_curve_toolpath(poly, m, idx, &cutter, &params);
-                combined.moves.extend(tp.moves);
-            }
-            let generated = generated_with_cut_run_spans(combined, "Projected curve");
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_depth_run_spans(
-                    &generated.spans,
-                    &generated.toolpath,
-                    ctx,
-                );
-            }
-            Ok(generated)
-        }
+        // Migrated to the registry GenerateFn (T11); arm kept for the
+        // exhaustiveness net and delegates to the same adapter.
+        OperationConfig::ProjectCurve(_) => generate_project_curve(&ctx, op),
     }
 }
 

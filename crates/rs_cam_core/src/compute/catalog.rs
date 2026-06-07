@@ -1724,7 +1724,7 @@ static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
     dressup_policy: DressupPolicy::strip_all(
         "Incompatible with Project Curve: each ring would get a phantom diagonal cut.",
     ),
-    generate: None,
+    generate: Some(crate::compute::execute::generate_project_curve),
 };
 
 static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
@@ -2061,6 +2061,9 @@ mod tests {
                 | OperationType::Scallop
                 | OperationType::SteepShallow
                 | OperationType::RampFinish
+                // ProjectCurve — migrated 2026-06-07 (T11 PR 13;
+                // caller-side setup_z_flipped pre-dispatch preserved).
+                | OperationType::ProjectCurve
             );
             assert_eq!(
                 migrated, expected,
