@@ -3,7 +3,10 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::collision::{CollisionReport, check_collisions_interpolated_with_cancel};
+use crate::collision::{
+    CollisionObstacle, CollisionReport, check_collisions_interpolated_with_cancel,
+    check_obstacle_collisions_with_cancel,
+};
 use crate::interrupt::Cancelled;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::ToolDefinition;
@@ -14,6 +17,11 @@ pub struct CollisionCheckRequest<'a> {
     pub toolpath: &'a Toolpath,
     pub tool: ToolDefinition,
     pub mesh: &'a TriangleMesh,
+    /// Workholding fixtures (clearance-expanded boxes, in the toolpath's
+    /// frame) the assembly must also clear. Empty when the setup has no
+    /// enabled fixtures. W0.1 / P6-003: without these, a holder crashing
+    /// a clamp is never flagged.
+    pub obstacles: Vec<CollisionObstacle>,
 }
 
 /// Result of a collision check.
@@ -58,16 +66,31 @@ pub fn run_collision_check(
 ) -> Result<CollisionCheckResult, CollisionCheckError> {
     let index = SpatialIndex::build_auto(request.mesh);
     let assembly = request.tool.to_assembly();
+    let cancel_check = || cancel.load(Ordering::SeqCst);
 
-    let report = check_collisions_interpolated_with_cancel(
+    let mut report = check_collisions_interpolated_with_cancel(
         request.toolpath,
         &assembly,
         request.mesh,
         &index,
         1.0,
-        &|| cancel.load(Ordering::SeqCst),
+        &cancel_check,
     )
     .map_err(|_cancelled| CollisionCheckError::Cancelled)?;
+
+    // W0.1 — also test the assembly against workholding fixtures. The mesh
+    // check above can only see the workpiece, so a holder/shank crashing a
+    // clamp would otherwise go unflagged. Same 1mm interpolation; fixture
+    // hits are merged into the report's collision list.
+    let fixture_hits = check_obstacle_collisions_with_cancel(
+        request.toolpath,
+        &assembly,
+        &request.obstacles,
+        1.0,
+        &cancel_check,
+    )
+    .map_err(|_cancelled| CollisionCheckError::Cancelled)?;
+    report.collisions.extend(fixture_hits);
 
     let positions: Vec<[f32; 3]> = report
         .collisions
@@ -120,6 +143,7 @@ mod tests {
             toolpath: &tp,
             tool,
             mesh: &mesh,
+            obstacles: Vec::new(),
         };
         let cancel = AtomicBool::new(false);
         let result = run_collision_check(&req, &cancel).unwrap();
@@ -148,6 +172,7 @@ mod tests {
             toolpath: &tp,
             tool,
             mesh: &mesh,
+            obstacles: Vec::new(),
         };
         let cancel = AtomicBool::new(true);
         let result = run_collision_check(&req, &cancel);
