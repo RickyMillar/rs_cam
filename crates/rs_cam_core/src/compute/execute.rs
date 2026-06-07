@@ -132,20 +132,7 @@ pub fn build_drill_op_for_config(
             }
             let top_z = stock_bbox.max.z;
             let bottom_z = stock_bbox.min.z - cfg.spoilboard_penetration;
-            let cycle = match cfg.cycle {
-                crate::compute::operation_configs::DrillCycleType::Simple => {
-                    crate::drill::DrillCycle::Simple
-                }
-                crate::compute::operation_configs::DrillCycleType::Dwell => {
-                    crate::drill::DrillCycle::Dwell(0.5)
-                }
-                crate::compute::operation_configs::DrillCycleType::Peck => {
-                    crate::drill::DrillCycle::Peck(cfg.peck_depth)
-                }
-                crate::compute::operation_configs::DrillCycleType::ChipBreak => {
-                    crate::drill::DrillCycle::ChipBreak(cfg.peck_depth, 0.5)
-                }
-            };
+            let cycle = cfg.drill_cycle();
             let holes = cfg
                 .holes
                 .iter()
@@ -729,20 +716,7 @@ pub fn execute_operation_annotated(
             }
             let stock_z = stock_bbox.max.z - stock_bbox.min.z;
             let depth = stock_z + cfg.spoilboard_penetration;
-            let cycle = match cfg.cycle {
-                crate::compute::operation_configs::DrillCycleType::Simple => {
-                    crate::drill::DrillCycle::Simple
-                }
-                crate::compute::operation_configs::DrillCycleType::Dwell => {
-                    crate::drill::DrillCycle::Dwell(0.5)
-                }
-                crate::compute::operation_configs::DrillCycleType::Peck => {
-                    crate::drill::DrillCycle::Peck(cfg.peck_depth)
-                }
-                crate::compute::operation_configs::DrillCycleType::ChipBreak => {
-                    crate::drill::DrillCycle::ChipBreak(cfg.peck_depth, 0.5)
-                }
-            };
+            let cycle = cfg.drill_cycle();
             let params = crate::drill::DrillParams {
                 depth,
                 top_z: stock_bbox.max.z,

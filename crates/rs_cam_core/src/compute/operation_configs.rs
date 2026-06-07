@@ -171,6 +171,24 @@ pub struct AlignmentPinDrillConfig {
     pub spindle_rpm: Option<u32>,
 }
 
+impl AlignmentPinDrillConfig {
+    /// Convert to the core [`crate::drill::DrillCycle`]. Pin drilling
+    /// fixes dwell to 0.5 s and chip-break retract to 0.5 mm — the
+    /// config carries no knobs for them (alignment pins are a fixture
+    /// cycle, not a tunable drill op). T11 dedup: this conversion was
+    /// previously inlined at both consumer sites in `execute.rs`
+    /// (toolpath arm + `build_drill_op_for_config`).
+    pub fn drill_cycle(&self) -> crate::drill::DrillCycle {
+        use crate::drill::DrillCycle;
+        match self.cycle {
+            DrillCycleType::Simple => DrillCycle::Simple,
+            DrillCycleType::Dwell => DrillCycle::Dwell(0.5),
+            DrillCycleType::Peck => DrillCycle::Peck(self.peck_depth),
+            DrillCycleType::ChipBreak => DrillCycle::ChipBreak(self.peck_depth, 0.5),
+        }
+    }
+}
+
 impl Default for AlignmentPinDrillConfig {
     fn default() -> Self {
         Self {
