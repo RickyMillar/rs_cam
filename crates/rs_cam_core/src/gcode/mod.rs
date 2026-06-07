@@ -157,10 +157,11 @@ pub fn export_gcode_checked(
     sim_trace: Option<&SimulationCutTrace>,
     policy: ToolLoadExportPolicy,
 ) -> Result<String, ExportError> {
-    // Run the project-level tool-load report and gate on policy. Phase 1a
-    // ships the deflection criterion (purely geometric L/D); chipload and
-    // power are stubs returning `Unmodeled(NotImplemented)` and are therefore
-    // gated behind `policy.accept_unmodeled`.
+    // Run the project-level tool-load report and gate on policy. All
+    // three criteria (chipload, power, deflection) are fully evaluated;
+    // a criterion that can't be modeled for this toolpath (no sim trace,
+    // no vendor row, drill kinematics) returns `Unmodeled` and is gated
+    // behind `policy.accept_unmodeled`.
     let report = project_load_report(project, sim_trace);
     enforce_load_policy(&report, &policy)?;
 
@@ -354,11 +355,11 @@ impl<'a> SimEvidenceMeta<'a> {
     }
 }
 
-/// Build a `ToolLoadReport` from a `ProjectSession`. Phase 1a wires
-/// `chipload` (per-sample vs vendor LUT, requires `sim_trace`) and
-/// `deflection` (geometric L/D, sample-independent). The `power`
-/// criterion is stubbed `Unmodeled(NotImplemented)` until Phase 1b's
-/// arc-engagement-driven power calc lands.
+/// Build a `ToolLoadReport` from a `ProjectSession`. Delegates each
+/// toolpath to `tool_load::evaluate_toolpath` (the single verdict
+/// assembly site), which runs all three criteria: `chipload` and
+/// `power` (per-sample, require `sim_trace`) and `deflection`
+/// (per-sample tip deflection from cutting force).
 ///
 /// PR-4: when `sim_trace` is `Some` but `sim_trace_is_fresh` returns
 /// false (project state has drifted since the trace was captured),

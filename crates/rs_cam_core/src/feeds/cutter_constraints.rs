@@ -307,21 +307,6 @@ fn max_doc_vendor(row: &LookupResult, query_diameter_mm: f64) -> Option<f64> {
     }
 }
 
-/// Combine the LUT row's diameter-scaling `ap_min_factor` with the
-/// absolute `ap_min_mm` floor — looser of the two (the tighter floor
-/// is a lower-bound on `min`, so picking the smaller floor produces
-/// the wider safe band).
-#[allow(dead_code)] // consumer in Phase 3 — kept for symmetry with max_doc_vendor.
-fn min_doc_vendor(row: &LookupResult, query_diameter_mm: f64) -> Option<f64> {
-    let from_factor = row.ap_min_factor.map(|f| f * query_diameter_mm);
-    match (from_factor, row.ap_min_mm) {
-        (Some(f), Some(a)) => Some(f.max(a)),
-        (Some(f), None) => Some(f),
-        (None, Some(a)) => Some(a),
-        (None, None) => None,
-    }
-}
-
 /// Max axial DOC before the **axial scallop** between consecutive Z-passes
 /// exceeds `target_um`. Rotated form of
 /// [`super::geometry::scallop_stepover`]: same `scallop = R - √(R² − (ap/2)²)`
