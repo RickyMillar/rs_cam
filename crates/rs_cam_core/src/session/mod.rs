@@ -1428,6 +1428,11 @@ mod tests {
         }
     }
 
+    /// Q4 tripwire, deliberately re-baselined in T8: the loader still
+    /// defaults unknown tokens to EndMill (now with a tracing warning
+    /// instead of silently), and the unified vocabulary additionally
+    /// accepts the former viz-legacy aliases — pre-T8 `"ball"` parsed
+    /// to EndMill here but BallNose in the viz legacy loader.
     #[test]
     fn tool_type_parsing() {
         assert!(matches!(parse_tool_type("end_mill"), ToolType::EndMill));
@@ -1439,6 +1444,12 @@ mod tests {
             ToolType::TaperedBallNose
         ));
         assert!(matches!(parse_tool_type("unknown"), ToolType::EndMill));
+        // T8 unified-vocabulary additions (were EndMill via wildcard).
+        assert!(matches!(parse_tool_type("ball"), ToolType::BallNose));
+        assert!(matches!(
+            parse_tool_type("tapered_ball"),
+            ToolType::TaperedBallNose
+        ));
     }
 
     /// Create a session with one tool and one Pocket toolpath for mutation tests.

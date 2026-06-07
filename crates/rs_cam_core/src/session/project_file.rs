@@ -458,14 +458,18 @@ pub(crate) fn stock_from_project(ps: &ProjectStockConfig) -> StockConfig {
     }
 }
 
+/// Q4 warn-and-default file-loading policy over the unified
+/// [`ToolType::parse_lenient`] vocabulary (T8). Pre-T8 this had its own
+/// alias table and a SILENT `_ => EndMill` — an unknown token (or a viz
+/// legacy alias like `ball`) became an end mill with no trace.
 pub(crate) fn parse_tool_type(s: &str) -> ToolType {
-    match s.to_ascii_lowercase().as_str() {
-        "ball_nose" | "ballnose" => ToolType::BallNose,
-        "bull_nose" | "bullnose" => ToolType::BullNose,
-        "v_bit" | "vbit" => ToolType::VBit,
-        "tapered_ball_nose" | "taperedballnose" => ToolType::TaperedBallNose,
-        _ => ToolType::EndMill,
-    }
+    ToolType::parse_lenient(s).unwrap_or_else(|| {
+        tracing::warn!(
+            tool_type = s,
+            "unknown tool type in project file — defaulting to end_mill"
+        );
+        ToolType::EndMill
+    })
 }
 
 pub(crate) fn tool_from_project_section(ts: &ProjectToolSection, idx: usize) -> ToolConfig {
