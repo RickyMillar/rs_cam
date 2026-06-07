@@ -40,10 +40,8 @@ use crate::compute::catalog::OperationType;
 use crate::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_row_for_geometry};
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily};
 use crate::feeds::vendor_normalize::material_to_lut;
-use crate::material::Material;
 use crate::simulation_cut::SimulationCutTrace;
-use crate::tool::{MillingCutter, ToolDefinition};
-use crate::toolpath_spans::Span;
+use crate::tool::MillingCutter;
 
 use super::locality::SpanLookup;
 
@@ -238,20 +236,24 @@ pub(crate) fn steady_state_samples_for_toolpath<'a>(
 /// — Item D of the tool-load fidelity plan) and `Adaptive3d`
 /// (Adaptive → Pocket so the LUT envelope reflects pocket-style
 /// clearing instead of 2D adaptive HSM — design doc §1.3, §10).
-#[allow(clippy::too_many_arguments)]
-#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id, op = ?operation_kind))]
-pub fn evaluate(
-    toolpath_id: usize,
-    tool: &ToolDefinition,
-    material: &Material,
-    sim_trace: Option<&SimulationCutTrace>,
-    spans: Option<&[Span]>,
-    operation_family: LutOperationFamily,
-    pass_role: LutPassRole,
-    operation_feed_rate_mm_min: f64,
-    operation_kind: OperationType,
-    tolerance: &super::ToleranceBands,
-) -> ChiploadVerdict {
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id, op = ?ctx.operation_kind))]
+pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) -> ChiploadVerdict {
+    let &super::ToolpathLoadContext {
+        toolpath_id,
+        tool,
+        material,
+        operation_family,
+        pass_role,
+        operation_feed_rate_mm_min,
+        operation_kind,
+        spans,
+        ..
+    } = ctx;
+    let &super::GateEnv {
+        sim_trace,
+        tolerance,
+        ..
+    } = env;
     // Roadmap F.8 — short-circuit when the op is geometrically
     // plunge-only. Drill cycles have no continuous chipload to
     // compare against an LUT envelope; the right answer is "doesn't
@@ -744,9 +746,47 @@ pub(crate) fn routed_lookup_family(
 )]
 mod tests {
     use super::*;
+    use crate::compute::catalog::OperationType;
+    use crate::material::Material;
     use crate::material::WoodSpecies;
     use crate::simulation_cut::{SimulationCutSample, SimulationCutSummary, SimulationCutTrace};
+    use crate::tool::ToolDefinition;
     use crate::tool::{FlatEndmill, VBitEndmill};
+
+    /// Adapts this module's legacy positional-arg test calls to the
+    /// Phase 6 `(ctx, env)` gate signature.
+    #[allow(clippy::too_many_arguments)]
+    fn evaluate_args(
+        toolpath_id: usize,
+        tool: &crate::tool::ToolDefinition,
+        material: &crate::material::Material,
+        sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
+        spans: Option<&[crate::toolpath_spans::Span]>,
+        operation_family: LutOperationFamily,
+        pass_role: LutPassRole,
+        operation_feed_rate_mm_min: f64,
+        operation_kind: crate::compute::catalog::OperationType,
+        tolerance: &crate::tool_load::ToleranceBands,
+    ) -> ChiploadVerdict {
+        evaluate(
+            &crate::tool_load::ToolpathLoadContext {
+                toolpath_id,
+                tool,
+                material,
+                operation_family,
+                pass_role,
+                operation_feed_rate_mm_min,
+                operation_kind,
+                spans,
+                drill_op: None,
+            },
+            &crate::tool_load::GateEnv {
+                sim_trace,
+                machine: None,
+                tolerance,
+            },
+        )
+    }
 
     fn tool() -> ToolDefinition {
         ToolDefinition::new(
@@ -903,7 +943,7 @@ mod tests {
         let mut s = sample(0, 0, 0.34, 0.5);
         s.arc_engagement_radians = Some(0.459);
         let t = trace(vec![s]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -926,7 +966,7 @@ mod tests {
     #[test]
     fn project_curve_vbit_stays_unmodeled() {
         let t = trace(vec![sample(0, 0, 0.02, 0.5)]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &vbit_tool(),
             &Material::SolidWood {
@@ -1017,7 +1057,7 @@ mod tests {
 
     #[test]
     fn no_trace_returns_simulation_required() {
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1049,7 +1089,7 @@ mod tests {
         let mut s = sample(0, 0, 0.05, 0.5);
         s.is_cutting = false;
         let t = trace(vec![s]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1076,7 +1116,7 @@ mod tests {
         // 6.35mm flat in hard maple, pocket roughing: Amana LUT puts the
         // chipload range somewhere around 0.025–0.060 mm/tooth. Use 0.04.
         let t = trace(vec![sample(0, 0, 0.04, 0.5)]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1106,7 +1146,7 @@ mod tests {
     fn chipload_far_above_max_is_exceeds_breakage() {
         // 0.5 mm/tooth on a 6.35mm 2-flute end mill is absurdly high.
         let t = trace(vec![sample(0, 0, 0.5, 0.5)]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1136,7 +1176,7 @@ mod tests {
     fn chipload_far_below_min_is_exceeds_burn() {
         // 0.001 mm/tooth — rubbing.
         let t = trace(vec![sample(0, 0, 0.001, 0.5)]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1167,7 +1207,7 @@ mod tests {
         // Toolpath 1 has a wildly out-of-bounds sample, but we're
         // evaluating toolpath 0 which has a normal sample.
         let t = trace(vec![sample(0, 0, 0.04, 0.5), sample(1, 1, 0.5, 0.5)]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1189,7 +1229,7 @@ mod tests {
         // Engagement 0.01 is below the 0.02 air-cut threshold; the
         // exorbitant chipload should be ignored as a phantom reading.
         let t = trace(vec![sample(0, 0, 0.5, 0.01), sample(0, 1, 0.04, 0.5)]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1225,7 +1265,7 @@ mod tests {
         let mut s1 = sample(0, 1, 0.0083, 0.5);
         s1.feed_rate_mm_min = 300.0;
         let t = trace(vec![s0, s1]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1267,7 +1307,7 @@ mod tests {
         ramp.feed_rate_mm_min = 500.0;
         ramp.cut_kinematics = crate::simulation_cut::CutKinematics::Linear;
         let t = trace(vec![linear, helix, ramp]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1307,7 +1347,7 @@ mod tests {
         s1.feed_rate_mm_min = 1500.0;
         s1.cut_kinematics = crate::simulation_cut::CutKinematics::Helix;
         let t = trace(vec![s0, s1]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1365,7 +1405,7 @@ mod tests {
         phantom.axial_doc_mm = 30.0;
         phantom.in_transit_span = true;
         let t = trace(vec![healthy_a, healthy_b, phantom]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1394,7 +1434,7 @@ mod tests {
         let mut s = sample(0, 0, 0.04, 0.5);
         s.feed_rate_mm_min = 950.0;
         let t = trace(vec![s]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1431,7 +1471,7 @@ mod tests {
         // arc_engagement is still Some — simulating a chip_geometry Err
         // case rather than a missing-arc case.
         let t = trace(vec![valid_a, valid_b, noise]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1462,7 +1502,7 @@ mod tests {
         let mut s1 = sample(0, 1, 0.04, 0.5);
         s1.effective_chip_thickness_mm = None;
         let t = trace(vec![s0, s1]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1499,7 +1539,7 @@ mod tests {
         // even at the commanded feed, the sample isn't in cut.
         s.feed_rate_mm_min = 1000.0;
         let t = trace(vec![s]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1613,7 +1653,7 @@ mod tests {
     /// so future LUT changes don't break the test setup.
     fn pocket_rough_lut_max() -> f64 {
         let t = trace(vec![sample(0, 0, 0.04, 0.5)]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1637,7 +1677,7 @@ mod tests {
 
     fn pocket_rough_lut_min() -> f64 {
         let t = trace(vec![sample(0, 0, 0.04, 0.5)]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1675,7 +1715,7 @@ mod tests {
             breakage: 0.05,
             ..crate::tool_load::ToleranceBands::default()
         };
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1706,7 +1746,7 @@ mod tests {
             breakage: 0.05,
             ..crate::tool_load::ToleranceBands::default()
         };
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1741,7 +1781,7 @@ mod tests {
             burn: 0.05,
             ..crate::tool_load::ToleranceBands::default()
         };
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1770,7 +1810,7 @@ mod tests {
             burn: 0.05,
             ..crate::tool_load::ToleranceBands::default()
         };
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1806,7 +1846,7 @@ mod tests {
         s.feed_rate_mm_min = 1500.0;
         s.cut_kinematics = crate::simulation_cut::CutKinematics::Linear;
         let t = trace(vec![s]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1862,7 +1902,7 @@ mod tests {
         s1.arc_engagement_radians = None;
         s1.effective_chip_thickness_mm = None;
         let t = trace(vec![s0, s1]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
@@ -1902,7 +1942,7 @@ mod tests {
         s.feed_rate_mm_min = 1500.0;
         s.cut_kinematics = crate::simulation_cut::CutKinematics::Plunge;
         let t = trace(vec![s]);
-        let v = evaluate(
+        let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {

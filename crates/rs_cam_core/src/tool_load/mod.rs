@@ -357,6 +357,74 @@ pub struct ToolpathLoadContext<'a> {
     pub drill_op: Option<&'a crate::drill_op::DrillOp>,
 }
 
+/// Evaluation environment shared by the per-criterion gates — the
+/// "what evidence, which machine, how strict" half of the metric
+/// context, complementing `ToolpathLoadContext`'s per-toolpath identity
+/// half (Phase 6 task 1). Bundling the two collapses the gates' former
+/// 7–10 positional args to `evaluate(ctx, env)`.
+pub struct GateEnv<'a> {
+    /// Simulation evidence; `None` routes evidence-driven gates to
+    /// `Unmodeled(SimulationRequired)`.
+    pub sim_trace: Option<&'a crate::simulation_cut::SimulationCutTrace>,
+    /// Only the power gate reads this; `None` routes it to
+    /// `Unmodeled(NotImplemented)`.
+    pub machine: Option<&'a crate::machine::MachineProfile>,
+    /// Gate-trigger widening; `&ToleranceBands::default()` for strict
+    /// LUT/machine-ceiling behaviour.
+    pub tolerance: &'a ToleranceBands,
+}
+
+/// Internal organizational trait (Phase 6 task 3): every milling gate
+/// is a `(ctx, env) → typed verdict` function plus a projection into
+/// the generic `CriterionStatus`. Lets tests sweep all gates uniformly
+/// (e.g. "every gate refuses drill kinematics the same way") without
+/// erasing the typed verdicts — `evaluate_toolpath` still names each
+/// gate's field explicitly and report construction stays typed.
+pub trait MetricEvaluator {
+    type Verdict;
+    fn evaluate_gate(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Self::Verdict;
+    fn status(verdict: &Self::Verdict) -> verdict::CriterionStatus<'_>;
+}
+
+/// `MetricEvaluator` handle for the chipload gate.
+pub struct ChiploadGate;
+impl MetricEvaluator for ChiploadGate {
+    type Verdict = ChiploadVerdict;
+    fn evaluate_gate(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> ChiploadVerdict {
+        chipload::evaluate(ctx, env)
+    }
+    fn status(verdict: &ChiploadVerdict) -> verdict::CriterionStatus<'_> {
+        verdict.as_criterion_status()
+    }
+}
+
+/// `MetricEvaluator` handle for the power gate.
+pub struct PowerGate;
+impl MetricEvaluator for PowerGate {
+    type Verdict = PowerVerdict;
+    fn evaluate_gate(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> PowerVerdict {
+        power::evaluate(ctx, env)
+    }
+    fn status(verdict: &PowerVerdict) -> verdict::CriterionStatus<'_> {
+        verdict.as_criterion_status()
+    }
+}
+
+/// `MetricEvaluator` handle for the deflection gate.
+pub struct DeflectionGate;
+impl MetricEvaluator for DeflectionGate {
+    type Verdict = verdict::DeflectionVerdict;
+    fn evaluate_gate(
+        ctx: &ToolpathLoadContext<'_>,
+        env: &GateEnv<'_>,
+    ) -> verdict::DeflectionVerdict {
+        deflection::evaluate(ctx, env)
+    }
+    fn status(verdict: &verdict::DeflectionVerdict) -> verdict::CriterionStatus<'_> {
+        verdict.as_criterion_status()
+    }
+}
+
 /// Evaluate every guardrail criterion for a single toolpath. All three
 /// criteria are independent — caller passes the inputs needed for each
 /// and the result carries per-criterion `Verdict`s.
@@ -374,22 +442,10 @@ pub fn evaluate_toolpath(
     machine: Option<&crate::machine::MachineProfile>,
     tolerance: &ToleranceBands,
 ) -> ToolpathLoadVerdict {
-    let power = match machine {
-        Some(m) => power::evaluate(
-            ctx.toolpath_id,
-            ctx.tool,
-            ctx.material,
-            m,
-            sim_trace,
-            ctx.spans,
-            ctx.operation_kind,
-            tolerance,
-        ),
-        None => PowerVerdict::Unmodeled {
-            reason: UnmodeledReason::NotImplemented(
-                "machine profile not provided to evaluator".to_owned(),
-            ),
-        },
+    let env = GateEnv {
+        sim_trace,
+        machine,
+        tolerance,
     };
     // §6.E / Step 3 PR2: evaluate drill gates when this toolpath
     // carries a `DrillOp` payload. Mirrors what
@@ -404,28 +460,9 @@ pub fn evaluate_toolpath(
     });
     ToolpathLoadVerdict {
         toolpath_id: ctx.toolpath_id,
-        chipload: chipload::evaluate(
-            ctx.toolpath_id,
-            ctx.tool,
-            ctx.material,
-            sim_trace,
-            ctx.spans,
-            ctx.operation_family,
-            ctx.pass_role,
-            ctx.operation_feed_rate_mm_min,
-            ctx.operation_kind,
-            tolerance,
-        ),
-        power,
-        deflection: deflection::evaluate(
-            ctx.toolpath_id,
-            ctx.tool,
-            ctx.material,
-            sim_trace,
-            ctx.spans,
-            ctx.operation_kind,
-            tolerance,
-        ),
+        chipload: chipload::evaluate(ctx, &env),
+        power: power::evaluate(ctx, &env),
+        deflection: deflection::evaluate(ctx, &env),
         drill_gates,
         // Feed-modulation rollup captured by the simulator for this
         // toolpath, when the trace carries one. Populated here (not at
@@ -448,4 +485,126 @@ pub fn evaluate_project(
         .map(|ctx| evaluate_toolpath(ctx, sim_trace, machine, tolerance))
         .collect();
     ToolLoadReport { per_toolpath }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+    use crate::compute::tool_config::ToolMaterial;
+    use crate::tool::FlatEndmill;
+    use verdict::LoadState;
+
+    fn tool() -> ToolDefinition {
+        ToolDefinition::new(
+            Box::new(FlatEndmill::new(6.35, 20.0)),
+            6.35,
+            30.0,
+            20.0,
+            30.0,
+            2,
+            ToolMaterial::Carbide,
+        )
+    }
+
+    fn ctx_for<'a>(
+        tool: &'a ToolDefinition,
+        material: &'a Material,
+        operation_kind: OperationType,
+    ) -> ToolpathLoadContext<'a> {
+        ToolpathLoadContext {
+            toolpath_id: 0,
+            tool,
+            material,
+            operation_family: LutOperationFamily::Pocket,
+            pass_role: LutPassRole::Roughing,
+            operation_feed_rate_mm_min: 1000.0,
+            operation_kind,
+            spans: None,
+            drill_op: None,
+        }
+    }
+
+    /// Run one gate generically through `MetricEvaluator` and project
+    /// the result into `(state, unmodeled-reason debug)`.
+    fn sweep<G: MetricEvaluator>(
+        ctx: &ToolpathLoadContext<'_>,
+        env: &GateEnv<'_>,
+    ) -> (LoadState, Option<String>) {
+        let v = G::evaluate_gate(ctx, env);
+        let s = G::status(&v);
+        (s.state, s.unmodeled_reason.map(|r| format!("{r:?}")))
+    }
+
+    /// Phase 6 task 3 sentry — every milling gate refuses uniformly
+    /// through the shared `(ctx, env)` surface:
+    /// - drill kinematics → `Unmodeled(NotApplicableForOp)` on all gates
+    /// - milling op with no sim trace → `Unmodeled(SimulationRequired)`
+    ///
+    /// If a gate ever stops honouring the shared short-circuits (e.g.
+    /// a new gate forgets the F.8 drill check), this catches it at the
+    /// trait level rather than in per-gate tests that each pin only
+    /// their own module.
+    #[test]
+    fn metric_evaluators_share_refusal_semantics() {
+        let tool = tool();
+        let material = Material::SolidWood {
+            species: crate::material::WoodSpecies::HardMaple,
+        };
+        let machine = crate::machine::MachineProfile::default();
+        let tolerance = ToleranceBands::default();
+        let env = GateEnv {
+            sim_trace: None,
+            machine: Some(&machine),
+            tolerance: &tolerance,
+        };
+
+        let drill_ctx = ctx_for(&tool, &material, OperationType::Drill);
+        for (label, (state, reason)) in [
+            ("chipload", sweep::<ChiploadGate>(&drill_ctx, &env)),
+            ("power", sweep::<PowerGate>(&drill_ctx, &env)),
+            ("deflection", sweep::<DeflectionGate>(&drill_ctx, &env)),
+        ] {
+            assert_eq!(state, LoadState::Unmodeled, "{label}: drill kinematics");
+            let reason = reason.unwrap_or_default();
+            assert!(
+                reason.contains("NotApplicableForOp"),
+                "{label}: expected NotApplicableForOp, got {reason}"
+            );
+        }
+
+        let mill_ctx = ctx_for(&tool, &material, OperationType::Pocket);
+        for (label, (state, reason)) in [
+            ("chipload", sweep::<ChiploadGate>(&mill_ctx, &env)),
+            ("power", sweep::<PowerGate>(&mill_ctx, &env)),
+            ("deflection", sweep::<DeflectionGate>(&mill_ctx, &env)),
+        ] {
+            assert_eq!(state, LoadState::Unmodeled, "{label}: no sim trace");
+            let reason = reason.unwrap_or_default();
+            assert!(
+                reason.contains("SimulationRequired"),
+                "{label}: expected SimulationRequired, got {reason}"
+            );
+        }
+
+        // The power gate is the only machine consumer: no machine →
+        // its dedicated `NotImplemented` refusal, evaluated before any
+        // other input check (pre-Phase-6 `evaluate_toolpath` parity).
+        let no_machine = GateEnv {
+            sim_trace: None,
+            machine: None,
+            tolerance: &tolerance,
+        };
+        let (state, reason) = sweep::<PowerGate>(&drill_ctx, &no_machine);
+        assert_eq!(state, LoadState::Unmodeled);
+        assert!(
+            reason.unwrap_or_default().contains("NotImplemented"),
+            "power without machine must refuse NotImplemented"
+        );
+    }
 }
