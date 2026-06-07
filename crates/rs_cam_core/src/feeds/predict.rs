@@ -48,8 +48,8 @@
 //! delivers — "no constraint signal", caller treats as a pass-through.
 
 use crate::compute::catalog::{OperationConfig, OperationType};
-use crate::compute::tool_config::{ToolConfig, ToolType};
-use crate::feeds::OperationFamily as FeedsOperationFamily;
+use crate::compute::tool_config::ToolConfig;
+use crate::feeds::{CutterKind, OperationFamily as FeedsOperationFamily};
 use crate::machine::MachineProfile;
 use crate::material::Material;
 
@@ -155,7 +155,7 @@ pub fn predict_peak_deflection_um(
     // and the "core" of a triangular profile isn't a bending section).
     // The post-sim integrator with `lookup_diameter_at` handles V-bits;
     // the closed-form predictor refuses.
-    if tool.tool_type == ToolType::VBit {
+    if tool.tool_type.cutter_kind() == CutterKind::VBit {
         tracing::debug!(
             reason = "vbit_unsupported",
             "predictor returns 0 µm — V-bit closed-form not modeled"
@@ -364,11 +364,15 @@ pub fn predict_peak_deflection_um(
 ///   shank (the cone-shoulder section dominates bending stiffness above
 ///   the tip). Floor at 0.5 mm to keep `1/d⁴` finite.
 /// - V-bit: returns 0 (caller refuses earlier).
+///
+/// Routes on [`CutterKind`] (Phase 3) — the bending-section model is a
+/// per-shape-class decision, so a 6th cutter shape fails to compile
+/// here instead of inheriting a wrong core silently.
 pub fn core_diameter_mm(tool: &ToolConfig) -> f64 {
-    match tool.tool_type {
-        ToolType::EndMill => ENDMILL_CORE_FRACTION * tool.diameter,
-        ToolType::BallNose | ToolType::BullNose => tool.diameter,
-        ToolType::TaperedBallNose => {
+    match tool.tool_type.cutter_kind() {
+        CutterKind::Flat => ENDMILL_CORE_FRACTION * tool.diameter,
+        CutterKind::Ball | CutterKind::Bull => tool.diameter,
+        CutterKind::TaperedBall => {
             let shank = tool.shaft_diameter.max(tool.diameter);
             // Weight 60% shank / 40% tip: the bending stiffness
             // integral above the ball junction is dominated by the
@@ -377,7 +381,7 @@ pub fn core_diameter_mm(tool: &ToolConfig) -> f64 {
                 + PREDICTOR_TAPERED_BALL_TIP_WEIGHT * tool.diameter)
                 .max(0.5)
         }
-        ToolType::VBit => 0.0,
+        CutterKind::VBit => 0.0,
     }
 }
 
