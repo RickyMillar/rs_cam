@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::feeds::{OperationFamily as FeedsOperationFamily, PassRole};
+use crate::feeds::{CutterKind, OperationFamily as FeedsOperationFamily, PassRole};
 
 use super::config::StockSource;
 use super::operation_configs::{
@@ -872,11 +872,19 @@ impl ParamDef {
 /// Static-friendly tool-constraint data for a registry entry.
 /// Materialized into the serde-facing [`ToolConstraints`] by
 /// [`Self::to_schema`].
+///
+/// Typed on [`CutterKind`] (Phase 3) — the published schema still
+/// speaks snake_case tool-type strings (derived via
+/// `CutterKind::tool_type().serde_token()`, byte-identical to the
+/// pre-Phase-3 literals), but the registry decision itself is a
+/// compiler-checked shape-class list: a 6th cutter shape can't be
+/// silently absent from a constraint list the way a typo'd string
+/// could.
 #[derive(Debug, Clone, Copy)]
 pub struct ToolConstraintsDef {
-    /// Tool types (snake_case serde reprs) the operation requires; empty
-    /// means any tool geometry is accepted.
-    pub required_tool_type: &'static [&'static str],
+    /// Cutter shape classes the operation requires; empty means any
+    /// tool geometry is accepted.
+    pub required_kinds: &'static [CutterKind],
     /// Whether a V-bit can run this operation at all.
     pub supports_v_bit: bool,
 }
@@ -886,18 +894,29 @@ impl ToolConstraintsDef {
     /// Referenced explicitly by every unrestricted entry so the
     /// unrestricted set is a recorded decision, not a wildcard fallback.
     pub const ANY_TOOL: Self = Self {
-        required_tool_type: &[],
+        required_kinds: &[],
         supports_v_bit: true,
     };
+
+    /// Whether a cutter of this shape class may run the operation.
+    /// THE reconciliation point with runtime refusals (e.g. the
+    /// Scallop ball-tip check in `execute_operation_annotated`): the
+    /// refusal reads this predicate, so the registry list and the
+    /// runtime gate cannot drift.
+    pub fn allows(&self, kind: CutterKind) -> bool {
+        if !self.supports_v_bit && kind == CutterKind::VBit {
+            return false;
+        }
+        self.required_kinds.is_empty() || self.required_kinds.contains(&kind)
+    }
 
     /// Materialize the serde-facing [`ToolConstraints`].
     pub fn to_schema(&self) -> ToolConstraints {
         ToolConstraints {
             required_tool_type: self
-                .required_tool_type
+                .required_kinds
                 .iter()
-                .copied()
-                .map(str::to_owned)
+                .map(|k| k.tool_type().serde_token().to_owned())
                 .collect(),
             supports_v_bit: self.supports_v_bit,
         }
@@ -1340,7 +1359,7 @@ static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: VCARVE_PARAMS,
     tool_constraints: ToolConstraintsDef {
-        required_tool_type: &["v_bit"],
+        required_kinds: &[CutterKind::VBit],
         supports_v_bit: true,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
@@ -1379,7 +1398,7 @@ static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: INLAY_PARAMS,
     tool_constraints: ToolConstraintsDef {
-        required_tool_type: &["v_bit"],
+        required_kinds: &[CutterKind::VBit],
         supports_v_bit: true,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
@@ -1456,7 +1475,7 @@ static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: CHAMFER_PARAMS,
     tool_constraints: ToolConstraintsDef {
-        required_tool_type: &["v_bit"],
+        required_kinds: &[CutterKind::VBit],
         supports_v_bit: true,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
@@ -1561,7 +1580,7 @@ static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: SCALLOP_PARAMS,
     tool_constraints: ToolConstraintsDef {
-        required_tool_type: &["ball_nose", "tapered_ball_nose"],
+        required_kinds: &[CutterKind::Ball, CutterKind::TaperedBall],
         supports_v_bit: false,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
@@ -1962,46 +1981,93 @@ mod tests {
         }
     }
 
-    /// Phase 1 wildcard kill (architectural refactor T3): tool
-    /// constraints are now an explicit per-entry registry field. This
-    /// pins (a) the four restricted ops exactly, and (b) that the 19
-    /// previously-wildcard-defaulted ops still resolve to the named
-    /// `ANY_TOOL` policy — proving the consolidation changed no
-    /// behavior. A new op must reference a policy explicitly; there is
-    /// no fallback arm left to inherit silently.
+    /// Phase 1 wildcard kill (architectural refactor T3, re-baselined
+    /// typed in T7): tool constraints are an explicit per-entry
+    /// registry field, now a `&[CutterKind]` list. This pins (a) the
+    /// four restricted ops exactly, (b) that the 19 previously-
+    /// wildcard-defaulted ops still resolve to the named `ANY_TOOL`
+    /// policy, and (c) that `to_schema()` materializes the EXACT
+    /// pre-Phase-3 snake_case strings — proving the typed conversion
+    /// changed neither behavior nor the published schema. A new op
+    /// must reference a policy explicitly; there is no fallback arm
+    /// left to inherit silently.
     #[test]
     fn tool_constraints_are_an_explicit_per_op_decision() {
         let mut unrestricted = 0;
         for &op_type in OperationType::ALL {
             let tc = op_type.registry_entry().tool_constraints;
+            let schema = tc.to_schema();
             match op_type {
                 OperationType::VCarve | OperationType::Inlay | OperationType::Chamfer => {
-                    assert_eq!(tc.required_tool_type, ["v_bit"], "{op_type:?}");
+                    assert_eq!(tc.required_kinds, [CutterKind::VBit], "{op_type:?}");
+                    assert_eq!(schema.required_tool_type, ["v_bit"], "{op_type:?}");
                     assert!(tc.supports_v_bit, "{op_type:?}");
                 }
                 OperationType::Scallop => {
-                    assert_eq!(tc.required_tool_type, ["ball_nose", "tapered_ball_nose"]);
+                    assert_eq!(
+                        tc.required_kinds,
+                        [CutterKind::Ball, CutterKind::TaperedBall]
+                    );
+                    assert_eq!(
+                        schema.required_tool_type,
+                        ["ball_nose", "tapered_ball_nose"]
+                    );
                     assert!(!tc.supports_v_bit);
                 }
                 _ => {
                     // Pre-registry these 19 fell through `_ => (Vec::new(), true)`.
                     assert!(
-                        tc.required_tool_type.is_empty(),
+                        tc.required_kinds.is_empty(),
                         "{op_type:?}: expected the ANY_TOOL policy"
                     );
+                    assert!(schema.required_tool_type.is_empty(), "{op_type:?}");
                     assert!(tc.supports_v_bit, "{op_type:?}");
                     unrestricted += 1;
                 }
             }
-            // The serde-facing materialization agrees with the def.
-            let schema = tc.to_schema();
-            assert_eq!(schema.required_tool_type, tc.required_tool_type);
             assert_eq!(schema.supports_v_bit, tc.supports_v_bit);
         }
         assert_eq!(
             unrestricted, 19,
             "unrestricted-op count changed — decide deliberately"
         );
+    }
+
+    /// T7 PR C reconciliation pin: the registry `allows()` predicate —
+    /// which the Scallop runtime refusal in
+    /// `execute_operation_annotated` now reads — agrees with the
+    /// pre-Phase-3 `ToolType::has_ball_tip()` check for Scallop, and
+    /// matches the constraint semantics for every (op, cutter) cell.
+    #[test]
+    fn tool_constraints_allows_matches_runtime_refusal_semantics() {
+        use crate::compute::ToolType;
+        for &tool_type in ToolType::ALL {
+            let kind = tool_type.cutter_kind();
+            // Scallop: allows() == has_ball_tip() — the exact predicate
+            // the execute-time refusal used before reading the registry.
+            assert_eq!(
+                OperationType::Scallop
+                    .registry_entry()
+                    .tool_constraints
+                    .allows(kind),
+                tool_type.has_ball_tip(),
+                "{tool_type:?} vs Scallop"
+            );
+            // V-bit-required ops accept exactly the V-bit.
+            for op in [
+                OperationType::VCarve,
+                OperationType::Inlay,
+                OperationType::Chamfer,
+            ] {
+                assert_eq!(
+                    op.registry_entry().tool_constraints.allows(kind),
+                    tool_type == ToolType::VBit,
+                    "{tool_type:?} vs {op:?}"
+                );
+            }
+            // ANY_TOOL accepts everything, V-bit included.
+            assert!(ToolConstraintsDef::ANY_TOOL.allows(kind));
+        }
     }
 
     /// Phase 1 T4: the drill-family membership behind the canonical

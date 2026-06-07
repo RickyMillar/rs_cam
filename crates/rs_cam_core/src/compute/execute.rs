@@ -5,7 +5,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::compute::catalog::{OperationConfig, OperationTransformCapabilities};
+use crate::compute::catalog::{OperationConfig, OperationTransformCapabilities, OperationType};
 use crate::compute::config::{DressupConfig, DressupEntryStyle, ResolvedHeights};
 use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::{ToolConfig, ToolType};
@@ -1040,7 +1040,15 @@ pub fn execute_operation_annotated(
             Ok(generated_with_spans(tp, spans))
         }
         OperationConfig::Scallop(cfg) => {
-            if !tool_cfg.tool_type.has_ball_tip() {
+            // Reads the registry constraint list (T7 PR C) so this
+            // refusal and the published `tool_constraints` schema
+            // cannot drift; membership pinned by
+            // `tool_constraints_allows_matches_runtime_refusal_semantics`.
+            if !OperationType::Scallop
+                .registry_entry()
+                .tool_constraints
+                .allows(tool_cfg.tool_type.cutter_kind())
+            {
                 return Err(OperationError::InvalidTool(
                     "Scallop requires a ball-tip tool (Ball Nose or Tapered Ball Nose)".into(),
                 ));
