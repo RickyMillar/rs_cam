@@ -37,7 +37,6 @@
 //! now any present trace is considered live.
 
 use crate::compute::catalog::OperationType;
-use crate::feeds::ToolGeometryHint;
 use crate::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_row_for_geometry};
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily};
 use crate::feeds::vendor_normalize::material_to_lut;
@@ -332,7 +331,7 @@ pub fn evaluate(
         .fold(0.0_f64, f64::max);
     let lut = embedded_lut();
     let geometry_hint = tool.to_geometry_hint();
-    let tool_family = tool_family_for(geometry_hint);
+    let tool_family = geometry_hint.cutter_kind().lut_family();
     let Some((operation_family, pass_role)) =
         routed_lookup_family(operation_kind, tool_family, operation_family, pass_role)
     else {
@@ -733,16 +732,6 @@ pub(crate) fn routed_lookup_family(
         }
         ToolFamily::FlatEnd => Some((LutOperationFamily::Contour, LutPassRole::Finish)),
         ToolFamily::BullNose | ToolFamily::ChamferVbit | ToolFamily::FacingBit => None,
-    }
-}
-
-pub(crate) fn tool_family_for(hint: ToolGeometryHint) -> ToolFamily {
-    match hint {
-        ToolGeometryHint::Flat => ToolFamily::FlatEnd,
-        ToolGeometryHint::Ball => ToolFamily::BallNose,
-        ToolGeometryHint::Bull { .. } => ToolFamily::BullNose,
-        ToolGeometryHint::VBit { .. } => ToolFamily::ChamferVbit,
-        ToolGeometryHint::TaperedBall { .. } => ToolFamily::TaperedBallNose,
     }
 }
 

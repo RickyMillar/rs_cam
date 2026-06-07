@@ -37,6 +37,35 @@ impl ToolType {
     pub fn has_ball_tip(&self) -> bool {
         matches!(self, ToolType::BallNose | ToolType::TaperedBallNose)
     }
+
+    /// Convenience `ToolType → CutterKind` classification for call
+    /// sites that only hold a `ToolConfig`. The PRIMARY derivation is
+    /// [`crate::feeds::ToolGeometryHint::cutter_kind`] (every
+    /// `MillingCutter` yields a hint); this layered shortcut must stay
+    /// the bijective inverse of [`crate::feeds::CutterKind::tool_type`]
+    /// (pinned by `tool_type_cutter_kind_round_trips`).
+    pub const fn cutter_kind(self) -> crate::feeds::CutterKind {
+        match self {
+            ToolType::EndMill => crate::feeds::CutterKind::Flat,
+            ToolType::BallNose => crate::feeds::CutterKind::Ball,
+            ToolType::BullNose => crate::feeds::CutterKind::Bull,
+            ToolType::VBit => crate::feeds::CutterKind::VBit,
+            ToolType::TaperedBallNose => crate::feeds::CutterKind::TaperedBall,
+        }
+    }
+
+    /// The snake_case serde repr of this tool type as a `&'static str`,
+    /// for const contexts (registry tool-constraint schemas). Must match
+    /// the serde rename — pinned by `tool_type_serde_repr_pinned`.
+    pub const fn serde_token(self) -> &'static str {
+        match self {
+            ToolType::EndMill => "end_mill",
+            ToolType::BallNose => "ball_nose",
+            ToolType::BullNose => "bull_nose",
+            ToolType::VBit => "v_bit",
+            ToolType::TaperedBallNose => "tapered_ball_nose",
+        }
+    }
 }
 
 /// Tool material (affects chip load and wear).
@@ -245,6 +274,12 @@ mod tests {
                 serde_json::from_value(serde_json::Value::String(repr.to_owned()))
                     .expect("canonical name must deserialize");
             assert_eq!(parsed, tool_type);
+            // The const-context mirror must agree with serde exactly.
+            assert_eq!(
+                tool_type.serde_token(),
+                repr,
+                "{tool_type:?}: serde_token() drifted from the serde repr"
+            );
         }
     }
 
