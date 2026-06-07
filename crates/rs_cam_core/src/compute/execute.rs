@@ -741,6 +741,126 @@ pub(crate) fn generate_face(
     Ok(generated)
 }
 
+/// SpiralFinish family adapter. NOTE: spans come from
+/// `spans_from_labeled_events` over the generator's annotations, and
+/// the family annotate fn is `annotate_spiral_finish` — both part of
+/// the contract.
+pub(crate) fn generate_spiral_finish(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::SpiralFinish(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_spiral_finish received a non-SpiralFinish config"
+                .into(),
+        ));
+    };
+    let m = require_mesh(ctx.mesh)?;
+    let idx = ctx
+        .index
+        .ok_or_else(|| OperationError::Other("SpiralFinish requires a spatial index".into()))?;
+    let params = crate::spiral_finish::SpiralFinishParams {
+        stepover: cfg.stepover,
+        direction: cfg.direction,
+        feed_rate: op.feed_rate(),
+        plunge_rate: op.plunge_rate(),
+        safe_z: ctx.heights.retract_z,
+        stock_to_leave: cfg.stock_to_leave,
+    };
+    let (tp, annotations) = crate::spiral_finish::spiral_finish_toolpath_structured_annotated(
+        m,
+        idx,
+        ctx.tool_def,
+        &params,
+        ctx.debug_ctx,
+    );
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_spiral_finish(&annotations, &tp, sem);
+    }
+    let spans = crate::compute::spans::spans_from_labeled_events(
+        tp.moves.len(),
+        annotations
+            .iter()
+            .map(|ann| (ann.move_index, ann.event.label())),
+    );
+    Ok(generated_with_spans(tp, spans))
+}
+
+/// RadialFinish family adapter.
+pub(crate) fn generate_radial_finish(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::RadialFinish(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_radial_finish received a non-RadialFinish config"
+                .into(),
+        ));
+    };
+    let m = require_mesh(ctx.mesh)?;
+    let idx = ctx
+        .index
+        .ok_or_else(|| OperationError::Other("RadialFinish requires a spatial index".into()))?;
+    let params = crate::radial_finish::RadialFinishParams {
+        angular_step: cfg.angular_step,
+        point_spacing: cfg.point_spacing,
+        feed_rate: op.feed_rate(),
+        plunge_rate: op.plunge_rate(),
+        safe_z: ctx.heights.retract_z,
+        stock_to_leave: cfg.stock_to_leave,
+    };
+    let generated = generated_with_cut_run_spans(
+        crate::radial_finish::radial_finish_toolpath(m, idx, ctx.tool_def, &params),
+        "Radial ray",
+    );
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_depth_run_spans(
+            &generated.spans,
+            &generated.toolpath,
+            sem,
+        );
+    }
+    Ok(generated)
+}
+
+/// HorizontalFinish family adapter.
+pub(crate) fn generate_horizontal_finish(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::HorizontalFinish(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_horizontal_finish received a \
+             non-HorizontalFinish config"
+                .into(),
+        ));
+    };
+    let m = require_mesh(ctx.mesh)?;
+    let idx = ctx
+        .index
+        .ok_or_else(|| OperationError::Other("HorizontalFinish requires a spatial index".into()))?;
+    let params = crate::horizontal_finish::HorizontalFinishParams {
+        angle_threshold: cfg.angle_threshold,
+        stepover: cfg.stepover,
+        feed_rate: op.feed_rate(),
+        plunge_rate: op.plunge_rate(),
+        safe_z: ctx.heights.retract_z,
+        stock_to_leave: cfg.stock_to_leave,
+    };
+    let generated = generated_with_cut_run_spans(
+        crate::horizontal_finish::horizontal_finish_toolpath(m, idx, ctx.tool_def, &params),
+        "Horizontal slice",
+    );
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_depth_run_spans(
+            &generated.spans,
+            &generated.toolpath,
+            sem,
+        );
+    }
+    Ok(generated)
+}
+
 /// DropCutter family adapter. Cancellable: the cooperative cancel
 /// closure is rebuilt from `ctx.cancel` (pinned by
 /// `cancellable_families_honour_a_preset_cancel_flag`).
@@ -1355,86 +1475,11 @@ pub fn execute_operation_annotated(
             );
             Ok(generated_with_spans(tp, spans))
         }
-        OperationConfig::SpiralFinish(cfg) => {
-            let m = require_mesh(mesh)?;
-            let idx = index.ok_or_else(|| {
-                OperationError::Other("SpiralFinish requires a spatial index".into())
-            })?;
-            let params = crate::spiral_finish::SpiralFinishParams {
-                stepover: cfg.stepover,
-                direction: cfg.direction,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-                stock_to_leave: cfg.stock_to_leave,
-            };
-            let (tp, annotations) =
-                crate::spiral_finish::spiral_finish_toolpath_structured_annotated(
-                    m, idx, tool_def, &params, debug_ctx,
-                );
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_spiral_finish(&annotations, &tp, ctx);
-            }
-            let spans = crate::compute::spans::spans_from_labeled_events(
-                tp.moves.len(),
-                annotations
-                    .iter()
-                    .map(|ann| (ann.move_index, ann.event.label())),
-            );
-            Ok(generated_with_spans(tp, spans))
-        }
-        OperationConfig::RadialFinish(cfg) => {
-            let m = require_mesh(mesh)?;
-            let idx = index.ok_or_else(|| {
-                OperationError::Other("RadialFinish requires a spatial index".into())
-            })?;
-            let params = crate::radial_finish::RadialFinishParams {
-                angular_step: cfg.angular_step,
-                point_spacing: cfg.point_spacing,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-                stock_to_leave: cfg.stock_to_leave,
-            };
-            let generated = generated_with_cut_run_spans(
-                crate::radial_finish::radial_finish_toolpath(m, idx, tool_def, &params),
-                "Radial ray",
-            );
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_depth_run_spans(
-                    &generated.spans,
-                    &generated.toolpath,
-                    ctx,
-                );
-            }
-            Ok(generated)
-        }
-        OperationConfig::HorizontalFinish(cfg) => {
-            let m = require_mesh(mesh)?;
-            let idx = index.ok_or_else(|| {
-                OperationError::Other("HorizontalFinish requires a spatial index".into())
-            })?;
-            let params = crate::horizontal_finish::HorizontalFinishParams {
-                angle_threshold: cfg.angle_threshold,
-                stepover: cfg.stepover,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-                stock_to_leave: cfg.stock_to_leave,
-            };
-            let generated = generated_with_cut_run_spans(
-                crate::horizontal_finish::horizontal_finish_toolpath(m, idx, tool_def, &params),
-                "Horizontal slice",
-            );
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_depth_run_spans(
-                    &generated.spans,
-                    &generated.toolpath,
-                    ctx,
-                );
-            }
-            Ok(generated)
-        }
+        // Migrated to the registry GenerateFn (T11); arms kept for the
+        // exhaustiveness net and delegate to the same adapters.
+        OperationConfig::SpiralFinish(_) => generate_spiral_finish(&ctx, op),
+        OperationConfig::RadialFinish(_) => generate_radial_finish(&ctx, op),
+        OperationConfig::HorizontalFinish(_) => generate_horizontal_finish(&ctx, op),
         OperationConfig::ProjectCurve(cfg) => {
             let polys = require_polygons(polygons)?;
             let m = require_mesh(mesh)?;
