@@ -1,23 +1,18 @@
 //! Tool-load monitor: independent guardrails on the cutting envelope.
 //!
-//! Three criteria, each with its own `Verdict`:
+//! Three criteria, each with its own typed `Verdict` (all fully
+//! implemented):
 //! - `chipload` — per-sample chipload-per-tooth vs vendor-LUT min/max
 //! - `power` — per-sample spindle power vs available power × safety factor
-//! - `deflection` — purely geometric L/D ratio
+//! - `deflection` — per-sample tip deflection from cutting force
+//!   (`Kc · DOC · WOC` through a stepped-cantilever model) vs the
+//!   50 µm / 200 µm bounds
 //!
 //! There is no aggregate scalar "load %". A scalar would conflate inputs
-//! that are individually honest (geometric L/D) with inputs that are
-//! systematically biased (current cylinder-volume engagement) and inputs
-//! that don't exist yet (force prediction). Each criterion is reported
-//! independently; UI and MCP render them independently.
-//!
-//! Phase status:
-//! - Phase 1a (this commit): `chipload` (per-sample vs vendor LUT) and
-//!   `deflection` (L/D only); `power` stubbed `Unmodeled(NotImplemented)`.
-//! - Phase 2 → Phase 1b power: arc-engagement metric lands, then `power`.
-//!
-//! See `/home/ricky/.claude-personal/plans/cheerful-popping-spring.md` for
-//! the full plan, including the deferred Phase 6 force model.
+//! that are individually honest with inputs that are systematically
+//! biased (the cylinder-side radial-WOC engagement fraction). Each
+//! criterion is reported independently; UI and MCP render them
+//! independently.
 
 pub mod chipload;
 pub mod deflection;
@@ -333,11 +328,12 @@ pub struct ToolpathLoadContext<'a> {
     /// within a small tolerance — and exclude transient entry/plunge/ramp
     /// moves at lower feeds. Item C of the tool-load fidelity plan.
     pub operation_feed_rate_mm_min: f64,
-    /// The toolpath's operation kind. Item D of the tool-load fidelity
-    /// plan will branch on this in the LUT lookup so project_curve ops
-    /// match an appropriate vendor row instead of falling through to
-    /// `Unmodeled(NoVendorData)`. Currently unused; populated here so the
-    /// `ToolpathLoadContext` and its construction sites are touched once.
+    /// The toolpath's operation kind. Read by every gate: it drives the
+    /// drill-kinematics short-circuit (`NotApplicableForOp`) and the LUT
+    /// lookup family routing (`routed_lookup_family` reroutes
+    /// `ProjectCurve` and `Adaptive3d` so they match an appropriate
+    /// vendor row instead of falling through to `Unmodeled(NoVendorData)`
+    /// — Item D of the tool-load fidelity plan).
     pub operation_kind: OperationType,
     /// Structural spans on the (annotated) toolpath. Threaded into the
     /// per-criterion evaluators so `tool_load::locality` can resolve
