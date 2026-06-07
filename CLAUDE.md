@@ -141,8 +141,8 @@ The GUI embeds an MCP server (`--mcp` flag) so Claude can control the live GUI i
 
 | Metric | Low / Within | Elevated | High / Exceeds |
 |--------|--------------|----------|----------------|
-| `max_depth_to_diameter` vs material threshold (softwood 8, hardwood 5, plastic 4) | < 0.75× | 0.75–1.0× | ≥ 1.0× |
-| Single peck D/d vs material per-peck threshold (softwood 2.0, plastic 1.0) | ≤ 1.0× | — | > 1.0× |
+| `max_depth_to_diameter` vs material threshold (Janka-banded: softwood 8, medium hardwood 6, dense/unknown 5; plywood/sheet 5, plastic 4) | < 0.75× | 0.75–1.0× | ≥ 1.0× |
+| Single peck D/d vs material per-peck threshold (Janka-banded 2026-06-03: softwood ≤700 lbf 6.0, medium hardwood 5.0, dense/unknown 4.0; plywood/sheet 1.5, plastic 1.0) | ≤ 1.0× | — | > 1.0× |
 | Plunge feed / diameter (1/min) | inside material envelope | below min | above max |
 
 **Metric caveats** (April 2026 review — `planning/adaptive_review_2026-04.md`):
