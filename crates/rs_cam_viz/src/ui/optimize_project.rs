@@ -384,9 +384,9 @@ fn draw_row(
 }
 
 fn draw_compact_verdict(ui: &mut egui::Ui, candidate: &OptimizeCandidate) {
-    let any_exceed = candidate.verdict.chipload.is_exceeded()
-        || candidate.verdict.power.is_exceeded()
-        || candidate.verdict.deflection.is_exceeded();
+    // Derived from `criteria()` (Phase 6 task 5) — a fourth gate joins
+    // this badge automatically.
+    let any_exceed = candidate.verdict.any_exceeded();
     let (glyph, color) = if any_exceed {
         ("⚠", theme::ERROR)
     } else {
