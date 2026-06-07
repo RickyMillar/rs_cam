@@ -292,6 +292,113 @@ pub(crate) fn generate_alignment_pin_drill(
     Ok(generated)
 }
 
+/// Rest-machining family adapter. Requires `prev_tool_radius` in the
+/// context (set by the session/worker drivers from the previous tool).
+pub(crate) fn generate_rest(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::Rest(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_rest received a non-Rest config".into(),
+        ));
+    };
+    let polys = require_polygons(ctx.polygons)?;
+    let ptr = ctx
+        .prev_tool_radius
+        .ok_or_else(|| OperationError::Other("Previous tool not set for rest machining".into()))?;
+    let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
+    let tool_radius = ctx.tool_def.radius();
+    let safe_z = ctx.heights.retract_z;
+    let mut combined = Toolpath::new();
+    for poly in polys {
+        let tp = crate::depth::toolpath_at_levels(&levels, safe_z, |z| {
+            crate::rest::rest_machining_toolpath(
+                poly,
+                &crate::rest::RestParams {
+                    prev_tool_radius: ptr,
+                    tool_radius,
+                    cut_depth: z,
+                    stepover: cfg.stepover,
+                    feed_rate: op.feed_rate(),
+                    plunge_rate: op.plunge_rate(),
+                    safe_z,
+                    angle: cfg.angle,
+                },
+            )
+        });
+        combined.moves.extend(tp.moves);
+    }
+    let generated = generated_with_depth_run_spans(combined, &levels);
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_depth_run_spans(
+            &generated.spans,
+            &generated.toolpath,
+            sem,
+        );
+    }
+    Ok(generated)
+}
+
+/// Inlay family adapter (female + male halves concatenated with a
+/// retract between; V-bit refusal preserved verbatim).
+pub(crate) fn generate_inlay(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::Inlay(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_inlay received a non-Inlay config".into(),
+        ));
+    };
+    let polys = require_polygons(ctx.polygons)?;
+    let ha = match ctx.tool_cfg.tool_type {
+        ToolType::VBit => (ctx.tool_cfg.included_angle / 2.0).to_radians(),
+        _ => {
+            return Err(OperationError::InvalidTool(
+                "Inlay requires V-Bit tool".into(),
+            ));
+        }
+    };
+    let safe_z = ctx.heights.retract_z;
+    let mut female_out = Toolpath::new();
+    let mut male_out = Toolpath::new();
+    for poly in polys {
+        let r = crate::inlay::inlay_toolpaths(
+            poly,
+            &crate::inlay::InlayParams {
+                half_angle: ha,
+                pocket_depth: cfg.pocket_depth,
+                glue_gap: cfg.glue_gap,
+                flat_depth: cfg.flat_depth,
+                boundary_offset: cfg.boundary_offset,
+                stepover: cfg.stepover,
+                flat_tool_radius: cfg.flat_tool_radius,
+                feed_rate: op.feed_rate(),
+                plunge_rate: op.plunge_rate(),
+                safe_z,
+                tolerance: cfg.tolerance,
+            },
+        );
+        female_out.moves.extend(r.female.moves);
+        male_out.moves.extend(r.male.moves);
+    }
+    let mut out = female_out;
+    if !male_out.moves.is_empty() {
+        out.final_retract(safe_z);
+        out.moves.extend(male_out.moves);
+    }
+    let generated = generated_with_cut_run_spans(out, "Inlay run");
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_depth_run_spans(
+            &generated.spans,
+            &generated.toolpath,
+            sem,
+        );
+    }
+    Ok(generated)
+}
+
 /// VCarve family adapter. Cut-run spans labeled "V-carve run"; refusal
 /// for non-V-bit tools preserved verbatim.
 pub(crate) fn generate_vcarve(
@@ -864,88 +971,10 @@ pub fn execute_operation_annotated(
         // Migrated to the registry GenerateFn (T11); arm kept for the
         // exhaustiveness net and delegates to the same adapter.
         OperationConfig::VCarve(_) => generate_vcarve(&ctx, op),
-        OperationConfig::Rest(cfg) => {
-            let polys = require_polygons(polygons)?;
-            let ptr = prev_tool_radius.ok_or_else(|| {
-                OperationError::Other("Previous tool not set for rest machining".into())
-            })?;
-            let levels = effective_levels(cutting_levels, heights, cfg.depth_per_pass);
-            let mut combined = Toolpath::new();
-            for poly in polys {
-                let tp = crate::depth::toolpath_at_levels(&levels, safe_z, |z| {
-                    crate::rest::rest_machining_toolpath(
-                        poly,
-                        &crate::rest::RestParams {
-                            prev_tool_radius: ptr,
-                            tool_radius,
-                            cut_depth: z,
-                            stepover: cfg.stepover,
-                            feed_rate,
-                            plunge_rate,
-                            safe_z,
-                            angle: cfg.angle,
-                        },
-                    )
-                });
-                combined.moves.extend(tp.moves);
-            }
-            let generated = generated_with_depth_run_spans(combined, &levels);
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_depth_run_spans(
-                    &generated.spans,
-                    &generated.toolpath,
-                    ctx,
-                );
-            }
-            Ok(generated)
-        }
-        OperationConfig::Inlay(cfg) => {
-            let polys = require_polygons(polygons)?;
-            let ha = match tool_cfg.tool_type {
-                ToolType::VBit => (tool_cfg.included_angle / 2.0).to_radians(),
-                _ => {
-                    return Err(OperationError::InvalidTool(
-                        "Inlay requires V-Bit tool".into(),
-                    ));
-                }
-            };
-            let mut female_out = Toolpath::new();
-            let mut male_out = Toolpath::new();
-            for poly in polys {
-                let r = crate::inlay::inlay_toolpaths(
-                    poly,
-                    &crate::inlay::InlayParams {
-                        half_angle: ha,
-                        pocket_depth: cfg.pocket_depth,
-                        glue_gap: cfg.glue_gap,
-                        flat_depth: cfg.flat_depth,
-                        boundary_offset: cfg.boundary_offset,
-                        stepover: cfg.stepover,
-                        flat_tool_radius: cfg.flat_tool_radius,
-                        feed_rate,
-                        plunge_rate,
-                        safe_z,
-                        tolerance: cfg.tolerance,
-                    },
-                );
-                female_out.moves.extend(r.female.moves);
-                male_out.moves.extend(r.male.moves);
-            }
-            let mut out = female_out;
-            if !male_out.moves.is_empty() {
-                out.final_retract(safe_z);
-                out.moves.extend(male_out.moves);
-            }
-            let generated = generated_with_cut_run_spans(out, "Inlay run");
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_depth_run_spans(
-                    &generated.spans,
-                    &generated.toolpath,
-                    ctx,
-                );
-            }
-            Ok(generated)
-        }
+        // Migrated to the registry GenerateFn (T11); arms kept for the
+        // exhaustiveness net and delegate to the same adapters.
+        OperationConfig::Rest(_) => generate_rest(&ctx, op),
+        OperationConfig::Inlay(_) => generate_inlay(&ctx, op),
         // Migrated to the registry GenerateFn (T11); arm kept for the
         // exhaustiveness net and delegates to the same adapter.
         OperationConfig::Drill(_) => generate_drill(&ctx, op),

@@ -1393,7 +1393,7 @@ static REG_REST: OpRegistryEntry = OpRegistryEntry {
     param_defs: REST_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_rest),
 };
 
 static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
@@ -1415,7 +1415,7 @@ static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
         supports_v_bit: true,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_inlay),
 };
 
 static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {
@@ -2041,6 +2041,10 @@ mod tests {
                 // V-bit InvalidTool refusals preserved in-adapter).
                 | OperationType::VCarve
                 | OperationType::Chamfer
+                // Rest + Inlay — migrated 2026-06-07 (T11 PR 9;
+                // prev_tool_radius requirement / V-bit refusal kept).
+                | OperationType::Rest
+                | OperationType::Inlay
             );
             assert_eq!(
                 migrated, expected,
