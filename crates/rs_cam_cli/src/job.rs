@@ -32,27 +32,21 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use tracing::{debug, info};
+use std::sync::atomic::AtomicBool;
+use tracing::{debug, info, warn};
 
 use rs_cam_core::{
-    adaptive::{AdaptiveParams, adaptive_toolpath},
-    adaptive3d::{
-        Adaptive3dParams, ClearingStrategy3d, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
-        adaptive_3d_toolpath_annotated_traced_with_cancel,
+    compute::ModelUnits,
+    compute::catalog::{OperationConfig, OperationType},
+    compute::config::{
+        BoundaryConfig, DressupConfig, DressupEntryStyle, HeightsConfig, StockSource,
     },
-    debug_trace::ToolpathDebugRecorder,
-    depth::{DepthStepping, depth_stepped_toolpath},
-    dressup::{apply_dogbones, apply_entry, apply_tabs, even_tabs},
-    dropcutter::batch_drop_cutter,
+    compute::tool_config::{ToolConfig, ToolId},
+    debug_trace::ToolpathDebugOptions,
     gcode::CoolantMode,
-    mesh::{SpatialIndex, TriangleMesh},
-    pocket::{PocketParams, pocket_toolpath},
-    profile::{ProfileParams, ProfileSide, profile_toolpath},
-    rest::{RestParams, rest_machining_toolpath},
-    semantic_trace::{ToolpathSemanticRecorder, ToolpathTraceArtifact, enrich_traces},
-    tool::MillingCutter,
-    toolpath::{Toolpath, raster_toolpath_from_grid},
-    zigzag::{ZigzagParams, zigzag_toolpath},
+    semantic_trace::ToolpathTraceArtifact,
+    session::{LoadedModel, ProjectSession, ToolpathConfig},
+    toolpath::Toolpath,
 };
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -77,6 +71,20 @@ impl fmt::Display for CliToolType {
             Self::BullNose => write!(f, "bullnose"),
             Self::VBit => write!(f, "vbit"),
             Self::TaperedBall => write!(f, "tapered_ball"),
+        }
+    }
+}
+
+impl CliToolType {
+    /// Map the job-file tool vocabulary onto the core `ToolType`.
+    fn to_tool_type(self) -> rs_cam_core::compute::tool_config::ToolType {
+        use rs_cam_core::compute::tool_config::ToolType;
+        match self {
+            Self::Flat => ToolType::EndMill,
+            Self::Ball => ToolType::BallNose,
+            Self::BullNose => ToolType::BullNose,
+            Self::VBit => ToolType::VBit,
+            Self::TaperedBall => ToolType::TaperedBallNose,
         }
     }
 }
@@ -360,9 +368,6 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
             .tools
             .get(&op.tool)
             .context(format!("Tool '{}' not found in [tools] table", op.tool))?;
-        let cutter = build_tool(tool_def)
-            .context(format!("Building tool '{}' for operation {}", op.tool, i))?;
-        let tool_radius = cutter.radius();
         let tool_number = Some(*tool_numbers.entry(op.tool.clone()).or_insert_with(|| {
             tool_def.number.unwrap_or_else(|| {
                 let assigned = next_tool_number;
@@ -372,429 +377,12 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
         }));
         debug!(tool = %op.tool, diameter_mm = tool_def.diameter, tool_type = %tool_def.tool_type, "Tool");
 
-        let safe_z = op.safe_z.unwrap_or(job.job.safe_z);
-        let feed_rate = op.feed_rate.unwrap_or(1000.0);
-        let plunge_rate = op.plunge_rate.unwrap_or(500.0);
-        let spindle_speed = op.spindle_speed.unwrap_or(job.job.spindle_speed);
-
-        // Resolve input path relative to job file directory
-        let input_path = if op.input.is_absolute() {
-            op.input.clone()
-        } else {
-            job_dir.join(&op.input)
-        };
-
-        let tp = match op.op_type.as_str() {
-            "pocket" => {
-                let polygons = crate::helpers::load_polygons(&input_path)?;
-                let depth = op.depth.context("Pocket requires 'depth'")?;
-                let depth_per_pass = op.depth_per_pass.unwrap_or(3.0);
-                let stepover = op.stepover.unwrap_or(2.0);
-                let stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
-                let climb = op.climb.unwrap_or(false);
-                let angle = op.angle.unwrap_or(0.0);
-                let pattern = op.pattern.as_deref().unwrap_or("contour");
-
-                debug!(polygons = polygons.len(), depth_mm = depth, pattern = %pattern, "Pocket details");
-
-                let mut tp = Toolpath::new();
-                for poly in &polygons {
-                    let poly_tp = depth_stepped_toolpath(&stepping, safe_z, |z| match pattern {
-                        "zigzag" => zigzag_toolpath(
-                            poly,
-                            &ZigzagParams {
-                                tool_radius,
-                                stepover,
-                                cut_depth: z,
-                                feed_rate,
-                                plunge_rate,
-                                safe_z,
-                                angle,
-                            },
-                        ),
-                        _ => pocket_toolpath(
-                            poly,
-                            &PocketParams {
-                                tool_radius,
-                                stepover,
-                                cut_depth: z,
-                                feed_rate,
-                                plunge_rate,
-                                safe_z,
-                                climb,
-                            },
-                        ),
-                    });
-                    tp.moves.extend(poly_tp.moves);
-                }
-
-                // Entry dressup
-                if let Some(entry) = &op.entry
-                    && let Some(style) = crate::helpers::parse_entry_style(entry)?
-                {
-                    tp = apply_entry(
-                        rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
-                        style,
-                        plunge_rate,
-                        0.0,
-                    )
-                    .toolpath;
-                }
-                if op.dogbone.unwrap_or(false) {
-                    tp = apply_dogbones(
-                        rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
-                        tool_radius,
-                        170.0,
-                    )
-                    .toolpath;
-                }
-                tp
-            }
-
-            "profile" => {
-                let polygons = crate::helpers::load_polygons(&input_path)?;
-                let depth = op.depth.context("Profile requires 'depth'")?;
-                let depth_per_pass = op.depth_per_pass.unwrap_or(3.0);
-                let stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
-                let climb = op.climb.unwrap_or(false);
-                let side = match op.side.as_deref().unwrap_or("outside") {
-                    "inside" | "in" => ProfileSide::Inside,
-                    _ => ProfileSide::Outside,
-                };
-
-                debug!(polygons = polygons.len(), depth_mm = depth, side = ?side, "Profile details");
-
-                let mut tp = Toolpath::new();
-                for poly in &polygons {
-                    let poly_tp = depth_stepped_toolpath(&stepping, safe_z, |z| {
-                        profile_toolpath(
-                            poly,
-                            &ProfileParams {
-                                tool_radius,
-                                side,
-                                cut_depth: z,
-                                feed_rate,
-                                plunge_rate,
-                                safe_z,
-                                climb,
-                                compensate_in_controller: false,
-                            },
-                        )
-                    });
-                    tp.moves.extend(poly_tp.moves);
-                }
-
-                // Entry dressup
-                if let Some(entry) = &op.entry
-                    && let Some(style) = crate::helpers::parse_entry_style(entry)?
-                {
-                    tp = apply_entry(
-                        rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
-                        style,
-                        plunge_rate,
-                        0.0,
-                    )
-                    .toolpath;
-                }
-
-                // Tabs
-                let num_tabs = op.tabs.unwrap_or(0);
-                if num_tabs > 0 {
-                    let tw = op.tab_width.unwrap_or(5.0);
-                    let th = op.tab_height.unwrap_or(2.0);
-                    let tab_list = even_tabs(num_tabs, tw, th);
-                    tp = apply_tabs(tp, &tab_list, -depth);
-                }
-                if op.dogbone.unwrap_or(false) {
-                    tp = apply_dogbones(
-                        rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
-                        tool_radius,
-                        170.0,
-                    )
-                    .toolpath;
-                }
-                tp
-            }
-
-            "adaptive" => {
-                let polygons = crate::helpers::load_polygons(&input_path)?;
-                let depth = op.depth.context("Adaptive requires 'depth'")?;
-                let depth_per_pass = op.depth_per_pass.unwrap_or(3.0);
-                let stepover = op.stepover.unwrap_or(2.0);
-                let tolerance = op.tolerance.unwrap_or(0.1);
-                let slot_clearing = op.slot_clearing.unwrap_or(false);
-                let min_cutting_radius = op.min_cutting_radius.unwrap_or(0.0);
-                let stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
-
-                debug!(
-                    polygons = polygons.len(),
-                    depth_mm = depth,
-                    stepover_mm = stepover,
-                    "Adaptive details"
-                );
-
-                let mut tp = Toolpath::new();
-                for poly in &polygons {
-                    let poly_tp = depth_stepped_toolpath(&stepping, safe_z, |z| {
-                        adaptive_toolpath(
-                            poly,
-                            &AdaptiveParams {
-                                tool_radius,
-                                stepover,
-                                cut_depth: z,
-                                feed_rate,
-                                plunge_rate,
-                                safe_z,
-                                tolerance,
-                                slot_clearing,
-                                min_cutting_radius,
-                                initial_stock: None,
-                                cleanup_strategy:
-                                    rs_cam_core::adaptive::CleanupStrategy::ContourParallelHybrid,
-                            },
-                        )
-                    });
-                    tp.moves.extend(poly_tp.moves);
-                }
-                tp
-            }
-
-            "rest" => {
-                let polygons = crate::helpers::load_polygons(&input_path)?;
-                let depth = op.depth.context("Rest requires 'depth'")?;
-                let depth_per_pass = op.depth_per_pass.unwrap_or(3.0);
-                let stepover = op.stepover.unwrap_or(1.0);
-                let angle = op.angle.unwrap_or(0.0);
-                let stepping = DepthStepping::new(0.0, -depth, depth_per_pass);
-
-                let prev_tool_name = op
-                    .prev_tool
-                    .as_ref()
-                    .context("Rest requires 'prev_tool' referencing the larger tool")?;
-                let prev_tool_def = job.tools.get(prev_tool_name).context(format!(
-                    "Rest 'prev_tool' references unknown tool '{}'",
-                    prev_tool_name
-                ))?;
-                let prev_cutter = build_tool(prev_tool_def)?;
-                let prev_tool_radius = prev_cutter.diameter() / 2.0;
-
-                debug!(polygons = polygons.len(), depth_mm = depth,
-                    prev_tool = %prev_tool_name, prev_diameter_mm = prev_cutter.diameter(),
-                    "Rest details");
-
-                let mut tp = Toolpath::new();
-                for poly in &polygons {
-                    let poly_tp = depth_stepped_toolpath(&stepping, safe_z, |z| {
-                        rest_machining_toolpath(
-                            poly,
-                            &RestParams {
-                                prev_tool_radius,
-                                tool_radius,
-                                cut_depth: z,
-                                stepover,
-                                feed_rate,
-                                plunge_rate,
-                                safe_z,
-                                angle,
-                            },
-                        )
-                    });
-                    tp.moves.extend(poly_tp.moves);
-                }
-                tp
-            }
-
-            "adaptive3d" => {
-                // 3D adaptive requires STL input
-                let ext = input_path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
-                if ext != "stl" {
-                    bail!("adaptive3d requires STL input, got '.{}'", ext);
-                }
-
-                let stl_scale = op.scale.unwrap_or(1.0);
-                let mesh = TriangleMesh::from_stl_scaled(&input_path, stl_scale)
-                    .context("Failed to load STL for adaptive3d")?;
-                let si_cell = cutter.diameter() * 2.0;
-                let si = SpatialIndex::build(&mesh, si_cell);
-
-                let depth_pp = op.depth_per_pass.unwrap_or(3.0);
-                let stepover = op.stepover.unwrap_or(2.0);
-                let stock_top = op.stock_top_z.unwrap_or(mesh.bbox.max.z + 5.0);
-                let stl = op.stock_to_leave.unwrap_or(0.5);
-                let tolerance = op.tolerance.unwrap_or(0.1);
-                let mcr = op.min_cutting_radius.unwrap_or(0.0);
-
-                debug!(
-                    vertices = mesh.vertices.len(),
-                    triangles = mesh.faces.len(),
-                    stock_top = stock_top,
-                    stock_to_leave = stl,
-                    "Adaptive3d STL details"
-                );
-
-                // Use entry_3d (supports legacy alias `entry_style`), then fall
-                // back to the shared `entry` field for backward-compat.
-                let entry_str = op
-                    .entry_3d
-                    .as_deref()
-                    .or(op.entry.as_deref())
-                    .unwrap_or("plunge");
-                let entry = match entry_str {
-                    "helix" => EntryStyle3d::Helix {
-                        radius: tool_radius * 0.8,
-                        pitch: 1.0,
-                    },
-                    "ramp" => EntryStyle3d::Ramp { max_angle_deg: 3.0 },
-                    _ => EntryStyle3d::Plunge,
-                };
-
-                let region_ord = match op.order_by.as_deref().unwrap_or("global") {
-                    "by-area" | "by_area" | "byarea" => RegionOrdering::ByArea,
-                    _ => RegionOrdering::Global,
-                };
-
-                let clearing_strategy = match op.strategy.as_deref().unwrap_or("contour") {
-                    "contour" | "contour_parallel" => ClearingStrategy3d::ContourParallel,
-                    "adaptive" => ClearingStrategy3d::Adaptive,
-                    "agent" | "agent_search" => ClearingStrategy3d::AgentSearch,
-                    _ => ClearingStrategy3d::ContourParallel,
-                };
-
-                let params = Adaptive3dParams {
-                    tool_radius,
-                    envelope_radius: tool_radius,
-                    stepover,
-                    depth_per_pass: depth_pp,
-                    stock_to_leave: stl,
-                    feed_rate,
-                    plunge_rate,
-                    safe_z,
-                    tolerance,
-                    min_cutting_radius: mcr,
-                    stock_top_z: stock_top,
-                    entry_style: entry,
-                    fine_stepdown: op.fine_stepdown,
-                    detect_flat_areas: op.detect_flat_areas.unwrap_or(false),
-                    max_stay_down_dist: op.max_stay_down_dist,
-                    region_ordering: region_ord,
-                    initial_stock: None,
-                    clearing_strategy,
-                    z_blend: op.z_blend.unwrap_or(false),
-                    boundary: None,
-                    mill_shallow_areas: op.mill_shallow_areas.unwrap_or(false),
-                    shallow_angle_rad: op.shallow_angle_deg.map(f64::to_radians),
-                    shallow_stepdown: op.shallow_stepdown,
-                    // F-027: CLI job path doesn't carry a world stock bbox
-                    // separate from the mesh footprint here; leave `None`.
-                    world_stock_xy_bbox: None,
-                    // F-038: forward from CLI option; default matches the
-                    // workspace default (operation_configs.rs).
-                    min_region_cut_length_mm: op.min_region_cut_length_mm.unwrap_or(15.0),
-                    // F-038b: forward keep-tool-down knobs. `None` lets the
-                    // planner pick 8 × tool diameter; the operator can pin
-                    // via `max_stay_down_distance_mm = N` or disable with 0.0.
-                    max_stay_down_distance_mm: op.max_stay_down_distance_mm,
-                    stay_down_clearance_mm: op.stay_down_clearance_mm.unwrap_or(0.5),
-                };
-
-                if debug_trace {
-                    let op_label = format!("Op {} — adaptive3d", i);
-                    let tp_name = format!("op_{}_adaptive3d", i);
-                    let debug_recorder = ToolpathDebugRecorder::new(&tp_name, &op_label);
-                    let semantic_recorder = ToolpathSemanticRecorder::new(&tp_name, &op_label);
-                    let debug_root = debug_recorder.root_context();
-
-                    let never_cancel = || false;
-                    let (tp, _annotations) = adaptive_3d_toolpath_annotated_traced_with_cancel(
-                        &mesh,
-                        &si,
-                        &cutter,
-                        &params,
-                        &never_cancel,
-                        Some(&debug_root),
-                    )
-                    .map_err(|e| anyhow::anyhow!("adaptive3d cancelled: {e}"))?;
-
-                    let mut debug_trace_data = debug_recorder.finish();
-                    let mut semantic_trace_data = semantic_recorder.finish();
-                    enrich_traces(&mut debug_trace_data, &mut semantic_trace_data);
-
-                    let request_snapshot = serde_json::json!({
-                        "operation_index": i,
-                        "operation_type": "adaptive3d",
-                        "input": input_path.display().to_string(),
-                        "tool": op.tool,
-                        "tool_diameter": tool_def.diameter,
-                        "params": {
-                            "stepover": params.stepover,
-                            "depth_per_pass": params.depth_per_pass,
-                            "stock_to_leave": params.stock_to_leave,
-                            "stock_top_z": params.stock_top_z,
-                            "tolerance": params.tolerance,
-                            "feed_rate": params.feed_rate,
-                            "plunge_rate": params.plunge_rate,
-                            "safe_z": params.safe_z,
-                            "clearing_strategy": format!("{:?}", params.clearing_strategy),
-                        }
-                    });
-
-                    let tool_summary = format!("{:.2}mm {}", tool_def.diameter, tool_def.tool_type);
-                    trace_artifacts.push(ToolpathTraceArtifact::new(
-                        i,
-                        &tp_name,
-                        &op_label,
-                        &tool_summary,
-                        request_snapshot,
-                        Some(debug_trace_data),
-                        Some(semantic_trace_data),
-                    ));
-
-                    tp
-                } else {
-                    adaptive_3d_toolpath(&mesh, &si, &cutter, &params)
-                }
-            }
-
-            "drop-cutter" | "drop_cutter" | "finish" => {
-                let ext = input_path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
-                if ext != "stl" {
-                    bail!("drop-cutter requires STL input, got '.{}'", ext);
-                }
-
-                let stl_scale = op.scale.unwrap_or(1.0);
-                let mesh = TriangleMesh::from_stl_scaled(&input_path, stl_scale)
-                    .context("Failed to load STL for drop-cutter")?;
-                let si_cell = cutter.diameter() * 2.0;
-                let si = SpatialIndex::build(&mesh, si_cell);
-
-                let stepover = op.stepover.unwrap_or(1.0);
-                let min_z = mesh.bbox.min.z;
-
-                debug!(
-                    vertices = mesh.vertices.len(),
-                    triangles = mesh.faces.len(),
-                    stepover = stepover,
-                    "Drop-cutter STL details"
-                );
-
-                let angle = op.angle.unwrap_or(0.0);
-                let grid = batch_drop_cutter(&mesh, &si, &cutter, stepover, angle, min_z);
-                raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z, None)
-            }
-
-            _ => bail!(
-                "Unknown operation type '{}'. Supported: pocket, profile, adaptive, rest, adaptive3d, drop-cutter",
-                op.op_type
-            ),
-        };
+        let output = execute_op_via_session(job, job_dir, i, op, tool_def, debug_trace)
+            .with_context(|| format!("operation {i} ({})", op.op_type))?;
+        if let Some(artifact) = output.trace {
+            trace_artifacts.push(artifact);
+        }
+        let tp = output.toolpath;
 
         info!(
             moves = tp.moves.len(),
@@ -806,17 +394,16 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
         combined.moves.extend(tp.moves.clone());
 
         let label = format!(
-            "Op {} — {} ({:.2}mm {})",
+            "Op {} \u{2014} {} ({:.2}mm {})",
             i, op.op_type, tool_def.diameter, tool_def.tool_type
         );
-        // Build a fresh cutter for the phase (the original was consumed above)
         let phase_cutter = build_tool(tool_def)?;
         let flute_count = tool_def.flute_count.unwrap_or(2);
         phases.push(OpResult {
             toolpath: tp,
             cutter: phase_cutter,
             label,
-            spindle_speed,
+            spindle_speed: op.spindle_speed.unwrap_or(job.job.spindle_speed),
             tool_number,
             coolant: op.coolant,
             flute_count,
@@ -831,10 +418,409 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
     })
 }
 
+// \u{2500}\u{2500} Session-backed execution (T9 PR 2, plan \u{a7}7.1) \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+//
+// The pre-T9 router re-implemented six operations against the raw
+// algorithm APIs (its own depth stepping, dressup application, entry
+// handling) \u{2014} a third execution path beside the GUI worker and the
+// session pipeline. Every operation now maps onto `OperationConfig`
+// and executes through `ProjectSession::generate_toolpath` \u{2192}
+// `execute_operation_annotated`: ONE execution path, and job params
+// apply through the same registry-validated serde round-trip the
+// GUI/MCP use.
+
+struct SessionOpOutput {
+    toolpath: Toolpath,
+    trace: Option<ToolpathTraceArtifact>,
+}
+
+/// The job-file operation vocabulary. Anything else points the user at
+/// the generic registry-driven `run` subcommand (all 23 ops).
+fn op_type_for(token: &str) -> Result<OperationType> {
+    Ok(match token {
+        "pocket" => OperationType::Pocket,
+        "profile" => OperationType::Profile,
+        "adaptive" => OperationType::Adaptive,
+        "rest" => OperationType::Rest,
+        "adaptive3d" => OperationType::Adaptive3d,
+        "drop-cutter" | "drop_cutter" | "finish" => OperationType::DropCutter,
+        other => bail!(
+            "Unknown operation type '{other}'. Job files support: pocket, profile, adaptive, \
+             rest, adaptive3d, drop-cutter. For other operations use `rs_cam_cli run <op>` \
+             (see `run --list-ops`)."
+        ),
+    })
+}
+
+/// Build a session `ToolConfig` from a job-file tool definition.
+fn tool_config_from_def(def: &ToolDef, name: &str) -> ToolConfig {
+    let mut tc = ToolConfig::new_default(ToolId(0), def.tool_type.to_tool_type());
+    tc.name = name.to_owned();
+    tc.diameter = def.diameter;
+    tc.cutting_length = def.diameter * DEFAULT_CUTTING_LENGTH_FACTOR;
+    if let Some(n) = def.number {
+        tc.tool_number = n;
+    }
+    if let Some(fc) = def.flute_count {
+        tc.flute_count = fc;
+    }
+    if let Some(cr) = def.corner_radius {
+        tc.corner_radius = cr;
+    }
+    if let Some(ia) = def.included_angle {
+        tc.included_angle = ia;
+    }
+    if let Some(ta) = def.taper_angle {
+        tc.taper_half_angle = ta;
+    }
+    if let Some(sd) = def.shaft_diameter {
+        tc.shaft_diameter = sd;
+    }
+    if let Some(sd) = def.shank_diameter {
+        tc.shank_diameter = sd;
+    }
+    if let Some(sl) = def.shank_length {
+        tc.shank_length = sl;
+    }
+    if let Some(hd) = def.holder_diameter {
+        tc.holder_diameter = hd;
+    }
+    tc
+}
+
+fn execute_op_via_session(
+    job: &JobFile,
+    job_dir: &Path,
+    i: usize,
+    op: &OperationDef,
+    tool_def: &ToolDef,
+    debug_trace: bool,
+) -> Result<SessionOpOutput> {
+    let op_type = op_type_for(&op.op_type)?;
+    let mut session = ProjectSession::new_empty();
+
+    // \u{2500}\u{2500} Model \u{2500}\u{2500}
+    let model_name = op
+        .input
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| format!("op_{i}_model"));
+    // Pre-T9 only the STL ops honored `scale`; keep that scoping.
+    let units = op.scale.map(ModelUnits::Custom);
+    let model = LoadedModel::from_file(0, &model_name, &op.input, None, units, job_dir)
+        .map_err(|e| anyhow::anyhow!("loading input '{}': {e}", op.input.display()))?;
+    session.add_model(model);
+
+    // Adaptive3d stock-frame fidelity: the pre-T9 router defaulted the
+    // stock top to `model_top + 5.0` when `stock_top_z` was unset.
+    if op_type == OperationType::Adaptive3d {
+        let bbox = session.models().first().and_then(LoadedModel::bbox);
+        if let Some(bbox) = bbox {
+            let top = op.stock_top_z.unwrap_or(bbox.max.z + 5.0);
+            let stock = session.stock_mut();
+            stock.auto_from_model = false;
+            stock.z = (top - stock.origin_z).max(0.0);
+        }
+    }
+
+    // \u{2500}\u{2500} Tools \u{2500}\u{2500}
+    let tool_idx = session.add_tool(tool_config_from_def(tool_def, &op.tool));
+    let prev_tool_id = if op_type == OperationType::Rest {
+        let prev_name = op
+            .prev_tool
+            .as_ref()
+            .context("Rest requires 'prev_tool' referencing the larger tool")?;
+        let prev_def = job.tools.get(prev_name).context(format!(
+            "Rest 'prev_tool' references unknown tool '{prev_name}'"
+        ))?;
+        Some(session.add_tool(tool_config_from_def(prev_def, prev_name)))
+    } else {
+        None
+    };
+
+    // \u{2500}\u{2500} Dressups (entry / dogbone were post-passes pre-T9) \u{2500}\u{2500}
+    let mut dressups = DressupConfig::default();
+    if matches!(
+        op_type,
+        OperationType::Pocket | OperationType::Profile | OperationType::Adaptive
+    ) && let Some(entry) = op.entry.as_deref()
+    {
+        match entry {
+            "plunge" => {}
+            "ramp" => {
+                dressups.entry_style = DressupEntryStyle::Ramp;
+                dressups.ramp_angle = 3.0;
+            }
+            "helix" => {
+                dressups.entry_style = DressupEntryStyle::Helix;
+                dressups.helix_radius = 2.0;
+                dressups.helix_pitch = 1.0;
+            }
+            other => bail!("Unknown entry style '{other}'. Supported: plunge, ramp, helix"),
+        }
+    }
+    if op.dogbone.unwrap_or(false) {
+        dressups.dogbone = true;
+        dressups.dogbone_angle = 170.0;
+    }
+
+    let debug_options = ToolpathDebugOptions {
+        enabled: debug_trace,
+    };
+
+    let tool_id = session
+        .tools()
+        .get(tool_idx)
+        .context("tool index out of bounds after add_tool")?
+        .id
+        .0;
+    let tp_index = session
+        .add_toolpath(
+            0,
+            ToolpathConfig {
+                id: 0,
+                name: format!("op_{}_{}", i, op_type.kind_str()),
+                enabled: true,
+                operation: OperationConfig::new_default(op_type),
+                dressups,
+                heights: HeightsConfig::default(),
+                tool_id,
+                model_id: 0,
+                pre_gcode: None,
+                post_gcode: None,
+                boundary: BoundaryConfig::default(),
+                boundary_inherit: true,
+                stock_source: StockSource::default(),
+                coolant: op.coolant,
+                face_selection: None,
+                debug_options,
+            },
+        )
+        .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?;
+
+    // \u{2500}\u{2500} Parameters: registry-validated serde round-trip \u{2500}\u{2500}
+    let drop_cutter_min_z = (op_type == OperationType::DropCutter)
+        .then(|| session.models().first().and_then(LoadedModel::bbox))
+        .flatten()
+        .map(|bbox| bbox.min.z);
+    let params = job_params_for(op, op_type, prev_tool_id, drop_cutter_min_z)?;
+    let table = op_type.registry_entry().param_defs;
+    for (key, value) in params {
+        if table.iter().any(|d| d.name == key) {
+            session
+                .set_toolpath_param(tp_index, key, value)
+                .map_err(|e| anyhow::anyhow!("param '{key}': {e}"))?;
+        } else {
+            // Pre-T9 the flat OperationDef silently ignored fields the
+            // op didn't read; keep that leniency but say so.
+            warn!(
+                param = key,
+                op = op_type.kind_str(),
+                "job param not applicable to this operation \u{2014} skipped"
+            );
+        }
+    }
+
+    let post = session.post_mut();
+    post.format = job.job.post.clone();
+    post.safe_z = op.safe_z.unwrap_or(job.job.safe_z);
+    post.spindle_speed = op.spindle_speed.unwrap_or(job.job.spindle_speed);
+
+    // \u{2500}\u{2500} Generate \u{2500}\u{2500}
+    let cancel = AtomicBool::new(false);
+    session
+        .generate_toolpath(tp_index, &cancel)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let result = session
+        .get_result(tp_index)
+        .context("generation produced no result")?;
+    let toolpath = result.toolpath().clone();
+
+    let trace = if debug_trace {
+        let tp_name = format!("op_{}_{}", i, op_type.kind_str());
+        let op_label = format!("Op {} \u{2014} {}", i, op.op_type);
+        let tool_summary = format!("{:.2}mm {}", tool_def.diameter, tool_def.tool_type);
+        let operation_json = session
+            .get_toolpath_config(tp_index)
+            .map(|tc| serde_json::to_value(&tc.operation).unwrap_or_default())
+            .unwrap_or_default();
+        let request_snapshot = serde_json::json!({
+            "operation_index": i,
+            "operation_type": op_type.kind_str(),
+            "input": op.input.display().to_string(),
+            "tool": op.tool,
+            "tool_diameter": tool_def.diameter,
+            "operation": operation_json,
+        });
+        Some(ToolpathTraceArtifact::new(
+            i,
+            &tp_name,
+            &op_label,
+            &tool_summary,
+            request_snapshot,
+            result.debug_trace.clone(),
+            result.semantic_trace.clone(),
+        ))
+    } else {
+        None
+    };
+
+    Ok(SessionOpOutput { toolpath, trace })
+}
+
+/// Map the flat job-file fields onto registry param names, preserving
+/// the pre-T9 router's per-op defaults verbatim.
+fn job_params_for(
+    op: &OperationDef,
+    op_type: OperationType,
+    prev_tool_id: Option<usize>,
+    drop_cutter_min_z: Option<f64>,
+) -> Result<Vec<(&'static str, serde_json::Value)>> {
+    use serde_json::json;
+    let mut p: Vec<(&'static str, serde_json::Value)> = vec![
+        ("feed_rate", json!(op.feed_rate.unwrap_or(1000.0))),
+        ("plunge_rate", json!(op.plunge_rate.unwrap_or(500.0))),
+    ];
+    if let Some(rpm) = op.spindle_speed {
+        p.push(("spindle_rpm", json!(rpm)));
+    }
+    match op_type {
+        OperationType::Pocket => {
+            p.push(("depth", json!(op.depth.context("Pocket requires 'depth'")?)));
+            p.push(("depth_per_pass", json!(op.depth_per_pass.unwrap_or(3.0))));
+            p.push(("stepover", json!(op.stepover.unwrap_or(2.0))));
+            p.push(("climb", json!(op.climb.unwrap_or(false))));
+            p.push(("angle", json!(op.angle.unwrap_or(0.0))));
+            p.push(("pattern", json!(op.pattern.as_deref().unwrap_or("contour"))));
+        }
+        OperationType::Profile => {
+            p.push((
+                "depth",
+                json!(op.depth.context("Profile requires 'depth'")?),
+            ));
+            p.push(("depth_per_pass", json!(op.depth_per_pass.unwrap_or(3.0))));
+            p.push(("climb", json!(op.climb.unwrap_or(false))));
+            let side = match op.side.as_deref().unwrap_or("outside") {
+                "inside" | "in" => "inside",
+                _ => "outside",
+            };
+            p.push(("side", json!(side)));
+            p.push(("tab_count", json!(op.tabs.unwrap_or(0))));
+            p.push(("tab_width", json!(op.tab_width.unwrap_or(5.0))));
+            p.push(("tab_height", json!(op.tab_height.unwrap_or(2.0))));
+        }
+        OperationType::Adaptive => {
+            p.push((
+                "depth",
+                json!(op.depth.context("Adaptive requires 'depth'")?),
+            ));
+            p.push(("depth_per_pass", json!(op.depth_per_pass.unwrap_or(3.0))));
+            p.push(("stepover", json!(op.stepover.unwrap_or(2.0))));
+            p.push(("tolerance", json!(op.tolerance.unwrap_or(0.1))));
+            p.push(("slot_clearing", json!(op.slot_clearing.unwrap_or(false))));
+            p.push((
+                "min_cutting_radius",
+                json!(op.min_cutting_radius.unwrap_or(0.0)),
+            ));
+            // Pre-T9 router hardcoded the hybrid cleanup strategy.
+            p.push(("cleanup_strategy", json!("ContourParallelHybrid")));
+        }
+        OperationType::Rest => {
+            p.push(("depth", json!(op.depth.context("Rest requires 'depth'")?)));
+            p.push(("depth_per_pass", json!(op.depth_per_pass.unwrap_or(3.0))));
+            p.push(("stepover", json!(op.stepover.unwrap_or(1.0))));
+            p.push(("angle", json!(op.angle.unwrap_or(0.0))));
+            p.push(("prev_tool_id", json!(prev_tool_id)));
+        }
+        OperationType::Adaptive3d => {
+            p.push(("stepover", json!(op.stepover.unwrap_or(2.0))));
+            p.push(("depth_per_pass", json!(op.depth_per_pass.unwrap_or(3.0))));
+            let stl = op.stock_to_leave.unwrap_or(0.5);
+            p.push(("stock_to_leave_radial", json!(stl)));
+            p.push(("stock_to_leave_axial", json!(stl)));
+            p.push(("tolerance", json!(op.tolerance.unwrap_or(0.1))));
+            p.push((
+                "min_cutting_radius",
+                json!(op.min_cutting_radius.unwrap_or(0.0)),
+            ));
+            // entry_3d (with legacy alias) falls back to the shared 2D
+            // `entry` field, matching the pre-T9 router.
+            let entry = op
+                .entry_3d
+                .as_deref()
+                .or(op.entry.as_deref())
+                .unwrap_or("plunge");
+            match entry {
+                "helix" => {
+                    p.push(("entry_style", json!("helix")));
+                    // Pre-T9: radius = 0.8 \u{d7} tool radius = 0.4 \u{d7} envelope
+                    // diameter (the config factor is diameter-relative).
+                    p.push(("helix_radius_factor", json!(0.4)));
+                    p.push(("helix_pitch", json!(1.0)));
+                }
+                "ramp" => {
+                    p.push(("entry_style", json!("ramp")));
+                    p.push(("ramp_angle_deg", json!(3.0)));
+                }
+                _ => p.push(("entry_style", json!("plunge"))),
+            }
+            let ordering = match op.order_by.as_deref().unwrap_or("global") {
+                "by-area" | "by_area" | "byarea" => "by_area",
+                _ => "global",
+            };
+            p.push(("region_ordering", json!(ordering)));
+            let strategy = match op.strategy.as_deref().unwrap_or("contour") {
+                "adaptive" => "adaptive",
+                "agent" | "agent_search" => "agent_search",
+                _ => "contour_parallel",
+            };
+            p.push(("clearing_strategy", json!(strategy)));
+            p.push(("z_blend", json!(op.z_blend.unwrap_or(false))));
+            p.push((
+                "detect_flat_areas",
+                json!(op.detect_flat_areas.unwrap_or(false)),
+            ));
+            if let Some(fs) = op.fine_stepdown {
+                p.push(("fine_stepdown", json!(fs)));
+            }
+            p.push((
+                "mill_shallow_areas",
+                json!(op.mill_shallow_areas.unwrap_or(false)),
+            ));
+            if let Some(a) = op.shallow_angle_deg {
+                p.push(("shallow_angle_deg", json!(a)));
+            }
+            if let Some(s) = op.shallow_stepdown {
+                p.push(("shallow_stepdown", json!(s)));
+            }
+            p.push((
+                "min_region_cut_length_mm",
+                json!(op.min_region_cut_length_mm.unwrap_or(15.0)),
+            ));
+            if let Some(d) = op.max_stay_down_distance_mm.or(op.max_stay_down_dist) {
+                p.push(("max_stay_down_distance_mm", json!(d)));
+            }
+            p.push((
+                "stay_down_clearance_mm",
+                json!(op.stay_down_clearance_mm.unwrap_or(0.5)),
+            ));
+        }
+        OperationType::DropCutter => {
+            p.push(("stepover", json!(op.stepover.unwrap_or(1.0))));
+            if let Some(min_z) = drop_cutter_min_z {
+                p.push(("min_z", json!(min_z)));
+            }
+        }
+        other => bail!("op_type_for returned unsupported {other:?}"),
+    }
+    Ok(p)
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use rs_cam_core::tool::MillingCutter as _;
 
     #[test]
     fn test_tool_radius_uses_cutter_radius() {
