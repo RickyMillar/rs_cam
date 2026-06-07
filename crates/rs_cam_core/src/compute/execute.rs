@@ -1583,11 +1583,10 @@ pub fn execute_operation_annotated(
         return generate(&ctx, op);
     }
 
-    let tool_radius = tool_def.radius();
-    let safe_z = heights.retract_z;
-    let feed_rate = op.feed_rate();
-    let plunge_rate = op.plunge_rate();
-
+    // Every family is registry-dispatched (T11 cutover complete); this
+    // match is the compile-time net — a new OperationConfig variant
+    // fails to compile until it gets an arm, and each arm delegates to
+    // the SAME adapter fn its registry entry references.
     match op {
         // Migrated to the registry GenerateFn (T11); arm kept for the
         // exhaustiveness net and delegates to the same adapter.
