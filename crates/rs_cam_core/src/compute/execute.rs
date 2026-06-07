@@ -177,6 +177,121 @@ impl From<String> for OperationError {
     }
 }
 
+// ── Phase-5 family adapters (T11) ────────────────────────────────────
+
+/// Bundled inputs for one operation execution — everything
+/// [`execute_operation_annotated`] receives, minus the operation
+/// itself. Family adapters ([`GenerateFn`]) take this context so every
+/// migrated family shares ONE signature; in particular `cancel` is
+/// always in scope, so an adapter can't silently drop the cooperative
+/// cancellation closure (sentried by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
+pub struct ExecutionContext<'a> {
+    pub mesh: Option<&'a TriangleMesh>,
+    pub index: Option<&'a SpatialIndex>,
+    pub polygons: Option<&'a [Polygon2]>,
+    pub tool_def: &'a ToolDefinition,
+    pub tool_cfg: &'a ToolConfig,
+    pub heights: &'a ResolvedHeights,
+    pub cutting_levels: &'a [f64],
+    pub stock_bbox: &'a BoundingBox3,
+    pub prev_tool_radius: Option<f64>,
+    pub debug_ctx: Option<&'a ToolpathDebugContext>,
+    pub cancel: &'a AtomicBool,
+    pub initial_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
+    pub semantic_ctx: Option<&'a ToolpathSemanticContext>,
+    pub boundary: Option<&'a Polygon2>,
+}
+
+/// A family adapter: generate the toolpath (with spans + annotations)
+/// for one operation family. Registered on `OpRegistryEntry.generate`
+/// per family as the Phase-5 cutover proves each one; unmigrated
+/// families fall back to the exhaustive match in
+/// [`execute_operation_annotated`]. An adapter must reproduce its
+/// family's span helper AND annotate fn — wrong/empty spans simulate
+/// fine and are only caught by span-aware tests, not the compiler.
+pub type GenerateFn =
+    fn(&ExecutionContext<'_>, &OperationConfig) -> Result<GeneratedToolpath, OperationError>;
+
+/// Drill family adapter (holes from polygon centroids).
+pub(crate) fn generate_drill(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::Drill(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_drill received a non-Drill config".into(),
+        ));
+    };
+    let polys = require_polygons(ctx.polygons)?;
+    let mut holes = Vec::new();
+    for poly in polys {
+        if poly.exterior.is_empty() {
+            continue;
+        }
+        let (sx, sy) = poly
+            .exterior
+            .iter()
+            .fold((0.0, 0.0), |(ax, ay), pt| (ax + pt.x, ay + pt.y));
+        let n = poly.exterior.len() as f64;
+        holes.push([sx / n, sy / n]);
+    }
+    if holes.is_empty() {
+        return Err(OperationError::MissingGeometry(
+            "No hole positions found (import SVG with circles)".to_owned(),
+        ));
+    }
+    let cycle = cfg.cycle.to_core(cfg);
+    let params = crate::drill::DrillParams {
+        depth: cfg.depth,
+        top_z: ctx.stock_bbox.max.z,
+        cycle,
+        feed_rate: op.feed_rate(),
+        safe_z: ctx.heights.retract_z,
+        retract_z: crate::compute::config::effective_safe_z(cfg.retract_z, ctx.stock_bbox.max.z),
+    };
+    let generated = generated_with_drill_spans(crate::drill::drill_toolpath(&holes, &params));
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_drill_spans(&generated.spans, &generated.toolpath, sem);
+    }
+    Ok(generated)
+}
+
+/// Alignment-pin drill family adapter (holes from the stock snapshot).
+pub(crate) fn generate_alignment_pin_drill(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::AlignmentPinDrill(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_alignment_pin_drill received a \
+             non-AlignmentPinDrill config"
+                .into(),
+        ));
+    };
+    if cfg.holes.is_empty() {
+        return Err(OperationError::MissingGeometry(
+            "No alignment pin positions defined".to_owned(),
+        ));
+    }
+    let stock_z = ctx.stock_bbox.max.z - ctx.stock_bbox.min.z;
+    let depth = stock_z + cfg.spoilboard_penetration;
+    let cycle = cfg.drill_cycle();
+    let params = crate::drill::DrillParams {
+        depth,
+        top_z: ctx.stock_bbox.max.z,
+        cycle,
+        feed_rate: cfg.feed_rate,
+        safe_z: ctx.heights.retract_z,
+        retract_z: crate::compute::config::effective_safe_z(cfg.retract_z, ctx.stock_bbox.max.z),
+    };
+    let generated = generated_with_drill_spans(crate::drill::drill_toolpath(&cfg.holes, &params));
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_drill_spans(&generated.spans, &generated.toolpath, sem);
+    }
+    Ok(generated)
+}
+
 // ── Public API ────────────────────────────────────────────────────────
 
 /// Execute a single operation, producing a raw toolpath.
@@ -251,6 +366,33 @@ pub fn execute_operation_annotated(
     // material with full-depth axial DOC.
     boundary: Option<&Polygon2>,
 ) -> Result<GeneratedToolpath, OperationError> {
+    // Phase-5 (T11) family adapters: when the registry carries a
+    // GenerateFn for this op's family, dispatch through it. The
+    // exhaustive match below remains the fallback for unmigrated
+    // families AND the compile-time net (a new op variant fails to
+    // compile until it has an arm — migrated arms delegate to the SAME
+    // adapter fn the registry references, so the two paths cannot
+    // diverge).
+    let ctx = ExecutionContext {
+        mesh,
+        index,
+        polygons,
+        tool_def,
+        tool_cfg,
+        heights,
+        cutting_levels,
+        stock_bbox,
+        prev_tool_radius,
+        debug_ctx,
+        cancel,
+        initial_stock,
+        semantic_ctx,
+        boundary,
+    };
+    if let Some(generate) = op.op_type().registry_entry().generate {
+        return generate(&ctx, op);
+    }
+
     let tool_radius = tool_def.radius();
     let safe_z = heights.retract_z;
     let feed_rate = op.feed_rate();
@@ -632,48 +774,9 @@ pub fn execute_operation_annotated(
             }
             Ok(generated)
         }
-        OperationConfig::Drill(cfg) => {
-            let polys = require_polygons(polygons)?;
-            let mut holes = Vec::new();
-            for poly in polys {
-                if poly.exterior.is_empty() {
-                    continue;
-                }
-                let (sx, sy) = poly
-                    .exterior
-                    .iter()
-                    .fold((0.0, 0.0), |(ax, ay), pt| (ax + pt.x, ay + pt.y));
-                let n = poly.exterior.len() as f64;
-                holes.push([sx / n, sy / n]);
-            }
-            if holes.is_empty() {
-                return Err(OperationError::MissingGeometry(
-                    "No hole positions found (import SVG with circles)".to_owned(),
-                ));
-            }
-            let cycle = cfg.cycle.to_core(cfg);
-            let params = crate::drill::DrillParams {
-                depth: cfg.depth,
-                top_z: stock_bbox.max.z,
-                cycle,
-                feed_rate,
-                safe_z,
-                retract_z: crate::compute::config::effective_safe_z(
-                    cfg.retract_z,
-                    stock_bbox.max.z,
-                ),
-            };
-            let generated =
-                generated_with_drill_spans(crate::drill::drill_toolpath(&holes, &params));
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_drill_spans(
-                    &generated.spans,
-                    &generated.toolpath,
-                    ctx,
-                );
-            }
-            Ok(generated)
-        }
+        // Migrated to the registry GenerateFn (T11); arm kept for the
+        // exhaustiveness net and delegates to the same adapter.
+        OperationConfig::Drill(_) => generate_drill(&ctx, op),
         OperationConfig::Chamfer(cfg) => {
             let polys = require_polygons(polygons)?;
             let ha = match tool_cfg.tool_type {
@@ -708,37 +811,9 @@ pub fn execute_operation_annotated(
             }
             Ok(generated)
         }
-        OperationConfig::AlignmentPinDrill(cfg) => {
-            if cfg.holes.is_empty() {
-                return Err(OperationError::MissingGeometry(
-                    "No alignment pin positions defined".to_owned(),
-                ));
-            }
-            let stock_z = stock_bbox.max.z - stock_bbox.min.z;
-            let depth = stock_z + cfg.spoilboard_penetration;
-            let cycle = cfg.drill_cycle();
-            let params = crate::drill::DrillParams {
-                depth,
-                top_z: stock_bbox.max.z,
-                cycle,
-                feed_rate: cfg.feed_rate,
-                safe_z,
-                retract_z: crate::compute::config::effective_safe_z(
-                    cfg.retract_z,
-                    stock_bbox.max.z,
-                ),
-            };
-            let generated =
-                generated_with_drill_spans(crate::drill::drill_toolpath(&cfg.holes, &params));
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_drill_spans(
-                    &generated.spans,
-                    &generated.toolpath,
-                    ctx,
-                );
-            }
-            Ok(generated)
-        }
+        // Migrated to the registry GenerateFn (T11); arm kept for the
+        // exhaustiveness net and delegates to the same adapter.
+        OperationConfig::AlignmentPinDrill(_) => generate_alignment_pin_drill(&ctx, op),
 
         // ── 3D operations ────────────────────────────────────────────
         OperationConfig::DropCutter(cfg) => {
