@@ -1352,7 +1352,7 @@ static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
     // Roadmap B.5 — 2D adaptive pocketing has natural circular
     // boundaries, so Ramp upgrades to Helix.
     dressup_policy: DressupPolicy::PREFER_HELIX,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_adaptive),
 };
 
 static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
@@ -1546,7 +1546,7 @@ static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
     // engagement on a 3 mm-commanded DPP, deflection gate Exceeds).
     // Users who want a Helix entry set it at the planner level.
     dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_adaptive3d),
 };
 
 static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
@@ -2018,58 +2018,16 @@ mod tests {
     /// fails here; the table is the cutover log.
     #[test]
     fn generate_adapter_migration_is_an_explicit_per_op_decision() {
+        // Cutover complete 2026-06-07 (T11 PRs 2-14): every family is
+        // registry-dispatched. A new op MUST ship a GenerateFn — the
+        // fallback match still compiles it, but registry dispatch is
+        // the production path and this test refuses a None entry.
         for &op_type in OperationType::ALL {
-            let migrated = op_type.registry_entry().generate.is_some();
-            let expected = matches!(
-                op_type,
-                // Drill family — migrated 2026-06-07 (T11 PR 2).
-                OperationType::Drill | OperationType::AlignmentPinDrill
-                // Waterline — migrated 2026-06-07 (T11 PR 3; first
-                // cancellable family through the adapter path).
-                | OperationType::Waterline
-                // Face — migrated 2026-06-07 (T11 PR 4).
-                | OperationType::Face
-                // Pocket — migrated 2026-06-07 (T11 PR 5).
-                | OperationType::Pocket
-                // Profile — migrated 2026-06-07 (T11 PR 6).
-                | OperationType::Profile
-                // Zigzag + Trace — migrated 2026-06-07 (T11 PR 7;
-                // trace pins its family-specific annotate_trace_spans).
-                | OperationType::Zigzag
-                | OperationType::Trace
-                // VCarve + Chamfer — migrated 2026-06-07 (T11 PR 8;
-                // V-bit InvalidTool refusals preserved in-adapter).
-                | OperationType::VCarve
-                | OperationType::Chamfer
-                // Rest + Inlay — migrated 2026-06-07 (T11 PR 9;
-                // prev_tool_radius requirement / V-bit refusal kept).
-                | OperationType::Rest
-                | OperationType::Inlay
-                // DropCutter — migrated 2026-06-07 (T11 PR 10;
-                // cancellable, slope filter + rim-trench guard kept).
-                | OperationType::DropCutter
-                // Spiral/Radial/Horizontal finish — migrated
-                // 2026-06-07 (T11 PR 11; spiral pins
-                // spans_from_labeled_events + annotate_spiral_finish).
-                | OperationType::SpiralFinish
-                | OperationType::RadialFinish
-                | OperationType::HorizontalFinish
-                // Pencil/Scallop/SteepShallow/RampFinish — migrated
-                // 2026-06-07 (T11 PR 12; scallop's registry-driven
-                // ball-tip refusal moved in-adapter intact).
-                | OperationType::Pencil
-                | OperationType::Scallop
-                | OperationType::SteepShallow
-                | OperationType::RampFinish
-                // ProjectCurve — migrated 2026-06-07 (T11 PR 13;
-                // caller-side setup_z_flipped pre-dispatch preserved).
-                | OperationType::ProjectCurve
-            );
-            assert_eq!(
-                migrated, expected,
-                "{op_type:?}: GenerateFn migration state changed — record the \
-                 decision in this table (and prove the family against the \
-                 param-sweep fingerprint oracle first)"
+            assert!(
+                op_type.registry_entry().generate.is_some(),
+                "{op_type:?}: missing GenerateFn — every operation family is \
+                 registry-dispatched since the T11 cutover; wire the adapter \
+                 and prove it against the param-sweep fingerprint oracle"
             );
         }
     }
