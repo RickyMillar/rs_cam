@@ -2435,6 +2435,94 @@ mod tests {
         }
     }
 
+    /// Phase 5 (T11) cancellation net — written BEFORE the adapter
+    /// cutover per plan §Phase-5 task 6. Exactly four of the 23 arms
+    /// cooperatively poll `cancel`: Adaptive, DropCutter, Adaptive3d,
+    /// Waterline. A `GenerateFn` adapter that forgets to rebuild the
+    /// `|| cancel.load(Ordering::SeqCst)` closure silently makes the
+    /// op uncancellable — no compile error, invisible to fast unit
+    /// tests. This pins the contract: with `cancel` pre-set, each of
+    /// those families must return `Err(OperationError::Cancelled)`
+    /// rather than running to completion.
+    #[test]
+    fn cancellable_families_honour_a_preset_cancel_flag() {
+        let heights = test_heights();
+        let bbox = test_stock_bbox();
+        let standard_polygons = vec![Polygon2::rectangle(10.0, 10.0, 50.0, 50.0)];
+        let hemisphere_mesh = make_test_hemisphere(25.0, 16);
+        let hemisphere_index = SpatialIndex::build_auto(&hemisphere_mesh);
+
+        let adaptive3d = op_with_updates(OperationType::Adaptive3d, |op| {
+            let OperationConfig::Adaptive3d(cfg) = op else {
+                unreachable!("default op kind mismatch");
+            };
+            cfg.depth_per_pass = 4.0;
+        });
+        let drop_cutter = op_with_updates(OperationType::DropCutter, |op| {
+            let OperationConfig::DropCutter(cfg) = op else {
+                unreachable!("default op kind mismatch");
+            };
+            cfg.stepover = 2.0;
+            cfg.min_z = -5.0;
+        });
+        let waterline = op_with_updates(OperationType::Waterline, |op| {
+            let OperationConfig::Waterline(cfg) = op else {
+                unreachable!("default op kind mismatch");
+            };
+            cfg.z_step = 2.0;
+            cfg.sampling = 1.0;
+        });
+
+        // (name, op, tool, needs_mesh, needs_polygons)
+        let cases: Vec<(&str, OperationConfig, ToolType, bool, bool)> = vec![
+            (
+                "Adaptive",
+                OperationConfig::new_default(OperationType::Adaptive),
+                ToolType::EndMill,
+                false,
+                true,
+            ),
+            ("DropCutter", drop_cutter, ToolType::BallNose, true, false),
+            ("Adaptive3d", adaptive3d, ToolType::EndMill, true, false),
+            ("Waterline", waterline, ToolType::BallNose, true, false),
+        ];
+
+        for (name, op, tool_type, needs_mesh, needs_polygons) in cases {
+            let (tool_def, tool_cfg) = make_tool(tool_type);
+            let cutting_levels = op.cutting_levels(heights.top_z);
+            let cancel = AtomicBool::new(true); // pre-set: cancel before any work
+
+            let result = execute_operation_annotated(
+                &op,
+                needs_mesh.then_some(&hemisphere_mesh),
+                needs_mesh.then_some(&hemisphere_index),
+                needs_polygons.then_some(standard_polygons.as_slice()),
+                &tool_def,
+                &tool_cfg,
+                &heights,
+                &cutting_levels,
+                &bbox,
+                None,
+                None,
+                &cancel,
+                None,
+                None,
+                None,
+            );
+
+            match result {
+                Err(OperationError::Cancelled) => {}
+                Ok(generated) => panic!(
+                    "{name}: pre-set cancel was ignored — generation ran to \
+                     completion ({} moves). The cancel closure is no longer \
+                     wired through this family's generator.",
+                    generated.toolpath.moves.len()
+                ),
+                Err(other) => panic!("{name}: expected OperationError::Cancelled, got: {other:?}"),
+            }
+        }
+    }
+
     #[test]
     fn trace_annotated_output_has_depth_and_region_spans() {
         let op = OperationConfig::new_default(OperationType::Trace);
