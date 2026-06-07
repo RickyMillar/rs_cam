@@ -414,31 +414,46 @@ pub fn run_project_command(
 /// write back to the project file. Prints a before→after table to
 /// stderr so the operator can see what shifted.
 fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> {
-    use rs_cam_core::feeds::{
-        embedded_vendor_lut,
-        suggest::{
-            StockContext, SuggestContext, SuggestForOperationInput, SuggestPolicy,
-            suggest_for_operation,
-        },
-    };
-
-    // Snapshot inputs needed for suggest. We need to borrow `tools()`,
-    // `machine()`, `stock_config()` immutably while we mutate
-    // `toolpath_configs_mut()` — so clone the immutable view up front.
-    let tools_snapshot: Vec<_> = session.tools().to_vec();
-    let machine = session.machine().clone();
-    let material = session.stock_config().material.clone();
-    let workholding = session.stock_config().workholding_rigidity;
-    let lut = embedded_vendor_lut();
-    // Build per-toolpath SuggestContext slots that depend on the
-    // session up front so the mutating loop below doesn't reborrow
-    // `session` while it holds `toolpath_configs_mut()`.
-    let stock_ctx =
-        StockContext::from_stock_bbox(session.stock_bbox(), session.stock_config().padding);
-    // Per-toolpath model bbox lookup. `ToolpathConfig.model_id` defaults
-    // to 0 when unspecified, so reuse the first model as the fallback
-    // (matches `project_file.rs::634`).
-    let model_bboxes = session.collect_model_bboxes();
+    // T16 — route through the canonical `ProjectSession::cutter_op_profile`
+    // (T10) instead of a third hand-rolled `SuggestContext` assembly. The
+    // previous CLI copy hardcoded `SpindleStrategy::default()` where the
+    // GUI Suggest button and the MCP rationale endpoint read
+    // `post_config().spindle_strategy`, so projects with a non-default
+    // strategy got different RPM/feed from `--apply-suggest` than from
+    // the GUI. That was a bug, not deliberate CLI semantics.
+    //
+    // Pass 1 (immutable): collect suggestions per enabled toolpath. The
+    // profile borrows `session`, so the suggested operations are moved
+    // into an owned list before the mutating pass.
+    let mut suggestions: Vec<(usize, rs_cam_core::compute::catalog::OperationConfig, f64)> =
+        Vec::new();
+    for (idx, tc) in session.toolpath_configs().iter().enumerate() {
+        if !tc.enabled {
+            continue;
+        }
+        let Some(profile) = session.cutter_op_profile(tc) else {
+            warn!(
+                toolpath_id = tc.id,
+                tool_id = tc.tool_id,
+                "Tool not found, skipping suggest"
+            );
+            continue;
+        };
+        if let Err(e) = &profile.feasibility {
+            warn!(
+                toolpath_id = tc.id,
+                tool_id = tc.tool_id,
+                error = %e,
+                "Suggest refused tool × operation combination, leaving existing values"
+            );
+            continue;
+        }
+        // Feasibility Ok ⟺ both Some (`CutterOpProfile::for_combo`).
+        let (Some(operation), Some(feeds)) = (profile.suggested_operation, profile.feeds) else {
+            continue;
+        };
+        suggestions.push((idx, operation, feeds.rpm));
+    }
 
     eprintln!("\n=== Applying LUT-suggested feeds/speeds ===");
     eprintln!(
@@ -446,16 +461,9 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
         "id", "name", "feed", "plunge", "stepover", "dpp", "rpm"
     );
 
-    for tc in session.toolpath_configs_mut().iter_mut() {
-        if !tc.enabled {
-            continue;
-        }
-        let Some(tool) = tools_snapshot.iter().find(|t| t.id.0 == tc.tool_id) else {
-            warn!(
-                toolpath_id = tc.id,
-                tool_id = tc.tool_id,
-                "Tool not found, skipping suggest"
-            );
+    // Pass 2 (mutable): apply + print the before→after table.
+    for (idx, suggested_op, suggested_rpm) in suggestions {
+        let Some(tc) = session.toolpath_configs_mut().get_mut(idx) else {
             continue;
         };
 
@@ -466,49 +474,12 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
         let dpp_before = tc.operation.depth_per_pass();
         let rpm_before = tc.operation.spindle_rpm();
 
-        let model_bbox = model_bboxes
-            .iter()
-            .find(|(id, _)| *id == tc.model_id)
-            .map(|(_, b)| b);
-        let context = SuggestContext {
-            model_bbox,
-            stock: Some(&stock_ctx),
-            upstream_leftover_stock_mm: None,
-            neighboring_strategy_hint: None,
-            chipload_bounds: None,
-            matched_lut_row: None,
-            effective_diameter_mm: 0.0,
-            policy: SuggestPolicy::default(),
-        };
-        let suggested = match suggest_for_operation(SuggestForOperationInput {
-            operation: &tc.operation,
-            tool,
-            machine: &machine,
-            material: &material,
-            workholding,
-            lut,
-            spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-            context,
-        }) {
-            Ok(s) => s,
-            Err(e) => {
-                warn!(
-                    toolpath_id = tc.id,
-                    tool_id = tc.tool_id,
-                    error = %e,
-                    "Suggest refused tool × operation combination, leaving existing values"
-                );
-                continue;
-            }
-        };
-
         // Replace operation with the suggested one (feed/plunge/
         // stepover/dpp already written by apply_feeds_result_to_op).
-        tc.operation = suggested.operation;
+        tc.operation = suggested_op;
         // Suggest doesn't write spindle_rpm into the operation; the
         // RPM lives in `feeds_result.rpm`. Apply it explicitly so the
         // emitted M3 line matches the calculator's recommendation.
-        let suggested_rpm = suggested.feeds_result.rpm;
         if suggested_rpm.is_finite() && suggested_rpm > 0.0 {
             tc.operation
                 .set_spindle_rpm(Some(suggested_rpm.round() as u32));
