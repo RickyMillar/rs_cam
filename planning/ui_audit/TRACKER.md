@@ -101,7 +101,7 @@ Tier-4/5 polish.
 | ID | Title | Crate | Track | Ctx | Depends on | Status |
 |----|-------|-------|-------|-----|------------|--------|
 | W-UP | egui 0.30→0.34.3 upgrade | viz | 🟥 | 🛠→🔁 | — | ☐ |
-| W0.1 | fixture→collision (safety) | core+viz | 🟪 | 🛠 | — (viz half: components) | ☐ |
+| W0.1 | fixture→collision (safety) | core+viz | 🟪 | 🛠 | — (viz pill: components) | ◐ |
 | W0.2 | optimizer cycle-time math | core+viz | 🟥 | 🛠 | — | ☑ |
 | W0.3 | one collision tally + severity order | viz | 🟥 | 🛠 | — | ☑ |
 | W0.4 | reconcile load rollups (one `summary()`) | core+viz | 🟥 | 🛠 | — | ☑ |
@@ -174,3 +174,17 @@ Tier-4/5 polish.
   confusable, and absent from the Inspector) and deleted `verdict_counts` + its now-unused
   `Confidence` import. clippy + fmt + 189 viz tests green. **First-cut correctness trio
   (W0.2+W0.3+W0.4) complete.**
+- **2026-06-08** — **W0.1 ◐** (CODE half ☑, top-priority safety) — fixture→collision
+  (P6-003). The collision check tested the assembly only against the workpiece mesh; a holder
+  crashing a clamp was never flagged. Added `CollisionKind`/`CollisionObstacle` + analytic
+  `check_obstacle_collisions_with_cancel` in core `collision.rs`, an `obstacles` field on
+  `CollisionCheckRequest`, and one shared builder `ProjectSession::
+  collision_obstacles_for_toolpath` (enabled fixtures → clearance-expanded boxes). Wired BOTH
+  call sites through it: core `session.collision_check` (headless + GUI-embedded MCP) and the
+  viz worker (`CollisionRequest.obstacles` built at `request_collision_check`). +4 core unit
+  tests; clippy + fmt + core collision + 189 viz tests green. **SPEC half deferred** to the
+  component layer (per-fixture clearance pill, 🛡 field markers, edit-resets-pill). Frame note:
+  non-identity-setup fidelity matches the existing mesh check; tracked separately if it
+  surfaces. **Suggested first cut now: W0.2 ☑ W0.3 ☑ W0.4 ☑ W0.1(code) ☑ → next W1.1 + W1.2.**
+- **Git:** branch `ia-cleanup/wave0`; commits: docs · correctness-trio · W0.1. Per-workstream
+  commits from here. `.mcp.json` (pre-existing) left untouched.
