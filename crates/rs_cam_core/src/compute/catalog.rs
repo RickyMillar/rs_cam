@@ -1663,7 +1663,7 @@ static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     param_defs: SPIRAL_FINISH_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_spiral_finish),
 };
 
 static REG_RADIAL_FINISH: OpRegistryEntry = OpRegistryEntry {
@@ -1682,7 +1682,7 @@ static REG_RADIAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     param_defs: RADIAL_FINISH_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_radial_finish),
 };
 
 static REG_HORIZONTAL_FINISH: OpRegistryEntry = OpRegistryEntry {
@@ -1701,7 +1701,7 @@ static REG_HORIZONTAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     param_defs: HORIZONTAL_FINISH_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_horizontal_finish),
 };
 
 static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
@@ -2048,6 +2048,12 @@ mod tests {
                 // DropCutter — migrated 2026-06-07 (T11 PR 10;
                 // cancellable, slope filter + rim-trench guard kept).
                 | OperationType::DropCutter
+                // Spiral/Radial/Horizontal finish — migrated
+                // 2026-06-07 (T11 PR 11; spiral pins
+                // spans_from_labeled_events + annotate_spiral_finish).
+                | OperationType::SpiralFinish
+                | OperationType::RadialFinish
+                | OperationType::HorizontalFinish
             );
             assert_eq!(
                 migrated, expected,
