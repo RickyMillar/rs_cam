@@ -684,3 +684,91 @@ fn wanaka_suggest_idempotent_on_second_run() {
         "spindle_rpm must be idempotent: first {rpm1} vs second {rpm2}"
     );
 }
+
+/// Phase 4 (T10) dedup gate: `ProjectSession::cutter_op_profile` must
+/// produce byte-identical Suggest output to the hand-rolled
+/// `SuggestContext` assembly the GUI feeds modal and MCP
+/// `get_suggest_rationale` previously carried (model bbox by
+/// `tc.model_id`, stock context, default policy, post-config spindle
+/// strategy, embedded LUT). If this drifts, the rationale surfaces
+/// silently diverge from the Suggest button.
+#[test]
+fn session_cutter_op_profile_matches_gui_rationale_assembly() {
+    use rs_cam_core::feeds::suggest::SuggestPolicy;
+
+    let path = wanaka_project_path();
+    let session = ProjectSession::load(&path).expect("Load wanaka.toml");
+    let lut = embedded_vendor_lut();
+    let machine = session.machine();
+    let stock = session.stock_config();
+    let stock_ctx = StockContext::from_stock_bbox(session.stock_bbox(), stock.padding);
+    let model_bboxes = session.collect_model_bboxes();
+
+    let mut checked = 0usize;
+    for tc in session.toolpath_configs() {
+        if !tc.enabled {
+            continue;
+        }
+        let tool = session
+            .get_tool(ToolId(tc.tool_id))
+            .unwrap_or_else(|| panic!("Tool {} missing for toolpath {}", tc.tool_id, tc.id));
+
+        // The exact context the GUI modal / MCP rationale path built
+        // by hand before the dedup (feeds_modal.rs / app/mcp.rs).
+        let model_bbox = model_bboxes
+            .iter()
+            .find(|(id, _)| *id == tc.model_id)
+            .map(|(_, b)| b);
+        let context = SuggestContext {
+            model_bbox,
+            stock: Some(&stock_ctx),
+            upstream_leftover_stock_mm: None,
+            neighboring_strategy_hint: None,
+            chipload_bounds: None,
+            matched_lut_row: None,
+            effective_diameter_mm: 0.0,
+            policy: SuggestPolicy::default(),
+        };
+        let direct = suggest_for_operation(SuggestForOperationInput {
+            operation: &tc.operation,
+            tool,
+            machine,
+            material: &stock.material,
+            workholding: stock.workholding_rigidity,
+            lut,
+            spindle_strategy: session.post_config().spindle_strategy,
+            context,
+        })
+        .unwrap_or_else(|e| panic!("Suggest refused toolpath {} ({}): {e:?}", tc.id, tc.name));
+
+        let profile = session
+            .cutter_op_profile(tc)
+            .unwrap_or_else(|| panic!("profile tool lookup failed for toolpath {}", tc.id));
+
+        assert!(
+            profile.feasibility.is_ok(),
+            "toolpath {} ({}): profile feasibility diverged from direct Ok",
+            tc.id,
+            tc.name
+        );
+        assert_eq!(
+            format!("{:?}", profile.warnings),
+            format!("{:?}", direct.warnings),
+            "toolpath {} ({}): profile warnings diverged from the hand-rolled assembly",
+            tc.id,
+            tc.name
+        );
+        assert_eq!(
+            format!("{:?}", profile.suggested_operation),
+            format!("{:?}", Some(&direct.operation)),
+            "toolpath {} ({}): profile suggested operation diverged",
+            tc.id,
+            tc.name
+        );
+        checked += 1;
+    }
+    assert!(
+        checked >= 5,
+        "expected to exercise the wanaka toolpath set, only checked {checked}"
+    );
+}

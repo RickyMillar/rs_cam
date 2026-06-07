@@ -1011,6 +1011,57 @@ impl ProjectSession {
         &self.toolpath_configs
     }
 
+    /// Build the pre-sim [`CutterOpProfile`] for one toolpath config —
+    /// the canonical Suggest-rationale invocation shared by the GUI
+    /// feeds modal and the MCP `get_suggest_rationale` surface (Phase 4
+    /// dedup; both previously assembled this context by hand).
+    ///
+    /// Assembles the exact project-level [`SuggestContext`] those
+    /// callers built: per-toolpath model bbox (matched on
+    /// `tc.model_id`), stock context from the stock bbox + padding,
+    /// and default policy/scope — then runs
+    /// [`CutterOpProfile::for_combo`] against the session's machine,
+    /// stock material, workholding, post-config spindle strategy, and
+    /// the embedded vendor LUT.
+    ///
+    /// Returns `None` when the toolpath's tool id doesn't resolve —
+    /// callers keep their own error surface for that case.
+    ///
+    /// [`CutterOpProfile`]: crate::feeds::profile::CutterOpProfile
+    /// [`CutterOpProfile::for_combo`]: crate::feeds::profile::CutterOpProfile::for_combo
+    /// [`SuggestContext`]: crate::feeds::suggest::SuggestContext
+    pub fn cutter_op_profile<'a>(
+        &'a self,
+        tc: &'a ToolpathConfig,
+    ) -> Option<crate::feeds::profile::CutterOpProfile<'a>> {
+        use crate::feeds::profile::{CutterOpProfile, CutterOpProfileInput};
+        use crate::feeds::suggest::{StockContext, SuggestContext};
+
+        let tool = self.get_tool(ToolId(tc.tool_id))?;
+        let stock = self.stock_config();
+        let stock_ctx = StockContext::from_stock_bbox(self.stock_bbox(), stock.padding);
+        let model_bboxes = self.collect_model_bboxes();
+        let model_bbox = model_bboxes
+            .iter()
+            .find(|(id, _)| *id == tc.model_id)
+            .map(|(_, b)| b);
+        let context = SuggestContext {
+            model_bbox,
+            stock: Some(&stock_ctx),
+            ..SuggestContext::default()
+        };
+        Some(CutterOpProfile::for_combo(CutterOpProfileInput {
+            operation: &tc.operation,
+            tool,
+            machine: self.machine(),
+            material: &stock.material,
+            workholding: stock.workholding_rigidity,
+            lut: crate::feeds::embedded_vendor_lut(),
+            spindle_strategy: self.post_config().spindle_strategy,
+            context,
+        }))
+    }
+
     // ── Mutable accessors ─────────────────────────────────────────
     //
     // These provide raw mutable access for immediate-mode UI binding and
