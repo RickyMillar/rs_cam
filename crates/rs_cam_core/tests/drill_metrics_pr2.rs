@@ -64,7 +64,7 @@ fn make_drill_toolpath(tool_id: usize, peck_depth: f64) -> ToolpathConfig {
     }
 }
 
-fn build_drill_session(peck_depth: f64) -> ProjectSession {
+fn build_drill_session(peck_depth: f64, tool_diameter: f64) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
     let stock = StockConfig {
         x: 100.0,
@@ -85,7 +85,7 @@ fn build_drill_session(peck_depth: f64) -> ProjectSession {
     };
     session.set_stock_config(stock);
 
-    let tool_idx = session.add_tool(make_drill_tool(4.0));
+    let tool_idx = session.add_tool(make_drill_tool(tool_diameter));
     let tool_id = session.tools()[tool_idx].id.0;
     let tc = make_drill_toolpath(tool_id, peck_depth);
     session.add_toolpath(0, tc).expect("add drill toolpath");
@@ -97,7 +97,7 @@ fn build_drill_session(peck_depth: f64) -> ProjectSession {
 /// count matching the cycle's nominal pecks.
 #[test]
 fn drill_session_produces_drill_summary_with_pecks() {
-    let mut session = build_drill_session(3.0); // 15mm depth / 3mm peck → 5 pecks
+    let mut session = build_drill_session(3.0, 4.0); // 15mm depth / 3mm peck → 5 pecks
     let cancel = AtomicBool::new(false);
     session
         .generate_toolpath(0, &cancel)
@@ -210,8 +210,12 @@ fn drill_session_produces_drill_summary_with_pecks() {
 /// peck-adequacy gate.
 #[test]
 fn drill_session_oversize_peck_trips_peck_adequacy_gate() {
-    // peck=10mm on Ø4 → peck/D = 2.5 vs softwood threshold 2.0 → critical.
-    let mut session = build_drill_session(10.0);
+    // peck=13mm on Ø2 → peck/D = 6.5 vs the Janka-banded softwood
+    // per-peck threshold 6.0 (`Material::drill_per_peck_max_dtd`,
+    // raised from the flat 2.0 in the 2026-06-03 banding fix) →
+    // inadequate. A Ø4 tool can't trip this any more — the 15mm hole
+    // caps per-peck D/d at 3.75.
+    let mut session = build_drill_session(13.0, 2.0);
     let cancel = AtomicBool::new(false);
     session
         .generate_toolpath(0, &cancel)
@@ -237,7 +241,7 @@ fn drill_session_oversize_peck_trips_peck_adequacy_gate() {
     let summary = trace.drill_summary_for(0).expect("drill summary");
     assert!(
         !summary.peck_pattern_adequate,
-        "10mm peck on Ø4 softwood (peck/D=2.5) should flag inadequate"
+        "13mm peck on Ø2 softwood (peck/D=6.5 vs threshold 6.0) should flag inadequate"
     );
 
     let report = session.tool_load_report();
