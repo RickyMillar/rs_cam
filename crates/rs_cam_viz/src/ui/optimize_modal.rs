@@ -502,9 +502,9 @@ fn draw_candidate_row(
 
     draw_verdict_badges(ui, &candidate.verdict);
 
-    let safe = !candidate.verdict.chipload.is_exceeded()
-        && !candidate.verdict.power.is_exceeded()
-        && !candidate.verdict.deflection.is_exceeded();
+    // Derived from `criteria()` (Phase 6 task 5) — a fourth gate gates
+    // the Apply button automatically.
+    let safe = !candidate.verdict.any_exceeded();
     let label = if is_recommended { "Apply ⭐" } else { "Apply" };
     let button = ui.add_enabled(safe, egui::Button::new(label));
     if button.clicked() {

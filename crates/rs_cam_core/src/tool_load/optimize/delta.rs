@@ -117,9 +117,9 @@ impl GateDeltas {
 /// band-admitted candidates, see [`candidate_is_strictly_safe`] and
 /// [`candidate_is_marginally_safe`].
 pub(crate) fn candidate_is_safe(candidate: &OptimizeCandidate) -> bool {
-    !candidate.verdict.chipload.is_exceeded()
-        && !candidate.verdict.power.is_exceeded()
-        && !candidate.verdict.deflection.is_exceeded()
+    // Derived from `criteria()` (Phase 6 task 5) so a future fourth
+    // gate participates automatically instead of being a silent miss.
+    !candidate.verdict.any_exceeded()
 }
 
 /// True if the candidate is `Within` on every gate AND every reading is
