@@ -33,6 +33,9 @@
     clippy::print_stderr
 )]
 
+mod common;
+use common::make_endmill_6mm;
+
 use std::f64::consts::TAU;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -42,7 +45,6 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern};
 use rs_cam_core::compute::stock_config::StockConfig;
-use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
@@ -72,18 +74,6 @@ fn rounded_rect_with_island() -> Polygon2 {
     }
 
     Polygon2::with_holes(exterior, vec![hole])
-}
-
-fn make_endmill_6mm() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
-    tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
-    tool.shank_diameter = 6.35;
-    tool.shank_length = 20.0;
-    tool.stickout = 45.0;
-    tool.flute_count = 2;
-    tool.name = "End Mill 6mm".to_owned();
-    tool
 }
 
 /// Build an AS001-shape pocket: 100x100x12 hardwood stock with origin

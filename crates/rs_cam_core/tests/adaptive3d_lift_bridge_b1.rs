@@ -21,6 +21,9 @@
     clippy::print_stderr
 )]
 
+mod common;
+use common::make_endmill_6mm;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -31,7 +34,6 @@ use rs_cam_core::compute::operation_configs::{
     Adaptive3dConfig, Adaptive3dEntryStyle, ClearingStrategy, RegionOrdering,
 };
 use rs_cam_core::compute::stock_config::StockConfig;
-use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
@@ -45,18 +47,6 @@ fn translate_mesh(mut mesh: TriangleMesh, dx: f64, dy: f64, dz: f64) -> Triangle
         *v = P3::new(v.x + dx, v.y + dy, v.z + dz);
     }
     mesh
-}
-
-fn make_endmill_6mm() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
-    tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
-    tool.shank_diameter = 6.35;
-    tool.shank_length = 20.0;
-    tool.stickout = 45.0;
-    tool.flute_count = 2;
-    tool.name = "End Mill 6mm".to_owned();
-    tool
 }
 
 fn build_adaptive3d_session() -> ProjectSession {

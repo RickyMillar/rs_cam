@@ -26,7 +26,10 @@
     clippy::indexing_slicing
 )]
 
-use std::path::{Path, PathBuf};
+mod common;
+use common::repo_root;
+
+use std::path::PathBuf;
 
 use rs_cam_core::material::Material;
 use rs_cam_core::session::ProjectSession;
@@ -42,13 +45,6 @@ const KNOWN_MATERIAL_MISMATCHES: &[(&str, &str, &str)] = &[
     ("AS013", "softwood", "hardwood"), // terrain template stays hardwood for AS014-18
     ("AS017", "mdf", "hardwood"),      // stepped template stays hardwood
 ];
-
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .expect("repo root resolves")
-}
 
 fn csv_path() -> PathBuf {
     repo_root().join("planning/toolpath_acceptance/cases_agent_smoke.csv")

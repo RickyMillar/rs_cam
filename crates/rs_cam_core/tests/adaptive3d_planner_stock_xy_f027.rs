@@ -59,7 +59,9 @@
     clippy::print_stderr
 )]
 
-use std::path::PathBuf;
+mod common;
+use common::repo_root;
+
 use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
@@ -72,13 +74,6 @@ use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{ProjectSession, SimulationOptions, ToolpathConfig};
 use rs_cam_core::simulation_cut::CutKinematics;
 use rs_cam_core::tool_load::DeflectionVerdict;
-
-fn repo_root() -> PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .expect("repo root resolves")
-}
 
 /// Load `ux_3d_terrain.toml` (auto_from_model = true, F-026 grows stock
 /// to z≈57.6 at load) and add an AS013-shape adaptive3d toolpath with

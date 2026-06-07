@@ -71,16 +71,10 @@
     clippy::print_stdout
 )]
 
-use std::path::PathBuf;
+mod common;
+use common::repo_root;
 
 use rs_cam_core::session::ProjectSession;
-
-fn repo_root() -> PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .expect("repo root resolves")
-}
 
 // ── F-026 primary acceptance ─────────────────────────────────────────
 
