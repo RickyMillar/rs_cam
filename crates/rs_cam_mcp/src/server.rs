@@ -448,10 +448,20 @@ pub fn parse_operation_type(s: &str) -> Result<OperationType, String> {
         .map_err(|e| format!("Unknown operation type '{s}' ({e}). Valid types: face, pocket, profile, adaptive, v_carve, rest, inlay, zigzag, trace, drill, chamfer, drop_cutter, adaptive3d, waterline, pencil, scallop, steep_shallow, ramp_finish, spiral_finish, radial_finish, horizontal_finish, project_curve, alignment_pin_drill"))
 }
 
-/// Parse a string into a `ToolType` (snake_case).
+/// Parse a string into a `ToolType`.
+///
+/// Vocabulary is the unified core [`ToolType::parse_lenient`] (T8) —
+/// canonical snake_case plus the historical loader aliases — so the
+/// MCP surface can't drift from the project-file parsers. Unknown
+/// input stays an explicit `Err` here (deliberate Q4 carve-out: this
+/// feeds live mutations like `add_tool`, where an error beats silently
+/// creating an end mill the caller didn't ask for).
 pub fn parse_tool_type(s: &str) -> Result<ToolType, String> {
-    serde_json::from_value(serde_json::Value::String(s.to_owned()))
-        .map_err(|e| format!("Unknown tool type '{s}' ({e}). Valid types: end_mill, ball_nose, bull_nose, v_bit, tapered_ball_nose"))
+    ToolType::parse_lenient(s).ok_or_else(|| {
+        format!(
+            "Unknown tool type '{s}'. Valid types: end_mill, ball_nose, bull_nose, v_bit, tapered_ball_nose"
+        )
+    })
 }
 
 pub fn text(msg: impl Into<String>) -> String {
@@ -614,5 +624,9 @@ mod tests {
             err.contains("tapered_ball_nose"),
             "error must list valid types: {err}"
         );
+        // T8: the unified lenient vocabulary reaches this surface too —
+        // historical loader aliases parse instead of erroring.
+        assert_eq!(parse_tool_type("ball"), Ok(ToolType::BallNose));
+        assert_eq!(parse_tool_type("flat"), Ok(ToolType::EndMill));
     }
 }

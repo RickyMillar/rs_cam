@@ -66,6 +66,36 @@ impl ToolType {
             ToolType::TaperedBallNose => "tapered_ball_nose",
         }
     }
+
+    /// THE tool-type string parser (Phase 3 T8, decision Q4).
+    ///
+    /// Unifies the four historically divergent vocabularies — core
+    /// project loader (`ballnose`, wildcard→EndMill), viz legacy loader
+    /// (`ball`/`tapered_ball`, wildcard→EndMill), MCP (canonical
+    /// snake_case only, `Err` on unknown), viz serde-direct (canonical
+    /// only, whole-file parse error on unknown) — into one
+    /// case-insensitive union. Pre-T8 the vocabularies disagreed:
+    /// `"ball"` parsed to `BallNose` in the viz legacy loader but
+    /// silently became `EndMill` in core.
+    ///
+    /// Returns `None` for unrecognized input. Policy at the call sites
+    /// (Q4): file-loading surfaces warn and default to `EndMill`; the
+    /// MCP mutation surface returns an explicit error (an interactive
+    /// caller should hear "unknown type", not get a surprise end mill).
+    pub fn parse_lenient(s: &str) -> Option<ToolType> {
+        match s.to_ascii_lowercase().as_str() {
+            // "flat" is the legacy save format's EndMill token
+            // (pre-TOML-rework writer, commit 978dc9c).
+            "end_mill" | "endmill" | "flat" => Some(ToolType::EndMill),
+            "ball_nose" | "ballnose" | "ball" => Some(ToolType::BallNose),
+            "bull_nose" | "bullnose" => Some(ToolType::BullNose),
+            "v_bit" | "vbit" => Some(ToolType::VBit),
+            "tapered_ball_nose" | "taperedballnose" | "tapered_ball" => {
+                Some(ToolType::TaperedBallNose)
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Tool material (affects chip load and wear).
@@ -281,6 +311,49 @@ mod tests {
                 "{tool_type:?}: serde_token() drifted from the serde repr"
             );
         }
+    }
+
+    /// T8: the unified lenient vocabulary, pinned exactly — canonical
+    /// serde tokens, the historical core-loader aliases, and the
+    /// historical viz-legacy aliases all parse; case is folded; unknown
+    /// input is `None` (each surface applies its own Q4 policy on top).
+    #[test]
+    fn parse_lenient_vocabulary_is_pinned() {
+        let table: &[(&str, ToolType)] = &[
+            ("end_mill", ToolType::EndMill),
+            ("endmill", ToolType::EndMill),
+            ("flat", ToolType::EndMill),
+            ("ball_nose", ToolType::BallNose),
+            ("ballnose", ToolType::BallNose),
+            ("ball", ToolType::BallNose),
+            ("bull_nose", ToolType::BullNose),
+            ("bullnose", ToolType::BullNose),
+            ("v_bit", ToolType::VBit),
+            ("vbit", ToolType::VBit),
+            ("tapered_ball_nose", ToolType::TaperedBallNose),
+            ("taperedballnose", ToolType::TaperedBallNose),
+            ("tapered_ball", ToolType::TaperedBallNose),
+        ];
+        for &(token, expected) in table {
+            assert_eq!(ToolType::parse_lenient(token), Some(expected), "{token}");
+            // Case-insensitive.
+            assert_eq!(
+                ToolType::parse_lenient(&token.to_ascii_uppercase()),
+                Some(expected),
+                "{token} (uppercase)"
+            );
+        }
+        // Round trip: every canonical token parses to its own type.
+        for &tool_type in ToolType::ALL {
+            assert_eq!(
+                ToolType::parse_lenient(tool_type.serde_token()),
+                Some(tool_type)
+            );
+        }
+        // Unknown stays None — the default-EndMill policy is the
+        // caller's, not the parser's.
+        assert_eq!(ToolType::parse_lenient("definitely_not_a_tool"), None);
+        assert_eq!(ToolType::parse_lenient(""), None);
     }
 
     #[test]

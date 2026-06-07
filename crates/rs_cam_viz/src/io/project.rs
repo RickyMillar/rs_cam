@@ -57,6 +57,12 @@ pub enum ProjectLoadWarning {
     MachineRefFallback {
         detail: String,
     },
+    /// A tool section carried an unrecognized tool-type token; the Q4
+    /// warn-and-default policy (T8) substituted an end mill.
+    UnknownToolType {
+        tool: String,
+        token: String,
+    },
 }
 
 impl ProjectLoadWarning {
@@ -103,6 +109,9 @@ impl ProjectLoadWarning {
                 )
             }
             ProjectLoadWarning::MachineRefFallback { detail } => detail.clone(),
+            ProjectLoadWarning::UnknownToolType { tool, token } => {
+                format!("Tool '{tool}' has unknown tool type '{token}' — defaulted to End Mill.")
+            }
         }
     }
 }
@@ -148,8 +157,13 @@ pub struct ProjectToolSection {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_number: Option<u32>,
-    #[serde(rename = "type", default = "default_tool_type")]
-    pub tool_type: ToolType,
+    /// Tool-type token, parsed leniently via [`ToolType::parse_lenient`]
+    /// in `into_runtime` (T8/Q4: warn-and-default, surfaced as a
+    /// [`ProjectLoadWarning::UnknownToolType`]). Pre-T8 this was a typed
+    /// `ToolType` field, so an unknown token failed the WHOLE typed
+    /// parse and cascaded into a doomed legacy-format attempt.
+    #[serde(rename = "type", default = "default_tool_type_token")]
+    pub tool_type: String,
     #[serde(default = "default_tool_diameter")]
     pub diameter: f64,
     #[serde(default = "default_cutting_length")]
@@ -470,7 +484,7 @@ impl ProjectToolSection {
             id: Some(tool.id),
             tool_number: Some(tool.tool_number),
             name: tool.name.clone(),
-            tool_type: tool.tool_type,
+            tool_type: tool.tool_type.serde_token().to_owned(),
             diameter: tool.diameter,
             cutting_length: tool.cutting_length,
             helix_deg: tool.helix_deg,
@@ -491,12 +505,19 @@ impl ProjectToolSection {
         }
     }
 
-    fn into_runtime(self, id: ToolId) -> ToolConfig {
+    fn into_runtime(self, id: ToolId, warnings: &mut Vec<ProjectLoadWarning>) -> ToolConfig {
+        let tool_type = ToolType::parse_lenient(&self.tool_type).unwrap_or_else(|| {
+            warnings.push(ProjectLoadWarning::UnknownToolType {
+                tool: self.name.clone(),
+                token: self.tool_type.clone(),
+            });
+            ToolType::EndMill
+        });
         ToolConfig {
             id,
             name: self.name,
             tool_number: self.tool_number.unwrap_or(id.0 as u32 + 1),
-            tool_type: self.tool_type,
+            tool_type,
             diameter: self.diameter,
             cutting_length: self.cutting_length,
             helix_deg: self.helix_deg,
@@ -664,7 +685,7 @@ fn load_typed_project(
             &mut used_tool_ids,
             &mut next_tool_id,
         ));
-        job.tools.push(tool.into_runtime(id));
+        job.tools.push(tool.into_runtime(id, &mut warnings));
     }
 
     let mut used_model_ids = BTreeSet::new();
@@ -803,7 +824,8 @@ fn load_legacy_project(
 
     for tool in legacy.tools {
         let id = job.next_tool_id();
-        job.tools.push(restore_legacy_tool(tool, id));
+        let restored = restore_legacy_tool(tool, id, &mut warnings);
+        job.tools.push(restored);
     }
 
     let mut model_ids_by_path = HashMap::new();
@@ -879,14 +901,21 @@ fn load_legacy_project(
     Ok(LoadedProject { job, warnings })
 }
 
-fn restore_legacy_tool(tool: LegacyToolSection, id: ToolId) -> ToolConfig {
-    let tool_type = match tool.tool_type.as_str() {
-        "ball" => ToolType::BallNose,
-        "bullnose" => ToolType::BullNose,
-        "vbit" => ToolType::VBit,
-        "tapered_ball" => ToolType::TaperedBallNose,
-        _ => ToolType::EndMill,
-    };
+fn restore_legacy_tool(
+    tool: LegacyToolSection,
+    id: ToolId,
+    warnings: &mut Vec<ProjectLoadWarning>,
+) -> ToolConfig {
+    // Unified vocabulary (T8/Q4): the legacy aliases (`ball`,
+    // `tapered_ball`, …) live in `ToolType::parse_lenient` now; unknown
+    // tokens warn-and-default instead of silently becoming an end mill.
+    let tool_type = ToolType::parse_lenient(&tool.tool_type).unwrap_or_else(|| {
+        warnings.push(ProjectLoadWarning::UnknownToolType {
+            tool: tool.name.clone(),
+            token: tool.tool_type.clone(),
+        });
+        ToolType::EndMill
+    });
     let mut restored = ToolConfig::new_default(id, tool_type);
     restored.name = tool.name;
     restored.diameter = tool.diameter;
@@ -1379,8 +1408,8 @@ fn default_tool_name() -> String {
     "Tool".to_owned()
 }
 
-fn default_tool_type() -> ToolType {
-    ToolType::EndMill
+fn default_tool_type_token() -> String {
+    ToolType::EndMill.serde_token().to_owned()
 }
 
 fn default_tool_diameter() -> f64 {
@@ -1495,27 +1524,61 @@ mod tests {
         tool
     }
 
-    /// Parity freeze (architectural refactor §7.2): the VIZ project-file
-    /// tool section serializes its tool type under the TOML key `type`
-    /// (serde rename) as a serde-direct [`ToolType`] — strict snake_case
-    /// (unknown values are a hard parse error, unlike the core loader's
-    /// lenient String field), defaulting a missing key to `EndMill`. A
-    /// registry/X-macro change must not silently alter this shape.
+    /// Parity freeze (architectural refactor §7.2, re-baselined T8/Q4):
+    /// the VIZ project-file tool section serializes its tool type under
+    /// the TOML key `type` (serde rename). Since T8 the field is a
+    /// lenient String parsed by `ToolType::parse_lenient` in
+    /// `into_runtime` — unknown tokens warn-and-default to EndMill via
+    /// `ProjectLoadWarning::UnknownToolType` instead of failing the
+    /// whole typed parse (and silently cascading into a legacy-format
+    /// attempt). Serialization still emits canonical snake_case.
     #[test]
     fn project_tool_section_type_key_shape_frozen() {
-        // `type` key round-trips into the serde-direct enum field.
+        // `type` key round-trips through the canonical token.
         let section: ProjectToolSection = toml::from_str(r#"type = "ball_nose""#).unwrap();
-        assert_eq!(section.tool_type, ToolType::BallNose);
+        let mut warnings = Vec::new();
+        assert_eq!(
+            section
+                .clone()
+                .into_runtime(ToolId(0), &mut warnings)
+                .tool_type,
+            ToolType::BallNose
+        );
+        assert!(warnings.is_empty());
 
-        // Strict layer: unknown tool types are a parse error here.
+        // T8 lenient layer: unknown tokens parse, warn, default EndMill.
+        let unknown: ProjectToolSection =
+            toml::from_str(r#"type = "definitely_not_a_tool""#).unwrap();
+        let runtime = unknown.into_runtime(ToolId(0), &mut warnings);
+        assert_eq!(runtime.tool_type, ToolType::EndMill);
         assert!(
-            toml::from_str::<ProjectToolSection>(r#"type = "definitely_not_a_tool""#).is_err(),
-            "viz serde-direct ToolType must reject unknown names"
+            matches!(
+                warnings.as_slice(),
+                [ProjectLoadWarning::UnknownToolType { token, .. }]
+                    if token == "definitely_not_a_tool"
+            ),
+            "unknown token must surface a load warning: {warnings:?}"
         );
 
-        // Missing key defaults to EndMill.
+        // Legacy aliases parse on the typed path too (unified vocabulary).
+        let alias: ProjectToolSection = toml::from_str(r#"type = "ball""#).unwrap();
+        let mut alias_warnings = Vec::new();
+        assert_eq!(
+            alias.into_runtime(ToolId(0), &mut alias_warnings).tool_type,
+            ToolType::BallNose
+        );
+        assert!(alias_warnings.is_empty());
+
+        // Missing key defaults to EndMill (no warning — absent ≠ unknown).
         let defaulted: ProjectToolSection = toml::from_str("").unwrap();
-        assert_eq!(defaulted.tool_type, ToolType::EndMill);
+        let mut default_warnings = Vec::new();
+        assert_eq!(
+            defaulted
+                .into_runtime(ToolId(0), &mut default_warnings)
+                .tool_type,
+            ToolType::EndMill
+        );
+        assert!(default_warnings.is_empty());
 
         // Serialization emits `type`, never the field name `tool_type`.
         let out = toml::to_string(&section).unwrap();
