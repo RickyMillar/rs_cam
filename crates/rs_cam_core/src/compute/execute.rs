@@ -741,6 +741,199 @@ pub(crate) fn generate_face(
     Ok(generated)
 }
 
+/// Pencil family adapter (labeled-event spans + annotate_pencil).
+pub(crate) fn generate_pencil(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::Pencil(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_pencil received a non-Pencil config".into(),
+        ));
+    };
+    let m = require_mesh(ctx.mesh)?;
+    let idx = ctx
+        .index
+        .ok_or_else(|| OperationError::Other("Pencil requires a spatial index".into()))?;
+    let params = crate::pencil::PencilParams {
+        bitangency_angle: cfg.bitangency_angle,
+        min_cut_length: cfg.min_cut_length,
+        hookup_distance: cfg.hookup_distance,
+        num_offset_passes: cfg.num_offset_passes,
+        offset_stepover: cfg.offset_stepover,
+        sampling: cfg.sampling,
+        feed_rate: op.feed_rate(),
+        plunge_rate: op.plunge_rate(),
+        safe_z: ctx.heights.retract_z,
+        stock_to_leave: cfg.stock_to_leave,
+    };
+    let (tp, annotations) = crate::pencil::pencil_toolpath_structured_annotated(
+        m,
+        idx,
+        ctx.tool_def,
+        &params,
+        ctx.debug_ctx,
+    );
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_pencil(&annotations, &tp, sem);
+    }
+    let spans = crate::compute::spans::spans_from_labeled_events(
+        tp.moves.len(),
+        annotations
+            .iter()
+            .map(|ann| (ann.move_index, ann.event.label())),
+    );
+    Ok(generated_with_spans(tp, spans))
+}
+
+/// Scallop family adapter (labeled-event spans + annotate_scallop).
+/// The ball-tip refusal reads the registry constraint list (T7 PR C)
+/// so refusal and published schema cannot drift.
+pub(crate) fn generate_scallop(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::Scallop(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_scallop received a non-Scallop config".into(),
+        ));
+    };
+    // Membership pinned by
+    // `tool_constraints_allows_matches_runtime_refusal_semantics`.
+    if !OperationType::Scallop
+        .registry_entry()
+        .tool_constraints
+        .allows(ctx.tool_cfg.tool_type.cutter_kind())
+    {
+        return Err(OperationError::InvalidTool(
+            "Scallop requires a ball-tip tool (Ball Nose or Tapered Ball Nose)".into(),
+        ));
+    }
+    let m = require_mesh(ctx.mesh)?;
+    let idx = ctx
+        .index
+        .ok_or_else(|| OperationError::Other("Scallop requires a spatial index".into()))?;
+    let params = crate::scallop::ScallopParams {
+        scallop_height: cfg.scallop_height,
+        tolerance: cfg.tolerance,
+        direction: cfg.direction,
+        continuous: cfg.continuous,
+        slope_from: cfg.slope_from,
+        slope_to: cfg.slope_to,
+        feed_rate: op.feed_rate(),
+        plunge_rate: op.plunge_rate(),
+        safe_z: ctx.heights.retract_z,
+        stock_to_leave: cfg.stock_to_leave,
+    };
+    let (tp, annotations) = crate::scallop::scallop_toolpath_structured_annotated(
+        m,
+        idx,
+        ctx.tool_def,
+        &params,
+        ctx.debug_ctx,
+    );
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_scallop(&annotations, &tp, sem);
+    }
+    let spans = crate::compute::spans::spans_from_labeled_events(
+        tp.moves.len(),
+        annotations
+            .iter()
+            .map(|ann| (ann.move_index, ann.event.label())),
+    );
+    Ok(generated_with_spans(tp, spans))
+}
+
+/// SteepShallow family adapter.
+pub(crate) fn generate_steep_shallow(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::SteepShallow(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_steep_shallow received a non-SteepShallow config"
+                .into(),
+        ));
+    };
+    let m = require_mesh(ctx.mesh)?;
+    let idx = ctx
+        .index
+        .ok_or_else(|| OperationError::Other("SteepShallow requires a spatial index".into()))?;
+    let params = crate::steep_shallow::SteepShallowParams {
+        threshold_angle: cfg.threshold_angle,
+        overlap_distance: cfg.overlap_distance,
+        wall_clearance: cfg.wall_clearance,
+        steep_first: cfg.steep_first,
+        stepover: cfg.stepover,
+        z_step: cfg.z_step,
+        feed_rate: op.feed_rate(),
+        plunge_rate: op.plunge_rate(),
+        safe_z: ctx.heights.retract_z,
+        sampling: cfg.sampling,
+        stock_to_leave: cfg.stock_to_leave,
+        tolerance: cfg.tolerance,
+    };
+    let generated = generated_with_cut_run_spans(
+        crate::steep_shallow::steep_shallow_toolpath(m, idx, ctx.tool_def, &params),
+        "Steep/shallow run",
+    );
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_depth_run_spans(
+            &generated.spans,
+            &generated.toolpath,
+            sem,
+        );
+    }
+    Ok(generated)
+}
+
+/// RampFinish family adapter (labeled-event spans + annotate_ramp_finish).
+pub(crate) fn generate_ramp_finish(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::RampFinish(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_ramp_finish received a non-RampFinish config"
+                .into(),
+        ));
+    };
+    let m = require_mesh(ctx.mesh)?;
+    let idx = ctx
+        .index
+        .ok_or_else(|| OperationError::Other("RampFinish requires a spatial index".into()))?;
+    let params = crate::ramp_finish::RampFinishParams {
+        max_stepdown: cfg.max_stepdown,
+        slope_from: cfg.slope_from,
+        slope_to: cfg.slope_to,
+        direction: cfg.direction,
+        order_bottom_up: cfg.order_bottom_up,
+        feed_rate: op.feed_rate(),
+        plunge_rate: op.plunge_rate(),
+        safe_z: ctx.heights.retract_z,
+        sampling: cfg.sampling,
+        stock_to_leave: cfg.stock_to_leave,
+        tolerance: cfg.tolerance,
+    };
+    let (tp, annotations) = crate::ramp_finish::ramp_finish_toolpath_structured_annotated(
+        m,
+        idx,
+        ctx.tool_def,
+        &params,
+        ctx.debug_ctx,
+    );
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_ramp_finish(&annotations, &tp, sem);
+    }
+    let spans = crate::compute::spans::spans_from_labeled_events(
+        tp.moves.len(),
+        annotations
+            .iter()
+            .map(|ann| (ann.move_index, ann.event.label())),
+    );
+    Ok(generated_with_spans(tp, spans))
+}
+
 /// SpiralFinish family adapter. NOTE: spans come from
 /// `spans_from_labeled_events` over the generator's annotations, and
 /// the family annotate fn is `annotate_spiral_finish` — both part of
@@ -1338,143 +1531,12 @@ pub fn execute_operation_annotated(
         // Migrated to the registry GenerateFn (T11); arm kept for the
         // exhaustiveness net and delegates to the same adapter.
         OperationConfig::Waterline(_) => generate_waterline(&ctx, op),
-        OperationConfig::Pencil(cfg) => {
-            let m = require_mesh(mesh)?;
-            let idx = index
-                .ok_or_else(|| OperationError::Other("Pencil requires a spatial index".into()))?;
-            let params = crate::pencil::PencilParams {
-                bitangency_angle: cfg.bitangency_angle,
-                min_cut_length: cfg.min_cut_length,
-                hookup_distance: cfg.hookup_distance,
-                num_offset_passes: cfg.num_offset_passes,
-                offset_stepover: cfg.offset_stepover,
-                sampling: cfg.sampling,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-                stock_to_leave: cfg.stock_to_leave,
-            };
-            let (tp, annotations) = crate::pencil::pencil_toolpath_structured_annotated(
-                m, idx, tool_def, &params, debug_ctx,
-            );
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_pencil(&annotations, &tp, ctx);
-            }
-            let spans = crate::compute::spans::spans_from_labeled_events(
-                tp.moves.len(),
-                annotations
-                    .iter()
-                    .map(|ann| (ann.move_index, ann.event.label())),
-            );
-            Ok(generated_with_spans(tp, spans))
-        }
-        OperationConfig::Scallop(cfg) => {
-            // Reads the registry constraint list (T7 PR C) so this
-            // refusal and the published `tool_constraints` schema
-            // cannot drift; membership pinned by
-            // `tool_constraints_allows_matches_runtime_refusal_semantics`.
-            if !OperationType::Scallop
-                .registry_entry()
-                .tool_constraints
-                .allows(tool_cfg.tool_type.cutter_kind())
-            {
-                return Err(OperationError::InvalidTool(
-                    "Scallop requires a ball-tip tool (Ball Nose or Tapered Ball Nose)".into(),
-                ));
-            }
-            let m = require_mesh(mesh)?;
-            let idx = index
-                .ok_or_else(|| OperationError::Other("Scallop requires a spatial index".into()))?;
-            let params = crate::scallop::ScallopParams {
-                scallop_height: cfg.scallop_height,
-                tolerance: cfg.tolerance,
-                direction: cfg.direction,
-                continuous: cfg.continuous,
-                slope_from: cfg.slope_from,
-                slope_to: cfg.slope_to,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-                stock_to_leave: cfg.stock_to_leave,
-            };
-            let (tp, annotations) = crate::scallop::scallop_toolpath_structured_annotated(
-                m, idx, tool_def, &params, debug_ctx,
-            );
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_scallop(&annotations, &tp, ctx);
-            }
-            let spans = crate::compute::spans::spans_from_labeled_events(
-                tp.moves.len(),
-                annotations
-                    .iter()
-                    .map(|ann| (ann.move_index, ann.event.label())),
-            );
-            Ok(generated_with_spans(tp, spans))
-        }
-        OperationConfig::SteepShallow(cfg) => {
-            let m = require_mesh(mesh)?;
-            let idx = index.ok_or_else(|| {
-                OperationError::Other("SteepShallow requires a spatial index".into())
-            })?;
-            let params = crate::steep_shallow::SteepShallowParams {
-                threshold_angle: cfg.threshold_angle,
-                overlap_distance: cfg.overlap_distance,
-                wall_clearance: cfg.wall_clearance,
-                steep_first: cfg.steep_first,
-                stepover: cfg.stepover,
-                z_step: cfg.z_step,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-                sampling: cfg.sampling,
-                stock_to_leave: cfg.stock_to_leave,
-                tolerance: cfg.tolerance,
-            };
-            let generated = generated_with_cut_run_spans(
-                crate::steep_shallow::steep_shallow_toolpath(m, idx, tool_def, &params),
-                "Steep/shallow run",
-            );
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_depth_run_spans(
-                    &generated.spans,
-                    &generated.toolpath,
-                    ctx,
-                );
-            }
-            Ok(generated)
-        }
-        OperationConfig::RampFinish(cfg) => {
-            let m = require_mesh(mesh)?;
-            let idx = index.ok_or_else(|| {
-                OperationError::Other("RampFinish requires a spatial index".into())
-            })?;
-            let params = crate::ramp_finish::RampFinishParams {
-                max_stepdown: cfg.max_stepdown,
-                slope_from: cfg.slope_from,
-                slope_to: cfg.slope_to,
-                direction: cfg.direction,
-                order_bottom_up: cfg.order_bottom_up,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-                sampling: cfg.sampling,
-                stock_to_leave: cfg.stock_to_leave,
-                tolerance: cfg.tolerance,
-            };
-            let (tp, annotations) = crate::ramp_finish::ramp_finish_toolpath_structured_annotated(
-                m, idx, tool_def, &params, debug_ctx,
-            );
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_ramp_finish(&annotations, &tp, ctx);
-            }
-            let spans = crate::compute::spans::spans_from_labeled_events(
-                tp.moves.len(),
-                annotations
-                    .iter()
-                    .map(|ann| (ann.move_index, ann.event.label())),
-            );
-            Ok(generated_with_spans(tp, spans))
-        }
+        // Migrated to the registry GenerateFn (T11); arms kept for the
+        // exhaustiveness net and delegate to the same adapters.
+        OperationConfig::Pencil(_) => generate_pencil(&ctx, op),
+        OperationConfig::Scallop(_) => generate_scallop(&ctx, op),
+        OperationConfig::SteepShallow(_) => generate_steep_shallow(&ctx, op),
+        OperationConfig::RampFinish(_) => generate_ramp_finish(&ctx, op),
         // Migrated to the registry GenerateFn (T11); arms kept for the
         // exhaustiveness net and delegate to the same adapters.
         OperationConfig::SpiralFinish(_) => generate_spiral_finish(&ctx, op),
