@@ -1565,7 +1565,7 @@ static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
     param_defs: WATERLINE_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_waterline),
 };
 
 static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
@@ -2024,6 +2024,9 @@ mod tests {
                 op_type,
                 // Drill family — migrated 2026-06-07 (T11 PR 2).
                 OperationType::Drill | OperationType::AlignmentPinDrill
+                // Waterline — migrated 2026-06-07 (T11 PR 3; first
+                // cancellable family through the adapter path).
+                | OperationType::Waterline
             );
             assert_eq!(
                 migrated, expected,
