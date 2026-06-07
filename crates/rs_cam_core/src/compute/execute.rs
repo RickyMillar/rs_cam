@@ -292,6 +292,45 @@ pub(crate) fn generate_alignment_pin_drill(
     Ok(generated)
 }
 
+/// Face family adapter.
+pub(crate) fn generate_face(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::Face(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_face received a non-Face config".into(),
+        ));
+    };
+    // F-028: face anchors its depth stepping at `heights.top_z`
+    // (which under Auto follows `ctx.stock_top_z` after F-028 — so
+    // identity setups land at world stock top and non-identity
+    // setups at local stock top, both consistent with the frame
+    // the toolpath gets stamped into).
+    let params = crate::face::FaceParams {
+        tool_radius: ctx.tool_def.radius(),
+        stepover: cfg.stepover,
+        depth: cfg.depth,
+        depth_per_pass: cfg.depth_per_pass,
+        feed_rate: op.feed_rate(),
+        plunge_rate: op.plunge_rate(),
+        safe_z: ctx.heights.retract_z,
+        stock_offset: cfg.stock_offset,
+        direction: cfg.direction,
+        stock_top_z: ctx.heights.top_z,
+    };
+    let generated =
+        generated_with_depth_run_spans(crate::face::face_toolpath(ctx.stock_bbox, &params), &[]);
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_depth_run_spans(
+            &generated.spans,
+            &generated.toolpath,
+            sem,
+        );
+    }
+    Ok(generated)
+}
+
 /// Waterline family adapter. Cancellable: the cooperative cancel
 /// closure is rebuilt from `ctx.cancel` (pinned by
 /// `cancellable_families_honour_a_preset_cancel_flag`).
@@ -443,37 +482,9 @@ pub fn execute_operation_annotated(
     let plunge_rate = op.plunge_rate();
 
     match op {
-        OperationConfig::Face(cfg) => {
-            // F-028: face anchors its depth stepping at `heights.top_z`
-            // (which under Auto follows `ctx.stock_top_z` after F-028 — so
-            // identity setups land at world stock top and non-identity
-            // setups at local stock top, both consistent with the frame
-            // the toolpath gets stamped into).
-            let params = crate::face::FaceParams {
-                tool_radius,
-                stepover: cfg.stepover,
-                depth: cfg.depth,
-                depth_per_pass: cfg.depth_per_pass,
-                feed_rate,
-                plunge_rate,
-                safe_z,
-                stock_offset: cfg.stock_offset,
-                direction: cfg.direction,
-                stock_top_z: heights.top_z,
-            };
-            let generated = generated_with_depth_run_spans(
-                crate::face::face_toolpath(stock_bbox, &params),
-                &[],
-            );
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_depth_run_spans(
-                    &generated.spans,
-                    &generated.toolpath,
-                    ctx,
-                );
-            }
-            Ok(generated)
-        }
+        // Migrated to the registry GenerateFn (T11); arm kept for the
+        // exhaustiveness net and delegates to the same adapter.
+        OperationConfig::Face(_) => generate_face(&ctx, op),
         OperationConfig::Pocket(cfg) => {
             let polys = require_polygons(polygons)?;
             let levels = effective_levels(cutting_levels, heights, cfg.depth_per_pass);

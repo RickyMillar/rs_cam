@@ -1293,7 +1293,7 @@ static REG_FACE: OpRegistryEntry = OpRegistryEntry {
     param_defs: FACE_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_face),
 };
 
 static REG_POCKET: OpRegistryEntry = OpRegistryEntry {
@@ -2027,6 +2027,8 @@ mod tests {
                 // Waterline — migrated 2026-06-07 (T11 PR 3; first
                 // cancellable family through the adapter path).
                 | OperationType::Waterline
+                // Face — migrated 2026-06-07 (T11 PR 4).
+                | OperationType::Face
             );
             assert_eq!(
                 migrated, expected,
