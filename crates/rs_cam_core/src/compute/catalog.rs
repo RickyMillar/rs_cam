@@ -1434,7 +1434,7 @@ static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {
     param_defs: ZIGZAG_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_zigzag),
 };
 
 static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
@@ -1454,7 +1454,7 @@ static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     // Roadmap B.5 — single-pass engraving: no entry style applies.
     dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_trace),
 };
 
 static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
@@ -2033,6 +2033,10 @@ mod tests {
                 | OperationType::Pocket
                 // Profile — migrated 2026-06-07 (T11 PR 6).
                 | OperationType::Profile
+                // Zigzag + Trace — migrated 2026-06-07 (T11 PR 7;
+                // trace pins its family-specific annotate_trace_spans).
+                | OperationType::Zigzag
+                | OperationType::Trace
             );
             assert_eq!(
                 migrated, expected,

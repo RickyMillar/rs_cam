@@ -292,6 +292,88 @@ pub(crate) fn generate_alignment_pin_drill(
     Ok(generated)
 }
 
+/// Zigzag family adapter.
+pub(crate) fn generate_zigzag(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::Zigzag(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_zigzag received a non-Zigzag config".into(),
+        ));
+    };
+    let polys = require_polygons(ctx.polygons)?;
+    let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
+    let tool_radius = ctx.tool_def.radius();
+    let safe_z = ctx.heights.retract_z;
+    let mut combined = Toolpath::new();
+    for poly in polys {
+        let tp = crate::depth::toolpath_at_levels(&levels, safe_z, |z| {
+            crate::zigzag::zigzag_toolpath(
+                poly,
+                &crate::zigzag::ZigzagParams {
+                    tool_radius,
+                    stepover: cfg.stepover,
+                    cut_depth: z,
+                    feed_rate: op.feed_rate(),
+                    plunge_rate: op.plunge_rate(),
+                    safe_z,
+                    angle: cfg.angle,
+                },
+            )
+        });
+        combined.moves.extend(tp.moves);
+    }
+    let generated = generated_with_depth_run_spans(combined, &levels);
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_depth_run_spans(
+            &generated.spans,
+            &generated.toolpath,
+            sem,
+        );
+    }
+    Ok(generated)
+}
+
+/// Trace family adapter. NOTE: trace uses `annotate_trace_spans`, not
+/// the generic depth-run annotator — the per-family annotate fn is
+/// part of the contract (plan §Phase-5 task 1).
+pub(crate) fn generate_trace(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::Trace(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_trace received a non-Trace config".into(),
+        ));
+    };
+    let polys = require_polygons(ctx.polygons)?;
+    let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
+    let safe_z = ctx.heights.retract_z;
+    let mut combined = Toolpath::new();
+    for poly in polys {
+        let params = crate::trace::TraceParams {
+            tool_radius: ctx.tool_def.radius(),
+            depth: cfg.depth,
+            depth_per_pass: cfg.depth_per_pass,
+            feed_rate: op.feed_rate(),
+            plunge_rate: op.plunge_rate(),
+            safe_z,
+            compensation: cfg.compensation,
+            top_z: ctx.heights.top_z,
+        };
+        let tp = crate::depth::toolpath_at_levels(&levels, safe_z, |z| {
+            crate::trace::trace_polygon_at_z(poly, z, &params)
+        });
+        combined.moves.extend(tp.moves);
+    }
+    let generated = generated_with_depth_run_spans(combined, &levels);
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_trace_spans(&generated.spans, &generated.toolpath, sem);
+    }
+    Ok(generated)
+}
+
 /// Profile family adapter (per-level passes; tabs on the final level).
 pub(crate) fn generate_profile(
     ctx: &ExecutionContext<'_>,
@@ -681,67 +763,10 @@ pub fn execute_operation_annotated(
             }
             Ok(generated)
         }
-        OperationConfig::Zigzag(cfg) => {
-            let polys = require_polygons(polygons)?;
-            let levels = effective_levels(cutting_levels, heights, cfg.depth_per_pass);
-            let mut combined = Toolpath::new();
-            for poly in polys {
-                let tp = crate::depth::toolpath_at_levels(&levels, safe_z, |z| {
-                    crate::zigzag::zigzag_toolpath(
-                        poly,
-                        &crate::zigzag::ZigzagParams {
-                            tool_radius,
-                            stepover: cfg.stepover,
-                            cut_depth: z,
-                            feed_rate,
-                            plunge_rate,
-                            safe_z,
-                            angle: cfg.angle,
-                        },
-                    )
-                });
-                combined.moves.extend(tp.moves);
-            }
-            let generated = generated_with_depth_run_spans(combined, &levels);
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_depth_run_spans(
-                    &generated.spans,
-                    &generated.toolpath,
-                    ctx,
-                );
-            }
-            Ok(generated)
-        }
-        OperationConfig::Trace(cfg) => {
-            let polys = require_polygons(polygons)?;
-            let levels = effective_levels(cutting_levels, heights, cfg.depth_per_pass);
-            let mut combined = Toolpath::new();
-            for poly in polys {
-                let params = crate::trace::TraceParams {
-                    tool_radius,
-                    depth: cfg.depth,
-                    depth_per_pass: cfg.depth_per_pass,
-                    feed_rate,
-                    plunge_rate,
-                    safe_z,
-                    compensation: cfg.compensation,
-                    top_z: heights.top_z,
-                };
-                let tp = crate::depth::toolpath_at_levels(&levels, safe_z, |z| {
-                    crate::trace::trace_polygon_at_z(poly, z, &params)
-                });
-                combined.moves.extend(tp.moves);
-            }
-            let generated = generated_with_depth_run_spans(combined, &levels);
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_trace_spans(
-                    &generated.spans,
-                    &generated.toolpath,
-                    ctx,
-                );
-            }
-            Ok(generated)
-        }
+        // Migrated to the registry GenerateFn (T11); arms kept for the
+        // exhaustiveness net and delegate to the same adapters.
+        OperationConfig::Zigzag(_) => generate_zigzag(&ctx, op),
+        OperationConfig::Trace(_) => generate_trace(&ctx, op),
         OperationConfig::VCarve(cfg) => {
             let polys = require_polygons(polygons)?;
             let ha = match tool_cfg.tool_type {
