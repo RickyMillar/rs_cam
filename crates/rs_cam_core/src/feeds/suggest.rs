@@ -1803,12 +1803,16 @@ fn check_plunge_entry_stability(
 ///
 /// The math is closed-form:
 ///
-///     predict_observed_chipload_mm = nominal × arc_fit_ratio,
-///     where nominal = feed / (rpm × flutes)
+/// ```text
+/// predict_observed_chipload_mm = nominal × arc_fit_ratio,
+/// where nominal = feed / (rpm × flutes)
+/// ```
 ///
 /// Solving for the feed that lands `observed = lut_min`:
 ///
-///     feed = lut_min × rpm × flutes / arc_fit_ratio
+/// ```text
+/// feed = lut_min × rpm × flutes / arc_fit_ratio
+/// ```
 ///
 /// The pre-v2.1 implementation iterated `feed × 1.25` up to four
 /// times before bailing; on the Wanaka Back Rough case the required
