@@ -156,7 +156,7 @@ fn calculator_and_gate_match_same_observation_id() {
         // matches the calculator's `lookup_diameter_for_input` default.
         let axial_doc = case.diameter_mm;
         let gate_query = LookupQuery {
-            tool_family: tool_family_for_geom(case.tool_geometry),
+            tool_family: case.tool_geometry.cutter_kind().lut_family(),
             tool_subfamily: None,
             diameter_mm: tool.lookup_diameter_at(axial_doc),
             flute_count: case.flute_count,
@@ -229,16 +229,6 @@ fn diameter_match_score_surfaces_for_consumers() {
 }
 
 // --- helpers ---
-
-fn tool_family_for_geom(hint: ToolGeometryHint) -> ToolFamily {
-    match hint {
-        ToolGeometryHint::Flat => ToolFamily::FlatEnd,
-        ToolGeometryHint::Ball => ToolFamily::BallNose,
-        ToolGeometryHint::Bull { .. } => ToolFamily::BullNose,
-        ToolGeometryHint::VBit { .. } => ToolFamily::ChamferVbit,
-        ToolGeometryHint::TaperedBall { .. } => ToolFamily::TaperedBallNose,
-    }
-}
 
 fn material_to_lut_for_test(material: &Material) -> (MaterialFamily, HardnessKind, f64) {
     // Mirrors `vendor_normalize::material_to_lut` (pub(crate)) for test access.

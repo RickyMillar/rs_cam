@@ -225,7 +225,7 @@ pub fn chipload_envelopes_for_session(
         };
         let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
         let geometry_hint = tool_def.to_geometry_hint();
-        let tool_family = chipload::tool_family_for(geometry_hint);
+        let tool_family = geometry_hint.cutter_kind().lut_family();
         let spec = tc.operation.spec();
         let lut_op_family = match spec.feeds_family {
             crate::feeds::OperationFamily::Adaptive => LutOperationFamily::Adaptive,

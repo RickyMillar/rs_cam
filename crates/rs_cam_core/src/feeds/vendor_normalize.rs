@@ -1,21 +1,13 @@
 //! Maps rs_cam_core types to vendor LUT query types.
 
 use super::vendor_lookup::LookupQuery;
-use super::vendor_lut::{
-    HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily,
-};
-use super::{FeedsInput, OperationFamily, PassRole, ToolGeometryHint};
+use super::vendor_lut::{HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily};
+use super::{FeedsInput, OperationFamily, PassRole};
 use crate::material::{Material, PlasticHardness};
 
 /// Convert a FeedsInput to a LookupQuery for vendor LUT lookup.
 pub fn to_lookup_query(input: &FeedsInput) -> LookupQuery {
-    let tool_family = match input.tool_geometry {
-        ToolGeometryHint::Flat => ToolFamily::FlatEnd,
-        ToolGeometryHint::Ball => ToolFamily::BallNose,
-        ToolGeometryHint::Bull { .. } => ToolFamily::BullNose,
-        ToolGeometryHint::VBit { .. } => ToolFamily::ChamferVbit,
-        ToolGeometryHint::TaperedBall { .. } => ToolFamily::TaperedBallNose,
-    };
+    let tool_family = input.tool_geometry.cutter_kind().lut_family();
 
     let (material_family, hardness_kind, hardness_value) = material_to_lut(input.material);
 
@@ -218,6 +210,8 @@ pub(crate) fn material_to_lut(material: &Material) -> (MaterialFamily, HardnessK
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::feeds::ToolGeometryHint;
+    use crate::feeds::vendor_lut::ToolFamily;
     use crate::machine::MachineProfile;
     use crate::material::{PlasticFamily, SheetGoodKind, WoodSpecies};
 

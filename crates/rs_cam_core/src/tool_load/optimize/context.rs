@@ -112,7 +112,7 @@ pub(crate) fn find_matched_lut_row(
     ctx: &EvaluationContext,
     commanded_doc_mm: Option<f64>,
 ) -> Option<MatchedRow> {
-    let tool_family = crate::tool_load::chipload::tool_family_for(tool.to_geometry_hint());
+    let tool_family = tool.to_geometry_hint().cutter_kind().lut_family();
     let (lut_op_family, lut_pass_role) = crate::tool_load::chipload::routed_lookup_family(
         ctx.operation_kind,
         tool_family,

@@ -141,6 +141,96 @@ impl ToolGeometryHint {
             }
         }
     }
+
+    /// The canonical fieldless shape class of this hint. Primary
+    /// derivation path for [`CutterKind`] — every `MillingCutter`
+    /// yields a `ToolGeometryHint`, so externally-constructed cutters
+    /// classify without touching the closed `ToolType` enum.
+    pub fn cutter_kind(self) -> CutterKind {
+        match self {
+            ToolGeometryHint::Flat => CutterKind::Flat,
+            ToolGeometryHint::Ball => CutterKind::Ball,
+            ToolGeometryHint::Bull { .. } => CutterKind::Bull,
+            ToolGeometryHint::VBit { .. } => CutterKind::VBit,
+            ToolGeometryHint::TaperedBall { .. } => CutterKind::TaperedBall,
+        }
+    }
+}
+
+/// Canonical cutter-shape classifier (Phase 3, architectural refactor
+/// 2026-06-06): the fieldless SHAPE CLASS of a cutter, used for routing
+/// and compatibility decisions.
+///
+/// Disambiguation — this crate has three similarly-named classifiers:
+///
+/// - **`CutterKind` (this)** — fieldless cutter shape class. Use it for
+///   per-shape routing (LUT family, bending-section model, op
+///   compatibility) where the geometry numbers don't matter.
+/// - **[`ToolGeometryHint`]** — cutter shape *plus* geometry data
+///   (included angle, tip/corner radii). Use it for math that needs the
+///   numbers (`engaged_diameter_at_doc`, MRR cross-section). Derive a
+///   `CutterKind` from it via [`ToolGeometryHint::cutter_kind`].
+/// - **[`geometry_class::GeometryClass`]** — an `OperationType`-keyed
+///   TERRAIN classifier (what the model surface looks like). It is not
+///   about the cutter at all.
+///
+/// Derivation order: `ToolGeometryHint::cutter_kind()` is the primary
+/// path; `ToolType::cutter_kind()` (compute layer) is a convenience
+/// layered on top for call sites that only hold a `ToolConfig`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CutterKind {
+    Flat,
+    Ball,
+    Bull,
+    VBit,
+    TaperedBall,
+}
+
+impl CutterKind {
+    pub const ALL: &[CutterKind] = &[
+        CutterKind::Flat,
+        CutterKind::Ball,
+        CutterKind::Bull,
+        CutterKind::VBit,
+        CutterKind::TaperedBall,
+    ];
+
+    /// THE single `cutter shape → vendor-LUT ToolFamily` map.
+    ///
+    /// Pre-Phase-3 this map was triplicated verbatim:
+    /// `tool_load::chipload::tool_family_for`, an inline match in
+    /// `vendor_normalize::to_lookup_query`, and a test-local shim in
+    /// `tests/lookup_parity.rs`. All three now route here.
+    ///
+    /// [`vendor_lut::ToolFamily::FacingBit`] is deliberately absent:
+    /// it is LUT row *data* vocabulary with no corresponding cutter —
+    /// no `ToolType` or `MillingCutter` classifies to it (pinned by
+    /// `facing_bit_is_a_lut_only_family`). Any compatibility logic
+    /// assuming a cutter ↔ family bijection is wrong in that direction.
+    pub fn lut_family(self) -> vendor_lut::ToolFamily {
+        match self {
+            CutterKind::Flat => vendor_lut::ToolFamily::FlatEnd,
+            CutterKind::Ball => vendor_lut::ToolFamily::BallNose,
+            CutterKind::Bull => vendor_lut::ToolFamily::BullNose,
+            CutterKind::VBit => vendor_lut::ToolFamily::ChamferVbit,
+            CutterKind::TaperedBall => vendor_lut::ToolFamily::TaperedBallNose,
+        }
+    }
+
+    /// The canonical [`crate::compute::ToolType`] for this shape class.
+    /// `ToolType ↔ CutterKind` is a bijection today (5 ↔ 5, pinned by
+    /// `tool_type_cutter_kind_round_trips`); this direction exists so
+    /// registry constraint lists typed on `CutterKind` can materialize
+    /// the serde-facing tool-type tokens.
+    pub const fn tool_type(self) -> crate::compute::ToolType {
+        match self {
+            CutterKind::Flat => crate::compute::ToolType::EndMill,
+            CutterKind::Ball => crate::compute::ToolType::BallNose,
+            CutterKind::Bull => crate::compute::ToolType::BullNose,
+            CutterKind::VBit => crate::compute::ToolType::VBit,
+            CutterKind::TaperedBall => crate::compute::ToolType::TaperedBallNose,
+        }
+    }
 }
 
 /// Which family of operation is being calculated.
@@ -3025,5 +3115,87 @@ mod tests {
             result.derates.spindle_speedup,
             MAX_SPINDLE_SPEEDUP,
         );
+    }
+
+    // ── Phase 3 CutterKind pins (architectural refactor 2026-06-06) ──
+
+    /// Every `ToolGeometryHint` shape maps to exactly the expected
+    /// `CutterKind`, and the centralized LUT-family map matches the
+    /// (formerly triplicated) `ToolGeometryHint → ToolFamily` table
+    /// verbatim. A new hint variant fails to compile in
+    /// `cutter_kind()`; a changed family mapping fails here.
+    #[test]
+    fn cutter_kind_lut_family_map_is_pinned() {
+        use vendor_lut::ToolFamily;
+        let cases = [
+            (
+                ToolGeometryHint::Flat,
+                CutterKind::Flat,
+                ToolFamily::FlatEnd,
+            ),
+            (
+                ToolGeometryHint::Ball,
+                CutterKind::Ball,
+                ToolFamily::BallNose,
+            ),
+            (
+                ToolGeometryHint::Bull { corner_radius: 1.0 },
+                CutterKind::Bull,
+                ToolFamily::BullNose,
+            ),
+            (
+                ToolGeometryHint::VBit {
+                    included_angle: 60.0,
+                    tip_diameter: 0.1,
+                },
+                CutterKind::VBit,
+                ToolFamily::ChamferVbit,
+            ),
+            (
+                ToolGeometryHint::TaperedBall {
+                    tip_radius: 0.5,
+                    taper_angle_deg: 10.0,
+                },
+                CutterKind::TaperedBall,
+                ToolFamily::TaperedBallNose,
+            ),
+        ];
+        assert_eq!(cases.len(), CutterKind::ALL.len());
+        for (hint, kind, family) in cases {
+            assert_eq!(hint.cutter_kind(), kind, "{hint:?}");
+            assert_eq!(kind.lut_family(), family, "{kind:?}");
+        }
+    }
+
+    /// Named decision: `ToolFamily::FacingBit` is LUT row vocabulary
+    /// only — no cutter shape classifies to it. If a facing cutter
+    /// ever becomes a real `CutterKind`, this pin forces the
+    /// compatibility story (LUT routing, constraints) to be revisited
+    /// deliberately rather than inherited.
+    #[test]
+    fn facing_bit_is_a_lut_only_family() {
+        for &kind in CutterKind::ALL {
+            assert_ne!(
+                kind.lut_family(),
+                vendor_lut::ToolFamily::FacingBit,
+                "{kind:?} must not classify to the data-only FacingBit family"
+            );
+        }
+    }
+
+    /// `ToolType ↔ CutterKind` is a bijection (5 ↔ 5): the convenience
+    /// `ToolType::cutter_kind()` and the registry-facing
+    /// `CutterKind::tool_type()` must be mutual inverses. A 6th cutter
+    /// breaking the bijection fails here and forces a decision.
+    #[test]
+    fn tool_type_cutter_kind_round_trips() {
+        use crate::compute::ToolType;
+        for &tool_type in ToolType::ALL {
+            assert_eq!(tool_type.cutter_kind().tool_type(), tool_type);
+        }
+        for &kind in CutterKind::ALL {
+            assert_eq!(kind.tool_type().cutter_kind(), kind);
+        }
+        assert_eq!(ToolType::ALL.len(), CutterKind::ALL.len());
     }
 }
