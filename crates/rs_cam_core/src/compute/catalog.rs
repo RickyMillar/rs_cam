@@ -1312,7 +1312,7 @@ static REG_POCKET: OpRegistryEntry = OpRegistryEntry {
     param_defs: POCKET_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: None,
+    generate: Some(crate::compute::execute::generate_pocket),
 };
 
 static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
@@ -2029,6 +2029,8 @@ mod tests {
                 | OperationType::Waterline
                 // Face — migrated 2026-06-07 (T11 PR 4).
                 | OperationType::Face
+                // Pocket — migrated 2026-06-07 (T11 PR 5).
+                | OperationType::Pocket
             );
             assert_eq!(
                 migrated, expected,

@@ -292,6 +292,67 @@ pub(crate) fn generate_alignment_pin_drill(
     Ok(generated)
 }
 
+/// Pocket family adapter (contour / zigzag pattern per config).
+pub(crate) fn generate_pocket(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::Pocket(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_pocket received a non-Pocket config".into(),
+        ));
+    };
+    let polys = require_polygons(ctx.polygons)?;
+    let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
+    let tool_radius = ctx.tool_def.radius();
+    let safe_z = ctx.heights.retract_z;
+    let feed_rate = op.feed_rate();
+    let plunge_rate = op.plunge_rate();
+    let mut combined = Toolpath::new();
+    for poly in polys {
+        let tp = crate::depth::toolpath_at_levels(&levels, safe_z, |z| match cfg.pattern {
+            crate::compute::operation_configs::PocketPattern::Contour => {
+                crate::pocket::pocket_toolpath(
+                    poly,
+                    &crate::pocket::PocketParams {
+                        tool_radius,
+                        stepover: cfg.stepover,
+                        cut_depth: z,
+                        feed_rate,
+                        plunge_rate,
+                        safe_z,
+                        climb: cfg.climb,
+                    },
+                )
+            }
+            crate::compute::operation_configs::PocketPattern::Zigzag => {
+                crate::zigzag::zigzag_toolpath(
+                    poly,
+                    &crate::zigzag::ZigzagParams {
+                        tool_radius,
+                        stepover: cfg.stepover,
+                        cut_depth: z,
+                        feed_rate,
+                        plunge_rate,
+                        safe_z,
+                        angle: cfg.angle,
+                    },
+                )
+            }
+        });
+        combined.moves.extend(tp.moves);
+    }
+    let generated = generated_with_depth_run_spans(combined, &levels);
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_depth_run_spans(
+            &generated.spans,
+            &generated.toolpath,
+            sem,
+        );
+    }
+    Ok(generated)
+}
+
 /// Face family adapter.
 pub(crate) fn generate_face(
     ctx: &ExecutionContext<'_>,
@@ -485,53 +546,9 @@ pub fn execute_operation_annotated(
         // Migrated to the registry GenerateFn (T11); arm kept for the
         // exhaustiveness net and delegates to the same adapter.
         OperationConfig::Face(_) => generate_face(&ctx, op),
-        OperationConfig::Pocket(cfg) => {
-            let polys = require_polygons(polygons)?;
-            let levels = effective_levels(cutting_levels, heights, cfg.depth_per_pass);
-            let mut combined = Toolpath::new();
-            for poly in polys {
-                let tp = crate::depth::toolpath_at_levels(&levels, safe_z, |z| match cfg.pattern {
-                    crate::compute::operation_configs::PocketPattern::Contour => {
-                        crate::pocket::pocket_toolpath(
-                            poly,
-                            &crate::pocket::PocketParams {
-                                tool_radius,
-                                stepover: cfg.stepover,
-                                cut_depth: z,
-                                feed_rate,
-                                plunge_rate,
-                                safe_z,
-                                climb: cfg.climb,
-                            },
-                        )
-                    }
-                    crate::compute::operation_configs::PocketPattern::Zigzag => {
-                        crate::zigzag::zigzag_toolpath(
-                            poly,
-                            &crate::zigzag::ZigzagParams {
-                                tool_radius,
-                                stepover: cfg.stepover,
-                                cut_depth: z,
-                                feed_rate,
-                                plunge_rate,
-                                safe_z,
-                                angle: cfg.angle,
-                            },
-                        )
-                    }
-                });
-                combined.moves.extend(tp.moves);
-            }
-            let generated = generated_with_depth_run_spans(combined, &levels);
-            if let Some(ctx) = semantic_ctx {
-                crate::compute::annotate::annotate_depth_run_spans(
-                    &generated.spans,
-                    &generated.toolpath,
-                    ctx,
-                );
-            }
-            Ok(generated)
-        }
+        // Migrated to the registry GenerateFn (T11); arm kept for the
+        // exhaustiveness net and delegates to the same adapter.
+        OperationConfig::Pocket(_) => generate_pocket(&ctx, op),
         OperationConfig::Profile(cfg) => {
             let polys = require_polygons(polygons)?;
             let levels = effective_levels(cutting_levels, heights, cfg.depth_per_pass);
