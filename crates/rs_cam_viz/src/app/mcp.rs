@@ -982,10 +982,11 @@ impl super::RsCamApp {
     /// why each parameter landed where it did (DPP back-off,
     /// chipload-target feed lift, runtime-stepover floor, etc.).
     ///
-    /// Mirrors the GUI feeds modal's `compute_suggest_rationale` so
-    /// the agent and the operator see the same surface. Does *not*
-    /// mutate the project — the agent decides whether to follow up
-    /// with `set_toolpath_param`.
+    /// Shares the GUI feeds modal's invocation via
+    /// `ProjectSession::cutter_op_profile` (T10 dedup) so the agent and
+    /// the operator see the same surface. Does *not* mutate the
+    /// project — the agent decides whether to follow up with
+    /// `set_toolpath_param`.
     fn mcp_get_suggest_rationale(&self, index: usize) -> String {
         let state = self.controller.state();
         let Some(tc) = state.session.get_toolpath_config(index) else {
@@ -993,41 +994,15 @@ impl super::RsCamApp {
                 "error": format!("Toolpath index {index} not found")
             }));
         };
-        let Some(tool) = state.session.tools().iter().find(|t| t.id.0 == tc.tool_id) else {
+        let Some(profile) = state.session.cutter_op_profile(tc) else {
             return json_str(serde_json::json!({
                 "error": format!("Tool {} for toolpath {} not found", tc.tool_id, tc.id)
             }));
         };
-        let stock = state.session.stock_config();
-        let stock_ctx = rs_cam_core::feeds::suggest::StockContext::from_stock_bbox(
-            state.session.stock_bbox(),
-            stock.padding,
-        );
-        let model_bboxes = state.session.collect_model_bboxes();
-        let model_bbox = model_bboxes
-            .iter()
-            .find(|(id, _)| *id == tc.model_id)
-            .map(|(_, b)| b);
-        let context = rs_cam_core::feeds::suggest::SuggestContext {
-            model_bbox,
-            stock: Some(&stock_ctx),
-            ..rs_cam_core::feeds::suggest::SuggestContext::default()
-        };
-        match rs_cam_core::feeds::suggest::suggest_for_operation(
-            rs_cam_core::feeds::suggest::SuggestForOperationInput {
-                operation: &tc.operation,
-                tool,
-                machine: state.session.machine(),
-                material: &stock.material,
-                workholding: stock.workholding_rigidity,
-                lut: rs_cam_core::feeds::embedded_vendor_lut(),
-                spindle_strategy: state.session.post_config().spindle_strategy,
-                context,
-            },
-        ) {
-            Ok(suggested) => {
+        match profile.feasibility {
+            Ok(()) => {
                 let rationale = rs_cam_core::feeds::rationale::SuggestRationale::from_warnings(
-                    &suggested.warnings,
+                    &profile.warnings,
                 );
                 json_str(serde_json::json!({
                     "toolpath_id": tc.id,

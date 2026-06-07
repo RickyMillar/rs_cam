@@ -19,9 +19,6 @@
 
 use egui_plot::{Line, MarkerShape, Plot, PlotPoints, Points, Polygon};
 use rs_cam_core::feeds::rationale::{RationaleEntry, SuggestRationale};
-use rs_cam_core::feeds::suggest::{
-    StockContext, SuggestContext, SuggestForOperationInput, suggest_for_operation,
-};
 use rs_cam_core::feeds::{
     FeedsExplain, ToolGeometryHint, vendor_lut::HardnessKind, vendor_lut::MaterialFamily,
     vendor_lut::ToolFamily,
@@ -457,6 +454,10 @@ fn compute_explain(state: &AppState, toolpath_id: usize) -> Option<FeedsExplain>
 /// rationale (rendered as nothing) when the Suggest call refuses
 /// (unmatched tool × op, etc.) — the user has no information they need
 /// to act on in that case.
+///
+/// T10 (Phase 4): the context assembly + Suggest invocation live in
+/// [`rs_cam_core::session::ProjectSession::cutter_op_profile`], shared
+/// with the MCP `get_suggest_rationale` surface.
 fn compute_suggest_rationale(state: &AppState, toolpath_id: usize) -> SuggestRationale {
     let Some(tc) = state
         .session
@@ -466,37 +467,11 @@ fn compute_suggest_rationale(state: &AppState, toolpath_id: usize) -> SuggestRat
     else {
         return SuggestRationale::default();
     };
-    let Some(tool) = state
-        .session
-        .tools()
-        .iter()
-        .find(|t| t.id == rs_cam_core::compute::ToolId(tc.tool_id))
-    else {
+    let Some(profile) = state.session.cutter_op_profile(tc) else {
         return SuggestRationale::default();
     };
-    let stock = state.session.stock_config();
-    let stock_ctx = StockContext::from_stock_bbox(state.session.stock_bbox(), stock.padding);
-    let model_bboxes = state.session.collect_model_bboxes();
-    let model_bbox = model_bboxes
-        .iter()
-        .find(|(id, _)| *id == tc.model_id)
-        .map(|(_, b)| b);
-    let context = SuggestContext {
-        model_bbox,
-        stock: Some(&stock_ctx),
-        ..SuggestContext::default()
-    };
-    match suggest_for_operation(SuggestForOperationInput {
-        operation: &tc.operation,
-        tool,
-        machine: state.session.machine(),
-        material: &stock.material,
-        workholding: stock.workholding_rigidity,
-        lut: rs_cam_core::feeds::embedded_vendor_lut(),
-        spindle_strategy: state.session.post_config().spindle_strategy,
-        context,
-    }) {
-        Ok(suggested) => SuggestRationale::from_warnings(&suggested.warnings),
+    match profile.feasibility {
+        Ok(()) => SuggestRationale::from_warnings(&profile.warnings),
         Err(_) => SuggestRationale::default(),
     }
 }
