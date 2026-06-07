@@ -140,21 +140,16 @@ These features exist in state, UI, or helper code, but are not yet end-to-end co
 
 ## CLI surface
 
-Verified direct CLI commands:
+Verified direct CLI commands (T9 cull, 2026-06-07 — the ~13 per-op
+subcommands were replaced by the registry-driven generic `run`):
 
-- `job`
-- `drop-cutter`
-- `pocket`
-- `profile`
-- `adaptive`
-- `vcarve`
-- `rest`
-- `adaptive3d`
-- `waterline`
-- `ramp-finish`
-- `steep-shallow`
-- `inlay`
-- `pencil`
-- `scallop`
+- `version` — build info for all workspace crates
+- `job` — TOML job file (multi-tool/multi-op batch; executes through the session pipeline)
+- `run` — ANY of the 23 operations: `run <op> --input model --tool type:diameter --set k=v --output out.nc`; `run --list-ops` / `run <op> --list-params` print the registry
+- `sweep` — parameter sweep over a job file with fingerprint diffs
+- `project` — GUI project file (format_version=3) full-diagnostics executor
+- `smoke` — F-037 smoke baseline suite
+- `nc-time` — G-code cycle-time prediction
 
-The GUI exposes a broader operation surface than the current direct CLI.
+Every operation in the registry is reachable from the CLI; a new
+operation appears in `run` with zero CLI code.

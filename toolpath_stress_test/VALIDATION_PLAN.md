@@ -13,7 +13,7 @@ How to verify each parameter change does what we expect, using simulation, G-cod
 | **G-code export** | Feed rates, Z levels, G-code commands (G0/G1/G2/G3/G41/G73/G81/G82/G83) | Export G-code, diff two exports with different parameter values |
 | **Viewport visual** | Toolpath shape, pass count, direction, coverage area | Toggle between parameter values and observe toolpath rendering |
 | **Move count / stats** | Total moves, cutting distance, rapid distance | Check ToolpathStats after generation |
-| **CLI batch mode** | Automated parameter sweeps without GUI | `cargo run -p rs_cam_cli -- <op> --param=value` for supported ops |
+| **CLI batch mode** | Automated parameter sweeps without GUI | `cargo run -p rs_cam_cli -- run <op> --set key=value` (all 23 ops; see `run --list-ops`) |
 
 ---
 
