@@ -22,6 +22,23 @@
 - unified service layer: `ProjectSession` API in core, shared `execute_operation()` dispatch for all 23 ops
 - MCP server (`rs_cam_mcp`) exposing `ProjectSession` tools for AI agent integration
 
+## Recent work (2026-06-08)
+
+### UI/IA cleanup — audit complete, execution committed
+
+Full code-led IA audit of `rs_cam_viz` (2 passes, 76 findings) plus a redesign
+spec and a committed execution plan. Root cause across nearly all findings: the
+same widget reimplemented per-surface (provenance color 3×, load rollup 2 ways
+that disagree, 105+ inline section headers) — the fix is a shared `ui::components`
+layer. Committed: full send to **egui 0.34.3** (spiked at ~3–5 mechanical days,
+`egui_plot` must be 0.35), rewrite the worst surfaces on the component layer,
+scope = clean up existing (no new features), MCP/assistant deferred but backend
+left MCP-ready. All docs in `planning/ui_audit/`: **`TRACKER.md`** (live status +
+parallelization + wave plan), `BACKLOG.md` (ranked workstreams), `ARCHITECTURE.md`
+(component layer), `FINAL_DESIGN.md` (mockups), `DIAGNOSIS.md` + `pass2/`,
+`SPIKE_egui034.md`. Status: nothing implemented yet; Wave 0 (egui upgrade ‖
+Tier-0 engine fixes ‖ provenance data model) is next.
+
 ## Recent work (2026-05-20)
 
 ### Dexel-fidelity roadmap — Step 2 tail PR (radial_engagement scalar deletion)
