@@ -985,6 +985,13 @@ pub struct OpRegistryEntry {
     pub param_defs: &'static [ParamDef],
     pub tool_constraints: ToolConstraintsDef,
     pub dressup_policy: DressupPolicy,
+    /// Phase-5 (T11) family adapter. `Some` once the family's
+    /// generation has been migrated onto the shared `GenerateFn`
+    /// signature and proven against the param-sweep fingerprint
+    /// oracle; `None` families dispatch through the exhaustive match
+    /// in `execute_operation_annotated`. Migration state is pinned by
+    /// `generate_adapter_migration_is_an_explicit_per_op_decision`.
+    pub generate: Option<crate::compute::execute::GenerateFn>,
 }
 
 const FACE_PARAMS: &[ParamDef] = &[
@@ -1286,6 +1293,7 @@ static REG_FACE: OpRegistryEntry = OpRegistryEntry {
     param_defs: FACE_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    generate: None,
 };
 
 static REG_POCKET: OpRegistryEntry = OpRegistryEntry {
@@ -1304,6 +1312,7 @@ static REG_POCKET: OpRegistryEntry = OpRegistryEntry {
     param_defs: POCKET_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    generate: None,
 };
 
 static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
@@ -1322,6 +1331,7 @@ static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
     param_defs: PROFILE_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    generate: None,
 };
 
 static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
@@ -1342,6 +1352,7 @@ static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
     // Roadmap B.5 — 2D adaptive pocketing has natural circular
     // boundaries, so Ramp upgrades to Helix.
     dressup_policy: DressupPolicy::PREFER_HELIX,
+    generate: None,
 };
 
 static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
@@ -1363,6 +1374,7 @@ static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
         supports_v_bit: true,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    generate: None,
 };
 
 static REG_REST: OpRegistryEntry = OpRegistryEntry {
@@ -1381,6 +1393,7 @@ static REG_REST: OpRegistryEntry = OpRegistryEntry {
     param_defs: REST_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    generate: None,
 };
 
 static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
@@ -1402,6 +1415,7 @@ static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
         supports_v_bit: true,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    generate: None,
 };
 
 static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {
@@ -1420,6 +1434,7 @@ static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {
     param_defs: ZIGZAG_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    generate: None,
 };
 
 static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
@@ -1439,6 +1454,7 @@ static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     // Roadmap B.5 — single-pass engraving: no entry style applies.
     dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
+    generate: None,
 };
 
 static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
@@ -1458,6 +1474,7 @@ static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     // Roadmap B.5 — stock-based peck cycle: no entry style applies.
     dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
+    generate: Some(crate::compute::execute::generate_drill),
 };
 
 static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
@@ -1479,6 +1496,7 @@ static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
         supports_v_bit: true,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    generate: None,
 };
 
 static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
@@ -1503,6 +1521,7 @@ static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
     dressup_policy: DressupPolicy::strip_all(
         "Incompatible with 3D Finish: each raster segment's ramp entry would carve a diagonal trench across the stock.",
     ),
+    generate: None,
 };
 
 static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
@@ -1527,6 +1546,7 @@ static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
     // engagement on a 3 mm-commanded DPP, deflection gate Exceeds).
     // Users who want a Helix entry set it at the planner level.
     dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
+    generate: None,
 };
 
 static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
@@ -1545,6 +1565,7 @@ static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
     param_defs: WATERLINE_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    generate: None,
 };
 
 static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
@@ -1563,6 +1584,7 @@ static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
     param_defs: PENCIL_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    generate: None,
 };
 
 static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
@@ -1584,6 +1606,7 @@ static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
         supports_v_bit: false,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    generate: None,
 };
 
 static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
@@ -1602,6 +1625,7 @@ static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
     param_defs: STEEP_SHALLOW_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    generate: None,
 };
 
 static REG_RAMP_FINISH: OpRegistryEntry = OpRegistryEntry {
@@ -1620,6 +1644,7 @@ static REG_RAMP_FINISH: OpRegistryEntry = OpRegistryEntry {
     param_defs: RAMP_FINISH_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    generate: None,
 };
 
 static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
@@ -1638,6 +1663,7 @@ static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     param_defs: SPIRAL_FINISH_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    generate: None,
 };
 
 static REG_RADIAL_FINISH: OpRegistryEntry = OpRegistryEntry {
@@ -1656,6 +1682,7 @@ static REG_RADIAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     param_defs: RADIAL_FINISH_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    generate: None,
 };
 
 static REG_HORIZONTAL_FINISH: OpRegistryEntry = OpRegistryEntry {
@@ -1674,6 +1701,7 @@ static REG_HORIZONTAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     param_defs: HORIZONTAL_FINISH_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    generate: None,
 };
 
 static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
@@ -1696,6 +1724,7 @@ static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
     dressup_policy: DressupPolicy::strip_all(
         "Incompatible with Project Curve: each ring would get a phantom diagonal cut.",
     ),
+    generate: None,
 };
 
 static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
@@ -1714,6 +1743,7 @@ static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
     param_defs: ALIGNMENT_PIN_DRILL_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    generate: Some(crate::compute::execute::generate_alignment_pin_drill),
 };
 
 fn param_defs_for_type(op_type: OperationType) -> &'static [ParamDef] {
@@ -1977,6 +2007,29 @@ mod tests {
                 !entry.param_defs.is_empty(),
                 "{op_type:?}: registry entry has no settable params — \
                  every op exposes at least one"
+            );
+        }
+    }
+
+    /// Phase 5 (T11): GenerateFn migration is a per-family DECISION,
+    /// not drift. Each op is either migrated (registry adapter — the
+    /// match arm delegates to the same fn) or fallback (exhaustive
+    /// match arm only). Moving a family without updating this table
+    /// fails here; the table is the cutover log.
+    #[test]
+    fn generate_adapter_migration_is_an_explicit_per_op_decision() {
+        for &op_type in OperationType::ALL {
+            let migrated = op_type.registry_entry().generate.is_some();
+            let expected = matches!(
+                op_type,
+                // Drill family — migrated 2026-06-07 (T11 PR 2).
+                OperationType::Drill | OperationType::AlignmentPinDrill
+            );
+            assert_eq!(
+                migrated, expected,
+                "{op_type:?}: GenerateFn migration state changed — record the \
+                 decision in this table (and prove the family against the \
+                 param-sweep fingerprint oracle first)"
             );
         }
     }
