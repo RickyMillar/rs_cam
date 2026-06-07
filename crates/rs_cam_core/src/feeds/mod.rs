@@ -20,6 +20,7 @@ pub mod explain;
 pub mod geometry;
 pub mod geometry_class;
 pub mod predict;
+pub mod profile;
 pub mod rationale;
 pub mod suggest;
 pub mod vendor_lookup;
