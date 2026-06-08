@@ -14,10 +14,22 @@
 > (one agent, single-subsystem context).
 
 ## ▶ Next action
-**Wave 0.** Two concurrent tracks (crate-disjoint, so no worktree-collision risk):
-Track A — egui-0.34 upgrade PR (viz). Track B — Tier-0 engine fixes (core). Track C —
-W2.1 provenance data model (core, keystone, careful). Start by standing up the screenshot
-baseline (see Wave 0 notes) before touching deps.
+**Tier 2 — start W2.1 (`ValueProvenance` data model).** On branch `ia-cleanup/tier2`
+(off master). Wave 0 (Tier-0 + egui-0.34 upgrade) and Tier 1 are both **merged to master**.
+
+W2.1 is the **core keystone** [P7-001/P7-002/P7-004], L, design-sensitive — do it carefully
+in one focused pass (it blocks W4.1 and the component layer's `ProvenanceBadge`):
+- Feeds are stored as bare `f64`/`u32` on `OperationConfig`; the displayed colour is recomputed
+  from a *fresh* LUT lookup rather than from what produced the stored value; and one
+  `ChiploadSource` enum is overloaded to label four independently-derived fields (so a vendor
+  RPM reads as amber "formula fallback").
+- Add a per-applied-value `ValueProvenance { source, ref, when }`; stop reusing `ChiploadSource`
+  as the universal provenance label. Touches `OperationConfig` + every `set_*`/read site —
+  audit setup-sheet, project-IO, and test initializers (per CLAUDE.md GUI-state rule).
+- **MCP-ready**: this is the backend unification the deferred assistant work will sit on.
+
+W2.2 (canonical post config, small) can ride along after. Standing instruction from user:
+**default to merging a completed green workstream branch to master without asking.**
 
 ---
 
