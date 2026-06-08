@@ -436,13 +436,20 @@ impl RsCamApp {
         ctx.input(|i| {
             let modifiers = i.modifiers;
 
-            // Delete: remove selected toolpath
-            if (i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace))
-                && let Selection::Toolpath(id) = self.controller.state().selection
-            {
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::RemoveToolpath(id));
+            // Delete: remove the selected toolpath or tool (W1.1 — the tool
+            // arm was missing, so Del never fired on a selected tool).
+            if i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace) {
+                match self.controller.state().selection {
+                    Selection::Toolpath(id) => {
+                        self.controller
+                            .events_mut()
+                            .push(AppEvent::RemoveToolpath(id));
+                    }
+                    Selection::Tool(id) => {
+                        self.controller.events_mut().push(AppEvent::RemoveTool(id));
+                    }
+                    _ => {}
+                }
             }
 
             // G: generate selected toolpath, Shift+G: generate all
