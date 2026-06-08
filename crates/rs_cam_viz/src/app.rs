@@ -226,6 +226,40 @@ impl RsCamApp {
             });
     }
 
+    fn draw_readiness_layout(&mut self, ui: &mut egui::Ui) {
+        // Job-readiness dashboard (W3.8): a focused, centred "is this safe to
+        // cut?" page — no side panels or viewport, just the consolidated
+        // verdict. Status bar stays for consistency with the other workspaces.
+        let col_count = self
+            .controller
+            .state()
+            .simulation
+            .checks
+            .total_collision_count();
+        let lane_snapshots = self.controller.lane_snapshots();
+        egui::Panel::bottom("status_bar").show_inside(ui, |ui| {
+            crate::ui::status_bar::draw(ui, self.controller.state(), col_count, &lane_snapshots);
+            if let Some(msg) = self.controller.status_message() {
+                ui.separator();
+                ui.label(egui::RichText::new(msg).color(egui::Color32::from_rgb(255, 200, 80)));
+            }
+        });
+
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::default()
+                    .fill(egui::Color32::from_rgb(26, 26, 38))
+                    .inner_margin(16.0),
+            )
+            .show_inside(ui, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.set_max_width(560.0);
+                    let (state, events) = self.controller.state_ref_and_events_mut();
+                    crate::ui::readiness_panel::draw(ui, state, events);
+                });
+            });
+    }
+
     fn draw_toolpath_layout(&mut self, ui: &mut egui::Ui) {
         // Left panel: operation queue
         egui::Panel::left("toolpath_tree")
@@ -470,7 +504,9 @@ impl RsCamApp {
 
         // Handle keyboard shortcuts (before UI to prevent conflicts)
         match self.controller.state().workspace {
-            Workspace::Setup | Workspace::Toolpaths => self.handle_keyboard_shortcuts(ctx),
+            Workspace::Setup | Workspace::Toolpaths | Workspace::Readiness => {
+                self.handle_keyboard_shortcuts(ctx);
+            }
             Workspace::Simulation => self.handle_simulation_shortcuts(ctx),
         }
 
@@ -524,6 +560,7 @@ impl RsCamApp {
                 Workspace::Setup => self.draw_setup_layout(ui),
                 Workspace::Toolpaths => self.draw_toolpath_layout(ui),
                 Workspace::Simulation => self.draw_simulation_layout(ui),
+                Workspace::Readiness => self.draw_readiness_layout(ui),
             }
         }
 

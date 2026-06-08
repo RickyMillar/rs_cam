@@ -21,6 +21,8 @@ pub enum Workspace {
     Toolpaths,
     /// Verification — material removal, collisions, cycle time, safety.
     Simulation,
+    /// Job-readiness dashboard — "is this safe to cut?" in one place (W3.8).
+    Readiness,
 }
 
 /// Top-level application state. Single source of truth.
