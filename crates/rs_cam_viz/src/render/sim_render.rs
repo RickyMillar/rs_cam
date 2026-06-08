@@ -139,15 +139,6 @@ pub fn deviation_colors(deviations: &[f32]) -> Vec<[f32; 3]> {
         .collect()
 }
 
-/// Generate per-vertex colors based on which operation index removed material.
-/// `op_colors` maps boundary index to palette color for each vertex.
-/// Since we don't track per-vertex op ownership in the heightmap, this returns the
-/// wood-tone default (operations color requires per-cell tracking in a future pass).
-pub fn operation_placeholder_colors(num_verts: usize) -> Vec<[f32; 3]> {
-    // Placeholder: uniform color until per-vertex op tracking is implemented
-    vec![[0.65, 0.45, 0.25]; num_verts]
-}
-
 /// Counter for unique generation IDs across all `SimMeshGpuData` instances.
 static NEXT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
