@@ -14,25 +14,24 @@
 > (one agent, single-subsystem context).
 
 ## ▶ Next action
-**W3.5 DONE + W3.4 mostly done (TOO-003 left) — W3.7 header/rail is the last full Wave-2 surface.**
-CL + W3.1 + W3.2 + W3.3 + W3.6 + W3.5 are merged; W3.4 merged its editor-clarity findings
-(TOO-004/005/006) with **TOO-003 (draft/Apply commit model) deferred**. Remaining: the **TOO-003
-sliver**, then 🔁 **W3.7 header/rail** (which builds `components::visibility` with the viewport
-overlay), then W3.8 dashboard + Tier-4/5 polish. Each full surface: fresh branch off master,
-consumes the component layer (`ARCHITECTURE.md` §4 usage map).
+**W3.4 + W3.5 DONE — W3.7 header/rail is the last full Wave-2 surface.** CL + W3.1 + W3.2 + W3.3 +
+W3.6 + W3.5 + W3.4 are all merged to master. Remaining: 🔁 **W3.7 header/rail** (which builds
+`components::visibility` with the viewport overlay), then W3.8 dashboard + Tier-4/5 polish.
+Fresh branch off master, consumes the component layer (`ARCHITECTURE.md` §4 usage map).
 
-⚠ **TOO-003 (deferred, focused follow-up):** make the **properties-panel** tool editor
-draft-commit — edit a `draft` clone, commit on an explicit **Apply** (or auto-commit on
-navigate-away as the spec's accepted fallback), show a "● modified — Apply / Revert" affordance —
-to match the modal's draft-then-Save model and retire the live-apply-vs-draft inconsistency
-(TOO-003). It's a `GuiState` field + `properties/mod.rs` Tool-branch + `flush_tool_snapshot`
-rework that interacts with the undo snapshot and `invalidate_tool`; do it with fresh context so
-a commit/invalidation bug can't silently drop a tool edit. The modal already draft-commits — only
-the panel changes.
+**W3.7 scope note (spec `pass2/redesign/shell-nav.md`, SHE-001..007):** SHE-001 (dead
+`project_tree.rs`) was already deleted by W1.1; SHE-002/003 (one collision tally + badge severity
+order) were largely done by W0.3 (`total_collision_count()` + simulation_badge reorder) — verify
+then consolidate into a single `ShellHealth` if the three surfaces still recompute. Real remaining
+work: §2 `ShellHealth` consolidation + status-bar collision provenance, §3 toolpath-header
+summary-first reorder + Geometry disclosure + SHE-005 face-picker prose collapse, §4 inline
+Enable/Duplicate row toggles (SHE-006), §5 setup-rail nav-on-top + rollups-behind-disclosure
+(SHE-007). `components::visibility` (viewport overlay) gets built here if it cleanly fits.
 
-⚠ **Visual-verify debt (MCP can't capture egui panel chrome — human `cargo run` pass):**
-W3.4 tool editor (Shaft/Shank split, holder header badge, Catalog-metadata fields, "Updated"
-vs "Saved" toast). [W3.5 already confirmed.]
+⚠ **Visual-verify debt (MCP can't capture egui panel chrome — human `cargo run` pass), batched:**
+W3.4 tool editor (Shaft/Shank split, holder header badge, Catalog-metadata fields, draft "● modified
+— Apply/Revert" affordance, "Updated" vs "Saved" toast). [W3.5 already confirmed.] Plus whatever
+W3.7 lands. The user will run one big audit pass at the end.
 
 **`compare::*` not adopted in W3.5 (deliberate):** the rollup header is two cycle-time numbers
 ("Current / Optimized (-26.6s, -10%)"), which `delta_tag`'s "↓ 0.90×" ratio renders *less*
@@ -231,7 +230,7 @@ Tier-4/5 polish.
 | W3.1 | feeds rewrite + core split | core+viz | 🟪 | 🧠 | CL | ☑ |
 | W3.2 | five-tab scaffold | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.3 | inspector summary-first | viz | 🟦 | 🔁 | CL | ☑ |
-| W3.4 | tool editor (commit + grouping) | viz | 🟪 | 🔁 | CL, W1.1 | ◐ (TOO-003 left) |
+| W3.4 | tool editor (commit + grouping) | viz | 🟪 | 🔁 | CL, W1.1 | ☑ |
 | W3.5 | optimizer affordances | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.6 | timeline disambiguation | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.7 | header/rail de-overload | viz | 🟦 | 🔁 | CL | ☐ |
@@ -425,9 +424,14 @@ Tier-4/5 polish.
   - **2/2** (`be0eea0`) TOO-004 append half: core `add_or_replace_to`/`add_or_replace_tool`
     (replace by dedupe key, else append; returns `(path, replaced)`); panel "Save to library"
     routes through it ("Updated" vs "Saved"), retiring the silent-append duplicate pile. +1 core test.
-  - **DEFERRED — TOO-003** (draft/Apply commit model in the properties panel): a `GuiState` +
-    `properties/mod.rs` + `flush_tool_snapshot` refactor touching the undo snapshot + `invalidate_tool`.
-    Done with fresh context to avoid a silent edit-drop. ⚠ W3.4 visual parity unverified.
-- **▶ Next:** finish W3.4's TOO-003 sliver, then W3.7 header/rail (builds `components::visibility`
-  with the viewport overlay), then W3.8 + Tier-4/5. Run **sequentially** (build-thrash), one
-  branch+merge per surface, consuming the component layer.
+- **2026-06-09** — **W3.4 TOO-003 DONE** on branch `ia-cleanup/w3.4-too003`, merged `b30a048`
+  `--no-ff` — **W3.4 now fully complete**. The properties-panel tool editor is draft-commit:
+  `UndoHistory.tool_draft` replaces the live-apply `tool_snapshot`; `tool::draw` returns a
+  `ToolEditAction`; a "● modified — Apply / Revert" affordance shows pending state; navigate-away
+  auto-commits via `flush_tool_draft`/`commit_tool_draft` (pushes undo, writes, `invalidate_tool`,
+  mark_edited). `ToolConfig` gained `PartialEq` (core). The modal was already draft-commit (shared
+  `draw_tool_fields`), so only the panel changed. clippy --workspace -D warnings + fmt + core
+  tool_library + viz properties tests green. ⚠ visual parity unverified (batched).
+- **▶ Next:** W3.7 header/rail (builds `components::visibility` with the viewport overlay), then
+  W3.8 + Tier-4/5. Run **sequentially** (build-thrash), one branch+merge per surface, consuming
+  the component layer. (SHE-001 dead-tree + SHE-002/003 collision-tally already done by W1.1/W0.3.)
