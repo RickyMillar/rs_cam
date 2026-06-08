@@ -32,6 +32,10 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
         .find(|tc| tc.id == toolpath_id)
         .map_or_else(|| format!("toolpath {toolpath_id}"), |tc| tc.name.clone());
 
+    // W0.5/OPT-003 — flag when the baseline behind these numbers came from
+    // a sim that's already out of date relative to the current params.
+    let baseline_stale = state.simulation.is_stale(state.gui.edit_counter);
+
     let mut still_open = true;
     egui::Window::new(format!("Optimize — {toolpath_name}"))
         .collapsible(false)
@@ -40,6 +44,10 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
         .default_width(640.0)
         .open(&mut still_open)
         .show(ctx, |ui| {
+            if baseline_stale {
+                theme::stale_banner(ui);
+                ui.add_space(4.0);
+            }
             draw_status(ui, modal, toolpath_id, events);
         });
 

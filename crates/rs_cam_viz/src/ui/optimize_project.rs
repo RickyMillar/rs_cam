@@ -41,6 +41,14 @@ fn draw_view(
     view: &OptimizeProjectState,
     events: &mut Vec<AppEvent>,
 ) {
+    // W0.5/OPT-003 — the baseline comes from the sim snapshot taken at
+    // launch; if that sim was already stale the optimized-vs-baseline
+    // numbers are computed from out-of-date stock. Flag it instead of
+    // presenting the figures as current.
+    if state.simulation.is_stale(state.gui.edit_counter) {
+        theme::stale_banner(ui);
+        ui.add_space(4.0);
+    }
     match &view.status {
         OptimizeProjectStatus::Loading => draw_loading(ui, events),
         OptimizeProjectStatus::Failed(msg) => draw_failed(ui, msg, events),
