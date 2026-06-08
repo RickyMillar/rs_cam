@@ -172,6 +172,9 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 let optimize_enabled = state.simulation.has_results() && !state.is_optimizing;
                 if ui
                     .add_enabled(optimize_enabled, egui::Button::new("Optimize project…"))
+                    .on_disabled_hover_text(
+                        "Run a simulation first — the optimizer needs a baseline cut trace.",
+                    )
                     .clicked()
                 {
                     ui.close();
