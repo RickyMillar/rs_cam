@@ -10,14 +10,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
         let current = state.workspace;
 
-        workspace_tab(
-            ui,
-            "Setup",
-            Workspace::Setup,
-            current,
-            readiness_badge(state),
-            events,
-        );
+        workspace_tab(ui, "Setup", Workspace::Setup, current, None, events);
         workspace_tab(
             ui,
             "Toolpaths",
@@ -34,6 +27,16 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             simulation_badge(state),
             events,
         );
+        // The aggregate export-readiness chip now lives on its named tab (W3.8),
+        // not interleaved onto Setup.
+        workspace_tab(
+            ui,
+            "Readiness",
+            Workspace::Readiness,
+            current,
+            readiness_badge(state),
+            events,
+        );
 
         // Right-aligned workspace context info
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -43,6 +46,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 Workspace::Setup => "Stock, orientation, workholding",
                 Workspace::Toolpaths => "Operations, tools, generation",
                 Workspace::Simulation => "Verify, animate, export",
+                Workspace::Readiness => "Is this safe to cut?",
             };
             ui.label(egui::RichText::new(hint).small().color(theme::TEXT_FAINT));
         });
