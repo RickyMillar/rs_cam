@@ -14,14 +14,29 @@
 > (one agent, single-subsystem context).
 
 ## ▶ Next action
-**W3.8 DONE — every Wave-2 surface AND the dashboard are merged. Only Tier-4/5 polish remains.**
-CL + W3.1 + W3.2 + W3.3 + W3.6 + W3.5 + W3.4 + W3.7 + W3.8 are all merged to master. Remaining:
-🔁 **Tier-4 confusables/visual-language (W4.1–W4.5)** + **Tier-5 discoverability/prose (W5.1–W5.4)** —
-see the TIER 4 / TIER 5 sections below for the per-item findings. Notable Tier-4 lows already
-flagged: INS-006 ⓘ engagement-comparative cue, INS-003 card accent-bar, TIM-009 staleness hatch.
-Fresh branch off master per surface, consumes the component layer (`ARCHITECTURE.md` §4 usage map).
-Note W4.3 (viewport-visibility dedup) and W5.1 (SHE-006/INS-008/OPT-006 inline entries) are partly
-pre-discharged — SHE-006 inline toggles landed in W3.7; audit before re-doing.
+**✅ IA CLEANUP COMPLETE — Tier-4 and Tier-5 are done; there is no Wave left.**
+Every workstream from Wave 0 through Tier 5 is merged to master. The final round (2026-06-09)
+verified that the bulk of Tier-4/5 was **already discharged by the W3.x surface rewrites** and that
+several findings cited now-deleted code; only four items were genuinely open and they are now landed:
+- **W4.1** (`c233581`) — the deferred provenance *rendering repoint*: the feeds card reads the stored
+  per-field `feeds_provenance` via `ValueRow::prov()` instead of one recomputed chipload source (P7-002).
+- **W4.3** (`de47c05`) — one home for viewport visibility (P4-005: overlay Show ▾ is sole home, Inspector
+  keeps stock appearance), per-row C/R greyed when the global toggle is off (P4-004), **+ P5-004** inline
+  deviation re-run button (folded in — same surface).
+- **W4.5** (`d3d93c8`) — distinct Z-plane labels (drill R-plane → "Retract (R)"), both apology tooltips
+  dropped (P2-004).
+
+**Audit-before-redo findings (no action — already done or refuted):** W4.2/P4-003 (⚡ overload resolved
+by W3.1/2 — single `⚡` field vs `⚡⚡` bulk vs status badge); W4.4 (INS-003/004/006 done W3.3);
+W5.1 (SHE-006 W3.7, INS-008 W3.3, OPT-006 W3.5); W5.2 (TIM-003/004 W3.6); P5-001/P6-001/P6-002/P2-007
+(done or feature retired); P7-003/P7-005 (modal Source block already on the canonical `ProvenanceBadge`
+— comment notes "P7-003 collapse"); P1-006/P1-007/P2-005 (refuted as true duplication / deliberate
+consolidation). The only remaining backlog rows are explicitly out-of-scope-this-round (unified
+AI/MCP assistant surface; command palette; templates/batch) — see BACKLOG "Out of scope".
+
+**Outstanding debt:** the single batched human GUI audit (egui panel chrome MCP can't screenshot) over
+W3.3 inspector · W3.4 tool editor · W3.6 timeline · all W3.7 chrome · W3.8 readiness · and now the
+W4.1/W4.3/W4.5 polish. Everything else is closed.
 
 **W3.8 outcome (BACKLOG §W3.8, no mockup — placement chosen as a new top-level workspace):** a
 "Readiness" workspace answering "is this safe to cut?" folding op-generation / sim-freshness /
@@ -252,8 +267,9 @@ Tier-4/5 polish.
 | W3.6 | timeline disambiguation | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.7 | header/rail de-overload | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.8 | job-readiness dashboard | viz | 🟦 | 🔁 | CL, W0.1, W0.4, W0.5 | ☑ |
-| T4 | confusables/visual lang (W4.2-4.5) | viz | 🟦 | 🔁 | CL | ☐ |
-| T5 | discoverability/prose (W5.1-5.4) | viz | 🟦 | 🔁 | CL | ☐ |
+| W4.1 | provenance render repoint | viz | 🟦 | 🛠 | CL, W2.1 | ☑ |
+| T4 | confusables/visual lang (W4.2-4.5) | viz | 🟦 | 🔁 | CL | ☑ |
+| T5 | discoverability/prose (W5.1-5.4) | viz | 🟦 | 🔁 | CL | ☑ |
 
 (Effort + finding-ids per workstream live in `BACKLOG.md`. 🟥 code · 🟦 spec · 🟪 both.)
 
@@ -480,7 +496,31 @@ Tier-4/5 polish.
   dispatch + keyboard arm + centred `draw_readiness_layout` (no viewport), viewport-overlay match.
   Built entirely from the component layer. clippy --workspace --all-targets -D warnings + fmt + 189
   viz lib tests green. ⚠ visual parity unverified (batched — W3.4 + all W3.7 + W3.8).
-- **▶ Next:** Tier-4 (W4.1–W4.5 confusables/visual-language) + Tier-5 (W5.1–W5.4 discoverability/
-  prose) polish. Audit before re-doing: SHE-006 inline queue toggles already landed (W3.7) so W5.1's
-  SHE-006 slice is done; check W4.3 viewport-visibility dedup state too. Run **sequentially**
-  (build-thrash), one branch+merge per surface, consuming the component layer.
+- **2026-06-09** — **TIER 4 + TIER 5 DONE — IA cleanup complete.** An audit-before-redo pass found
+  most Tier-4/5 findings were already discharged by the W3.x rewrites (and several cited deleted code);
+  four genuinely-open items were landed, each its own green branch (clippy `-p rs_cam_viz --all-targets
+  -D warnings` + fmt + 189 viz lib tests), default-merged `--no-ff`:
+  - **W4.1** (`ffe0539`, merged `c233581`) — the W2.1-deferred provenance *rendering repoint*. The feeds
+    card showed one `ProvenanceBadge` derived from a recomputed `FeedsResult.chipload_source` (the P7-002
+    mislabel — one chipload origin standing in for every field). Repointed to the honest stored model via
+    the purpose-built `ValueRow::prov()`: Feed/Plunge rows render a compact badge read from
+    `entry.feeds_provenance.{feed_rate,plunge_rate}` (owned tuples so the read doesn't outlive the
+    `entry.operation` edits); the single recomputed bottom badge removed (each suggest pill still carries
+    its recommendation source on hover). Drops the now-unused `ProvenanceBadge` import from `mod.rs`.
+  - **W4.3** (`25dde44`, merged `de47c05`) — viewport visibility (P4-005): overlay "Show ▾" is the sole
+    home for global show_stock/cutting/rapids; the three duplicate Inspector checkboxes (different labels,
+    same backing field) removed, Inspector keeps stock *appearance* (opacity + colour modes). `draw` no
+    longer needs `&mut ViewportState` — param + borrow dropped at the one call site. P4-004: per-row C/R
+    greyed (`add_enabled`) when the global toggle is off, with a disabled-hover pointing at the menu.
+    **+ P5-004 (W5.3)** folded in (same surface): the "No deviation data" warning gains an inline
+    "Re-run simulation" button.
+  - **W4.5** (`8077adb`, merged `d3d93c8`) — Z-plane naming (P2-004): drill R-plane relabelled
+    "Retract (R)" (tooltip key updated) so it stops colliding with the milling "Retract"; with labels now
+    distinct, both "Different from …" apology tooltips (drill + post) dropped. Heights labels unchanged.
+  - **No-action (audit-before-redo):** W4.2/P4-003 (⚡ overload resolved by W3.1/2); W4.4 (INS-003/4/6 done
+    W3.3); W5.1 (SHE-006 W3.7 / INS-008 W3.3 / OPT-006 W3.5); W5.2 (TIM-003/4 W3.6); P5-001/P6-001/P6-002/
+    P2-007 done-or-retired; **P7-003/P7-005** already collapsed onto `ProvenanceBadge` in `feeds_modal.rs`
+    (the per-op card now matches via W4.1); P1-006/P1-007/P2-005 refuted/deliberate.
+  ⚠ visual parity unverified for the polish (batched into the one human GUI audit — W3.3/W3.4/W3.6/all
+  W3.7/W3.8 + W4.1/W4.3/W4.5). **No Wave remains; remaining BACKLOG rows are explicitly out-of-scope-this-
+  round (unified AI/MCP assistant, command palette, templates/batch).**
