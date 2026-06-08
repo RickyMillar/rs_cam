@@ -94,9 +94,26 @@ fn draw_verdict_hud(
     gui: &GuiState,
     max_feed: f64,
     load_report: &ToolLoadReport,
-    _events: &mut Vec<AppEvent>,
+    events: &mut Vec<AppEvent>,
 ) {
     let issue_count = sim.issues(gui, max_feed).len();
+
+    // TIM-005 — the pills *are* the navigation, not a sign pointing at the
+    // markers below. Pre-compute the first offending move for the exceeds and
+    // collisions pills so a click seeks the playhead there (and focuses the
+    // Safety tab for collisions). Prose "click the red lines…" instructions
+    // are retired; hover keeps only a short factual definition.
+    let first_exceed_move = tool_load_marker_moves(sim, load_report).into_iter().min();
+    let first_collision_move = std::iter::empty::<usize>()
+        .chain(
+            sim.checks
+                .collision_report
+                .as_ref()
+                .into_iter()
+                .flat_map(|r| r.collisions.iter().map(|c| c.move_idx)),
+        )
+        .chain(sim.checks.rapid_collision_move_indices.iter().copied())
+        .min();
 
     // W0.4 — read the same per-toolpath rollup the Inspector overview uses
     // (`ToolLoadReport::summary()`) so the two project rollups can't print
@@ -133,15 +150,20 @@ fn draw_verdict_hud(
                         .color(egui::Color32::from_rgb(85, 180, 110))
                         .hover("Toolpaths within modeled load limits (of total modeled)."),
                 );
-                ui.add(
-                    CountPill::verdict("\u{2715} exceeds", bad)
-                        .denom(total_tp)
-                        .color(egui::Color32::from_rgb(220, 90, 90))
-                        .hover(
-                            "Toolpaths exceeding a modeled load limit. Click the red lines on \
-                             the boundary timeline below to navigate.",
-                        ),
-                );
+                // Exceeds is a navigation control when any TP exceeds: click
+                // seeks to the first exceedance marker (TIM-005).
+                let exceeds_pill = CountPill::verdict("\u{2715} exceeds", bad)
+                    .denom(total_tp)
+                    .color(egui::Color32::from_rgb(220, 90, 90))
+                    .hover("Toolpaths exceeding a modeled load limit.");
+                if let Some(move_idx) = first_exceed_move.filter(|_| bad > 0) {
+                    if ui.add(exceeds_pill.actionable()).clicked() {
+                        sim.analytics_tab = SimulationAnalyticsTab::Safety;
+                        events.push(AppEvent::SimJumpToMove(move_idx));
+                    }
+                } else {
+                    ui.add(exceeds_pill);
+                }
                 ui.add(
                     CountPill::verdict("\u{26A0} unmodeled", unmodeled)
                         .denom(total_tp)
@@ -156,14 +178,19 @@ fn draw_verdict_hud(
                 } else {
                     egui::Color32::from_rgb(255, 120, 110)
                 };
-                ui.add(
-                    CountPill::observation("collisions", collision_count)
-                        .color(collision_color)
-                        .hover(
-                            "Rapid/holder collisions. Click the red lines on the boundary \
-                             timeline below to navigate.",
-                        ),
-                );
+                // Collisions is likewise a navigation control: click seeks to
+                // the first collision and focuses the Safety tab (TIM-005).
+                let collisions_pill = CountPill::observation("collisions", collision_count)
+                    .color(collision_color)
+                    .hover("Rapid/holder collisions detected during simulation.");
+                if let Some(move_idx) = first_collision_move.filter(|_| collision_count > 0) {
+                    if ui.add(collisions_pill.actionable()).clicked() {
+                        sim.analytics_tab = SimulationAnalyticsTab::Safety;
+                        events.push(AppEvent::SimJumpToMove(move_idx));
+                    }
+                } else {
+                    ui.add(collisions_pill);
+                }
                 ui.add(
                     CountPill::observation("issues", issue_count)
                         .color(egui::Color32::from_rgb(230, 190, 90))
@@ -197,13 +224,22 @@ fn draw_signal_spine(
         .as_ref()
         .and_then(|r| r.cut_trace.as_ref())
         .map(std::sync::Arc::clone);
-    let Some(trace_arc) = trace_arc else { return };
+    let Some(trace_arc) = trace_arc else {
+        draw_spine_empty_placeholder(ui, sim, events);
+        return;
+    };
     sim.debug.span_aggregates.ensure_built(&trace_arc);
     let trace = trace_arc.as_ref();
     let total_moves = sim.total_moves();
     if total_moves == 0 {
+        draw_spine_empty_placeholder(ui, sim, events);
         return;
     }
+    // TIM-009 — whole-spine stale skin. When the trace no longer matches the
+    // current params, desaturate the track colours and drop the gate-trip
+    // drill (its dots point at moves that may no longer exist), and surface a
+    // single Re-run affordance where the stale data shows.
+    let stale = sim.is_stale(gui.edit_counter);
 
     // Group cutting samples by toolpath using the per-trace cache. Without
     // this, the per-frame `for sample in samples.iter()` + linear
@@ -250,12 +286,16 @@ fn draw_signal_spine(
     }
 
     if groups.iter().all(|g| g.samples.is_empty()) {
-        ui.label(
-            egui::RichText::new("No cutting samples captured.")
-                .small()
-                .italics(),
-        );
+        draw_spine_empty_placeholder(ui, sim, events);
         return;
+    }
+
+    // Stale skin: grey the per-toolpath line colours so the spine reads as
+    // "last run, not current" (TIM-009).
+    if stale {
+        for g in &mut groups {
+            g.color = desaturate(g.color);
+        }
     }
 
     ui.add_space(4.0);
@@ -291,6 +331,11 @@ fn draw_signal_spine(
         if let Some(global_move) = first_exceeded_tool_load_move(sim, trace, verdict) {
             hotspots.push(HotspotMarker { global_move });
         }
+    }
+    // Stale data → drop the gate-trip dots so they can't be clicked into a
+    // move that no longer exists (TIM-009).
+    if stale {
+        hotspots.clear();
     }
 
     let display_x = sim.hovered_x;
@@ -384,6 +429,22 @@ fn draw_signal_spine(
         ),
     ];
 
+    // Single Re-run affordance pinned where the stale data shows (TIM-009) —
+    // the left-panel card stays the canonical control; this is the legibility
+    // fix so the user can refresh from where the stale numbers are.
+    if stale {
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("\u{27F3} stale — showing last run")
+                    .small()
+                    .color(super::theme::WARNING),
+            );
+            if ui.small_button("Re-run").clicked() {
+                events.push(AppEvent::RunSimulation);
+            }
+        });
+    }
+
     // Header row showing what's currently in focus. Focus follows the
     // playing toolpath — clicking a row in the left panel jumps playback
     // there, and the focus naturally moves with playback.
@@ -411,12 +472,13 @@ fn draw_signal_spine(
         .auto_shrink([false, false])
         .show(ui, |ui| {
             for (label, value_fn, color, env) in tracks {
+                let track_color = if stale { desaturate(color) } else { color };
                 draw_signal_track(
                     ui,
                     label,
                     &groups,
                     value_fn,
-                    color,
+                    track_color,
                     active_x,
                     display_x,
                     &mut new_hovered,
@@ -437,8 +499,10 @@ fn draw_signal_spine(
     }
     sim.hovered_x = new_hovered;
     if let Some(global_move) = clicked_hotspot {
-        // Gate-trip dots jump to the offending move (TIM-010 — the old
-        // trace.hotspots.get on a synthetic index was always None).
+        // Gate-trip dot drill (TIM-010): seek to the offending move AND focus
+        // the Safety tab, where the per-toolpath gate detail lives — the
+        // "drill into the gate" half, not just a bare seek.
+        sim.analytics_tab = SimulationAnalyticsTab::Safety;
         events.push(AppEvent::SimJumpToMove(global_move));
     }
 }
@@ -797,9 +861,14 @@ fn draw_signal_track(
                 }
             }
         });
-    response.response.on_hover_text(
-        "Hover to read all five tracks at the same X. Click or drag to scrub. Scroll to zoom. Each toolpath renders as its own line segment.",
-    );
+    // TIM-004 — the primary interactivity disclosure is the cursor change
+    // (the track is scrubbable), not a wall of prose; keep one short line.
+    if response.response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+    }
+    response
+        .response
+        .on_hover_text("Click or drag to scrub · scroll to zoom");
 }
 
 /// Find the global-move sample (across all toolpath groups) whose X is
@@ -814,6 +883,63 @@ fn nearest_in_groups(target_x: f64, group_points: &GroupPoints) -> Option<(usize
                 .total_cmp(&(b.1[0] - target_x).abs())
         })
         .copied()
+}
+
+/// Blend a colour toward its own luminance (neutral grey) and dim it, for the
+/// stale-skin treatment so a last-run trace reads as not-current (TIM-009).
+fn desaturate(c: egui::Color32) -> egui::Color32 {
+    let lum = (0.3 * c.r() as f32 + 0.59 * c.g() as f32 + 0.11 * c.b() as f32) as u8;
+    let mix = |ch: u8| (((ch as u16) + (lum as u16) * 2) / 3) as u8;
+    egui::Color32::from_rgb(mix(c.r()), mix(c.g()), mix(c.b())).linear_multiply(0.7)
+}
+
+/// TIM-003 — the signal spine's empty state. Instead of silently early-
+/// returning into a void, paint a muted placeholder where the spine would be
+/// and surface the capture toggle from where it's missing: "Enable & re-run"
+/// flips metric capture on and re-runs, or "Re-run" when capture is already on
+/// but this run produced no cutting samples.
+fn draw_spine_empty_placeholder(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    events: &mut Vec<AppEvent>,
+) {
+    ui.add_space(4.0);
+    egui::Frame::default()
+        .fill(egui::Color32::from_rgb(28, 30, 38))
+        .inner_margin(egui::Margin::symmetric(8, 10))
+        .corner_radius(4)
+        .show(ui, |ui| {
+            if sim.metric_options.enabled {
+                ui.label(
+                    egui::RichText::new("No cutting metrics for this run.")
+                        .small()
+                        .italics()
+                        .color(super::theme::TEXT_MUTED),
+                );
+                if ui
+                    .button("Re-run")
+                    .on_hover_text("Re-run the simulation to populate the signal spine.")
+                    .clicked()
+                {
+                    events.push(AppEvent::RunSimulation);
+                }
+            } else {
+                ui.label(
+                    egui::RichText::new("No cutting metrics captured — enable capture and re-run.")
+                        .small()
+                        .italics()
+                        .color(super::theme::TEXT_MUTED),
+                );
+                if ui
+                    .button("Enable & re-run")
+                    .on_hover_text("Turn on cutting-metric capture and re-run the simulation.")
+                    .clicked()
+                {
+                    sim.metric_options.enabled = true;
+                    events.push(AppEvent::RunSimulation);
+                }
+            }
+        });
 }
 
 /// Row 1: Transport buttons, timeline scrubber slider, and time display.
