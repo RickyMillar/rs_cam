@@ -9,6 +9,8 @@ pub mod optimize_modal;
 pub mod optimize_project;
 pub mod preflight;
 pub mod properties;
+pub mod readiness;
+pub mod readiness_panel;
 pub mod setup_panel;
 pub mod shortcuts_window;
 pub mod sim_debug;
