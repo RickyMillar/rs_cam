@@ -1,5 +1,5 @@
 use super::AppEvent;
-use super::components::FreshnessGate;
+use super::components::{CountPill, FreshnessGate};
 use super::sim_debug::{
     debug_span_math_summary, format_json_value, semantic_kind_color, semantic_kind_label,
 };
@@ -392,21 +392,26 @@ fn draw_focused_hotspot_card(
                         .color(theme::TEXT_MUTED),
                 );
             });
+            // Lead line: the canonical hotspot summary (INS-004), identical to
+            // the Top-hotspots and Span-findings rows. Detail lines follow.
+            ui.label(
+                egui::RichText::new(hotspot_summary_line(move_start, wasted, peak_chip))
+                    .small()
+                    .color(theme::TEXT_MUTED),
+            );
             ui.label(
                 egui::RichText::new(format!(
-                    "Moves {move_start}–{move_end} · {sample_count} samples"
+                    "moves {move_start}–{move_end} · {sample_count} samples · peak DOC {peak_doc:.2}"
                 ))
                 .small()
                 .color(theme::TEXT_MUTED),
             );
             ui.label(
-                egui::RichText::new(format!(
-                    "wasted {wasted:.2}s · peak chip {peak_chip:.4} · peak DOC {peak_doc:.2} · avg engage {:.0}%",
-                    avg_eng * 100.0
-                ))
-                .small()
-                .color(theme::TEXT_MUTED),
-            );
+                egui::RichText::new(format!("avg engage {:.0}%", avg_eng * 100.0))
+                    .small()
+                    .color(theme::TEXT_MUTED),
+            )
+            .on_hover_text(ENGAGEMENT_PROVENANCE_HOVER);
             ui.label(
                 egui::RichText::new(format!("X{:.1} Y{:.1} Z{:.2}", pos[0], pos[1], pos[2]))
                     .small()
@@ -520,7 +525,12 @@ fn draw_project_overview(
             .find(|tc| tc.id == id)
             .map(|tc| tc.name.clone())
     });
-    let (ok, bad, unmodeled) = (summary.within, summary.exceeds, summary.fully_unmodeled);
+    let (ok, bad, unmodeled, total_tp) = (
+        summary.within,
+        summary.exceeds,
+        summary.fully_unmodeled,
+        summary.total_toolpaths,
+    );
     let collision_count = sim.checks.total_collision_count();
 
     // ─── Global stats ───
@@ -617,64 +627,49 @@ fn draw_project_overview(
     ui.add_space(4.0);
     ui.separator();
 
-    // Project-wide findings counts — Selected section below shows the same
-    // metrics scoped to the active span.
+    // Project-wide findings counts — the same `CountPill` grammar + `/T`
+    // denominator the verdict HUD uses, reading the same `summary()` producer
+    // so the two rollups cannot diverge (W3.3 carry-over, P4-001/002). Load
+    // buckets are verdicts (`[ … ]`); collisions is an observation (`{ … }`).
+    // The exceeding pill is actionable (`( … → )`) when any TP exceeds — it
+    // jumps straight to the project-level Optimize, replacing the separate
+    // ⚡ Optimize-all button (FINAL_DESIGN §5.1).
     ui.label(egui::RichText::new("Findings").small().strong());
-    egui::Grid::new("cut_overview_findings")
-        .num_columns(2)
-        .spacing([8.0, 2.0])
-        .show(ui, |ui| {
-            ui.label(
-                egui::RichText::new("TPs within bounds")
-                    .small()
-                    .color(egui::Color32::from_rgb(120, 200, 130)),
-            );
-            ui.label(egui::RichText::new(format!("{ok}")).small());
-            ui.end_row();
-            ui.label(
-                egui::RichText::new("TPs exceeding")
-                    .small()
-                    .color(egui::Color32::from_rgb(220, 90, 90)),
-            );
-            ui.label(egui::RichText::new(format!("{bad}")).small());
-            ui.end_row();
-            ui.label(
-                egui::RichText::new("TPs fully unmodeled")
-                    .small()
-                    .color(egui::Color32::from_rgb(210, 170, 80)),
-            );
-            ui.label(egui::RichText::new(format!("{unmodeled}")).small());
-            ui.end_row();
-            let collision_color = if collision_count == 0 {
-                theme::SUCCESS
-            } else {
-                theme::ERROR
-            };
-            ui.label(
-                egui::RichText::new("Collisions")
-                    .small()
-                    .color(collision_color),
-            );
-            ui.label(egui::RichText::new(format!("{collision_count}")).small());
-            ui.end_row();
-        });
-
-    // Roadmap F.6 — when one or more toolpaths exceed their gate
-    // bounds, surface the project-level Optimize entry point inline
-    // so the user doesn't have to open each per-TP modal in turn.
-    // Discovered-in-context (the Findings grid is where the user
-    // sees the exceeding count).
-    if bad > 0 {
-        ui.add_space(2.0);
-        let label = if bad == 1 {
-            "⚡ Optimize 1 exceeding toolpath".to_owned()
+    ui.horizontal_wrapped(|ui| {
+        ui.add(
+            CountPill::verdict("\u{2713} within", ok)
+                .denom(total_tp)
+                .color(egui::Color32::from_rgb(120, 200, 130))
+                .hover("Toolpaths within modeled load limits (of total modeled)."),
+        );
+        let exceeds_pill = CountPill::verdict("\u{2715} exceeding", bad)
+            .denom(total_tp)
+            .color(egui::Color32::from_rgb(220, 90, 90))
+            .hover("Toolpaths exceeding a modeled load limit. Click to optimize all exceeding.");
+        if bad > 0 {
+            if ui.add(exceeds_pill.actionable()).clicked() {
+                events.push(AppEvent::OpenOptimizeProject);
+            }
         } else {
-            format!("⚡ Optimize all {bad} exceeding toolpaths")
-        };
-        if ui.button(label).clicked() {
-            events.push(AppEvent::OpenOptimizeProject);
+            ui.add(exceeds_pill);
         }
-    }
+        ui.add(
+            CountPill::verdict("\u{26A0} unmodeled", unmodeled)
+                .denom(total_tp)
+                .color(egui::Color32::from_rgb(210, 170, 80))
+                .hover("Toolpaths the gate could not model (drill cycles, no vendor data, etc.)."),
+        );
+        let collision_color = if collision_count == 0 {
+            theme::SUCCESS
+        } else {
+            theme::ERROR
+        };
+        ui.add(
+            CountPill::observation("collisions", collision_count)
+                .color(collision_color)
+                .hover("Rapid/holder collisions detected during simulation."),
+        );
+    });
 
     // Roadmap C.1 — partition the issue count by SimulationIssueKind into
     // a "must address" cluster (collisions, hotspots) and an
@@ -795,10 +790,7 @@ fn draw_project_overview(
                     let global_start = sim
                         .global_move_for_local(tp_id, *move_start)
                         .unwrap_or(*move_start);
-                    let label = format!(
-                        "m{} · waste {:.2}s · peak chip {:.4}",
-                        move_start, wasted, peak
-                    );
+                    let label = hotspot_summary_line(*move_start, *wasted, *peak);
                     let resp = ui
                         .selectable_label(
                             false,
@@ -902,6 +894,19 @@ fn issue_kind_label(kind: SimulationIssueKind) -> &'static str {
         SimulationIssueKind::HolderCollision => "Holder collision",
     }
 }
+
+/// Canonical one-line hotspot summary (INS-004). The same datum used to print
+/// three different ways (focused card, Top-hotspots list, Span findings row);
+/// every site now leads with this identical line + units so the focused card's
+/// first line matches the list rows exactly.
+fn hotspot_summary_line(move_start: usize, wasted_runtime_s: f64, peak_chip: f64) -> String {
+    format!("m{move_start} · waste {wasted_runtime_s:.2}s · peak chip {peak_chip:.4} mm")
+}
+
+/// Provenance caveat shown as an `on_hover_text` on every engagement readout
+/// (INS-006) — engagement is comparative, not an absolute under-engagement bar.
+const ENGAGEMENT_PROVENANCE_HOVER: &str = "Engagement = cylinder-side radial width-of-cut fraction. Reads ~10× below the \
+     algorithmic target; use it to compare variants, not as an absolute under-engagement bar.";
 
 /// Render a single short summary line in the project summary card showing how
 /// Render three independent badges (chipload | power | deflection) for the
@@ -1370,9 +1375,9 @@ fn draw_selected_section(
                 .num_columns(2)
                 .spacing([8.0, 2.0])
                 .show(ui, |ui| {
-                    let row = |ui: &mut egui::Ui, label: &str, value: String| {
+                    let row = |ui: &mut egui::Ui, label: &str, value: String| -> egui::Response {
                         ui.label(egui::RichText::new(label).small().color(theme::TEXT_MUTED));
-                        ui.label(egui::RichText::new(value).small().monospace());
+                        ui.label(egui::RichText::new(value).small().monospace())
                     };
                     row(
                         ui,
@@ -1380,11 +1385,18 @@ fn draw_selected_section(
                         format!("{} ({} cutting)", agg.n_samples, agg.n_cutting),
                     );
                     ui.end_row();
+                    // Engagement as percent everywhere (INS-004) + provenance
+                    // hover (INS-006): comparative signal, not an absolute bar.
                     row(
                         ui,
                         "Engagement",
-                        format!("avg {:.2} · peak {:.2}", agg.avg_engagement(), agg.peak_eng),
-                    );
+                        format!(
+                            "avg {:.0}% · peak {:.0}%",
+                            agg.avg_engagement() * 100.0,
+                            agg.peak_eng * 100.0
+                        ),
+                    )
+                    .on_hover_text(ENGAGEMENT_PROVENANCE_HOVER);
                     ui.end_row();
                     row(
                         ui,
@@ -1469,8 +1481,12 @@ fn draw_selected_section(
             .selectable_label(
                 false,
                 egui::RichText::new(format!(
-                    "Hotspot · m{} · waste {:.2}s · peak chip {:.4}",
-                    h.move_start, h.wasted_runtime_s, h.peak_chipload_mm_per_tooth
+                    "Hotspot · {}",
+                    hotspot_summary_line(
+                        h.move_start,
+                        h.wasted_runtime_s,
+                        h.peak_chipload_mm_per_tooth
+                    )
                 ))
                 .small()
                 .color(egui::Color32::from_rgb(255, 170, 90)),
