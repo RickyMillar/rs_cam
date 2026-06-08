@@ -14,11 +14,23 @@
 > (one agent, single-subsystem context).
 
 ## ▶ Next action
-**W3.7 DONE — all full Wave-2 surfaces complete. W3.8 job-readiness dashboard is next.** CL + W3.1 +
-W3.2 + W3.3 + W3.6 + W3.5 + W3.4 + W3.7 are all merged to master. Remaining: 🔁 **W3.8 job-readiness
-dashboard** (needs W0.1 + W0.4 + W0.5 + components), then Tier-4/5 polish (incl. Tier-4 lows INS-006
-ⓘ engagement cue, INS-003 card accent-bar, TIM-009 hatch). Fresh branch off master, consumes the
-component layer (`ARCHITECTURE.md` §4 usage map).
+**W3.8 DONE — every Wave-2 surface AND the dashboard are merged. Only Tier-4/5 polish remains.**
+CL + W3.1 + W3.2 + W3.3 + W3.6 + W3.5 + W3.4 + W3.7 + W3.8 are all merged to master. Remaining:
+🔁 **Tier-4 confusables/visual-language (W4.1–W4.5)** + **Tier-5 discoverability/prose (W5.1–W5.4)** —
+see the TIER 4 / TIER 5 sections below for the per-item findings. Notable Tier-4 lows already
+flagged: INS-006 ⓘ engagement-comparative cue, INS-003 card accent-bar, TIM-009 staleness hatch.
+Fresh branch off master per surface, consumes the component layer (`ARCHITECTURE.md` §4 usage map).
+Note W4.3 (viewport-visibility dedup) and W5.1 (SHE-006/INS-008/OPT-006 inline entries) are partly
+pre-discharged — SHE-006 inline toggles landed in W3.7; audit before re-doing.
+
+**W3.8 outcome (BACKLOG §W3.8, no mockup — placement chosen as a new top-level workspace):** a
+"Readiness" workspace answering "is this safe to cut?" folding op-generation / sim-freshness /
+rapid+holder collisions / tool-load verdicts / cycle-time. New shared `ui/readiness.rs` owns the
+pass/warn/fail thresholds (consumed by BOTH the new panel and the pre-flight modal, which was
+refactored onto it — no threshold divergence). `ui/readiness_panel.rs` is summary-first: worst-of
+verdict banner → per-check rows with jump-to-fix → `FreshnessGate`-wrapped readout → tool-load
+`CountPill`s (within/exceeds/unmodeled, /T denom) → "Export G-code…" opens the pre-flight gate. The
+aggregate readiness badge moved off the Setup tab onto its named Readiness tab. Merged `366c9d0`.
 
 **W3.7 outcome (spec `pass2/redesign/shell-nav.md`, SHE-001..007):** SHE-001 (dead `project_tree.rs`)
 already deleted by W1.1; SHE-002/003 (one collision tally + badge severity order) already done by
@@ -181,7 +193,7 @@ WAVE 2  (fan-out — one agent/PR per surface, all disjoint)     ▼
  └─ ✓ W3.2 tab scaffold · W3.7 header/rail
                                                                │
 WAVE 3  (consolidation + polish — fan-out)                     ▼
- ├─ W3.8 job-readiness dashboard (needs W0.1 + W0.4 + W0.5 + components)
+ ├─ ✓ W3.8 job-readiness dashboard (needs W0.1 + W0.4 + W0.5 + components)
  └─ 🔁 W4.2 W4.3 W4.4 W4.5 · W5.1 W5.2 W5.3 W5.4  (batch with the surface each touches)
 ```
 
@@ -239,7 +251,7 @@ Tier-4/5 polish.
 | W3.5 | optimizer affordances | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.6 | timeline disambiguation | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.7 | header/rail de-overload | viz | 🟦 | 🔁 | CL | ☑ |
-| W3.8 | job-readiness dashboard | viz | 🟦 | 🔁 | CL, W0.1, W0.4, W0.5 | ☐ |
+| W3.8 | job-readiness dashboard | viz | 🟦 | 🔁 | CL, W0.1, W0.4, W0.5 | ☑ |
 | T4 | confusables/visual lang (W4.2-4.5) | viz | 🟦 | 🔁 | CL | ☐ |
 | T5 | discoverability/prose (W5.1-5.4) | viz | 🟦 | 🔁 | CL | ☐ |
 
@@ -453,6 +465,22 @@ Tier-4/5 polish.
   text, stable `id_salt`), diagnostics card last and still self-hiding (SHE-007). `components::visibility`
   deferred (no second consumer; viewport overlay is its only future home). clippy --workspace
   -D warnings + fmt + 189 viz lib tests green. ⚠ visual parity unverified (batched — W3.4 + all W3.7).
-- **▶ Next:** W3.8 job-readiness dashboard (needs W0.1 + W0.4 + W0.5 + components), then Tier-4/5
-  polish (Tier-4 lows INS-006 ⓘ engagement cue, INS-003 card accent-bar, TIM-009 hatch). Run
-  **sequentially** (build-thrash), one branch+merge per surface, consuming the component layer.
+- **2026-06-09** — **W3.8 DONE** on branch `ia-cleanup/w3.8-readiness`, 1 commit green, merged
+  `366c9d0` `--no-ff` — **every Wave-2 surface + the dashboard are now merged.** No mockup existed;
+  placement chosen (with the user) as a **new top-level "Readiness" workspace**. New shared
+  `ui/readiness.rs` owns the pass/warn/fail thresholds for all five checks (op-generation /
+  sim-freshness / rapid + holder collisions / tool-load / cycle-time) — consumed by BOTH the new
+  panel and the export pre-flight modal (`preflight.rs` refactored onto it; its duplicated threshold
+  code + private `estimate_total_time`/`count_tool_changes` + local `CheckStatus` enum removed), so
+  the two surfaces can't diverge. `ui/readiness_panel.rs` is summary-first: worst-of verdict banner
+  (READY / REVIEW / NOT READY) → per-check rows with jump-to-fix actions → whole readout wrapped in
+  `FreshnessGate` → tool-load verdict `CountPill`s (within/exceeds/unmodeled, /T denom) → "Export
+  G-code…" opens the pre-flight gate. Wired `Workspace::Readiness` through the enum, workspace bar
+  (new tab + hint; the aggregate readiness badge MOVED here off Setup — its proper home), app
+  dispatch + keyboard arm + centred `draw_readiness_layout` (no viewport), viewport-overlay match.
+  Built entirely from the component layer. clippy --workspace --all-targets -D warnings + fmt + 189
+  viz lib tests green. ⚠ visual parity unverified (batched — W3.4 + all W3.7 + W3.8).
+- **▶ Next:** Tier-4 (W4.1–W4.5 confusables/visual-language) + Tier-5 (W5.1–W5.4 discoverability/
+  prose) polish. Audit before re-doing: SHE-006 inline queue toggles already landed (W3.7) so W5.1's
+  SHE-006 slice is done; check W4.3 viewport-visibility dedup state too. Run **sequentially**
+  (build-thrash), one branch+merge per surface, consuming the component layer.
