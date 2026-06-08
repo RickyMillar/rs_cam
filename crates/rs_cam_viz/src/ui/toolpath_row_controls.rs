@@ -1,19 +1,25 @@
 //! Shared per-toolpath row controls used by both the Toolpaths-workspace
 //! panel and the Simulation workspace op list.
 //!
-//! Renders three compact toggle buttons — eye (overall visibility), cut,
-//! rapid — plus a bullseye (isolate). All use tight symbolic glyphs so they
-//! fit on one row next to the toolpath name.
+//! Renders compact toggle buttons — eye (overall visibility), cut, rapid,
+//! bullseye (isolate) — and, for the toolpath-queue panel, inline
+//! Enable/Disable + Duplicate (SHE-006). All use tight symbolic glyphs so
+//! they fit on one row next to the toolpath name.
 
 use crate::state::toolpath::ToolpathId;
 use crate::state::viewport::ViewportState;
 use crate::ui::AppEvent;
 use crate::ui::theme;
 
+/// `queue_state` carries the toolpath's `enabled` flag when rendered in the
+/// toolpath-queue panel (`Some` → also render the inline Enable/Disable +
+/// Duplicate queue toggles, SHE-006); the Simulation op list passes `None`
+/// (those queue actions don't belong in the sim view).
 pub fn draw(
     ui: &mut egui::Ui,
     tp_id: ToolpathId,
     overall_visible: bool,
+    queue_state: Option<bool>,
     viewport: &mut ViewportState,
     events: &mut Vec<AppEvent>,
 ) {
@@ -107,6 +113,48 @@ pub fn draw(
                 crate::state::selection::Selection::Toolpath(tp_id),
             ));
             events.push(AppEvent::ToggleIsolateToolpath);
+        }
+    }
+
+    // SHE-006 — queue-management toggles, only in the toolpath panel. These
+    // give the menu-only Enable/Disable + Duplicate a visible inline cue; the
+    // passive dim-name colouring for disabled ops stays as reinforcement, and
+    // the context menu remains the full superset.
+    if let Some(enabled) = queue_state {
+        // Enable/Disable (power glyph). Filled when enabled, dim when off.
+        let power_color = if enabled {
+            theme::TEXT_HEADING
+        } else {
+            theme::TEXT_DIM
+        };
+        let power_btn =
+            egui::Button::new(egui::RichText::new("\u{23FB}").small().color(power_color))
+                .min_size(egui::vec2(18.0, 16.0));
+        if ui
+            .add(power_btn)
+            .on_hover_text(if enabled {
+                "Disable this toolpath (excluded from generation, simulation and output)."
+            } else {
+                "Enable this toolpath."
+            })
+            .clicked()
+        {
+            events.push(AppEvent::ToggleToolpathEnabled(tp_id));
+        }
+
+        // Duplicate (two-page glyph).
+        let dup_btn = egui::Button::new(
+            egui::RichText::new("\u{2398}")
+                .small()
+                .color(theme::TEXT_HEADING),
+        )
+        .min_size(egui::vec2(18.0, 16.0));
+        if ui
+            .add(dup_btn)
+            .on_hover_text("Duplicate this toolpath.")
+            .clicked()
+        {
+            events.push(AppEvent::DuplicateToolpath(tp_id));
         }
     }
 }

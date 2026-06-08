@@ -2649,110 +2649,11 @@ fn draw_toolpath_panel(
         ui.text_edit_singleline(&mut entry.name);
     });
 
-    // Tool selector
-    ui.horizontal(|ui| {
-        ui.label("Tool:");
-        let tool_label = tools
-            .iter()
-            .find(|(id, _, _)| *id == entry.tool_id)
-            .map(|(_, s, _)| s.as_str())
-            .unwrap_or("(none)");
-        egui::ComboBox::from_id_salt("tp_tool")
-            .selected_text(tool_label)
-            .show_ui(ui, |ui| {
-                for (id, name, _) in tools {
-                    ui.selectable_value(&mut entry.tool_id, *id, name.as_str());
-                }
-            });
-    });
+    ui.separator();
 
-    // Model selector
-    ui.horizontal(|ui| {
-        ui.label("Input:");
-        let model_label = models
-            .iter()
-            .find(|(id, _)| *id == entry.model_id)
-            .map(|(_, s)| s.as_str())
-            .unwrap_or("(none)");
-        egui::ComboBox::from_id_salt("tp_model")
-            .selected_text(model_label)
-            .show_ui(ui, |ui| {
-                for (id, name) in models {
-                    ui.selectable_value(&mut entry.model_id, *id, name.as_str());
-                }
-            });
-    });
-
-    // BREP-not-loaded warning: surfaces when a STEP model loaded without
-    // its enriched mesh (older project files written before the BREP
-    // round-trip fix, or an unexpected loader regression). Without this,
-    // the face picker just silently disappears.
-    if model_is_step_missing_brep {
-        ui.add_space(4.0);
-        ui.label(
-            egui::RichText::new(
-                "⚠ BREP topology not loaded — face picker unavailable. Reload model.",
-            )
-            .color(egui::Color32::from_rgb(220, 160, 60))
-            .strong(),
-        );
-    }
-
-    // Face selection (STEP models only)
-    if model_has_enriched {
-        ui.add_space(8.0);
-        ui.label(
-            egui::RichText::new("Face Selection")
-                .strong()
-                .color(egui::Color32::from_rgb(180, 180, 195)),
-        );
-        let face_count = entry.face_selection.as_ref().map(|f| f.len()).unwrap_or(0);
-        if face_count > 0 {
-            ui.label(format!(
-                "{} face{} selected",
-                face_count,
-                if face_count == 1 { "" } else { "s" }
-            ));
-            if ui.small_button("Clear Faces").clicked() {
-                entry.face_selection = None;
-                entry.stale_since = Some(std::time::Instant::now());
-            }
-        } else {
-            ui.label(
-                egui::RichText::new("Click faces in viewport to select")
-                    .italics()
-                    .color(egui::Color32::from_rgb(120, 120, 130)),
-            );
-        }
-        ui.label(
-            egui::RichText::new("Tip: click faces in the 3D view while this toolpath is selected")
-                .small()
-                .color(egui::Color32::from_rgb(100, 100, 110)),
-        );
-    }
-
-    // Stock source toggle
-    ui.add_space(8.0);
-    {
-        let mut use_remaining = entry.stock_source == StockSource::FromRemainingStock;
-        let resp = ui
-            .checkbox(&mut use_remaining, "Use remaining stock")
-            .on_hover_text(
-                "When enabled, prior operations in this setup are simulated to determine \
-                 remaining material. The toolpath will skip air cuts and adapt to the \
-                 actual stock state.",
-            );
-        if resp.changed() {
-            entry.stock_source = if use_remaining {
-                StockSource::FromRemainingStock
-            } else {
-                StockSource::Fresh
-            };
-            entry.stale_since = Some(std::time::Instant::now());
-        }
-    }
-
-    // Generate button + status (always visible)
+    // Generate button + status (always visible) — promoted to the top
+    // (SHE-004) so "is it generated? any warnings?" reads before the geometry
+    // combos the user rarely revisits after setup.
     ui.add_space(4.0);
     let validation_errors = validate_toolpath(entry, validation);
     let can_generate = !tools.is_empty() && validation_errors.is_empty();
@@ -2881,6 +2782,119 @@ fn draw_toolpath_panel(
                 }
             });
     }
+
+    ui.separator();
+
+    // Geometry wiring (SHE-004): Tool · Input model · Faces · stock source,
+    // grouped behind one disclosure. Default-open on a fresh op (no result
+    // yet); collapsed once it has a result so settled wiring gets out of the way.
+    egui::CollapsingHeader::new("Geometry")
+        .default_open(entry.result.is_none())
+        .show(ui, |ui| {
+            // Tool selector
+            ui.horizontal(|ui| {
+                ui.label("Tool:");
+                let tool_label = tools
+                    .iter()
+                    .find(|(id, _, _)| *id == entry.tool_id)
+                    .map(|(_, s, _)| s.as_str())
+                    .unwrap_or("(none)");
+                egui::ComboBox::from_id_salt("tp_tool")
+                    .selected_text(tool_label)
+                    .show_ui(ui, |ui| {
+                        for (id, name, _) in tools {
+                            ui.selectable_value(&mut entry.tool_id, *id, name.as_str());
+                        }
+                    });
+            });
+
+            // Model selector
+            ui.horizontal(|ui| {
+                ui.label("Input:");
+                let model_label = models
+                    .iter()
+                    .find(|(id, _)| *id == entry.model_id)
+                    .map(|(_, s)| s.as_str())
+                    .unwrap_or("(none)");
+                egui::ComboBox::from_id_salt("tp_model")
+                    .selected_text(model_label)
+                    .show_ui(ui, |ui| {
+                        for (id, name) in models {
+                            ui.selectable_value(&mut entry.model_id, *id, name.as_str());
+                        }
+                    });
+            });
+
+            // BREP-not-loaded warning: surfaces when a STEP model loaded
+            // without its enriched mesh (older project files written before
+            // the BREP round-trip fix, or an unexpected loader regression).
+            // It stays adjacent to the Input model combo it concerns.
+            if model_is_step_missing_brep {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(
+                        "⚠ BREP topology not loaded — face picker unavailable. Reload model.",
+                    )
+                    .color(egui::Color32::from_rgb(220, 160, 60))
+                    .strong(),
+                );
+            }
+
+            // Face selection (STEP models only)
+            if model_has_enriched {
+                ui.add_space(8.0);
+                ui.label(
+                    egui::RichText::new("Face Selection")
+                        .strong()
+                        .color(egui::Color32::from_rgb(180, 180, 195)),
+                );
+                // SHE-005 — one affordance, not two stacked sentences. Zero
+                // selected: a single muted placeholder. ≥1 selected: count +
+                // Clear, no tip line. The unconditional "Tip:" sentence is
+                // removed — the placeholder + the live count updating as the
+                // user clicks convey the action.
+                let face_count = entry.face_selection.as_ref().map(|f| f.len()).unwrap_or(0);
+                if face_count > 0 {
+                    ui.horizontal(|ui| {
+                        ui.label(format!(
+                            "{} face{} selected",
+                            face_count,
+                            if face_count == 1 { "" } else { "s" }
+                        ));
+                        if ui.small_button("Clear").clicked() {
+                            entry.face_selection = None;
+                            entry.stale_since = Some(std::time::Instant::now());
+                        }
+                    });
+                } else {
+                    ui.label(
+                        egui::RichText::new("Pick faces in viewport \u{2197}")
+                            .color(egui::Color32::from_rgb(120, 120, 130)),
+                    );
+                }
+            }
+
+            // Stock source toggle
+            ui.add_space(8.0);
+            {
+                let mut use_remaining = entry.stock_source == StockSource::FromRemainingStock;
+                let resp = ui
+                    .checkbox(&mut use_remaining, "Use remaining stock")
+                    .on_hover_text(
+                        "When enabled, prior operations in this setup are simulated to \
+                         determine remaining material. The toolpath will skip air cuts and \
+                         adapt to the actual stock state.",
+                    );
+                if resp.changed() {
+                    entry.stock_source = if use_remaining {
+                        StockSource::FromRemainingStock
+                    } else {
+                        StockSource::Fresh
+                    };
+                    entry.stale_since = Some(std::time::Instant::now());
+                }
+            }
+        });
 
     // ── Tab bar ─────────────────────────────────────────────────────
 
