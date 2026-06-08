@@ -33,17 +33,9 @@ pub const LANE_QUEUED: Color32 = Color32::from_rgb(150, 170, 210);
 pub const LANE_RUNNING: Color32 = Color32::from_rgb(210, 190, 90);
 pub const LANE_CANCELLING: Color32 = Color32::from_rgb(220, 120, 90);
 
-/// Inline "results are stale" warning — the single shared staleness cue.
-/// Consulted at every concrete-metric readout (cut cards, timeline spine,
-/// optimizer baseline) so a stale number is never styled as fresh (W0.5).
-/// The component layer's `FreshnessGate` will later supersede this.
-pub fn stale_banner(ui: &mut egui::Ui) {
-    ui.label(
-        egui::RichText::new("⚠ Results stale (params changed) — re-run sim")
-            .small()
-            .color(WARNING),
-    );
-}
+// The inline "results are stale" cue now lives in the component layer as
+// `ui::components::FreshnessGate::banner` (W0.5 → CL); the old
+// `theme::stale_banner` free function was superseded and removed.
 
 /// Standard card frame for list items and info panels.
 pub fn card_frame(selected: bool) -> egui::Frame {

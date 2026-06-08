@@ -14,20 +14,42 @@
 > (one agent, single-subsystem context).
 
 ## ▶ Next action
-**Tier 2 DONE — next is the 🧠 component layer (CL, incl. W4.1).** Tier 2 (W2.1 + W2.2)
-is merged to master. Wave 0 + Tier 1 already were. All four barrier deps for CL are now
-satisfied: W-UP ✓, W2.1 ✓, W0.4 ✓, W0.5 ✓.
+**CL DONE — next are the Wave-2 per-surface rewrites (W3.x), which now fan out.** The
+component layer is merged to master. Wave 0, Tier 1, Tier 2 already were. The barrier is
+lifted: every ♻ surface rewrite + W3.8 + Tier-4/5 polish are unblocked.
 
-The component layer is the headline keystone (the duplication-killer). It builds the
-atom/section/value components every Tier-3 surface rewrite consumes, and folds in **W4.1**
-(the `ProvenanceBadge` visual language that finally *renders* the W2.1 provenance model —
-W2.1 deliberately left rendering to here). Do it on a fresh branch off master
-(`ia-cleanup/components`), single owner, full plan context, NOT fanned out. Once CL is
-stable, the Tier-3 surface rewrites (W3.1 feeds epicenter, W3.3–W3.7) fan out per-surface.
+Start with **🧠 W3.1 (feeds rewrite + core SPEED/CUT split)** — the epicenter, keep it
+single-owner/high-context (couples core + UI). The rest fan out per-surface, one agent/PR
+each, all disjoint files: 🔁 W3.2 tab scaffold · W3.3 inspector · W3.4 tools · W3.5
+optimizer · W3.6 timeline · W3.7 header/rail. The components are the shared substrate they
+all draw from — read `ARCHITECTURE.md` §4 (usage map) for which component each surface uses.
 
-**W2.2 landed** [P1-004]: post-panel edits now write straight to the canonical
-`session.post_config()` (guarded on a real change so the sim cache only drops on an actual
-edit); added `PartialEq` to `ProjectPostConfig`. The GUI-vs-MCP stale window is closed.
+**CL landed** (4 stacked commits, `ia-cleanup/components`) — the duplication-killer substrate:
+- **1/4** foundations: `ProvKind`/`ProvenanceBadge` (one glyph+RGB per source, `From<&ValueProvenance>`),
+  `ValueRow` (supersedes `dv`/`dv_pill`), `SuggestButton`, `UiExt`/`SummaryCard`. `dv`/`dv_pill`/
+  `suggest_pill` delegate; `pill_color_for_source`/`source_short_label` deleted.
+- **2/4** collapsed the provenance source narratives (properties cyan + feeds_modal green) onto
+  `ProvenanceBadge` — kills the P7-003 three-colours divergence.
+- **3/4** `CountPill` (`[ ]`/`{ }`/`( … → )` grammar) + `FreshnessGate` (one stale renderer,
+  `theme::stale_banner` removed). Verdict HUD + all 4 stale-banner sites migrated.
+- **4/4** lifted `CompareRow`/`delta_tag`/`power_bar`/`mrr_row`/`format_optional` out of
+  `feeds_modal` into `components::compare`; six private fns deleted.
+
+**Deliberate CL deferrals (NOT bugs — pick up in the surface rewrite that owns each):**
+- `ProvenanceBadge` is built + reads the stored `ValueProvenance`, but the **live per-op feeds
+  pill still recomputes** a fresh lookup — its rewiring is **W3.1** (those widgets are rebuilt
+  there; threading display through them now = throwaway). [decision 2026-06-08]
+- The **Inspector "Findings" rollup** still renders as a grid (not `CountPill`); it already reads
+  the same `summary()` producer so it can't diverge — its CountPill adoption is **W3.3**.
+- The **optimizer** rollup shows a `ParamDelta` string, a different concept; it adopts
+  `compare::*` if/when **W3.5** adds a compare view.
+- `components::{visibility, nav, diagram}` from `ARCHITECTURE.md` §1 were **not built** — they pay
+  off only inside the surfaces that consume them (W3.6/W3.7/diagrams); build them with those.
+
+— prior context —
+**Tier 2 landed**: **W2.2** [P1-004] — post-panel edits write straight to the canonical
+`session.post_config()` (guarded so the sim cache only drops on a real edit); added `PartialEq`
+to `ProjectPostConfig`. GUI-vs-MCP stale window closed.
 
 — prior context —
 Wave 0 + Tier 1 are merged to master; **W2.1 is DONE** (per-field `ValueProvenance`).
@@ -150,7 +172,7 @@ Tier-4/5 polish.
 | W2.2 | canonical post-config | viz | 🟥 | 🛠 | — | ☑ |
 | W1.1 | revive tool CRUD (kill `project_tree`) | viz | 🟪 | 🛠 | W-UP | ☑ |
 | W1.2 | wire/retire dead controls (×4) | viz | 🟥 | 🔁 | W-UP | ☑ |
-| CL | **component layer** (+W4.1) | viz | 🟦 | 🧠 | W-UP, W2.1, W0.4, W0.5 | ☐ |
+| CL | **component layer** (+W4.1) | viz | 🟦 | 🧠 | W-UP, W2.1, W0.4, W0.5 | ☑ |
 | W3.1 | feeds rewrite + core split | core+viz | 🟪 | 🧠 | CL | ☐ |
 | W3.2 | five-tab scaffold | viz | 🟦 | 🔁 | CL | ☐ |
 | W3.3 | inspector summary-first | viz | 🟦 | 🔁 | CL | ☐ |
@@ -253,6 +275,17 @@ Tier-4/5 polish.
     coloring — honest cut, not a misleading selector); P2-003 greyed the adaptive3d entry combo
     on `EntryStylePolicy::ForceNone`; TIM-010 retired the dead `10_000+i` gate-dot drill →
     jump-to-move.
-- **▶ Next:** Tier 2 foundation — **W2.1** (ValueProvenance data model, core keystone — blocks
-  W4.1) + **W2.2** (canonical post config). Then the Wave-1 keystone **component layer** (CL +
-  W4.1) is fully unblocked (W-UP ✓, W0.4 ✓, W0.5 ✓). `ia-cleanup/tier1` is ready to merge.
+- **2026-06-08** — **Tier 2 merged to master** (`f9673b2`, --no-ff): W2.1 per-field
+  `ValueProvenance` data model + W2.2 canonical post-config.
+- **2026-06-08** — **CL (component layer) COMPLETE** on branch `ia-cleanup/components`, 4 stacked
+  commits each green (clippy -D warnings + fmt + viz 189+9):
+  - **1/4** (`ac28637`) foundations — `ProvKind`/`ProvenanceBadge`/`ValueRow`/`SuggestButton`/
+    `UiExt`/`SummaryCard`; `dv`/`dv_pill`/`suggest_pill` delegate; local colour/label helpers deleted.
+  - **2/4** (`e17189c`) provenance-narrative collapse onto `ProvenanceBadge` (P7-003).
+  - **3/4** (`4aa003b`) `CountPill` + `FreshnessGate`; HUD + 4 stale sites migrated; `stale_banner` removed.
+  - **4/4** (`76abb54`) `components::compare` lifted from `feeds_modal`; six private fns deleted.
+  Deferrals (by design, see ▶ Next action): live per-op pill rewiring → W3.1; Inspector Findings
+  grid → CountPill → W3.3; optimizer compare adoption → W3.5; `visibility`/`nav`/`diagram`
+  components built with the surfaces that consume them.
+- **▶ Next:** the Wave-2 per-surface rewrites fan out — **W3.1 feeds (keystone, single-owner)**
+  first, then 🔁 W3.2–W3.7 per-surface. All consume the now-stable component layer.

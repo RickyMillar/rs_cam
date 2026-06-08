@@ -1,6 +1,7 @@
 #![deny(clippy::indexing_slicing)]
 
 pub mod automation;
+pub mod components;
 pub mod export_wizard;
 pub mod feeds_modal;
 pub mod menu_bar;
