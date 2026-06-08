@@ -366,7 +366,6 @@ impl RsCamApp {
                         &mut state.simulation,
                         &state.session,
                         &state.gui,
-                        &mut state.viewport,
                         events,
                     );
                 });
