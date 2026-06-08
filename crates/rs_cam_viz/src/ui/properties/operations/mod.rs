@@ -30,21 +30,21 @@ use crate::state::toolpath::{
 
 use rs_cam_core::feeds::FeedsResult;
 
-use super::{dv_pill, suggest_pill};
+use super::dv_pill;
 
 /// Draw the standard "Feed Rate" + "Plunge Rate" + "Spindle RPM" parameter
 /// triple used by most cutting operations.
 ///
-/// `spindle_rpm` is the per-operation override: `None` means "use the project
-/// default" (rendered as an unchecked checkbox with the DragValue disabled).
-///
 /// `feeds_result`, when present, drives inline ⚡ Suggest pills next to each
 /// field (PR-2D Phase 2).
+///
+/// W3.1 relocated the per-operation spindle RPM override out of here into the
+/// Feeds-card SPEED section (its FINAL_DESIGN home), where the project default
+/// is reachable and the override/default precedence can be shown honestly.
 pub(super) fn draw_feed_params(
     ui: &mut egui::Ui,
     feed_rate: &mut f64,
     plunge_rate: &mut f64,
-    spindle_rpm: &mut Option<u32>,
     feeds_result: Option<&FeedsResult>,
 ) {
     dv_pill(
@@ -65,84 +65,12 @@ pub(super) fn draw_feed_params(
         1.0..=10000.0,
         feeds_result.map(|r| (r.plunge_rate_mm_min, &r.chipload_source)),
     );
-    draw_spindle_rpm_row(ui, spindle_rpm, feeds_result);
 }
 
-/// Per-operation spindle RPM override: checkbox + DragValue.
-///
-/// Unchecked → `None` (the project default applies).
-/// Checked → `Some(rpm)`. The DragValue is disabled while unchecked, and a
-/// dim "uses project default" hint is shown beside it.
-///
-/// When `feeds_result` is provided, an inline ⚡ pill is rendered after the
-/// DragValue. Clicking it both enables the override and writes the LUT
-/// recommendation into `spindle_rpm`.
-fn draw_spindle_rpm_row(
-    ui: &mut egui::Ui,
-    spindle_rpm: &mut Option<u32>,
-    feeds_result: Option<&FeedsResult>,
-) {
-    const DEFAULT_RPM: u32 = 18_000;
-
-    let mut override_active = spindle_rpm.is_some();
-    let mut rpm_value: u32 = spindle_rpm.unwrap_or(DEFAULT_RPM);
-
-    let toggled = ui
-        .checkbox(&mut override_active, "Spindle RPM:")
-        .on_hover_text(
-            "Override the project default spindle speed for this operation. \
-             Leave unchecked to follow the post-config spindle speed.",
-        )
-        .changed();
-
-    ui.horizontal(|ui| {
-        let dragged = ui
-            .add_enabled(
-                override_active,
-                egui::DragValue::new(&mut rpm_value)
-                    .suffix(" RPM")
-                    .speed(100.0)
-                    .range(1_000..=60_000),
-            )
-            .changed();
-
-        if !override_active {
-            ui.label(
-                egui::RichText::new("(uses project default)")
-                    .small()
-                    .color(egui::Color32::from_rgb(120, 120, 135)),
-            );
-        }
-
-        if toggled || dragged {
-            *spindle_rpm = if override_active {
-                Some(rpm_value)
-            } else {
-                None
-            };
-        }
-
-        if let Some(result) = feeds_result {
-            let current = f64::from(rpm_value);
-            if suggest_pill(
-                ui,
-                "Spindle RPM:",
-                current,
-                result.rpm,
-                &result.chipload_source,
-                " RPM",
-            ) {
-                // SAFETY: clamp into u32 range before the as-cast. RPMs
-                // outside 1_000..=60_000 are nonsense anyway.
-                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                let suggested = result.rpm.round().clamp(1_000.0, 60_000.0) as u32;
-                *spindle_rpm = Some(suggested);
-            }
-        }
-    });
-
-    ui.end_row();
-}
+// The per-operation spindle RPM override moved to the Feeds-card SPEED section
+// (W3.1) as a `PrecedenceField`, where the project default RPM is reachable and
+// the override-vs-default precedence renders honestly. The old in-place
+// `draw_spindle_rpm_row` (hardcoded 18 000 default) was retired.
 
 // ── Heights panel ────────────────────────────────────────────────────────
 
