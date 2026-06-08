@@ -1,4 +1,5 @@
 use crate::state::job::{BitCutDirection, ToolConfig, ToolMaterial, ToolType};
+use crate::ui::theme;
 
 pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     ui.heading(&tool.name);
@@ -10,6 +11,9 @@ pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     ui.separator();
     // Save this tool into a reusable library catalog. Importing it later
     // (Add Tool ▸ From library) copies a fresh snapshot into a project.
+    // TOO-004: add-or-replace by geometry signature, so re-saving an edited
+    // tool overwrites its catalog entry instead of silently piling up
+    // duplicates that only the modal's Dedupe button could clean.
     let name_id = egui::Id::new("tool_lib_save_catalog");
     let status_id = egui::Id::new("tool_lib_save_status");
     ui.horizontal(|ui| {
@@ -26,14 +30,16 @@ pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig) {
         let trimmed = catalog.trim().to_owned();
         if ui
             .add_enabled(!trimmed.is_empty(), egui::Button::new("Save"))
+            .on_hover_text("Add to the catalog, or overwrite the matching entry if one exists.")
             .clicked()
         {
-            match rs_cam_core::tool_library::append_tool(&trimmed, tool.clone()) {
-                Ok(path) => {
+            match rs_cam_core::tool_library::add_or_replace_tool(&trimmed, tool.clone()) {
+                Ok((path, replaced)) => {
+                    let verb = if replaced { "Updated" } else { "Saved" };
                     ui.data_mut(|d| {
                         d.insert_temp(
                             status_id,
-                            format!("Saved '{}' to {}", tool.name, path.display()),
+                            format!("{verb} '{}' in {}", tool.name, path.display()),
                         );
                     });
                 }
@@ -181,77 +187,120 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
                             .range(0.5..=89.0),
                     );
                     ui.end_row();
-
-                    ui.label("Shaft Diameter:");
-                    ui.add(
-                        egui::DragValue::new(&mut tool.shaft_diameter)
-                            .suffix(" mm")
-                            .speed(0.1)
-                            .range(tool.diameter..=100.0),
-                    );
-                    ui.end_row();
+                    // TOO-005: the tapered "shaft diameter" (taper top) used to
+                    // sit here next to the holder "shank diameter", two near-
+                    // identical names for different geometry. It now lives in its
+                    // own "Cutter geometry" group below, distinct from Holder/Shank.
                 }
                 _ => {}
             }
         });
+
+    // TOO-005 — "Cutter geometry" group: the tapered ball-nose upper-shaft
+    // diameter (taper top), separated from the holder "Shank ⌀ (in collet)"
+    // so the two diameters live under distinct headers, not as sibling rows.
+    if matches!(tool.tool_type, ToolType::TaperedBallNose) {
+        ui.add_space(8.0);
+        ui.label(egui::RichText::new("Cutter geometry").strong());
+        egui::Grid::new("tool_cutter_geometry")
+            .num_columns(2)
+            .spacing([8.0, 4.0])
+            .show(ui, |ui| {
+                ui.label("Upper shaft ⌀ (taper top):");
+                ui.add(
+                    egui::DragValue::new(&mut tool.shaft_diameter)
+                        .suffix(" mm")
+                        .speed(0.1)
+                        .range(tool.diameter..=100.0),
+                );
+                ui.end_row();
+            });
+    }
 
     // Cross-section preview
     ui.add_space(12.0);
     ui.label("Cross-Section Preview:");
     draw_tool_preview(ui, tool);
 
-    // Holder section (collapsible)
+    // Holder section (collapsible). TOO-006: the "collision check skipped"
+    // safety state is promoted onto the header itself — a warning glyph +
+    // phrase in the WARNING colour, visible *without* expanding the section
+    // (the old free-floating italic prose below the collapsed section was
+    // effectively invisible). UI wins, not prose.
     ui.add_space(12.0);
-    ui.collapsing("Holder / Shank", |ui| {
-        egui::Grid::new("holder_params")
+    let no_holder = tool.holder_diameter < 0.01;
+    let (header_text, header_color) = if no_holder {
+        (
+            "\u{26A0} Holder / Shank — no holder, collision check skipped".to_owned(),
+            theme::WARNING,
+        )
+    } else {
+        ("Holder / Shank".to_owned(), theme::TEXT_HEADING)
+    };
+    egui::CollapsingHeader::new(egui::RichText::new(header_text).color(header_color))
+        .id_salt("tool_holder_shank")
+        .show(ui, |ui| {
+            egui::Grid::new("holder_params")
+                .num_columns(2)
+                .spacing([8.0, 4.0])
+                .show(ui, |ui| {
+                    ui.label("Holder Diameter:");
+                    ui.add(
+                        egui::DragValue::new(&mut tool.holder_diameter)
+                            .suffix(" mm")
+                            .speed(0.5)
+                            .range(0.0..=200.0),
+                    );
+                    ui.end_row();
+
+                    // TOO-005: role-bearing label, distinct from the tapered
+                    // "Upper shaft ⌀" in the Cutter geometry group above.
+                    ui.label("Shank \u{2300} (in collet):");
+                    ui.add(
+                        egui::DragValue::new(&mut tool.shank_diameter)
+                            .suffix(" mm")
+                            .speed(0.1)
+                            .range(0.0..=100.0),
+                    );
+                    ui.end_row();
+
+                    ui.label("Shank Length:");
+                    ui.add(
+                        egui::DragValue::new(&mut tool.shank_length)
+                            .suffix(" mm")
+                            .speed(0.5)
+                            .range(0.0..=200.0),
+                    );
+                    ui.end_row();
+
+                    ui.label("Stickout:");
+                    ui.add(
+                        egui::DragValue::new(&mut tool.stickout)
+                            .suffix(" mm")
+                            .speed(0.5)
+                            .range(0.0..=300.0),
+                    );
+                    ui.end_row();
+                });
+        });
+
+    // TOO-004 — Catalog metadata: vendor / product-id are now editable (they
+    // previously rendered read-only in the library modal and were absent from
+    // this shared editor), so a tool can carry correctable source provenance.
+    ui.add_space(12.0);
+    ui.collapsing("Catalog metadata", |ui| {
+        egui::Grid::new("tool_catalog_metadata")
             .num_columns(2)
             .spacing([8.0, 4.0])
             .show(ui, |ui| {
-                ui.label("Holder Diameter:");
-                ui.add(
-                    egui::DragValue::new(&mut tool.holder_diameter)
-                        .suffix(" mm")
-                        .speed(0.5)
-                        .range(0.0..=200.0),
-                );
+                ui.label("Vendor:");
+                ui.text_edit_singleline(&mut tool.vendor);
                 ui.end_row();
-
-                ui.label("Shank Diameter:");
-                ui.add(
-                    egui::DragValue::new(&mut tool.shank_diameter)
-                        .suffix(" mm")
-                        .speed(0.1)
-                        .range(0.0..=100.0),
-                );
-                ui.end_row();
-
-                ui.label("Shank Length:");
-                ui.add(
-                    egui::DragValue::new(&mut tool.shank_length)
-                        .suffix(" mm")
-                        .speed(0.5)
-                        .range(0.0..=200.0),
-                );
-                ui.end_row();
-
-                ui.label("Stickout:");
-                ui.add(
-                    egui::DragValue::new(&mut tool.stickout)
-                        .suffix(" mm")
-                        .speed(0.5)
-                        .range(0.0..=300.0),
-                );
+                ui.label("Product ID:");
+                ui.text_edit_singleline(&mut tool.product_id);
                 ui.end_row();
             });
     });
-    if tool.holder_diameter < 0.01 {
-        ui.label(
-            egui::RichText::new("Holder not configured — collision check will be skipped")
-                .small()
-                .italics()
-                .color(egui::Color32::from_rgb(120, 120, 130)),
-        );
-    }
 }
 
 /// Draw a 2D cross-section preview of the full tool assembly.
