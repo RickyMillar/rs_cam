@@ -148,10 +148,10 @@ fn draw_outcome(
                         .color(theme::TEXT_MUTED),
                 );
             }
-            // G17 A4: operator-actionable suggestions, if any.
+            // G17 A4 / OPT-005: operator-actionable suggestions, if any.
             if !narrative.suggestions.is_empty() {
                 ui.add_space(6.0);
-                draw_suggestions(ui, &narrative.suggestions);
+                draw_suggestions(ui, &narrative.suggestions, toolpath_id, events);
             }
             ui.add_space(8.0);
             if attempted.len() <= 1 {
@@ -573,10 +573,18 @@ fn format_delta(delta: &ParamDelta) -> String {
     }
 }
 
-/// G17 A4 — render the suggestions as a small inline callout. Each
-/// suggestion is a one-liner with no button (operator must manually
-/// act; we never auto-apply a heuristic).
-fn draw_suggestions(ui: &mut egui::Ui, suggestions: &[OperatorSuggestion]) {
+/// G17 A4 / OPT-005 — render the suggestions as a small inline callout.
+/// `CapAxisAt` / `RaiseAxisAbove` carry a concrete axis + value, so each
+/// gets an **Apply & re-optimize** button that sets that axis and re-runs
+/// the search — an explicit operator click that just removes the manual
+/// re-typing step (we still never auto-apply a heuristic). `DataGapHere`
+/// has no value to apply, so it stays a plain note.
+fn draw_suggestions(
+    ui: &mut egui::Ui,
+    suggestions: &[OperatorSuggestion],
+    toolpath_id: usize,
+    events: &mut Vec<AppEvent>,
+) {
     egui::Frame::new()
         .fill(ui.visuals().faint_bg_color)
         .inner_margin(egui::Margin::symmetric(8, 6))
@@ -588,42 +596,68 @@ fn draw_suggestions(ui: &mut egui::Ui, suggestions: &[OperatorSuggestion]) {
                     .color(theme::TEXT_MUTED),
             );
             for s in suggestions {
-                ui.label(egui::RichText::new(format!("• {}", format_suggestion(s))).small());
+                ui.horizontal(|ui| match s {
+                    OperatorSuggestion::CapAxisAt { axis, ceiling } => {
+                        ui.label(
+                            egui::RichText::new(format_suggestion_action(*axis, *ceiling)).small(),
+                        );
+                        suggestion_apply_button(ui, toolpath_id, *axis, *ceiling, events);
+                    }
+                    OperatorSuggestion::RaiseAxisAbove { axis, floor } => {
+                        ui.label(
+                            egui::RichText::new(format_suggestion_action(*axis, *floor)).small(),
+                        );
+                        suggestion_apply_button(ui, toolpath_id, *axis, *floor, events);
+                    }
+                    OperatorSuggestion::DataGapHere { reason } => {
+                        ui.label(
+                            egui::RichText::new(format!("\u{24D8} Data gap: {reason}"))
+                                .small()
+                                .color(theme::TEXT_MUTED),
+                        );
+                    }
+                });
             }
         });
 }
 
-/// G17 A4 — render an `OperatorSuggestion` as one operator-facing
-/// sentence. Avoids "Bayesian" / "closed-loop" / other engine
-/// vocabulary; uses bare imperative ("Cap feed at …", "Raise feed to …").
-fn format_suggestion(s: &OperatorSuggestion) -> String {
-    fn axis_label_units(axis: KnobAxis) -> (&'static str, &'static str, usize) {
-        // (display label, units, decimal places)
-        match axis {
-            KnobAxis::Feed => ("feed", "mm/min", 0),
-            KnobAxis::SpindleRpm => ("RPM", "rpm", 0),
-            KnobAxis::Stepover => ("stepover", "mm", 2),
-            KnobAxis::DepthPerPass => ("depth-per-pass", "mm", 2),
-            KnobAxis::ScallopHeight => ("scallop height", "mm", 3),
-        }
+/// OPT-005 — the Apply-&-re-optimize button shared by both actionable
+/// suggestion kinds.
+fn suggestion_apply_button(
+    ui: &mut egui::Ui,
+    toolpath_id: usize,
+    axis: KnobAxis,
+    value: f64,
+    events: &mut Vec<AppEvent>,
+) {
+    if ui
+        .small_button("Apply & re-optimize")
+        .on_hover_text("Set this axis to the suggested value and re-run the search.")
+        .clicked()
+    {
+        events.push(AppEvent::ReoptimizeWithAxisOverride {
+            toolpath_id: ToolpathId(toolpath_id),
+            axis,
+            value,
+        });
     }
-    match s {
-        OperatorSuggestion::CapAxisAt { axis, ceiling } => {
-            let (label, units, dp) = axis_label_units(*axis);
-            format!(
-                "Cap {label} at ~{ceiling:.dp$} {units} and re-optimize.",
-                dp = dp
-            )
-        }
-        OperatorSuggestion::RaiseAxisAbove { axis, floor } => {
-            let (label, units, dp) = axis_label_units(*axis);
-            format!(
-                "Raise {label} above ~{floor:.dp$} {units} and re-optimize.",
-                dp = dp
-            )
-        }
-        OperatorSuggestion::DataGapHere { reason } => format!("Data gap: {reason}"),
+}
+
+/// (display label, units, decimal places) for an optimizer search axis.
+fn axis_label_units(axis: KnobAxis) -> (&'static str, &'static str, usize) {
+    match axis {
+        KnobAxis::Feed => ("feed", "mm/min", 0),
+        KnobAxis::SpindleRpm => ("RPM", "rpm", 0),
+        KnobAxis::Stepover => ("stepover", "mm", 2),
+        KnobAxis::DepthPerPass => ("depth-per-pass", "mm", 2),
+        KnobAxis::ScallopHeight => ("scallop height", "mm", 3),
     }
+}
+
+/// OPT-005 — compact button-row label, e.g. "Cap feed \u{2192} 2961 mm/min".
+fn format_suggestion_action(axis: KnobAxis, value: f64) -> String {
+    let (label, units, dp) = axis_label_units(axis);
+    format!("{label} \u{2192} {value:.dp$} {units}", dp = dp)
 }
 
 /// G17 A2 — one-line summary of the search envelope reached, e.g.
@@ -827,40 +861,22 @@ mod tests {
     }
 
     #[test]
-    fn format_suggestion_cap_feed() {
-        let s = OperatorSuggestion::CapAxisAt {
-            axis: KnobAxis::Feed,
-            ceiling: 2960.7,
-        };
-        let rendered = format_suggestion(&s);
-        // No "Bayesian" / "closed-loop" in operator copy — just the
-        // imperative.
-        assert!(rendered.starts_with("Cap feed at ~2961 mm/min"));
-        assert!(rendered.ends_with("re-optimize."));
+    fn format_suggestion_action_feed_rounds_to_int() {
+        // OPT-005: compact button-row label, "feed → 2961 mm/min".
+        let rendered = format_suggestion_action(KnobAxis::Feed, 2960.7);
+        assert_eq!(rendered, "feed \u{2192} 2961 mm/min");
     }
 
     #[test]
-    fn format_suggestion_raise_feed_uses_raise_verb() {
-        let s = OperatorSuggestion::RaiseAxisAbove {
-            axis: KnobAxis::Feed,
-            floor: 4032.0,
-        };
-        let rendered = format_suggestion(&s);
-        assert!(rendered.starts_with("Raise feed above ~4032 mm/min"));
+    fn format_suggestion_action_rpm() {
+        let rendered = format_suggestion_action(KnobAxis::SpindleRpm, 16000.0);
+        assert_eq!(rendered, "RPM \u{2192} 16000 rpm");
     }
 
     #[test]
-    fn format_suggestion_cap_doc_uses_two_decimals() {
-        let s = OperatorSuggestion::CapAxisAt {
-            axis: KnobAxis::DepthPerPass,
-            ceiling: 3.87,
-        };
-        let rendered = format_suggestion(&s);
-        assert!(
-            rendered.contains("3.87 mm"),
-            "DOC should render with 2 dp: {rendered}"
-        );
-        assert!(rendered.starts_with("Cap depth-per-pass"));
+    fn format_suggestion_action_doc_uses_two_decimals() {
+        let rendered = format_suggestion_action(KnobAxis::DepthPerPass, 3.87);
+        assert_eq!(rendered, "depth-per-pass \u{2192} 3.87 mm");
     }
 
     #[test]

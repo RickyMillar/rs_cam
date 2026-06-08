@@ -2,10 +2,14 @@
 //!
 //! Surfaces the result of `optimize_project` as one rollup window
 //! anchored at the screen centre. Header shows baseline vs optimized
-//! cycle time; bottleneck callout names the toolpath that dominates
-//! runtime; per-row checkboxes drive batch Apply. Refused rows
-//! (Skipped / NoSafeImprovement) are rendered inline with their typed
-//! reason — no separate error column.
+//! cycle time (with a `+N not estimated` note for skipped rows and a
+//! baseline-provenance line). W3.5/OPT-004 re-groups the grid by what
+//! the operator can do: **Apply now** (Ranked + safe candidate —
+//! checkbox-only column), **Needs your call** (TradeOff / MarginalSafe
+//! — role chip + a Review button that opens the per-toolpath modal,
+//! OPT-002), and a collapsed **Not optimized** disclosure (no-safe /
+//! skipped — full narrative behind a per-row expander, no inline
+//! truncation).
 
 use rs_cam_core::tool_load::optimize::{
     OptimizeCandidate, OptimizeOutcome, OutcomeKind, ParamDelta, ProjectOptimizeReport,
@@ -13,6 +17,7 @@ use rs_cam_core::tool_load::optimize::{
 
 use super::components::FreshnessGate;
 use super::{AppEvent, theme};
+use crate::state::toolpath::ToolpathId;
 use crate::state::{AppState, OptimizeProjectState, OptimizeProjectStatus};
 
 /// Draw the Optimize-project rollup if `state.optimize_project` is set.
@@ -129,26 +134,89 @@ fn draw_ready(
         return;
     }
 
-    egui::ScrollArea::vertical()
-        .max_height(400.0)
-        .show(ui, |ui| {
-            egui::Grid::new("optimize_project_grid")
-                .num_columns(5)
-                .spacing([8.0, 6.0])
-                .striped(true)
-                .show(ui, |ui| {
-                    ui.label(egui::RichText::new("").small()); // checkbox
-                    ui.label(egui::RichText::new("toolpath").small().strong());
-                    ui.label(egui::RichText::new("Δ").small().strong());
-                    ui.label(egui::RichText::new("cycle delta").small().strong());
-                    ui.label(egui::RichText::new("verdict").small().strong());
-                    ui.end_row();
+    // OPT-004: bucket rows by what the operator can actually do, so
+    // "apply this", "decide on this", and "nothing to apply" never
+    // share one unlabeled column. `row_idx` is preserved so the
+    // Apply-now checkbox still indexes `row_selected` correctly.
+    let mut apply_now: Vec<(usize, usize, &OptimizeOutcome)> = Vec::new();
+    let mut needs_call: Vec<(usize, &OptimizeOutcome)> = Vec::new();
+    let mut not_optimized: Vec<(usize, &OptimizeOutcome)> = Vec::new();
+    for (row_idx, (tp_index, outcome)) in report.per_toolpath.iter().enumerate() {
+        match outcome.kind {
+            OutcomeKind::Ranked if outcome.first_safe().is_some() => {
+                apply_now.push((row_idx, *tp_index, outcome));
+            }
+            OutcomeKind::TradeOff | OutcomeKind::MarginalSafe => {
+                needs_call.push((*tp_index, outcome));
+            }
+            _ => not_optimized.push((*tp_index, outcome)),
+        }
+    }
 
-                    for (row_idx, (tp_index, outcome)) in report.per_toolpath.iter().enumerate() {
-                        draw_row(ui, state, row_idx, *tp_index, outcome, row_selected, events);
+    egui::ScrollArea::vertical()
+        .max_height(420.0)
+        .show(ui, |ui| {
+            if !apply_now.is_empty() {
+                draw_section_heading(ui, "APPLY NOW");
+                egui::Grid::new("optimize_apply_now_grid")
+                    .num_columns(5)
+                    .spacing([8.0, 6.0])
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.label(egui::RichText::new("Apply").small().strong());
+                        ui.label(egui::RichText::new("toolpath").small().strong());
+                        ui.label(egui::RichText::new("change").small().strong());
+                        ui.label(egui::RichText::new("−cycle").small().strong());
+                        ui.label(egui::RichText::new("verdict").small().strong());
                         ui.end_row();
+                        for (row_idx, tp_index, outcome) in &apply_now {
+                            draw_apply_now_row(
+                                ui,
+                                state,
+                                *row_idx,
+                                *tp_index,
+                                outcome,
+                                row_selected,
+                                events,
+                            );
+                            ui.end_row();
+                        }
+                    });
+                ui.add_space(8.0);
+            }
+
+            if !needs_call.is_empty() {
+                draw_section_heading(ui, "NEEDS YOUR CALL");
+                egui::Grid::new("optimize_needs_call_grid")
+                    .num_columns(4)
+                    .spacing([8.0, 6.0])
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.label(egui::RichText::new("role").small().strong());
+                        ui.label(egui::RichText::new("toolpath").small().strong());
+                        ui.label(egui::RichText::new("note").small().strong());
+                        ui.label(egui::RichText::new("action").small().strong());
+                        ui.end_row();
+                        for (tp_index, outcome) in &needs_call {
+                            draw_needs_call_row(ui, state, *tp_index, outcome, events);
+                            ui.end_row();
+                        }
+                    });
+                ui.add_space(8.0);
+            }
+
+            if !not_optimized.is_empty() {
+                egui::CollapsingHeader::new(
+                    egui::RichText::new(format!("Not optimized ({})", not_optimized.len())).small(),
+                )
+                .id_salt("optimize_not_optimized")
+                .default_open(false)
+                .show(ui, |ui| {
+                    for (tp_index, outcome) in &not_optimized {
+                        draw_not_optimized_row(ui, state, *tp_index, outcome);
                     }
                 });
+            }
         });
 
     ui.add_space(8.0);
@@ -166,6 +234,17 @@ fn draw_ready(
             events.push(AppEvent::CloseOptimizeProject);
         }
     });
+}
+
+/// Small caps-style section heading for the role-grouped rollup tables.
+fn draw_section_heading(ui: &mut egui::Ui, text: &str) {
+    ui.label(
+        egui::RichText::new(text)
+            .small()
+            .strong()
+            .color(theme::TEXT_MUTED),
+    );
+    ui.add_space(2.0);
 }
 
 fn draw_header(ui: &mut egui::Ui, report: &ProjectOptimizeReport, row_selected: &[bool]) {
@@ -193,6 +272,35 @@ fn draw_header(ui: &mut egui::Ui, report: &ProjectOptimizeReport, row_selected: 
             );
         }
     });
+
+    // OPT-001: Skipped rows carry no candidate baseline and are excluded
+    // from both the baseline and optimized sums (see
+    // `optimized_cycle_time_s`). Surface them explicitly so the headline
+    // never silently drops their time.
+    let not_estimated = report
+        .per_toolpath
+        .iter()
+        .filter(|(_, o)| matches!(o.kind, OutcomeKind::Skipped))
+        .count();
+    if not_estimated > 0 {
+        let plural = if not_estimated == 1 { "" } else { "s" };
+        ui.label(
+            egui::RichText::new(format!(
+                "+ {not_estimated} toolpath{plural} not estimated (skipped)"
+            ))
+            .small()
+            .color(theme::TEXT_MUTED),
+        );
+    }
+
+    // OPT-003: baseline provenance. Staleness (params changed since the
+    // sim these numbers came from) is flagged by the FreshnessGate banner
+    // at the top of the view; this line states the source when fresh.
+    ui.label(
+        egui::RichText::new("baseline: current simulation")
+            .small()
+            .color(theme::TEXT_DIM),
+    );
 }
 
 fn draw_bottleneck_callout(
@@ -231,7 +339,19 @@ fn draw_bottleneck_callout(
     );
 }
 
-fn draw_row(
+fn toolpath_name(state: &AppState, toolpath_index: usize) -> String {
+    state
+        .session
+        .toolpath_configs()
+        .get(toolpath_index)
+        .map_or_else(|| format!("idx {toolpath_index}"), |tc| tc.name.clone())
+}
+
+/// OPT-004 "Apply now" row: a Ranked outcome with a safe recommended
+/// candidate. The checkbox is always live (rows without a safe
+/// candidate never reach this section), and the verdict column holds a
+/// single glyph — no overloaded meaning.
+fn draw_apply_now_row(
     ui: &mut egui::Ui,
     state: &AppState,
     row_idx: usize,
@@ -240,122 +360,126 @@ fn draw_row(
     row_selected: &[bool],
     events: &mut Vec<AppEvent>,
 ) {
-    let name = state
+    let name = toolpath_name(state, toolpath_index);
+    let mut checked = row_selected.get(row_idx).copied().unwrap_or(false);
+    let response = ui.add(egui::Checkbox::new(&mut checked, ""));
+    if response.clicked() {
+        events.push(AppEvent::ToggleOptimizeProjectRow(row_idx));
+    }
+    ui.label(egui::RichText::new(name).small());
+    if let (Some(b), Some(rec)) = (outcome.candidates.first(), outcome.first_safe()) {
+        ui.label(egui::RichText::new(format_delta(&rec.delta)).small());
+        let saving = b.cycle_time_s - rec.cycle_time_s;
+        ui.label(
+            egui::RichText::new(format!("-{}", format_cycle(saving)))
+                .small()
+                .color(theme::SUCCESS),
+        );
+        draw_compact_verdict(ui, rec);
+    } else {
+        // Defensive: bucketing guarantees a safe candidate here.
+        ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
+        ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
+        ui.label("");
+    }
+}
+
+/// OPT-002 / OPT-004 "Needs your call" row: TradeOff / MarginalSafe.
+/// A role chip (not a fake checkbox) names *why* it needs a decision,
+/// and the Review button opens the per-toolpath modal for that exact
+/// row — closing the old dead-end where the user had to hunt for it.
+fn draw_needs_call_row(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    toolpath_index: usize,
+    outcome: &OptimizeOutcome,
+    events: &mut Vec<AppEvent>,
+) {
+    let name = toolpath_name(state, toolpath_index);
+    let tried = outcome.candidates.len().saturating_sub(1);
+    let (chip, note) = match outcome.kind {
+        OutcomeKind::TradeOff => ("trade-off", format!("{tried} faster, gate regression")),
+        OutcomeKind::MarginalSafe => ("verify scrap", format!("{tried} inside tolerance band")),
+        _ => ("review", String::new()),
+    };
+    ui.label(egui::RichText::new(chip).small().color(theme::WARNING));
+    ui.label(egui::RichText::new(name).small());
+    ui.label(egui::RichText::new(note).small().color(theme::WARNING));
+
+    let tp_id = state
         .session
         .toolpath_configs()
         .get(toolpath_index)
-        .map_or_else(|| format!("idx {toolpath_index}"), |tc| tc.name.clone());
-
-    match outcome.kind {
-        OutcomeKind::Ranked => {
-            let baseline = outcome.candidates.first();
-            let recommended = outcome.first_safe();
-            let selected = row_selected.get(row_idx).copied().unwrap_or(false);
-            let mut checked = selected;
-            // Disable the checkbox if there's nothing to apply.
-            let enabled = recommended.is_some();
-            let response = ui.add_enabled(enabled, egui::Checkbox::new(&mut checked, ""));
-            if response.clicked() {
-                events.push(AppEvent::ToggleOptimizeProjectRow(row_idx));
-            }
-            ui.label(egui::RichText::new(name).small());
-
-            if let (Some(b), Some(rec)) = (baseline, recommended) {
-                ui.label(egui::RichText::new(format_delta(&rec.delta)).small());
-                let saving = b.cycle_time_s - rec.cycle_time_s;
-                ui.label(
-                    egui::RichText::new(format!("-{}", format_cycle(saving)))
-                        .small()
-                        .color(theme::SUCCESS),
-                );
-                draw_compact_verdict(ui, rec);
-            } else {
-                ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
-                ui.label(
-                    egui::RichText::new("no improvement found")
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                );
-                ui.label("");
-            }
+        .map(|tc| tc.id);
+    if let Some(id) = tp_id {
+        if ui
+            .small_button("Review ▸")
+            .on_hover_text("Open the per-toolpath optimize detail to inspect and apply.")
+            .clicked()
+        {
+            events.push(AppEvent::OpenOptimizeModal(ToolpathId(id)));
         }
-        OutcomeKind::NoSafeImprovement => {
-            let explanation = &outcome.narrative.explanation;
-            ui.label(""); // checkbox column blank
-            ui.label(egui::RichText::new(name).small());
-            ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
-            // Refused row narrative + a count of candidates tried so
-            // the user can see "no improvement" wasn't a black box.
-            // Subtract 1 to exclude the baseline at index 0.
-            let tried = outcome.candidates.len().saturating_sub(1);
-            let suffix = if tried > 0 {
-                format!(" — tried {tried}")
-            } else {
-                String::new()
-            };
-            ui.label(
-                egui::RichText::new(format!("{}{}", truncate(explanation, 70), suffix))
-                    .small()
-                    .color(theme::WARNING),
-            )
-            .on_hover_text(explanation.as_str());
-            ui.label("");
-        }
+    } else {
+        ui.label("");
+    }
+}
+
+/// OPT-004 "Not optimized" row: NoSafeImprovement / Skipped / a Ranked
+/// outcome with no safe candidate. Rendered as a per-row disclosure —
+/// the header is a glyph + one phrase, the full narrative and the
+/// candidates-tried count live in the body, so there is no 70-char
+/// inline truncation in the table.
+fn draw_not_optimized_row(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    toolpath_index: usize,
+    outcome: &OptimizeOutcome,
+) {
+    let name = toolpath_name(state, toolpath_index);
+    let tried = outcome.candidates.len().saturating_sub(1);
+    let (glyph, color, phrase, detail) = match outcome.kind {
         OutcomeKind::Skipped => {
-            let reason_text = outcome
+            let reason = outcome
                 .reason
                 .as_ref()
-                .map_or("optimizer refused", |r| r.explanation_for_optimize());
-            ui.label("");
-            ui.label(egui::RichText::new(name).small());
-            ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
-            ui.label(
-                egui::RichText::new(reason_text.to_owned())
-                    .small()
-                    .color(theme::TEXT_DIM),
-            );
-            ui.label("");
+                .map_or("optimizer refused", |r| r.explanation_for_optimize())
+                .to_owned();
+            ("·", theme::TEXT_DIM, format!("skipped: {reason}"), reason)
         }
-        OutcomeKind::TradeOff => {
-            // Trade-off rows: faster candidate exists but has a gate
-            // regression. Render with a "trade-off" badge and no
-            // checkbox (open the modal to apply).
-            ui.label(""); // checkbox column blank
-            ui.label(egui::RichText::new(name).small());
-            ui.label(
-                egui::RichText::new("trade-off")
-                    .small()
-                    .color(theme::WARNING),
-            );
-            let tried = outcome.candidates.len().saturating_sub(1);
-            ui.label(
-                egui::RichText::new(format!("{tried} faster candidate(s) with gate regression"))
-                    .small()
-                    .color(theme::WARNING),
-            );
-            ui.label("");
+        OutcomeKind::NoSafeImprovement => {
+            let explanation = outcome.narrative.explanation.clone();
+            let detail = if tried > 0 {
+                format!(
+                    "{explanation}\n\nTried {tried} candidate(s); none beat the baseline safely."
+                )
+            } else {
+                explanation.clone()
+            };
+            (
+                "⚠",
+                theme::WARNING,
+                format!("no safe gain — {}", truncate(&explanation, 60)),
+                detail,
+            )
         }
-        OutcomeKind::MarginalSafe => {
-            // G16 §11.4 Layer 3: faster candidate exists but at least
-            // one gate reading was admitted only by the tolerance
-            // band. No checkbox — user must verify on a scrap via the
-            // modal before applying.
-            ui.label(""); // checkbox column blank
-            ui.label(egui::RichText::new(name).small());
-            ui.label(
-                egui::RichText::new("verify on scrap")
-                    .small()
-                    .color(theme::WARNING),
-            );
-            let tried = outcome.candidates.len().saturating_sub(1);
-            ui.label(
-                egui::RichText::new(format!("{tried} candidate(s) inside tolerance band"))
-                    .small()
-                    .color(theme::WARNING),
-            );
-            ui.label("");
-        }
-    }
+        // Ranked-without-safe lands here too (bucketed as not-optimized).
+        _ => (
+            "·",
+            theme::TEXT_MUTED,
+            "no improvement found".to_owned(),
+            "The optimizer found no candidate faster than the baseline.".to_owned(),
+        ),
+    };
+    egui::CollapsingHeader::new(
+        egui::RichText::new(format!("{glyph}  {name} — {phrase}"))
+            .small()
+            .color(color),
+    )
+    .id_salt(("optimize_not_optimized_row", toolpath_index))
+    .default_open(false)
+    .show(ui, |ui| {
+        ui.label(egui::RichText::new(detail).small().color(theme::TEXT_MUTED));
+    });
 }
 
 fn draw_compact_verdict(ui: &mut egui::Ui, candidate: &OptimizeCandidate) {
@@ -420,15 +544,6 @@ fn draw_reconciling(
                 .strong(),
         );
     });
-    ui.add_space(6.0);
-    ui.label(
-        egui::RichText::new(
-            "End-to-end project sim with the new params. The rollup will refresh \
-             with reconciled cycle times and verdicts when the sim completes.",
-        )
-        .small()
-        .color(theme::TEXT_MUTED),
-    );
     ui.add_space(8.0);
     ui.separator();
     ui.add_space(6.0);
@@ -459,16 +574,9 @@ fn draw_reconciled(
 ) {
     ui.label(egui::RichText::new("Optimize applied — reconciled").strong());
     ui.add_space(6.0);
-    ui.label(
-        egui::RichText::new(
-            "Reconciled values come from a project end-to-end sim with the new \
-             params. Rows where reconciled disagrees with candidate-isolated indicate \
-             cross-toolpath interactions — the upstream params changed downstream stock state.",
-        )
-        .small()
-        .color(theme::TEXT_MUTED),
-    );
-    ui.add_space(8.0);
+    // UI-wins: the prose paragraph is replaced by the amber `xtp` note on
+    // mismatched reconciled cells (see draw_readonly_row) — the cell that
+    // disagrees with candidate-isolated *is* the cross-toolpath signal.
     ui.separator();
     ui.add_space(6.0);
 
@@ -548,18 +656,26 @@ fn draw_readonly_row(
                             let candidate_cycle = rec.cycle_time_s;
                             let delta = c - candidate_cycle;
                             let mismatch = delta.abs() > 1.0;
-                            let color = if mismatch {
-                                theme::WARNING
+                            let (color, suffix) = if mismatch {
+                                (theme::WARNING, "  xtp")
                             } else {
-                                theme::TEXT_MUTED
+                                (theme::TEXT_MUTED, "")
                             };
-                            egui::RichText::new(format!("{} ({:+.1}s)", format_cycle(c), delta))
-                                .small()
-                                .color(color)
+                            egui::RichText::new(format!(
+                                "{} ({:+.1}s){suffix}",
+                                format_cycle(c),
+                                delta
+                            ))
+                            .small()
+                            .color(color)
                         }
                         None => egui::RichText::new("—").small().color(theme::TEXT_DIM),
                     };
-                    ui.label(label);
+                    ui.label(label).on_hover_text(
+                        "Reconciled cycle from a project end-to-end sim. `xtp` marks a \
+                         cross-toolpath interaction — the reconciled value disagrees with \
+                         the candidate-isolated estimate.",
+                    );
                 }
             } else {
                 ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
