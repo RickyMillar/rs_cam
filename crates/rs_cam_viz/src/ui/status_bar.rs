@@ -79,9 +79,23 @@ pub fn draw(
 
         if collision_count > 0 {
             ui.separator();
-            ui.label(
-                egui::RichText::new(format!("{} collisions", collision_count)).color(theme::ERROR),
-            );
+            // SHE-002 — the chip is the shared `total_collision_count()` (holder
+            // + rapid), matching the workspace bar. Provenance lives on hover
+            // (the holder/rapid split) and the chip greys when the count is from
+            // a sim that's now stale, instead of asserting a fresh red count.
+            let holder = state.simulation.checks.holder_collision_count;
+            let rapid = state.simulation.checks.rapid_collisions.len();
+            let stale = state.simulation.is_stale(state.gui.edit_counter);
+            let color = if stale {
+                theme::TEXT_MUTED
+            } else {
+                theme::ERROR
+            };
+            let stale_suffix = if stale { " (from a stale run)" } else { "" };
+            ui.label(egui::RichText::new(format!("{collision_count} collisions")).color(color))
+                .on_hover_text(format!(
+                    "{collision_count} collisions — {holder} holder, {rapid} rapid{stale_suffix}"
+                ));
         }
 
         if state.gui.dirty {

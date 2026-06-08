@@ -487,6 +487,7 @@ fn draw_toolpath_card(
                     ui,
                     tp_id,
                     visible,
+                    Some(tc.enabled),
                     &mut state.viewport,
                     events,
                 );

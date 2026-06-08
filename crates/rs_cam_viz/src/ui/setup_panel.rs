@@ -42,19 +42,10 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     });
 
     ui.add_space(6.0);
+    ui.separator();
 
-    // Project summary card
-    draw_project_summary(ui, state);
-
-    // Project-wide diagnostics card — surfaces collisions, air-cut
-    // outliers, plunge-stress, and generated-empty toolpaths via the
-    // unified diagnostic schema. Hidden when the session has no
-    // findings so a healthy project shows nothing here.
-    draw_project_diagnostics_card(ui, state);
-
-    ui.add_space(6.0);
-
-    // Setup cards
+    // Setup cards — the rail's primary navigation job (SHE-007), promoted
+    // directly under the Stock card instead of below the project rollups.
     for setup in state.session.list_setups() {
         draw_setup_card(ui, setup, state, events);
         ui.add_space(4.0);
@@ -69,7 +60,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         }
     }
 
-    ui.add_space(12.0);
+    ui.add_space(8.0);
 
     // Models section (compact)
     egui::CollapsingHeader::new("Models")
@@ -101,6 +92,15 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 });
             }
         });
+
+    ui.add_space(12.0);
+    ui.separator();
+
+    // Project rollups demoted to the bottom (SHE-007): whole-project readouts
+    // belong with project chrome, not interleaved into per-setup navigation.
+    // Summary sits behind a disclosure; diagnostics self-hide when empty.
+    draw_project_summary(ui, state);
+    draw_project_diagnostics_card(ui, state);
 }
 
 fn draw_setup_card(
@@ -382,41 +382,61 @@ fn draw_project_summary(ui: &mut egui::Ui, state: &AppState) {
         }
     }
 
-    let time_str = if total_time_min >= 1.0 {
+    let time_str = if total_time_min >= 60.0 {
+        let h = (total_time_min / 60.0).floor();
+        let m = (total_time_min - h * 60.0).round();
+        format!("{h:.0}:{m:02.0}")
+    } else if total_time_min >= 1.0 {
         format!("{:.0} min", total_time_min)
     } else {
         format!("{:.0} s", total_time_min * 60.0)
     };
 
-    egui::Frame::default()
-        .fill(egui::Color32::from_rgb(34, 36, 44))
-        .inner_margin(6.0)
-        .corner_radius(4)
+    // SHE-007 — the project rollup is a whole-project readout, demoted behind a
+    // disclosure with the headline numbers in the header text. Default
+    // collapsed; the full table is one click away. A stable `id_salt` keeps the
+    // collapse state from resetting as the header numbers change.
+    let header = if computed > 0 {
+        format!(
+            "Project summary  \u{00B7}  {enabled_ops} ops \u{00B7} {tool_count} tools \u{00B7} ~{time_str}"
+        )
+    } else {
+        format!("Project summary  \u{00B7}  {enabled_ops} ops \u{00B7} {tool_count} tools")
+    };
+    egui::CollapsingHeader::new(egui::RichText::new(header).small().color(theme::TEXT_MUTED))
+        .id_salt("project_summary")
+        .default_open(false)
         .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(format!("{computed}/{enabled_ops} ops"))
-                        .small()
-                        .strong()
-                        .color(if computed == enabled_ops {
-                            theme::SUCCESS
-                        } else {
-                            theme::WARNING
-                        }),
-                );
-                ui.label(
-                    egui::RichText::new(format!("\u{00B7} {tool_count} tool(s)"))
-                        .small()
-                        .color(theme::TEXT_DIM),
-                );
-                if computed > 0 {
-                    ui.label(
-                        egui::RichText::new(format!("\u{00B7} ~{time_str}"))
-                            .small()
-                            .color(theme::TEXT_DIM),
-                    );
-                }
-            });
+            egui::Frame::default()
+                .fill(egui::Color32::from_rgb(34, 36, 44))
+                .inner_margin(6.0)
+                .corner_radius(4)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!("{computed}/{enabled_ops} ops"))
+                                .small()
+                                .strong()
+                                .color(if computed == enabled_ops {
+                                    theme::SUCCESS
+                                } else {
+                                    theme::WARNING
+                                }),
+                        );
+                        ui.label(
+                            egui::RichText::new(format!("\u{00B7} {tool_count} tool(s)"))
+                                .small()
+                                .color(theme::TEXT_DIM),
+                        );
+                        if computed > 0 {
+                            ui.label(
+                                egui::RichText::new(format!("\u{00B7} ~{time_str}"))
+                                    .small()
+                                    .color(theme::TEXT_DIM),
+                            );
+                        }
+                    });
+                });
         });
 }
 
