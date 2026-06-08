@@ -70,7 +70,7 @@ impl<B: ComputeBackend> AppController<B> {
             );
             return;
         };
-        let operation = match rs_cam_core::feeds::suggest::suggest_params(
+        let (operation, feeds_provenance) = match rs_cam_core::feeds::suggest::suggest_params(
             rs_cam_core::feeds::suggest::SuggestParamsInput {
                 op_type,
                 tool,
@@ -87,7 +87,7 @@ impl<B: ComputeBackend> AppController<B> {
                 context: rs_cam_core::feeds::suggest::SuggestContext::default(),
             },
         ) {
-            Ok(s) => s.operation,
+            Ok(s) => (s.operation, s.provenance),
             Err(e) => {
                 // Engine refused the tool × operation combination
                 // (e.g. flat endmill on a Scallop op — no tip radius
@@ -157,6 +157,7 @@ impl<B: ComputeBackend> AppController<B> {
             coolant: rs_cam_core::gcode::CoolantMode::Off,
             face_selection: None,
             debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+            feeds_provenance,
         };
 
         if let Some(setup_idx) = target_setup_idx
@@ -206,6 +207,7 @@ impl<B: ComputeBackend> AppController<B> {
                     coolant: src.coolant,
                     face_selection: src.face_selection.clone(),
                     debug_options: src.debug_options,
+                    feeds_provenance: src.feeds_provenance.clone(),
                 }
             });
 

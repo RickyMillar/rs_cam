@@ -1235,6 +1235,7 @@ fn draw_feeds_card(
                 let pass_role = entry.operation.feeds_style().1;
                 rs_cam_core::feeds::suggest::apply_feeds_result_to_op(
                     &mut entry.operation,
+                    &mut entry.feeds_provenance,
                     &result,
                     tool,
                     machine,
@@ -2212,7 +2213,11 @@ fn render_diagnostic_row(
                 ))
                 .clicked()
         {
-            rs_cam_core::compute::validate::apply_stale_default_to_op(&mut entry.operation, defect);
+            rs_cam_core::compute::validate::apply_stale_default_to_op(
+                &mut entry.operation,
+                &mut entry.feeds_provenance,
+                defect,
+            );
             entry.stale_since = Some(std::time::Instant::now());
         }
     });
@@ -2426,6 +2431,7 @@ fn build_entry_from_session_and_gui(
         auto_regen: rt.auto_regen,
         face_selection: tc.face_selection.clone(),
         feeds_result: rt.feeds_result.clone(),
+        feeds_provenance: tc.feeds_provenance.clone(),
         debug_options: tc.debug_options,
         debug_trace: rt.debug_trace.clone(),
         semantic_trace: rt.semantic_trace.clone(),
@@ -2439,6 +2445,11 @@ fn write_entry_config_to_session(
     session: &mut rs_cam_core::session::ProjectSession,
 ) {
     if let Some((_, tc)) = session.find_toolpath_config_by_id_mut(entry.id.0) {
+        // W2.1: stamp Manual on any feeds dimension the user hand-edited in the
+        // param widgets this frame (value moved but provenance didn't). Must run
+        // before `tc.operation` / `tc.feeds_provenance` are overwritten below.
+        let mut new_provenance = entry.feeds_provenance.clone();
+        new_provenance.detect_manual_edits(&tc.operation, &entry.operation, &tc.feeds_provenance);
         tc.name = entry.name.clone();
         tc.enabled = entry.enabled;
         tc.tool_id = entry.tool_id.0;
@@ -2462,6 +2473,7 @@ fn write_entry_config_to_session(
         tc.stock_source = entry.stock_source;
         tc.face_selection = entry.face_selection.clone();
         tc.debug_options = entry.debug_options;
+        tc.feeds_provenance = new_provenance;
     }
 }
 
@@ -2797,6 +2809,7 @@ fn draw_toolpath_panel(
                         {
                             rs_cam_core::compute::validate::apply_stale_default_to_op(
                                 &mut entry.operation,
+                                &mut entry.feeds_provenance,
                                 defect,
                             );
                             entry.stale_since = Some(std::time::Instant::now());
@@ -2842,6 +2855,7 @@ fn draw_toolpath_panel(
                                 let pass_role = entry.operation.feeds_style().1;
                                 rs_cam_core::feeds::suggest::apply_feeds_result_to_op(
                                     &mut entry.operation,
+                                    &mut entry.feeds_provenance,
                                     &result,
                                     tool_cfg,
                                     machine,

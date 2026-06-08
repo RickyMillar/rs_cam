@@ -176,6 +176,7 @@ impl ProjectSession {
                             .map(|ids| ids.iter().map(|fg| fg.0).collect()),
                         _legacy_feeds_auto: None,
                         debug_options: tc.debug_options,
+                        feeds_provenance: tc.feeds_provenance.clone(),
                     })
                     .collect();
 
@@ -270,6 +271,7 @@ mod tests {
             coolant: crate::gcode::CoolantMode::Off,
             face_selection: None,
             debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+            feeds_provenance: crate::feeds::FeedsProvenance::default(),
         }
     }
 

@@ -133,6 +133,7 @@ fn build_as004_face_session() -> ProjectSession {
         coolant: CoolantMode::Off,
         face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
+        feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
     };
 
     // The fixture loads with one setup at index 0 (identity / face_up=Top).
@@ -392,6 +393,7 @@ fn build_as001_pocket_session_from_file() -> ProjectSession {
         coolant: CoolantMode::Off,
         face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
+        feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
     };
 
     session

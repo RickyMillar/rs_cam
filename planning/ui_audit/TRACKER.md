@@ -14,22 +14,36 @@
 > (one agent, single-subsystem context).
 
 ## ▶ Next action
-**Tier 2 — start W2.1 (`ValueProvenance` data model).** On branch `ia-cleanup/tier2`
-(off master). Wave 0 (Tier-0 + egui-0.34 upgrade) and Tier 1 are both **merged to master**.
+**Tier 2 — W2.2 (canonical post-config), then the component layer.** On branch
+`ia-cleanup/tier2` (off master). Wave 0 + Tier 1 are merged to master; **W2.1 is DONE**
+(committed on this branch, green).
 
-W2.1 is the **core keystone** [P7-001/P7-002/P7-004], L, design-sensitive — do it carefully
-in one focused pass (it blocks W4.1 and the component layer's `ProvenanceBadge`):
-- Feeds are stored as bare `f64`/`u32` on `OperationConfig`; the displayed colour is recomputed
-  from a *fresh* LUT lookup rather than from what produced the stored value; and one
-  `ChiploadSource` enum is overloaded to label four independently-derived fields (so a vendor
-  RPM reads as amber "formula fallback").
-- Add a per-applied-value `ValueProvenance { source, ref, when }`; stop reusing `ChiploadSource`
-  as the universal provenance label. Touches `OperationConfig` + every `set_*`/read site —
-  audit setup-sheet, project-IO, and test initializers (per CLAUDE.md GUI-state rule).
-- **MCP-ready**: this is the backend unification the deferred assistant work will sit on.
+**W2.1 landed** (`ValueProvenance` data model, core keystone) — decisions taken:
+`ValueProvenance { source, reference }` (**no `when`** — deferred), **full per-field
+independence** (RPM/DOC/WOC labelled from the matched LUT row's `rpm_*`/`ap_*`/`ae_*`
+independently of the chipload's `ChiploadSource`), and **full apply-site consolidation**.
+- `feeds::provenance` module: `ProvenanceSource` (VendorLut/Formula/EdgeRadiusFloor/Manual/
+  Optimizer/AutoCorrect), `ValueProvenance`, `FeedsProvenance` (per-dimension), `FeedsField`,
+  `FeedsResult::provenance()`. `ToolpathConfig.feeds_provenance` + serde via BOTH project-IO
+  DTOs (core `project_file.rs` + viz `io/project.rs`), `#[serde(default)]` → back-compatible.
+- Stamped at every producer: suggest funnel (`apply_feeds_result_to_op` gained `&mut
+  FeedsProvenance` + `SuggestedParams.provenance`; per-field controller apply; CLI; GUI/MCP
+  add-toolpath), manual `set_param` + GUI in-place edits (diff-detected at the entry→session
+  flush via `detect_manual_edits`), optimizer (`stamped_optimizer` + `set_feeds_provenance`),
+  auto-correct. 5 unit tests lock per-field independence + manual detection.
+- **Deferred to W4.1 / component layer (deliberate):** the *rendering* repoint — the per-op
+  pill still shows the recomputed suggestion source. `ProvenanceBadge` IS the visual language
+  (folded into CL), and W3.1 rewrites these exact feeds widgets, so threading display through
+  them now would be throwaway. The honest data model is in place and correctly populated; CL
+  reads it. **MCP-ready** backend unification done.
 
-W2.2 (canonical post config, small) can ride along after. Standing instruction from user:
-**default to merging a completed green workstream branch to master without asking.**
+**W2.2** [P1-004] (S, viz): `gui.post` and `session.post_config()` can disagree until next
+save (GUI-vs-MCP window). Make the session canonical; route post-panel edits through a
+`SetPostConfig`-style event that writes immediately (as the wizard already does). Ride it
+along on this branch, then merge `ia-cleanup/tier2` → master.
+
+Standing instruction from user: **default to merging a completed green workstream branch to
+master without asking.**
 
 ---
 
@@ -118,7 +132,7 @@ Tier-4/5 polish.
 | W0.3 | one collision tally + severity order | viz | 🟥 | 🛠 | — | ☑ |
 | W0.4 | reconcile load rollups (one `summary()`) | core+viz | 🟥 | 🛠 | — | ☑ |
 | W0.5 | wire `is_stale` everywhere | viz | 🟥 | 🛠 | — | ☑ |
-| W2.1 | `ValueProvenance` data model | core | 🟥 | 🧠 | — | ☐ |
+| W2.1 | `ValueProvenance` data model | core | 🟥 | 🧠 | — | ☑ |
 | W2.2 | canonical post-config | viz | 🟥 | 🛠 | — | ☐ |
 | W1.1 | revive tool CRUD (kill `project_tree`) | viz | 🟪 | 🛠 | W-UP | ☑ |
 | W1.2 | wire/retire dead controls (×4) | viz | 🟥 | 🔁 | W-UP | ☑ |

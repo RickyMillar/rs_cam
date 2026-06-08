@@ -365,6 +365,7 @@ mod restore_guard_tests {
             coolant: crate::gcode::CoolantMode::Off,
             face_selection: None,
             debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+            feeds_provenance: crate::feeds::FeedsProvenance::default(),
         }
     }
 

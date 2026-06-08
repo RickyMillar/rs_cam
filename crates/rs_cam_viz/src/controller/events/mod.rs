@@ -510,6 +510,13 @@ impl<B: ComputeBackend> AppController<B> {
         };
         let dressups = tc.dressups.clone();
         let face_selection = tc.face_selection.clone();
+        // W2.1: stamp Optimizer provenance on the dimensions the chosen
+        // candidate actually changed, before the baseline operation is replaced.
+        let baseline_op = tc.operation.clone();
+        let new_provenance = tc
+            .feeds_provenance
+            .clone()
+            .stamped_optimizer(&baseline_op, &candidate_op);
 
         if let Err(e) = self.state.session.apply_toolpath_param_snapshot(
             idx,
@@ -523,6 +530,7 @@ impl<B: ComputeBackend> AppController<B> {
             );
             return;
         }
+        let _ = self.state.session.set_feeds_provenance(idx, new_provenance);
 
         self.state.gui.mark_edited();
         if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
@@ -639,14 +647,30 @@ impl<B: ComputeBackend> AppController<B> {
         };
         use crate::ui::FeedsField as F;
         let r = &explain.recommended;
+        // Per-field suggest provenance, derived independently from the matched
+        // LUT row (W2.1) — a vendor RPM and a formula feed get distinct labels.
+        let prov = r.provenance();
         match field {
             F::Rpm => {
                 tc.operation.set_spindle_rpm(Some(r.rpm.round() as u32));
+                tc.feeds_provenance.spindle_rpm = prov.spindle_rpm;
             }
-            F::Feed => tc.operation.set_feed_rate(r.feed_rate_mm_min),
-            F::Plunge => tc.operation.set_plunge_rate(r.plunge_rate_mm_min),
-            F::Doc => tc.operation.set_depth_per_pass(r.axial_depth_mm),
-            F::Woc => tc.operation.set_stepover(r.radial_width_mm),
+            F::Feed => {
+                tc.operation.set_feed_rate(r.feed_rate_mm_min);
+                tc.feeds_provenance.feed_rate = prov.feed_rate;
+            }
+            F::Plunge => {
+                tc.operation.set_plunge_rate(r.plunge_rate_mm_min);
+                tc.feeds_provenance.plunge_rate = prov.plunge_rate;
+            }
+            F::Doc => {
+                tc.operation.set_depth_per_pass(r.axial_depth_mm);
+                tc.feeds_provenance.depth_per_pass = prov.depth_per_pass;
+            }
+            F::Woc => {
+                tc.operation.set_stepover(r.radial_width_mm);
+                tc.feeds_provenance.stepover = prov.stepover;
+            }
         }
         self.state.gui.mark_edited();
         if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
@@ -705,6 +729,7 @@ impl<B: ComputeBackend> AppController<B> {
         tc.operation.set_spindle_rpm(Some(r.rpm.round() as u32));
         rs_cam_core::feeds::suggest::apply_feeds_result_to_op(
             &mut tc.operation,
+            &mut tc.feeds_provenance,
             r,
             &tool,
             &machine,
@@ -943,6 +968,12 @@ impl<B: ComputeBackend> AppController<B> {
             let dressups = tc.dressups.clone();
             let face_selection = tc.face_selection.clone();
             let toolpath_id_raw = tc.id;
+            // W2.1: stamp Optimizer on changed dimensions before applying.
+            let baseline_op = tc.operation.clone();
+            let new_provenance = tc
+                .feeds_provenance
+                .clone()
+                .stamped_optimizer(&baseline_op, &params);
 
             if let Err(e) = self.state.session.apply_toolpath_param_snapshot(
                 toolpath_index,
@@ -953,6 +984,10 @@ impl<B: ComputeBackend> AppController<B> {
                 failed.push(format!("toolpath idx {toolpath_index}: {e}"));
                 continue;
             }
+            let _ = self
+                .state
+                .session
+                .set_feeds_provenance(toolpath_index, new_provenance);
             // Mark stale so auto-regen picks it up.
             if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id_raw) {
                 rt.stale_since = Some(std::time::Instant::now());
