@@ -105,7 +105,7 @@ Tier-4/5 polish.
 | W0.2 | optimizer cycle-time math | core+viz | 🟥 | 🛠 | — | ☑ |
 | W0.3 | one collision tally + severity order | viz | 🟥 | 🛠 | — | ☑ |
 | W0.4 | reconcile load rollups (one `summary()`) | core+viz | 🟥 | 🛠 | — | ☑ |
-| W0.5 | wire `is_stale` everywhere | viz | 🟥 | 🛠 | — | ☐ |
+| W0.5 | wire `is_stale` everywhere | viz | 🟥 | 🛠 | — | ☑ |
 | W2.1 | `ValueProvenance` data model | core | 🟥 | 🧠 | — | ☐ |
 | W2.2 | canonical post-config | viz | 🟥 | 🛠 | — | ☐ |
 | W1.1 | revive tool CRUD (kill `project_tree`) | viz | 🟪 | 🛠 | W-UP | ☐ |
@@ -197,7 +197,12 @@ Tier-4/5 polish.
   lifted: the component layer + all ♻ Wave-2 rewrites are now unblocked.** ⚠ One open item:
   **visual parity unverified** — MCP screenshots capture the 3D render, not egui chrome; needs
   a human pass over panels/feeds-modal/timeline via `cargo run -p rs_cam_viz --bin rs_cam_gui`.
-- **▶ Next:** Wave 1 — the keystone **component layer** (CL, +W4.1), now unblocked by W-UP +
-  W2.1(todo)+W0.4+W0.5(todo). Note W2.1 (provenance data model) and W0.5 (wire is_stale) are
-  still ☐ and are component-layer prerequisites; W1.1/W1.2 (Tier-1 reachability) are now
-  unblocked by W-UP too.
+- **2026-06-08** — **W0.5 ☑** — wired `is_stale` at the 3 fresh-on-stale readouts
+  (INS-005 reactive-inspector cards, TIM-009 timeline spine, OPT-003 optimizer baseline) via
+  one shared `theme::stale_banner`. Commit `0576d03`. **Tier 0 COMPLETE** (W0.1c/W0.2/W0.3/
+  W0.4/W0.5). W-UP visual parity confirmed by user.
+- **▶ Next:** Component-layer prerequisites left are **W2.1** (ValueProvenance data model,
+  core keystone — blocks W4.1) and **W2.2** (canonical post config). After those, the Wave-1
+  keystone **component layer** (CL + W4.1) is fully unblocked (W-UP ✓, W0.4 ✓, W0.5 ✓). Tier-1
+  reachability (**W1.1** revive tool CRUD / kill `project_tree.rs`, **W1.2** dead controls) is
+  also unblocked by W-UP and is high user-harm — a good visible-win track to interleave.
