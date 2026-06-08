@@ -24,6 +24,7 @@ use rs_cam_core::feeds::{
     vendor_lut::ToolFamily,
 };
 
+use super::components::{ProvKind, ProvenanceBadge};
 use super::{AppEvent, FeedsField, theme};
 use crate::state::AppState;
 use crate::state::{FeedsModalMode, ProjectFeedsSort};
@@ -289,26 +290,23 @@ fn draw_context_chip(ui: &mut egui::Ui, explain: &FeedsExplain) {
                 .small()
                 .color(theme::TEXT_DIM),
         );
+        // Source signal via the one provenance vocabulary (ProvenanceBadge);
+        // the extrapolation caveat stays an explicit amber note rather than
+        // recolouring the source, so a vendor row reads canonically green and
+        // "approx" is a separate, honest signal (P7-003 collapse).
         match &explain.matched_row {
             Some(row) => {
-                let mut color = theme::SUCCESS;
-                let mut text = format!("Vendor LUT · {}", row.observation_id);
+                ui.add(ProvenanceBadge::new(ProvKind::VendorLut).reference(&row.observation_id));
                 if row.is_extrapolated {
-                    text = format!(
-                        "LUT (approx ×{:.2}) · {}",
-                        combined_scale(row),
-                        row.observation_id
+                    ui.label(
+                        egui::RichText::new(format!("approx ×{:.2}", combined_scale(row)))
+                            .small()
+                            .color(theme::WARNING_MILD),
                     );
-                    color = theme::WARNING_MILD;
                 }
-                ui.label(egui::RichText::new(text).small().color(color));
             }
             None => {
-                ui.label(
-                    egui::RichText::new("Empirical formula (no LUT match)")
-                        .small()
-                        .color(theme::WARNING_MILD),
-                );
+                ui.add(ProvenanceBadge::new(ProvKind::Formula));
             }
         }
     });

@@ -27,7 +27,7 @@ use crate::state::toolpath::{
 };
 use crate::ui::AppEvent;
 use crate::ui::automation;
-use crate::ui::components::{ProvKind, SuggestButton, Suggestion, ValueRow};
+use crate::ui::components::{ProvKind, ProvenanceBadge, SuggestButton, Suggestion, ValueRow};
 
 /// Paint a brief blue glow behind a UI region when an MCP parameter was recently changed.
 /// Call this right after allocating the widget/row so the highlight paints behind it.
@@ -1256,34 +1256,11 @@ fn draw_feeds_card(
                 entry.stale_since = Some(std::time::Instant::now());
             }
 
-            // Vendor source
-            match &result.chipload_source {
-                rs_cam_core::feeds::ChiploadSource::VendorLut { observation_id } => {
-                    ui.label(
-                        egui::RichText::new(format!("Source: {observation_id}"))
-                            .small()
-                            .color(egui::Color32::from_rgb(100, 160, 200)),
-                    );
-                }
-                rs_cam_core::feeds::ChiploadSource::FormulaFallback => {
-                    ui.label(
-                        egui::RichText::new(
-                            "No vendor row matched; using formula approximation — verify against vendor data.",
-                        )
-                        .small()
-                        .color(egui::Color32::from_rgb(220, 180, 60)),
-                    );
-                }
-                rs_cam_core::feeds::ChiploadSource::EdgeRadiusFloor => {
-                    ui.label(
-                        egui::RichText::new(
-                            "Using edge-radius chipload floor — verify against vendor data.",
-                        )
-                        .small()
-                        .color(egui::Color32::from_rgb(220, 180, 60)),
-                    );
-                }
-            }
+            // Vendor source — the one provenance vocabulary (was a third,
+            // cyan, source-colour treatment; collapsed onto ProvenanceBadge to
+            // kill the P7-003 three-colours-for-one-signal divergence).
+            let (kind, reference) = prov_from_chipload(&result.chipload_source);
+            ui.add(ProvenanceBadge::new(kind).reference_opt(reference));
 
             // Warnings
             for w in &result.warnings {
