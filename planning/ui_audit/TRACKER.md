@@ -100,7 +100,7 @@ Tier-4/5 polish.
 
 | ID | Title | Crate | Track | Ctx | Depends on | Status |
 |----|-------|-------|-------|-----|------------|--------|
-| W-UP | egui 0.30→0.34.3 upgrade | viz | 🟥 | 🛠→🔁 | — | ☐ |
+| W-UP | egui 0.30→0.34.3 upgrade | viz | 🟥 | 🛠→🔁 | — | ☑ (visual-verify pending) |
 | W0.1 | fixture→collision (safety) | core+viz | 🟪 | 🛠 | — (viz pill: components) | ◐ |
 | W0.2 | optimizer cycle-time math | core+viz | 🟥 | 🛠 | — | ☑ |
 | W0.3 | one collision tally + severity order | viz | 🟥 | 🛠 | — | ☑ |
@@ -188,3 +188,16 @@ Tier-4/5 polish.
   surfaces. **Suggested first cut now: W0.2 ☑ W0.3 ☑ W0.4 ☑ W0.1(code) ☑ → next W1.1 + W1.2.**
 - **Git:** branch `ia-cleanup/wave0`; commits: docs · correctness-trio · W0.1. Per-workstream
   commits from here. `.mcp.json` (pre-existing) left untouched.
+- **2026-06-08** — **W-UP ☑ (code; visual-verify pending)** — egui 0.30→0.34.3 + wgpu 23→29.
+  169→0 errors via the spike's map: egui_plot **0.35** (not 0.34), 5 wgpu descriptor renames
+  in render/mod.rs, eframe `App::ui`+`show_inside` shell (app.rs `draw_frame`), egui_plot name
+  args, rect_stroke StrokeKind::Middle, Margin/CornerRadius int, and all deprecations cleared
+  (close_menu, menu::bar→MenuBar, Tooltip::always_open, global_style, run_ui test harness).
+  clippy -D warnings + fmt + 189 viz tests + gui bin all green. Commit `0103376`. **Barrier
+  lifted: the component layer + all ♻ Wave-2 rewrites are now unblocked.** ⚠ One open item:
+  **visual parity unverified** — MCP screenshots capture the 3D render, not egui chrome; needs
+  a human pass over panels/feeds-modal/timeline via `cargo run -p rs_cam_viz --bin rs_cam_gui`.
+- **▶ Next:** Wave 1 — the keystone **component layer** (CL, +W4.1), now unblocked by W-UP +
+  W2.1(todo)+W0.4+W0.5(todo). Note W2.1 (provenance data model) and W0.5 (wire is_stale) are
+  still ☐ and are component-layer prerequisites; W1.1/W1.2 (Tier-1 reachability) are now
+  unblocked by W-UP too.
