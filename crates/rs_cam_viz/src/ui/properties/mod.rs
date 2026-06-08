@@ -53,25 +53,61 @@ pub fn mcp_highlight_effect(ui: &mut egui::Ui, gui: &crate::state::runtime::GuiS
     }
 }
 
-/// Flush tool undo snapshot if the user navigated away from a tool.
-fn flush_tool_snapshot(state: &mut AppState) {
-    if let Some((tool_id, old)) = state.history.tool_snapshot.take() {
-        if !matches!(state.selection, crate::state::selection::Selection::Tool(id) if id == tool_id)
-        {
-            if let Some(current) = state.session.tools().iter().find(|t| t.id == tool_id) {
-                let new = current.clone();
-                // Invalidate cached results for toolpaths using this tool
-                state.session.invalidate_tool(tool_id.0);
-                state
-                    .history
-                    .push(crate::state::history::UndoAction::ToolChange { tool_id, old, new });
-                state.gui.mark_edited();
-            }
-        } else {
-            // Still editing — put the snapshot back.
-            state.history.tool_snapshot = Some((tool_id, old));
-        }
+/// TOO-003 — flush the pending tool draft if the user navigated away from
+/// the tool. Edits are pending-until-committed in the panel, but navigating
+/// away **auto-commits** them (the spec's accepted fallback) so a stray
+/// click elsewhere can't silently drop edits. If still editing the same
+/// tool, the draft is left in place.
+fn flush_tool_draft(state: &mut AppState) {
+    let Some((tool_id, draft)) = state.history.tool_draft.take() else {
+        return;
+    };
+    if matches!(state.selection, crate::state::selection::Selection::Tool(id) if id == tool_id) {
+        // Still editing — keep the draft.
+        state.history.tool_draft = Some((tool_id, draft));
+        return;
     }
+    // Navigated away: commit any pending edits against the live tool.
+    commit_tool_draft(state, tool_id, draft);
+}
+
+/// Commit a tool draft to the session: no-op if it matches the committed
+/// tool, else push an undo step, write it, invalidate dependent toolpaths,
+/// and mark the project edited.
+fn commit_tool_draft(
+    state: &mut AppState,
+    tool_id: crate::state::job::ToolId,
+    draft: crate::state::job::ToolConfig,
+) {
+    let Some(committed) = state
+        .session
+        .tools()
+        .iter()
+        .find(|t| t.id == tool_id)
+        .cloned()
+    else {
+        return;
+    };
+    if draft == committed {
+        return;
+    }
+    state
+        .history
+        .push(crate::state::history::UndoAction::ToolChange {
+            tool_id,
+            old: committed,
+            new: draft.clone(),
+        });
+    if let Some(t) = state
+        .session
+        .tools_mut()
+        .iter_mut()
+        .find(|t| t.id == tool_id)
+    {
+        *t = draft;
+    }
+    state.session.invalidate_tool(tool_id.0);
+    state.gui.mark_edited();
 }
 
 /// Flush post undo snapshot if the user navigated away from post.
@@ -144,7 +180,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
     }
 
     // Flush pending undo snapshots when selection changes away from a tracked panel.
-    flush_tool_snapshot(state);
+    flush_tool_draft(state);
     flush_post_snapshot(state);
     flush_machine_snapshot(state);
     flush_toolpath_snapshot(state);
@@ -231,14 +267,36 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             draw_model_properties(ui, id, state, events);
         }
         Selection::Tool(id) => {
-            // Capture snapshot for undo before editing
-            if state.history.tool_snapshot.is_none()
-                && let Some(t) = state.session.tools().iter().find(|t| t.id == id)
-            {
-                state.history.tool_snapshot = Some((id, t.clone()));
-            }
-            if let Some(t) = state.session.tools_mut().iter_mut().find(|t| t.id == id) {
-                tool::draw(ui, t);
+            // TOO-003 — draft-commit: edit a clone, commit on Apply (or on
+            // navigate-away via flush_tool_draft), discard on Revert.
+            if let Some(committed) = state.session.tools().iter().find(|t| t.id == id).cloned() {
+                // (Re)initialise the draft when entering a different tool.
+                if state.history.tool_draft.as_ref().map(|(d, _)| *d) != Some(id) {
+                    state.history.tool_draft = Some((id, committed.clone()));
+                }
+                let modified = state
+                    .history
+                    .tool_draft
+                    .as_ref()
+                    .is_some_and(|(_, draft)| *draft != committed);
+                let mut action = tool::ToolEditAction::None;
+                if let Some((_, draft)) = state.history.tool_draft.as_mut() {
+                    action = tool::draw(ui, draft, modified);
+                }
+                match action {
+                    tool::ToolEditAction::Apply => {
+                        if let Some((_, draft)) = state.history.tool_draft.clone() {
+                            commit_tool_draft(state, id, draft);
+                        }
+                    }
+                    tool::ToolEditAction::Revert => {
+                        state.history.tool_draft = Some((id, committed));
+                    }
+                    tool::ToolEditAction::None => {}
+                }
+            } else {
+                // Tool vanished (e.g. deleted while selected).
+                state.history.tool_draft = None;
             }
         }
         Selection::Setup(setup_id) => {
