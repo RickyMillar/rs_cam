@@ -14,6 +14,7 @@ use rs_cam_core::tool_load::optimize::{
 };
 use rs_cam_core::tool_load::verdict::{ChipSide, ToolpathLoadVerdict};
 
+use super::components::FreshnessGate;
 use super::{AppEvent, theme};
 use crate::state::AppState;
 use crate::state::toolpath::ToolpathId;
@@ -45,7 +46,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
         .open(&mut still_open)
         .show(ctx, |ui| {
             if baseline_stale {
-                theme::stale_banner(ui);
+                FreshnessGate::banner(ui);
                 ui.add_space(4.0);
             }
             draw_status(ui, modal, toolpath_id, events);

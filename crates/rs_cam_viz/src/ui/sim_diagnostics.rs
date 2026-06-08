@@ -1,4 +1,5 @@
 use super::AppEvent;
+use super::components::FreshnessGate;
 use super::sim_debug::{
     debug_span_math_summary, format_json_value, semantic_kind_color, semantic_kind_label,
 };
@@ -331,7 +332,7 @@ fn draw_reactive_inspector(
     // focused hotspot/issue card printed concrete cut metrics with no
     // freshness warning (INS-005).
     if sim.is_stale(gui.edit_counter) {
-        theme::stale_banner(ui);
+        FreshnessGate::banner(ui);
         ui.add_space(4.0);
     }
 
