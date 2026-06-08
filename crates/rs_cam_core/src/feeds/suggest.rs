@@ -687,11 +687,32 @@ pub fn feeds_explain_for_operation(
 /// Callers that don't have the context cheaply available should pass
 /// [`SuggestContext::default()`]; the back-off short-circuits to a no-op
 /// when `model_bbox` is `None`.
-// W2.1 added the `provenance` out-param (per-field stamping); the canonical
-// suggest funnel legitimately needs op + provenance + result + tool/machine/
-// material + pass_role + context together.
+/// Which dimensions of a [`FeedsResult`] an apply writes back to the operation.
+///
+/// W3.1 (IA cleanup) split the single apply into a SPEED path (feed / plunge /
+/// RPM — "how fast") and a CUT-geometry path (stepover / DOC — "how deep/wide,
+/// changes the cut"), so the Feeds UI can offer a speed-only "Apply recommended
+/// speeds" that never silently rewrites the cut geometry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ApplySubset {
+    Speeds,
+    CutGeometry,
+    Both,
+}
+
+/// Apply the calculator's recommendation to `operation`, writing back only the
+/// requested [`ApplySubset`].
+///
+/// The recommended *full* operating point is run through `enforce_invariants`
+/// on a scratch clone — so the feed ↔ chipload ↔ DPP coupling is resolved
+/// against the complete recommended state — and then only the requested fields
+/// are copied into the real operation. This keeps a speed-only or geometry-only
+/// apply byte-identical to the combined apply for the fields it does write,
+/// while leaving the others (and their provenance) untouched.
+// The canonical suggest funnel legitimately needs op + provenance + result +
+// tool/machine/material + pass_role + context + subset together.
 #[allow(clippy::too_many_arguments)]
-pub fn apply_feeds_result_to_op(
+fn apply_feeds_subset(
     operation: &mut OperationConfig,
     provenance: &mut crate::feeds::FeedsProvenance,
     result: &FeedsResult,
@@ -700,11 +721,13 @@ pub fn apply_feeds_result_to_op(
     material: &Material,
     pass_role: PassRole,
     context: SuggestContext<'_>,
+    subset: ApplySubset,
 ) -> Vec<SuggestWarning> {
-    operation.set_feed_rate(round_suggestion_value(result.feed_rate_mm_min, 1.0));
-    operation.set_plunge_rate(round_suggestion_value(result.plunge_rate_mm_min, 1.0));
-    operation.set_stepover(round_suggestion_value(result.radial_width_mm, 0.001));
-    operation.set_depth_per_pass(round_suggestion_value(result.axial_depth_mm, 0.001));
+    let mut scratch = operation.clone();
+    scratch.set_feed_rate(round_suggestion_value(result.feed_rate_mm_min, 1.0));
+    scratch.set_plunge_rate(round_suggestion_value(result.plunge_rate_mm_min, 1.0));
+    scratch.set_stepover(round_suggestion_value(result.radial_width_mm, 0.001));
+    scratch.set_depth_per_pass(round_suggestion_value(result.axial_depth_mm, 0.001));
     // v3.0d (2026-06-04): also write the calculator's chosen RPM so
     // enforce_invariants's chipload recalibration pass reads a
     // consistent operating point instead of the operation's prior
@@ -715,7 +738,7 @@ pub fn apply_feeds_result_to_op(
     // arc_fit`, so any RPM drift propagates linearly into feed.
     let rpm_written = result.rpm.is_finite() && result.rpm > 0.0;
     if rpm_written {
-        operation.set_spindle_rpm(Some(result.rpm.round() as u32));
+        scratch.set_spindle_rpm(Some(result.rpm.round() as u32));
     }
     // Enrich the caller-supplied context with the LUT chipload band
     // derived by the calculator so v2 step 2 recalibration can read it
@@ -730,12 +753,114 @@ pub fn apply_feeds_result_to_op(
         effective_diameter_mm: result.effective_diameter_mm,
         ..context
     };
-    let warnings = enforce_invariants(operation, tool, machine, material, pass_role, enriched);
+    let warnings = enforce_invariants(&mut scratch, tool, machine, material, pass_role, enriched);
+
+    let write_speeds = matches!(subset, ApplySubset::Speeds | ApplySubset::Both);
+    let write_geometry = matches!(subset, ApplySubset::CutGeometry | ApplySubset::Both);
+    if write_speeds {
+        operation.set_feed_rate(scratch.feed_rate());
+        operation.set_plunge_rate(scratch.plunge_rate());
+        if rpm_written {
+            operation.set_spindle_rpm(scratch.spindle_rpm());
+        }
+    }
+    if write_geometry {
+        if let Some(v) = scratch.as_params().stepover() {
+            operation.set_stepover(v);
+        }
+        if let Some(v) = scratch.as_params().depth_per_pass() {
+            operation.set_depth_per_pass(v);
+        }
+    }
     // Stamp per-field provenance from what actually produced these values
-    // (W2.1). enforce_invariants may have recalibrated feed/DPP, but the
-    // values remain suggest-derived, so the source labels still hold.
-    provenance.apply_suggested(result, operation, rpm_written);
+    // (W2.1), gated to the subset we wrote. enforce_invariants may have
+    // recalibrated feed/DPP, but the values remain suggest-derived, so the
+    // source labels still hold.
+    provenance.apply_suggested_subset(result, operation, rpm_written, write_speeds, write_geometry);
     warnings
+}
+
+/// Apply the full recommendation — both speeds and cut geometry. The canonical
+/// suggest funnel (`suggest_for_operation`, CLI, the GUI "Apply all").
+// W2.1 added the `provenance` out-param (per-field stamping); the funnel
+// legitimately needs op + provenance + result + tool/machine/material +
+// pass_role + context together.
+#[allow(clippy::too_many_arguments)]
+pub fn apply_feeds_result_to_op(
+    operation: &mut OperationConfig,
+    provenance: &mut crate::feeds::FeedsProvenance,
+    result: &FeedsResult,
+    tool: &ToolConfig,
+    machine: &MachineProfile,
+    material: &Material,
+    pass_role: PassRole,
+    context: SuggestContext<'_>,
+) -> Vec<SuggestWarning> {
+    apply_feeds_subset(
+        operation,
+        provenance,
+        result,
+        tool,
+        machine,
+        material,
+        pass_role,
+        context,
+        ApplySubset::Both,
+    )
+}
+
+/// Apply only the recommended *speeds* (feed / plunge / RPM), leaving the cut
+/// geometry (stepover / DOC) and its provenance untouched. The "Apply
+/// recommended speeds" action — speed-only by construction (W3.1).
+#[allow(clippy::too_many_arguments)]
+pub fn apply_speeds_to_op(
+    operation: &mut OperationConfig,
+    provenance: &mut crate::feeds::FeedsProvenance,
+    result: &FeedsResult,
+    tool: &ToolConfig,
+    machine: &MachineProfile,
+    material: &Material,
+    pass_role: PassRole,
+    context: SuggestContext<'_>,
+) -> Vec<SuggestWarning> {
+    apply_feeds_subset(
+        operation,
+        provenance,
+        result,
+        tool,
+        machine,
+        material,
+        pass_role,
+        context,
+        ApplySubset::Speeds,
+    )
+}
+
+/// Apply only the recommended *cut geometry* (stepover / DOC), leaving the
+/// speeds and their provenance untouched. The attributed "Apply cut" action
+/// (W3.1) — kept distinct because changing DOC/WOC changes the cut.
+#[allow(clippy::too_many_arguments)]
+pub fn apply_cut_geometry_to_op(
+    operation: &mut OperationConfig,
+    provenance: &mut crate::feeds::FeedsProvenance,
+    result: &FeedsResult,
+    tool: &ToolConfig,
+    machine: &MachineProfile,
+    material: &Material,
+    pass_role: PassRole,
+    context: SuggestContext<'_>,
+) -> Vec<SuggestWarning> {
+    apply_feeds_subset(
+        operation,
+        provenance,
+        result,
+        tool,
+        machine,
+        material,
+        pass_role,
+        context,
+        ApplySubset::CutGeometry,
+    )
 }
 
 /// Apply drill-cycle defaults that depend on tool diameter + material —
@@ -2169,6 +2294,140 @@ mod tests {
             result.feeds_result.chipload_source,
             ChiploadSource::VendorLut { .. }
         ));
+    }
+
+    // ── W3.1 SPEED / CUT split ──────────────────────────────────────────
+    //
+    // A speed-only apply must change feed/plunge/RPM exactly as the combined
+    // apply does while leaving stepover/DOC (and their provenance) untouched;
+    // a cut-only apply is the mirror image.
+
+    /// A Pocket op with distinctive sentinel speeds + geometry so "unchanged"
+    /// assertions are meaningful, plus the calculator's recommendation for it.
+    fn split_fixture() -> (
+        OperationConfig,
+        FeedsResult,
+        ToolConfig,
+        MachineProfile,
+        Material,
+        PassRole,
+    ) {
+        let tool = tool(6.35);
+        let machine = MachineProfile::default();
+        let material = Material::default();
+        let suggested = suggest_params(SuggestParamsInput {
+            op_type: OperationType::Pocket,
+            tool: &tool,
+            machine: &machine,
+            material: &material,
+            workholding: WorkholdingRigidity::Medium,
+            lut: &EMBEDDED_LUT,
+            stock_ctx: &stock_ctx(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
+            context: SuggestContext::default(),
+        })
+        .expect("pocket + flat is not a refused combination");
+
+        let mut base = OperationConfig::Pocket(PocketConfig::default());
+        base.set_feed_rate(111.0);
+        base.set_plunge_rate(22.0);
+        base.set_spindle_rpm(Some(9000));
+        base.set_stepover(1.234);
+        base.set_depth_per_pass(2.345);
+        let role = base.feeds_style().1;
+        (base, suggested.feeds_result, tool, machine, material, role)
+    }
+
+    #[test]
+    fn apply_speeds_changes_speeds_leaves_cut_geometry() {
+        let (base, result, tool, machine, material, role) = split_fixture();
+
+        let mut both = base.clone();
+        let mut both_prov = crate::feeds::FeedsProvenance::default();
+        apply_feeds_result_to_op(
+            &mut both,
+            &mut both_prov,
+            &result,
+            &tool,
+            &machine,
+            &material,
+            role,
+            SuggestContext::default(),
+        );
+
+        let mut speeds = base.clone();
+        let mut speeds_prov = crate::feeds::FeedsProvenance::default();
+        apply_speeds_to_op(
+            &mut speeds,
+            &mut speeds_prov,
+            &result,
+            &tool,
+            &machine,
+            &material,
+            role,
+            SuggestContext::default(),
+        );
+
+        // speeds identical to the combined apply
+        assert_eq!(speeds.feed_rate(), both.feed_rate());
+        assert_eq!(speeds.plunge_rate(), both.plunge_rate());
+        assert_eq!(speeds.spindle_rpm(), both.spindle_rpm());
+        assert_eq!(speeds_prov.feed_rate, both_prov.feed_rate);
+        assert!(speeds_prov.feed_rate.is_some());
+        // cut geometry + its provenance untouched
+        assert_eq!(speeds.as_params().stepover(), base.as_params().stepover());
+        assert_eq!(
+            speeds.as_params().depth_per_pass(),
+            base.as_params().depth_per_pass()
+        );
+        assert!(speeds_prov.stepover.is_none());
+        assert!(speeds_prov.depth_per_pass.is_none());
+    }
+
+    #[test]
+    fn apply_cut_geometry_changes_geometry_leaves_speeds() {
+        let (base, result, tool, machine, material, role) = split_fixture();
+
+        let mut both = base.clone();
+        let mut both_prov = crate::feeds::FeedsProvenance::default();
+        apply_feeds_result_to_op(
+            &mut both,
+            &mut both_prov,
+            &result,
+            &tool,
+            &machine,
+            &material,
+            role,
+            SuggestContext::default(),
+        );
+
+        let mut geom = base.clone();
+        let mut geom_prov = crate::feeds::FeedsProvenance::default();
+        apply_cut_geometry_to_op(
+            &mut geom,
+            &mut geom_prov,
+            &result,
+            &tool,
+            &machine,
+            &material,
+            role,
+            SuggestContext::default(),
+        );
+
+        // geometry identical to the combined apply
+        assert_eq!(geom.as_params().stepover(), both.as_params().stepover());
+        assert_eq!(
+            geom.as_params().depth_per_pass(),
+            both.as_params().depth_per_pass()
+        );
+        assert_eq!(geom_prov.stepover, both_prov.stepover);
+        assert!(geom_prov.stepover.is_some());
+        // speeds + their provenance untouched
+        assert_eq!(geom.feed_rate(), base.feed_rate());
+        assert_eq!(geom.plunge_rate(), base.plunge_rate());
+        assert_eq!(geom.spindle_rpm(), base.spindle_rpm());
+        assert!(geom_prov.feed_rate.is_none());
+        assert!(geom_prov.spindle_rpm.is_none());
     }
 
     #[test]
