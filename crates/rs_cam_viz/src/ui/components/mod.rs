@@ -18,6 +18,7 @@
 pub mod compare;
 pub mod freshness;
 pub mod pill;
+pub mod precedence;
 pub mod provenance;
 pub mod section;
 pub mod suggest;
@@ -26,6 +27,7 @@ pub mod value_row;
 pub use compare::{CompareRow, delta_tag, format_optional, mrr_row, power_bar};
 pub use freshness::{Freshness, FreshnessGate};
 pub use pill::{CountPill, PillFamily, PillRole};
+pub use precedence::PrecedenceField;
 pub use provenance::{ProvKind, ProvenanceBadge};
 pub use section::{SummaryCard, UiExt};
 pub use suggest::{SuggestButton, SuggestScope, Suggestion};

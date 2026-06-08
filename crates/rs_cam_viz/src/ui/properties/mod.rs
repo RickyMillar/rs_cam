@@ -28,7 +28,7 @@ use crate::state::toolpath::{
 use crate::ui::AppEvent;
 use crate::ui::automation;
 use crate::ui::components::{
-    ProvKind, ProvenanceBadge, SuggestButton, Suggestion, UiExt, ValueRow, mrr_row, power_bar,
+    PrecedenceField, ProvKind, ProvenanceBadge, Suggestion, UiExt, ValueRow, mrr_row, power_bar,
 };
 
 /// Paint a brief blue glow behind a UI region when an MCP parameter was recently changed.
@@ -448,6 +448,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     &machine,
                     workholding,
                     state.session.post_config().spindle_strategy,
+                    state.session.post_config().spindle_speed,
                     model_has_enriched,
                     model_is_step_missing_brep,
                     height_ctx.as_ref(),
@@ -1092,6 +1093,7 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
 /// here (Roadmap F.5) — the SPEED / CUT recipe buttons inside
 /// `draw_feeds_card` are the only path that pushes calculated values into
 /// the op (W3.1: speeds and cut geometry are applied separately).
+#[allow(clippy::too_many_arguments)]
 fn calculate_and_apply_feeds(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
@@ -1100,6 +1102,7 @@ fn calculate_and_apply_feeds(
     machine: &rs_cam_core::machine::MachineProfile,
     workholding: rs_cam_core::feeds::WorkholdingRigidity,
     spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
+    project_default_rpm: u32,
 ) {
     match rs_cam_core::feeds::suggest::feeds_result_for_operation(
         &entry.operation,
@@ -1112,7 +1115,7 @@ fn calculate_and_apply_feeds(
     ) {
         Ok(result) => {
             entry.feeds_result = Some(result);
-            draw_feeds_card(ui, entry, tool, machine, material);
+            draw_feeds_card(ui, entry, tool, machine, material, project_default_rpm);
         }
         Err(e) => {
             // Engine refused — the tool × operation combination is
@@ -1135,6 +1138,7 @@ fn draw_feeds_card(
     tool: &crate::state::job::ToolConfig,
     machine: &rs_cam_core::machine::MachineProfile,
     material: &rs_cam_core::material::Material,
+    project_default_rpm: u32,
 ) {
     ui.add_space(8.0);
     ui.collapsing("Feeds & Speeds", |ui| {
@@ -1161,12 +1165,27 @@ fn draw_feeds_card(
                     ui.label("Plunge:");
                     ui.label(format!("{:.0} mm/min", result.plunge_rate_mm_min));
                     ui.end_row();
-                    ui.label("RPM:");
-                    ui.label(format!("{:.0}", result.rpm));
-                    ui.end_row();
                     ui.label("Chip Load:");
                     ui.label(format!("{:.4} mm/tooth", result.chip_load_mm));
                     ui.end_row();
+                    // Spindle override vs project default — the one editable
+                    // SPEED field here (feed/plunge are recommendations applied
+                    // by the recipe button). W3.1 relocated this from the
+                    // per-op Params tab so the precedence renders honestly.
+                    let mut spindle = entry.operation.spindle_rpm();
+                    if PrecedenceField::new("Spindle:", &mut spindle, project_default_rpm)
+                        .suffix(" RPM")
+                        .speed(100.0)
+                        .range(1_000..=60_000)
+                        .tooltip(
+                            "Override the project default spindle speed for this operation. \
+                             Leave unchecked to follow the post-config spindle speed.",
+                        )
+                        .show(ui)
+                    {
+                        entry.operation.set_spindle_rpm(spindle);
+                        entry.stale_since = Some(std::time::Instant::now());
+                    }
                 });
             // W3.1: SPEED-only apply — never rewrites the cut geometry.
             if ui
@@ -2475,6 +2494,7 @@ fn draw_toolpath_panel(
     machine: &rs_cam_core::machine::MachineProfile,
     workholding: rs_cam_core::feeds::WorkholdingRigidity,
     spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
+    project_default_rpm: u32,
     model_has_enriched: bool,
     model_is_step_missing_brep: bool,
     height_ctx: Option<&HeightContext>,
@@ -3027,6 +3047,7 @@ fn draw_toolpath_panel(
                     machine,
                     workholding,
                     spindle_strategy,
+                    project_default_rpm,
                 );
             }
             if let Some(result) = &entry.feeds_result {
@@ -3312,34 +3333,6 @@ fn prov_from_chipload(source: &rs_cam_core::feeds::ChiploadSource) -> (ProvKind,
         ChiploadSource::FormulaFallback => (ProvKind::Formula, None),
         ChiploadSource::EdgeRadiusFloor => (ProvKind::EdgeRadiusFloor, None),
     }
-}
-
-/// Render a small ⚡ Suggest pill. Returns true if the user clicked it.
-pub(crate) fn suggest_pill(
-    ui: &mut egui::Ui,
-    field_label: &str,
-    current: f64,
-    recommended: f64,
-    source: &rs_cam_core::feeds::ChiploadSource,
-    suffix: &str,
-) -> bool {
-    let (kind, reference) = prov_from_chipload(source);
-    let near_match = recommended > 0.0 && (current - recommended).abs() / recommended < 0.01;
-    let trimmed = field_label.trim().trim_end_matches(':');
-    let src = kind.label_with_reference(reference);
-    let hover = if near_match {
-        format!(
-            "{trimmed} already matches LUT recommendation ({recommended:.3}{suffix}). \
-             Source: {src}."
-        )
-    } else {
-        format!(
-            "Suggest {trimmed} = {recommended:.3}{suffix} (source: {src}). \
-             Click to overwrite this field only."
-        )
-    };
-    ui.add(SuggestButton::field(kind).enabled(!near_match).hover(hover))
-        .clicked()
 }
 
 /// Same as [`dv`] but with an optional inline ⚡ Suggest pill that pushes
