@@ -1128,6 +1128,38 @@ fn calculate_and_apply_feeds(
                 egui::Color32::from_rgb(220, 80, 80),
                 format!("Feeds unavailable: {e}"),
             );
+            // No LUT recipe, but feed/plunge moved off the Geometry tab in
+            // W3.2, so this is the only place to set them by hand. (Drill
+            // keeps its feed on the Geometry tab next to the drill cycle.)
+            if !matches!(
+                entry.operation,
+                OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
+            ) {
+                ui.add_space(4.0);
+                ui.named_section("SPEED \u{2014} how fast (manual)", |ui| {
+                    egui::Grid::new("feeds_manual_speed")
+                        .num_columns(2)
+                        .spacing([8.0, 3.0])
+                        .show(ui, |ui| {
+                            let mut feed = entry.operation.feed_rate();
+                            if ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, 1.0..=50000.0)
+                                .show(ui)
+                                .edited
+                            {
+                                entry.operation.set_feed_rate(feed);
+                                entry.stale_since = Some(std::time::Instant::now());
+                            }
+                            let mut plunge = entry.operation.plunge_rate();
+                            if ValueRow::new("Plunge:", &mut plunge, " mm/min", 10.0, 1.0..=10000.0)
+                                .show(ui)
+                                .edited
+                            {
+                                entry.operation.set_plunge_rate(plunge);
+                                entry.stale_since = Some(std::time::Instant::now());
+                            }
+                        });
+                });
+            }
         }
     }
 }
@@ -1152,26 +1184,64 @@ fn draw_feeds_card(
         let pass_role = entry.operation.feeds_style().1;
         let has_stepover = entry.operation.as_params().stepover().is_some();
         let has_dpp = entry.operation.as_params().depth_per_pass().is_some();
+        // Drill ops are Z-only (plunge_rate IS feed_rate, no WOC/DOC); their
+        // single feed is edited on the Geometry tab next to the drill cycle,
+        // so the SPEED section shows it read-only to avoid a duplicate /
+        // no-op "Plunge" field (W3.2).
+        let is_drill = matches!(
+            entry.operation,
+            OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
+        );
 
         // ── SPEED — how fast (feed / plunge / RPM) ──
         ui.named_section("SPEED \u{2014} how fast", |ui| {
+            // The live LUT recommendation drives each field's ⚡ suggest.
+            let (speed_kind, speed_ref) = prov_from_chipload(&result.chipload_source);
             egui::Grid::new("feeds_card_speed")
                 .num_columns(2)
                 .spacing([8.0, 3.0])
                 .show(ui, |ui| {
-                    ui.label("Feed:");
-                    ui.label(format!("{:.0} mm/min", result.feed_rate_mm_min));
-                    ui.end_row();
-                    ui.label("Plunge:");
-                    ui.label(format!("{:.0} mm/min", result.plunge_rate_mm_min));
-                    ui.end_row();
+                    // Feed / Plunge — editable here (W3.2 relocated them off
+                    // the Geometry tab), each with a per-field ⚡ that applies
+                    // only its own recommendation.
+                    if is_drill {
+                        ui.label("Feed:");
+                        ui.label(format!("{:.0} mm/min", result.feed_rate_mm_min));
+                        ui.end_row();
+                    } else {
+                        let mut feed = entry.operation.feed_rate();
+                        if ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, 1.0..=50000.0)
+                            .suggest(Suggestion {
+                                recommended: result.feed_rate_mm_min,
+                                source: speed_kind,
+                                reference: speed_ref,
+                            })
+                            .show(ui)
+                            .edited
+                        {
+                            entry.operation.set_feed_rate(feed);
+                            entry.stale_since = Some(std::time::Instant::now());
+                        }
+                        let mut plunge = entry.operation.plunge_rate();
+                        if ValueRow::new("Plunge:", &mut plunge, " mm/min", 10.0, 1.0..=10000.0)
+                            .suggest(Suggestion {
+                                recommended: result.plunge_rate_mm_min,
+                                source: speed_kind,
+                                reference: speed_ref,
+                            })
+                            .show(ui)
+                            .edited
+                        {
+                            entry.operation.set_plunge_rate(plunge);
+                            entry.stale_since = Some(std::time::Instant::now());
+                        }
+                    }
                     ui.label("Chip Load:");
                     ui.label(format!("{:.4} mm/tooth", result.chip_load_mm));
                     ui.end_row();
-                    // Spindle override vs project default — the one editable
-                    // SPEED field here (feed/plunge are recommendations applied
-                    // by the recipe button). W3.1 relocated this from the
-                    // per-op Params tab so the precedence renders honestly.
+                    // Spindle override vs project default. W3.1 relocated this
+                    // from the per-op Params tab so the precedence renders
+                    // honestly.
                     let mut spindle = entry.operation.spindle_rpm();
                     if PrecedenceField::new("Spindle:", &mut spindle, project_default_rpm)
                         .suffix(" RPM")
@@ -2818,16 +2888,18 @@ fn draw_toolpath_panel(
                 ui.add_space(2.0);
             }
 
-            // LUT-driven "Suggest all" button (PR-2C Phase 1). Mirrors
-            // the same-named button in the Feeds tab so the user can
-            // bulk-apply LUT recommendations without a tab switch.
-            // Per-field Suggest pills remain in the Feeds tab (Phase 2).
+            // Compute + cache the LUT feeds result so the per-field ⚡ pills
+            // on the Geometry rows (stepover / depth-per-pass) can render.
+            // The bulk "Suggest all" button was retired in W3.2 — feed /
+            // plunge / RPM and DOC / WOC now apply from the SPEED and CUT
+            // sections of the Feeds & Speeds tab (the split-aware applies),
+            // and the engine-refusal message surfaces there too.
             if let Some(tool_cfg) = tool_configs
                 .iter()
                 .find(|(id, _)| *id == entry.tool_id)
                 .map(|(_, t)| t)
             {
-                match rs_cam_core::feeds::suggest::feeds_result_for_operation(
+                entry.feeds_result = rs_cam_core::feeds::suggest::feeds_result_for_operation(
                     &entry.operation,
                     tool_cfg,
                     material,
@@ -2835,64 +2907,8 @@ fn draw_toolpath_panel(
                     workholding,
                     rs_cam_core::feeds::embedded_vendor_lut(),
                     spindle_strategy,
-                ) {
-                    Ok(result) => {
-                        ui.horizontal(|ui| {
-                            if ui
-                                .button("\u{26A1} Suggest all (LUT)")
-                                .on_hover_text(format!(
-                                    "Overwrite feed ({:.0}), plunge ({:.0}), depth-per-pass ({:.2}), \
-                                     stepover ({:.2}), and RPM ({:.0}) from the LUT. \
-                                     See the Feeds tab for the formula breakdown and per-field Suggest buttons.",
-                                    result.feed_rate_mm_min,
-                                    result.plunge_rate_mm_min,
-                                    result.axial_depth_mm,
-                                    result.radial_width_mm,
-                                    result.rpm,
-                                ))
-                                .clicked()
-                            {
-                                let pass_role = entry.operation.feeds_style().1;
-                                rs_cam_core::feeds::suggest::apply_feeds_result_to_op(
-                                    &mut entry.operation,
-                                    &mut entry.feeds_provenance,
-                                    &result,
-                                    tool_cfg,
-                                    machine,
-                                    material,
-                                    pass_role,
-                                    rs_cam_core::feeds::suggest::SuggestContext::default(),
-                                );
-                                entry.stale_since = Some(std::time::Instant::now());
-                            }
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "\u{2192} feed {:.0}, plunge {:.0}, DOC {:.2}, WOC {:.2}",
-                                    result.feed_rate_mm_min,
-                                    result.plunge_rate_mm_min,
-                                    result.axial_depth_mm,
-                                    result.radial_width_mm,
-                                ))
-                                .small()
-                                .color(egui::Color32::from_rgb(140, 160, 180)),
-                            );
-                        });
-                        entry.feeds_result = Some(result);
-                        ui.add_space(4.0);
-                    }
-                    Err(e) => {
-                        // Engine refused — tool × operation pairing
-                        // is physically unrunnable. Clear stale cache
-                        // and surface the refusal so the user knows
-                        // why no Suggest button is shown.
-                        entry.feeds_result = None;
-                        ui.colored_label(
-                            egui::Color32::from_rgb(220, 80, 80),
-                            format!("Feeds unavailable: {e}"),
-                        );
-                        ui.add_space(4.0);
-                    }
-                }
+                )
+                .ok();
             }
 
             // Operation description from spec (consistent across all operations)
