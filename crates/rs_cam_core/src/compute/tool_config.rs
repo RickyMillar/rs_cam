@@ -159,7 +159,7 @@ impl BitCutDirection {
 }
 
 /// Complete tool configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolConfig {
     pub id: ToolId,
     pub name: String,
