@@ -778,6 +778,24 @@ impl ProjectSession {
         Ok(())
     }
 
+    /// Overwrite a toolpath's feeds provenance (W2.1). Used by the optimizer's
+    /// candidate-apply path to stamp [`crate::feeds::ProvenanceSource::Optimizer`]
+    /// on the dimensions it changed, after the operation values themselves are
+    /// installed via [`Self::apply_toolpath_param_snapshot`]. Does not touch the
+    /// result/simulation caches — the snapshot call already invalidated them.
+    pub fn set_feeds_provenance(
+        &mut self,
+        index: usize,
+        feeds_provenance: crate::feeds::FeedsProvenance,
+    ) -> Result<(), SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get_mut(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        tc.feeds_provenance = feeds_provenance;
+        Ok(())
+    }
+
     /// Write a freshly-computed `ToolpathComputeResult` into `session.results`.
     ///
     /// Symmetric counterpart to the `self.results.remove(&index)` calls
@@ -873,6 +891,7 @@ mod tests {
             coolant: CoolantMode::Off,
             face_selection: None,
             debug_options: ToolpathDebugOptions::default(),
+            feeds_provenance: crate::feeds::FeedsProvenance::default(),
         }
     }
 

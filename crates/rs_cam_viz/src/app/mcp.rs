@@ -2712,7 +2712,7 @@ impl super::RsCamApp {
             return self
                 .mcp_mutation_error(format!("Error: Tool index {tool_index} not found"), None);
         };
-        let op_config = match rs_cam_core::feeds::suggest::suggest_params(
+        let (op_config, feeds_provenance) = match rs_cam_core::feeds::suggest::suggest_params(
             rs_cam_core::feeds::suggest::SuggestParamsInput {
                 op_type,
                 tool,
@@ -2728,7 +2728,7 @@ impl super::RsCamApp {
                 context: rs_cam_core::feeds::suggest::SuggestContext::default(),
             },
         ) {
-            Ok(s) => s.operation,
+            Ok(s) => (s.operation, s.provenance),
             Err(e) => {
                 return self.mcp_mutation_error(format!("Cannot add toolpath: {e}"), None);
             }
@@ -2763,6 +2763,7 @@ impl super::RsCamApp {
             coolant: rs_cam_core::gcode::CoolantMode::default(),
             face_selection: None,
             debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+            feeds_provenance,
         };
 
         match self

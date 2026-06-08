@@ -240,6 +240,7 @@ fn sample_controller() -> AppController<ScriptedBackend> {
         coolant: Default::default(),
         face_selection: None,
         debug_options: Default::default(),
+        feeds_provenance: Default::default(),
     };
     controller.state.session.add_toolpath(0, tp_config).unwrap();
     let tp_id = controller.state.session.toolpath_configs()[0].id;
@@ -445,6 +446,7 @@ fn simulation_results_capture_setup_boundaries() {
         coolant: Default::default(),
         face_selection: None,
         debug_options: Default::default(),
+        feeds_provenance: Default::default(),
     };
     controller
         .state
@@ -1726,6 +1728,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
         coolant: Default::default(),
         face_selection: None,
         debug_options: Default::default(),
+        feeds_provenance: Default::default(),
     };
     let tp_idx = controller
         .state

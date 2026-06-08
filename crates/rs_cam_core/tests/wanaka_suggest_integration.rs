@@ -108,6 +108,7 @@ fn run_suggest_for_enabled(session: &ProjectSession) -> Vec<(usize, String, Sugg
                 operation,
                 feeds_result,
                 warnings: profile.warnings,
+                provenance: rs_cam_core::feeds::FeedsProvenance::default(),
             },
         ));
     }

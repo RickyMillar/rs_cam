@@ -96,6 +96,7 @@ fn make_tp(name: &str, op: OperationConfig, tool_id: usize, model_id: usize) -> 
         coolant: CoolantMode::Off,
         face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
+        feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
     }
 }
 

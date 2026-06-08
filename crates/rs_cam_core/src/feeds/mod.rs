@@ -21,6 +21,7 @@ pub mod geometry;
 pub mod geometry_class;
 pub mod predict;
 pub mod profile;
+pub mod provenance;
 pub mod rationale;
 pub mod suggest;
 pub mod vendor_lookup;
@@ -28,6 +29,7 @@ pub mod vendor_lut;
 pub mod vendor_normalize;
 pub use explain::{FeedsExplain, MachineEnvelope, explain as explain_feeds};
 pub use predict::{DeflectionBreakdown, DeflectionPrediction, predict_peak_deflection_um};
+pub use provenance::{FeedsField, FeedsProvenance, ProvenanceSource, ValueProvenance};
 pub use vendor_lut::VendorLut;
 
 /// Global embedded vendor LUT, loaded once on first access.

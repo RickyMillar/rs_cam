@@ -2135,6 +2135,7 @@ mod tests {
             coolant: Default::default(),
             face_selection: None,
             debug_options: Default::default(),
+            feeds_provenance: Default::default(),
         }
     }
 
