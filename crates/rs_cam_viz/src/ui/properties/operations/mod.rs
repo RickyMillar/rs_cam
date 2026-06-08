@@ -28,45 +28,10 @@ use crate::state::toolpath::{
     ReferenceOffset, ToolpathEntry, ToolpathId,
 };
 
-use rs_cam_core::feeds::FeedsResult;
-
-use super::dv_pill;
-
-/// Draw the standard "Feed Rate" + "Plunge Rate" + "Spindle RPM" parameter
-/// triple used by most cutting operations.
-///
-/// `feeds_result`, when present, drives inline ⚡ Suggest pills next to each
-/// field (PR-2D Phase 2).
-///
-/// W3.1 relocated the per-operation spindle RPM override out of here into the
-/// Feeds-card SPEED section (its FINAL_DESIGN home), where the project default
-/// is reachable and the override/default precedence can be shown honestly.
-pub(super) fn draw_feed_params(
-    ui: &mut egui::Ui,
-    feed_rate: &mut f64,
-    plunge_rate: &mut f64,
-    feeds_result: Option<&FeedsResult>,
-) {
-    dv_pill(
-        ui,
-        "Feed Rate:",
-        feed_rate,
-        " mm/min",
-        50.0,
-        1.0..=50000.0,
-        feeds_result.map(|r| (r.feed_rate_mm_min, &r.chipload_source)),
-    );
-    dv_pill(
-        ui,
-        "Plunge Rate:",
-        plunge_rate,
-        " mm/min",
-        10.0,
-        1.0..=10000.0,
-        feeds_result.map(|r| (r.plunge_rate_mm_min, &r.chipload_source)),
-    );
-}
-
+// Feed / plunge editing moved off the per-op Geometry panel into the
+// Feeds & Speeds tab's SPEED section (W3.2) — the `draw_feed_params` helper
+// (and its `FeedsResult` / `dv_pill` deps) was retired with the recharter.
+//
 // The per-operation spindle RPM override moved to the Feeds-card SPEED section
 // (W3.1) as a `PrecedenceField`, where the project default RPM is reachable and
 // the override-vs-default precedence renders honestly. The old in-place
