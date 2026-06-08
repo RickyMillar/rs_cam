@@ -1,4 +1,5 @@
 use super::AppEvent;
+use super::components::{CountPill, FreshnessGate};
 use super::sim_debug::semantic_kind_color;
 use crate::render::toolpath_render::palette_color;
 use crate::state::runtime::GuiState;
@@ -49,7 +50,7 @@ pub fn draw(
     // flag staleness here too; otherwise the bottom panel's concrete metrics
     // read as fresh after an edit while only the left/right panels say stale.
     if sim.has_results() && sim.is_stale(gui.edit_counter) {
-        super::theme::stale_banner(ui);
+        FreshnessGate::banner(ui);
         ui.add_space(2.0);
     }
     sim.sync_debug_state(gui, max_feed);
@@ -122,54 +123,59 @@ fn draw_verdict_hud(
         .corner_radius(4)
         .show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                info_pill(
-                    ui,
-                    format!("✓ load {ok}/{total_tp}"),
-                    egui::Color32::from_rgb(85, 180, 110),
-                    "Toolpaths within modeled load limits (of total modeled).",
+                // Load buckets are verdicts (pass/fail of a modeled limit);
+                // collisions/issues/traces are observations (tallies). One
+                // CountPill renderer, the same summary() producer the Inspector
+                // reads — the two rollups cannot diverge (W0.4 + P4-001/002).
+                ui.add(
+                    CountPill::verdict("\u{2713} load", ok)
+                        .denom(total_tp)
+                        .color(egui::Color32::from_rgb(85, 180, 110))
+                        .hover("Toolpaths within modeled load limits (of total modeled)."),
                 );
-                info_pill(
-                    ui,
-                    format!("✕ exceeds {bad}/{total_tp}"),
-                    egui::Color32::from_rgb(220, 90, 90),
-                    "Toolpaths exceeding a modeled load limit. Click the red lines on the boundary timeline below to navigate.",
+                ui.add(
+                    CountPill::verdict("\u{2715} exceeds", bad)
+                        .denom(total_tp)
+                        .color(egui::Color32::from_rgb(220, 90, 90))
+                        .hover(
+                            "Toolpaths exceeding a modeled load limit. Click the red lines on \
+                             the boundary timeline below to navigate.",
+                        ),
                 );
-                info_pill(
-                    ui,
-                    format!("⚠ unmodeled {unmodeled}/{total_tp}"),
-                    egui::Color32::from_rgb(210, 170, 80),
-                    "Toolpaths the gate could not model (drill cycles, no vendor data, etc.).",
+                ui.add(
+                    CountPill::verdict("\u{26A0} unmodeled", unmodeled)
+                        .denom(total_tp)
+                        .color(egui::Color32::from_rgb(210, 170, 80))
+                        .hover(
+                            "Toolpaths the gate could not model (drill cycles, no vendor data, \
+                             etc.).",
+                        ),
                 );
                 let collision_color = if collision_count == 0 {
                     egui::Color32::from_rgb(120, 210, 140)
                 } else {
                     egui::Color32::from_rgb(255, 120, 110)
                 };
-                info_pill(
-                    ui,
-                    format!("collisions {collision_count}"),
-                    collision_color,
-                    "Rapid/holder collisions. Click the red lines on the boundary timeline below to navigate.",
+                ui.add(
+                    CountPill::observation("collisions", collision_count)
+                        .color(collision_color)
+                        .hover(
+                            "Rapid/holder collisions. Click the red lines on the boundary \
+                             timeline below to navigate.",
+                        ),
                 );
-                info_pill(
-                    ui,
-                    format!("issues {issue_count}"),
-                    egui::Color32::from_rgb(230, 190, 90),
-                    "Air cuts and low-engagement clusters detected during simulation.",
+                ui.add(
+                    CountPill::observation("issues", issue_count)
+                        .color(egui::Color32::from_rgb(230, 190, 90))
+                        .hover("Air cuts and low-engagement clusters detected during simulation."),
                 );
-                info_pill(
-                    ui,
-                    format!("traces {trace_count}"),
-                    egui::Color32::from_rgb(150, 170, 230),
-                    "Generator traces recorded for inspection.",
+                ui.add(
+                    CountPill::observation("traces", trace_count)
+                        .color(egui::Color32::from_rgb(150, 170, 230))
+                        .hover("Generator traces recorded for inspection."),
                 );
             });
         });
-}
-
-fn info_pill(ui: &mut egui::Ui, text: String, color: egui::Color32, hover: &str) {
-    ui.label(egui::RichText::new(text).small().color(color))
-        .on_hover_text(hover);
 }
 
 fn draw_signal_spine(
