@@ -425,8 +425,12 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
     // Pass 1 (immutable): collect suggestions per enabled toolpath. The
     // profile borrows `session`, so the suggested operations are moved
     // into an owned list before the mutating pass.
-    let mut suggestions: Vec<(usize, rs_cam_core::compute::catalog::OperationConfig, f64)> =
-        Vec::new();
+    let mut suggestions: Vec<(
+        usize,
+        rs_cam_core::compute::catalog::OperationConfig,
+        f64,
+        rs_cam_core::feeds::FeedsProvenance,
+    )> = Vec::new();
     for (idx, tc) in session.toolpath_configs().iter().enumerate() {
         if !tc.enabled {
             continue;
@@ -452,7 +456,12 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
         let (Some(operation), Some(feeds)) = (profile.suggested_operation, profile.feeds) else {
             continue;
         };
-        suggestions.push((idx, operation, feeds.rpm));
+        // W2.1: per-field provenance of the suggested values, derived from the
+        // same FeedsResult the calculator produced.
+        let rpm_written = feeds.rpm.is_finite() && feeds.rpm > 0.0;
+        let mut provenance = rs_cam_core::feeds::FeedsProvenance::default();
+        provenance.apply_suggested(&feeds, &operation, rpm_written);
+        suggestions.push((idx, operation, feeds.rpm, provenance));
     }
 
     eprintln!("\n=== Applying LUT-suggested feeds/speeds ===");
@@ -462,7 +471,7 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
     );
 
     // Pass 2 (mutable): apply + print the before→after table.
-    for (idx, suggested_op, suggested_rpm) in suggestions {
+    for (idx, suggested_op, suggested_rpm, provenance) in suggestions {
         let Some(tc) = session.toolpath_configs_mut().get_mut(idx) else {
             continue;
         };
@@ -484,6 +493,7 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
             tc.operation
                 .set_spindle_rpm(Some(suggested_rpm.round() as u32));
         }
+        tc.feeds_provenance = provenance;
 
         let feed_after = tc.operation.feed_rate();
         let plunge_after = tc.operation.plunge_rate();

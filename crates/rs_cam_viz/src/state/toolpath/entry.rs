@@ -144,6 +144,10 @@ pub struct ToolpathEntry {
     pub auto_regen: bool,
     pub face_selection: Option<Vec<FaceGroupId>>,
     pub feeds_result: Option<rs_cam_core::feeds::FeedsResult>,
+    /// Per-dimension provenance of the stored feeds values (W2.1). Mirrors
+    /// `ToolpathConfig::feeds_provenance`; round-trips via
+    /// `build_entry_from_session_and_gui` / `write_entry_config_to_session`.
+    pub feeds_provenance: rs_cam_core::feeds::FeedsProvenance,
     pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
     pub debug_trace: Option<Arc<rs_cam_core::debug_trace::ToolpathDebugTrace>>,
     pub semantic_trace: Option<Arc<rs_cam_core::semantic_trace::ToolpathSemanticTrace>>,
@@ -206,6 +210,7 @@ impl ToolpathEntry {
             auto_regen,
             face_selection: init.face_selection,
             feeds_result: None,
+            feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
             debug_options: init.debug_options,
             debug_trace: None,
             semantic_trace: None,

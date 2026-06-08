@@ -128,7 +128,7 @@ fn default_workholding_rigidity() -> crate::feeds::WorkholdingRigidity {
 }
 
 /// Post-processor configuration from the project file.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectPostConfig {
     #[serde(default)]
     pub format: String,
@@ -433,6 +433,14 @@ pub struct ProjectToolpathSection {
     /// Debug trace options.
     #[serde(default)]
     pub debug_options: ToolpathDebugOptions,
+    /// Per-dimension provenance of the stored feeds values (W2.1). Absent in
+    /// projects saved before provenance tracking — defaults to all-`None`.
+    #[serde(default, skip_serializing_if = "feeds_provenance_is_empty")]
+    pub feeds_provenance: crate::feeds::FeedsProvenance,
+}
+
+fn feeds_provenance_is_empty(p: &crate::feeds::FeedsProvenance) -> bool {
+    *p == crate::feeds::FeedsProvenance::default()
 }
 
 fn default_true() -> bool {
@@ -647,6 +655,7 @@ fn toolpath_config_from_section(
             .as_ref()
             .map(|ids| ids.iter().copied().map(FaceGroupId).collect()),
         debug_options: tp.debug_options,
+        feeds_provenance: tp.feeds_provenance.clone(),
     }
 }
 

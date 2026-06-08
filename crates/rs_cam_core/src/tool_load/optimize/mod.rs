@@ -810,6 +810,7 @@ mod orchestration_skip_tests {
             coolant: crate::gcode::CoolantMode::Off,
             face_selection: None,
             debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+            feeds_provenance: crate::feeds::FeedsProvenance::default(),
         }
     }
 
@@ -1188,6 +1189,7 @@ mod project_rollup_tests {
             coolant: CoolantMode::Off,
             face_selection: None,
             debug_options: ToolpathDebugOptions::default(),
+            feeds_provenance: crate::feeds::FeedsProvenance::default(),
         }
     }
 

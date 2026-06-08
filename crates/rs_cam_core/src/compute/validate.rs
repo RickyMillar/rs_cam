@@ -154,7 +154,7 @@ pub fn apply_stale_default_fix(
         .iter_mut()
         .find(|tc| tc.id == defect.toolpath_id)
         .ok_or(SessionError::ToolpathNotFound(defect.toolpath_id))?;
-    apply_stale_default_to_op(&mut tc.operation, defect);
+    apply_stale_default_to_op(&mut tc.operation, &mut tc.feeds_provenance, defect);
     Ok(())
 }
 
@@ -163,7 +163,11 @@ pub fn apply_stale_default_fix(
 /// (e.g. the GUI toolpath-properties panel, which builds a transient
 /// `ToolpathEntry` and writes back to the session at the end of the
 /// frame). Session-level callers should prefer [`apply_stale_default_fix`].
-pub fn apply_stale_default_to_op(op: &mut OperationConfig, defect: &StaleDefault) {
+pub fn apply_stale_default_to_op(
+    op: &mut OperationConfig,
+    provenance: &mut crate::feeds::FeedsProvenance,
+    defect: &StaleDefault,
+) {
     match defect.rule_id {
         StaleDefaultRule::DropCutterMinZPreB1 => {
             if let OperationConfig::DropCutter(cfg) = op {
@@ -172,9 +176,17 @@ pub fn apply_stale_default_to_op(op: &mut OperationConfig, defect: &StaleDefault
         }
         StaleDefaultRule::TaperedBallPlungePreFix2 => {
             op.as_params_mut().set_plunge_rate(defect.new_value);
+            provenance.set(
+                crate::feeds::FeedsField::PlungeRate,
+                crate::feeds::ValueProvenance::auto_correct(),
+            );
         }
         StaleDefaultRule::WoodAdaptiveStepoverPreFix1 => {
             op.as_params_mut().set_stepover(defect.new_value);
+            provenance.set(
+                crate::feeds::FeedsField::Stepover,
+                crate::feeds::ValueProvenance::auto_correct(),
+            );
         }
         StaleDefaultRule::ProjectCurveNegativeDepth => {
             if let OperationConfig::ProjectCurve(cfg) = op {
@@ -377,6 +389,7 @@ mod tests {
             coolant: CoolantMode::Off,
             face_selection: None,
             debug_options: ToolpathDebugOptions::default(),
+            feeds_provenance: crate::feeds::FeedsProvenance::default(),
         }
     }
 

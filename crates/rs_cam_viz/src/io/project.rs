@@ -268,6 +268,13 @@ pub struct ProjectToolpathSection {
     pub face_selection: Option<Vec<u16>>,
     #[serde(default)]
     pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
+    /// Per-dimension feeds provenance (W2.1). Absent in pre-provenance projects.
+    #[serde(default, skip_serializing_if = "feeds_provenance_is_empty")]
+    pub feeds_provenance: rs_cam_core::feeds::FeedsProvenance,
+}
+
+fn feeds_provenance_is_empty(p: &rs_cam_core::feeds::FeedsProvenance) -> bool {
+    *p == rs_cam_core::feeds::FeedsProvenance::default()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -580,6 +587,7 @@ impl ProjectToolpathSection {
                 .as_ref()
                 .map(|faces| faces.iter().map(|f| f.0).collect()),
             debug_options: toolpath.debug_options,
+            feeds_provenance: toolpath.feeds_provenance.clone(),
         }
     }
 }
@@ -1212,6 +1220,7 @@ fn restore_project_toolpath(
     }
     init.debug_options = section.debug_options;
     let mut toolpath = ToolpathEntry::from_init(init);
+    toolpath.feeds_provenance = section.feeds_provenance;
     toolpath.clear_runtime_state();
     toolpath.stale_since = Some(loaded_at);
 
