@@ -41,7 +41,12 @@ pub fn draw(
         events.push(AppEvent::ToggleToolpathVisibility(tp_id));
     }
 
-    // Per-toolpath cut / rapid visibility. Entries default to both-visible.
+    // Per-toolpath cut / rapid visibility. The global viewport toggles gate
+    // these, so a per-row C / R does nothing while its global toggle is off —
+    // grey it out so the layering explains itself (P4-004). Capture the global
+    // flags before the mutable entry borrow.
+    let global_cutting = viewport.show_cutting;
+    let global_rapids = viewport.show_rapids;
     let entry = viewport.toolpath_move_visibility.entry(tp_id).or_default();
 
     let cut_text = "C";
@@ -53,15 +58,20 @@ pub fn draw(
         },
     ))
     .min_size(egui::vec2(18.0, 16.0));
-    if ui
-        .add(cut_btn)
-        .on_hover_text(if entry.show_cutting {
+    let cut_resp = ui.add_enabled(global_cutting, cut_btn);
+    let cut_resp = if global_cutting {
+        cut_resp.on_hover_text(if entry.show_cutting {
             "Hide green cutting/feed moves for this toolpath."
         } else {
             "Show green cutting/feed moves for this toolpath."
         })
-        .clicked()
-    {
+    } else {
+        cut_resp.on_disabled_hover_text(
+            "Cutting moves are hidden globally (viewport Show \u{25BE} \u{2192} Paths). \
+             Enable there to use this per-toolpath toggle.",
+        )
+    };
+    if cut_resp.clicked() {
         entry.show_cutting = !entry.show_cutting;
     }
 
@@ -74,15 +84,20 @@ pub fn draw(
         },
     ))
     .min_size(egui::vec2(18.0, 16.0));
-    if ui
-        .add(rapid_btn)
-        .on_hover_text(if entry.show_rapids {
+    let rapid_resp = ui.add_enabled(global_rapids, rapid_btn);
+    let rapid_resp = if global_rapids {
+        rapid_resp.on_hover_text(if entry.show_rapids {
             "Hide orange rapid-traverse moves for this toolpath."
         } else {
             "Show orange rapid-traverse moves for this toolpath."
         })
-        .clicked()
-    {
+    } else {
+        rapid_resp.on_disabled_hover_text(
+            "Rapid moves are hidden globally (viewport Show \u{25BE} \u{2192} Rapids). \
+             Enable there to use this per-toolpath toggle.",
+        )
+    };
+    if rapid_resp.clicked() {
         entry.show_rapids = !entry.show_rapids;
     }
 
