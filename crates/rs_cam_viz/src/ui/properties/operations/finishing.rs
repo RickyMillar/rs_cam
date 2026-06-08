@@ -6,15 +6,14 @@ use crate::state::toolpath::{
 };
 
 use super::super::{dv, dv_pill};
-use super::draw_feed_params;
 
 pub(in crate::ui::properties) fn draw_ramp_finish_params(
     ui: &mut egui::Ui,
     cfg: &mut RampFinishConfig,
-    feeds_result: Option<&FeedsResult>,
+    _feeds_result: Option<&FeedsResult>,
 ) {
     // Ramp finish: max_stepdown is a Z-step (geometry-driven, not LUT
-    // axial DOC). No stepover field. Only feed/plunge/RPM get pills.
+    // axial DOC). No stepover field; feed/plunge live on the Feeds tab.
     egui::Grid::new("rf_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -56,7 +55,6 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
             ui.label("Bottom Up:");
             ui.checkbox(&mut cfg.order_bottom_up, "");
             ui.end_row();
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
             dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
             dv(
                 ui,
@@ -115,7 +113,6 @@ pub(in crate::ui::properties) fn draw_spiral_finish_params(
                     );
                 });
             ui.end_row();
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
             dv(
                 ui,
                 "Stock to Leave:",
@@ -130,10 +127,10 @@ pub(in crate::ui::properties) fn draw_spiral_finish_params(
 pub(in crate::ui::properties) fn draw_radial_finish_params(
     ui: &mut egui::Ui,
     cfg: &mut RadialFinishConfig,
-    feeds_result: Option<&FeedsResult>,
+    _feeds_result: Option<&FeedsResult>,
 ) {
     // Radial finish uses angular_step + point_spacing — neither maps to a
-    // clearing-style WOC/DOC. Only feed/plunge/RPM get pills.
+    // clearing-style WOC/DOC. Feed/plunge live on the Feeds tab.
     egui::Grid::new("radial_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -154,7 +151,6 @@ pub(in crate::ui::properties) fn draw_radial_finish_params(
                 0.1,
                 0.1..=5.0,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
             dv(
                 ui,
                 "Stock to Leave:",
@@ -193,7 +189,6 @@ pub(in crate::ui::properties) fn draw_horizontal_finish_params(
                 0.05..=20.0,
                 stepover_sugg,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
             dv(
                 ui,
                 "Stock to Leave:",

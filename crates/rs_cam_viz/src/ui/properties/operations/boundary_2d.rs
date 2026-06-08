@@ -6,7 +6,6 @@ use crate::state::toolpath::{
 };
 
 use super::super::{dv, dv_pill};
-use super::draw_feed_params;
 use super::draw_tab_diagram;
 
 pub(in crate::ui::properties) fn draw_face_params(
@@ -50,7 +49,6 @@ pub(in crate::ui::properties) fn draw_face_params(
                 0.1..=20.0,
                 dpp_sugg,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
             dv(
                 ui,
                 "Stock Offset:",
@@ -103,7 +101,6 @@ pub(in crate::ui::properties) fn draw_pocket_params(
                 0.1..=50.0,
                 dpp_sugg,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
             ui.label("Climb:");
             ui.checkbox(&mut cfg.climb, "");
             ui.end_row();
@@ -154,7 +151,6 @@ pub(in crate::ui::properties) fn draw_profile_params(
                 0.1..=50.0,
                 dpp_sugg,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
             ui.label("Climb:");
             ui.checkbox(&mut cfg.climb, "");
             ui.end_row();
@@ -250,7 +246,6 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
                 0.1..=50.0,
                 dpp_sugg,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
             dv(
                 ui,
                 "Tolerance:",
@@ -331,7 +326,6 @@ pub(in crate::ui::properties) fn draw_vcarve_params(
                 0.01..=10.0,
                 stepover_sugg,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
             dv(
                 ui,
                 "Tolerance:",
@@ -391,7 +385,6 @@ pub(in crate::ui::properties) fn draw_rest_params(
                 0.1..=50.0,
                 dpp_sugg,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
             dv(ui, "Angle:", &mut cfg.angle, " deg", 1.0, 0.0..=360.0);
         });
 }
@@ -451,7 +444,6 @@ pub(in crate::ui::properties) fn draw_inlay_params(
                 0.1,
                 0.1..=50.0,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
             dv(
                 ui,
                 "Tolerance:",
@@ -493,7 +485,6 @@ pub(in crate::ui::properties) fn draw_zigzag_params(
                 0.1..=50.0,
                 dpp_sugg,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
             dv(ui, "Angle:", &mut cfg.angle, " deg", 1.0, 0.0..=360.0);
         });
 }

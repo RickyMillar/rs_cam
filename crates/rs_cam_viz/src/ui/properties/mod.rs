@@ -1128,6 +1128,38 @@ fn calculate_and_apply_feeds(
                 egui::Color32::from_rgb(220, 80, 80),
                 format!("Feeds unavailable: {e}"),
             );
+            // No LUT recipe, but feed/plunge moved off the Geometry tab in
+            // W3.2, so this is the only place to set them by hand. (Drill
+            // keeps its feed on the Geometry tab next to the drill cycle.)
+            if !matches!(
+                entry.operation,
+                OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
+            ) {
+                ui.add_space(4.0);
+                ui.named_section("SPEED \u{2014} how fast (manual)", |ui| {
+                    egui::Grid::new("feeds_manual_speed")
+                        .num_columns(2)
+                        .spacing([8.0, 3.0])
+                        .show(ui, |ui| {
+                            let mut feed = entry.operation.feed_rate();
+                            if ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, 1.0..=50000.0)
+                                .show(ui)
+                                .edited
+                            {
+                                entry.operation.set_feed_rate(feed);
+                                entry.stale_since = Some(std::time::Instant::now());
+                            }
+                            let mut plunge = entry.operation.plunge_rate();
+                            if ValueRow::new("Plunge:", &mut plunge, " mm/min", 10.0, 1.0..=10000.0)
+                                .show(ui)
+                                .edited
+                            {
+                                entry.operation.set_plunge_rate(plunge);
+                                entry.stale_since = Some(std::time::Instant::now());
+                            }
+                        });
+                });
+            }
         }
     }
 }
@@ -1152,26 +1184,64 @@ fn draw_feeds_card(
         let pass_role = entry.operation.feeds_style().1;
         let has_stepover = entry.operation.as_params().stepover().is_some();
         let has_dpp = entry.operation.as_params().depth_per_pass().is_some();
+        // Drill ops are Z-only (plunge_rate IS feed_rate, no WOC/DOC); their
+        // single feed is edited on the Geometry tab next to the drill cycle,
+        // so the SPEED section shows it read-only to avoid a duplicate /
+        // no-op "Plunge" field (W3.2).
+        let is_drill = matches!(
+            entry.operation,
+            OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
+        );
 
         // ── SPEED — how fast (feed / plunge / RPM) ──
         ui.named_section("SPEED \u{2014} how fast", |ui| {
+            // The live LUT recommendation drives each field's ⚡ suggest.
+            let (speed_kind, speed_ref) = prov_from_chipload(&result.chipload_source);
             egui::Grid::new("feeds_card_speed")
                 .num_columns(2)
                 .spacing([8.0, 3.0])
                 .show(ui, |ui| {
-                    ui.label("Feed:");
-                    ui.label(format!("{:.0} mm/min", result.feed_rate_mm_min));
-                    ui.end_row();
-                    ui.label("Plunge:");
-                    ui.label(format!("{:.0} mm/min", result.plunge_rate_mm_min));
-                    ui.end_row();
+                    // Feed / Plunge — editable here (W3.2 relocated them off
+                    // the Geometry tab), each with a per-field ⚡ that applies
+                    // only its own recommendation.
+                    if is_drill {
+                        ui.label("Feed:");
+                        ui.label(format!("{:.0} mm/min", result.feed_rate_mm_min));
+                        ui.end_row();
+                    } else {
+                        let mut feed = entry.operation.feed_rate();
+                        if ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, 1.0..=50000.0)
+                            .suggest(Suggestion {
+                                recommended: result.feed_rate_mm_min,
+                                source: speed_kind,
+                                reference: speed_ref,
+                            })
+                            .show(ui)
+                            .edited
+                        {
+                            entry.operation.set_feed_rate(feed);
+                            entry.stale_since = Some(std::time::Instant::now());
+                        }
+                        let mut plunge = entry.operation.plunge_rate();
+                        if ValueRow::new("Plunge:", &mut plunge, " mm/min", 10.0, 1.0..=10000.0)
+                            .suggest(Suggestion {
+                                recommended: result.plunge_rate_mm_min,
+                                source: speed_kind,
+                                reference: speed_ref,
+                            })
+                            .show(ui)
+                            .edited
+                        {
+                            entry.operation.set_plunge_rate(plunge);
+                            entry.stale_since = Some(std::time::Instant::now());
+                        }
+                    }
                     ui.label("Chip Load:");
                     ui.label(format!("{:.4} mm/tooth", result.chip_load_mm));
                     ui.end_row();
-                    // Spindle override vs project default — the one editable
-                    // SPEED field here (feed/plunge are recommendations applied
-                    // by the recipe button). W3.1 relocated this from the
-                    // per-op Params tab so the precedence renders honestly.
+                    // Spindle override vs project default. W3.1 relocated this
+                    // from the per-op Params tab so the precedence renders
+                    // honestly.
                     let mut spindle = entry.operation.spindle_rpm();
                     if PrecedenceField::new("Spindle:", &mut spindle, project_default_rpm)
                         .suffix(" RPM")
@@ -2011,28 +2081,36 @@ fn draw_entry_preview_diagram(
 
 #[allow(clippy::too_many_arguments)]
 // ── Toolpath property tab system ─────────────────────────────────────────
+// The per-toolpath properties panel is chartered into five concern tabs
+// (IA cleanup W3.2, FINAL_DESIGN §4): Geometry (what to cut), Feeds & Speeds
+// (how fast — the SPEED/CUT split from W3.1), Linking (how moves connect:
+// entry/exit, move optimization, retract), Heights (Z planes), and Dressup
+// (edge work / path quality). Replaces the old [Params][Feeds][Heights][Dressups].
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ToolpathTab {
-    Params,
-    Feeds,
+    Geometry,
+    FeedsSpeeds,
+    Linking,
     Heights,
-    Mods,
+    Dressup,
 }
 
 impl ToolpathTab {
     const ALL: &[ToolpathTab] = &[
-        ToolpathTab::Params,
-        ToolpathTab::Feeds,
+        ToolpathTab::Geometry,
+        ToolpathTab::FeedsSpeeds,
+        ToolpathTab::Linking,
         ToolpathTab::Heights,
-        ToolpathTab::Mods,
+        ToolpathTab::Dressup,
     ];
 
     fn label(self) -> &'static str {
         match self {
-            ToolpathTab::Params => "Params",
-            ToolpathTab::Feeds => "Feeds",
+            ToolpathTab::Geometry => "Geometry",
+            ToolpathTab::FeedsSpeeds => "Feeds & Speeds",
+            ToolpathTab::Linking => "Linking",
             ToolpathTab::Heights => "Heights",
-            ToolpathTab::Mods => "Dressups",
+            ToolpathTab::Dressup => "Dressup",
         }
     }
 }
@@ -2041,16 +2119,16 @@ impl ToolpathTab {
 struct TabBadges {
     feeds_badge: Option<egui::Color32>,
     heights_badge: Option<egui::Color32>,
-    mods_badge: Option<egui::Color32>,
+    dressup_badge: Option<egui::Color32>,
 }
 
 impl TabBadges {
     fn for_tab(&self, tab: ToolpathTab) -> Option<egui::Color32> {
         match tab {
-            ToolpathTab::Feeds => self.feeds_badge,
+            ToolpathTab::FeedsSpeeds => self.feeds_badge,
             ToolpathTab::Heights => self.heights_badge,
-            ToolpathTab::Mods => self.mods_badge,
-            ToolpathTab::Params => None,
+            ToolpathTab::Dressup => self.dressup_badge,
+            ToolpathTab::Geometry | ToolpathTab::Linking => None,
         }
     }
 }
@@ -2106,7 +2184,7 @@ fn compute_tab_badges(
             _ => {}
         }
     }
-    let mods_badge = if has_critical {
+    let dressup_badge = if has_critical {
         Some(egui::Color32::from_rgb(220, 100, 80))
     } else if has_caution {
         Some(egui::Color32::from_rgb(220, 180, 60))
@@ -2117,7 +2195,7 @@ fn compute_tab_badges(
     TabBadges {
         feeds_badge,
         heights_badge,
-        mods_badge,
+        dressup_badge,
     }
 }
 
@@ -2752,7 +2830,7 @@ fn draw_toolpath_panel(
     let tab_id = ui.id().with("tp_tab").with(entry.id.0);
     let mut active_tab: ToolpathTab = ui
         .memory(|mem| mem.data.get_temp(tab_id))
-        .unwrap_or(ToolpathTab::Params);
+        .unwrap_or(ToolpathTab::Geometry);
     let tab_badges = compute_tab_badges(entry, &diagnostics, height_ctx);
     draw_toolpath_tabs(ui, &mut active_tab, &tab_badges);
     ui.memory_mut(|mem| mem.data.insert_temp(tab_id, active_tab));
@@ -2761,7 +2839,7 @@ fn draw_toolpath_panel(
     // ── Tab content ─────────────────────────────────────────────────
 
     match active_tab {
-        ToolpathTab::Params => {
+        ToolpathTab::Geometry => {
             ui.add_space(4.0);
 
             // Validator-driven Fix banner (PR-2C Phase 1). One row per
@@ -2810,16 +2888,18 @@ fn draw_toolpath_panel(
                 ui.add_space(2.0);
             }
 
-            // LUT-driven "Suggest all" button (PR-2C Phase 1). Mirrors
-            // the same-named button in the Feeds tab so the user can
-            // bulk-apply LUT recommendations without a tab switch.
-            // Per-field Suggest pills remain in the Feeds tab (Phase 2).
+            // Compute + cache the LUT feeds result so the per-field ⚡ pills
+            // on the Geometry rows (stepover / depth-per-pass) can render.
+            // The bulk "Suggest all" button was retired in W3.2 — feed /
+            // plunge / RPM and DOC / WOC now apply from the SPEED and CUT
+            // sections of the Feeds & Speeds tab (the split-aware applies),
+            // and the engine-refusal message surfaces there too.
             if let Some(tool_cfg) = tool_configs
                 .iter()
                 .find(|(id, _)| *id == entry.tool_id)
                 .map(|(_, t)| t)
             {
-                match rs_cam_core::feeds::suggest::feeds_result_for_operation(
+                entry.feeds_result = rs_cam_core::feeds::suggest::feeds_result_for_operation(
                     &entry.operation,
                     tool_cfg,
                     material,
@@ -2827,64 +2907,8 @@ fn draw_toolpath_panel(
                     workholding,
                     rs_cam_core::feeds::embedded_vendor_lut(),
                     spindle_strategy,
-                ) {
-                    Ok(result) => {
-                        ui.horizontal(|ui| {
-                            if ui
-                                .button("\u{26A1} Suggest all (LUT)")
-                                .on_hover_text(format!(
-                                    "Overwrite feed ({:.0}), plunge ({:.0}), depth-per-pass ({:.2}), \
-                                     stepover ({:.2}), and RPM ({:.0}) from the LUT. \
-                                     See the Feeds tab for the formula breakdown and per-field Suggest buttons.",
-                                    result.feed_rate_mm_min,
-                                    result.plunge_rate_mm_min,
-                                    result.axial_depth_mm,
-                                    result.radial_width_mm,
-                                    result.rpm,
-                                ))
-                                .clicked()
-                            {
-                                let pass_role = entry.operation.feeds_style().1;
-                                rs_cam_core::feeds::suggest::apply_feeds_result_to_op(
-                                    &mut entry.operation,
-                                    &mut entry.feeds_provenance,
-                                    &result,
-                                    tool_cfg,
-                                    machine,
-                                    material,
-                                    pass_role,
-                                    rs_cam_core::feeds::suggest::SuggestContext::default(),
-                                );
-                                entry.stale_since = Some(std::time::Instant::now());
-                            }
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "\u{2192} feed {:.0}, plunge {:.0}, DOC {:.2}, WOC {:.2}",
-                                    result.feed_rate_mm_min,
-                                    result.plunge_rate_mm_min,
-                                    result.axial_depth_mm,
-                                    result.radial_width_mm,
-                                ))
-                                .small()
-                                .color(egui::Color32::from_rgb(140, 160, 180)),
-                            );
-                        });
-                        entry.feeds_result = Some(result);
-                        ui.add_space(4.0);
-                    }
-                    Err(e) => {
-                        // Engine refused — tool × operation pairing
-                        // is physically unrunnable. Clear stale cache
-                        // and surface the refusal so the user knows
-                        // why no Suggest button is shown.
-                        entry.feeds_result = None;
-                        ui.colored_label(
-                            egui::Color32::from_rgb(220, 80, 80),
-                            format!("Feeds unavailable: {e}"),
-                        );
-                        ui.add_space(4.0);
-                    }
-                }
+                )
+                .ok();
             }
 
             // Operation description from spec (consistent across all operations)
@@ -3007,152 +3031,11 @@ fn draw_toolpath_panel(
                     _ => {}
                 }
             }
-        }
 
-        ToolpathTab::Feeds => {
-            let tool_info = tool_configs
-                .iter()
-                .find(|(id, _)| *id == entry.tool_id)
-                .map(|(_, t)| (t.diameter, t.tool_type));
-            let (tool_diameter, tool_type) =
-                tool_info.unwrap_or((6.0, crate::state::job::ToolType::EndMill));
-            // Redesigned modal entry — pulls open the full chart-driven
-            // view. Stays alongside the legacy feeds card so existing
-            // muscle memory keeps working until the modal is fully
-            // promoted (Phase 4).
-            ui.horizontal(|ui| {
-                if ui
-                    .button("\u{1F4CA} Open Feeds & Speeds modal")
-                    .on_hover_text(
-                        "Open the redesigned Feeds & Speeds view: \
-                         current-vs-recommended comparison, three machinist \
-                         charts, and Apply buttons.",
-                    )
-                    .clicked()
-                {
-                    events.push(AppEvent::OpenFeedsModal(entry.id));
-                }
-            });
-            ui.add_space(4.0);
-            if let Some(tool_cfg) = tool_configs
-                .iter()
-                .find(|(id, _)| *id == entry.tool_id)
-                .map(|(_, t)| t)
-            {
-                calculate_and_apply_feeds(
-                    ui,
-                    entry,
-                    tool_cfg,
-                    material,
-                    machine,
-                    workholding,
-                    spindle_strategy,
-                    project_default_rpm,
-                );
-            }
-            if let Some(result) = &entry.feeds_result {
-                // Formula breakdown — always visible, the key teaching tool
-                ui.add_space(4.0);
-                let flute_count = tool_configs
-                    .iter()
-                    .find(|(id, _)| *id == entry.tool_id)
-                    .map(|(_, t)| t.flute_count)
-                    .unwrap_or(2);
-                let val = egui::Color32::from_rgb(170, 170, 185);
-                let font = egui::FontId::proportional(9.5);
-
-                ui.label(egui::RichText::new(format!(
-                    "Feed = RPM \u{00D7} flutes \u{00D7} chipload = {:.0} \u{00D7} {} \u{00D7} {:.4} = {:.0} mm/min",
-                    result.rpm, flute_count, result.chip_load_mm, result.feed_rate_mm_min
-                )).font(font.clone()).color(val));
-
-                ui.label(egui::RichText::new(format!(
-                    "MRR = DOC \u{00D7} WOC \u{00D7} Feed = {:.2} \u{00D7} {:.2} \u{00D7} {:.0} = {:.0} mm\u{00B3}/min",
-                    result.axial_depth_mm, result.radial_width_mm, result.feed_rate_mm_min, result.mrr_mm3_min
-                )).font(font.clone()).color(val));
-
-                ui.label(
-                    egui::RichText::new(format!(
-                        "Power = MRR \u{00D7} Kc / 60e6 = {:.2} kW (of {:.2} kW available)",
-                        result.power_kw, result.available_power_kw
-                    ))
-                    .font(font.clone())
-                    .color(val),
-                );
-
-                if result.power_limited {
-                    ui.label(
-                        egui::RichText::new("Feed was reduced to stay within spindle power")
-                            .font(font.clone())
-                            .color(egui::Color32::from_rgb(220, 170, 60)),
-                    );
-                }
-
-                ui.label(
-                    egui::RichText::new(format!(
-                        "Plunge = {:.0} mm/min ({:.0}% of feed)",
-                        result.plunge_rate_mm_min,
-                        result.plunge_rate_mm_min / result.feed_rate_mm_min.max(1.0) * 100.0
-                    ))
-                    .font(font)
-                    .color(val),
-                );
-
-                // Engagement diagram
-                ui.add_space(6.0);
-                draw_engagement_diagram(ui, result, tool_diameter, tool_type);
-            }
-
-            // Vendor cutting data viewer (always available, filtered by tool)
-            draw_vendor_lut_viewer(ui, tool_type, tool_diameter);
-        }
-
-        ToolpathTab::Heights => {
-            let fallback_ctx = HeightContext::simple(10.0, 5.0);
-            let ctx = height_ctx.unwrap_or(&fallback_ctx);
-            draw_heights_params(ui, &mut entry.heights, ctx);
-            ui.add_space(6.0);
-            draw_height_diagram(ui, &mut entry.heights, ctx);
-        }
-
-        ToolpathTab::Mods => {
-            // Active dressup summary + reset button
-            let (active, total) = dressup_active_count(&entry.dressups);
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(format!("{active}/{total} dressups active"))
-                        .small()
-                        .color(if active > 0 {
-                            egui::Color32::from_rgb(100, 170, 140)
-                        } else {
-                            egui::Color32::from_rgb(140, 140, 155)
-                        }),
-                );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let role = entry.operation.op_type().spec().ui_process_role;
-                    if ui
-                        .small_button("Reset to recommended")
-                        .on_hover_text(format!(
-                            "Apply recommended dressups for {} operations",
-                            match role {
-                                UiProcessRole::Roughing => "roughing",
-                                UiProcessRole::SemiFinish => "semi-finish",
-                                UiProcessRole::Finish => "finishing",
-                            }
-                        ))
-                        .clicked()
-                    {
-                        entry.dressups = DressupConfig::for_role(role);
-                    }
-                });
-            });
-
-            // Dressup sections (grouped: Entry & Exit, Path Quality, Optimization, Safety)
-            draw_dressup_params(ui, entry, height_ctx);
-
+            // ── Machining Boundary ─────────────────────────────────────
+            // W3.2: the boundary defines *what region to cut*, so it lives
+            // under Geometry (was on the old Dressups tab).
             ui.add_space(8.0);
-
-            // --- Machining Boundary ---
             ui.label(
                 egui::RichText::new("Machining Boundary")
                     .small()
@@ -3267,6 +3150,156 @@ fn draw_toolpath_panel(
                     });
                 }
             }
+        }
+
+        ToolpathTab::FeedsSpeeds => {
+            let tool_info = tool_configs
+                .iter()
+                .find(|(id, _)| *id == entry.tool_id)
+                .map(|(_, t)| (t.diameter, t.tool_type));
+            let (tool_diameter, tool_type) =
+                tool_info.unwrap_or((6.0, crate::state::job::ToolType::EndMill));
+            // Redesigned modal entry — pulls open the full chart-driven
+            // view. Stays alongside the legacy feeds card so existing
+            // muscle memory keeps working until the modal is fully
+            // promoted (Phase 4).
+            ui.horizontal(|ui| {
+                if ui
+                    .button("\u{1F4CA} Open Feeds & Speeds modal")
+                    .on_hover_text(
+                        "Open the redesigned Feeds & Speeds view: \
+                         current-vs-recommended comparison, three machinist \
+                         charts, and Apply buttons.",
+                    )
+                    .clicked()
+                {
+                    events.push(AppEvent::OpenFeedsModal(entry.id));
+                }
+            });
+            ui.add_space(4.0);
+            if let Some(tool_cfg) = tool_configs
+                .iter()
+                .find(|(id, _)| *id == entry.tool_id)
+                .map(|(_, t)| t)
+            {
+                calculate_and_apply_feeds(
+                    ui,
+                    entry,
+                    tool_cfg,
+                    material,
+                    machine,
+                    workholding,
+                    spindle_strategy,
+                    project_default_rpm,
+                );
+            }
+            if let Some(result) = &entry.feeds_result {
+                // Formula breakdown — always visible, the key teaching tool
+                ui.add_space(4.0);
+                let flute_count = tool_configs
+                    .iter()
+                    .find(|(id, _)| *id == entry.tool_id)
+                    .map(|(_, t)| t.flute_count)
+                    .unwrap_or(2);
+                let val = egui::Color32::from_rgb(170, 170, 185);
+                let font = egui::FontId::proportional(9.5);
+
+                ui.label(egui::RichText::new(format!(
+                    "Feed = RPM \u{00D7} flutes \u{00D7} chipload = {:.0} \u{00D7} {} \u{00D7} {:.4} = {:.0} mm/min",
+                    result.rpm, flute_count, result.chip_load_mm, result.feed_rate_mm_min
+                )).font(font.clone()).color(val));
+
+                ui.label(egui::RichText::new(format!(
+                    "MRR = DOC \u{00D7} WOC \u{00D7} Feed = {:.2} \u{00D7} {:.2} \u{00D7} {:.0} = {:.0} mm\u{00B3}/min",
+                    result.axial_depth_mm, result.radial_width_mm, result.feed_rate_mm_min, result.mrr_mm3_min
+                )).font(font.clone()).color(val));
+
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Power = MRR \u{00D7} Kc / 60e6 = {:.2} kW (of {:.2} kW available)",
+                        result.power_kw, result.available_power_kw
+                    ))
+                    .font(font.clone())
+                    .color(val),
+                );
+
+                if result.power_limited {
+                    ui.label(
+                        egui::RichText::new("Feed was reduced to stay within spindle power")
+                            .font(font.clone())
+                            .color(egui::Color32::from_rgb(220, 170, 60)),
+                    );
+                }
+
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Plunge = {:.0} mm/min ({:.0}% of feed)",
+                        result.plunge_rate_mm_min,
+                        result.plunge_rate_mm_min / result.feed_rate_mm_min.max(1.0) * 100.0
+                    ))
+                    .font(font)
+                    .color(val),
+                );
+
+                // Engagement diagram
+                ui.add_space(6.0);
+                draw_engagement_diagram(ui, result, tool_diameter, tool_type);
+            }
+
+            // Vendor cutting data viewer (always available, filtered by tool)
+            draw_vendor_lut_viewer(ui, tool_type, tool_diameter);
+        }
+
+        ToolpathTab::Linking => {
+            // How moves connect: entry/exit, move optimization, retract
+            // strategy (W3.2 — lifted out of the old Dressups tab).
+            draw_linking_params(ui, entry, height_ctx);
+        }
+
+        ToolpathTab::Heights => {
+            let fallback_ctx = HeightContext::simple(10.0, 5.0);
+            let ctx = height_ctx.unwrap_or(&fallback_ctx);
+            draw_heights_params(ui, &mut entry.heights, ctx);
+            ui.add_space(6.0);
+            draw_height_diagram(ui, &mut entry.heights, ctx);
+        }
+
+        ToolpathTab::Dressup => {
+            // Active dressup summary + reset button
+            let (active, total) = dressup_active_count(&entry.dressups);
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(format!("{active}/{total} dressups active"))
+                        .small()
+                        .color(if active > 0 {
+                            egui::Color32::from_rgb(100, 170, 140)
+                        } else {
+                            egui::Color32::from_rgb(140, 140, 155)
+                        }),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let role = entry.operation.op_type().spec().ui_process_role;
+                    if ui
+                        .small_button("Reset to recommended")
+                        .on_hover_text(format!(
+                            "Apply recommended dressups for {} operations",
+                            match role {
+                                UiProcessRole::Roughing => "roughing",
+                                UiProcessRole::SemiFinish => "semi-finish",
+                                UiProcessRole::Finish => "finishing",
+                            }
+                        ))
+                        .clicked()
+                    {
+                        entry.dressups = DressupConfig::for_role(role);
+                    }
+                });
+            });
+
+            // Edge work / path quality (W3.2 — Entry/Exit, Optimization
+            // and Retract moved to the Linking tab; Machining Boundary
+            // moved to Geometry).
+            draw_dressup_params(ui, &mut entry.dressups);
 
             // Manual G-code fields (pre_gcode, post_gcode) kept in state
             // for future export wiring — UI removed until export is implemented.
@@ -3474,7 +3507,10 @@ fn dressup_active_count(cfg: &DressupConfig) -> (usize, usize) {
     (active, total)
 }
 
-fn draw_dressup_params(
+/// Linking tab (W3.2): how moves connect — Entry & Exit, Move Optimization,
+/// and Retract strategy. Split out of the old monolithic dressup panel; the
+/// remaining edge-work (arc fitting / dogbone) stays in [`draw_dressup_params`].
+fn draw_linking_params(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
     height_ctx: Option<&HeightContext>,
@@ -3603,53 +3639,6 @@ fn draw_dressup_params(
 
     ui.add_space(6.0);
 
-    // ── Path Quality ──────────────────────────────────────────
-    ui.label(
-        egui::RichText::new("Path Quality")
-            .small()
-            .strong()
-            .color(section_color),
-    );
-
-    ui.checkbox(&mut cfg.arc_fitting, "Arc fitting (G2/G3)")
-        .on_hover_text("Convert sequences of linear segments into smooth G2/G3 arcs. Reduces file size, improves surface finish, and produces smoother machine motion. Safe for all operations.");
-    if cfg.arc_fitting {
-        egui::Grid::new("arc_p")
-            .num_columns(2)
-            .spacing([8.0, 4.0])
-            .show(ui, |ui| {
-                dv(
-                    ui,
-                    "  Tolerance:",
-                    &mut cfg.arc_tolerance,
-                    " mm",
-                    0.01,
-                    0.01..=0.5,
-                );
-            });
-    }
-
-    ui.checkbox(&mut cfg.dogbone, "Dogbone overcuts")
-        .on_hover_text("Add circular overcuts at inside corners so parts fit together. Essential for joints, inlays, and press-fit assemblies. Not needed for open pockets or 3D surfaces.");
-    if cfg.dogbone {
-        egui::Grid::new("dog_p")
-            .num_columns(2)
-            .spacing([8.0, 4.0])
-            .show(ui, |ui| {
-                dv(
-                    ui,
-                    "  Max Angle:",
-                    &mut cfg.dogbone_angle,
-                    " deg",
-                    1.0,
-                    45.0..=135.0,
-                );
-            });
-        draw_dogbone_diagram(ui, cfg.dogbone_angle);
-    }
-
-    ui.add_space(6.0);
-
     // ── Optimization ──────────────────────────────────────────
     ui.label(
         egui::RichText::new("Optimization")
@@ -3762,4 +3751,56 @@ fn draw_dressup_params(
                     .on_hover_text("Retract just above nearby path. Faster cycle time but risk of collision if geometry is complex.");
             });
     });
+}
+
+/// Dressup tab (W3.2): edge work / path quality — arc fitting and dogbone
+/// overcuts. Entry/exit + optimization + retract live on the Linking tab
+/// ([`draw_linking_params`]); the machining boundary lives on Geometry.
+fn draw_dressup_params(ui: &mut egui::Ui, cfg: &mut DressupConfig) {
+    let section_color = egui::Color32::from_rgb(150, 155, 170);
+
+    // ── Path Quality ──────────────────────────────────────────
+    ui.label(
+        egui::RichText::new("Path Quality")
+            .small()
+            .strong()
+            .color(section_color),
+    );
+
+    ui.checkbox(&mut cfg.arc_fitting, "Arc fitting (G2/G3)")
+        .on_hover_text("Convert sequences of linear segments into smooth G2/G3 arcs. Reduces file size, improves surface finish, and produces smoother machine motion. Safe for all operations.");
+    if cfg.arc_fitting {
+        egui::Grid::new("arc_p")
+            .num_columns(2)
+            .spacing([8.0, 4.0])
+            .show(ui, |ui| {
+                dv(
+                    ui,
+                    "  Tolerance:",
+                    &mut cfg.arc_tolerance,
+                    " mm",
+                    0.01,
+                    0.01..=0.5,
+                );
+            });
+    }
+
+    ui.checkbox(&mut cfg.dogbone, "Dogbone overcuts")
+        .on_hover_text("Add circular overcuts at inside corners so parts fit together. Essential for joints, inlays, and press-fit assemblies. Not needed for open pockets or 3D surfaces.");
+    if cfg.dogbone {
+        egui::Grid::new("dog_p")
+            .num_columns(2)
+            .spacing([8.0, 4.0])
+            .show(ui, |ui| {
+                dv(
+                    ui,
+                    "  Max Angle:",
+                    &mut cfg.dogbone_angle,
+                    " deg",
+                    1.0,
+                    45.0..=135.0,
+                );
+            });
+        draw_dogbone_diagram(ui, cfg.dogbone_angle);
+    }
 }

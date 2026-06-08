@@ -4,17 +4,16 @@ use crate::state::job::ModelId;
 use crate::state::toolpath::{ProjectCurveConfig, ProjectCurveDirection, ProjectCurveSide};
 
 use super::super::dv;
-use super::draw_feed_params;
 
 pub(in crate::ui::properties) fn draw_project_curve_params(
     ui: &mut egui::Ui,
     cfg: &mut ProjectCurveConfig,
     models: &[(ModelId, String)],
-    feeds_result: Option<&FeedsResult>,
+    _feeds_result: Option<&FeedsResult>,
 ) {
     // Project-curve is an engraving op (single-line tracing onto a 3D
-    // surface). No stepover/DOC pills — only feed/plunge/RPM via
-    // draw_feed_params.
+    // surface). No stepover/DOC pills; feed/plunge are edited on the
+    // Feeds & Speeds tab (W3.2).
 
     // Surface model selector — lets the user pick a different model for the 3D surface.
     ui.horizontal(|ui| {
@@ -100,6 +99,5 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
                 0.1,
                 0.1..=5.0,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
         });
 }
