@@ -14,15 +14,20 @@
 > (one agent, single-subsystem context).
 
 ## ▶ Next action
-**W3.3 DONE — the remaining Wave-2 surface rewrites are next.** CL + W3.1 + W3.2 + W3.3 are
-merged to master. The inspector is now scope-tiered (fixed verdict+freshness header → Project /
-Toolpath / Span CollapsingHeaders) and the Findings rollup shares the verdict-HUD `CountPill`
-grammar — so the CL "Inspector Findings → CountPill" carry-over is discharged. Remaining: 🔁
-**W3.6 timeline · W3.5 optimizer · W3.4 tools · W3.7 header/rail**, then W3.8 dashboard +
-Tier-4/5 polish. Each: fresh branch off master, consumes the component layer (`ARCHITECTURE.md`
-§4 usage map). Suggested order leads with W3.6 (timeline — concrete component carry-overs:
-`components::{visibility,nav,diagram}` get built with it) then W3.5 (optimizer adopts
-`compare::*` if it adds a compare view).
+**W3.6 DONE — the remaining Wave-2 surface rewrites are next.** CL + W3.1 + W3.2 + W3.3 + W3.6
+are merged to master. The timeline is now a single Tier-2 time axis (boundary + span + semantic
+bands collapsed into one global-X widget, one shared playhead, one Y-region click contract),
+with clickable verdict pills, spine empty-state/stale-skin, and op-list name-jump. Remaining: 🔁
+**W3.5 optimizer · W3.4 tools · W3.7 header/rail**, then W3.8 dashboard + Tier-4/5 polish. Each:
+fresh branch off master, consumes the component layer (`ARCHITECTURE.md` §4 usage map). Suggested
+order: W3.5 (optimizer — adopts `compare::*` if it adds a compare view) → W3.4 tools → W3.7
+header/rail (which is `visibility.rs`'s true home).
+
+⚠ **Component-build carry-over still open:** `components::{visibility,nav,diagram}` were NOT built
+in W3.6 — deferred with rationale: the Tier-2 widget is interactive (doesn't fit diagram.rs's
+paint-only `InlineDiagram`), `nav::SimMove` is ceremony over `SimJumpToMove`, and `visibility`'s
+real consumer is the viewport overlay (W3.7). Build each with the surface that genuinely uses it.
+Also deferred: TIM-008 metric-chip row (no per-track gate signal for 4 of the 5 spine tracks).
 
 ⚠ **Execution constraint (don't true-fan-out the builds):** [[feedback_no_concurrent_release_builds]]
 — parallel viz builds thrash swap and crash the PC. So although the surfaces are file-disjoint,
@@ -211,7 +216,7 @@ Tier-4/5 polish.
 | W3.3 | inspector summary-first | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.4 | tool editor (commit + grouping) | viz | 🟪 | 🔁 | CL, W1.1 | ☐ |
 | W3.5 | optimizer affordances | viz | 🟦 | 🔁 | CL | ☐ |
-| W3.6 | timeline disambiguation | viz | 🟦 | 🔁 | CL | ☐ |
+| W3.6 | timeline disambiguation | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.7 | header/rail de-overload | viz | 🟦 | 🔁 | CL | ☐ |
 | W3.8 | job-readiness dashboard | viz | 🟦 | 🔁 | CL, W0.1, W0.4, W0.5 | ☐ |
 | T4 | confusables/visual lang (W4.2-4.5) | viz | 🟦 | 🔁 | CL | ☐ |
@@ -355,7 +360,22 @@ Tier-4/5 polish.
     `draw_span_section`/`draw_span_body`+2 disclosure fns. Nothing deleted; every datum keeps a home.
   ⚠ egui-chrome visual parity unverified — MCP screenshots capture the 3D viewport, not panel
   chrome; needs a human `cargo run -p rs_cam_viz --bin rs_cam_gui` pass over the Inspector panel.
-- **▶ Next:** the remaining Wave-2 rewrites — W3.6 timeline · W3.5 optimizer · W3.4 tools ·
-  W3.7 header/rail. File-disjoint, but run **sequentially** (build-thrash constraint, see
-  ▶ Next action), one branch+merge per surface, all consuming the component layer. Lead with
-  W3.6 (builds `components::{visibility,nav,diagram}`) then W3.5 (`compare::*`).
+- **2026-06-09** — **W3.6 COMPLETE** on branch `ia-cleanup/w3.6-timeline`, 3 commits each green
+  (clippy --workspace -D warnings + fmt + viz 189+9), merged to master `0ea4a5f` `--no-ff`:
+  - **1/3** (`f8013df`) clickable verdict pills (TIM-005 — exceeds/collisions seek to first
+    marker + Safety tab); spine empty-state placeholder + Enable-&-rerun (TIM-003); whole-spine
+    stale skin — desaturate + drop gate dots + Re-run affordance (TIM-009); gate-dot drill →
+    Safety tab focus (TIM-010); cursor-change disclosure (TIM-004).
+  - **2/3** (`2190dec`) Tier-2 single-axis merge (TIM-001/002): `draw_boundary_timeline` now
+    allocates ONE rect with op band + span sub-band + (debug) semantic sub-band as Y-regions,
+    one shared global-X playhead, one Y-dispatched click contract (drag=scrub everywhere).
+    `draw_span_ribbon`→`span_subband_present`+`paint_span_subband`; `draw_semantic_band`→
+    `semantic_subband_present`+`paint_semantic_subband` (converted local-X → global-X). Two
+    divergent axes + two orphan playheads gone.
+  - **3/3** (`d2a39b4`) op-list (sim_op_list.rs): name label is the explicit jump target
+    (TIM-006, retires the whole-card overlapping-Id click); outline kind banner (TIM-007).
+  Deferred w/ rationale: TIM-008 metric-chip row; `components::{visibility,nav,diagram}` (build
+  with consuming surfaces — visibility→W3.7). ⚠ Painting reorg — needs a human `cargo run` pass.
+- **▶ Next:** the remaining Wave-2 rewrites — W3.5 optimizer · W3.4 tools · W3.7 header/rail.
+  File-disjoint, run **sequentially** (build-thrash), one branch+merge per surface, consuming the
+  component layer. Lead with W3.5 (`compare::*` if it adds a compare view).
