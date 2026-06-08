@@ -319,6 +319,7 @@ pub fn draw(
                     ui,
                     boundary.id,
                     overall_visible,
+                    None,
                     viewport,
                     events,
                 );
