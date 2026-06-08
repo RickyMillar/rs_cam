@@ -334,7 +334,9 @@ Tier-4/5 polish.
   - **2/2** (`122e82c`) feed/plunge relocated into the Feeds SPEED section (editable ValueRows +
     per-field ⚡); `draw_feed_params` deleted; "Suggest all" button retired; drill feed stays on
     Geometry; manual SPEED editor on the feeds-refusal branch.
+- **2026-06-08** — **Visual parity CONFIRMED** by the user for CL + W3.1 + W3.2 (live GUI pass:
+  Feeds tab SPEED/CUT + editable feed/plunge + spindle precedence + the five-tab bar all good).
+  The egui-chrome verification debt from those three workstreams is cleared.
 - **▶ Next:** the remaining Wave-2 rewrites — W3.3 inspector · W3.4 tools · W3.5 optimizer ·
   W3.6 timeline · W3.7 header/rail. File-disjoint, but run **sequentially** (build-thrash
-  constraint, see ▶ Next action), one branch+merge per surface, all consuming the component
-  layer. (UI visual parity for CL + W3.1 + W3.2 pending a human `cargo run` pass.)
+  constraint, see ▶ Next action), one branch+merge per surface, all consuming the component layer.
