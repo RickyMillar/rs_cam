@@ -236,7 +236,8 @@ pub fn draw(
 
         // ── Workspace-specific actions (right-aligned) ──────────
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| match workspace {
-            Workspace::Setup => {}
+            // Readiness has no viewport, so this overlay never renders there.
+            Workspace::Setup | Workspace::Readiness => {}
             Workspace::Toolpaths => {
                 if ui.small_button("Generate All").clicked() {
                     events.push(AppEvent::GenerateAll);

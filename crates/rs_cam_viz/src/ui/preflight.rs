@@ -1,5 +1,6 @@
 use super::AppEvent;
 use crate::state::AppState;
+use crate::ui::readiness::{self, CheckStatus};
 use crate::ui::theme;
 use rs_cam_core::tool_load::{ToolLoadReport, ToolpathLoadVerdict};
 
@@ -18,34 +19,11 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             let sim = &state.simulation;
 
             // --- Operations check ---
-            let enabled_count = state
-                .session
-                .toolpath_configs()
-                .iter()
-                .filter(|tc| tc.enabled)
-                .count();
-            let computed_count = state
-                .session
-                .toolpath_configs()
-                .iter()
-                .filter(|tc| {
-                    tc.enabled
-                        && state
-                            .gui
-                            .toolpath_rt
-                            .get(&tc.id)
-                            .and_then(|rt| rt.result.as_ref())
-                            .is_some()
-                })
-                .count();
+            let (ops_status, computed_count, enabled_count) = readiness::operations_check(state);
 
             check_card(
                 ui,
-                if computed_count < enabled_count {
-                    CheckStatus::Warning
-                } else {
-                    CheckStatus::Pass
-                },
+                ops_status,
                 "Operations",
                 &format!("{computed_count}/{enabled_count} computed"),
                 "Toolpaths",
@@ -57,15 +35,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             );
 
             // --- Simulation check ---
-            let sim_status = if sim.has_results() {
-                if sim.is_stale(state.gui.edit_counter) {
-                    CheckStatus::Warning
-                } else {
-                    CheckStatus::Pass
-                }
-            } else {
-                CheckStatus::Warning
-            };
+            let sim_status = readiness::simulation_check(state);
             let sim_detail = if sim.has_results() {
                 if sim.is_stale(state.gui.edit_counter) {
                     "Stale — parameters changed"
@@ -89,13 +59,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             );
 
             // --- Rapid collisions check ---
-            let rapid_status = if !sim.has_results() {
-                CheckStatus::Warning
-            } else if sim.checks.rapid_collisions.is_empty() {
-                CheckStatus::Pass
-            } else {
-                CheckStatus::Fail
-            };
+            let rapid_status = readiness::rapid_collision_check(state);
             let rapid_detail = if !sim.has_results() {
                 "Run simulation first".to_owned()
             } else if sim.checks.rapid_collisions.is_empty() {
@@ -117,13 +81,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             );
 
             // --- Holder clearance check ---
-            let holder_status = if sim.checks.holder_collision_count > 0 {
-                CheckStatus::Fail
-            } else if sim.checks.min_safe_stickout.is_some() {
-                CheckStatus::Pass
-            } else {
-                CheckStatus::Warning
-            };
+            let holder_status = readiness::holder_clearance_check(state);
             let holder_detail = if sim.checks.holder_collision_count > 0 {
                 format!("{} issues", sim.checks.holder_collision_count)
             } else if sim.checks.min_safe_stickout.is_some() {
@@ -142,23 +100,10 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                 &mut still_open,
             );
 
-            // --- Tool load model ---
-            // Trace is in viz sim state, not session.simulation.
-            let load_report = {
-                let sim_trace = state
-                    .simulation
-                    .results
-                    .as_ref()
-                    .and_then(|r| r.cut_trace.as_deref());
-                rs_cam_core::gcode::project_load_report(&state.session, sim_trace)
-            };
-            let tool_load_status = if load_report.any_exceeded() {
-                CheckStatus::Fail
-            } else if load_report.any_unmodeled() || load_report.per_toolpath.is_empty() {
-                CheckStatus::Warning
-            } else {
-                CheckStatus::Pass
-            };
+            // --- Tool load model --- (shared thresholds; trace lives in viz
+            // sim state, not session.simulation)
+            let load_report = readiness::load_report(state);
+            let tool_load_status = readiness::tool_load_check(&load_report);
             let tool_load_detail = tool_load_summary_detail(&load_report);
             check_card(
                 ui,
@@ -172,10 +117,10 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             );
 
             // --- Cycle time (info only) ---
-            let total_time = estimate_total_time(state);
+            let total_time = readiness::estimate_total_time(state);
             let m = (total_time / 60.0).floor() as u32;
             let s = (total_time % 60.0) as u32;
-            let tool_changes = count_tool_changes(state);
+            let tool_changes = readiness::count_tool_changes(state);
             check_card(
                 ui,
                 CheckStatus::Pass,
@@ -275,13 +220,6 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
     still_open
 }
 
-#[derive(Clone, Copy)]
-enum CheckStatus {
-    Pass,
-    Fail,
-    Warning,
-}
-
 /// A check card with status icon, label, detail, and optional action link.
 #[allow(clippy::too_many_arguments)]
 fn check_card(
@@ -326,37 +264,6 @@ fn check_card(
     });
 
     ui.add_space(2.0);
-}
-
-fn estimate_total_time(state: &AppState) -> f64 {
-    let mut total_secs = 0.0;
-    for tc in state.session.toolpath_configs() {
-        if tc.enabled
-            && let Some(rt) = state.gui.toolpath_rt.get(&tc.id)
-            && let Some(result) = &rt.result
-        {
-            let feed = tc.operation.feed_rate();
-            total_secs += (result.stats.cutting_distance / feed) * 60.0;
-        }
-    }
-    total_secs
-}
-
-fn count_tool_changes(state: &AppState) -> usize {
-    let mut count = 0;
-    let mut last_tool: Option<usize> = None;
-    for tc in state.session.toolpath_configs() {
-        if !tc.enabled {
-            continue;
-        }
-        if let Some(last) = last_tool
-            && tc.tool_id != last
-        {
-            count += 1;
-        }
-        last_tool = Some(tc.tool_id);
-    }
-    count
 }
 
 fn tool_load_summary_detail(report: &ToolLoadReport) -> String {
