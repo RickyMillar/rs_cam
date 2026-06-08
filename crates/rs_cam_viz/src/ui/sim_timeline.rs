@@ -276,23 +276,20 @@ fn draw_signal_spine(
     // gate's actual worst-sample move. Reuses the timeline's already-
     // memoed `load_report` (passed in) instead of building a second copy
     // per frame.
-    for (i, verdict) in load_report.per_toolpath.iter().enumerate() {
+    for verdict in &load_report.per_toolpath {
         if let Some(focus) = focused_id
             && verdict.toolpath_id != focus.0
         {
             continue;
         }
         if let Some(global_move) = first_exceeded_tool_load_move(sim, trace, verdict) {
-            hotspots.push(HotspotMarker {
-                index: 10000 + i,
-                global_move,
-            });
+            hotspots.push(HotspotMarker { global_move });
         }
     }
 
     let display_x = sim.hovered_x;
     let mut new_hovered: Option<f64> = None;
-    let mut clicked_hotspot: Option<(usize, usize)> = None;
+    let mut clicked_hotspot: Option<usize> = None;
     let mut signal_drag_active = false;
     let total_moves_f = total_moves as f64;
 
@@ -433,13 +430,9 @@ fn draw_signal_spine(
         sim.playback.scrub_drag_active = true;
     }
     sim.hovered_x = new_hovered;
-    if let Some((hotspot_index, global_move)) = clicked_hotspot {
-        if let Some(hs) = trace.hotspots.get(hotspot_index) {
-            sim.debug.focused_hotspot = Some((
-                crate::state::toolpath::ToolpathId(hs.toolpath_id),
-                hotspot_index,
-            ));
-        }
+    if let Some(global_move) = clicked_hotspot {
+        // Gate-trip dots jump to the offending move (TIM-010 — the old
+        // trace.hotspots.get on a synthetic index was always None).
         events.push(AppEvent::SimJumpToMove(global_move));
     }
 }
@@ -451,9 +444,18 @@ struct ToolpathGroup<'a> {
     samples: Vec<&'a SimulationCutSample>,
 }
 
+/// A clickable tool-load gate-trip dot on the signal tracks. Carries only
+/// the offending move — clicking jumps there.
+///
+/// TIM-010: this previously held an `index` field overloaded with a
+/// `10_000+i` synthetic value, then tried `trace.hotspots.get(index)` on
+/// click — always None, so the "drill into hotspot" half was dead. These
+/// markers are gate trips, not engagement hotspots; there is no trace
+/// hotspot to focus, so the jump *is* the drill. (Plotting real hotspots
+/// here, with a focus-the-card affordance, is left to the W3.6 timeline
+/// rewrite.)
 #[derive(Clone, Copy)]
 struct HotspotMarker {
-    index: usize,
     global_move: usize,
 }
 
@@ -473,7 +475,7 @@ fn draw_signal_track(
     hotspots: &[HotspotMarker],
     x_range: (f64, f64),
     pass_bands: &[(f64, f64, bool)],
-    clicked_hotspot: &mut Option<(usize, usize)>,
+    clicked_hotspot: &mut Option<usize>,
     scrub_drag_active: &mut bool,
     events: &mut Vec<AppEvent>,
 ) {
@@ -776,7 +778,7 @@ fn draw_signal_track(
                     if let Some(hs) = nearest_hotspot
                         && (hs.global_move as f64 - pointer.x).abs() <= tolerance
                     {
-                        *clicked_hotspot = Some((hs.index, hs.global_move));
+                        *clicked_hotspot = Some(hs.global_move);
                     } else if let Some((global_move, _)) =
                         nearest_in_groups(pointer.x, &group_points)
                     {

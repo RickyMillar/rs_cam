@@ -3534,12 +3534,22 @@ fn draw_dressup_params(
     // those controls out so the UI reflects what compute actually does.
     // Read from the SAME registry policy `DressupConfig::normalize_for_op`
     // applies (Phase 1 T5) — no hand-synced duplicate table.
-    let op_incompatible_msg: Option<&str> = entry
-        .operation
-        .op_type()
-        .registry_entry()
-        .dressup_policy
-        .strip_all_reason;
+    let dressup_policy = entry.operation.op_type().registry_entry().dressup_policy;
+    let op_incompatible_msg: Option<&str> = dressup_policy.strip_all_reason;
+    // W1.2/P2-003 — adaptive3d (and other planner-emitted / single-pass
+    // ops) coerce the dressup entry style to None via
+    // EntryStylePolicy::ForceNone, independently of strip_all_reason. The
+    // entry combo was gated only on the latter, so it stayed editable while
+    // compute silently ignored it. Gate the entry combo on the entry policy
+    // too (lead-in/out and link moves are unaffected by ForceNone, so they
+    // keep using op_incompatible_msg).
+    let entry_disabled_msg: Option<&str> = op_incompatible_msg.or_else(|| {
+        matches!(
+            dressup_policy.entry,
+            rs_cam_core::compute::catalog::EntryStylePolicy::ForceNone
+        )
+        .then_some("This operation sets its entry move directly — the dressup entry style isn't used here.")
+    });
     let cfg = &mut entry.dressups;
     let section_color = egui::Color32::from_rgb(150, 155, 170);
 
@@ -3553,7 +3563,7 @@ fn draw_dressup_params(
 
     ui.horizontal(|ui| {
         ui.label("Entry Style:");
-        ui.add_enabled_ui(op_incompatible_msg.is_none(), |ui| {
+        ui.add_enabled_ui(entry_disabled_msg.is_none(), |ui| {
             let combo = egui::ComboBox::from_id_salt("dressup_entry")
                 .selected_text(match cfg.entry_style {
                     DressupEntryStyle::None => "None",
@@ -3568,7 +3578,7 @@ fn draw_dressup_params(
                     ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::Helix, "Helix")
                         .on_hover_text("Spiral descent. Best for deep pockets and hard materials. Spreads heat and load evenly.");
                 });
-            if let Some(msg) = op_incompatible_msg {
+            if let Some(msg) = entry_disabled_msg {
                 combo.response.on_hover_text(msg);
             }
         });

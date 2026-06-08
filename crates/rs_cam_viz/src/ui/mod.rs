@@ -7,7 +7,6 @@ pub mod menu_bar;
 pub mod optimize_modal;
 pub mod optimize_project;
 pub mod preflight;
-pub mod project_tree;
 pub mod properties;
 pub mod setup_panel;
 pub mod shortcuts_window;
