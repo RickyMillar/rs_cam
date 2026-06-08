@@ -14,24 +14,29 @@
 > (one agent, single-subsystem context).
 
 ## ▶ Next action
-**W3.4 + W3.5 DONE — W3.7 header/rail is the last full Wave-2 surface.** CL + W3.1 + W3.2 + W3.3 +
-W3.6 + W3.5 + W3.4 are all merged to master. Remaining: 🔁 **W3.7 header/rail** (which builds
-`components::visibility` with the viewport overlay), then W3.8 dashboard + Tier-4/5 polish.
-Fresh branch off master, consumes the component layer (`ARCHITECTURE.md` §4 usage map).
+**W3.7 DONE — all full Wave-2 surfaces complete. W3.8 job-readiness dashboard is next.** CL + W3.1 +
+W3.2 + W3.3 + W3.6 + W3.5 + W3.4 + W3.7 are all merged to master. Remaining: 🔁 **W3.8 job-readiness
+dashboard** (needs W0.1 + W0.4 + W0.5 + components), then Tier-4/5 polish (incl. Tier-4 lows INS-006
+ⓘ engagement cue, INS-003 card accent-bar, TIM-009 hatch). Fresh branch off master, consumes the
+component layer (`ARCHITECTURE.md` §4 usage map).
 
-**W3.7 scope note (spec `pass2/redesign/shell-nav.md`, SHE-001..007):** SHE-001 (dead
-`project_tree.rs`) was already deleted by W1.1; SHE-002/003 (one collision tally + badge severity
-order) were largely done by W0.3 (`total_collision_count()` + simulation_badge reorder) — verify
-then consolidate into a single `ShellHealth` if the three surfaces still recompute. Real remaining
-work: §2 `ShellHealth` consolidation + status-bar collision provenance, §3 toolpath-header
-summary-first reorder + Geometry disclosure + SHE-005 face-picker prose collapse, §4 inline
-Enable/Duplicate row toggles (SHE-006), §5 setup-rail nav-on-top + rollups-behind-disclosure
-(SHE-007). `components::visibility` (viewport overlay) gets built here if it cleanly fits.
+**W3.7 outcome (spec `pass2/redesign/shell-nav.md`, SHE-001..007):** SHE-001 (dead `project_tree.rs`)
+already deleted by W1.1; SHE-002/003 (one collision tally + badge severity order) already done by
+W0.3 (`total_collision_count()` + simulation_badge reorder). The standalone `ShellHealth` struct (§2)
+was assessed redundant — the tally is already single-sourced via `SimulationChecks::total_collision_count()`,
+so no new struct was introduced; instead the status-bar chip earned its provenance directly (SHE-002:
+holder/rapid hover split + grey-when-stale). `components::visibility` was *not* built (deferred — no
+second consumer materialised; the viewport overlay is its only future home). Shipped: SHE-002 chip
+provenance, SHE-005 single face-picker placeholder, SHE-006 inline Enable/Disable + Duplicate toggles
+(`c502b40`); SHE-004 summary-first toolpath header + Geometry disclosure, SHE-007 setup-rail nav-spine
++ rollups-behind-disclosure (`0f7e17b`). Merged `53b85c3`.
 
 ⚠ **Visual-verify debt (MCP can't capture egui panel chrome — human `cargo run` pass), batched:**
 W3.4 tool editor (Shaft/Shank split, holder header badge, Catalog-metadata fields, draft "● modified
-— Apply/Revert" affordance, "Updated" vs "Saved" toast). [W3.5 already confirmed.] Plus whatever
-W3.7 lands. The user will run one big audit pass at the end.
+— Apply/Revert" affordance, "Updated" vs "Saved" toast) + **all of W3.7 chrome** (status-bar collision
+hover/grey, inline queue toggles, single face-picker placeholder, summary-first toolpath header +
+Geometry disclosure, setup-rail nav-on-top + Project-summary disclosure). [W3.5 already confirmed.]
+The user will run one big audit pass at the end.
 
 **`compare::*` not adopted in W3.5 (deliberate):** the rollup header is two cycle-time numbers
 ("Current / Optimized (-26.6s, -10%)"), which `delta_tag`'s "↓ 0.90×" ratio renders *less*
@@ -172,8 +177,8 @@ WAVE 1  (keystone, mostly serial)                              ▼
                                                                │
 WAVE 2  (fan-out — one agent/PR per surface, all disjoint)     ▼
  ├─ 🧠 W3.1 feeds rewrite (epicenter — keep high-context)
- ├─ 🔁 W3.3 inspector  · W3.4 tools  · W3.5 optimizer  · W3.6 timeline
- └─ 🔁 W3.2 tab scaffold · W3.7 header/rail
+ ├─ ✓ W3.3 inspector  · W3.4 tools  · W3.5 optimizer  · W3.6 timeline
+ └─ ✓ W3.2 tab scaffold · W3.7 header/rail
                                                                │
 WAVE 3  (consolidation + polish — fan-out)                     ▼
  ├─ W3.8 job-readiness dashboard (needs W0.1 + W0.4 + W0.5 + components)
@@ -233,7 +238,7 @@ Tier-4/5 polish.
 | W3.4 | tool editor (commit + grouping) | viz | 🟪 | 🔁 | CL, W1.1 | ☑ |
 | W3.5 | optimizer affordances | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.6 | timeline disambiguation | viz | 🟦 | 🔁 | CL | ☑ |
-| W3.7 | header/rail de-overload | viz | 🟦 | 🔁 | CL | ☐ |
+| W3.7 | header/rail de-overload | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.8 | job-readiness dashboard | viz | 🟦 | 🔁 | CL, W0.1, W0.4, W0.5 | ☐ |
 | T4 | confusables/visual lang (W4.2-4.5) | viz | 🟦 | 🔁 | CL | ☐ |
 | T5 | discoverability/prose (W5.1-5.4) | viz | 🟦 | 🔁 | CL | ☐ |
@@ -432,6 +437,22 @@ Tier-4/5 polish.
   mark_edited). `ToolConfig` gained `PartialEq` (core). The modal was already draft-commit (shared
   `draw_tool_fields`), so only the panel changed. clippy --workspace -D warnings + fmt + core
   tool_library + viz properties tests green. ⚠ visual parity unverified (batched).
-- **▶ Next:** W3.7 header/rail (builds `components::visibility` with the viewport overlay), then
-  W3.8 + Tier-4/5. Run **sequentially** (build-thrash), one branch+merge per surface, consuming
-  the component layer. (SHE-001 dead-tree + SHE-002/003 collision-tally already done by W1.1/W0.3.)
+- **2026-06-09** — **W3.7 DONE** on branch `ia-cleanup/w3.7-shell`, 2 commits each green, merged
+  `53b85c3` `--no-ff` — **all full Wave-2 surfaces now complete.** SHE-001 (dead `project_tree.rs`)
+  + SHE-002/003 (collision tally + badge order) were already discharged by W1.1/W0.3. The §2
+  standalone `ShellHealth` struct was assessed *redundant* (tally already single-sourced via
+  `SimulationChecks::total_collision_count()`) — not introduced; instead `c502b40` gave the
+  status-bar chip its provenance directly (SHE-002: holder/rapid hover split + grey-when-stale),
+  collapsed the doubled face-picker prose to one placeholder (SHE-005), and added inline
+  Enable/Disable + Duplicate row toggles via a new `queue_state: Option<bool>` on
+  `toolpath_row_controls::draw` (SHE-006). `0f7e17b` reordered `draw_toolpath_panel` to summary-first
+  (Name → Generate+status → diagnostics ribbon → "Geometry" disclosure holding Tool/Input/BREP/Face/
+  Use-remaining, default-open on a fresh op, collapsed once it has a result) (SHE-004) and rebuilt
+  the setup rail with the nav spine on top (Stock → setups+Add → Models) and the two project rollups
+  demoted to the bottom — Project summary behind a default-collapsed disclosure (headline in header
+  text, stable `id_salt`), diagnostics card last and still self-hiding (SHE-007). `components::visibility`
+  deferred (no second consumer; viewport overlay is its only future home). clippy --workspace
+  -D warnings + fmt + 189 viz lib tests green. ⚠ visual parity unverified (batched — W3.4 + all W3.7).
+- **▶ Next:** W3.8 job-readiness dashboard (needs W0.1 + W0.4 + W0.5 + components), then Tier-4/5
+  polish (Tier-4 lows INS-006 ⓘ engagement cue, INS-003 card accent-bar, TIM-009 hatch). Run
+  **sequentially** (build-thrash), one branch+merge per surface, consuming the component layer.
