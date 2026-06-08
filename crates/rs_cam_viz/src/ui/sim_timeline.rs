@@ -45,6 +45,13 @@ pub fn draw(
         });
         ui.add_space(2.0);
     }
+    // W0.5/TIM-009 — the spine + strips keep rendering the last trace, so
+    // flag staleness here too; otherwise the bottom panel's concrete metrics
+    // read as fresh after an edit while only the left/right panels say stale.
+    if sim.has_results() && sim.is_stale(gui.edit_counter) {
+        super::theme::stale_banner(ui);
+        ui.add_space(2.0);
+    }
     sim.sync_debug_state(gui, max_feed);
     let active_semantic = sim.active_semantic_item(gui, max_feed);
     let current_boundary = sim.current_boundary().cloned();
