@@ -376,8 +376,6 @@ pub enum StockVizMode {
     Solid,
     /// Green/yellow/red/blue deviation from model surface.
     Deviation,
-    /// Colored by which operation removed material.
-    ByOperation,
     /// Height gradient (low=blue, high=red).
     ByHeight,
 }
