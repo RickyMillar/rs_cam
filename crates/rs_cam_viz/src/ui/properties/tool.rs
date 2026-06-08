@@ -1,11 +1,64 @@
 use crate::state::job::{BitCutDirection, ToolConfig, ToolMaterial, ToolType};
 use crate::ui::theme;
 
-pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig) {
+/// TOO-003 — what the operator asked the tool editor to do this frame.
+/// The properties panel edits a draft clone; the caller commits or
+/// discards based on this.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ToolEditAction {
+    /// No commit action this frame (the draft may still have been edited).
+    None,
+    /// Commit the draft to the session.
+    Apply,
+    /// Discard the draft and restore the committed tool.
+    Revert,
+}
+
+/// Draw the tool editor for `draft` (a clone of the committed tool).
+/// `modified` is whether the draft differs from the committed tool; when
+/// true a "● modified — Apply / Revert" affordance is shown so the
+/// pending-until-committed state is legible (matching the Tool Library
+/// modal's draft-then-Save model — TOO-003). Returns the operator action.
+pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig, modified: bool) -> ToolEditAction {
     ui.heading(&tool.name);
     ui.separator();
 
     draw_tool_fields(ui, tool);
+
+    // TOO-003 — commit affordance. Edits are pending until Apply (or until
+    // the user navigates away, which auto-commits); Revert discards them.
+    ui.add_space(8.0);
+    ui.separator();
+    let mut action = ToolEditAction::None;
+    ui.horizontal(|ui| {
+        if modified {
+            ui.label(
+                egui::RichText::new("\u{25CF} modified")
+                    .small()
+                    .color(theme::WARNING),
+            );
+            if ui
+                .button("Apply")
+                .on_hover_text("Commit these edits to the project tool.")
+                .clicked()
+            {
+                action = ToolEditAction::Apply;
+            }
+            if ui
+                .button("Revert")
+                .on_hover_text("Discard these edits and restore the saved values.")
+                .clicked()
+            {
+                action = ToolEditAction::Revert;
+            }
+        } else {
+            ui.label(
+                egui::RichText::new("\u{2713} saved")
+                    .small()
+                    .color(theme::TEXT_MUTED),
+            );
+        }
+    });
 
     ui.add_space(8.0);
     ui.separator();
@@ -53,6 +106,8 @@ pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     if let Some(msg) = ui.data(|d| d.get_temp::<String>(status_id)) {
         ui.label(egui::RichText::new(msg).small().weak());
     }
+
+    action
 }
 
 /// Draw the editable tool fields (name, type, params, preview, holder).
