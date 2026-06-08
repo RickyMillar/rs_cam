@@ -27,6 +27,7 @@ use crate::state::toolpath::{
 };
 use crate::ui::AppEvent;
 use crate::ui::automation;
+use crate::ui::components::{ProvKind, SuggestButton, Suggestion, ValueRow};
 
 /// Paint a brief blue glow behind a UI region when an MCP parameter was recently changed.
 /// Call this right after allocating the widget/row so the highlight paints behind it.
@@ -3300,53 +3301,54 @@ fn dv(
     speed: f64,
     range: std::ops::RangeInclusive<f64>,
 ) {
-    let label_resp = ui.label(label);
-    let resp = ui.add(
-        egui::DragValue::new(val)
-            .suffix(suffix)
-            .speed(speed)
-            .range(range),
-    );
+    // Delegates to the shared `ValueRow` component (the one labelled-input row).
+    let out = ValueRow::new(label, val, suffix, speed, range)
+        .tooltip(tooltip_for(label))
+        .show(ui);
+    record_stock_to_leave(ui, label, &out);
+}
+
+/// The "Stock to Leave" UI-automation hook, shared by `dv`/`dv_pill`.
+fn record_stock_to_leave(
+    ui: &mut egui::Ui,
+    label: &str,
+    out: &crate::ui::components::ValueRowOutcome,
+) {
     if label.trim().trim_end_matches(':') == "Stock to Leave" {
-        automation::record(ui, "properties_stock_to_leave", &resp, "Stock to Leave");
+        automation::record(
+            ui,
+            "properties_stock_to_leave",
+            &out.value_response,
+            "Stock to Leave",
+        );
         automation::record(
             ui,
             "properties_stock_to_leave_label",
-            &label_resp,
+            &out.label_response,
             "Stock to Leave",
         );
     }
-    if let Some(tip) = tooltip_for(label) {
-        resp.on_hover_text(tip);
-    }
-    ui.end_row();
 }
 
 // PR-2D Phase 2 — per-field LUT Suggest pills.
 //
-// `dv_pill` is `dv` with an optional ⚡ button rendered inline to the right
-// of the DragValue. The button overwrites the field with the LUT
-// recommendation when clicked. Pill colour reflects evidence: green for a
-// vendor LUT row, amber for the formula fallback or edge-radius floor.
-// The pill is greyed out when the current value is already within 1% of
-// the recommendation so a click has no surprise side effect.
+// `dv_pill` is `dv` with an optional ⚡ Suggest pill rendered inline to the
+// right of the DragValue. Both now delegate to the shared `ValueRow` /
+// `SuggestButton` components; pill colour + source wording come from the one
+// `ProvKind` vocabulary (green for a vendor LUT row, amber for the formula
+// fallback or edge-radius floor) rather than the old local
+// `pill_color_for_source` / `source_short_label` helpers.
 
-fn pill_color_for_source(source: &rs_cam_core::feeds::ChiploadSource) -> egui::Color32 {
+/// Map the chipload's [`ChiploadSource`](rs_cam_core::feeds::ChiploadSource)
+/// into the shared provenance vocabulary (kind + optional observation id).
+fn prov_from_chipload(source: &rs_cam_core::feeds::ChiploadSource) -> (ProvKind, Option<&str>) {
     use rs_cam_core::feeds::ChiploadSource;
     match source {
-        ChiploadSource::VendorLut { .. } => egui::Color32::from_rgb(80, 180, 80),
-        ChiploadSource::FormulaFallback | ChiploadSource::EdgeRadiusFloor => {
-            egui::Color32::from_rgb(220, 180, 60)
+        ChiploadSource::VendorLut { observation_id } => {
+            (ProvKind::VendorLut, Some(observation_id.as_str()))
         }
-    }
-}
-
-fn source_short_label(source: &rs_cam_core::feeds::ChiploadSource) -> String {
-    use rs_cam_core::feeds::ChiploadSource;
-    match source {
-        ChiploadSource::VendorLut { observation_id } => format!("vendor LUT ({observation_id})"),
-        ChiploadSource::FormulaFallback => "formula fallback".to_owned(),
-        ChiploadSource::EdgeRadiusFloor => "edge-radius floor".to_owned(),
+        ChiploadSource::FormulaFallback => (ProvKind::Formula, None),
+        ChiploadSource::EdgeRadiusFloor => (ProvKind::EdgeRadiusFloor, None),
     }
 }
 
@@ -3359,32 +3361,29 @@ pub(crate) fn suggest_pill(
     source: &rs_cam_core::feeds::ChiploadSource,
     suffix: &str,
 ) -> bool {
+    let (kind, reference) = prov_from_chipload(source);
     let near_match = recommended > 0.0 && (current - recommended).abs() / recommended < 0.01;
-    let color = pill_color_for_source(source);
     let trimmed = field_label.trim().trim_end_matches(':');
-    let btn = egui::Button::new(egui::RichText::new("\u{26A1}").color(color)).small();
+    let src = kind.label_with_reference(reference);
     let hover = if near_match {
         format!(
             "{trimmed} already matches LUT recommendation ({recommended:.3}{suffix}). \
-             Source: {}.",
-            source_short_label(source),
+             Source: {src}."
         )
     } else {
         format!(
-            "Suggest {trimmed} = {recommended:.3}{suffix} (source: {}). \
-             Click to overwrite this field only.",
-            source_short_label(source),
+            "Suggest {trimmed} = {recommended:.3}{suffix} (source: {src}). \
+             Click to overwrite this field only."
         )
     };
-    ui.add_enabled(!near_match, btn)
-        .on_hover_text(hover)
+    ui.add(SuggestButton::field(kind).enabled(!near_match).hover(hover))
         .clicked()
 }
 
 /// Same as [`dv`] but with an optional inline ⚡ Suggest pill that pushes
-/// the LUT-recommended value into the field on click. The grid stays
-/// 2-column — the DragValue and pill share one cell via a horizontal
-/// layout so rows without a pill still align cleanly.
+/// the LUT-recommended value into the field on click. Delegates to
+/// [`ValueRow`] with a [`Suggestion`]; behaviour (near-match greying,
+/// suggestion rounding) is identical to the pre-component path.
 fn dv_pill(
     ui: &mut egui::Ui,
     label: &str,
@@ -3394,43 +3393,18 @@ fn dv_pill(
     range: std::ops::RangeInclusive<f64>,
     suggestion: Option<(f64, &rs_cam_core::feeds::ChiploadSource)>,
 ) -> bool {
-    let label_resp = ui.label(label);
-    let mut clicked = false;
-    ui.horizontal(|ui| {
-        let resp = ui.add(
-            egui::DragValue::new(val)
-                .suffix(suffix)
-                .speed(speed)
-                .range(range),
-        );
-        if label.trim().trim_end_matches(':') == "Stock to Leave" {
-            automation::record(ui, "properties_stock_to_leave", &resp, "Stock to Leave");
-            automation::record(
-                ui,
-                "properties_stock_to_leave_label",
-                &label_resp,
-                "Stock to Leave",
-            );
-        }
-        if let Some(tip) = tooltip_for(label) {
-            resp.on_hover_text(tip);
-        }
-        if let Some((rec, source)) = suggestion
-            && suggest_pill(ui, label, *val, rec, source, suffix)
-        {
-            // Match the rounding used by apply_feeds_result_to_op so
-            // suggested values feel like suggestions, not measurements.
-            let step = if suffix.contains("mm/min") {
-                1.0
-            } else {
-                0.001
-            };
-            *val = rs_cam_core::feeds::suggest::round_suggestion_value(rec, step);
-            clicked = true;
-        }
-    });
-    ui.end_row();
-    clicked
+    let mut row = ValueRow::new(label, val, suffix, speed, range).tooltip(tooltip_for(label));
+    if let Some((rec, source)) = suggestion {
+        let (kind, reference) = prov_from_chipload(source);
+        row = row.suggest(Suggestion {
+            recommended: rec,
+            source: kind,
+            reference,
+        });
+    }
+    let out = row.show(ui);
+    record_stock_to_leave(ui, label, &out);
+    out.suggested
 }
 
 fn tooltip_for(label: &str) -> Option<&'static str> {
