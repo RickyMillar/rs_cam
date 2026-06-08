@@ -56,8 +56,11 @@ pub struct UndoHistory {
     redo_stack: Vec<UndoAction>,
     /// Snapshot of stock config before current edit drag.
     pub stock_snapshot: Option<StockConfig>,
-    /// Snapshot of tool config before current edit.
-    pub tool_snapshot: Option<(ToolId, ToolConfig)>,
+    /// TOO-003 — pending draft for the selected tool. The properties panel
+    /// edits this clone; it is committed to the session on an explicit Apply
+    /// (or auto-committed when the user navigates away). `None` when no tool
+    /// is being edited.
+    pub tool_draft: Option<(ToolId, ToolConfig)>,
     /// Snapshot of post config before current edit.
     pub post_snapshot: Option<PostConfig>,
     /// Snapshot of machine config before current edit.
@@ -72,7 +75,7 @@ impl UndoHistory {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             stock_snapshot: None,
-            tool_snapshot: None,
+            tool_draft: None,
             post_snapshot: None,
             machine_snapshot: None,
             toolpath_snapshot: None,
