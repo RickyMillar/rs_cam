@@ -260,7 +260,7 @@ pub fn draw(
             egui::Frame::default().inner_margin(4.0)
         };
 
-        let inner = frame.show(ui, |ui| {
+        frame.show(ui, |ui| {
             ui.horizontal(|ui| {
                 // Checkbox for including in simulation
                 let mut checked = all_selected || selected_set.contains(&boundary.id);
@@ -278,15 +278,22 @@ pub fn draw(
                     ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
                 ui.painter().rect_filled(swatch_rect, 2.0, color);
 
-                // Operation name — visual focus indicator only; the click
-                // target is the whole card (handled below the frame).
+                // Operation name IS the jump target (TIM-006) — one explicit
+                // hit-region instead of an invisible whole-card click zone that
+                // overlapped the inner controls' Ids.
                 let name_text = egui::RichText::new(&boundary.name).small();
                 let name_text = if is_focused {
                     name_text.strong()
                 } else {
                     name_text
                 };
-                ui.label(name_text);
+                if ui
+                    .add(egui::Label::new(name_text).sense(egui::Sense::click()))
+                    .on_hover_text("Click to jump playback to this toolpath's start.")
+                    .clicked()
+                {
+                    events.push(AppEvent::SimJumpToOpStart(i));
+                }
             });
 
             ui.label(
@@ -340,6 +347,20 @@ pub fn draw(
                     }
 
                     if sim.debug.is_toolpath_expanded(boundary.id) {
+                        // TIM-007 — a one-line kind banner so an expanded tree
+                        // is self-identifying without re-reading the toggle.
+                        let banner = match kind {
+                            OutlineKind::StructuralSpans => "Structural spans",
+                            OutlineKind::SemanticFallback => {
+                                "Legacy semantic trace — spans invalidated"
+                            }
+                        };
+                        ui.label(
+                            egui::RichText::new(banner)
+                                .small()
+                                .italics()
+                                .color(theme::TEXT_MUTED),
+                        );
                         match kind {
                             OutlineKind::StructuralSpans => {
                                 draw_structural_outline(ui, sim, gui, boundary, events);
@@ -360,21 +381,9 @@ pub fn draw(
             }
         });
 
-        // Whole-card click → jump playback to this TP's start. Inner widgets
-        // (checkbox, visibility eyes, "Show spans") consume their own
-        // clicks first; only clicks on empty card real-estate fall through
-        // here. We give the card a discrete `Id` so the response doesn't
-        // collide with neighbours.
-        let card_resp = ui
-            .interact(
-                inner.response.rect,
-                ui.id().with(("sim_card", boundary.id.0)),
-                egui::Sense::click(),
-            )
-            .on_hover_text("Click anywhere on this card to jump playback to the toolpath's start.");
-        if card_resp.clicked() {
-            events.push(AppEvent::SimJumpToOpStart(i));
-        }
+        // The jump verb now has one explicit hit-region — the name label
+        // (TIM-006) — so the invisible whole-card click Id that overlapped the
+        // inner controls is retired.
 
         if i + 1 < boundaries.len() {
             ui.add_space(2.0);
