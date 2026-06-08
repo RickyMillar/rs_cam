@@ -240,6 +240,16 @@ pub enum AppEvent {
         /// non-baseline candidate.
         candidate_index: usize,
     },
+    /// OPT-005 — accept an operator suggestion from the Optimize modal:
+    /// set the named axis to `value` on the toolpath, then re-run the
+    /// search against the new baseline (re-opens the modal). An explicit
+    /// operator click — never an auto-apply — that removes the manual
+    /// re-typing step the prose suggestions used to require.
+    ReoptimizeWithAxisOverride {
+        toolpath_id: ToolpathId,
+        axis: rs_cam_core::tool_load::optimize::KnobAxis,
+        value: f64,
+    },
 
     // Feeds & Speeds modal (Feeds-tab redesign)
     /// Open the redesigned Feeds & Speeds modal focused on a specific
