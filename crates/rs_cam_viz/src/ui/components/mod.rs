@@ -15,11 +15,15 @@
 //!
 //! See `planning/ui_audit/ARCHITECTURE.md` for the full contract map.
 
+pub mod freshness;
+pub mod pill;
 pub mod provenance;
 pub mod section;
 pub mod suggest;
 pub mod value_row;
 
+pub use freshness::{Freshness, FreshnessGate};
+pub use pill::{CountPill, PillFamily, PillRole};
 pub use provenance::{ProvKind, ProvenanceBadge};
 pub use section::{SummaryCard, UiExt};
 pub use suggest::{SuggestButton, SuggestScope, Suggestion};

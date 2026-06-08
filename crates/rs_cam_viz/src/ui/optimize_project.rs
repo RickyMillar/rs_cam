@@ -11,6 +11,7 @@ use rs_cam_core::tool_load::optimize::{
     OptimizeCandidate, OptimizeOutcome, OutcomeKind, ParamDelta, ProjectOptimizeReport,
 };
 
+use super::components::FreshnessGate;
 use super::{AppEvent, theme};
 use crate::state::{AppState, OptimizeProjectState, OptimizeProjectStatus};
 
@@ -46,7 +47,7 @@ fn draw_view(
     // numbers are computed from out-of-date stock. Flag it instead of
     // presenting the figures as current.
     if state.simulation.is_stale(state.gui.edit_counter) {
-        theme::stale_banner(ui);
+        FreshnessGate::banner(ui);
         ui.add_space(4.0);
     }
     match &view.status {
