@@ -169,16 +169,47 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
         add_toolpath_menu(ui, sid, state, events);
     }
 
-    // Tool library (compact, collapsed by default)
+    // Tool library (compact, collapsed by default). This is the *live*
+    // tool home and holds the full CRUD set: per-tool Duplicate/Delete
+    // (context menu or Del key), library manager, and library import.
+    // W1.1 harvested these from the dead `project_tree.rs` (deleted) — the
+    // shipping GUI previously had no way to delete/duplicate a tool or
+    // reach the library from the panel.
     ui.add_space(12.0);
     egui::CollapsingHeader::new("Tool Library")
         .default_open(false)
         .show(ui, |ui| {
+            if ui
+                .small_button("Manage library…")
+                .on_hover_text("Browse, edit, and organise the reusable tool catalogs.")
+                .clicked()
+            {
+                events.push(AppEvent::OpenToolLibrary);
+            }
+            ui.add_space(4.0);
+            if state.session.tools().is_empty() {
+                ui.label(
+                    egui::RichText::new("No tools defined")
+                        .italics()
+                        .color(theme::TEXT_DIM),
+                );
+            }
             for tool in state.session.tools() {
                 let selected = state.selection == Selection::Tool(tool.id);
-                if ui.selectable_label(selected, tool.summary()).clicked() {
+                let response = ui.selectable_label(selected, tool.summary());
+                if response.clicked() {
                     events.push(AppEvent::Select(Selection::Tool(tool.id)));
                 }
+                response.context_menu(|ui| {
+                    if ui.button("Duplicate").clicked() {
+                        events.push(AppEvent::DuplicateTool(tool.id));
+                        ui.close();
+                    }
+                    if ui.button("Delete").clicked() {
+                        events.push(AppEvent::RemoveTool(tool.id));
+                        ui.close();
+                    }
+                });
             }
             ui.add_space(4.0);
             ui.menu_button("+ Add Tool", |ui| {
@@ -187,6 +218,37 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                         events.push(AppEvent::AddTool(tt));
                         ui.close();
                     }
+                }
+                let libraries = rs_cam_core::tool_library::list_libraries();
+                if !libraries.is_empty() {
+                    ui.separator();
+                    ui.menu_button("From library", |ui| {
+                        for lib in &libraries {
+                            ui.menu_button(
+                                lib,
+                                |ui| match rs_cam_core::tool_library::load_library(lib) {
+                                    Ok(catalog) if catalog.tools.is_empty() => {
+                                        ui.label("(empty)");
+                                    }
+                                    Ok(catalog) => {
+                                        for tool in &catalog.tools {
+                                            let label =
+                                                format!("{} — ⌀{:.2}mm", tool.name, tool.diameter);
+                                            if ui.button(label).clicked() {
+                                                events.push(AppEvent::AddToolFromLibrary(
+                                                    Box::new(tool.clone()),
+                                                ));
+                                                ui.close();
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        ui.label(format!("load error: {e}"));
+                                    }
+                                },
+                            );
+                        }
+                    });
                 }
             });
         });
