@@ -14,15 +14,29 @@
 > (one agent, single-subsystem context).
 
 ## ▶ Next action
-**CL DONE — next are the Wave-2 per-surface rewrites (W3.x), which now fan out.** The
-component layer is merged to master. Wave 0, Tier 1, Tier 2 already were. The barrier is
-lifted: every ♻ surface rewrite + W3.8 + Tier-4/5 polish are unblocked.
+**W3.1 DONE — next is the W3.x fan-out (now safe to parallelize).** CL + W3.1 are merged to
+master. The remaining Wave-2 surface rewrites are disjoint per-surface and consume the stable
+component layer: 🔁 **W3.2 tab scaffold · W3.3 inspector · W3.4 tools · W3.5 optimizer · W3.6
+timeline · W3.7 header/rail**, then W3.8 dashboard + Tier-4/5 polish. Each: one agent/PR,
+fresh branch off master. Read `ARCHITECTURE.md` §4 (usage map) for which component each uses.
 
-Start with **🧠 W3.1 (feeds rewrite + core SPEED/CUT split)** — the epicenter, keep it
-single-owner/high-context (couples core + UI). The rest fan out per-surface, one agent/PR
-each, all disjoint files: 🔁 W3.2 tab scaffold · W3.3 inspector · W3.4 tools · W3.5
-optimizer · W3.6 timeline · W3.7 header/rail. The components are the shared substrate they
-all draw from — read `ARCHITECTURE.md` §4 (usage map) for which component each surface uses.
+Carry-overs the fan-out should pick up (from CL + W3.1 deferrals): W3.3 adopts `CountPill` for
+the Inspector Findings grid; W3.5 adopts `compare::*` if it adds a compare view; W3.2 owns
+relocating feed/plunge to the Feeds tab (spindle already moved there in W3.1) and the 5-tab
+recharter; `components::{visibility, nav, diagram}` get built with the surfaces that use them.
+
+**W3.1 landed** (3 stacked commits, `ia-cleanup/w3.1-feeds`) — the feeds epicenter:
+- **1/3** core SPEED/CUT split: `apply_speeds_to_op` + `apply_cut_geometry_to_op` beside
+  `apply_feeds_result_to_op` (all via a scratch-clone `apply_feeds_subset`; subset applies are
+  byte-identical to the combined apply for the fields they write). `apply_suggested_subset`
+  mirrors it. Callers unchanged. 2 unit tests lock per-axis isolation.
+- **2/3** Feeds card → SPEED / CUT / Derived `named_section`s. "⚡⚡ Apply recommended speeds"
+  is SPEED-only; "⚡ Apply cut geometry" is the separate attributed cut apply. Derived uses
+  `compare::power_bar`/`mrr_row`. Dropped the old un-provenanced per-field set buttons.
+- **3/3** spindle `PrecedenceField` (shows override vs real project default `〈N〉`): relocated
+  from every op's Params tab into the Feeds SPEED section (its end-state home), so W3.2 inherits
+  it. Removed spindle from `draw_feed_params` (+21 sites); deleted `draw_spindle_rpm_row` +
+  `suggest_pill`. Fixes P1-005/P2-006.
 
 **CL landed** (4 stacked commits, `ia-cleanup/components`) — the duplication-killer substrate:
 - **1/4** foundations: `ProvKind`/`ProvenanceBadge` (one glyph+RGB per source, `From<&ValueProvenance>`),
@@ -173,7 +187,7 @@ Tier-4/5 polish.
 | W1.1 | revive tool CRUD (kill `project_tree`) | viz | 🟪 | 🛠 | W-UP | ☑ |
 | W1.2 | wire/retire dead controls (×4) | viz | 🟥 | 🔁 | W-UP | ☑ |
 | CL | **component layer** (+W4.1) | viz | 🟦 | 🧠 | W-UP, W2.1, W0.4, W0.5 | ☑ |
-| W3.1 | feeds rewrite + core split | core+viz | 🟪 | 🧠 | CL | ☐ |
+| W3.1 | feeds rewrite + core split | core+viz | 🟪 | 🧠 | CL | ☑ |
 | W3.2 | five-tab scaffold | viz | 🟦 | 🔁 | CL | ☐ |
 | W3.3 | inspector summary-first | viz | 🟦 | 🔁 | CL | ☐ |
 | W3.4 | tool editor (commit + grouping) | viz | 🟪 | 🔁 | CL, W1.1 | ☐ |
@@ -287,5 +301,16 @@ Tier-4/5 polish.
   Deferrals (by design, see ▶ Next action): live per-op pill rewiring → W3.1; Inspector Findings
   grid → CountPill → W3.3; optimizer compare adoption → W3.5; `visibility`/`nav`/`diagram`
   components built with the surfaces that consume them.
-- **▶ Next:** the Wave-2 per-surface rewrites fan out — **W3.1 feeds (keystone, single-owner)**
-  first, then 🔁 W3.2–W3.7 per-surface. All consume the now-stable component layer.
+- **2026-06-08** — **CL merged to master** (`583ac4b`, --no-ff).
+- **2026-06-08** — **W3.1 COMPLETE** on branch `ia-cleanup/w3.1-feeds`, 3 stacked commits each
+  green (clippy -D warnings + fmt + core/viz tests):
+  - **1/3** (`d809fdc`) core SPEED/CUT split — `apply_speeds_to_op` + `apply_cut_geometry_to_op`
+    via a scratch-clone `apply_feeds_subset`; `apply_suggested_subset` mirrors it; callers
+    unchanged; 2 isolation unit tests.
+  - **2/3** (`008b614`) Feeds card → SPEED / CUT / Derived sections; speed-only + cut-only
+    recipe applies; Derived via `compare::*`.
+  - **3/3** (`619490d`) spindle `PrecedenceField` relocated to the Feeds SPEED section with the
+    real project default; removed from `draw_feed_params` (+21 sites); `draw_spindle_rpm_row` +
+    `suggest_pill` deleted. Fixes P1-005/P2-006.
+- **▶ Next:** the remaining Wave-2 rewrites fan out — 🔁 W3.2–W3.7 per-surface, one PR each off
+  master, all consuming the component layer. (UI visual parity for CL + W3.1 pending a human pass.)
