@@ -20,7 +20,6 @@ pub fn draw(
     sim: &mut SimulationState,
     session: &ProjectSession,
     gui: &GuiState,
-    viewport: &mut crate::state::viewport::ViewportState,
     events: &mut Vec<AppEvent>,
 ) {
     let max_feed = session.machine().max_feed_mm_min;
@@ -87,16 +86,16 @@ pub fn draw(
     egui::CollapsingHeader::new("View")
         .default_open(true)
         .show(ui, |ui| {
-            // Stock visibility — basic show/hide and opacity. Color modes
-            // (Deviation, By Height) live under "Analysis" below.
+            // Stock appearance — opacity only. The show/hide *toggle* lives in
+            // the viewport "Show ▼" menu (W4.3: one home for visibility); this
+            // panel keeps stock *appearance* (opacity + the colour modes under
+            // "Analysis" below). Same backing field, two labels, was P4-005.
             ui.label(
                 egui::RichText::new("Stock")
                     .small()
                     .strong()
                     .color(theme::TEXT_HEADING),
             );
-            ui.checkbox(&mut viewport.show_stock, "Show stock")
-                .on_hover_text("Show the simulated stock mesh in the 3D viewport.");
             ui.horizontal(|ui| {
                 ui.label("Opacity:");
                 ui.add(egui::Slider::new(&mut sim.stock_opacity, 0.0..=1.0).show_value(true));
@@ -104,19 +103,24 @@ pub fn draw(
 
             ui.add_space(8.0);
 
-            // Toolpath visibility — project-wide show/hide for cutting and
-            // rapid moves. Per-toolpath overrides remain on each row's
-            // toolpath_row_controls below.
+            // Toolpath visibility moved entirely to the viewport "Show ▼" menu
+            // (global) and each row's C / R buttons (per-toolpath). Duplicating
+            // the global checkboxes here under a second set of labels was the
+            // P4-005 confusable; the pointer keeps them discoverable.
             ui.label(
                 egui::RichText::new("Toolpaths")
                     .small()
                     .strong()
                     .color(theme::TEXT_HEADING),
             );
-            ui.checkbox(&mut viewport.show_cutting, "Show cutting moves")
-                .on_hover_text("Show green cutting-feed lines in the 3D viewport.");
-            ui.checkbox(&mut viewport.show_rapids, "Show rapid moves")
-                .on_hover_text("Show orange rapid-traverse lines in the 3D viewport.");
+            ui.label(
+                egui::RichText::new(
+                    "Cutting / rapid visibility: viewport \u{201C}Show \u{25BE}\u{201D} menu. \
+                     Per-toolpath: each row\u{2019}s C / R.",
+                )
+                .small()
+                .color(theme::TEXT_FAINT),
+            );
 
             ui.add_space(8.0);
 
@@ -164,11 +168,23 @@ pub fn draw(
             if matches!(sim.stock_viz_mode, StockVizMode::Deviation)
                 && sim.playback.display_deviations.is_none()
             {
-                ui.label(
-                    egui::RichText::new("No deviation data — re-run simulation to compute")
-                        .small()
-                        .color(theme::WARNING),
-                );
+                // P5-004: the mode selector that needs deviation data is right
+                // here, so the re-run affordance is too — no off-surface hunt
+                // for the Run button.
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new("No deviation data \u{2014}")
+                            .small()
+                            .color(theme::WARNING),
+                    );
+                    if ui
+                        .small_button("Re-run simulation")
+                        .on_hover_text("Re-run the simulation to compute surface deviation.")
+                        .clicked()
+                    {
+                        events.push(AppEvent::RunSimulation);
+                    }
+                });
             }
 
             // Generator overlay — only meaningful when traces are recorded.
