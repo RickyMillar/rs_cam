@@ -6,7 +6,6 @@ use crate::state::toolpath::{
 };
 
 use super::super::{dv, dv_pill};
-use super::draw_feed_params;
 
 pub(in crate::ui::properties) fn draw_dropcutter_params(
     ui: &mut egui::Ui,
@@ -27,7 +26,6 @@ pub(in crate::ui::properties) fn draw_dropcutter_params(
                 0.05..=50.0,
                 stepover_sugg,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
             dv(ui, "Min Z:", &mut cfg.min_z, " mm", 0.5, -500.0..=0.0);
             dv(
                 ui,
@@ -88,7 +86,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                 0.05,
                 0.0..=10.0,
             );
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
             dv(
                 ui,
                 "Tolerance:",
@@ -261,11 +258,11 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
 pub(in crate::ui::properties) fn draw_waterline_params(
     ui: &mut egui::Ui,
     cfg: &mut WaterlineConfig,
-    feeds_result: Option<&FeedsResult>,
+    _feeds_result: Option<&FeedsResult>,
 ) {
     // Waterline: z_step is the axial pass spacing, but Step 3 LUT mapping
     // (axial_depth_mm) is calibrated for clearing DOC, not contour Z-step.
-    // Leave Z Step alone; only feed/plunge/RPM get pills.
+    // Leave Z Step alone; feed/plunge live on the Feeds tab (W3.2).
     egui::Grid::new("wl_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -276,18 +273,17 @@ pub(in crate::ui::properties) fn draw_waterline_params(
             ui.checkbox(&mut cfg.continuous, "");
             ui.end_row();
             // Z range now comes from the Heights tab (top_z / bottom_z)
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
         });
 }
 
 pub(in crate::ui::properties) fn draw_pencil_params(
     ui: &mut egui::Ui,
     cfg: &mut PencilConfig,
-    feeds_result: Option<&FeedsResult>,
+    _feeds_result: Option<&FeedsResult>,
 ) {
     // Pencil's offset_stepover is a parallel-pass spacing, not the same
-    // shape as a clearing radial WOC; leave it alone. Only feed/plunge/RPM
-    // get pills.
+    // shape as a clearing radial WOC; leave it alone. Feed/plunge live on
+    // the Feeds tab (W3.2).
     egui::Grid::new("pen_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -331,7 +327,6 @@ pub(in crate::ui::properties) fn draw_pencil_params(
                 0.05..=10.0,
             );
             dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
             dv(
                 ui,
                 "Stock to Leave:",
@@ -346,10 +341,11 @@ pub(in crate::ui::properties) fn draw_pencil_params(
 pub(in crate::ui::properties) fn draw_scallop_params(
     ui: &mut egui::Ui,
     cfg: &mut ScallopConfig,
-    feeds_result: Option<&FeedsResult>,
+    _feeds_result: Option<&FeedsResult>,
 ) {
     // Scallop's stepover is computed from scallop_height + tool radius, not
-    // an editable field, so no stepover pill. Only feed/plunge/RPM.
+    // an editable field, so no stepover pill. Feed/plunge live on the Feeds
+    // tab (W3.2).
     egui::Grid::new("sc_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -401,7 +397,6 @@ pub(in crate::ui::properties) fn draw_scallop_params(
                 0.0..=90.0,
             );
             dv(ui, "Slope To:", &mut cfg.slope_to, " deg", 1.0, 0.0..=90.0);
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
             dv(
                 ui,
                 "Stock to Leave:",
@@ -460,7 +455,6 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
                 stepover_sugg,
             );
             dv(ui, "Z Step:", &mut cfg.z_step, " mm", 0.1, 0.05..=20.0);
-            draw_feed_params(ui, &mut cfg.feed_rate, &mut cfg.plunge_rate, feeds_result);
             dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
             dv(
                 ui,
