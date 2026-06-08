@@ -14,16 +14,32 @@
 > (one agent, single-subsystem context).
 
 ## ▶ Next action
-**W3.1 DONE — next is the W3.x fan-out (now safe to parallelize).** CL + W3.1 are merged to
-master. The remaining Wave-2 surface rewrites are disjoint per-surface and consume the stable
-component layer: 🔁 **W3.2 tab scaffold · W3.3 inspector · W3.4 tools · W3.5 optimizer · W3.6
-timeline · W3.7 header/rail**, then W3.8 dashboard + Tier-4/5 polish. Each: one agent/PR,
-fresh branch off master. Read `ARCHITECTURE.md` §4 (usage map) for which component each uses.
+**W3.2 DONE — the remaining Wave-2 surface rewrites are next.** CL + W3.1 + W3.2 are merged to
+master. The per-toolpath panel is now the five concern tabs and the feeds epicenter is
+single-homed, so the surface rewrites no longer share the central properties file: 🔁 **W3.3
+inspector · W3.4 tools · W3.5 optimizer · W3.6 timeline · W3.7 header/rail**, then W3.8
+dashboard + Tier-4/5 polish. Each: fresh branch off master, consumes the component layer
+(`ARCHITECTURE.md` §4 usage map).
 
-Carry-overs the fan-out should pick up (from CL + W3.1 deferrals): W3.3 adopts `CountPill` for
-the Inspector Findings grid; W3.5 adopts `compare::*` if it adds a compare view; W3.2 owns
-relocating feed/plunge to the Feeds tab (spindle already moved there in W3.1) and the 5-tab
-recharter; `components::{visibility, nav, diagram}` get built with the surfaces that use them.
+⚠ **Execution constraint (don't true-fan-out the builds):** [[feedback_no_concurrent_release_builds]]
+— parallel viz builds thrash swap and crash the PC. So although the surfaces are file-disjoint,
+run them **sequentially in the main tree** (one surface → commits → green → merge `--no-ff`,
+then the next), the same proven rhythm CL/W3.1/W3.2 used. Fan-out agents are only safe if their
+builds are serialized.
+
+Carry-overs the rewrites still pick up (from CL + W3.1 deferrals): W3.3 adopts `CountPill` for
+the Inspector Findings grid; W3.5 adopts `compare::*` if it adds a compare view;
+`components::{visibility, nav, diagram}` get built with the surfaces that use them.
+
+**W3.2 landed** (2 commits, `ia-cleanup/w3.2-tabs`, merge `caed022`):
+- **1/2** (`2994b84`) five-tab recharter `[Params][Feeds][Heights][Dressups]` →
+  `[Geometry][Feeds & Speeds][Linking][Heights][Dressup]`. Machining Boundary moved to Geometry;
+  `draw_dressup_params` split into `draw_linking_params` (Entry & Exit + Optimization + Retract)
+  + `draw_dressup_params` (Path Quality). Tab enum/labels/badges renamed; default tab Geometry.
+- **2/2** (`122e82c`) feed/plunge relocated into the Feeds SPEED section as editable `ValueRow`s
+  with per-field ⚡; `draw_feed_params` deleted (21 call sites); bulk "Suggest all (LUT)" button
+  retired from Geometry (feeds_result still cached for the stepover/DOC pills); manual SPEED
+  editor added to the Feeds engine-refusal branch. Drill keeps its Z-only feed on Geometry.
 
 **W3.1 landed** (3 stacked commits, `ia-cleanup/w3.1-feeds`) — the feeds epicenter:
 - **1/3** core SPEED/CUT split: `apply_speeds_to_op` + `apply_cut_geometry_to_op` beside
@@ -188,7 +204,7 @@ Tier-4/5 polish.
 | W1.2 | wire/retire dead controls (×4) | viz | 🟥 | 🔁 | W-UP | ☑ |
 | CL | **component layer** (+W4.1) | viz | 🟦 | 🧠 | W-UP, W2.1, W0.4, W0.5 | ☑ |
 | W3.1 | feeds rewrite + core split | core+viz | 🟪 | 🧠 | CL | ☑ |
-| W3.2 | five-tab scaffold | viz | 🟦 | 🔁 | CL | ☐ |
+| W3.2 | five-tab scaffold | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.3 | inspector summary-first | viz | 🟦 | 🔁 | CL | ☐ |
 | W3.4 | tool editor (commit + grouping) | viz | 🟪 | 🔁 | CL, W1.1 | ☐ |
 | W3.5 | optimizer affordances | viz | 🟦 | 🔁 | CL | ☐ |
@@ -312,5 +328,13 @@ Tier-4/5 polish.
   - **3/3** (`619490d`) spindle `PrecedenceField` relocated to the Feeds SPEED section with the
     real project default; removed from `draw_feed_params` (+21 sites); `draw_spindle_rpm_row` +
     `suggest_pill` deleted. Fixes P1-005/P2-006.
-- **▶ Next:** the remaining Wave-2 rewrites fan out — 🔁 W3.2–W3.7 per-surface, one PR each off
-  master, all consuming the component layer. (UI visual parity for CL + W3.1 pending a human pass.)
+- **2026-06-08** — **W3.2 COMPLETE** on branch `ia-cleanup/w3.2-tabs`, 2 commits each green
+  (clippy --workspace -D warnings + fmt + viz 189+9), merged to master `caed022` `--no-ff`:
+  - **1/2** (`2994b84`) five-tab recharter + dressup→linking/dressup split + boundary→Geometry.
+  - **2/2** (`122e82c`) feed/plunge relocated into the Feeds SPEED section (editable ValueRows +
+    per-field ⚡); `draw_feed_params` deleted; "Suggest all" button retired; drill feed stays on
+    Geometry; manual SPEED editor on the feeds-refusal branch.
+- **▶ Next:** the remaining Wave-2 rewrites — W3.3 inspector · W3.4 tools · W3.5 optimizer ·
+  W3.6 timeline · W3.7 header/rail. File-disjoint, but run **sequentially** (build-thrash
+  constraint, see ▶ Next action), one branch+merge per surface, all consuming the component
+  layer. (UI visual parity for CL + W3.1 + W3.2 pending a human `cargo run` pass.)
