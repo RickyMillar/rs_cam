@@ -128,7 +128,7 @@ fn default_workholding_rigidity() -> crate::feeds::WorkholdingRigidity {
 }
 
 /// Post-processor configuration from the project file.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectPostConfig {
     #[serde(default)]
     pub format: String,
