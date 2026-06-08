@@ -1037,11 +1037,13 @@ fn draw_transport_and_scrubber(
     });
 }
 
-/// Row 2: Custom-painted per-op timeline bar with collision markers and
-/// optional semantic annotation band. Always project-wide — segments,
-/// markers, and the playhead all live in the global move space across
-/// every toolpath in the project, regardless of which TP is focused
-/// in the panel below.
+/// Row 2: the **Tier-2 time axis** (pass-2 timeline §2) — the single widget
+/// that owns the project-global move axis. It stacks the op segments, the span
+/// sub-band, and (in debug) the semantic sub-band as Y-regions of ONE allocated
+/// rect, painted with ONE shared playhead and governed by ONE mode-aware click
+/// contract: drag anywhere scrubs; a click's side-effect is decided by which
+/// sub-band Y-region it lands in. This kills the three-divergent-axes /
+/// three-orphan-playheads problem (TIM-001/002).
 #[allow(clippy::too_many_arguments)]
 fn draw_boundary_timeline(
     ui: &mut egui::Ui,
@@ -1053,250 +1055,303 @@ fn draw_boundary_timeline(
     active_semantic: &Option<ActiveSemanticItem>,
     events: &mut Vec<AppEvent>,
 ) {
-    if sim.total_moves() > 0 && !sim.boundaries().is_empty() {
-        let total_width = ui.available_width();
-        let height = 32.0;
-        let rounding = 6.0;
-        let (rect, response) = ui.allocate_exact_size(
-            egui::vec2(total_width, height),
-            egui::Sense::click_and_drag(),
-        );
-
-        let painter = ui.painter_at(rect);
-        let total_moves = sim.total_moves().max(1) as f32;
-
-        // Subtle border around the timeline bar
-        painter.rect_stroke(
-            rect,
-            rounding,
-            egui::Stroke::new(1.0, egui::Color32::from_rgb(55, 55, 65)),
-            egui::StrokeKind::Middle,
-        );
-
-        for (i, boundary) in sim.boundaries().iter().enumerate() {
-            let op_moves = boundary.end_move.saturating_sub(boundary.start_move);
-            let x_start = rect.min.x + (boundary.start_move as f32 / total_moves) * total_width;
-            let x_end = rect.min.x + (boundary.end_move as f32 / total_moves) * total_width;
-
-            let pc = palette_color(i);
-            let dim_color = egui::Color32::from_rgb(
-                (pc[0] * 50.0) as u8,
-                (pc[1] * 50.0) as u8,
-                (pc[2] * 50.0) as u8,
-            );
-            let color = egui::Color32::from_rgb(
-                (pc[0] * 255.0) as u8,
-                (pc[1] * 255.0) as u8,
-                (pc[2] * 255.0) as u8,
-            );
-
-            let seg_rect = egui::Rect::from_min_max(
-                egui::pos2(x_start, rect.min.y),
-                egui::pos2(x_end, rect.max.y),
-            );
-            painter.rect_filled(seg_rect, rounding, dim_color);
-
-            let progress = if sim.playback.current_move >= boundary.end_move {
-                1.0
-            } else if sim.playback.current_move <= boundary.start_move {
-                0.0
-            } else {
-                (sim.playback.current_move - boundary.start_move) as f32 / op_moves.max(1) as f32
-            };
-            let fill_width = (x_end - x_start) * progress;
-            let fill_rect = egui::Rect::from_min_size(
-                egui::pos2(x_start, rect.min.y),
-                egui::vec2(fill_width, height),
-            );
-            painter.rect_filled(fill_rect, rounding, color);
-        }
-
-        // Inspector focus filters all markers on the boundary timeline. When
-        // a TP is focused, only its markers are drawn; otherwise all are
-        // shown. The boundary segments themselves (above) stay project-wide.
-        let focused_id = sim.focused_toolpath();
-        let in_focus = |move_idx: usize| -> bool {
-            let Some(focus) = focused_id else {
-                return true;
-            };
-            sim.boundaries()
-                .iter()
-                .find(|b| move_idx >= b.start_move && move_idx <= b.end_move)
-                .map(|b| b.id == focus)
-                .unwrap_or(false)
-        };
-
-        if let Some(ref report) = sim.checks.collision_report {
-            let holder_color = egui::Color32::from_rgb(255, 50, 50);
-            for col in &report.collisions {
-                if !in_focus(col.move_idx) {
-                    continue;
-                }
-                let x = rect.min.x + (col.move_idx as f32 / total_moves) * total_width;
-                painter.line_segment(
-                    [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
-                    egui::Stroke::new(2.0, holder_color),
-                );
-            }
-        }
-
-        let rapid_color = egui::Color32::from_rgb(255, 160, 40);
-        for &idx in &sim.checks.rapid_collision_move_indices {
-            if !in_focus(idx) {
-                continue;
-            }
-            let x = rect.min.x + (idx as f32 / total_moves) * total_width;
-            painter.line_segment(
-                [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
-                egui::Stroke::new(1.5, rapid_color),
-            );
-        }
-
-        draw_tool_load_timeline_markers(
-            &painter,
-            rect,
-            total_moves,
-            total_width,
-            sim,
-            load_report,
-            focused_id,
-        );
-
-        // Hover tooltip: when the pointer is near a timeline marker, show
-        // what the marker is. Uses a single tooltip per hover frame, picking
-        // the closest visible marker within ~6 px.
-        if response.hovered()
-            && let Some(pos) = response.hover_pos()
-            && let Some(tip) = nearest_marker_tooltip(
-                pos.x,
-                rect,
-                total_moves,
-                total_width,
-                sim,
-                load_report,
-                focused_id,
-            )
-        {
-            egui::Tooltip::always_open(
-                ui.ctx().clone(),
-                ui.layer_id(),
-                egui::Id::new("sim_timeline_marker_tip"),
-                egui::PopupAnchor::Pointer,
-            )
-            .show(|ui| {
-                ui.label(tip);
-            });
-        }
-
-        // Playhead line
-        let pos_x = rect.min.x + (sim.playback.current_move as f32 / total_moves) * total_width;
-        painter.line_segment(
-            [
-                egui::pos2(pos_x, rect.min.y - 1.0),
-                egui::pos2(pos_x, rect.max.y + 1.0),
-            ],
-            egui::Stroke::new(2.0, egui::Color32::WHITE),
-        );
-
-        // Playhead diamond handle at the top
-        let diamond_center = egui::pos2(pos_x, rect.min.y);
-        let diamond_size = 4.0;
-        let diamond_points = vec![
-            egui::pos2(diamond_center.x, diamond_center.y - diamond_size),
-            egui::pos2(diamond_center.x + diamond_size, diamond_center.y),
-            egui::pos2(diamond_center.x, diamond_center.y + diamond_size),
-            egui::pos2(diamond_center.x - diamond_size, diamond_center.y),
-        ];
-        painter.add(egui::Shape::convex_polygon(
-            diamond_points,
-            egui::Color32::WHITE,
-            egui::Stroke::NONE,
-        ));
-
-        // Click or drag to seek. If the pointer is near an actionable safety
-        // marker, focus the Safety tab and jump to that finding instead.
-        if response.dragged() {
-            sim.playback.scrub_drag_active = true;
-        }
-        if (response.dragged() || response.clicked())
-            && let Some(pos) = response.interact_pointer_pos()
-        {
-            if response.clicked()
-                && let Some(target) = nearest_safety_marker_move(
-                    pos.x,
-                    rect,
-                    total_moves,
-                    total_width,
-                    sim,
-                    load_report,
-                )
-            {
-                sim.analytics_tab = SimulationAnalyticsTab::Safety;
-                sim.playback.current_move = target;
-                sim.playback.playing = false;
-                events.push(AppEvent::SimJumpToMove(target));
-            } else {
-                let frac = ((pos.x - rect.min.x) / total_width).clamp(0.0, 1.0);
-                sim.playback.current_move = (frac * total_moves) as usize;
-                sim.playback.playing = false;
-            }
-        }
+    if sim.total_moves() == 0 || sim.boundaries().is_empty() {
+        return;
     }
 
-    // Span ribbon: subdivides the scope toolpath's segment of the X axis
-    // into DepthPass blocks (and Region sub-blocks when a pass is selected).
-    // Click → scrub to the span's start AND set the chip-row scope. This
-    // replaces the «Z Z» pass-jump buttons in the transport row with a
-    // visual, hover-aware navigator.
-    draw_span_ribbon(ui, sim, gui, events);
+    // Decide which sub-bands are present so their slot heights can be reserved
+    // before the single allocate.
+    let span_scope_tp = span_subband_present(sim, gui);
+    let semantic_present = sim.debug.enabled
+        && current_boundary
+            .as_ref()
+            .is_some_and(|b| semantic_subband_present(sim, gui, b));
 
-    if sim.debug.enabled
-        && let Some(boundary) = current_boundary.as_ref()
-    {
-        draw_semantic_band(
+    let op_h = 28.0_f32;
+    let span_h = 12.0_f32;
+    let sem_h = 10.0_f32;
+    let gap = 2.0_f32;
+    let mut total_h = op_h;
+    if span_scope_tp.is_some() {
+        total_h += gap + span_h;
+    }
+    if semantic_present {
+        total_h += gap + sem_h;
+    }
+
+    let total_width = ui.available_width();
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(total_width, total_h),
+        egui::Sense::click_and_drag(),
+    );
+    let painter = ui.painter_at(rect);
+    let total_moves = sim.total_moves().max(1) as f32;
+    let global_x =
+        |move_idx: usize| -> f32 { rect.min.x + (move_idx as f32 / total_moves) * total_width };
+
+    let op_rect = egui::Rect::from_min_max(rect.min, egui::pos2(rect.max.x, rect.min.y + op_h));
+    let mut next_y = op_rect.max.y + gap;
+    let span_rect = span_scope_tp.map(|_| {
+        let r = egui::Rect::from_min_max(
+            egui::pos2(rect.min.x, next_y),
+            egui::pos2(rect.max.x, next_y + span_h),
+        );
+        next_y = r.max.y + gap;
+        r
+    });
+    let sem_rect = semantic_present.then(|| {
+        egui::Rect::from_min_max(
+            egui::pos2(rect.min.x, next_y),
+            egui::pos2(rect.max.x, next_y + sem_h),
+        )
+    });
+
+    // ── Op band ──
+    let rounding = 6.0;
+    painter.rect_stroke(
+        op_rect,
+        rounding,
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(55, 55, 65)),
+        egui::StrokeKind::Middle,
+    );
+    for (i, boundary) in sim.boundaries().iter().enumerate() {
+        let op_moves = boundary.end_move.saturating_sub(boundary.start_move);
+        let x_start = global_x(boundary.start_move);
+        let x_end = global_x(boundary.end_move);
+        let pc = palette_color(i);
+        let dim_color = egui::Color32::from_rgb(
+            (pc[0] * 50.0) as u8,
+            (pc[1] * 50.0) as u8,
+            (pc[2] * 50.0) as u8,
+        );
+        let color = egui::Color32::from_rgb(
+            (pc[0] * 255.0) as u8,
+            (pc[1] * 255.0) as u8,
+            (pc[2] * 255.0) as u8,
+        );
+        let seg_rect = egui::Rect::from_min_max(
+            egui::pos2(x_start, op_rect.min.y),
+            egui::pos2(x_end, op_rect.max.y),
+        );
+        painter.rect_filled(seg_rect, rounding, dim_color);
+        let progress = if sim.playback.current_move >= boundary.end_move {
+            1.0
+        } else if sim.playback.current_move <= boundary.start_move {
+            0.0
+        } else {
+            (sim.playback.current_move - boundary.start_move) as f32 / op_moves.max(1) as f32
+        };
+        let fill_width = (x_end - x_start) * progress;
+        let fill_rect = egui::Rect::from_min_size(
+            egui::pos2(x_start, op_rect.min.y),
+            egui::vec2(fill_width, op_h),
+        );
+        painter.rect_filled(fill_rect, rounding, color);
+    }
+
+    // Inspector focus filters the op-band markers (segments stay project-wide).
+    let focused_id = sim.focused_toolpath();
+    let in_focus = |move_idx: usize| -> bool {
+        let Some(focus) = focused_id else {
+            return true;
+        };
+        sim.boundaries()
+            .iter()
+            .find(|b| move_idx >= b.start_move && move_idx <= b.end_move)
+            .map(|b| b.id == focus)
+            .unwrap_or(false)
+    };
+    if let Some(ref report) = sim.checks.collision_report {
+        let holder_color = egui::Color32::from_rgb(255, 50, 50);
+        for col in &report.collisions {
+            if !in_focus(col.move_idx) {
+                continue;
+            }
+            let x = global_x(col.move_idx);
+            painter.line_segment(
+                [egui::pos2(x, op_rect.min.y), egui::pos2(x, op_rect.max.y)],
+                egui::Stroke::new(2.0, holder_color),
+            );
+        }
+    }
+    let rapid_color = egui::Color32::from_rgb(255, 160, 40);
+    for &idx in &sim.checks.rapid_collision_move_indices {
+        if !in_focus(idx) {
+            continue;
+        }
+        let x = global_x(idx);
+        painter.line_segment(
+            [egui::pos2(x, op_rect.min.y), egui::pos2(x, op_rect.max.y)],
+            egui::Stroke::new(1.5, rapid_color),
+        );
+    }
+    draw_tool_load_timeline_markers(
+        &painter,
+        op_rect,
+        total_moves,
+        total_width,
+        sim,
+        load_report,
+        focused_id,
+    );
+
+    // ── Span sub-band (indented, thinner — telegraphs "scope a pass") ──
+    if let (Some(tp_id), Some(span_rect)) = (span_scope_tp, span_rect) {
+        paint_span_subband(
             ui,
+            span_rect,
+            &response,
+            sim,
+            gui,
+            tp_id,
+            total_moves,
+            total_width,
+            events,
+        );
+    }
+    // ── Semantic sub-band (debug-only, now project-global X) ──
+    if let (Some(sem_rect), Some(boundary)) = (sem_rect, current_boundary.as_ref()) {
+        paint_semantic_subband(
+            ui,
+            sem_rect,
+            &response,
             sim,
             gui,
             max_feed,
             boundary,
             active_semantic.as_ref(),
+            total_moves,
+            total_width,
             events,
         );
     }
+
+    // ── One playhead, full height through every band ──
+    let pos_x = global_x(sim.playback.current_move);
+    painter.line_segment(
+        [
+            egui::pos2(pos_x, rect.min.y - 1.0),
+            egui::pos2(pos_x, rect.max.y + 1.0),
+        ],
+        egui::Stroke::new(2.0, egui::Color32::WHITE),
+    );
+    let diamond_center = egui::pos2(pos_x, rect.min.y);
+    let diamond_size = 4.0;
+    painter.add(egui::Shape::convex_polygon(
+        vec![
+            egui::pos2(diamond_center.x, diamond_center.y - diamond_size),
+            egui::pos2(diamond_center.x + diamond_size, diamond_center.y),
+            egui::pos2(diamond_center.x, diamond_center.y + diamond_size),
+            egui::pos2(diamond_center.x - diamond_size, diamond_center.y),
+        ],
+        egui::Color32::WHITE,
+        egui::Stroke::NONE,
+    ));
+
+    // ── Op-band hover tooltip (markers) ──
+    if response.hovered()
+        && let Some(pos) = response.hover_pos()
+        && (op_rect.min.y..=op_rect.max.y).contains(&pos.y)
+        && let Some(tip) = nearest_marker_tooltip(
+            pos.x,
+            op_rect,
+            total_moves,
+            total_width,
+            sim,
+            load_report,
+            focused_id,
+        )
+    {
+        egui::Tooltip::always_open(
+            ui.ctx().clone(),
+            ui.layer_id(),
+            egui::Id::new("sim_timeline_marker_tip"),
+            egui::PopupAnchor::Pointer,
+        )
+        .show(|ui| {
+            ui.label(tip);
+        });
+    }
+
+    // ── Click contract ──
+    // Drag anywhere = positional scrub (the one universal gesture). A click's
+    // side-effect is decided by Y-region: the span / semantic sub-bands handle
+    // their own clicks inside their paint fns above, so here we only resolve a
+    // click that lands in the op band (safety-marker focus, else seek).
+    if response.dragged() {
+        sim.playback.scrub_drag_active = true;
+        if let Some(pos) = response.interact_pointer_pos() {
+            let frac = ((pos.x - rect.min.x) / total_width).clamp(0.0, 1.0);
+            sim.playback.current_move = (frac * total_moves) as usize;
+            sim.playback.playing = false;
+        }
+    } else if response.clicked()
+        && let Some(pos) = response.interact_pointer_pos()
+        && (op_rect.min.y..=op_rect.max.y).contains(&pos.y)
+    {
+        if let Some(target) =
+            nearest_safety_marker_move(pos.x, op_rect, total_moves, total_width, sim, load_report)
+        {
+            sim.analytics_tab = SimulationAnalyticsTab::Safety;
+            sim.playback.current_move = target;
+            sim.playback.playing = false;
+            events.push(AppEvent::SimJumpToMove(target));
+        } else {
+            let frac = ((pos.x - rect.min.x) / total_width).clamp(0.0, 1.0);
+            sim.playback.current_move = (frac * total_moves) as usize;
+            sim.playback.playing = false;
+        }
+    }
 }
 
-/// Paint a 14px ribbon under the boundary timeline showing structural
-/// span subdivisions for the scope toolpath. DepthPass spans render as
-/// primary colored blocks when present; operations without DepthPass spans
-/// render Region spans as the primary blocks instead. When a DepthPass is
-/// selected, its Region children render as lighter sub-blocks. Hover shows
-/// the span label; click sets the chip-row scope to that span and scrubs
-/// playback to its start move.
-fn draw_span_ribbon(
-    ui: &mut egui::Ui,
+/// Should a span sub-band render, and for which toolpath? Mirrors the guards
+/// `paint_span_subband` needs so the Tier-2 widget can reserve its slot height
+/// before the single allocate.
+fn span_subband_present(
+    sim: &SimulationState,
+    gui: &GuiState,
+) -> Option<crate::state::toolpath::ToolpathId> {
+    if sim.total_moves() == 0 || sim.boundaries().is_empty() {
+        return None;
+    }
+    let tp_id = sim
+        .debug
+        .span_scope
+        .toolpath_id
+        .or_else(|| sim.current_boundary().map(|b| b.id))?;
+    sim.boundaries().iter().find(|b| b.id == tp_id)?;
+    let rt = gui.toolpath_rt.get(&tp_id.0)?;
+    let result = rt.result.as_ref()?;
+    if !result.spans_valid() || result.spans().is_empty() {
+        return None;
+    }
+    Some(tp_id)
+}
+
+/// Paint the **span sub-band** of the Tier-2 time axis: structural span
+/// subdivisions for the scope toolpath, in the shared project-global X space.
+/// DepthPass spans render as primary blocks (Region spans when no DepthPasses);
+/// a selected DepthPass shows its Region children as a lighter sub-tier. Hover
+/// shows the span label; a click (when the pointer is in this sub-band's Y
+/// region) sets the chip-row scope and seeks to the span start. No own
+/// playhead — the Tier-2 widget paints one shared playhead over every band.
+#[allow(clippy::too_many_arguments)]
+fn paint_span_subband(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    response: &egui::Response,
     sim: &mut SimulationState,
     gui: &GuiState,
+    tp_id: crate::state::toolpath::ToolpathId,
+    total_moves: f32,
+    total_width: f32,
     events: &mut Vec<AppEvent>,
 ) {
     use rs_cam_core::toolpath_spans::{SpanKind, SpanPayload};
 
-    if sim.total_moves() == 0 || sim.boundaries().is_empty() {
-        return;
-    }
-
-    let scope_tp = sim
-        .debug
-        .span_scope
-        .toolpath_id
-        .or_else(|| sim.current_boundary().map(|b| b.id));
-    let Some(tp_id) = scope_tp else { return };
-
-    // Find the boundary entry for this toolpath so we can convert its
-    // toolpath-local move indices into the project-global X space.
     let Some(boundary) = sim.boundaries().iter().find(|b| b.id == tp_id).cloned() else {
         return;
     };
-
     let Some(rt) = gui.toolpath_rt.get(&tp_id.0) else {
         return;
     };
@@ -1311,10 +1366,7 @@ fn draw_span_ribbon(
         return;
     }
 
-    let total_width = ui.available_width();
-    let height = 18.0;
-    let (rect, response) =
-        ui.allocate_exact_size(egui::vec2(total_width, height), egui::Sense::click());
+    let height = rect.height();
     let painter = ui.painter_at(rect);
 
     // Background — dim track so DepthPass blocks have something to sit on
@@ -1326,7 +1378,6 @@ fn draw_span_ribbon(
         egui::Color32::from_rgba_unmultiplied(20, 22, 30, 220),
     );
 
-    let total_moves = sim.total_moves().max(1) as f32;
     let scope_span_id = sim.debug.span_scope.span_id;
     let global_x = |local_move: usize| -> f32 {
         let global = (boundary.start_move + local_move) as f32;
@@ -1395,7 +1446,12 @@ fn draw_span_ribbon(
     let mut primary_index_seq = 0u32;
     let mut click_target: Option<(u32, usize)> = None;
     let mut hover_label: Option<String> = None;
-    let pointer_x = response.hover_pos().map(|p| p.x);
+    // Gate hover/click to this sub-band's Y region so the shared Tier-2
+    // response only drives span scoping when the pointer is actually here.
+    let pointer_x = response
+        .hover_pos()
+        .filter(|p| (rect.min.y..=rect.max.y).contains(&p.y))
+        .map(|p| p.x);
 
     for (sid, span) in spans
         .iter()
@@ -1514,18 +1570,8 @@ fn draw_span_ribbon(
         }
     }
 
-    // Playhead overlay so the user can see how its position relates to the
-    // active span.
-    let playhead_x = rect.min.x + (sim.playback.current_move as f32 / total_moves) * total_width;
-    if playhead_x >= rect.min.x && playhead_x <= rect.max.x {
-        painter.line_segment(
-            [
-                egui::pos2(playhead_x, rect.min.y),
-                egui::pos2(playhead_x, rect.max.y),
-            ],
-            egui::Stroke::new(1.5, egui::Color32::WHITE),
-        );
-    }
+    // (No own playhead — the Tier-2 widget paints one shared full-height
+    // playhead over the op band and every sub-band.)
 
     if let Some(tip) = hover_label {
         egui::Tooltip::always_open(
@@ -1837,15 +1883,38 @@ fn format_time(secs: f64) -> String {
     format!("{}:{:02}", m, s)
 }
 
+/// Whether the debug semantic sub-band should render for `boundary`.
+fn semantic_subband_present(
+    sim: &SimulationState,
+    gui: &GuiState,
+    boundary: &crate::state::simulation::ToolpathBoundary,
+) -> bool {
+    let Some(rt) = gui.toolpath_rt.get(&boundary.id.0) else {
+        return false;
+    };
+    rt.semantic_trace.is_some() && sim.debug.semantic_indexes.contains_key(&boundary.id)
+}
+
+/// Paint the **semantic sub-band** (debug-only) of the Tier-2 time axis. This
+/// was the one strip on a divergent toolpath-LOCAL X axis with its own
+/// playhead; it now renders in the shared project-global X space (each item
+/// offset by `boundary.start_move`) and shares the single Tier-2 playhead and
+/// click contract (TIM-001/002). Click side-effects (annotation → DebugTrace,
+/// cut-issue → CutQuality, semantic item → pin) are unchanged.
 // SAFETY: item_index and depths[] from semantic index built from trace.items
 #[allow(clippy::indexing_slicing)]
-fn draw_semantic_band(
-    ui: &mut egui::Ui,
+#[allow(clippy::too_many_arguments)]
+fn paint_semantic_subband(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    response: &egui::Response,
     sim: &mut SimulationState,
     gui: &GuiState,
     max_feed: f64,
     boundary: &crate::state::simulation::ToolpathBoundary,
     active_semantic: Option<&ActiveSemanticItem>,
+    total_moves: f32,
+    total_width: f32,
     events: &mut Vec<AppEvent>,
 ) {
     let Some(rt) = gui.toolpath_rt.get(&boundary.id.0) else {
@@ -1858,19 +1927,11 @@ fn draw_semantic_band(
         return;
     };
 
-    let local_total = boundary.end_move.saturating_sub(boundary.start_move).max(1);
-    let total_width = ui.available_width();
-    let height = 10.0;
-    ui.add_space(4.0);
-    ui.label(
-        egui::RichText::new("Semantic timeline")
-            .small()
-            .color(egui::Color32::from_rgb(140, 140, 155)),
-    );
-    let (rect, response) =
-        ui.allocate_exact_size(egui::vec2(total_width, height), egui::Sense::click());
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 2.0, egui::Color32::from_rgb(30, 30, 40));
+    let global_x = |local: usize| -> f32 {
+        rect.min.x + ((boundary.start_move + local) as f32 / total_moves) * total_width
+    };
 
     let mut segments = index.move_item_indices.clone();
     segments.sort_by_key(|item_index| index.depths[*item_index]);
@@ -1879,8 +1940,8 @@ fn draw_semantic_band(
         let (Some(move_start), Some(move_end)) = (item.move_start, item.move_end) else {
             continue;
         };
-        let x_start = rect.min.x + (move_start as f32 / local_total as f32) * total_width;
-        let x_end = rect.min.x + ((move_end + 1) as f32 / local_total as f32) * total_width;
+        let x_start = global_x(move_start);
+        let x_end = global_x(move_end + 1);
         let seg_rect = egui::Rect::from_min_max(
             egui::pos2(x_start, rect.min.y),
             egui::pos2(x_end.max(x_start + 1.0), rect.max.y),
@@ -1901,7 +1962,7 @@ fn draw_semantic_band(
 
     if let Some(debug_trace) = rt.debug_trace.as_ref() {
         for annotation in &debug_trace.annotations {
-            let x = rect.min.x + (annotation.move_index as f32 / local_total as f32) * total_width;
+            let x = global_x(annotation.move_index);
             painter.line_segment(
                 [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
                 egui::Stroke::new(1.0, egui::Color32::from_rgb(255, 210, 120)),
@@ -1919,7 +1980,7 @@ fn draw_semantic_band(
             .iter()
             .filter(|issue| issue.toolpath_id == boundary.id.0)
         {
-            let x = rect.min.x + (issue.move_index as f32 / local_total as f32) * total_width;
+            let x = global_x(issue.move_index);
             let color = match issue.kind {
                 rs_cam_core::simulation_cut::SimulationCutIssueKind::AirCut => {
                     egui::Color32::from_rgb(255, 120, 80)
@@ -1932,22 +1993,11 @@ fn draw_semantic_band(
         }
     }
 
-    let local_move = sim
-        .playback
-        .current_move
-        .saturating_sub(boundary.start_move)
-        .min(local_total);
-    let pos_x = rect.min.x + (local_move as f32 / local_total as f32) * total_width;
-    painter.line_segment(
-        [
-            egui::pos2(pos_x, rect.min.y - 1.0),
-            egui::pos2(pos_x, rect.max.y + 1.0),
-        ],
-        egui::Stroke::new(1.5, egui::Color32::WHITE),
-    );
+    // No own playhead — the shared Tier-2 playhead covers this band.
 
     if response.clicked()
         && let Some(pointer) = response.interact_pointer_pos()
+        && (rect.min.y..=rect.max.y).contains(&pointer.y)
     {
         if let Some(debug_trace) = rt.debug_trace.as_ref() {
             let nearest_annotation = debug_trace
@@ -1955,8 +2005,7 @@ fn draw_semantic_band(
                 .iter()
                 .enumerate()
                 .map(|(index, annotation)| {
-                    let x = rect.min.x
-                        + (annotation.move_index as f32 / local_total as f32) * total_width;
+                    let x = global_x(annotation.move_index);
                     (index, annotation, (pointer.x - x).abs())
                 })
                 .filter(|(_, _, distance)| *distance <= 5.0)
@@ -1984,8 +2033,7 @@ fn draw_semantic_band(
                 .iter()
                 .filter(|issue| issue.toolpath_id == boundary.id.0)
                 .map(|issue| {
-                    let x =
-                        rect.min.x + (issue.move_index as f32 / local_total as f32) * total_width;
+                    let x = global_x(issue.move_index);
                     (issue.clone(), (pointer.x - x).abs())
                 })
                 .filter(|(_, distance)| *distance <= 6.0)
@@ -2013,8 +2061,8 @@ fn draw_semantic_band(
                 let (Some(move_start), Some(move_end)) = (item.move_start, item.move_end) else {
                     return None;
                 };
-                let x_start = rect.min.x + (move_start as f32 / local_total as f32) * total_width;
-                let x_end = rect.min.x + ((move_end + 1) as f32 / local_total as f32) * total_width;
+                let x_start = global_x(move_start);
+                let x_end = global_x(move_end + 1);
                 (pointer.x >= x_start && pointer.x <= x_end).then_some((
                     item_index,
                     index.depths[item_index],
@@ -2038,10 +2086,10 @@ fn draw_semantic_band(
         }
 
         let frac = ((pointer.x - rect.min.x) / total_width).clamp(0.0, 1.0);
-        let local_move = (frac * local_total as f32) as usize;
+        let global_move = (frac * total_moves) as usize;
         sim.clear_pinned_semantic_item();
         sim.debug.focused_issue_index = None;
         sim.debug.focused_hotspot = None;
-        events.push(AppEvent::SimJumpToMove(boundary.start_move + local_move));
+        events.push(AppEvent::SimJumpToMove(global_move));
     }
 }
