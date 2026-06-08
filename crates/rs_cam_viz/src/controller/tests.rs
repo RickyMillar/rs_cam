@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use egui::{CentralPanel, Context, FontDefinitions, SidePanel, TopBottomPanel, Window};
+use egui::{CentralPanel, Context, FontDefinitions, Panel, Window};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::toolpath::Toolpath;
@@ -265,21 +265,21 @@ fn render_snapshot(
 ) -> crate::ui::automation::UiAutomationSnapshot {
     let ctx = Context::default();
     ctx.set_fonts(FontDefinitions::empty());
-    let _ = ctx.run(Default::default(), |ctx| {
-        crate::ui::automation::begin_frame(ctx);
+    let _ = ctx.run_ui(Default::default(), |ui| {
+        crate::ui::automation::begin_frame(ui.ctx());
 
-        SidePanel::right("properties").show(ctx, |ui| {
+        Panel::right("properties").show_inside(ui, |ui| {
             let events = &mut controller.events;
             crate::ui::properties::draw(ui, &mut controller.state, events);
         });
 
-        TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
+        Panel::bottom("status_bar").show_inside(ui, |ui| {
             let lanes = controller.lane_snapshots();
             let collision_count = controller.collision_positions.len();
             crate::ui::status_bar::draw(ui, &controller.state, collision_count, &lanes);
         });
 
-        CentralPanel::default().show(ctx, |ui| {
+        CentralPanel::default().show_inside(ui, |ui| {
             let lanes = controller.lane_snapshots();
             let events = &mut controller.events;
             crate::ui::viewport_overlay::draw(
@@ -298,7 +298,7 @@ fn render_snapshot(
             let mut open = true;
             Window::new("Project Load Warnings")
                 .open(&mut open)
-                .show(ctx, |ui| {
+                .show(ui.ctx(), |ui| {
                     let response =
                         ui.label("The project loaded, but some references need attention:");
                     crate::ui::automation::record(

@@ -42,5 +42,5 @@ pub fn card_frame(selected: bool) -> egui::Frame {
             CARD_FILL
         })
         .inner_margin(6.0)
-        .rounding(4.0)
+        .corner_radius(4)
 }

@@ -177,12 +177,12 @@ impl RsCamApp {
 
     // --- Layout methods ---
 
-    fn draw_setup_layout(&mut self, ctx: &egui::Context) {
+    fn draw_setup_layout(&mut self, ui: &mut egui::Ui) {
         // Left panel: setup list with summary cards
-        egui::SidePanel::left("setup_tree")
-            .default_width(240.0)
+        egui::Panel::left("setup_tree")
+            .default_size(240.0)
             .resizable(true)
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_ref_and_events_mut();
                     crate::ui::setup_panel::draw(ui, state, events);
@@ -190,10 +190,10 @@ impl RsCamApp {
             });
 
         // Right panel: setup properties
-        egui::SidePanel::right("setup_properties")
-            .default_width(280.0)
+        egui::Panel::right("setup_properties")
+            .default_size(280.0)
             .resizable(true)
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_and_events_mut();
                     crate::ui::properties::draw(ui, state, events);
@@ -207,7 +207,7 @@ impl RsCamApp {
             .checks
             .total_collision_count();
         let lane_snapshots = self.controller.lane_snapshots();
-        egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
+        egui::Panel::bottom("status_bar").show_inside(ui, |ui| {
             crate::ui::status_bar::draw(ui, self.controller.state(), col_count, &lane_snapshots);
             if let Some(msg) = self.controller.status_message() {
                 ui.separator();
@@ -221,17 +221,17 @@ impl RsCamApp {
                     .fill(egui::Color32::from_rgb(26, 26, 38))
                     .inner_margin(0.0),
             )
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 self.draw_viewport(ui);
             });
     }
 
-    fn draw_toolpath_layout(&mut self, ctx: &egui::Context) {
+    fn draw_toolpath_layout(&mut self, ui: &mut egui::Ui) {
         // Left panel: operation queue
-        egui::SidePanel::left("toolpath_tree")
-            .default_width(240.0)
+        egui::Panel::left("toolpath_tree")
+            .default_size(240.0)
             .resizable(true)
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_and_events_mut();
                     crate::ui::toolpath_panel::draw(ui, state, events);
@@ -239,10 +239,10 @@ impl RsCamApp {
             });
 
         // Right panel: operation/tool parameters
-        egui::SidePanel::right("toolpath_properties")
-            .default_width(280.0)
+        egui::Panel::right("toolpath_properties")
+            .default_size(280.0)
             .resizable(true)
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_and_events_mut();
                     crate::ui::properties::draw(ui, state, events);
@@ -256,7 +256,7 @@ impl RsCamApp {
             .checks
             .total_collision_count();
         let lane_snapshots = self.controller.lane_snapshots();
-        egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
+        egui::Panel::bottom("status_bar").show_inside(ui, |ui| {
             crate::ui::status_bar::draw(ui, self.controller.state(), col_count, &lane_snapshots);
             if let Some(msg) = self.controller.status_message() {
                 ui.separator();
@@ -270,12 +270,12 @@ impl RsCamApp {
                     .fill(egui::Color32::from_rgb(26, 26, 38))
                     .inner_margin(0.0),
             )
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 self.draw_viewport(ui);
             });
     }
 
-    fn draw_simulation_layout(&mut self, ctx: &egui::Context) {
+    fn draw_simulation_layout(&mut self, ui: &mut egui::Ui) {
         // (The old `sim_analysis_bar` top strip — Debug / Cut Metrics /
         // Highlight / Record trace — was consolidated into the right-panel
         // Inspector's "View" section. One place for all display settings.)
@@ -286,12 +286,12 @@ impl RsCamApp {
         // form a feedback loop where the panel sizes to the ScrollArea's
         // requested max height, the ScrollArea then sees more space and
         // requests more, and so on until the panel takes the whole window.
-        egui::TopBottomPanel::bottom("sim_timeline")
-            .min_height(60.0)
-            .max_height(480.0)
+        egui::Panel::bottom("sim_timeline")
+            .min_size(60.0)
+            .max_size(480.0)
             .resizable(true)
-            .default_height(360.0)
-            .show(ctx, |ui| {
+            .default_size(360.0)
+            .show_inside(ui, |ui| {
                 let (state, events) = self.controller.state_and_events_mut();
                 crate::ui::sim_timeline::draw(
                     ui,
@@ -303,10 +303,10 @@ impl RsCamApp {
             });
 
         // Left panel: operation list
-        egui::SidePanel::left("sim_op_list")
-            .default_width(240.0)
+        egui::Panel::left("sim_op_list")
+            .default_size(240.0)
             .resizable(true)
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_and_events_mut();
                     crate::ui::sim_op_list::draw(
@@ -321,10 +321,10 @@ impl RsCamApp {
             });
 
         // Right panel: diagnostics
-        egui::SidePanel::right("sim_diagnostics")
-            .default_width(240.0)
+        egui::Panel::right("sim_diagnostics")
+            .default_size(240.0)
             .resizable(true)
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_and_events_mut();
                     crate::ui::sim_diagnostics::draw(
@@ -345,7 +345,7 @@ impl RsCamApp {
                     .fill(egui::Color32::from_rgb(26, 26, 38))
                     .inner_margin(0.0),
             )
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 self.draw_viewport(ui);
             });
 
@@ -354,11 +354,11 @@ impl RsCamApp {
             egui::Area::new(egui::Id::new("sim_preview_quality_notice"))
                 .order(egui::Order::Foreground)
                 .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 54.0))
-                .show(ctx, |ui| {
+                .show(ui.ctx(), |ui| {
                     egui::Frame::default()
                         .fill(egui::Color32::from_rgba_premultiplied(35, 30, 18, 220))
-                        .rounding(5.0)
-                        .inner_margin(egui::Margin::symmetric(10.0, 6.0))
+                        .corner_radius(5)
+                        .inner_margin(egui::Margin::symmetric(10, 6))
                         .show(ui, |ui| {
                             ui.label(
                                 egui::RichText::new(
@@ -402,7 +402,17 @@ impl RsCamApp {
 }
 
 impl eframe::App for RsCamApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    // eframe 0.34 made `ui` the required entry point (the old `update(ctx)`
+    // is deprecated). We draw everything via panels nested in this root
+    // `ui` with `show_inside`, so the whole frame lives in `draw_frame`.
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        self.draw_frame(&ctx, ui, frame);
+    }
+}
+
+impl RsCamApp {
+    fn draw_frame(&mut self, ctx: &egui::Context, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         // Intercept OS close button when there are unsaved changes
         let os_close_requested = ctx.input(|i| i.viewport().close_requested());
         if os_close_requested && self.controller.state().gui.dirty {
@@ -467,17 +477,17 @@ impl eframe::App for RsCamApp {
         // Menu bar (shown in all workspaces)
         {
             let (state, events) = self.controller.state_ref_and_events_mut();
-            crate::ui::menu_bar::draw(ctx, state, events);
+            crate::ui::menu_bar::draw(ui, state, events);
         }
 
         // Workspace switcher bar (shown in all workspaces)
-        egui::TopBottomPanel::top("workspace_bar")
+        egui::Panel::top("workspace_bar")
             .frame(
                 egui::Frame::default()
                     .fill(egui::Color32::from_rgb(34, 34, 42))
-                    .inner_margin(egui::Margin::symmetric(8.0, 2.0)),
+                    .inner_margin(egui::Margin::symmetric(8, 2)),
             )
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 let (state, events) = self.controller.state_ref_and_events_mut();
                 crate::ui::workspace_bar::draw(ui, state, events);
             });
@@ -489,7 +499,7 @@ impl eframe::App for RsCamApp {
         // "Optimize running…" placeholder instead and let the
         // modal/rollup window be the only interactive surface.
         if self.controller.state().is_optimizing {
-            egui::CentralPanel::default().show(ctx, |ui| {
+            egui::CentralPanel::default().show_inside(ui, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.add_space(80.0);
                     ui.spinner();
@@ -511,9 +521,9 @@ impl eframe::App for RsCamApp {
             });
         } else {
             match self.controller.state().workspace {
-                Workspace::Setup => self.draw_setup_layout(ctx),
-                Workspace::Toolpaths => self.draw_toolpath_layout(ctx),
-                Workspace::Simulation => self.draw_simulation_layout(ctx),
+                Workspace::Setup => self.draw_setup_layout(ui),
+                Workspace::Toolpaths => self.draw_toolpath_layout(ui),
+                Workspace::Simulation => self.draw_simulation_layout(ui),
             }
         }
 
@@ -638,8 +648,8 @@ impl eframe::App for RsCamApp {
                             };
                             egui::Frame::default()
                                 .fill(bg)
-                                .inner_margin(egui::Margin::symmetric(12.0, 8.0))
-                                .rounding(4.0)
+                                .inner_margin(egui::Margin::symmetric(12, 8))
+                                .corner_radius(4)
                                 .show(ui, |ui: &mut egui::Ui| {
                                     ui.colored_label(text_color, message);
                                 });
@@ -711,9 +721,9 @@ fn configure_theme(ctx: &egui::Context) {
 
     ctx.set_visuals(visuals);
 
-    let mut style = (*ctx.style()).clone();
+    let mut style = (*ctx.global_style()).clone();
     style.spacing.item_spacing = egui::vec2(6.0, 4.0);
-    ctx.set_style(style);
+    ctx.set_global_style(style);
 
     configure_fonts(ctx);
 }

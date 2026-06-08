@@ -65,10 +65,10 @@ fn draw_content(
 
     clamp_selection(&mut view, modal);
 
-    egui::SidePanel::left("toollib_left")
+    egui::Panel::left("toollib_left")
         .resizable(true)
-        .default_width(340.0)
-        .min_width(280.0)
+        .default_size(340.0)
+        .min_size(280.0)
         .show_inside(ui, |ui| {
             draw_catalog_panel(ui, modal, &mut view, events);
         });

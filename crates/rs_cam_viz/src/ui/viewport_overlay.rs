@@ -26,24 +26,24 @@ pub fn draw(
         ui.menu_button("View ▼", |ui| {
             if ui.button("Top").clicked() {
                 events.push(AppEvent::SetViewPreset(ViewPreset::Top));
-                ui.close_menu();
+                ui.close();
             }
             if ui.button("Front").clicked() {
                 events.push(AppEvent::SetViewPreset(ViewPreset::Front));
-                ui.close_menu();
+                ui.close();
             }
             if ui.button("Right").clicked() {
                 events.push(AppEvent::SetViewPreset(ViewPreset::Right));
-                ui.close_menu();
+                ui.close();
             }
             if ui.button("Iso").clicked() {
                 events.push(AppEvent::SetViewPreset(ViewPreset::Isometric));
-                ui.close_menu();
+                ui.close();
             }
             ui.separator();
             if ui.button("Reset view").clicked() {
                 events.push(AppEvent::ResetView);
-                ui.close_menu();
+                ui.close();
             }
         });
 
@@ -58,14 +58,14 @@ pub fn draw(
                 .clicked()
             {
                 viewport.render_mode = RenderMode::Shaded;
-                ui.close_menu();
+                ui.close();
             }
             if ui
                 .selectable_label(viewport.render_mode == RenderMode::Wireframe, "Wireframe")
                 .clicked()
             {
                 viewport.render_mode = RenderMode::Wireframe;
-                ui.close_menu();
+                ui.close();
             }
         });
 
@@ -85,7 +85,7 @@ pub fn draw(
                 if !matches!(projection, ProjectionMode::Perspective) {
                     events.push(AppEvent::ToggleProjection);
                 }
-                ui.close_menu();
+                ui.close();
             }
             if ui
                 .selectable_label(
@@ -97,7 +97,7 @@ pub fn draw(
                 if !matches!(projection, ProjectionMode::Orthographic) {
                     events.push(AppEvent::ToggleProjection);
                 }
-                ui.close_menu();
+                ui.close();
             }
         });
 
@@ -139,7 +139,7 @@ pub fn draw(
                         );
                     if any_hidden && ui.button("Reset").clicked() {
                         *f = crate::state::viewport::SpanKindFilter::default();
-                        ui.close_menu();
+                        ui.close();
                     }
                 },
             );

@@ -601,7 +601,7 @@ fn draw_hierarchical_material_picker(
                     for (cat, entries) in &wood_buckets {
                         if draw_wood_subcategory(ui, *cat, entries, stock) {
                             changed = true;
-                            ui.close_menu();
+                            ui.close();
                         }
                     }
                 });
@@ -617,7 +617,7 @@ fn draw_hierarchical_material_picker(
                         if ui.selectable_label(selected, label).clicked() {
                             stock.material = mat.clone();
                             changed = true;
-                            ui.close_menu();
+                            ui.close();
                         }
                     }
                 });

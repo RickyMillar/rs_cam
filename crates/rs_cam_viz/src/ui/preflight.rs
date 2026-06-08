@@ -209,7 +209,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                     .fill(egui::Color32::from_rgb(60, 25, 25))
                     .stroke(egui::Stroke::new(1.5, error_color))
                     .inner_margin(8.0)
-                    .rounding(4.0)
+                    .corner_radius(4)
                     .show(ui, |ui| {
                         ui.label(
                             egui::RichText::new("\u{26A0} Exporting with unresolved collisions")
@@ -414,7 +414,7 @@ fn draw_tool_load_overrides(
         .fill(frame_color)
         .stroke(egui::Stroke::new(1.5, stroke_color))
         .inner_margin(8.0)
-        .rounding(4.0)
+        .corner_radius(4)
         .show(ui, |ui| {
             ui.label(
                 egui::RichText::new("Safety / Tool Load gate")

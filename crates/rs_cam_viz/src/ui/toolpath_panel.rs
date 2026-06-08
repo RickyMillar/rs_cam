@@ -185,7 +185,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 for &tt in crate::state::job::ToolType::ALL {
                     if ui.button(tt.label()).clicked() {
                         events.push(AppEvent::AddTool(tt));
-                        ui.close_menu();
+                        ui.close();
                     }
                 }
             });
@@ -232,7 +232,7 @@ fn draw_toolpath_card(
         })
         .stroke(egui::Stroke::new(1.0, border_color))
         .inner_margin(4.0)
-        .rounding(3.0)
+        .corner_radius(3)
         .show(ui, |ui| {
             // MCP parameter highlight: glow the card when an MCP action recently
             // changed a parameter on this toolpath.
@@ -434,11 +434,11 @@ fn draw_toolpath_card(
             card_resp.context_menu(|ui| {
                 if ui.button("Generate").clicked() {
                     events.push(AppEvent::GenerateToolpath(tp_id));
-                    ui.close_menu();
+                    ui.close();
                 }
                 if has_result && ui.button("Inspect in Simulation").clicked() {
                     events.push(AppEvent::InspectToolpathInSimulation(tp_id));
-                    ui.close_menu();
+                    ui.close();
                 }
                 let is_isolated = state.viewport.isolate_toolpath == Some(tp_id);
                 let iso_label = if is_isolated {
@@ -453,35 +453,35 @@ fn draw_toolpath_card(
                         events.push(AppEvent::Select(Selection::Toolpath(tp_id)));
                         events.push(AppEvent::ToggleIsolateToolpath);
                     }
-                    ui.close_menu();
+                    ui.close();
                 }
                 let vis_label = if visible { "Hide" } else { "Show" };
                 if ui.button(vis_label).clicked() {
                     events.push(AppEvent::ToggleToolpathVisibility(tp_id));
-                    ui.close_menu();
+                    ui.close();
                 }
                 let en_label = if tc.enabled { "Disable" } else { "Enable" };
                 if ui.button(en_label).clicked() {
                     events.push(AppEvent::ToggleToolpathEnabled(tp_id));
-                    ui.close_menu();
+                    ui.close();
                 }
                 if ui.button("Duplicate").clicked() {
                     events.push(AppEvent::DuplicateToolpath(tp_id));
-                    ui.close_menu();
+                    ui.close();
                 }
                 ui.separator();
                 if ui.button("Move Up").clicked() {
                     events.push(AppEvent::MoveToolpathUp(tp_id));
-                    ui.close_menu();
+                    ui.close();
                 }
                 if ui.button("Move Down").clicked() {
                     events.push(AppEvent::MoveToolpathDown(tp_id));
-                    ui.close_menu();
+                    ui.close();
                 }
                 ui.separator();
                 if ui.button("Delete").clicked() {
                     events.push(AppEvent::RemoveToolpath(tp_id));
-                    ui.close_menu();
+                    ui.close();
                 }
             });
         });
@@ -569,7 +569,7 @@ fn add_op_menu_item(
         {
             events.push(AppEvent::Select(Selection::Setup(setup_id)));
             events.push(AppEvent::AddToolpath(op));
-            ui.close_menu();
+            ui.close();
         }
     } else {
         let reason = match spec.geometry {

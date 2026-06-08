@@ -568,9 +568,9 @@ fn format_delta(delta: &ParamDelta) -> String {
 /// suggestion is a one-liner with no button (operator must manually
 /// act; we never auto-apply a heuristic).
 fn draw_suggestions(ui: &mut egui::Ui, suggestions: &[OperatorSuggestion]) {
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(ui.visuals().faint_bg_color)
-        .inner_margin(egui::Margin::symmetric(8.0, 6.0))
+        .inner_margin(egui::Margin::symmetric(8, 6))
         .show(ui, |ui| {
             ui.label(
                 egui::RichText::new("Try this")

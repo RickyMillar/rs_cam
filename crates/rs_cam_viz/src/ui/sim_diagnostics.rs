@@ -369,7 +369,7 @@ fn draw_focused_hotspot_card(
     egui::Frame::default()
         .fill(egui::Color32::from_rgb(50, 38, 28))
         .inner_margin(6.0)
-        .rounding(4.0)
+        .corner_radius(4)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(
@@ -431,7 +431,7 @@ fn draw_focused_issue_card(
     egui::Frame::default()
         .fill(egui::Color32::from_rgb(42, 36, 28))
         .inner_margin(6.0)
-        .rounding(4.0)
+        .corner_radius(4)
         .show(ui, |ui| {
             ui.label(
                 egui::RichText::new(format!("{}: {}", issue_kind_label(issue.kind), issue.label))
