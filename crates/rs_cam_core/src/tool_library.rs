@@ -173,6 +173,42 @@ pub fn append_tool(name: &str, tool: ToolConfig) -> Result<PathBuf, ToolLibraryE
     append_to(&dir, name, tool)
 }
 
+/// Add `tool` to catalog `name` in `dir`, **replacing** an existing tool
+/// with the same [`dedupe_key`] (geometry signature) instead of pushing a
+/// duplicate. Returns `(path, replaced)` where `replaced` is true if an
+/// existing entry was overwritten. TOO-004: this retires the silent-append
+/// that piled up duplicates only the Dedupe button could later clean.
+pub fn add_or_replace_to(
+    dir: &Path,
+    name: &str,
+    tool: ToolConfig,
+) -> Result<(PathBuf, bool), ToolLibraryError> {
+    let mut catalog = match load_from(dir, name) {
+        Ok(c) => c,
+        Err(ToolLibraryError::Io { .. }) => ToolCatalog::default(),
+        Err(e) => return Err(e),
+    };
+    let key = dedupe_key(&tool);
+    let replaced = if let Some(slot) = catalog.tools.iter_mut().find(|t| dedupe_key(t) == key) {
+        *slot = tool;
+        true
+    } else {
+        catalog.tools.push(tool);
+        false
+    };
+    let path = save_to(dir, name, &catalog)?;
+    Ok((path, replaced))
+}
+
+/// Add-or-replace a tool in catalog `name` in the resolved library dir.
+pub fn add_or_replace_tool(
+    name: &str,
+    tool: ToolConfig,
+) -> Result<(PathBuf, bool), ToolLibraryError> {
+    let dir = library_dir().ok_or(ToolLibraryError::NoLibraryDir)?;
+    add_or_replace_to(&dir, name, tool)
+}
+
 /// Every tool across every catalog in the resolved library dir, paired
 /// with its catalog name. Order: catalogs sorted, tools in file order.
 pub fn all_tools() -> Vec<(String, ToolConfig)> {
@@ -508,6 +544,26 @@ mod tests {
         assert_eq!(cat.tools.len(), 2);
         assert_eq!(cat.tools[0].name, "dup1");
         assert_eq!(cat.tools[1].name, "unique");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn add_or_replace_overwrites_same_key_and_appends_distinct() {
+        let dir = temp_dir("add_or_replace");
+        // First save of a 6 mm geometry: a plain insert.
+        let (_, replaced) = add_or_replace_to(&dir, "cat", tool("first", 6.0)).unwrap();
+        assert!(!replaced, "first save of a new geometry is not a replace");
+        // Re-saving the same geometry (different name) overwrites in place —
+        // no duplicate piles up (TOO-004).
+        let (_, replaced) = add_or_replace_to(&dir, "cat", tool("renamed", 6.0)).unwrap();
+        assert!(replaced, "same dedupe key should replace, not append");
+        let cat = load_from(&dir, "cat").unwrap();
+        assert_eq!(cat.tools.len(), 1, "no duplicate appended");
+        assert_eq!(cat.tools[0].name, "renamed", "the entry was overwritten");
+        // A distinct geometry still appends.
+        let (_, replaced) = add_or_replace_to(&dir, "cat", tool("bigger", 8.0)).unwrap();
+        assert!(!replaced);
+        assert_eq!(load_from(&dir, "cat").unwrap().tools.len(), 2);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

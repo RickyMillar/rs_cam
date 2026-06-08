@@ -11,6 +11,9 @@ pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     ui.separator();
     // Save this tool into a reusable library catalog. Importing it later
     // (Add Tool ▸ From library) copies a fresh snapshot into a project.
+    // TOO-004: add-or-replace by geometry signature, so re-saving an edited
+    // tool overwrites its catalog entry instead of silently piling up
+    // duplicates that only the modal's Dedupe button could clean.
     let name_id = egui::Id::new("tool_lib_save_catalog");
     let status_id = egui::Id::new("tool_lib_save_status");
     ui.horizontal(|ui| {
@@ -27,14 +30,16 @@ pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig) {
         let trimmed = catalog.trim().to_owned();
         if ui
             .add_enabled(!trimmed.is_empty(), egui::Button::new("Save"))
+            .on_hover_text("Add to the catalog, or overwrite the matching entry if one exists.")
             .clicked()
         {
-            match rs_cam_core::tool_library::append_tool(&trimmed, tool.clone()) {
-                Ok(path) => {
+            match rs_cam_core::tool_library::add_or_replace_tool(&trimmed, tool.clone()) {
+                Ok((path, replaced)) => {
+                    let verb = if replaced { "Updated" } else { "Saved" };
                     ui.data_mut(|d| {
                         d.insert_temp(
                             status_id,
-                            format!("Saved '{}' to {}", tool.name, path.display()),
+                            format!("{verb} '{}' in {}", tool.name, path.display()),
                         );
                     });
                 }
