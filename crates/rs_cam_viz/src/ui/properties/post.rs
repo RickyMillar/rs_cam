@@ -29,9 +29,8 @@ pub fn draw(ui: &mut egui::Ui, post: &mut PostConfig, stock_top_z: f64) {
             );
             ui.end_row();
 
-            ui.label("Safe Z:").on_hover_text(
-                "Global clearance plane for rapid moves between operations. Different from per-operation Retract Z."
-            );
+            ui.label("Safe Z:")
+                .on_hover_text("Global clearance plane for rapid moves between operations.");
             ui.add(
                 egui::DragValue::new(&mut post.safe_z)
                     .suffix(" mm")
