@@ -70,11 +70,11 @@ fn workspace_tab(
 
     let button = egui::Button::new(egui::RichText::new(label).color(text_color).strong())
         .fill(bg)
-        .rounding(egui::Rounding {
-            nw: 4.0,
-            ne: 4.0,
-            sw: 0.0,
-            se: 0.0,
+        .corner_radius(egui::CornerRadius {
+            nw: 4,
+            ne: 4,
+            sw: 0,
+            se: 0,
         })
         .min_size(egui::vec2(90.0, 28.0));
 

@@ -281,14 +281,15 @@ impl RsCamApp {
                 )
                 && let Some(tip) = span_path_tooltip(state, id, move_index)
             {
-                egui::show_tooltip_at_pointer(
-                    ui.ctx(),
+                egui::Tooltip::always_open(
+                    ui.ctx().clone(),
                     response.layer_id,
                     egui::Id::new("toolpath_span_tip"),
-                    |ui| {
-                        ui.label(tip);
-                    },
-                );
+                    egui::PopupAnchor::Pointer,
+                )
+                .show(|ui| {
+                    ui.label(tip);
+                });
             }
         }
 
@@ -422,8 +423,8 @@ impl RsCamApp {
                                 1.0,
                                 egui::Color32::from_rgb(110, 140, 200),
                             ))
-                            .rounding(6.0)
-                            .inner_margin(egui::Margin::symmetric(10.0, 4.0))
+                            .corner_radius(6)
+                            .inner_margin(egui::Margin::symmetric(10, 4))
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
                                     ui.add(egui::Spinner::new().size(14.0));
@@ -634,6 +635,7 @@ impl RsCamApp {
             panel_rect,
             6.0,
             egui::Stroke::new(1.0, egui::Color32::from_rgb(70, 74, 84)),
+            egui::StrokeKind::Middle,
         );
 
         let delta = playback.tool_deflection_mm;
@@ -678,6 +680,7 @@ impl RsCamApp {
             cutter_rect,
             2.0,
             egui::Stroke::new(1.0, egui::Color32::from_rgb(150, 150, 95)),
+            egui::StrokeKind::Middle,
         );
 
         let note = if delta.is_some() {

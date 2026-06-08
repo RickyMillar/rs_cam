@@ -23,8 +23,8 @@ pub fn draw_trace_badge(ui: &mut egui::Ui, availability: ToolpathTraceAvailabili
         egui::Frame::default()
             .fill(color.linear_multiply(0.12))
             .stroke(egui::Stroke::new(1.0, color.linear_multiply(0.75)))
-            .inner_margin(egui::Margin::symmetric(4.0, 1.0))
-            .rounding(3.0)
+            .inner_margin(egui::Margin::symmetric(4, 1))
+            .corner_radius(3)
             .show(ui, |ui| {
                 ui.label(egui::RichText::new(label).small().strong().color(color));
             });

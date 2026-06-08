@@ -2,7 +2,8 @@ use super::AppEvent;
 use crate::state::AppState;
 use crate::state::job::SetupId;
 
-pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
+pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
+    let ctx = ui.ctx().clone();
     // Keyboard shortcuts
     let modifiers = ctx.input(|i| i.modifiers);
     ctx.input(|i| {
@@ -29,11 +30,11 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
         }
     });
 
-    egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
-        egui::menu::bar(ui, |ui| {
+    egui::Panel::top("menu_bar").show_inside(ui, |ui| {
+        egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
                 if ui.button("Import STL...").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     if let Some(path) = rfd::FileDialog::new()
                         .add_filter("STL Files", &["stl", "STL"])
                         .pick_file()
@@ -42,7 +43,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                     }
                 }
                 if ui.button("Import SVG...").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     if let Some(path) = rfd::FileDialog::new()
                         .add_filter("SVG Files", &["svg", "SVG"])
                         .pick_file()
@@ -51,7 +52,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                     }
                 }
                 if ui.button("Import DXF...").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     if let Some(path) = rfd::FileDialog::new()
                         .add_filter("DXF Files", &["dxf", "DXF"])
                         .pick_file()
@@ -60,7 +61,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                     }
                 }
                 if ui.button("Import STEP...").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     if let Some(path) = rfd::FileDialog::new()
                         .add_filter("STEP Files", &["step", "stp", "STEP", "STP"])
                         .pick_file()
@@ -70,14 +71,14 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                 }
                 ui.separator();
                 if ui.add(egui::Button::new("Open Job...  Ctrl+O")).clicked() {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::OpenJob);
                 }
                 if ui
                     .add(egui::Button::new("Save Job").shortcut_text("Ctrl+S"))
                     .clicked()
                 {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::SaveJob);
                 }
                 ui.separator();
@@ -85,7 +86,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                     .add(egui::Button::new("Export G-code...").shortcut_text("Ctrl+Shift+E"))
                     .clicked()
                 {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::OpenExportWizard);
                 }
                 ui.menu_button("Direct export (skip wizard)", |ui| {
@@ -93,30 +94,30 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                         .add(egui::Button::new("All toolpaths").shortcut_text("Ctrl+Alt+E"))
                         .clicked()
                     {
-                        ui.close_menu();
+                        ui.close();
                         events.push(AppEvent::ExportGcode);
                     }
                     if state.session.list_setups().len() > 1 {
                         if ui.button("Combined (M0 pauses)").clicked() {
-                            ui.close_menu();
+                            ui.close();
                             events.push(AppEvent::ExportCombinedGcode);
                         }
                         ui.separator();
                         for setup in state.session.list_setups() {
                             let label = format!("Setup: {}", setup.name);
                             if ui.button(&label).clicked() {
-                                ui.close_menu();
+                                ui.close();
                                 events.push(AppEvent::ExportSetupGcode(SetupId(setup.id)));
                             }
                         }
                     }
                 });
                 if ui.button("Export Setup Sheet...").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::ExportSetupSheet);
                 }
                 if ui.button("Export SVG Preview...").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::ExportSvgPreview);
                 }
                 ui.separator();
@@ -130,14 +131,14 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                     .add(egui::Button::new("Undo").shortcut_text("Ctrl+Z"))
                     .clicked()
                 {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::Undo);
                 }
                 if ui
                     .add(egui::Button::new("Redo").shortcut_text("Ctrl+Shift+Z"))
                     .clicked()
                 {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::Redo);
                 }
                 ui.separator();
@@ -149,7 +150,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
 
             ui.menu_button("Toolpath", |ui| {
                 if ui.button("Generate All").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::GenerateAll);
                 }
                 let optimize_enabled = state.simulation.has_results() && !state.is_optimizing;
@@ -157,31 +158,31 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                     .add_enabled(optimize_enabled, egui::Button::new("Optimize project…"))
                     .clicked()
                 {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::OpenOptimizeProject);
                 }
             });
 
             ui.menu_button("Tools", |ui| {
                 if ui.button("Tool Library…").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::OpenToolLibrary);
                 }
             });
 
             ui.menu_button("Workspace", |ui| {
                 if ui.button("Setup").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::SwitchWorkspace(crate::state::Workspace::Setup));
                 }
                 if ui.button("Toolpaths").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::SwitchWorkspace(
                         crate::state::Workspace::Toolpaths,
                     ));
                 }
                 if ui.button("Simulation").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::SwitchWorkspace(
                         crate::state::Workspace::Simulation,
                     ));
@@ -190,46 +191,46 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
 
             ui.menu_button("Simulation", |ui| {
                 if ui.button("Run Simulation").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::RunSimulation);
                 }
                 if ui.button("Reset Simulation").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::ResetSimulation);
                 }
                 ui.separator();
                 if ui.button("Check Holder Clearance").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::RunCollisionCheck);
                 }
             });
 
             ui.menu_button("View", |ui| {
                 if ui.button("Reset View").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::ResetView);
                 }
                 ui.separator();
                 if ui.button("Top").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::SetViewPreset(
                         crate::render::camera::ViewPreset::Top,
                     ));
                 }
                 if ui.button("Front").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::SetViewPreset(
                         crate::render::camera::ViewPreset::Front,
                     ));
                 }
                 if ui.button("Right").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::SetViewPreset(
                         crate::render::camera::ViewPreset::Right,
                     ));
                 }
                 if ui.button("Isometric").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::SetViewPreset(
                         crate::render::camera::ViewPreset::Isometric,
                     ));
@@ -238,7 +239,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
 
             ui.menu_button("Help", |ui| {
                 if ui.button("Keyboard Shortcuts...").clicked() {
-                    ui.close_menu();
+                    ui.close();
                     events.push(AppEvent::ShowShortcuts);
                 }
             });
