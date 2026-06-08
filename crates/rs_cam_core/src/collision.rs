@@ -8,7 +8,7 @@
 //! "Holder collision in 3-axis is just drop-cutter at larger radii"
 
 use crate::dropcutter::point_drop_cutter;
-use crate::geo::P3;
+use crate::geo::{BoundingBox3, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::FlatEndmill;
@@ -100,6 +100,32 @@ impl ToolAssembly {
     }
 }
 
+/// What the holder/shank collided with — the workpiece mesh, or a
+/// workholding fixture. Lets the UI attribute "holder crashed a clamp"
+/// rather than only counting it (W0.1 / P6-003).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CollisionKind {
+    /// The workpiece mesh being cut.
+    Workpiece,
+    /// A workholding fixture, identified by its `FixtureId` raw value.
+    Fixture { fixture_id: usize },
+}
+
+/// An axis-aligned obstacle the tool assembly must clear — a workholding
+/// fixture, already expanded by its clearance.
+///
+/// Kept frame-agnostic and free of the session fixture model so this
+/// geometry module has no upward dependency: the caller supplies the box
+/// (in the toolpath's coordinate frame) plus an opaque id that is echoed
+/// back on any resulting [`CollisionEvent`].
+#[derive(Debug, Clone)]
+pub struct CollisionObstacle {
+    /// Opaque id (the fixture's raw id) echoed onto resulting events.
+    pub id: usize,
+    /// Clearance-expanded box in the toolpath's coordinate frame.
+    pub aabb: BoundingBox3,
+}
+
 /// A single collision event.
 #[derive(Debug, Clone)]
 pub struct CollisionEvent {
@@ -107,10 +133,12 @@ pub struct CollisionEvent {
     pub move_idx: usize,
     /// Position of the tool tip when collision occurs.
     pub position: P3,
-    /// How deep the holder penetrates the workpiece (mm, positive = penetration).
+    /// How deep the holder penetrates the obstacle (mm, positive = penetration).
     pub penetration_depth: f64,
     /// Which segment collided: "shank" or "holder".
     pub segment: String,
+    /// What was hit — the workpiece mesh or a specific fixture.
+    pub kind: CollisionKind,
 }
 
 /// Result of a collision check.
@@ -209,25 +237,7 @@ pub fn check_collisions_interpolated_with_cancel(
         };
 
         // Generate sample points along this move
-        let sample_points = if step_mm > 0.01 {
-            let dx = mv.target.x - prev.x;
-            let dy = mv.target.y - prev.y;
-            let dz = mv.target.z - prev.z;
-            let dist = (dx * dx + dy * dy + dz * dz).sqrt();
-            let n_steps = (dist / step_mm).ceil() as usize;
-            if n_steps > 1 {
-                let mut pts = Vec::with_capacity(n_steps + 1);
-                for i in 0..=n_steps {
-                    let t = i as f64 / n_steps as f64;
-                    pts.push(P3::new(prev.x + t * dx, prev.y + t * dy, prev.z + t * dz));
-                }
-                pts
-            } else {
-                vec![mv.target]
-            }
-        } else {
-            vec![mv.target]
-        };
+        let sample_points = interpolate_samples(prev, mv.target, step_mm);
 
         for tip in &sample_points {
             check_cancel(cancel)?;
@@ -258,6 +268,7 @@ pub fn check_collisions_interpolated_with_cancel(
                         position: *tip,
                         penetration_depth: penetration,
                         segment: seg_name.to_owned(),
+                        kind: CollisionKind::Workpiece,
                     });
 
                     max_extra_stickout_needed = max_extra_stickout_needed.max(penetration);
@@ -273,6 +284,135 @@ pub fn check_collisions_interpolated_with_cancel(
         collisions,
         min_safe_stickout,
     })
+}
+
+/// Sample points along a move at `step_mm` spacing (plus endpoints).
+/// `step_mm <= 0.01` checks the move endpoint only (legacy behavior).
+/// Shared by the workpiece-mesh and fixture-obstacle checks so both
+/// sample identically.
+fn interpolate_samples(prev: P3, target: P3, step_mm: f64) -> Vec<P3> {
+    if step_mm <= 0.01 {
+        return vec![target];
+    }
+    let dx = target.x - prev.x;
+    let dy = target.y - prev.y;
+    let dz = target.z - prev.z;
+    let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+    let n_steps = (dist / step_mm).ceil() as usize;
+    if n_steps > 1 {
+        let mut pts = Vec::with_capacity(n_steps + 1);
+        for i in 0..=n_steps {
+            let t = i as f64 / n_steps as f64;
+            pts.push(P3::new(prev.x + t * dx, prev.y + t * dy, prev.z + t * dz));
+        }
+        pts
+    } else {
+        vec![target]
+    }
+}
+
+/// Planar distance from the tool axis at `(px, py)` to an AABB's XY
+/// footprint. Zero when the axis is inside the footprint.
+fn point_to_rect_xy_distance(px: f64, py: f64, aabb: &BoundingBox3) -> f64 {
+    let dx = (aabb.min.x - px).max(0.0).max(px - aabb.max.x);
+    let dy = (aabb.min.y - py).max(0.0).max(py - aabb.max.y);
+    (dx * dx + dy * dy).sqrt()
+}
+
+/// Check a toolpath's holder/shank against axis-aligned
+/// [`CollisionObstacle`]s (workholding fixtures).
+///
+/// Mirrors [`check_collisions_interpolated_with_cancel`] but tests each
+/// assembly segment against the obstacle boxes analytically instead of
+/// drop-cutting a mesh. A collision is recorded when a segment cylinder
+/// (radius wider than the cutter — i.e. shank or holder) overlaps an
+/// obstacle box in both XY and Z; the cutter itself is out of scope, the
+/// same conservatism as the workpiece holder check.
+///
+/// Obstacle penetration intentionally does **not** feed
+/// `min_safe_stickout` — raising stickout is not the remedy for a fixture
+/// crash (move the fixture / raise safe-Z), so these events are returned
+/// separately for the caller to merge into the report's collision list.
+///
+/// The obstacle box is assumed to already include the fixture clearance
+/// and to be in the same coordinate frame as `toolpath`.
+pub fn check_obstacle_collisions_with_cancel(
+    toolpath: &Toolpath,
+    assembly: &ToolAssembly,
+    obstacles: &[CollisionObstacle],
+    step_mm: f64,
+    cancel: &dyn CancelCheck,
+) -> Result<Vec<CollisionEvent>, Cancelled> {
+    if obstacles.is_empty() {
+        return Ok(Vec::new());
+    }
+    let segments = assembly.segments();
+    let mut collisions = Vec::new();
+
+    for (move_idx, mv) in toolpath.moves.iter().enumerate() {
+        check_cancel(cancel)?;
+        let is_cutting = matches!(
+            mv.move_type,
+            MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
+        );
+        if !is_cutting {
+            continue;
+        }
+
+        // SAFETY: move_idx > 0 checked in condition
+        #[allow(clippy::indexing_slicing)]
+        let prev = if move_idx > 0 {
+            toolpath.moves[move_idx - 1].target
+        } else {
+            mv.target
+        };
+
+        let sample_points = interpolate_samples(prev, mv.target, step_mm);
+
+        for tip in &sample_points {
+            check_cancel(cancel)?;
+            for &(z_offset, seg_radius, seg_length) in &segments {
+                if seg_radius <= assembly.cutter_radius + 1e-6 {
+                    continue;
+                }
+                let seg_bottom_z = tip.z + z_offset;
+                let seg_top_z = seg_bottom_z + seg_length;
+
+                for obstacle in obstacles {
+                    let aabb = &obstacle.aabb;
+                    // Z interval overlap: segment must dip below the box
+                    // top and reach above the box bottom.
+                    if seg_bottom_z >= aabb.max.z || seg_top_z <= aabb.min.z {
+                        continue;
+                    }
+                    // XY: tool axis within the segment radius of the box.
+                    if point_to_rect_xy_distance(tip.x, tip.y, aabb) >= seg_radius {
+                        continue;
+                    }
+                    let penetration = aabb.max.z - seg_bottom_z;
+                    if penetration > 0.01 {
+                        let seg_name = if seg_radius > assembly.shank_diameter / 2.0 - 0.01 {
+                            "holder"
+                        } else {
+                            "shank"
+                        };
+                        collisions.push(CollisionEvent {
+                            move_idx,
+                            position: *tip,
+                            penetration_depth: penetration,
+                            segment: seg_name.to_owned(),
+                            kind: CollisionKind::Fixture {
+                                fixture_id: obstacle.id,
+                            },
+                        });
+                        break; // one obstacle hit per segment per sample is enough
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(collisions)
 }
 
 /// A rapid move that passes through stock material.
@@ -850,5 +990,99 @@ mod tests {
             1,
             "Pure-Z rapid down to uncleared stock must still collide",
         );
+    }
+
+    // ── Fixture-obstacle collision (W0.1 / P6-003) ────────────────────
+    // test_assembly: cutter r=3, shank r=3 (== cutter, skipped), holder
+    // r=17.5 at z_offset=35. With a tip at z=0 the holder spans Z [35,75].
+
+    fn obstacle_tp_at_origin() -> Toolpath {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 0.0));
+        tp.feed_to(P3::new(0.0, 0.0, 0.0), 1000.0);
+        tp
+    }
+
+    #[test]
+    fn fixture_obstacle_flags_holder_collision() {
+        let asm = test_assembly();
+        let tp = obstacle_tp_at_origin();
+        let obstacle = CollisionObstacle {
+            id: 7,
+            aabb: BoundingBox3 {
+                min: P3::new(5.0, 5.0, 30.0),
+                max: P3::new(25.0, 25.0, 60.0),
+            },
+        };
+        let never = || false;
+        let hits = check_obstacle_collisions_with_cancel(
+            &tp,
+            &asm,
+            std::slice::from_ref(&obstacle),
+            1.0,
+            &never,
+        )
+        .unwrap();
+        assert_eq!(hits.len(), 1, "holder should hit the fixture box");
+        assert_eq!(hits[0].kind, CollisionKind::Fixture { fixture_id: 7 });
+        assert_eq!(hits[0].segment, "holder");
+        assert!(hits[0].penetration_depth > 0.0);
+    }
+
+    #[test]
+    fn fixture_obstacle_clear_when_holder_above_box() {
+        // Box top (20) sits below the holder bottom (35) → clear. This is
+        // exactly the "enough stickout to clear the clamp" case.
+        let asm = test_assembly();
+        let tp = obstacle_tp_at_origin();
+        let obstacle = CollisionObstacle {
+            id: 1,
+            aabb: BoundingBox3 {
+                min: P3::new(5.0, 5.0, 0.0),
+                max: P3::new(25.0, 25.0, 20.0),
+            },
+        };
+        let never = || false;
+        let hits = check_obstacle_collisions_with_cancel(
+            &tp,
+            &asm,
+            std::slice::from_ref(&obstacle),
+            1.0,
+            &never,
+        )
+        .unwrap();
+        assert!(hits.is_empty(), "holder clears a box entirely below it");
+    }
+
+    #[test]
+    fn fixture_obstacle_clear_when_far_in_xy() {
+        let asm = test_assembly();
+        let tp = obstacle_tp_at_origin();
+        let obstacle = CollisionObstacle {
+            id: 2,
+            aabb: BoundingBox3 {
+                min: P3::new(100.0, 100.0, 30.0),
+                max: P3::new(120.0, 120.0, 60.0),
+            },
+        };
+        let never = || false;
+        let hits = check_obstacle_collisions_with_cancel(
+            &tp,
+            &asm,
+            std::slice::from_ref(&obstacle),
+            1.0,
+            &never,
+        )
+        .unwrap();
+        assert!(hits.is_empty(), "holder clears a box far away in XY");
+    }
+
+    #[test]
+    fn fixture_obstacle_empty_obstacles_is_clear() {
+        let asm = test_assembly();
+        let tp = obstacle_tp_at_origin();
+        let never = || false;
+        let hits = check_obstacle_collisions_with_cancel(&tp, &asm, &[], 1.0, &never).unwrap();
+        assert!(hits.is_empty());
     }
 }

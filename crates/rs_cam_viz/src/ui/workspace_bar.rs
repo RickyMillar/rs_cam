@@ -70,11 +70,11 @@ fn workspace_tab(
 
     let button = egui::Button::new(egui::RichText::new(label).color(text_color).strong())
         .fill(bg)
-        .rounding(egui::Rounding {
-            nw: 4.0,
-            ne: 4.0,
-            sw: 0.0,
-            se: 0.0,
+        .corner_radius(egui::CornerRadius {
+            nw: 4,
+            ne: 4,
+            sw: 0,
+            se: 0,
         })
         .min_size(egui::vec2(90.0, 28.0));
 
@@ -133,13 +133,15 @@ fn simulation_badge(state: &AppState) -> Option<(String, egui::Color32)> {
         return None;
     }
 
-    if sim.is_stale(state.gui.edit_counter) {
-        return Some((" stale".to_owned(), theme::WARNING));
-    }
-
-    let collision_count = sim.checks.holder_collision_count + sim.checks.rapid_collisions.len();
+    // Collisions outrank staleness: a safety error must never hide behind
+    // the yellow "stale" warning (SHE-003 — mirror readiness_badge's order).
+    let collision_count = sim.checks.total_collision_count();
     if collision_count > 0 {
         return Some((format!(" {collision_count}!"), theme::ERROR));
+    }
+
+    if sim.is_stale(state.gui.edit_counter) {
+        return Some((" stale".to_owned(), theme::WARNING));
     }
 
     Some((" \u{2713}".to_owned(), theme::SUCCESS))
@@ -167,7 +169,7 @@ fn readiness_badge(state: &AppState) -> Option<(String, egui::Color32)> {
         .count();
 
     // Check collisions
-    let collisions = sim.checks.holder_collision_count + sim.checks.rapid_collisions.len();
+    let collisions = sim.checks.total_collision_count();
 
     // Check simulation staleness
     let stale = sim.has_results() && sim.is_stale(state.gui.edit_counter);

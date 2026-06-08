@@ -92,11 +92,11 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 response.context_menu(|ui| {
                     if ui.button("Reload from disk").clicked() {
                         events.push(AppEvent::ReloadModel(mid));
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Delete").clicked() {
                         events.push(AppEvent::RemoveModel(mid));
-                        ui.close_menu();
+                        ui.close();
                     }
                 });
             }
@@ -121,7 +121,7 @@ fn draw_setup_card(
         .fill(egui::Color32::from_rgb(38, 40, 50))
         .stroke(egui::Stroke::new(1.0, base_border))
         .inner_margin(8.0)
-        .rounding(4.0)
+        .corner_radius(4)
         .show(ui, |ui| {
             // Header: setup name + face label
             ui.horizontal(|ui| {
@@ -247,6 +247,7 @@ fn draw_setup_card(
             card_response.rect,
             4.0,
             egui::Stroke::new(1.0, hover_border),
+            egui::StrokeKind::Middle,
         );
     }
 }
@@ -305,7 +306,7 @@ fn draw_project_diagnostics_card(ui: &mut egui::Ui, state: &AppState) {
     egui::Frame::default()
         .fill(egui::Color32::from_rgb(38, 32, 32))
         .inner_margin(6.0)
-        .rounding(4.0)
+        .corner_radius(4)
         .show(ui, |ui| {
             ui.label(
                 egui::RichText::new("Project findings")
@@ -390,7 +391,7 @@ fn draw_project_summary(ui: &mut egui::Ui, state: &AppState) {
     egui::Frame::default()
         .fill(egui::Color32::from_rgb(34, 36, 44))
         .inner_margin(6.0)
-        .rounding(4.0)
+        .corner_radius(4)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(

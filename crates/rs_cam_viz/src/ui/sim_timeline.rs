@@ -6,7 +6,7 @@ use crate::state::simulation::{ActiveSemanticItem, SimulationAnalyticsTab, Simul
 use egui_plot::{Line, Plot, PlotPoints, Polygon};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::simulation_cut::SimulationCutSample;
-use rs_cam_core::tool_load::{Confidence, ToolLoadReport};
+use rs_cam_core::tool_load::ToolLoadReport;
 
 /// Per-toolpath line in the signal plot: a colour plus a sequence of
 /// `(global_move_index, [x, y])` points decimated for the current X span.
@@ -43,6 +43,13 @@ pub fn draw(
                     .color(egui::Color32::from_rgb(255, 220, 130)),
             );
         });
+        ui.add_space(2.0);
+    }
+    // W0.5/TIM-009 — the spine + strips keep rendering the last trace, so
+    // flag staleness here too; otherwise the bottom panel's concrete metrics
+    // read as fresh after an edit while only the left/right panels say stale.
+    if sim.has_results() && sim.is_stale(gui.edit_counter) {
+        super::theme::stale_banner(ui);
         ui.add_space(2.0);
     }
     sim.sync_debug_state(gui, max_feed);
@@ -90,53 +97,48 @@ fn draw_verdict_hud(
 ) {
     let issue_count = sim.issues(gui, max_feed).len();
 
-    let (ok, warn, bad, unmodeled, collision_count, trace_count) = {
-        let counts = verdict_counts(load_report);
-        let collision_count = sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
-        let trace_count = gui
-            .toolpath_rt
-            .values()
-            .filter(|rt| rt.debug_trace.is_some() || rt.semantic_trace.is_some())
-            .count();
-        (
-            counts.0,
-            counts.1,
-            counts.2,
-            counts.3,
-            collision_count,
-            trace_count,
-        )
-    };
+    // W0.4 — read the same per-toolpath rollup the Inspector overview uses
+    // (`ToolLoadReport::summary()`) so the two project rollups can't print
+    // different numbers for the same load concept. The HUD previously folded
+    // per-(toolpath × gate) criteria, which is irreconcilable with the
+    // Inspector's per-toolpath counts and mislabeled them as "Toolpaths".
+    let summary = load_report.summary(|_| None);
+    let (ok, bad, unmodeled, total_tp) = (
+        summary.within,
+        summary.exceeds,
+        summary.fully_unmodeled,
+        summary.total_toolpaths,
+    );
+    let collision_count = sim.checks.total_collision_count();
+    let trace_count = gui
+        .toolpath_rt
+        .values()
+        .filter(|rt| rt.debug_trace.is_some() || rt.semantic_trace.is_some())
+        .count();
 
     egui::Frame::default()
         .fill(egui::Color32::from_rgb(30, 32, 42))
-        .inner_margin(egui::Margin::symmetric(6.0, 4.0))
-        .rounding(4.0)
+        .inner_margin(egui::Margin::symmetric(6, 4))
+        .corner_radius(4)
         .show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 info_pill(
                     ui,
-                    format!("✓ load {ok}"),
+                    format!("✓ load {ok}/{total_tp}"),
                     egui::Color32::from_rgb(85, 180, 110),
-                    "Toolpaths within modeled load limits.",
+                    "Toolpaths within modeled load limits (of total modeled).",
                 );
                 info_pill(
                     ui,
-                    format!("⚠ unmodeled {unmodeled}"),
-                    egui::Color32::from_rgb(210, 170, 80),
-                    "Load criteria the gate could not model (drill cycles, no vendor data, etc.).",
-                );
-                info_pill(
-                    ui,
-                    format!("✕ exceeds {bad}"),
+                    format!("✕ exceeds {bad}/{total_tp}"),
                     egui::Color32::from_rgb(220, 90, 90),
-                    "Load-limit exceedances. Click the red lines on the boundary timeline below to navigate.",
+                    "Toolpaths exceeding a modeled load limit. Click the red lines on the boundary timeline below to navigate.",
                 );
                 info_pill(
                     ui,
-                    format!("~ approx {warn}"),
-                    egui::Color32::from_rgb(120, 150, 220),
-                    "Approximate or advisory verdicts.",
+                    format!("⚠ unmodeled {unmodeled}/{total_tp}"),
+                    egui::Color32::from_rgb(210, 170, 80),
+                    "Toolpaths the gate could not model (drill cycles, no vendor data, etc.).",
                 );
                 let collision_color = if collision_count == 0 {
                     egui::Color32::from_rgb(120, 210, 140)
@@ -163,31 +165,6 @@ fn draw_verdict_hud(
                 );
             });
         });
-}
-
-fn verdict_counts(report: &ToolLoadReport) -> (usize, usize, usize, usize) {
-    use rs_cam_core::tool_load::verdict::LoadState;
-    let mut ok = 0;
-    let mut warn = 0;
-    let mut bad = 0;
-    let mut unmodeled = 0;
-    for tp in &report.per_toolpath {
-        for (state, confidence) in [
-            (tp.chipload.state(), tp.chipload.confidence()),
-            (tp.power.state(), tp.power.confidence()),
-            (tp.deflection.state(), tp.deflection.confidence()),
-        ] {
-            match state {
-                LoadState::Within => ok += 1,
-                LoadState::Unmodeled => unmodeled += 1,
-                LoadState::Exceeds => bad += 1,
-            }
-            if matches!(confidence, Some(Confidence::Approximate(_))) {
-                warn += 1;
-            }
-        }
-    }
-    (ok, warn, bad, unmodeled)
 }
 
 fn info_pill(ui: &mut egui::Ui, text: String, color: egui::Color32, hover: &str) {
@@ -585,7 +562,7 @@ fn draw_signal_track(
         .allow_scroll([false, false])
         .allow_boxed_zoom(false)
         .link_axis(link_group, [true, false])
-        .link_cursor(link_group, [true, false].into())
+        .link_cursor(link_group, [true, false])
         .show_axes([true, true])
         .show_grid([true, true])
         .include_x(x_min)
@@ -608,12 +585,15 @@ fn draw_signal_track(
                         egui::Color32::from_rgba_premultiplied(35, 45, 70, 8)
                     };
                     plot_ui.polygon(
-                        Polygon::new(PlotPoints::from(vec![
-                            [*g_start, band_y_min],
-                            [*g_end, band_y_min],
-                            [*g_end, band_y_max],
-                            [*g_start, band_y_max],
-                        ]))
+                        Polygon::new(
+                            "",
+                            PlotPoints::from(vec![
+                                [*g_start, band_y_min],
+                                [*g_end, band_y_min],
+                                [*g_end, band_y_max],
+                                [*g_start, band_y_max],
+                            ]),
+                        )
                         .fill_color(fill)
                         .stroke(band_stroke)
                         .allow_hover(false)
@@ -653,7 +633,8 @@ fn draw_signal_track(
                         let xy: Vec<[f64; 2]> =
                             pts[run_start..end].iter().map(|(_, p)| *p).collect();
                         if xy.len() >= 2 {
-                            plot_ui.line(Line::new(PlotPoints::from(xy)).name(label).color(color));
+                            plot_ui
+                                .line(Line::new("", PlotPoints::from(xy)).name(label).color(color));
                         }
                         run_start = end;
                     }
@@ -664,7 +645,7 @@ fn draw_signal_track(
                 #[allow(clippy::indexing_slicing)]
                 let xy: Vec<[f64; 2]> = pts[run_start..].iter().map(|(_, p)| *p).collect();
                 if xy.len() >= 2 {
-                    plot_ui.line(Line::new(PlotPoints::from(xy)).name(label).color(color));
+                    plot_ui.line(Line::new("", PlotPoints::from(xy)).name(label).color(color));
                 }
             }
 
@@ -678,12 +659,15 @@ fn draw_signal_track(
                 if cl_max < max_y {
                     let breakage_top = max_y.max(cl_max);
                     plot_ui.polygon(
-                        Polygon::new(PlotPoints::from(vec![
-                            [x_min, cl_max],
-                            [x_max, cl_max],
-                            [x_max, breakage_top],
-                            [x_min, breakage_top],
-                        ]))
+                        Polygon::new(
+                            "",
+                            PlotPoints::from(vec![
+                                [x_min, cl_max],
+                                [x_max, cl_max],
+                                [x_max, breakage_top],
+                                [x_min, breakage_top],
+                            ]),
+                        )
                         .fill_color(egui::Color32::from_rgba_premultiplied(70, 18, 18, 90))
                         .stroke(transparent)
                         .allow_hover(false)
@@ -693,12 +677,15 @@ fn draw_signal_track(
                 if cl_min > min_y {
                     let burn_bottom = min_y.min(cl_min);
                     plot_ui.polygon(
-                        Polygon::new(PlotPoints::from(vec![
-                            [x_min, burn_bottom],
-                            [x_max, burn_bottom],
-                            [x_max, cl_min],
-                            [x_min, cl_min],
-                        ]))
+                        Polygon::new(
+                            "",
+                            PlotPoints::from(vec![
+                                [x_min, burn_bottom],
+                                [x_max, burn_bottom],
+                                [x_max, cl_min],
+                                [x_min, cl_min],
+                            ]),
+                        )
                         .fill_color(egui::Color32::from_rgba_premultiplied(90, 60, 12, 80))
                         .stroke(transparent)
                         .allow_hover(false)
@@ -707,13 +694,13 @@ fn draw_signal_track(
                 }
                 let band_color = egui::Color32::from_rgb(220, 90, 90);
                 plot_ui.line(
-                    Line::new(PlotPoints::from(vec![[x_min, cl_min], [x_max, cl_min]]))
+                    Line::new("", PlotPoints::from(vec![[x_min, cl_min], [x_max, cl_min]]))
                         .color(band_color)
                         .style(egui_plot::LineStyle::Dashed { length: 6.0 })
                         .name("cl_min"),
                 );
                 plot_ui.line(
-                    Line::new(PlotPoints::from(vec![[x_min, cl_max], [x_max, cl_max]]))
+                    Line::new("", PlotPoints::from(vec![[x_min, cl_max], [x_max, cl_max]]))
                         .color(band_color)
                         .style(egui_plot::LineStyle::Dashed { length: 6.0 })
                         .name("cl_max"),
@@ -722,7 +709,7 @@ fn draw_signal_track(
 
             if let Some(x) = active_x {
                 plot_ui.line(
-                    Line::new(PlotPoints::from(vec![[x, min_y], [x, max_y]]))
+                    Line::new("", PlotPoints::from(vec![[x, min_y], [x, max_y]]))
                         .color(egui::Color32::from_rgb(245, 245, 245))
                         .name("playback"),
                 );
@@ -730,12 +717,13 @@ fn draw_signal_track(
 
             if let Some(x) = display_x {
                 plot_ui.line(
-                    Line::new(PlotPoints::from(vec![[x, min_y], [x, max_y]]))
+                    Line::new("", PlotPoints::from(vec![[x, min_y], [x, max_y]]))
                         .color(egui::Color32::from_rgb(200, 240, 100))
                         .style(egui_plot::LineStyle::Dashed { length: 4.0 }),
                 );
                 if let Some((_, point)) = nearest_in_groups(x, &group_points) {
                     plot_ui.text(egui_plot::Text::new(
+                        "",
                         egui_plot::PlotPoint::new(point[0], point[1]),
                         format!("{label}: {:.3} @ move {}", point[1], point[0] as usize),
                     ));
@@ -751,7 +739,7 @@ fn draw_signal_track(
                     .collect();
                 if !hotspot_pts.is_empty() {
                     plot_ui.points(
-                        egui_plot::Points::new(PlotPoints::from(hotspot_pts))
+                        egui_plot::Points::new("", PlotPoints::from(hotspot_pts))
                             .color(super::theme::ERROR)
                             .radius(4.0)
                             .name("gate trips"),
@@ -948,6 +936,7 @@ fn draw_boundary_timeline(
             rect,
             rounding,
             egui::Stroke::new(1.0, egui::Color32::from_rgb(55, 55, 65)),
+            egui::StrokeKind::Middle,
         );
 
         for (i, boundary) in sim.boundaries().iter().enumerate() {
@@ -1054,14 +1043,15 @@ fn draw_boundary_timeline(
                 focused_id,
             )
         {
-            egui::show_tooltip_at_pointer(
-                ui.ctx(),
+            egui::Tooltip::always_open(
+                ui.ctx().clone(),
                 ui.layer_id(),
                 egui::Id::new("sim_timeline_marker_tip"),
-                |ui| {
-                    ui.label(tip);
-                },
-            );
+                egui::PopupAnchor::Pointer,
+            )
+            .show(|ui| {
+                ui.label(tip);
+            });
         }
 
         // Playhead line
@@ -1314,7 +1304,12 @@ fn draw_span_ribbon(
         // Hover outline — thin white ring around the block under the cursor
         // so the user has clear visual feedback that the block is clickable.
         if hovered {
-            painter.rect_stroke(block, 0.0, egui::Stroke::new(1.5, COLOR_HOVER_OUTLINE));
+            painter.rect_stroke(
+                block,
+                0.0,
+                egui::Stroke::new(1.5, COLOR_HOVER_OUTLINE),
+                egui::StrokeKind::Middle,
+            );
         }
 
         // Thin separator on the right edge so consecutive passes don't blur.
@@ -1399,14 +1394,15 @@ fn draw_span_ribbon(
     }
 
     if let Some(tip) = hover_label {
-        egui::show_tooltip_at_pointer(
-            ui.ctx(),
+        egui::Tooltip::always_open(
+            ui.ctx().clone(),
             ui.layer_id(),
             egui::Id::new("sim_span_ribbon_tip"),
-            |ui| {
-                ui.label(tip);
-            },
-        );
+            egui::PopupAnchor::Pointer,
+        )
+        .show(|ui| {
+            ui.label(tip);
+        });
     }
 
     if let Some((sid, jump_move)) = click_target {
@@ -1760,7 +1756,12 @@ fn draw_semantic_band(
         if active_semantic
             .is_some_and(|active| active.toolpath_id == boundary.id && active.item.id == item.id)
         {
-            painter.rect_stroke(seg_rect, 1.0, egui::Stroke::new(1.5, egui::Color32::WHITE));
+            painter.rect_stroke(
+                seg_rect,
+                1.0,
+                egui::Stroke::new(1.5, egui::Color32::WHITE),
+                egui::StrokeKind::Middle,
+            );
         }
     }
 

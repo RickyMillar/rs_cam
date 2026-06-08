@@ -1474,6 +1474,7 @@ fn analysis_requests_replace_stale_work() {
         })),
         tool: ToolConfig::new_default(ToolId(1), ToolType::EndMill),
         mesh: Arc::new(make_test_flat(20.0)),
+        obstacles: Vec::new(),
     });
 
     let snapshot = backend.lane_snapshot(ComputeLane::Analysis);

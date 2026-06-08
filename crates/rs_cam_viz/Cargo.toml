@@ -12,10 +12,10 @@ workspace = true
 
 [dependencies]
 rs_cam_core = { path = "../rs_cam_core", features = ["step"] }
-eframe = { version = "0.30", features = ["wgpu"] }
-egui = "0.30"
-egui-wgpu = "0.30"
-egui_plot = "0.30"
+eframe = { version = "0.34", features = ["wgpu"] }
+egui = "0.34"
+egui-wgpu = "0.34"
+egui_plot = "0.35"
 nalgebra = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }

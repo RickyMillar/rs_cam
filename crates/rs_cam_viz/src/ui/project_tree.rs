@@ -84,11 +84,11 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             response.context_menu(|ui| {
                 if ui.button("Reload from disk").clicked() {
                     events.push(AppEvent::ReloadModel(mid));
-                    ui.close_menu();
+                    ui.close();
                 }
                 if ui.button("Delete").clicked() {
                     events.push(AppEvent::RemoveModel(mid));
-                    ui.close_menu();
+                    ui.close();
                 }
             });
         }
@@ -120,11 +120,11 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             response.context_menu(|ui| {
                 if ui.button("Duplicate").clicked() {
                     events.push(AppEvent::DuplicateTool(tool.id));
-                    ui.close_menu();
+                    ui.close();
                 }
                 if ui.button("Delete").clicked() {
                     events.push(AppEvent::RemoveTool(tool.id));
-                    ui.close_menu();
+                    ui.close();
                 }
             });
         }
@@ -133,7 +133,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             for &tt in ToolType::ALL {
                 if ui.button(tt.label()).clicked() {
                     events.push(AppEvent::AddTool(tt));
-                    ui.close_menu();
+                    ui.close();
                 }
             }
             let libraries = rs_cam_core::tool_library::list_libraries();
@@ -154,7 +154,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                                             events.push(AppEvent::AddToolFromLibrary(Box::new(
                                                 tool.clone(),
                                             )));
-                                            ui.close_menu();
+                                            ui.close();
                                         }
                                     }
                                 }
@@ -201,7 +201,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 resp.context_menu(|ui| {
                     if ui.button("Export G-code").clicked() {
                         events.push(AppEvent::ExportSetupGcode(setup_id));
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     let can_delete = setups.len() > 1;
@@ -210,7 +210,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                         .clicked()
                     {
                         events.push(AppEvent::RemoveSetup(setup_id));
-                        ui.close_menu();
+                        ui.close();
                     }
                 });
                 ui.separator();
@@ -241,7 +241,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     resp.context_menu(|ui| {
                         if ui.button("Delete").clicked() {
                             events.push(AppEvent::RemoveFixture(setup_id, fixture.id));
-                            ui.close_menu();
+                            ui.close();
                         }
                     });
                 }
@@ -258,7 +258,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     resp.context_menu(|ui| {
                         if ui.button("Delete").clicked() {
                             events.push(AppEvent::RemoveKeepOut(setup_id, keep_out.id));
-                            ui.close_menu();
+                            ui.close();
                         }
                     });
                 }
@@ -341,34 +341,34 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     let vis_label = if visible { "Hide" } else { "Show" };
                     if ui.button(vis_label).clicked() {
                         events.push(AppEvent::ToggleToolpathVisibility(tp_id));
-                        ui.close_menu();
+                        ui.close();
                     }
                     let en_label = if tc.enabled { "Disable" } else { "Enable" };
                     if ui.button(en_label).clicked() {
                         events.push(AppEvent::ToggleToolpathEnabled(tp_id));
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Duplicate").clicked() {
                         events.push(AppEvent::DuplicateToolpath(tp_id));
-                        ui.close_menu();
+                        ui.close();
                     }
                     if has_result && ui.button("Inspect in Simulation").clicked() {
                         events.push(AppEvent::InspectToolpathInSimulation(tp_id));
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button("Move Up").clicked() {
                         events.push(AppEvent::MoveToolpathUp(tp_id));
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Move Down").clicked() {
                         events.push(AppEvent::MoveToolpathDown(tp_id));
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button("Delete").clicked() {
                         events.push(AppEvent::RemoveToolpath(tp_id));
-                        ui.close_menu();
+                        ui.close();
                     }
                 });
             }
@@ -379,7 +379,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 for &op in OperationType::ALL_2D {
                     if ui.button(op.label()).clicked() {
                         events.push(AppEvent::AddToolpath(op));
-                        ui.close_menu();
+                        ui.close();
                     }
                 }
                 ui.separator();
@@ -387,7 +387,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 for &op in OperationType::ALL_3D {
                     if ui.button(op.label()).clicked() {
                         events.push(AppEvent::AddToolpath(op));
-                        ui.close_menu();
+                        ui.close();
                     }
                 }
             });

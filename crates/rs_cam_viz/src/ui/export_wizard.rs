@@ -79,7 +79,7 @@ fn draw_stepper(ui: &mut egui::Ui, active: u8, events: &mut Vec<AppEvent>) {
                 text = text.strong();
             }
             if ui
-                .add(egui::SelectableLabel::new(n == active, text))
+                .add(egui::Button::selectable(n == active, text))
                 .clicked()
             {
                 events.push(AppEvent::WizardSetStep(n));
