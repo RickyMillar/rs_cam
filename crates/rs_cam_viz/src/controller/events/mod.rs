@@ -203,6 +203,13 @@ impl<B: ComputeBackend> AppController<B> {
             } => {
                 self.apply_optimize_candidate(toolpath_id, candidate_index);
             }
+            AppEvent::ReoptimizeWithAxisOverride {
+                toolpath_id,
+                axis,
+                value,
+            } => {
+                self.reoptimize_with_axis_override(toolpath_id, axis, value);
+            }
 
             // --- Optimize project (U3) ---
             AppEvent::OpenOptimizeProject => {
@@ -568,6 +575,82 @@ impl<B: ComputeBackend> AppController<B> {
                 crate::controller::Severity::Info,
             );
         }
+    }
+
+    /// OPT-005 — accept an operator suggestion from the Optimize modal:
+    /// set the named axis to the suggested value on the toolpath, then
+    /// re-open the modal so the search re-runs against the new baseline.
+    /// An explicit operator click (never an auto-apply) that removes the
+    /// manual re-typing the prose suggestions used to require.
+    fn reoptimize_with_axis_override(
+        &mut self,
+        toolpath_id: crate::state::toolpath::ToolpathId,
+        axis: rs_cam_core::tool_load::optimize::KnobAxis,
+        value: f64,
+    ) {
+        use rs_cam_core::tool_load::optimize::KnobAxis;
+
+        let Some(idx) = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .position(|tc| tc.id == toolpath_id.0)
+        else {
+            self.push_notification(
+                format!(
+                    "Re-optimize failed: toolpath id {} not found",
+                    toolpath_id.0
+                ),
+                crate::controller::Severity::Error,
+            );
+            return;
+        };
+        let Some(tc) = self.state.session.get_toolpath_config(idx) else {
+            self.push_notification(
+                format!("Re-optimize failed: toolpath {} disappeared", toolpath_id.0),
+                crate::controller::Severity::Error,
+            );
+            return;
+        };
+        let baseline_op = tc.operation.clone();
+        let mut new_op = baseline_op.clone();
+        let dressups = tc.dressups.clone();
+        let face_selection = tc.face_selection.clone();
+        match axis {
+            KnobAxis::Feed => new_op.set_feed_rate(value),
+            KnobAxis::SpindleRpm => new_op.set_spindle_rpm(Some(value.round().max(0.0) as u32)),
+            KnobAxis::Stepover => new_op.set_stepover(value),
+            KnobAxis::DepthPerPass => new_op.set_depth_per_pass(value),
+            KnobAxis::ScallopHeight => new_op.set_scallop_height(value),
+        }
+        // W2.1: the override value originates from the optimizer's own
+        // suggestion, so stamp Optimizer provenance on the changed dim.
+        let new_provenance = tc
+            .feeds_provenance
+            .clone()
+            .stamped_optimizer(&baseline_op, &new_op);
+
+        if let Err(e) =
+            self.state
+                .session
+                .apply_toolpath_param_snapshot(idx, new_op, dressups, face_selection)
+        {
+            self.push_notification(
+                format!("Re-optimize failed: {e}"),
+                crate::controller::Severity::Error,
+            );
+            return;
+        }
+        let _ = self.state.session.set_feeds_provenance(idx, new_provenance);
+        self.state.gui.mark_edited();
+        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
+            rt.stale_since = Some(std::time::Instant::now());
+        }
+        // Re-run the search against the new baseline. open_optimize_modal
+        // reuses the cached baseline trace; the modal's FreshnessGate
+        // banner flags that the trace is now one edit behind.
+        self.open_optimize_modal(toolpath_id);
     }
 
     // ── Feeds & Speeds modal ───────────────────────────────────────

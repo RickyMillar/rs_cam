@@ -532,6 +532,30 @@ fn draw_project_section(
                 );
             });
 
+            // OPT-006 — discoverable in-context Optimize entry. When any
+            // toolpath exceeds, the actionable exceeding-pill above is the
+            // entry (W3.3). When nothing is over-budget the pill is inert,
+            // yet the optimizer can still cut cycle time on within-gate
+            // toolpaths — so surface a muted always-available entry here so
+            // the obscure Toolpath-menu item is no longer the only path.
+            if bad == 0 {
+                ui.add_space(2.0);
+                if ui
+                    .button(
+                        egui::RichText::new("\u{26A1} Optimize project for cycle time")
+                            .small()
+                            .color(theme::TEXT_MUTED),
+                    )
+                    .on_hover_text(
+                        "Search every enabled toolpath for a faster, still-safe set of \
+                         feeds & speeds.",
+                    )
+                    .clicked()
+                {
+                    events.push(AppEvent::OpenOptimizeProject);
+                }
+            }
+
             // Roadmap C.1 — partition the issue count by SimulationIssueKind into
             // a "must address" cluster (collisions, hotspots) and an
             // informational cluster (low engagement, air cut). The single
