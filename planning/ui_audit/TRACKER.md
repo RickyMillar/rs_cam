@@ -14,14 +14,24 @@
 > (one agent, single-subsystem context).
 
 ## ▶ Next action
-**W3.6 DONE — the remaining Wave-2 surface rewrites are next.** CL + W3.1 + W3.2 + W3.3 + W3.6
-are merged to master. The timeline is now a single Tier-2 time axis (boundary + span + semantic
-bands collapsed into one global-X widget, one shared playhead, one Y-region click contract),
-with clickable verdict pills, spine empty-state/stale-skin, and op-list name-jump. Remaining: 🔁
-**W3.5 optimizer · W3.4 tools · W3.7 header/rail**, then W3.8 dashboard + Tier-4/5 polish. Each:
-fresh branch off master, consumes the component layer (`ARCHITECTURE.md` §4 usage map). Suggested
-order: W3.5 (optimizer — adopts `compare::*` if it adds a compare view) → W3.4 tools → W3.7
-header/rail (which is `visibility.rs`'s true home).
+**W3.5 DONE — two Wave-2 surface rewrites remain.** CL + W3.1 + W3.2 + W3.3 + W3.6 + W3.5
+are merged to master. The optimizer rollup is now role-sectioned (Apply-now / Needs-your-call
+with Review buttons / collapsed Not-optimized), the modal's suggestions are Apply-&-re-optimize
+affordances, and the project optimizer has a self-explaining disabled menu item + an
+always-available cycle-time entry in the inspector. Remaining: 🔁 **W3.4 tools · W3.7 header/rail**,
+then W3.8 dashboard + Tier-4/5 polish. Each: fresh branch off master, consumes the component
+layer (`ARCHITECTURE.md` §4 usage map). Suggested order: W3.4 tools → W3.7 header/rail (which is
+`visibility.rs`'s true home).
+
+⚠ **W3.5 visual-verify debt:** MCP screenshots capture the 3D viewport, not egui panel chrome —
+the new optimizer rollup window, the modal suggestion rows, and the inspector Optimize entry
+need a human `cargo run -p rs_cam_viz --bin rs_cam_gui` pass.
+
+**`compare::*` not adopted in W3.5 (deliberate):** the rollup header is two cycle-time numbers
+("Current / Optimized (-26.6s, -10%)"), which `delta_tag`'s "↓ 0.90×" ratio renders *less*
+clearly than the existing absolute+percent. `CompareRow` is also feeds-field-specific (ties to
+`ApplyFeedsField`). So compare:: didn't cleanly fit — the deferral from CL/W3.1 ("optimizer adopts
+compare:: if it adds a compare view") is closed as *not-applicable*, not carried forward.
 
 ⚠ **Component-build carry-over still open:** `components::{visibility,nav,diagram}` were NOT built
 in W3.6 — deferred with rationale: the Tier-2 widget is interactive (doesn't fit diagram.rs's
@@ -215,7 +225,7 @@ Tier-4/5 polish.
 | W3.2 | five-tab scaffold | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.3 | inspector summary-first | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.4 | tool editor (commit + grouping) | viz | 🟪 | 🔁 | CL, W1.1 | ☐ |
-| W3.5 | optimizer affordances | viz | 🟦 | 🔁 | CL | ☐ |
+| W3.5 | optimizer affordances | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.6 | timeline disambiguation | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.7 | header/rail de-overload | viz | 🟦 | 🔁 | CL | ☐ |
 | W3.8 | job-readiness dashboard | viz | 🟦 | 🔁 | CL, W0.1, W0.4, W0.5 | ☐ |
@@ -376,6 +386,25 @@ Tier-4/5 polish.
     (TIM-006, retires the whole-card overlapping-Id click); outline kind banner (TIM-007).
   Deferred w/ rationale: TIM-008 metric-chip row; `components::{visibility,nav,diagram}` (build
   with consuming surfaces — visibility→W3.7). ⚠ Painting reorg — needs a human `cargo run` pass.
-- **▶ Next:** the remaining Wave-2 rewrites — W3.5 optimizer · W3.4 tools · W3.7 header/rail.
-  File-disjoint, run **sequentially** (build-thrash), one branch+merge per surface, consuming the
-  component layer. Lead with W3.5 (`compare::*` if it adds a compare view).
+- **2026-06-09** — **W3.5 COMPLETE** on branch `ia-cleanup/w3.5-optimizer`, 3 commits each green
+  (clippy --workspace -D warnings + fmt + viz ui tests), merged to master `c2505d3` `--no-ff`:
+  - **1/3** (`ddb6b60`) `optimize_project.rs` role-sectioned rollup (OPT-002/OPT-004): Apply-now
+    (Ranked+safe, checkbox-only col, glyph-only verdict) / Needs-your-call (TradeOff/MarginalSafe,
+    role chip + `Review ▸` → `OpenOptimizeModal`) / collapsed Not-optimized (per-row expander, no
+    70-char inline truncation). Header `+N not estimated` note + `baseline:` provenance line
+    (OPT-001 presentation); Reconciling/Reconciled prose → `xtp` cross-toolpath cell note + hover.
+  - **2/3** (`811e761`) `optimize_modal.rs` Apply-&-re-optimize suggestions (OPT-005): `CapAxisAt`/
+    `RaiseAxisAbove` render as button rows → new `AppEvent::ReoptimizeWithAxisOverride` (controller
+    sets the axis via the op setter, stamps Optimizer provenance, re-opens the modal); `DataGapHere`
+    stays a ⓘ note. Lifted `axis_label_units`; added `format_suggestion_action`; retired prose
+    `format_suggestion`.
+  - **3/3** (`72c4169`) discoverability (OPT-006): `menu_bar` `on_disabled_hover_text`; inspector
+    Project section gains an always-available `⚡ Optimize project for cycle time` entry when
+    `bad == 0` (the W3.3 actionable exceeds-pill remains the entry when `bad > 0` — no redundant
+    button re-added for that case).
+  OPT-001 (header math, W0.2) + OPT-003 (stale banner, W0.5) were already done. `compare::*` not
+  adopted — didn't cleanly fit (header is absolute+percent, not a ratio; `CompareRow` is feeds-only).
+  ⚠ egui-chrome visual parity unverified — needs a human `cargo run` pass.
+- **▶ Next:** the remaining Wave-2 rewrites — W3.4 tools · W3.7 header/rail. File-disjoint, run
+  **sequentially** (build-thrash), one branch+merge per surface, consuming the component layer.
+  Lead with W3.4 tools (then W3.7 builds `components::visibility` with the viewport overlay).
