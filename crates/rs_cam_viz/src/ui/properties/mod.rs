@@ -28,7 +28,7 @@ use crate::state::toolpath::{
 use crate::ui::AppEvent;
 use crate::ui::automation;
 use crate::ui::components::{
-    PrecedenceField, ProvKind, ProvenanceBadge, Suggestion, UiExt, ValueRow, mrr_row, power_bar,
+    PrecedenceField, ProvKind, Suggestion, UiExt, ValueRow, mrr_row, power_bar,
 };
 
 /// Paint a brief blue glow behind a UI region when an MCP parameter was recently changed.
@@ -1251,6 +1251,24 @@ fn draw_feeds_card(
             OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
         );
 
+        // W4.1 — render the *stored* per-field provenance (what actually
+        // produced the value on this operation), not a recomputed lookup. This
+        // is the rendering repoint W2.1 deliberately deferred: a vendor-LUT feed
+        // with a formula-fallback plunge now reads honestly per field instead of
+        // one chipload source labelling every value (P7-002). Captured as owned
+        // tuples up front so the immutable read of `entry.feeds_provenance`
+        // doesn't outlive the `entry.operation` edits in the section closures.
+        let feed_prov = entry
+            .feeds_provenance
+            .feed_rate
+            .as_ref()
+            .map(|v| (ProvKind::from(v), v.reference.clone()));
+        let plunge_prov = entry
+            .feeds_provenance
+            .plunge_rate
+            .as_ref()
+            .map(|v| (ProvKind::from(v), v.reference.clone()));
+
         // ── SPEED — how fast (feed / plunge / RPM) ──
         ui.named_section("SPEED \u{2014} how fast", |ui| {
             // The live LUT recommendation drives each field's ⚡ suggest.
@@ -1268,28 +1286,32 @@ fn draw_feeds_card(
                         ui.end_row();
                     } else {
                         let mut feed = entry.operation.feed_rate();
-                        if ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, 1.0..=50000.0)
-                            .suggest(Suggestion {
-                                recommended: result.feed_rate_mm_min,
-                                source: speed_kind,
-                                reference: speed_ref,
-                            })
-                            .show(ui)
-                            .edited
-                        {
+                        let mut feed_row =
+                            ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, 1.0..=50000.0)
+                                .suggest(Suggestion {
+                                    recommended: result.feed_rate_mm_min,
+                                    source: speed_kind,
+                                    reference: speed_ref,
+                                });
+                        if let Some((kind, reference)) = &feed_prov {
+                            feed_row = feed_row.prov(*kind, reference.as_deref());
+                        }
+                        if feed_row.show(ui).edited {
                             entry.operation.set_feed_rate(feed);
                             entry.stale_since = Some(std::time::Instant::now());
                         }
                         let mut plunge = entry.operation.plunge_rate();
-                        if ValueRow::new("Plunge:", &mut plunge, " mm/min", 10.0, 1.0..=10000.0)
-                            .suggest(Suggestion {
-                                recommended: result.plunge_rate_mm_min,
-                                source: speed_kind,
-                                reference: speed_ref,
-                            })
-                            .show(ui)
-                            .edited
-                        {
+                        let mut plunge_row =
+                            ValueRow::new("Plunge:", &mut plunge, " mm/min", 10.0, 1.0..=10000.0)
+                                .suggest(Suggestion {
+                                    recommended: result.plunge_rate_mm_min,
+                                    source: speed_kind,
+                                    reference: speed_ref,
+                                });
+                        if let Some((kind, reference)) = &plunge_prov {
+                            plunge_row = plunge_row.prov(*kind, reference.as_deref());
+                        }
+                        if plunge_row.show(ui).edited {
                             entry.operation.set_plunge_rate(plunge);
                             entry.stale_since = Some(std::time::Instant::now());
                         }
@@ -1388,11 +1410,12 @@ fn draw_feeds_card(
         });
 
         {
-            // Vendor source — the one provenance vocabulary (was a third,
-            // cyan, source-colour treatment; collapsed onto ProvenanceBadge to
-            // kill the P7-003 three-colours-for-one-signal divergence).
-            let (kind, reference) = prov_from_chipload(&result.chipload_source);
-            ui.add(ProvenanceBadge::new(kind).reference_opt(reference));
+            // W4.1: provenance is now per field (the compact badges on the Feed
+            // / Plunge rows above, read from the stored `feeds_provenance`). The
+            // single bottom badge derived from a recomputed chipload source was
+            // the P7-002 mislabel — one source standing in for every field — so
+            // it is gone; each suggest pill still carries its recommendation
+            // source on hover.
 
             // Warnings
             for w in &result.warnings {
