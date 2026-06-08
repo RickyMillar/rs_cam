@@ -47,7 +47,14 @@ pub(in crate::ui::properties) fn draw_drill_params(
                 1.0..=5000.0,
                 feed_sugg,
             );
-            dv(ui, "Retract Z:", &mut cfg.retract_z, " mm", 0.5, 0.5..=50.0);
+            dv(
+                ui,
+                "Retract (R):",
+                &mut cfg.retract_z,
+                " mm",
+                0.5,
+                0.5..=50.0,
+            );
             if matches!(cfg.cycle, DrillCycleType::Peck | DrillCycleType::ChipBreak) {
                 dv(
                     ui,
@@ -128,7 +135,14 @@ pub(in crate::ui::properties) fn draw_alignment_pin_drill_params(
                 1.0..=5000.0,
                 feed_sugg,
             );
-            dv(ui, "Retract Z:", &mut cfg.retract_z, " mm", 0.5, 0.5..=50.0);
+            dv(
+                ui,
+                "Retract (R):",
+                &mut cfg.retract_z,
+                " mm",
+                0.5,
+                0.5..=50.0,
+            );
             if matches!(cfg.cycle, DrillCycleType::Peck | DrillCycleType::ChipBreak) {
                 dv(
                     ui,

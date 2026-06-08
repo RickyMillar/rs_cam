@@ -3537,8 +3537,8 @@ fn tooltip_for(label: &str) -> Option<&'static str> {
         "Peck Depth" => "Incremental depth per peck for chip evacuation.",
         "Dwell Time" => "Pause at bottom of drill hole (seconds).",
         "Retract Amt" => "Small retract distance for chip breaking between pecks.",
-        "Retract Z" => {
-            "R-plane height for this drill cycle: rapid down to here, then feed into material. Different from global Safe Z."
+        "Retract (R)" => {
+            "R-plane for this drill cycle: rapid down to here, then feed into material."
         }
         "Angular Step" => "Degrees between radial spokes. Smaller = more passes, finer finish.",
         "Point Spacing" => "Distance between sample points along curves. Smaller = smoother.",
