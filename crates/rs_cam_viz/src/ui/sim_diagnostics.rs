@@ -327,6 +327,15 @@ fn draw_reactive_inspector(
         return;
     }
 
+    // Staleness cue first, so it shows regardless of which branch below
+    // runs. Before W0.5 the banner lived only in the overview path, so a
+    // focused hotspot/issue card printed concrete cut metrics with no
+    // freshness warning (INS-005).
+    if sim.is_stale(gui.edit_counter) {
+        theme::stale_banner(ui);
+        ui.add_space(4.0);
+    }
+
     // Priority order for what to display:
     // 1. Focused hotspot card (user clicked a 3D-viewport pin or graph dot).
     // 2. Issue card (an air-cut / low-engagement issue at the current move).
@@ -369,7 +378,7 @@ fn draw_focused_hotspot_card(
     egui::Frame::default()
         .fill(egui::Color32::from_rgb(50, 38, 28))
         .inner_margin(6.0)
-        .rounding(4.0)
+        .corner_radius(4)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(
@@ -431,7 +440,7 @@ fn draw_focused_issue_card(
     egui::Frame::default()
         .fill(egui::Color32::from_rgb(42, 36, 28))
         .inner_margin(6.0)
-        .rounding(4.0)
+        .corner_radius(4)
         .show(ui, |ui| {
             ui.label(
                 egui::RichText::new(format!("{}: {}", issue_kind_label(issue.kind), issue.label))
@@ -512,7 +521,7 @@ fn draw_project_overview(
             .map(|tc| tc.name.clone())
     });
     let (ok, bad, unmodeled) = (summary.within, summary.exceeds, summary.fully_unmodeled);
-    let collision_count = sim.checks.rapid_collisions.len() + sim.checks.holder_collision_count;
+    let collision_count = sim.checks.total_collision_count();
 
     // ─── Global stats ───
     ui.label(
@@ -816,14 +825,8 @@ fn draw_project_overview(
             });
     }
 
-    if sim.is_stale(gui.edit_counter) {
-        ui.add_space(4.0);
-        ui.label(
-            egui::RichText::new("⚠ Results stale (params changed) — re-run sim")
-                .small()
-                .color(theme::WARNING),
-        );
-    }
+    // (Staleness banner hoisted to draw_reactive_inspector — W0.5/INS-005 —
+    // so it also covers the focused-card paths, not just this overview.)
 
     // Tool-load badges + jump buttons for the currently-playing toolpath
     // (project-wide concern, not span-scoped).

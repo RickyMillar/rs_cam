@@ -2353,7 +2353,7 @@ fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab, badges: &TabB
                         ..Default::default()
                     },
                 );
-                egui::WidgetText::LayoutJob(job)
+                egui::WidgetText::LayoutJob(std::sync::Arc::new(job))
             } else {
                 egui::RichText::new(tab.label())
                     .color(text_color)
@@ -2362,11 +2362,11 @@ fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab, badges: &TabB
             };
             let button = egui::Button::new(label)
                 .fill(bg)
-                .rounding(egui::Rounding {
-                    nw: 4.0,
-                    ne: 4.0,
-                    sw: 0.0,
-                    se: 0.0,
+                .corner_radius(egui::CornerRadius {
+                    nw: 4,
+                    ne: 4,
+                    sw: 0,
+                    se: 0,
                 })
                 .min_size(egui::vec2(55.0, 24.0));
             let response = ui.add(button);
@@ -2772,7 +2772,7 @@ fn draw_toolpath_panel(
                         1.0,
                         egui::Color32::from_rgb(200, 150, 60),
                     ))
-                    .inner_margin(egui::Margin::same(6.0))
+                    .inner_margin(egui::Margin::same(6))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
                             ui.label(

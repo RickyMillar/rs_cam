@@ -369,6 +369,7 @@ pub(super) fn draw_stepover_diagram(ui: &mut egui::Ui, pattern: &StepoverPattern
         wp,
         2.0,
         egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 80, 95)),
+        egui::StrokeKind::Middle,
     );
 
     let path_color = egui::Color32::from_rgb(50, 200, 180);
@@ -492,6 +493,7 @@ pub(super) fn draw_stepover_diagram(ui: &mut egui::Ui, pattern: &StepoverPattern
                             (255.0 * alpha) as u8,
                         ),
                     ),
+                    egui::StrokeKind::Middle,
                 );
                 inset += step_frac * min_dim;
             }
@@ -761,6 +763,7 @@ pub(super) fn draw_tab_diagram(
         pr,
         2.0,
         egui::Stroke::new(1.5, egui::Color32::from_rgb(80, 80, 95)),
+        egui::StrokeKind::Middle,
     );
 
     let tab_color = egui::Color32::from_rgb(220, 160, 50);
@@ -836,7 +839,12 @@ pub(super) fn draw_outline_diagram(ui: &mut egui::Ui, label: &str, offset_side: 
     let dim_color = egui::Color32::from_rgb(100, 100, 115);
 
     // Main path outline
-    painter.rect_stroke(wp, 2.0, egui::Stroke::new(2.0, path_color));
+    painter.rect_stroke(
+        wp,
+        2.0,
+        egui::Stroke::new(2.0, path_color),
+        egui::StrokeKind::Middle,
+    );
 
     // Direction arrows (clockwise around the perimeter)
     let arrow_r = 3.0;
@@ -863,7 +871,12 @@ pub(super) fn draw_outline_diagram(ui: &mut egui::Ui, label: &str, offset_side: 
             egui::pos2(wp.left() + inset, wp.top() + inset),
             egui::pos2(wp.right() - inset, wp.bottom() - inset),
         );
-        painter.rect_stroke(offset_rect, 1.0, egui::Stroke::new(1.0, offset_color));
+        painter.rect_stroke(
+            offset_rect,
+            1.0,
+            egui::Stroke::new(1.0, offset_color),
+            egui::StrokeKind::Middle,
+        );
     }
 
     // Label
@@ -897,6 +910,7 @@ pub(super) fn draw_spiral_diagram(ui: &mut egui::Ui, stepover: f64, outward: boo
         egui::Rect::from_center_size(egui::pos2(cx, cy), egui::vec2(max_r * 2.1, max_r * 2.1)),
         2.0,
         egui::Stroke::new(0.5, egui::Color32::from_rgb(50, 50, 60)),
+        egui::StrokeKind::Middle,
     );
 
     // Spiral: r = max_r * t, θ = turns * 2π * t
@@ -1140,6 +1154,7 @@ pub(super) fn draw_steep_shallow_diagram(ui: &mut egui::Ui, threshold: f64) {
                 ),
                 1.0,
                 egui::Stroke::new(0.8, steep_color),
+                egui::StrokeKind::Middle,
             );
         }
     }
@@ -1525,6 +1540,7 @@ pub(super) fn draw_height_diagram(
         ),
         2.0,
         egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 80, 95)),
+        egui::StrokeKind::Middle,
     );
 
     // Model rectangle (narrower, different color)
@@ -1549,6 +1565,7 @@ pub(super) fn draw_height_diagram(
             ),
             1.0,
             egui::Stroke::new(1.0, egui::Color32::from_rgb(90, 90, 120)),
+            egui::StrokeKind::Middle,
         );
     }
 

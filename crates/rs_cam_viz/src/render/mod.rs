@@ -202,14 +202,14 @@ impl RenderResources {
 
         let mesh_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("mesh_pl"),
-            bind_group_layouts: &[&mesh_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&mesh_bind_group_layout)],
+            immediate_size: 0,
         });
 
         let depth_stencil = wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Less,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Less),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         };
@@ -217,7 +217,7 @@ impl RenderResources {
         // against opaque geometry but don't write, so they don't block each other
         // or the model behind them.
         let depth_read_only = wgpu::DepthStencilState {
-            depth_write_enabled: false,
+            depth_write_enabled: Some(false),
             ..depth_stencil.clone()
         };
 
@@ -248,7 +248,7 @@ impl RenderResources {
             },
             depth_stencil: Some(depth_stencil.clone()),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -277,8 +277,8 @@ impl RenderResources {
         let sim_mesh_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("sim_mesh_pl"),
-                bind_group_layouts: &[&mesh_bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&mesh_bind_group_layout)],
+                immediate_size: 0,
             });
 
         let sim_mesh_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -308,7 +308,7 @@ impl RenderResources {
             },
             depth_stencil: Some(depth_stencil.clone()),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -343,7 +343,7 @@ impl RenderResources {
                 },
                 depth_stencil: Some(depth_read_only),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -378,7 +378,7 @@ impl RenderResources {
                 },
                 depth_stencil: Some(depth_stencil.clone()),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -421,8 +421,8 @@ impl RenderResources {
 
         let line_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("line_pl"),
-            bind_group_layouts: &[&line_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&line_bind_group_layout)],
+            immediate_size: 0,
         });
 
         let line_vertex_layout = wgpu::VertexBufferLayout {
@@ -467,7 +467,7 @@ impl RenderResources {
             },
             depth_stencil: Some(depth_stencil),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -502,8 +502,8 @@ impl RenderResources {
 
         let blit_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("blit_pl"),
-            bind_group_layouts: &[&blit_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&blit_bind_group_layout)],
+            immediate_size: 0,
         });
 
         let blit_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -531,7 +531,7 @@ impl RenderResources {
             },
             depth_stencil: None, // Blit into egui pass (no depth)
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -751,6 +751,7 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 label: Some("3d_scene"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &offscreen.color_view,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {

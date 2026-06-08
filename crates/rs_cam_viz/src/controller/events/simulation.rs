@@ -297,31 +297,41 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub(crate) fn request_collision_check(&mut self) {
         // Find first toolpath with a result and matching tool/model
-        let toolpath_data = self.state.session.toolpath_configs().iter().find_map(|tc| {
-            let rt = self.state.gui.toolpath_rt.get(&tc.id)?;
-            let result = rt.result.as_ref()?;
-            let tool = self
-                .state
-                .session
-                .tools()
-                .iter()
-                .find(|t| t.id.0 == tc.tool_id)?
-                .clone();
-            let mesh = self
-                .state
-                .session
-                .models()
-                .iter()
-                .find(|m| m.id == tc.model_id)
-                .and_then(|m| m.mesh.clone())?;
-            Some((Arc::clone(&result.annotated), tool, mesh))
-        });
+        let toolpath_data = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .enumerate()
+            .find_map(|(index, tc)| {
+                let rt = self.state.gui.toolpath_rt.get(&tc.id)?;
+                let result = rt.result.as_ref()?;
+                let tool = self
+                    .state
+                    .session
+                    .tools()
+                    .iter()
+                    .find(|t| t.id.0 == tc.tool_id)?
+                    .clone();
+                let mesh = self
+                    .state
+                    .session
+                    .models()
+                    .iter()
+                    .find(|m| m.id == tc.model_id)
+                    .and_then(|m| m.mesh.clone())?;
+                // W0.1 — carry the setup's fixtures so the GUI check
+                // flags holder-vs-clamp crashes, not just mesh hits.
+                let obstacles = self.state.session.collision_obstacles_for_toolpath(index);
+                Some((Arc::clone(&result.annotated), tool, mesh, obstacles))
+            });
 
-        if let Some((annotated, tool, mesh)) = toolpath_data {
+        if let Some((annotated, tool, mesh, obstacles)) = toolpath_data {
             self.compute.submit_collision(CollisionRequest {
                 annotated,
                 tool,
                 mesh,
+                obstacles,
             });
         } else {
             tracing::warn!("No toolpath with STL mesh available for collision check");

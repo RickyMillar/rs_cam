@@ -204,10 +204,10 @@ fn draw_toolpath_view(
     ui.add_space(8.0);
 
     // Two-column body: left = comparison card + provenance; right = charts.
-    egui::SidePanel::left("feeds_modal_left")
+    egui::Panel::left("feeds_modal_left")
         .resizable(true)
-        .default_width(380.0)
-        .min_width(320.0)
+        .default_size(380.0)
+        .min_size(320.0)
         .show_inside(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 draw_comparison_card(
@@ -1550,7 +1550,7 @@ fn draw_chart_c(
                 let band_poly =
                     wedge_polygon(lo, hi, env.spindle_max_rpm, flutes, env.max_feed_mm_min);
                 plot_ui.polygon(
-                    Polygon::new(band_poly)
+                    Polygon::new("", band_poly)
                         .fill_color(egui::Color32::from_rgba_unmultiplied(80, 180, 80, 50))
                         .stroke(egui::Stroke::new(
                             1.0,
@@ -1566,6 +1566,7 @@ fn draw_chart_c(
                 if let Some(end) = mid_pts.last() {
                     plot_ui.text(
                         egui_plot::Text::new(
+                            "",
                             egui_plot::PlotPoint::new(end[0] * 0.55, end[1] * 0.5),
                             egui::RichText::new(format!("VENDOR BAND\n{lo:.4}–{hi:.4} mm/tooth"))
                                 .small()
@@ -1595,13 +1596,13 @@ fn draw_chart_c(
                 let warn = egui::Color32::from_rgba_unmultiplied(220, 180, 60, 50);
                 let warn_edge = egui::Color32::from_rgba_unmultiplied(220, 180, 60, 100);
                 plot_ui.polygon(
-                    Polygon::new(low_admit)
+                    Polygon::new("", low_admit)
                         .fill_color(warn)
                         .stroke(egui::Stroke::new(1.0, warn_edge))
                         .name("Band-admitted (low)"),
                 );
                 plot_ui.polygon(
-                    Polygon::new(high_admit)
+                    Polygon::new("", high_admit)
                         .fill_color(warn)
                         .stroke(egui::Stroke::new(1.0, warn_edge))
                         .name("Band-admitted (high)"),
@@ -1621,7 +1622,7 @@ fn draw_chart_c(
                     let line_pts =
                         clip_iso_line(cl, env.spindle_max_rpm, flutes, env.max_feed_mm_min);
                     plot_ui.line(
-                        Line::new(PlotPoints::from(line_pts.clone()))
+                        Line::new("", PlotPoints::from(line_pts.clone()))
                             .color(color)
                             .width(1.5)
                             .name(format!("chipload {prefix} {cl:.4} mm/tooth")),
@@ -1633,6 +1634,7 @@ fn draw_chart_c(
                     if let Some(end) = line_pts.last() {
                         plot_ui.text(
                             egui_plot::Text::new(
+                                "",
                                 egui_plot::PlotPoint::new(end[0], end[1]),
                                 egui::RichText::new(format!(" {prefix} {cl:.4}"))
                                     .small()
@@ -1650,12 +1652,15 @@ fn draw_chart_c(
             // 4. Vendor RPM column.
             if let Some((Some(lo), Some(hi), _)) = vendor_rpm {
                 plot_ui.polygon(
-                    Polygon::new(PlotPoints::from(vec![
-                        [lo, 0.0],
-                        [hi, 0.0],
-                        [hi, feed_axis_max],
-                        [lo, feed_axis_max],
-                    ]))
+                    Polygon::new(
+                        "",
+                        PlotPoints::from(vec![
+                            [lo, 0.0],
+                            [hi, 0.0],
+                            [hi, feed_axis_max],
+                            [lo, feed_axis_max],
+                        ]),
+                    )
                     .fill_color(egui::Color32::from_rgba_unmultiplied(100, 160, 200, 25))
                     .stroke(egui::Stroke::new(
                         1.0,
@@ -1668,7 +1673,7 @@ fn draw_chart_c(
             // 5. Current operating point.
             if let Some(rpm) = current.spindle_rpm {
                 plot_ui.points(
-                    Points::new(vec![[f64::from(rpm), current.feed_rate_mm_min]])
+                    Points::new("", vec![[f64::from(rpm), current.feed_rate_mm_min]])
                         .shape(MarkerShape::Circle)
                         .filled(true)
                         .radius(6.0)
@@ -1686,7 +1691,7 @@ fn draw_chart_c(
                 let target_feed = target_chipload * explain.recommended.rpm * flutes;
                 if (target_feed - explain.recommended.feed_rate_mm_min).abs() > 1.0 {
                     plot_ui.points(
-                        Points::new(vec![[explain.recommended.rpm, target_feed]])
+                        Points::new("", vec![[explain.recommended.rpm, target_feed]])
                             .shape(MarkerShape::Circle)
                             .filled(false)
                             .radius(7.0)
@@ -1695,13 +1700,16 @@ fn draw_chart_c(
                     );
                     // Arrow from target down to derated recommendation.
                     plot_ui.line(
-                        Line::new(PlotPoints::from(vec![
-                            [explain.recommended.rpm, target_feed],
-                            [
-                                explain.recommended.rpm,
-                                explain.recommended.feed_rate_mm_min,
-                            ],
-                        ]))
+                        Line::new(
+                            "",
+                            PlotPoints::from(vec![
+                                [explain.recommended.rpm, target_feed],
+                                [
+                                    explain.recommended.rpm,
+                                    explain.recommended.feed_rate_mm_min,
+                                ],
+                            ]),
+                        )
                         .color(egui::Color32::from_rgba_unmultiplied(100, 160, 240, 180))
                         .style(egui_plot::LineStyle::Dashed { length: 4.0 })
                         .width(1.5)
@@ -1712,6 +1720,7 @@ fn draw_chart_c(
                     let derate_pct = (1.0 - explain.recommended.derates.combined_factor()) * 100.0;
                     plot_ui.text(
                         egui_plot::Text::new(
+                            "",
                             egui_plot::PlotPoint::new(explain.recommended.rpm, mid_feed),
                             egui::RichText::new(format!(" −{derate_pct:.0}% derate"))
                                 .small()
@@ -1724,10 +1733,13 @@ fn draw_chart_c(
 
             // Recommended operating point (after derates).
             plot_ui.points(
-                Points::new(vec![[
-                    explain.recommended.rpm,
-                    explain.recommended.feed_rate_mm_min,
-                ]])
+                Points::new(
+                    "",
+                    vec![[
+                        explain.recommended.rpm,
+                        explain.recommended.feed_rate_mm_min,
+                    ]],
+                )
                 .shape(MarkerShape::Diamond)
                 .filled(true)
                 .radius(6.0)
@@ -1738,7 +1750,7 @@ fn draw_chart_c(
             // 6. Drag-to-explore overlay (Phase 3).
             if explore.is_some() {
                 plot_ui.points(
-                    Points::new(vec![[display_point.rpm, display_point.feed_mm_min]])
+                    Points::new("", vec![[display_point.rpm, display_point.feed_mm_min]])
                         .shape(MarkerShape::Cross)
                         .filled(true)
                         .radius(8.0)
@@ -1748,10 +1760,13 @@ fn draw_chart_c(
                 // Proposed-move line from current → explore.
                 if let Some(rpm) = current.spindle_rpm {
                     plot_ui.line(
-                        Line::new(PlotPoints::from(vec![
-                            [f64::from(rpm), current.feed_rate_mm_min],
-                            [display_point.rpm, display_point.feed_mm_min],
-                        ]))
+                        Line::new(
+                            "",
+                            PlotPoints::from(vec![
+                                [f64::from(rpm), current.feed_rate_mm_min],
+                                [display_point.rpm, display_point.feed_mm_min],
+                            ]),
+                        )
                         .color(egui::Color32::from_rgba_unmultiplied(220, 200, 80, 180))
                         .style(egui_plot::LineStyle::Dashed { length: 5.0 })
                         .width(1.2)
@@ -1790,6 +1805,7 @@ fn draw_chart_c(
                 // it stays out of the band area.
                 plot_ui.text(
                     egui_plot::Text::new(
+                        "",
                         egui_plot::PlotPoint::new(rpm_axis_max * 0.02, feed_axis_max * 0.97),
                         egui::RichText::new(label)
                             .small()
@@ -2025,6 +2041,7 @@ fn draw_legend_swatch(ui: &mut egui::Ui, swatch: LegendSwatch, color: egui::Colo
                 rect,
                 2.0,
                 egui::Stroke::new(0.5, color.linear_multiply(1.4)),
+                egui::StrokeKind::Middle,
             );
         }
         LegendSwatch::Line => {
@@ -2059,7 +2076,13 @@ fn draw_legend_swatch(ui: &mut egui::Ui, swatch: LegendSwatch, color: egui::Colo
 
 /// Build the polygon for a chipload band wedge between `cl_lo` and
 /// `cl_hi`, clipped to the chart's RPM and feed extents.
-fn wedge_polygon(cl_lo: f64, cl_hi: f64, rpm_max: f64, flutes: f64, feed_cap: f64) -> PlotPoints {
+fn wedge_polygon(
+    cl_lo: f64,
+    cl_hi: f64,
+    rpm_max: f64,
+    flutes: f64,
+    feed_cap: f64,
+) -> PlotPoints<'static> {
     // The wedge has two sides:
     //   lower: feed = cl_lo * rpm * flutes
     //   upper: feed = cl_hi * rpm * flutes
@@ -2319,32 +2342,32 @@ fn draw_chart_a(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
                 let mut band_poly: Vec<[f64; 2]> = min_pts.clone();
                 band_poly.extend(max_pts.iter().rev().copied());
                 plot_ui.polygon(
-                    Polygon::new(PlotPoints::from(band_poly))
+                    Polygon::new("", PlotPoints::from(band_poly))
                         .fill_color(band_color)
                         .stroke(egui::Stroke::new(0.0, egui::Color32::TRANSPARENT))
                         .name("vendor band (this material)"),
                 );
             }
             plot_ui.line(
-                Line::new(PlotPoints::from(min_pts.clone()))
+                Line::new("", PlotPoints::from(min_pts.clone()))
                     .color(min_color)
                     .width(1.5)
                     .name("vendor min"),
             );
             plot_ui.line(
-                Line::new(PlotPoints::from(max_pts.clone()))
+                Line::new("", PlotPoints::from(max_pts.clone()))
                     .color(max_color)
                     .width(1.5)
                     .name("vendor max"),
             );
             plot_ui.points(
-                Points::new(min_pts.clone())
+                Points::new("", min_pts.clone())
                     .shape(MarkerShape::Square)
                     .radius(3.0)
                     .color(min_color),
             );
             plot_ui.points(
-                Points::new(max_pts.clone())
+                Points::new("", max_pts.clone())
                     .shape(MarkerShape::Square)
                     .radius(3.0)
                     .color(max_color),
@@ -2354,6 +2377,7 @@ fn draw_chart_a(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
             for p in &min_pts {
                 plot_ui.text(
                     egui_plot::Text::new(
+                        "",
                         egui_plot::PlotPoint::new(p[0], p[1]),
                         egui::RichText::new(format!("{:.3}", p[1]))
                             .small()
@@ -2365,6 +2389,7 @@ fn draw_chart_a(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
             for p in &max_pts {
                 plot_ui.text(
                     egui_plot::Text::new(
+                        "",
                         egui_plot::PlotPoint::new(p[0], p[1]),
                         egui::RichText::new(format!("{:.3}", p[1]))
                             .small()
@@ -2377,16 +2402,20 @@ fn draw_chart_a(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
             // Your tool vertical line spanning the band height.
             let y_top = max_pts.iter().map(|p| p[1]).fold(0.0_f64, f64::max) * 1.15;
             plot_ui.line(
-                Line::new(PlotPoints::from(vec![
-                    [explain.tool_diameter_mm, 0.0],
-                    [explain.tool_diameter_mm, y_top.max(0.05)],
-                ]))
+                Line::new(
+                    "",
+                    PlotPoints::from(vec![
+                        [explain.tool_diameter_mm, 0.0],
+                        [explain.tool_diameter_mm, y_top.max(0.05)],
+                    ]),
+                )
                 .color(theme::TEXT_DIM)
                 .style(egui_plot::LineStyle::Dashed { length: 4.0 })
                 .name(format!("your tool {:.2} mm", explain.tool_diameter_mm)),
             );
             plot_ui.text(
                 egui_plot::Text::new(
+                    "",
                     egui_plot::PlotPoint::new(explain.tool_diameter_mm, y_top.max(0.05)),
                     egui::RichText::new(format!(" {:.2} mm", explain.tool_diameter_mm))
                         .small()
@@ -2397,7 +2426,7 @@ fn draw_chart_a(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
 
             // Current and recommended chipload at your diameter.
             plot_ui.points(
-                Points::new(vec![[explain.tool_diameter_mm, current.chipload_mm()]])
+                Points::new("", vec![[explain.tool_diameter_mm, current.chipload_mm()]])
                     .shape(MarkerShape::Circle)
                     .filled(true)
                     .radius(5.0)
@@ -2405,10 +2434,10 @@ fn draw_chart_a(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
                     .name("Current"),
             );
             plot_ui.points(
-                Points::new(vec![[
-                    explain.tool_diameter_mm,
-                    explain.recommended.chip_load_mm,
-                ]])
+                Points::new(
+                    "",
+                    vec![[explain.tool_diameter_mm, explain.recommended.chip_load_mm]],
+                )
                 .shape(MarkerShape::Diamond)
                 .filled(true)
                 .radius(5.0)
@@ -2564,32 +2593,32 @@ fn draw_chart_b(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
                 let mut band_poly: Vec<[f64; 2]> = min_pts.clone();
                 band_poly.extend(max_pts.iter().rev().copied());
                 plot_ui.polygon(
-                    Polygon::new(PlotPoints::from(band_poly))
+                    Polygon::new("", PlotPoints::from(band_poly))
                         .fill_color(band_color)
                         .stroke(egui::Stroke::new(0.0, egui::Color32::TRANSPARENT))
                         .name("vendor band (this diameter)"),
                 );
             }
             plot_ui.line(
-                Line::new(PlotPoints::from(min_pts.clone()))
+                Line::new("", PlotPoints::from(min_pts.clone()))
                     .color(min_color)
                     .width(1.5)
                     .name("vendor min"),
             );
             plot_ui.line(
-                Line::new(PlotPoints::from(max_pts.clone()))
+                Line::new("", PlotPoints::from(max_pts.clone()))
                     .color(max_color)
                     .width(1.5)
                     .name("vendor max"),
             );
             plot_ui.points(
-                Points::new(min_pts.clone())
+                Points::new("", min_pts.clone())
                     .shape(MarkerShape::Square)
                     .radius(3.0)
                     .color(min_color),
             );
             plot_ui.points(
-                Points::new(max_pts.clone())
+                Points::new("", max_pts.clone())
                     .shape(MarkerShape::Square)
                     .radius(3.0)
                     .color(max_color),
@@ -2598,6 +2627,7 @@ fn draw_chart_b(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
             for p in &min_pts {
                 plot_ui.text(
                     egui_plot::Text::new(
+                        "",
                         egui_plot::PlotPoint::new(p[0], p[1]),
                         egui::RichText::new(format!("{:.3}", p[1]))
                             .small()
@@ -2609,6 +2639,7 @@ fn draw_chart_b(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
             for p in &max_pts {
                 plot_ui.text(
                     egui_plot::Text::new(
+                        "",
                         egui_plot::PlotPoint::new(p[0], p[1]),
                         egui::RichText::new(format!("{:.3}", p[1]))
                             .small()
@@ -2622,16 +2653,17 @@ fn draw_chart_b(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
             let y_top = max_pts.iter().map(|p| p[1]).fold(0.0_f64, f64::max) * 1.15;
             if q_hardness > 0.0 {
                 plot_ui.line(
-                    Line::new(PlotPoints::from(vec![
-                        [q_hardness, 0.0],
-                        [q_hardness, y_top.max(0.05)],
-                    ]))
+                    Line::new(
+                        "",
+                        PlotPoints::from(vec![[q_hardness, 0.0], [q_hardness, y_top.max(0.05)]]),
+                    )
                     .color(theme::TEXT_DIM)
                     .style(egui_plot::LineStyle::Dashed { length: 4.0 })
                     .name(format!("your material ({q_hardness:.0})")),
                 );
                 plot_ui.text(
                     egui_plot::Text::new(
+                        "",
                         egui_plot::PlotPoint::new(q_hardness, y_top.max(0.05)),
                         egui::RichText::new(format!(" {q_hardness:.0}"))
                             .small()
@@ -2642,7 +2674,7 @@ fn draw_chart_b(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
             }
             // Current and recommended.
             plot_ui.points(
-                Points::new(vec![[q_hardness, current.chipload_mm()]])
+                Points::new("", vec![[q_hardness, current.chipload_mm()]])
                     .shape(MarkerShape::Circle)
                     .filled(true)
                     .radius(5.0)
@@ -2650,7 +2682,7 @@ fn draw_chart_b(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
                     .name("Current"),
             );
             plot_ui.points(
-                Points::new(vec![[q_hardness, explain.recommended.chip_load_mm]])
+                Points::new("", vec![[q_hardness, explain.recommended.chip_load_mm]])
                     .shape(MarkerShape::Diamond)
                     .filled(true)
                     .radius(5.0)
@@ -3025,12 +3057,12 @@ fn draw_project_scatter(ui: &mut egui::Ui, rows: &[ProjectFeedsRow]) {
                 if let Some(c) = cur {
                     // Connecting arrow line.
                     plot_ui.line(
-                        Line::new(PlotPoints::from(vec![c, rec]))
+                        Line::new("", PlotPoints::from(vec![c, rec]))
                             .color(egui::Color32::from_rgba_unmultiplied(140, 140, 160, 140))
                             .width(1.0),
                     );
                     plot_ui.points(
-                        Points::new(vec![c])
+                        Points::new("", vec![c])
                             .shape(MarkerShape::Circle)
                             .filled(true)
                             .radius(4.0)
@@ -3038,7 +3070,7 @@ fn draw_project_scatter(ui: &mut egui::Ui, rows: &[ProjectFeedsRow]) {
                     );
                 }
                 plot_ui.points(
-                    Points::new(vec![rec])
+                    Points::new("", vec![rec])
                         .shape(MarkerShape::Diamond)
                         .filled(true)
                         .radius(4.5)
@@ -3063,12 +3095,15 @@ fn draw_machine_envelope(
 
     if axis_rpm_max > env.spindle_max_rpm {
         plot_ui.polygon(
-            Polygon::new(PlotPoints::from(vec![
-                [env.spindle_max_rpm, 0.0],
-                [axis_rpm_max, 0.0],
-                [axis_rpm_max, axis_feed_max],
-                [env.spindle_max_rpm, axis_feed_max],
-            ]))
+            Polygon::new(
+                "",
+                PlotPoints::from(vec![
+                    [env.spindle_max_rpm, 0.0],
+                    [axis_rpm_max, 0.0],
+                    [axis_rpm_max, axis_feed_max],
+                    [env.spindle_max_rpm, axis_feed_max],
+                ]),
+            )
             .fill_color(forbidden_fill)
             .stroke(egui::Stroke::new(0.0, egui::Color32::TRANSPARENT))
             .name(format!(
@@ -3079,12 +3114,15 @@ fn draw_machine_envelope(
     }
     if axis_feed_max > env.max_feed_mm_min {
         plot_ui.polygon(
-            Polygon::new(PlotPoints::from(vec![
-                [0.0, env.max_feed_mm_min],
-                [axis_rpm_max, env.max_feed_mm_min],
-                [axis_rpm_max, axis_feed_max],
-                [0.0, axis_feed_max],
-            ]))
+            Polygon::new(
+                "",
+                PlotPoints::from(vec![
+                    [0.0, env.max_feed_mm_min],
+                    [axis_rpm_max, env.max_feed_mm_min],
+                    [axis_rpm_max, axis_feed_max],
+                    [0.0, axis_feed_max],
+                ]),
+            )
             .fill_color(forbidden_fill)
             .stroke(egui::Stroke::new(0.0, egui::Color32::TRANSPARENT))
             .name(format!(
@@ -3095,12 +3133,15 @@ fn draw_machine_envelope(
     }
     if env.spindle_min_rpm > 0.0 {
         plot_ui.polygon(
-            Polygon::new(PlotPoints::from(vec![
-                [0.0, 0.0],
-                [env.spindle_min_rpm, 0.0],
-                [env.spindle_min_rpm, axis_feed_max],
-                [0.0, axis_feed_max],
-            ]))
+            Polygon::new(
+                "",
+                PlotPoints::from(vec![
+                    [0.0, 0.0],
+                    [env.spindle_min_rpm, 0.0],
+                    [env.spindle_min_rpm, axis_feed_max],
+                    [0.0, axis_feed_max],
+                ]),
+            )
             .fill_color(egui::Color32::from_rgba_unmultiplied(150, 150, 160, 25))
             .stroke(egui::Stroke::new(0.0, egui::Color32::TRANSPARENT))
             .name(format!(
@@ -3109,29 +3150,38 @@ fn draw_machine_envelope(
             )),
         );
         plot_ui.line(
-            Line::new(PlotPoints::from(vec![
-                [env.spindle_min_rpm, 0.0],
-                [env.spindle_min_rpm, axis_feed_max],
-            ]))
+            Line::new(
+                "",
+                PlotPoints::from(vec![
+                    [env.spindle_min_rpm, 0.0],
+                    [env.spindle_min_rpm, axis_feed_max],
+                ]),
+            )
             .color(egui::Color32::from_rgb(150, 150, 160))
             .width(1.5)
             .name(format!("spindle min {} RPM", env.spindle_min_rpm as i64)),
         );
     }
     plot_ui.line(
-        Line::new(PlotPoints::from(vec![
-            [env.spindle_max_rpm, 0.0],
-            [env.spindle_max_rpm, axis_feed_max],
-        ]))
+        Line::new(
+            "",
+            PlotPoints::from(vec![
+                [env.spindle_max_rpm, 0.0],
+                [env.spindle_max_rpm, axis_feed_max],
+            ]),
+        )
         .color(forbidden_edge)
         .width(2.0)
         .name(format!("machine max {} RPM", env.spindle_max_rpm as i64)),
     );
     plot_ui.line(
-        Line::new(PlotPoints::from(vec![
-            [0.0, env.max_feed_mm_min],
-            [axis_rpm_max, env.max_feed_mm_min],
-        ]))
+        Line::new(
+            "",
+            PlotPoints::from(vec![
+                [0.0, env.max_feed_mm_min],
+                [axis_rpm_max, env.max_feed_mm_min],
+            ]),
+        )
         .color(forbidden_edge)
         .width(2.0)
         .name(format!(
@@ -3141,6 +3191,7 @@ fn draw_machine_envelope(
     );
     plot_ui.text(
         egui_plot::Text::new(
+            "",
             egui_plot::PlotPoint::new(env.spindle_max_rpm, axis_feed_max * 0.97),
             egui::RichText::new(format!("max {} RPM ⬢", env.spindle_max_rpm as i64))
                 .small()
@@ -3150,6 +3201,7 @@ fn draw_machine_envelope(
     );
     plot_ui.text(
         egui_plot::Text::new(
+            "",
             egui_plot::PlotPoint::new(axis_rpm_max * 0.97, env.max_feed_mm_min),
             egui::RichText::new(format!("max {} mm/min ⬢", env.max_feed_mm_min as i64))
                 .small()

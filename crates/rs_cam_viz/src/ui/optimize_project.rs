@@ -41,6 +41,14 @@ fn draw_view(
     view: &OptimizeProjectState,
     events: &mut Vec<AppEvent>,
 ) {
+    // W0.5/OPT-003 — the baseline comes from the sim snapshot taken at
+    // launch; if that sim was already stale the optimized-vs-baseline
+    // numbers are computed from out-of-date stock. Flag it instead of
+    // presenting the figures as current.
+    if state.simulation.is_stale(state.gui.edit_counter) {
+        theme::stale_banner(ui);
+        ui.add_space(4.0);
+    }
     match &view.status {
         OptimizeProjectStatus::Loading => draw_loading(ui, events),
         OptimizeProjectStatus::Failed(msg) => draw_failed(ui, msg, events),
@@ -161,7 +169,7 @@ fn draw_ready(
 
 fn draw_header(ui: &mut egui::Ui, report: &ProjectOptimizeReport, row_selected: &[bool]) {
     let baseline = report.baseline_cycle_time_s;
-    let optimized = compute_optimized_cycle(report, row_selected);
+    let optimized = report.optimized_cycle_time_s(row_selected);
     let saving = baseline - optimized;
     let pct = if baseline > 0.0 {
         100.0 * saving / baseline
@@ -184,40 +192,6 @@ fn draw_header(ui: &mut egui::Ui, report: &ProjectOptimizeReport, row_selected: 
             );
         }
     });
-}
-
-/// Sum baseline cycle for unselected rows + recommended cycle for
-/// selected rows — gives the "if you applied just these" estimate.
-/// Refused/skipped rows always contribute their baseline cycle.
-fn compute_optimized_cycle(report: &ProjectOptimizeReport, row_selected: &[bool]) -> f64 {
-    report
-        .per_toolpath
-        .iter()
-        .zip(row_selected.iter().chain(std::iter::repeat(&false)))
-        .map(|((_, outcome), &selected)| match outcome.kind {
-            OutcomeKind::Ranked => {
-                let baseline = outcome.candidates.first().map_or(0.0, |c| c.cycle_time_s);
-                if selected {
-                    outcome.first_safe().map_or(baseline, |c| c.cycle_time_s)
-                } else {
-                    baseline
-                }
-            }
-            OutcomeKind::TradeOff | OutcomeKind::MarginalSafe => {
-                // Trade-off and MarginalSafe rows aren't auto-selectable
-                // from the project rollup — user must open the modal.
-                // Contribute baseline.
-                outcome.candidates.first().map_or(0.0, |c| c.cycle_time_s)
-            }
-            OutcomeKind::NoSafeImprovement | OutcomeKind::Skipped => {
-                // No candidate to swap — contributes baseline.
-                // We don't have direct access to baseline cycle for
-                // refused rows from the outcome; treat as 0 to avoid
-                // double-counting (the header is an estimate anyway).
-                0.0
-            }
-        })
-        .sum()
 }
 
 fn draw_bottleneck_callout(

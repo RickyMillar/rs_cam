@@ -314,7 +314,7 @@ pub fn draw(
         resp.context_menu(|ui| {
             if ui.button("Delete").clicked() {
                 events.push(AppEvent::RemoveFixture(setup_id, fixture.id));
-                ui.close_menu();
+                ui.close();
             }
         });
     }
@@ -345,7 +345,7 @@ pub fn draw(
         resp.context_menu(|ui| {
             if ui.button("Delete").clicked() {
                 events.push(AppEvent::RemoveKeepOut(setup_id, zone.id));
-                ui.close_menu();
+                ui.close();
             }
         });
     }

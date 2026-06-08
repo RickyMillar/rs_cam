@@ -509,6 +509,19 @@ pub struct SimulationChecks {
     pub min_safe_stickout: Option<f64>,
 }
 
+impl SimulationChecks {
+    /// Total safety-relevant collisions: holder-clearance + rapid-through-stock.
+    ///
+    /// The single source of truth for every collision tally in the UI
+    /// (status bar, workspace badges, timeline, diagnostics). Before W0.3
+    /// the status bar counted holder-only while the workspace bar counted
+    /// holder+rapid, so the same project could read "0 collisions" at the
+    /// bottom and "2!" on the Simulation tab (SHE-002).
+    pub fn total_collision_count(&self) -> usize {
+        self.holder_collision_count + self.rapid_collisions.len()
+    }
+}
+
 /// Metadata about the last simulation run for staleness tracking.
 pub struct SimulationRunMeta {
     /// Generation counter — incremented when sim results arrive.

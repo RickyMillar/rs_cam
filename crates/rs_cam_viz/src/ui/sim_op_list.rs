@@ -132,7 +132,7 @@ pub fn draw(
         egui::Frame::default()
             .fill(theme::CARD_FILL)
             .inner_margin(12.0)
-            .rounding(4.0)
+            .corner_radius(4)
             .show(ui, |ui| {
                 if has_computed {
                     ui.label(
@@ -178,7 +178,7 @@ pub fn draw(
             .fill(egui::Color32::from_rgb(50, 42, 20))
             .stroke(egui::Stroke::new(1.5, theme::WARNING))
             .inner_margin(8.0)
-            .rounding(4.0)
+            .corner_radius(4)
             .show(ui, |ui| {
                 ui.label(
                     egui::RichText::new("\u{26A0} Results may be stale")
@@ -255,7 +255,7 @@ pub fn draw(
                 .fill(theme::CARD_FILL_SELECTED)
                 .stroke(egui::Stroke::new(1.0, color))
                 .inner_margin(4.0)
-                .rounding(3.0)
+                .corner_radius(3)
         } else {
             egui::Frame::default().inner_margin(4.0)
         };

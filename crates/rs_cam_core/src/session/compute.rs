@@ -1660,9 +1660,44 @@ impl ProjectSession {
             toolpath: result.toolpath(),
             tool: tool_def,
             mesh: model,
+            obstacles: self.collision_obstacles_for_toolpath(index),
         };
         let check_result = run_collision_check(&request, cancel)?;
         Ok(check_result)
+    }
+
+    /// Build the fixture obstacle set for a toolpath's setup — every
+    /// enabled fixture as a clearance-expanded axis-aligned box. The
+    /// single source of truth shared by the core collision check above
+    /// and the GUI worker path, so both flag holder-vs-fixture crashes
+    /// identically (W0.1 / P6-003). Returns empty when the toolpath has
+    /// no setup or no enabled fixtures.
+    pub fn collision_obstacles_for_toolpath(
+        &self,
+        index: usize,
+    ) -> Vec<crate::collision::CollisionObstacle> {
+        let Some(setup) = self.find_setup_for_toolpath_index(index) else {
+            return Vec::new();
+        };
+        setup
+            .fixtures
+            .iter()
+            .filter(|f| f.enabled)
+            .map(|f| {
+                let c = f.clearance;
+                crate::collision::CollisionObstacle {
+                    id: f.id.0,
+                    aabb: crate::geo::BoundingBox3 {
+                        min: crate::geo::P3::new(f.origin_x - c, f.origin_y - c, f.origin_z - c),
+                        max: crate::geo::P3::new(
+                            f.origin_x + f.size_x + c,
+                            f.origin_y + f.size_y + c,
+                            f.origin_z + f.size_z + c,
+                        ),
+                    },
+                }
+            })
+            .collect()
     }
 
     /// Narrate one generated toolpath in prose for agent-oriented debugging.

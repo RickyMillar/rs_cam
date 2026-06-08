@@ -100,6 +100,7 @@ where
         toolpath: &req.annotated.toolpath,
         tool: build_cutter(&req.tool),
         mesh: &req.mesh,
+        obstacles: req.obstacles.clone(),
     };
     set_phase("Check collisions");
     let core_result =
