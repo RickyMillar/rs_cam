@@ -29,11 +29,50 @@ pub fn draw(
 
     let load_report = sim.cached_load_report(session, gui.edit_counter);
 
-    let active_semantic = sim.active_semantic_item(gui, max_feed);
-    let linked_span = sim.active_debug_span(gui, max_feed);
-    let current_boundary_id = sim.current_boundary().map(|boundary| boundary.id);
+    // Fixed status header (pass2 inspector §2.1) — verdict + freshness, drawn
+    // before the card dispatch so the stale signal is reachable even when a
+    // focused card replaces the scope sections (INS-001/005).
+    draw_status_header(ui, sim, gui);
 
-    draw_reactive_inspector(ui, sim, session, gui, max_feed, &load_report, events);
+    // Scope-tiered body (§2.2/2.3). A focused hotspot/issue card is a
+    // mutually-exclusive drill-in overlay (early-return); otherwise the three
+    // concern-scoped sections — Project / Toolpath / Span — render in fixed
+    // order, each summary-first behind its own disclosure.
+    if sim.results.is_none() {
+        ui.label(
+            egui::RichText::new("Run simulation to see the cut overview here.")
+                .small()
+                .italics()
+                .color(theme::TEXT_DIM),
+        );
+    } else if draw_focused_hotspot_card(ui, sim, events).is_some() {
+        // Focused hotspot card shown — scope sections suppressed.
+    } else if draw_focused_issue_card(ui, sim, gui, max_feed, events).is_some() {
+        // Focused issue card shown — scope sections suppressed.
+    } else {
+        // Refresh the per-span aggregate cache once up front (cheap Arc
+        // pointer compare when unchanged) and compute the issue list once —
+        // both the Project and Span sections read it.
+        if let Some(trace_arc) = sim.results.as_ref().and_then(|r| r.cut_trace.as_ref()) {
+            let trace_arc = std::sync::Arc::clone(trace_arc);
+            sim.debug.span_aggregates.ensure_built(&trace_arc);
+        }
+        let issues = sim.issues(gui, max_feed);
+
+        draw_project_section(ui, sim, session, gui, &issues, &load_report, events);
+        ui.add_space(6.0);
+        draw_toolpath_section(ui, sim, session, gui, &load_report, events);
+
+        let trace_arc = sim
+            .results
+            .as_ref()
+            .and_then(|r| r.cut_trace.as_ref())
+            .map(std::sync::Arc::clone);
+        if let Some(trace) = trace_arc.as_ref() {
+            ui.add_space(6.0);
+            draw_span_section(ui, sim, gui, max_feed, trace, &issues, events);
+        }
+    }
     ui.separator();
 
     // --- View ---
@@ -151,207 +190,71 @@ pub fn draw(
                 }
             }
         });
-
-    ui.add_space(4.0);
-
-    // --- Selection details ---
-    // Slim view of the active semantic item: only data the span tree and
-    // chip filter cannot provide — the params grid and geometric bbox.
-    // Runtime numbers and start/end jump buttons were removed; runtime is
-    // visible in the project overview (scoped via the chip row), and span-
-    // navigation lives on the timeline ribbon.
-    {
-        egui::CollapsingHeader::new("Selection details")
-            .default_open(false)
-            .show(ui, |ui| {
-                if let Some(active) = active_semantic.as_ref() {
-                    let color = semantic_kind_color(&active.item.kind);
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label(
-                            egui::RichText::new(&active.item.label)
-                                .strong()
-                                .color(color),
-                        );
-                        if sim.debug.pinned_semantic_item
-                            == Some((active.toolpath_id, active.item.id))
-                        {
-                            ui.label(
-                                egui::RichText::new("Pinned")
-                                    .small()
-                                    .color(theme::WARNING_TEXT),
-                            );
-                        }
-                    });
-                    ui.label(
-                        egui::RichText::new(semantic_kind_label(&active.item.kind))
-                            .small()
-                            .color(theme::TEXT_MUTED),
-                    );
-                    if let Some(bounds) = active.item.xy_bbox {
-                        ui.label(format!(
-                            "XY: {:.2}, {:.2} → {:.2}, {:.2}",
-                            bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y
-                        ));
-                    }
-                    if let (Some(z_min), Some(z_max)) = (active.item.z_min, active.item.z_max) {
-                        ui.label(format!("Z: {:.3} → {:.3}", z_min, z_max));
-                    }
-                    if !active.item.params.values.is_empty() {
-                        ui.add_space(4.0);
-                        egui::Grid::new("sim_selection_details_grid")
-                            .num_columns(2)
-                            .spacing([8.0, 2.0])
-                            .show(ui, |ui| {
-                                for (idx, (key, value)) in
-                                    active.item.params.values.iter().enumerate()
-                                {
-                                    if idx >= 6 {
-                                        break;
-                                    }
-                                    ui.label(
-                                        egui::RichText::new(key).small().color(theme::TEXT_MUTED),
-                                    );
-                                    ui.label(egui::RichText::new(format_json_value(value)).small());
-                                    ui.end_row();
-                                }
-                            });
-                    }
-                } else {
-                    ui.label(
-                        egui::RichText::new("No semantic item at the current move")
-                            .small()
-                            .italics()
-                            .color(theme::TEXT_DIM),
-                    );
-                }
-            });
-    }
-
-    ui.add_space(4.0);
-
-    // --- Generation Metrics ---
-    // Generator-internal phases (preflight / widen_band / agent_search /…)
-    // and the semantic-trace item count. Orthogonal to the structural span
-    // tree — this is about *how* the toolpath was built, not what's in it.
-    {
-        egui::CollapsingHeader::new("Generation Metrics")
-            .default_open(false)
-            .show(ui, |ui| {
-                let rt = current_boundary_id.and_then(|tp| gui.toolpath_rt.get(&tp.0));
-                let debug_trace = rt.and_then(|r| r.debug_trace.as_ref());
-                let semantic_trace = rt.and_then(|r| r.semantic_trace.as_ref());
-
-                if let Some(trace) = debug_trace {
-                    ui.label(format!(
-                        "Total: {:.1} ms",
-                        trace.summary.total_elapsed_us as f64 / 1000.0
-                    ));
-                    if let Some(label) = &trace.summary.dominant_span_label {
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "Dominant: {} ({:.1} ms)",
-                                label,
-                                trace.summary.dominant_span_elapsed_us.unwrap_or_default() as f64
-                                    / 1000.0
-                            ))
-                            .small()
-                            .color(theme::INFO),
-                        );
-                    }
-                    ui.label(format!("Hotspots: {}", trace.hotspots.len()));
-                    if let Some((toolpath_id, span)) = linked_span.as_ref()
-                        && Some(*toolpath_id) == current_boundary_id
-                    {
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "Linked span: {} ({:.1} ms)",
-                                span.label,
-                                span.elapsed_us as f64 / 1000.0
-                            ))
-                            .small()
-                            .color(theme::INFO),
-                        );
-                        if let Some(summary) = debug_span_math_summary(&span.kind) {
-                            ui.label(
-                                egui::RichText::new(summary)
-                                    .small()
-                                    .color(theme::TEXT_MUTED),
-                            );
-                        }
-                    }
-                    if let Some((_, annotation)) = sim.current_debug_annotation(gui) {
-                        ui.label(
-                            egui::RichText::new(format!("Annotation: {}", annotation.label))
-                                .small()
-                                .color(theme::WARNING_TEXT),
-                        );
-                    }
-                } else {
-                    ui.label(
-                        egui::RichText::new("No performance trace available")
-                            .small()
-                            .italics()
-                            .color(theme::TEXT_DIM),
-                    );
-                }
-                if let Some(semantic) = semantic_trace {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "Semantic items: {} (move-linked {})",
-                            semantic.summary.item_count, semantic.summary.move_linked_item_count
-                        ))
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                    );
-                }
-            });
-    }
 }
 
-fn draw_reactive_inspector(
-    ui: &mut egui::Ui,
-    sim: &mut SimulationState,
-    session: &ProjectSession,
-    gui: &GuiState,
-    max_feed: f64,
-    load_report: &ToolLoadReport,
-    events: &mut Vec<AppEvent>,
-) {
+/// Fixed status header (pass2 inspector §2.1) — the always-visible glance: a
+/// one-line verdict banner (collision / air-cut / OK) plus a freshness chip.
+/// Drawn before the card dispatch so the stale signal covers the focused-card
+/// paths too (INS-001/005). No-op when no simulation has run.
+fn draw_status_header(ui: &mut egui::Ui, sim: &SimulationState, gui: &GuiState) {
     if sim.results.is_none() {
-        ui.label(
-            egui::RichText::new("Run simulation to see the cut overview here.")
-                .small()
-                .italics()
-                .color(theme::TEXT_DIM),
-        );
         return;
     }
-
-    // Staleness cue first, so it shows regardless of which branch below
-    // runs. Before W0.5 the banner lived only in the overview path, so a
-    // focused hotspot/issue card printed concrete cut metrics with no
-    // freshness warning (INS-005).
+    let collision_count = sim.checks.total_collision_count();
+    // Roadmap C.6 — verdict mirrors the rule the MCP `run_simulation` response
+    // uses: collisions → ERROR; air cut > 20% → WARNING; otherwise SUCCESS.
+    let air_cut_pct = sim
+        .results
+        .as_ref()
+        .and_then(|r| r.cut_trace.as_ref())
+        .map(|ct| {
+            let s = &ct.summary;
+            if s.total_runtime_s > 0.0 {
+                s.air_cut_time_s / s.total_runtime_s * 100.0
+            } else {
+                0.0
+            }
+        })
+        .unwrap_or(0.0);
+    let (banner_text, banner_color) = if collision_count > 0 {
+        (
+            format!(
+                "⚠ {collision_count} collision{} — review before export",
+                if collision_count == 1 { "" } else { "s" }
+            ),
+            theme::ERROR,
+        )
+    } else if air_cut_pct > 20.0 {
+        (
+            format!(
+                "⚠ High air cutting ({air_cut_pct:.0}%) — toolpath may be sweeping over uncut stock"
+            ),
+            theme::WARNING,
+        )
+    } else {
+        (
+            "✓ No collisions, air cutting under threshold".to_owned(),
+            theme::SUCCESS,
+        )
+    };
+    ui.label(
+        egui::RichText::new(banner_text)
+            .color(banner_color)
+            .strong(),
+    );
+    // Freshness chip — rendered here (not in the overview body) so it covers
+    // the focused-card paths too (INS-005).
     if sim.is_stale(gui.edit_counter) {
         FreshnessGate::banner(ui);
-        ui.add_space(4.0);
+    } else {
+        ui.label(
+            egui::RichText::new("\u{2713} live")
+                .small()
+                .color(theme::TEXT_DIM),
+        );
     }
-
-    // Priority order for what to display:
-    // 1. Focused hotspot card (user clicked a 3D-viewport pin or graph dot).
-    // 2. Issue card (an air-cut / low-engagement issue at the current move).
-    // 3. Project overview (the default — cut totals + counts).
-    //
-    // We deliberately don't stack these; showing the overview *and* a
-    // hotspot card together is what the user called out as too much info.
-
-    if let Some(()) = draw_focused_hotspot_card(ui, sim, events) {
-        return;
-    }
-    if let Some(()) = draw_focused_issue_card(ui, sim, gui, max_feed, events) {
-        return;
-    }
-
-    draw_project_overview(ui, sim, session, gui, max_feed, load_report, events);
+    ui.add_space(4.0);
+    ui.separator();
 }
 
 /// Hotspot card. Returns `Some(())` when drawn so the caller can early-return.
@@ -375,14 +278,21 @@ fn draw_focused_hotspot_card(
         .global_move_for_local(toolpath_id, move_start)
         .unwrap_or(move_start);
 
+    // Distinct shape (pass2 inspector §2.3 / INS-003): the hotspot card is
+    // FILLED with a solid orange border and a filled ◍ glyph (a "time-waste"
+    // focus), structurally unlike the issue card's hollow outline.
     egui::Frame::default()
         .fill(egui::Color32::from_rgb(50, 38, 28))
+        .stroke(egui::Stroke::new(
+            1.5,
+            egui::Color32::from_rgb(255, 170, 90),
+        ))
         .inner_margin(6.0)
         .corner_radius(4)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new("Hotspot")
+                    egui::RichText::new("\u{25CD} Hotspot")
                         .strong()
                         .color(egui::Color32::from_rgb(255, 170, 90)),
                 );
@@ -422,7 +332,7 @@ fn draw_focused_hotspot_card(
                 if ui.small_button("Jump").clicked() {
                     events.push(AppEvent::SimJumpToMove(global_start));
                 }
-                if ui.small_button("Optimize").clicked() {
+                if ui.small_button("Optimize this op").clicked() {
                     events.push(AppEvent::OpenOptimizeModal(toolpath_id));
                 }
                 if ui.small_button("Clear").clicked() {
@@ -442,15 +352,25 @@ fn draw_focused_issue_card(
     events: &mut Vec<AppEvent>,
 ) -> Option<()> {
     let issue = sim.current_issue(gui, max_feed)?;
+    // Distinct shape (pass2 inspector §2.3 / INS-003): the issue card is a
+    // HOLLOW outline (no fill) with an outline △ glyph and Prev/Next nav —
+    // visually unlike the filled hotspot card even though they share the slot.
     egui::Frame::default()
-        .fill(egui::Color32::from_rgb(42, 36, 28))
+        .stroke(egui::Stroke::new(
+            1.5,
+            egui::Color32::from_rgb(210, 170, 80),
+        ))
         .inner_margin(6.0)
         .corner_radius(4)
         .show(ui, |ui| {
             ui.label(
-                egui::RichText::new(format!("{}: {}", issue_kind_label(issue.kind), issue.label))
-                    .strong()
-                    .color(theme::WARNING_TEXT),
+                egui::RichText::new(format!(
+                    "\u{25B3} {}: {}",
+                    issue_kind_label(issue.kind),
+                    issue.label
+                ))
+                .strong()
+                .color(theme::WARNING_TEXT),
             );
             ui.label(format!("Move {}", issue.move_index));
             ui.horizontal(|ui| {
@@ -468,7 +388,7 @@ fn draw_focused_issue_card(
                     events.push(AppEvent::SimJumpToMove(issue.move_index));
                 }
                 if let Some(toolpath_id) = issue.toolpath_id
-                    && ui.small_button("Optimize").clicked()
+                    && ui.small_button("Optimize this op").clicked()
                 {
                     events.push(AppEvent::OpenOptimizeModal(toolpath_id));
                 }
@@ -477,18 +397,20 @@ fn draw_focused_issue_card(
     Some(())
 }
 
-/// Default state: a single-screen overview of the whole cut. Cycle time
-/// + total moves/ops at the top, issue/safety counts in a key-value grid
-///   below, then a slim "Now playing: TP X" strip with verdict badges when
-///   playback is inside a toolpath. Replaces the previous Cutting Metrics,
-///   Warnings & Flags, and Summary Stats sections in the right panel.
+/// Project scope (pass2 inspector §2.3-A) — "is the whole run good?". A
+/// summary-first CollapsingHeader: the header line carries cycle time + the
+/// within/exceeding glance; the body holds the Global grid, the CountPill
+/// Findings rollup, the issue-kind partition, and the nested Top-hotspots
+/// triage list. The verdict banner + freshness moved up to the fixed status
+/// header (§2.1); the now-playing strip and Selected span are their own scope
+/// sections now.
 #[allow(clippy::too_many_arguments)]
-fn draw_project_overview(
+fn draw_project_section(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
     session: &ProjectSession,
     gui: &GuiState,
-    max_feed: f64,
+    issues: &[crate::state::simulation::SimulationIssue],
     load_report: &ToolLoadReport,
     events: &mut Vec<AppEvent>,
 ) {
@@ -496,28 +418,9 @@ fn draw_project_overview(
     let total_min = total_time_min.floor() as u32;
     let total_sec = ((total_time_min - total_min as f64) * 60.0) as u32;
 
-    // Refresh the per-span aggregate cache up front so the Selected section
-    // can do O(1) lookups. Cheap when the trace pointer hasn't changed
-    // (just an Arc pointer compare).
-    if let Some(trace_arc) = sim.results.as_ref().and_then(|r| r.cut_trace.as_ref()) {
-        let trace_arc = std::sync::Arc::clone(trace_arc);
-        sim.debug.span_aggregates.ensure_built(&trace_arc);
-    }
-
-    // Compute issues + hotspot counts once per draw — the Selected section
-    // also needs the issue list, so we share via &Vec rather than calling
-    // `sim.issues()` twice (it rebuilds + sorts each call).
-    let issues = sim.issues(gui, max_feed);
-    let issue_count = issues.len();
-
-    // Roadmap C.2 — use ToolLoadReport.summary() so denominators are
-    // toolpath-counted, not gate-cell counted ("Within bounds: 0" used to
-    // appear because the per-toolpath × 3-gate fold rarely landed an
-    // entire row in `Within`).
-    //
-    // Roadmap F.11 — pass a name resolver so `exceeds_breakdown` carries
-    // operator-readable labels even though this overview only reads the
-    // bucket counts.
+    // Roadmap C.2/F.11 — ToolLoadReport::summary() gives toolpath-counted
+    // denominators (and operator-readable exceed labels), the same producer
+    // the verdict HUD reads so the two rollups cannot diverge.
     let summary = load_report.summary(|id| {
         session
             .toolpath_configs()
@@ -533,355 +436,309 @@ fn draw_project_overview(
     );
     let collision_count = sim.checks.total_collision_count();
 
-    // ─── Global stats ───
-    ui.label(
-        egui::RichText::new("Global")
-            .strong()
-            .color(theme::TEXT_HEADING),
+    // Summary-first header line: cycle + the within/exceeding glance.
+    let header = format!(
+        "Project — {total_min}:{total_sec:02} · \u{2713}{ok} within · \u{2715}{bad} exceeding"
     );
-    ui.label(
-        egui::RichText::new(format!("Cycle: {}:{:02} min", total_min, total_sec))
-            .strong()
-            .color(theme::INFO),
-    );
-
-    egui::Grid::new("cut_overview_grid")
-        .num_columns(2)
-        .spacing([8.0, 2.0])
+    egui::CollapsingHeader::new(header)
+        .id_salt("inspector_project")
+        .default_open(true)
         .show(ui, |ui| {
+            // ─── Global stats ─── (cycle now lives in the header line)
             ui.label(
-                egui::RichText::new("Moves")
-                    .small()
-                    .color(theme::TEXT_MUTED),
+                egui::RichText::new("Global")
+                    .strong()
+                    .color(theme::TEXT_HEADING),
             );
-            ui.label(egui::RichText::new(format!("{}", sim.total_moves())).small());
-            ui.end_row();
-            ui.label(
-                egui::RichText::new("Operations")
-                    .small()
-                    .color(theme::TEXT_MUTED),
-            );
-            ui.label(egui::RichText::new(format!("{}", sim.boundaries().len())).small());
-            ui.end_row();
-            ui.label(
-                egui::RichText::new("Cut distance")
-                    .small()
-                    .color(theme::TEXT_MUTED),
-            );
-            ui.label(egui::RichText::new(format!("{:.0} mm", total_cutting)).small());
-            ui.end_row();
-            ui.label(
-                egui::RichText::new("Rapid distance")
-                    .small()
-                    .color(theme::TEXT_MUTED),
-            );
-            ui.label(egui::RichText::new(format!("{:.0} mm", total_rapid)).small());
-            ui.end_row();
-        });
 
-    // Roadmap C.6 — single-line verdict banner mirroring the rule the
-    // MCP `run_simulation` response uses: collisions → ERROR; air cut
-    // > 20% → WARNING; otherwise SUCCESS. Gives a glanceable answer
-    // ("is this run good?") above the per-metric breakdown.
-    let air_cut_pct = sim
-        .results
-        .as_ref()
-        .and_then(|r| r.cut_trace.as_ref())
-        .map(|ct| {
-            let s = &ct.summary;
-            if s.total_runtime_s > 0.0 {
-                s.air_cut_time_s / s.total_runtime_s * 100.0
-            } else {
-                0.0
-            }
-        })
-        .unwrap_or(0.0);
-    let (banner_text, banner_color) = if collision_count > 0 {
-        (
-            format!(
-                "⚠ {collision_count} collision{} — review before export",
-                if collision_count == 1 { "" } else { "s" }
-            ),
-            theme::ERROR,
-        )
-    } else if air_cut_pct > 20.0 {
-        (
-            format!(
-                "⚠ High air cutting ({air_cut_pct:.0}%) — toolpath may be sweeping over uncut stock"
-            ),
-            theme::WARNING,
-        )
-    } else {
-        (
-            "✓ No collisions, air cutting under threshold".to_owned(),
-            theme::SUCCESS,
-        )
-    };
-    ui.add_space(4.0);
-    ui.label(
-        egui::RichText::new(banner_text)
-            .color(banner_color)
-            .strong(),
-    );
+            egui::Grid::new("cut_overview_grid")
+                .num_columns(2)
+                .spacing([8.0, 2.0])
+                .show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new("Moves")
+                            .small()
+                            .color(theme::TEXT_MUTED),
+                    );
+                    ui.label(egui::RichText::new(format!("{}", sim.total_moves())).small());
+                    ui.end_row();
+                    ui.label(
+                        egui::RichText::new("Operations")
+                            .small()
+                            .color(theme::TEXT_MUTED),
+                    );
+                    ui.label(egui::RichText::new(format!("{}", sim.boundaries().len())).small());
+                    ui.end_row();
+                    ui.label(
+                        egui::RichText::new("Cut distance")
+                            .small()
+                            .color(theme::TEXT_MUTED),
+                    );
+                    ui.label(egui::RichText::new(format!("{:.0} mm", total_cutting)).small());
+                    ui.end_row();
+                    ui.label(
+                        egui::RichText::new("Rapid distance")
+                            .small()
+                            .color(theme::TEXT_MUTED),
+                    );
+                    ui.label(egui::RichText::new(format!("{:.0} mm", total_rapid)).small());
+                    ui.end_row();
+                });
 
-    ui.add_space(4.0);
-    ui.separator();
+            ui.add_space(4.0);
+            ui.separator();
 
-    // Project-wide findings counts — the same `CountPill` grammar + `/T`
-    // denominator the verdict HUD uses, reading the same `summary()` producer
-    // so the two rollups cannot diverge (W3.3 carry-over, P4-001/002). Load
-    // buckets are verdicts (`[ … ]`); collisions is an observation (`{ … }`).
-    // The exceeding pill is actionable (`( … → )`) when any TP exceeds — it
-    // jumps straight to the project-level Optimize, replacing the separate
-    // ⚡ Optimize-all button (FINAL_DESIGN §5.1).
-    ui.label(egui::RichText::new("Findings").small().strong());
-    ui.horizontal_wrapped(|ui| {
-        ui.add(
-            CountPill::verdict("\u{2713} within", ok)
-                .denom(total_tp)
-                .color(egui::Color32::from_rgb(120, 200, 130))
-                .hover("Toolpaths within modeled load limits (of total modeled)."),
-        );
-        let exceeds_pill = CountPill::verdict("\u{2715} exceeding", bad)
+            // Project-wide findings counts — the same `CountPill` grammar + `/T`
+            // denominator the verdict HUD uses, reading the same `summary()` producer
+            // so the two rollups cannot diverge (W3.3 carry-over, P4-001/002). Load
+            // buckets are verdicts (`[ … ]`); collisions is an observation (`{ … }`).
+            // The exceeding pill is actionable (`( … → )`) when any TP exceeds — it
+            // jumps straight to the project-level Optimize, replacing the separate
+            // ⚡ Optimize-all button (FINAL_DESIGN §5.1).
+            ui.label(egui::RichText::new("Findings").small().strong());
+            ui.horizontal_wrapped(|ui| {
+                ui.add(
+                    CountPill::verdict("\u{2713} within", ok)
+                        .denom(total_tp)
+                        .color(egui::Color32::from_rgb(120, 200, 130))
+                        .hover("Toolpaths within modeled load limits (of total modeled)."),
+                );
+                let exceeds_pill = CountPill::verdict("\u{2715} exceeding", bad)
             .denom(total_tp)
             .color(egui::Color32::from_rgb(220, 90, 90))
             .hover("Toolpaths exceeding a modeled load limit. Click to optimize all exceeding.");
-        if bad > 0 {
-            if ui.add(exceeds_pill.actionable()).clicked() {
-                events.push(AppEvent::OpenOptimizeProject);
-            }
-        } else {
-            ui.add(exceeds_pill);
-        }
-        ui.add(
+                if bad > 0 {
+                    if ui.add(exceeds_pill.actionable()).clicked() {
+                        events.push(AppEvent::OpenOptimizeProject);
+                    }
+                } else {
+                    ui.add(exceeds_pill);
+                }
+                ui.add(
             CountPill::verdict("\u{26A0} unmodeled", unmodeled)
                 .denom(total_tp)
                 .color(egui::Color32::from_rgb(210, 170, 80))
                 .hover("Toolpaths the gate could not model (drill cycles, no vendor data, etc.)."),
         );
-        let collision_color = if collision_count == 0 {
-            theme::SUCCESS
-        } else {
-            theme::ERROR
-        };
-        ui.add(
-            CountPill::observation("collisions", collision_count)
-                .color(collision_color)
-                .hover("Rapid/holder collisions detected during simulation."),
-        );
-    });
-
-    // Roadmap C.1 — partition the issue count by SimulationIssueKind into
-    // a "must address" cluster (collisions, hotspots) and an
-    // informational cluster (low engagement, air cut). The single
-    // `issue_count` row hid 24 800 air-cut "issues" alongside 14
-    // hotspots, which makes the project look broken when most of the
-    // count is emission noise.
-    let mut must_address: Vec<(SimulationIssueKind, usize)> = Vec::new();
-    let mut informational: Vec<(SimulationIssueKind, usize)> = Vec::new();
-    let kinds_must = [
-        SimulationIssueKind::RapidCollision,
-        SimulationIssueKind::HolderCollision,
-        SimulationIssueKind::Hotspot,
-    ];
-    let kinds_info = [
-        SimulationIssueKind::LowEngagement,
-        SimulationIssueKind::AirCut,
-    ];
-    for kind in kinds_must {
-        let count = issues.iter().filter(|i| i.kind == kind).count();
-        if count > 0 {
-            must_address.push((kind, count));
-        }
-    }
-    for kind in kinds_info {
-        let count = issues.iter().filter(|i| i.kind == kind).count();
-        informational.push((kind, count));
-    }
-    if !must_address.is_empty() {
-        ui.add_space(2.0);
-        ui.label(
-            egui::RichText::new("Must address")
-                .small()
-                .strong()
-                .color(theme::ERROR),
-        );
-        egui::Grid::new("cut_overview_must_address")
-            .num_columns(2)
-            .spacing([8.0, 2.0])
-            .show(ui, |ui| {
-                for (kind, count) in &must_address {
-                    ui.label(
-                        egui::RichText::new(issue_kind_label(*kind))
-                            .small()
-                            .color(theme::ERROR),
-                    );
-                    ui.label(egui::RichText::new(format!("{count}")).small());
-                    ui.end_row();
-                }
+                let collision_color = if collision_count == 0 {
+                    theme::SUCCESS
+                } else {
+                    theme::ERROR
+                };
+                ui.add(
+                    CountPill::observation("collisions", collision_count)
+                        .color(collision_color)
+                        .hover("Rapid/holder collisions detected during simulation."),
+                );
             });
-    }
-    if informational.iter().any(|(_, c)| *c > 0) {
-        ui.add_space(2.0);
-        ui.label(
-            egui::RichText::new("Informational")
-                .small()
-                .color(theme::TEXT_MUTED),
-        );
-        egui::Grid::new("cut_overview_informational")
-            .num_columns(2)
-            .spacing([8.0, 2.0])
-            .show(ui, |ui| {
-                for (kind, count) in &informational {
-                    ui.label(
-                        egui::RichText::new(issue_kind_label(*kind))
-                            .small()
-                            .color(theme::TEXT_MUTED),
-                    );
-                    ui.label(egui::RichText::new(format!("{count}")).small());
-                    ui.end_row();
-                }
-            });
-    }
-    let _ = issue_count; // partition above replaces the single tally
 
-    // Roadmap C.4 — project-wide hotspot triage list. Source:
-    // `cut_trace.hotspots`, sorted by `wasted_runtime_s` desc. The
-    // single-card `draw_focused_hotspot_card` only shows one hotspot at
-    // a time; without this list a user has no glanceable triage of
-    // "where is the tool wasting time?" at the project level.
-    //
-    // Snapshot the (idx, toolpath_id, move_start, wasted, peak) tuples
-    // so we can drop the trace borrow before re-borrowing sim mutably
-    // inside the click handler.
-    let hotspot_snapshot: Vec<(usize, usize, usize, f64, f64)> = sim
-        .results
-        .as_ref()
-        .and_then(|r| r.cut_trace.as_ref())
-        .map(|trace| {
-            let mut v: Vec<(usize, usize, usize, f64, f64)> = trace
-                .hotspots
-                .iter()
-                .enumerate()
-                .map(|(idx, h)| {
-                    (
-                        idx,
-                        h.toolpath_id,
-                        h.move_start,
-                        h.wasted_runtime_s,
-                        h.peak_chipload_mm_per_tooth,
-                    )
-                })
-                .collect();
-            v.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
-            v
-        })
-        .unwrap_or_default();
-    if !hotspot_snapshot.is_empty() {
-        ui.add_space(4.0);
-        egui::CollapsingHeader::new(format!("Top hotspots ({})", hotspot_snapshot.len()))
-            .default_open(false)
-            .show(ui, |ui| {
-                const TOP_N: usize = 10;
-                for (h_idx, tp_id_raw, move_start, wasted, peak) in
-                    hotspot_snapshot.iter().take(TOP_N)
-                {
-                    let tp_id = ToolpathId(*tp_id_raw);
-                    let global_start = sim
-                        .global_move_for_local(tp_id, *move_start)
-                        .unwrap_or(*move_start);
-                    let label = hotspot_summary_line(*move_start, *wasted, *peak);
-                    let resp = ui
-                        .selectable_label(
-                            false,
-                            egui::RichText::new(label)
-                                .small()
-                                .color(egui::Color32::from_rgb(255, 170, 90)),
-                        )
-                        .on_hover_text("Click to focus and jump to this hotspot.");
-                    if resp.clicked() {
-                        sim.debug.focused_hotspot = Some((tp_id, *h_idx));
-                        events.push(AppEvent::SimJumpToMove(global_start));
-                    }
+            // Roadmap C.1 — partition the issue count by SimulationIssueKind into
+            // a "must address" cluster (collisions, hotspots) and an
+            // informational cluster (low engagement, air cut). The single
+            // `issue_count` row hid 24 800 air-cut "issues" alongside 14
+            // hotspots, which makes the project look broken when most of the
+            // count is emission noise.
+            let mut must_address: Vec<(SimulationIssueKind, usize)> = Vec::new();
+            let mut informational: Vec<(SimulationIssueKind, usize)> = Vec::new();
+            let kinds_must = [
+                SimulationIssueKind::RapidCollision,
+                SimulationIssueKind::HolderCollision,
+                SimulationIssueKind::Hotspot,
+            ];
+            let kinds_info = [
+                SimulationIssueKind::LowEngagement,
+                SimulationIssueKind::AirCut,
+            ];
+            for kind in kinds_must {
+                let count = issues.iter().filter(|i| i.kind == kind).count();
+                if count > 0 {
+                    must_address.push((kind, count));
                 }
-                if hotspot_snapshot.len() > TOP_N {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "… +{} more (open Selected for span-scoped list)",
-                            hotspot_snapshot.len() - TOP_N
-                        ))
+            }
+            for kind in kinds_info {
+                let count = issues.iter().filter(|i| i.kind == kind).count();
+                informational.push((kind, count));
+            }
+            if !must_address.is_empty() {
+                ui.add_space(2.0);
+                ui.label(
+                    egui::RichText::new("Must address")
                         .small()
+                        .strong()
+                        .color(theme::ERROR),
+                );
+                egui::Grid::new("cut_overview_must_address")
+                    .num_columns(2)
+                    .spacing([8.0, 2.0])
+                    .show(ui, |ui| {
+                        for (kind, count) in &must_address {
+                            ui.label(
+                                egui::RichText::new(issue_kind_label(*kind))
+                                    .small()
+                                    .color(theme::ERROR),
+                            );
+                            ui.label(egui::RichText::new(format!("{count}")).small());
+                            ui.end_row();
+                        }
+                    });
+            }
+            if informational.iter().any(|(_, c)| *c > 0) {
+                ui.add_space(2.0);
+                ui.label(
+                    egui::RichText::new("Informational")
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+                egui::Grid::new("cut_overview_informational")
+                    .num_columns(2)
+                    .spacing([8.0, 2.0])
+                    .show(ui, |ui| {
+                        for (kind, count) in &informational {
+                            ui.label(
+                                egui::RichText::new(issue_kind_label(*kind))
+                                    .small()
+                                    .color(theme::TEXT_MUTED),
+                            );
+                            ui.label(egui::RichText::new(format!("{count}")).small());
+                            ui.end_row();
+                        }
+                    });
+            }
+            // Roadmap C.4 — project-wide hotspot triage list. Source:
+            // `cut_trace.hotspots`, sorted by `wasted_runtime_s` desc. The
+            // single-card `draw_focused_hotspot_card` only shows one hotspot at
+            // a time; without this list a user has no glanceable triage of
+            // "where is the tool wasting time?" at the project level.
+            //
+            // Snapshot the (idx, toolpath_id, move_start, wasted, peak) tuples
+            // so we can drop the trace borrow before re-borrowing sim mutably
+            // inside the click handler.
+            let hotspot_snapshot: Vec<(usize, usize, usize, f64, f64)> = sim
+                .results
+                .as_ref()
+                .and_then(|r| r.cut_trace.as_ref())
+                .map(|trace| {
+                    let mut v: Vec<(usize, usize, usize, f64, f64)> = trace
+                        .hotspots
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, h)| {
+                            (
+                                idx,
+                                h.toolpath_id,
+                                h.move_start,
+                                h.wasted_runtime_s,
+                                h.peak_chipload_mm_per_tooth,
+                            )
+                        })
+                        .collect();
+                    v.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
+                    v
+                })
+                .unwrap_or_default();
+            if !hotspot_snapshot.is_empty() {
+                ui.add_space(4.0);
+                egui::CollapsingHeader::new(format!("Top hotspots ({})", hotspot_snapshot.len()))
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        const TOP_N: usize = 10;
+                        for (h_idx, tp_id_raw, move_start, wasted, peak) in
+                            hotspot_snapshot.iter().take(TOP_N)
+                        {
+                            let tp_id = ToolpathId(*tp_id_raw);
+                            let global_start = sim
+                                .global_move_for_local(tp_id, *move_start)
+                                .unwrap_or(*move_start);
+                            let label = hotspot_summary_line(*move_start, *wasted, *peak);
+                            let resp = ui
+                                .selectable_label(
+                                    false,
+                                    egui::RichText::new(label)
+                                        .small()
+                                        .color(egui::Color32::from_rgb(255, 170, 90)),
+                                )
+                                .on_hover_text("Click to focus and jump to this hotspot.");
+                            if resp.clicked() {
+                                sim.debug.focused_hotspot = Some((tp_id, *h_idx));
+                                events.push(AppEvent::SimJumpToMove(global_start));
+                            }
+                        }
+                        if hotspot_snapshot.len() > TOP_N {
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "… +{} more (open Selected for span-scoped list)",
+                                    hotspot_snapshot.len() - TOP_N
+                                ))
+                                .small()
+                                .color(theme::TEXT_DIM),
+                            );
+                        }
+                    });
+            }
+        });
+}
+
+/// Toolpath scope (pass2 inspector §2.3-B) — "what is the op under the
+/// playhead doing?". The header names the playing op (or "—" when idle); the
+/// body carries the tool-load badges + the per-op Optimize / Jump buttons.
+fn draw_toolpath_section(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    session: &ProjectSession,
+    gui: &GuiState,
+    load_report: &ToolLoadReport,
+    events: &mut Vec<AppEvent>,
+) {
+    let now = sim
+        .current_boundary()
+        .map(|boundary| (boundary.id, boundary.name.clone(), boundary.start_move));
+    let title = match &now {
+        Some((_, name, _)) => format!("Now playing: {name}"),
+        None => "Now playing: \u{2014}".to_owned(),
+    };
+    egui::CollapsingHeader::new(title)
+        .id_salt("inspector_toolpath")
+        .default_open(now.is_some())
+        .show(ui, |ui| {
+            let Some((boundary_id, _, boundary_start)) = now else {
+                ui.label(
+                    egui::RichText::new("Scrub or play to see the active op.")
+                        .small()
+                        .italics()
                         .color(theme::TEXT_DIM),
-                    );
+                );
+                return;
+            };
+            if let Some(tp) = load_report
+                .per_toolpath
+                .iter()
+                .find(|tp| tp.toolpath_id == boundary_id.0)
+            {
+                let chipload_envelopes = sim.cached_chipload_envelopes(session, gui.edit_counter);
+                let chipload_cap = chipload_envelopes
+                    .get(&boundary_id.0)
+                    .map(|range| range.end);
+                let machine = session.machine();
+                let max_power_kw = match machine.power {
+                    rs_cam_core::machine::PowerModel::ConstantPower { power_kw } => power_kw,
+                    rs_cam_core::machine::PowerModel::VfdConstantTorque {
+                        rated_power_kw, ..
+                    } => rated_power_kw,
+                };
+                let power_cap_kw = (max_power_kw * machine.safety_factor > 0.0)
+                    .then_some(max_power_kw * machine.safety_factor);
+                let deflection_cap = Some(DEFLECTION_SAFE_LD_RATIO);
+                draw_tool_load_badges(ui, tp, chipload_cap, power_cap_kw, deflection_cap);
+            }
+            ui.horizontal(|ui| {
+                if ui.small_button("Optimize this op").clicked() {
+                    events.push(AppEvent::OpenOptimizeModal(boundary_id));
+                }
+                if ui.small_button("Jump to start").clicked() {
+                    events.push(AppEvent::SimJumpToMove(boundary_start));
                 }
             });
-    }
-
-    // (Staleness banner hoisted to draw_reactive_inspector — W0.5/INS-005 —
-    // so it also covers the focused-card paths, not just this overview.)
-
-    // Tool-load badges + jump buttons for the currently-playing toolpath
-    // (project-wide concern, not span-scoped).
-    if let Some((boundary_id, boundary_name, boundary_start)) = sim
-        .current_boundary()
-        .map(|boundary| (boundary.id, boundary.name.clone(), boundary.start_move))
-    {
-        ui.add_space(6.0);
-        ui.separator();
-        ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("Now playing:")
-                    .small()
-                    .color(theme::TEXT_MUTED),
-            );
-            ui.label(egui::RichText::new(&boundary_name).small().strong());
         });
-        if let Some(tp) = load_report
-            .per_toolpath
-            .iter()
-            .find(|tp| tp.toolpath_id == boundary_id.0)
-        {
-            let chipload_envelopes = sim.cached_chipload_envelopes(session, gui.edit_counter);
-            let chipload_cap = chipload_envelopes
-                .get(&boundary_id.0)
-                .map(|range| range.end);
-            let machine = session.machine();
-            let max_power_kw = match machine.power {
-                rs_cam_core::machine::PowerModel::ConstantPower { power_kw } => power_kw,
-                rs_cam_core::machine::PowerModel::VfdConstantTorque { rated_power_kw, .. } => {
-                    rated_power_kw
-                }
-            };
-            let power_cap_kw = (max_power_kw * machine.safety_factor > 0.0)
-                .then_some(max_power_kw * machine.safety_factor);
-            let deflection_cap = Some(DEFLECTION_SAFE_LD_RATIO);
-            draw_tool_load_badges(ui, tp, chipload_cap, power_cap_kw, deflection_cap);
-        }
-        ui.horizontal(|ui| {
-            if ui.small_button("Optimize").clicked() {
-                events.push(AppEvent::OpenOptimizeModal(boundary_id));
-            }
-            if ui.small_button("Jump to start").clicked() {
-                events.push(AppEvent::SimJumpToMove(boundary_start));
-            }
-        });
-    }
-
-    // ─── Selected stats ───
-    // Reflects whichever span the timeline ribbon is locked to (scope.span_id),
-    // or the span the playhead is currently inside. Clone the cut_trace Arc
-    // up front so we can pass `&mut sim` into the section without borrow
-    // conflicts.
-    let trace_arc = sim
-        .results
-        .as_ref()
-        .and_then(|r| r.cut_trace.as_ref())
-        .map(std::sync::Arc::clone);
-    if let Some(trace) = trace_arc.as_ref() {
-        ui.add_space(8.0);
-        ui.separator();
-        draw_selected_section(ui, sim, gui, trace, &issues, events);
-    }
 }
 
 fn issue_kind_label(kind: SimulationIssueKind) -> &'static str {
@@ -1265,10 +1122,18 @@ fn playhead_span_id(sim: &SimulationState, gui: &GuiState, toolpath_id: Toolpath
         .map(|(i, _)| i as u32)
 }
 
-fn draw_selected_section(
+/// Span scope (pass2 inspector §2.3-C) — "what's in the span I picked?". A
+/// CollapsingHeader titled "Selected: <span>" with the in-panel lock toggle
+/// (INS-008); the body holds the span facts, the per-span metrics grid, and
+/// the in-span findings list, then the nested "Generator item" and "Generation
+/// trace" drill-downs (§2.4), so the inspector has a single "what's selected"
+/// home with two clearly-labelled sub-tiers.
+#[allow(clippy::too_many_arguments)]
+fn draw_span_section(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
     gui: &GuiState,
+    max_feed: f64,
     trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
     issues: &[crate::state::simulation::SimulationIssue],
     events: &mut Vec<AppEvent>,
@@ -1276,12 +1141,83 @@ fn draw_selected_section(
     let toolpath_id = sim
         .focused_toolpath()
         .or_else(|| sim.current_boundary().map(|b| b.id));
+    let locked_span_id = sim.debug.span_scope.span_id;
+    let effective =
+        toolpath_id.and_then(|tp| locked_span_id.or_else(|| playhead_span_id(sim, gui, tp)));
+
+    // Title carries the span label + lock glyph (§2.3-C).
+    let header_label = match (toolpath_id, effective) {
+        (Some(tp), Some(sid)) => gui
+            .toolpath_rt
+            .get(&tp.0)
+            .and_then(|rt| rt.result.as_ref())
+            .and_then(|r| {
+                r.spans()
+                    .get(sid as usize)
+                    .map(|s| span_display_label(s, sid as usize))
+            })
+            .unwrap_or_else(|| "\u{2014}".to_owned()),
+        _ => "\u{2014}".to_owned(),
+    };
+    let lock_glyph = if locked_span_id.is_some() {
+        " \u{1F512}"
+    } else {
+        ""
+    };
+    let title = format!("Selected: {header_label}{lock_glyph}");
+
+    egui::CollapsingHeader::new(title)
+        .id_salt("inspector_span")
+        .default_open(true)
+        .show(ui, |ui| {
+            // In-panel lock toggle (INS-008) — the panel's own entry point to
+            // the span lock, writing the same span_scope field the ribbon does.
+            ui.horizontal(|ui| {
+                let (lbl, hover) = if locked_span_id.is_some() {
+                    ("\u{1F512} locked", "Click to follow the playhead again.")
+                } else {
+                    (
+                        "\u{1F513} follow",
+                        "Click to lock the Selected section to the current span.",
+                    )
+                };
+                if ui.small_button(lbl).on_hover_text(hover).clicked() {
+                    if locked_span_id.is_some() {
+                        sim.debug.span_scope.span_id = None;
+                        sim.debug.span_scope.toolpath_id = None;
+                    } else if let (Some(tp), Some(sid)) = (toolpath_id, effective) {
+                        sim.debug.span_scope.span_id = Some(sid);
+                        sim.debug.span_scope.toolpath_id = Some(tp);
+                    }
+                }
+            });
+
+            draw_span_body(ui, sim, gui, trace, issues, toolpath_id, effective, events);
+
+            // Nested drill-downs (§2.4): the generator item that produced the
+            // span, and the generation-phase trace — folded here so the top
+            // level no longer carries two competing "selection" collapsers.
+            ui.add_space(4.0);
+            draw_generator_item_disclosure(ui, sim, gui, max_feed);
+            draw_generation_trace_disclosure(ui, sim, gui, max_feed);
+        });
+}
+
+/// The Span section body: span facts, the per-span metrics grid, and the
+/// in-span findings list. Split out of `draw_span_section` so the lock toggle
+/// and the nested drill-downs can sit around it.
+#[allow(clippy::too_many_arguments)]
+fn draw_span_body(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    gui: &GuiState,
+    trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
+    issues: &[crate::state::simulation::SimulationIssue],
+    toolpath_id: Option<ToolpathId>,
+    effective: Option<u32>,
+    events: &mut Vec<AppEvent>,
+) {
     let Some(tp_id) = toolpath_id else {
-        ui.label(
-            egui::RichText::new("Selected")
-                .strong()
-                .color(theme::TEXT_HEADING),
-        );
         ui.label(
             egui::RichText::new("Scrub or play to see span details.")
                 .small()
@@ -1291,10 +1227,6 @@ fn draw_selected_section(
         return;
     };
 
-    let locked_span_id = sim.debug.span_scope.span_id;
-    let playhead_id = playhead_span_id(sim, gui, tp_id);
-    let effective = locked_span_id.or(playhead_id);
-
     let Some(rt) = gui.toolpath_rt.get(&tp_id.0) else {
         return;
     };
@@ -1303,50 +1235,15 @@ fn draw_selected_section(
     };
     let spans = result.spans();
 
-    // Header: "Selected: <span name>" plus a lock indicator and a quick
-    // "Follow playhead" reset when locked.
-    ui.horizontal(|ui| {
+    let Some(sid) = effective else {
         ui.label(
-            egui::RichText::new("Selected")
-                .strong()
-                .color(theme::TEXT_HEADING),
+            egui::RichText::new("(playhead outside any span)")
+                .small()
+                .italics()
+                .color(theme::TEXT_DIM),
         );
-        if let Some(sid) = effective
-            && let Some(span) = spans.get(sid as usize)
-        {
-            ui.label(
-                egui::RichText::new(span_display_label(span, sid as usize))
-                    .strong()
-                    .color(theme::INFO),
-            );
-            if locked_span_id.is_some() {
-                ui.label(
-                    egui::RichText::new("· locked")
-                        .small()
-                        .color(theme::WARNING_TEXT),
-                );
-                if ui
-                    .small_button("Follow playhead")
-                    .on_hover_text(
-                        "Clear the ribbon lock and let the Selected section follow playback.",
-                    )
-                    .clicked()
-                {
-                    sim.debug.span_scope.span_id = None;
-                    sim.debug.span_scope.toolpath_id = None;
-                }
-            }
-        } else {
-            ui.label(
-                egui::RichText::new("(playhead outside any span)")
-                    .small()
-                    .italics()
-                    .color(theme::TEXT_DIM),
-            );
-        }
-    });
-
-    let Some(sid) = effective else { return };
+        return;
+    };
     let Some(span) = spans.get(sid as usize) else {
         return;
     };
@@ -1537,6 +1434,167 @@ fn draw_selected_section(
             .color(theme::TEXT_DIM),
         );
     }
+}
+
+/// "Generator item" drill-down (pass2 inspector §2.4) — the semantic generator
+/// item under the playhead/pin (label, kind, XY/Z bbox, first few params).
+/// Nested under the Span section instead of floating as a top-level peer
+/// "Selection details" collapser (INS-007).
+fn draw_generator_item_disclosure(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    gui: &GuiState,
+    max_feed: f64,
+) {
+    let active_semantic = sim.active_semantic_item(gui, max_feed);
+    let pinned = sim.debug.pinned_semantic_item;
+    egui::CollapsingHeader::new("Generator item")
+        .id_salt("inspector_generator_item")
+        .default_open(false)
+        .show(ui, |ui| {
+            if let Some(active) = active_semantic.as_ref() {
+                let color = semantic_kind_color(&active.item.kind);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        egui::RichText::new(&active.item.label)
+                            .strong()
+                            .color(color),
+                    );
+                    if pinned == Some((active.toolpath_id, active.item.id)) {
+                        ui.label(
+                            egui::RichText::new("Pinned")
+                                .small()
+                                .color(theme::WARNING_TEXT),
+                        );
+                    }
+                });
+                ui.label(
+                    egui::RichText::new(semantic_kind_label(&active.item.kind))
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+                if let Some(bounds) = active.item.xy_bbox {
+                    ui.label(format!(
+                        "XY: {:.2}, {:.2} → {:.2}, {:.2}",
+                        bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y
+                    ));
+                }
+                if let (Some(z_min), Some(z_max)) = (active.item.z_min, active.item.z_max) {
+                    ui.label(format!("Z: {:.3} → {:.3}", z_min, z_max));
+                }
+                if !active.item.params.values.is_empty() {
+                    ui.add_space(4.0);
+                    egui::Grid::new("sim_selection_details_grid")
+                        .num_columns(2)
+                        .spacing([8.0, 2.0])
+                        .show(ui, |ui| {
+                            for (idx, (key, value)) in active.item.params.values.iter().enumerate()
+                            {
+                                if idx >= 6 {
+                                    break;
+                                }
+                                ui.label(egui::RichText::new(key).small().color(theme::TEXT_MUTED));
+                                ui.label(egui::RichText::new(format_json_value(value)).small());
+                                ui.end_row();
+                            }
+                        });
+                }
+            } else {
+                ui.label(
+                    egui::RichText::new("No semantic item at the current move")
+                        .small()
+                        .italics()
+                        .color(theme::TEXT_DIM),
+                );
+            }
+        });
+}
+
+/// "Generation trace" drill-down (pass2 inspector §2.4) — generator-internal
+/// phase timings and the semantic-trace item count. About *how* the toolpath
+/// was built, orthogonal to the structural span tree; nested under the Span
+/// section as a sibling of "Generator item" (INS-007).
+fn draw_generation_trace_disclosure(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    gui: &GuiState,
+    max_feed: f64,
+) {
+    let linked_span = sim.active_debug_span(gui, max_feed);
+    let current_boundary_id = sim.current_boundary().map(|b| b.id);
+    let annotation = sim.current_debug_annotation(gui).map(|(_, a)| a.label);
+    egui::CollapsingHeader::new("Generation trace")
+        .id_salt("inspector_generation_trace")
+        .default_open(false)
+        .show(ui, |ui| {
+            let rt = current_boundary_id.and_then(|tp| gui.toolpath_rt.get(&tp.0));
+            let debug_trace = rt.and_then(|r| r.debug_trace.as_ref());
+            let semantic_trace = rt.and_then(|r| r.semantic_trace.as_ref());
+
+            if let Some(trace) = debug_trace {
+                ui.label(format!(
+                    "Total: {:.1} ms",
+                    trace.summary.total_elapsed_us as f64 / 1000.0
+                ));
+                if let Some(label) = &trace.summary.dominant_span_label {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Dominant: {} ({:.1} ms)",
+                            label,
+                            trace.summary.dominant_span_elapsed_us.unwrap_or_default() as f64
+                                / 1000.0
+                        ))
+                        .small()
+                        .color(theme::INFO),
+                    );
+                }
+                ui.label(format!("Hotspots: {}", trace.hotspots.len()));
+                if let Some((toolpath_id, span)) = linked_span.as_ref()
+                    && Some(*toolpath_id) == current_boundary_id
+                {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Linked span: {} ({:.1} ms)",
+                            span.label,
+                            span.elapsed_us as f64 / 1000.0
+                        ))
+                        .small()
+                        .color(theme::INFO),
+                    );
+                    if let Some(summary) = debug_span_math_summary(&span.kind) {
+                        ui.label(
+                            egui::RichText::new(summary)
+                                .small()
+                                .color(theme::TEXT_MUTED),
+                        );
+                    }
+                }
+                if let Some(label) = &annotation {
+                    ui.label(
+                        egui::RichText::new(format!("Annotation: {label}"))
+                            .small()
+                            .color(theme::WARNING_TEXT),
+                    );
+                }
+            } else {
+                ui.label(
+                    egui::RichText::new("No performance trace available")
+                        .small()
+                        .italics()
+                        .color(theme::TEXT_DIM),
+                );
+            }
+            if let Some(semantic) = semantic_trace {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Semantic items: {} (move-linked {})",
+                        semantic.summary.item_count, semantic.summary.move_linked_item_count
+                    ))
+                    .small()
+                    .color(theme::TEXT_MUTED),
+                );
+            }
+        });
 }
 
 #[cfg(test)]
