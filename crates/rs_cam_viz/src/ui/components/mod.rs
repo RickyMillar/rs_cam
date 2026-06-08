@@ -15,6 +15,7 @@
 //!
 //! See `planning/ui_audit/ARCHITECTURE.md` for the full contract map.
 
+pub mod compare;
 pub mod freshness;
 pub mod pill;
 pub mod provenance;
@@ -22,6 +23,7 @@ pub mod section;
 pub mod suggest;
 pub mod value_row;
 
+pub use compare::{CompareRow, delta_tag, format_optional, mrr_row, power_bar};
 pub use freshness::{Freshness, FreshnessGate};
 pub use pill::{CountPill, PillFamily, PillRole};
 pub use provenance::{ProvKind, ProvenanceBadge};

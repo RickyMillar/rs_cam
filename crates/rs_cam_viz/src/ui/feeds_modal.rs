@@ -24,6 +24,7 @@ use rs_cam_core::feeds::{
     vendor_lut::ToolFamily,
 };
 
+use super::components::compare::{self, CompareRow};
 use super::components::{ProvKind, ProvenanceBadge};
 use super::{AppEvent, FeedsField, theme};
 use crate::state::AppState;
@@ -509,62 +510,51 @@ fn draw_comparison_card(
                 ui.label(egui::RichText::new("").small());
                 ui.end_row();
 
-                compare_row(
-                    ui,
+                CompareRow::new(
                     "RPM",
                     current.spindle_rpm.map(f64::from),
                     Some(explain.recommended.rpm),
                     "",
                     1.0,
-                    Some(FeedsField::Rpm),
-                    toolpath_id,
-                    events,
-                );
-                compare_row(
-                    ui,
+                )
+                .apply(FeedsField::Rpm, toolpath_id)
+                .show(ui, events);
+                CompareRow::new(
                     "Feed",
                     Some(current.feed_rate_mm_min),
                     Some(explain.recommended.feed_rate_mm_min),
                     " mm/min",
                     1.0,
-                    Some(FeedsField::Feed),
-                    toolpath_id,
-                    events,
-                );
-                compare_row(
-                    ui,
+                )
+                .apply(FeedsField::Feed, toolpath_id)
+                .show(ui, events);
+                CompareRow::new(
                     "Plunge",
                     Some(current.plunge_rate_mm_min),
                     Some(explain.recommended.plunge_rate_mm_min),
                     " mm/min",
                     1.0,
-                    Some(FeedsField::Plunge),
-                    toolpath_id,
-                    events,
-                );
-                compare_row(
-                    ui,
+                )
+                .apply(FeedsField::Plunge, toolpath_id)
+                .show(ui, events);
+                CompareRow::new(
                     "DOC",
                     current.depth_per_pass,
                     Some(explain.recommended.axial_depth_mm),
                     " mm",
                     0.01,
-                    Some(FeedsField::Doc),
-                    toolpath_id,
-                    events,
-                );
+                )
+                .apply(FeedsField::Doc, toolpath_id)
+                .show(ui, events);
                 woc_row(ui, current, explain, toolpath_id, events);
-                compare_row(
-                    ui,
+                CompareRow::new(
                     "Chipload",
                     Some(current.chipload_mm()),
                     Some(explain.recommended.chip_load_mm),
                     " mm/tooth",
                     0.0001,
-                    None,
-                    toolpath_id,
-                    events,
-                );
+                )
+                .show(ui, events);
             });
 
         // S3 — chipload-min (rubbing/burning) warning, finish ops only.
@@ -578,9 +568,13 @@ fn draw_comparison_card(
         }
 
         ui.add_space(4.0);
-        draw_power_bar(ui, current, explain);
+        compare::power_bar(
+            ui,
+            explain.recommended.power_kw,
+            explain.recommended.available_power_kw,
+        );
         ui.add_space(2.0);
-        draw_mrr_row(ui, current, explain);
+        compare::mrr_row(ui, explain.recommended.mrr_mm3_min);
 
         ui.add_space(6.0);
         ui.horizontal(|ui| {
@@ -595,39 +589,6 @@ fn draw_comparison_card(
             }
         });
     });
-}
-
-#[allow(clippy::too_many_arguments)]
-fn compare_row(
-    ui: &mut egui::Ui,
-    label: &str,
-    current: Option<f64>,
-    recommended: Option<f64>,
-    unit: &str,
-    precision: f64,
-    apply: Option<FeedsField>,
-    toolpath_id: crate::state::toolpath::ToolpathId,
-    events: &mut Vec<AppEvent>,
-) {
-    ui.label(egui::RichText::new(label).small().color(theme::TEXT_DIM));
-    ui.label(format_optional(current, unit, precision));
-    ui.label(format_optional(recommended, unit, precision));
-    ui.label(format_delta(current, recommended));
-    if let Some(field) = apply
-        && let (Some(c), Some(r)) = (current, recommended)
-        && (c - r).abs() > 1e-9
-    {
-        if ui
-            .small_button("Apply")
-            .on_hover_text("Overwrite this field with the recommended value.")
-            .clicked()
-        {
-            events.push(AppEvent::ApplyFeedsField { toolpath_id, field });
-        }
-    } else {
-        ui.label("");
-    }
-    ui.end_row();
 }
 
 /// Ball-tip radius (mm) used for scallop/cusp geometry, or `None` for
@@ -655,17 +616,15 @@ fn woc_row(
 ) {
     let scallop_active = current.supports_scallop_override && current.scallop_height.is_some();
     if !scallop_active {
-        compare_row(
-            ui,
+        CompareRow::new(
             "WOC",
             current.stepover,
             Some(explain.recommended.radial_width_mm),
             " mm",
             0.01,
-            Some(FeedsField::Woc),
-            toolpath_id,
-            events,
-        );
+        )
+        .apply(FeedsField::Woc, toolpath_id)
+        .show(ui, events);
         return;
     }
 
@@ -687,14 +646,14 @@ fn woc_row(
 
     ui.label(egui::RichText::new("WOC ⓢ").small().color(theme::TEXT_DIM))
         .on_hover_text(&math);
-    ui.label(format_optional(current.stepover, " mm", 0.01));
+    ui.label(compare::format_optional(current.stepover, " mm", 0.01));
     ui.label(
         egui::RichText::new(format!("{derived:.2} mm (auto)"))
             .small()
             .color(theme::SUCCESS),
     )
     .on_hover_text(&math);
-    ui.label(format_delta(current.stepover, Some(derived)));
+    ui.label(compare::delta_tag(current.stepover, Some(derived)));
     if let (Some(c), r) = (current.stepover, derived)
         && (c - r).abs() > 1e-9
     {
@@ -906,78 +865,9 @@ fn draw_chipload_engaged_attestation(
     );
 }
 
-fn format_optional(v: Option<f64>, unit: &str, precision: f64) -> String {
-    match v {
-        Some(x) if x.is_finite() && x.abs() > 1e-12 => {
-            if precision >= 1.0 {
-                format!("{x:.0}{unit}")
-            } else if precision >= 0.01 {
-                format!("{x:.2}{unit}")
-            } else {
-                format!("{x:.4}{unit}")
-            }
-        }
-        _ => "—".to_owned(),
-    }
-}
-
-fn format_delta(current: Option<f64>, recommended: Option<f64>) -> egui::RichText {
-    let (Some(c), Some(r)) = (current, recommended) else {
-        return egui::RichText::new("—").small().color(theme::TEXT_DIM);
-    };
-    if c.abs() < 1e-9 {
-        return egui::RichText::new("—").small().color(theme::TEXT_DIM);
-    }
-    let ratio = r / c;
-    let (text, color) = if (ratio - 1.0).abs() < 0.05 {
-        ("≈".to_owned(), theme::TEXT_DIM)
-    } else if ratio > 1.0 {
-        (format!("↑ {ratio:.2}×"), theme::SUCCESS)
-    } else {
-        (format!("↓ {ratio:.2}×"), theme::WARNING_MILD)
-    };
-    egui::RichText::new(text).small().color(color)
-}
-
-fn draw_power_bar(ui: &mut egui::Ui, _current: &CurrentValues, explain: &FeedsExplain) {
-    let avail = explain.recommended.available_power_kw.max(0.0001);
-    let rec_frac = (explain.recommended.power_kw / avail).clamp(0.0, 1.0);
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Power:").small().color(theme::TEXT_DIM));
-        let bar = egui::ProgressBar::new(rec_frac as f32)
-            .fill(power_color(rec_frac))
-            .desired_width(160.0);
-        ui.add(bar);
-        ui.label(
-            egui::RichText::new(format!(
-                "{:.2} / {:.2} kW ({:.0} %)",
-                explain.recommended.power_kw,
-                avail,
-                rec_frac * 100.0
-            ))
-            .small(),
-        );
-    });
-}
-
-fn power_color(frac: f64) -> egui::Color32 {
-    if frac > 0.9 {
-        theme::ERROR
-    } else if frac > 0.7 {
-        theme::WARNING_MILD
-    } else {
-        theme::SUCCESS
-    }
-}
-
-fn draw_mrr_row(ui: &mut egui::Ui, _current: &CurrentValues, explain: &FeedsExplain) {
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("MRR:").small().color(theme::TEXT_DIM));
-        ui.label(
-            egui::RichText::new(format!("{:.0} mm³/min", explain.recommended.mrr_mm3_min)).small(),
-        );
-    });
-}
+// compare_row / format_optional / format_delta / draw_power_bar / power_color
+// / draw_mrr_row were lifted to `ui::components::compare` (CL 4/4) so the
+// optimizer rollup and the Feeds Details drawer share one implementation.
 
 // ── Provenance disclosure ───────────────────────────────────────────
 
@@ -2899,13 +2789,13 @@ fn draw_project_view(
                     ui.label(egui::RichText::new(&r.name).small());
                     ui.label(format!("{:.0}", r.current.feed_rate_mm_min));
                     ui.label(format!("{:.0}", r.explain.recommended.feed_rate_mm_min));
-                    ui.label(format_delta(
+                    ui.label(compare::delta_tag(
                         Some(r.current.feed_rate_mm_min),
                         Some(r.explain.recommended.feed_rate_mm_min),
                     ));
-                    ui.label(format_optional(r.current.depth_per_pass, "", 0.01));
+                    ui.label(compare::format_optional(r.current.depth_per_pass, "", 0.01));
                     ui.label(format!("{:.2}", r.explain.recommended.axial_depth_mm));
-                    ui.label(format_optional(r.current.stepover, "", 0.01));
+                    ui.label(compare::format_optional(r.current.stepover, "", 0.01));
                     if ui.small_button("Apply").clicked() {
                         events.push(AppEvent::ApplyFeedsAll(crate::state::toolpath::ToolpathId(
                             r.id,
