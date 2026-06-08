@@ -2706,29 +2706,29 @@ fn draw_toolpath_panel(
                 .strong()
                 .color(egui::Color32::from_rgb(180, 180, 195)),
         );
+        // SHE-005 — one affordance, not two stacked sentences. Zero selected:
+        // a single muted placeholder. ≥1 selected: count + Clear, no tip line.
+        // The unconditional "Tip:" sentence is removed — the placeholder + the
+        // live count updating as the user clicks convey the action.
         let face_count = entry.face_selection.as_ref().map(|f| f.len()).unwrap_or(0);
         if face_count > 0 {
-            ui.label(format!(
-                "{} face{} selected",
-                face_count,
-                if face_count == 1 { "" } else { "s" }
-            ));
-            if ui.small_button("Clear Faces").clicked() {
-                entry.face_selection = None;
-                entry.stale_since = Some(std::time::Instant::now());
-            }
+            ui.horizontal(|ui| {
+                ui.label(format!(
+                    "{} face{} selected",
+                    face_count,
+                    if face_count == 1 { "" } else { "s" }
+                ));
+                if ui.small_button("Clear").clicked() {
+                    entry.face_selection = None;
+                    entry.stale_since = Some(std::time::Instant::now());
+                }
+            });
         } else {
             ui.label(
-                egui::RichText::new("Click faces in viewport to select")
-                    .italics()
+                egui::RichText::new("Pick faces in viewport \u{2197}")
                     .color(egui::Color32::from_rgb(120, 120, 130)),
             );
         }
-        ui.label(
-            egui::RichText::new("Tip: click faces in the 3D view while this toolpath is selected")
-                .small()
-                .color(egui::Color32::from_rgb(100, 100, 110)),
-        );
     }
 
     // Stock source toggle
