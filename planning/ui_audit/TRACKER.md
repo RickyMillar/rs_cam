@@ -14,18 +14,25 @@
 > (one agent, single-subsystem context).
 
 ## ▶ Next action
-**W3.5 DONE — two Wave-2 surface rewrites remain.** CL + W3.1 + W3.2 + W3.3 + W3.6 + W3.5
-are merged to master. The optimizer rollup is now role-sectioned (Apply-now / Needs-your-call
-with Review buttons / collapsed Not-optimized), the modal's suggestions are Apply-&-re-optimize
-affordances, and the project optimizer has a self-explaining disabled menu item + an
-always-available cycle-time entry in the inspector. Remaining: 🔁 **W3.4 tools · W3.7 header/rail**,
-then W3.8 dashboard + Tier-4/5 polish. Each: fresh branch off master, consumes the component
-layer (`ARCHITECTURE.md` §4 usage map). Suggested order: W3.4 tools → W3.7 header/rail (which is
-`visibility.rs`'s true home).
+**W3.5 DONE + W3.4 mostly done (TOO-003 left) — W3.7 header/rail is the last full Wave-2 surface.**
+CL + W3.1 + W3.2 + W3.3 + W3.6 + W3.5 are merged; W3.4 merged its editor-clarity findings
+(TOO-004/005/006) with **TOO-003 (draft/Apply commit model) deferred**. Remaining: the **TOO-003
+sliver**, then 🔁 **W3.7 header/rail** (which builds `components::visibility` with the viewport
+overlay), then W3.8 dashboard + Tier-4/5 polish. Each full surface: fresh branch off master,
+consumes the component layer (`ARCHITECTURE.md` §4 usage map).
 
-⚠ **W3.5 visual-verify debt:** MCP screenshots capture the 3D viewport, not egui panel chrome —
-the new optimizer rollup window, the modal suggestion rows, and the inspector Optimize entry
-need a human `cargo run -p rs_cam_viz --bin rs_cam_gui` pass.
+⚠ **TOO-003 (deferred, focused follow-up):** make the **properties-panel** tool editor
+draft-commit — edit a `draft` clone, commit on an explicit **Apply** (or auto-commit on
+navigate-away as the spec's accepted fallback), show a "● modified — Apply / Revert" affordance —
+to match the modal's draft-then-Save model and retire the live-apply-vs-draft inconsistency
+(TOO-003). It's a `GuiState` field + `properties/mod.rs` Tool-branch + `flush_tool_snapshot`
+rework that interacts with the undo snapshot and `invalidate_tool`; do it with fresh context so
+a commit/invalidation bug can't silently drop a tool edit. The modal already draft-commits — only
+the panel changes.
+
+⚠ **Visual-verify debt (MCP can't capture egui panel chrome — human `cargo run` pass):**
+W3.4 tool editor (Shaft/Shank split, holder header badge, Catalog-metadata fields, "Updated"
+vs "Saved" toast). [W3.5 already confirmed.]
 
 **`compare::*` not adopted in W3.5 (deliberate):** the rollup header is two cycle-time numbers
 ("Current / Optimized (-26.6s, -10%)"), which `delta_tag`'s "↓ 0.90×" ratio renders *less*
@@ -224,7 +231,7 @@ Tier-4/5 polish.
 | W3.1 | feeds rewrite + core split | core+viz | 🟪 | 🧠 | CL | ☑ |
 | W3.2 | five-tab scaffold | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.3 | inspector summary-first | viz | 🟦 | 🔁 | CL | ☑ |
-| W3.4 | tool editor (commit + grouping) | viz | 🟪 | 🔁 | CL, W1.1 | ☐ |
+| W3.4 | tool editor (commit + grouping) | viz | 🟪 | 🔁 | CL, W1.1 | ◐ (TOO-003 left) |
 | W3.5 | optimizer affordances | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.6 | timeline disambiguation | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.7 | header/rail de-overload | viz | 🟦 | 🔁 | CL | ☐ |
@@ -407,6 +414,20 @@ Tier-4/5 polish.
 - **2026-06-09** — **W3.5 visual parity CONFIRMED** by the user (live GUI pass: role-sectioned
   rollup, Review buttons, modal Apply-&-re-optimize rows, inspector cycle-time entry, disabled
   menu-hover all good). W3.5 egui-chrome verification debt cleared.
-- **▶ Next:** the remaining Wave-2 rewrites — W3.4 tools · W3.7 header/rail. File-disjoint, run
-  **sequentially** (build-thrash), one branch+merge per surface, consuming the component layer.
-  Lead with W3.4 tools (then W3.7 builds `components::visibility` with the viewport overlay).
+- **2026-06-09** — **W3.4 PARTIAL** on branch `ia-cleanup/w3.4-tools`, 2 commits each green,
+  merged to master `8e503f8` `--no-ff`. (TOO-001/TOO-002 + `project_tree.rs` deletion were already
+  done by W1.1, so W3.4's real scope was the editor findings.)
+  - **1/2** (`6af118c`) `properties/tool.rs` editor clarity: TOO-005 (tapered Shaft → "Cutter
+    geometry" group as "Upper shaft ⌀ (taper top)"; holder relabelled "Shank ⌀ (in collet)");
+    TOO-006 (no-holder collision-skip → warning badge on the Holder/Shank CollapsingHeader, italic
+    prose removed); TOO-004 metadata half (editable Vendor / Product ID "Catalog metadata" group,
+    reaches the modal edit form too via the shared `draw_tool_fields`).
+  - **2/2** (`be0eea0`) TOO-004 append half: core `add_or_replace_to`/`add_or_replace_tool`
+    (replace by dedupe key, else append; returns `(path, replaced)`); panel "Save to library"
+    routes through it ("Updated" vs "Saved"), retiring the silent-append duplicate pile. +1 core test.
+  - **DEFERRED — TOO-003** (draft/Apply commit model in the properties panel): a `GuiState` +
+    `properties/mod.rs` + `flush_tool_snapshot` refactor touching the undo snapshot + `invalidate_tool`.
+    Done with fresh context to avoid a silent edit-drop. ⚠ W3.4 visual parity unverified.
+- **▶ Next:** finish W3.4's TOO-003 sliver, then W3.7 header/rail (builds `components::visibility`
+  with the viewport overlay), then W3.8 + Tier-4/5. Run **sequentially** (build-thrash), one
+  branch+merge per surface, consuming the component layer.
