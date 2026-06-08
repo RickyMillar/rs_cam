@@ -1,6 +1,7 @@
 use super::AppEvent;
 use crate::state::AppState;
 use crate::state::job::SetupId;
+use crate::state::selection::Selection;
 
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     let ctx = ui.ctx().clone();
@@ -142,10 +143,25 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     events.push(AppEvent::Redo);
                 }
                 ui.separator();
-                ui.add_enabled(
-                    false,
-                    egui::Button::new("Delete Selected").shortcut_text("Del"),
-                );
+                // W1.2/P6-001 — was a hardcoded add_enabled(false) advertising
+                // a "Del" it never fired. Enable + wire it to the selection.
+                let delete_event = match state.selection {
+                    Selection::Toolpath(id) => Some(AppEvent::RemoveToolpath(id)),
+                    Selection::Tool(id) => Some(AppEvent::RemoveTool(id)),
+                    _ => None,
+                };
+                if ui
+                    .add_enabled(
+                        delete_event.is_some(),
+                        egui::Button::new("Delete Selected").shortcut_text("Del"),
+                    )
+                    .clicked()
+                {
+                    ui.close();
+                    if let Some(ev) = delete_event {
+                        events.push(ev);
+                    }
+                }
             });
 
             ui.menu_button("Toolpath", |ui| {

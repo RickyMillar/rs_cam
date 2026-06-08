@@ -108,8 +108,8 @@ Tier-4/5 polish.
 | W0.5 | wire `is_stale` everywhere | viz | 🟥 | 🛠 | — | ☑ |
 | W2.1 | `ValueProvenance` data model | core | 🟥 | 🧠 | — | ☐ |
 | W2.2 | canonical post-config | viz | 🟥 | 🛠 | — | ☐ |
-| W1.1 | revive tool CRUD (kill `project_tree`) | viz | 🟪 | 🛠 | W-UP | ☐ |
-| W1.2 | wire/retire dead controls (×4) | viz | 🟥 | 🔁 | W-UP | ☐ |
+| W1.1 | revive tool CRUD (kill `project_tree`) | viz | 🟪 | 🛠 | W-UP | ☑ |
+| W1.2 | wire/retire dead controls (×4) | viz | 🟥 | 🔁 | W-UP | ☑ |
 | CL | **component layer** (+W4.1) | viz | 🟦 | 🧠 | W-UP, W2.1, W0.4, W0.5 | ☐ |
 | W3.1 | feeds rewrite + core split | core+viz | 🟪 | 🧠 | CL | ☐ |
 | W3.2 | five-tab scaffold | viz | 🟦 | 🔁 | CL | ☐ |
@@ -201,8 +201,18 @@ Tier-4/5 polish.
   (INS-005 reactive-inspector cards, TIM-009 timeline spine, OPT-003 optimizer baseline) via
   one shared `theme::stale_banner`. Commit `0576d03`. **Tier 0 COMPLETE** (W0.1c/W0.2/W0.3/
   W0.4/W0.5). W-UP visual parity confirmed by user.
-- **▶ Next:** Component-layer prerequisites left are **W2.1** (ValueProvenance data model,
-  core keystone — blocks W4.1) and **W2.2** (canonical post config). After those, the Wave-1
-  keystone **component layer** (CL + W4.1) is fully unblocked (W-UP ✓, W0.4 ✓, W0.5 ✓). Tier-1
-  reachability (**W1.1** revive tool CRUD / kill `project_tree.rs`, **W1.2** dead controls) is
-  also unblocked by W-UP and is high user-harm — a good visible-win track to interleave.
+- **2026-06-08** — **Wave 0 merged to `master`** (`99c70c8`, --no-ff: Tier 0 + W-UP as one
+  revertable unit). New work branches off master per workstream.
+- **2026-06-08** — **Tier 1 COMPLETE** on branch `ia-cleanup/tier1`:
+  - **W1.1 ☑** (`5742240`) — harvested the full tool CRUD (Duplicate/Delete context menu, Del
+    key, Manage-library, From-library import) into the live `toolpath_panel` Tool Library
+    collapsible; **deleted the dead 446-LOC `project_tree.rs`** + its `pub mod`. A user can now
+    delete/duplicate a tool and reach the library from the panel (couldn't before).
+  - **W1.2 ☑** (`825caff`) — P6-001 wired Edit›Delete-Selected to the selection; P6-002
+    retired the `StockVizMode::ByOperation` stub (uniform-color placeholder, not real per-op
+    coloring — honest cut, not a misleading selector); P2-003 greyed the adaptive3d entry combo
+    on `EntryStylePolicy::ForceNone`; TIM-010 retired the dead `10_000+i` gate-dot drill →
+    jump-to-move.
+- **▶ Next:** Tier 2 foundation — **W2.1** (ValueProvenance data model, core keystone — blocks
+  W4.1) + **W2.2** (canonical post config). Then the Wave-1 keystone **component layer** (CL +
+  W4.1) is fully unblocked (W-UP ✓, W0.4 ✓, W0.5 ✓). `ia-cleanup/tier1` is ready to merge.

@@ -97,7 +97,6 @@ pub fn draw(
                     .selected_text(match sim.stock_viz_mode {
                         StockVizMode::Solid => "Solid",
                         StockVizMode::Deviation => "Deviation",
-                        StockVizMode::ByOperation => "Solid", // placeholder: treated as Solid
                         StockVizMode::ByHeight => "By Height",
                     })
                     .show_ui(ui, |ui| {
