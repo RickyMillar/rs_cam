@@ -404,7 +404,9 @@ Tier-4/5 polish.
     button re-added for that case).
   OPT-001 (header math, W0.2) + OPT-003 (stale banner, W0.5) were already done. `compare::*` not
   adopted — didn't cleanly fit (header is absolute+percent, not a ratio; `CompareRow` is feeds-only).
-  ⚠ egui-chrome visual parity unverified — needs a human `cargo run` pass.
+- **2026-06-09** — **W3.5 visual parity CONFIRMED** by the user (live GUI pass: role-sectioned
+  rollup, Review buttons, modal Apply-&-re-optimize rows, inspector cycle-time entry, disabled
+  menu-hover all good). W3.5 egui-chrome verification debt cleared.
 - **▶ Next:** the remaining Wave-2 rewrites — W3.4 tools · W3.7 header/rail. File-disjoint, run
   **sequentially** (build-thrash), one branch+merge per surface, consuming the component layer.
   Lead with W3.4 tools (then W3.7 builds `components::visibility` with the viewport overlay).
