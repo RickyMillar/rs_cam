@@ -14,12 +14,15 @@
 > (one agent, single-subsystem context).
 
 ## ▶ Next action
-**W3.2 DONE — the remaining Wave-2 surface rewrites are next.** CL + W3.1 + W3.2 are merged to
-master. The per-toolpath panel is now the five concern tabs and the feeds epicenter is
-single-homed, so the surface rewrites no longer share the central properties file: 🔁 **W3.3
-inspector · W3.4 tools · W3.5 optimizer · W3.6 timeline · W3.7 header/rail**, then W3.8
-dashboard + Tier-4/5 polish. Each: fresh branch off master, consumes the component layer
-(`ARCHITECTURE.md` §4 usage map).
+**W3.3 DONE — the remaining Wave-2 surface rewrites are next.** CL + W3.1 + W3.2 + W3.3 are
+merged to master. The inspector is now scope-tiered (fixed verdict+freshness header → Project /
+Toolpath / Span CollapsingHeaders) and the Findings rollup shares the verdict-HUD `CountPill`
+grammar — so the CL "Inspector Findings → CountPill" carry-over is discharged. Remaining: 🔁
+**W3.6 timeline · W3.5 optimizer · W3.4 tools · W3.7 header/rail**, then W3.8 dashboard +
+Tier-4/5 polish. Each: fresh branch off master, consumes the component layer (`ARCHITECTURE.md`
+§4 usage map). Suggested order leads with W3.6 (timeline — concrete component carry-overs:
+`components::{visibility,nav,diagram}` get built with it) then W3.5 (optimizer adopts
+`compare::*` if it adds a compare view).
 
 ⚠ **Execution constraint (don't true-fan-out the builds):** [[feedback_no_concurrent_release_builds]]
 — parallel viz builds thrash swap and crash the PC. So although the surfaces are file-disjoint,
@@ -27,8 +30,8 @@ run them **sequentially in the main tree** (one surface → commits → green �
 then the next), the same proven rhythm CL/W3.1/W3.2 used. Fan-out agents are only safe if their
 builds are serialized.
 
-Carry-overs the rewrites still pick up (from CL + W3.1 deferrals): W3.3 adopts `CountPill` for
-the Inspector Findings grid; W3.5 adopts `compare::*` if it adds a compare view;
+Carry-overs the rewrites still pick up (from CL + W3.1 deferrals): ~~W3.3 adopts `CountPill` for
+the Inspector Findings grid~~ ✓ DONE (W3.3); W3.5 adopts `compare::*` if it adds a compare view;
 `components::{visibility, nav, diagram}` get built with the surfaces that use them.
 
 **W3.2 landed** (2 commits, `ia-cleanup/w3.2-tabs`, merge `caed022`):
@@ -205,7 +208,7 @@ Tier-4/5 polish.
 | CL | **component layer** (+W4.1) | viz | 🟦 | 🧠 | W-UP, W2.1, W0.4, W0.5 | ☑ |
 | W3.1 | feeds rewrite + core split | core+viz | 🟪 | 🧠 | CL | ☑ |
 | W3.2 | five-tab scaffold | viz | 🟦 | 🔁 | CL | ☑ |
-| W3.3 | inspector summary-first | viz | 🟦 | 🔁 | CL | ☐ |
+| W3.3 | inspector summary-first | viz | 🟦 | 🔁 | CL | ☑ |
 | W3.4 | tool editor (commit + grouping) | viz | 🟪 | 🔁 | CL, W1.1 | ☐ |
 | W3.5 | optimizer affordances | viz | 🟦 | 🔁 | CL | ☐ |
 | W3.6 | timeline disambiguation | viz | 🟦 | 🔁 | CL | ☐ |
@@ -337,6 +340,22 @@ Tier-4/5 polish.
 - **2026-06-08** — **Visual parity CONFIRMED** by the user for CL + W3.1 + W3.2 (live GUI pass:
   Feeds tab SPEED/CUT + editable feed/plunge + spindle precedence + the five-tab bar all good).
   The egui-chrome verification debt from those three workstreams is cleared.
-- **▶ Next:** the remaining Wave-2 rewrites — W3.3 inspector · W3.4 tools · W3.5 optimizer ·
-  W3.6 timeline · W3.7 header/rail. File-disjoint, but run **sequentially** (build-thrash
-  constraint, see ▶ Next action), one branch+merge per surface, all consuming the component layer.
+- **2026-06-08** — **W3.3 COMPLETE** on branch `ia-cleanup/w3.3-inspector`, 2 commits each green
+  (clippy --workspace -D warnings + fmt + viz tests), merged to master `099c4e4` `--no-ff`:
+  - **1/2** (`dffe126`) CountPill Findings rollup (CL carry-over — same `summary()` producer +
+    `/T` denom as the verdict HUD, exceeds-pill actionable → project Optimize, retiring the
+    separate ⚡ button); `hotspot_summary_line` helper (one format across card/Top-hotspots/Span,
+    INS-004); engagement→percent everywhere + `ENGAGEMENT_PROVENANCE_HOVER` (INS-006).
+  - **2/2** (`4b2182e`) scope-tiered disclosure (pass2 inspector §2): fixed verdict+freshness
+    status header (INS-001/005) → Project / Toolpath / Span CollapsingHeaders, each summary-first;
+    distinct card shapes (filled+◍ hotspot vs hollow+△ issue, INS-003); in-panel span lock toggle
+    (INS-008); Generator-item + Generation-trace folded under Span (INS-007); Optimize buttons
+    scope-labelled (INS-009). `draw_reactive_inspector`/`draw_project_overview`/
+    `draw_selected_section` → `draw_status_header`+`draw_project_section`+`draw_toolpath_section`+
+    `draw_span_section`/`draw_span_body`+2 disclosure fns. Nothing deleted; every datum keeps a home.
+  ⚠ egui-chrome visual parity unverified — MCP screenshots capture the 3D viewport, not panel
+  chrome; needs a human `cargo run -p rs_cam_viz --bin rs_cam_gui` pass over the Inspector panel.
+- **▶ Next:** the remaining Wave-2 rewrites — W3.6 timeline · W3.5 optimizer · W3.4 tools ·
+  W3.7 header/rail. File-disjoint, but run **sequentially** (build-thrash constraint, see
+  ▶ Next action), one branch+merge per surface, all consuming the component layer. Lead with
+  W3.6 (builds `components::{visibility,nav,diagram}`) then W3.5 (`compare::*`).
