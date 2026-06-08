@@ -27,7 +27,9 @@ use crate::state::toolpath::{
 };
 use crate::ui::AppEvent;
 use crate::ui::automation;
-use crate::ui::components::{ProvKind, ProvenanceBadge, SuggestButton, Suggestion, ValueRow};
+use crate::ui::components::{
+    ProvKind, ProvenanceBadge, SuggestButton, Suggestion, UiExt, ValueRow, mrr_row, power_bar,
+};
 
 /// Paint a brief blue glow behind a UI region when an MCP parameter was recently changed.
 /// Call this right after allocating the widget/row so the highlight paints behind it.
@@ -1086,10 +1088,10 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
 
 /// Map OperationConfig variant to (OperationFamily, PassRole) for the feeds calculator.
 /// Run the LUT calculator (read-only), cache the result on the entry,
-/// and draw the feeds card with per-field Suggest buttons. The
-/// calculator never writes to the operation here (Roadmap F.5) — the
-/// Suggest buttons inside `draw_feeds_card` are the only path that
-/// pushes calculated values into the op.
+/// and draw the feeds card. The calculator never writes to the operation
+/// here (Roadmap F.5) — the SPEED / CUT recipe buttons inside
+/// `draw_feeds_card` are the only path that pushes calculated values into
+/// the op (W3.1: speeds and cut geometry are applied separately).
 fn calculate_and_apply_feeds(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
@@ -1137,113 +1139,45 @@ fn draw_feeds_card(
     ui.add_space(8.0);
     ui.collapsing("Feeds & Speeds", |ui| {
         // Read-only snapshot of the cached LUT result so we can borrow
-        // `entry.operation` mutably from the Suggest buttons below.
+        // `entry.operation` mutably from the recipe buttons below.
         let Some(result) = entry.feeds_result.clone() else {
             return;
         };
-        {
-            egui::Grid::new("feeds_card")
-                .num_columns(3)
+        // Capture op capabilities as plain bools so no borrow of
+        // `entry.operation` is held across the mutating recipe closures.
+        let pass_role = entry.operation.feeds_style().1;
+        let has_stepover = entry.operation.as_params().stepover().is_some();
+        let has_dpp = entry.operation.as_params().depth_per_pass().is_some();
+
+        // ── SPEED — how fast (feed / plunge / RPM) ──
+        ui.named_section("SPEED \u{2014} how fast", |ui| {
+            egui::Grid::new("feeds_card_speed")
+                .num_columns(2)
                 .spacing([8.0, 3.0])
                 .show(ui, |ui| {
-                    ui.label("RPM:");
-                    ui.label(format!("{:.0}", result.rpm));
-                    ui.label("");
-                    ui.end_row();
-                    ui.label("Chip Load:");
-                    ui.label(format!("{:.4} mm/tooth", result.chip_load_mm));
-                    ui.label("");
-                    ui.end_row();
                     ui.label("Feed:");
                     ui.label(format!("{:.0} mm/min", result.feed_rate_mm_min));
-                    if ui
-                        .small_button("\u{26A1} Suggest")
-                        .on_hover_text("Overwrite the operation's feed rate with this recommended value.")
-                        .clicked()
-                    {
-                        entry.operation.set_feed_rate(result.feed_rate_mm_min);
-                        entry.stale_since = Some(std::time::Instant::now());
-                    }
                     ui.end_row();
                     ui.label("Plunge:");
                     ui.label(format!("{:.0} mm/min", result.plunge_rate_mm_min));
-                    if ui
-                        .small_button("\u{26A1} Suggest")
-                        .on_hover_text("Overwrite the operation's plunge rate with this recommended value.")
-                        .clicked()
-                    {
-                        entry.operation.set_plunge_rate(result.plunge_rate_mm_min);
-                        entry.stale_since = Some(std::time::Instant::now());
-                    }
                     ui.end_row();
-                    ui.label("DOC:");
-                    ui.label(format!("{:.2} mm", result.axial_depth_mm));
-                    if ui
-                        .small_button("\u{26A1} Suggest")
-                        .on_hover_text("Overwrite the operation's depth-per-pass with this recommended value.")
-                        .clicked()
-                    {
-                        entry.operation.set_depth_per_pass(result.axial_depth_mm);
-                        entry.stale_since = Some(std::time::Instant::now());
-                    }
+                    ui.label("RPM:");
+                    ui.label(format!("{:.0}", result.rpm));
                     ui.end_row();
-                    ui.label("WOC:");
-                    ui.label(format!("{:.2} mm", result.radial_width_mm));
-                    if ui
-                        .small_button("\u{26A1} Suggest")
-                        .on_hover_text("Overwrite the operation's stepover with this recommended value.")
-                        .clicked()
-                    {
-                        entry.operation.set_stepover(result.radial_width_mm);
-                        entry.stale_since = Some(std::time::Instant::now());
-                    }
-                    ui.end_row();
-
-                    // Power bar
-                    ui.label("Power:");
-                    let frac = if result.available_power_kw > 0.0 {
-                        (result.power_kw / result.available_power_kw).clamp(0.0, 1.0)
-                    } else {
-                        0.0
-                    };
-                    let color = if frac > 0.9 {
-                        egui::Color32::from_rgb(220, 80, 80)
-                    } else if frac > 0.7 {
-                        egui::Color32::from_rgb(220, 180, 60)
-                    } else {
-                        egui::Color32::from_rgb(80, 180, 80)
-                    };
-                    ui.horizontal(|ui| {
-                        let bar = egui::ProgressBar::new(frac as f32)
-                            .fill(color)
-                            .desired_width(100.0);
-                        ui.add(bar);
-                        ui.label(format!(
-                            "{:.2}/{:.2}kW",
-                            result.power_kw, result.available_power_kw
-                        ));
-                    });
-                    ui.label("");
-                    ui.end_row();
-
-                    ui.label("MRR:");
-                    ui.label(format!("{:.0} mm\u{00B3}/min", result.mrr_mm3_min));
-                    ui.label("");
+                    ui.label("Chip Load:");
+                    ui.label(format!("{:.4} mm/tooth", result.chip_load_mm));
                     ui.end_row();
                 });
-
-            // Roadmap F.5 — "Suggest all" pushes every editable LUT
-            // value into the operation in one click. Fields stay
-            // user-editable; no flag bookkeeping involved.
+            // W3.1: SPEED-only apply — never rewrites the cut geometry.
             if ui
-                .button("\u{26A1} Suggest all")
+                .button("\u{26A1}\u{26A1} Apply recommended speeds")
                 .on_hover_text(
-                    "Overwrite feed, plunge, depth-per-pass, and stepover with the recommended values above.",
+                    "Overwrite feed, plunge, and RPM with the recommended values. \
+                     Does not change the cut (DOC/WOC).",
                 )
                 .clicked()
             {
-                let pass_role = entry.operation.feeds_style().1;
-                rs_cam_core::feeds::suggest::apply_feeds_result_to_op(
+                rs_cam_core::feeds::suggest::apply_speeds_to_op(
                     &mut entry.operation,
                     &mut entry.feeds_provenance,
                     &result,
@@ -1255,7 +1189,58 @@ fn draw_feeds_card(
                 );
                 entry.stale_since = Some(std::time::Instant::now());
             }
+        });
 
+        // ── CUT — how deep/wide (changes the cut) ──
+        if has_stepover || has_dpp {
+            ui.named_section("CUT \u{2014} changes the cut", |ui| {
+                egui::Grid::new("feeds_card_cut")
+                    .num_columns(2)
+                    .spacing([8.0, 3.0])
+                    .show(ui, |ui| {
+                        if has_dpp {
+                            ui.label("DOC:");
+                            ui.label(format!("{:.2} mm", result.axial_depth_mm));
+                            ui.end_row();
+                        }
+                        if has_stepover {
+                            ui.label("WOC:");
+                            ui.label(format!("{:.2} mm", result.radial_width_mm));
+                            ui.end_row();
+                        }
+                    });
+                // W3.1: cut-geometry apply is separate + attributed — it
+                // changes the cut, so it is never folded into "Apply speeds".
+                if ui
+                    .button("\u{26A1} Apply cut geometry")
+                    .on_hover_text(
+                        "Overwrite DOC/WOC with the recommended values. \
+                         Changes the cut.",
+                    )
+                    .clicked()
+                {
+                    rs_cam_core::feeds::suggest::apply_cut_geometry_to_op(
+                        &mut entry.operation,
+                        &mut entry.feeds_provenance,
+                        &result,
+                        tool,
+                        machine,
+                        material,
+                        pass_role,
+                        rs_cam_core::feeds::suggest::SuggestContext::default(),
+                    );
+                    entry.stale_since = Some(std::time::Instant::now());
+                }
+            });
+        }
+
+        // ── Derived (read-only) ──
+        ui.named_section("Derived", |ui| {
+            power_bar(ui, result.power_kw, result.available_power_kw);
+            mrr_row(ui, result.mrr_mm3_min);
+        });
+
+        {
             // Vendor source — the one provenance vocabulary (was a third,
             // cyan, source-colour treatment; collapsed onto ProvenanceBadge to
             // kill the P7-003 three-colours-for-one-signal divergence).
