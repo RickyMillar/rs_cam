@@ -121,6 +121,7 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
                 coolant: CoolantMode::Off,
                 face_selection: None,
                 debug_options: ToolpathDebugOptions::default(),
+                feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
             },
         )
         .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?;

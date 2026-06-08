@@ -189,24 +189,40 @@ impl ProjectSession {
                     SessionError::InvalidParam("feed_rate must be a number".to_owned())
                 })?;
                 tc.operation.set_feed_rate(v);
+                tc.feeds_provenance.set(
+                    crate::feeds::FeedsField::FeedRate,
+                    crate::feeds::ValueProvenance::manual(),
+                );
             }
             "plunge_rate" => {
                 let v = as_number(&value).ok_or_else(|| {
                     SessionError::InvalidParam("plunge_rate must be a number".to_owned())
                 })?;
                 tc.operation.set_plunge_rate(v);
+                tc.feeds_provenance.set(
+                    crate::feeds::FeedsField::PlungeRate,
+                    crate::feeds::ValueProvenance::manual(),
+                );
             }
             "stepover" => {
                 let v = as_number(&value).ok_or_else(|| {
                     SessionError::InvalidParam("stepover must be a number".to_owned())
                 })?;
                 tc.operation.set_stepover(v);
+                tc.feeds_provenance.set(
+                    crate::feeds::FeedsField::Stepover,
+                    crate::feeds::ValueProvenance::manual(),
+                );
             }
             "depth_per_pass" => {
                 let v = as_number(&value).ok_or_else(|| {
                     SessionError::InvalidParam("depth_per_pass must be a number".to_owned())
                 })?;
                 tc.operation.set_depth_per_pass(v);
+                tc.feeds_provenance.set(
+                    crate::feeds::FeedsField::DepthPerPass,
+                    crate::feeds::ValueProvenance::manual(),
+                );
             }
             "spindle_rpm" => {
                 // Accept Null, integer, integer-valued float, or numeric string.
@@ -239,6 +255,10 @@ impl ProjectSession {
                     }
                 };
                 tc.operation.set_spindle_rpm(rpm);
+                tc.feeds_provenance.set(
+                    crate::feeds::FeedsField::SpindleRpm,
+                    crate::feeds::ValueProvenance::manual(),
+                );
             }
             "debug_enabled" => {
                 let v = match &value {
@@ -2552,6 +2572,7 @@ mod tests {
             coolant: CoolantMode::Off,
             face_selection: None,
             debug_options: ToolpathDebugOptions::default(),
+            feeds_provenance: crate::feeds::FeedsProvenance::default(),
         }
     }
 
@@ -3371,6 +3392,7 @@ mod tests {
             coolant: CoolantMode::Off,
             face_selection: None,
             debug_options: ToolpathDebugOptions::default(),
+            feeds_provenance: crate::feeds::FeedsProvenance::default(),
         }
     }
 

@@ -100,6 +100,7 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
         coolant: Default::default(),
         face_selection: None,
         debug_options: Default::default(),
+        feeds_provenance: Default::default(),
     };
     session.add_toolpath(0, tp).expect("add toolpath");
     let tp_id = session.toolpath_configs()[0].id;
@@ -437,6 +438,7 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
         coolant: Default::default(),
         face_selection: None,
         debug_options: Default::default(),
+        feeds_provenance: Default::default(),
     };
     session
         .add_toolpath(bottom_idx, tp_bottom)

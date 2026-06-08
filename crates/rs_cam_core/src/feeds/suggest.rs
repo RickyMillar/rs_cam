@@ -473,6 +473,9 @@ pub struct SuggestedParams {
     pub operation: OperationConfig,
     pub feeds_result: FeedsResult,
     pub warnings: Vec<SuggestWarning>,
+    /// Per-field provenance of the suggested values (W2.1). Install alongside
+    /// `operation` into the target `ToolpathConfig::feeds_provenance`.
+    pub provenance: crate::feeds::FeedsProvenance,
 }
 
 /// Input for [`suggest_params`].
@@ -560,8 +563,10 @@ pub fn suggest_for_operation(
         input.spindle_strategy,
     )?;
     let mut operation = input.operation.clone();
+    let mut provenance = crate::feeds::FeedsProvenance::default();
     let warnings = apply_feeds_result_to_op(
         &mut operation,
+        &mut provenance,
         &feeds_result,
         input.tool,
         input.machine,
@@ -574,6 +579,7 @@ pub fn suggest_for_operation(
         operation,
         feeds_result,
         warnings,
+        provenance,
     })
 }
 
@@ -681,8 +687,13 @@ pub fn feeds_explain_for_operation(
 /// Callers that don't have the context cheaply available should pass
 /// [`SuggestContext::default()`]; the back-off short-circuits to a no-op
 /// when `model_bbox` is `None`.
+// W2.1 added the `provenance` out-param (per-field stamping); the canonical
+// suggest funnel legitimately needs op + provenance + result + tool/machine/
+// material + pass_role + context together.
+#[allow(clippy::too_many_arguments)]
 pub fn apply_feeds_result_to_op(
     operation: &mut OperationConfig,
+    provenance: &mut crate::feeds::FeedsProvenance,
     result: &FeedsResult,
     tool: &ToolConfig,
     machine: &MachineProfile,
@@ -702,7 +713,8 @@ pub fn apply_feeds_result_to_op(
     // (the post-first-Suggest value) and lands a different target_feed.
     // The closed-form solve is `target_feed = target × rpm × flutes /
     // arc_fit`, so any RPM drift propagates linearly into feed.
-    if result.rpm.is_finite() && result.rpm > 0.0 {
+    let rpm_written = result.rpm.is_finite() && result.rpm > 0.0;
+    if rpm_written {
         operation.set_spindle_rpm(Some(result.rpm.round() as u32));
     }
     // Enrich the caller-supplied context with the LUT chipload band
@@ -718,7 +730,12 @@ pub fn apply_feeds_result_to_op(
         effective_diameter_mm: result.effective_diameter_mm,
         ..context
     };
-    enforce_invariants(operation, tool, machine, material, pass_role, enriched)
+    let warnings = enforce_invariants(operation, tool, machine, material, pass_role, enriched);
+    // Stamp per-field provenance from what actually produced these values
+    // (W2.1). enforce_invariants may have recalibrated feed/DPP, but the
+    // values remain suggest-derived, so the source labels still hold.
+    provenance.apply_suggested(result, operation, rpm_written);
+    warnings
 }
 
 /// Apply drill-cycle defaults that depend on tool diameter + material —

@@ -107,6 +107,7 @@ fn build_pocket_session() -> ProjectSession {
         coolant: CoolantMode::Off,
         face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
+        feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
     };
     session
         .add_toolpath(0, tc)

@@ -398,8 +398,10 @@ pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
     // snapshot matches production output exactly (rigidity clamp on
     // DOC, plunge-to-feed clamp, stepover-to-diameter clamp).
     let mut op_clamped = operation;
+    let mut provenance = rs_cam_core::feeds::FeedsProvenance::default();
     let _warnings = apply_feeds_result_to_op(
         &mut op_clamped,
+        &mut provenance,
         &result,
         &tool,
         &machine,

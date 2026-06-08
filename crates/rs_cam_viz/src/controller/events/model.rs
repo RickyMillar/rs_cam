@@ -547,6 +547,7 @@ impl<B: ComputeBackend> AppController<B> {
                     coolant: rs_cam_core::gcode::CoolantMode::Off,
                     face_selection: None,
                     debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+                    feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
                 };
                 let _ = self.state.session.add_toolpath(setup_idx, tc);
             }

@@ -594,6 +594,7 @@ fn execute_op_via_session(
                 coolant: op.coolant,
                 face_selection: None,
                 debug_options,
+                feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
             },
         )
         .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?;

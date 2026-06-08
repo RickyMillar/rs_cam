@@ -444,6 +444,11 @@ pub struct ToolpathConfig {
     pub face_selection: Option<Vec<FaceGroupId>>,
     /// Debug trace options for this toolpath.
     pub debug_options: ToolpathDebugOptions,
+    /// Per-dimension provenance of the feeds stored on `operation` — how each
+    /// applied value was produced (vendor LUT / formula / manual / optimizer /
+    /// auto-correct). Stamped at write time and read back by the UI instead of
+    /// recomputing a fresh lookup. Defaults to all-`None` ("config default").
+    pub feeds_provenance: crate::feeds::FeedsProvenance,
 }
 
 /// Result of generating a single toolpath.
@@ -1461,6 +1466,7 @@ mod tests {
                     face_selection: None,
                     _legacy_feeds_auto: None,
                     debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+                    feeds_provenance: crate::feeds::FeedsProvenance::default(),
                 }],
             }],
             toolpaths: Vec::new(),
@@ -1610,6 +1616,7 @@ mod tests {
                     face_selection: None,
                     _legacy_feeds_auto: None,
                     debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+                    feeds_provenance: crate::feeds::FeedsProvenance::default(),
                 }],
             }],
             toolpaths: Vec::new(),
@@ -1737,6 +1744,7 @@ mod tests {
             coolant: crate::gcode::CoolantMode::default(),
             face_selection: None,
             debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+            feeds_provenance: crate::feeds::FeedsProvenance::default(),
         };
 
         let idx = session.add_toolpath(0, new_tp).unwrap();
