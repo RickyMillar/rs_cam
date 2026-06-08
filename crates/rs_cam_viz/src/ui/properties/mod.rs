@@ -207,6 +207,15 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             }
             let stock_top = state.session.stock_config().origin_z + state.session.stock_config().z;
             post::draw(ui, &mut state.gui.post, stock_top);
+            // W2.2 [P1-004]: the session is canonical for post config. Push the
+            // edited gui.post straight through so `session.post_config()` can't
+            // lag behind the panel (the stale window the GUI-vs-MCP race read).
+            // Guarded on a real change because set_post_config invalidates the
+            // simulation cache — we must not wipe it every idle frame.
+            let session_post = crate::state::runtime::GuiState::post_to_session(&state.gui.post);
+            if *state.session.post_config() != session_post {
+                state.session.set_post_config(session_post);
+            }
         }
         Selection::Machine => {
             // Capture snapshot for undo before editing

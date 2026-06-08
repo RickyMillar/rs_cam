@@ -14,9 +14,23 @@
 > (one agent, single-subsystem context).
 
 ## ▶ Next action
-**Tier 2 — W2.2 (canonical post-config), then the component layer.** On branch
-`ia-cleanup/tier2` (off master). Wave 0 + Tier 1 are merged to master; **W2.1 is DONE**
-(committed on this branch, green).
+**Tier 2 DONE — next is the 🧠 component layer (CL, incl. W4.1).** Tier 2 (W2.1 + W2.2)
+is merged to master. Wave 0 + Tier 1 already were. All four barrier deps for CL are now
+satisfied: W-UP ✓, W2.1 ✓, W0.4 ✓, W0.5 ✓.
+
+The component layer is the headline keystone (the duplication-killer). It builds the
+atom/section/value components every Tier-3 surface rewrite consumes, and folds in **W4.1**
+(the `ProvenanceBadge` visual language that finally *renders* the W2.1 provenance model —
+W2.1 deliberately left rendering to here). Do it on a fresh branch off master
+(`ia-cleanup/components`), single owner, full plan context, NOT fanned out. Once CL is
+stable, the Tier-3 surface rewrites (W3.1 feeds epicenter, W3.3–W3.7) fan out per-surface.
+
+**W2.2 landed** [P1-004]: post-panel edits now write straight to the canonical
+`session.post_config()` (guarded on a real change so the sim cache only drops on an actual
+edit); added `PartialEq` to `ProjectPostConfig`. The GUI-vs-MCP stale window is closed.
+
+— prior context —
+Wave 0 + Tier 1 are merged to master; **W2.1 is DONE** (per-field `ValueProvenance`).
 
 **W2.1 landed** (`ValueProvenance` data model, core keystone) — decisions taken:
 `ValueProvenance { source, reference }` (**no `when`** — deferred), **full per-field
@@ -133,7 +147,7 @@ Tier-4/5 polish.
 | W0.4 | reconcile load rollups (one `summary()`) | core+viz | 🟥 | 🛠 | — | ☑ |
 | W0.5 | wire `is_stale` everywhere | viz | 🟥 | 🛠 | — | ☑ |
 | W2.1 | `ValueProvenance` data model | core | 🟥 | 🧠 | — | ☑ |
-| W2.2 | canonical post-config | viz | 🟥 | 🛠 | — | ☐ |
+| W2.2 | canonical post-config | viz | 🟥 | 🛠 | — | ☑ |
 | W1.1 | revive tool CRUD (kill `project_tree`) | viz | 🟪 | 🛠 | W-UP | ☑ |
 | W1.2 | wire/retire dead controls (×4) | viz | 🟥 | 🔁 | W-UP | ☑ |
 | CL | **component layer** (+W4.1) | viz | 🟦 | 🧠 | W-UP, W2.1, W0.4, W0.5 | ☐ |
