@@ -34,7 +34,7 @@ Cross-cutting (tracked but not a class of its own):
 
 ## Fix tracks
 
-### F1 — Drill feed clobber + floor-grazing defaults  — STATUS: in progress
+### F1 — Drill feed clobber + floor-grazing defaults  — STATUS: ✅ DONE 2026-06-10
 
 Confirmed behaviour: both WANAKA drill TPs run at exactly 50.0 feed/Ø — the SolidWood
 rubbing floor. Literature band for hardwood drills is 0.08–0.18 mm/tooth ≈ 213–427 feed/Ø
@@ -65,7 +65,32 @@ Sub-fixes:
 Validation: drill suggest feeds land in the literature band for the cells.toml drill cells;
 WANAKA pin drill + holes re-suggest off the floor.
 
-### F2 — adaptive3d phantom samples inflating deflection — STATUS: pending
+**Landed** (commits 648b8db, 089c209 on `defect-class/f1-drill-feed`):
+- Sub-fixes 1-6 as specified, plus **F1.7** (from A4): drill gates join
+  `ToolpathLoadVerdict::criteria()` — Critical drill exceedances block g-code export;
+  Elevated stays a warning band (mapping documented on
+  `DrillGateOutcome::as_criterion_status`). `milling_criteria()` split preserves the
+  not-applicable partition and the `any_unmodeled` drill special case.
+- Step 9c addition discovered during F1.6: when the envelope CEILING binds, RPM
+  follows the feed down (bounded by the drill band floor) so the shipped recipe
+  holds its commanded chipload instead of thinning toward rubbing (Ø3 oak: implied
+  0.043 @ 14k pre-fix → 0.075 @ 8k). Spindle speedup rolled back proportionally.
+- Lit-matrix: 7 drill cells × 2 critical final-feed invariants (envelope band +
+  rubbing floor); drill plunge/feed fraction expectation corrected to 1.0 (feed IS
+  plunge — the 0.40-0.70 milling band failed every drill cell as advisory noise).
+- `DrillToolpathSummary.chip_welding_dtd` added (evacuation-credited ratio the risk
+  classifies from); cut-trace schema v5.
+- Deferred to backlog from A2: `set_toolpath_param("plunge_rate")` provenance lie on
+  drill ops; CLI run/job raw defaults; SteepShallow z_step hint/setter asymmetry.
+
+### F2 — phantom/untagged samples polluting gates — STATUS: pending (REFRAMED by A3)
+
+A3 audit reframes sub-fix 1: do the `MoveIntent`→span bridge (one pass in
+`compute/spans.rs`, appended in the four `generated_with_*` helpers) which fixes all
+22 ops × all 3 gates, AND honor `spans_valid` at the 4 consumer sites that currently
+stamp TSP-corrupted ancestry (`compute/simulate.rs:471`, `gcode/mod.rs:399`,
+`optimize/mod.rs:171`, `optimize/candidate.rs:359`) — the TSP corruption is the likely
+actual mechanism behind the 622 µm sample. Original framing below kept for context.
 
 Confirmed behaviour: TP1 Back Rough peak sample carries ~9 mm axial engagement at slot arc
 (commanded DOC 3.0) → 622 µm verdict → preflight `DeflectionSetupLocked`. Honest reading
@@ -300,6 +325,20 @@ F2 fix order: (1) intent→span bridge, (2) honor `spans_valid` at the 4 call si
 
 - 2026-06-10: branch from master (ia-cleanup viz deletions stashed:
   `git stash list` → "ia-cleanup dead-code-sweep viz deletions").
+- 2026-06-10 (F1.7): drill `Exceeds(Elevated)` maps to `LoadState::Within` — only
+  Critical blocks export. Rationale: Elevated is the documented warning band
+  (chip-welding approach zone, plunge-feed rubbing side); blocking export on it
+  would refuse working-but-suboptimal programs. The dedicated drill badges still
+  surface Elevated.
+- 2026-06-10 (F1.6): when the plunge-feed envelope ceiling conflicts with the
+  literature chipload band (small drills: Ø3 oak band wants 2240-5040 mm/min, envelope
+  caps at 1200), the machine-safe envelope wins and RPM follows down to preserve chip
+  thickness — bounded by the drill band floor. The cells' `fpt` band continues to bind
+  the calculator's target; the new invariants bind the final applied values.
+- 2026-06-10 (F1): chip-welding credit for Peck cycles = deepest single peck governs
+  (full retract clears flutes; Onsrud peck guidance), ChipBreak = half total (matches
+  `chip_evacuation_score`'s 0.5 factor), Simple/Dwell unchanged. No new constants
+  invented.
 - 2026-06-10: fix order F1 → F2 → F3 → F4 chosen by real-world payoff: drills currently
   cut at the rubbing floor (burn risk on every default drill op); F2 converts a locked
   toolpath to optimizable; F3 unblocks a 4.5× cycle-time win; F4 makes the unblocked
