@@ -400,14 +400,20 @@ fn tool_load_adapter_drops_milling_na_on_drill_with_drill_gates() {
             chip_welding: DrillGateOutcome::Within {
                 observed: 4.0,
                 threshold: 8.0,
+                envelope_lo: None,
+                envelope_hi: None,
             },
             peck_adequacy: DrillGateOutcome::Within {
                 observed: 0.5,
                 threshold: 2.0,
+                envelope_lo: None,
+                envelope_hi: None,
             },
             plunge_feed: DrillGateOutcome::Within {
                 observed: 100.0,
                 threshold: 100.0,
+                envelope_lo: Some(50.0),
+                envelope_hi: Some(400.0),
             },
         }),
         modulation_summary: None,

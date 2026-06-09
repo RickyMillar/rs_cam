@@ -1450,6 +1450,14 @@ fn draw_feeds_card(
                     } => format!(
                         "Chipload below rubbing floor: {requested:.3} -> {floor:.3}mm/tooth"
                     ),
+                    rs_cam_core::feeds::FeedsWarning::DrillFeedClampedToEnvelope {
+                        requested,
+                        actual,
+                        envelope_lo,
+                        envelope_hi,
+                    } => format!(
+                        "Drill feed clamped: {requested:.0} -> {actual:.0} mm/min (envelope {envelope_lo:.0}-{envelope_hi:.0})"
+                    ),
                 };
                 ui.label(
                     egui::RichText::new(format!("! {text}"))

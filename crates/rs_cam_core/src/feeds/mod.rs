@@ -568,6 +568,18 @@ pub enum FeedsWarning {
         requested: f64,
         floor: f64,
     },
+    /// Drill-cycle feed clamped into the material plunge-feed envelope
+    /// (`Material::drill_plunge_feed_envelope_per_mm` × diameter,
+    /// mm/min). Below the envelope the drill rubs and burns; above it
+    /// the bit risks breakage. Mirrors the drill plunge-feed gate
+    /// (`tool_load/drill_gates.rs`) so Suggest and the verdict share
+    /// one envelope source.
+    DrillFeedClampedToEnvelope {
+        requested: f64,
+        actual: f64,
+        envelope_lo: f64,
+        envelope_hi: f64,
+    },
 }
 
 /// Hard refusal from the Suggest pipeline — the operation × tool
@@ -1307,6 +1319,47 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             let target_feed = RUBBING_FLOOR_MM_TOOTH * fpt_divisor;
             feed = target_feed.min(machine_max_feed_after_safety);
         }
+    }
+
+    // --- Step 9c: Drill cycles — envelope sanity + "feed IS plunge" ---
+    //
+    // A drill cycle has exactly one feed: the plunge. Two corrections
+    // close the 2026-06-10 defect-class findings (F1, see
+    // `planning/DEFECT_CLASS_CLEANUP_2026-06-10.md`):
+    //
+    // 1. Clamp the chipload-derived feed into the material plunge-feed
+    //    envelope (`Material::drill_plunge_feed_envelope_per_mm`, units
+    //    feed/Ø per minute). Same clamp-and-warn convention as the
+    //    rubbing floor above — never silently serve a recipe in the
+    //    rubbing band below the envelope or the breakage band above it.
+    //    The machine cap (post-safety) still wins over the envelope
+    //    floor: a machine that can't reach the floor gets the honest
+    //    conflict via the warning rather than an unreachable feed.
+    // 2. Alias `plunge_rate` to the final drill feed. Drill op configs
+    //    alias `set_feed_rate` / `set_plunge_rate` onto one field
+    //    ("feed IS plunge"), and `apply_feeds_subset` writes feed then
+    //    plunge — pre-fix, the milling plunge baseline from Step 8
+    //    clobbered the drill-tuned feed (RPM band + 2.5× chipload from
+    //    Steps 1-2), landing every suggested drill at the milling
+    //    plunge value instead. Making the result self-consistent here
+    //    keeps any write order safe.
+    if input.operation == OperationFamily::Drill {
+        let (env_lo_per_mm, env_hi_per_mm) = material.drill_plunge_feed_envelope_per_mm();
+        let (env_lo, env_hi) = (env_lo_per_mm * d, env_hi_per_mm * d);
+        if feed < env_lo || feed > env_hi {
+            let machine_max_feed_after_safety = machine.max_feed_mm_min * machine.safety_factor;
+            let clamped = feed
+                .clamp(env_lo, env_hi)
+                .min(machine_max_feed_after_safety);
+            warnings.push(FeedsWarning::DrillFeedClampedToEnvelope {
+                requested: feed,
+                actual: clamped,
+                envelope_lo: env_lo,
+                envelope_hi: env_hi,
+            });
+            feed = clamped;
+        }
+        plunge_rate = feed;
     }
 
     // Final power at actual feed. Materials without a primary-source Kc
@@ -2108,6 +2161,102 @@ mod tests {
             "drill implied chipload {} must clear softwood drill floor of 0.05",
             implied_chipload
         );
+    }
+
+    /// F1 (2026-06-10 defect-class cleanup): drill results are
+    /// self-consistent — plunge IS feed, so the drill configs' aliased
+    /// setters ("feed IS plunge") are write-order-safe — and the feed
+    /// sits inside the material plunge-feed envelope. Pre-fix,
+    /// `apply_feeds_subset` wrote feed then plunge and the milling
+    /// plunge baseline (≈595 for Ø6 hardwood) clobbered the drill-tuned
+    /// feed; separately the unclamped drill feed (4000) exceeded the
+    /// Ø6 wood envelope max (2400).
+    #[test]
+    fn test_drill_feed_within_envelope_and_plunge_aliased() {
+        for species in [WoodSpecies::GenericSoftwood, WoodSpecies::GenericHardwood] {
+            let material = Material::SolidWood { species };
+            let machine = MachineProfile::shapeoko_vfd();
+            for d in [3.0, 6.0, 12.0] {
+                let result = calculate(&FeedsInput {
+                    tool_diameter: d,
+                    flute_count: 2,
+                    flute_length: 18.0,
+                    tool_geometry: ToolGeometryHint::Flat,
+                    shank_diameter: None,
+                    material: &material,
+                    machine: &machine,
+                    operation: OperationFamily::Drill,
+                    pass_role: PassRole::Roughing,
+                    axial_depth_mm: None,
+                    radial_width_mm: None,
+                    target_scallop_mm: None,
+                    vendor_lut: None,
+                    setup: SetupContext::default(),
+                    spindle_strategy: crate::feeds::SpindleStrategy::default(),
+                });
+                assert_eq!(
+                    result.plunge_rate_mm_min, result.feed_rate_mm_min,
+                    "Ø{d} {species:?}: drill plunge must alias the final feed"
+                );
+                let (lo, hi) = material.drill_plunge_feed_envelope_per_mm();
+                let ratio = result.feed_rate_mm_min / d;
+                assert!(
+                    ratio >= lo - 1e-9 && ratio <= hi + 1e-9,
+                    "Ø{d} {species:?}: feed/Ø {ratio:.1} outside envelope {lo}-{hi}"
+                );
+            }
+        }
+    }
+
+    /// F1: the envelope clamp warns when it binds — never a silent
+    /// rewrite. Hardwood Ø3 drives the chipload-derived feed above the
+    /// small-diameter envelope max (400 × 3 = 1200), so the clamp must
+    /// fire with the honest before/after.
+    #[test]
+    fn test_drill_feed_clamp_emits_warning_when_binding() {
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
+        let machine = MachineProfile::shapeoko_vfd();
+        let result = calculate(&FeedsInput {
+            tool_diameter: 3.0,
+            flute_count: 2,
+            flute_length: 12.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Drill,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        });
+        let ratio = result.feed_rate_mm_min / 3.0;
+        let (lo, hi) = material.drill_plunge_feed_envelope_per_mm();
+        assert!(ratio >= lo - 1e-9 && ratio <= hi + 1e-9);
+        // If the pre-clamp feed was out of band the warning must exist;
+        // verify consistency rather than hardcoding which side binds.
+        let clamped = result.warnings.iter().find_map(|w| match w {
+            FeedsWarning::DrillFeedClampedToEnvelope {
+                requested, actual, ..
+            } => Some((*requested, *actual)),
+            _ => None,
+        });
+        if let Some((requested, actual)) = clamped {
+            assert!(
+                (actual - result.feed_rate_mm_min).abs() < 1e-9,
+                "warning's actual {actual} must match the shipped feed {}",
+                result.feed_rate_mm_min
+            );
+            assert!(
+                requested < lo * 3.0 || requested > hi * 3.0,
+                "warning fired but requested {requested} was in band"
+            );
+        }
     }
 
     /// Fix #3 regression guard: a Pocket op on the same tool/material

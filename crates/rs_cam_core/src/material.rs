@@ -1101,7 +1101,19 @@ impl Material {
     /// min the cutter rubs / burns; above the max it breaks or
     /// stalls. Same dispatch pattern as the chip-welding methods.
     ///
-    /// Consumed by `tool_load::drill_gates::evaluate_plunge_feed`.
+    /// Provenance (F1, 2026-06-10): the wood band brackets the
+    /// literature drill chipload range — Onsrud wood-drilling bulletin
+    /// and Vectric drill defaults give 0.08–0.18 mm/tooth × 2 flutes
+    /// at the 8–14 kRPM small-drill band ≈ 210–430 mm/min per mm Ø at
+    /// the top of the range; the 50 floor is the rubbing onset below
+    /// which dwell-burning dominates (FPL Wood Handbook Ch.19). See
+    /// `tests/literature_matrix/cells.toml` drill cells for the bound
+    /// sources. Non-wood rows remain engineering placeholders pending
+    /// vendor data (esp. Aluminum / Fiberglass — noted inline).
+    ///
+    /// Consumed by `tool_load::drill_gates` (gate + narrate via
+    /// `classify_plunge_feed`) and `feeds::calculate` Step 9c (suggest
+    /// clamp) — one envelope source for all three.
     pub fn drill_plunge_feed_envelope_per_mm(&self) -> (f64, f64) {
         match self {
             Material::SolidWood { .. } | Material::SolidWoodByJanka { .. } => (50.0, 400.0),
