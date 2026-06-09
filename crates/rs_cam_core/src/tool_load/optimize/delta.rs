@@ -148,8 +148,26 @@ pub(crate) fn candidate_is_marginally_safe(candidate: &OptimizeCandidate) -> boo
         return false;
     }
     chipload_within_breaches_strict(&candidate.verdict.chipload)
+        || chipload_within_carries_burn_advisory(&candidate.verdict.chipload)
         || power_within_breaches_strict(&candidate.verdict.power)
         || deflection_within_breaches_strict(&candidate.verdict.deflection)
+}
+
+/// F3.3 — a `Within` chipload verdict carrying a weak-provenance burn
+/// advisory (median below a point-preset / extrapolated / ae-less burn
+/// floor) is safe enough to attempt on a scrap but must not
+/// auto-recommend: route to MarginalSafe. Pre-F3.3 such a candidate
+/// either hard-refused on the fabricated floor or recommended with
+/// full authority (A4 dead-signal finding on
+/// `ChipBoundsSource::VendorLutExtrapolated`).
+fn chipload_within_carries_burn_advisory(v: &ChiploadVerdict) -> bool {
+    matches!(
+        v,
+        ChiploadVerdict::Within {
+            burn_advisory: Some(_),
+            ..
+        }
+    )
 }
 
 fn chipload_within_breaches_strict(v: &ChiploadVerdict) -> bool {

@@ -122,9 +122,18 @@ pub fn find_best_vbit_row(
     criteria: &LookupCriteria,
     query_included_angle_deg: Option<f64>,
 ) -> Option<MatchedRow> {
+    find_best_vbit_row_where(lut, criteria, query_included_angle_deg, |_| true)
+}
+
+fn find_best_vbit_row_where(
+    lut: &VendorLut,
+    criteria: &LookupCriteria,
+    query_included_angle_deg: Option<f64>,
+    extra: impl Fn(&VendorObservation) -> bool,
+) -> Option<MatchedRow> {
     let mut best: Option<(i64, i64, usize)> = None;
     for (i, obs) in lut.observations.iter().enumerate() {
-        if !passes_must_match(criteria, obs) {
+        if !passes_must_match(criteria, obs) || !extra(obs) {
             continue;
         }
         let angle_bonus = match (query_included_angle_deg, obs.included_angle_deg) {
@@ -139,7 +148,12 @@ pub fn find_best_vbit_row(
         };
         let (base_score, diam_score) = score_observation(criteria, obs);
         let score = base_score + angle_bonus;
-        if best.is_none_or(|(bs, _, _)| score > bs) {
+        #[allow(clippy::indexing_slicing)] // best.i stored from this same iteration
+        if beats(
+            score,
+            &obs.observation_id,
+            best.map(|(s, _, bi)| (s, lut.observations[bi].observation_id.as_str())),
+        ) {
             best = Some((score, diam_score, i));
         }
     }
@@ -179,6 +193,36 @@ pub fn find_best_row_for_geometry(
     }
 }
 
+/// F3.4 (defect class C5/A1) — chipload-ENVELOPE row lookup: like
+/// [`find_best_row_for_geometry`] but only rows publishing at least one
+/// chipload bound compete. RPM-only rows (e.g.
+/// `whiteside_rpm_assorted.json`) are legitimate RPM anchors for the
+/// feeds calculator, but when one outranks a chipload-bearing row it
+/// forces the chipload gate to `Unmodeled(NoVendorData)` even though
+/// usable rows exist underneath (A1 blocker). Every consumer that
+/// needs a chipload envelope — the gate, the optimizer context, the
+/// viewport envelope map — must resolve rows through this entry point.
+pub fn find_best_chip_envelope_row(
+    lut: &VendorLut,
+    criteria: &LookupCriteria,
+    geometry: &crate::feeds::ToolGeometryHint,
+) -> Option<MatchedRow> {
+    let has_chipload = |obs: &VendorObservation| {
+        obs.chipload_min_mm_tooth.is_some() || obs.chipload_max_mm_tooth.is_some()
+    };
+    match geometry {
+        crate::feeds::ToolGeometryHint::VBit { included_angle, .. } => {
+            find_best_vbit_row_where(lut, criteria, Some(*included_angle), has_chipload)
+        }
+        crate::feeds::ToolGeometryHint::Flat
+        | crate::feeds::ToolGeometryHint::Ball
+        | crate::feeds::ToolGeometryHint::Bull { .. }
+        | crate::feeds::ToolGeometryHint::TaperedBall { .. } => {
+            lookup_best_where(lut, criteria, has_chipload)
+        }
+    }
+}
+
 /// All compatible rows for the given criteria, sorted by composite score
 /// descending. Used by the F&S suggest module to enumerate alternatives —
 /// the gate only needs the best, the suggest module needs to consider
@@ -192,7 +236,12 @@ pub fn enumerate_matching_rows(lut: &VendorLut, criteria: &LookupCriteria) -> Ve
         let (score, diam_score) = score_observation(criteria, obs);
         all.push((score, build_result(obs, criteria, score, diam_score, i)));
     }
-    all.sort_by_key(|(score, _)| -*score);
+    // F3.2 rule 8 — deterministic order: equal scores break on
+    // observation_id instead of file iteration order.
+    all.sort_by(|(sa, ra), (sb, rb)| {
+        sb.cmp(sa)
+            .then_with(|| ra.observation_id.cmp(&rb.observation_id))
+    });
     all.into_iter().map(|(_, row)| row).collect()
 }
 
@@ -325,20 +374,44 @@ fn build_result(
     }
 }
 
+/// F3.2 rule 8 — deterministic tie-break: on equal composite score the
+/// lexicographically smallest `observation_id` wins. Pre-F3.2 ties were
+/// broken by `EMBEDDED_FILES` iteration order, so reordering the
+/// include list (or loading an external directory) could silently flip
+/// which vendor row drives a verdict.
+fn beats(candidate_score: i64, candidate_id: &str, best: Option<(i64, &str)>) -> bool {
+    match best {
+        None => true,
+        Some((best_score, best_id)) => {
+            candidate_score > best_score
+                || (candidate_score == best_score && candidate_id < best_id)
+        }
+    }
+}
+
 /// Find the best matching observation for a query.
 pub fn lookup_best(lut: &VendorLut, query: &LookupQuery) -> Option<LookupResult> {
+    lookup_best_where(lut, query, |_| true)
+}
+
+fn lookup_best_where(
+    lut: &VendorLut,
+    query: &LookupQuery,
+    extra: impl Fn(&VendorObservation) -> bool,
+) -> Option<LookupResult> {
     let mut best: Option<(i64, i64, usize)> = None;
 
     for (i, obs) in lut.observations.iter().enumerate() {
-        if !passes_must_match(query, obs) {
+        if !passes_must_match(query, obs) || !extra(obs) {
             continue;
         }
         let (score, diam_score) = score_observation(query, obs);
-        if let Some((best_score, _, _)) = best {
-            if score > best_score {
-                best = Some((score, diam_score, i));
-            }
-        } else {
+        #[allow(clippy::indexing_slicing)] // best.i stored from this same iteration
+        if beats(
+            score,
+            &obs.observation_id,
+            best.map(|(s, _, bi)| (s, lut.observations[bi].observation_id.as_str())),
+        ) {
             best = Some((score, diam_score, i));
         }
     }
@@ -903,6 +976,56 @@ mod tests {
         }
     }
 
+    /// F3.1 (defect class C1) — A1's score replay: the Whiteside
+    /// Fusion360 .tool preset rows (encoded as degenerate min==max
+    /// "ranges") used to WIN tapered-ball/hardwood/parallel/finish at
+    /// grade-a/exact (1813 vs 1705 for the calibrated Amana row),
+    /// returning a Validated chipload ~15× the Amana-scaled value and
+    /// hard-blocking the optimizer. Demoted to grade-c + fallback with
+    /// the fabricated lower bound dropped, the calibrated row must win.
+    #[test]
+    fn demoted_fusion360_preset_rows_lose_to_calibrated_amana() {
+        let lut = embedded_lut();
+        let query = LookupQuery {
+            tool_family: ToolFamily::TaperedBallNose,
+            tool_subfamily: None,
+            diameter_mm: 6.0,
+            flute_count: 2,
+            material_family: MaterialFamily::Hardwood,
+            hardness_kind: Some(HardnessKind::Janka),
+            hardness_value: Some(1450.0),
+            operation_family: LutOperationFamily::Parallel,
+            pass_role: LutPassRole::Finish,
+        };
+        let result = lookup_best(&lut, &query).expect("tapered-ball hardwood row");
+        assert!(
+            !result.observation_id.contains("fusion360"),
+            "Fusion360 preset row must not win a calibrated query, got {}",
+            result.observation_id
+        );
+        assert!(
+            result.observation_id.contains("amana"),
+            "calibrated Amana row expected, got {}",
+            result.observation_id
+        );
+        // The demoted rows keep their nominal as an upper reference but
+        // publish no fabricated lower bound any more.
+        let sc64 = embedded_lut()
+            .observations
+            .into_iter()
+            .find(|o| o.observation_id == "whiteside-sc64-conical-ball-nose-spiral-fusion360")
+            .expect("demoted row still present as RPM/nominal reference");
+        assert!(sc64.chipload_min_mm_tooth.is_none());
+        assert_eq!(
+            sc64.evidence_grade,
+            crate::feeds::vendor_lut::EvidenceGrade::C
+        );
+        assert_eq!(
+            sc64.row_kind,
+            crate::feeds::vendor_lut::ObservationKind::Fallback
+        );
+    }
+
     #[test]
     fn test_rpm_nominal_returned() {
         let lut = embedded_lut();
@@ -1099,6 +1222,82 @@ mod tests {
             "fiberglass query must select the Garr fiberglass row, not a \
              polymer/aluminum row that would otherwise match on diameter+op"
         );
+    }
+
+    /// F3.4 / A1 blocker replay — an RPM-only row (no chipload bounds)
+    /// can win the plain lookup (it's a legitimate vendor RPM anchor
+    /// for the feeds calculator), but the chipload-ENVELOPE lookup
+    /// must skip it and return the best chipload-bearing row instead
+    /// of forcing the gate to `Unmodeled(NoVendorData)`. Replay case:
+    /// 9.525 mm 3F flat-end / plywood-hardwood / adaptive roughing —
+    /// plain winner is `whiteside-ru4000h-...-rpm` (chipload 0.0).
+    #[test]
+    fn chip_envelope_lookup_skips_rpm_only_rows() {
+        let lut = embedded_lut();
+        let query = LookupQuery {
+            tool_family: ToolFamily::FlatEnd,
+            tool_subfamily: None,
+            diameter_mm: 9.525,
+            flute_count: 3,
+            material_family: MaterialFamily::PlywoodHardwood,
+            hardness_kind: Some(HardnessKind::Janka),
+            hardness_value: Some(1000.0),
+            operation_family: LutOperationFamily::Adaptive,
+            pass_role: LutPassRole::Roughing,
+        };
+        let plain = lookup_best(&lut, &query).expect("plain lookup matches");
+        assert_eq!(
+            plain.observation_id, "whiteside-ru4000h-roughing-up-spiral-3f-plywood-rpm",
+            "fixture drift: the RPM-only row no longer wins the plain lookup — \
+             pick a query where it does, or this test loses its teeth"
+        );
+        assert!(plain.chip_load_mm <= 0.0, "RPM-only row has no chipload");
+
+        let env = find_best_chip_envelope_row(&lut, &query, &crate::feeds::ToolGeometryHint::Flat)
+            .expect("a chipload-bearing row exists underneath");
+        assert!(
+            env.chip_load_min_mm.is_some() || env.chip_load_max_mm.is_some(),
+            "envelope lookup must return a chipload-bearing row, got {}",
+            env.observation_id
+        );
+        assert!(env.chip_load_mm > 0.0);
+    }
+
+    /// F3.2 rule 8 — equal-score ties break on observation_id, not on
+    /// insertion order: the same two rows in either order pick the
+    /// same winner.
+    #[test]
+    fn equal_score_tie_breaks_on_observation_id_not_order() {
+        let row = |id: &str| {
+            let mut o = VendorLut::embedded()
+                .observations
+                .into_iter()
+                .find(|o| o.observation_id == "amana-flat-softwood-adaptive-6000-2f")
+                .expect("anchor row exists");
+            o.observation_id = id.to_owned();
+            o
+        };
+        let query = LookupQuery {
+            tool_family: ToolFamily::FlatEnd,
+            tool_subfamily: None,
+            diameter_mm: 6.0,
+            flute_count: 2,
+            material_family: MaterialFamily::Softwood,
+            hardness_kind: Some(HardnessKind::Janka),
+            hardness_value: Some(600.0),
+            operation_family: LutOperationFamily::Adaptive,
+            pass_role: LutPassRole::Roughing,
+        };
+        let forward = VendorLut {
+            observations: vec![row("tie-aaa"), row("tie-bbb")],
+        };
+        let reversed = VendorLut {
+            observations: vec![row("tie-bbb"), row("tie-aaa")],
+        };
+        let a = lookup_best(&forward, &query).expect("match");
+        let b = lookup_best(&reversed, &query).expect("match");
+        assert_eq!(a.observation_id, "tie-aaa");
+        assert_eq!(b.observation_id, "tie-aaa");
     }
 
     #[test]

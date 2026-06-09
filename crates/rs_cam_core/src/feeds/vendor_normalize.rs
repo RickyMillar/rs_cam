@@ -5,13 +5,12 @@ use super::vendor_lut::{HardnessKind, LutOperationFamily, LutPassRole, MaterialF
 use super::{FeedsInput, OperationFamily, PassRole};
 use crate::material::{Material, PlasticHardness};
 
-/// Convert a FeedsInput to a LookupQuery for vendor LUT lookup.
-pub fn to_lookup_query(input: &FeedsInput) -> LookupQuery {
-    let tool_family = input.tool_geometry.cutter_kind().lut_family();
-
-    let (material_family, hardness_kind, hardness_value) = material_to_lut(input.material);
-
-    let operation_family = match input.operation {
+/// Canonical `feeds::OperationFamily` → `LutOperationFamily` mapping.
+/// F3.2: extracted from `to_lookup_query` so the loader's reachability
+/// rule and gate-side query builders share one mapping instead of
+/// re-deriving it inline (defect class C5).
+pub fn op_family_to_lut(family: OperationFamily) -> LutOperationFamily {
+    match family {
         OperationFamily::Adaptive => LutOperationFamily::Adaptive,
         OperationFamily::Pocket => LutOperationFamily::Pocket,
         OperationFamily::Contour => LutOperationFamily::Contour,
@@ -20,7 +19,16 @@ pub fn to_lookup_query(input: &FeedsInput) -> LookupQuery {
         OperationFamily::Trace => LutOperationFamily::Trace,
         OperationFamily::Face => LutOperationFamily::Face,
         OperationFamily::Drill => LutOperationFamily::Drill,
-    };
+    }
+}
+
+/// Convert a FeedsInput to a LookupQuery for vendor LUT lookup.
+pub fn to_lookup_query(input: &FeedsInput) -> LookupQuery {
+    let tool_family = input.tool_geometry.cutter_kind().lut_family();
+
+    let (material_family, hardness_kind, hardness_value) = material_to_lut(input.material);
+
+    let operation_family = op_family_to_lut(input.operation);
 
     let pass_role = match input.pass_role {
         PassRole::Roughing => LutPassRole::Roughing,

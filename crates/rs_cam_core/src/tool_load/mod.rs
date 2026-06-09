@@ -199,8 +199,7 @@ pub fn chipload_envelopes_for_session(
     session: &crate::session::ProjectSession,
     sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
 ) -> std::collections::HashMap<usize, std::ops::Range<f64>> {
-    use crate::feeds::vendor_lookup::{LookupCriteria, enumerate_matching_rows};
-    use crate::feeds::vendor_normalize::material_to_lut;
+    use crate::feeds::vendor_normalize::op_family_to_lut;
     use crate::tool::MillingCutter;
 
     let mut out = std::collections::HashMap::new();
@@ -208,7 +207,6 @@ pub fn chipload_envelopes_for_session(
     if matches!(material, Material::Custom { .. }) {
         return out;
     }
-    let (material_family, hardness_kind, hardness_value) = material_to_lut(material);
 
     for tc in session.toolpath_configs() {
         if !tc.enabled {
@@ -219,65 +217,52 @@ pub fn chipload_envelopes_for_session(
             continue;
         };
         let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
-        let geometry_hint = tool_def.to_geometry_hint();
-        let tool_family = geometry_hint.cutter_kind().lut_family();
         let spec = tc.operation.spec();
-        let lut_op_family = match spec.feeds_family {
-            crate::feeds::OperationFamily::Adaptive => LutOperationFamily::Adaptive,
-            crate::feeds::OperationFamily::Pocket => LutOperationFamily::Pocket,
-            crate::feeds::OperationFamily::Contour => LutOperationFamily::Contour,
-            crate::feeds::OperationFamily::Parallel => LutOperationFamily::Parallel,
-            crate::feeds::OperationFamily::Scallop => LutOperationFamily::Scallop,
-            crate::feeds::OperationFamily::Trace => LutOperationFamily::Trace,
-            crate::feeds::OperationFamily::Face => LutOperationFamily::Face,
-            crate::feeds::OperationFamily::Drill => LutOperationFamily::Drill,
-        };
+        let lut_op_family = op_family_to_lut(spec.feeds_family);
         let lut_pass_role = match spec.feeds_pass_role {
             crate::feeds::PassRole::Roughing => LutPassRole::Roughing,
             crate::feeds::PassRole::SemiFinish => LutPassRole::SemiFinish,
             crate::feeds::PassRole::Finish => LutPassRole::Finish,
         };
-        let Some((operation_family, pass_role)) = chipload::routed_lookup_family(
-            tc.operation.op_type(),
-            tool_family,
-            lut_op_family,
-            lut_pass_role,
-        ) else {
-            continue;
-        };
-        // Use sim_trace's per-sample axial DOC if available — same
-        // input the gate's chipload evaluator uses. Falls back to 0.0
-        // when no trace.
+        // Peak axial DOC over the same sample population the gate
+        // measures: steady-state only. F3.4 — pre-fix this folded over
+        // every cutting sample, so a phantom transit reading (the F2
+        // class) inflated the engaged-diameter lookup and the viewport
+        // colors could disagree with the export verdict.
         let axial_doc = sim_trace
             .map(|t| {
                 t.samples
                     .iter()
-                    .filter(|s| s.toolpath_id == tc.id && s.is_cutting)
+                    .filter(|s| {
+                        s.toolpath_id == tc.id
+                            && s.is_cutting
+                            && locality::is_steady_state_for_gate(s, None)
+                    })
                     .map(|s| s.axial_doc_mm.max(0.0))
                     .fold(0.0_f64, f64::max)
             })
             .unwrap_or(0.0);
-        let criteria = LookupCriteria {
-            tool_family,
-            tool_subfamily: None,
-            diameter_mm: tool_def.lookup_diameter_at(axial_doc),
-            flute_count: tool_def.flute_count,
-            material_family,
-            hardness_kind: Some(hardness_kind),
-            hardness_value: Some(hardness_value),
-            operation_family,
-            pass_role,
-        };
-        let lut = chipload::embedded_lut();
-        let Some(matched) = enumerate_matching_rows(lut, &criteria).into_iter().next() else {
+        // F3.4 — same canonical resolver as the gate / optimizer.
+        let Some(matched) = chipload::matched_chip_envelope(
+            &tool_def,
+            material,
+            tc.operation.op_type(),
+            lut_op_family,
+            lut_pass_role,
+            tool_def.lookup_diameter_at(axial_doc),
+        ) else {
             continue;
         };
-        // Keep envelope rows where both bounds exist and are sane.
+        // Keep envelope rows where both bounds exist and are sane,
+        // DOC-derated exactly like the gate's trip bounds so the
+        // operator-facing colors agree with the export verdict.
+        let lookup_diameter = tool_def.lookup_diameter_at(axial_doc).max(1e-9);
+        let doc_scale = crate::feeds::geometry::doc_derating_scale(axial_doc / lookup_diameter);
         if let (Some(lo), Some(hi)) = (matched.chip_load_min_mm, matched.chip_load_max_mm)
             && lo > 0.0
             && hi >= lo
         {
-            out.insert(tc.id, lo..hi);
+            out.insert(tc.id, (lo * doc_scale)..(hi * doc_scale));
         }
     }
     out

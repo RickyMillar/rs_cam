@@ -190,7 +190,10 @@ fn chipload_supersedes() -> Vec<DiagnosticId> {
 fn chipload_confidence(src: &ChipBoundsSource) -> Confidence {
     match src {
         ChipBoundsSource::VendorLut => Confidence::Verified,
-        ChipBoundsSource::VendorLutExtrapolated => Confidence::Approximate,
+        // F3.3 weak-provenance sources — same demotion as extrapolated.
+        ChipBoundsSource::VendorLutExtrapolated
+        | ChipBoundsSource::VendorLutPointPreset
+        | ChipBoundsSource::VendorLutMissingAe => Confidence::Approximate,
     }
 }
 
