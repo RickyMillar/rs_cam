@@ -271,6 +271,35 @@ impl AnnotatedToolpath {
         out
     }
 
+    /// F2 (defect class C3) — transit bitmap rebuilt from per-move
+    /// [`crate::toolpath::MoveIntent`] tags instead of spans.
+    ///
+    /// Intents travel WITH their moves through reordering transforms
+    /// (TSP), so this stays correct even when `spans_valid == false`
+    /// and [`Self::transit_moves_bitmap`] would read fragmented span
+    /// ranges. Used as the metrics-stamping fallback for invalidated
+    /// spans. Coverage caveat: dressup-inserted moves
+    /// (`DressupArtifact` spans) usually carry `Unknown` intent and
+    /// are NOT marked transit by this fallback.
+    pub fn transit_moves_bitmap_from_intents(&self) -> Vec<bool> {
+        use crate::toolpath::MoveIntent as I;
+        self.toolpath
+            .moves
+            .iter()
+            .map(|mv| {
+                matches!(
+                    mv.intent,
+                    I::Linking
+                        | I::EntryPlunge
+                        | I::EntryHelix
+                        | I::EntryRamp
+                        | I::LeadIn
+                        | I::LeadOut
+                )
+            })
+            .collect()
+    }
+
     /// Precompute [`Self::span_path_at`] for every move index in the toolpath.
     /// Cheaper than calling `span_path_at` per move when stamping ~100K
     /// simulation samples.
@@ -474,6 +503,45 @@ mod tests {
     }
 
     // ── Span basics ────────────────────────────────────────────────────
+
+    /// F2.2 — the intent-derived transit bitmap reads per-move
+    /// `MoveIntent` tags, not spans, so it stays correct when
+    /// `spans_valid == false` (TSP split). Transit intents (Linking /
+    /// Entry* / LeadIn / LeadOut) mark true; cuts, retracts, drilling,
+    /// and Unknown mark false.
+    #[test]
+    fn transit_bitmap_from_intents_ignores_spans() {
+        use crate::toolpath::MoveIntent as I;
+
+        let mut tp = Toolpath::new();
+        let p = P3::new(0.0, 0.0, 0.0);
+        let intents = [
+            I::EntryHelix,
+            I::ClearingCut,
+            I::Linking,
+            I::FinishingCut,
+            I::LeadIn,
+            I::LeadOut,
+            I::Retract,
+            I::Drilling,
+            I::Unknown,
+        ];
+        for intent in intents {
+            tp.feed_to_with_intent(p, 1000.0, intent);
+        }
+        // Deliberately corrupted span vector + invalid flag — the
+        // intent bitmap must not consult either.
+        let mut at = AnnotatedToolpath::with_spans(
+            tp,
+            vec![Span::new(0, 9, SpanKind::Entry).with_label("bogus")],
+        );
+        at.spans_valid = false;
+
+        assert_eq!(
+            at.transit_moves_bitmap_from_intents(),
+            vec![true, false, true, false, true, true, false, false, false],
+        );
+    }
 
     #[test]
     fn span_new_has_default_label_and_no_payload() {

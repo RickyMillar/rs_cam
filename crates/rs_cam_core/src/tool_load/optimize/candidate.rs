@@ -355,9 +355,12 @@ pub(crate) fn evaluate_candidate(
     // toolpath at index `toolpath_index`, so the cached compute result's
     // `annotated.spans` are fresh. None when generation hasn't produced
     // a result yet (callers downstream degrade to engagement-only
-    // locality labels).
+    // locality labels). F2.2: also None when a transform invalidated
+    // the spans (TSP split) — corrupted ancestry must not stamp gate
+    // verdicts.
     let spans: Option<&[crate::toolpath_spans::Span]> = session_ref
         .get_result(toolpath_index)
+        .filter(|r| r.annotated().spans_valid)
         .map(|r| r.annotated().spans.as_slice());
     let drill_op = session_ref
         .get_result(toolpath_index)

@@ -37,26 +37,33 @@ pub enum OperationError {
 
 pub type GeneratedToolpath = AnnotatedToolpath;
 
+/// F2 (defect class C3): every generation funnel appends the
+/// [`crate::toolpath::MoveIntent`]-derived transit spans
+/// ([`crate::compute::spans::spans_from_move_intents`]) after the
+/// family's structural spans, so all 22 op families get gate-visible
+/// Entry / LinkBridge / LeadOut ancestry in one pass — not just the
+/// families whose generator explicitly tags transients at emission.
 fn generated_with_spans(
     toolpath: Toolpath,
-    spans: Vec<crate::toolpath_spans::Span>,
+    mut spans: Vec<crate::toolpath_spans::Span>,
 ) -> GeneratedToolpath {
+    spans.extend(crate::compute::spans::spans_from_move_intents(&toolpath));
     AnnotatedToolpath::with_spans(toolpath, spans)
 }
 
 fn generated_with_depth_run_spans(toolpath: Toolpath, levels: &[f64]) -> GeneratedToolpath {
     let spans = crate::compute::spans::spans_from_depth_runs(&toolpath, levels);
-    AnnotatedToolpath::with_spans(toolpath, spans)
+    generated_with_spans(toolpath, spans)
 }
 
 fn generated_with_cut_run_spans(toolpath: Toolpath, label_prefix: &str) -> GeneratedToolpath {
     let spans = crate::compute::spans::spans_from_cutting_runs(&toolpath, label_prefix);
-    AnnotatedToolpath::with_spans(toolpath, spans)
+    generated_with_spans(toolpath, spans)
 }
 
 fn generated_with_drill_spans(toolpath: Toolpath) -> GeneratedToolpath {
     let spans = crate::compute::spans::spans_from_drill_holes(&toolpath);
-    AnnotatedToolpath::with_spans(toolpath, spans)
+    generated_with_spans(toolpath, spans)
 }
 
 /// Build the [`crate::drill_op::DrillOp`] for a drilling-cycle operation,
@@ -2797,6 +2804,35 @@ mod tests {
                         .map(|span| span.label.as_ref())
                         .collect::<Vec<_>>()
                 );
+            }
+
+            // F2.1 — every move carrying a transit intent must sit
+            // inside a span of the mapped kind (Linking → LinkBridge,
+            // Entry*/LeadIn → Entry, LeadOut → LeadOut), for every
+            // family and funnel. This is the per-op guarantee that
+            // gate-side ancestry filters see ALL transients, not just
+            // generator-tagged ones.
+            for (move_idx, mv) in result.toolpath.moves.iter().enumerate() {
+                use crate::toolpath::MoveIntent as I;
+                let expected_kind = match mv.intent {
+                    I::Linking => Some(SpanKind::LinkBridge),
+                    I::EntryPlunge | I::EntryHelix | I::EntryRamp | I::LeadIn => {
+                        Some(SpanKind::Entry)
+                    }
+                    I::LeadOut => Some(SpanKind::LeadOut),
+                    _ => None,
+                };
+                if let Some(kind) = expected_kind {
+                    assert!(
+                        result
+                            .spans
+                            .iter()
+                            .any(|span| span.kind == kind && span.contains(move_idx)),
+                        "{}: move {move_idx} has intent {:?} but no covering {kind:?} span",
+                        case.name,
+                        mv.intent,
+                    );
+                }
             }
         }
     }

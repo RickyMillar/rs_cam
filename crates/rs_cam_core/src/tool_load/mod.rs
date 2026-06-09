@@ -164,7 +164,7 @@ impl RefuseReason {
                 "stepover varies wildly across the toolpath — no single feed/RPM fixes both extremes; reduce stepover variation"
             }
             Self::DeflectionSetupLocked => {
-                "tool stickout / diameter ratio (L/D) exceeds 6 — feed/RPM/DOC/stepover can't fix this; shorten the stickout or use a stiffer tool"
+                "predicted tip deflection exceeds the 200 µm limit even at the lightest reachable cut — feed/RPM/DOC/stepover can't fix this; shorten the stickout or use a stiffer tool"
             }
             Self::NoFeasibleRow => {
                 "every compatible LUT row falls outside the machine's feed or RPM range"

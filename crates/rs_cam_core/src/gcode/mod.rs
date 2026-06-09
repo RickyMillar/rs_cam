@@ -396,8 +396,12 @@ pub fn project_load_report(
         // Spans live on the AnnotatedToolpath in the cached compute
         // result; absent if the toolpath hasn't been generated yet —
         // classifiers fall back to engagement-only labels in that case.
+        // F2.2: spans invalidated by a transform (TSP split) are
+        // corrupted ancestry — pass None so the gates fall back to the
+        // per-sample `in_transit_span` flag instead of misclassifying.
         let spans: Option<&[crate::toolpath_spans::Span]> = project
             .get_result(idx)
+            .filter(|r| r.annotated().spans_valid)
             .map(|r| r.annotated().spans.as_slice());
         let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
         let spec = tc.operation.spec();
