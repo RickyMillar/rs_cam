@@ -112,33 +112,19 @@ pub(crate) fn find_matched_lut_row(
     ctx: &EvaluationContext,
     commanded_doc_mm: Option<f64>,
 ) -> Option<MatchedRow> {
-    let tool_family = tool.to_geometry_hint().cutter_kind().lut_family();
-    let (lut_op_family, lut_pass_role) = crate::tool_load::chipload::routed_lookup_family(
+    // F3.4 — delegate to the canonical chipload-envelope resolver.
+    // Pre-F3.4 this took the first of `enumerate_matching_rows` (no
+    // V-bit angle gate, RPM-only rows eligible), so the optimizer
+    // could retarget against a different envelope than the gate's
+    // verdict.
+    crate::tool_load::chipload::matched_chip_envelope(
+        tool,
+        material,
         ctx.operation_kind,
-        tool_family,
         ctx.lut_op_family,
         ctx.lut_pass_role,
-    )?;
-    if matches!(material, crate::material::Material::Custom { .. }) {
-        return None;
-    }
-    let (material_family, hardness_kind, hardness_value) =
-        crate::feeds::vendor_normalize::material_to_lut(material);
-    let criteria = crate::feeds::vendor_lookup::LookupCriteria {
-        tool_family,
-        tool_subfamily: None,
-        diameter_mm: diameter_for_lut_lookup(tool, commanded_doc_mm),
-        flute_count: tool.flute_count,
-        material_family,
-        hardness_kind: Some(hardness_kind),
-        hardness_value: Some(hardness_value),
-        operation_family: lut_op_family,
-        pass_role: lut_pass_role,
-    };
-    let lut = crate::tool_load::chipload::embedded_lut();
-    crate::feeds::vendor_lookup::enumerate_matching_rows(lut, &criteria)
-        .into_iter()
-        .next()
+        diameter_for_lut_lookup(tool, commanded_doc_mm),
+    )
 }
 
 /// Map the operation's `feeds_family` (used by the F&S calculator) to
