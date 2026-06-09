@@ -2296,6 +2296,54 @@ mod tests {
         ));
     }
 
+    /// F1 (2026-06-10 defect-class cleanup): the drill-family suggested
+    /// feed survives the apply funnel. Pre-fix, `apply_feeds_subset`
+    /// wrote feed then plunge, and the drill configs' aliased setters
+    /// ("feed IS plunge") let the milling plunge baseline win —
+    /// suggested ~2400 → stored ~595 on every funnel (GUI/MCP add,
+    /// Apply-all, CLI --apply-suggest). Post-fix `calculate()` aliases
+    /// plunge to the envelope-clamped drill feed, so write order is
+    /// irrelevant and the stored value equals the suggestion.
+    #[test]
+    fn drill_apply_round_trips_suggested_feed() {
+        let tool = tool(6.0);
+        let machine = MachineProfile::default();
+        let material = Material::default();
+        for op_type in [OperationType::Drill, OperationType::AlignmentPinDrill] {
+            let s = suggest_params(SuggestParamsInput {
+                op_type,
+                tool: &tool,
+                machine: &machine,
+                material: &material,
+                workholding: WorkholdingRigidity::Medium,
+                lut: &EMBEDDED_LUT,
+                stock_ctx: &stock_ctx(),
+                spindle_strategy: crate::feeds::SpindleStrategy::default(),
+                context: SuggestContext::default(),
+            })
+            .expect("drill + flat is not a refused combination");
+            let stored = s.operation.feed_rate();
+            let suggested = s.feeds_result.feed_rate_mm_min;
+            assert_eq!(
+                s.feeds_result.plunge_rate_mm_min, suggested,
+                "{op_type:?}: drill FeedsResult must be self-consistent (plunge IS feed)"
+            );
+            assert!(
+                (stored - suggested).abs() <= 1.0,
+                "{op_type:?}: stored feed {stored} must match suggested {suggested} \
+                 (pre-F1 the plunge baseline clobbered it)"
+            );
+            // And the stored feed must sit inside the drill plunge-feed
+            // gate band — the calculator and the gate share one envelope.
+            let (lo, hi) = material.drill_plunge_feed_envelope_per_mm();
+            let ratio = stored / 6.0;
+            assert!(
+                ratio >= lo - 1e-9 && ratio <= hi + 1e-9,
+                "{op_type:?}: stored feed/Ø {ratio:.1} outside envelope {lo}-{hi}"
+            );
+        }
+    }
+
     // ── W3.1 SPEED / CUT split ──────────────────────────────────────────
     //
     // A speed-only apply must change feed/plunge/RPM exactly as the combined

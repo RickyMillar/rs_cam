@@ -88,9 +88,14 @@ pub struct DrillToolpathSummary {
     pub dwell_time_s: f64,
     /// `top_z - bottom_z` for the deepest hole in the toolpath (mm).
     pub deepest_hole_mm: f64,
-    /// `deepest_hole_mm / tool_diameter`. The primary input to the
-    /// chip-welding gate.
+    /// `deepest_hole_mm / tool_diameter` — total-hole ratio, kept for
+    /// cycle-time / geometry reads.
     pub max_depth_to_diameter: f64,
+    /// Evacuation-credited depth-to-diameter the chip-welding risk was
+    /// classified from — see [`effective_chip_welding_dtd`]. Equals
+    /// `max_depth_to_diameter` for `Simple` / `Dwell`, the deepest
+    /// single peck's ratio for `Peck`, half the total for `ChipBreak`.
+    pub chip_welding_dtd: f64,
     /// Material-aware classification — see [`ChipWeldingRisk`].
     pub chip_welding_risk: ChipWeldingRisk,
     /// True when the cycle's peck depth (or absence of pecking, for
@@ -215,7 +220,6 @@ pub fn build_drill_toolpath_summary(
         }
     }
     let max_dtd = deepest / diameter;
-    let chip_welding_risk = classify_chip_welding(max_dtd, &drill_op.material);
 
     let mut feed_time_s = 0.0;
     let mut dwell_time_s = 0.0;
@@ -240,6 +244,9 @@ pub fn build_drill_toolpath_summary(
     };
     let peck_pattern_adequate =
         per_peck_max_dtd <= per_peck_max_depth_to_diameter(&drill_op.material);
+    let effective_welding_dtd =
+        effective_chip_welding_dtd(max_dtd, per_peck_max_dtd, drill_op.cycle);
+    let chip_welding_risk = classify_chip_welding(effective_welding_dtd, &drill_op.material);
 
     let _ = ToolProfile::Flat; // reference to silence unused-import worry in cone-only refactors
 
@@ -251,13 +258,39 @@ pub fn build_drill_toolpath_summary(
         dwell_time_s,
         deepest_hole_mm: deepest,
         max_depth_to_diameter: max_dtd,
+        chip_welding_dtd: effective_welding_dtd,
         chip_welding_risk,
         peck_pattern_adequate,
         avg_chip_evacuation_score,
     }
 }
 
-/// Classify the deepest-hole depth-to-diameter against material thresholds.
+/// Effective depth-to-diameter for chip-welding classification, with
+/// the drill cycle's evacuation credited (F1, 2026-06-10 defect-class
+/// cleanup — pre-fix the classifier keyed on total-hole D/d even for
+/// peck cycles, so a pecking drill read Elevated while its own remedy
+/// text said "switch to a peck cycle").
+///
+/// Credit follows the same convention as [`chip_evacuation_score`]:
+/// - `Peck`: full retract clears the flutes between pecks, so the
+///   deepest *single peck* governs chip packing, not the total hole.
+/// - `ChipBreak`: chips broken but not evacuated — half credit on the
+///   total depth (matches the 0.5 effective-depth factor in
+///   `chip_evacuation_score`).
+/// - `Simple` / `Dwell`: chips stay in the flutes — total-hole D/d,
+///   unchanged.
+pub fn effective_chip_welding_dtd(total_dtd: f64, per_peck_max_dtd: f64, cycle: DrillCycle) -> f64 {
+    match cycle {
+        DrillCycle::Simple | DrillCycle::Dwell(_) => total_dtd,
+        DrillCycle::ChipBreak(_, _) => total_dtd * 0.5,
+        DrillCycle::Peck(_) => per_peck_max_dtd,
+    }
+}
+
+/// Classify an (evacuation-credited) depth-to-diameter against material
+/// thresholds. Bands are half-open: Low `[0, 0.75t)`, Elevated
+/// `[0.75t, t)`, High `[t, ∞)` — an observation at exactly 0.75× the
+/// threshold reads Elevated.
 pub fn classify_chip_welding(max_dtd: f64, material: &Material) -> ChipWeldingRisk {
     let t = chip_welding_threshold(material);
     if max_dtd < t * 0.75 {
@@ -342,6 +375,46 @@ mod tests {
         assert!((samples[1].descent_mm - 5.0).abs() < 1e-9);
         assert!((samples[2].descent_mm - 2.0).abs() < 1e-9);
         assert!((samples[2].cumulative_depth_mm - 12.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn effective_chip_welding_dtd_credits_cycle() {
+        // Simple / Dwell: total-hole ratio, unchanged.
+        assert_eq!(
+            effective_chip_welding_dtd(6.0, 0.5, DrillCycle::Simple),
+            6.0
+        );
+        assert_eq!(
+            effective_chip_welding_dtd(6.0, 0.5, DrillCycle::Dwell(0.5)),
+            6.0
+        );
+        // ChipBreak: chips broken but not evacuated — half credit,
+        // matching `chip_evacuation_score`'s 0.5 effective-depth factor.
+        assert_eq!(
+            effective_chip_welding_dtd(6.0, 0.5, DrillCycle::ChipBreak(2.0, 0.2)),
+            3.0
+        );
+        // Peck: full retract clears the flutes — deepest single peck governs.
+        assert_eq!(
+            effective_chip_welding_dtd(6.0, 0.5, DrillCycle::Peck(2.0)),
+            0.5
+        );
+    }
+
+    #[test]
+    fn summary_chip_welding_uses_evacuation_credited_dtd() {
+        // Ø4 × 40 mm: total D/d = 10 (Critical for softwood threshold 8
+        // when Simple), but Peck(2) credits to per-peck 0.5 → Low.
+        let op = op_with(DrillCycle::Peck(2.0), 4.0, 40.0, Material::default());
+        let samples = emit_drill_samples(0, &op);
+        let s = build_drill_toolpath_summary(0, &op, &samples);
+        assert_eq!(s.max_depth_to_diameter, 10.0, "total ratio preserved");
+        assert!(
+            (s.chip_welding_dtd - 0.5).abs() < 1e-9,
+            "credited ratio = deepest peck / d, got {}",
+            s.chip_welding_dtd
+        );
+        assert_eq!(s.chip_welding_risk, ChipWeldingRisk::Low);
     }
 
     #[test]

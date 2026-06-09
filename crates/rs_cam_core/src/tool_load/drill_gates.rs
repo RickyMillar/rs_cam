@@ -26,14 +26,31 @@ pub enum DrillGateOutcome {
         /// [`DrillGatesVerdict`]).
         observed: f64,
         /// Material-aware threshold the observation was compared against.
+        /// For two-sided gates (plunge feed) this is the *nearer*
+        /// envelope bound — consult `envelope_lo` / `envelope_hi` for
+        /// the actual band; pre-F1 this overload made an at-the-floor
+        /// reading (`threshold == observed == envelope_lo`) look like a
+        /// healthy headroom number.
         threshold: f64,
+        /// Full envelope for two-sided gates; `None` for one-sided
+        /// gates (chip welding, peck adequacy).
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        envelope_lo: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        envelope_hi: Option<f64>,
     },
     Exceeds {
         observed: f64,
+        /// The violated bound.
         threshold: f64,
         /// Coarse severity flag for UI styling. `Elevated` is a warning;
         /// `Critical` is a hard exceedance the operator should act on.
         severity: DrillGateSeverity,
+        /// Full envelope for two-sided gates; `None` for one-sided gates.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        envelope_lo: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        envelope_hi: Option<f64>,
     },
 }
 
@@ -87,21 +104,30 @@ pub fn evaluate(drill_op: &DrillOp, summary: &DrillToolpathSummary) -> DrillGate
 
 fn evaluate_chip_welding(summary: &DrillToolpathSummary, material: &Material) -> DrillGateOutcome {
     let threshold = chip_welding_threshold(material);
-    let observed = summary.max_depth_to_diameter;
+    // Evacuation-credited ratio (F1): for peck cycles the deepest single
+    // peck governs chip packing, not the total hole — `observed` must be
+    // the value the risk was actually classified from.
+    let observed = summary.chip_welding_dtd;
     match summary.chip_welding_risk {
         ChipWeldingRisk::Low => DrillGateOutcome::Within {
             observed,
             threshold,
+            envelope_lo: None,
+            envelope_hi: None,
         },
         ChipWeldingRisk::Elevated => DrillGateOutcome::Exceeds {
             observed,
             threshold,
             severity: DrillGateSeverity::Elevated,
+            envelope_lo: None,
+            envelope_hi: None,
         },
         ChipWeldingRisk::High => DrillGateOutcome::Exceeds {
             observed,
             threshold,
             severity: DrillGateSeverity::Critical,
+            envelope_lo: None,
+            envelope_hi: None,
         },
     }
 }
@@ -126,35 +152,59 @@ fn evaluate_peck_adequacy(drill_op: &DrillOp, summary: &DrillToolpathSummary) ->
         DrillGateOutcome::Within {
             observed: peak_peck_dtd,
             threshold,
+            envelope_lo: None,
+            envelope_hi: None,
         }
     } else {
         DrillGateOutcome::Exceeds {
             observed: peak_peck_dtd,
             threshold,
             severity: DrillGateSeverity::Critical,
+            envelope_lo: None,
+            envelope_hi: None,
         }
     }
 }
 
 fn evaluate_plunge_feed(drill_op: &DrillOp) -> DrillGateOutcome {
-    let diameter = drill_op.tool_diameter_mm.max(f64::MIN_POSITIVE);
-    let observed = drill_op.feed_rate_mm_min / diameter;
-    let (lo, hi) = plunge_feed_envelope(&drill_op.material);
+    classify_plunge_feed(
+        drill_op.feed_rate_mm_min,
+        drill_op.tool_diameter_mm,
+        &drill_op.material,
+    )
+}
+
+/// Classify a plunge feed against the material envelope. Shared by the
+/// gate and `narrate` so the comparison has exactly one implementation
+/// (F1 — pre-fix, narrate re-derived the band check and could drift).
+pub fn classify_plunge_feed(
+    feed_rate_mm_min: f64,
+    diameter_mm: f64,
+    material: &Material,
+) -> DrillGateOutcome {
+    let diameter = diameter_mm.max(f64::MIN_POSITIVE);
+    let observed = feed_rate_mm_min / diameter;
+    let (lo, hi) = plunge_feed_envelope(material);
     if observed < lo {
         DrillGateOutcome::Exceeds {
             observed,
             threshold: lo,
             severity: DrillGateSeverity::Elevated,
+            envelope_lo: Some(lo),
+            envelope_hi: Some(hi),
         }
     } else if observed > hi {
         DrillGateOutcome::Exceeds {
             observed,
             threshold: hi,
             severity: DrillGateSeverity::Critical,
+            envelope_lo: Some(lo),
+            envelope_hi: Some(hi),
         }
     } else {
-        // Report the closer envelope bound as the "threshold" so the UI
-        // can show a single useful headroom number.
+        // `threshold` keeps the closer envelope bound for single-number
+        // headroom displays; the full band rides alongside so consumers
+        // can't mistake an at-the-floor reading for healthy headroom.
         let nearer = if (observed - lo).abs() < (hi - observed).abs() {
             lo
         } else {
@@ -163,6 +213,8 @@ fn evaluate_plunge_feed(drill_op: &DrillOp) -> DrillGateOutcome {
         DrillGateOutcome::Within {
             observed,
             threshold: nearer,
+            envelope_lo: Some(lo),
+            envelope_hi: Some(hi),
         }
     }
 }
@@ -176,6 +228,55 @@ impl DrillGateOutcome {
         match self {
             DrillGateOutcome::Within { observed, .. }
             | DrillGateOutcome::Exceeds { observed, .. } => *observed,
+        }
+    }
+
+    /// Adapt to the generic criterion summary so drill gates join
+    /// `ToolpathLoadVerdict::criteria()` — and with it export gating
+    /// (F1.7, 2026-06-10; pre-fix a Critical drill exceedance did not
+    /// block g-code export while an equivalent milling trip did).
+    ///
+    /// Severity mapping: `Exceeds(Critical)` → `LoadState::Exceeds`
+    /// (gates export); `Exceeds(Elevated)` → `LoadState::Within`
+    /// (warning band — surfaced by the drill badges and narrate, not
+    /// an export blocker). Drill outcomes are always modeled, so
+    /// `Unmodeled` never appears here.
+    pub fn as_criterion_status(
+        &self,
+        kind: crate::tool_load::verdict::CriterionKind,
+    ) -> crate::tool_load::verdict::CriterionStatus<'_> {
+        use crate::tool_load::verdict::{
+            CriterionKind, CriterionStatus, ExceededCriterion, LoadState,
+        };
+        let (state, exceeded) = match self {
+            DrillGateOutcome::Within { .. }
+            | DrillGateOutcome::Exceeds {
+                severity: DrillGateSeverity::Elevated,
+                ..
+            } => (LoadState::Within, None),
+            DrillGateOutcome::Exceeds {
+                severity: DrillGateSeverity::Critical,
+                ..
+            } => (
+                LoadState::Exceeds,
+                Some(match kind {
+                    CriterionKind::DrillChipWelding => ExceededCriterion::drill_chip_welding(),
+                    CriterionKind::DrillPeckAdequacy => ExceededCriterion::drill_peck_adequacy(),
+                    // The plunge-feed arm — and the fallback for any
+                    // milling kind passed in error.
+                    _ => ExceededCriterion::drill_plunge_feed(),
+                }),
+            ),
+        };
+        CriterionStatus {
+            kind,
+            state,
+            confidence: None,
+            unmodeled_reason: None,
+            sample_range: None,
+            display_peak: Some(self.observed()),
+            unit: kind.unit(),
+            exceeded,
         }
     }
 }
@@ -269,6 +370,69 @@ mod tests {
         // 7.33 > 6.0).
         let v = evaluate_one(&op(DrillCycle::Peck(22.0), 3.0, 25.0, 300.0));
         assert!(v.peck_adequacy.is_exceeded());
+    }
+
+    /// F1 (2026-06-10): pecking credits chip welding. The WANAKA pin
+    /// drill — Ø6, 27 mm deep, Peck(2), medium hardwood (threshold 6) —
+    /// read total D/d 4.5 = exactly 0.75× the threshold → Elevated,
+    /// while its own remedy text said "switch to a peck cycle" and the
+    /// cycle WAS Peck. Post-fix the deepest single peck governs for
+    /// peck cycles. Test material is the softwood default (threshold
+    /// 8), so the contrast hole is 40 mm: Simple reads D/d 6.67 →
+    /// Elevated, Peck(2) reads 0.33 → Within.
+    #[test]
+    fn pecked_deep_hole_credits_evacuation_in_chip_welding() {
+        let v = evaluate_one(&op(DrillCycle::Peck(2.0), 6.0, 40.0, 300.0));
+        assert!(
+            !v.chip_welding.is_exceeded(),
+            "pecked hole must credit evacuation, got {:?}",
+            v.chip_welding
+        );
+        // The same hole drilled Simple keeps the total-depth reading.
+        let v_simple = evaluate_one(&op(DrillCycle::Simple, 6.0, 40.0, 300.0));
+        assert!(
+            v_simple.chip_welding.is_exceeded(),
+            "Simple cycle at 6.67 D/d (softwood threshold 8) must still warn"
+        );
+    }
+
+    /// F1: band boundary is half-open — exactly 0.75× the threshold
+    /// reads Elevated (`[0.75t, t)`), documented on
+    /// `classify_chip_welding`. Softwood threshold 8 → Ø4 × 24 mm = 6.0
+    /// = 0.75×8 exactly.
+    #[test]
+    fn chip_welding_band_edge_at_exactly_three_quarters_is_elevated() {
+        let v = evaluate_one(&op(DrillCycle::Simple, 4.0, 24.0, 300.0));
+        match v.chip_welding {
+            DrillGateOutcome::Exceeds { severity, .. } => {
+                assert_eq!(severity, DrillGateSeverity::Elevated);
+            }
+            other => panic!("expected elevated at exact band edge, got {other:?}"),
+        }
+    }
+
+    /// F1.7: drill gates participate in the criterion tier — a Critical
+    /// drill exceedance reads as `Exceeds` through
+    /// `ToolpathLoadVerdict::criteria()`-style consumption, an Elevated
+    /// one stays `Within` (warning band, not an export blocker).
+    #[test]
+    fn criterion_status_maps_critical_to_exceeds_and_elevated_to_within() {
+        use crate::tool_load::verdict::{CriterionKind, LoadState};
+        // Ø3 @ 1500 mm/min → 500 per mm Ø > 400 hi → Critical.
+        let critical = evaluate_one(&op(DrillCycle::Peck(1.0), 3.0, 6.0, 1500.0));
+        let status = critical
+            .plunge_feed
+            .as_criterion_status(CriterionKind::DrillPlungeFeed);
+        assert_eq!(status.state, LoadState::Exceeds);
+        assert!(status.exceeded.is_some());
+
+        // Ø6 @ 100 mm/min → 16.7 < 50 lo → Elevated (rubbing — warn only).
+        let elevated = evaluate_one(&op(DrillCycle::Peck(2.0), 6.0, 12.0, 100.0));
+        let status = elevated
+            .plunge_feed
+            .as_criterion_status(CriterionKind::DrillPlungeFeed);
+        assert_eq!(status.state, LoadState::Within);
+        assert!(status.exceeded.is_none());
     }
 
     #[test]

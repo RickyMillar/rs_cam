@@ -34,7 +34,7 @@ Cross-cutting (tracked but not a class of its own):
 
 ## Fix tracks
 
-### F1 — Drill feed clobber + floor-grazing defaults  — STATUS: in progress
+### F1 — Drill feed clobber + floor-grazing defaults  — STATUS: ✅ DONE 2026-06-10
 
 Confirmed behaviour: both WANAKA drill TPs run at exactly 50.0 feed/Ø — the SolidWood
 rubbing floor. Literature band for hardwood drills is 0.08–0.18 mm/tooth ≈ 213–427 feed/Ø
@@ -65,7 +65,32 @@ Sub-fixes:
 Validation: drill suggest feeds land in the literature band for the cells.toml drill cells;
 WANAKA pin drill + holes re-suggest off the floor.
 
-### F2 — adaptive3d phantom samples inflating deflection — STATUS: pending
+**Landed** (commits 648b8db, 089c209 on `defect-class/f1-drill-feed`):
+- Sub-fixes 1-6 as specified, plus **F1.7** (from A4): drill gates join
+  `ToolpathLoadVerdict::criteria()` — Critical drill exceedances block g-code export;
+  Elevated stays a warning band (mapping documented on
+  `DrillGateOutcome::as_criterion_status`). `milling_criteria()` split preserves the
+  not-applicable partition and the `any_unmodeled` drill special case.
+- Step 9c addition discovered during F1.6: when the envelope CEILING binds, RPM
+  follows the feed down (bounded by the drill band floor) so the shipped recipe
+  holds its commanded chipload instead of thinning toward rubbing (Ø3 oak: implied
+  0.043 @ 14k pre-fix → 0.075 @ 8k). Spindle speedup rolled back proportionally.
+- Lit-matrix: 7 drill cells × 2 critical final-feed invariants (envelope band +
+  rubbing floor); drill plunge/feed fraction expectation corrected to 1.0 (feed IS
+  plunge — the 0.40-0.70 milling band failed every drill cell as advisory noise).
+- `DrillToolpathSummary.chip_welding_dtd` added (evacuation-credited ratio the risk
+  classifies from); cut-trace schema v5.
+- Deferred to backlog from A2: `set_toolpath_param("plunge_rate")` provenance lie on
+  drill ops; CLI run/job raw defaults; SteepShallow z_step hint/setter asymmetry.
+
+### F2 — phantom/untagged samples polluting gates — STATUS: pending (REFRAMED by A3)
+
+A3 audit reframes sub-fix 1: do the `MoveIntent`→span bridge (one pass in
+`compute/spans.rs`, appended in the four `generated_with_*` helpers) which fixes all
+22 ops × all 3 gates, AND honor `spans_valid` at the 4 consumer sites that currently
+stamp TSP-corrupted ancestry (`compute/simulate.rs:471`, `gcode/mod.rs:399`,
+`optimize/mod.rs:171`, `optimize/candidate.rs:359`) — the TSP corruption is the likely
+actual mechanism behind the 622 µm sample. Original framing below kept for context.
 
 Confirmed behaviour: TP1 Back Rough peak sample carries ~9 mm axial engagement at slot arc
 (commanded DOC 3.0) → 622 µm verdict → preflight `DeflectionSetupLocked`. Honest reading
@@ -133,31 +158,144 @@ machine_kinematics.md guidance updated.
 
 ## Audit tracks (parallel agents, read-only)
 
-| Track | Scope | Status | Findings |
-|-------|-------|--------|----------|
-| A1 | All `data/vendor_lut/observations/*.json`: degenerate ranges, missing ae/hardness, provenance gaps, cross-check against published vendor values | running | — |
-| A2 | All 22 op configs: setter alias maps, `apply_feeds_subset` order dependencies, suggest→config round-trip integrity | running | — |
-| A3 | Per kinematics class: which emitted move kinds reach steady-state filters untagged; sweep param_sweep fixtures for peak-sample axial > 1.5× commanded DPP | running | — |
-| A4 | Dead-signal sweep (set-but-never-read fields in tool_load/feeds/optimize) + duplicated-evaluation inventory | running | — |
+| Track | Scope | Status |
+|-------|-------|--------|
+| A1 | All `data/vendor_lut/observations/*.json` | **done 2026-06-10** |
+| A2 | All 23 op configs: setter aliases, apply order, round-trips | **done 2026-06-10** |
+| A3 | Sample tagging vs gate steady-state filters, all 22 ops | **done 2026-06-10** |
+| A4 | Dead signals + duplicated evaluation in tool_load/feeds/optimize | **done 2026-06-10** |
 
 Findings get appended below as they come in, triaged into: fix-now (joins F-tracks),
 backlog, or working-as-intended.
 
-### A1 findings
+### A1 findings — vendor LUT data (252 rows / 20 files audited)
 
-(pending)
+Confirmed worse than the original instance. Triage:
 
-### A2 findings
+**BLOCKER (joins F3):**
+- `whiteside_fusion360.json` — ALL 13 rows `min==max` 0.1016 (Fusion360 generic
+  0.004"/tooth preset), grade-a/exact, no ae/hardness. Score-replay confirms
+  `whiteside-sc64` WINS tapered-ball/hardwood/parallel/finish (1813 vs 1705 for the
+  calibrated Amana row) returning Validated chipload ~15× the Amana-scaled value;
+  `whiteside-ud2102` (compression) wins Profile-on-plywood 4.5× hot. Disposition:
+  drop or demote to grade-c + `row_kind: fallback`.
+- **NEW blocker class — chipload-less rows that win and hard-refuse the gate**:
+  `whiteside_rpm_assorted.json` (4 RPM-only rows, `row_kind: exact`) — three win real
+  queries and force `Unmodeled(NoVendorData)` even though usable rows exist underneath
+  (60° V-bit hardwood trace; plywood adaptive 9.525 3F; hardwood adaptive 12.7 3F via
+  EMBEDDED_FILES iteration-order tie-break). RPM-only rows must not be selectable by
+  the chipload gate.
 
-(pending)
+**MAJOR:** 62/252 rows (25%) degenerate `min==max`; 194 lack ae; 176 lack hardness
+(worst: `amana_long_tail.json` 26 spektra single-points, `amana_compression.json`,
+`helical_aluminum.json`). `onsrud_ocr.json` (47 rows): INDUSTRIAL chiploads
+0.254–0.483 mm/tooth, no machine-class derate, no RPM — and they are the ONLY wood
+contour finish/semi-finish rows (every Waterline/SteepShallow flat-end wood query lands
+on them as Validated). `freud_solid_carbide.json` half-inch rows to 0.69 mm/tooth —
+suspect OCR derivation, re-verify. The 9 `facing_bit` rows are UNREACHABLE dead data
+(Face op declares `feeds_family: Pocket`). `lookup_best` tie-break depends on
+EMBEDDED_FILES order.
 
-### A3 findings
+**Coverage gaps forcing `Unmodeled(NoVendorData)`:** drill family (empty by design but
+the slot exists); **ball_nose × contour** (the canonical Waterline 3D combo!); flat_end
+× parallel; flat_end × trace (wood); bull_nose finishing; plastics scallop; aluminum
+parallel; fiberglass beyond pocket.
 
-(pending)
+**8 proposed loader validation rules** (degenerate-range rejection, chipload-required-
+for-exact-kind, grade-A provenance denylist for CAM presets, calibration completeness,
+per-diameter plausibility band, conflict detector, reachability check, deterministic
+tie-break) — implement with F3.2.
 
-### A4 findings
+### A2 findings — config write paths (23 op configs audited)
 
-(pending)
+**BLOCKER (= F1.1, numerically confirmed):** drill suggested feed 4000 → stored 595
+(plunge clobber) on ALL funnels: GUI add, MCP add, Apply-all, Apply-speeds, CLI
+--apply-suggest. UI shows 4000 while apply stores 595; provenance stamps "suggested" on
+what is actually the plunge baseline. The lit-matrix binds the calculator result, never
+the applied config — clobber invisible to the regression net (= F1.6).
+
+**MAJOR:** (= F1.2) calculator never clamped drill feed to the envelope — the
+un-clobbered 4000 exceeds 2400 (Ø6 wood hi); a naive clobber fix ships gate-failing
+configs → both fixed together in Step 9c. `set_toolpath_param("plunge_rate")` on drill
+ops rewrites feed through the alias but stamps only PlungeRate provenance (backlog).
+(= F1.3) pin-drill auto-create bypasses suggest.
+
+**MINOR:** SteepShallow `z_step` is a calculator input hint with NO write-back setter
+(suggested axial DOC can never land; self-referential hint loop); RadialFinish suggested
+WOC silently dropped (no-op trait setter); Pencil conditional-getter asymmetry; CLI
+run/job + legacy import create from magic defaults; DropCutter `set_scallop_height`
+mode-flip via optimizer axis; `TaperedBallPlungePreFix2` would alias-clobber a drill
+holding a tapered-ball tool; `apply_axis_patch_to_op` silently no-ops undeclared axes.
+
+**6 proposed invariant tests** (setter-independence matrix w/ alias allow-list,
+family-appropriate apply, hint/setter symmetry, apply-order commutation, no-bypass
+creation sentry, provenance honesty) — adopt #2/#5 with F1, rest with backlog.
+
+### A3 findings — sample tagging vs gate filters (22 ops audited)
+
+**Reframes F2.** Two BLOCKER mechanisms, both broader than adaptive3d:
+
+1. **`MoveIntent` is the missing bridge.** Every pollution site already carries correct
+   per-move intent (`Linking`, `EntryPlunge/Helix/Ramp`, `LeadIn/Out`) — but gates read
+   only `SpanKind` ancestry, and only adaptive3d tags any transient at emission. Fix:
+   one `spans_from_move_intents()` pass in `compute/spans.rs` appended in the four
+   `generated_with_*` helpers (`execute.rs:40-60`) — fixes all 22 ops × all 3 gates.
+2. **TSP corrupts spans and nobody checks.** Default-on TSP sets `spans_valid=false`
+   when it splits a non-Operation span (`tsp.rs:478-489`); `compute/simulate.rs:471`,
+   `gcode/mod.rs:399`, `optimize/mod.rs:171`, `optimize/candidate.rs:359` consume
+   `.spans` without checking — samples stamped with WRONG ancestry (a tagged Entry can
+   become effectively untagged). Likely the actual mechanism behind the 622 µm case.
+
+Pollution-capable untagged kinds: adaptive3d at-depth `Link` re-entries (full feed,
+Helix kinematics) and 2D adaptive `Link` at cut_depth (full feed — passes even
+chipload's 0.95× filter). Deflection most exposed (no feed filter, feed-independent
+force, peak-driven); power next; chipload partially shielded. The other 20 ops are
+clean (pure-vertical plunges are kinematics-quarantined; note the 1-nm XY-drift cliff
+in `classify_cut_kinematics` as residual risk). No existing harness surfaces per-sample
+axial vs commanded DPP — ~50-line detector test over param-sweep fixtures proposed
+(flag peak steady-state axial > 1.5× commanded DPP).
+
+F2 fix order: (1) intent→span bridge, (2) honor `spans_valid` at the 4 call sites,
+(3) only then the defensive gate clamp (landing it first would mask real overloads),
+(4) detector regression test.
+
+### A4 findings — dead signals + duplicated evaluation
+
+**CLASS A (High first):**
+- `ToolpathLoadVerdict.drill_gates` is DISPLAY-ONLY: `criteria()` excludes drill gates,
+  so export gating / readiness / `any_exceeded` all ignore them. A Critical chip-welding
+  or plunge-feed exceedance does NOT block g-code export while an equivalent milling
+  trip does. `DrillGatesVerdict::any_exceeded()` has zero production callers. → **F1.7**.
+- `OptimizeCandidate.reconciled_verdict` written by U4 reconciliation, never read — a
+  candidate that flips to Exceeds in the post-Apply project sim is invisible (only
+  cycle-time mismatch flagged). Safety-relevant. → F4 follow-up.
+- `Confidence::Approximate` + `ChipBoundsSource::VendorLutExtrapolated` display-only /
+  fully-dead — optimizer auto-recommends on extrapolated bounds with full authority
+  (= F3.3).
+- `pass_role` dead for the deflection gate (rough/finish limits exist in
+  cutter_constraints; gate hard-codes 50/200 for every pass) — fold into F2.3.
+- Fully dead: `AxisPatch.clamped`, `CandidatePatch.{strategy,rationale}` (docs claim
+  "surfaced in MCP/GUI" — false), `AxisBounds.sources`, `FeedsResult.{ramp_feed_mm_min,
+  vendor_source}` (ramp feed never reaches any operation).
+
+**CLASS B:**
+- LUT row resolution is FOUR-way duplicated (not 3): gate / optimizer context /
+  **viewport envelope map** (`tool_load/mod.rs:198-284` — first-match, UNFILTERED max
+  axial DOC incl. phantom transits, un-derated bounds → operator-facing colors can
+  disagree with the export verdict) / suggest. V-bit angle gate skipped by two. (= F3.4,
+  scope widened.)
+- Envelope semantics drift: gate derates bounds + arc-normalizes samples; retargeter,
+  preflight-bipolar, viewport use raw bounds → systematically wrong retarget multipliers.
+- Deflection model FOUR implementations (stepped integrator canonical; 0.7·D-core
+  closed form +36% bias; feed_modulation uniform cylinder; retarget cube-root seed).
+- Preflight ↔ DeflectionDocRetargeter contradiction confirmed (= F2.2); same dispatch
+  gap starves PowerFeedRetargeter on power-only-Exceeds baselines.
+- Power retargeter recomputes available power instead of reading `available_kw` off the
+  verdict it consumes.
+- Drill plunge envelope check duplicated in narrate (= F1.5, FIXED — narrate now calls
+  `classify_plunge_feed`).
+- Plunge cap literals in `feeds/mod.rs:1251-1261` mirror `plunge_stress.rs` named
+  constants — feeds should call `safe_plunge_cap_mm_min` (backlog).
 
 ---
 
@@ -187,6 +325,20 @@ backlog, or working-as-intended.
 
 - 2026-06-10: branch from master (ia-cleanup viz deletions stashed:
   `git stash list` → "ia-cleanup dead-code-sweep viz deletions").
+- 2026-06-10 (F1.7): drill `Exceeds(Elevated)` maps to `LoadState::Within` — only
+  Critical blocks export. Rationale: Elevated is the documented warning band
+  (chip-welding approach zone, plunge-feed rubbing side); blocking export on it
+  would refuse working-but-suboptimal programs. The dedicated drill badges still
+  surface Elevated.
+- 2026-06-10 (F1.6): when the plunge-feed envelope ceiling conflicts with the
+  literature chipload band (small drills: Ø3 oak band wants 2240-5040 mm/min, envelope
+  caps at 1200), the machine-safe envelope wins and RPM follows down to preserve chip
+  thickness — bounded by the drill band floor. The cells' `fpt` band continues to bind
+  the calculator's target; the new invariants bind the final applied values.
+- 2026-06-10 (F1): chip-welding credit for Peck cycles = deepest single peck governs
+  (full retract clears flutes; Onsrud peck guidance), ChipBreak = half total (matches
+  `chip_evacuation_score`'s 0.5 factor), Simple/Dwell unchanged. No new constants
+  invented.
 - 2026-06-10: fix order F1 → F2 → F3 → F4 chosen by real-world payoff: drills currently
   cut at the rubbing floor (burn risk on every default drill op); F2 converts a locked
   toolpath to optimizable; F3 unblocks a 4.5× cycle-time win; F4 makes the unblocked

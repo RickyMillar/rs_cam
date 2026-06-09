@@ -39,6 +39,7 @@ pub const FEEDS_DOC_EXCEEDS_FLUTE: &str = "feeds.doc_exceeds_flute";
 pub const FEEDS_SLOTTING_DETECTED: &str = "feeds.slotting_detected";
 pub const FEEDS_SCALLOP_INVALID: &str = "feeds.scallop_invalid";
 pub const FEEDS_CHIPLOAD_CLAMPED_TO_FLOOR: &str = "feeds.chipload_clamped_to_floor";
+pub const FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE: &str = "feeds.drill_feed_clamped_to_envelope";
 
 // ── Pre-sim heuristic hints (superseded by load gates) ───────────────
 pub const FEEDS_FEED_VS_LUT_HIGH: &str = "feeds.feed_vs_lut.high";
@@ -131,6 +132,7 @@ pub const ALL: &[&str] = &[
     FEEDS_SLOTTING_DETECTED,
     FEEDS_SCALLOP_INVALID,
     FEEDS_CHIPLOAD_CLAMPED_TO_FLOOR,
+    FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE,
     FEEDS_FEED_VS_LUT_HIGH,
     FEEDS_FEED_VS_LUT_LOW,
     FEEDS_STEPOVER_VS_LUT,
