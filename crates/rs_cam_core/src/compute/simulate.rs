@@ -468,8 +468,34 @@ where
                 drill_summaries_all.push(summary);
             } else if request.metric_options.enabled {
                 let entry_rpm = entry.spindle_rpm.unwrap_or(request.spindle_rpm);
-                let span_paths_by_move = entry.annotated.span_paths_by_move();
-                let transit_moves = entry.annotated.transit_moves_bitmap();
+                // F2.2 (defect class C3): honor `spans_valid`. When a
+                // transform invalidated the spans (legacy invalidators;
+                // TSP now drops exactly the spans it split instead),
+                // stamping per-sample ancestry from the fragmented
+                // vector gives samples WRONG ancestry — a tagged
+                // Entry/LinkBridge sample can become effectively
+                // untagged and drive a gate trip with phantom dexel
+                // engagement (the WANAKA 622 µm DeflectionSetupLocked
+                // mechanism). Degrade honestly: no span_path, transit
+                // classification from per-move intents only.
+                //
+                // In the valid case the intent bitmap is UNIONED in:
+                // a transit span dropped by TSP (split LinkBridge)
+                // leaves its moves without ancestry, but their intents
+                // still classify them as transit.
+                let intent_transits = entry.annotated.transit_moves_bitmap_from_intents();
+                let (span_paths_by_move, transit_moves) = if entry.annotated.spans_valid {
+                    let mut transit = entry.annotated.transit_moves_bitmap();
+                    for (slot, from_intent) in transit.iter_mut().zip(intent_transits) {
+                        *slot = *slot || from_intent;
+                    }
+                    (entry.annotated.span_paths_by_move(), transit)
+                } else {
+                    (
+                        vec![Vec::new(); entry_toolpath.moves.len()],
+                        intent_transits,
+                    )
+                };
                 let mut samples = group_stock
                     .simulate_toolpath_with_lut_metrics_cancel(
                         entry_toolpath,

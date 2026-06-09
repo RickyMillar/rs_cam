@@ -119,10 +119,10 @@ fn total_rapid_distance(order: &[usize], segments: &[Segment]) -> f64 {
 /// **Known limitation:** if a non-`Operation` span's old move range maps to a
 /// non-contiguous new range — i.e. the bounding range of the span's moves in
 /// the new toolpath also contains foreign moves that came from outside the
-/// span — the output's `spans_valid` flag is set to `false` and a
-/// `tracing::warn!` is emitted. The span is preserved with its bounding
-/// range so downstream code that honors `spans_valid` still has something
-/// usable for diagnostics.
+/// span — that span is dropped (F2.2). The surviving spans keep correct
+/// bounds, so `spans_valid` stays `true`; transit classification for the
+/// dropped span's moves degrades to the per-move `MoveIntent` union in the
+/// metrics stamper.
 ///
 /// # Algorithm
 ///
@@ -131,8 +131,8 @@ fn total_rapid_distance(order: &[usize], segments: &[Segment]) -> f64 {
 /// 2. Within each group: split into cutting segments, apply nearest-neighbor
 ///    + 2-opt, then reassemble with retract/rapid/plunge between segments.
 /// 3. Build a `MoveRemap` describing where each old move ended up.
-/// 4. Remap input spans through the permutation; flag `spans_valid = false`
-///    if any non-`Operation` span fragmented across barriers / segments.
+/// 4. Remap input spans through the permutation; drop any non-`Operation`
+///    span that fragmented across barriers / segments (F2.2).
 // SAFETY: all indexing in this function is bounded by `n` (segment count)
 // and group_bounds, both built locally.
 #[allow(clippy::indexing_slicing)]
@@ -205,7 +205,7 @@ pub fn optimize_rapid_order(annotated: AnnotatedToolpath, safe_z: f64) -> Annota
     let remap = MoveRemap { old_to_new };
 
     let (new_spans, new_valid) = if input_valid {
-        remap_spans(&spans, &remap, new_n)
+        (remap_spans(&spans, &remap, new_n), true)
     } else {
         (spans, false)
     };
@@ -436,13 +436,23 @@ fn fill_group_rapids(
     }
 }
 
-/// Remap each input span through the permutation. Returns the new spans and
-/// a `spans_valid` flag — `false` if any non-`Operation` span fragmented
-/// (foreign moves intruded into its new bounding range).
+/// Remap each input span through the permutation. Returns the new spans —
+/// non-`Operation` spans that fragmented (foreign moves intruded into their
+/// new bounding range) are DROPPED rather than poisoning the whole vector.
+///
+/// F2.2 (defect class C3): pre-F2 a single fragmented span flipped
+/// `spans_valid = false` for the entire toolpath, discarding every
+/// still-correct span (Entry, WaterlineCleanup) at the metrics stamper
+/// and the gate sites — which is how a tagged transient became
+/// effectively untagged and drove phantom gate trips (the WANAKA 622 µm
+/// DeflectionSetupLocked mechanism). Dropping exactly the spans whose
+/// remapped bounds are wrong keeps the survivors trustworthy; the
+/// dropped spans' moves keep their transit classification through the
+/// per-move `MoveIntent` union in the metrics stamper
+/// (`compute/simulate.rs`).
 #[allow(clippy::indexing_slicing)]
-fn remap_spans(spans: &[Span], remap: &MoveRemap, new_n: usize) -> (Vec<Span>, bool) {
+fn remap_spans(spans: &[Span], remap: &MoveRemap, new_n: usize) -> Vec<Span> {
     let mut out: Vec<Span> = Vec::with_capacity(spans.len());
-    let mut valid = true;
 
     for s in spans {
         let payload = s.payload.clone();
@@ -477,15 +487,16 @@ fn remap_spans(spans: &[Span], remap: &MoveRemap, new_n: usize) -> (Vec<Span>, b
                 });
 
             if foreign_intrusion && s.kind != SpanKind::Operation {
-                tracing::warn!(
+                tracing::debug!(
                     span_kind = ?s.kind,
                     span_label = %s.label,
                     old_range = ?(s.start_move..s.end_move),
                     new_bounds = ?bounds,
                     "TSP rapid-order optimization split a non-Operation span; \
-                     marking spans_valid = false"
+                     dropping it (remaining spans stay valid; per-move intents \
+                     keep transit classification for its moves)"
                 );
-                valid = false;
+                continue;
             }
 
             Span::new(bounds.start, bounds.end, s.kind)
@@ -500,7 +511,7 @@ fn remap_spans(spans: &[Span], remap: &MoveRemap, new_n: usize) -> (Vec<Span>, b
         out.push(new_span);
     }
 
-    (out, valid)
+    out
 }
 
 #[cfg(test)]
@@ -849,7 +860,7 @@ mod tests {
     }
 
     #[test]
-    fn optimize_rapid_order_invalidates_on_split() {
+    fn optimize_rapid_order_drops_split_span_keeps_rest_valid() {
         // Build four segments so that NN/2-opt picks the order
         // [seg0, seg2, seg1, seg3] (proximity grouping):
         //   seg0 cuts at X=0, seg1 at X=50 (far), seg2 at X=2 (next to seg0),
@@ -857,7 +868,10 @@ mod tests {
         // A Region span covers input range [0..seg2_start), i.e. seg0+seg1.
         // After reorder, seg2 (which is OUTSIDE the span) lands between
         // seg0 and seg1 in the output → seg2's new slot intrudes into the
-        // span's bounding range → spans_valid must flip to false.
+        // span's bounding range → the split span is DROPPED while
+        // `spans_valid` stays true for the survivors (F2.2: pre-F2 this
+        // flipped spans_valid=false for the whole vector, discarding
+        // every still-correct span at the metrics stamper / gate sites).
         let safe_z = 10.0;
         let feed = 1000.0;
         let mut tp = Toolpath::new();
@@ -909,8 +923,16 @@ mod tests {
         assert_ne!(cut_x, original_cut_x, "TSP should have reordered the cuts");
 
         assert!(
-            !result.spans_valid,
-            "Region span split by foreign-move intrusion must invalidate spans"
+            result.spans_valid,
+            "surviving spans stay valid after a split span is dropped"
+        );
+        assert!(
+            result
+                .spans
+                .iter()
+                .all(|s| s.kind != SpanKind::Region || s.label != "seg0+seg1"),
+            "the split Region span must be dropped, got {:?}",
+            result.spans,
         );
         result
             .check_invariants()

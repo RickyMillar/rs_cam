@@ -6,7 +6,7 @@
 //! module translates the subset that is structurally meaningful into [`Span`]s
 //! for the dressup pipeline.
 
-use crate::toolpath::{MoveType, Toolpath};
+use crate::toolpath::{MoveIntent, MoveType, Toolpath};
 use crate::toolpath_spans::{Span, SpanKind, SpanPayload};
 
 /// Build the default span vector for an operation's freshly-generated toolpath.
@@ -164,6 +164,64 @@ pub fn spans_from_drill_holes(toolpath: &Toolpath) -> Vec<Span> {
         }
     }
 
+    spans
+}
+
+/// F2 (defect class C3) — bridge per-move [`MoveIntent`] tags into
+/// structural transit spans so the tool-load gates' span-ancestry
+/// filters see every transient, not just the ones a generator
+/// explicitly tagged at emission (pre-F2 only adaptive3d emitted Entry
+/// spans; the other 21 ops' link/entry/lead moves counted as steady
+/// state and could drive a gate trip with phantom dexel engagement).
+///
+/// Mapping (contiguous runs of the same target kind merge into one
+/// span; the run's first intent names it):
+///
+/// - [`MoveIntent::Linking`] → [`SpanKind::LinkBridge`]
+/// - [`MoveIntent::EntryPlunge`] / [`MoveIntent::EntryHelix`] /
+///   [`MoveIntent::EntryRamp`] / [`MoveIntent::LeadIn`] → [`SpanKind::Entry`]
+/// - [`MoveIntent::LeadOut`] → [`SpanKind::LeadOut`]
+///
+/// All other intents (cuts, drilling, retracts, `Unknown`) produce no
+/// span. Appended after the structural spans in the
+/// `generated_with_*` helpers (`compute/execute.rs`), so ancestry
+/// order stays outermost-first.
+pub fn spans_from_move_intents(toolpath: &Toolpath) -> Vec<Span> {
+    fn mapped(intent: MoveIntent) -> Option<(SpanKind, &'static str)> {
+        match intent {
+            MoveIntent::Linking => Some((SpanKind::LinkBridge, "link")),
+            MoveIntent::EntryPlunge => Some((SpanKind::Entry, "plunge entry")),
+            MoveIntent::EntryHelix => Some((SpanKind::Entry, "helix entry")),
+            MoveIntent::EntryRamp => Some((SpanKind::Entry, "ramp entry")),
+            MoveIntent::LeadIn => Some((SpanKind::Entry, "lead-in")),
+            MoveIntent::LeadOut => Some((SpanKind::LeadOut, "lead-out")),
+            MoveIntent::Drilling
+            | MoveIntent::ClearingCut
+            | MoveIntent::FinishingCut
+            | MoveIntent::Retract
+            | MoveIntent::Unknown => None,
+        }
+    }
+
+    let mut spans = Vec::new();
+    let mut run: Option<(usize, SpanKind, &'static str)> = None;
+    for (i, mv) in toolpath.moves.iter().enumerate() {
+        let here = mapped(mv.intent);
+        match (&run, here) {
+            (Some((_, kind, _)), Some((k, _))) if *kind == k => {}
+            _ => {
+                if let Some((start, kind, label)) = run.take() {
+                    spans.push(Span::new(start, i, kind).with_label(label));
+                }
+                if let Some((k, l)) = here {
+                    run = Some((i, k, l));
+                }
+            }
+        }
+    }
+    if let Some((start, kind, label)) = run {
+        spans.push(Span::new(start, toolpath.moves.len(), kind).with_label(label));
+    }
     spans
 }
 
@@ -714,6 +772,82 @@ mod tests {
             cleanup[0].payload.is_none(),
             "cleanup spans don't carry z_level/pass_index"
         );
+    }
+
+    /// F2 — contiguous `MoveIntent` runs become transit spans the gate
+    /// filters can see: Linking → LinkBridge, Entry*/LeadIn → Entry,
+    /// LeadOut → LeadOut; cuts/retracts/Unknown produce nothing.
+    #[test]
+    fn move_intents_bridge_to_transit_spans() {
+        use crate::geo::P3;
+        use crate::toolpath::MoveIntent as I;
+
+        let mut tp = Toolpath::new();
+        let p = P3::new(0.0, 0.0, 0.0);
+        let intents = [
+            I::EntryHelix,
+            I::EntryHelix,
+            I::ClearingCut,
+            I::ClearingCut,
+            I::Linking,
+            I::Linking,
+            I::Linking,
+            I::ClearingCut,
+            I::LeadOut,
+        ];
+        for intent in intents {
+            tp.feed_to_with_intent(p, 1000.0, intent);
+        }
+
+        let spans = spans_from_move_intents(&tp);
+        assert_eq!(spans.len(), 3);
+        assert_eq!(spans[0].kind, SpanKind::Entry);
+        assert_eq!(spans[0].range(), 0..2);
+        assert_eq!(spans[0].label, "helix entry");
+        assert_eq!(spans[1].kind, SpanKind::LinkBridge);
+        assert_eq!(spans[1].range(), 4..7);
+        assert_eq!(spans[2].kind, SpanKind::LeadOut);
+        assert_eq!(spans[2].range(), 8..9);
+    }
+
+    /// F2 — a run that changes target kind without a gap (Entry
+    /// directly into LeadOut) splits into two spans, and a trailing
+    /// run closes at `n_moves`.
+    #[test]
+    fn move_intents_adjacent_kinds_split_and_trailing_run_closes() {
+        use crate::geo::P3;
+        use crate::toolpath::MoveIntent as I;
+
+        let mut tp = Toolpath::new();
+        let p = P3::new(0.0, 0.0, 0.0);
+        for intent in [I::EntryPlunge, I::LeadIn, I::Linking] {
+            tp.feed_to_with_intent(p, 1000.0, intent);
+        }
+        let spans = spans_from_move_intents(&tp);
+        // EntryPlunge + LeadIn both map to Entry → one merged span,
+        // labeled by the run's first intent.
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].kind, SpanKind::Entry);
+        assert_eq!(spans[0].range(), 0..2);
+        assert_eq!(spans[0].label, "plunge entry");
+        assert_eq!(spans[1].kind, SpanKind::LinkBridge);
+        assert_eq!(spans[1].range(), 2..3);
+    }
+
+    /// F2 — untagged (`Unknown`) and cut/retract intents emit no spans;
+    /// an empty toolpath emits no spans.
+    #[test]
+    fn move_intents_without_transients_emit_no_spans() {
+        use crate::geo::P3;
+        use crate::toolpath::MoveIntent as I;
+
+        let mut tp = Toolpath::new();
+        let p = P3::new(0.0, 0.0, 0.0);
+        for intent in [I::ClearingCut, I::FinishingCut, I::Retract, I::Unknown] {
+            tp.feed_to_with_intent(p, 1000.0, intent);
+        }
+        assert!(spans_from_move_intents(&tp).is_empty());
+        assert!(spans_from_move_intents(&Toolpath::new()).is_empty());
     }
 
     #[test]
