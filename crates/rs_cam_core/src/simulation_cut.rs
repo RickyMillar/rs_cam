@@ -15,7 +15,9 @@ pub struct SimulationMetricOptions {
     pub capture_arc_engagement: bool,
 }
 
-pub const SIMULATION_CUT_TRACE_SCHEMA_VERSION: u32 = 4;
+// v5 (2026-06-10, F1): `DrillToolpathSummary` gains `chip_welding_dtd`
+// (evacuation-credited ratio the chip-welding risk is classified from).
+pub const SIMULATION_CUT_TRACE_SCHEMA_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

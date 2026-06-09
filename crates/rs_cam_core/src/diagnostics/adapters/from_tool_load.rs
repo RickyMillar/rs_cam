@@ -395,7 +395,7 @@ fn drill_gates_to_diagnostics(
             &drill.plunge_feed,
             scope.clone(),
             tp_id,
-            "mm/min·Ø",
+            "mm/min per mm Ø",
         ),
     ]
 }
@@ -412,6 +412,7 @@ fn drill_gate_to_diagnostic(
         DrillGateOutcome::Within {
             observed,
             threshold,
+            ..
         } => Diagnostic {
             id: DiagnosticId::from(id),
             scope,
@@ -436,6 +437,7 @@ fn drill_gate_to_diagnostic(
             observed,
             threshold,
             severity,
+            ..
         } => Diagnostic {
             id: DiagnosticId::from(id),
             scope,

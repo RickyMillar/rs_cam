@@ -147,6 +147,28 @@ fn feeds_warning_to_diagnostic(tp_id: usize, w: &FeedsWarning) -> Diagnostic {
             supersedes: vec![],
             suppressed_diagnostics: vec![],
         },
+        FeedsWarning::DrillFeedClampedToEnvelope {
+            requested,
+            actual,
+            envelope_lo,
+            envelope_hi,
+        } => Diagnostic {
+            id: DiagnosticId::from(ids::FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE),
+            scope: Scope::Toolpath { id: tp_id },
+            category: Category::ToolLoad,
+            severity: Severity::Caution,
+            confidence: Confidence::Static,
+            state: DiagnosticState::Current,
+            source: Source::FeedsCalculator,
+            message: format!(
+                "Drill feed clamped into material envelope: {requested:.0} → {actual:.0} mm/min \
+                 (safe band {envelope_lo:.0}–{envelope_hi:.0} mm/min for this diameter)"
+            ),
+            evidence: None,
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        },
     }
 }
 

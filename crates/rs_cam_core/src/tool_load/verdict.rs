@@ -245,6 +245,33 @@ impl ToolpathLoadVerdict {
     /// this list, so a gate added here automatically participates in
     /// export gating — a forgotten gate is structurally impossible.
     pub fn criteria(&self) -> Vec<CriterionStatus<'_>> {
+        let mut all = self.milling_criteria();
+        // F1.7: drill gates join the criterion tier when present, so a
+        // Critical drill exceedance blocks export exactly like a
+        // milling trip (pre-fix `drill_gates` was display-only and
+        // `enforce_load_policy` never saw it).
+        if let Some(d) = &self.drill_gates {
+            all.push(
+                d.chip_welding
+                    .as_criterion_status(CriterionKind::DrillChipWelding),
+            );
+            all.push(
+                d.peck_adequacy
+                    .as_criterion_status(CriterionKind::DrillPeckAdequacy),
+            );
+            all.push(
+                d.plunge_feed
+                    .as_criterion_status(CriterionKind::DrillPlungeFeed),
+            );
+        }
+        all
+    }
+
+    /// The three milling gates only — chipload, power, deflection.
+    /// Used by `all_not_applicable` to decide the "drill cycle, milling
+    /// gates don't apply" partition without the drill criteria muddying
+    /// the test.
+    pub fn milling_criteria(&self) -> Vec<CriterionStatus<'_>> {
         vec![
             self.chipload.as_criterion_status(),
             self.power.as_criterion_status(),
@@ -410,7 +437,11 @@ impl ToolLoadReport {
 /// to the op type (drill cycles, alignment-pin drills). Used by
 /// `summary()` to partition `fully_unmodeled` from `not_applicable`.
 fn all_not_applicable(v: &ToolpathLoadVerdict) -> bool {
-    v.criteria()
+    // Milling criteria only — drill criteria are always modeled, so
+    // including them here would break the "drill cycle, milling gates
+    // don't apply" partition (and with it `any_unmodeled`'s drill
+    // special case, re-blocking export on accept_unmodeled policies).
+    v.milling_criteria()
         .iter()
         .all(|s| is_not_applicable(s.unmodeled_reason))
 }
@@ -443,6 +474,11 @@ pub enum CriterionKind {
     Chipload,
     Power,
     Deflection,
+    // F1.7 (2026-06-10): drill-native gates join the criterion tier so
+    // they participate in export gating like the milling gates.
+    DrillChipWelding,
+    DrillPeckAdequacy,
+    DrillPlungeFeed,
 }
 
 impl CriterionKind {
@@ -451,6 +487,9 @@ impl CriterionKind {
             CriterionKind::Chipload => "chipload",
             CriterionKind::Power => "power",
             CriterionKind::Deflection => "deflection",
+            CriterionKind::DrillChipWelding => "chip welding",
+            CriterionKind::DrillPeckAdequacy => "peck depth",
+            CriterionKind::DrillPlungeFeed => "plunge feed",
         }
     }
 
@@ -459,6 +498,8 @@ impl CriterionKind {
             CriterionKind::Chipload => "mm/tooth",
             CriterionKind::Power => "kW",
             CriterionKind::Deflection => "mm",
+            CriterionKind::DrillChipWelding | CriterionKind::DrillPeckAdequacy => "D/d",
+            CriterionKind::DrillPlungeFeed => "mm/min per mm Ø",
         }
     }
 }
@@ -972,6 +1013,30 @@ impl ExceededCriterion {
         }
     }
 
+    pub fn drill_chip_welding() -> Self {
+        Self {
+            kind: CriterionKind::DrillChipWelding,
+            label: "chip welding",
+            reason_label: "deep hole",
+        }
+    }
+
+    pub fn drill_peck_adequacy() -> Self {
+        Self {
+            kind: CriterionKind::DrillPeckAdequacy,
+            label: "peck depth",
+            reason_label: "peck too deep",
+        }
+    }
+
+    pub fn drill_plunge_feed() -> Self {
+        Self {
+            kind: CriterionKind::DrillPlungeFeed,
+            label: "plunge feed",
+            reason_label: "breakage",
+        }
+    }
+
     /// `"low"` / `"high"` for the chipload burn / breakage sides,
     /// `None` for the single-sided gates. Feeds `ExceedsEntry.side`
     /// in the report summary.
@@ -1169,6 +1234,91 @@ mod tests {
         assert_eq!(exceeded[0].0, 0);
         assert_eq!(exceeded[0].1.len(), 1);
         assert_eq!(exceeded[0].1[0], ExceededCriterion::deflection());
+    }
+
+    /// F1.7 (2026-06-10) — drill gates join `criteria()` and therefore
+    /// export gating: a Critical drill exceedance trips `any_exceeded`
+    /// (blocking export like a milling trip), an all-within drill
+    /// verdict buckets `within` (gates WERE evaluated), and the
+    /// milling-N/A drill special case in `any_unmodeled` still holds.
+    #[test]
+    fn drill_gates_participate_in_criteria_and_export_gating() {
+        use crate::tool_load::drill_gates::{
+            DrillGateOutcome, DrillGateSeverity, DrillGatesVerdict,
+        };
+        let na = || UnmodeledReason::NotApplicableForOp("drill cycle".to_owned());
+        let drill_verdict = |plunge: DrillGateOutcome| ToolpathLoadVerdict {
+            toolpath_id: 0,
+            chipload: ChiploadVerdict::Unmodeled { reason: na() },
+            power: PowerVerdict::Unmodeled { reason: na() },
+            deflection: DeflectionVerdict::Unmodeled { reason: na() },
+            drill_gates: Some(DrillGatesVerdict {
+                chip_welding: DrillGateOutcome::Within {
+                    observed: 0.5,
+                    threshold: 8.0,
+                    envelope_lo: None,
+                    envelope_hi: None,
+                },
+                peck_adequacy: DrillGateOutcome::Within {
+                    observed: 0.3,
+                    threshold: 6.0,
+                    envelope_lo: None,
+                    envelope_hi: None,
+                },
+                plunge_feed: plunge,
+            }),
+            modulation_summary: None,
+        };
+
+        let healthy = drill_verdict(DrillGateOutcome::Within {
+            observed: 100.0,
+            threshold: 50.0,
+            envelope_lo: Some(50.0),
+            envelope_hi: Some(400.0),
+        });
+        assert!(!healthy.any_exceeded());
+        assert!(
+            !healthy.any_unmodeled(),
+            "milling-N/A + drill gates stays neutral, not 'missing evidence'"
+        );
+        assert_eq!(healthy.modeled_count(), 3, "three drill criteria modeled");
+
+        let critical = drill_verdict(DrillGateOutcome::Exceeds {
+            observed: 500.0,
+            threshold: 400.0,
+            severity: DrillGateSeverity::Critical,
+            envelope_lo: Some(50.0),
+            envelope_hi: Some(400.0),
+        });
+        assert!(critical.any_exceeded(), "Critical drill gate must block");
+        let labels: Vec<&str> = critical
+            .exceeded_criteria()
+            .iter()
+            .map(|e| e.label)
+            .collect();
+        assert_eq!(labels, vec!["plunge feed"]);
+
+        let elevated = drill_verdict(DrillGateOutcome::Exceeds {
+            observed: 20.0,
+            threshold: 50.0,
+            severity: DrillGateSeverity::Elevated,
+            envelope_lo: Some(50.0),
+            envelope_hi: Some(400.0),
+        });
+        assert!(
+            !elevated.any_exceeded(),
+            "Elevated is a warning band, not an export blocker"
+        );
+
+        // Summary buckets: healthy drill TP rolls up `within` (the
+        // gates were evaluated), critical rolls up `exceeds`.
+        let report = ToolLoadReport {
+            per_toolpath: vec![healthy, critical],
+        };
+        let s = report.summary(|_| None);
+        assert_eq!(s.within, 1);
+        assert_eq!(s.exceeds, 1);
+        assert_eq!(s.not_applicable, 0);
     }
 
     /// F.8 — toolpaths whose every gate reports `NotApplicableForOp`

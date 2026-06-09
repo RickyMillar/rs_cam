@@ -884,15 +884,23 @@ fn drill_gate_badge(ui: &mut egui::Ui, label: &str, outcome: &DrillGateOutcome) 
         DrillGateOutcome::Within {
             observed,
             threshold,
+            envelope_lo,
+            envelope_hi,
         } => (
             theme::SUCCESS,
             "OK".to_owned(),
-            format!("Within drill gate: observed {observed:.3}, threshold {threshold:.3}"),
+            match (envelope_lo, envelope_hi) {
+                (Some(lo), Some(hi)) => {
+                    format!("Within drill gate: observed {observed:.3}, envelope {lo:.1}–{hi:.1}")
+                }
+                _ => format!("Within drill gate: observed {observed:.3}, threshold {threshold:.3}"),
+            },
         ),
         DrillGateOutcome::Exceeds {
             observed,
             threshold,
             severity,
+            ..
         } => {
             let sev = match severity {
                 DrillGateSeverity::Elevated => "elevated",
@@ -1011,6 +1019,17 @@ fn verdict_tooltip(status: &CriterionStatus<'_>, cap: Option<f64>, burn_risk: bo
                 (CriterionKind::Power, _) => "predicted spindle power exceeds machine limit",
                 (CriterionKind::Deflection, _) => {
                     "tip deflection exceeds 200 µm — finish/breakage risk"
+                }
+                (CriterionKind::DrillChipWelding, _) => {
+                    "hole depth-to-diameter exceeds the material chip-welding \
+                     threshold — switch to a peck cycle or reduce depth"
+                }
+                (CriterionKind::DrillPeckAdequacy, _) => {
+                    "single peck too deep for the material — reduce peck depth"
+                }
+                (CriterionKind::DrillPlungeFeed, _) => {
+                    "plunge feed above the material envelope — breakage risk. \
+                     Reduce feed rate."
                 }
             };
             let conf = match status.confidence {

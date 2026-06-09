@@ -1019,11 +1019,12 @@ fn append_air_cut_anomaly(
             };
             let cycle_time_s = d.feed_time_s + d.dwell_time_s;
             anomalies.push(format!(
-                "ℹ drill cycle — engagement / air-cut% are not modeled. {} hole(s), {} peck(s), deepest hole {:.2} mm, depth-to-diameter {:.1}× (chip-welding risk {}), peck pattern {}.",
+                "ℹ drill cycle — engagement / air-cut% are not modeled. {} hole(s), {} peck(s), deepest hole {:.2} mm, depth-to-diameter {:.1}× total / {:.1}× evacuation-credited (chip-welding risk {}), peck pattern {}.",
                 d.hole_count,
                 d.peck_count,
                 d.deepest_hole_mm,
                 d.max_depth_to_diameter,
+                d.chip_welding_dtd,
                 risk,
                 if d.peck_pattern_adequate { "adequate" } else { "INADEQUATE — reduce peck depth" },
             ));
@@ -1045,12 +1046,12 @@ fn append_air_cut_anomaly(
             {
                 let ratio = feed / dia;
                 let (mark, envelope_label) = if let Some(material) = context.material {
+                    // Single-source the band check through the gate's
+                    // classifier (F1) — narrate only formats the outcome.
+                    let outcome =
+                        crate::tool_load::drill_gates::classify_plunge_feed(feed, dia, material);
                     let (lo, hi) = crate::tool_load::drill_gates::plunge_feed_envelope(material);
-                    let mark = if ratio < lo || ratio > hi {
-                        "⚠"
-                    } else {
-                        "ℹ"
-                    };
+                    let mark = if outcome.is_exceeded() { "⚠" } else { "ℹ" };
                     (
                         mark,
                         format!(" (material envelope {:.0}–{:.0} mm/min per mm Ø)", lo, hi),
