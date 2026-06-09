@@ -526,9 +526,69 @@ impl<B: ComputeBackend> AppController<B> {
                     .iter()
                     .map(|p| [p.x, p.y])
                     .collect();
-                let cfg = AlignmentPinDrillConfig {
-                    holes,
-                    ..Default::default()
+                // F1 (2026-06-10): run the suggest funnel instead of raw
+                // defaults — `..Default::default()` shipped the hardcoded
+                // 300 mm/min feed, which on a Ø6 pin drill is exactly the
+                // SolidWood rubbing floor (50 mm/min per mm Ø). Mirrors
+                // the add-toolpath path in `events/toolpath.rs`. On a
+                // suggest refusal, fall back to defaults rather than
+                // skipping the auto-create.
+                let stock_bbox = self.state.session.stock_bbox();
+                let stock_padding = self.state.session.stock_config().padding;
+                let stock_ctx = rs_cam_core::feeds::suggest::StockContext::from_stock_bbox(
+                    stock_bbox,
+                    stock_padding,
+                );
+                let suggested = self
+                    .state
+                    .session
+                    .tools()
+                    .iter()
+                    .find(|t| t.id.0 == tool_id)
+                    .and_then(|tool| {
+                        rs_cam_core::feeds::suggest::suggest_params(
+                            rs_cam_core::feeds::suggest::SuggestParamsInput {
+                                op_type: crate::state::toolpath::OperationType::AlignmentPinDrill,
+                                tool,
+                                machine: self.state.session.machine(),
+                                material: &self.state.session.stock_config().material,
+                                workholding: self.state.session.stock_config().workholding_rigidity,
+                                lut: rs_cam_core::feeds::embedded_vendor_lut(),
+                                stock_ctx: &stock_ctx,
+                                spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
+                                context: rs_cam_core::feeds::suggest::SuggestContext::default(),
+                            },
+                        )
+                        .ok()
+                    });
+                let (cfg, feeds_provenance) = match suggested {
+                    Some(s) => match s.operation {
+                        OperationConfig::AlignmentPinDrill(mut c) => {
+                            c.holes = holes;
+                            (c, s.provenance)
+                        }
+                        // suggest_params builds from the requested op_type,
+                        // so this arm is unreachable; defaults keep it total.
+                        _ => (
+                            AlignmentPinDrillConfig {
+                                holes,
+                                ..Default::default()
+                            },
+                            rs_cam_core::feeds::FeedsProvenance::default(),
+                        ),
+                    },
+                    None => {
+                        tracing::warn!(
+                            "pin-drill auto-create: suggest refused; falling back to defaults"
+                        );
+                        (
+                            AlignmentPinDrillConfig {
+                                holes,
+                                ..Default::default()
+                            },
+                            rs_cam_core::feeds::FeedsProvenance::default(),
+                        )
+                    }
                 };
                 let tc = rs_cam_core::session::ToolpathConfig {
                     id: 0, // will be assigned by session
@@ -547,7 +607,7 @@ impl<B: ComputeBackend> AppController<B> {
                     coolant: rs_cam_core::gcode::CoolantMode::Off,
                     face_selection: None,
                     debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
-                    feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+                    feeds_provenance,
                 };
                 let _ = self.state.session.add_toolpath(setup_idx, tc);
             }
