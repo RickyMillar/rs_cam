@@ -83,7 +83,7 @@ WANAKA pin drill + holes re-suggest off the floor.
 - Deferred to backlog from A2: `set_toolpath_param("plunge_rate")` provenance lie on
   drill ops; CLI run/job raw defaults; SteepShallow z_step hint/setter asymmetry.
 
-### F2 — phantom/untagged samples polluting gates — STATUS: pending (REFRAMED by A3)
+### F2 — phantom/untagged samples polluting gates — STATUS: ✅ DONE 2026-06-10
 
 A3 audit reframes sub-fix 1: do the `MoveIntent`→span bridge (one pass in
 `compute/spans.rs`, appended in the four `generated_with_*` helpers) which fixes all
@@ -91,6 +91,36 @@ A3 audit reframes sub-fix 1: do the `MoveIntent`→span bridge (one pass in
 stamp TSP-corrupted ancestry (`compute/simulate.rs:471`, `gcode/mod.rs:399`,
 `optimize/mod.rs:171`, `optimize/candidate.rs:359`) — the TSP corruption is the likely
 actual mechanism behind the 622 µm sample. Original framing below kept for context.
+
+**Landed** (commits 25f5325, 84fcf6f, 102c480 on `defect-class/f2-phantom-samples`):
+- F2.1: `spans_from_move_intents()` bridge (Linking→LinkBridge, Entry*/LeadIn→Entry,
+  LeadOut→LeadOut), appended in all four `generated_with_*` helpers; the
+  span-coverage matrix now asserts per-move intent↔span agreement for every family.
+- F2.2 **(scope widened during implementation)**: honoring `spans_valid` by
+  wholesale degradation broke the F-031 sentries — TSP's all-or-nothing
+  `spans_valid=false` poisoning was itself the defect (one split span discarded the
+  still-correct Entry/WaterlineCleanup spans → tagged transients became untagged →
+  the 622 µm family). TSP now DROPS exactly the spans it split (survivors stay
+  valid); the metrics stamper unions intent-derived transit classification (intents
+  survive reordering); `is_phantom_transit` honors `in_transit_span` for
+  ancestry-less samples even with a span lookup present. The 4 consumer sites still
+  honor `spans_valid` as defense against legacy invalidators.
+- F2.3: preflight evaluates the canonical closed-form deflection at the
+  minimum-force corner (hard-floor DOC × hard-floor stepover) before refusing
+  `DeflectionSetupLocked`; Stage F dispatches per-gate retargeters on ANY Exceeds
+  gate (`any_load_gate_exceeds`) — `DeflectionDocRetargeter` no longer dead,
+  `PowerFeedRetargeter` no longer starved on power-only-Exceeds, and such baselines
+  no longer route to the headroom scale-up. Prescription states both the 200 µm
+  Exceeds limit and the 50 µm stickout-sizing target; structured
+  `peak_um`/`bound_um`/`target_stickout_mm` land on
+  `OutcomeNarrative.deflection_setup`; stale L/D>6 `RefuseReason` prose replaced.
+- F2.4: detector test `axial_engagement_vs_dpp_detector_f2.rs` — peak steady-state
+  axial vs 1.5× commanded DPP across pocket/profile/adaptive/zigzag/trace through
+  the production generate→simulate funnel (project fixtures rather than the raw
+  param-sweep harness, which never produces metric samples). Dexel-bridge teeth
+  remain F-031's whole-toolpath bar, which demonstrably trips on filter regressions.
+- Deferred: live WANAKA re-validation via MCP (TP1 expected ~98 µm Within +
+  optimizer searches instead of refusing) — pending a GUI session.
 
 Confirmed behaviour: TP1 Back Rough peak sample carries ~9 mm axial engagement at slot arc
 (commanded DOC 3.0) → 622 µm verdict → preflight `DeflectionSetupLocked`. Honest reading
@@ -343,3 +373,22 @@ F2 fix order: (1) intent→span bridge, (2) honor `spans_valid` at the 4 call si
   cut at the rubbing floor (burn risk on every default drill op); F2 converts a locked
   toolpath to optimizable; F3 unblocks a 4.5× cycle-time win; F4 makes the unblocked
   win safe to apply.
+- 2026-06-10 (F2.2): TSP `remap_spans` drops split spans instead of flipping
+  `spans_valid=false` for the whole vector. Rationale: wholesale invalidation
+  discards every still-correct span; the planned consumer-side degradation (pass
+  None / empty ancestry) then un-tags the valid Entry/WaterlineCleanup transients
+  and reproduces the exact pollution F2 exists to fix (F-031 sentries fail under
+  it). Dropping only the spans whose remapped bounds are wrong keeps survivors
+  trustworthy; the dropped spans' moves keep transit classification via the
+  per-move `MoveIntent` union in the stamper (intents travel with moves through
+  reordering). Consumer-site `spans_valid` checks retained for legacy invalidators.
+- 2026-06-10 (F2.3): `DeflectionSetupLocked` threshold = the closed-form corner
+  must clear the bare 200 µm Exceeds bound (no headroom factor). Preflight asks
+  reachability, not quality — candidates near the corner still get sim-verified
+  and ranked; an over-strict corner test would re-introduce the assert-style
+  refusal. The 50/200 µm constants themselves untouched (out of scope per doc).
+- 2026-06-10 (F2.4): detector implemented over the ux project fixtures through the
+  production session funnel instead of the `param_sweep` harness — the sweep
+  harness drives generators directly and its sims don't produce metric samples,
+  so `axial_engagement_mm` doesn't exist there. Same coverage intent, honest
+  signal path.
