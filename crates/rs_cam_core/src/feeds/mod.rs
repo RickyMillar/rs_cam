@@ -1348,15 +1348,40 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         let (env_lo, env_hi) = (env_lo_per_mm * d, env_hi_per_mm * d);
         if feed < env_lo || feed > env_hi {
             let machine_max_feed_after_safety = machine.max_feed_mm_min * machine.safety_factor;
+            let requested = feed;
             let clamped = feed
                 .clamp(env_lo, env_hi)
                 .min(machine_max_feed_after_safety);
             warnings.push(FeedsWarning::DrillFeedClampedToEnvelope {
-                requested: feed,
+                requested,
                 actual: clamped,
                 envelope_lo: env_lo,
                 envelope_hi: env_hi,
             });
+            // When the ceiling binds (feed reduced), RPM follows down —
+            // bounded by the drill band floor — so the commanded
+            // chipload holds instead of thinning toward rubbing. A
+            // feed-capped drill that keeps spinning fast takes thinner
+            // and thinner bites per rev; drilling chip evacuation
+            // prefers fewer revolutions anyway (same sources as
+            // `drill_rpm_envelope_for_diameter`). Small drills make
+            // this concrete: Ø3 oak targets ~0.107 mm/tooth at 14 kRPM
+            // ⇒ ~3000 mm/min, but the envelope caps feed at 1200 —
+            // without the follow-down the shipped recipe implies
+            // 0.043 mm/tooth at 14 k, well under the chart band.
+            let flutes = input.flute_count as f64;
+            if clamped < requested && rpm > 0.0 && flutes > 0.0 {
+                let kept_fpt = requested / (rpm * flutes);
+                if kept_fpt > 0.0 {
+                    let (band_floor, _) = drill_rpm_envelope_for_diameter(d);
+                    let target_rpm =
+                        machine.clamp_rpm((clamped / (kept_fpt * flutes)).max(band_floor));
+                    if target_rpm < rpm {
+                        spindle_speedup *= target_rpm / rpm;
+                        rpm = target_rpm;
+                    }
+                }
+            }
             feed = clamped;
         }
         plunge_rate = feed;
@@ -2206,6 +2231,57 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// F1: when the envelope ceiling binds, RPM follows the feed down
+    /// (bounded by the drill band floor) so the shipped recipe keeps
+    /// its commanded chipload instead of thinning toward rubbing. Ø3
+    /// oak: target ~0.107 mm/tooth at 14 kRPM ⇒ ~3000 mm/min, envelope
+    /// caps at 1200 — without the follow-down the implied chipload
+    /// collapses to 0.043 at 14 k.
+    #[test]
+    fn test_drill_envelope_ceiling_drops_rpm_to_hold_chipload() {
+        let material = Material::SolidWood {
+            species: WoodSpecies::WhiteOak,
+        };
+        let machine = MachineProfile::shapeoko_vfd();
+        let result = calculate(&FeedsInput {
+            tool_diameter: 3.0,
+            flute_count: 2,
+            flute_length: 12.0,
+            tool_geometry: ToolGeometryHint::Flat,
+            shank_diameter: None,
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Drill,
+            pass_role: PassRole::Roughing,
+            axial_depth_mm: None,
+            radial_width_mm: None,
+            target_scallop_mm: None,
+            vendor_lut: None,
+            setup: SetupContext::default(),
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        });
+        let clamp_fired = result
+            .warnings
+            .iter()
+            .any(|w| matches!(w, FeedsWarning::DrillFeedClampedToEnvelope { .. }));
+        assert!(clamp_fired, "Ø3 oak drill must hit the envelope ceiling");
+        assert!(
+            result.rpm < 14_000.0,
+            "RPM must follow the capped feed down, got {}",
+            result.rpm
+        );
+        assert!(
+            result.rpm >= 8_000.0,
+            "follow-down bounded by the drill band floor, got {}",
+            result.rpm
+        );
+        let implied = result.feed_rate_mm_min / (2.0 * result.rpm);
+        assert!(
+            implied >= 0.05,
+            "implied chipload {implied:.4} must stay clear of the rubbing regime"
+        );
     }
 
     /// F1: the envelope clamp warns when it binds — never a silent

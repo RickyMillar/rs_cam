@@ -434,8 +434,12 @@ unit = "mm"
 sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 
 [cell.expected.plunge_feed]
-min_fraction_of_feed = 0.40
-max_fraction_of_feed = 0.70
+# F1 (2026-06-10): drill cycles have one feed — the plunge — so the
+# ratio is 1.0 by construction (the op aliases both onto one field).
+# The pre-F1 0.40-0.70 milling-style band failed every drill cell as
+# advisory noise.
+min_fraction_of_feed = 1.0
+max_fraction_of_feed = 1.0
 mode = "fraction"
 sources = ["onsrud_drill", "vectric_drill_default", "shapeoko_wiki"]
 
@@ -481,6 +485,29 @@ name = "drill_no_peck_cycle"
 expr = "peck_depth >= drill_depth"
 severity = "major"
 
+[[cell.invariants]]
+# F1 (2026-06-10): binds the FINAL applied op feed (not the calculator
+# result) into the material plunge-feed envelope — a regression of the
+# drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
+# or of the Step 9c envelope clamp fails here at critical.
+name = "drill_final_feed_in_plunge_envelope"
+expr = "feed_rate / D"
+floor = 50
+ceiling = 400
+unit = "mm/min per mm dia"
+sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+severity_on_fail = "critical"
+
+[[cell.invariants]]
+# F1: the final feed/RPM pair must stay clear of the rubbing regime.
+# The clobbered drill feed (milling plunge baseline) implied
+# 0.008-0.021 mm/tooth on these cells — below chip formation.
+name = "drill_final_implied_chipload_floor"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.025
+unit = "mm/tooth"
+sources = ["shaw_metal_cutting", "onsrud_drill"]
+severity_on_fail = "critical"
 
 [[cell]]
 id = "flat_1p5mm_pocket_oak_clamp"
@@ -1614,8 +1641,12 @@ unit = "mm"
 sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 
 [cell.expected.plunge_feed]
-min_fraction_of_feed = 0.40
-max_fraction_of_feed = 0.70
+# F1 (2026-06-10): drill cycles have one feed — the plunge — so the
+# ratio is 1.0 by construction (the op aliases both onto one field).
+# The pre-F1 0.40-0.70 milling-style band failed every drill cell as
+# advisory noise.
+min_fraction_of_feed = 1.0
+max_fraction_of_feed = 1.0
 mode = "fraction"
 sources = ["onsrud_drill", "vectric_drill_default", "shapeoko_wiki"]
 
@@ -1663,6 +1694,30 @@ severity = "major"
 
 
 # === N2 (6 cells) ==========================================================
+
+[[cell.invariants]]
+# F1 (2026-06-10): binds the FINAL applied op feed (not the calculator
+# result) into the material plunge-feed envelope — a regression of the
+# drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
+# or of the Step 9c envelope clamp fails here at critical.
+name = "drill_final_feed_in_plunge_envelope"
+expr = "feed_rate / D"
+floor = 50
+ceiling = 400
+unit = "mm/min per mm dia"
+sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+severity_on_fail = "critical"
+
+[[cell.invariants]]
+# F1: the final feed/RPM pair must stay clear of the rubbing regime.
+# The clobbered drill feed (milling plunge baseline) implied
+# 0.008-0.021 mm/tooth on these cells — below chip formation.
+name = "drill_final_implied_chipload_floor"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.025
+unit = "mm/tooth"
+sources = ["shaw_metal_cutting", "onsrud_drill"]
+severity_on_fail = "critical"
 
 [[cell]]
 id = "flat_3mm_adaptive2d_oak"
@@ -2119,8 +2174,12 @@ unit = "mm"
 sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 
 [cell.expected.plunge_feed]
-min_fraction_of_feed = 0.40
-max_fraction_of_feed = 0.70
+# F1 (2026-06-10): drill cycles have one feed — the plunge — so the
+# ratio is 1.0 by construction (the op aliases both onto one field).
+# The pre-F1 0.40-0.70 milling-style band failed every drill cell as
+# advisory noise.
+min_fraction_of_feed = 1.0
+max_fraction_of_feed = 1.0
 mode = "fraction"
 sources = ["onsrud_drill", "vectric_drill_default", "shapeoko_wiki"]
 
@@ -2171,6 +2230,29 @@ name = "softwood_drill_matches_hardwood_peck"
 expr = "peck_over_d < 3.0"
 severity = "moderate"
 
+[[cell.invariants]]
+# F1 (2026-06-10): binds the FINAL applied op feed (not the calculator
+# result) into the material plunge-feed envelope — a regression of the
+# drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
+# or of the Step 9c envelope clamp fails here at critical.
+name = "drill_final_feed_in_plunge_envelope"
+expr = "feed_rate / D"
+floor = 50
+ceiling = 400
+unit = "mm/min per mm dia"
+sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+severity_on_fail = "critical"
+
+[[cell.invariants]]
+# F1: the final feed/RPM pair must stay clear of the rubbing regime.
+# The clobbered drill feed (milling plunge baseline) implied
+# 0.008-0.021 mm/tooth on these cells — below chip formation.
+name = "drill_final_implied_chipload_floor"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.025
+unit = "mm/tooth"
+sources = ["shaw_metal_cutting", "onsrud_drill"]
+severity_on_fail = "critical"
 
 [[cell]]
 id = "vbit_90deg_vcarve_oak"
@@ -3176,8 +3258,12 @@ unit = "mm"
 sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 
 [cell.expected.plunge_feed]
-min_fraction_of_feed = 0.40
-max_fraction_of_feed = 0.70
+# F1 (2026-06-10): drill cycles have one feed — the plunge — so the
+# ratio is 1.0 by construction (the op aliases both onto one field).
+# The pre-F1 0.40-0.70 milling-style band failed every drill cell as
+# advisory noise.
+min_fraction_of_feed = 1.0
+max_fraction_of_feed = 1.0
 mode = "fraction"
 sources = ["onsrud_drill", "vectric_drill_default", "shapeoko_wiki"]
 
@@ -3223,6 +3309,29 @@ name = "microdrill_no_peck_cycle"
 expr = "peck_depth >= drill_depth"
 severity = "critical"
 
+[[cell.invariants]]
+# F1 (2026-06-10): binds the FINAL applied op feed (not the calculator
+# result) into the material plunge-feed envelope — a regression of the
+# drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
+# or of the Step 9c envelope clamp fails here at critical.
+name = "drill_final_feed_in_plunge_envelope"
+expr = "feed_rate / D"
+floor = 50
+ceiling = 400
+unit = "mm/min per mm dia"
+sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+severity_on_fail = "critical"
+
+[[cell.invariants]]
+# F1: the final feed/RPM pair must stay clear of the rubbing regime.
+# The clobbered drill feed (milling plunge baseline) implied
+# 0.008-0.021 mm/tooth on these cells — below chip formation.
+name = "drill_final_implied_chipload_floor"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.025
+unit = "mm/tooth"
+sources = ["shaw_metal_cutting", "onsrud_drill"]
+severity_on_fail = "critical"
 
 [[cell]]
 id = "vbit_60deg_vcarve_oak_micro_depth"
@@ -3646,8 +3755,12 @@ unit = "mm"
 sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 
 [cell.expected.plunge_feed]
-min_fraction_of_feed = 0.40
-max_fraction_of_feed = 0.70
+# F1 (2026-06-10): drill cycles have one feed — the plunge — so the
+# ratio is 1.0 by construction (the op aliases both onto one field).
+# The pre-F1 0.40-0.70 milling-style band failed every drill cell as
+# advisory noise.
+min_fraction_of_feed = 1.0
+max_fraction_of_feed = 1.0
 mode = "fraction"
 sources = ["onsrud_drill", "vectric_drill_default", "shapeoko_wiki"]
 
@@ -3698,6 +3811,29 @@ name = "drill_no_peck_cycle"
 expr = "peck_depth >= drill_depth"
 severity = "major"
 
+[[cell.invariants]]
+# F1 (2026-06-10): binds the FINAL applied op feed (not the calculator
+# result) into the material plunge-feed envelope — a regression of the
+# drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
+# or of the Step 9c envelope clamp fails here at critical.
+name = "drill_final_feed_in_plunge_envelope"
+expr = "feed_rate / D"
+floor = 50
+ceiling = 400
+unit = "mm/min per mm dia"
+sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+severity_on_fail = "critical"
+
+[[cell.invariants]]
+# F1: the final feed/RPM pair must stay clear of the rubbing regime.
+# The clobbered drill feed (milling plunge baseline) implied
+# 0.008-0.021 mm/tooth on these cells — below chip formation.
+name = "drill_final_implied_chipload_floor"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.025
+unit = "mm/tooth"
+sources = ["shaw_metal_cutting", "onsrud_drill"]
+severity_on_fail = "critical"
 
 [[cell]]
 id = "ball_6mm_adaptive2d_oak_oversized"
@@ -4397,8 +4533,12 @@ unit = "mm"
 sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 
 [cell.expected.plunge_feed]
-min_fraction_of_feed = 0.30
-max_fraction_of_feed = 0.65
+# F1 (2026-06-10): drill cycles have one feed — the plunge — so the
+# ratio is 1.0 by construction (the op aliases both onto one field).
+# The pre-F1 0.40-0.70 milling-style band failed every drill cell as
+# advisory noise.
+min_fraction_of_feed = 1.0
+max_fraction_of_feed = 1.0
 mode = "fraction"
 sources = ["onsrud_drill", "vectric_drill_default", "shapeoko_wiki"]
 
@@ -4441,6 +4581,29 @@ mode = "unadvised"
 expected_derate = 0.7
 expected_warning_pattern = "endmill|center.?cut|drill|peck|plunge"
 
+[[cell.invariants]]
+# F1 (2026-06-10): binds the FINAL applied op feed (not the calculator
+# result) into the material plunge-feed envelope — a regression of the
+# drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
+# or of the Step 9c envelope clamp fails here at critical.
+name = "drill_final_feed_in_plunge_envelope"
+expr = "feed_rate / D"
+floor = 50
+ceiling = 400
+unit = "mm/min per mm dia"
+sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+severity_on_fail = "critical"
+
+[[cell.invariants]]
+# F1: the final feed/RPM pair must stay clear of the rubbing regime.
+# The clobbered drill feed (milling plunge baseline) implied
+# 0.008-0.021 mm/tooth on these cells — below chip formation.
+name = "drill_final_implied_chipload_floor"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.025
+unit = "mm/tooth"
+sources = ["shaw_metal_cutting", "onsrud_drill"]
+severity_on_fail = "critical"
 
 [[cell]]
 id = "vbit_60deg_adaptive2d_mdf_unadvised"
@@ -4569,8 +4732,12 @@ unit = "mm"
 sources = ["onsrud_drill", "vectric_drill_default"]
 
 [cell.expected.plunge_feed]
-min_fraction_of_feed = 0.25
-max_fraction_of_feed = 0.60
+# F1 (2026-06-10): drill cycles have one feed — the plunge — so the
+# ratio is 1.0 by construction (the op aliases both onto one field).
+# The pre-F1 0.40-0.70 milling-style band failed every drill cell as
+# advisory noise.
+min_fraction_of_feed = 1.0
+max_fraction_of_feed = 1.0
 mode = "fraction"
 sources = ["onsrud_drill", "vectric_drill_default", "shapeoko_wiki"]
 
@@ -4615,6 +4782,30 @@ expected_warning_pattern = "ball|drill|tip|center.?cut|plunge"
 
 
 # === M1 material-edge (4 cells) ============================================
+
+[[cell.invariants]]
+# F1 (2026-06-10): binds the FINAL applied op feed (not the calculator
+# result) into the material plunge-feed envelope — a regression of the
+# drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
+# or of the Step 9c envelope clamp fails here at critical.
+name = "drill_final_feed_in_plunge_envelope"
+expr = "feed_rate / D"
+floor = 50
+ceiling = 400
+unit = "mm/min per mm dia"
+sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+severity_on_fail = "critical"
+
+[[cell.invariants]]
+# F1: the final feed/RPM pair must stay clear of the rubbing regime.
+# The clobbered drill feed (milling plunge baseline) implied
+# 0.008-0.021 mm/tooth on these cells — below chip formation.
+name = "drill_final_implied_chipload_floor"
+expr = "feed_rate / (rpm * flutes)"
+floor = 0.025
+unit = "mm/tooth"
+sources = ["shaw_metal_cutting", "onsrud_drill"]
+severity_on_fail = "critical"
 
 [[cell]]
 id = "flat_3mm_pocket_ipe_extreme"
