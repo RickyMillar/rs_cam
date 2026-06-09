@@ -609,6 +609,33 @@ pub enum ChipBoundsSource {
     /// The diagnostic detail (scale factors, calibrated row id) lives
     /// on the verdict's `Confidence::Approximate` payload.
     VendorLutExtrapolated,
+    /// F3.3 (defect class C1) — the matched row publishes a
+    /// single-point "range" (raw min == max): a nominal preset, not a
+    /// calibrated envelope. The implied burn floor is fabricated
+    /// precision.
+    VendorLutPointPreset,
+    /// F3.3 — the matched row carries no `ae_min`/`ae_max`
+    /// calibration, so the engagement-arc normalization was skipped
+    /// and the bound comparison is arc-uncompensated.
+    VendorLutMissingAe,
+}
+
+impl ChipBoundsSource {
+    /// F3.3 — true when the LOW (burn) side of these bounds is too
+    /// weakly provenanced to hard-refuse on: a low-side trip downgrades
+    /// to a structured burn advisory
+    /// ([`ChiploadVerdict::Within::burn_advisory`]) instead of
+    /// `Exceeds(Low)`. The HIGH (breakage) side stays hard for every
+    /// source — over-thick chips break teeth regardless of how the
+    /// bound was derived.
+    pub fn low_side_is_advisory(self) -> bool {
+        match self {
+            ChipBoundsSource::VendorLut => false,
+            ChipBoundsSource::VendorLutExtrapolated
+            | ChipBoundsSource::VendorLutPointPreset
+            | ChipBoundsSource::VendorLutMissingAe => true,
+        }
+    }
 }
 
 /// G17 C2 — informational entry-sample spike that exceeded the
@@ -698,6 +725,14 @@ pub enum ChiploadVerdict {
         /// sample exceeded its bound.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         entry_spikes: Vec<EntrySpike>,
+        /// F3.3 — the median chip thickness sat below the row's burn
+        /// floor, but the floor's provenance is too weak to refuse on
+        /// ([`ChipBoundsSource::low_side_is_advisory`]): surfaced as a
+        /// structured advisory instead of flipping to `Exceeds(Low)`.
+        /// Candidates carrying this land in the MarginalSafe tier
+        /// rather than auto-recommending.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        burn_advisory: Option<Box<ChiploadMetric>>,
     },
     Exceeds {
         side: ChipSide,
@@ -1087,6 +1122,7 @@ mod tests {
                 },
                 confidence: Confidence::Validated,
                 entry_spikes: Vec::new(),
+                burn_advisory: None,
             },
             power: PowerVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired,
@@ -1132,6 +1168,7 @@ mod tests {
                     },
                     confidence: Confidence::Approximate("isotropic Kc only".to_owned()),
                     entry_spikes: Vec::new(),
+                    burn_advisory: None,
                 },
                 power: PowerVerdict::Unmodeled {
                     reason: UnmodeledReason::CutterModeUnsupported("v-bit tip".to_owned()),
@@ -1177,6 +1214,7 @@ mod tests {
                         },
                         confidence: Confidence::Validated,
                         entry_spikes: Vec::new(),
+                        burn_advisory: None,
                     },
                     power: PowerVerdict::Unmodeled {
                         reason: UnmodeledReason::NotImplemented("phase 1b".to_owned()),
@@ -1209,6 +1247,7 @@ mod tests {
                         },
                         confidence: Confidence::Validated,
                         entry_spikes: Vec::new(),
+                        burn_advisory: None,
                     },
                     power: PowerVerdict::Unmodeled {
                         reason: UnmodeledReason::NotImplemented("phase 1b".to_owned()),
@@ -1486,6 +1525,7 @@ mod tests {
             },
             confidence: Confidence::Validated,
             entry_spikes: Vec::new(),
+            burn_advisory: None,
         };
         assert_eq!(within.state(), LoadState::Within);
         assert!(!within.is_exceeded());
@@ -1525,6 +1565,7 @@ mod tests {
             },
             confidence: Confidence::Validated,
             entry_spikes: Vec::new(),
+            burn_advisory: None,
         };
         let json = serde_json::to_string(&v).expect("ser");
         let back: ChiploadVerdict = serde_json::from_str(&json).expect("de");
@@ -1954,6 +1995,7 @@ mod tests {
                     },
                     confidence: Confidence::Validated,
                     entry_spikes: Vec::new(),
+                    burn_advisory: None,
                 },
                 power: PowerVerdict::Unmodeled {
                     reason: UnmodeledReason::SimulationRequired,

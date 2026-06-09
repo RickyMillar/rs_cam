@@ -145,7 +145,37 @@ bounds + un-multiplied shear-parallel Kc + solid-D section are co-tuned into a w
 stiffness index. Touching one constant alone breaks discrimination. Needs its own
 calibration effort with real measurements — see Backlog.
 
-### F3 — degenerate Whiteside LUT rows hard-blocking the optimizer — STATUS: pending
+### F3 — degenerate Whiteside LUT rows hard-blocking the optimizer — STATUS: ✅ DONE 2026-06-10
+
+**Landed** (commits 07652d7, + F3.3/F3.4 on `defect-class/f3-lut-validation`):
+- F3.1: all 13 whiteside_fusion360 rows demoted (fabricated `chipload_min` dropped,
+  grade c, row_kind fallback; kept as RPM/nominal references). A1 score replay pinned:
+  calibrated Amana tapered-ball row wins. The RPM-only blocker is fixed at lookup
+  level (see F3.4) — `whiteside_rpm_assorted.json` data unchanged; the rows stay
+  valid feeds-calculator RPM anchors.
+- F3.2: `validate_observation()` + `detect_conflicting_rows()` in feeds/vendor_lut.rs;
+  `load_dir` rejects violating files; embedded enforcement test with a SHRINK-ONLY
+  allowlist of the 48 legacy single-point rows (A1 MAJOR class — disposition per-row
+  later); reachability test (facing-bit rows documented dead pending the Face
+  feeds_family decision); deterministic observation_id tie-break in all lookups
+  (rule 8); `op_family_to_lut()` extracted (C5 dedup). Plausibility band 0.12×D
+  (clears the genuine Onsrud industrial 0.104×D row; catches inch/mm + per-rev errors).
+- F3.3: `ChipBoundsSource` extended (PointPreset / MissingAe; `low_side_is_advisory()`).
+  A LOW-side trip on weak-provenance bounds returns `Within` + structured
+  `burn_advisory` (boxed ChiploadMetric) instead of `Exceeds(Low)`; HIGH side stays
+  hard everywhere. `candidate_is_marginally_safe` consumes the advisory → such
+  candidates land MarginalSafe, never auto-recommend (closes A4's dead
+  Confidence/ChipBoundsSource finding for the burn side).
+- F3.4: `matched_chip_envelope()` (tool_load/chipload.rs) is THE chipload-envelope
+  resolver — gate, optimizer context (→ preflight bipolar + retargeters), and the
+  viewport envelope map all consume it. `find_best_chip_envelope_row()`: only
+  chipload-bearing rows compete (kills the A1 RPM-only `Unmodeled(NoVendorData)`
+  blocker; replay test pins the 9.525 mm 3F plywood case). Optimizer rows are now
+  V-bit angle-gated; viewport bounds DOC-derated + steady-state-filtered axial.
+- Validation: `wanaka_suggest_baseline` TP11 (drop_cutter, 2 mm tapered ball — the
+  TP7-class finish candidate) repinned: feed recal now REACHES the calibrated Amana
+  target (950 → ~1353 mm/min, no MaxFeed cap, no still-low warning) instead of
+  chasing the fabricated 0.1016 preset into the machine ceiling.
 
 Sub-fixes:
 1. Demote the four `min==max` rows in `whiteside_fusion360.json`: drop their
@@ -392,3 +422,23 @@ F2 fix order: (1) intent→span bridge, (2) honor `spans_valid` at the 4 call si
   harness drives generators directly and its sims don't produce metric samples,
   so `axial_engagement_mm` doesn't exist there. Same coverage intent, honest
   signal path.
+- 2026-06-10 (F3.1): RPM-only rows NOT data-demoted — `feeds::calculate`
+  deliberately consumes them as vendor RPM anchors (litmatrix sentry
+  `_litmatrix_rpm_only_lut_chipload` pins this). The "must not be selectable by
+  the chipload gate" rule lives in `find_best_chip_envelope_row` instead: every
+  envelope consumer filters to chipload-bearing rows; the calculator keeps the
+  anchor + formula-chipload fallback.
+- 2026-06-10 (F3.2): the 48 remaining single-point rows (Spektra, compression,
+  IDC CSV, 60°/90° V-groove, Garr/Helical aluminum) carry a shrink-only test
+  allowlist rather than a bulk demotion — each needs a per-source disposition
+  (some have genuine vendor nominals worth keeping as max-only). Plausibility
+  band set to 0.12×D after verifying the hottest genuine row (Onsrud industrial
+  softwood 0.013 ipt on 1/8" = 0.104×D) — NOT a unit error, A1's "re-verify"
+  satisfied for that row; the freud half-inch 0.69 row sits at 0.054×D, also
+  inside.
+- 2026-06-10 (F3.3): weak-low-provenance = PointPreset ∪ Extrapolated ∪
+  MissingAe per the A3-era doc framing; HIGH side stays hard for ALL sources
+  (breakage is catastrophic regardless of bound provenance). The burn advisory
+  carries the full MedianLow metric (boxed for enum-size lint) so MCP/GUI can
+  render the would-be trip numbers. Broader Confidence wiring into
+  candidate ranking stays backlog (A4).
