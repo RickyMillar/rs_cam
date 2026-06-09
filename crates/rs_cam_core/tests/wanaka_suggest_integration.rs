@@ -413,8 +413,16 @@ fn wanaka_suggest_baseline() {
     // ── Toolpath 11: 3D Finish 6 (DropCutter, 2 mm-tip tapered ball)
     //
     // The scallop-height target drives stepover to ~0.03 mm; the runtime
-    // back-off raises it to ~0.23 mm. Feed then hits machine.max_feed
-    // before the LUT min is reached → ChiploadStillLowAfterRecalibration.
+    // back-off raises it to ~0.23 mm.
+    //
+    // F3.1 (2026-06-10): pre-F3 the tapered-ball lookup matched the
+    // Whiteside Fusion360 preset row (fabricated 0.1016 mm/tooth
+    // "range"), so feed recalibration chased an unreachable target and
+    // slammed into machine.max_feed → ChiploadStillLowAfterRecalibration.
+    // With the preset rows demoted, the calibrated Amana row wins
+    // (scaled target ~0.0053 mm/tooth) and the recalibration REACHES the
+    // target inside the machine envelope: feed 950 → ~1350 mm/min, no
+    // cap hit, no still-low warning.
     {
         let (_id, name, suggested) = find_case(&cases, 11);
         let ctx = format!("3D Finish 6 (tp {_id} / {name})");
@@ -446,41 +454,25 @@ fn wanaka_suggest_baseline() {
             "{ctx}: raised stepover must clear 0.10 mm for runtime, got {raised_step}"
         );
 
-        let (_, _, _, _, _, cap_hit) = assert_has_feed_raised(&suggested.warnings, &ctx);
+        let (_, _, _, obs_after, lut_target, cap_hit) =
+            assert_has_feed_raised(&suggested.warnings, &ctx);
         assert_eq!(
-            cap_hit,
-            Some(FeedRecalibrationCap::MaxFeed),
-            "{ctx}: feed must hit MaxFeed cap on the Shapeoko machine envelope, got {cap_hit:?}"
-        );
-
-        // Paired ChiploadStillLowAfterRecalibration with blocking_cap == MaxFeed.
-        let still_low = suggested.warnings.iter().find_map(|w| match w {
-            SuggestWarning::ChiploadStillLowAfterRecalibration {
-                predicted_observed_mm_per_tooth,
-                lut_target_mm_per_tooth,
-                blocking_cap,
-                ..
-            } => Some((
-                *predicted_observed_mm_per_tooth,
-                *lut_target_mm_per_tooth,
-                *blocking_cap,
-            )),
-            _ => None,
-        });
-        let (still_low_obs, still_low_lut, blocking_cap) = still_low.unwrap_or_else(|| {
-            panic!(
-                "{ctx}: ChiploadStillLowAfterRecalibration must fire, got warnings: {:?}",
-                suggested.warnings
-            )
-        });
-        assert_eq!(
-            blocking_cap,
-            FeedRecalibrationCap::MaxFeed,
-            "{ctx}: blocking_cap must be MaxFeed, got {blocking_cap:?}"
+            cap_hit, None,
+            "{ctx}: the calibrated tapered-ball target must be reachable inside the \
+             machine envelope (pre-F3.1 the fabricated preset target hit MaxFeed), \
+             got {cap_hit:?}"
         );
         assert!(
-            still_low_obs < still_low_lut,
-            "{ctx}: still-low observed must be below LUT min ({still_low_lut}), got {still_low_obs}"
+            obs_after >= lut_target * 0.95,
+            "{ctx}: post-recal observed must reach the LUT target ({lut_target}), got {obs_after}"
+        );
+        assert!(
+            !suggested
+                .warnings
+                .iter()
+                .any(|w| matches!(w, SuggestWarning::ChiploadStillLowAfterRecalibration { .. })),
+            "{ctx}: no still-low warning once the target is reachable, got warnings: {:?}",
+            suggested.warnings
         );
     }
 

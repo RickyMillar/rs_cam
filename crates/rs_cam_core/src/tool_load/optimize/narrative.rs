@@ -983,6 +983,7 @@ mod tests {
             },
             confidence: Confidence::Validated,
             entry_spikes: Vec::new(),
+            burn_advisory: None,
         }
     }
 
@@ -1329,6 +1330,7 @@ mod tests {
                     locality: "helix entry".to_owned(),
                     side: Some(ChipSide::High),
                 }],
+                burn_advisory: None,
             },
             _ => panic!("within_chipload should produce Within"),
         };

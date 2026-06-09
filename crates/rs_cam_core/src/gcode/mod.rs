@@ -1489,6 +1489,7 @@ mod tests {
             },
             confidence: Confidence::Validated,
             entry_spikes: Vec::new(),
+            burn_advisory: None,
         }
     }
 

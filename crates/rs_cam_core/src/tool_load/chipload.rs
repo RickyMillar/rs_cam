@@ -37,13 +37,64 @@
 //! now any present trace is considered live.
 
 use crate::compute::catalog::OperationType;
-use crate::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_row_for_geometry};
+use crate::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_chip_envelope_row};
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily};
 use crate::feeds::vendor_normalize::material_to_lut;
 use crate::simulation_cut::SimulationCutTrace;
 use crate::tool::MillingCutter;
 
 use super::locality::SpanLookup;
+
+/// F3.4 (defect class C5) — THE canonical chipload-envelope row
+/// resolution. Pre-F3.4 four call sites re-derived this independently
+/// (the gate below, the optimizer context's `find_matched_lut_row`,
+/// the viewport envelope map, the preflight/retargeter via the
+/// optimizer row) — with three different lookup strategies (angle-aware
+/// vs first-of-enumerate vs first-match), so advice could be computed
+/// against a different envelope than the verdict.
+///
+/// Semantics:
+/// - `Custom` material → `None` (no validated LUT category).
+/// - Operation routing via [`routed_lookup_family`] (ProjectCurve /
+///   Adaptive3d reroutes).
+/// - `lookup_diameter_mm` is the caller's engaged-diameter choice —
+///   the gate uses `lookup_diameter_at(peak steady-state DOC)`, the
+///   optimizer `diameter_for_lut_lookup(tool, commanded DOC)` (nominal
+///   fallback when no DOC is commanded).
+/// - Angle-aware dispatch for V-bit / chamfer geometry.
+/// - Only chipload-bearing rows compete
+///   ([`find_best_chip_envelope_row`]) — RPM-only rows are feeds-
+///   calculator anchors, not envelopes.
+pub(crate) fn matched_chip_envelope(
+    tool: &crate::tool::ToolDefinition,
+    material: &crate::material::Material,
+    operation_kind: OperationType,
+    operation_family: LutOperationFamily,
+    pass_role: LutPassRole,
+    lookup_diameter_mm: f64,
+) -> Option<LookupResult> {
+    if matches!(material, crate::material::Material::Custom { .. }) {
+        return None;
+    }
+    let geometry_hint = tool.to_geometry_hint();
+    let tool_family = geometry_hint.cutter_kind().lut_family();
+    let (operation_family, pass_role) =
+        routed_lookup_family(operation_kind, tool_family, operation_family, pass_role)?;
+    let (material_family, hardness_kind, hardness_value) = material_to_lut(material);
+    let diameter_mm = lookup_diameter_mm;
+    let query = LookupQuery {
+        tool_family,
+        tool_subfamily: None,
+        diameter_mm,
+        flute_count: tool.flute_count,
+        material_family,
+        hardness_kind: Some(hardness_kind),
+        hardness_value: Some(hardness_value),
+        operation_family,
+        pass_role,
+    };
+    find_best_chip_envelope_row(embedded_lut(), &query, &geometry_hint)
+}
 
 /// D9 — `mean_chip / feed_per_tooth` for a flat endmill at the given
 /// engagement arc. Mirrors `flat_chip_geometry_for_radius`'s mean-chip
@@ -331,42 +382,26 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         .filter(|(_, s)| super::locality::is_steady_state_for_gate(s, span_lookup.as_ref()))
         .map(|(_, s)| s.axial_doc_mm.max(0.0))
         .fold(0.0_f64, f64::max);
-    let lut = embedded_lut();
-    let geometry_hint = tool.to_geometry_hint();
-    let tool_family = geometry_hint.cutter_kind().lut_family();
-    let Some((operation_family, pass_role)) =
-        routed_lookup_family(operation_kind, tool_family, operation_family, pass_role)
-    else {
-        return ChiploadVerdict::Unmodeled {
-            reason: UnmodeledReason::NoVendorData,
-        };
-    };
-    let (material_family, hardness_kind, hardness_value) = material_to_lut(material);
-    let query = LookupQuery {
-        tool_family,
-        tool_subfamily: None,
-        diameter_mm: tool.lookup_diameter_at(lookup_axial_doc_mm),
-        flute_count: tool.flute_count,
-        material_family,
-        hardness_kind: Some(hardness_kind),
-        hardness_value: Some(hardness_value),
+    // F3.4 — resolve through the canonical chipload-envelope helper
+    // (angle-aware dispatch, ProjectCurve/Adaptive3d routing, engaged
+    // diameter at peak DOC, RPM-only rows excluded) so the gate, the
+    // optimizer, and the viewport read the SAME row.
+    let result = matched_chip_envelope(
+        tool,
+        material,
+        operation_kind,
         operation_family,
         pass_role,
-    };
-    // V-bit / chamfer cutters route to the angle-aware lookup; other
-    // families fall through to the diameter/hardness matcher. Centralised
-    // in `find_best_row_for_geometry` so Suggest / Explain / MCP /
-    // chipload-gate dispatch identically.
-    let result = find_best_row_for_geometry(lut, &query, &geometry_hint);
+        tool.lookup_diameter_at(lookup_axial_doc_mm),
+    );
     let Some(result) = result else {
         tracing::debug!(
             reason = "NoVendorData",
-            tool_family = ?tool_family,
-            material_family = ?material_family,
             operation_family = ?operation_family,
             pass_role = ?pass_role,
-            diameter_mm = query.diameter_mm,
-            "chipload gate refuses: no LUT row matched the (tool, material, op) query"
+            lookup_axial_doc_mm,
+            "chipload gate refuses: no chipload-bearing LUT row matched the \
+             (tool, material, op) query"
         );
         return ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::NoVendorData,
@@ -398,14 +433,30 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     let doc_ratio = lookup_axial_doc_mm / lookup_diameter_at_peak;
     let doc_scale = doc_derating_scale(doc_ratio);
     let (min, max) = (min.map(|m| m * doc_scale), max * doc_scale);
+    // F3.3 — provenance classification, worst-first. A single-point
+    // "range" (raw min == max — scaling preserves equality) is a
+    // nominal preset, not a calibrated envelope; extrapolation past
+    // ±40 % stretches whatever the row published; a row with no ae
+    // calibration skipped the engagement-arc normalization. All three
+    // make the LOW side advisory-only (`low_side_is_advisory`); the
+    // HIGH side stays hard everywhere.
+    let source = if result
+        .chip_load_min_mm
+        .zip(result.chip_load_max_mm)
+        .is_some_and(|(lo, hi)| lo >= hi)
+    {
+        ChipBoundsSource::VendorLutPointPreset
+    } else if result.is_extrapolated {
+        ChipBoundsSource::VendorLutExtrapolated
+    } else if result.ae_min_mm.is_none() && result.ae_max_mm.is_none() {
+        ChipBoundsSource::VendorLutMissingAe
+    } else {
+        ChipBoundsSource::VendorLut
+    };
     let bounds = ChipBounds {
         min_mm_per_tooth: min,
         max_mm_per_tooth: max,
-        source: if result.is_extrapolated {
-            ChipBoundsSource::VendorLutExtrapolated
-        } else {
-            ChipBoundsSource::VendorLut
-        },
+        source,
     };
     // Confidence is `Approximate` whenever the matched row's chipload
     // bounds were extrapolated to the query's diameter / hardness past
@@ -617,26 +668,46 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
             confidence: chipload_confidence,
         };
     }
+    // F3.3 — a low-side trip on weakly-provenanced bounds (point
+    // preset / extrapolated / no ae calibration) downgrades to a
+    // structured advisory on the `Within` arm instead of `Exceeds(Low)`.
+    // The fabricated/stretched burn floor must not hard-block the
+    // operator or the optimizer; the breakage side above stays hard.
+    let mut burn_advisory: Option<Box<ChiploadMetric>> = None;
     if let Some((dev, idx)) = peak_below {
         let observed = min.map(|m| m - dev).unwrap_or_default().max(0.0);
-        tracing::warn!(
-            verdict = "Exceeds",
-            side = "Low",
-            observed_mm_per_tooth = observed,
-            bound_min_mm_per_tooth = min.unwrap_or(f64::NAN),
-            "chipload gate Exceeds: median chip thickness below vendor-derived min → burn / rubbing risk"
-        );
-        return ChiploadVerdict::Exceeds {
-            side: ChipSide::Low,
-            triggering: ChiploadMetric {
-                observed_mm_per_tooth: observed,
-                statistic: ChiploadStatistic::MedianLow,
-                evidence: SampleEvidence::at_with_stat(idx, ChiploadStatistic::MedianLow)
-                    .with_locality(locality_for(idx)),
-                bounds,
-            },
-            confidence: chipload_confidence,
+        let metric = ChiploadMetric {
+            observed_mm_per_tooth: observed,
+            statistic: ChiploadStatistic::MedianLow,
+            evidence: SampleEvidence::at_with_stat(idx, ChiploadStatistic::MedianLow)
+                .with_locality(locality_for(idx)),
+            bounds: bounds.clone(),
         };
+        if bounds.source.low_side_is_advisory() {
+            tracing::debug!(
+                verdict = "Within",
+                advisory = "burn",
+                source = ?bounds.source,
+                observed_mm_per_tooth = observed,
+                bound_min_mm_per_tooth = min.unwrap_or(f64::NAN),
+                "chipload gate: median below vendor min but the burn floor's \
+                 provenance is weak — surfacing a burn advisory instead of Exceeds(Low)"
+            );
+            burn_advisory = Some(Box::new(metric));
+        } else {
+            tracing::warn!(
+                verdict = "Exceeds",
+                side = "Low",
+                observed_mm_per_tooth = observed,
+                bound_min_mm_per_tooth = min.unwrap_or(f64::NAN),
+                "chipload gate Exceeds: median chip thickness below vendor-derived min → burn / rubbing risk"
+            );
+            return ChiploadVerdict::Exceeds {
+                side: ChipSide::Low,
+                triggering: metric,
+                confidence: chipload_confidence,
+            };
+        }
     }
 
     // Within: report both bounds-approach metrics. `approach_to_min` is
@@ -692,6 +763,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         approach_to_max,
         confidence: chipload_confidence,
         entry_spikes,
+        burn_advisory,
     }
 }
 
@@ -1169,6 +1241,63 @@ mod tests {
                 assert_eq!(triggering.statistic, ChiploadStatistic::PeakHigh);
             }
             other => panic!("expected Exceeds(High/PeakHigh), got {other:?}"),
+        }
+    }
+
+    /// F3.3 — a low-side trip against weakly-provenanced bounds
+    /// (extrapolated here: 0.5 mm tapered ball against a ≥1 mm
+    /// calibrated row, the documented ±40 % extrapolation case) must
+    /// NOT hard-refuse with `Exceeds(Low)`: it lands `Within` with a
+    /// structured `burn_advisory` carrying the same MedianLow metric
+    /// the trip would have reported. The breakage side stays hard for
+    /// every provenance.
+    #[test]
+    fn weak_provenance_low_trip_demotes_to_burn_advisory() {
+        use crate::tool::TaperedBallEndmill;
+        let tapered = ToolDefinition::new(
+            Box::new(TaperedBallEndmill::new(0.5, 7.0, 6.0, 30.0)),
+            0.5,
+            10.0,
+            25.0,
+            35.0,
+            2,
+            crate::compute::tool_config::ToolMaterial::Carbide,
+        );
+        // Far below any scaled min — would trip Exceeds(Low) on a
+        // calibrated row.
+        let t = trace(vec![sample(0, 0, 0.0001, 0.5)]);
+        let v = evaluate_args(
+            0,
+            &tapered,
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            None,
+            LutOperationFamily::Parallel,
+            LutPassRole::Finish,
+            1000.0,
+            OperationType::DropCutter,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        match v {
+            ChiploadVerdict::Within {
+                burn_advisory: Some(advisory),
+                confidence,
+                ..
+            } => {
+                assert_eq!(advisory.statistic, ChiploadStatistic::MedianLow);
+                assert!(
+                    advisory.bounds.source.low_side_is_advisory(),
+                    "advisory must carry the weak source, got {:?}",
+                    advisory.bounds.source
+                );
+                assert!(
+                    matches!(confidence, Confidence::Approximate(_)),
+                    "extrapolated bounds must demote confidence, got {confidence:?}"
+                );
+            }
+            other => panic!("expected Within + burn_advisory, got {other:?}"),
         }
     }
 
