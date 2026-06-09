@@ -168,8 +168,11 @@ pub fn optimize_toolpath(
     // D6/D7: pull spans for the current toolpath out of the cached
     // compute result. None when generation hasn't been run; locality
     // classifier degrades to engagement-only labels in that case.
+    // F2.2: also None when a transform invalidated the spans (TSP
+    // split) — corrupted ancestry must not stamp gate verdicts.
     let baseline_spans: Option<&[crate::toolpath_spans::Span]> = session
         .get_result(toolpath_index)
+        .filter(|r| r.annotated().spans_valid)
         .map(|r| r.annotated().spans.as_slice());
     let baseline_drill_op = session
         .get_result(toolpath_index)
@@ -223,11 +226,14 @@ pub fn optimize_toolpath(
 
     // 5b. Pre-flight: classify the baseline against the gates before
     //     burning any sims. If the failing axis isn't in the
-    //     optimizer's search space (deflection L/D, bipolar chipload),
-    //     refuse immediately with an op-aware prescription rather
-    //     than running stages that can't move the failing gate.
+    //     optimizer's search space (deflection over the bound even at
+    //     the minimum-force corner, bipolar chipload), refuse
+    //     immediately with an op-aware prescription rather than
+    //     running stages that can't move the failing gate.
     if let Some(refusal) = preflight::preflight_classify(
         &ctx,
+        &baseline_op,
+        &machine,
         baseline_trace,
         baseline_op.feed_rate(),
         &baseline_verdict,
@@ -235,6 +241,7 @@ pub fn optimize_toolpath(
     ) {
         let narrative = OutcomeNarrative {
             explanation: refusal.explanation,
+            deflection_setup: refusal.deflection_setup,
             ..OutcomeNarrative::default()
         };
         return OptimizeOutcome::no_safe_improvement(
@@ -273,40 +280,40 @@ pub fn optimize_toolpath(
     );
 
     // 7. Stage F: closed-form feed/RPM solve. Two modes:
-    //    - Within baselines → headroom scale-up (Stage 0).
-    //    - Single-side Exceeds (Burn or Breakage, not bipolar — pre-
-    //      flight refused bipolar already) → re-target via the LUT
-    //      row's chipload envelope, RCTF-compensated.
-    //    Either mode produces at most one candidate.
+    //    - All load gates Within → headroom scale-up (Stage 0).
+    //    - ANY load gate Exceeds (chipload single-side Burn/Breakage —
+    //      pre-flight refused bipolar already — power overuse, or
+    //      reachable deflection) → per-gate retargeters. F2.3: pre-F2
+    //      only chipload-Exceeds dispatched here, which left
+    //      `DeflectionDocRetargeter` dead code and starved
+    //      `PowerFeedRetargeter` on power-only-Exceeds baselines —
+    //      worse, a power/deflection-Exceeds baseline with Within
+    //      chipload ran the headroom SCALE-UP instead.
     let mut all_candidates: Vec<OptimizeCandidate> = Vec::new();
-    match baseline_verdict.chipload {
-        ChiploadVerdict::Within { .. } => {
-            if let Some(c) = run_headroom_strategy(
-                &mut guard,
-                &ctx,
-                &baseline_op,
-                baseline_rpm,
-                &baseline_verdict,
-                matched_lut_row.as_ref(),
-                &machine,
-                cancel,
-            ) {
-                all_candidates.push(c);
-            }
-        }
-        ChiploadVerdict::Exceeds { .. } => {
-            all_candidates.extend(run_retarget_strategy(
-                &mut guard,
-                &ctx,
-                &baseline_op,
-                baseline_rpm,
-                &baseline_verdict,
-                matched_lut_row.as_ref(),
-                &machine,
-                cancel,
-            ));
-        }
-        ChiploadVerdict::Unmodeled { .. } => {}
+    if any_load_gate_exceeds(&baseline_verdict) {
+        all_candidates.extend(run_retarget_strategy(
+            &mut guard,
+            &ctx,
+            &baseline_op,
+            baseline_rpm,
+            &baseline_verdict,
+            matched_lut_row.as_ref(),
+            &machine,
+            cancel,
+        ));
+    } else if matches!(baseline_verdict.chipload, ChiploadVerdict::Within { .. })
+        && let Some(c) = run_headroom_strategy(
+            &mut guard,
+            &ctx,
+            &baseline_op,
+            baseline_rpm,
+            &baseline_verdict,
+            matched_lut_row.as_ref(),
+            &machine,
+            cancel,
+        )
+    {
+        all_candidates.push(c);
     }
 
     if cancel.load(Ordering::SeqCst) {
@@ -438,6 +445,19 @@ fn run_headroom_strategy(
 /// peak=0.0253, LUT [0.038, 0.07], 1.20× headroom) now produces a
 /// feed-up candidate that clamps at 5000 mm/min — the previous Stage F
 /// produced a feed-down one.
+/// F2.3 — Stage F dispatch predicate: the per-gate retarget strategy
+/// runs when ANY load gate is `Exceeds`. Pre-F2.3 only
+/// chipload-Exceeds dispatched, which left `DeflectionDocRetargeter`
+/// dead code, starved `PowerFeedRetargeter` on power-only-Exceeds
+/// baselines, and routed those baselines to the headroom SCALE-UP
+/// instead.
+fn any_load_gate_exceeds(v: &ToolpathLoadVerdict) -> bool {
+    use crate::tool_load::verdict::{DeflectionVerdict, PowerVerdict};
+    matches!(v.chipload, ChiploadVerdict::Exceeds { .. })
+        || matches!(v.power, PowerVerdict::Exceeds { .. })
+        || matches!(v.deflection, DeflectionVerdict::Exceeds { .. })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_retarget_strategy(
     guard: &mut BaselineRestoreGuard<'_>,
@@ -596,9 +616,11 @@ fn run_grid_strategy(
 //
 // Before any sims fire, classify the baseline against each gate:
 //
-//   - Deflection `Exceeds` → search space (feed/RPM/DOC/stepover)
-//     can't reach a Within answer because L/D depends only on the
-//     tool config. Refuse with `DeflectionSetupLocked`.
+//   - Deflection `Exceeds` AND the closed-form model still over the
+//     bound at the search space's minimum-force corner (F2.3) →
+//     tool/material/stickout-driven failure the levers can't reach.
+//     Refuse with `DeflectionSetupLocked`. Reachable corners proceed
+//     to the per-gate retarget strategy instead.
 //   - Bipolar chipload (steady-state samples straddle both `cl_min`
 //     and `cl_max`) → no single feed/RPM scaling fixes both
 //     extremes. Refuse with `BipolarEngagement`.
@@ -994,13 +1016,19 @@ mod orchestration_skip_tests {
         trace
     }
 
+    /// F2.3 — a deflection-Exceeds baseline whose minimum-force corner
+    /// (hard-floor DOC × hard-floor stepover) clears the bound must NOT
+    /// refuse `DeflectionSetupLocked`; the optimizer proceeds into the
+    /// per-gate retarget search. Pre-F2.3 this exact fixture refused at
+    /// pre-flight, contradicting the `DeflectionDocRetargeter` (which
+    /// existed to fix exactly this case) and leaving it dead code.
     #[test]
-    fn deflection_exceeds_yields_setup_locked_refusal() {
-        // Default endmill has stickout 45 mm, diameter 6.35 mm. With a
-        // 6 mm slot in HardMaple (Kc=15) the force-aware deflection
-        // gate predicts a peak δ around 350 µm, comfortably above the
-        // 200 µm Exceeds threshold and triggering the pre-flight
-        // `DeflectionSetupLocked` refusal.
+    fn deflection_exceeds_with_reachable_corner_searches_instead_of_refusing() {
+        // Default endmill (stickout 45 mm, diameter 6.35 mm), 6 mm slot
+        // in HardMaple: baseline δ ≈ 350 µm → Exceeds. But at the
+        // search-space corner (DOC 0.05 mm × stepover 0.05 mm) the
+        // closed-form δ is far under 200 µm, so the levers CAN reach a
+        // Within answer.
         let mut session = session_with_op(OperationConfig::Pocket(PocketConfig::default()));
         let mut stock = session.stock_config().clone();
         stock.material = crate::material::Material::SolidWood {
@@ -1010,6 +1038,46 @@ mod orchestration_skip_tests {
         let trace = trace_with_summary_and_high_force_samples();
         let cancel = AtomicBool::new(false);
         let outcome = optimize_toolpath(&mut session, &trace, 0, &cancel);
+        assert_ne!(
+            outcome.reason,
+            Some(RefuseReason::DeflectionSetupLocked),
+            "reachable corner must not refuse setup-locked, got {outcome:?}"
+        );
+        // The empty test session can't actually sim candidates, so the
+        // search comes back empty-handed — but it must have SEARCHED
+        // (NoImprovementFound), not asserted the search is pointless.
+        assert_eq!(outcome.reason, Some(RefuseReason::NoImprovementFound));
+    }
+
+    /// F2.3 — a setup whose minimum-force corner still exceeds the
+    /// bound (1 mm HSS endmill at 60 mm stickout) keeps the
+    /// `DeflectionSetupLocked` refusal, with the structured detail on
+    /// the narrative.
+    #[test]
+    fn deflection_exceeds_with_unreachable_corner_refuses_setup_locked() {
+        let mut tool = make_tool();
+        tool.diameter = 1.0;
+        tool.shank_diameter = 1.0;
+        tool.stickout = 60.0;
+        tool.cutting_length = 50.0;
+        tool.tool_material = crate::compute::tool_config::ToolMaterial::Hss;
+        let mut s = ProjectSession::new_empty();
+        s.add_tool(tool);
+        let tool_id = s.tools()[0].id.0;
+        s.add_toolpath(
+            0,
+            make_tc(OperationConfig::Pocket(PocketConfig::default()), tool_id),
+        )
+        .unwrap();
+        let mut stock = s.stock_config().clone();
+        stock.material = crate::material::Material::SolidWood {
+            species: crate::material::WoodSpecies::HardMaple,
+        };
+        s.set_stock_config(stock);
+
+        let trace = trace_with_summary_and_high_force_samples();
+        let cancel = AtomicBool::new(false);
+        let outcome = optimize_toolpath(&mut s, &trace, 0, &cancel);
         assert_eq!(
             outcome.kind,
             OutcomeKind::NoSafeImprovement,
@@ -1025,6 +1093,14 @@ mod orchestration_skip_tests {
             explanation.contains("stickout"),
             "explanation should point at the stickout lever, got: {explanation}"
         );
+        let detail = outcome
+            .narrative
+            .deflection_setup
+            .as_ref()
+            .expect("structured DeflectionSetupDetail on the narrative");
+        assert!(detail.peak_um > detail.bound_um);
+        assert!((detail.bound_um - 200.0).abs() < 1e-9);
+        assert!(detail.target_stickout_mm > 0.0 && detail.target_stickout_mm < 60.0);
         assert_eq!(
             outcome.candidates.len(),
             1,
@@ -1048,10 +1124,26 @@ mod orchestration_skip_tests {
             crate::compute::tool_config::ToolMaterial::Carbide,
         );
         let peak_delta_mm = 0.215;
-        let s = deflection_setup_prescription(&tool, peak_delta_mm);
-        assert!(s.contains("215"), "peak µm not in '{s}'");
-        assert!(s.contains("28"), "target stickout ~28mm not in '{s}'");
-        assert!(s.contains("stickout"), "stickout lever not in '{s}'");
+        let p = deflection_setup_prescription(&tool, peak_delta_mm);
+        assert!(p.text.contains("215"), "peak µm not in '{}'", p.text);
+        assert!(
+            p.text.contains("28"),
+            "target stickout ~28mm not in '{}'",
+            p.text
+        );
+        assert!(
+            p.text.contains("stickout"),
+            "stickout lever not in '{}'",
+            p.text
+        );
+        // F2.3 — structured fields mirror the prose, and both bounds
+        // (200 µm Exceeds limit, 50 µm Within target) are stated so the
+        // prescription can't drift inconsistent again.
+        assert!((p.peak_um - 215.0).abs() < 1e-9);
+        assert!((p.bound_um - 200.0).abs() < 1e-9);
+        assert!((p.target_stickout_mm - 27.8).abs() < 0.5);
+        assert!(p.text.contains("200"), "Exceeds limit not in '{}'", p.text);
+        assert!(p.text.contains("50"), "Within target not in '{}'", p.text);
     }
 
     #[test]
@@ -1901,6 +1993,33 @@ mod tests {
             reason: UnmodeledReason::NoVendorData,
         };
         v
+    }
+
+    /// F2.3 — the Stage F dispatch predicate fires on ANY Exceeds load
+    /// gate, not chipload alone. A power-only or deflection-only
+    /// Exceeds baseline must route to the per-gate retargeters (pre-
+    /// F2.3 it routed to the headroom scale-up).
+    #[test]
+    fn retarget_dispatch_fires_on_any_exceeds_gate() {
+        use super::super::verdict::{
+            Confidence, DeflectionBounds, DeflectionVerdict, SampleEvidence,
+        };
+        assert!(!any_load_gate_exceeds(&within_verdict()));
+        assert!(!any_load_gate_exceeds(&unmodeled_chipload_verdict()));
+        assert!(any_load_gate_exceeds(&exceeds_chipload_verdict()));
+        assert!(any_load_gate_exceeds(&exceeds_power_verdict()));
+
+        let mut v = within_verdict();
+        v.deflection = DeflectionVerdict::Exceeds {
+            peak_mm: 0.35,
+            bounds: DeflectionBounds {
+                validated_within_mm: 0.050,
+                exceeds_mm: 0.200,
+            },
+            evidence: SampleEvidence::at(0),
+            confidence: Confidence::Validated,
+        };
+        assert!(any_load_gate_exceeds(&v));
     }
 
     #[test]
