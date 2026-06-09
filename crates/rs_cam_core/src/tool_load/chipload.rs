@@ -37,13 +37,64 @@
 //! now any present trace is considered live.
 
 use crate::compute::catalog::OperationType;
-use crate::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_row_for_geometry};
+use crate::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_chip_envelope_row};
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily};
 use crate::feeds::vendor_normalize::material_to_lut;
 use crate::simulation_cut::SimulationCutTrace;
 use crate::tool::MillingCutter;
 
 use super::locality::SpanLookup;
+
+/// F3.4 (defect class C5) — THE canonical chipload-envelope row
+/// resolution. Pre-F3.4 four call sites re-derived this independently
+/// (the gate below, the optimizer context's `find_matched_lut_row`,
+/// the viewport envelope map, the preflight/retargeter via the
+/// optimizer row) — with three different lookup strategies (angle-aware
+/// vs first-of-enumerate vs first-match), so advice could be computed
+/// against a different envelope than the verdict.
+///
+/// Semantics:
+/// - `Custom` material → `None` (no validated LUT category).
+/// - Operation routing via [`routed_lookup_family`] (ProjectCurve /
+///   Adaptive3d reroutes).
+/// - `lookup_diameter_mm` is the caller's engaged-diameter choice —
+///   the gate uses `lookup_diameter_at(peak steady-state DOC)`, the
+///   optimizer `diameter_for_lut_lookup(tool, commanded DOC)` (nominal
+///   fallback when no DOC is commanded).
+/// - Angle-aware dispatch for V-bit / chamfer geometry.
+/// - Only chipload-bearing rows compete
+///   ([`find_best_chip_envelope_row`]) — RPM-only rows are feeds-
+///   calculator anchors, not envelopes.
+pub(crate) fn matched_chip_envelope(
+    tool: &crate::tool::ToolDefinition,
+    material: &crate::material::Material,
+    operation_kind: OperationType,
+    operation_family: LutOperationFamily,
+    pass_role: LutPassRole,
+    lookup_diameter_mm: f64,
+) -> Option<LookupResult> {
+    if matches!(material, crate::material::Material::Custom { .. }) {
+        return None;
+    }
+    let geometry_hint = tool.to_geometry_hint();
+    let tool_family = geometry_hint.cutter_kind().lut_family();
+    let (operation_family, pass_role) =
+        routed_lookup_family(operation_kind, tool_family, operation_family, pass_role)?;
+    let (material_family, hardness_kind, hardness_value) = material_to_lut(material);
+    let diameter_mm = lookup_diameter_mm;
+    let query = LookupQuery {
+        tool_family,
+        tool_subfamily: None,
+        diameter_mm,
+        flute_count: tool.flute_count,
+        material_family,
+        hardness_kind: Some(hardness_kind),
+        hardness_value: Some(hardness_value),
+        operation_family,
+        pass_role,
+    };
+    find_best_chip_envelope_row(embedded_lut(), &query, &geometry_hint)
+}
 
 /// D9 — `mean_chip / feed_per_tooth` for a flat endmill at the given
 /// engagement arc. Mirrors `flat_chip_geometry_for_radius`'s mean-chip
@@ -331,42 +382,26 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         .filter(|(_, s)| super::locality::is_steady_state_for_gate(s, span_lookup.as_ref()))
         .map(|(_, s)| s.axial_doc_mm.max(0.0))
         .fold(0.0_f64, f64::max);
-    let lut = embedded_lut();
-    let geometry_hint = tool.to_geometry_hint();
-    let tool_family = geometry_hint.cutter_kind().lut_family();
-    let Some((operation_family, pass_role)) =
-        routed_lookup_family(operation_kind, tool_family, operation_family, pass_role)
-    else {
-        return ChiploadVerdict::Unmodeled {
-            reason: UnmodeledReason::NoVendorData,
-        };
-    };
-    let (material_family, hardness_kind, hardness_value) = material_to_lut(material);
-    let query = LookupQuery {
-        tool_family,
-        tool_subfamily: None,
-        diameter_mm: tool.lookup_diameter_at(lookup_axial_doc_mm),
-        flute_count: tool.flute_count,
-        material_family,
-        hardness_kind: Some(hardness_kind),
-        hardness_value: Some(hardness_value),
+    // F3.4 — resolve through the canonical chipload-envelope helper
+    // (angle-aware dispatch, ProjectCurve/Adaptive3d routing, engaged
+    // diameter at peak DOC, RPM-only rows excluded) so the gate, the
+    // optimizer, and the viewport read the SAME row.
+    let result = matched_chip_envelope(
+        tool,
+        material,
+        operation_kind,
         operation_family,
         pass_role,
-    };
-    // V-bit / chamfer cutters route to the angle-aware lookup; other
-    // families fall through to the diameter/hardness matcher. Centralised
-    // in `find_best_row_for_geometry` so Suggest / Explain / MCP /
-    // chipload-gate dispatch identically.
-    let result = find_best_row_for_geometry(lut, &query, &geometry_hint);
+        tool.lookup_diameter_at(lookup_axial_doc_mm),
+    );
     let Some(result) = result else {
         tracing::debug!(
             reason = "NoVendorData",
-            tool_family = ?tool_family,
-            material_family = ?material_family,
             operation_family = ?operation_family,
             pass_role = ?pass_role,
-            diameter_mm = query.diameter_mm,
-            "chipload gate refuses: no LUT row matched the (tool, material, op) query"
+            lookup_axial_doc_mm,
+            "chipload gate refuses: no chipload-bearing LUT row matched the \
+             (tool, material, op) query"
         );
         return ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::NoVendorData,

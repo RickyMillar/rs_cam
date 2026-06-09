@@ -122,9 +122,18 @@ pub fn find_best_vbit_row(
     criteria: &LookupCriteria,
     query_included_angle_deg: Option<f64>,
 ) -> Option<MatchedRow> {
+    find_best_vbit_row_where(lut, criteria, query_included_angle_deg, |_| true)
+}
+
+fn find_best_vbit_row_where(
+    lut: &VendorLut,
+    criteria: &LookupCriteria,
+    query_included_angle_deg: Option<f64>,
+    extra: impl Fn(&VendorObservation) -> bool,
+) -> Option<MatchedRow> {
     let mut best: Option<(i64, i64, usize)> = None;
     for (i, obs) in lut.observations.iter().enumerate() {
-        if !passes_must_match(criteria, obs) {
+        if !passes_must_match(criteria, obs) || !extra(obs) {
             continue;
         }
         let angle_bonus = match (query_included_angle_deg, obs.included_angle_deg) {
@@ -181,6 +190,36 @@ pub fn find_best_row_for_geometry(
         | crate::feeds::ToolGeometryHint::Ball
         | crate::feeds::ToolGeometryHint::Bull { .. }
         | crate::feeds::ToolGeometryHint::TaperedBall { .. } => find_best_row(lut, criteria),
+    }
+}
+
+/// F3.4 (defect class C5/A1) — chipload-ENVELOPE row lookup: like
+/// [`find_best_row_for_geometry`] but only rows publishing at least one
+/// chipload bound compete. RPM-only rows (e.g.
+/// `whiteside_rpm_assorted.json`) are legitimate RPM anchors for the
+/// feeds calculator, but when one outranks a chipload-bearing row it
+/// forces the chipload gate to `Unmodeled(NoVendorData)` even though
+/// usable rows exist underneath (A1 blocker). Every consumer that
+/// needs a chipload envelope — the gate, the optimizer context, the
+/// viewport envelope map — must resolve rows through this entry point.
+pub fn find_best_chip_envelope_row(
+    lut: &VendorLut,
+    criteria: &LookupCriteria,
+    geometry: &crate::feeds::ToolGeometryHint,
+) -> Option<MatchedRow> {
+    let has_chipload = |obs: &VendorObservation| {
+        obs.chipload_min_mm_tooth.is_some() || obs.chipload_max_mm_tooth.is_some()
+    };
+    match geometry {
+        crate::feeds::ToolGeometryHint::VBit { included_angle, .. } => {
+            find_best_vbit_row_where(lut, criteria, Some(*included_angle), has_chipload)
+        }
+        crate::feeds::ToolGeometryHint::Flat
+        | crate::feeds::ToolGeometryHint::Ball
+        | crate::feeds::ToolGeometryHint::Bull { .. }
+        | crate::feeds::ToolGeometryHint::TaperedBall { .. } => {
+            lookup_best_where(lut, criteria, has_chipload)
+        }
     }
 }
 
@@ -352,10 +391,18 @@ fn beats(candidate_score: i64, candidate_id: &str, best: Option<(i64, &str)>) ->
 
 /// Find the best matching observation for a query.
 pub fn lookup_best(lut: &VendorLut, query: &LookupQuery) -> Option<LookupResult> {
+    lookup_best_where(lut, query, |_| true)
+}
+
+fn lookup_best_where(
+    lut: &VendorLut,
+    query: &LookupQuery,
+    extra: impl Fn(&VendorObservation) -> bool,
+) -> Option<LookupResult> {
     let mut best: Option<(i64, i64, usize)> = None;
 
     for (i, obs) in lut.observations.iter().enumerate() {
-        if !passes_must_match(query, obs) {
+        if !passes_must_match(query, obs) || !extra(obs) {
             continue;
         }
         let (score, diam_score) = score_observation(query, obs);
@@ -1175,6 +1222,45 @@ mod tests {
             "fiberglass query must select the Garr fiberglass row, not a \
              polymer/aluminum row that would otherwise match on diameter+op"
         );
+    }
+
+    /// F3.4 / A1 blocker replay — an RPM-only row (no chipload bounds)
+    /// can win the plain lookup (it's a legitimate vendor RPM anchor
+    /// for the feeds calculator), but the chipload-ENVELOPE lookup
+    /// must skip it and return the best chipload-bearing row instead
+    /// of forcing the gate to `Unmodeled(NoVendorData)`. Replay case:
+    /// 9.525 mm 3F flat-end / plywood-hardwood / adaptive roughing —
+    /// plain winner is `whiteside-ru4000h-...-rpm` (chipload 0.0).
+    #[test]
+    fn chip_envelope_lookup_skips_rpm_only_rows() {
+        let lut = embedded_lut();
+        let query = LookupQuery {
+            tool_family: ToolFamily::FlatEnd,
+            tool_subfamily: None,
+            diameter_mm: 9.525,
+            flute_count: 3,
+            material_family: MaterialFamily::PlywoodHardwood,
+            hardness_kind: Some(HardnessKind::Janka),
+            hardness_value: Some(1000.0),
+            operation_family: LutOperationFamily::Adaptive,
+            pass_role: LutPassRole::Roughing,
+        };
+        let plain = lookup_best(&lut, &query).expect("plain lookup matches");
+        assert_eq!(
+            plain.observation_id, "whiteside-ru4000h-roughing-up-spiral-3f-plywood-rpm",
+            "fixture drift: the RPM-only row no longer wins the plain lookup — \
+             pick a query where it does, or this test loses its teeth"
+        );
+        assert!(plain.chip_load_mm <= 0.0, "RPM-only row has no chipload");
+
+        let env = find_best_chip_envelope_row(&lut, &query, &crate::feeds::ToolGeometryHint::Flat)
+            .expect("a chipload-bearing row exists underneath");
+        assert!(
+            env.chip_load_min_mm.is_some() || env.chip_load_max_mm.is_some(),
+            "envelope lookup must return a chipload-bearing row, got {}",
+            env.observation_id
+        );
+        assert!(env.chip_load_mm > 0.0);
     }
 
     /// F3.2 rule 8 — equal-score ties break on observation_id, not on
