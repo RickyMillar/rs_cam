@@ -206,7 +206,7 @@ pub struct VendorObservation {
 }
 
 /// Operation family as used in vendor LUT JSON (separate from feeds::OperationFamily for serde).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LutOperationFamily {
     Adaptive,
@@ -372,6 +372,8 @@ impl VendorLut {
     }
 
     /// Load additional observations from a directory of JSON files.
+    /// F3.2 (defect class C1): rows must pass [`validate_observation`]
+    /// — bad data must not enter the LUT wearing a "validated" badge.
     pub fn load_dir(&mut self, path: &Path) -> Result<usize, String> {
         let entries = std::fs::read_dir(path)
             .map_err(|e| format!("cannot read directory {}: {e}", path.display()))?;
@@ -383,12 +385,195 @@ impl VendorLut {
                     .map_err(|e| format!("cannot read {}: {e}", p.display()))?;
                 let file: ObservationFile = serde_json::from_str(&contents)
                     .map_err(|e| format!("parse error in {}: {e}", p.display()))?;
+                for obs in &file.observations {
+                    if let Err(violation) = validate_observation(obs) {
+                        return Err(format!(
+                            "invalid observation in {}: {violation}",
+                            p.display()
+                        ));
+                    }
+                }
                 count += file.observations.len();
                 self.observations.extend(file.observations);
             }
         }
         Ok(count)
     }
+}
+
+// ── F3.2 row validation (defect class C1) ───────────────────────────────
+//
+// A1's audit found 62/252 embedded rows with degenerate min==max
+// chipload "ranges" (CAM nominal presets encoded as ranges), grade-A
+// badges on CAM tool-library presets, and RPM-only rows winning
+// chipload queries. These rules reject the *classes*, not the
+// instances: every newly ingested file must pass, and the
+// `embedded_rows_pass_loader_validation` test holds the embedded set
+// to the same bar (with a documented legacy allowlist that may only
+// shrink).
+
+/// Minimum chipload range width as a fraction of the midpoint. A
+/// narrower published "range" is a single nominal value encoded as a
+/// range — the burn floor and breakage ceiling it implies are
+/// fabricated precision. Encode such sources with only
+/// `chipload_max_mm_tooth` (nominal reference) instead.
+pub const MIN_CHIPLOAD_RANGE_FRACTION: f64 = 0.05;
+
+/// Plausibility ceiling for chipload as a fraction of cutter diameter.
+/// The hottest legitimate vendor row (Onsrud industrial softwood chart,
+/// 0.013 ipt = 0.3302 mm/tooth on a 1/8" compression spiral) sits at
+/// 0.104×D; 0.12×D clears it while still rejecting unit mistakes —
+/// inch-vs-mm (25.4×) and per-rev-vs-per-tooth (flute_count×) errors
+/// land far past this band.
+pub const MAX_CHIPLOAD_DIAMETER_FRACTION: f64 = 0.12;
+
+/// Substrings identifying CAM tool-library presets. Such sources are
+/// software defaults, not vendor cutting charts — they may not carry
+/// `evidence_grade: a` (rule 3) because grade A means "vendor chart".
+const CAM_PRESET_SOURCE_MARKERS: &[&str] = &["fusion360", ".tools", ".tool library"];
+
+/// Validate one observation row against the F3.2 ingest rules.
+/// Returns `Err(description)` naming the row and the violated rule.
+pub fn validate_observation(obs: &VendorObservation) -> Result<(), String> {
+    let id = &obs.observation_id;
+
+    // Rule 1 — degenerate-range rejection.
+    if let (Some(min), Some(max)) = (obs.chipload_min_mm_tooth, obs.chipload_max_mm_tooth) {
+        let mid = (min + max) / 2.0;
+        if mid > 0.0 && (max - min) < MIN_CHIPLOAD_RANGE_FRACTION * mid {
+            return Err(format!(
+                "{id}: chipload range [{min}, {max}] is degenerate (width < {:.0}% of \
+                 midpoint) — a nominal preset encoded as a range; publish only \
+                 chipload_max_mm_tooth instead",
+                MIN_CHIPLOAD_RANGE_FRACTION * 100.0
+            ));
+        }
+    }
+
+    // Rule 2 — exact-kind rows must publish chipload data.
+    if obs.row_kind == ObservationKind::Exact
+        && obs.chipload_min_mm_tooth.is_none()
+        && obs.chipload_max_mm_tooth.is_none()
+    {
+        return Err(format!(
+            "{id}: row_kind 'exact' with no chipload bounds — RPM-only rows must be \
+             'derived' or 'fallback' so they cannot outrank chipload-bearing rows"
+        ));
+    }
+
+    // Rule 3 — grade-A provenance denylist for CAM presets.
+    if obs.evidence_grade == EvidenceGrade::A {
+        let hay = format!(
+            "{} {} {}",
+            obs.source_id.to_lowercase(),
+            obs.source_title.to_lowercase(),
+            obs.source_url.to_lowercase()
+        );
+        if let Some(marker) = CAM_PRESET_SOURCE_MARKERS.iter().find(|m| hay.contains(**m)) {
+            return Err(format!(
+                "{id}: evidence_grade 'a' on a CAM tool-library preset source \
+                 (matched {marker:?}) — grade A is reserved for vendor cutting charts; \
+                 use 'c' for software defaults"
+            ));
+        }
+    }
+
+    // Rule 4 — calibration completeness: paired/ordered numeric fields.
+    if obs.hardness_kind.is_some() != obs.hardness_value.is_some() {
+        return Err(format!(
+            "{id}: hardness_kind and hardness_value must be present together"
+        ));
+    }
+    for (label, lo, hi) in [
+        (
+            "chipload",
+            obs.chipload_min_mm_tooth,
+            obs.chipload_max_mm_tooth,
+        ),
+        ("rpm", obs.rpm_min, obs.rpm_max),
+        ("ap", obs.ap_min_mm, obs.ap_max_mm),
+        ("ae", obs.ae_min_mm, obs.ae_max_mm),
+    ] {
+        if let (Some(lo), Some(hi)) = (lo, hi)
+            && lo > hi
+        {
+            return Err(format!("{id}: {label} min {lo} > max {hi}"));
+        }
+    }
+    if obs
+        .chipload_min_mm_tooth
+        .or(obs.chipload_max_mm_tooth)
+        .is_some_and(|v| v <= 0.0)
+    {
+        return Err(format!("{id}: chipload bounds must be positive"));
+    }
+
+    // Rule 5 — per-diameter plausibility band (anchored rows only).
+    if let (Some(d), Some(max)) = (obs.diameter_mm, obs.chipload_max_mm_tooth)
+        && d > 0.0
+        && max > MAX_CHIPLOAD_DIAMETER_FRACTION * d
+    {
+        return Err(format!(
+            "{id}: chipload_max {max} mm/tooth exceeds {MAX_CHIPLOAD_DIAMETER_FRACTION}×D \
+             ({:.3} mm) for a {d} mm cutter — likely a unit error (inch-vs-mm or \
+             per-rev vs per-tooth)",
+            MAX_CHIPLOAD_DIAMETER_FRACTION * d
+        ));
+    }
+
+    Ok(())
+}
+
+/// Rule 6 — conflict detector across a row set: two same-vendor rows
+/// for the identical query tuple whose full chipload ranges do not
+/// overlap describe contradictory physics; one of them is wrong.
+pub fn detect_conflicting_rows(observations: &[VendorObservation]) -> Vec<String> {
+    use std::collections::HashMap;
+    let mut by_key: HashMap<String, Vec<&VendorObservation>> = HashMap::new();
+    for obs in observations {
+        let (Some(min), Some(max)) = (obs.chipload_min_mm_tooth, obs.chipload_max_mm_tooth) else {
+            continue;
+        };
+        if min >= max {
+            continue;
+        }
+        let key = format!(
+            "{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{}|{:?}",
+            obs.source_vendor,
+            obs.tool_family,
+            obs.tool_subfamily,
+            obs.material_family,
+            obs.operation_family,
+            obs.pass_role,
+            obs.flute_count,
+            obs.diameter_mm,
+        );
+        by_key.entry(key).or_default().push(obs);
+    }
+    let mut conflicts = Vec::new();
+    for rows in by_key.values() {
+        for (i, a) in rows.iter().enumerate() {
+            for b in rows.iter().skip(i + 1) {
+                // SAFETY: filtered to rows with both bounds above.
+                #[allow(clippy::unwrap_used)]
+                let (a_min, a_max, b_min, b_max) = (
+                    a.chipload_min_mm_tooth.unwrap(),
+                    a.chipload_max_mm_tooth.unwrap(),
+                    b.chipload_min_mm_tooth.unwrap(),
+                    b.chipload_max_mm_tooth.unwrap(),
+                );
+                if a_max < b_min || b_max < a_min {
+                    conflicts.push(format!(
+                        "{} [{a_min}, {a_max}] vs {} [{b_min}, {b_max}]: same query tuple, \
+                         disjoint chipload ranges",
+                        a.observation_id, b.observation_id
+                    ));
+                }
+            }
+        }
+    }
+    conflicts.sort();
+    conflicts
 }
 
 #[cfg(test)]
@@ -501,6 +686,206 @@ mod tests {
                 obs.observation_id
             );
         }
+    }
+
+    /// F3.2 — legacy rows that predate the loader-validation rules and
+    /// still violate rule 1 (degenerate single-point "range"; the A1
+    /// MAJOR class: Spektra single-points, compression presets,
+    /// community CSV points). This list may only SHRINK — fix a row by
+    /// dropping its fabricated `chipload_min_mm_tooth` (keep the value
+    /// as a nominal `max` reference) and remove it here. New ingests
+    /// must pass with no additions.
+    const LEGACY_DEGENERATE_RANGE_ROWS: &[&str] = &[
+        "amana-compression-acrylic-pocket-6350-2f",
+        "amana-compression-mdf-pocket-12700-2f",
+        "amana-compression-mdf-pocket-6350-2f",
+        "amana-compression-plywood-hardwood-pocket-6350-2f",
+        "amana-compression-wood-pocket-12700-2f",
+        "amana-compression-wood-pocket-6350-2f",
+        "amana-flat-mdf-pocket-0794-2f-spektra",
+        "amana-flat-mdf-pocket-12000-2f-spektra",
+        "amana-flat-mdf-pocket-12700-2f-spektra",
+        "amana-flat-mdf-pocket-12700-3f-spektra",
+        "amana-flat-mdf-pocket-1500-2f-spektra",
+        "amana-flat-mdf-pocket-1587-2f-spektra",
+        "amana-flat-mdf-pocket-19050-3f-spektra",
+        "amana-flat-mdf-pocket-2381-2f-spektra",
+        "amana-flat-mdf-pocket-3000-2f-spektra",
+        "amana-flat-mdf-pocket-4763-2f-spektra",
+        "amana-flat-mdf-pocket-5000-2f-spektra",
+        "amana-flat-mdf-pocket-9525-2f-spektra",
+        "amana-flat-mdf-pocket-9525-3f-spektra",
+        "amana-flat-softwood-pocket-0794-2f-spektra",
+        "amana-flat-softwood-pocket-12000-2f-spektra",
+        "amana-flat-softwood-pocket-12700-2f-spektra",
+        "amana-flat-softwood-pocket-12700-3f-spektra",
+        "amana-flat-softwood-pocket-1500-2f-spektra",
+        "amana-flat-softwood-pocket-1587-2f-spektra",
+        "amana-flat-softwood-pocket-19050-3f-spektra",
+        "amana-flat-softwood-pocket-2381-2f-spektra",
+        "amana-flat-softwood-pocket-3000-2f-spektra",
+        "amana-flat-softwood-pocket-4763-2f-spektra",
+        "amana-flat-softwood-pocket-5000-2f-spektra",
+        "amana-flat-softwood-pocket-9525-2f-spektra",
+        "amana-flat-softwood-pocket-9525-3f-spektra",
+        "amana-vgroove-hardwood-trace-60deg-2f",
+        "amana-vgroove-softwood-trace-60deg-2f",
+        "amana-vgroove-softwood-trace-90deg-2f",
+        "garr-a3-alum-finish-6000-flat-3f",
+        "helical-h45al-6061-hem-adaptive-12700-3f",
+        "helical-h45al-6061-trad-rough-12700-3f",
+        "idcwoodcraft-bn-12-ball-nose",
+        "idcwoodcraft-bn-14-ball-nose",
+        "idcwoodcraft-bn-18-ball-nose",
+        "idcwoodcraft-cm-14-compression",
+        "idcwoodcraft-cm-18-compression",
+        "idcwoodcraft-dc-18-downcut",
+        "idcwoodcraft-of-14-acrylic-o-flute",
+        "idcwoodcraft-of-18-acrylic-o-flute",
+        "idcwoodcraft-su-10-surfacing",
+        "idcwoodcraft-uc-18-upcut",
+    ];
+
+    /// F3.2 — every embedded row passes the loader-validation rules,
+    /// modulo the shrink-only legacy allowlist above. Strict equality
+    /// both ways: a NEW violation fails loud, and a FIXED row left on
+    /// the allowlist fails loud too (so the list can't go stale).
+    #[test]
+    fn embedded_rows_pass_loader_validation() {
+        let lut = VendorLut::embedded();
+        let mut violating: Vec<&str> = Vec::new();
+        for obs in &lut.observations {
+            if let Err(violation) = validate_observation(obs) {
+                if !LEGACY_DEGENERATE_RANGE_ROWS.contains(&obs.observation_id.as_str()) {
+                    panic!("non-allowlisted loader-validation violation: {violation}");
+                }
+                violating.push(obs.observation_id.as_str());
+            }
+        }
+        for legacy in LEGACY_DEGENERATE_RANGE_ROWS {
+            assert!(
+                violating.contains(legacy),
+                "{legacy} no longer violates any rule — remove it from \
+                 LEGACY_DEGENERATE_RANGE_ROWS (the list may only shrink)"
+            );
+        }
+    }
+
+    /// F3.2 rule 6 — no two same-vendor rows for the identical query
+    /// tuple publish disjoint chipload ranges.
+    #[test]
+    fn embedded_rows_have_no_conflicting_ranges() {
+        let lut = VendorLut::embedded();
+        let conflicts = detect_conflicting_rows(&lut.observations);
+        assert!(conflicts.is_empty(), "conflicting rows:\n{conflicts:#?}");
+    }
+
+    /// F3.2 rule 7 — reachability: every row's `operation_family` must
+    /// be declared as `feeds_family` by at least one registered
+    /// operation, otherwise the row is dead data no query can ever
+    /// select. The facing-bit rows are the documented exception (A1):
+    /// the Face op declares `feeds_family: Pocket`, so the 9
+    /// `operation_family: face` rows are unreachable until that
+    /// mapping decision is revisited (backlog).
+    #[test]
+    fn embedded_rows_reachable_by_some_operation_family() {
+        use crate::compute::catalog::OperationType;
+        use crate::feeds::vendor_normalize::op_family_to_lut;
+
+        let reachable: std::collections::HashSet<LutOperationFamily> = OperationType::ALL
+            .iter()
+            .map(|op| op_family_to_lut(op.registry_entry().spec.feeds_family))
+            .collect();
+        let lut = VendorLut::embedded();
+        for obs in &lut.observations {
+            if obs.operation_family == LutOperationFamily::Face {
+                continue; // documented dead data — see doc comment.
+            }
+            assert!(
+                reachable.contains(&obs.operation_family),
+                "{}: operation_family {:?} is not the feeds_family of any registered \
+                 operation — the row can never be selected",
+                obs.observation_id,
+                obs.operation_family
+            );
+        }
+    }
+
+    fn synthetic_row() -> VendorObservation {
+        // SAFETY: parse of a known-good literal.
+        #[allow(clippy::expect_used)]
+        serde_json::from_str(
+            r#"{
+                "observation_id": "synthetic-test-row",
+                "source_id": "synthetic",
+                "source_vendor": "amana",
+                "source_title": "Synthetic Vendor Chart",
+                "source_url": "https://example.com/chart.pdf",
+                "accessed_on": "2026-06-10",
+                "evidence_grade": "a",
+                "row_kind": "exact",
+                "tool_family": "flat_end",
+                "operation_family": "pocket",
+                "pass_role": "roughing",
+                "material_family": "hardwood",
+                "material_label": "synthetic",
+                "diameter_mm": 6.0,
+                "flute_count": 2,
+                "chipload_min_mm_tooth": 0.04,
+                "chipload_max_mm_tooth": 0.08
+            }"#,
+        )
+        .expect("synthetic row parses")
+    }
+
+    #[test]
+    fn validate_observation_rules_fire() {
+        // Baseline passes.
+        assert!(validate_observation(&synthetic_row()).is_ok());
+
+        // Rule 1 — degenerate range.
+        let mut r = synthetic_row();
+        r.chipload_min_mm_tooth = Some(0.0508);
+        r.chipload_max_mm_tooth = Some(0.0508);
+        assert!(validate_observation(&r).unwrap_err().contains("degenerate"));
+
+        // Rule 2 — exact kind without chipload.
+        let mut r = synthetic_row();
+        r.chipload_min_mm_tooth = None;
+        r.chipload_max_mm_tooth = None;
+        assert!(validate_observation(&r).unwrap_err().contains("RPM-only"));
+        r.row_kind = ObservationKind::Derived;
+        assert!(validate_observation(&r).is_ok(), "derived RPM-only is fine");
+
+        // Rule 3 — grade-A CAM preset.
+        let mut r = synthetic_row();
+        r.source_title = "Vendor Fusion360 .tool Library".to_owned();
+        assert!(
+            validate_observation(&r)
+                .unwrap_err()
+                .contains("CAM tool-library preset")
+        );
+        r.evidence_grade = EvidenceGrade::C;
+        assert!(validate_observation(&r).is_ok(), "grade-c preset is fine");
+
+        // Rule 4 — pairing / ordering.
+        let mut r = synthetic_row();
+        r.hardness_kind = Some(HardnessKind::Janka);
+        r.hardness_value = None;
+        assert!(
+            validate_observation(&r)
+                .unwrap_err()
+                .contains("hardness_kind and hardness_value")
+        );
+        let mut r = synthetic_row();
+        r.rpm_min = Some(24000.0);
+        r.rpm_max = Some(18000.0);
+        assert!(validate_observation(&r).unwrap_err().contains("rpm min"));
+
+        // Rule 5 — implausible chipload for the diameter.
+        let mut r = synthetic_row();
+        r.chipload_max_mm_tooth = Some(2.54); // 0.1" — inch-vs-mm error
+        assert!(validate_observation(&r).unwrap_err().contains("unit error"));
     }
 
     #[test]

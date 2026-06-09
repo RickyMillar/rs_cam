@@ -139,7 +139,12 @@ pub fn find_best_vbit_row(
         };
         let (base_score, diam_score) = score_observation(criteria, obs);
         let score = base_score + angle_bonus;
-        if best.is_none_or(|(bs, _, _)| score > bs) {
+        #[allow(clippy::indexing_slicing)] // best.i stored from this same iteration
+        if beats(
+            score,
+            &obs.observation_id,
+            best.map(|(s, _, bi)| (s, lut.observations[bi].observation_id.as_str())),
+        ) {
             best = Some((score, diam_score, i));
         }
     }
@@ -192,7 +197,12 @@ pub fn enumerate_matching_rows(lut: &VendorLut, criteria: &LookupCriteria) -> Ve
         let (score, diam_score) = score_observation(criteria, obs);
         all.push((score, build_result(obs, criteria, score, diam_score, i)));
     }
-    all.sort_by_key(|(score, _)| -*score);
+    // F3.2 rule 8 — deterministic order: equal scores break on
+    // observation_id instead of file iteration order.
+    all.sort_by(|(sa, ra), (sb, rb)| {
+        sb.cmp(sa)
+            .then_with(|| ra.observation_id.cmp(&rb.observation_id))
+    });
     all.into_iter().map(|(_, row)| row).collect()
 }
 
@@ -325,6 +335,21 @@ fn build_result(
     }
 }
 
+/// F3.2 rule 8 — deterministic tie-break: on equal composite score the
+/// lexicographically smallest `observation_id` wins. Pre-F3.2 ties were
+/// broken by `EMBEDDED_FILES` iteration order, so reordering the
+/// include list (or loading an external directory) could silently flip
+/// which vendor row drives a verdict.
+fn beats(candidate_score: i64, candidate_id: &str, best: Option<(i64, &str)>) -> bool {
+    match best {
+        None => true,
+        Some((best_score, best_id)) => {
+            candidate_score > best_score
+                || (candidate_score == best_score && candidate_id < best_id)
+        }
+    }
+}
+
 /// Find the best matching observation for a query.
 pub fn lookup_best(lut: &VendorLut, query: &LookupQuery) -> Option<LookupResult> {
     let mut best: Option<(i64, i64, usize)> = None;
@@ -334,11 +359,12 @@ pub fn lookup_best(lut: &VendorLut, query: &LookupQuery) -> Option<LookupResult>
             continue;
         }
         let (score, diam_score) = score_observation(query, obs);
-        if let Some((best_score, _, _)) = best {
-            if score > best_score {
-                best = Some((score, diam_score, i));
-            }
-        } else {
+        #[allow(clippy::indexing_slicing)] // best.i stored from this same iteration
+        if beats(
+            score,
+            &obs.observation_id,
+            best.map(|(s, _, bi)| (s, lut.observations[bi].observation_id.as_str())),
+        ) {
             best = Some((score, diam_score, i));
         }
     }
@@ -903,6 +929,56 @@ mod tests {
         }
     }
 
+    /// F3.1 (defect class C1) — A1's score replay: the Whiteside
+    /// Fusion360 .tool preset rows (encoded as degenerate min==max
+    /// "ranges") used to WIN tapered-ball/hardwood/parallel/finish at
+    /// grade-a/exact (1813 vs 1705 for the calibrated Amana row),
+    /// returning a Validated chipload ~15× the Amana-scaled value and
+    /// hard-blocking the optimizer. Demoted to grade-c + fallback with
+    /// the fabricated lower bound dropped, the calibrated row must win.
+    #[test]
+    fn demoted_fusion360_preset_rows_lose_to_calibrated_amana() {
+        let lut = embedded_lut();
+        let query = LookupQuery {
+            tool_family: ToolFamily::TaperedBallNose,
+            tool_subfamily: None,
+            diameter_mm: 6.0,
+            flute_count: 2,
+            material_family: MaterialFamily::Hardwood,
+            hardness_kind: Some(HardnessKind::Janka),
+            hardness_value: Some(1450.0),
+            operation_family: LutOperationFamily::Parallel,
+            pass_role: LutPassRole::Finish,
+        };
+        let result = lookup_best(&lut, &query).expect("tapered-ball hardwood row");
+        assert!(
+            !result.observation_id.contains("fusion360"),
+            "Fusion360 preset row must not win a calibrated query, got {}",
+            result.observation_id
+        );
+        assert!(
+            result.observation_id.contains("amana"),
+            "calibrated Amana row expected, got {}",
+            result.observation_id
+        );
+        // The demoted rows keep their nominal as an upper reference but
+        // publish no fabricated lower bound any more.
+        let sc64 = embedded_lut()
+            .observations
+            .into_iter()
+            .find(|o| o.observation_id == "whiteside-sc64-conical-ball-nose-spiral-fusion360")
+            .expect("demoted row still present as RPM/nominal reference");
+        assert!(sc64.chipload_min_mm_tooth.is_none());
+        assert_eq!(
+            sc64.evidence_grade,
+            crate::feeds::vendor_lut::EvidenceGrade::C
+        );
+        assert_eq!(
+            sc64.row_kind,
+            crate::feeds::vendor_lut::ObservationKind::Fallback
+        );
+    }
+
     #[test]
     fn test_rpm_nominal_returned() {
         let lut = embedded_lut();
@@ -1099,6 +1175,43 @@ mod tests {
             "fiberglass query must select the Garr fiberglass row, not a \
              polymer/aluminum row that would otherwise match on diameter+op"
         );
+    }
+
+    /// F3.2 rule 8 — equal-score ties break on observation_id, not on
+    /// insertion order: the same two rows in either order pick the
+    /// same winner.
+    #[test]
+    fn equal_score_tie_breaks_on_observation_id_not_order() {
+        let row = |id: &str| {
+            let mut o = VendorLut::embedded()
+                .observations
+                .into_iter()
+                .find(|o| o.observation_id == "amana-flat-softwood-adaptive-6000-2f")
+                .expect("anchor row exists");
+            o.observation_id = id.to_owned();
+            o
+        };
+        let query = LookupQuery {
+            tool_family: ToolFamily::FlatEnd,
+            tool_subfamily: None,
+            diameter_mm: 6.0,
+            flute_count: 2,
+            material_family: MaterialFamily::Softwood,
+            hardness_kind: Some(HardnessKind::Janka),
+            hardness_value: Some(600.0),
+            operation_family: LutOperationFamily::Adaptive,
+            pass_role: LutPassRole::Roughing,
+        };
+        let forward = VendorLut {
+            observations: vec![row("tie-aaa"), row("tie-bbb")],
+        };
+        let reversed = VendorLut {
+            observations: vec![row("tie-bbb"), row("tie-aaa")],
+        };
+        let a = lookup_best(&forward, &query).expect("match");
+        let b = lookup_best(&reversed, &query).expect("match");
+        assert_eq!(a.observation_id, "tie-aaa");
+        assert_eq!(b.observation_id, "tie-aaa");
     }
 
     #[test]
