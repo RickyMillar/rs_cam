@@ -1639,6 +1639,7 @@ mod tests {
             },
             confidence: Confidence::Validated,
             entry_spikes: Vec::new(),
+            burn_advisory: None,
         }
     }
 
@@ -1814,6 +1815,7 @@ mod tests {
                 },
                 confidence: Confidence::Validated,
                 entry_spikes: Vec::new(),
+                burn_advisory: None,
             };
             ToolpathLoadVerdict {
                 toolpath_id: 0,
@@ -2211,6 +2213,7 @@ mod tests {
             },
             confidence: Confidence::Validated,
             entry_spikes: Vec::new(),
+            burn_advisory: None,
         }
     }
 
@@ -2225,6 +2228,64 @@ mod tests {
             drill_gates: None,
             modulation_summary: None,
         }
+    }
+
+    /// F3.3 — a `Within` chipload verdict carrying a weak-provenance
+    /// `burn_advisory` routes the candidate to MarginalSafe (safe to
+    /// scrap-test, not auto-recommend). Pre-F3.3 such a candidate
+    /// either hard-refused on the fabricated burn floor or
+    /// auto-recommended with full authority.
+    #[test]
+    fn burn_advisory_candidate_lands_marginal_safe() {
+        use super::super::verdict::{
+            ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, Confidence,
+            SampleEvidence,
+        };
+        let advisory_metric = ChiploadMetric {
+            observed_mm_per_tooth: 0.005,
+            statistic: ChiploadStatistic::MedianLow,
+            evidence: SampleEvidence::empty(),
+            bounds: ChipBounds {
+                min_mm_per_tooth: Some(0.02),
+                max_mm_per_tooth: 0.070,
+                source: ChipBoundsSource::VendorLutExtrapolated,
+            },
+        };
+        let chipload = match band_admitted_chipload_verdict(0.05) {
+            ChiploadVerdict::Within {
+                approach_to_min,
+                approach_to_max,
+                entry_spikes,
+                ..
+            } => ChiploadVerdict::Within {
+                approach_to_min,
+                approach_to_max,
+                confidence: Confidence::Approximate("extrapolated".to_owned()),
+                entry_spikes,
+                burn_advisory: Some(Box::new(advisory_metric)),
+            },
+            other => panic!("fixture must be Within, got {other:?}"),
+        };
+        let verdict = ToolpathLoadVerdict {
+            toolpath_id: 0,
+            chipload,
+            power: within_power_verdict(),
+            deflection: within_deflection_verdict(0.030),
+            drill_gates: None,
+            modulation_summary: None,
+        };
+        let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
+        let advisory_candidate = synthetic_candidate(2100.0, 75.0, verdict);
+        let outcome = build_outcome(
+            baseline,
+            vec![advisory_candidate],
+            &crate::machine::MachineProfile::default(),
+        );
+        assert_eq!(outcome.kind, OutcomeKind::MarginalSafe, "got {outcome:?}");
+        assert!(
+            outcome.first_safe().is_none(),
+            "burn-advisory candidates must not auto-recommend"
+        );
     }
 
     #[test]
