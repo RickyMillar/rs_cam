@@ -168,8 +168,11 @@ pub fn optimize_toolpath(
     // D6/D7: pull spans for the current toolpath out of the cached
     // compute result. None when generation hasn't been run; locality
     // classifier degrades to engagement-only labels in that case.
+    // F2.2: also None when a transform invalidated the spans (TSP
+    // split) — corrupted ancestry must not stamp gate verdicts.
     let baseline_spans: Option<&[crate::toolpath_spans::Span]> = session
         .get_result(toolpath_index)
+        .filter(|r| r.annotated().spans_valid)
         .map(|r| r.annotated().spans.as_slice());
     let baseline_drill_op = session
         .get_result(toolpath_index)

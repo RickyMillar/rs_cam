@@ -185,11 +185,18 @@ pub fn is_phantom_transit(
         Some(lookup) => {
             // With spans, we can split phantom from configured-entry
             // precisely. A sample is phantom iff any non-Entry transit
-            // kind appears in its ancestry.
+            // kind appears in its ancestry — OR the stamper flagged it
+            // `in_transit_span` without an Entry ancestor (F2.2: a
+            // transit span dropped by TSP leaves its moves without
+            // ancestry, but the per-move intent union still marks them
+            // in_transit; dropping them beats letting a phantom
+            // reading drive the gate).
             lookup.ancestors_contain_kind(&sample.span_path, SpanKind::WaterlineCleanup)
                 || lookup.ancestors_contain_kind(&sample.span_path, SpanKind::LinkBridge)
                 || lookup.ancestors_contain_kind(&sample.span_path, SpanKind::LeadOut)
                 || lookup.ancestors_contain_kind(&sample.span_path, SpanKind::DressupArtifact)
+                || (sample.in_transit_span
+                    && !lookup.ancestors_contain_kind(&sample.span_path, SpanKind::Entry))
         }
         // No span info → fall back to the conservative
         // `in_transit_span` flag and treat anything in_transit as
@@ -471,6 +478,39 @@ mod tests {
         // Inside an earlier depth pass (no cleanup ancestor) → steady-state.
         let cut_sample = sample(Some(PI), vec![SpanId(0)]);
         assert!(is_steady_state_for_gate(&cut_sample, Some(&lookup)));
+    }
+
+    /// F2.2 — a sample the stamper flagged `in_transit_span` whose
+    /// transit span was dropped (TSP split) has no transit ancestry,
+    /// but must still be excluded from the steady-state trip. An
+    /// Entry-ancestry sample with the flag keeps routing to the
+    /// configured-entry track, not the phantom drop.
+    #[test]
+    fn in_transit_flag_without_ancestry_is_phantom_even_with_lookup() {
+        let spans = vec![
+            span(0, 10, SpanKind::Operation, "op"),
+            span(0, 3, SpanKind::Entry, "plunge entry"),
+        ];
+        let lookup = SpanLookup::new(&spans);
+
+        // Flagged transit, ancestry only reaches Operation (its
+        // LinkBridge span was dropped by the TSP remap).
+        let mut dropped_bridge = sample(Some(PI), vec![SpanId(0)]);
+        dropped_bridge.in_transit_span = true;
+        assert!(is_phantom_transit(&dropped_bridge, Some(&lookup)));
+        assert!(!is_steady_state_for_gate(&dropped_bridge, Some(&lookup)));
+
+        // Flagged transit WITH Entry ancestry → configured entry, not
+        // phantom.
+        let mut entry = sample(Some(PI), vec![SpanId(0), SpanId(1)]);
+        entry.in_transit_span = true;
+        assert!(!is_phantom_transit(&entry, Some(&lookup)));
+        assert!(is_configured_entry(&entry, Some(&lookup)));
+
+        // Unflagged steady-state sample unaffected.
+        let steady = sample(Some(PI), vec![SpanId(0)]);
+        assert!(!is_phantom_transit(&steady, Some(&lookup)));
+        assert!(is_steady_state_for_gate(&steady, Some(&lookup)));
     }
 
     #[test]
