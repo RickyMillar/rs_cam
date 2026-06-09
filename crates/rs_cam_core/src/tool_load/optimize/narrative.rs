@@ -80,6 +80,23 @@ pub struct OutcomeNarrative {
     /// Within/Better → Exceeds/Worse. Empty for other tiers.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub worsened_gates: Vec<GateKind>,
+    /// F2.3 — structured numbers behind a `DeflectionSetupLocked`
+    /// refusal so MCP/GUI consumers read values instead of parsing
+    /// the explanation prose. `None` for every other outcome.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deflection_setup: Option<DeflectionSetupDetail>,
+}
+
+/// F2.3 — the numbers behind a `DeflectionSetupLocked` refusal
+/// (mirrors `refusal::DeflectionSetupPrescription` minus the prose).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DeflectionSetupDetail {
+    /// Predicted peak tip deflection at baseline load, µm.
+    pub peak_um: f64,
+    /// The Exceeds safety limit the peak breached, µm.
+    pub bound_um: f64,
+    /// Stickout estimated to land peak δ in the Within band, mm.
+    pub target_stickout_mm: f64,
 }
 
 /// G17 C2 — informational entry-sample breach surfaced on the
@@ -262,6 +279,7 @@ pub(crate) fn build_no_safe_narrative(
         .map(|c| entry_advisories_for_verdict(&c.verdict))
         .unwrap_or_default();
     OutcomeNarrative {
+        deflection_setup: None,
         headline,
         explanation: String::new(),
         envelope,
@@ -297,6 +315,7 @@ pub(crate) fn build_marginal_safe_narrative(
     // no operator action needed unless the user wants to tighten further.
     // Skip suggestions for now; the "verify on a scrap" header covers it.
     OutcomeNarrative {
+        deflection_setup: None,
         headline,
         explanation: String::new(),
         envelope,
@@ -522,6 +541,7 @@ pub(crate) fn build_tradeoff_narrative(
         .unwrap_or_default();
     let headline = headline_tradeoff(&improved_gates, &worsened_gates);
     OutcomeNarrative {
+        deflection_setup: None,
         headline,
         explanation: String::new(),
         envelope,

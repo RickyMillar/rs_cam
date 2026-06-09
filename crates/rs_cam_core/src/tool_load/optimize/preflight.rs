@@ -1,13 +1,17 @@
 //! Pre-flight gate — classify the baseline before running any stages
 //! to short-circuit cases the search space can't reach. Two refusals:
 //!
-//!   - Deflection setup-locked: baseline is `Exceeds` on deflection.
-//!     The optimizer's feed/RPM/DOC/stepover levers reduce force
-//!     linearly with DOC × radial-width, but for tool/material/
-//!     stickout-driven failures even the smallest viable DOC won't
-//!     bring δ below threshold. The search space can't reach a
-//!     Within answer because L/D depends only on the tool config.
-//!     Refuse with `DeflectionSetupLocked`.
+//!   - Deflection setup-locked: baseline is `Exceeds` on deflection
+//!     AND the closed-form deflection model still exceeds the bound at
+//!     the minimum-force corner of the search space (hard-floor DOC ×
+//!     hard-floor stepover). F2.3: pre-F2 ANY deflection-Exceeds
+//!     baseline refused here, asserting "the levers can't fix this"
+//!     without computing it — which contradicted the
+//!     `DeflectionDocRetargeter` (whose whole job is driving DOC down
+//!     to fix exactly this) and left it dead code. Now the refusal
+//!     fires only when even the lightest reachable cut stays over the
+//!     bound — tool/material/stickout-driven failures the search
+//!     space genuinely can't reach.
 //!   - Bipolar chipload (steady-state samples straddle both `cl_min`
 //!     and `cl_max`) → no single feed/RPM scaling fixes both
 //!     extremes. Refuse with `BipolarEngagement`.
@@ -17,46 +21,75 @@
 //! the diagnostic explains *what* is wrong and the lever points at a
 //! knob the user has access to.
 
+use crate::compute::catalog::OperationConfig;
 use crate::feeds::vendor_lookup::MatchedRow;
+use crate::machine::MachineProfile;
 use crate::simulation_cut::SimulationCutTrace;
+use crate::tool::MillingCutter;
 use crate::tool_load::RefuseReason;
 use crate::tool_load::verdict::{DeflectionVerdict, ToolpathLoadVerdict};
 
+use super::axes::SearchAxis;
 use super::context::EvaluationContext;
-use super::refusal;
+use super::narrative::DeflectionSetupDetail;
+use super::{refusal, search_policy};
 
 /// Outcome of pre-flight: either a refusal that should short-circuit
 /// the optimizer, or `None` to proceed to stages.
 pub(crate) struct PreflightRefusal {
     pub reason: RefuseReason,
     pub explanation: String,
+    /// Structured numbers behind a `DeflectionSetupLocked` refusal
+    /// (peak / bound / target stickout), surfaced on
+    /// [`super::narrative::OutcomeNarrative::deflection_setup`] so
+    /// MCP/GUI render values instead of parsing the prose. `None` for
+    /// other refusal kinds.
+    pub deflection_setup: Option<DeflectionSetupDetail>,
 }
 
 /// Classify the baseline before running any stages. Returns `Some`
 /// when the optimizer should refuse early without burning sims.
 pub(crate) fn preflight_classify(
     ctx: &EvaluationContext,
+    baseline_op: &OperationConfig,
+    machine: &MachineProfile,
     baseline_trace: &SimulationCutTrace,
     operation_feed_rate_mm_min: f64,
     baseline_verdict: &ToolpathLoadVerdict,
     matched_lut_row: Option<&MatchedRow>,
 ) -> Option<PreflightRefusal> {
-    // 1. Deflection — predicted tip deflection at baseline force. The
-    //    search-space levers (feed/RPM/DOC/stepover) reduce force
-    //    linearly with DOC × radial-width, but for tool/material/
-    //    stickout-driven failures even the smallest viable DOC won't
-    //    bring δ below the threshold. We refuse pre-flight; the
-    //    prescription points the user at the setup levers (stickout,
-    //    tool material) the search space can't reach.
+    // 1. Deflection — predicted tip deflection at baseline force.
+    //    F2.3: COMPUTE whether the search space can reach Within
+    //    instead of asserting it can't. Force scales with
+    //    DOC × radial-width, so the lowest-force corner the search
+    //    space can reach is hard-floor DOC × hard-floor stepover; the
+    //    closed-form model (same canonical cantilever as the gate's
+    //    per-sample evaluation) at that corner decides:
+    //    - corner ≤ Exceeds bound → proceed; the per-gate retarget
+    //      strategy dispatches `DeflectionDocRetargeter` downstream.
+    //    - corner still over the bound (or no force lever exists) →
+    //      genuinely setup-locked; refuse with the stickout/tool
+    //      prescription.
     if let DeflectionVerdict::Exceeds {
         peak_mm: peak_delta_mm,
         ..
     } = baseline_verdict.deflection
     {
-        return Some(PreflightRefusal {
-            reason: RefuseReason::DeflectionSetupLocked,
-            explanation: refusal::deflection_setup_prescription(&ctx.tool, peak_delta_mm),
-        });
+        let corner_mm = deflection_at_min_force_corner(ctx, baseline_op, machine, matched_lut_row);
+        let reachable = corner_mm
+            .is_some_and(|corner| corner <= crate::tool_load::deflection::EXCEEDS_BOUND_MM);
+        if !reachable {
+            let prescription = refusal::deflection_setup_prescription(&ctx.tool, peak_delta_mm);
+            return Some(PreflightRefusal {
+                reason: RefuseReason::DeflectionSetupLocked,
+                deflection_setup: Some(DeflectionSetupDetail {
+                    peak_um: prescription.peak_um,
+                    bound_um: prescription.bound_um,
+                    target_stickout_mm: prescription.target_stickout_mm,
+                }),
+                explanation: prescription.text,
+            });
+        }
     }
 
     // 2. Bipolar chipload — needs both LUT bounds to be defined,
@@ -75,9 +108,66 @@ pub(crate) fn preflight_classify(
             return Some(PreflightRefusal {
                 reason: RefuseReason::BipolarEngagement,
                 explanation: refusal::bipolar_prescription(ctx.operation_kind, ctx.op_family),
+                deflection_setup: None,
             });
         }
     }
 
     None
+}
+
+/// Closed-form tip deflection (mm) at the minimum-force corner of the
+/// optimizer's search space.
+///
+/// Corner inputs:
+/// - axial DOC: the `DepthPerPass` axis hard floor when the op exposes
+///   the axis, else the op's fixed `depth_per_pass()`. `None` when the
+///   op has neither — DOC isn't a reachable lever.
+/// - radial width: the `Stepover` axis hard floor, else the op's fixed
+///   `stepover()`, else the full tool diameter (contour-follow ops
+///   can't reduce radial engagement below what geometry dictates —
+///   full slot is the honest worst case).
+///
+/// Returns `None` when no DOC value is derivable or the canonical
+/// closed-form model refuses (Custom material, zero stickout) — the
+/// caller treats `None` as "cannot be shown reachable" and refuses.
+fn deflection_at_min_force_corner(
+    ctx: &EvaluationContext,
+    baseline_op: &OperationConfig,
+    machine: &MachineProfile,
+    matched_lut_row: Option<&MatchedRow>,
+) -> Option<f64> {
+    use crate::compute::catalog::OptimizationSurface;
+
+    let view = match baseline_op.optimization_surface() {
+        OptimizationSurface::Optimizable(v) => v,
+        OptimizationSurface::NotOptimizable { .. } => return None,
+    };
+    let axis_ctx = super::axes::AxisContext {
+        // Matches `run_retarget_strategy`'s fallback (Step 8 should
+        // plumb a real project default through `EvaluationContext`).
+        project_default_rpm: 18_000,
+        machine,
+        tool: &ctx.tool,
+        material: &ctx.material,
+    };
+    let space =
+        super::space::SearchSpace::build(&view, &axis_ctx, matched_lut_row, search_policy());
+
+    let min_doc_mm = space
+        .axis(SearchAxis::DepthPerPass)
+        .map(|b| b.hard.lo)
+        .or_else(|| baseline_op.depth_per_pass())?;
+    let min_woc_mm = space
+        .axis(SearchAxis::Stepover)
+        .map(|b| b.hard.lo)
+        .or_else(|| baseline_op.stepover())
+        .unwrap_or_else(|| ctx.tool.radius() * 2.0);
+
+    crate::feeds::predict::tip_deflection_from_engagement(
+        &ctx.tool,
+        &ctx.material,
+        min_doc_mm,
+        min_woc_mm,
+    )
 }
