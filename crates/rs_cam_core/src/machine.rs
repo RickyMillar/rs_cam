@@ -266,24 +266,36 @@ impl MachineProfile {
         }
     }
 
-    /// Serialization key for TOML project files.
-    pub fn to_key(&self) -> String {
-        if self.name.contains("VFD") {
-            "shapeoko_vfd".to_owned()
-        } else if self.name.contains("Makita") {
-            "shapeoko_makita".to_owned()
-        } else {
-            "generic".to_owned()
-        }
-    }
-
-    /// Parse from TOML key.
+    /// Parse a persisted preset key. Consumers: the viz LEGACY project
+    /// loader (old format stored `machine = "<key>"`) and the
+    /// literature-matrix shim's `machine_class` cell input. Unknown
+    /// keys fall back to the generic profile.
     pub fn from_key(key: &str) -> Self {
         match key {
             "shapeoko_vfd" => Self::shapeoko_vfd(),
             "shapeoko_makita" => Self::shapeoko_makita(),
             _ => Self::generic_wood_router(),
         }
+    }
+
+    /// Index into [`Self::presets`] of the preset this profile
+    /// structurally equals, or `None` for a custom/edited machine.
+    ///
+    /// R6 (tech-debt review 2026-06-10): replaces the removed
+    /// `to_key()`, which dispatched on `name.contains("VFD")`/
+    /// `"Makita"` — renaming a machine silently changed its identity,
+    /// and an edited preset still claimed to BE the preset. Current
+    /// project files serialize the full profile inline
+    /// (`ProjectFile.job.machine`), so no key is written anywhere
+    /// (`from_key` above only reads legacy files); structural equality
+    /// (same serde-JSON form, the comparison
+    /// `machine_library::resolve_in` already uses for its override
+    /// warning) is the honest preset test.
+    pub fn matching_preset_index(&self) -> Option<usize> {
+        let self_json = serde_json::to_string(self).ok()?;
+        Self::presets()
+            .iter()
+            .position(|(_, p)| serde_json::to_string(p).ok().as_deref() == Some(&self_json))
     }
 }
 
@@ -366,14 +378,29 @@ mod tests {
     }
 
     #[test]
-    fn test_key_roundtrip() {
-        for (_, profile) in MachineProfile::presets() {
-            let key = profile.to_key();
-            let restored = MachineProfile::from_key(&key);
+    fn matching_preset_index_identifies_each_preset() {
+        for (i, (label, profile)) in MachineProfile::presets().iter().enumerate() {
             assert_eq!(
-                profile.name, restored.name,
-                "roundtrip failed for key '{key}'"
+                profile.matching_preset_index(),
+                Some(i),
+                "preset '{label}' must match itself"
             );
         }
+    }
+
+    /// R6: identity is structural, not name-based — an edited preset is
+    /// a custom machine even if its name still says "VFD", and a rename
+    /// alone doesn't change which preset it is.
+    #[test]
+    fn matching_preset_index_rejects_edited_and_survives_rename() {
+        let mut edited = MachineProfile::shapeoko_vfd();
+        edited.max_feed_mm_min += 1.0;
+        assert_eq!(edited.matching_preset_index(), None);
+
+        let mut renamed = MachineProfile::shapeoko_vfd();
+        renamed.name = "My router".to_owned();
+        // A renamed profile differs structurally too (name serializes),
+        // so it reads as custom — never as a different preset.
+        assert_eq!(renamed.matching_preset_index(), None);
     }
 }

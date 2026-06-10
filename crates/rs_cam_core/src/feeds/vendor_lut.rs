@@ -38,6 +38,27 @@ pub enum Vendor {
     Idcwoodcraft,
 }
 
+impl std::fmt::Display for Vendor {
+    /// Human-readable vendor name for UI surfaces (R6: display is the
+    /// only stringly edge — identity stays on the enum).
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Amana => "Amana",
+            Self::Onsrud => "Onsrud",
+            Self::Harvey => "Harvey",
+            Self::Whiteside => "Whiteside",
+            Self::Sandvik => "Sandvik",
+            Self::Garr => "GARR",
+            Self::Autodesk => "Autodesk",
+            Self::Carbide3d => "Carbide 3D",
+            Self::Helical => "Helical Solutions",
+            Self::Freud => "Freud",
+            Self::Idcwoodcraft => "IDC Woodcraft",
+        };
+        f.write_str(s)
+    }
+}
+
 /// Evidence quality grade: A = vendor chart, B = derived, C = community.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
