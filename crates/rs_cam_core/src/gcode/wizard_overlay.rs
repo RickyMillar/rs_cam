@@ -25,6 +25,43 @@ use std::borrow::Cow;
 use super::ir::{Program, Statement};
 use super::post::{PostDefinition, Units, WcsCode};
 
+/// Per-export tool-change handling override. `None` on the overlay
+/// means "use the post's `tool_change` template as-is".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolChangeMode {
+    /// Manual change: spindle off, operator message, M0 pause. The
+    /// `SpindleSet` emitted after the change block spins back up on
+    /// resume. (The GRBL-family posts' default.)
+    Pause,
+    /// Native `M5` + `M6 T{n}` change. (The LinuxCNC/Mach3 default.)
+    M6,
+    /// Strip `ToolChange` statements entirely — the following
+    /// `SpindleSet` is kept so per-tool RPM still applies. For
+    /// operators who handle changes outside the program.
+    Suppress,
+}
+
+impl ToolChangeMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Pause => "Pause for manual change (M0)",
+            Self::M6 => "M6 tool change",
+            Self::Suppress => "Suppress tool changes",
+        }
+    }
+
+    /// The `tool_change` template implementing this mode (for the
+    /// template-overriding modes; `Suppress` is handled at the program
+    /// level and has no template).
+    fn template(self) -> Option<&'static str> {
+        match self {
+            Self::Pause => Some("M5\n{message_comment}\nM0\n"),
+            Self::M6 => Some("M5\nM6 T{tool_number}\n"),
+            Self::Suppress => None,
+        }
+    }
+}
+
 /// Per-export overrides collected by the export wizard.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct WizardOverlay {
@@ -41,6 +78,11 @@ pub struct WizardOverlay {
     /// effective safe-Z (`wizard.safe_z_override.unwrap_or(gui.post.safe_z)`)
     /// before calling the emit helpers.
     pub dry_run_safe_z: Option<f64>,
+    /// Tool-change handling override. `None` = post default.
+    /// `Pause`/`M6` replace the post's `tool_change` template;
+    /// `Suppress` strips `ToolChange` statements from the program
+    /// (keeping the per-tool `SpindleSet`).
+    pub tool_change_override: Option<ToolChangeMode>,
 }
 
 impl WizardOverlay {
@@ -53,17 +95,23 @@ impl WizardOverlay {
             && self.safe_z_override.is_none()
             && self.spindle_warmup_secs == 0
             && self.dry_run_safe_z.is_none()
+            && self.tool_change_override.is_none()
     }
 
-    /// Apply the post-affecting overrides (`wcs_override`, `units_override`)
-    /// to `base`. Returns `Cow::Borrowed(base)` if neither field is set,
-    /// avoiding an allocation on the default path.
+    /// Apply the post-affecting overrides (`wcs_override`,
+    /// `units_override`, and the template-overriding tool-change modes)
+    /// to `base`. Returns `Cow::Borrowed(base)` if no post-level field
+    /// is set, avoiding an allocation on the default path.
     ///
     /// `safe_z_override` and `spindle_warmup_secs` are NOT applied here —
     /// they're program-level concerns handled by the export helpers and
-    /// `apply_to_program`.
+    /// `apply_to_program` (as is `ToolChangeMode::Suppress`).
     pub fn applied_post<'a>(&self, base: &'a PostDefinition) -> Cow<'a, PostDefinition> {
-        if self.wcs_override.is_none() && self.units_override.is_none() {
+        let tool_change_template = self.tool_change_override.and_then(ToolChangeMode::template);
+        if self.wcs_override.is_none()
+            && self.units_override.is_none()
+            && tool_change_template.is_none()
+        {
             return Cow::Borrowed(base);
         }
         let mut p = base.clone();
@@ -72,6 +120,9 @@ impl WizardOverlay {
         }
         if let Some(u) = self.units_override {
             p.units = u;
+        }
+        if let Some(t) = tool_change_template {
+            p.tool_change = t.to_owned();
         }
         Cow::Owned(p)
     }
@@ -93,10 +144,18 @@ impl WizardOverlay {
     pub fn apply_to_program<'a>(&self, program: &'a Program) -> Cow<'a, Program> {
         let needs_warmup = self.spindle_warmup_secs > 0;
         let needs_dry_run = self.dry_run_safe_z.is_some();
-        if !needs_warmup && !needs_dry_run {
+        let needs_tc_strip = self.tool_change_override == Some(ToolChangeMode::Suppress);
+        if !needs_warmup && !needs_dry_run && !needs_tc_strip {
             return Cow::Borrowed(program);
         }
         let mut p = program.clone();
+        if needs_tc_strip {
+            // Strip the change blocks only — the SpindleSet that the
+            // builder emits right after each ToolChange stays, so the
+            // incoming tool's RPM still applies.
+            p.statements
+                .retain(|s| !matches!(s, Statement::ToolChange { .. }));
+        }
         if needs_warmup
             && let Some(idx) = p
                 .statements
@@ -130,6 +189,7 @@ fn clamp_cutting_z(s: &mut Statement, safe_z: f64) {
         | Statement::Postamble
         | Statement::ProgramPause { .. }
         | Statement::Comment(_)
+        | Statement::ToolChange { .. }
         | Statement::Raw(_)
         | Statement::Rapid { .. }
         | Statement::SafeZRetract { .. } => {}
@@ -161,6 +221,7 @@ mod tests {
             safe_z_override: Some(20.0),
             spindle_warmup_secs: 3,
             dry_run_safe_z: None,
+            tool_change_override: None,
         };
         let base = post::grbl();
         let cow = o.applied_post(base);
@@ -356,6 +417,91 @@ mod tests {
         match cow.statements[2] {
             Statement::Linear { z, .. } => assert!((z - 3.0).abs() < 1e-9),
             ref other => panic!("expected clamped Linear, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tool_change_pause_override_swaps_template() {
+        let o = WizardOverlay {
+            tool_change_override: Some(ToolChangeMode::Pause),
+            ..Default::default()
+        };
+        // LinuxCNC ships the M6 template; the Pause override replaces it.
+        let cow = o.applied_post(post::linuxcnc());
+        assert!(matches!(cow, Cow::Owned(_)));
+        assert_eq!(cow.tool_change, "M5\n{message_comment}\nM0\n");
+        assert_eq!(
+            cow.render_tool_change(2, "Ball"),
+            "M5\n(TOOL CHANGE: Ball [T2])\nM0\n"
+        );
+    }
+
+    #[test]
+    fn tool_change_m6_override_swaps_template() {
+        let o = WizardOverlay {
+            tool_change_override: Some(ToolChangeMode::M6),
+            ..Default::default()
+        };
+        // Grbl ships the pause template; the M6 override replaces it
+        // (e.g. for a grblHAL ATC build using the GRBL post).
+        let cow = o.applied_post(post::grbl());
+        assert!(matches!(cow, Cow::Owned(_)));
+        assert_eq!(cow.render_tool_change(3, "Bit"), "M5\nM6 T3\n");
+    }
+
+    #[test]
+    fn tool_change_suppress_strips_statement_keeps_spindle() {
+        let o = WizardOverlay {
+            tool_change_override: Some(ToolChangeMode::Suppress),
+            ..Default::default()
+        };
+        // Suppress does NOT touch the post (template-level Cow stays
+        // borrowed)…
+        assert!(matches!(o.applied_post(post::grbl()), Cow::Borrowed(_)));
+        // …but strips ToolChange statements from the program, keeping
+        // the SpindleSet that follows.
+        let prog = Program {
+            statements: vec![
+                Statement::Preamble {
+                    spindle_rpm: 18_000,
+                },
+                Statement::ToolChange {
+                    tool_number: 2,
+                    label: "Ball".to_owned(),
+                },
+                Statement::SpindleSet { rpm: 10_610 },
+                Statement::Postamble,
+            ],
+            ..Default::default()
+        };
+        let cow = o.apply_to_program(&prog);
+        assert_eq!(cow.statements.len(), 3);
+        assert!(
+            !cow.statements
+                .iter()
+                .any(|s| matches!(s, Statement::ToolChange { .. })),
+            "ToolChange must be stripped"
+        );
+        assert!(
+            cow.statements
+                .iter()
+                .any(|s| matches!(s, Statement::SpindleSet { rpm: 10_610 })),
+            "SpindleSet must survive suppression"
+        );
+    }
+
+    #[test]
+    fn tool_change_override_makes_overlay_non_empty() {
+        for mode in [
+            ToolChangeMode::Pause,
+            ToolChangeMode::M6,
+            ToolChangeMode::Suppress,
+        ] {
+            let o = WizardOverlay {
+                tool_change_override: Some(mode),
+                ..Default::default()
+            };
+            assert!(!o.is_empty(), "{mode:?} should make overlay non-empty");
         }
     }
 

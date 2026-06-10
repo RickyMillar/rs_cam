@@ -29,6 +29,12 @@ M5
 M0
 """
 
+# Tool change: LinuxCNC implements M6 natively (tool table + Tn M6).
+tool_change = """\
+M5
+M6 T{tool_number}
+"""
+
 # LinuxCNC supports the full M-code/G-code surface including mist,
 # flood, and cutter compensation (G41/G42).
 # supports_cutter_comp defaults to true.

@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use crate::gcode::{Units, WcsCode};
+use crate::gcode::{ToolChangeMode, Units, WcsCode};
 
 /// How emitted g-code is split across files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -50,6 +50,10 @@ pub struct WizardState {
     /// without touching material. Resolved into the emit path via
     /// `WizardOverlay::dry_run_safe_z`.
     pub dry_run: bool,
+    /// Tool-change handling override for this export. `None` = use the
+    /// post's `tool_change` template; `Pause`/`M6` swap the template;
+    /// `Suppress` strips tool-change blocks (keeping per-tool RPM).
+    pub tool_change_override: Option<ToolChangeMode>,
     pub allow_validator_errors: bool,
     pub last_save_dir: Option<PathBuf>,
     /// Highest 0-indexed step the user has visited. The wizard opens at
@@ -67,6 +71,7 @@ impl Default for WizardState {
             safe_z_override: None,
             spindle_warmup_secs: 0,
             dry_run: false,
+            tool_change_override: None,
             allow_validator_errors: false,
             last_save_dir: None,
             last_step_visited: 0,
@@ -89,6 +94,7 @@ mod tests {
         assert!(s.safe_z_override.is_none());
         assert_eq!(s.spindle_warmup_secs, 0);
         assert!(!s.dry_run);
+        assert!(s.tool_change_override.is_none());
         assert!(!s.allow_validator_errors);
         assert!(s.last_save_dir.is_none());
         assert_eq!(s.last_step_visited, 0);

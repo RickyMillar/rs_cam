@@ -197,6 +197,10 @@ pub enum AppEvent {
     WizardSetDryRun(bool),
     /// Step 4: spindle warmup dwell in seconds. Zero disables.
     WizardSetSpindleWarmup(u32),
+    /// Step 4: tool-change handling override. `None` = use the post's
+    /// `tool_change` template; `Pause`/`M6` swap the template;
+    /// `Suppress` strips tool-change blocks (keeping per-tool RPM).
+    WizardSetToolChangeMode(Option<rs_cam_core::gcode::ToolChangeMode>),
     /// Step 4.5: per-setup pause-message override. `None` falls back to
     /// the default `Setup change: <name>` text emitted before the
     /// inter-setup `M0`. `Some("...")` replaces it verbatim — used to

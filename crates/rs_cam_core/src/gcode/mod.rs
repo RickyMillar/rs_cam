@@ -16,7 +16,7 @@ pub use post::{
     ArcLinearize, CommentStyle, Decimals, Feedrate, LoadError as PostLoadError, PostDefinition,
     PostLimits, Rpm, SafeZ, Units, WcsCode,
 };
-pub use wizard_overlay::WizardOverlay;
+pub use wizard_overlay::{ToolChangeMode, WizardOverlay};
 
 use crate::compute::catalog::effective_spindle_rpm;
 use crate::session::ProjectSession;
@@ -110,6 +110,25 @@ pub fn emit_program(program: &Program, post: &PostDefinition) -> String {
     emitter::emit_program(program, post)
 }
 
+/// The tool a phase cuts with, as seen by the g-code program builder.
+///
+/// `id` is the *identity* — the tool config id (`ToolConfig::id.0`).
+/// Tool-change detection keys on it, NOT on the user-curated display
+/// `number`: real projects carry T-number collisions across distinct
+/// tools (WANAKA: "End Mill" and "Tapered Ball 2mm" both T1), which
+/// silently suppressed the change when detection keyed on the number.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PhaseTool<'a> {
+    /// Tool config id — the identity used for change detection.
+    pub id: usize,
+    /// Display T-number, substituted into the post's `tool_change`
+    /// template (`M6 T{n}` / operator message).
+    pub number: u32,
+    /// Tool name for the operator message
+    /// (`TOOL CHANGE: {label} [T{number}]`).
+    pub label: &'a str,
+}
+
 /// A phase in a multi-operation job: toolpath + spindle speed + label.
 pub struct GcodePhase<'a> {
     pub toolpath: &'a Toolpath,
@@ -119,9 +138,10 @@ pub struct GcodePhase<'a> {
     pub pre_gcode: Option<&'a str>,
     /// Raw G-code to emit after this toolpath's moves (user-defined).
     pub post_gcode: Option<&'a str>,
-    /// Tool number for M6 tool change. If `Some` and different from previous phase,
-    /// an M6 T{n} command is emitted before this phase.
-    pub tool_number: Option<u32>,
+    /// The tool this phase cuts with. If `Some` and its `id` differs
+    /// from the previous phase's, the post's tool-change template is
+    /// emitted before this phase.
+    pub tool: Option<PhaseTool<'a>>,
     /// Coolant mode for this phase. Coolant on/off commands are emitted
     /// when the mode changes between phases.
     pub coolant: CoolantMode,
@@ -178,18 +198,23 @@ pub fn export_gcode_checked(
         .enumerate()
         .filter_map(|(idx, tc)| {
             let result = project.get_result(idx)?;
-            // Pull the tool_number from the matching tool config so the
-            // emitter can insert M6 T{n} between toolpaths that use
-            // different tools. The modal layer suppresses duplicate
-            // M6 commands for consecutive same-tool phases, so this is
-            // always safe to populate. Pre-Phase-5 this was hardcoded
-            // to `None`, suppressing all tool changes (including the
-            // M6 between Wanaka's End Mill and 20° V-bit operations).
-            let tool_number = project
+            // Pull tool identity (config id) + display number + name
+            // from the matching tool config so the emitter can insert
+            // the post's tool-change block between toolpaths that use
+            // different tools. Change detection keys on the config id —
+            // NOT the user-curated T-number, which collides in real
+            // projects (WANAKA: two distinct tools both T1). The modal
+            // layer suppresses duplicate changes for consecutive
+            // same-tool phases, so this is always safe to populate.
+            let tool = project
                 .tools()
                 .iter()
                 .find(|t| t.id.0 == tc.tool_id)
-                .map(|t| t.tool_number);
+                .map(|t| PhaseTool {
+                    id: t.id.0,
+                    number: t.tool_number,
+                    label: t.name.as_str(),
+                });
             Some(GcodePhase {
                 toolpath: result.toolpath(),
                 spindle_rpm: effective_spindle_rpm(
@@ -197,7 +222,7 @@ pub fn export_gcode_checked(
                     project.post_config().spindle_speed,
                 ),
                 label: &tc.name,
-                tool_number,
+                tool,
                 coolant: CoolantMode::Off,
                 pre_gcode: tc.pre_gcode.as_deref(),
                 post_gcode: tc.post_gcode.as_deref(),
@@ -775,7 +800,11 @@ mod tests {
                 label: "Op 0 — pocket",
                 pre_gcode: Some("M8"),
                 post_gcode: Some("M9"),
-                tool_number: Some(1),
+                tool: Some(PhaseTool {
+                    id: 1,
+                    number: 1,
+                    label: "Tool One",
+                }),
                 coolant: CoolantMode::Mist,
                 controller_compensation: None,
             },
@@ -785,7 +814,11 @@ mod tests {
                 label: "Op 1 — profile",
                 pre_gcode: None,
                 post_gcode: None,
-                tool_number: Some(2),
+                tool: Some(PhaseTool {
+                    id: 2,
+                    number: 2,
+                    label: "Tool Two",
+                }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             },
@@ -822,7 +855,11 @@ mod tests {
                     label: "Top pocket",
                     pre_gcode: None,
                     post_gcode: None,
-                    tool_number: Some(1),
+                    tool: Some(PhaseTool {
+                        id: 1,
+                        number: 1,
+                        label: "Tool One",
+                    }),
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
                 }],
@@ -836,7 +873,11 @@ mod tests {
                     label: "Bottom profile",
                     pre_gcode: None,
                     post_gcode: None,
-                    tool_number: Some(2),
+                    tool: Some(PhaseTool {
+                        id: 2,
+                        number: 2,
+                        label: "Tool Two",
+                    }),
                     coolant: CoolantMode::Flood,
                     controller_compensation: None,
                 }],
@@ -931,7 +972,7 @@ mod tests {
                 label: "Op 0 — pocket",
                 pre_gcode: None,
                 post_gcode: None,
-                tool_number: None,
+                tool: None,
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             },
@@ -941,7 +982,7 @@ mod tests {
                 label: "Op 1 — profile",
                 pre_gcode: None,
                 post_gcode: None,
-                tool_number: None,
+                tool: None,
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             },
@@ -975,7 +1016,7 @@ mod tests {
                 label: "Op 0 — rough",
                 pre_gcode: None,
                 post_gcode: None,
-                tool_number: None,
+                tool: None,
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             },
@@ -985,7 +1026,7 @@ mod tests {
                 label: "Op 1 — finish",
                 pre_gcode: None,
                 post_gcode: None,
-                tool_number: None,
+                tool: None,
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             },
@@ -1031,7 +1072,7 @@ mod tests {
                 label: "TP0 — override",
                 pre_gcode: None,
                 post_gcode: None,
-                tool_number: None,
+                tool: None,
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             },
@@ -1041,7 +1082,7 @@ mod tests {
                 label: "TP1 — default",
                 pre_gcode: None,
                 post_gcode: None,
-                tool_number: None,
+                tool: None,
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             },
@@ -1085,7 +1126,7 @@ mod tests {
                     label: "Pocket",
                     pre_gcode: None,
                     post_gcode: None,
-                    tool_number: None,
+                    tool: None,
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
                 }],
@@ -1099,7 +1140,7 @@ mod tests {
                     label: "Profile",
                     pre_gcode: None,
                     post_gcode: None,
-                    tool_number: None,
+                    tool: None,
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
                 }],
@@ -1130,7 +1171,7 @@ mod tests {
             label: "Test Op",
             pre_gcode: Some("G55\nG10 L20 P2 X0 Y0 Z0"),
             post_gcode: Some("M9"),
-            tool_number: None,
+            tool: None,
             coolant: CoolantMode::Off,
             controller_compensation: None,
         }];
@@ -1169,7 +1210,7 @@ mod tests {
                 label: "Pocket",
                 pre_gcode: Some("G55"),
                 post_gcode: Some("M9"),
-                tool_number: None,
+                tool: None,
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             }],
@@ -1199,7 +1240,7 @@ mod tests {
             label: "Empty",
             pre_gcode: Some(""),
             post_gcode: None,
-            tool_number: None,
+            tool: None,
             coolant: CoolantMode::Off,
             controller_compensation: None,
         }];
@@ -1230,7 +1271,11 @@ mod tests {
                 label: "Op 0 — 6mm endmill",
                 pre_gcode: None,
                 post_gcode: None,
-                tool_number: Some(1),
+                tool: Some(PhaseTool {
+                    id: 1,
+                    number: 1,
+                    label: "Tool One",
+                }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             },
@@ -1240,12 +1285,18 @@ mod tests {
                 label: "Op 1 — 3mm ballnose",
                 pre_gcode: None,
                 post_gcode: None,
-                tool_number: Some(2),
+                tool: Some(PhaseTool {
+                    id: 2,
+                    number: 2,
+                    label: "Tool Two",
+                }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             },
         ];
-        let gcode = emit_gcode_phased(&phases, post::grbl());
+        // LinuxCNC's post implements M6 natively, so its tool_change
+        // template is the classic M5 + M6 pair.
+        let gcode = emit_gcode_phased(&phases, post::linuxcnc());
 
         // M6 T2 should appear between the two phases
         assert!(
@@ -1269,6 +1320,68 @@ mod tests {
     }
 
     #[test]
+    fn test_grbl_tool_change_is_pause_not_m6() {
+        // Vanilla Grbl rejects M6 (error:20) — its tool_change template
+        // is spindle-off + operator message + M0 pause; the SpindleSet
+        // right after doubles as the resume spin-up.
+        let mut tp1 = Toolpath::new();
+        tp1.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp1.feed_to(P3::new(10.0, 0.0, 0.0), 1000.0);
+
+        let mut tp2 = Toolpath::new();
+        tp2.rapid_to(P3::new(20.0, 0.0, 10.0));
+        tp2.feed_to(P3::new(30.0, 0.0, 0.0), 800.0);
+
+        let phases = vec![
+            GcodePhase {
+                toolpath: &tp1,
+                spindle_rpm: 18000,
+                label: "Op 0",
+                pre_gcode: None,
+                post_gcode: None,
+                tool: Some(PhaseTool {
+                    id: 1,
+                    number: 1,
+                    label: "End Mill",
+                }),
+                coolant: CoolantMode::Off,
+                controller_compensation: None,
+            },
+            GcodePhase {
+                toolpath: &tp2,
+                spindle_rpm: 10610,
+                label: "Op 1",
+                pre_gcode: None,
+                post_gcode: None,
+                tool: Some(PhaseTool {
+                    id: 2,
+                    number: 2,
+                    label: "Tapered Ball 2mm",
+                }),
+                coolant: CoolantMode::Off,
+                controller_compensation: None,
+            },
+        ];
+        let gcode = emit_gcode_phased(&phases, post::grbl());
+
+        assert!(
+            !gcode.contains("M6"),
+            "Grbl post must not emit M6 (error:20 on vanilla GRBL):\n{gcode}"
+        );
+        let msg = "(TOOL CHANGE: Tapered Ball 2mm [T2])";
+        let msg_pos = gcode.find(msg).expect("operator message");
+        let pause_pos = gcode[msg_pos..].find("M0\n").expect("M0 after message") + msg_pos;
+        let spinup_pos = gcode[pause_pos..]
+            .find("M3 S10610")
+            .expect("resume spin-up after pause")
+            + pause_pos;
+        assert!(msg_pos < pause_pos && pause_pos < spinup_pos);
+        // Spindle off precedes the message.
+        let m5_pos = gcode[..msg_pos].rfind("M5\n").expect("M5 before message");
+        assert!(m5_pos < msg_pos);
+    }
+
+    #[test]
     fn test_no_m6_when_same_tool() {
         let mut tp1 = Toolpath::new();
         tp1.rapid_to(P3::new(0.0, 0.0, 10.0));
@@ -1283,7 +1396,11 @@ mod tests {
                 label: "Op 0",
                 pre_gcode: None,
                 post_gcode: None,
-                tool_number: Some(1),
+                tool: Some(PhaseTool {
+                    id: 1,
+                    number: 1,
+                    label: "Tool One",
+                }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             },
@@ -1293,14 +1410,77 @@ mod tests {
                 label: "Op 1",
                 pre_gcode: None,
                 post_gcode: None,
-                tool_number: Some(1),
+                tool: Some(PhaseTool {
+                    id: 1,
+                    number: 1,
+                    label: "Tool One",
+                }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             },
         ];
-        let gcode = emit_gcode_phased(&phases, post::grbl());
+        let gcode = emit_gcode_phased(&phases, post::linuxcnc());
 
-        assert!(!gcode.contains("M6"), "Same tool number should not emit M6");
+        assert!(!gcode.contains("M6"), "Same tool id should not emit M6");
+    }
+
+    #[test]
+    fn test_tool_change_fires_on_id_despite_colliding_numbers() {
+        // WANAKA regression: two DISTINCT tools both curated as T1.
+        // Detection keyed on the display number suppressed the change;
+        // keyed on the config id it must fire.
+        let mut tp1 = Toolpath::new();
+        tp1.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp1.feed_to(P3::new(10.0, 0.0, 0.0), 1000.0);
+
+        let mut tp2 = Toolpath::new();
+        tp2.rapid_to(P3::new(20.0, 0.0, 10.0));
+        tp2.feed_to(P3::new(30.0, 0.0, 0.0), 800.0);
+
+        let phases = vec![
+            GcodePhase {
+                toolpath: &tp1,
+                spindle_rpm: 12194,
+                label: "Rough",
+                pre_gcode: None,
+                post_gcode: None,
+                tool: Some(PhaseTool {
+                    id: 1,
+                    number: 1,
+                    label: "End Mill",
+                }),
+                coolant: CoolantMode::Off,
+                controller_compensation: None,
+            },
+            GcodePhase {
+                toolpath: &tp2,
+                spindle_rpm: 10610,
+                label: "Finish",
+                pre_gcode: None,
+                post_gcode: None,
+                tool: Some(PhaseTool {
+                    id: 2,
+                    number: 1, // SAME display number, different tool
+                    label: "Tapered Ball 2mm",
+                }),
+                coolant: CoolantMode::Off,
+                controller_compensation: None,
+            },
+        ];
+
+        // M6-style post: change fires with the (colliding) display T1.
+        let lcnc = emit_gcode_phased(&phases, post::linuxcnc());
+        assert!(
+            lcnc.contains("M6 T1"),
+            "tool change must fire on id change even when T-numbers collide:\n{lcnc}"
+        );
+
+        // Pause-style post: operator message names the incoming tool.
+        let grbl = emit_gcode_phased(&phases, post::grbl());
+        assert!(
+            grbl.contains("(TOOL CHANGE: Tapered Ball 2mm [T1])"),
+            "pause-style change must fire on id change:\n{grbl}"
+        );
     }
 
     #[test]
@@ -1315,7 +1495,7 @@ mod tests {
             label: "Mist coolant op",
             pre_gcode: None,
             post_gcode: None,
-            tool_number: None,
+            tool: None,
             coolant: CoolantMode::Mist,
             controller_compensation: None,
         }];
@@ -1344,7 +1524,7 @@ mod tests {
             label: "Flood coolant op",
             pre_gcode: None,
             post_gcode: None,
-            tool_number: None,
+            tool: None,
             coolant: CoolantMode::Flood,
             controller_compensation: None,
         }];
@@ -1365,7 +1545,7 @@ mod tests {
             label: "Both coolant op",
             pre_gcode: None,
             post_gcode: None,
-            tool_number: None,
+            tool: None,
             coolant: CoolantMode::Both,
             controller_compensation: None,
         }];
@@ -1387,7 +1567,7 @@ mod tests {
             label: "No coolant",
             pre_gcode: None,
             post_gcode: None,
-            tool_number: None,
+            tool: None,
             coolant: CoolantMode::Off,
             controller_compensation: None,
         }];
@@ -1413,7 +1593,11 @@ mod tests {
                 label: "Op 0",
                 pre_gcode: None,
                 post_gcode: None,
-                tool_number: Some(1),
+                tool: Some(PhaseTool {
+                    id: 1,
+                    number: 1,
+                    label: "Tool One",
+                }),
                 coolant: CoolantMode::Flood,
                 controller_compensation: None,
             },
@@ -1423,12 +1607,18 @@ mod tests {
                 label: "Op 1",
                 pre_gcode: None,
                 post_gcode: None,
-                tool_number: Some(2),
+                tool: Some(PhaseTool {
+                    id: 2,
+                    number: 2,
+                    label: "Tool Two",
+                }),
                 coolant: CoolantMode::Mist,
                 controller_compensation: None,
             },
         ];
-        let gcode = emit_gcode_phased(&phases, post::grbl());
+        // LinuxCNC: M6-style tool change AND native M7 mist (Grbl's post
+        // filters M7 via unsupported_mcodes).
+        let gcode = emit_gcode_phased(&phases, post::linuxcnc());
 
         // Should have M8 for first phase, M9 before tool change, M6 T2, M3, M7 for second
         assert!(gcode.contains("M8"), "First phase should have M8 flood");

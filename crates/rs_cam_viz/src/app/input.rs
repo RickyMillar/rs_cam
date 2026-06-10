@@ -208,6 +208,11 @@ impl RsCamApp {
                     s.session.wizard_mut().spindle_warmup_secs = secs;
                     s.gui.mark_edited();
                 }
+                AppEvent::WizardSetToolChangeMode(mode) => {
+                    let s = self.controller.state_mut();
+                    s.session.wizard_mut().tool_change_override = mode;
+                    s.gui.mark_edited();
+                }
                 AppEvent::WizardSetSetupPauseMessage { setup_id, message } => {
                     let s = self.controller.state_mut();
                     if let Some(setup) = s

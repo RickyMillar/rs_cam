@@ -339,7 +339,14 @@ pub struct OpResult {
     pub cutter: rs_cam_core::tool::ToolDefinition,
     pub label: String,
     pub spindle_speed: u32,
+    /// Stable tool identity within the job: index of first appearance
+    /// of the tool's `[tools]` key. Distinct tools always get distinct
+    /// ids even when their display `tool_number`s collide.
+    pub tool_id: Option<usize>,
     pub tool_number: Option<u32>,
+    /// The tool's `[tools]` key — used as the operator-facing label in
+    /// tool-change messages.
+    pub tool_name: String,
     pub coolant: CoolantMode,
     /// Number of cutting flutes on the tool (for chipload calculation).
     pub flute_count: u32,
@@ -359,6 +366,10 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
     let mut phases = Vec::new();
     let mut next_tool_number = 1u32;
     let mut tool_numbers = HashMap::new();
+    // Tool identity: one stable id per distinct `[tools]` key, assigned
+    // in order of first use. Tool-change detection keys on this id, not
+    // on the (possibly colliding) display tool_number.
+    let mut tool_ids: HashMap<String, usize> = HashMap::new();
     let mut trace_artifacts = Vec::new();
 
     for (i, op) in job.operation.iter().enumerate() {
@@ -375,6 +386,8 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
                 assigned
             })
         }));
+        let next_tool_id = tool_ids.len();
+        let tool_id = Some(*tool_ids.entry(op.tool.clone()).or_insert(next_tool_id));
         debug!(tool = %op.tool, diameter_mm = tool_def.diameter, tool_type = %tool_def.tool_type, "Tool");
 
         let output = execute_op_via_session(job, job_dir, i, op, tool_def, debug_trace)
@@ -404,7 +417,9 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
             cutter: phase_cutter,
             label,
             spindle_speed: op.spindle_speed.unwrap_or(job.job.spindle_speed),
+            tool_id,
             tool_number,
+            tool_name: op.tool.clone(),
             coolant: op.coolant,
             flute_count,
             setup_name: op.setup.clone(),

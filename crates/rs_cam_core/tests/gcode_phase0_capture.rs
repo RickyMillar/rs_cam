@@ -25,8 +25,8 @@
 )]
 
 use rs_cam_core::gcode::{
-    CoolantMode, GcodePhase, GcodeSetupPhase, PostDefinition, ToolLoadExportPolicy, emit_gcode,
-    export_gcode_multi_setup_checked, export_gcode_phases_checked, post,
+    CoolantMode, GcodePhase, GcodeSetupPhase, PhaseTool, PostDefinition, ToolLoadExportPolicy,
+    emit_gcode, export_gcode_multi_setup_checked, export_gcode_phases_checked, post,
 };
 use rs_cam_core::geo::P3;
 use rs_cam_core::toolpath::Toolpath;
@@ -165,7 +165,11 @@ fn capture_f5_two_tool_changes() {
             label: "Op 0 — pocket T1",
             pre_gcode: None,
             post_gcode: None,
-            tool_number: Some(1),
+            tool: Some(PhaseTool {
+                id: 1,
+                number: 1,
+                label: "Tool One",
+            }),
             coolant: CoolantMode::Off,
             controller_compensation: None,
         },
@@ -175,7 +179,11 @@ fn capture_f5_two_tool_changes() {
             label: "Op 1 — finish T2",
             pre_gcode: None,
             post_gcode: None,
-            tool_number: Some(2),
+            tool: Some(PhaseTool {
+                id: 2,
+                number: 2,
+                label: "Tool Two",
+            }),
             coolant: CoolantMode::Off,
             controller_compensation: None,
         },
@@ -289,7 +297,11 @@ fn capture_f12_tool_change_at_z_zero() {
             label: "Op 0 — surface skim T1",
             pre_gcode: None,
             post_gcode: None,
-            tool_number: Some(1),
+            tool: Some(PhaseTool {
+                id: 1,
+                number: 1,
+                label: "Tool One",
+            }),
             coolant: CoolantMode::Off,
             controller_compensation: None,
         },
@@ -299,7 +311,11 @@ fn capture_f12_tool_change_at_z_zero() {
             label: "Op 1 — finish T2",
             pre_gcode: None,
             post_gcode: None,
-            tool_number: Some(2),
+            tool: Some(PhaseTool {
+                id: 2,
+                number: 2,
+                label: "Tool Two",
+            }),
             coolant: CoolantMode::Off,
             controller_compensation: None,
         },
@@ -337,7 +353,11 @@ fn capture_f13_climb_vs_conventional() {
             label: "Op 0 — conventional CCW",
             pre_gcode: None,
             post_gcode: None,
-            tool_number: Some(1),
+            tool: Some(PhaseTool {
+                id: 1,
+                number: 1,
+                label: "Tool One",
+            }),
             coolant: CoolantMode::Off,
             controller_compensation: None,
         },
@@ -347,7 +367,11 @@ fn capture_f13_climb_vs_conventional() {
             label: "Op 1 — climb CW",
             pre_gcode: None,
             post_gcode: None,
-            tool_number: Some(1),
+            tool: Some(PhaseTool {
+                id: 1,
+                number: 1,
+                label: "Tool One",
+            }),
             coolant: CoolantMode::Off,
             controller_compensation: None,
         },
@@ -376,7 +400,11 @@ fn capture_f14_multi_line_pause_message() {
                 label: "Top pocket",
                 pre_gcode: None,
                 post_gcode: None,
-                tool_number: Some(1),
+                tool: Some(PhaseTool {
+                    id: 1,
+                    number: 1,
+                    label: "Tool One",
+                }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             }],
@@ -394,7 +422,11 @@ fn capture_f14_multi_line_pause_message() {
                 label: "Bottom profile",
                 pre_gcode: None,
                 post_gcode: None,
-                tool_number: Some(1),
+                tool: Some(PhaseTool {
+                    id: 1,
+                    number: 1,
+                    label: "Tool One",
+                }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             }],
@@ -421,7 +453,11 @@ fn capture_f15_embedded_newline_snippets() {
         // intermediate newlines and not collapse blank lines.
         pre_gcode: Some("(custom prep)\nM7\nG4 P0.5"),
         post_gcode: Some("M9\n(custom retract)\nG0 Z20.000"),
-        tool_number: Some(1),
+        tool: Some(PhaseTool {
+            id: 1,
+            number: 1,
+            label: "Tool One",
+        }),
         coolant: CoolantMode::Off,
         controller_compensation: None,
     }];
@@ -447,7 +483,11 @@ fn capture_f16_comp_round_trip() {
         label: "Op 0 — left-comp profile",
         pre_gcode: None,
         post_gcode: None,
-        tool_number: Some(3),
+        tool: Some(PhaseTool {
+            id: 3,
+            number: 3,
+            label: "Tool Three",
+        }),
         coolant: CoolantMode::Off,
         // G41 D3 emitted before first cutting move; G40 emitted at
         // end of phase. Validates the comp_started bookkeeping in
@@ -480,7 +520,11 @@ fn capture_f6_two_setups() {
                 label: "Pocket",
                 pre_gcode: None,
                 post_gcode: None,
-                tool_number: Some(1),
+                tool: Some(PhaseTool {
+                    id: 1,
+                    number: 1,
+                    label: "Tool One",
+                }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             }],
@@ -494,7 +538,11 @@ fn capture_f6_two_setups() {
                 label: "Profile",
                 pre_gcode: None,
                 post_gcode: None,
-                tool_number: Some(1),
+                tool: Some(PhaseTool {
+                    id: 1,
+                    number: 1,
+                    label: "Tool One",
+                }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             }],

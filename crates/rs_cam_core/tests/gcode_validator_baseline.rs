@@ -5,8 +5,10 @@
 //! Phase 4b: dialect set grew from 3 to 4 (added grblHAL) and corpus
 //! grew from 6 to 16 fixtures. grblHAL captures all read 0 findings;
 //! the new fixtures inherit the same per-dialect issues as F1–F6.
-//! Current baseline: 82 findings across 64 captures (was 98 before the
-//! Grbl post gained explicit G54, clearing 16 MissingWcs findings).
+//! Current baseline: 80 findings across 64 captures (was 98 before the
+//! Grbl post gained explicit G54, clearing 16 MissingWcs findings; then
+//! 82 before the Grbl post's tool_change template replaced M6 with an
+//! M0 pause, clearing the 2 UnsupportedM6 findings on F5/F12).
 //!
 //! The goal of subsequent phases is to drive each of these counts to
 //! zero. This test acts as the regression suite: when Phase 2/3 fixes
@@ -76,9 +78,10 @@ struct Expected {
 /// here come from the gap report's "still-pending bugs" list; driving
 /// them to zero is the Phase 2/3 work.
 const BASELINE: &[Expected] = &[
-    // ── Grbl: now emits explicit G54 (matches grblHAL), so no
-    //    MissingWcs. Only UnsupportedM6 remains, on the multi-tool
-    //    fixtures (F5).
+    // ── Grbl: emits explicit G54 (matches grblHAL), so no MissingWcs.
+    //    Tool changes are now templated as M5 + message + M0 pause
+    //    (Grbl 1.1 rejects M6 with error:20), so the multi-tool
+    //    fixtures (F5/F12) no longer raise UnsupportedM6 either.
     Expected {
         fixture: "f1_basic_lines",
         dialect: "grbl",
@@ -102,7 +105,7 @@ const BASELINE: &[Expected] = &[
     Expected {
         fixture: "f5_two_tool_changes",
         dialect: "grbl",
-        findings: &[(FindingKind::UnsupportedM6, 1)],
+        findings: &[],
     },
     Expected {
         fixture: "f6_two_setups",
@@ -361,11 +364,12 @@ const BASELINE: &[Expected] = &[
         dialect: "mach3",
         findings: &[(FindingKind::MissingWcs, 1)],
     },
-    // F12 Tool change at Z=0 (multi-tool)
+    // F12 Tool change at Z=0 (multi-tool). Grbl emits the M0-pause
+    // change block, not M6 — no UnsupportedM6.
     Expected {
         fixture: "f12_tool_change_at_z_zero",
         dialect: "grbl",
-        findings: &[(FindingKind::UnsupportedM6, 1)],
+        findings: &[],
     },
     Expected {
         fixture: "f12_tool_change_at_z_zero",
