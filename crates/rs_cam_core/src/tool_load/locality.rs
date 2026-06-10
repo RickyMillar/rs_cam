@@ -240,18 +240,11 @@ pub fn is_configured_entry(
 )]
 mod tests {
     use super::*;
-    use crate::ids::ToolpathId;
     use crate::simulation_cut::CutKinematics;
     use std::borrow::Cow;
 
     fn sample(arc: Option<f64>, span_path: Vec<SpanId>) -> SimulationCutSample {
         SimulationCutSample {
-            toolpath_id: ToolpathId(0),
-            move_index: 0,
-            sample_index: 0,
-            position: [0.0, 0.0, 0.0],
-            cumulative_time_s: 0.0,
-            segment_time_s: 0.0,
             is_cutting: true,
             cut_kinematics: CutKinematics::Linear,
             feed_rate_mm_min: 1000.0,
@@ -259,16 +252,11 @@ mod tests {
             flute_count: 2,
             axial_doc_mm: 1.0,
             axial_engagement_mm: 1.0,
-            plunge_descent_mm: 0.0,
             arc_engagement_radians: arc,
             chipload_mm_per_tooth: 0.03,
-            effective_chip_thickness_mm: None,
             engagement: crate::simulation_cut::Engagement::with_radial_woc(0.5),
-            removed_volume_est_mm3: 0.0,
-            mrr_mm3_s: 0.0,
-            semantic_item_id: None,
             span_path,
-            in_transit_span: false,
+            ..SimulationCutSample::test_fixture()
         }
     }
 

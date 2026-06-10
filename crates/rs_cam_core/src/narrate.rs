@@ -1430,16 +1430,11 @@ mod tests {
             flute_count: 2,
             axial_doc_mm,
             axial_engagement_mm: axial_doc_mm,
-            plunge_descent_mm: 0.0,
             arc_engagement_radians: Some(0.1),
             chipload_mm_per_tooth: 0.03,
             effective_chip_thickness_mm: Some(0.0),
             engagement: crate::simulation_cut::Engagement::with_radial_woc(radial_engagement),
-            removed_volume_est_mm3: 0.0,
-            mrr_mm3_s: 0.0,
-            semantic_item_id: None,
-            span_path: Vec::new(),
-            in_transit_span: false,
+            ..SimulationCutSample::test_fixture()
         }
     }
 }

@@ -122,7 +122,6 @@ fn mk_sample(
         flute_count: 2,
         axial_doc_mm: axial_mm,
         axial_engagement_mm: axial_mm,
-        plunge_descent_mm: 0.0,
         arc_engagement_radians: arc,
         chipload_mm_per_tooth: 0.02,
         effective_chip_thickness_mm: Some(0.018),
@@ -137,9 +136,7 @@ fn mk_sample(
         },
         removed_volume_est_mm3: 1.0,
         mrr_mm3_s: 10.0,
-        semantic_item_id: None,
-        span_path: Vec::new(),
-        in_transit_span: false,
+        ..SimulationCutSample::test_fixture()
     }
 }
 

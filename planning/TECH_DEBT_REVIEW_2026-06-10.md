@@ -92,15 +92,20 @@ Landed as a three-layer fix (deep-dive session, same day):
   a determinism sentry. The rest of the file already followed rule 2 after
   the F3/F4 repins (cap_hit identity, warning identity, relative bands).
 
-## R5 — Sim-type test-fixture sprawl
+## R5 — Sim-type test-fixture sprawl — **DONE 2026-06-10**
 
-- Adding one field to `ChiploadVerdict::Within` touched 18 construction sites
-  (F3.3); `SimulationCutSample`/`SimulationCutTrace` ~25-field fixtures are
-  hand-copied in ≥5 test modules, many stamped `schema_version: 1` while the
-  real schema is v5 (F1).
-- Review shape: test-builder helpers (`SimulationCutSample::test_default()`-style
-  or a builder in a shared test-support module) + decide whether schema_version
-  in fixtures should track the real version.
+- `SimulationCutSample::test_fixture()` / `SimulationCutTrace::test_fixture()`
+  landed in `simulation_cut.rs` (named constructors, NOT `Default` — a
+  25-field sim sample has no meaningful production default, and the name
+  carries the test-only contract; plain pub so integration tests reach it).
+  All hand-rolled fixture literals across 11 files migrated to struct-update
+  syntax — each test now states only the fields it asserts about
+  (net −285 lines).
+- schema_version policy decided: fixtures track the REAL
+  `SIMULATION_CUT_TRACE_SCHEMA_VERSION` via the constructor. The one
+  deliberate v1 literal stays in
+  `old_trace_json_deserializes_without_new_fields` (backward-compat test).
+- The R3 `ToolpathId` newtype (same day) means fixture ids are typed too.
 
 ## R6 — Name-string identity
 
