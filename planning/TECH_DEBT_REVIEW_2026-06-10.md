@@ -76,15 +76,21 @@ Landed as a three-layer fix (deep-dive session, same day):
 - Tools have a `ToolId` newtype; toolpaths don't. Review shape: introduce
   `ToolpathId` + audit every `toolpath_id == idx`-shaped comparison.
 
-## R4 — Golden-number test pins vs spec assertions
+## R4 — Golden-number test pins vs spec assertions — **DECIDED 2026-06-10**
 
-- `wanaka_suggest_integration.rs` was repinned twice in one day (TP11 for F3,
-  TP4/TP10 for F4): exact-value pins ("feed must land 6500–7500") mean every
-  intentional behavior change requires a human to ratify a new number — the
-  moment a wrong number gets approved is invisible.
-- Review shape: classify each pin as (a) literature-backed (keep exact band, cite
-  source like the litmatrix cells do) or (b) behavior pin (rewrite as spec
-  assertion: which cap binds, which warning fires, monotonicity).
+- Convention (canonical copy lives in the `wanaka_suggest_integration.rs`
+  header, where authors will see it):
+  1. Literature-backed values → pin exact band + cite source (litmatrix style).
+  2. Behavioral outcomes (the default) → assert identity and direction, not
+     magnitude: which warning fires, which cap binds, monotonic relations,
+     relative bands against model outputs, named constants instead of
+     literals.
+  3. Determinism sentries (rare) → raw numeric pin allowed only with a
+     comment naming what legitimately re-baselines it.
+- Applied: the two `6000.0` cutting-ceiling pins now assert against
+  `machine::DEFAULT_CUTTING_FEED_CAP_MM_MIN`; the 3.69 mm DPP pin is labeled
+  a determinism sentry. The rest of the file already followed rule 2 after
+  the F3/F4 repins (cap_hit identity, warning identity, relative bands).
 
 ## R5 — Sim-type test-fixture sprawl
 
