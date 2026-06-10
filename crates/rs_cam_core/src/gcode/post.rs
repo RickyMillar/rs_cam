@@ -148,12 +148,19 @@ fn default_arc_linearize_threshold() -> f64 {
 
 /// Collapse newlines in comment text so the rendered `(...)` block
 /// stays on one line. Tabs and CR are also collapsed for parser safety.
+///
+/// Parentheses are mapped to square brackets: GRBL (and rs274-family
+/// parsers) end a `(...)` comment at the FIRST `)`, so a toolpath named
+/// `Rivers (back)` would render `(Rivers (back))` and leave a stray `)`
+/// on the line as bare g-code.
 fn sanitize_comment_text(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
         match ch {
             '\n' => out.push_str(" / "),
             '\r' | '\t' => out.push(' '),
+            '(' => out.push('['),
+            ')' => out.push(']'),
             other => out.push(other),
         }
     }
@@ -173,6 +180,19 @@ pub struct PostDefinition {
     pub preamble: String,
     pub postamble: String,
     pub program_pause: String,
+    /// Multi-line tool-change template. Tokens:
+    ///
+    /// - `{tool_number}` → the display T-number of the incoming tool
+    /// - `{message_comment}` → `TOOL CHANGE: <label> [T<n>]` wrapped in
+    ///   this post's comment style
+    ///
+    /// Default (posts that omit the field) is the classic
+    /// `M5` + `M6 T{tool_number}` pair. Controllers without M6
+    /// (vanilla GRBL) template a spindle-stop + message + `M0` pause
+    /// instead; the `SpindleSet` emitted right after the change doubles
+    /// as the resume spin-up.
+    #[serde(default = "default_tool_change")]
+    pub tool_change: String,
     pub comment: CommentStyle,
     #[serde(default)]
     pub limits: PostLimits,
@@ -205,6 +225,12 @@ pub struct PostDefinition {
     /// cutter comp; LinuxCNC and Mach3 do.
     #[serde(default = "default_supports_cutter_comp")]
     pub supports_cutter_comp: bool,
+}
+
+/// Backward-compat default for post TOMLs lacking a `tool_change`
+/// field: the pre-template behaviour (`M5` then `M6 T<n>`).
+fn default_tool_change() -> String {
+    "M5\nM6 T{tool_number}\n".to_owned()
 }
 
 fn default_supports_cutter_comp() -> bool {
@@ -278,6 +304,22 @@ impl PostDefinition {
         let sanitized = sanitize_comment_text(message);
         let formatted = self.comment.format.replace("{text}", &sanitized);
         self.program_pause.replace("{message_comment}", &formatted)
+    }
+
+    /// Render a tool-change block from the post's `tool_change`
+    /// template. Substitutes `{tool_number}` with the display T-number
+    /// and `{message_comment}` with `TOOL CHANGE: <label> [T<n>]`
+    /// wrapped in this post's comment style. The operator message uses
+    /// square brackets (and `sanitize_comment_text` maps any parens in
+    /// the label to brackets) so it stays parser-safe inside a `(...)`
+    /// comment.
+    pub fn render_tool_change(&self, tool_number: u32, label: &str) -> String {
+        let message = format!("TOOL CHANGE: {label} [T{tool_number}]");
+        let sanitized = sanitize_comment_text(&message);
+        let formatted = self.comment.format.replace("{text}", &sanitized);
+        self.tool_change
+            .replace("{tool_number}", &tool_number.to_string())
+            .replace("{message_comment}", &formatted)
     }
 }
 
@@ -479,10 +521,76 @@ mod tests {
 
     #[test]
     fn shipped_post_unsupported_mcodes() {
-        assert_eq!(grbl().unsupported_mcodes, vec![7]);
+        assert_eq!(grbl().unsupported_mcodes, vec![6, 7]);
         assert!(grblhal().unsupported_mcodes.is_empty());
         assert!(linuxcnc().unsupported_mcodes.is_empty());
         assert!(mach3().unsupported_mcodes.is_empty());
+    }
+
+    #[test]
+    fn comment_renderer_maps_parens_to_brackets() {
+        // GRBL ends a comment at the first ')' — nested parens in a
+        // toolpath name would leave a stray ')' as bare g-code.
+        let p = grbl();
+        assert_eq!(p.render_comment("Rivers (back)"), "(Rivers [back])\n");
+    }
+
+    #[test]
+    fn shipped_post_tool_change_templates() {
+        // GRBL family: manual change — spindle off, operator message,
+        // M0 pause. Resume spin-up comes from the SpindleSet that the
+        // program builder emits right after the ToolChange statement.
+        for p in [grbl(), grblhal()] {
+            assert_eq!(
+                p.tool_change, "M5\n{message_comment}\nM0\n",
+                "{}: expected pause-style tool change",
+                p.name
+            );
+        }
+        // LinuxCNC / Mach3: native M6.
+        for p in [linuxcnc(), mach3()] {
+            assert_eq!(
+                p.tool_change, "M5\nM6 T{tool_number}\n",
+                "{}: expected M6-style tool change",
+                p.name
+            );
+        }
+    }
+
+    #[test]
+    fn render_tool_change_substitutes_number_and_message() {
+        let block = linuxcnc().render_tool_change(2, "Tapered Ball 2mm");
+        assert_eq!(block, "M5\nM6 T2\n");
+
+        let block = grbl().render_tool_change(2, "Tapered Ball 2mm");
+        assert_eq!(block, "M5\n(TOOL CHANGE: Tapered Ball 2mm [T2])\nM0\n");
+    }
+
+    #[test]
+    fn render_tool_change_sanitizes_label_parens() {
+        let block = grbl().render_tool_change(3, "End Mill (rough)");
+        assert_eq!(block, "M5\n(TOOL CHANGE: End Mill [rough] [T3])\nM0\n");
+    }
+
+    #[test]
+    fn tool_change_field_defaults_when_absent_from_toml() {
+        // Backward compat: a post TOML without `tool_change` must parse
+        // and fall back to the legacy M5 + M6 pair.
+        let toml = r#"
+            name = "Legacy"
+            preamble = "M3 S{spindle_rpm}\n"
+            postamble = "M30\n"
+            program_pause = "M0\n"
+            [decimals]
+            xyz = 3
+            feed = 0
+            ijk = 3
+            [comment]
+            format = "({text})"
+        "#;
+        let post = PostDefinition::from_toml(toml).unwrap();
+        assert_eq!(post.tool_change, "M5\nM6 T{tool_number}\n");
+        assert_eq!(post.render_tool_change(4, "Bit"), "M5\nM6 T4\n");
     }
 
     #[test]

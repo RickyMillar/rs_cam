@@ -13,7 +13,10 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use rs_cam_core::{
     dexel_stock::{StockCutDirection, TriDexelStock},
-    gcode::{GcodePhase, ToolLoadExportPolicy, export_gcode_phases_checked, get_post_definition},
+    gcode::{
+        GcodePhase, PhaseTool, ToolLoadExportPolicy, export_gcode_phases_checked,
+        get_post_definition,
+    },
     geo::BoundingBox3,
     simulation_cut::{SimulationCutArtifact, SimulationCutIssueKind, SimulationCutTrace},
     tool::MillingCutter as _,
@@ -495,7 +498,13 @@ fn main() -> Result<()> {
                             label: &phase.label,
                             pre_gcode: None,
                             post_gcode: None,
-                            tool_number: phase.tool_number,
+                            tool: phase.tool_id.zip(phase.tool_number).map(|(id, number)| {
+                                PhaseTool {
+                                    id,
+                                    number,
+                                    label: &phase.tool_name,
+                                }
+                            }),
                             coolant: phase.coolant,
                             controller_compensation: None,
                         })
@@ -548,7 +557,14 @@ fn main() -> Result<()> {
                         label: &phase.label,
                         pre_gcode: None,
                         post_gcode: None,
-                        tool_number: phase.tool_number,
+                        tool: phase
+                            .tool_id
+                            .zip(phase.tool_number)
+                            .map(|(id, number)| PhaseTool {
+                                id,
+                                number,
+                                label: &phase.tool_name,
+                            }),
                         coolant: phase.coolant,
                         controller_compensation: None,
                     })

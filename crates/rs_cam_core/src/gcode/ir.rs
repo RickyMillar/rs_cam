@@ -34,6 +34,14 @@ pub enum Statement {
     /// Comment rendered via the post's comment style.
     Comment(String),
 
+    /// Tool change rendered via the post's `tool_change` template.
+    /// `tool_number` substitutes `{tool_number}`; `label` (the tool's
+    /// display name) feeds the `{message_comment}` operator message
+    /// (`TOOL CHANGE: <label> [T<n>]` wrapped in the post's comment
+    /// style). Posts without M6 support (vanilla GRBL) template this
+    /// as a spindle-stop + message + M0 pause instead of `M6 T{n}`.
+    ToolChange { tool_number: u32, label: String },
+
     /// Verbatim text spliced into output, including any trailing newlines.
     /// Used for: modal-state `writeln!` lines (M5, M3, M6, M7/M8/M9, G40,
     /// G41/G42, G0 Z<safe>) and user-supplied pre/post g-code snippets.

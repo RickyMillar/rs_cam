@@ -4,6 +4,7 @@ G54
 M3 S18000
 (=== Top ===)
 (Top pocket)
+G0 Z5.000
 G0 X0.000 Y0.000 Z5.000
 G1 X10.000 Y0.000 Z-2.000 F600
 G0 Z25.000
@@ -13,6 +14,7 @@ M0
 M3 S18000
 (=== Bottom / Flip stock 180 then resume ===)
 (Bottom profile)
+G0 Z5.000
 G0 X20.000 Y0.000 Z5.000
 G1 X30.000 Y0.000 Z-2.000 F600
 M5

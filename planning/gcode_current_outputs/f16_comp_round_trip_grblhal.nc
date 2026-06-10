@@ -3,6 +3,7 @@ G17 G21 G90 G40 G49 G80
 G54
 M3 S18000
 (Op 0 — left-comp profile)
+G0 Z5.000
 G0 X0.000 Y0.000 Z5.000
 (WARNING: cutter compensation unsupported on grblHAL; dropped: G41 D3)
 G1 X0.000 Y0.000 Z-2.000 F300

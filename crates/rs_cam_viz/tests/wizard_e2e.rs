@@ -277,7 +277,7 @@ fn default_wizard_state_does_not_mutate_export() {
     // helper isn't injecting anything unexpected. Both paths route
     // through `export_gcode_phases_with_overlay_checked` — only the
     // overlay-construction step differs.
-    use rs_cam_core::gcode::{CoolantMode, GcodePhase};
+    use rs_cam_core::gcode::{CoolantMode, GcodePhase, PhaseTool};
     let phases: Vec<GcodePhase<'_>> = session
         .toolpath_configs()
         .iter()
@@ -287,15 +287,22 @@ fn default_wizard_state_does_not_mutate_export() {
             let result = rt.result.as_ref()?;
             Some(GcodePhase {
                 toolpath: result.toolpath(),
-                spindle_rpm: gui.post.spindle_speed,
+                spindle_rpm: rs_cam_core::compute::catalog::effective_spindle_rpm(
+                    &tc.operation,
+                    gui.post.spindle_speed,
+                ),
                 label: &tc.name,
                 pre_gcode: tc.pre_gcode.as_deref(),
                 post_gcode: tc.post_gcode.as_deref(),
-                tool_number: session
+                tool: session
                     .tools()
                     .iter()
                     .find(|t| t.id.0 == tc.tool_id)
-                    .map(|t| t.tool_number),
+                    .map(|t| PhaseTool {
+                        id: t.id.0,
+                        number: t.tool_number,
+                        label: t.name.as_str(),
+                    }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
             })
@@ -313,6 +320,68 @@ fn default_wizard_state_does_not_mutate_export() {
     assert_eq!(
         with_overlay, baseline,
         "default wizard state must not mutate output"
+    );
+}
+
+/// Fix 1 regression (WANAKA): the viz phase ASSEMBLY must read each
+/// op's own spindle RPM, not flatten every phase to the project
+/// default. Two toolpaths — one with an op-level RPM override, one
+/// without — must emit an S-change between phases.
+#[test]
+fn viz_phase_assembly_uses_per_op_spindle_rpm() {
+    let (mut session, mut gui, sim) = build_session();
+
+    // Second toolpath on the same tool, with an op-level RPM override.
+    let mut op = OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default());
+    op.set_spindle_rpm(Some(12_345));
+    let tp2 = ToolpathConfig {
+        id: rs_cam_core::ToolpathId(1),
+        name: "Override Path".to_owned(),
+        enabled: true,
+        operation: op,
+        dressups: Default::default(),
+        heights: Default::default(),
+        tool_id: 1,
+        model_id: 0,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: Default::default(),
+        boundary_inherit: true,
+        stock_source: Default::default(),
+        coolant: Default::default(),
+        face_selection: None,
+        debug_options: Default::default(),
+        feeds_provenance: Default::default(),
+    };
+    session.add_toolpath(0, tp2).expect("add second toolpath");
+    let tp2_id = session.toolpath_configs()[1].id;
+
+    let mut path = Toolpath::new();
+    path.rapid_to(P3::new(20.0, 0.0, 5.0));
+    path.feed_to(P3::new(30.0, 0.0, -1.0), 600.0);
+    let mut rt = ToolpathRuntime::new(true);
+    rt.result = Some(ToolpathResult {
+        annotated: Arc::new(AnnotatedToolpath::new(path)),
+        stats: Default::default(),
+        debug_trace: None,
+        semantic_trace: None,
+        debug_trace_path: None,
+        drill_op: None,
+    });
+    gui.toolpath_rt.insert(tp2_id, rt);
+
+    let default_rpm = gui.post.spindle_speed;
+    assert_ne!(default_rpm, 12_345, "test premise: override differs");
+
+    let gcode = export_gcode_from_session(&session, &gui, &sim).expect("export succeeds");
+
+    assert!(
+        gcode.contains(&format!("M3 S{default_rpm}")),
+        "first phase (no override) should use the project default RPM:\n{gcode}"
+    );
+    assert!(
+        gcode.contains("M3 S12345"),
+        "second phase's op-level RPM override must be emitted as an S change:\n{gcode}"
     );
 }
 

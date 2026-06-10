@@ -430,20 +430,15 @@ fn validate_f3_grbl() {
 fn validate_f4_grbl() {
     assert_gvalidate_accepts("f4_profile_multipass", "grbl");
 }
-/// Real bug surfaced by Phase 0.5: rs_cam emits `M6 T2` for Grbl tool
-/// changes, but Grbl 1.1 does NOT support M6 (gvalidate rejects with
-/// error 20). Fusion's grbl.cps defaults `useM06=false` for this exact
-/// reason. The Grbl post needs a `useM06`-equivalent toggle (Phase 4b
-/// data-driven post field), defaulting to false for Grbl.
+/// Fixed: the Grbl post's `tool_change` template emits a manual-change
+/// pause (M5 + operator message + M0) instead of M6, which Grbl 1.1
+/// rejects with error 20. Fusion's grbl.cps defaults `useM06=false`
+/// for the same reason. gvalidate now accepts the capture (the M0 is
+/// stripped by the harness's pause filter, as for multi-setup).
 #[test]
 #[ignore = "phase 4a emulator validation"]
 fn validate_f5_grbl() {
-    assert_gvalidate_rejects(
-        "f5_two_tool_changes",
-        "grbl",
-        20,
-        "Grbl 1.1 does not support M6; rs_cam Grbl post should not emit it (useM06=false equivalent)",
-    );
+    assert_gvalidate_accepts("f5_two_tool_changes", "grbl");
 }
 #[test]
 #[ignore = "phase 4a emulator validation"]
@@ -561,10 +556,10 @@ fn validate_f6_mach3_rs274() {
 // ── grblHAL: gvalidate as syntax check (grblHAL is a strict superset of
 // Grbl 1.1 — anything gvalidate accepts is grblHAL-valid; grblHAL-
 // specific syntax such as $TC, M62/M63 isn't covered here, but no
-// shipped fixture uses those features today). M6 is supported on
-// grblHAL so F5 should pass once we surface a `use_m6 = true` field
-// on PostDefinition; until then F5 grblhal also rejects via the same
-// proxy limitation as LinuxCNC/Mach3.
+// shipped fixture uses those features today). The grblHAL post ships
+// the manual-pause tool_change template (default hobby builds have no
+// ATC), so F5 now validates clean under gvalidate too; ATC builds can
+// override to the M6 template per machine or via the export wizard.
 #[test]
 #[ignore = "phase 4b emulator validation"]
 fn validate_f1_grblhal() {
@@ -588,12 +583,7 @@ fn validate_f4_grblhal() {
 #[test]
 #[ignore = "phase 4b emulator validation"]
 fn validate_f5_grblhal() {
-    assert_gvalidate_rejects(
-        "f5_two_tool_changes",
-        "grblhal",
-        20,
-        "gvalidate (Grbl 1.1 parser) rejects M6 — valid in grblHAL; needs working grblHAL_validator (deferred — upstream EOF-hang)",
-    );
+    assert_gvalidate_accepts("f5_two_tool_changes", "grblhal");
 }
 #[test]
 #[ignore = "phase 4b emulator validation"]
@@ -808,27 +798,18 @@ fn validate_f11_mach3_gvalidate() {
     assert_gvalidate_accepts("f11_depth_step_boundary", "mach3");
 }
 
-// F12 tool_change_at_z_zero — multi-tool, M6 reject same as F5 on
-// gvalidate (Grbl 1.1 + grblHAL via proxy).
+// F12 tool_change_at_z_zero — multi-tool. The Grbl-family posts now
+// emit the M0-pause change block instead of M6, so gvalidate accepts
+// (pause codes are stripped by the harness filter).
 #[test]
 #[ignore = "phase 4b emulator validation"]
 fn validate_f12_grbl() {
-    assert_gvalidate_rejects(
-        "f12_tool_change_at_z_zero",
-        "grbl",
-        20,
-        "Grbl 1.1 does not support M6; same root-cause as F5 grbl",
-    );
+    assert_gvalidate_accepts("f12_tool_change_at_z_zero", "grbl");
 }
 #[test]
 #[ignore = "phase 4b emulator validation"]
 fn validate_f12_grblhal() {
-    assert_gvalidate_rejects(
-        "f12_tool_change_at_z_zero",
-        "grblhal",
-        20,
-        "gvalidate proxy doesn't implement M6 (valid in grblHAL); same as F5 grblhal",
-    );
+    assert_gvalidate_accepts("f12_tool_change_at_z_zero", "grblhal");
 }
 #[test]
 #[ignore = "phase 4b emulator validation"]

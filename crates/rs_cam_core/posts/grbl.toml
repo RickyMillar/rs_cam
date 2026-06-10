@@ -38,10 +38,20 @@ M5
 M0
 """
 
-# Grbl 1.1 lacks mist coolant (M7) and cutter compensation
-# (G40/G41/G42). Without these guards, user pre/post snippets that
-# emit M7 or comp toggles fail at the controller.
-unsupported_mcodes = [7]
+# Tool change: vanilla Grbl 1.1 rejects M6 (error:20), so a tool
+# change is a manual operation — spindle off, operator message, M0
+# pause. The `M3 S{rpm}` the program builder emits right after the
+# change doubles as the resume spin-up.
+tool_change = """\
+M5
+{message_comment}
+M0
+"""
+
+# Grbl 1.1 lacks tool change (M6), mist coolant (M7) and cutter
+# compensation (G40/G41/G42). Without these guards, user pre/post
+# snippets that emit M6/M7 or comp toggles fail at the controller.
+unsupported_mcodes = [6, 7]
 supports_cutter_comp = false
 
 # Linearise sub-0.05mm arcs into chords — Grbl 1.1 rejects them

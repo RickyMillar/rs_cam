@@ -29,6 +29,12 @@ M5
 M0
 """
 
+# Tool change: Mach3 implements M6 natively (tool-change macro hooks).
+tool_change = """\
+M5
+M6 T{tool_number}
+"""
+
 # Mach3 supports mist coolant (M7) and cutter compensation
 # (G41/G42). supports_cutter_comp defaults to true.
 

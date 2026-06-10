@@ -1,7 +1,7 @@
 use rs_cam_core::gcode::{
-    ControllerCompensation, GcodePhase, GcodeSetupPhase, ToolLoadExportPolicy, WizardOverlay,
-    export_gcode_multi_setup_with_overlay_checked, export_gcode_phases_with_overlay_checked,
-    replace_rapids_with_feed,
+    ControllerCompensation, GcodePhase, GcodeSetupPhase, PhaseTool, ToolLoadExportPolicy,
+    WizardOverlay, export_gcode_multi_setup_with_overlay_checked,
+    export_gcode_phases_with_overlay_checked, replace_rapids_with_feed,
 };
 use rs_cam_core::gcode_validator::{MachineSafety, Severity, validate_machine_safety};
 use rs_cam_core::session::ProjectSession;
@@ -63,11 +63,16 @@ fn overlay_for(session: &ProjectSession, gui: &GuiState) -> WizardOverlay {
         safe_z_override: w.safe_z_override,
         spindle_warmup_secs: w.spindle_warmup_secs,
         dry_run_safe_z,
+        tool_change_override: w.tool_change_override,
     }
 }
 
-fn tool_number_for_export(tool: &ToolConfig) -> u32 {
-    tool.tool_number
+fn phase_tool_for_export(tool: &ToolConfig) -> PhaseTool<'_> {
+    PhaseTool {
+        id: tool.id.0,
+        number: tool.tool_number,
+        label: tool.name.as_str(),
+    }
 }
 
 fn gcode_phase_for_session_toolpath<'a>(
@@ -81,11 +86,19 @@ fn gcode_phase_for_session_toolpath<'a>(
 
     Some(GcodePhase {
         toolpath: result.toolpath(),
-        spindle_rpm: gui.post.spindle_speed,
+        // Per-toolpath spindle RPM: the op's own override wins, the
+        // project default is only a fallback — same resolution as the
+        // core export path (`export_gcode_checked`). Pre-fix this read
+        // `gui.post.spindle_speed` unconditionally, flattening every
+        // op's RPM (WANAKA's 12194/10610/21000) to the project default.
+        spindle_rpm: rs_cam_core::compute::catalog::effective_spindle_rpm(
+            &tc.operation,
+            gui.post.spindle_speed,
+        ),
         label: &tc.name,
         pre_gcode: tc.pre_gcode.as_deref(),
         post_gcode: tc.post_gcode.as_deref(),
-        tool_number: tool.map(tool_number_for_export),
+        tool: tool.map(phase_tool_for_export),
         coolant: tc.coolant,
         controller_compensation: controller_comp_for_session_toolpath(tc),
     })

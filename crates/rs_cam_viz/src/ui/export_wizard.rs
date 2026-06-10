@@ -513,6 +513,65 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
 
     ui.add_space(12.0);
 
+    // ── Tool-change handling ──
+    ui.heading("Tool change handling");
+    ui.add_space(4.0);
+    {
+        use rs_cam_core::gcode::ToolChangeMode;
+        let post = state.gui.post.format.definition();
+        let post_uses_m6 = post.tool_change.contains("M6");
+        ui.label(
+            egui::RichText::new(format!(
+                "Post default: {}",
+                if post_uses_m6 {
+                    "M6 tool change"
+                } else {
+                    "pause for manual change (M0)"
+                }
+            ))
+            .small()
+            .italics(),
+        );
+        let wiz = state.session.wizard();
+        let mut selected = wiz.tool_change_override;
+        let selected_label =
+            selected.map_or_else(|| "Use post default".to_owned(), |m| m.label().to_owned());
+        egui::ComboBox::from_label("Tool change")
+            .selected_text(selected_label)
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut selected, None, "Use post default");
+                for mode in [
+                    ToolChangeMode::Pause,
+                    ToolChangeMode::M6,
+                    ToolChangeMode::Suppress,
+                ] {
+                    ui.selectable_value(&mut selected, Some(mode), mode.label());
+                }
+            });
+        if selected != wiz.tool_change_override {
+            events.push(AppEvent::WizardSetToolChangeMode(selected));
+        }
+        if selected == Some(ToolChangeMode::M6) && !post_uses_m6 {
+            ui.colored_label(
+                egui::Color32::from_rgb(220, 140, 0),
+                "⚠ Vanilla GRBL rejects M6 (error:20). Only use this on a \
+                 controller with a configured tool changer (e.g. grblHAL ATC).",
+            );
+        }
+        if selected == Some(ToolChangeMode::Suppress) {
+            ui.label(
+                egui::RichText::new(
+                    "Tool-change blocks are stripped; per-tool spindle RPM is kept. \
+                     You are responsible for swapping tools outside the program.",
+                )
+                .small()
+                .italics(),
+            );
+        }
+    }
+
+    ui.add_space(12.0);
+
     // ── Spindle warmup ──
     ui.heading("Spindle warmup");
     ui.add_space(4.0);

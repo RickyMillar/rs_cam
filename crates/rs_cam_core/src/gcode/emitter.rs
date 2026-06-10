@@ -185,6 +185,12 @@ fn emit_statement(output: &mut String, statement: &Statement, post: &PostDefinit
             output.push_str(&post.render_program_pause(message));
         }
         Statement::Comment(ref text) => output.push_str(&post.render_comment(text)),
+        Statement::ToolChange {
+            tool_number,
+            ref label,
+        } => {
+            output.push_str(&post.render_tool_change(tool_number, label));
+        }
         Statement::Raw(ref text) => output.push_str(&filter_raw(text, post)),
         Statement::Rapid { x, y, z } => {
             let _ = writeln!(output, "G0 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$}");
@@ -454,7 +460,8 @@ M3 S{spindle_rpm}
         // between phases. Building two trivial setups and overlaying a
         // safe-Z must change the retract value emitted between them.
         use crate::gcode::{
-            CoolantMode, GcodePhase, GcodeSetupPhase, emit_gcode_multi_setup_with_overlay,
+            CoolantMode, GcodePhase, GcodeSetupPhase, PhaseTool,
+            emit_gcode_multi_setup_with_overlay,
         };
 
         let mut tp = Toolpath::new();
@@ -470,7 +477,11 @@ M3 S{spindle_rpm}
                     label: "S1 op",
                     pre_gcode: None,
                     post_gcode: None,
-                    tool_number: Some(1),
+                    tool: Some(PhaseTool {
+                        id: 1,
+                        number: 1,
+                        label: "Tool One",
+                    }),
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
                 }],
@@ -484,7 +495,11 @@ M3 S{spindle_rpm}
                     label: "S2 op",
                     pre_gcode: None,
                     post_gcode: None,
-                    tool_number: Some(1),
+                    tool: Some(PhaseTool {
+                        id: 1,
+                        number: 1,
+                        label: "Tool One",
+                    }),
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
                 }],
