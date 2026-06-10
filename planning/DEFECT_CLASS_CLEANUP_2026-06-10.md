@@ -119,8 +119,16 @@ actual mechanism behind the 622 µm sample. Original framing below kept for cont
   the production generate→simulate funnel (project fixtures rather than the raw
   param-sweep harness, which never produces metric samples). Dexel-bridge teeth
   remain F-031's whole-toolpath bar, which demonstrably trips on filter regressions.
-- Deferred: live WANAKA re-validation via MCP (TP1 expected ~98 µm Within +
-  optimizer searches instead of refusing) — pending a GUI session.
+- Validation (2026-06-10, headless probe over
+  `/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml` — generate-all →
+  metrics sim → tool_load_report → optimize on TP1 "Back Rough"):
+  **deflection reads Within, peak 107.6 µm** (was 622 µm Exceeds →
+  DeflectionSetupLocked; honest estimate was ~98 µm), and the optimizer
+  proceeds into the retarget + grid search instead of refusing. The search
+  then hits a PRE-EXISTING third-party panic (see Backlog: cavalier
+  parallel_offset) on one grid candidate — unrelated to the C3 class. MCP
+  re-validation in a live GUI session still worthwhile for the full
+  narrate/screenshot loop.
 
 Confirmed behaviour: TP1 Back Rough peak sample carries ~9 mm axial engagement at slot arc
 (commanded DOC 3.0) → 622 µm verdict → preflight `DeflectionSetupLocked`. Honest reading
@@ -378,6 +386,19 @@ F2 fix order: (1) intent→span bridge, (2) honor `spans_valid` at the 4 call si
 ---
 
 ## Backlog (acknowledged, deliberately deferred)
+
+- **Optimizer-candidate adaptive3d crash (found by the F2 WANAKA probe,
+  2026-06-10):** `cavalier_contours 0.7.0 pline_view.rs:507` panics
+  ("start index should be less than or equal to end index if polyline is
+  open") inside `Shape::parallel_offset` via `polygon::offset_polygon` ←
+  `adaptive::path::is_narrow_machinable` ← `generate_adaptive3d` when the
+  optimizer's grid strategy regenerates WANAKA Back Rough at some
+  stepover/DOC combination. Pre-existing latent geometry crash (not one of
+  the five classes); a panic in candidate evaluation poisons the whole
+  optimize run. Candidate fixes: harden `offset_polygon` against the
+  upstream assert (catch the degenerate slice before calling), or upgrade
+  cavalier_contours. Repro: load wanaka_full_tuned.toml, generate all,
+  simulate, `optimize_toolpath(idx 1)`.
 
 - Deflection model recalibration: force model is feed-independent (`F = Kc·ap·ae`,
   drag-cut physics, ~16–60× energy-balance force at WANAKA params), offset by co-tuned
