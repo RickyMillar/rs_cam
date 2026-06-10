@@ -1224,16 +1224,19 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     }
 
     // --- Step 7: Machine feed clamp ---
+    // F4: the calculator emits CUTTING feeds — clamp at the cutting
+    // ceiling, not the gantry travel rate.
+    let machine_cut_ceiling = machine.cutting_feed_ceiling_mm_min();
     let mut feed_clamp_factor = 1.0;
-    if feed > machine.max_feed_mm_min {
+    if feed > machine_cut_ceiling {
         warnings.push(FeedsWarning::FeedRateClamped {
             requested: feed,
-            actual: machine.max_feed_mm_min,
+            actual: machine_cut_ceiling,
         });
         if feed > 0.0 {
-            feed_clamp_factor = machine.max_feed_mm_min / feed;
+            feed_clamp_factor = machine_cut_ceiling / feed;
         }
-        feed = machine.max_feed_mm_min;
+        feed = machine_cut_ceiling;
     }
 
     // --- Step 8: Plunge rate ---

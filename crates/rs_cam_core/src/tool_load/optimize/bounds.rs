@@ -224,7 +224,9 @@ pub fn resolve_feed_bounds(
     let mut sources = Vec::new();
 
     let machine_min: f64 = 0.0;
-    let machine_max = ctx.machine.max_feed_mm_min.max(machine_min);
+    // F4: the search space caps CUTTING feed at the cutting ceiling,
+    // not the gantry travel rate.
+    let machine_max = ctx.machine.cutting_feed_ceiling_mm_min().max(machine_min);
     sources.push(BoundsSource::MachineEnvelope {
         lo: machine_min,
         hi: machine_max,
