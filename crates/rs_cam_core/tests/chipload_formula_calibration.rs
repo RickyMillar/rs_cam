@@ -80,8 +80,6 @@ fn half_engagement_sample(
         toolpath_id: ToolpathId(tp_id),
         move_index: idx,
         sample_index: idx,
-        position: [0.0, 0.0, 0.0],
-        cumulative_time_s: 0.0,
         segment_time_s: 0.1,
         is_cutting: true,
         cut_kinematics: CutKinematics::Linear,
@@ -90,22 +88,18 @@ fn half_engagement_sample(
         flute_count: 2,
         axial_doc_mm: WANAKA_AXIAL_DOC_MM,
         axial_engagement_mm: WANAKA_AXIAL_DOC_MM,
-        plunge_descent_mm: 0.0,
         arc_engagement_radians: Some(arc),
         chipload_mm_per_tooth: chipload,
         effective_chip_thickness_mm: exposed,
         engagement: rs_cam_core::simulation_cut::Engagement::with_radial_woc(0.5),
         removed_volume_est_mm3: 0.1,
         mrr_mm3_s: 1.0,
-        semantic_item_id: None,
-        span_path: Vec::new(),
-        in_transit_span: false,
+        ..SimulationCutSample::test_fixture()
     }
 }
 
 fn trace(samples: Vec<SimulationCutSample>) -> SimulationCutTrace {
     SimulationCutTrace {
-        schema_version: 1,
         sample_step_mm: 1.0,
         summary: SimulationCutSummary {
             sample_count: samples.len(),
@@ -125,17 +119,8 @@ fn trace(samples: Vec<SimulationCutSample>) -> SimulationCutTrace {
             average_mrr_mm3_s: 1.0,
             per_kinematics: std::collections::BTreeMap::new(),
         },
-        toolpath_summaries: Vec::new(),
-        semantic_summaries: Vec::new(),
-        hotspots: Vec::new(),
-        issues: Vec::new(),
         samples,
-        provenance: None,
-        drill_samples: Vec::new(),
-        drill_summaries: Vec::new(),
-        predicted_feeds: rs_cam_core::machine_kinematics::PredictedFeedMap::new(),
-        modulated_feeds: std::collections::BTreeMap::new(),
-        modulation_summaries: std::collections::BTreeMap::new(),
+        ..SimulationCutTrace::test_fixture()
     }
 }
 
@@ -235,11 +220,6 @@ fn lut_nominal_engagement_sample_within_published_envelope_passes() {
     .expect("flat endmill chip geometry supported at LUT-nominal engagement");
 
     let sample = SimulationCutSample {
-        toolpath_id: ToolpathId(0),
-        move_index: 0,
-        sample_index: 0,
-        position: [0.0, 0.0, 0.0],
-        cumulative_time_s: 0.0,
         segment_time_s: 0.1,
         is_cutting: true,
         cut_kinematics: CutKinematics::Linear,
@@ -248,16 +228,13 @@ fn lut_nominal_engagement_sample_within_published_envelope_passes() {
         flute_count: 2,
         axial_doc_mm: WANAKA_AXIAL_DOC_MM,
         axial_engagement_mm: WANAKA_AXIAL_DOC_MM,
-        plunge_descent_mm: 0.0,
         arc_engagement_radians: Some(arc_lut_nominal),
         chipload_mm_per_tooth: feed_per_tooth,
         effective_chip_thickness_mm: Some(exposed),
         engagement: rs_cam_core::simulation_cut::Engagement::with_radial_woc(0.27),
         removed_volume_est_mm3: 0.1,
         mrr_mm3_s: 1.0,
-        semantic_item_id: None,
-        span_path: Vec::new(),
-        in_transit_span: false,
+        ..SimulationCutSample::test_fixture()
     };
     let trace = trace(vec![sample]);
 
@@ -328,11 +305,6 @@ fn slot_engagement_sample_at_safe_feed_passes_after_d9_normalization() {
     );
 
     let sample = SimulationCutSample {
-        toolpath_id: ToolpathId(0),
-        move_index: 0,
-        sample_index: 0,
-        position: [0.0, 0.0, 0.0],
-        cumulative_time_s: 0.0,
         segment_time_s: 0.1,
         is_cutting: true,
         cut_kinematics: CutKinematics::Linear,
@@ -341,16 +313,13 @@ fn slot_engagement_sample_at_safe_feed_passes_after_d9_normalization() {
         flute_count: 2,
         axial_doc_mm: WANAKA_AXIAL_DOC_MM,
         axial_engagement_mm: WANAKA_AXIAL_DOC_MM,
-        plunge_descent_mm: 0.0,
         arc_engagement_radians: Some(arc_slot),
         chipload_mm_per_tooth: feed_per_tooth,
         effective_chip_thickness_mm: Some(exposed),
         engagement: rs_cam_core::simulation_cut::Engagement::with_radial_woc(1.0),
         removed_volume_est_mm3: 0.1,
         mrr_mm3_s: 1.0,
-        semantic_item_id: None,
-        span_path: Vec::new(),
-        in_transit_span: false,
+        ..SimulationCutSample::test_fixture()
     };
     let trace = trace(vec![sample]);
 

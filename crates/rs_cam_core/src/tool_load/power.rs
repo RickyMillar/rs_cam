@@ -416,7 +416,6 @@ mod tests {
 
     fn cutting_sample(idx: usize, axial: f64, arc_rad: f64, feed_mmpm: f64) -> SimulationCutSample {
         SimulationCutSample {
-            toolpath_id: ToolpathId(0),
             move_index: idx,
             sample_index: idx,
             position: [0.0, 0.0, -axial],
@@ -429,22 +428,18 @@ mod tests {
             flute_count: 2,
             axial_doc_mm: axial,
             axial_engagement_mm: axial,
-            plunge_descent_mm: 0.0,
             arc_engagement_radians: Some(arc_rad),
             chipload_mm_per_tooth: feed_mmpm / (18_000.0 * 2.0),
             effective_chip_thickness_mm: Some(feed_mmpm / (18_000.0 * 2.0)),
             engagement: crate::simulation_cut::Engagement::with_radial_woc(0.5),
             removed_volume_est_mm3: 0.1,
             mrr_mm3_s: 1.0,
-            semantic_item_id: None,
-            span_path: Vec::new(),
-            in_transit_span: false,
+            ..SimulationCutSample::test_fixture()
         }
     }
 
     fn trace_with(samples: Vec<SimulationCutSample>) -> SimulationCutTrace {
         SimulationCutTrace {
-            schema_version: 1,
             sample_step_mm: 1.0,
             summary: SimulationCutSummary {
                 sample_count: samples.len(),
@@ -464,17 +459,8 @@ mod tests {
                 average_mrr_mm3_s: 1.0,
                 per_kinematics: std::collections::BTreeMap::new(),
             },
-            toolpath_summaries: Vec::new(),
-            semantic_summaries: Vec::new(),
-            hotspots: Vec::new(),
-            issues: Vec::new(),
             samples,
-            provenance: None,
-            drill_samples: Vec::new(),
-            drill_summaries: Vec::new(),
-            predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
-            modulated_feeds: std::collections::BTreeMap::new(),
-            modulation_summaries: std::collections::BTreeMap::new(),
+            ..SimulationCutTrace::test_fixture()
         }
     }
 

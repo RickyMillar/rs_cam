@@ -192,6 +192,39 @@ pub struct SimulationCutSample {
     pub in_transit_span: bool,
 }
 
+impl SimulationCutSample {
+    /// Neutral test fixture: a non-cutting sample at the origin with zeroed
+    /// metrics. Test code overrides the fields under test via struct-update
+    /// syntax. Not for production paths.
+    pub fn test_fixture() -> Self {
+        Self {
+            toolpath_id: ToolpathId(0),
+            move_index: 0,
+            sample_index: 0,
+            position: [0.0, 0.0, 0.0],
+            cumulative_time_s: 0.0,
+            segment_time_s: 0.0,
+            is_cutting: false,
+            cut_kinematics: CutKinematics::default(),
+            feed_rate_mm_min: 0.0,
+            spindle_rpm: 0,
+            flute_count: 0,
+            axial_doc_mm: 0.0,
+            axial_engagement_mm: 0.0,
+            plunge_descent_mm: 0.0,
+            arc_engagement_radians: None,
+            chipload_mm_per_tooth: 0.0,
+            effective_chip_thickness_mm: None,
+            engagement: Engagement::default(),
+            removed_volume_est_mm3: 0.0,
+            mrr_mm3_s: 0.0,
+            semantic_item_id: None,
+            span_path: Vec::new(),
+            in_transit_span: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SimulationCutIssue {
     pub kind: SimulationCutIssueKind,
@@ -568,6 +601,29 @@ impl SimulationCutArtifact {
 }
 
 impl SimulationCutTrace {
+    /// Neutral test fixture: an empty trace at the current
+    /// [`SIMULATION_CUT_TRACE_SCHEMA_VERSION`] with no samples, summaries,
+    /// issues, or drill data. Test code overrides the fields under test via
+    /// struct-update syntax. Not for production paths.
+    pub fn test_fixture() -> Self {
+        Self {
+            schema_version: SIMULATION_CUT_TRACE_SCHEMA_VERSION,
+            sample_step_mm: 0.0,
+            summary: SimulationCutSummary::default(),
+            toolpath_summaries: Vec::new(),
+            semantic_summaries: Vec::new(),
+            hotspots: Vec::new(),
+            issues: Vec::new(),
+            samples: Vec::new(),
+            provenance: None,
+            drill_samples: Vec::new(),
+            drill_summaries: Vec::new(),
+            predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
+            modulated_feeds: std::collections::BTreeMap::new(),
+            modulation_summaries: std::collections::BTreeMap::new(),
+        }
+    }
+
     pub fn from_samples(sample_step_mm: f64, samples: Vec<SimulationCutSample>) -> Self {
         Self::from_samples_with_semantics(
             sample_step_mm,
@@ -1251,7 +1307,6 @@ mod tests {
                 SimulationCutSample {
                     toolpath_id: ToolpathId(1),
                     move_index: 4,
-                    sample_index: 0,
                     position: [1.0, 2.0, -1.0],
                     cumulative_time_s: 0.2,
                     segment_time_s: 0.2,
@@ -1262,16 +1317,13 @@ mod tests {
                     flute_count: 2,
                     axial_doc_mm: 1.5,
                     axial_engagement_mm: 1.5,
-                    plunge_descent_mm: 0.0,
-                    arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0166,
                     effective_chip_thickness_mm: Some(0.0166),
                     engagement: Engagement::with_radial_woc(0.01),
                     removed_volume_est_mm3: 2.0,
                     mrr_mm3_s: 10.0,
                     semantic_item_id: Some(9),
-                    span_path: Vec::new(),
-                    in_transit_span: false,
+                    ..SimulationCutSample::test_fixture()
                 },
                 SimulationCutSample {
                     toolpath_id: ToolpathId(1),
@@ -1287,16 +1339,13 @@ mod tests {
                     flute_count: 2,
                     axial_doc_mm: 2.0,
                     axial_engagement_mm: 2.0,
-                    plunge_descent_mm: 0.0,
-                    arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0166,
                     effective_chip_thickness_mm: Some(0.0166),
                     engagement: Engagement::with_radial_woc(0.08),
                     removed_volume_est_mm3: 3.0,
                     mrr_mm3_s: 10.0,
                     semantic_item_id: Some(9),
-                    span_path: Vec::new(),
-                    in_transit_span: false,
+                    ..SimulationCutSample::test_fixture()
                 },
                 SimulationCutSample {
                     toolpath_id: ToolpathId(1),
@@ -1305,23 +1354,11 @@ mod tests {
                     position: [3.0, 2.0, 5.0],
                     cumulative_time_s: 0.6,
                     segment_time_s: 0.1,
-                    is_cutting: false,
                     cut_kinematics: crate::simulation_cut::CutKinematics::Linear,
                     feed_rate_mm_min: 5000.0,
                     spindle_rpm: 18_000,
                     flute_count: 2,
-                    axial_doc_mm: 0.0,
-                    axial_engagement_mm: 0.0,
-                    plunge_descent_mm: 0.0,
-                    arc_engagement_radians: None,
-                    chipload_mm_per_tooth: 0.0,
-                    effective_chip_thickness_mm: None,
-                    engagement: Engagement::with_radial_woc(0.0),
-                    removed_volume_est_mm3: 0.0,
-                    mrr_mm3_s: 0.0,
-                    semantic_item_id: None,
-                    span_path: Vec::new(),
-                    in_transit_span: false,
+                    ..SimulationCutSample::test_fixture()
                 },
             ],
         );
@@ -1358,7 +1395,6 @@ mod tests {
                 SimulationCutSample {
                     toolpath_id: ToolpathId(1),
                     move_index: 1,
-                    sample_index: 0,
                     position: [0.0, 0.0, -1.0],
                     cumulative_time_s: 0.2,
                     segment_time_s: 0.2,
@@ -1369,16 +1405,13 @@ mod tests {
                     flute_count: 2,
                     axial_doc_mm: 1.0,
                     axial_engagement_mm: 1.0,
-                    plunge_descent_mm: 0.0,
-                    arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0083,
                     effective_chip_thickness_mm: Some(0.0083),
                     engagement: Engagement::with_radial_woc(0.08),
                     removed_volume_est_mm3: 0.2,
                     mrr_mm3_s: 1.0,
                     semantic_item_id: Some(2),
-                    span_path: Vec::new(),
-                    in_transit_span: false,
+                    ..SimulationCutSample::test_fixture()
                 },
                 SimulationCutSample {
                     toolpath_id: ToolpathId(1),
@@ -1394,16 +1427,13 @@ mod tests {
                     flute_count: 2,
                     axial_doc_mm: 1.2,
                     axial_engagement_mm: 1.2,
-                    plunge_descent_mm: 0.0,
-                    arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0083,
                     effective_chip_thickness_mm: Some(0.0083),
                     engagement: Engagement::with_radial_woc(0.15),
                     removed_volume_est_mm3: 0.4,
                     mrr_mm3_s: 2.0,
                     semantic_item_id: Some(2),
-                    span_path: Vec::new(),
-                    in_transit_span: false,
+                    ..SimulationCutSample::test_fixture()
                 },
             ],
             [(ToolpathId(1), &trace)],
@@ -1433,7 +1463,6 @@ mod tests {
                 SimulationCutSample {
                     toolpath_id: ToolpathId(1),
                     move_index: 4,
-                    sample_index: 0,
                     position: [1.0, 2.0, -1.0],
                     cumulative_time_s: 0.2,
                     segment_time_s: 0.2,
@@ -1444,8 +1473,6 @@ mod tests {
                     flute_count: 2,
                     axial_doc_mm: 1.5,
                     axial_engagement_mm: 1.5,
-                    plunge_descent_mm: 0.0,
-                    arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0166,
                     effective_chip_thickness_mm: Some(0.0166),
                     engagement: Engagement::with_radial_woc(0.005),
@@ -1453,7 +1480,7 @@ mod tests {
                     mrr_mm3_s: 0.5,
                     semantic_item_id: Some(7),
                     span_path: span_path.clone(),
-                    in_transit_span: false,
+                    ..SimulationCutSample::test_fixture()
                 },
                 SimulationCutSample {
                     toolpath_id: ToolpathId(1),
@@ -1469,8 +1496,6 @@ mod tests {
                     flute_count: 2,
                     axial_doc_mm: 1.5,
                     axial_engagement_mm: 1.5,
-                    plunge_descent_mm: 0.0,
-                    arc_engagement_radians: None,
                     chipload_mm_per_tooth: 0.0166,
                     effective_chip_thickness_mm: Some(0.0166),
                     engagement: Engagement::with_radial_woc(0.005),
@@ -1478,7 +1503,7 @@ mod tests {
                     mrr_mm3_s: 0.5,
                     semantic_item_id: Some(7),
                     span_path: span_path.clone(),
-                    in_transit_span: false,
+                    ..SimulationCutSample::test_fixture()
                 },
             ],
         );
@@ -1541,54 +1566,24 @@ mod tests {
     fn trace_rapid_only_has_zero_cutting_time() {
         let samples = vec![
             SimulationCutSample {
-                toolpath_id: ToolpathId(0),
-                move_index: 0,
-                sample_index: 0,
                 position: [0.0, 0.0, 10.0],
                 cumulative_time_s: 0.1,
                 segment_time_s: 0.1,
-                is_cutting: false,
-                cut_kinematics: crate::simulation_cut::CutKinematics::Rapid,
                 feed_rate_mm_min: 5000.0,
                 spindle_rpm: 18_000,
                 flute_count: 2,
-                axial_doc_mm: 0.0,
-                axial_engagement_mm: 0.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
-                chipload_mm_per_tooth: 0.0,
-                effective_chip_thickness_mm: None,
-                engagement: Engagement::with_radial_woc(0.0),
-                removed_volume_est_mm3: 0.0,
-                mrr_mm3_s: 0.0,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
             SimulationCutSample {
-                toolpath_id: ToolpathId(0),
                 move_index: 1,
                 sample_index: 1,
                 position: [50.0, 0.0, 10.0],
                 cumulative_time_s: 0.3,
                 segment_time_s: 0.2,
-                is_cutting: false,
-                cut_kinematics: crate::simulation_cut::CutKinematics::Rapid,
                 feed_rate_mm_min: 5000.0,
                 spindle_rpm: 18_000,
                 flute_count: 2,
-                axial_doc_mm: 0.0,
-                axial_engagement_mm: 0.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
-                chipload_mm_per_tooth: 0.0,
-                effective_chip_thickness_mm: None,
-                engagement: Engagement::with_radial_woc(0.0),
-                removed_volume_est_mm3: 0.0,
-                mrr_mm3_s: 0.0,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
         ];
 
@@ -1611,9 +1606,6 @@ mod tests {
         let samples = vec![
             // Air cut: is_cutting=true, engagement < 0.02
             SimulationCutSample {
-                toolpath_id: ToolpathId(0),
-                move_index: 0,
-                sample_index: 0,
                 position: [0.0, 0.0, -1.0],
                 cumulative_time_s: 0.1,
                 segment_time_s: 0.1,
@@ -1624,20 +1616,15 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 1.0,
                 axial_engagement_mm: 1.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
                 engagement: Engagement::with_radial_woc(0.01),
                 removed_volume_est_mm3: 0.1,
                 mrr_mm3_s: 1.0,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
             // Low engagement: is_cutting=true, 0.02 <= engagement < 0.10
             SimulationCutSample {
-                toolpath_id: ToolpathId(0),
                 move_index: 1,
                 sample_index: 1,
                 position: [1.0, 0.0, -1.0],
@@ -1650,20 +1637,15 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 1.0,
                 axial_engagement_mm: 1.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
                 engagement: Engagement::with_radial_woc(0.05),
                 removed_volume_est_mm3: 0.3,
                 mrr_mm3_s: 3.0,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
             // Good engagement: is_cutting=true, engagement >= 0.10
             SimulationCutSample {
-                toolpath_id: ToolpathId(0),
                 move_index: 2,
                 sample_index: 2,
                 position: [2.0, 0.0, -1.0],
@@ -1676,16 +1658,12 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 2.0,
                 axial_engagement_mm: 2.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.02,
                 effective_chip_thickness_mm: Some(0.02),
                 engagement: Engagement::with_radial_woc(0.50),
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
         ];
 
@@ -1775,7 +1753,6 @@ mod tests {
         let mut samples = Vec::new();
         for i in 0..10 {
             samples.push(SimulationCutSample {
-                toolpath_id: ToolpathId(0),
                 move_index: i,
                 sample_index: i,
                 position: [i as f64, 0.0, -1.0],
@@ -1788,22 +1765,15 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 1.0,
                 axial_engagement_mm: 1.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
                 // all below 0.02
                 engagement: Engagement::with_radial_woc(0.005 + i as f64 * 0.001),
-                removed_volume_est_mm3: 0.0,
-                mrr_mm3_s: 0.0,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             });
         }
         // One good sample breaks the segment
         samples.push(SimulationCutSample {
-            toolpath_id: ToolpathId(0),
             move_index: 10,
             sample_index: 10,
             position: [10.0, 0.0, -1.0],
@@ -1816,20 +1786,15 @@ mod tests {
             flute_count: 2,
             axial_doc_mm: 2.0,
             axial_engagement_mm: 2.0,
-            plunge_descent_mm: 0.0,
-            arc_engagement_radians: None,
             chipload_mm_per_tooth: 0.02,
             effective_chip_thickness_mm: Some(0.02),
             engagement: Engagement::with_radial_woc(0.50),
             removed_volume_est_mm3: 1.0,
             mrr_mm3_s: 10.0,
-            semantic_item_id: None,
-            span_path: Vec::new(),
-            in_transit_span: false,
+            ..SimulationCutSample::test_fixture()
         });
         for i in 0..5 {
             samples.push(SimulationCutSample {
-                toolpath_id: ToolpathId(0),
                 move_index: 11 + i,
                 sample_index: 11 + i,
                 position: [11.0 + i as f64, 0.0, -1.0],
@@ -1842,16 +1807,10 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 1.0,
                 axial_engagement_mm: 1.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
                 engagement: Engagement::with_radial_woc(0.01),
-                removed_volume_est_mm3: 0.0,
-                mrr_mm3_s: 0.0,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             });
         }
 
@@ -1894,9 +1853,6 @@ mod tests {
         // air-cut), the open segment must be flushed, not lost.
         let samples = vec![
             SimulationCutSample {
-                toolpath_id: ToolpathId(0),
-                move_index: 0,
-                sample_index: 0,
                 position: [0.0, 0.0, -1.0],
                 cumulative_time_s: 0.1,
                 segment_time_s: 0.1,
@@ -1907,19 +1863,12 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 1.0,
                 axial_engagement_mm: 1.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
                 engagement: Engagement::with_radial_woc(0.01),
-                removed_volume_est_mm3: 0.0,
-                mrr_mm3_s: 0.0,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
             SimulationCutSample {
-                toolpath_id: ToolpathId(0),
                 move_index: 1,
                 sample_index: 1,
                 position: [1.0, 0.0, -1.0],
@@ -1932,16 +1881,10 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 1.0,
                 axial_engagement_mm: 1.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
                 engagement: Engagement::with_radial_woc(0.01),
-                removed_volume_est_mm3: 0.0,
-                mrr_mm3_s: 0.0,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
         ];
 
@@ -1960,9 +1903,6 @@ mod tests {
         // the other's.
         let samples = vec![
             SimulationCutSample {
-                toolpath_id: ToolpathId(0),
-                move_index: 0,
-                sample_index: 0,
                 position: [0.0, 0.0, -1.0],
                 cumulative_time_s: 0.1,
                 segment_time_s: 0.1,
@@ -1973,21 +1913,13 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 1.0,
                 axial_engagement_mm: 1.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
                 engagement: Engagement::with_radial_woc(0.01),
-                removed_volume_est_mm3: 0.0,
-                mrr_mm3_s: 0.0,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
             SimulationCutSample {
                 toolpath_id: ToolpathId(1),
-                move_index: 0,
-                sample_index: 0,
                 position: [10.0, 0.0, -1.0],
                 cumulative_time_s: 0.15,
                 segment_time_s: 0.1,
@@ -1998,19 +1930,12 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 1.0,
                 axial_engagement_mm: 1.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
                 engagement: Engagement::with_radial_woc(0.01),
-                removed_volume_est_mm3: 0.0,
-                mrr_mm3_s: 0.0,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
             SimulationCutSample {
-                toolpath_id: ToolpathId(0),
                 move_index: 1,
                 sample_index: 1,
                 position: [1.0, 0.0, -1.0],
@@ -2023,16 +1948,10 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 1.0,
                 axial_engagement_mm: 1.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
                 engagement: Engagement::with_radial_woc(0.01),
-                removed_volume_est_mm3: 0.0,
-                mrr_mm3_s: 0.0,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
         ];
 
@@ -2062,9 +1981,6 @@ mod tests {
     fn trace_tracks_peak_chipload_and_axial_doc() {
         let samples = vec![
             SimulationCutSample {
-                toolpath_id: ToolpathId(0),
-                move_index: 0,
-                sample_index: 0,
                 position: [0.0, 0.0, -1.0],
                 cumulative_time_s: 0.1,
                 segment_time_s: 0.1,
@@ -2075,19 +1991,14 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 1.5,
                 axial_engagement_mm: 1.5,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.05,
                 effective_chip_thickness_mm: Some(0.05),
                 engagement: Engagement::with_radial_woc(0.30),
                 removed_volume_est_mm3: 2.0,
                 mrr_mm3_s: 20.0,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
             SimulationCutSample {
-                toolpath_id: ToolpathId(0),
                 move_index: 1,
                 sample_index: 1,
                 position: [1.0, 0.0, -2.0],
@@ -2100,16 +2011,12 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 3.0,
                 axial_engagement_mm: 3.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.08,
                 effective_chip_thickness_mm: Some(0.08),
                 engagement: Engagement::with_radial_woc(0.60),
                 removed_volume_est_mm3: 5.0,
                 mrr_mm3_s: 50.0,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
         ];
 
@@ -2138,9 +2045,6 @@ mod tests {
     fn trace_multiple_toolpaths_produce_separate_summaries() {
         let samples = vec![
             SimulationCutSample {
-                toolpath_id: ToolpathId(0),
-                move_index: 0,
-                sample_index: 0,
                 position: [0.0, 0.0, -1.0],
                 cumulative_time_s: 0.1,
                 segment_time_s: 0.1,
@@ -2151,20 +2055,15 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 1.0,
                 axial_engagement_mm: 1.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
                 engagement: Engagement::with_radial_woc(0.40),
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
             SimulationCutSample {
                 toolpath_id: ToolpathId(1),
-                move_index: 0,
                 sample_index: 1,
                 position: [10.0, 0.0, -2.0],
                 cumulative_time_s: 0.3,
@@ -2176,16 +2075,12 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 2.0,
                 axial_engagement_mm: 2.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.02,
                 effective_chip_thickness_mm: Some(0.02),
                 engagement: Engagement::with_radial_woc(0.50),
                 removed_volume_est_mm3: 3.0,
                 mrr_mm3_s: 15.0,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
         ];
 
@@ -2229,9 +2124,6 @@ mod tests {
         let samples = vec![
             // 0.1s at engagement=0.20
             SimulationCutSample {
-                toolpath_id: ToolpathId(0),
-                move_index: 0,
-                sample_index: 0,
                 position: [0.0, 0.0, -1.0],
                 cumulative_time_s: 0.1,
                 segment_time_s: 0.1,
@@ -2242,20 +2134,15 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 1.0,
                 axial_engagement_mm: 1.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
                 engagement: Engagement::with_radial_woc(0.20),
                 removed_volume_est_mm3: 0.5,
                 mrr_mm3_s: 5.0,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
             // 0.3s at engagement=0.80
             SimulationCutSample {
-                toolpath_id: ToolpathId(0),
                 move_index: 1,
                 sample_index: 1,
                 position: [1.0, 0.0, -1.0],
@@ -2268,16 +2155,12 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 2.0,
                 axial_engagement_mm: 2.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.02,
                 effective_chip_thickness_mm: Some(0.02),
                 engagement: Engagement::with_radial_woc(0.80),
                 removed_volume_est_mm3: 2.0,
                 mrr_mm3_s: 6.67,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
         ];
 
@@ -2300,9 +2183,6 @@ mod tests {
     fn trace_hotspots_grouped_by_toolpath_and_semantic_id() {
         let samples = vec![
             SimulationCutSample {
-                toolpath_id: ToolpathId(0),
-                move_index: 0,
-                sample_index: 0,
                 position: [0.0, 0.0, -1.0],
                 cumulative_time_s: 0.1,
                 segment_time_s: 0.1,
@@ -2313,19 +2193,15 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 1.0,
                 axial_engagement_mm: 1.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
                 engagement: Engagement::with_radial_woc(0.50),
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 semantic_item_id: Some(1),
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
             SimulationCutSample {
-                toolpath_id: ToolpathId(0),
                 move_index: 1,
                 sample_index: 1,
                 position: [1.0, 0.0, -1.0],
@@ -2338,19 +2214,15 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 1.0,
                 axial_engagement_mm: 1.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
                 engagement: Engagement::with_radial_woc(0.50),
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 semantic_item_id: Some(2),
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
             SimulationCutSample {
-                toolpath_id: ToolpathId(0),
                 move_index: 2,
                 sample_index: 2,
                 position: [2.0, 0.0, -1.0],
@@ -2363,16 +2235,13 @@ mod tests {
                 flute_count: 2,
                 axial_doc_mm: 1.0,
                 axial_engagement_mm: 1.0,
-                plunge_descent_mm: 0.0,
-                arc_engagement_radians: None,
                 chipload_mm_per_tooth: 0.01,
                 effective_chip_thickness_mm: Some(0.01),
                 engagement: Engagement::with_radial_woc(0.50),
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 semantic_item_id: Some(1),
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             },
         ];
 
@@ -2426,10 +2295,8 @@ mod tests {
         in_transit_span: bool,
     ) -> SimulationCutSample {
         SimulationCutSample {
-            toolpath_id: ToolpathId(0),
             move_index: sample_index,
             sample_index,
-            position: [0.0, 0.0, 0.0],
             cumulative_time_s: sample_index as f64 * 0.01,
             segment_time_s: 0.01,
             is_cutting: true,
@@ -2439,16 +2306,13 @@ mod tests {
             flute_count: 2,
             axial_doc_mm,
             axial_engagement_mm: axial_doc_mm,
-            plunge_descent_mm: 0.0,
-            arc_engagement_radians: None,
             chipload_mm_per_tooth: 0.03,
             effective_chip_thickness_mm: Some(0.03),
             engagement: Engagement::with_radial_woc(0.3),
             removed_volume_est_mm3: 1.0,
             mrr_mm3_s: 50.0,
-            semantic_item_id: None,
-            span_path: Vec::new(),
             in_transit_span,
+            ..SimulationCutSample::test_fixture()
         }
     }
 

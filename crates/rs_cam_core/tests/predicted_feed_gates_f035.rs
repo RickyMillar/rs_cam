@@ -61,7 +61,7 @@ use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
-use rs_cam_core::machine_kinematics::{MachineKinematics, PredictedFeedMap};
+use rs_cam_core::machine_kinematics::MachineKinematics;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSession, SimulationOptions, ToolpathConfig};
@@ -118,8 +118,6 @@ fn sample(
         toolpath_id: ToolpathId(toolpath_id),
         move_index,
         sample_index: move_index,
-        position: [0.0, 0.0, 0.0],
-        cumulative_time_s: 0.0,
         segment_time_s: 0.1,
         is_cutting: true,
         cut_kinematics: CutKinematics::Linear,
@@ -128,22 +126,18 @@ fn sample(
         flute_count: 2,
         axial_doc_mm: 1.0,
         axial_engagement_mm: 1.0,
-        plunge_descent_mm: 0.0,
         arc_engagement_radians: Some(TEST_LUT_NOMINAL_ARC_RAD),
         chipload_mm_per_tooth: chipload_mm,
         effective_chip_thickness_mm: Some(chipload_mm),
         engagement: Engagement::with_radial_woc(radial_woc),
         removed_volume_est_mm3: 0.1,
         mrr_mm3_s: 1.0,
-        semantic_item_id: None,
-        span_path: Vec::new(),
-        in_transit_span: false,
+        ..SimulationCutSample::test_fixture()
     }
 }
 
 fn empty_trace(samples: Vec<SimulationCutSample>) -> SimulationCutTrace {
     SimulationCutTrace {
-        schema_version: 1,
         sample_step_mm: 1.0,
         summary: SimulationCutSummary {
             sample_count: samples.len(),
@@ -163,17 +157,8 @@ fn empty_trace(samples: Vec<SimulationCutSample>) -> SimulationCutTrace {
             average_mrr_mm3_s: 1.0,
             per_kinematics: std::collections::BTreeMap::new(),
         },
-        toolpath_summaries: Vec::new(),
-        semantic_summaries: Vec::new(),
-        hotspots: Vec::new(),
-        issues: Vec::new(),
         samples,
-        provenance: None,
-        drill_samples: Vec::new(),
-        drill_summaries: Vec::new(),
-        predicted_feeds: PredictedFeedMap::new(),
-        modulated_feeds: std::collections::BTreeMap::new(),
-        modulation_summaries: std::collections::BTreeMap::new(),
+        ..SimulationCutTrace::test_fixture()
     }
 }
 

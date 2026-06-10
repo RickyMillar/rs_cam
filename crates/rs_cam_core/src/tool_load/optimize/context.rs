@@ -481,9 +481,7 @@ mod restore_guard_tests {
         air_cut_time_s: f64,
     ) -> crate::simulation_cut::SimulationCutTrace {
         crate::simulation_cut::SimulationCutTrace {
-            schema_version: 1,
             sample_step_mm: 1.0,
-            summary: crate::simulation_cut::SimulationCutSummary::default(),
             toolpath_summaries: vec![crate::simulation_cut::SimulationToolpathCutSummary {
                 toolpath_id,
                 sample_count: 1,
@@ -501,16 +499,7 @@ mod restore_guard_tests {
                 metrics_not_applicable: false,
                 per_kinematics: std::collections::BTreeMap::new(),
             }],
-            semantic_summaries: Vec::new(),
-            hotspots: Vec::new(),
-            issues: Vec::new(),
-            samples: Vec::new(),
-            provenance: None,
-            drill_samples: Vec::new(),
-            drill_summaries: Vec::new(),
-            predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
-            modulated_feeds: std::collections::BTreeMap::new(),
-            modulation_summaries: std::collections::BTreeMap::new(),
+            ..crate::simulation_cut::SimulationCutTrace::test_fixture()
         }
     }
 

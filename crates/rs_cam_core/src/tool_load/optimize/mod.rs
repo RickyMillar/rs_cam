@@ -805,7 +805,7 @@ mod orchestration_skip_tests {
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::feeds::OperationFamily;
     use crate::session::ToolpathConfig;
-    use crate::simulation_cut::{SimulationCutSummary, SimulationCutTrace};
+    use crate::simulation_cut::SimulationCutTrace;
 
     fn make_tool() -> ToolConfig {
         ToolConfig::new_default(ToolId(0), ToolType::EndMill)
@@ -813,20 +813,8 @@ mod orchestration_skip_tests {
 
     fn empty_trace() -> SimulationCutTrace {
         SimulationCutTrace {
-            schema_version: 1,
             sample_step_mm: 1.0,
-            summary: SimulationCutSummary::default(),
-            samples: Vec::new(),
-            toolpath_summaries: Vec::new(),
-            semantic_summaries: Vec::new(),
-            hotspots: Vec::new(),
-            issues: Vec::new(),
-            provenance: None,
-            drill_samples: Vec::new(),
-            drill_summaries: Vec::new(),
-            predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
-            modulated_feeds: std::collections::BTreeMap::new(),
-            modulation_summaries: std::collections::BTreeMap::new(),
+            ..SimulationCutTrace::test_fixture()
         }
     }
 
@@ -1027,7 +1015,6 @@ mod orchestration_skip_tests {
         // tripping the 200 µm Exceeds threshold.
         for i in 0..4 {
             trace.samples.push(SimulationCutSample {
-                toolpath_id: ToolpathId(0),
                 move_index: i,
                 sample_index: i,
                 position: [i as f64, 0.0, -6.0],
@@ -1040,16 +1027,13 @@ mod orchestration_skip_tests {
                 flute_count: 2,
                 axial_doc_mm: 6.0,
                 axial_engagement_mm: 6.0,
-                plunge_descent_mm: 0.0,
                 arc_engagement_radians: Some(std::f64::consts::PI),
                 chipload_mm_per_tooth: 0.04,
                 effective_chip_thickness_mm: Some(0.04),
                 engagement: crate::simulation_cut::Engagement::with_radial_woc(1.0),
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
-                semantic_item_id: None,
-                span_path: Vec::new(),
-                in_transit_span: false,
+                ..SimulationCutSample::test_fixture()
             });
         }
         trace
@@ -1249,9 +1233,7 @@ mod project_rollup_tests {
     use crate::debug_trace::ToolpathDebugOptions;
     use crate::gcode::CoolantMode;
     use crate::session::ToolpathConfig;
-    use crate::simulation_cut::{
-        SimulationCutSummary, SimulationCutTrace, SimulationToolpathCutSummary,
-    };
+    use crate::simulation_cut::{SimulationCutTrace, SimulationToolpathCutSummary};
     use std::sync::Mutex;
 
     fn make_tool() -> ToolConfig {
@@ -1260,20 +1242,8 @@ mod project_rollup_tests {
 
     fn empty_trace() -> SimulationCutTrace {
         SimulationCutTrace {
-            schema_version: 1,
             sample_step_mm: 1.0,
-            summary: SimulationCutSummary::default(),
-            samples: Vec::new(),
-            toolpath_summaries: Vec::new(),
-            semantic_summaries: Vec::new(),
-            hotspots: Vec::new(),
-            issues: Vec::new(),
-            provenance: None,
-            drill_samples: Vec::new(),
-            drill_summaries: Vec::new(),
-            predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
-            modulated_feeds: std::collections::BTreeMap::new(),
-            modulation_summaries: std::collections::BTreeMap::new(),
+            ..SimulationCutTrace::test_fixture()
         }
     }
 
