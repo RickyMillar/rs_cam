@@ -38,7 +38,8 @@ impl MachineEnvelope {
         Self {
             spindle_min_rpm: min_rpm,
             spindle_max_rpm: max_rpm,
-            max_feed_mm_min: machine.max_feed_mm_min,
+            // F4: the explain envelope describes cutting-feed bounds.
+            max_feed_mm_min: machine.cutting_feed_ceiling_mm_min(),
             max_power_kw,
             safety_factor: machine.safety_factor,
         }

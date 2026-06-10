@@ -136,6 +136,21 @@ pub fn optimize_toolpath(
     toolpath_index: usize,
     cancel: &AtomicBool,
 ) -> OptimizeOutcome {
+    // F4.3 — stamp the machine caps this run consumed on every outcome
+    // (including refusals/skips), so narratives stay reconcilable with
+    // the profile that actually bounded the search.
+    let snapshot = outcome::MachineSnapshot::of(session.machine());
+    let mut outcome = optimize_toolpath_inner(session, baseline_trace, toolpath_index, cancel);
+    outcome.machine_snapshot = Some(snapshot);
+    outcome
+}
+
+fn optimize_toolpath_inner(
+    session: &mut ProjectSession,
+    baseline_trace: &SimulationCutTrace,
+    toolpath_index: usize,
+    cancel: &AtomicBool,
+) -> OptimizeOutcome {
     use std::sync::atomic::Ordering;
 
     // 1. Build the evaluation context. Skip cleanly if the toolpath or
@@ -842,6 +857,29 @@ mod orchestration_skip_tests {
         s.add_toolpath(0, make_tc(operation, s.tools()[0].id.0))
             .unwrap();
         s
+    }
+
+    /// F4.3 — every outcome (including refusals/skips) carries the
+    /// machine snapshot the run consumed, with the cutting ceiling
+    /// distinct from the travel rate.
+    #[test]
+    fn outcome_carries_machine_snapshot() {
+        let mut session = session_with_op(OperationConfig::Drill(DrillConfig::default()));
+        let trace = empty_trace();
+        let cancel = AtomicBool::new(false);
+        let outcome = optimize_toolpath(&mut session, &trace, 0, &cancel);
+        let snap = outcome
+            .machine_snapshot
+            .as_ref()
+            .expect("snapshot on every outcome, even Skipped");
+        assert_eq!(snap.name, session.machine().name);
+        assert!((snap.max_feed_mm_min - session.machine().max_feed_mm_min).abs() < 1e-9);
+        assert!(
+            (snap.cutting_feed_ceiling_mm_min - session.machine().cutting_feed_ceiling_mm_min())
+                .abs()
+                < 1e-9
+        );
+        assert!(snap.cutting_feed_ceiling_mm_min <= snap.max_feed_mm_min);
     }
 
     #[test]

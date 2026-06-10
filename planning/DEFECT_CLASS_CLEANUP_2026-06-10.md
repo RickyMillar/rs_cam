@@ -198,7 +198,25 @@ Validation: TP7-style drop_cutter finish candidate (structurally safe, 4.5× fas
 longer refused on burn-side chipload from preset-point bounds; Amana tapered rows
 (real ranges 0.010–0.032 + ae calibration) win tapered-ball lookups.
 
-### F4 — travel rate vs cutting-feed ceiling conflation — STATUS: pending
+### F4 — travel rate vs cutting-feed ceiling conflation — STATUS: ✅ DONE 2026-06-10
+
+**Landed** (on `defect-class/f4-feed-ceiling`):
+- F4.1: `MachineProfile.max_feed_mm_min` documented as TRAVEL rate (name kept for
+  serde); new `max_cutting_feed_mm_min: Option<f64>` + `cutting_feed_ceiling_mm_min()`
+  (`explicit.unwrap_or(DEFAULT_CUTTING_FEED_CAP 6000).min(travel)` — never exceeds
+  travel). Built-ins (travel ≤ 5000) keep pre-F4 behavior exactly.
+- F4.2: cutting consumers switched to the ceiling — optimizer feed-axis bounds,
+  headroom k_feed, narrative suggestion envelope, suggest feed recalibration cap,
+  calculator Step-7 clamp, modulation ceiling (session), explain MachineEnvelope.
+  Travel kept where it belongs: simulator rapid feed, kinematics integrator,
+  rapid_feed fallback.
+- F4.3: `OptimizeOutcome.machine_snapshot` (name, travel, cutting ceiling, RPM
+  range) stamped on every outcome including refusals/skips.
+- F4.4: `machine_library::resolve` warns when the library profile differs from the
+  project's inline copy (override no longer silent); identical copies stay quiet.
+- Validation tests: 10k-travel profile derives the 6000 cutting cap (ricky-XXL
+  case); explicit ceiling wins but never exceeds travel; kinematics module docs
+  updated (the $110=10000 guidance now notes cutting is bounded separately).
 
 Sub-fixes:
 1. Split `MachineProfile`: `max_feed_mm_min` (travel, $110-class — keep name for serde
@@ -442,3 +460,13 @@ F2 fix order: (1) intent→span bridge, (2) honor `spans_valid` at the 4 call si
   carries the full MedianLow metric (boxed for enum-size lint) so MCP/GUI can
   render the would-be trip numbers. Broader Confidence wiring into
   candidate ranking stays backlog (A4).
+- 2026-06-10 (F4.1): `DEFAULT_CUTTING_FEED_CAP_MM_MIN = 6000` — above every
+  wood-routing recommendation in the embedded literature net for the machine
+  classes we model, far under gantry travel. Profiles that genuinely cut faster
+  set `max_cutting_feed_mm_min` explicitly; the ceiling never exceeds travel
+  (a cut can't outrun the axes). Built-in presets keep `None` → behavior
+  identical (their travel ≤ 5000 < cap).
+- 2026-06-10 (F4.2): travel-rate consumers deliberately NOT switched: simulator
+  `rapid_feed_mm_min`, the F-034 kinematics integrator's axis cap, and the
+  modulation context's `rapid_feed` — those model what the axes do between
+  cuts, which IS the $110 travel rate.
