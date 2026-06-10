@@ -296,6 +296,10 @@ fn draw_project_diagnostics_card(ui: &mut egui::Ui, state: &AppState) {
         rapid_collisions: &state.simulation.checks.rapid_collisions,
         rapid_collision_move_indices: &state.simulation.checks.rapid_collision_move_indices,
         cut_trace,
+        // Last dedicated check only — this card draws every frame, and
+        // the diagnostics layer no longer recomputes collision sweeps
+        // (the setup-tab lag, 2026-06-11).
+        holder_collisions: state.simulation.holder_collision_counts_by_tp(),
     };
     let diagnostics = state.session.diagnose_project_with_evidence(&evidence);
     if diagnostics.is_empty() {

@@ -3694,6 +3694,7 @@ fn viz_project_evidence(
         rapid_collisions: &state.simulation.checks.rapid_collisions,
         rapid_collision_move_indices: &state.simulation.checks.rapid_collision_move_indices,
         cut_trace,
+        holder_collisions: state.simulation.holder_collision_counts_by_tp(),
     }
 }
 
