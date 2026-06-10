@@ -11,9 +11,10 @@ pub enum StockSource {
     FromRemainingStock,
 }
 
-/// Unique identifier for a toolpath.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ToolpathId(pub usize);
+// Canonical definition now lives in `crate::ids` (R3 — id/index split);
+// re-exported here so the long-standing `compute::config::ToolpathId`
+// path keeps working.
+pub use crate::ids::ToolpathId;
 
 #[derive(Debug, Clone)]
 pub enum ComputeStatus {

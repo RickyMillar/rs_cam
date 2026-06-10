@@ -316,7 +316,7 @@ impl super::RsCamApp {
                         .gui
                         .mcp_highlights
                         .insert(key, std::time::Instant::now());
-                    self.controller.state_mut().selection = Selection::Toolpath(ToolpathId(tp_id));
+                    self.controller.state_mut().selection = Selection::Toolpath(tp_id);
                 }
                 let resp = self.mcp_set_toolpath_param(index, &param, value);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
@@ -398,7 +398,7 @@ impl super::RsCamApp {
                         .toolpath_configs()
                         .get(tp_count - 1)
                 {
-                    self.controller.state_mut().selection = Selection::Toolpath(ToolpathId(tc.id));
+                    self.controller.state_mut().selection = Selection::Toolpath(tc.id);
                 }
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
@@ -874,7 +874,10 @@ impl super::RsCamApp {
         }
     }
 
-    fn mcp_runtime_status_for_toolpath_id(&self, toolpath_id: usize) -> serde_json::Value {
+    fn mcp_runtime_status_for_toolpath_id(
+        &self,
+        toolpath_id: rs_cam_core::ToolpathId,
+    ) -> serde_json::Value {
         let rt = self.controller.state().gui.toolpath_rt.get(&toolpath_id);
         let (status, error) = match rt.map(|r| &r.status) {
             Some(rs_cam_core::compute::config::ComputeStatus::Pending) => ("Pending", None),
@@ -1021,7 +1024,7 @@ impl super::RsCamApp {
     #[allow(clippy::too_many_arguments)]
     fn mcp_get_cut_trace(
         &self,
-        toolpath_id: Option<usize>,
+        toolpath_id: Option<usize>, // wire-level raw id; typed immediately below
         max_hotspots: Option<usize>,
         max_issues: Option<usize>,
         span_kind: Option<&str>,
@@ -1092,8 +1095,9 @@ impl super::RsCamApp {
         // Build a {toolpath_id_raw → accepted SpanId set}. Toolpath_id arg is
         // the project-level raw id (matching SimulationCutSample.toolpath_id),
         // while accepted-set lookup needs the index — translate via session.
+        let toolpath_id = toolpath_id.map(rs_cam_core::ToolpathId);
         let mut accepted_by_toolpath: std::collections::HashMap<
-            usize,
+            rs_cam_core::ToolpathId,
             Option<std::collections::HashSet<u32>>,
         > = std::collections::HashMap::new();
         if span_filter_active {
@@ -1106,7 +1110,7 @@ impl super::RsCamApp {
                 }
             }
         }
-        let span_path_matches = |tp_id: usize, path: &[SpanId]| -> bool {
+        let span_path_matches = |tp_id: rs_cam_core::ToolpathId, path: &[SpanId]| -> bool {
             if !span_filter_active {
                 return true;
             }
@@ -2052,7 +2056,7 @@ impl super::RsCamApp {
             rs_cam_core::session::compute_stale_set(&self.controller.state().session, mutation)
                 .toolpath_indices;
         let now = std::time::Instant::now();
-        let ids: Vec<usize> = stale
+        let ids: Vec<rs_cam_core::ToolpathId> = stale
             .iter()
             .filter_map(|&index| {
                 self.controller
@@ -2252,7 +2256,7 @@ impl super::RsCamApp {
                 None,
             );
         };
-        let tp_id = crate::state::toolpath::ToolpathId(tc.id);
+        let tp_id = tc.id;
         let Some(target_setup) = session.list_setups().get(target_setup_index) else {
             return self.mcp_mutation_error(
                 format!("Error: Setup index {target_setup_index} not found"),
@@ -2747,7 +2751,7 @@ impl super::RsCamApp {
         };
 
         let config = rs_cam_core::session::ToolpathConfig {
-            id: 0,
+            id: rs_cam_core::ToolpathId(0),
             name: tp_name,
             enabled: true,
             operation: op_config,
@@ -3162,7 +3166,7 @@ impl super::RsCamApp {
             });
             return;
         };
-        let tp_id = ToolpathId(tc.id);
+        let tp_id = tc.id;
 
         // MCP diagnostics depend on generation debug + semantic traces; enable
         // capture before queuing compute so get_generation_debug_trace and
@@ -3205,7 +3209,7 @@ impl super::RsCamApp {
             .toolpath_configs()
             .iter()
             .filter(|tc| tc.enabled)
-            .map(|tc| ToolpathId(tc.id))
+            .map(|tc| tc.id)
             .collect();
         for tc in self.controller.state_mut().session.toolpath_configs_mut() {
             if tc.enabled {
@@ -3568,9 +3572,12 @@ impl super::RsCamApp {
 fn build_span_cut_summaries(
     state: &crate::state::AppState,
     trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
-    toolpath_id: Option<usize>,
+    toolpath_id: Option<rs_cam_core::ToolpathId>,
     span_filter_active: bool,
-    accepted_by_toolpath: &std::collections::HashMap<usize, Option<std::collections::HashSet<u32>>>,
+    accepted_by_toolpath: &std::collections::HashMap<
+        rs_cam_core::ToolpathId,
+        Option<std::collections::HashSet<u32>>,
+    >,
 ) -> serde_json::Value {
     use rs_cam_core::toolpath_spans::SpanId;
 
@@ -3673,7 +3680,7 @@ fn viz_project_evidence(
         .map(|r| {
             r.boundaries
                 .iter()
-                .map(|b| (b.id.0, b.start_move, b.end_move))
+                .map(|b| (b.id, b.start_move, b.end_move))
                 .collect()
         })
         .unwrap_or_default();
@@ -3940,7 +3947,7 @@ fn span_to_json(id: usize, s: &rs_cam_core::toolpath_spans::Span) -> serde_json:
 /// `truncated` reflecting `max_spans`.
 #[allow(clippy::too_many_arguments)]
 fn build_inspect_spans_response(
-    toolpath_id: usize,
+    toolpath_id: rs_cam_core::ToolpathId,
     toolpath_index: usize,
     name: &str,
     operation_label: &str,
@@ -4128,7 +4135,17 @@ mod tests {
         max_spans: Option<usize>,
     ) -> serde_json::Value {
         build_inspect_spans_response(
-            42, 0, "tp", "pocket", 30, spans, true, kind, parent_id, pass_index, region_id,
+            rs_cam_core::ToolpathId(42),
+            0,
+            "tp",
+            "pocket",
+            30,
+            spans,
+            true,
+            kind,
+            parent_id,
+            pass_index,
+            region_id,
             max_spans,
         )
         .expect("valid filter")
@@ -4245,7 +4262,7 @@ mod tests {
             );
         }
         let v = build_inspect_spans_response(
-            1,
+            rs_cam_core::ToolpathId(1),
             0,
             "tp",
             "pocket",
@@ -4269,7 +4286,7 @@ mod tests {
     fn invalid_kind_returns_error() {
         let spans = fixture_spans();
         let res = build_inspect_spans_response(
-            1,
+            rs_cam_core::ToolpathId(1),
             0,
             "tp",
             "pocket",
@@ -4289,7 +4306,7 @@ mod tests {
     fn invalid_parent_id_returns_error() {
         let spans = fixture_spans();
         let res = build_inspect_spans_response(
-            1,
+            rs_cam_core::ToolpathId(1),
             0,
             "tp",
             "pocket",

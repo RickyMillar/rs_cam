@@ -24,6 +24,7 @@
     clippy::indexing_slicing
 )]
 
+use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::{
     dexel_stock::{StockCutDirection, TriDexelStock},
     geo::{BoundingBox3, P3},
@@ -61,7 +62,7 @@ fn production_samples_carry_populated_engagement_vector() {
             &tp,
             &cutter,
             StockCutDirection::FromTop,
-            0,
+            ToolpathId(0),
             18_000,
             2,
             5000.0,
@@ -108,7 +109,7 @@ fn mk_sample(
     arc: Option<f64>,
 ) -> SimulationCutSample {
     SimulationCutSample {
-        toolpath_id,
+        toolpath_id: ToolpathId(toolpath_id),
         move_index: sample_index,
         sample_index,
         position: [sample_index as f64, 0.0, 0.0],
@@ -166,7 +167,7 @@ fn summary_accumulator_separates_kinematics() {
     ));
     acc.observe(&mk_sample(1, 2, CutKinematics::Plunge, 1.0, 4.0, None));
 
-    let summary = acc.finish_toolpath(1);
+    let summary = acc.finish_toolpath(ToolpathId(1));
     let lin = summary
         .per_kinematics
         .get(&CutKinematics::Linear)
@@ -267,7 +268,7 @@ fn legacy_scalar_matches_engagement_radial_woc_for_all_samples() {
             &tp,
             &cutter,
             StockCutDirection::FromTop,
-            0,
+            ToolpathId(0),
             18_000,
             2,
             5000.0,

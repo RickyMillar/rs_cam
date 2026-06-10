@@ -272,7 +272,7 @@ pub fn compute_cycle_time(
 /// Stored as a single flat `BTreeMap` (toolpath_id, move_index) → feed
 /// so a single trace can carry predictions for any mix of toolpaths.
 /// Empty / absent → fall back to commanded feed (pre-F-035 behaviour).
-pub type PredictedFeedMap = BTreeMap<(usize, usize), f64>;
+pub type PredictedFeedMap = BTreeMap<(crate::ids::ToolpathId, usize), f64>;
 
 /// F-035 — Compute the per-move predicted achieved feed (mm/min) for a
 /// single toolpath under the given kinematics limits.

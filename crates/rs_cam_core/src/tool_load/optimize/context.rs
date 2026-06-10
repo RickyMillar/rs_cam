@@ -19,6 +19,7 @@ use crate::enriched_mesh::FaceGroupId;
 use crate::feeds::vendor_lookup::MatchedRow;
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use crate::feeds::{OperationFamily, PassRole};
+use crate::ids::ToolpathId;
 use crate::machine::{MachineProfile, PowerModel};
 use crate::session::{ProjectSession, SessionError};
 use crate::simulation_cut::SimulationCutTrace;
@@ -28,7 +29,10 @@ use crate::tool::MillingCutter;
 /// per-toolpath summary. Returns `None` if the toolpath isn't
 /// represented in the trace (no samples for that id — happens when
 /// the toolpath was disabled or skipped).
-pub(crate) fn cycle_time_from_trace(trace: &SimulationCutTrace, toolpath_id: usize) -> Option<f64> {
+pub(crate) fn cycle_time_from_trace(
+    trace: &SimulationCutTrace,
+    toolpath_id: ToolpathId,
+) -> Option<f64> {
     trace
         .toolpath_summaries
         .iter()
@@ -42,7 +46,7 @@ pub(crate) fn cycle_time_from_trace(trace: &SimulationCutTrace, toolpath_id: usi
 /// summary entry (failed sim) or `total_runtime_s` is non-positive.
 pub(crate) fn air_cut_pct_from_trace(
     trace: &SimulationCutTrace,
-    toolpath_id: usize,
+    toolpath_id: ToolpathId,
 ) -> Option<f64> {
     trace
         .toolpath_summaries
@@ -62,7 +66,7 @@ pub(crate) fn air_cut_pct_from_trace(
 /// RPM, then to the machine's minimum RPM.
 pub(crate) fn baseline_rpm_from_trace(
     trace: &SimulationCutTrace,
-    toolpath_id: usize,
+    toolpath_id: ToolpathId,
     op_rpm: Option<u32>,
     machine: &MachineProfile,
 ) -> f64 {
@@ -268,7 +272,7 @@ pub(crate) struct EvaluationContext {
     /// The toolpath's index in `session.toolpath_configs`.
     pub toolpath_index: usize,
     /// The toolpath's stable id (matches `SimulationCutSample::toolpath_id`).
-    pub toolpath_id: usize,
+    pub toolpath_id: ToolpathId,
     /// Operation kind — used for the gate's LUT routing and for
     /// skipping ops the optimizer can't model.
     pub operation_kind: OperationType,
@@ -329,7 +333,7 @@ mod restore_guard_tests {
 
     fn make_tc(tool_id: usize) -> ToolpathConfig {
         ToolpathConfig {
-            id: 0,
+            id: ToolpathId(0),
             name: "test".to_owned(),
             enabled: true,
             operation: OperationConfig::Pocket(PocketConfig {
@@ -472,7 +476,7 @@ mod restore_guard_tests {
     // ── F.12 — per-toolpath air-cut fraction helper ──────────────────
 
     fn trace_with_summary(
-        toolpath_id: usize,
+        toolpath_id: ToolpathId,
         total_runtime_s: f64,
         air_cut_time_s: f64,
     ) -> crate::simulation_cut::SimulationCutTrace {
@@ -512,20 +516,20 @@ mod restore_guard_tests {
 
     #[test]
     fn air_cut_pct_from_trace_divides_air_by_total() {
-        let trace = trace_with_summary(7, 100.0, 42.0);
-        let pct = air_cut_pct_from_trace(&trace, 7).expect("summary present");
+        let trace = trace_with_summary(ToolpathId(7), 100.0, 42.0);
+        let pct = air_cut_pct_from_trace(&trace, ToolpathId(7)).expect("summary present");
         assert!((pct - 0.42).abs() < 1e-9, "{pct}");
     }
 
     #[test]
     fn air_cut_pct_from_trace_missing_toolpath_returns_none() {
-        let trace = trace_with_summary(7, 100.0, 42.0);
-        assert!(air_cut_pct_from_trace(&trace, 99).is_none());
+        let trace = trace_with_summary(ToolpathId(7), 100.0, 42.0);
+        assert!(air_cut_pct_from_trace(&trace, ToolpathId(99)).is_none());
     }
 
     #[test]
     fn air_cut_pct_from_trace_zero_runtime_returns_none() {
-        let trace = trace_with_summary(7, 0.0, 0.0);
-        assert!(air_cut_pct_from_trace(&trace, 7).is_none());
+        let trace = trace_with_summary(ToolpathId(7), 0.0, 0.0);
+        assert!(air_cut_pct_from_trace(&trace, ToolpathId(7)).is_none());
     }
 }

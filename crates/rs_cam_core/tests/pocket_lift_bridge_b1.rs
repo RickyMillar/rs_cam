@@ -35,6 +35,7 @@
 
 mod common;
 use common::make_endmill_6mm;
+use rs_cam_core::ids::ToolpathId;
 
 use std::f64::consts::TAU;
 use std::path::PathBuf;
@@ -124,7 +125,7 @@ fn build_pocket_session() -> ProjectSession {
     };
 
     let tc = ToolpathConfig {
-        id: 0,
+        id: ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(pocket),

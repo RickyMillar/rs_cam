@@ -22,11 +22,12 @@ use crate::diagnostics::{
     Category, Confidence, Diagnostic, DiagnosticEvidence, DiagnosticId, DiagnosticState, Scope,
     Severity, Source, ids,
 };
+use crate::ids::ToolpathId;
 
 /// Run every static check against a single toolpath, returning a flat
 /// diagnostic list (no supersession applied yet).
 pub fn diagnostics_from_static_checks(
-    toolpath_id: usize,
+    toolpath_id: ToolpathId,
     op: &OperationConfig,
     tool: &ToolConfig,
     heights_resolved: Option<&ResolvedHeights>,

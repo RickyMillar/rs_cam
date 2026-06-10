@@ -17,6 +17,7 @@
     clippy::print_stderr
 )]
 
+use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::{
     dexel_stock::{StockCutDirection, TriDexelStock},
     geo::{BoundingBox3, P3},
@@ -96,7 +97,7 @@ fn flat_endmill_second_pass_through_cleared_strip_agrees() {
             &toolpath,
             &cutter,
             StockCutDirection::FromTop,
-            0,
+            ToolpathId(0),
             12_000,
             2,
             3000.0,
@@ -157,7 +158,7 @@ fn ball_endmill_sloped_second_pass_through_cleared_strip_agrees() {
             &clear_pass,
             &flat,
             StockCutDirection::FromTop,
-            0,
+            ToolpathId(0),
             12_000,
             2,
             3000.0,
@@ -180,7 +181,7 @@ fn ball_endmill_sloped_second_pass_through_cleared_strip_agrees() {
             &second_pass,
             &cutter,
             StockCutDirection::FromTop,
-            1,
+            ToolpathId(1),
             12_000,
             2,
             3000.0,
@@ -217,7 +218,7 @@ fn flat_endmill_adjacent_stepover_pass_agrees() {
             &toolpath,
             &cutter,
             StockCutDirection::FromTop,
-            0,
+            ToolpathId(0),
             12_000,
             2,
             3000.0,

@@ -167,7 +167,7 @@ pub(super) fn build_trace_artifact(
     });
 
     rs_cam_core::semantic_trace::ToolpathTraceArtifact::new(
-        req.toolpath_id.0,
+        req.toolpath_id,
         req.toolpath_name.clone(),
         req.operation.label(),
         req.tool.summary(),
@@ -184,7 +184,7 @@ pub(super) fn build_simulation_cut_artifact(
     let included_toolpath_ids: Vec<_> = req
         .groups
         .iter()
-        .flat_map(|group| group.toolpaths.iter().map(|toolpath| toolpath.id.0))
+        .flat_map(|group| group.toolpaths.iter().map(|toolpath| toolpath.id))
         .collect();
     let request_snapshot = json!({
         "resolution_mm": req.resolution,

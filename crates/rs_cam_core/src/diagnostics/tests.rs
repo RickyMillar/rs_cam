@@ -11,6 +11,7 @@
 
 use super::*;
 use crate::diagnostics::adapters;
+use crate::ids::ToolpathId;
 
 fn make_diag(
     id: &str,
@@ -20,7 +21,7 @@ fn make_diag(
 ) -> Diagnostic {
     Diagnostic {
         id: DiagnosticId::from(id),
-        scope: Scope::Toolpath { id: 0 },
+        scope: Scope::Toolpath { id: ToolpathId(0) },
         category: Category::ToolLoad,
         severity,
         confidence: Confidence::Verified,
@@ -380,7 +381,7 @@ fn tool_load_adapter_drops_milling_na_on_drill_with_drill_gates() {
     use crate::tool_load::verdict::*;
 
     let verdict = ToolpathLoadVerdict {
-        toolpath_id: 0,
+        toolpath_id: ToolpathId(0),
         chipload: ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::NotApplicableForOp(
                 "drill cycle — no continuous engagement".to_owned(),
@@ -446,7 +447,7 @@ fn tool_load_adapter_emits_chipload_exceeds_with_evidence() {
         },
     };
     let verdict = ToolpathLoadVerdict {
-        toolpath_id: 12,
+        toolpath_id: ToolpathId(12),
         chipload: ChiploadVerdict::Exceeds {
             side: ChipSide::Low,
             triggering,
@@ -486,7 +487,7 @@ fn tool_load_adapter_marks_stale_simulation_as_stale_evidence_state() {
     use crate::tool_load::verdict::*;
 
     let verdict = ToolpathLoadVerdict {
-        toolpath_id: 4,
+        toolpath_id: ToolpathId(4),
         chipload: ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::StaleSimulation,
         },
@@ -520,7 +521,7 @@ fn tool_load_adapter_marks_sim_required_as_needs_simulation_state() {
     use crate::tool_load::verdict::*;
 
     let verdict = ToolpathLoadVerdict {
-        toolpath_id: 7,
+        toolpath_id: ToolpathId(7),
         chipload: ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::SimulationRequired,
         },
@@ -555,7 +556,7 @@ fn stale_default_adapter_carries_fix() {
 
     let defects = vec![StaleDefault {
         rule_id: StaleDefaultRule::ProjectCurveNegativeDepth,
-        toolpath_id: 12,
+        toolpath_id: ToolpathId(12),
         toolpath_name: "Rivers (back) (copy)".to_owned(),
         title: "Project-curve depth is negative".to_owned(),
         detail: "depth is -2.0".to_owned(),
@@ -575,7 +576,7 @@ fn stale_default_adapter_carries_fix() {
             new_value,
         }) => {
             assert_eq!(rule_id, "project_curve_negative_depth");
-            assert_eq!(*toolpath_id, 12);
+            assert_eq!(*toolpath_id, ToolpathId(12));
             assert!((new_value - 2.0).abs() < 1e-9);
         }
         other => panic!("expected ApplyStaleDefault fix, got {other:?}"),
@@ -609,8 +610,11 @@ fn feeds_hint_emits_high_feed_ratio() {
         derates: crate::feeds::FeedsDerates::default(),
     };
     let diags = adapters::from_feeds::heuristic_hints_from_recommendation(
-        7, 2500.0, // commanded feed = 2.5× recommended
-        None, None, &result,
+        ToolpathId(7),
+        2500.0, // commanded feed = 2.5× recommended
+        None,
+        None,
+        &result,
     );
     assert_eq!(diags.len(), 1);
     let d = &diags[0];

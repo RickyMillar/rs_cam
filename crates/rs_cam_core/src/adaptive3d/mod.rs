@@ -501,6 +501,7 @@ mod tests {
     use crate::dexel::{DexelSegment, ray_subtract_above};
     use crate::dexel_stock::StockCutDirection;
     use crate::geo::P3;
+    use crate::ids::ToolpathId;
     use crate::mesh::SpatialIndex;
     use crate::radial_profile::RadialProfileLUT;
     use crate::slope::SurfaceHeightmap;
@@ -2084,7 +2085,7 @@ mod tests {
                 &toolpath,
                 &cutter,
                 StockCutDirection::FromTop,
-                0,
+                ToolpathId(0),
                 12_000,
                 2,
                 3000.0,
@@ -2382,7 +2383,7 @@ mod tests {
                 &cut_only_toolpath,
                 &cutter,
                 StockCutDirection::FromTop,
-                0,
+                ToolpathId(0),
                 12_000,
                 2,
                 3000.0,

@@ -49,6 +49,7 @@
     clippy::print_stderr
 )]
 
+use rs_cam_core::ids::ToolpathId;
 use std::f64::consts::TAU;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -152,7 +153,7 @@ fn build_as001_pocket_session(attach_kinematics: bool) -> ProjectSession {
         spindle_rpm: Some(18_000),
     };
     let tc = ToolpathConfig {
-        id: 0,
+        id: ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(pocket),
@@ -351,7 +352,7 @@ fn modulated_gates_within_constant_chipload_band() {
     let verdict = report
         .per_toolpath
         .iter()
-        .find(|v| v.toolpath_id == 0)
+        .find(|v| v.toolpath_id == ToolpathId(0))
         .expect("tool-load verdict for pocket toolpath");
 
     // The chipload gate already grades against the LUT band; with
@@ -449,7 +450,7 @@ fn modulated_path_never_emits_below_min_chipload() {
         .expect("cut trace flag-on");
 
     let envelopes = rs_cam_core::tool_load::chipload_envelopes_for_session(&session, Some(trace));
-    let Some(band) = envelopes.get(&0) else {
+    let Some(band) = envelopes.get(&ToolpathId(0)) else {
         // No LUT band → modulator was a no-op. Vacuously satisfied;
         // pinned here so a future calibration shift doesn't silently
         // downgrade the assertion.
@@ -610,7 +611,7 @@ fn fixture_sanity_lut_band_resolves_for_as001() {
         .expect("cut trace");
     let envelopes = rs_cam_core::tool_load::chipload_envelopes_for_session(&session, Some(trace));
     assert!(
-        envelopes.contains_key(&0),
+        envelopes.contains_key(&ToolpathId(0)),
         "F-036b sanity: AS001 pocket must resolve a vendor LUT chipload band so the \
          flag-ON tests actually exercise modulation. Got envelopes = {envelopes:?}"
     );

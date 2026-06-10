@@ -78,7 +78,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
     }
 }
 
-fn toolpath_name(state: &AppState, toolpath_id: usize) -> Option<String> {
+fn toolpath_name(state: &AppState, toolpath_id: rs_cam_core::ToolpathId) -> Option<String> {
     state
         .session
         .toolpath_configs()
@@ -181,7 +181,7 @@ fn draw_spindle_strategy_row(
 fn draw_toolpath_view(
     ui: &mut egui::Ui,
     state: &AppState,
-    toolpath_id: usize,
+    toolpath_id: rs_cam_core::ToolpathId,
     modal: &crate::state::FeedsModalState,
     events: &mut Vec<AppEvent>,
 ) {
@@ -212,13 +212,7 @@ fn draw_toolpath_view(
         .min_size(320.0)
         .show_inside(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                draw_comparison_card(
-                    ui,
-                    &current,
-                    &explain,
-                    crate::state::toolpath::ToolpathId(toolpath_id),
-                    events,
-                );
+                draw_comparison_card(ui, &current, &explain, toolpath_id, events);
                 ui.add_space(8.0);
                 draw_chipload_breakdown(ui, &explain);
                 ui.add_space(8.0);
@@ -233,14 +227,7 @@ fn draw_toolpath_view(
 
     egui::CentralPanel::default().show_inside(ui, |ui| {
         egui::ScrollArea::vertical().show(ui, |ui| {
-            draw_chart_c(
-                ui,
-                &current,
-                &explain,
-                crate::state::toolpath::ToolpathId(toolpath_id),
-                modal,
-                events,
-            );
+            draw_chart_c(ui, &current, &explain, toolpath_id, modal, events);
             ui.add_space(12.0);
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
@@ -397,7 +384,10 @@ impl CurrentValues {
     }
 }
 
-fn read_current_values(state: &AppState, toolpath_id: usize) -> Option<CurrentValues> {
+fn read_current_values(
+    state: &AppState,
+    toolpath_id: rs_cam_core::ToolpathId,
+) -> Option<CurrentValues> {
     let tc = state
         .session
         .toolpath_configs()
@@ -424,7 +414,7 @@ fn read_current_values(state: &AppState, toolpath_id: usize) -> Option<CurrentVa
     })
 }
 
-fn compute_explain(state: &AppState, toolpath_id: usize) -> Option<FeedsExplain> {
+fn compute_explain(state: &AppState, toolpath_id: rs_cam_core::ToolpathId) -> Option<FeedsExplain> {
     let tc = state
         .session
         .toolpath_configs()
@@ -457,7 +447,10 @@ fn compute_explain(state: &AppState, toolpath_id: usize) -> Option<FeedsExplain>
 /// T10 (Phase 4): the context assembly + Suggest invocation live in
 /// [`rs_cam_core::session::ProjectSession::cutter_op_profile`], shared
 /// with the MCP `get_suggest_rationale` surface.
-fn compute_suggest_rationale(state: &AppState, toolpath_id: usize) -> SuggestRationale {
+fn compute_suggest_rationale(
+    state: &AppState,
+    toolpath_id: rs_cam_core::ToolpathId,
+) -> SuggestRationale {
     let Some(tc) = state
         .session
         .toolpath_configs()
@@ -2805,9 +2798,7 @@ fn draw_project_view(
                     ui.label(format!("{:.2}", r.explain.recommended.axial_depth_mm));
                     ui.label(compare::format_optional(r.current.stepover, "", 0.01));
                     if ui.small_button("Apply").clicked() {
-                        events.push(AppEvent::ApplyFeedsAll(crate::state::toolpath::ToolpathId(
-                            r.id,
-                        )));
+                        events.push(AppEvent::ApplyFeedsAll(r.id));
                     }
                     ui.end_row();
                 }
@@ -3108,7 +3099,7 @@ fn draw_machine_envelope(
 }
 
 struct ProjectFeedsRow {
-    id: usize,
+    id: rs_cam_core::ToolpathId,
     name: String,
     current: CurrentValues,
     explain: FeedsExplain,

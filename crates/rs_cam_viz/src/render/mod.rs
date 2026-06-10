@@ -669,7 +669,7 @@ pub struct ViewportCallback {
     /// Per-toolpath move-type visibility (toolpath_id → (show_cut, show_rapid)).
     /// AND'd with the global `show_cutting` / `show_rapids`. Missing entries
     /// default to both-visible.
-    pub toolpath_move_visibility: std::collections::HashMap<usize, (bool, bool)>,
+    pub toolpath_move_visibility: std::collections::HashMap<rs_cam_core::ToolpathId, (bool, bool)>,
     pub show_tool_model: bool,
     /// If Some, only draw toolpath moves up to this index (sim scrubbing).
     pub toolpath_move_limit: Option<usize>,

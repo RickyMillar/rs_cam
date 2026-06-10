@@ -301,6 +301,7 @@ mod tests {
     use crate::drill::DrillCycle;
     use crate::drill_metrics::{build_drill_toolpath_summary, emit_drill_samples};
     use crate::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
+    use crate::ids::ToolpathId;
 
     fn op(cycle: DrillCycle, diameter: f64, depth: f64, feed: f64) -> DrillOp {
         DrillOp {
@@ -321,8 +322,8 @@ mod tests {
     }
 
     fn evaluate_one(d: &DrillOp) -> DrillGatesVerdict {
-        let samples = emit_drill_samples(0, d);
-        let summary = build_drill_toolpath_summary(0, d, &samples);
+        let samples = emit_drill_samples(ToolpathId(0), d);
+        let summary = build_drill_toolpath_summary(ToolpathId(0), d, &samples);
         evaluate(d, &summary)
     }
 

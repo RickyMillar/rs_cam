@@ -67,6 +67,7 @@ pub use evidence::DiagnosticEvidence;
 pub use fix::DiagnosticFix;
 pub use supersession::apply_supersession;
 
+use crate::ids::ToolpathId;
 use serde::{Deserialize, Serialize};
 
 /// Stable string identifier for a diagnostic rule. Adapters use the
@@ -108,7 +109,7 @@ pub enum Scope {
         id: usize,
     },
     Toolpath {
-        id: usize,
+        id: ToolpathId,
     },
     Tool {
         id: usize,
@@ -116,7 +117,7 @@ pub enum Scope {
     /// Sub-toolpath: specific move range. `start` and `end` are
     /// toolpath-local move indices.
     MoveRange {
-        toolpath_id: usize,
+        toolpath_id: ToolpathId,
         start: usize,
         end: usize,
     },

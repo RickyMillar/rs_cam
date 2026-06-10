@@ -36,14 +36,14 @@ impl<B: ComputeBackend> AppController<B> {
                     old_face_selection,
                     ..
                 } => {
-                    if let Some((idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id.0) {
+                    if let Some((idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id) {
                         let _ = self.state.session.apply_toolpath_param_snapshot(
                             idx,
                             old_op,
                             old_dressups,
                             old_face_selection,
                         );
-                        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id.0) {
+                        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id) {
                             rt.stale_since = Some(std::time::Instant::now());
                         }
                     }
@@ -88,14 +88,14 @@ impl<B: ComputeBackend> AppController<B> {
                     new_face_selection,
                     ..
                 } => {
-                    if let Some((idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id.0) {
+                    if let Some((idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id) {
                         let _ = self.state.session.apply_toolpath_param_snapshot(
                             idx,
                             new_op,
                             new_dressups,
                             new_face_selection,
                         );
-                        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id.0) {
+                        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id) {
                             rt.stale_since = Some(std::time::Instant::now());
                         }
                     }

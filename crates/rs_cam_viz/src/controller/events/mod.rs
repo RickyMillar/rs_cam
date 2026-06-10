@@ -97,7 +97,7 @@ impl<B: ComputeBackend> AppController<B> {
                 self.handle_move_toolpath_to_setup(tp_id, setup_id, idx);
             }
             AppEvent::ToggleToolpathEnabled(tp_id) => {
-                if let Some((idx, tc)) = self.state.session.find_toolpath_config_by_id(tp_id.0) {
+                if let Some((idx, tc)) = self.state.session.find_toolpath_config_by_id(tp_id) {
                     let _ = self.state.session.set_toolpath_enabled(idx, !tc.enabled);
                 }
             }
@@ -105,7 +105,7 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::GenerateToolpath(tp_id) => self.submit_toolpath_compute(tp_id),
             AppEvent::GenerateAll => self.handle_generate_all(),
             AppEvent::ToggleToolpathVisibility(tp_id) => {
-                if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id.0) {
+                if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id) {
                     rt.visible = !rt.visible;
                     self.pending_upload = true;
                 }
@@ -144,8 +144,7 @@ impl<B: ComputeBackend> AppController<B> {
                 model_id: _,
                 face_id,
             } => {
-                if let Some((idx, tc)) =
-                    self.state.session.find_toolpath_config_by_id(toolpath_id.0)
+                if let Some((idx, tc)) = self.state.session.find_toolpath_config_by_id(toolpath_id)
                 {
                     // Compute new face selection by toggling the given face_id
                     let mut faces = tc.face_selection.clone().unwrap_or_default();
@@ -158,7 +157,7 @@ impl<B: ComputeBackend> AppController<B> {
                     let _ = self.state.session.set_face_selection(idx, new_selection);
 
                     // Mark stale in GUI runtime
-                    if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
+                    if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
                         rt.stale_since = Some(std::time::Instant::now());
                     }
                     self.state.selection = Selection::Toolpath(toolpath_id);
@@ -384,7 +383,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session
             .toolpath_configs()
             .iter()
-            .position(|tc| tc.id == toolpath_id.0)
+            .position(|tc| tc.id == toolpath_id)
         else {
             self.push_notification(
                 format!("Optimize failed: toolpath id {} not found", toolpath_id.0),
@@ -404,7 +403,7 @@ impl<B: ComputeBackend> AppController<B> {
             .and_then(|r| r.cut_trace.clone());
         let Some(trace) = trace_clone else {
             self.state.optimize_modal = Some(crate::state::OptimizeModalState {
-                toolpath_id: toolpath_id.0,
+                toolpath_id,
                 status: crate::state::OptimizeRunStatus::Ready(OptimizeOutcome::skipped(
                     RefuseReason::SimulationRequired,
                 )),
@@ -430,7 +429,7 @@ impl<B: ComputeBackend> AppController<B> {
         );
         self.state.is_optimizing = true;
         self.state.optimize_modal = Some(crate::state::OptimizeModalState {
-            toolpath_id: toolpath_id.0,
+            toolpath_id,
             status: crate::state::OptimizeRunStatus::Loading,
         });
         self.compute
@@ -438,7 +437,7 @@ impl<B: ComputeBackend> AppController<B> {
                 session,
                 baseline_trace: trace,
                 toolpath_index: idx,
-                toolpath_id: toolpath_id.0,
+                toolpath_id,
             });
     }
 
@@ -500,7 +499,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session
             .toolpath_configs()
             .iter()
-            .position(|tc| tc.id == toolpath_id.0)
+            .position(|tc| tc.id == toolpath_id)
         else {
             self.push_notification(
                 format!("Apply failed: toolpath id {} not found", toolpath_id.0),
@@ -540,7 +539,7 @@ impl<B: ComputeBackend> AppController<B> {
         let _ = self.state.session.set_feeds_provenance(idx, new_provenance);
 
         self.state.gui.mark_edited();
-        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
+        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
             rt.stale_since = Some(std::time::Instant::now());
         }
         self.state.optimize_modal = None;
@@ -595,7 +594,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session
             .toolpath_configs()
             .iter()
-            .position(|tc| tc.id == toolpath_id.0)
+            .position(|tc| tc.id == toolpath_id)
         else {
             self.push_notification(
                 format!(
@@ -644,7 +643,7 @@ impl<B: ComputeBackend> AppController<B> {
         }
         let _ = self.state.session.set_feeds_provenance(idx, new_provenance);
         self.state.gui.mark_edited();
-        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
+        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
             rt.stale_since = Some(std::time::Instant::now());
         }
         // Re-run the search against the new baseline. open_optimize_modal
@@ -669,7 +668,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session
             .toolpath_configs()
             .iter()
-            .any(|tc| tc.id == toolpath_id.0)
+            .any(|tc| tc.id == toolpath_id)
         {
             self.push_notification(
                 format!("Feeds modal: toolpath id {} not found", toolpath_id.0),
@@ -697,7 +696,7 @@ impl<B: ComputeBackend> AppController<B> {
             .map(|tc| tc.id)
             .collect();
         self.state.feeds_modal = Some(crate::state::FeedsModalState {
-            toolpath_id: toolpath_id.0,
+            toolpath_id,
             mode: existing_mode,
             explore: None,
             show_provenance: existing_provenance,
@@ -721,7 +720,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session
             .toolpath_configs()
             .iter()
-            .position(|tc| tc.id == toolpath_id.0)
+            .position(|tc| tc.id == toolpath_id)
         else {
             return;
         };
@@ -756,7 +755,7 @@ impl<B: ComputeBackend> AppController<B> {
             }
         }
         self.state.gui.mark_edited();
-        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
+        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
             rt.stale_since = Some(std::time::Instant::now());
         }
     }
@@ -773,7 +772,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session
             .toolpath_configs()
             .iter()
-            .position(|tc| tc.id == toolpath_id.0)
+            .position(|tc| tc.id == toolpath_id)
         else {
             return;
         };
@@ -821,7 +820,7 @@ impl<B: ComputeBackend> AppController<B> {
             rs_cam_core::feeds::suggest::SuggestContext::default(),
         );
         self.state.gui.mark_edited();
-        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
+        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
             rt.stale_since = Some(std::time::Instant::now());
         }
     }
@@ -839,7 +838,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session
             .toolpath_configs()
             .iter()
-            .position(|tc| tc.id == toolpath_id.0)
+            .position(|tc| tc.id == toolpath_id)
         else {
             return;
         };
@@ -855,7 +854,7 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         }
         self.state.gui.mark_edited();
-        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
+        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
             rt.stale_since = Some(std::time::Instant::now());
         }
     }
@@ -867,13 +866,7 @@ impl<B: ComputeBackend> AppController<B> {
             .state
             .feeds_modal
             .as_ref()
-            .map(|m| {
-                m.project_selected
-                    .iter()
-                    .copied()
-                    .map(crate::state::toolpath::ToolpathId)
-                    .collect()
-            })
+            .map(|m| m.project_selected.iter().copied().collect())
             .unwrap_or_default();
         for id in ids {
             self.apply_feeds_all(id);
@@ -889,7 +882,7 @@ impl<B: ComputeBackend> AppController<B> {
             .toolpath_configs()
             .iter()
             .filter(|tc| tc.enabled)
-            .map(|tc| crate::state::toolpath::ToolpathId(tc.id))
+            .map(|tc| tc.id)
             .collect();
         for id in ids {
             self.apply_feeds_all(id);
@@ -909,7 +902,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session
             .toolpath_configs()
             .iter()
-            .position(|tc| tc.id == toolpath_id.0)
+            .position(|tc| tc.id == toolpath_id)
         else {
             return;
         };
@@ -920,7 +913,7 @@ impl<B: ComputeBackend> AppController<B> {
         tc.operation
             .set_spindle_rpm(Some(rpm.round().max(1.0) as u32));
         self.state.gui.mark_edited();
-        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id.0) {
+        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
             rt.stale_since = Some(std::time::Instant::now());
         }
     }
@@ -936,7 +929,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session
             .toolpath_configs()
             .iter()
-            .find(|tc| tc.id == toolpath_id.0)?;
+            .find(|tc| tc.id == toolpath_id)?;
         let tool = self
             .state
             .session
@@ -1085,7 +1078,7 @@ impl<B: ComputeBackend> AppController<B> {
         // path: each touched toolpath is marked stale; the regen
         // results land on `gui.toolpath_rt`, and we kick the sim
         // once they all complete (see `maybe_kick_reconciliation_sim`).
-        let touched_ids: Vec<usize> = self
+        let touched_ids: Vec<rs_cam_core::ToolpathId> = self
             .state
             .session
             .toolpath_configs()
@@ -1126,7 +1119,7 @@ impl<B: ComputeBackend> AppController<B> {
             .toolpath_configs()
             .iter()
             .filter(|tc| tc.enabled)
-            .map(|tc| crate::state::toolpath::ToolpathId(tc.id))
+            .map(|tc| tc.id)
             .collect();
         for id in enabled_ids {
             self.submit_toolpath_compute(id);

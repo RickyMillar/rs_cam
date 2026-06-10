@@ -1821,7 +1821,7 @@ fn simulation_metrics_capture_emits_cut_trace_and_artifact() {
         trace
             .toolpath_summaries
             .iter()
-            .any(|summary| summary.toolpath_id == 1)
+            .any(|summary| summary.toolpath_id == ToolpathId(1))
     );
     if let Some(path) = result.cut_trace_path.as_ref() {
         assert!(path.exists(), "expected cut trace artifact to exist");
@@ -2048,7 +2048,7 @@ fn simulation_metrics_capture_emits_semantic_cut_summaries() {
     let summary = trace
         .semantic_summaries
         .iter()
-        .find(|summary| summary.toolpath_id == 1)
+        .find(|summary| summary.toolpath_id == ToolpathId(1))
         .expect("semantic cut summary");
     assert_eq!(summary.label, "Pass 1");
     assert!(summary.sample_count > 0);

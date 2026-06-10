@@ -387,7 +387,7 @@ fn default_face_up() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectToolpathSection {
     #[serde(default)]
-    pub id: Option<usize>,
+    pub id: Option<crate::ids::ToolpathId>,
     #[serde(default)]
     pub name: String,
     #[serde(rename = "type", default)]
@@ -618,7 +618,7 @@ pub(crate) fn load_model_geometry(
 /// Convert a TOML toolpath section into a session `ToolpathConfig`.
 fn toolpath_config_from_section(
     tp: &ProjectToolpathSection,
-    tp_id: usize,
+    tp_id: crate::ids::ToolpathId,
     operation: &OperationConfig,
 ) -> ToolpathConfig {
     // One-shot migration: projects saved before operation-specific dressup
@@ -909,13 +909,13 @@ pub(super) fn build_session_from_project(
 
             for tp_section in &setup_section.toolpaths {
                 let tp_idx = toolpath_configs.len();
-                let tp_id = tp_section.id.unwrap_or(tp_idx);
+                let tp_id = tp_section.id.unwrap_or(crate::ids::ToolpathId(tp_idx));
                 let operation = match &tp_section.operation {
                     Some(op) => op.clone(),
                     None => {
                         let op_type = tp_section.op_type.unwrap_or(OperationType::Pocket);
                         tracing::warn!(
-                            toolpath_id = tp_id,
+                            toolpath_id = tp_id.0,
                             ?op_type,
                             "loaded toolpath with default operation; TOML was missing [setups.toolpaths.operation]"
                         );
@@ -945,13 +945,13 @@ pub(super) fn build_session_from_project(
         let mut tp_indices = Vec::new();
         for tp_section in &project.toolpaths {
             let tp_idx = toolpath_configs.len();
-            let tp_id = tp_section.id.unwrap_or(tp_idx);
+            let tp_id = tp_section.id.unwrap_or(crate::ids::ToolpathId(tp_idx));
             let operation = match &tp_section.operation {
                 Some(op) => op.clone(),
                 None => {
                     let op_type = tp_section.op_type.unwrap_or(OperationType::Pocket);
                     tracing::warn!(
-                        toolpath_id = tp_id,
+                        toolpath_id = tp_id.0,
                         ?op_type,
                         "loaded toolpath with default operation; TOML was missing [setups.toolpaths.operation]"
                     );
@@ -978,7 +978,7 @@ pub(super) fn build_session_from_project(
     // Compute next IDs by scanning existing maximums
     let next_toolpath_id = toolpath_configs
         .iter()
-        .map(|tc| tc.id)
+        .map(|tc| tc.id.0)
         .max()
         .map_or(0, |m| m + 1);
     let next_tool_id = tools.iter().map(|t| t.id.0).max().map_or(0, |m| m + 1);

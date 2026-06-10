@@ -10,7 +10,7 @@ use super::super::AppController;
 
 impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn submit_toolpath_compute(&mut self, tp_id: ToolpathId) {
-        let Some((tp_idx, tc)) = self.state.session.find_toolpath_config_by_id(tp_id.0) else {
+        let Some((tp_idx, tc)) = self.state.session.find_toolpath_config_by_id(tp_id) else {
             return;
         };
 
@@ -44,10 +44,10 @@ impl<B: ComputeBackend> AppController<B> {
         {
             let validation =
                 crate::ui::properties::ToolpathValidationContext::from_session(&self.state.session);
-            if let Some((_, tc)) = self.state.session.find_toolpath_config_by_id(tp_id.0) {
+            if let Some((_, tc)) = self.state.session.find_toolpath_config_by_id(tp_id) {
                 let errs = crate::ui::properties::validate_toolpath_config(tc, &validation);
                 if !errs.is_empty() {
-                    if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id.0) {
+                    if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id) {
                         rt.status = ComputeStatus::Error(errs.join("; "));
                     }
                     return;
@@ -196,13 +196,13 @@ impl<B: ComputeBackend> AppController<B> {
 
         let is_3d = operation.is_3d();
         if is_3d && mesh.is_none() {
-            if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id.0) {
+            if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id) {
                 rt.status = ComputeStatus::Error("No 3D mesh (import STL or STEP)".to_owned());
             }
             return;
         }
         if !is_3d && !operation.is_stock_based() && polygons.is_none() {
-            if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id.0) {
+            if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id) {
                 rt.status = ComputeStatus::Error(
                     "No 2D geometry (import SVG/DXF or select STEP faces)".to_owned(),
                 );
@@ -236,7 +236,7 @@ impl<B: ComputeBackend> AppController<B> {
         }
 
         // Update GUI runtime status
-        let rt = self.state.gui.toolpath_rt_or_default(tp_id.0);
+        let rt = self.state.gui.toolpath_rt_or_default(tp_id);
         rt.status = ComputeStatus::Computing;
         rt.result = None;
         rt.debug_trace = None;
@@ -336,7 +336,7 @@ impl<B: ComputeBackend> AppController<B> {
             match message {
                 ComputeMessage::Toolpath(result) => {
                     let tp_id = result.toolpath_id;
-                    let rt = self.state.gui.toolpath_rt_or_default(tp_id.0);
+                    let rt = self.state.gui.toolpath_rt_or_default(tp_id);
                     rt.debug_trace = result.debug_trace.clone();
                     rt.semantic_trace = result.semantic_trace.clone();
                     rt.debug_trace_path = result.debug_trace_path.clone();
@@ -351,7 +351,7 @@ impl<B: ComputeBackend> AppController<B> {
                             // `session.results[idx]` after Apply (see
                             // `planning/F1_RCA.md`).
                             if let Some((tp_index, _)) =
-                                self.state.session.find_toolpath_config_by_id(tp_id.0)
+                                self.state.session.find_toolpath_config_by_id(tp_id)
                             {
                                 // Honour the §6.E dual-representation
                                 // invariant: drill ops carry both the
@@ -408,7 +408,7 @@ impl<B: ComputeBackend> AppController<B> {
                     // last applied toolpath finishes regenerating.
                     self.state
                         .pending_reconciliation_for_ids
-                        .retain(|id| *id != tp_id.0);
+                        .retain(|id| *id != tp_id);
                     if self.state.pending_reconciliation_for_ids.is_empty()
                         && matches!(
                             self.state.optimize_project.as_ref().map(|v| &v.status),
@@ -745,7 +745,7 @@ impl<B: ComputeBackend> AppController<B> {
         // Map toolpath_id -> verdict for fast lookup. Index by id
         // (not toolpath_index) because the report uses ids.
         let mut verdict_by_id: std::collections::HashMap<
-            usize,
+            rs_cam_core::ToolpathId,
             &rs_cam_core::tool_load::ToolpathLoadVerdict,
         > = std::collections::HashMap::new();
         for v in &load_report.per_toolpath {
@@ -803,7 +803,7 @@ impl<B: ComputeBackend> AppController<B> {
         if let Some(ref mut pending) = self.pending_mcp {
             // Check individual toolpath request
             if let Some(sender) = pending.toolpath.remove(&tp_id) {
-                let rt = self.state.gui.toolpath_rt.get(&tp_id.0);
+                let rt = self.state.gui.toolpath_rt.get(&tp_id);
                 let resp = match rt.and_then(|rt| rt.result.as_ref()) {
                     Some(result) => json_str(serde_json::json!({
                         "id": tp_id.0,
@@ -828,7 +828,7 @@ impl<B: ComputeBackend> AppController<B> {
             if let Some(ref mut ga) = pending.generate_all {
                 if let Some(pos) = ga.remaining.iter().position(|id| *id == tp_id) {
                     ga.remaining.remove(pos);
-                    let rt = self.state.gui.toolpath_rt.get(&tp_id.0);
+                    let rt = self.state.gui.toolpath_rt.get(&tp_id);
                     if rt.and_then(|rt| rt.result.as_ref()).is_some() {
                         ga.completed += 1;
                     } else {
@@ -839,7 +839,7 @@ impl<B: ComputeBackend> AppController<B> {
                         let tp_name = self
                             .state
                             .session
-                            .find_toolpath_config_by_id(tp_id.0)
+                            .find_toolpath_config_by_id(tp_id)
                             .map(|(_, tc)| tc.name.clone())
                             .unwrap_or_else(|| format!("toolpath {}", tp_id.0));
                         let error_msg = match rt.map(|rt| &rt.status) {
@@ -868,7 +868,7 @@ impl<B: ComputeBackend> AppController<B> {
                         let tp_name = self
                             .state
                             .session
-                            .find_toolpath_config_by_id(tp_id.0)
+                            .find_toolpath_config_by_id(tp_id)
                             .map(|(_, tc)| tc.name.clone())
                             .unwrap_or_else(|| format!("toolpath {}", tp_id.0));
                         let msg = format!(

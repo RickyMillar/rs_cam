@@ -287,8 +287,10 @@ fn print_diagnostics_report(trace: &SimulationCutTrace, toolpath_labels: &[Strin
     eprintln!();
 
     for ts in &trace.toolpath_summaries {
+        // Job-pipeline toolpath ids are minted from the phase index
+        // (see the simulate loop), so indexing labels by id.0 is sound here.
         let label = toolpath_labels
-            .get(ts.toolpath_id)
+            .get(ts.toolpath_id.0)
             .map(|s| s.as_str())
             .unwrap_or("unknown");
         let air_runtime = trace.summary.total_runtime_s - ts.cutting_runtime_s - ts.rapid_runtime_s;
@@ -709,7 +711,7 @@ fn main() -> Result<()> {
                         &phase.toolpath,
                         &phase.cutter,
                         StockCutDirection::FromTop,
-                        idx,
+                        rs_cam_core::ToolpathId(idx),
                         phase.spindle_speed,
                         phase.flute_count,
                         rapid_feed,
@@ -741,7 +743,9 @@ fn main() -> Result<()> {
                         sample_step,
                         [sim_bbox.min.x, sim_bbox.min.y, sim_bbox.min.z],
                         [sim_bbox.max.x, sim_bbox.max.y, sim_bbox.max.z],
-                        (0..job_result.phases.len()).collect(),
+                        (0..job_result.phases.len())
+                            .map(rs_cam_core::ToolpathId)
+                            .collect(),
                         serde_json::json!({"source": "cli_diagnostics"}),
                         trace,
                     );
@@ -815,12 +819,12 @@ fn main() -> Result<()> {
             apply_suggest,
             spindle_strategy,
         } => {
-            let skip_ids: Vec<usize> = skip
+            let skip_ids: Vec<rs_cam_core::ToolpathId> = skip
                 .as_deref()
                 .unwrap_or("")
                 .split(',')
                 .filter(|s| !s.is_empty())
-                .filter_map(|s| s.trim().parse().ok())
+                .filter_map(|s| s.trim().parse().ok().map(rs_cam_core::ToolpathId))
                 .collect();
             let strategy = match modulation_strategy.as_str() {
                 "band-mid" | "bandmid" | "band_mid" => {

@@ -36,7 +36,7 @@ impl<B: ComputeBackend> AppController<B> {
         tp_id: crate::state::toolpath::ToolpathId,
     ) -> Option<SetupId> {
         // Find which setup contains this toolpath by checking toolpath_indices
-        let (tp_index, _) = self.state.session.find_toolpath_config_by_id(tp_id.0)?;
+        let (tp_index, _) = self.state.session.find_toolpath_config_by_id(tp_id)?;
         self.state
             .session
             .list_setups()
@@ -493,7 +493,7 @@ impl<B: ComputeBackend> AppController<B> {
         let has_pins = !self.state.session.stock_config().alignment_pins.is_empty();
 
         // Find existing pin drill toolpath across all setups.
-        let existing: Option<(usize, usize)> = self
+        let existing: Option<(usize, rs_cam_core::ToolpathId)> = self
             .state
             .session
             .toolpath_configs()
@@ -591,7 +591,7 @@ impl<B: ComputeBackend> AppController<B> {
                     }
                 };
                 let tc = rs_cam_core::session::ToolpathConfig {
-                    id: 0, // will be assigned by session
+                    id: rs_cam_core::ToolpathId(0), // will be assigned by session
                     name: "Pin Drill".to_owned(),
                     enabled: true,
                     operation: OperationConfig::AlignmentPinDrill(cfg),

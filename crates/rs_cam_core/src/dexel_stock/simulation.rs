@@ -9,6 +9,7 @@ use super::stamping::{
     lerp_point, sample_segment_runtime, stamp_segment_with_metrics,
 };
 use super::{StockCutDirection, TriDexelStock};
+use crate::ids::ToolpathId;
 
 use crate::arc_util::linearize_arc_into;
 use crate::geo::P3;
@@ -99,7 +100,7 @@ impl TriDexelStock {
         toolpath: &Toolpath,
         cutter: &dyn MillingCutter,
         direction: StockCutDirection,
-        toolpath_id: usize,
+        toolpath_id: ToolpathId,
         spindle_rpm: u32,
         flute_count: u32,
         rapid_feed_mm_min: f64,
@@ -140,7 +141,7 @@ impl TriDexelStock {
         cutter: &dyn MillingCutter,
         radius: f64,
         direction: StockCutDirection,
-        toolpath_id: usize,
+        toolpath_id: ToolpathId,
         spindle_rpm: u32,
         flute_count: u32,
         rapid_feed_mm_min: f64,
@@ -629,7 +630,7 @@ mod tests {
                 &toolpath,
                 &cutter,
                 StockCutDirection::FromTop,
-                0,
+                ToolpathId(0),
                 12_000,
                 2,
                 3000.0,
@@ -721,7 +722,7 @@ mod tests {
                 &toolpath,
                 &cutter,
                 StockCutDirection::FromTop,
-                0,
+                ToolpathId(0),
                 12_000,
                 2,
                 3000.0,
@@ -762,7 +763,7 @@ mod tests {
                 &toolpath,
                 &cutter,
                 StockCutDirection::FromTop,
-                0,
+                ToolpathId(0),
                 12_000,
                 2,
                 3000.0,

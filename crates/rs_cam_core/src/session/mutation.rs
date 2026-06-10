@@ -71,7 +71,7 @@ impl ProjectSession {
             .ok_or(SessionError::SetupNotFound(setup_index))?;
 
         // Assign a fresh ID
-        config.id = self.next_toolpath_id;
+        config.id = crate::ids::ToolpathId(self.next_toolpath_id);
         self.next_toolpath_id += 1;
 
         let tp_index = self.toolpath_configs.len();
@@ -839,7 +839,7 @@ impl ProjectSession {
         self.next_toolpath_id = self
             .toolpath_configs
             .iter()
-            .map(|tc| tc.id + 1)
+            .map(|tc| tc.id.0 + 1)
             .max()
             .unwrap_or(0);
         self.next_setup_id = self.setups.iter().map(|s| s.id + 1).max().unwrap_or(0);
@@ -858,6 +858,7 @@ impl ProjectSession {
 )]
 mod tests {
     use super::*;
+    use crate::ids::ToolpathId;
     use std::sync::Arc;
 
     use crate::compute::catalog::OperationConfig;
@@ -875,7 +876,7 @@ mod tests {
 
     fn make_tc(tool_id: usize, model_id: usize) -> ToolpathConfig {
         ToolpathConfig {
-            id: 0,
+            id: ToolpathId(0),
             name: "test".to_owned(),
             enabled: true,
             operation: OperationConfig::Pocket(PocketConfig::default()),
@@ -921,13 +922,13 @@ mod tests {
         let tc = make_tc(s.tools()[0].id.0, 0);
         let idx = s.add_toolpath(0, tc).unwrap();
         assert_eq!(idx, 0);
-        assert_eq!(s.toolpath_configs()[0].id, 0);
+        assert_eq!(s.toolpath_configs()[0].id, ToolpathId(0));
         assert_eq!(s.list_setups()[0].toolpath_indices, vec![0]);
 
         let tc2 = make_tc(s.tools()[0].id.0, 0);
         let idx2 = s.add_toolpath(0, tc2).unwrap();
         assert_eq!(idx2, 1);
-        assert_eq!(s.toolpath_configs()[1].id, 1);
+        assert_eq!(s.toolpath_configs()[1].id, ToolpathId(1));
         assert_eq!(s.list_setups()[0].toolpath_indices, vec![0, 1]);
     }
 

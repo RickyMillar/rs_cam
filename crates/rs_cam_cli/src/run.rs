@@ -105,7 +105,7 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
         .add_toolpath(
             0,
             ToolpathConfig {
-                id: 0,
+                id: rs_cam_core::ToolpathId(0),
                 name: format!("{} (cli run)", op_type.label()),
                 enabled: true,
                 operation: OperationConfig::new_default(op_type),

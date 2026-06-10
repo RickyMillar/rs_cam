@@ -23,6 +23,7 @@
 
 mod common;
 use common::make_endmill_6mm;
+use rs_cam_core::ids::ToolpathId;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -105,7 +106,7 @@ fn build_adaptive3d_session() -> ProjectSession {
     };
 
     let tc = ToolpathConfig {
-        id: 0,
+        id: ToolpathId(0),
         name: "Adaptive3d".to_owned(),
         enabled: true,
         operation: OperationConfig::Adaptive3d(cfg),

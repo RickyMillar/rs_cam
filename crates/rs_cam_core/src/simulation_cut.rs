@@ -1,5 +1,6 @@
 use crate::debug_trace::TOOLPATH_DEBUG_SCHEMA_VERSION;
 use crate::drill_metrics::{DrillSample, DrillToolpathSummary};
+use crate::ids::ToolpathId;
 use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticTrace};
 use crate::toolpath_spans::SpanId;
 use serde::{Deserialize, Serialize};
@@ -109,8 +110,10 @@ impl Engagement {
 pub struct SimulationProvenance {
     pub trace_schema_version: u32,
     pub captured_arc_engagement: bool,
-    pub toolpath_hashes: BTreeMap<usize, u64>,
-    pub tool_hashes: BTreeMap<usize, u64>,
+    pub toolpath_hashes: BTreeMap<ToolpathId, u64>,
+    /// Per-toolpath hash of the tool geometry used by that toolpath.
+    /// NB: keyed by **toolpath** id (like `toolpath_hashes`), not tool id.
+    pub tool_hashes: BTreeMap<ToolpathId, u64>,
     /// Hash of each toolpath's `OperationConfig` at sim time. New in
     /// PR-4 polish — lets [`crate::gcode::sim_trace_is_fresh`] catch
     /// config-only edits (e.g. `feed_rate` changes that don't change
@@ -119,7 +122,7 @@ pub struct SimulationProvenance {
     /// check treats a missing entry as a config match for
     /// backward-compatibility.
     #[serde(default)]
-    pub operation_config_hashes: BTreeMap<usize, u64>,
+    pub operation_config_hashes: BTreeMap<ToolpathId, u64>,
     pub stock_hash: u64,
     pub machine_hash: u64,
 }
@@ -133,7 +136,7 @@ pub enum SimulationCutIssueKind {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SimulationCutSample {
-    pub toolpath_id: usize,
+    pub toolpath_id: ToolpathId,
     pub move_index: usize,
     pub sample_index: usize,
     pub position: [f64; 3],
@@ -192,7 +195,7 @@ pub struct SimulationCutSample {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SimulationCutIssue {
     pub kind: SimulationCutIssueKind,
-    pub toolpath_id: usize,
+    pub toolpath_id: ToolpathId,
     /// First move in the issue segment.
     pub move_index: usize,
     /// First sample in the issue segment.
@@ -320,7 +323,7 @@ pub struct KinematicsSummary {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SimulationToolpathCutSummary {
-    pub toolpath_id: usize,
+    pub toolpath_id: ToolpathId,
     pub sample_count: usize,
     pub total_runtime_s: f64,
     pub cutting_runtime_s: f64,
@@ -375,7 +378,7 @@ pub struct SimulationToolpathCutSummary {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SimulationSemanticCutSummary {
-    pub toolpath_id: usize,
+    pub toolpath_id: ToolpathId,
     pub semantic_item_id: u64,
     pub label: String,
     pub kind: ToolpathSemanticKind,
@@ -404,7 +407,7 @@ pub struct SimulationSemanticCutSummary {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SimulationCutHotspot {
-    pub toolpath_id: usize,
+    pub toolpath_id: ToolpathId,
     pub semantic_item_id: Option<u64>,
     pub move_start: usize,
     pub move_end: usize,
@@ -518,7 +521,7 @@ pub struct SimulationCutTrace {
     /// IR + modulation context, and JSON can't serialise tuple keys.
     #[serde(skip)]
     pub modulated_feeds:
-        std::collections::BTreeMap<(usize, usize), (f64, crate::tool_load::BindingConstraint)>,
+        std::collections::BTreeMap<(ToolpathId, usize), (f64, crate::tool_load::BindingConstraint)>,
     /// F-039 — per-toolpath modulation rollup, keyed by
     /// `toolpath_id`. The [`crate::gcode::project_load_report`]
     /// builder reads this map and writes the corresponding
@@ -526,7 +529,7 @@ pub struct SimulationCutTrace {
     /// `#[serde(skip)]` — derived from the per-move map above.
     #[serde(skip)]
     pub modulation_summaries:
-        std::collections::BTreeMap<usize, crate::tool_load::ModulationSummary>,
+        std::collections::BTreeMap<ToolpathId, crate::tool_load::ModulationSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -536,7 +539,7 @@ pub struct SimulationCutArtifact {
     pub sample_step_mm: f64,
     pub stock_bbox_min: [f64; 3],
     pub stock_bbox_max: [f64; 3],
-    pub included_toolpath_ids: Vec<usize>,
+    pub included_toolpath_ids: Vec<ToolpathId>,
     pub request_snapshot: Value,
     pub trace: SimulationCutTrace,
 }
@@ -547,7 +550,7 @@ impl SimulationCutArtifact {
         sample_step_mm: f64,
         stock_bbox_min: [f64; 3],
         stock_bbox_max: [f64; 3],
-        included_toolpath_ids: Vec<usize>,
+        included_toolpath_ids: Vec<ToolpathId>,
         request_snapshot: Value,
         trace: SimulationCutTrace,
     ) -> Self {
@@ -569,7 +572,7 @@ impl SimulationCutTrace {
         Self::from_samples_with_semantics(
             sample_step_mm,
             samples,
-            std::iter::empty::<(usize, &'static ToolpathSemanticTrace)>(),
+            std::iter::empty::<(ToolpathId, &'static ToolpathSemanticTrace)>(),
         )
     }
 
@@ -579,7 +582,7 @@ impl SimulationCutTrace {
         semantic_traces: I,
     ) -> Self
     where
-        I: IntoIterator<Item = (usize, &'a ToolpathSemanticTrace)>,
+        I: IntoIterator<Item = (ToolpathId, &'a ToolpathSemanticTrace)>,
     {
         Self::from_samples_with_context(
             sample_step_mm,
@@ -603,16 +606,18 @@ impl SimulationCutTrace {
         sample_step_mm: f64,
         samples: Vec<SimulationCutSample>,
         semantic_traces: I,
-        metrics_not_applicable_toolpath_ids: &std::collections::BTreeSet<usize>,
+        metrics_not_applicable_toolpath_ids: &std::collections::BTreeSet<ToolpathId>,
     ) -> Self
     where
-        I: IntoIterator<Item = (usize, &'a ToolpathSemanticTrace)>,
+        I: IntoIterator<Item = (ToolpathId, &'a ToolpathSemanticTrace)>,
     {
-        let semantic_traces: BTreeMap<usize, &ToolpathSemanticTrace> =
+        let semantic_traces: BTreeMap<ToolpathId, &ToolpathSemanticTrace> =
             semantic_traces.into_iter().collect();
-        let mut toolpaths: BTreeMap<usize, SummaryAccumulator> = BTreeMap::new();
-        let mut hotspot_accs: BTreeMap<(usize, Option<u64>), HotspotAccumulator> = BTreeMap::new();
-        let mut semantic_accs: BTreeMap<(usize, u64), SemanticSummaryAccumulator> = BTreeMap::new();
+        let mut toolpaths: BTreeMap<ToolpathId, SummaryAccumulator> = BTreeMap::new();
+        let mut hotspot_accs: BTreeMap<(ToolpathId, Option<u64>), HotspotAccumulator> =
+            BTreeMap::new();
+        let mut semantic_accs: BTreeMap<(ToolpathId, u64), SemanticSummaryAccumulator> =
+            BTreeMap::new();
         let mut overall = SummaryAccumulator::default();
         let mut issues = Vec::new();
         // Coalesce contiguous air-cut / low-engagement samples into a single
@@ -624,7 +629,7 @@ impl SimulationCutTrace {
         // into another's.
         //
         // See planning/adaptive_review_2026-04.md F-15.
-        let mut open_segments: BTreeMap<usize, SimulationCutIssue> = BTreeMap::new();
+        let mut open_segments: BTreeMap<ToolpathId, SimulationCutIssue> = BTreeMap::new();
 
         for sample in &samples {
             overall.observe(sample);
@@ -770,7 +775,7 @@ impl SimulationCutTrace {
     /// [`SimulationToolpathCutSummary::metrics_not_applicable`] flag —
     /// when that flag is set, this lookup is the right place to read
     /// drill-native metrics in lieu of engagement-axis ones.
-    pub fn drill_summary_for(&self, toolpath_id: usize) -> Option<&DrillToolpathSummary> {
+    pub fn drill_summary_for(&self, toolpath_id: ToolpathId) -> Option<&DrillToolpathSummary> {
         self.drill_summaries
             .iter()
             .find(|s| s.toolpath_id == toolpath_id)
@@ -1000,7 +1005,7 @@ impl SummaryAccumulator {
         }
     }
 
-    pub fn finish_toolpath(self, toolpath_id: usize) -> SimulationToolpathCutSummary {
+    pub fn finish_toolpath(self, toolpath_id: ToolpathId) -> SimulationToolpathCutSummary {
         let average_engagement = self.average_engagement();
         let average_mrr_mm3_s = self.average_mrr();
         let per_kinematics = finalize_per_kinematics(self.per_kinematics);
@@ -1055,7 +1060,7 @@ impl SummaryAccumulator {
 }
 
 struct HotspotAccumulator {
-    toolpath_id: usize,
+    toolpath_id: ToolpathId,
     semantic_item_id: Option<u64>,
     move_start: usize,
     move_end: usize,
@@ -1154,7 +1159,7 @@ impl SemanticSummaryAccumulator {
 
     fn finish(
         self,
-        toolpath_id: usize,
+        toolpath_id: ToolpathId,
         item: &crate::semantic_trace::ToolpathSemanticItem,
     ) -> SimulationSemanticCutSummary {
         SimulationSemanticCutSummary {
@@ -1244,7 +1249,7 @@ mod tests {
             0.5,
             vec![
                 SimulationCutSample {
-                    toolpath_id: 1,
+                    toolpath_id: ToolpathId(1),
                     move_index: 4,
                     sample_index: 0,
                     position: [1.0, 2.0, -1.0],
@@ -1269,7 +1274,7 @@ mod tests {
                     in_transit_span: false,
                 },
                 SimulationCutSample {
-                    toolpath_id: 1,
+                    toolpath_id: ToolpathId(1),
                     move_index: 5,
                     sample_index: 1,
                     position: [2.0, 2.0, -1.0],
@@ -1294,7 +1299,7 @@ mod tests {
                     in_transit_span: false,
                 },
                 SimulationCutSample {
-                    toolpath_id: 1,
+                    toolpath_id: ToolpathId(1),
                     move_index: 6,
                     sample_index: 2,
                     position: [3.0, 2.0, 5.0],
@@ -1351,7 +1356,7 @@ mod tests {
             0.5,
             vec![
                 SimulationCutSample {
-                    toolpath_id: 1,
+                    toolpath_id: ToolpathId(1),
                     move_index: 1,
                     sample_index: 0,
                     position: [0.0, 0.0, -1.0],
@@ -1376,7 +1381,7 @@ mod tests {
                     in_transit_span: false,
                 },
                 SimulationCutSample {
-                    toolpath_id: 1,
+                    toolpath_id: ToolpathId(1),
                     move_index: 2,
                     sample_index: 1,
                     position: [5.0, 0.0, -1.0],
@@ -1401,7 +1406,7 @@ mod tests {
                     in_transit_span: false,
                 },
             ],
-            [(1, &trace)],
+            [(ToolpathId(1), &trace)],
         );
 
         let summary = cut_trace
@@ -1426,7 +1431,7 @@ mod tests {
             0.5,
             vec![
                 SimulationCutSample {
-                    toolpath_id: 1,
+                    toolpath_id: ToolpathId(1),
                     move_index: 4,
                     sample_index: 0,
                     position: [1.0, 2.0, -1.0],
@@ -1451,7 +1456,7 @@ mod tests {
                     in_transit_span: false,
                 },
                 SimulationCutSample {
-                    toolpath_id: 1,
+                    toolpath_id: ToolpathId(1),
                     move_index: 4,
                     sample_index: 1,
                     position: [1.5, 2.0, -1.0],
@@ -1490,7 +1495,7 @@ mod tests {
             0.25,
             [0.0, 0.0, 0.0],
             [10.0, 10.0, 10.0],
-            vec![1, 2],
+            vec![ToolpathId(1), ToolpathId(2)],
             serde_json::json!({"resolution": 0.25}),
             SimulationCutTrace::from_samples(0.25, Vec::new()),
         );
@@ -1536,7 +1541,7 @@ mod tests {
     fn trace_rapid_only_has_zero_cutting_time() {
         let samples = vec![
             SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: 0,
                 sample_index: 0,
                 position: [0.0, 0.0, 10.0],
@@ -1561,7 +1566,7 @@ mod tests {
                 in_transit_span: false,
             },
             SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: 1,
                 sample_index: 1,
                 position: [50.0, 0.0, 10.0],
@@ -1606,7 +1611,7 @@ mod tests {
         let samples = vec![
             // Air cut: is_cutting=true, engagement < 0.02
             SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: 0,
                 sample_index: 0,
                 position: [0.0, 0.0, -1.0],
@@ -1632,7 +1637,7 @@ mod tests {
             },
             // Low engagement: is_cutting=true, 0.02 <= engagement < 0.10
             SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: 1,
                 sample_index: 1,
                 position: [1.0, 0.0, -1.0],
@@ -1658,7 +1663,7 @@ mod tests {
             },
             // Good engagement: is_cutting=true, engagement >= 0.10
             SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: 2,
                 sample_index: 2,
                 position: [2.0, 0.0, -1.0],
@@ -1770,7 +1775,7 @@ mod tests {
         let mut samples = Vec::new();
         for i in 0..10 {
             samples.push(SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: i,
                 sample_index: i,
                 position: [i as f64, 0.0, -1.0],
@@ -1798,7 +1803,7 @@ mod tests {
         }
         // One good sample breaks the segment
         samples.push(SimulationCutSample {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             move_index: 10,
             sample_index: 10,
             position: [10.0, 0.0, -1.0],
@@ -1824,7 +1829,7 @@ mod tests {
         });
         for i in 0..5 {
             samples.push(SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: 11 + i,
                 sample_index: 11 + i,
                 position: [11.0 + i as f64, 0.0, -1.0],
@@ -1889,7 +1894,7 @@ mod tests {
         // air-cut), the open segment must be flushed, not lost.
         let samples = vec![
             SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: 0,
                 sample_index: 0,
                 position: [0.0, 0.0, -1.0],
@@ -1914,7 +1919,7 @@ mod tests {
                 in_transit_span: false,
             },
             SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: 1,
                 sample_index: 1,
                 position: [1.0, 0.0, -1.0],
@@ -1955,7 +1960,7 @@ mod tests {
         // the other's.
         let samples = vec![
             SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: 0,
                 sample_index: 0,
                 position: [0.0, 0.0, -1.0],
@@ -1980,7 +1985,7 @@ mod tests {
                 in_transit_span: false,
             },
             SimulationCutSample {
-                toolpath_id: 1,
+                toolpath_id: ToolpathId(1),
                 move_index: 0,
                 sample_index: 0,
                 position: [10.0, 0.0, -1.0],
@@ -2005,7 +2010,7 @@ mod tests {
                 in_transit_span: false,
             },
             SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: 1,
                 sample_index: 1,
                 position: [1.0, 0.0, -1.0],
@@ -2035,8 +2040,16 @@ mod tests {
         // Two segments — one per toolpath — not three per-sample issues
         // and not one bleeding across toolpath boundaries.
         assert_eq!(trace.issues.len(), 2);
-        let tp0_segs: Vec<_> = trace.issues.iter().filter(|i| i.toolpath_id == 0).collect();
-        let tp1_segs: Vec<_> = trace.issues.iter().filter(|i| i.toolpath_id == 1).collect();
+        let tp0_segs: Vec<_> = trace
+            .issues
+            .iter()
+            .filter(|i| i.toolpath_id == ToolpathId(0))
+            .collect();
+        let tp1_segs: Vec<_> = trace
+            .issues
+            .iter()
+            .filter(|i| i.toolpath_id == ToolpathId(1))
+            .collect();
         assert_eq!(tp0_segs.len(), 1);
         assert_eq!(tp1_segs.len(), 1);
         assert_eq!(tp0_segs[0].sample_count, 2);
@@ -2049,7 +2062,7 @@ mod tests {
     fn trace_tracks_peak_chipload_and_axial_doc() {
         let samples = vec![
             SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: 0,
                 sample_index: 0,
                 position: [0.0, 0.0, -1.0],
@@ -2074,7 +2087,7 @@ mod tests {
                 in_transit_span: false,
             },
             SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: 1,
                 sample_index: 1,
                 position: [1.0, 0.0, -2.0],
@@ -2125,7 +2138,7 @@ mod tests {
     fn trace_multiple_toolpaths_produce_separate_summaries() {
         let samples = vec![
             SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: 0,
                 sample_index: 0,
                 position: [0.0, 0.0, -1.0],
@@ -2150,7 +2163,7 @@ mod tests {
                 in_transit_span: false,
             },
             SimulationCutSample {
-                toolpath_id: 1,
+                toolpath_id: ToolpathId(1),
                 move_index: 0,
                 sample_index: 1,
                 position: [10.0, 0.0, -2.0],
@@ -2185,12 +2198,12 @@ mod tests {
         let tp0 = trace
             .toolpath_summaries
             .iter()
-            .find(|s| s.toolpath_id == 0)
+            .find(|s| s.toolpath_id == ToolpathId(0))
             .expect("should have toolpath 0");
         let tp1 = trace
             .toolpath_summaries
             .iter()
-            .find(|s| s.toolpath_id == 1)
+            .find(|s| s.toolpath_id == ToolpathId(1))
             .expect("should have toolpath 1");
 
         assert_eq!(tp0.sample_count, 1);
@@ -2216,7 +2229,7 @@ mod tests {
         let samples = vec![
             // 0.1s at engagement=0.20
             SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: 0,
                 sample_index: 0,
                 position: [0.0, 0.0, -1.0],
@@ -2242,7 +2255,7 @@ mod tests {
             },
             // 0.3s at engagement=0.80
             SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: 1,
                 sample_index: 1,
                 position: [1.0, 0.0, -1.0],
@@ -2287,7 +2300,7 @@ mod tests {
     fn trace_hotspots_grouped_by_toolpath_and_semantic_id() {
         let samples = vec![
             SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: 0,
                 sample_index: 0,
                 position: [0.0, 0.0, -1.0],
@@ -2312,7 +2325,7 @@ mod tests {
                 in_transit_span: false,
             },
             SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: 1,
                 sample_index: 1,
                 position: [1.0, 0.0, -1.0],
@@ -2337,7 +2350,7 @@ mod tests {
                 in_transit_span: false,
             },
             SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: 2,
                 sample_index: 2,
                 position: [2.0, 0.0, -1.0],
@@ -2413,7 +2426,7 @@ mod tests {
         in_transit_span: bool,
     ) -> SimulationCutSample {
         SimulationCutSample {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             move_index: sample_index,
             sample_index,
             position: [0.0, 0.0, 0.0],
@@ -2499,7 +2512,7 @@ mod tests {
         // Drill kinematics: is_cutting=true, radial_engagement=0 (dexel can't
         // see Z-only moves).
         let mut s = make_sample(sample_index, 1.0, false);
-        s.toolpath_id = toolpath_id;
+        s.toolpath_id = ToolpathId(toolpath_id);
         s.engagement.radial_woc_fraction = 0.0;
         s
     }
@@ -2509,11 +2522,12 @@ mod tests {
         // 100 samples of a drill TP; without the gate they'd produce 1
         // coalesced air-cut issue. With the gate, zero.
         let samples: Vec<_> = (0..100).map(|i| make_drill_sample(7, i)).collect();
-        let drill_ids: std::collections::BTreeSet<usize> = std::iter::once(7).collect();
+        let drill_ids: std::collections::BTreeSet<ToolpathId> =
+            std::iter::once(ToolpathId(7)).collect();
         let trace = SimulationCutTrace::from_samples_with_context(
             0.5,
             samples,
-            std::iter::empty::<(usize, &'static ToolpathSemanticTrace)>(),
+            std::iter::empty::<(ToolpathId, &'static ToolpathSemanticTrace)>(),
             &drill_ids,
         );
         assert_eq!(
@@ -2526,17 +2540,18 @@ mod tests {
     #[test]
     fn drill_toolpath_summary_is_marked_not_applicable() {
         let samples = vec![make_drill_sample(7, 0), make_drill_sample(7, 1)];
-        let drill_ids: std::collections::BTreeSet<usize> = std::iter::once(7).collect();
+        let drill_ids: std::collections::BTreeSet<ToolpathId> =
+            std::iter::once(ToolpathId(7)).collect();
         let trace = SimulationCutTrace::from_samples_with_context(
             0.5,
             samples,
-            std::iter::empty::<(usize, &'static ToolpathSemanticTrace)>(),
+            std::iter::empty::<(ToolpathId, &'static ToolpathSemanticTrace)>(),
             &drill_ids,
         );
         let tp = trace
             .toolpath_summaries
             .iter()
-            .find(|s| s.toolpath_id == 7)
+            .find(|s| s.toolpath_id == ToolpathId(7))
             .expect("toolpath 7 should have a summary");
         assert!(
             tp.metrics_not_applicable,
@@ -2550,7 +2565,7 @@ mod tests {
         let mut samples = Vec::new();
         for i in 0..100 {
             let mut s = make_sample(i, 1.0, false);
-            s.toolpath_id = 1;
+            s.toolpath_id = ToolpathId(1);
             s.engagement.radial_woc_fraction = 0.0;
             samples.push(s);
         }
@@ -2558,7 +2573,7 @@ mod tests {
         let trace = SimulationCutTrace::from_samples_with_context(
             0.5,
             samples,
-            std::iter::empty::<(usize, &'static ToolpathSemanticTrace)>(),
+            std::iter::empty::<(ToolpathId, &'static ToolpathSemanticTrace)>(),
             &drill_ids,
         );
         assert_eq!(
@@ -2570,7 +2585,7 @@ mod tests {
         let tp = trace
             .toolpath_summaries
             .iter()
-            .find(|s| s.toolpath_id == 1)
+            .find(|s| s.toolpath_id == ToolpathId(1))
             .unwrap();
         assert!(!tp.metrics_not_applicable);
     }
@@ -2582,27 +2597,28 @@ mod tests {
         let mut samples: Vec<_> = (0..50).map(|i| make_drill_sample(7, i)).collect();
         for i in 50..100 {
             let mut s = make_sample(i, 1.0, false);
-            s.toolpath_id = 1;
+            s.toolpath_id = ToolpathId(1);
             s.engagement.radial_woc_fraction = 0.0;
             samples.push(s);
         }
-        let drill_ids: std::collections::BTreeSet<usize> = std::iter::once(7).collect();
+        let drill_ids: std::collections::BTreeSet<ToolpathId> =
+            std::iter::once(ToolpathId(7)).collect();
         let trace = SimulationCutTrace::from_samples_with_context(
             0.5,
             samples,
-            std::iter::empty::<(usize, &'static ToolpathSemanticTrace)>(),
+            std::iter::empty::<(ToolpathId, &'static ToolpathSemanticTrace)>(),
             &drill_ids,
         );
         assert_eq!(trace.issues.len(), 1, "only non-drill TP emits an issue");
         let drill_summary = trace
             .toolpath_summaries
             .iter()
-            .find(|s| s.toolpath_id == 7)
+            .find(|s| s.toolpath_id == ToolpathId(7))
             .unwrap();
         let mill_summary = trace
             .toolpath_summaries
             .iter()
-            .find(|s| s.toolpath_id == 1)
+            .find(|s| s.toolpath_id == ToolpathId(1))
             .unwrap();
         assert!(drill_summary.metrics_not_applicable);
         assert!(!mill_summary.metrics_not_applicable);
@@ -2618,7 +2634,7 @@ mod tests {
         let tp = trace
             .toolpath_summaries
             .iter()
-            .find(|s| s.toolpath_id == 0)
+            .find(|s| s.toolpath_id == ToolpathId(0))
             .expect("toolpath 0 should have a summary");
         assert!(
             (tp.peak_axial_doc_mm - 3.0).abs() < 1e-9,

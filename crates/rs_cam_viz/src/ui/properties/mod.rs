@@ -152,7 +152,7 @@ fn flush_toolpath_snapshot(state: &mut AppState) {
     if let Some((tp_id, old_op, old_dressups, old_faces)) = state.history.toolpath_snapshot.take() {
         if !matches!(state.selection, crate::state::selection::Selection::Toolpath(id) if id == tp_id)
         {
-            if let Some((_, tc)) = state.session.find_toolpath_config_by_id(tp_id.0) {
+            if let Some((_, tc)) = state.session.find_toolpath_config_by_id(tp_id) {
                 state
                     .history
                     .push(crate::state::history::UndoAction::ToolpathParamChange {
@@ -378,7 +378,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
         Selection::Toolpath(id) => {
             // Capture snapshot for undo before editing
             if state.history.toolpath_snapshot.is_none()
-                && let Some((_, tc)) = state.session.find_toolpath_config_by_id(id.0)
+                && let Some((_, tc)) = state.session.find_toolpath_config_by_id(id)
             {
                 state.history.toolpath_snapshot = Some((
                     id,
@@ -418,7 +418,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             // Check if the toolpath's model has enriched mesh (for face selection UI)
             let model_for_panel = state
                 .session
-                .find_toolpath_config_by_id(id.0)
+                .find_toolpath_config_by_id(id)
                 .and_then(|(_, tc)| state.session.models().iter().find(|m| m.id == tc.model_id));
             let model_has_enriched = model_for_panel
                 .map(|m| m.enriched_mesh.is_some())
@@ -437,17 +437,17 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             // helper so model_top/bottom_z are in the setup-local frame.
             let height_ctx = state
                 .session
-                .find_toolpath_config_by_id(id.0)
+                .find_toolpath_config_by_id(id)
                 .map(|(_, tc)| crate::state::job::height_context_from_session(&state.session, tc));
 
             // Snapshot operation and heights for stale_since detection
             let op_before = state
                 .session
-                .find_toolpath_config_by_id(id.0)
+                .find_toolpath_config_by_id(id)
                 .map(|(_, tc)| serde_json::to_string(&tc.operation).unwrap_or_default());
             let heights_before = state
                 .session
-                .find_toolpath_config_by_id(id.0)
+                .find_toolpath_config_by_id(id)
                 .map(|(_, tc)| format!("{:?}", tc.heights));
 
             // Pre-compute stale-default defects for this TP so the panel
@@ -456,7 +456,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             // click takes effect immediately on the next render.
             let stale_default_defects = state
                 .session
-                .find_toolpath_config_by_id(id.0)
+                .find_toolpath_config_by_id(id)
                 .map(|(_, tc)| {
                     let tool =
                         state.session.tools().iter().find(|t| {
@@ -487,7 +487,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             let load_verdict_for_tp = load_report
                 .per_toolpath
                 .iter()
-                .find(|v| v.toolpath_id == id.0)
+                .find(|v| v.toolpath_id == id)
                 .cloned();
 
             // Build a temporary ToolpathEntry from session config + gui runtime
@@ -522,7 +522,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             }
 
             // B3a: set stale_since when parameters or heights change
-            if let Some((_, tc)) = state.session.find_toolpath_config_by_id(id.0) {
+            if let Some((_, tc)) = state.session.find_toolpath_config_by_id(id) {
                 let op_changed = op_before.as_ref().is_some_and(|b| {
                     *b != serde_json::to_string(&tc.operation).unwrap_or_default()
                 });
@@ -530,7 +530,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     .as_ref()
                     .is_some_and(|b| *b != format!("{:?}", tc.heights));
                 if op_changed || heights_changed {
-                    if let Some(rt) = state.gui.toolpath_rt.get_mut(&id.0) {
+                    if let Some(rt) = state.gui.toolpath_rt.get_mut(&id) {
                         rt.stale_since = Some(std::time::Instant::now());
                     }
                     state.gui.mark_edited();
@@ -2562,14 +2562,12 @@ fn build_entry_from_session_and_gui(
     session: &rs_cam_core::session::ProjectSession,
     gui: &crate::state::runtime::GuiState,
 ) -> Option<ToolpathEntry> {
-    use crate::state::toolpath::ToolpathId;
-
-    let (_, tc) = session.find_toolpath_config_by_id(id.0)?;
-    let rt = gui.toolpath_rt.get(&id.0);
+    let (_, tc) = session.find_toolpath_config_by_id(id)?;
+    let rt = gui.toolpath_rt.get(&id);
     let default_rt = crate::state::runtime::ToolpathRuntime::new(true);
     let rt = rt.unwrap_or(&default_rt);
     Some(ToolpathEntry {
-        id: ToolpathId(tc.id),
+        id: tc.id,
         name: tc.name.clone(),
         enabled: tc.enabled,
         visible: rt.visible,
@@ -2604,7 +2602,7 @@ fn write_entry_config_to_session(
     entry: &ToolpathEntry,
     session: &mut rs_cam_core::session::ProjectSession,
 ) {
-    if let Some((_, tc)) = session.find_toolpath_config_by_id_mut(entry.id.0) {
+    if let Some((_, tc)) = session.find_toolpath_config_by_id_mut(entry.id) {
         // W2.1: stamp Manual on any feeds dimension the user hand-edited in the
         // param widgets this frame (value moved but provenance didn't). Must run
         // before `tc.operation` / `tc.feeds_provenance` are overwritten below.
@@ -2639,7 +2637,7 @@ fn write_entry_config_to_session(
 
 /// Write runtime changes from a `ToolpathEntry` back to the GUI's `ToolpathRuntime`.
 fn write_entry_runtime_to_gui(entry: &ToolpathEntry, gui: &mut crate::state::runtime::GuiState) {
-    if let Some(rt) = gui.toolpath_rt.get_mut(&entry.id.0) {
+    if let Some(rt) = gui.toolpath_rt.get_mut(&entry.id) {
         rt.visible = entry.visible;
         rt.locked = entry.locked;
         rt.auto_regen = entry.auto_regen;
@@ -2763,7 +2761,7 @@ fn draw_toolpath_panel(
     if !entry.auto_regen && matches!(entry.status, ComputeStatus::Pending) {
         diagnostics.push(rs_cam_core::diagnostics::Diagnostic {
             id: rs_cam_core::diagnostics::DiagnosticId::new("workflow.needs_generation"),
-            scope: rs_cam_core::diagnostics::Scope::Toolpath { id: entry.id.0 },
+            scope: rs_cam_core::diagnostics::Scope::Toolpath { id: entry.id },
             category: rs_cam_core::diagnostics::Category::State,
             severity: rs_cam_core::diagnostics::Severity::Info,
             confidence: rs_cam_core::diagnostics::Confidence::Static,

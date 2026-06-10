@@ -755,6 +755,7 @@ pub fn get_post_definition(name: &str) -> Option<&'static PostDefinition> {
 mod tests {
     use super::*;
     use crate::geo::P3;
+    use crate::ids::ToolpathId;
     use crate::toolpath::Toolpath;
 
     #[test]
@@ -1460,7 +1461,7 @@ mod tests {
     ) -> ToolLoadReport {
         ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
-                toolpath_id: 4,
+                toolpath_id: ToolpathId(4),
                 chipload,
                 power,
                 deflection,

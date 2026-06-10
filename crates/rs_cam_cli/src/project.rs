@@ -17,7 +17,7 @@ use rs_cam_core::simulation_cut::SimulationCutArtifact;
 
 #[derive(Serialize)]
 struct ToolpathDiagnostic {
-    toolpath_id: usize,
+    toolpath_id: rs_cam_core::ToolpathId,
     toolpath_name: String,
     operation_type: String,
     tool: String,
@@ -33,7 +33,7 @@ struct ToolpathDiagnostic {
 
 #[derive(Serialize)]
 struct ToolpathSummaryEntry {
-    id: usize,
+    id: rs_cam_core::ToolpathId,
     name: String,
     operation: String,
     status: String,
@@ -64,7 +64,7 @@ pub fn run_project_command(
     input: &Path,
     output_dir: &Path,
     setup_filter: Option<&str>,
-    skip_ids: &[usize],
+    skip_ids: &[rs_cam_core::ToolpathId],
     resolution: f64,
     summary: bool,
     emit_gcode: Option<&Path>,
@@ -112,7 +112,7 @@ pub fn run_project_command(
     );
 
     // 2. Map setup_filter to additional skip IDs
-    let mut combined_skip: Vec<usize> = skip_ids.to_vec();
+    let mut combined_skip: Vec<rs_cam_core::ToolpathId> = skip_ids.to_vec();
     if let Some(filter) = setup_filter {
         for setup in session.list_setups() {
             let matches = setup.name == filter || setup.id.to_string() == filter;
@@ -160,7 +160,7 @@ pub fn run_project_command(
     // 5. Run collision checks per toolpath and collect results
     let tp_count = session.toolpath_count();
     let mut collision_reports: std::collections::HashMap<
-        usize,
+        rs_cam_core::ToolpathId,
         rs_cam_core::collision::CollisionReport,
     > = std::collections::HashMap::new();
 
@@ -171,7 +171,9 @@ pub fn run_project_command(
         let tp_id = session
             .get_toolpath_config(idx)
             .map(|tc| tc.id)
-            .unwrap_or(idx);
+            // Defensive fallback mirrors the project-file loader: when a
+            // config is somehow absent, the position doubles as the id.
+            .unwrap_or(rs_cam_core::ToolpathId(idx));
         match session.collision_check(idx, &cancel) {
             Ok(check) => {
                 if !check.collision_report.is_clear() {
@@ -255,7 +257,7 @@ pub fn run_project_command(
     if let Some(sim_result) = session.simulation_result()
         && let Some(trace) = &sim_result.cut_trace
     {
-        let included_ids: Vec<usize> = (0..tp_count)
+        let included_ids: Vec<rs_cam_core::ToolpathId> = (0..tp_count)
             .filter(|idx| session.get_result(*idx).is_some())
             .filter_map(|idx| session.get_toolpath_config(idx).map(|tc| tc.id))
             .collect();
@@ -437,7 +439,7 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
         }
         let Some(profile) = session.cutter_op_profile(tc) else {
             warn!(
-                toolpath_id = tc.id,
+                toolpath_id = tc.id.0,
                 tool_id = tc.tool_id,
                 "Tool not found, skipping suggest"
             );
@@ -445,7 +447,7 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
         };
         if let Err(e) = &profile.feasibility {
             warn!(
-                toolpath_id = tc.id,
+                toolpath_id = tc.id.0,
                 tool_id = tc.tool_id,
                 error = %e,
                 "Suggest refused tool × operation combination, leaving existing values"

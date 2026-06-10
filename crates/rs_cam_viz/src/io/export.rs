@@ -230,7 +230,7 @@ pub fn export_single_toolpath_from_session(
     session: &ProjectSession,
     gui: &GuiState,
     sim: &SimulationState,
-    toolpath_id: usize,
+    toolpath_id: rs_cam_core::ToolpathId,
 ) -> Result<String, crate::error::VizError> {
     let post = gui.post.format.definition();
 

@@ -20,6 +20,7 @@
 //! See `planning/OPTIMIZER_UX_PLAN.md` — particularly Resolutions 1-9
 //! and Engineering Defaults 1-10.
 
+use crate::ids::ToolpathId;
 use std::sync::LazyLock;
 use std::sync::atomic::AtomicBool;
 
@@ -715,7 +716,7 @@ pub fn optimize_project(
     //    for every enabled toolpath. We need ids to look up each
     //    toolpath's baseline cycle from the trace, names for the
     //    progress label, and indices for `optimize_toolpath`.
-    let enabled: Vec<(usize, usize, String)> = session
+    let enabled: Vec<(usize, ToolpathId, String)> = session
         .toolpath_configs()
         .iter()
         .enumerate()
@@ -727,7 +728,7 @@ pub fn optimize_project(
     // 2. Compute baseline cycle times per toolpath from the trace.
     //    Pre-compute the project total so we can derive the bottleneck
     //    callout without walking the report after the loop.
-    let baseline_cycles: Vec<(usize, f64)> = enabled
+    let baseline_cycles: Vec<(ToolpathId, f64)> = enabled
         .iter()
         .map(|(_, id, _)| {
             let cycle = cycle_time_from_trace(baseline_trace, *id).unwrap_or(0.0);
@@ -831,7 +832,7 @@ mod orchestration_skip_tests {
 
     fn make_tc(operation: OperationConfig, tool_id: usize) -> ToolpathConfig {
         ToolpathConfig {
-            id: 0,
+            id: ToolpathId(0),
             name: "test".to_owned(),
             enabled: true,
             operation,
@@ -964,7 +965,7 @@ mod orchestration_skip_tests {
         use crate::simulation_cut::SimulationToolpathCutSummary;
         let mut trace = empty_trace();
         trace.toolpath_summaries.push(SimulationToolpathCutSummary {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             sample_count: 100,
             total_runtime_s: 60.0,
             cutting_runtime_s: 50.0,
@@ -1004,7 +1005,7 @@ mod orchestration_skip_tests {
         };
         let mut trace = empty_trace();
         trace.toolpath_summaries.push(SimulationToolpathCutSummary {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             sample_count: 4,
             total_runtime_s: 60.0,
             cutting_runtime_s: 50.0,
@@ -1026,7 +1027,7 @@ mod orchestration_skip_tests {
         // tripping the 200 µm Exceeds threshold.
         for i in 0..4 {
             trace.samples.push(SimulationCutSample {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 move_index: i,
                 sample_index: i,
                 position: [i as f64, 0.0, -6.0],
@@ -1276,7 +1277,7 @@ mod project_rollup_tests {
         }
     }
 
-    fn summary_for(toolpath_id: usize, runtime_s: f64) -> SimulationToolpathCutSummary {
+    fn summary_for(toolpath_id: ToolpathId, runtime_s: f64) -> SimulationToolpathCutSummary {
         SimulationToolpathCutSummary {
             toolpath_id,
             sample_count: 100,
@@ -1303,7 +1304,7 @@ mod project_rollup_tests {
         enabled: bool,
     ) -> ToolpathConfig {
         ToolpathConfig {
-            id: 0,
+            id: ToolpathId(0),
             name: name.to_owned(),
             enabled,
             operation,
@@ -1426,7 +1427,7 @@ mod project_rollup_tests {
         let mut session = session_with_n_drills(&[("a", true), ("b", true), ("c", true)]);
         // Pull the assigned ids out of the session (add_toolpath
         // increments next_toolpath_id, so they're stable: 0, 1, 2).
-        let ids: Vec<usize> = session.toolpath_configs().iter().map(|tc| tc.id).collect();
+        let ids: Vec<ToolpathId> = session.toolpath_configs().iter().map(|tc| tc.id).collect();
         let mut trace = empty_trace();
         trace.toolpath_summaries.push(summary_for(ids[0], 10.0));
         trace.toolpath_summaries.push(summary_for(ids[1], 60.0));
@@ -1445,7 +1446,7 @@ mod project_rollup_tests {
         // is None. The rollup view will show "no single bottleneck".
         let mut session =
             session_with_n_drills(&[("a", true), ("b", true), ("c", true), ("d", true)]);
-        let ids: Vec<usize> = session.toolpath_configs().iter().map(|tc| tc.id).collect();
+        let ids: Vec<ToolpathId> = session.toolpath_configs().iter().map(|tc| tc.id).collect();
         let mut trace = empty_trace();
         for &id in &ids {
             trace.toolpath_summaries.push(summary_for(id, 10.0));
@@ -1474,7 +1475,7 @@ mod project_rollup_tests {
         // Cancel set before the loop runs. per_toolpath empty;
         // baseline metrics still populated from the trace.
         let mut session = session_with_n_drills(&[("a", true), ("b", true)]);
-        let ids: Vec<usize> = session.toolpath_configs().iter().map(|tc| tc.id).collect();
+        let ids: Vec<ToolpathId> = session.toolpath_configs().iter().map(|tc| tc.id).collect();
         let mut trace = empty_trace();
         trace.toolpath_summaries.push(summary_for(ids[0], 50.0));
         trace.toolpath_summaries.push(summary_for(ids[1], 50.0));
@@ -1704,7 +1705,7 @@ mod tests {
 
     fn within_verdict() -> ToolpathLoadVerdict {
         ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload: within_chipload_verdict(0.04),
             power: within_power_verdict(),
             deflection: within_deflection_verdict(0.030),
@@ -1715,7 +1716,7 @@ mod tests {
 
     fn exceeds_chipload_verdict() -> ToolpathLoadVerdict {
         ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload: exceeds_chipload_verdict_high(0.08),
             power: within_power_verdict(),
             deflection: within_deflection_verdict(0.030),
@@ -1856,7 +1857,7 @@ mod tests {
                 burn_advisory: None,
             };
             ToolpathLoadVerdict {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 chipload,
                 power: within_power_verdict(),
                 deflection: within_deflection_verdict(0.030),
@@ -2259,7 +2260,7 @@ mod tests {
         // 0.072 > 0.07 strict max but inside 0.07 × (1 + 0.05) = 0.0735
         // tolerance band → Within with strict-bound breach.
         ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload: band_admitted_chipload_verdict(0.072),
             power: within_power_verdict(),
             deflection: within_deflection_verdict(0.030),
@@ -2305,7 +2306,7 @@ mod tests {
             other => panic!("fixture must be Within, got {other:?}"),
         };
         let verdict = ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload,
             power: within_power_verdict(),
             deflection: within_deflection_verdict(0.030),

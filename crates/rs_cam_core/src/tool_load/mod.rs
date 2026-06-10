@@ -23,6 +23,7 @@ pub mod plunge_stress;
 pub mod power;
 pub mod verdict;
 
+use crate::ids::ToolpathId;
 use crate::simulation_cut::SimulationCutSample;
 
 /// F-035 — Single source of truth for "what feed should this sample
@@ -198,7 +199,7 @@ impl RefuseReason {
 pub fn chipload_envelopes_for_session(
     session: &crate::session::ProjectSession,
     sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
-) -> std::collections::HashMap<usize, std::ops::Range<f64>> {
+) -> std::collections::HashMap<ToolpathId, std::ops::Range<f64>> {
     use crate::feeds::vendor_normalize::op_family_to_lut;
     use crate::tool::MillingCutter;
 
@@ -302,7 +303,7 @@ pub struct ToleranceBands {
 /// inputs (e.g. `MachineProfile` for the power criterion).
 pub struct ToolpathLoadContext<'a> {
     /// Stable simulator-side toolpath id (matches `SimulationCutSample::toolpath_id`).
-    pub toolpath_id: usize,
+    pub toolpath_id: ToolpathId,
     pub tool: &'a ToolDefinition,
     pub material: &'a Material,
     pub operation_family: LutOperationFamily,
@@ -499,7 +500,7 @@ mod tests {
         operation_kind: OperationType,
     ) -> ToolpathLoadContext<'a> {
         ToolpathLoadContext {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             tool,
             material,
             operation_family: LutOperationFamily::Pocket,

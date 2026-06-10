@@ -22,6 +22,7 @@
     clippy::indexing_slicing
 )]
 
+use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::{
     dexel_stock::{StockCutDirection, TriDexelStock},
     drill::{DrillCycle, DrillParams, drill_toolpath},
@@ -144,7 +145,7 @@ fn retract_feed_is_non_cutting_in_simulator() {
             &tp,
             &cutter,
             StockCutDirection::FromTop,
-            0,
+            ToolpathId(0),
             18_000,
             2,
             5000.0,
@@ -198,7 +199,7 @@ fn unknown_intent_linear_still_classified_kinematically() {
             &tp,
             &cutter,
             StockCutDirection::FromTop,
-            0,
+            ToolpathId(0),
             18_000,
             2,
             5000.0,

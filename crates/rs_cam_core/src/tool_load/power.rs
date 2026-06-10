@@ -69,7 +69,7 @@ pub(crate) fn predicted_power_kw(kc: f64, cross_section_mm2: f64, feed_mm_min: f
     GRAIN_ANISOTROPY_FACTOR * kc * cross_section_mm2 * feed_mm_min / 60_000_000.0
 }
 
-#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id, op = ?ctx.operation_kind))]
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.0, op = ?ctx.operation_kind))]
 pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) -> PowerVerdict {
     let &super::ToolpathLoadContext {
         toolpath_id,
@@ -344,6 +344,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
 mod tests {
     use super::*;
     use crate::compute::catalog::OperationType;
+    use crate::ids::ToolpathId;
     use crate::machine::MachineProfile;
     use crate::material::WoodSpecies;
     use crate::simulation_cut::{
@@ -366,7 +367,7 @@ mod tests {
     ) -> PowerVerdict {
         evaluate(
             &crate::tool_load::ToolpathLoadContext {
-                toolpath_id,
+                toolpath_id: ToolpathId(toolpath_id),
                 tool,
                 material,
                 operation_family: crate::feeds::vendor_lut::LutOperationFamily::Pocket,
@@ -415,7 +416,7 @@ mod tests {
 
     fn cutting_sample(idx: usize, axial: f64, arc_rad: f64, feed_mmpm: f64) -> SimulationCutSample {
         SimulationCutSample {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             move_index: idx,
             sample_index: idx,
             position: [0.0, 0.0, -axial],

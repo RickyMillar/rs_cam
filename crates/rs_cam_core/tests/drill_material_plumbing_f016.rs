@@ -17,6 +17,7 @@
     clippy::indexing_slicing
 )]
 
+use rs_cam_core::ids::ToolpathId;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -87,7 +88,7 @@ fn build_drill_session(material: Material) -> ProjectSession {
     };
 
     let tc = ToolpathConfig {
-        id: 0,
+        id: ToolpathId(0),
         name: "Drill".to_owned(),
         enabled: true,
         operation: OperationConfig::Drill(drill),

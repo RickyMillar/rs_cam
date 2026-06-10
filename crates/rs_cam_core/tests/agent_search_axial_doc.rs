@@ -17,6 +17,7 @@ use rs_cam_core::adaptive3d::{
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::{BoundingBox3, P3};
+use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::tool::FlatEndmill;
 use rs_cam_core::toolpath::MoveType;
@@ -141,7 +142,7 @@ fn agent_search_axial_doc_diag() {
             &tp,
             &cutter,
             StockCutDirection::FromTop,
-            1,
+            ToolpathId(1),
             18000,
             2,
             5000.0,
@@ -275,7 +276,7 @@ fn agent_search_axial_doc_diag() {
             &up_to_9388,
             &cutter,
             StockCutDirection::FromTop,
-            1,
+            ToolpathId(1),
             18000,
             2,
             5000.0,

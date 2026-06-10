@@ -302,7 +302,7 @@ fn draw_signal_spine(
     let active_x = Some(sim.playback.current_move as f64);
     let chipload_envelopes = sim.cached_chipload_envelopes(session, gui.edit_counter);
     let envelope = focused_id
-        .and_then(|id| chipload_envelopes.get(&id.0))
+        .and_then(|id| chipload_envelopes.get(&id))
         .map(|range| (range.start, range.end));
 
     // F6.1 — timeline point markers are reserved for Critical/Risky gate
@@ -324,7 +324,7 @@ fn draw_signal_spine(
     // per frame.
     for verdict in &load_report.per_toolpath {
         if let Some(focus) = focused_id
-            && verdict.toolpath_id != focus.0
+            && verdict.toolpath_id != focus
         {
             continue;
         }
@@ -361,7 +361,7 @@ fn draw_signal_spine(
     let pass_bands: Vec<(f64, f64, bool)> = focused_id
         .and_then(|id| {
             let boundary = sim.boundaries().iter().find(|b| b.id == id)?;
-            let rt = gui.toolpath_rt.get(&id.0)?;
+            let rt = gui.toolpath_rt.get(&id)?;
             let result = rt.result.as_ref()?;
             if !result.spans_valid() {
                 return None;
@@ -1320,7 +1320,7 @@ fn span_subband_present(
         .toolpath_id
         .or_else(|| sim.current_boundary().map(|b| b.id))?;
     sim.boundaries().iter().find(|b| b.id == tp_id)?;
-    let rt = gui.toolpath_rt.get(&tp_id.0)?;
+    let rt = gui.toolpath_rt.get(&tp_id)?;
     let result = rt.result.as_ref()?;
     if !result.spans_valid() || result.spans().is_empty() {
         return None;
@@ -1352,7 +1352,7 @@ fn paint_span_subband(
     let Some(boundary) = sim.boundaries().iter().find(|b| b.id == tp_id).cloned() else {
         return;
     };
-    let Some(rt) = gui.toolpath_rt.get(&tp_id.0) else {
+    let Some(rt) = gui.toolpath_rt.get(&tp_id) else {
         return;
     };
     let Some(result) = rt.result.as_ref() else {
@@ -1676,7 +1676,7 @@ fn draw_tool_load_timeline_markers(
 
     for verdict in &load_report.per_toolpath {
         if let Some(focus) = focused_id
-            && verdict.toolpath_id != focus.0
+            && verdict.toolpath_id != focus
         {
             continue;
         }
@@ -1690,7 +1690,7 @@ fn draw_tool_load_timeline_markers(
             && let Some(boundary) = sim
                 .boundaries()
                 .iter()
-                .find(|boundary| boundary.id.0 == verdict.toolpath_id)
+                .find(|boundary| boundary.id == verdict.toolpath_id)
         {
             let x = rect.min.x + (boundary.start_move as f32 / total_moves) * total_width;
             painter.line_segment(
@@ -1778,7 +1778,7 @@ fn nearest_marker_tooltip(
     if let Some(trace) = sim_trace {
         for verdict in &load_report.per_toolpath {
             if let Some(focus) = focused_id
-                && verdict.toolpath_id != focus.0
+                && verdict.toolpath_id != focus
             {
                 continue;
             }
@@ -1840,7 +1840,7 @@ fn first_exceeded_tool_load_move(
     let boundary_start = sim
         .boundaries()
         .iter()
-        .find(|boundary| boundary.id.0 == sample.toolpath_id)
+        .find(|boundary| boundary.id == sample.toolpath_id)
         .map(|boundary| boundary.start_move)
         .unwrap_or_default();
     Some(boundary_start + sample.move_index)
@@ -1853,9 +1853,9 @@ fn estimate_times(sim: &SimulationState, session: &ProjectSession, gui: &GuiStat
     let mut elapsed_secs = 0.0;
 
     for boundary in sim.boundaries() {
-        if let Some(rt) = gui.toolpath_rt.get(&boundary.id.0)
+        if let Some(rt) = gui.toolpath_rt.get(&boundary.id)
             && let Some(result) = &rt.result
-            && let Some((_, tc)) = session.find_toolpath_config_by_id(boundary.id.0)
+            && let Some((_, tc)) = session.find_toolpath_config_by_id(boundary.id)
         {
             let feed = tc.operation.feed_rate();
             let op_time = (result.stats.cutting_distance / feed) * 60.0;
@@ -1889,7 +1889,7 @@ fn semantic_subband_present(
     gui: &GuiState,
     boundary: &crate::state::simulation::ToolpathBoundary,
 ) -> bool {
-    let Some(rt) = gui.toolpath_rt.get(&boundary.id.0) else {
+    let Some(rt) = gui.toolpath_rt.get(&boundary.id) else {
         return false;
     };
     rt.semantic_trace.is_some() && sim.debug.semantic_indexes.contains_key(&boundary.id)
@@ -1917,7 +1917,7 @@ fn paint_semantic_subband(
     total_width: f32,
     events: &mut Vec<AppEvent>,
 ) {
-    let Some(rt) = gui.toolpath_rt.get(&boundary.id.0) else {
+    let Some(rt) = gui.toolpath_rt.get(&boundary.id) else {
         return;
     };
     let Some(trace) = rt.semantic_trace.as_ref() else {
@@ -1978,7 +1978,7 @@ fn paint_semantic_subband(
         for issue in cut_trace
             .issues
             .iter()
-            .filter(|issue| issue.toolpath_id == boundary.id.0)
+            .filter(|issue| issue.toolpath_id == boundary.id)
         {
             let x = global_x(issue.move_index);
             let color = match issue.kind {
@@ -2031,7 +2031,7 @@ fn paint_semantic_subband(
             let nearest_issue = cut_trace
                 .issues
                 .iter()
-                .filter(|issue| issue.toolpath_id == boundary.id.0)
+                .filter(|issue| issue.toolpath_id == boundary.id)
                 .map(|issue| {
                     let x = global_x(issue.move_index);
                     (issue.clone(), (pointer.x - x).abs())

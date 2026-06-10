@@ -21,6 +21,7 @@
     clippy::print_stderr
 )]
 
+use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::{
     dexel_stock::{StockCutDirection, TriDexelStock},
     geo::{BoundingBox3, P3},
@@ -60,7 +61,7 @@ fn run_stepover_and_get_steady_state(sample_step_mm: f64) -> f64 {
             &toolpath,
             &cutter,
             StockCutDirection::FromTop,
-            0,
+            ToolpathId(0),
             12_000,
             2,
             3000.0,
@@ -137,7 +138,7 @@ fn radial_engagement_full_slot_first_cut() {
             &toolpath,
             &cutter,
             StockCutDirection::FromTop,
-            0,
+            ToolpathId(0),
             12_000,
             2,
             3000.0,
@@ -182,7 +183,7 @@ fn radial_engagement_air_cut_reads_zero() {
             &toolpath,
             &cutter,
             StockCutDirection::FromTop,
-            0,
+            ToolpathId(0),
             12_000,
             2,
             3000.0,

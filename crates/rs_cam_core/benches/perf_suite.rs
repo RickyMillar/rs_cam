@@ -76,7 +76,7 @@ fn make_cut_samples(n_samples: usize, toolpath_count: usize) -> Vec<SimulationCu
             let radial_engagement = if i % 17 == 0 { 0.01 } else { 0.35 };
             let segment_time_s = 0.01;
             SimulationCutSample {
-                toolpath_id,
+                toolpath_id: rs_cam_core::ids::ToolpathId(toolpath_id),
                 move_index: i / toolpath_count.max(1),
                 sample_index: i,
                 position: [i as f64 * 0.1, toolpath_id as f64, -1.0],
@@ -407,15 +407,15 @@ fn bench_simulate_toolpath_metrics(c: &mut Criterion) {
                     &tp,
                     &ball,
                     StockCutDirection::FromTop,
-                    0,      // toolpath_id
-                    18000,  // spindle_rpm
-                    2,      // flute_count
-                    5000.0, // rapid_feed
-                    1.0,    // sample_step
-                    None,   // no semantic trace
-                    &[],    // no span paths
-                    &[],    // no transit moves
-                    false,  // capture_arc_engagement
+                    rs_cam_core::ids::ToolpathId(0), // toolpath_id
+                    18000,                           // spindle_rpm
+                    2,                               // flute_count
+                    5000.0,                          // rapid_feed
+                    1.0,                             // sample_step
+                    None,                            // no semantic trace
+                    &[],                             // no span paths
+                    &[],                             // no transit moves
+                    false,                           // capture_arc_engagement
                     &never_cancel,
                 )
                 .expect("no cancel");

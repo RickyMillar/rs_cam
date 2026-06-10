@@ -289,7 +289,7 @@ fn draw_focused_hotspot_card(
     let peak_doc = h.peak_axial_doc_mm;
     let avg_eng = h.average_engagement;
     let pos = h.representative_position;
-    let toolpath_id = ToolpathId(tp_id);
+    let toolpath_id = tp_id;
     let global_start = sim
         .global_move_for_local(toolpath_id, move_start)
         .unwrap_or(move_start);
@@ -313,7 +313,7 @@ fn draw_focused_hotspot_card(
                         .color(egui::Color32::from_rgb(255, 170, 90)),
                 );
                 ui.label(
-                    egui::RichText::new(format!("TP {}", tp_id + 1))
+                    egui::RichText::new(format!("TP {}", tp_id.0 + 1))
                         .small()
                         .color(theme::TEXT_MUTED),
                 );
@@ -653,12 +653,12 @@ fn draw_project_section(
             // Snapshot the (idx, toolpath_id, move_start, wasted, peak) tuples
             // so we can drop the trace borrow before re-borrowing sim mutably
             // inside the click handler.
-            let hotspot_snapshot: Vec<(usize, usize, usize, f64, f64)> = sim
+            let hotspot_snapshot: Vec<(usize, rs_cam_core::ToolpathId, usize, f64, f64)> = sim
                 .results
                 .as_ref()
                 .and_then(|r| r.cut_trace.as_ref())
                 .map(|trace| {
-                    let mut v: Vec<(usize, usize, usize, f64, f64)> = trace
+                    let mut v: Vec<(usize, rs_cam_core::ToolpathId, usize, f64, f64)> = trace
                         .hotspots
                         .iter()
                         .enumerate()
@@ -685,7 +685,7 @@ fn draw_project_section(
                         for (h_idx, tp_id_raw, move_start, wasted, peak) in
                             hotspot_snapshot.iter().take(TOP_N)
                         {
-                            let tp_id = ToolpathId(*tp_id_raw);
+                            let tp_id = *tp_id_raw;
                             let global_start = sim
                                 .global_move_for_local(tp_id, *move_start)
                                 .unwrap_or(*move_start);
@@ -752,12 +752,10 @@ fn draw_toolpath_section(
             if let Some(tp) = load_report
                 .per_toolpath
                 .iter()
-                .find(|tp| tp.toolpath_id == boundary_id.0)
+                .find(|tp| tp.toolpath_id == boundary_id)
             {
                 let chipload_envelopes = sim.cached_chipload_envelopes(session, gui.edit_counter);
-                let chipload_cap = chipload_envelopes
-                    .get(&boundary_id.0)
-                    .map(|range| range.end);
+                let chipload_cap = chipload_envelopes.get(&boundary_id).map(|range| range.end);
                 let machine = session.machine();
                 let max_power_kw = match machine.power {
                     rs_cam_core::machine::PowerModel::ConstantPower { power_kw } => power_kw,
@@ -1098,9 +1096,9 @@ fn aggregate_stats(
     let mut total_time_min = 0.0;
 
     for boundary in sim.boundaries() {
-        if let Some(rt) = gui.toolpath_rt.get(&boundary.id.0)
+        if let Some(rt) = gui.toolpath_rt.get(&boundary.id)
             && let Some(result) = &rt.result
-            && let Some((_, tc)) = session.find_toolpath_config_by_id(boundary.id.0)
+            && let Some((_, tc)) = session.find_toolpath_config_by_id(boundary.id)
         {
             total_cutting += result.stats.cutting_distance;
             total_rapid += result.stats.rapid_distance;
@@ -1165,7 +1163,7 @@ fn playhead_span_id(sim: &SimulationState, gui: &GuiState, toolpath_id: Toolpath
         return None;
     }
     let local = global - boundary.start_move;
-    let rt = gui.toolpath_rt.get(&toolpath_id.0)?;
+    let rt = gui.toolpath_rt.get(&toolpath_id)?;
     let result = rt.result.as_ref()?;
     if !result.spans_valid() {
         return None;
@@ -1208,7 +1206,7 @@ fn draw_span_section(
     let header_label = match (toolpath_id, effective) {
         (Some(tp), Some(sid)) => gui
             .toolpath_rt
-            .get(&tp.0)
+            .get(&tp)
             .and_then(|rt| rt.result.as_ref())
             .and_then(|r| {
                 r.spans()
@@ -1286,7 +1284,7 @@ fn draw_span_body(
         return;
     };
 
-    let Some(rt) = gui.toolpath_rt.get(&tp_id.0) else {
+    let Some(rt) = gui.toolpath_rt.get(&tp_id) else {
         return;
     };
     let Some(result) = rt.result.as_ref() else {
@@ -1392,7 +1390,7 @@ fn draw_span_body(
             .hotspots
             .iter()
             .enumerate()
-            .filter(|(_, h)| h.toolpath_id == tp_id.0 && h.span_path.iter().any(|s| s.0 == sid))
+            .filter(|(_, h)| h.toolpath_id == tp_id && h.span_path.iter().any(|s| s.0 == sid))
             .collect();
     in_scope_hotspots.sort_by(|a, b| {
         b.1.wasted_runtime_s
@@ -1586,7 +1584,7 @@ fn draw_generation_trace_disclosure(
         .id_salt("inspector_generation_trace")
         .default_open(false)
         .show(ui, |ui| {
-            let rt = current_boundary_id.and_then(|tp| gui.toolpath_rt.get(&tp.0));
+            let rt = current_boundary_id.and_then(|tp| gui.toolpath_rt.get(&tp));
             let debug_trace = rt.and_then(|r| r.debug_trace.as_ref());
             let semantic_trace = rt.and_then(|r| r.semantic_trace.as_ref());
 

@@ -578,7 +578,7 @@ fn execute_op_via_session(
         .add_toolpath(
             0,
             ToolpathConfig {
-                id: 0,
+                id: rs_cam_core::ToolpathId(0),
                 name: format!("op_{}_{}", i, op_type.kind_str()),
                 enabled: true,
                 operation: OperationConfig::new_default(op_type),
@@ -654,7 +654,7 @@ fn execute_op_via_session(
             "operation": operation_json,
         });
         Some(ToolpathTraceArtifact::new(
-            i,
+            rs_cam_core::ToolpathId(i),
             &tp_name,
             &op_label,
             &tool_summary,

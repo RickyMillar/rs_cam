@@ -19,6 +19,7 @@
     clippy::clone_on_ref_ptr
 )]
 
+use rs_cam_core::ids::ToolpathId;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -95,7 +96,7 @@ fn build_pocket_session() -> Option<(ProjectSession, usize)> {
         ..Default::default()
     };
     let tc = ToolpathConfig {
-        id: 0, // overwritten by add_toolpath
+        id: ToolpathId(0), // overwritten by add_toolpath
         name: "smoke pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(pocket),

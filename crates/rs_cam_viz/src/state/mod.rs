@@ -69,7 +69,7 @@ pub struct AppState {
     /// Set after the user clicks Apply selected on the Optimize-project
     /// rollup. Holds the toolpath ids that need to finish regenerating
     /// before we kick the reconciliation sim. Empty otherwise.
-    pub pending_reconciliation_for_ids: Vec<usize>,
+    pub pending_reconciliation_for_ids: Vec<rs_cam_core::ToolpathId>,
     /// Toolpath id of a per-TP Optimize candidate just applied via
     /// `apply_optimize_candidate`. When the corresponding regen lands,
     /// the drain handler auto-triggers a full project sim so the
@@ -105,7 +105,7 @@ pub struct ToolLibraryModalState {
 /// derived fresh from the session each frame.
 #[derive(Debug, Clone)]
 pub struct FeedsModalState {
-    pub toolpath_id: usize,
+    pub toolpath_id: rs_cam_core::ToolpathId,
     pub mode: FeedsModalMode,
     /// Phase 3 — drag-to-explore on the feed-RPM nomogram. `Some` while
     /// the user is dragging the operating point.
@@ -117,7 +117,7 @@ pub struct FeedsModalState {
     /// Phase 4 — set of toolpath IDs whose row checkbox is currently
     /// ticked. Empty == nothing selected (Apply selected disabled).
     /// Defaults to every enabled toolpath when project view is opened.
-    pub project_selected: std::collections::BTreeSet<usize>,
+    pub project_selected: std::collections::BTreeSet<rs_cam_core::ToolpathId>,
     /// Phase 4 — toggle for the project-view scatter overlay.
     pub project_show_scatter: bool,
 }
@@ -150,7 +150,7 @@ pub enum ProjectFeedsSort {
 /// Failed states for the worker-thread integration that lands in U3).
 #[derive(Debug, Clone)]
 pub struct OptimizeModalState {
-    pub toolpath_id: usize,
+    pub toolpath_id: rs_cam_core::ToolpathId,
     pub status: OptimizeRunStatus,
 }
 

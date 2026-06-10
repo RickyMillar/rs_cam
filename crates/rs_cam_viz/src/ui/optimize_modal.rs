@@ -17,7 +17,6 @@ use rs_cam_core::tool_load::verdict::{ChipSide, ToolpathLoadVerdict};
 use super::components::FreshnessGate;
 use super::{AppEvent, theme};
 use crate::state::AppState;
-use crate::state::toolpath::ToolpathId;
 use crate::state::{OptimizeModalState, OptimizeRunStatus};
 
 /// Draw the Optimize modal if `state.optimize_modal` is set.
@@ -60,7 +59,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
 fn draw_status(
     ui: &mut egui::Ui,
     modal: &OptimizeModalState,
-    toolpath_id: usize,
+    toolpath_id: rs_cam_core::ToolpathId,
     events: &mut Vec<AppEvent>,
 ) {
     match &modal.status {
@@ -106,7 +105,7 @@ fn draw_status(
 fn draw_outcome(
     ui: &mut egui::Ui,
     outcome: &OptimizeOutcome,
-    toolpath_id: usize,
+    toolpath_id: rs_cam_core::ToolpathId,
     events: &mut Vec<AppEvent>,
 ) {
     let narrative = outcome.narrative.as_ref();
@@ -367,7 +366,7 @@ fn draw_ranked(
     ui: &mut egui::Ui,
     candidates: &[OptimizeCandidate],
     recommended: Option<&OptimizeCandidate>,
-    toolpath_id: usize,
+    toolpath_id: rs_cam_core::ToolpathId,
     events: &mut Vec<AppEvent>,
 ) {
     // Index 0 is always the baseline. Render it in a pinned card
@@ -480,7 +479,7 @@ fn draw_candidate_row(
     candidate: &OptimizeCandidate,
     baseline: &OptimizeCandidate,
     is_recommended: bool,
-    toolpath_id: usize,
+    toolpath_id: rs_cam_core::ToolpathId,
     events: &mut Vec<AppEvent>,
 ) {
     if is_recommended {
@@ -518,7 +517,7 @@ fn draw_candidate_row(
     let button = ui.add_enabled(safe, egui::Button::new(label));
     if button.clicked() {
         events.push(AppEvent::ApplyOptimizeCandidate {
-            toolpath_id: ToolpathId(toolpath_id),
+            toolpath_id,
             candidate_index,
         });
     }
@@ -582,7 +581,7 @@ fn format_delta(delta: &ParamDelta) -> String {
 fn draw_suggestions(
     ui: &mut egui::Ui,
     suggestions: &[OperatorSuggestion],
-    toolpath_id: usize,
+    toolpath_id: rs_cam_core::ToolpathId,
     events: &mut Vec<AppEvent>,
 ) {
     egui::Frame::new()
@@ -625,7 +624,7 @@ fn draw_suggestions(
 /// suggestion kinds.
 fn suggestion_apply_button(
     ui: &mut egui::Ui,
-    toolpath_id: usize,
+    toolpath_id: rs_cam_core::ToolpathId,
     axis: KnobAxis,
     value: f64,
     events: &mut Vec<AppEvent>,
@@ -636,7 +635,7 @@ fn suggestion_apply_button(
         .clicked()
     {
         events.push(AppEvent::ReoptimizeWithAxisOverride {
-            toolpath_id: ToolpathId(toolpath_id),
+            toolpath_id,
             axis,
             value,
         });

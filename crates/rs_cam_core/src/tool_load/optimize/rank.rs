@@ -127,6 +127,7 @@ mod tests {
     use super::*;
     use crate::compute::catalog::OperationConfig;
     use crate::compute::operation_configs::PocketConfig;
+    use crate::ids::ToolpathId;
     use crate::tool_load::optimize::{ParamDelta, SearchStage};
     use crate::tool_load::verdict::{
         ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, Confidence,
@@ -195,7 +196,7 @@ mod tests {
             delta: ParamDelta::default(),
             cycle_time_s,
             verdict: ToolpathLoadVerdict {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 chipload,
                 power,
                 deflection,

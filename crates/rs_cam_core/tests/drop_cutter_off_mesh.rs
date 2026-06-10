@@ -25,6 +25,7 @@
     noop_method_call
 )]
 
+use rs_cam_core::ids::ToolpathId;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
@@ -75,7 +76,7 @@ fn drop_cutter_does_not_cut_outside_mesh_footprint() {
         .toolpath_configs()
         .iter()
         .enumerate()
-        .find(|(_, tc)| tc.id == 17)
+        .find(|(_, tc)| tc.id == ToolpathId(17))
         .expect("3D Finish 8 exists");
 
     let cancel = AtomicBool::new(false);
@@ -145,7 +146,7 @@ fn rapids_should_be_at_safe_z() {
         .toolpath_configs()
         .iter()
         .enumerate()
-        .find(|(_, tc)| tc.id == 17)
+        .find(|(_, tc)| tc.id == ToolpathId(17))
         .expect("3D Finish 8 exists");
     let cancel = AtomicBool::new(false);
     let result = session
@@ -220,7 +221,7 @@ fn drop_cutter_toolpath_stamp_no_dive_below_mesh() {
         .toolpath_configs()
         .iter()
         .enumerate()
-        .find(|(_, tc)| tc.id == 17)
+        .find(|(_, tc)| tc.id == ToolpathId(17))
         .expect("3D Finish 8 exists");
 
     // DressupConfig::normalize_for_op runs on load for DropCutter and

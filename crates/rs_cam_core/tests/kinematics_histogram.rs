@@ -15,6 +15,7 @@
     clippy::print_stdout
 )]
 
+use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::session::{ProjectSession, SimulationOptions};
 use rs_cam_core::simulation_cut::{CutKinematics, SimulationCutSample};
 use rs_cam_core::toolpath_spans::SpanKind;
@@ -133,7 +134,7 @@ fn kinematics_histogram_wanaka() {
 }
 
 fn report_for_toolpath(
-    tp_id: usize,
+    tp_id: ToolpathId,
     samples: &[SimulationCutSample],
     moves: &[rs_cam_core::toolpath::Move],
 ) {

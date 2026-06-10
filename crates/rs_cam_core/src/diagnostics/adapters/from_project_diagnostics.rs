@@ -27,7 +27,7 @@ fn verdict_to_diagnostic(v: &Verdict) -> Diagnostic {
         v.evidence
             .move_index
             .map(|move_index| DiagnosticEvidence::Move {
-                toolpath_id: 0,
+                toolpath_id: crate::ids::ToolpathId(0),
                 move_index,
                 position: None,
             })

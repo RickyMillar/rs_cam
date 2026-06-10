@@ -23,6 +23,7 @@ use crate::diagnostics::{
     Category, Confidence, Diagnostic, DiagnosticEvidence, DiagnosticId, DiagnosticState, Scope,
     Severity, Source, ids,
 };
+use crate::ids::ToolpathId;
 use crate::tool_load::drill_gates::{DrillGateOutcome, DrillGateSeverity, DrillGatesVerdict};
 use crate::tool_load::verdict::{
     ChipBoundsSource, ChiploadVerdict, Confidence as VerdictConfidence, DeflectionVerdict,
@@ -80,7 +81,7 @@ fn is_not_applicable(reason: Option<&UnmodeledReason>) -> bool {
 
 // ── chipload ────────────────────────────────────────────────────────
 
-fn chipload_to_diagnostic(tp_id: usize, v: &ChiploadVerdict) -> Option<Diagnostic> {
+fn chipload_to_diagnostic(tp_id: ToolpathId, v: &ChiploadVerdict) -> Option<Diagnostic> {
     match v {
         ChiploadVerdict::Within {
             approach_to_max, ..
@@ -199,7 +200,7 @@ fn chipload_confidence(src: &ChipBoundsSource) -> Confidence {
 
 // ── power ───────────────────────────────────────────────────────────
 
-fn power_to_diagnostic(tp_id: usize, v: &PowerVerdict) -> Option<Diagnostic> {
+fn power_to_diagnostic(tp_id: ToolpathId, v: &PowerVerdict) -> Option<Diagnostic> {
     match v {
         PowerVerdict::Within {
             peak_kw,
@@ -278,7 +279,7 @@ fn power_to_diagnostic(tp_id: usize, v: &PowerVerdict) -> Option<Diagnostic> {
 
 // ── deflection ──────────────────────────────────────────────────────
 
-fn deflection_to_diagnostic(tp_id: usize, v: &DeflectionVerdict) -> Option<Diagnostic> {
+fn deflection_to_diagnostic(tp_id: ToolpathId, v: &DeflectionVerdict) -> Option<Diagnostic> {
     match v {
         DeflectionVerdict::Within {
             peak_mm,
@@ -371,7 +372,7 @@ fn deflection_supersedes() -> Vec<DiagnosticId> {
 // ── drill gates ─────────────────────────────────────────────────────
 
 fn drill_gates_to_diagnostics(
-    tp_id: usize,
+    tp_id: ToolpathId,
     drill: &DrillGatesVerdict,
     scope: &Scope,
 ) -> Vec<Diagnostic> {
@@ -408,7 +409,7 @@ fn drill_gate_to_diagnostic(
     label: &str,
     outcome: &DrillGateOutcome,
     scope: Scope,
-    tp_id: usize,
+    tp_id: ToolpathId,
     unit: &str,
 ) -> Diagnostic {
     match outcome {
@@ -479,7 +480,7 @@ fn confidence_to_kind(c: &VerdictConfidence) -> Confidence {
 }
 
 fn unmodeled_to_diagnostic(
-    tp_id: usize,
+    tp_id: ToolpathId,
     id: &str,
     label: &str,
     reason: &UnmodeledReason,

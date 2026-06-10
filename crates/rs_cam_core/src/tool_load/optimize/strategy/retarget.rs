@@ -105,6 +105,7 @@ mod tests {
     use crate::compute::operation_configs::PocketConfig;
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::feeds::vendor_lookup::MatchedRow;
+    use crate::ids::ToolpathId;
     use crate::machine::MachineProfile;
     use crate::material::Material;
     use crate::tool::{FlatEndmill, ToolDefinition};
@@ -315,7 +316,7 @@ mod tests {
             ctx: &ctx,
         };
         let verdict = ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload: within(0.05),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
@@ -339,7 +340,7 @@ mod tests {
             ctx: &ctx,
         };
         let verdict = ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload: exceeds_burn(0.025),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
@@ -365,7 +366,7 @@ mod tests {
             ctx: &ctx,
         };
         let verdict = ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload: exceeds_burn(0.025),
             power: exceeds_power(1.5),
             deflection: within_deflection(0.020),
@@ -392,7 +393,7 @@ mod tests {
             ctx: &ctx,
         };
         let verdict = ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload: exceeds_burn(0.025),
             power: exceeds_power(1.5),
             deflection: exceeds_deflection(0.32),
@@ -422,7 +423,7 @@ mod tests {
             ctx: &ctx,
         };
         let verdict = ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload: exceeds_burn(0.025),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
@@ -448,7 +449,7 @@ mod tests {
             ctx: &ctx,
         };
         let burn = ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload: exceeds_burn(0.025),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
@@ -458,7 +459,7 @@ mod tests {
         assert!(strat.candidates(&view, &burn).is_empty());
 
         let breakage = ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload: exceeds_breakage(0.20),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
@@ -488,7 +489,7 @@ mod tests {
             ctx: &ctx,
         };
         let verdict = ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload: exceeds_burn(0.0253),
             power: within_power(0.4),
             deflection: within_deflection(0.020),

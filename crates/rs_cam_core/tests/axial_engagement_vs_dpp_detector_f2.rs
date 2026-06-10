@@ -26,6 +26,7 @@
 
 mod common;
 use common::repo_root;
+use rs_cam_core::ids::ToolpathId;
 
 use std::sync::atomic::AtomicBool;
 
@@ -111,7 +112,7 @@ fn steady_state_axial_engagement_stays_within_commanded_dpp() {
     for (i, (name, op)) in matrix.iter().enumerate() {
         let op_type = op.op_type();
         let tc = ToolpathConfig {
-            id: i,
+            id: ToolpathId(i),
             name: format!("detector {name}"),
             enabled: true,
             operation: op.clone(),
@@ -168,7 +169,7 @@ fn steady_state_axial_engagement_stays_within_commanded_dpp() {
         let mut over = 0usize;
         let mut steady = 0usize;
         for s in &cut_trace.samples {
-            if s.toolpath_id != i
+            if s.toolpath_id != ToolpathId(i)
                 || !s.is_cutting
                 || s.cut_kinematics == CutKinematics::Plunge
                 || s.in_transit_span

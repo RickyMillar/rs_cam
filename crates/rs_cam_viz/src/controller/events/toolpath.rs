@@ -121,7 +121,7 @@ impl<B: ComputeBackend> AppController<B> {
             .unwrap_or(0);
 
         let tc = rs_cam_core::session::ToolpathConfig {
-            id: 0, // will be assigned by session
+            id: rs_cam_core::ToolpathId(0), // will be assigned by session
             name: format!(
                 "{} {}",
                 op_type.label(),
@@ -164,7 +164,7 @@ impl<B: ComputeBackend> AppController<B> {
             && let Ok(tp_idx) = self.state.session.add_toolpath(setup_idx, tc)
             && let Some(tc) = self.state.session.toolpath_configs().get(tp_idx)
         {
-            let tp_id = ToolpathId(tc.id);
+            let tp_id = tc.id;
             // Create GUI runtime entry
             self.state.gui.toolpath_rt.insert(
                 tc.id,
@@ -188,10 +188,10 @@ impl<B: ComputeBackend> AppController<B> {
         let dup = self
             .state
             .session
-            .find_toolpath_config_by_id(tp_id.0)
+            .find_toolpath_config_by_id(tp_id)
             .map(|(_, src)| {
                 rs_cam_core::session::ToolpathConfig {
-                    id: 0, // will be assigned by session
+                    id: rs_cam_core::ToolpathId(0), // will be assigned by session
                     name: format!("{} (copy)", src.name),
                     enabled: src.enabled,
                     operation: src.operation.clone(),
@@ -216,7 +216,7 @@ impl<B: ComputeBackend> AppController<B> {
                 && let Ok(tp_idx) = self.state.session.add_toolpath(setup_idx, tc)
                 && let Some(new_tc) = self.state.session.toolpath_configs().get(tp_idx)
             {
-                let new_id = ToolpathId(new_tc.id);
+                let new_id = new_tc.id;
                 self.state.gui.toolpath_rt.insert(
                     new_tc.id,
                     crate::state::runtime::ToolpathRuntime::new(
@@ -231,7 +231,7 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub(crate) fn handle_move_toolpath_up(&mut self, tp_id: ToolpathId) {
         // Find the setup and local position of this toolpath
-        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id.0)
+        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id)
             && let Some(setup) = self
                 .state
                 .session
@@ -250,7 +250,7 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn handle_move_toolpath_down(&mut self, tp_id: ToolpathId) {
-        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id.0)
+        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id)
             && let Some(setup) = self
                 .state
                 .session
@@ -267,7 +267,7 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn handle_reorder_toolpath(&mut self, tp_id: ToolpathId, target_idx: usize) {
-        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id.0)
+        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id)
             && let Some(setup) = self
                 .state
                 .session
@@ -294,7 +294,7 @@ impl<B: ComputeBackend> AppController<B> {
         setup_id: crate::state::job::SetupId,
         _idx: usize,
     ) {
-        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id.0) {
+        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id) {
             // Resolve the target setup's index from its ID
             let target_idx = self
                 .state
@@ -314,9 +314,9 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn handle_remove_toolpath(&mut self, tp_id: ToolpathId) {
-        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id.0) {
+        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id) {
             let _ = self.state.session.remove_toolpath(tp_idx);
-            self.state.gui.toolpath_rt.remove(&tp_id.0);
+            self.state.gui.toolpath_rt.remove(&tp_id);
         }
         if self.state.selection == Selection::Toolpath(tp_id) {
             self.state.selection = Selection::None;
@@ -334,7 +334,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session
             .toolpath_configs()
             .iter()
-            .map(|tc| ToolpathId(tc.id))
+            .map(|tc| tc.id)
             .collect();
         for id in ids {
             self.submit_toolpath_compute(id);
@@ -369,7 +369,7 @@ impl<B: ComputeBackend> AppController<B> {
                 .state
                 .gui
                 .toolpath_rt
-                .get(&tp_id.0)
+                .get(&tp_id)
                 .and_then(|rt| rt.result.as_ref())
                 .is_some();
             if has_result {

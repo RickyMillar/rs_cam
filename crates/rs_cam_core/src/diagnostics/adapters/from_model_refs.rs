@@ -26,6 +26,7 @@ use crate::compute::catalog::OperationConfig;
 use crate::diagnostics::{
     Category, Confidence, Diagnostic, DiagnosticId, DiagnosticState, Scope, Severity, Source, ids,
 };
+use crate::ids::ToolpathId;
 
 /// Cross-reference context for the model-ref adapter.
 ///
@@ -48,7 +49,7 @@ pub struct ModelRefContext {
 /// Run every model-ref check against a single toolpath, returning a
 /// flat diagnostic list. Stock-based ops (face, etc.) skip the check.
 pub fn diagnostics_from_model_refs(
-    toolpath_id: usize,
+    toolpath_id: ToolpathId,
     op: &OperationConfig,
     ctx: &ModelRefContext,
 ) -> Vec<Diagnostic> {
@@ -103,7 +104,7 @@ mod tests {
             model_id: 999,
             model_resolved: false,
         };
-        let diags = diagnostics_from_model_refs(0, &pocket_op(), &ctx);
+        let diags = diagnostics_from_model_refs(ToolpathId(0), &pocket_op(), &ctx);
         assert_eq!(diags.len(), 1);
         let d = &diags[0];
         assert_eq!(d.id.as_str(), ids::REF_MODEL_MISSING);
@@ -123,7 +124,7 @@ mod tests {
             model_id: 1,
             model_resolved: true,
         };
-        let diags = diagnostics_from_model_refs(0, &pocket_op(), &ctx);
+        let diags = diagnostics_from_model_refs(ToolpathId(0), &pocket_op(), &ctx);
         assert!(diags.is_empty(), "got {:?}", diags);
     }
 
@@ -136,7 +137,7 @@ mod tests {
             model_resolved: false,
         };
         let face = OperationConfig::new_default(OperationType::Face);
-        let diags = diagnostics_from_model_refs(0, &face, &ctx);
+        let diags = diagnostics_from_model_refs(ToolpathId(0), &face, &ctx);
         assert!(diags.is_empty(), "stock-based op should skip: {:?}", diags);
     }
 }

@@ -21,6 +21,7 @@ use crate::compute::catalog::OperationConfig;
 use crate::compute::tool_config::ToolConfig;
 use crate::compute::validate::StaleDefault;
 use crate::feeds::FeedsResult;
+use crate::ids::ToolpathId;
 use crate::tool_load::ToolpathLoadVerdict;
 
 pub use from_model_refs::ModelRefContext;
@@ -33,7 +34,7 @@ pub use from_preconditions::{
 /// optional — missing inputs cause the relevant gates to surface as
 /// `DiagnosticState::NeedsSimulation` rather than to crash.
 pub struct ToolpathDiagnoseInputs<'a> {
-    pub toolpath_id: usize,
+    pub toolpath_id: ToolpathId,
     pub operation: &'a OperationConfig,
     pub tool: &'a ToolConfig,
     pub heights: Option<&'a from_static_checks::ResolvedHeights>,

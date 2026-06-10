@@ -84,7 +84,7 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
     // something to chew on (an empty toolpath emits only the post's
     // pre/post-amble, which still yields valid g-code).
     let tp = ToolpathConfig {
-        id: 0,
+        id: rs_cam_core::ToolpathId(0),
         name: "Sample Path".to_owned(),
         enabled: true,
         operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
@@ -196,7 +196,7 @@ fn wizard_per_toolpath_save_writes_one_file_per_toolpath() {
     session.wizard_mut().output_layout = OutputLayout::PerToolpath;
     session.wizard_mut().filename_template = "{job}_{toolpath}.nc".to_owned();
 
-    let ids: Vec<usize> = session
+    let ids: Vec<rs_cam_core::ToolpathId> = session
         .toolpath_configs()
         .iter()
         .filter(|tc| tc.enabled)
@@ -422,7 +422,7 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
     let bottom_id = session.list_setups()[bottom_idx].id;
 
     let tp_bottom = ToolpathConfig {
-        id: 99,
+        id: rs_cam_core::ToolpathId(99),
         name: "Bottom Op".to_owned(),
         enabled: true,
         operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),

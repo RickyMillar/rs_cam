@@ -30,6 +30,7 @@ use crate::compute::tool_config::ToolId;
 use crate::diagnostics::{
     Category, Confidence, Diagnostic, DiagnosticId, DiagnosticState, Scope, Severity, Source, ids,
 };
+use crate::ids::ToolpathId;
 
 /// Per-toolpath, per-session context the precondition adapter needs.
 ///
@@ -82,7 +83,7 @@ pub struct ToolDiameterEntry {
 /// Run every precondition check against a single toolpath, returning a
 /// flat diagnostic list.
 pub fn diagnostics_from_preconditions(
-    toolpath_id: usize,
+    toolpath_id: ToolpathId,
     op: &OperationConfig,
     current_tool_id: usize,
     ctx: &PreconditionContext,
@@ -331,7 +332,7 @@ mod tests {
     #[test]
     fn rest_missing_prev_tool_fires_blocking() {
         let ctx = PreconditionContext::default();
-        let diags = diagnostics_from_preconditions(0, &rest_op(None), 0, &ctx);
+        let diags = diagnostics_from_preconditions(ToolpathId(0), &rest_op(None), 0, &ctx);
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].id.as_str(), ids::PRECOND_REST_PREV_TOOL_MISSING);
         assert_eq!(diags[0].severity, Severity::Blocking);
@@ -352,7 +353,8 @@ mod tests {
             ],
             ..Default::default()
         };
-        let diags = diagnostics_from_preconditions(0, &rest_op(Some(ToolId(1))), 0, &ctx);
+        let diags =
+            diagnostics_from_preconditions(ToolpathId(0), &rest_op(Some(ToolId(1))), 0, &ctx);
         assert!(
             diags
                 .iter()
@@ -382,7 +384,8 @@ mod tests {
             ],
             ..Default::default()
         };
-        let diags = diagnostics_from_preconditions(0, &rest_op(Some(ToolId(1))), 0, &ctx);
+        let diags =
+            diagnostics_from_preconditions(ToolpathId(0), &rest_op(Some(ToolId(1))), 0, &ctx);
         assert!(
             diags.is_empty(),
             "prior toolpath using larger tool 1 should clear all rest preconditions, got {:?}",
@@ -410,7 +413,8 @@ mod tests {
             ],
             ..Default::default()
         };
-        let diags = diagnostics_from_preconditions(0, &rest_op(Some(ToolId(1))), 0, &ctx);
+        let diags =
+            diagnostics_from_preconditions(ToolpathId(0), &rest_op(Some(ToolId(1))), 0, &ctx);
         assert!(
             diags
                 .iter()
@@ -440,7 +444,8 @@ mod tests {
             ],
             ..Default::default()
         };
-        let diags = diagnostics_from_preconditions(0, &rest_op(Some(ToolId(1))), 0, &ctx);
+        let diags =
+            diagnostics_from_preconditions(ToolpathId(0), &rest_op(Some(ToolId(1))), 0, &ctx);
         assert!(
             diags
                 .iter()
@@ -460,7 +465,7 @@ mod tests {
             any_loaded_model_has_mesh: true,
             ..Default::default()
         };
-        let diags = diagnostics_from_preconditions(0, &drill_op(), 0, &ctx);
+        let diags = diagnostics_from_preconditions(ToolpathId(0), &drill_op(), 0, &ctx);
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].id.as_str(), ids::PRECOND_DRILL_NO_HOLES);
         assert_eq!(diags[0].severity, Severity::Blocking);
@@ -475,14 +480,15 @@ mod tests {
             }),
             ..Default::default()
         };
-        let diags = diagnostics_from_preconditions(0, &drill_op(), 0, &ctx);
+        let diags = diagnostics_from_preconditions(ToolpathId(0), &drill_op(), 0, &ctx);
         assert!(diags.is_empty());
     }
 
     #[test]
     fn alignment_pin_drill_no_holes_fires_when_holes_empty() {
         let ctx = PreconditionContext::default();
-        let diags = diagnostics_from_preconditions(0, &alignment_pin_drill_op(vec![]), 0, &ctx);
+        let diags =
+            diagnostics_from_preconditions(ToolpathId(0), &alignment_pin_drill_op(vec![]), 0, &ctx);
         assert_eq!(diags.len(), 1);
         assert_eq!(
             diags[0].id.as_str(),
@@ -494,7 +500,7 @@ mod tests {
     fn alignment_pin_drill_silent_when_holes_present() {
         let ctx = PreconditionContext::default();
         let op = alignment_pin_drill_op(vec![[0.0, 0.0], [10.0, 10.0]]);
-        let diags = diagnostics_from_preconditions(0, &op, 0, &ctx);
+        let diags = diagnostics_from_preconditions(ToolpathId(0), &op, 0, &ctx);
         assert!(diags.is_empty());
     }
 
@@ -509,7 +515,7 @@ mod tests {
             any_loaded_model_has_mesh: true,
             ..Default::default()
         };
-        let diags = diagnostics_from_preconditions(0, &project_curve_op(), 0, &ctx);
+        let diags = diagnostics_from_preconditions(ToolpathId(0), &project_curve_op(), 0, &ctx);
         assert!(
             diags
                 .iter()
@@ -530,7 +536,7 @@ mod tests {
             any_loaded_model_has_mesh: false,
             ..Default::default()
         };
-        let diags = diagnostics_from_preconditions(0, &project_curve_op(), 0, &ctx);
+        let diags = diagnostics_from_preconditions(ToolpathId(0), &project_curve_op(), 0, &ctx);
         assert!(
             diags
                 .iter()
@@ -550,7 +556,7 @@ mod tests {
             any_loaded_model_has_mesh: true,
             ..Default::default()
         };
-        let diags = diagnostics_from_preconditions(0, &project_curve_op(), 0, &ctx);
+        let diags = diagnostics_from_preconditions(ToolpathId(0), &project_curve_op(), 0, &ctx);
         assert!(diags.is_empty(), "got {:?}", diags);
     }
 
@@ -558,7 +564,7 @@ mod tests {
     fn non_precondition_ops_emit_nothing() {
         let ctx = PreconditionContext::default();
         let pocket = OperationConfig::new_default(crate::compute::catalog::OperationType::Pocket);
-        let diags = diagnostics_from_preconditions(0, &pocket, 0, &ctx);
+        let diags = diagnostics_from_preconditions(ToolpathId(0), &pocket, 0, &ctx);
         assert!(diags.is_empty());
     }
 }
