@@ -400,6 +400,18 @@ F2 fix order: (1) intent→span bridge, (2) honor `spans_valid` at the 4 call si
   sentries: `offset_polygon_degenerate_inputs_r1.rs`,
   `generator_extremes_fuzz_r1.rs`.
 
+- **Non-identity-setup phantom axial sample (surfaced 2026-06-11, live MCP
+  validation):** `narrate_toolpath` on WANAKA Back Rough (back setup —
+  face-flipped, i.e. the non-identity dexel-frame path F-024 deliberately
+  left zero-rooted) flags one sample with `peak axial DOC 19.95 mm`
+  (commanded DPP 3.0) at move 3175/3245, z=5.05, position (27.2, 31.8).
+  The GATES are clean — deflection reads 135 µm Within, so the F2 transit
+  filters exclude it — this is diagnostic-surface noise only. But it is
+  the predicted F-024 follow-up ("non-identity setups still use the
+  zero-rooted effective bbox — tracked separately if it surfaces again",
+  CLAUDE.md): it has now surfaced. Next look: per-setup `local_stock_bbox`
+  for non-identity setups, mirroring the F-024 identity-setup fix.
+
 - Deflection model recalibration: force model is feed-independent (`F = Kc·ap·ae`,
   drag-cut physics, ~16–60× energy-balance force at WANAKA params), offset by co-tuned
   constants. Needs physical measurements or a literature-anchored recalibration as one
