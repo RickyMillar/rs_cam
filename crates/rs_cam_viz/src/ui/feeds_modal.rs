@@ -899,7 +899,7 @@ fn draw_provenance_disclosure(
                     ui.label(egui::RichText::new(&row.observation_id).small());
                     ui.end_row();
                     ui.label(egui::RichText::new("Vendor").small().color(theme::TEXT_DIM));
-                    ui.label(egui::RichText::new(&row.source_vendor).small());
+                    ui.label(egui::RichText::new(row.source_vendor.to_string()).small());
                     ui.end_row();
                     ui.label(
                         egui::RichText::new("Calibrated for")

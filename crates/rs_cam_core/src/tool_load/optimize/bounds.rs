@@ -490,7 +490,7 @@ mod tests {
             ae_min_mm: ae.map(|x| x.0),
             ae_max_mm: ae.map(|x| x.1),
             observation_id: "test-row".to_owned(),
-            source_vendor: "Test".to_owned(),
+            source_vendor: crate::feeds::vendor_lut::Vendor::Amana,
             score: 100,
             diameter_match_score: 200,
             row_diameter_mm: 6.0,

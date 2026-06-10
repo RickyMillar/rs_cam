@@ -1008,19 +1008,21 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
     ui.separator();
 
     let presets = rs_cam_core::machine::MachineProfile::presets();
-    let current_key = state.session.machine().to_key();
-    let mut selected_idx = presets
-        .iter()
-        .position(|(_, p)| p.to_key() == current_key)
-        .unwrap_or(0);
+    // R6: identity is structural — a library machine or edited preset
+    // shows as "Custom" instead of silently claiming the first preset
+    // whose name happens to overlap.
+    let selected_idx = state.session.machine().matching_preset_index();
 
     ui.horizontal(|ui| {
         ui.label("Preset:");
         egui::ComboBox::from_id_salt("machine_preset")
-            .selected_text(presets[selected_idx].0)
+            .selected_text(selected_idx.map_or("Custom", |i| presets[i].0))
             .show_ui(ui, |ui| {
                 for (i, (label, _)) in presets.iter().enumerate() {
-                    if ui.selectable_value(&mut selected_idx, i, *label).changed() {
+                    if ui
+                        .selectable_label(selected_idx == Some(i), *label)
+                        .clicked()
+                    {
                         *state.session.machine_mut() = presets[i].1.clone();
                         // Loading a built-in preset breaks any library
                         // link — the values no longer come from the file.

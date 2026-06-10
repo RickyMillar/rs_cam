@@ -60,7 +60,8 @@ pub struct LookupResult {
     pub ae_min_mm: Option<f64>,
     pub ae_max_mm: Option<f64>,
     pub observation_id: String,
-    pub source_vendor: String,
+    /// R6: typed vendor identity — format with `Display` at UI edges.
+    pub source_vendor: crate::feeds::vendor_lut::Vendor,
     pub score: i64,
     /// Diameter-proximity component of the composite score (0–200).
     /// 200 = exact diameter match; lower = more derated. Surfaced so
@@ -361,7 +362,7 @@ fn build_result(
         ae_min_mm: obs.ae_min_mm,
         ae_max_mm: obs.ae_max_mm,
         observation_id: obs.observation_id.clone(),
-        source_vendor: format!("{:?}", obs.source_vendor),
+        source_vendor: obs.source_vendor,
         score,
         diameter_match_score,
         // 0.0 is a safe sentinel for "no diameter anchor" because real
