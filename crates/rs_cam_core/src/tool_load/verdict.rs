@@ -6,6 +6,7 @@
 //! cannot be evaluated honestly returns `Unmodeled` with a typed reason; it
 //! never silently falls back to a passing or failing value.
 
+use crate::ids::ToolpathId;
 use std::collections::BTreeMap;
 use std::ops::Range;
 
@@ -180,7 +181,7 @@ pub enum Confidence {
 /// All three gates use typed verdicts (G16 Step 7).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolpathLoadVerdict {
-    pub toolpath_id: usize,
+    pub toolpath_id: ToolpathId,
     pub chipload: ChiploadVerdict,
     pub power: PowerVerdict,
     pub deflection: DeflectionVerdict,
@@ -330,7 +331,7 @@ pub struct ToolLoadReportSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExceedsEntry {
-    pub toolpath_id: usize,
+    pub toolpath_id: ToolpathId,
     /// Operator-facing toolpath name resolved at summary time. Empty
     /// string when the caller didn't supply a name resolver (e.g. unit
     /// tests). Roadmap F.11.
@@ -356,10 +357,10 @@ impl ToolLoadReport {
             .any(ToolpathLoadVerdict::any_unmodeled)
     }
 
-    /// All toolpath indices that have at least one `Exceeds` verdict, with
-    /// per-criterion `ExceededCriterion` entries. Used by the export gate
-    /// to produce the blocking error message.
-    pub fn exceeded_criteria(&self) -> Vec<(usize, Vec<ExceededCriterion>)> {
+    /// All toolpath **ids** (not indices) that have at least one `Exceeds`
+    /// verdict, with per-criterion `ExceededCriterion` entries. Used by the
+    /// export gate to produce the blocking error message.
+    pub fn exceeded_criteria(&self) -> Vec<(ToolpathId, Vec<ExceededCriterion>)> {
         self.per_toolpath
             .iter()
             .filter_map(|v| {
@@ -381,7 +382,7 @@ impl ToolLoadReport {
     /// string.
     pub fn summary<F>(&self, name_for: F) -> ToolLoadReportSummary
     where
-        F: Fn(usize) -> Option<String>,
+        F: Fn(ToolpathId) -> Option<String>,
     {
         let mut within = 0usize;
         let mut exceeds = 0usize;
@@ -1107,7 +1108,7 @@ mod tests {
     #[test]
     fn modeled_count_ignores_unmodeled() {
         let v = ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload: ChiploadVerdict::Within {
                 approach_to_min: None,
                 approach_to_max: ChiploadMetric {
@@ -1153,7 +1154,7 @@ mod tests {
     fn report_serializes_with_string_carrying_variants() {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 chipload: ChiploadVerdict::Within {
                     approach_to_min: None,
                     approach_to_max: ChiploadMetric {
@@ -1199,7 +1200,7 @@ mod tests {
         let r = ToolLoadReport {
             per_toolpath: vec![
                 ToolpathLoadVerdict {
-                    toolpath_id: 0,
+                    toolpath_id: ToolpathId(0),
                     chipload: ChiploadVerdict::Within {
                         approach_to_min: None,
                         approach_to_max: ChiploadMetric {
@@ -1232,7 +1233,7 @@ mod tests {
                     modulation_summary: None,
                 },
                 ToolpathLoadVerdict {
-                    toolpath_id: 1,
+                    toolpath_id: ToolpathId(1),
                     chipload: ChiploadVerdict::Within {
                         approach_to_min: None,
                         approach_to_max: ChiploadMetric {
@@ -1270,7 +1271,7 @@ mod tests {
         assert!(r.any_exceeded());
         let exceeded = r.exceeded_criteria();
         assert_eq!(exceeded.len(), 1);
-        assert_eq!(exceeded[0].0, 0);
+        assert_eq!(exceeded[0].0, ToolpathId(0));
         assert_eq!(exceeded[0].1.len(), 1);
         assert_eq!(exceeded[0].1[0], ExceededCriterion::deflection());
     }
@@ -1287,7 +1288,7 @@ mod tests {
         };
         let na = || UnmodeledReason::NotApplicableForOp("drill cycle".to_owned());
         let drill_verdict = |plunge: DrillGateOutcome| ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload: ChiploadVerdict::Unmodeled { reason: na() },
             power: PowerVerdict::Unmodeled { reason: na() },
             deflection: DeflectionVerdict::Unmodeled { reason: na() },
@@ -1371,7 +1372,7 @@ mod tests {
             per_toolpath: vec![
                 // Drill cycle — every gate N/A.
                 ToolpathLoadVerdict {
-                    toolpath_id: 0,
+                    toolpath_id: ToolpathId(0),
                     chipload: ChiploadVerdict::Unmodeled {
                         reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
                     },
@@ -1387,7 +1388,7 @@ mod tests {
                 // Sim wasn't run yet — every gate `SimulationRequired`.
                 // Operator action: run the sim.
                 ToolpathLoadVerdict {
-                    toolpath_id: 1,
+                    toolpath_id: ToolpathId(1),
                     chipload: ChiploadVerdict::Unmodeled {
                         reason: UnmodeledReason::SimulationRequired,
                     },
@@ -1404,7 +1405,7 @@ mod tests {
                 // has an action item, so this rolls up as
                 // `fully_unmodeled` (not `not_applicable`).
                 ToolpathLoadVerdict {
-                    toolpath_id: 2,
+                    toolpath_id: ToolpathId(2),
                     chipload: ChiploadVerdict::Unmodeled {
                         reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
                     },
@@ -1441,7 +1442,7 @@ mod tests {
     fn summary_resolves_toolpath_name_into_exceeds_breakdown() {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
-                toolpath_id: 42,
+                toolpath_id: ToolpathId(42),
                 chipload: ChiploadVerdict::Exceeds {
                     side: ChipSide::High,
                     triggering: ChiploadMetric {
@@ -1474,10 +1475,10 @@ mod tests {
             }],
         };
         // Resolver hit — name flows into the entry.
-        let s = r.summary(|id| (id == 42).then(|| "TP3 Adaptive Rough".to_owned()));
+        let s = r.summary(|id| (id == ToolpathId(42)).then(|| "TP3 Adaptive Rough".to_owned()));
         assert_eq!(s.exceeds_breakdown.len(), 1);
         let e = &s.exceeds_breakdown[0];
-        assert_eq!(e.toolpath_id, 42);
+        assert_eq!(e.toolpath_id, ToolpathId(42));
         assert_eq!(e.toolpath_name, "TP3 Adaptive Rough");
         assert_eq!(e.gate, "chipload");
         assert_eq!(e.side.as_deref(), Some("high"));
@@ -1702,7 +1703,7 @@ mod tests {
     fn report_serializes_typed_verdict_wire_format() {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
-                toolpath_id: 7,
+                toolpath_id: ToolpathId(7),
                 chipload: ChiploadVerdict::Exceeds {
                     side: ChipSide::Low,
                     triggering: ChiploadMetric {
@@ -1772,7 +1773,7 @@ mod tests {
     fn exceeded_criteria_returns_typed_labels() {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 chipload: ChiploadVerdict::Exceeds {
                     side: ChipSide::High,
                     triggering: ChiploadMetric {
@@ -1806,7 +1807,7 @@ mod tests {
         };
         let exceeded = r.exceeded_criteria();
         assert_eq!(exceeded.len(), 1);
-        assert_eq!(exceeded[0].0, 0);
+        assert_eq!(exceeded[0].0, ToolpathId(0));
         assert_eq!(exceeded[0].1.len(), 1);
         assert_eq!(exceeded[0].1[0], ExceededCriterion::chipload_breakage());
     }
@@ -1846,7 +1847,7 @@ mod tests {
     #[test]
     fn gating_tier_derives_from_criteria() {
         let v = ToolpathLoadVerdict {
-            toolpath_id: 7,
+            toolpath_id: ToolpathId(7),
             chipload: ChiploadVerdict::Exceeds {
                 side: ChipSide::Low,
                 triggering: ChiploadMetric {
@@ -1902,7 +1903,7 @@ mod tests {
             "drill cycle — no continuous engagement".to_owned(),
         );
         ToolpathLoadVerdict {
-            toolpath_id: id,
+            toolpath_id: ToolpathId(id),
             chipload: ChiploadVerdict::Unmodeled {
                 reason: reason.clone(),
             },
@@ -1919,7 +1920,7 @@ mod tests {
     /// fully-unmodeled bucket where operator action *would* help.
     fn vd_all_sim_required(id: usize) -> ToolpathLoadVerdict {
         ToolpathLoadVerdict {
-            toolpath_id: id,
+            toolpath_id: ToolpathId(id),
             chipload: ChiploadVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired,
             },
@@ -1980,7 +1981,7 @@ mod tests {
     fn summary_populates_exceeds_breakdown_toolpath_name() {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
-                toolpath_id: 42,
+                toolpath_id: ToolpathId(42),
                 chipload: ChiploadVerdict::Within {
                     approach_to_min: None,
                     approach_to_max: ChiploadMetric {
@@ -2014,7 +2015,7 @@ mod tests {
             }],
         };
         let s = r.summary(|id| {
-            if id == 42 {
+            if id == ToolpathId(42) {
                 Some("TP 5: Front pocket".to_owned())
             } else {
                 None
@@ -2022,7 +2023,7 @@ mod tests {
         });
         assert_eq!(s.exceeds_breakdown.len(), 1);
         let entry = &s.exceeds_breakdown[0];
-        assert_eq!(entry.toolpath_id, 42);
+        assert_eq!(entry.toolpath_id, ToolpathId(42));
         assert_eq!(entry.gate, "deflection");
         assert_eq!(entry.toolpath_name, "TP 5: Front pocket");
     }
@@ -2033,7 +2034,7 @@ mod tests {
     fn summary_without_resolver_yields_empty_name() {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 chipload: ChiploadVerdict::Exceeds {
                     side: ChipSide::High,
                     triggering: ChiploadMetric {

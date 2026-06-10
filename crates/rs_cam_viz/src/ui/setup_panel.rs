@@ -275,14 +275,14 @@ fn draw_project_diagnostics_card(ui: &mut egui::Ui, state: &AppState) {
 
     // Build the same viz-side evidence the MCP handler uses so the
     // GUI and MCP report identical project diagnostics.
-    let boundaries: Vec<(usize, usize, usize)> = state
+    let boundaries: Vec<(rs_cam_core::ToolpathId, usize, usize)> = state
         .simulation
         .results
         .as_ref()
         .map(|r| {
             r.boundaries
                 .iter()
-                .map(|b| (b.id.0, b.start_move, b.end_move))
+                .map(|b| (b.id, b.start_move, b.end_move))
                 .collect()
         })
         .unwrap_or_default();
@@ -448,7 +448,7 @@ fn active_setup(state: &AppState) -> Option<&SetupData> {
         Selection::Fixture(id, _) | Selection::KeepOut(id, _) => Some(*id),
         Selection::Toolpath(tp_id) => state
             .session
-            .setup_of_toolpath_id(tp_id.0)
+            .setup_of_toolpath_id(*tp_id)
             .and_then(|idx| setups.get(idx))
             .map(|s| SetupId(s.id)),
         _ => None,

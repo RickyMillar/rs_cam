@@ -234,13 +234,13 @@ impl<B: ComputeBackend> AppController<B> {
             .filter_map(|(id, rt)| {
                 rt.stale_since
                     .filter(|stale_since| now.duration_since(*stale_since).as_millis() > 500)
-                    .map(|_| ToolpathId(*id))
+                    .map(|_| *id)
             })
             .collect();
 
         let count = stale_ids.len();
         for id in stale_ids {
-            if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&id.0) {
+            if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&id) {
                 rt.stale_since = None;
             }
             self.submit_toolpath_compute(id);

@@ -1,3 +1,4 @@
+use crate::ids::ToolpathId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
@@ -124,7 +125,7 @@ pub struct ToolpathDebugTrace {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolpathDebugArtifact {
     pub schema_version: u32,
-    pub toolpath_id: usize,
+    pub toolpath_id: ToolpathId,
     pub toolpath_name: String,
     pub operation_label: String,
     pub tool_summary: String,
@@ -134,7 +135,7 @@ pub struct ToolpathDebugArtifact {
 
 impl ToolpathDebugArtifact {
     pub fn new(
-        toolpath_id: usize,
+        toolpath_id: ToolpathId,
         toolpath_name: impl Into<String>,
         operation_label: impl Into<String>,
         tool_summary: impl Into<String>,
@@ -650,7 +651,7 @@ mod tests {
         let recorder = ToolpathDebugRecorder::new("Pocket 1", "Pocket");
         let trace = recorder.finish();
         let artifact = ToolpathDebugArtifact::new(
-            1,
+            ToolpathId(1),
             "Pocket 1",
             "Pocket",
             "6.35mm End Mill",

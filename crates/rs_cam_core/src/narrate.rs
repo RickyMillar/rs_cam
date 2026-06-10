@@ -5,6 +5,7 @@
 //! prose report that makes spatial/metric anomalies easy for an LLM or human to
 //! notice without hand-filtering large JSON dumps.
 
+use crate::ids::ToolpathId;
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
@@ -30,7 +31,7 @@ const MAX_ANOMALY_LINES: usize = 8;
 /// Optional metadata that lets narration tie raw traces back to the project.
 #[derive(Debug, Clone, Default)]
 pub struct ToolpathNarrationContext<'a> {
-    pub toolpath_id: Option<usize>,
+    pub toolpath_id: Option<ToolpathId>,
     pub toolpath_name: Option<&'a str>,
     /// Human label, used for DISPLAY only. All routing decisions key on
     /// [`Self::operation_kind`] (Phase 1 T13) so label edits can never
@@ -1216,9 +1217,9 @@ mod tests {
         toolpath.arc_cw_to(P3::new(20.0, 0.0, 2.0), 100.0, 0.0, 1000.0);
 
         let tool = build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-        let trace = SimulationCutTrace::from_samples(1.0, vec![sample(7, 1, 8.0, 0.0)]);
+        let trace = SimulationCutTrace::from_samples(1.0, vec![sample(ToolpathId(7), 1, 8.0, 0.0)]);
         let context = ToolpathNarrationContext {
-            toolpath_id: Some(7),
+            toolpath_id: Some(ToolpathId(7)),
             toolpath_name: Some("Back Rough"),
             operation_label: Some("adaptive3d"),
             operation_kind: Some(crate::compute::catalog::OperationType::Adaptive3d),
@@ -1410,7 +1411,7 @@ mod tests {
     }
 
     fn sample(
-        toolpath_id: usize,
+        toolpath_id: ToolpathId,
         move_index: usize,
         axial_doc_mm: f64,
         radial_engagement: f64,

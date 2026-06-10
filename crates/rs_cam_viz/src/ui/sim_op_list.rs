@@ -305,14 +305,14 @@ pub fn draw(
             let load_verdict = load_report
                 .per_toolpath
                 .iter()
-                .find(|verdict| verdict.toolpath_id == boundary.id.0);
+                .find(|verdict| verdict.toolpath_id == boundary.id);
             draw_toolpath_status_flags(ui, boundary.id, &issues, load_verdict);
 
             // Per-toolpath visibility controls: eye / cut / rapid / isolate.
             // Shared with the Toolpaths-workspace panel for a consistent row.
             let overall_visible = gui
                 .toolpath_rt
-                .get(&boundary.id.0)
+                .get(&boundary.id)
                 .is_none_or(|rt| rt.visible);
             ui.horizontal(|ui| {
                 crate::ui::toolpath_row_controls::draw(
@@ -454,7 +454,7 @@ pub fn draw(
     }
 
     fn outline_kind_for_toolpath(gui: &GuiState, toolpath_id: ToolpathId) -> Option<OutlineKind> {
-        let rt = gui.toolpath_rt.get(&toolpath_id.0)?;
+        let rt = gui.toolpath_rt.get(&toolpath_id)?;
         let result = rt.result.as_ref()?;
         if result.spans_valid() {
             if result
@@ -482,7 +482,7 @@ pub fn draw(
         boundary: &crate::state::simulation::ToolpathBoundary,
         events: &mut Vec<AppEvent>,
     ) {
-        let Some(rt) = gui.toolpath_rt.get(&boundary.id.0) else {
+        let Some(rt) = gui.toolpath_rt.get(&boundary.id) else {
             return;
         };
         let Some(result) = rt.result.as_ref() else {
@@ -763,7 +763,7 @@ pub fn draw(
         active_item_id: Option<(ToolpathId, u64)>,
         events: &mut Vec<AppEvent>,
     ) {
-        let Some(rt) = gui.toolpath_rt.get(&boundary.id.0) else {
+        let Some(rt) = gui.toolpath_rt.get(&boundary.id) else {
             return;
         };
         let Some(trace) = rt.semantic_trace.as_ref() else {

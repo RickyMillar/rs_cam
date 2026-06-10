@@ -240,12 +240,13 @@ pub fn is_configured_entry(
 )]
 mod tests {
     use super::*;
+    use crate::ids::ToolpathId;
     use crate::simulation_cut::CutKinematics;
     use std::borrow::Cow;
 
     fn sample(arc: Option<f64>, span_path: Vec<SpanId>) -> SimulationCutSample {
         SimulationCutSample {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             move_index: 0,
             sample_index: 0,
             position: [0.0, 0.0, 0.0],

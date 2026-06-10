@@ -36,6 +36,7 @@
     clippy::print_stderr
 )]
 
+use rs_cam_core::ids::ToolpathId;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
@@ -91,7 +92,7 @@ fn build_pocket_session() -> ProjectSession {
         spindle_rpm: Some(18_000),
     };
     let tc = ToolpathConfig {
-        id: 0,
+        id: ToolpathId(0),
         name: "Pocket (F-034 test)".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(pocket),
@@ -253,7 +254,15 @@ fn cycle_time_calibrated_against_shapeoko_reference() {
     const PIN_DRILL_MEASURED_S: f64 = 65.0;
     /// Back Rough is the only Setup 1 toolpath we keep; the others get
     /// skipped by id.
-    const SKIP_IDS: &[usize] = &[14, 5, 6, 7, 10, 11, 12];
+    const SKIP_IDS: &[ToolpathId] = &[
+        ToolpathId(14),
+        ToolpathId(5),
+        ToolpathId(6),
+        ToolpathId(7),
+        ToolpathId(10),
+        ToolpathId(11),
+        ToolpathId(12),
+    ];
 
     let toml_path = Path::new(WANAKA_TOML);
     if !toml_path.exists() {

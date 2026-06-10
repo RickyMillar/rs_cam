@@ -180,7 +180,7 @@ impl RsCamApp {
                     .session
                     .toolpath_configs()
                     .iter()
-                    .find(|tc| tc.id == tp_id.0)
+                    .find(|tc| tc.id == tp_id)
                     .map(|tc| tc.name.clone())
             })
         };
@@ -367,7 +367,7 @@ impl RsCamApp {
                 .viewport
                 .toolpath_move_visibility
                 .iter()
-                .map(|(id, v)| (id.0, (v.show_cutting, v.show_rapids)))
+                .map(|(id, v)| (*id, (v.show_cutting, v.show_rapids)))
                 .collect(),
             show_tool_model: state.workspace == Workspace::Simulation
                 && state.simulation.has_results()
@@ -730,7 +730,7 @@ fn span_path_tooltip(
     move_index: usize,
 ) -> Option<String> {
     use rs_cam_core::toolpath_spans::{SpanKind, SpanPayload};
-    let rt = state.gui.toolpath_rt.get(&toolpath_id.0)?;
+    let rt = state.gui.toolpath_rt.get(&toolpath_id)?;
     let result = rt.result.as_ref()?;
     if !result.spans_valid() {
         return None;

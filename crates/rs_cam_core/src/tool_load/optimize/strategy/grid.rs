@@ -169,6 +169,7 @@ mod tests {
     use super::*;
     use crate::compute::catalog::{OperationConfig, OptimizationSurface};
     use crate::compute::operation_configs::{Adaptive3dConfig, PocketConfig, ScallopConfig};
+    use crate::ids::ToolpathId;
     use crate::tool_load::verdict::Confidence;
 
     fn empty_verdict() -> ToolpathLoadVerdict {
@@ -177,7 +178,7 @@ mod tests {
             DeflectionBounds, DeflectionVerdict, PowerVerdict, SampleEvidence,
         };
         ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload: ChiploadVerdict::Within {
                 approach_to_min: None,
                 approach_to_max: ChiploadMetric {

@@ -19,6 +19,7 @@
     clippy::print_stderr
 )]
 
+use rs_cam_core::ids::ToolpathId;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -115,7 +116,7 @@ fn build_vcarve_session() -> ProjectSession {
     };
 
     let tc = ToolpathConfig {
-        id: 0,
+        id: ToolpathId(0),
         name: "VCarve".to_owned(),
         enabled: true,
         operation: OperationConfig::VCarve(vcarve),

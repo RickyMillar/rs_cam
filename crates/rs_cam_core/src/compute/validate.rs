@@ -24,6 +24,7 @@ use crate::compute::catalog::OperationConfig;
 use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::{ToolConfig, ToolId};
 use crate::feeds::ToolGeometryHint;
+use crate::ids::ToolpathId;
 use crate::material::Material;
 use crate::session::{ProjectSession, SessionError, ToolpathConfig};
 use crate::tool::MillingCutter;
@@ -83,7 +84,7 @@ impl StaleDefaultRule {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StaleDefault {
     pub rule_id: StaleDefaultRule,
-    pub toolpath_id: usize,
+    pub toolpath_id: ToolpathId,
     pub toolpath_name: String,
     /// Operator-facing one-line title.
     pub title: String,
@@ -153,7 +154,7 @@ pub fn apply_stale_default_fix(
     let tc = configs
         .iter_mut()
         .find(|tc| tc.id == defect.toolpath_id)
-        .ok_or(SessionError::ToolpathNotFound(defect.toolpath_id))?;
+        .ok_or(SessionError::ToolpathIdNotFound(defect.toolpath_id))?;
     apply_stale_default_to_op(&mut tc.operation, &mut tc.feeds_provenance, defect);
     Ok(())
 }
@@ -373,7 +374,7 @@ mod tests {
 
     fn make_tp(id: usize, name: &str, op: OperationConfig, tool_id: usize) -> ToolpathConfig {
         ToolpathConfig {
-            id,
+            id: crate::ids::ToolpathId(id),
             name: name.to_owned(),
             enabled: true,
             operation: op,

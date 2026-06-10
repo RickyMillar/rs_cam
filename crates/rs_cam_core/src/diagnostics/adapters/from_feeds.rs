@@ -17,9 +17,10 @@ use crate::diagnostics::{
     Severity, Source, ids,
 };
 use crate::feeds::{FeedsResult, FeedsWarning};
+use crate::ids::ToolpathId;
 
 /// Calculator-emitted [`FeedsWarning`]s for a given toolpath.
-pub fn diagnostics_from_feeds_result(tp_id: usize, result: &FeedsResult) -> Vec<Diagnostic> {
+pub fn diagnostics_from_feeds_result(tp_id: ToolpathId, result: &FeedsResult) -> Vec<Diagnostic> {
     result
         .warnings
         .iter()
@@ -27,7 +28,7 @@ pub fn diagnostics_from_feeds_result(tp_id: usize, result: &FeedsResult) -> Vec<
         .collect()
 }
 
-fn feeds_warning_to_diagnostic(tp_id: usize, w: &FeedsWarning) -> Diagnostic {
+fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnostic {
     match w {
         FeedsWarning::FeedRateClamped { requested, actual } => Diagnostic {
             id: DiagnosticId::from(ids::FEEDS_FEED_CLAMPED),
@@ -182,7 +183,7 @@ fn feeds_warning_to_diagnostic(tp_id: usize, w: &FeedsWarning) -> Diagnostic {
 ///   commanded values (zero / `None` skips the check)
 /// - `recommendation` — the calculator output for the same op
 pub fn heuristic_hints_from_recommendation(
-    tp_id: usize,
+    tp_id: ToolpathId,
     feed_rate_mm_min: f64,
     stepover_mm: Option<f64>,
     dpp_mm: Option<f64>,
@@ -270,7 +271,7 @@ pub fn heuristic_hints_from_recommendation(
 
 #[allow(clippy::too_many_arguments)]
 fn ratio_hint(
-    tp_id: usize,
+    tp_id: ToolpathId,
     id: &str,
     message: String,
     lhs_label: &str,

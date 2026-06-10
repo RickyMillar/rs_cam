@@ -928,6 +928,7 @@ mod tests {
     use super::*;
     use crate::compute::catalog::OperationConfig;
     use crate::compute::operation_configs::PocketConfig;
+    use crate::ids::ToolpathId;
     use crate::tool_load::optimize::delta::{GateDelta, GateDeltas, ParamDelta};
     use crate::tool_load::optimize::{OptimizeCandidate, SearchStage};
     use crate::tool_load::verdict::{
@@ -1042,7 +1043,7 @@ mod tests {
 
     fn vd(chipload: ChiploadVerdict, defl: DeflectionVerdict) -> ToolpathLoadVerdict {
         ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload,
             power: within_power(),
             deflection: defl,
@@ -1339,7 +1340,7 @@ mod tests {
             3000.0,
             500.0,
             ToolpathLoadVerdict {
-                toolpath_id: 0,
+                toolpath_id: ToolpathId(0),
                 chipload: chipload_with_spike,
                 power: within_power(),
                 deflection: within_deflection(0.030),

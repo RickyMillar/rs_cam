@@ -46,6 +46,7 @@
     clippy::print_stderr
 )]
 
+use rs_cam_core::ids::ToolpathId;
 use std::f64::consts::TAU;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -114,7 +115,7 @@ fn sample(
     radial_woc: f64,
 ) -> SimulationCutSample {
     SimulationCutSample {
-        toolpath_id,
+        toolpath_id: ToolpathId(toolpath_id),
         move_index,
         sample_index: move_index,
         position: [0.0, 0.0, 0.0],
@@ -184,7 +185,7 @@ fn evaluate_chipload(trace: &SimulationCutTrace) -> ChiploadVerdict {
     let tolerance = ToleranceBands::default();
     chipload::evaluate(
         &rs_cam_core::tool_load::ToolpathLoadContext {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             tool: &tool,
             material: &material,
             operation_family: LutOperationFamily::Pocket,
@@ -362,7 +363,7 @@ fn build_as001_pocket_session(kinematics: Option<MachineKinematics>) -> ProjectS
         spindle_rpm: Some(18_000),
     };
     let tc = ToolpathConfig {
-        id: 0,
+        id: ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(pocket),
@@ -535,7 +536,7 @@ fn flag_on_extends_existing_f024_test_invariants() {
     let verdict = report
         .per_toolpath
         .iter()
-        .find(|v| v.toolpath_id == 0)
+        .find(|v| v.toolpath_id == ToolpathId(0))
         .expect("verdict for pocket toolpath");
     let peak_mm = match &verdict.deflection {
         DeflectionVerdict::Within { peak_mm, .. } | DeflectionVerdict::Exceeds { peak_mm, .. } => {

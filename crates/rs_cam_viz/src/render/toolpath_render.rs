@@ -60,7 +60,7 @@ pub struct ToolpathGpuData {
     /// Identifies which toolpath this GPU buffer came from, so the render
     /// loop can apply per-toolpath visibility overrides. `None` only during
     /// transient states where the id isn't known.
-    pub toolpath_id: Option<usize>,
+    pub toolpath_id: Option<rs_cam_core::ToolpathId>,
     /// Cutting move vertices (line list, 2 verts per segment).
     pub cut_vertex_buffer: wgpu::Buffer,
     pub cut_vertex_count: u32,

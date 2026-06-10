@@ -10,6 +10,7 @@
 //! them — typically via [`crate::session::ProjectSession::set_toolpath_param`]
 //! or the stale-default applier.
 
+use crate::ids::ToolpathId;
 use serde::{Deserialize, Serialize};
 
 /// One auto-applyable fix. Tagged so consumers can branch on the kind
@@ -20,7 +21,7 @@ pub enum DiagnosticFix {
     /// Set a parameter on a toolpath operation config. Mirrors the
     /// `set_toolpath_param` MCP contract — same `param` names.
     SetToolpathParam {
-        toolpath_id: usize,
+        toolpath_id: ToolpathId,
         param: String,
         new_value: serde_json::Value,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -32,7 +33,7 @@ pub enum DiagnosticFix {
     /// path.
     ApplyStaleDefault {
         rule_id: String,
-        toolpath_id: usize,
+        toolpath_id: ToolpathId,
         new_value: f64,
     },
 }

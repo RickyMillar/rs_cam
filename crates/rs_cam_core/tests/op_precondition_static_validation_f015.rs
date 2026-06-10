@@ -17,6 +17,7 @@
     clippy::indexing_slicing
 )]
 
+use rs_cam_core::ids::ToolpathId;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -80,7 +81,7 @@ fn mesh_model(id: usize) -> LoadedModel {
 
 fn make_tp(name: &str, op: OperationConfig, tool_id: usize, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
-        id: 0,
+        id: ToolpathId(0),
         name: name.to_owned(),
         enabled: true,
         operation: op,

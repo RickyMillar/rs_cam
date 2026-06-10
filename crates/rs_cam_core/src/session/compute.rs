@@ -19,6 +19,7 @@ use crate::compute::transform::FaceUp;
 use crate::debug_trace::ToolpathDebugRecorder;
 use crate::dexel_stock::StockCutDirection;
 use crate::geo::{BoundingBox3, P3};
+use crate::ids::ToolpathId;
 use crate::mesh::TriangleMesh;
 use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces};
 use crate::simulation_cut::SimulationMetricOptions;
@@ -1079,11 +1080,11 @@ impl ProjectSession {
     #[instrument(skip(self, skip_ids, cancel))]
     pub fn generate_all(
         &mut self,
-        skip_ids: &[usize],
+        skip_ids: &[ToolpathId],
         cancel: &AtomicBool,
     ) -> Result<(), SessionError> {
         // Collect info needed for skip/logging before mutable borrow
-        let tp_info: Vec<(usize, usize, String, bool)> = self
+        let tp_info: Vec<(usize, ToolpathId, String, bool)> = self
             .toolpath_configs
             .iter()
             .enumerate()
@@ -1095,16 +1096,16 @@ impl ProjectSession {
                 continue;
             }
             if skip_ids.contains(tp_id) {
-                tracing::info!(id = tp_id, name = %tp_name, "Skipping toolpath (skip list)");
+                tracing::info!(id = tp_id.0, name = %tp_name, "Skipping toolpath (skip list)");
                 continue;
             }
             match self.generate_toolpath(*idx, cancel) {
                 Ok(_) => {}
                 Err(SessionError::MissingGeometry(msg)) => {
-                    tracing::warn!(id = tp_id, name = %tp_name, reason = %msg, "Skipping toolpath");
+                    tracing::warn!(id = tp_id.0, name = %tp_name, reason = %msg, "Skipping toolpath");
                 }
                 Err(e) => {
-                    tracing::error!(id = tp_id, name = %tp_name, error = %e, "Toolpath failed");
+                    tracing::error!(id = tp_id.0, name = %tp_name, error = %e, "Toolpath failed");
                 }
             }
         }
@@ -1386,11 +1387,11 @@ impl ProjectSession {
         // `(feed, binding)` map and the per-toolpath
         // `ModulationSummary`. Stamped onto the cut trace below.
         let mut modulated_feeds: std::collections::BTreeMap<
-            (usize, usize),
+            (ToolpathId, usize),
             (f64, crate::tool_load::BindingConstraint),
         > = std::collections::BTreeMap::new();
         let mut modulation_summaries: std::collections::BTreeMap<
-            usize,
+            ToolpathId,
             crate::tool_load::ModulationSummary,
         > = std::collections::BTreeMap::new();
 
@@ -1405,7 +1406,7 @@ impl ProjectSession {
 
         // Toolpath indices to walk: enabled, with a result, with at least
         // one cut sample in the trace.
-        let candidate_indices: Vec<(usize, usize)> = self
+        let candidate_indices: Vec<(usize, ToolpathId)> = self
             .toolpath_configs
             .iter()
             .enumerate()
@@ -1805,14 +1806,14 @@ impl ProjectSession {
             move_index: usize,
             z: f64,
         }
-        let mut holder_collisions_by_tp: Vec<(usize, String, usize)> = Vec::new();
-        let mut rapid_collisions_by_tp: Vec<(usize, String, usize, RapidWorst)> = Vec::new();
-        let mut empty_results_by_tp: Vec<(usize, String, &str)> = Vec::new();
+        let mut holder_collisions_by_tp: Vec<(ToolpathId, String, usize)> = Vec::new();
+        let mut rapid_collisions_by_tp: Vec<(ToolpathId, String, usize, RapidWorst)> = Vec::new();
+        let mut empty_results_by_tp: Vec<(ToolpathId, String, &str)> = Vec::new();
 
         // Build per-boundary maps from the simulation result. Each boundary
         // maps to one toolpath via its `id`.
-        type RapidCountsByBoundary = Vec<(usize, usize)>;
-        type RapidWorstByBoundary = Vec<(usize, RapidWorst)>;
+        type RapidCountsByBoundary = Vec<(ToolpathId, usize)>;
+        type RapidWorstByBoundary = Vec<(ToolpathId, RapidWorst)>;
         let (rapid_counts_by_boundary, rapid_worst_by_boundary): (
             RapidCountsByBoundary,
             RapidWorstByBoundary,
@@ -2069,7 +2070,7 @@ impl ProjectSession {
                 .iter()
                 .map(|(n, pct)| format!("'{n}' is {pct:.0}% air-cut"))
                 .collect();
-            let offender_ids: Vec<usize> = air_cut_offenders
+            let offender_ids: Vec<ToolpathId> = air_cut_offenders
                 .iter()
                 .filter_map(|(n, _)| {
                     self.toolpath_configs
@@ -2558,7 +2559,7 @@ mod tests {
 
     fn make_tc(tool_id: usize) -> ToolpathConfig {
         ToolpathConfig {
-            id: 0,
+            id: ToolpathId(0),
             name: "test".to_owned(),
             enabled: true,
             operation: OperationConfig::Pocket(PocketConfig::default()),
@@ -3378,7 +3379,7 @@ mod tests {
 
     fn make_tp(id: usize, name: &str, op: OperationConfig) -> ToolpathConfig {
         ToolpathConfig {
-            id,
+            id: ToolpathId(id),
             name: name.to_owned(),
             enabled: true,
             operation: op,
@@ -3401,7 +3402,7 @@ mod tests {
     fn summary(id: usize, air_pct: f64) -> SimulationToolpathCutSummary {
         let total = 100.0;
         SimulationToolpathCutSummary {
-            toolpath_id: id,
+            toolpath_id: ToolpathId(id),
             sample_count: 0,
             total_runtime_s: total,
             cutting_runtime_s: total * (1.0 - air_pct / 100.0),

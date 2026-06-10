@@ -34,6 +34,25 @@
 //!
 //! If `wanaka.toml` is intentionally mutated this test will fail and
 //! force a deliberate re-baseline — that's the design.
+//!
+//! ## Pin convention (R4, tech-debt review 2026-06-10)
+//!
+//! This file was repinned twice in one day (F3 then F4) — every
+//! exact-number pin makes a human ratify a new number on every
+//! intentional behavior change, and a wrongly-ratified number is
+//! invisible. So assertions here follow three rules:
+//!
+//! 1. **Literature-backed values**: pin the exact band and cite the
+//!    source (the `_litmatrix_*` suites are the model).
+//! 2. **Behavioral outcomes** (the default): assert *identity and
+//!    direction*, not magnitude — which warning fires, which cap binds
+//!    (`cap_hit == Some(MaxFeed)`), monotonic relations
+//!    (`raised > requested`), relative bands against model outputs
+//!    (`obs_after ∈ (0.8×target, target)`), and named constants
+//!    (`DEFAULT_CUTTING_FEED_CAP_MM_MIN`) instead of literals.
+//! 3. **Determinism sentries** (rare): a raw numeric pin is allowed
+//!    only with a comment naming what legitimately re-baselines it
+//!    (see the 3.69 mm DPP pin below).
 
 #![allow(
     clippy::unwrap_used,
@@ -43,6 +62,7 @@
     clippy::print_stdout
 )]
 
+use rs_cam_core::ids::ToolpathId;
 use std::path::PathBuf;
 
 use rs_cam_core::compute::tool_config::ToolId;
@@ -53,6 +73,7 @@ use rs_cam_core::feeds::{
         SuggestWarning, SuggestedParams, suggest_for_operation,
     },
 };
+use rs_cam_core::machine::DEFAULT_CUTTING_FEED_CAP_MM_MIN;
 use rs_cam_core::session::ProjectSession;
 
 /// Resolve the on-disk wanaka project path. We deliberately load the
@@ -79,7 +100,7 @@ fn wanaka_project_path() -> PathBuf {
 ///
 /// Returns `(toolpath_id, toolpath_name, suggested)` tuples in
 /// session order so individual assertions can find their case by id.
-fn run_suggest_for_enabled(session: &ProjectSession) -> Vec<(usize, String, SuggestedParams)> {
+fn run_suggest_for_enabled(session: &ProjectSession) -> Vec<(ToolpathId, String, SuggestedParams)> {
     let mut out = Vec::new();
     for tc in session.toolpath_configs() {
         if !tc.enabled {
@@ -118,9 +139,9 @@ fn run_suggest_for_enabled(session: &ProjectSession) -> Vec<(usize, String, Sugg
 /// Find one toolpath in the suggest output by id; panic with a helpful
 /// message if it is absent (likely disabled or missing from the project).
 fn find_case(
-    cases: &[(usize, String, SuggestedParams)],
-    id: usize,
-) -> &(usize, String, SuggestedParams) {
+    cases: &[(ToolpathId, String, SuggestedParams)],
+    id: ToolpathId,
+) -> &(ToolpathId, String, SuggestedParams) {
     cases.iter().find(|(tid, _, _)| *tid == id).unwrap_or_else(|| {
         panic!(
             "Toolpath id {id} missing from suggest cases — wanaka.toml shape changed? Got ids: {:?}",
@@ -225,7 +246,7 @@ fn wanaka_suggest_baseline() {
 
     // ── Toolpath 4: Back Rough (Adaptive3D, 6 mm carbide endmill, HardMaple)
     {
-        let (_id, name, suggested) = find_case(&cases, 4);
+        let (_id, name, suggested) = find_case(&cases, ToolpathId(4));
         let ctx = format!("Back Rough (tp {_id} / {name})");
 
         // Phase 3 (`planning/cutter_axial_constraints_2026-06-06.md`):
@@ -273,6 +294,10 @@ fn wanaka_suggest_baseline() {
             capped_dpp > 0.0 && capped_dpp < 6.0,
             "{ctx}: capped DPP must drop below tool diameter (6 mm), got {capped_dpp}"
         );
+        // R4 convention: DETERMINISM SENTRY (rule 3) — 3.69 mm is the
+        // deflection solve's output on this exact geometry, not a
+        // literature value or a named constant. Re-baseline it only when
+        // the deflection model or wanaka.toml changes deliberately.
         assert!(
             (capped_dpp - 3.69).abs() < 0.5,
             "{ctx}: capped DPP must land near 3.69 mm (regression baseline), got {capped_dpp}"
@@ -302,8 +327,9 @@ fn wanaka_suggest_baseline() {
         // reports the shortfall. A profile that genuinely cuts faster
         // sets max_cutting_feed_mm_min explicitly.
         assert!(
-            (feed_after - 6000.0).abs() < 1e-6,
-            "{ctx}: post-recal feed must cap at the cutting ceiling (6000), got {feed_after}"
+            (feed_after - DEFAULT_CUTTING_FEED_CAP_MM_MIN).abs() < 1e-6,
+            "{ctx}: post-recal feed must cap at the derived cutting ceiling \
+             ({DEFAULT_CUTTING_FEED_CAP_MM_MIN}), got {feed_after}"
         );
         assert_eq!(
             cap_hit,
@@ -379,7 +405,7 @@ fn wanaka_suggest_baseline() {
 
     // ── Toolpath 10: 3D Rough 6 — same op family + tool as Back Rough.
     {
-        let (_id, name, suggested) = find_case(&cases, 10);
+        let (_id, name, suggested) = find_case(&cases, ToolpathId(10));
         let ctx = format!("3D Rough 6 (tp {_id} / {name})");
 
         // Phase 3 envelope clamps DPP first; back-off then runs on the
@@ -415,10 +441,11 @@ fn wanaka_suggest_baseline() {
             assert_has_feed_raised(&suggested.warnings, &ctx);
         // v3.0d: same Wanaka geometry as Back Rough → same operating
         // point. F4 (2026-06-10): the solve's 6912 mm/min target feed
-        // now caps at the 6000 cutting ceiling (see Back Rough above).
+        // now caps at the cutting ceiling (see Back Rough above).
         assert!(
-            (feed_after - 6000.0).abs() < 1e-6,
-            "{ctx}: post-recal feed must cap at the cutting ceiling (6000), got {feed_after}"
+            (feed_after - DEFAULT_CUTTING_FEED_CAP_MM_MIN).abs() < 1e-6,
+            "{ctx}: post-recal feed must cap at the derived cutting ceiling \
+             ({DEFAULT_CUTTING_FEED_CAP_MM_MIN}), got {feed_after}"
         );
         assert!(
             obs_before < lut_target,
@@ -444,7 +471,7 @@ fn wanaka_suggest_baseline() {
     // target inside the machine envelope: feed 950 → ~1350 mm/min, no
     // cap hit, no still-low warning.
     {
-        let (_id, name, suggested) = find_case(&cases, 11);
+        let (_id, name, suggested) = find_case(&cases, ToolpathId(11));
         let ctx = format!("3D Finish 6 (tp {_id} / {name})");
 
         let stepover_hit = suggested.warnings.iter().find_map(|w| match w {
@@ -498,7 +525,7 @@ fn wanaka_suggest_baseline() {
 
     // ── Toolpath 14: Pin Drill (drill family — chipload NotApplicable)
     {
-        let (_id, name, suggested) = find_case(&cases, 14);
+        let (_id, name, suggested) = find_case(&cases, ToolpathId(14));
         let ctx = format!("Pin Drill (tp {_id} / {name})");
         assert_no_feed_raised(&suggested.warnings, &ctx);
         assert_no_dpp_capped(&suggested.warnings, &ctx);
@@ -514,7 +541,7 @@ fn wanaka_suggest_baseline() {
 
     // ── Toolpath 7: Holes (drill — same as Pin Drill)
     {
-        let (_id, name, suggested) = find_case(&cases, 7);
+        let (_id, name, suggested) = find_case(&cases, ToolpathId(7));
         let ctx = format!("Holes (tp {_id} / {name})");
         assert_no_feed_raised(&suggested.warnings, &ctx);
         assert_no_dpp_capped(&suggested.warnings, &ctx);
@@ -522,14 +549,14 @@ fn wanaka_suggest_baseline() {
 
     // ── Toolpath 5: Rivers (back) — Project Curve, 60° V-bit (chipload NotApplicable)
     {
-        let (_id, name, suggested) = find_case(&cases, 5);
+        let (_id, name, suggested) = find_case(&cases, ToolpathId(5));
         let ctx = format!("Rivers (tp {_id} / {name})");
         assert_no_feed_raised(&suggested.warnings, &ctx);
     }
 
     // ── Toolpath 6: Lakes (back, inside) — Project Curve, 60° V-bit
     {
-        let (_id, name, suggested) = find_case(&cases, 6);
+        let (_id, name, suggested) = find_case(&cases, ToolpathId(6));
         let ctx = format!("Lakes (tp {_id} / {name})");
         assert_no_feed_raised(&suggested.warnings, &ctx);
     }
@@ -620,7 +647,7 @@ fn wanaka_suggest_idempotent_on_second_run() {
     let tc = session
         .toolpath_configs()
         .iter()
-        .find(|t| t.id == 4)
+        .find(|t| t.id == ToolpathId(4))
         .expect("Wanaka Back Rough (tp 4) missing");
     let tool = session
         .get_tool(ToolId(tc.tool_id))

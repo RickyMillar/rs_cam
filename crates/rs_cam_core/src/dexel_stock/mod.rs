@@ -270,6 +270,7 @@ impl TriDexelStock {
 mod tests {
     use super::*;
     use crate::dexel::{ray_bottom, ray_top};
+    use crate::ids::ToolpathId;
     use crate::radial_profile::RadialProfileLUT;
     use crate::tool::{BallEndmill, FlatEndmill, MillingCutter};
     use crate::toolpath::Toolpath;
@@ -892,7 +893,7 @@ mod tests {
                 &tp,
                 &flat,
                 StockCutDirection::FromTop,
-                0,
+                ToolpathId(0),
                 18000,
                 2,
                 5000.0,
@@ -941,7 +942,7 @@ mod tests {
                 &tp,
                 &ball,
                 StockCutDirection::FromTop,
-                0,
+                ToolpathId(0),
                 18000,
                 2,
                 5000.0,
@@ -977,7 +978,7 @@ mod tests {
                 &tp,
                 &flat,
                 StockCutDirection::FromTop,
-                0,
+                ToolpathId(0),
                 18000,
                 2,
                 5000.0,

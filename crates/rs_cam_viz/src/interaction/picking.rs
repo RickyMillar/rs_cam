@@ -249,7 +249,7 @@ fn pick_toolpaths(
     let mut best: Option<(ToolpathId, usize)> = None;
 
     for tc in session.toolpath_configs() {
-        let tp_id = ToolpathId(tc.id);
+        let tp_id = tc.id;
         let rt = gui.toolpath_rt.get(&tc.id);
         let visible = rt.is_none_or(|r| r.visible);
         if !visible {

@@ -13,6 +13,7 @@ use crate::dexel::{
     DexelGrid, ray_blend_above, ray_blend_below, ray_material_length, ray_material_length_above,
 };
 use crate::geo::P3;
+use crate::ids::ToolpathId;
 use crate::radial_profile::RadialProfileLUT;
 use crate::semantic_trace::ToolpathSemanticTrace;
 use crate::simulation_cut::{CutKinematics, SimulationCutSample};
@@ -170,7 +171,7 @@ fn lut_h_with_edge_fallback(lut: &RadialProfileLUT, dist_sq: f64) -> Option<f64>
 
 #[derive(Clone, Copy)]
 pub(super) struct CuttingCaptureParams<'a> {
-    pub(super) toolpath_id: usize,
+    pub(super) toolpath_id: ToolpathId,
     pub(super) move_index: usize,
     pub(super) feed_rate_mm_min: f64,
     pub(super) spindle_rpm: u32,
@@ -643,7 +644,7 @@ pub(super) fn stamp_segment_with_metrics(
 /// Bundled parameters for `sample_segment_runtime`.
 pub(super) struct SegmentSampleParams<'a> {
     pub(super) move_index: usize,
-    pub(super) toolpath_id: usize,
+    pub(super) toolpath_id: ToolpathId,
     pub(super) sample_step_mm: f64,
     pub(super) feed_rate_mm_min: f64,
     pub(super) is_cutting: bool,

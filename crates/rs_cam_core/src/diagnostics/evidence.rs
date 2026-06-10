@@ -7,6 +7,7 @@
 //! fields — adapters pick the one that matches the upstream source,
 //! and consumers branch on the variant to render.
 
+use crate::ids::ToolpathId;
 use serde::{Deserialize, Serialize};
 
 /// Locality hint for sim-derived findings — passed through from the
@@ -38,7 +39,7 @@ pub enum DiagnosticEvidence {
     /// finding. `observed`/`threshold` are in `unit` (e.g.
     /// "mm/tooth", "kW", "mm").
     SampleRange {
-        toolpath_id: usize,
+        toolpath_id: ToolpathId,
         /// Project-global sample indices (matching
         /// [`crate::simulation_cut::SimulationCutSample`]'s ordering).
         sample_start: usize,
@@ -76,7 +77,7 @@ pub enum DiagnosticEvidence {
     /// A single move pointer (collision, generated-empty, plunge
     /// stress). `position` is the global-frame XYZ when available.
     Move {
-        toolpath_id: usize,
+        toolpath_id: ToolpathId,
         move_index: usize,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         position: Option<[f64; 3]>,
@@ -85,6 +86,6 @@ pub enum DiagnosticEvidence {
     /// span multiple toolpaths.
     Counts {
         count: usize,
-        offender_toolpath_ids: Vec<usize>,
+        offender_toolpath_ids: Vec<ToolpathId>,
     },
 }

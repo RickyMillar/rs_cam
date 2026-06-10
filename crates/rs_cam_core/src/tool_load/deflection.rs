@@ -102,7 +102,7 @@ pub fn sample_tip_deflection_mm(
     )
 }
 
-#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id, op = ?ctx.operation_kind))]
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.0, op = ?ctx.operation_kind))]
 pub fn evaluate(
     ctx: &super::ToolpathLoadContext<'_>,
     env: &super::GateEnv<'_>,
@@ -329,6 +329,7 @@ mod tests {
     use super::*;
     use crate::compute::catalog::OperationType;
     use crate::compute::tool_config::ToolMaterial;
+    use crate::ids::ToolpathId;
     use crate::material::WoodSpecies;
     use crate::simulation_cut::{
         CutKinematics, SimulationCutSample, SimulationCutSummary, SimulationCutTrace,
@@ -348,7 +349,7 @@ mod tests {
     ) -> DeflectionVerdict {
         evaluate(
             &crate::tool_load::ToolpathLoadContext {
-                toolpath_id,
+                toolpath_id: ToolpathId(toolpath_id),
                 tool,
                 material,
                 operation_family: crate::feeds::vendor_lut::LutOperationFamily::Pocket,
@@ -413,7 +414,7 @@ mod tests {
         radial_eng: f64,
     ) -> SimulationCutSample {
         SimulationCutSample {
-            toolpath_id,
+            toolpath_id: ToolpathId(toolpath_id),
             move_index: idx,
             sample_index: idx,
             position: [0.0, 0.0, -axial],

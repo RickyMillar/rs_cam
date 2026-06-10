@@ -1641,7 +1641,7 @@ impl ToolpathValidationContext {
                         .iter()
                         .filter_map(|&tp_idx| session.toolpath_configs().get(tp_idx))
                         .map(|tc| ValidationToolpath {
-                            id: ToolpathId(tc.id),
+                            id: tc.id,
                             tool_id: crate::state::job::ToolId(tc.tool_id),
                             model_id: crate::state::job::ModelId(tc.model_id),
                             enabled: tc.enabled,
@@ -1662,7 +1662,7 @@ pub fn validate_toolpath_config(
 
     let tool_id = crate::state::job::ToolId(tc.tool_id);
     let model_id = crate::state::job::ModelId(tc.model_id);
-    let tp_id = ToolpathId(tc.id);
+    let tp_id = tc.id;
 
     let Some(tool) = ctx.tools.iter().find(|t| t.id == tool_id) else {
         errs.push("No tool selected".into());
@@ -1934,7 +1934,7 @@ pub fn collect_diagnostics(
     let heights = height_ctx
         .map(rs_cam_core::diagnostics::adapters::from_static_checks::ResolvedHeights::from_context);
     let inputs = rs_cam_core::diagnostics::ToolpathDiagnoseInputs {
-        toolpath_id: entry.id.0,
+        toolpath_id: entry.id,
         operation: &entry.operation,
         tool,
         heights: heights.as_ref(),
@@ -2012,7 +2012,7 @@ mod tests {
         op: OperationConfig,
     ) -> rs_cam_core::session::ToolpathConfig {
         rs_cam_core::session::ToolpathConfig {
-            id: 0, // assigned by session.add_toolpath
+            id: rs_cam_core::ToolpathId(0), // assigned by session.add_toolpath
             name: name.to_owned(),
             enabled: true,
             operation: op,
@@ -2076,7 +2076,7 @@ mod tests {
         #[allow(clippy::indexing_slicing)]
         let rest_id = session.toolpath_configs()[rest_idx].id;
         let mut rest = ToolpathEntry::for_operation(
-            ToolpathId(rest_id),
+            rest_id,
             "Rest".to_owned(),
             ToolId(2),
             ModelId(4),
@@ -2133,7 +2133,7 @@ mod tests {
 
         // GUI path — the params panel calls this.
         let entry = ToolpathEntry::for_operation(
-            ToolpathId(tc_id),
+            tc_id,
             tc_name,
             ToolId(tc_tool_id),
             ModelId(tc_model_id),
@@ -2244,7 +2244,7 @@ mod tests {
         #[allow(clippy::indexing_slicing)]
         let rest_id = session.toolpath_configs()[rest_idx].id;
         let mut rest = ToolpathEntry::for_operation(
-            ToolpathId(rest_id),
+            rest_id,
             "Rest".to_owned(),
             ToolId(2),
             ModelId(4),

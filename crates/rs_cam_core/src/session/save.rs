@@ -250,12 +250,13 @@ mod tests {
     use crate::compute::stock_config::FixtureId;
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::compute::transform::FaceUp;
+    use crate::ids::ToolpathId;
     use crate::session::{Fixture, FixtureKind, KeepOutZone, ToolpathConfig};
 
     fn make_tc(tool_id: usize, model_id: usize) -> ToolpathConfig {
         use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
         ToolpathConfig {
-            id: 0,
+            id: ToolpathId(0),
             name: "Test Op".to_owned(),
             enabled: true,
             operation: OperationConfig::Pocket(PocketConfig::default()),

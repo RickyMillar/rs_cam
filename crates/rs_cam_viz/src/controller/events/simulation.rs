@@ -142,7 +142,7 @@ impl<B: ComputeBackend> AppController<B> {
                             | rs_cam_core::compute::catalog::OperationType::AlignmentPinDrill
                     );
                     Some(SetupSimToolpath {
-                        id: ToolpathId(tc.id),
+                        id: tc.id,
                         name: tc.name.clone(),
                         annotated: Arc::clone(&result.annotated),
                         tool,
@@ -261,7 +261,7 @@ impl<B: ComputeBackend> AppController<B> {
                     .session
                     .toolpath_configs()
                     .get(tp_idx)
-                    .is_some_and(|tc| ids.iter().any(|id| id.0 == tc.id))
+                    .is_some_and(|tc| ids.contains(&tc.id))
             })
         });
         let Some(target_setup_idx) = target_setup_idx else {
@@ -276,7 +276,7 @@ impl<B: ComputeBackend> AppController<B> {
         let Some((groups, all_toolpaths_flat, stock_bbox)) = self.build_simulation_groups(
             |setup_idx, tc| {
                 if setup_idx == target_setup_idx {
-                    ids.iter().any(|id| id.0 == tc.id)
+                    ids.contains(&tc.id)
                 } else if setup_idx < target_setup_idx {
                     tc.enabled
                 } else {

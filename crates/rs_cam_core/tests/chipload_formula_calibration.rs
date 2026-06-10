@@ -25,6 +25,7 @@
 
 #![allow(clippy::expect_used, clippy::panic)]
 
+use rs_cam_core::ids::ToolpathId;
 use std::f64::consts::FRAC_PI_2;
 
 use rs_cam_core::compute::catalog::OperationType;
@@ -76,7 +77,7 @@ fn half_engagement_sample(
     let chipload = WANAKA_FEED_PER_TOOTH_MM;
     let exposed = effective_chip_thickness_mm(cutter, WANAKA_AXIAL_DOC_MM, Some(arc), chipload, 2);
     SimulationCutSample {
-        toolpath_id: tp_id,
+        toolpath_id: ToolpathId(tp_id),
         move_index: idx,
         sample_index: idx,
         position: [0.0, 0.0, 0.0],
@@ -234,7 +235,7 @@ fn lut_nominal_engagement_sample_within_published_envelope_passes() {
     .expect("flat endmill chip geometry supported at LUT-nominal engagement");
 
     let sample = SimulationCutSample {
-        toolpath_id: 0,
+        toolpath_id: ToolpathId(0),
         move_index: 0,
         sample_index: 0,
         position: [0.0, 0.0, 0.0],
@@ -266,7 +267,7 @@ fn lut_nominal_engagement_sample_within_published_envelope_passes() {
     let tolerance = rs_cam_core::tool_load::ToleranceBands::default();
     let verdict = chipload::evaluate(
         &rs_cam_core::tool_load::ToolpathLoadContext {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             tool: &tool,
             material: &material,
             operation_family: LutOperationFamily::Pocket,
@@ -327,7 +328,7 @@ fn slot_engagement_sample_at_safe_feed_passes_after_d9_normalization() {
     );
 
     let sample = SimulationCutSample {
-        toolpath_id: 0,
+        toolpath_id: ToolpathId(0),
         move_index: 0,
         sample_index: 0,
         position: [0.0, 0.0, 0.0],
@@ -359,7 +360,7 @@ fn slot_engagement_sample_at_safe_feed_passes_after_d9_normalization() {
     let tolerance = rs_cam_core::tool_load::ToleranceBands::default();
     let verdict = chipload::evaluate(
         &rs_cam_core::tool_load::ToolpathLoadContext {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             tool: &tool,
             material: &material,
             operation_family: LutOperationFamily::Pocket,

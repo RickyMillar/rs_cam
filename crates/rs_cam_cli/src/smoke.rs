@@ -322,7 +322,7 @@ fn materialize_case_toolpath(
     let model_id = session.models().first().map(|m| m.id).unwrap_or(0);
 
     let tc = ToolpathConfig {
-        id: 0,
+        id: rs_cam_core::ToolpathId(0),
         name: format!("{} {name_suffix}", op_type.kind_str()),
         enabled: true,
         operation,
@@ -545,7 +545,7 @@ fn run_single_case(case: &SmokeCase, all_cases: &[SmokeCase], resolution: f64) -
     let toolpath_id_after_add = session
         .get_toolpath_config(tp_idx)
         .map(|tc| tc.id)
-        .unwrap_or(0);
+        .unwrap_or(rs_cam_core::ToolpathId(0));
     let verdict = report
         .per_toolpath
         .iter()

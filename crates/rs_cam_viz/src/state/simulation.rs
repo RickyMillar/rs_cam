@@ -177,7 +177,7 @@ pub(crate) struct ToolLoadReportCache {
 pub(crate) struct ChiploadEnvelopeCache {
     trace_ptr: Option<usize>,
     edit_counter: u64,
-    envelopes: Option<HashMap<usize, Range<f64>>>,
+    envelopes: Option<HashMap<rs_cam_core::ToolpathId, Range<f64>>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -298,7 +298,7 @@ impl SpanAggregateCache {
         self.aggregates.clear();
         self.cutting_indices.clear();
         for (idx, sample) in trace.samples.iter().enumerate() {
-            let key_tp = ToolpathId(sample.toolpath_id);
+            let key_tp = sample.toolpath_id;
             for sid in &sample.span_path {
                 self.aggregates
                     .entry((key_tp, sid.0))
@@ -354,9 +354,9 @@ impl SpanScope {
 
     /// True if a sample/issue/hotspot with this `toolpath_id` and `span_path`
     /// is in scope. Empty/unset filter matches everything.
-    pub fn matches(&self, toolpath_id: usize, span_path: &[SpanId]) -> bool {
+    pub fn matches(&self, toolpath_id: rs_cam_core::ToolpathId, span_path: &[SpanId]) -> bool {
         if let Some(tp) = self.toolpath_id
-            && tp.0 != toolpath_id
+            && tp != toolpath_id
         {
             return false;
         }
@@ -687,7 +687,7 @@ impl SimulationState {
         &mut self,
         session: &ProjectSession,
         edit_counter: u64,
-    ) -> HashMap<usize, Range<f64>> {
+    ) -> HashMap<rs_cam_core::ToolpathId, Range<f64>> {
         let trace_ptr = self
             .results
             .as_ref()
@@ -872,7 +872,7 @@ impl SimulationState {
         gui: &GuiState,
         toolpath_id: ToolpathId,
     ) -> ToolpathTraceAvailability {
-        let Some(rt) = gui.toolpath_rt.get(&toolpath_id.0) else {
+        let Some(rt) = gui.toolpath_rt.get(&toolpath_id) else {
             return ToolpathTraceAvailability::None;
         };
 
@@ -923,7 +923,7 @@ impl SimulationState {
         item_id: u64,
     ) -> Option<SimulationRuntimeMetrics> {
         self.sync_debug_state(gui, max_feed_mm_min);
-        let rt = gui.toolpath_rt.get(&toolpath_id.0)?;
+        let rt = gui.toolpath_rt.get(&toolpath_id)?;
         let trace = rt.semantic_trace.as_ref()?;
         let index = self.debug.semantic_indexes.get(&toolpath_id)?;
         let item_index = index.item_index_by_id.get(&item_id).copied()?;
@@ -943,7 +943,7 @@ impl SimulationState {
             .as_ref()?
             .toolpath_summaries
             .iter()
-            .find(|summary| summary.toolpath_id == toolpath_id.0)
+            .find(|summary| summary.toolpath_id == toolpath_id)
     }
 
     pub fn semantic_cut_summary(
@@ -958,7 +958,7 @@ impl SimulationState {
             .semantic_summaries
             .iter()
             .find(|summary| {
-                summary.toolpath_id == toolpath_id.0 && summary.semantic_item_id == item_id
+                summary.toolpath_id == toolpath_id && summary.semantic_item_id == item_id
             })
     }
 
@@ -977,7 +977,7 @@ impl SimulationState {
         let mut items: Vec<_> = trace
             .semantic_summaries
             .iter()
-            .filter(|summary| summary.toolpath_id == toolpath_id.0)
+            .filter(|summary| summary.toolpath_id == toolpath_id)
             .cloned()
             .collect();
         items.sort_by(|left, right| {
@@ -1014,7 +1014,7 @@ impl SimulationState {
         trace
             .hotspots
             .iter()
-            .filter(|hotspot| hotspot.toolpath_id == toolpath_id.0)
+            .filter(|hotspot| hotspot.toolpath_id == toolpath_id)
             .take(limit)
             .cloned()
             .collect()
@@ -1026,7 +1026,7 @@ impl SimulationState {
         let sample = trace
             .samples
             .iter()
-            .filter(|sample| sample.toolpath_id == toolpath_id.0 && sample.move_index <= local_move)
+            .filter(|sample| sample.toolpath_id == toolpath_id && sample.move_index <= local_move)
             .max_by(|left, right| {
                 left.move_index
                     .cmp(&right.move_index)
@@ -1050,7 +1050,7 @@ impl SimulationState {
         limit: usize,
     ) -> Vec<SimulationRuntimeHotspot> {
         self.sync_debug_state(gui, max_feed_mm_min);
-        let Some(rt) = gui.toolpath_rt.get(&toolpath_id.0) else {
+        let Some(rt) = gui.toolpath_rt.get(&toolpath_id) else {
             return Vec::new();
         };
         let Some(trace) = rt.semantic_trace.as_ref() else {
@@ -1115,7 +1115,7 @@ impl SimulationState {
     ) -> Option<ActiveSemanticItem> {
         let (boundary_index, toolpath_id, local_move) = self.current_local_toolpath_move()?;
         self.sync_debug_state(gui, max_feed_mm_min);
-        let rt = gui.toolpath_rt.get(&toolpath_id.0)?;
+        let rt = gui.toolpath_rt.get(&toolpath_id)?;
         let trace = rt.semantic_trace.as_ref()?;
         let index = self.debug.semantic_indexes.get(&toolpath_id)?;
         let active_index = index.active_item_index(trace, local_move)?;
@@ -1136,7 +1136,7 @@ impl SimulationState {
         item_id: u64,
     ) -> Option<ActiveSemanticItem> {
         self.sync_debug_state(gui, max_feed_mm_min);
-        let rt = gui.toolpath_rt.get(&toolpath_id.0)?;
+        let rt = gui.toolpath_rt.get(&toolpath_id)?;
         let trace = rt.semantic_trace.as_ref()?;
         let index = self.debug.semantic_indexes.get(&toolpath_id)?;
         let item_index = index.item_index_by_id.get(&item_id).copied()?;
@@ -1184,7 +1184,7 @@ impl SimulationState {
         max_feed_mm_min: f64,
     ) -> Option<(ToolpathId, rs_cam_core::debug_trace::ToolpathDebugSpan)> {
         let active = self.active_semantic_item(gui, max_feed_mm_min)?;
-        let rt = gui.toolpath_rt.get(&active.toolpath_id.0)?;
+        let rt = gui.toolpath_rt.get(&active.toolpath_id)?;
         let trace = rt.debug_trace.as_ref()?;
         let span_id = active
             .ancestry
@@ -1233,7 +1233,7 @@ impl SimulationState {
         span_id: u64,
         prefer_end: bool,
     ) -> Option<SimulationTraceTarget> {
-        let rt = gui.toolpath_rt.get(&toolpath_id.0)?;
+        let rt = gui.toolpath_rt.get(&toolpath_id)?;
         let debug_trace = rt.debug_trace.as_ref()?;
         let span = debug_trace.spans.iter().find(|span| span.id == span_id)?;
         if let (Some(move_start), Some(move_end)) = (span.move_start, span.move_end) {
@@ -1284,7 +1284,7 @@ impl SimulationState {
         span_id: SpanId,
         prefer_end: bool,
     ) -> Option<SimulationTraceTarget> {
-        let rt = gui.toolpath_rt.get(&toolpath_id.0)?;
+        let rt = gui.toolpath_rt.get(&toolpath_id)?;
         let result = rt.result.as_ref()?;
         if !result.spans_valid() {
             return None;
@@ -1312,7 +1312,7 @@ impl SimulationState {
         toolpath_id: ToolpathId,
         hotspot_index: usize,
     ) -> Option<SimulationTraceTarget> {
-        let rt = gui.toolpath_rt.get(&toolpath_id.0)?;
+        let rt = gui.toolpath_rt.get(&toolpath_id)?;
         let debug_trace = rt.debug_trace.as_ref()?;
         let hotspot = debug_trace.hotspots.get(hotspot_index)?.clone();
         if let Some(item_id) = hotspot.semantic_item_id {
@@ -1348,7 +1348,7 @@ impl SimulationState {
         &mut self,
         issue: &SimulationCutIssue,
     ) -> Option<SimulationTraceTarget> {
-        let toolpath_id = ToolpathId(issue.toolpath_id);
+        let toolpath_id = issue.toolpath_id;
         Some(SimulationTraceTarget {
             toolpath_id,
             move_index: self.global_move_for_local(toolpath_id, issue.move_index)?,
@@ -1362,7 +1362,7 @@ impl SimulationState {
         gui: &GuiState,
     ) -> Option<(ToolpathId, usize, ToolpathDebugAnnotation)> {
         let (_, toolpath_id, local_move) = self.current_local_toolpath_move()?;
-        let rt = gui.toolpath_rt.get(&toolpath_id.0)?;
+        let rt = gui.toolpath_rt.get(&toolpath_id)?;
         let trace = rt.debug_trace.as_ref()?;
         trace
             .annotations
@@ -1423,7 +1423,7 @@ impl SimulationState {
             P3::new(xy.min_x, xy.max_y, z_max),
         ];
         let setup = session
-            .setup_of_toolpath_id(toolpath_id.0)
+            .setup_of_toolpath_id(toolpath_id)
             .and_then(|idx| session.list_setups().get(idx));
         Some(BoundingBox3::from_points(local_corners.into_iter().map(
             |corner| {
@@ -1445,7 +1445,7 @@ impl SimulationState {
         let mut issues = Vec::new();
 
         for boundary in self.boundaries().to_vec() {
-            let Some(rt) = gui.toolpath_rt.get(&boundary.id.0) else {
+            let Some(rt) = gui.toolpath_rt.get(&boundary.id) else {
                 continue;
             };
             if let Some(trace) = rt.debug_trace.as_ref() {
@@ -1503,7 +1503,7 @@ impl SimulationState {
             .and_then(|results| results.cut_trace.as_ref())
         {
             for issue in &trace.issues {
-                let toolpath_id = ToolpathId(issue.toolpath_id);
+                let toolpath_id = issue.toolpath_id;
                 let Some(global_move) = self.global_move_for_local(toolpath_id, issue.move_index)
                 else {
                     continue;
@@ -1581,7 +1581,7 @@ impl SimulationState {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         for boundary in self.boundaries() {
             boundary.id.0.hash(&mut hasher);
-            if let Some(rt) = gui.toolpath_rt.get(&boundary.id.0) {
+            if let Some(rt) = gui.toolpath_rt.get(&boundary.id) {
                 if let Some(trace) = rt.debug_trace.as_ref() {
                     (Arc::as_ptr(trace) as usize).hash(&mut hasher);
                     trace.annotations.len().hash(&mut hasher);
@@ -1666,7 +1666,7 @@ impl SimulationState {
                 );
             }
             if let Some(annotation_index) = issue.annotation_index
-                && let Some(rt) = gui.toolpath_rt.get(&toolpath_id.0)
+                && let Some(rt) = gui.toolpath_rt.get(&toolpath_id)
                 && let Some(trace) = rt.debug_trace.as_ref()
                 && let Some(annotation) = trace.annotations.get(annotation_index)
             {
@@ -1727,7 +1727,7 @@ impl SimulationState {
         let mut best_hit: Option<(f64, usize, usize, ToolpathId, u64)> = None;
 
         for boundary in self.boundaries().to_vec() {
-            let Some(rt) = gui.toolpath_rt.get(&boundary.id.0) else {
+            let Some(rt) = gui.toolpath_rt.get(&boundary.id) else {
                 continue;
             };
             let Some(trace) = rt.semantic_trace.as_ref() else {
@@ -1831,7 +1831,7 @@ impl SimulationDebugState {
         for toolpath_id in boundary_ids {
             let Some(trace) = gui
                 .toolpath_rt
-                .get(&toolpath_id.0)
+                .get(&toolpath_id)
                 .and_then(|rt| rt.semantic_trace.as_ref())
             else {
                 self.semantic_indexes.remove(&toolpath_id);
@@ -1860,7 +1860,7 @@ impl SimulationDebugState {
             .retain(|toolpath_id, _| boundary_ids.contains(toolpath_id));
 
         for toolpath_id in boundary_ids {
-            let Some(rt) = gui.toolpath_rt.get(&toolpath_id.0) else {
+            let Some(rt) = gui.toolpath_rt.get(&toolpath_id) else {
                 self.runtime_profiles.remove(&toolpath_id);
                 continue;
             };
@@ -2166,7 +2166,7 @@ mod tests {
 
     fn gui_with_traces() -> GuiState {
         let mut gui = GuiState::new();
-        let toolpath_id: usize = 1;
+        let toolpath_id = rs_cam_core::ToolpathId(1);
 
         let semantic = ToolpathSemanticRecorder::new("Adaptive", "Adaptive");
         let root = semantic.root_context();
@@ -2311,7 +2311,7 @@ mod tests {
             0.5,
             vec![
                 rs_cam_core::simulation_cut::SimulationCutSample {
-                    toolpath_id: 1,
+                    toolpath_id: rs_cam_core::ToolpathId(1),
                     move_index: 1,
                     sample_index: 0,
                     position: [0.0, 0.0, -1.0],
@@ -2336,7 +2336,7 @@ mod tests {
                     in_transit_span: false,
                 },
                 rs_cam_core::simulation_cut::SimulationCutSample {
-                    toolpath_id: 1,
+                    toolpath_id: rs_cam_core::ToolpathId(1),
                     move_index: 7,
                     sample_index: 1,
                     position: [8.0, 8.0, -1.0],

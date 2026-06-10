@@ -407,12 +407,12 @@ impl RsCamApp {
             let state = self.controller.state();
             let session = &state.session;
             let gui = &state.gui;
-            let rt = gui.toolpath_rt.get(&toolpath_id.0);
+            let rt = gui.toolpath_rt.get(&toolpath_id);
             let result = rt.and_then(|r| r.result.as_ref())?;
             let tp = result.toolpath();
             let motion = tp.moves.get(local_idx)?;
             let tool_info = session
-                .find_toolpath_config_by_id(toolpath_id.0)
+                .find_toolpath_config_by_id(toolpath_id)
                 .and_then(|(_, tc)| session.tools().iter().find(|tool| tool.id.0 == tc.tool_id))
                 .cloned()
                 .map(|tool| {
@@ -428,7 +428,7 @@ impl RsCamApp {
                     .and_then(|trace| {
                         peak_deflection_for_move(
                             trace,
-                            toolpath_id.0,
+                            toolpath_id,
                             local_idx,
                             tool_def,
                             &session.stock_config().material,
@@ -495,7 +495,7 @@ fn clear_playback_tool(playback: &mut crate::state::simulation::SimulationPlayba
 
 fn peak_deflection_for_move(
     trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
-    toolpath_id: usize,
+    toolpath_id: rs_cam_core::ToolpathId,
     local_move: usize,
     tool: &rs_cam_core::tool::ToolDefinition,
     material: &rs_cam_core::material::Material,

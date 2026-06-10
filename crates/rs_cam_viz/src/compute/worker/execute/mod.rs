@@ -208,7 +208,7 @@ fn build_core_simulation_request(
                     .map(|tp| {
                         let cutter = build_cutter(&tp.tool);
                         SimToolpathEntry {
-                            id: tp.id.0,
+                            id: tp.id,
                             name: tp.name.clone(),
                             annotated: Arc::clone(&tp.annotated),
                             tool: cutter,
@@ -333,7 +333,7 @@ where
         .boundaries
         .into_iter()
         .map(|b| SimBoundary {
-            id: super::ToolpathId(b.id),
+            id: b.id,
             name: b.name,
             tool_name: b.tool_name,
             start_move: b.start_move,

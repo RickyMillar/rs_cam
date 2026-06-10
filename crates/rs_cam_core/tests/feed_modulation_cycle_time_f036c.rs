@@ -47,6 +47,7 @@
     clippy::print_stderr
 )]
 
+use rs_cam_core::ids::ToolpathId;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
@@ -57,7 +58,15 @@ const WANAKA_TOML: &str = "/home/ricky/Downloads/wanaka100/wanaka_full_tuned.tom
 
 /// Setup-1 toolpath IDs other than Back Rough (id 4) — skipped so we
 /// time only that one toolpath. Setup 2 toolpaths (10, 11) too.
-const SKIP_IDS: &[usize] = &[14, 5, 6, 7, 10, 11, 12];
+const SKIP_IDS: &[ToolpathId] = &[
+    ToolpathId(14),
+    ToolpathId(5),
+    ToolpathId(6),
+    ToolpathId(7),
+    ToolpathId(10),
+    ToolpathId(11),
+    ToolpathId(12),
+];
 
 /// Wall-clock seconds Back Rough takes on the user's tuned Shapeoko XXL
 /// with `adaptive_feed_modulation = false`. Measured 2026-05-26.

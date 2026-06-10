@@ -33,6 +33,7 @@
 
 mod common;
 use common::repo_root;
+use rs_cam_core::ids::ToolpathId;
 
 use std::sync::atomic::AtomicBool;
 
@@ -81,7 +82,7 @@ fn toolpath_config(
 ) -> ToolpathConfig {
     let op_type = op.op_type();
     ToolpathConfig {
-        id,
+        id: ToolpathId(id),
         name: name.to_owned(),
         enabled: true,
         operation: op,

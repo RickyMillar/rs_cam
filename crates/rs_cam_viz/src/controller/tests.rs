@@ -224,7 +224,7 @@ fn sample_controller() -> AppController<ScriptedBackend> {
     });
 
     let tp_config = ToolpathConfig {
-        id: 0,
+        id: ToolpathId(0),
         name: "Scallop".to_owned(),
         enabled: true,
         operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
@@ -257,7 +257,7 @@ fn sample_controller() -> AppController<ScriptedBackend> {
     });
     controller.state.gui.toolpath_rt.insert(tp_id, rt);
 
-    controller.state.selection = Selection::Toolpath(ToolpathId(tp_id));
+    controller.state.selection = Selection::Toolpath(tp_id);
     controller
 }
 
@@ -383,7 +383,13 @@ fn fixture_projects_load_2d_and_3d_models() {
 fn controller_save_open_and_export_smoke() {
     let mut controller = sample_controller();
     controller.state.session.set_name("Smoke".to_owned());
-    controller.state.gui.toolpath_rt.get_mut(&0).unwrap().result = Some(ToolpathResult {
+    controller
+        .state
+        .gui
+        .toolpath_rt
+        .get_mut(&ToolpathId(0))
+        .unwrap()
+        .result = Some(ToolpathResult {
         annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new({
             let mut toolpath = Toolpath::new();
             toolpath.rapid_to(P3::new(0.0, 0.0, 5.0));
@@ -430,7 +436,7 @@ fn simulation_results_capture_setup_boundaries() {
         rs_cam_core::compute::transform::FaceUp::default(),
     );
     let tp2_config = ToolpathConfig {
-        id: 0,
+        id: ToolpathId(0),
         name: "Profile".to_owned(),
         enabled: true,
         operation: OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
@@ -477,7 +483,7 @@ fn simulation_results_capture_setup_boundaries() {
                         direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
                     },
                     crate::compute::worker::SimBoundary {
-                        id: ToolpathId(tp2_id),
+                        id: tp2_id,
                         name: "Profile".to_owned(),
                         tool_name: "End Mill".to_owned(),
                         start_move: 10,
@@ -716,7 +722,7 @@ fn toolpath_results_persist_debug_trace_metadata() {
         .state
         .gui
         .toolpath_rt
-        .get(&0)
+        .get(&ToolpathId(0))
         .expect("toolpath runtime should exist");
     let result = rt.result.as_ref().expect("result should be stored");
     let stored_trace = result
@@ -783,7 +789,7 @@ fn cancelled_toolpath_preserves_debug_trace_metadata() {
         .state
         .gui
         .toolpath_rt
-        .get(&0)
+        .get(&ToolpathId(0))
         .expect("toolpath runtime should exist");
     assert!(matches!(
         rt.status,
@@ -1115,7 +1121,7 @@ fn add_toolpath_and_remove_toolpath_lifecycle() {
         controller
             .state
             .session
-            .find_toolpath_config_by_id(new_tp_id.0)
+            .find_toolpath_config_by_id(new_tp_id)
             .is_none(),
         "Removed toolpath should not be findable"
     );
@@ -1712,7 +1718,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
     };
 
     let tp_config = ToolpathConfig {
-        id: 0,
+        id: ToolpathId(0),
         name: "Pocket (AS001)".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(pocket),
@@ -1735,15 +1741,13 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
         .session
         .add_toolpath(0, tp_config)
         .expect("add pocket to default setup");
-    let tp_id = ToolpathId(
-        controller
-            .state
-            .session
-            .toolpath_configs()
-            .get(tp_idx)
-            .expect("toolpath_configs slot present after add_toolpath")
-            .id,
-    );
+    let tp_id = controller
+        .state
+        .session
+        .toolpath_configs()
+        .get(tp_idx)
+        .expect("toolpath_configs slot present after add_toolpath")
+        .id;
 
     // Drive the production code path. The default setup is identity
     // (face_up=Top, z_rotation=Deg0).

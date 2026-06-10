@@ -29,6 +29,7 @@ pub use project_file::{
     ProjectToolSection, ProjectToolpathSection,
 };
 
+use crate::ids::ToolpathId;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -68,6 +69,9 @@ pub enum SessionError {
     ModelLoad { name: String, detail: String },
     /// Toolpath not found by index.
     ToolpathNotFound(usize),
+    /// Toolpath not found by stable id (R3 — distinct from the
+    /// index-carrying `ToolpathNotFound` so id/index can't conflate).
+    ToolpathIdNotFound(ToolpathId),
     /// Tool not found by id.
     ToolNotFound(ToolId),
     /// Setup not found by index.
@@ -101,7 +105,8 @@ impl std::fmt::Display for SessionError {
             Self::ModelLoad { name, detail } => {
                 write!(f, "Failed to load model '{name}': {detail}")
             }
-            Self::ToolpathNotFound(id) => write!(f, "Toolpath {id} not found"),
+            Self::ToolpathNotFound(index) => write!(f, "Toolpath {index} not found"),
+            Self::ToolpathIdNotFound(id) => write!(f, "Toolpath id {id} not found"),
             Self::ToolNotFound(id) => write!(f, "Tool {} not found", id.0),
             Self::SetupNotFound(id) => write!(f, "Setup {id} not found"),
             Self::ToolInUse(id) => write!(f, "Tool {} is still referenced by toolpaths", id.0),
@@ -420,7 +425,7 @@ pub struct SetupData {
 
 /// Configuration for a single toolpath within the session.
 pub struct ToolpathConfig {
-    pub id: usize,
+    pub id: ToolpathId,
     pub name: String,
     pub enabled: bool,
     pub operation: OperationConfig,
@@ -497,7 +502,7 @@ impl ToolpathComputeResult {
 #[derive(serde::Serialize)]
 pub struct ToolpathSummary {
     pub index: usize,
-    pub id: usize,
+    pub id: ToolpathId,
     pub name: String,
     pub operation_label: String,
     pub enabled: bool,
@@ -550,7 +555,7 @@ pub struct SimulationOptions {
     /// Resolution in mm for tri-dexel stock.
     pub resolution: f64,
     /// Toolpath IDs to skip.
-    pub skip_ids: Vec<usize>,
+    pub skip_ids: Vec<ToolpathId>,
     /// Whether to collect detailed cut metrics.
     pub metrics_enabled: bool,
     /// When `true`, override `resolution` with an auto-computed value based
@@ -644,7 +649,7 @@ impl Default for SimulationOptions {
 /// Per-toolpath diagnostic summary.
 #[derive(Debug, Clone)]
 pub struct ToolpathDiagnostic {
-    pub toolpath_id: usize,
+    pub toolpath_id: ToolpathId,
     pub name: String,
     pub operation_type: String,
     /// Stable op-kind tag (e.g. `"drill"`, `"alignment_pin_drill"`, `"pocket"`).
@@ -711,17 +716,18 @@ pub struct VerdictEvidence {
 ///
 /// Both the core session and the GUI hold the same evidence — but the
 /// GUI's copy lives in a different struct (viz `SimulationResults` +
-/// `SimulationChecks`), and the GUI's boundary type uses a strongly
-/// typed `ToolpathId` while core's uses `usize`. This shared borrow
-/// view lets both callers feed `diagnostics_with_evidence` without
-/// forcing a copy of the full simulation result.
+/// `SimulationChecks`). Both sides key boundaries by the shared
+/// strongly-typed [`ToolpathId`] (R3 unified the previously-`usize`
+/// core side). This shared borrow view lets both callers feed
+/// `diagnostics_with_evidence` without forcing a copy of the full
+/// simulation result.
 #[derive(Default)]
 pub struct ProjectEvidence<'a> {
     /// `(toolpath_id, start_move, end_move)` per simulation boundary —
     /// the rapid-collision counters use this to attribute counts to
     /// the right toolpath. The viz side flattens its
     /// `Vec<ToolpathBoundary>` into this shape.
-    pub boundaries: Vec<(usize, usize, usize)>,
+    pub boundaries: Vec<(ToolpathId, usize, usize)>,
     pub rapid_collisions: &'a [crate::collision::RapidCollision],
     pub rapid_collision_move_indices: &'a [usize],
     pub cut_trace: Option<&'a crate::simulation_cut::SimulationCutTrace>,
@@ -756,7 +762,7 @@ pub struct Verdict {
     pub headline: String,
     /// Toolpath ids this verdict refers to (may be empty for project-wide
     /// signals).
-    pub offender_toolpath_ids: Vec<usize>,
+    pub offender_toolpath_ids: Vec<ToolpathId>,
     /// Suggested next action ("increase retract_z…", "set boundary…").
     pub fix_hint: String,
     pub evidence: VerdictEvidence,
@@ -1131,7 +1137,7 @@ impl ProjectSession {
     // ── ID lookup helpers ─────────────────────────────────────────
 
     /// Find a toolpath config by its semantic ID (not vec index).
-    pub fn find_toolpath_config_by_id(&self, id: usize) -> Option<(usize, &ToolpathConfig)> {
+    pub fn find_toolpath_config_by_id(&self, id: ToolpathId) -> Option<(usize, &ToolpathConfig)> {
         self.toolpath_configs
             .iter()
             .enumerate()
@@ -1141,7 +1147,7 @@ impl ProjectSession {
     /// Find a mutable toolpath config by its semantic ID.
     pub fn find_toolpath_config_by_id_mut(
         &mut self,
-        id: usize,
+        id: ToolpathId,
     ) -> Option<(usize, &mut ToolpathConfig)> {
         self.toolpath_configs
             .iter_mut()
@@ -1150,7 +1156,7 @@ impl ProjectSession {
     }
 
     /// Find which setup (by index) owns a toolpath with the given semantic ID.
-    pub fn setup_of_toolpath_id(&self, tp_id: usize) -> Option<usize> {
+    pub fn setup_of_toolpath_id(&self, tp_id: ToolpathId) -> Option<usize> {
         let tp_index = self.toolpath_configs.iter().position(|tc| tc.id == tp_id)?;
         self.setups
             .iter()
@@ -1168,7 +1174,7 @@ impl ProjectSession {
     }
 
     /// Collect all toolpath semantic IDs.
-    pub fn all_toolpath_ids(&self) -> Vec<usize> {
+    pub fn all_toolpath_ids(&self) -> Vec<ToolpathId> {
         self.toolpath_configs.iter().map(|tc| tc.id).collect()
     }
 
@@ -1448,7 +1454,7 @@ mod tests {
                 fixtures: Vec::new(),
                 keep_out_zones: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {
-                    id: Some(0),
+                    id: Some(ToolpathId(0)),
                     name: "Bare".to_owned(),
                     op_type: Some(OperationType::Profile),
                     operation: None,
@@ -1596,7 +1602,7 @@ mod tests {
                 fixtures: Vec::new(),
                 keep_out_zones: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {
-                    id: Some(0),
+                    id: Some(ToolpathId(0)),
                     name: "Test Pocket".to_owned(),
                     op_type: Some(crate::compute::catalog::OperationType::Pocket),
                     operation: Some(OperationConfig::new_default(
@@ -1728,7 +1734,7 @@ mod tests {
         assert_eq!(session.toolpath_count(), 1);
 
         let new_tp = ToolpathConfig {
-            id: 0, // will be overwritten by add_toolpath
+            id: ToolpathId(0), // will be overwritten by add_toolpath
             name: "New Profile".to_owned(),
             enabled: true,
             operation: OperationConfig::new_default(OperationType::Profile),

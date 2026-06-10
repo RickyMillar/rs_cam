@@ -59,6 +59,7 @@
     clippy::print_stderr
 )]
 
+use rs_cam_core::ids::ToolpathId;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
@@ -117,7 +118,7 @@ fn build_as004_face_session() -> ProjectSession {
     };
 
     let tc = ToolpathConfig {
-        id: 0,
+        id: ToolpathId(0),
         name: "Face (AS004)".to_owned(),
         enabled: true,
         operation: OperationConfig::Face(face),
@@ -178,7 +179,7 @@ fn as004_face_peak_axial_within_commanded_doc() {
     let summary = cut_trace
         .toolpath_summaries
         .iter()
-        .find(|s| s.toolpath_id == 0)
+        .find(|s| s.toolpath_id == ToolpathId(0))
         .expect("toolpath summary for face toolpath");
 
     let peak_axial = summary.peak_axial_doc_mm;
@@ -236,7 +237,7 @@ fn as004_face_deflection_within_safe_band() {
     let verdict = report
         .per_toolpath
         .iter()
-        .find(|v| v.toolpath_id == 0)
+        .find(|v| v.toolpath_id == ToolpathId(0))
         .expect("verdict for face toolpath");
 
     let peak_mm = match &verdict.deflection {
@@ -293,7 +294,7 @@ fn as004_face_no_rapid_collisions() {
     let tp_diag = diag
         .per_toolpath
         .iter()
-        .find(|d| d.toolpath_id == 0)
+        .find(|d| d.toolpath_id == ToolpathId(0))
         .expect("per-toolpath diagnostic for face toolpath");
 
     assert_eq!(
@@ -377,7 +378,7 @@ fn build_as001_pocket_session_from_file() -> ProjectSession {
     };
 
     let tc = ToolpathConfig {
-        id: 0,
+        id: ToolpathId(0),
         name: "Pocket (AS001)".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(pocket),
@@ -453,7 +454,7 @@ fn as001_pocket_actually_removes_stock_material_post_f028() {
     let summary = cut_trace
         .toolpath_summaries
         .iter()
-        .find(|s| s.toolpath_id == 0)
+        .find(|s| s.toolpath_id == ToolpathId(0))
         .expect("toolpath summary for pocket toolpath");
 
     // Bar 1: actually remove material
@@ -481,7 +482,7 @@ fn as001_pocket_actually_removes_stock_material_post_f028() {
     let verdict = report
         .per_toolpath
         .iter()
-        .find(|v| v.toolpath_id == 0)
+        .find(|v| v.toolpath_id == ToolpathId(0))
         .expect("verdict for pocket toolpath");
     if let ChiploadVerdict::Unmodeled { reason } = &verdict.chipload {
         panic!(

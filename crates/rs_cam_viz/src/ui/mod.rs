@@ -308,7 +308,7 @@ pub enum AppEvent {
     /// current/recommended pair).
     SetFeedsExplore(Option<crate::state::NomogramExplore>),
     /// Toggle a row in the Feeds project-view selection.
-    ToggleFeedsProjectRow(usize),
+    ToggleFeedsProjectRow(ToolpathId),
     /// Apply Feeds recommendations to every selected (checked) toolpath.
     ApplyFeedsProjectSelected,
     /// Set the project-view scatter overlay visibility.

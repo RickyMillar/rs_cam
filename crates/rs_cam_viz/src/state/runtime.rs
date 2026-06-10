@@ -267,7 +267,7 @@ pub struct GuiState {
     /// Viz-friendly post config view (mirrors session post config with enum format).
     pub post: PostConfig,
     /// Per-toolpath GUI runtime state, keyed by toolpath semantic ID.
-    pub toolpath_rt: HashMap<usize, ToolpathRuntime>,
+    pub toolpath_rt: HashMap<rs_cam_core::ToolpathId, ToolpathRuntime>,
     /// Per-setup GUI runtime state, keyed by setup semantic ID.
     pub setup_rt: HashMap<usize, SetupRuntime>,
     /// User-toggled overrides for the tool-load export gate. Reset on project load.
@@ -334,7 +334,7 @@ impl GuiState {
     }
 
     /// Get or create a toolpath runtime entry.
-    pub fn toolpath_rt_or_default(&mut self, id: usize) -> &mut ToolpathRuntime {
+    pub fn toolpath_rt_or_default(&mut self, id: rs_cam_core::ToolpathId) -> &mut ToolpathRuntime {
         self.toolpath_rt
             .entry(id)
             .or_insert_with(|| ToolpathRuntime::new(true))

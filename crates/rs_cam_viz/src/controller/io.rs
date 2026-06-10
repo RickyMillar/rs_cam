@@ -249,7 +249,7 @@ impl<B: ComputeBackend> AppController<B> {
                 for tp in job.all_toolpaths() {
                     let mut rt = ToolpathRuntime::new(tp.auto_regen);
                     rt.stale_since = Some(loaded_at);
-                    gui.toolpath_rt.insert(tp.id.0, rt);
+                    gui.toolpath_rt.insert(tp.id, rt);
                 }
 
                 self.state.session = session;
@@ -326,7 +326,7 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
             let tp_index = session_tp_configs.len();
             tp_indices.push(tp_index);
             session_tp_configs.push(rs_cam_core::session::ToolpathConfig {
-                id: tp.id.0,
+                id: tp.id,
                 name: tp.name.clone(),
                 enabled: tp.enabled,
                 operation: tp.operation.clone(),

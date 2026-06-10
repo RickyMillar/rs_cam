@@ -1,5 +1,6 @@
 use crate::debug_trace::{TOOLPATH_DEBUG_SCHEMA_VERSION, ToolpathDebugBounds2, ToolpathDebugTrace};
 use crate::geo::{BoundingBox3, P3};
+use crate::ids::ToolpathId;
 use crate::toolpath::{Move, Toolpath};
 use serde::Serialize;
 use serde::{Deserialize, Serialize as DeriveSerialize};
@@ -90,7 +91,7 @@ pub struct ToolpathSemanticTrace {
 #[derive(Debug, Clone, PartialEq, DeriveSerialize, Deserialize)]
 pub struct ToolpathTraceArtifact {
     pub schema_version: u32,
-    pub toolpath_id: usize,
+    pub toolpath_id: ToolpathId,
     pub toolpath_name: String,
     pub operation_label: String,
     pub tool_summary: String,
@@ -101,7 +102,7 @@ pub struct ToolpathTraceArtifact {
 
 impl ToolpathTraceArtifact {
     pub fn new(
-        toolpath_id: usize,
+        toolpath_id: ToolpathId,
         toolpath_name: impl Into<String>,
         operation_label: impl Into<String>,
         tool_summary: impl Into<String>,
@@ -685,7 +686,7 @@ mod tests {
     #[test]
     fn combined_artifact_writer_creates_json_file() {
         let artifact = ToolpathTraceArtifact::new(
-            1,
+            ToolpathId(1),
             "Pocket 1",
             "Pocket",
             "6.35mm End Mill",

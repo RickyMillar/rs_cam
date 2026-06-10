@@ -40,6 +40,7 @@ use crate::compute::catalog::OperationType;
 use crate::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_chip_envelope_row};
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily};
 use crate::feeds::vendor_normalize::material_to_lut;
+use crate::ids::ToolpathId;
 use crate::simulation_cut::SimulationCutTrace;
 use crate::tool::MillingCutter;
 
@@ -225,7 +226,7 @@ pub(crate) fn is_bipolar_engagement(
 /// without duplicating the threshold constants.
 pub(crate) fn steady_state_samples_for_toolpath<'a>(
     trace: &'a SimulationCutTrace,
-    toolpath_id: usize,
+    toolpath_id: ToolpathId,
     operation_feed_rate_mm_min: f64,
 ) -> SteadyStateSamples<'a> {
     let feed_threshold = STEADY_STATE_FEED_FRACTION * operation_feed_rate_mm_min;
@@ -287,7 +288,7 @@ pub(crate) fn steady_state_samples_for_toolpath<'a>(
 /// — Item D of the tool-load fidelity plan) and `Adaptive3d`
 /// (Adaptive → Pocket so the LUT envelope reflects pocket-style
 /// clearing instead of 2D adaptive HSM — design doc §1.3, §10).
-#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id, op = ?ctx.operation_kind))]
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.0, op = ?ctx.operation_kind))]
 pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) -> ChiploadVerdict {
     let &super::ToolpathLoadContext {
         toolpath_id,
@@ -842,7 +843,7 @@ mod tests {
     ) -> ChiploadVerdict {
         evaluate(
             &crate::tool_load::ToolpathLoadContext {
-                toolpath_id,
+                toolpath_id: ToolpathId(toolpath_id),
                 tool,
                 material,
                 operation_family,
@@ -896,7 +897,7 @@ mod tests {
 
     fn sample(tp_id: usize, idx: usize, chipload: f64, engagement: f64) -> SimulationCutSample {
         SimulationCutSample {
-            toolpath_id: tp_id,
+            toolpath_id: ToolpathId(tp_id),
             move_index: idx,
             sample_index: idx,
             position: [0.0, 0.0, 0.0],

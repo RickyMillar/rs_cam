@@ -169,7 +169,7 @@ fn find_vertical_face(enriched: &EnrichedMesh) -> FaceGroupId {
 fn add_pocket(controller: &mut AppController<ScriptedBackend>) -> ToolpathId {
     use rs_cam_core::compute::catalog::OperationConfig;
     let tp_config = ToolpathConfig {
-        id: 0,
+        id: ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::new_default(OperationType::Pocket),
@@ -195,7 +195,7 @@ fn add_pocket(controller: &mut AppController<ScriptedBackend>) -> ToolpathId {
         .last()
         .unwrap()
         .id;
-    let tp_id = ToolpathId(tp_id_raw);
+    let tp_id = tp_id_raw;
     controller
         .state
         .gui
@@ -252,14 +252,14 @@ fn w3_face_toggle_adds_and_removes() {
         face_id: face_a,
     });
 
-    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id.0).unwrap();
+    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
     assert_eq!(
         tc.face_selection.as_ref().map(|f| f.len()),
         Some(1),
         "Should have 1 face selected"
     );
     assert_eq!(tc.face_selection.as_ref().unwrap()[0], face_a);
-    let rt = c.state.gui.toolpath_rt.get(&tp_id.0).unwrap();
+    let rt = c.state.gui.toolpath_rt.get(&tp_id).unwrap();
     assert!(rt.stale_since.is_some(), "Toolpath should be marked stale");
 
     // Selection should stay on toolpath (not switch to Face panel)
@@ -276,7 +276,7 @@ fn w3_face_toggle_adds_and_removes() {
         face_id: face_a,
     });
 
-    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id.0).unwrap();
+    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
     assert_eq!(
         tc.face_selection, None,
         "Face selection should be None after toggle off"
@@ -391,7 +391,7 @@ fn w3_multi_face_toggle() {
         face_id: face_b,
     });
 
-    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id.0).unwrap();
+    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
     assert_eq!(
         tc.face_selection.as_ref().map(|f| f.len()),
         Some(2),
@@ -413,7 +413,7 @@ fn w4_face_selection_in_undo_snapshot() {
 
     // Capture undo snapshot (simulates what properties panel does on first render)
     {
-        let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id.0).unwrap();
+        let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
         c.state.history.toolpath_snapshot = Some((
             tp_id,
             tc.operation.clone(),
@@ -430,7 +430,7 @@ fn w4_face_selection_in_undo_snapshot() {
     });
 
     // Verify face is selected
-    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id.0).unwrap();
+    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
     assert!(tc.face_selection.is_some());
 
     // Flush snapshot (simulates navigating away from toolpath)
@@ -438,7 +438,7 @@ fn w4_face_selection_in_undo_snapshot() {
     if let Some((snap_id, old_op, old_dressups, old_faces)) =
         c.state.history.toolpath_snapshot.take()
     {
-        if let Some((_, tc)) = c.state.session.find_toolpath_config_by_id(snap_id.0) {
+        if let Some((_, tc)) = c.state.session.find_toolpath_config_by_id(snap_id) {
             c.state
                 .history
                 .push(crate::state::history::UndoAction::ToolpathParamChange {
@@ -455,7 +455,7 @@ fn w4_face_selection_in_undo_snapshot() {
 
     // Undo should restore face_selection to None
     c.handle_internal_event(AppEvent::Undo);
-    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id.0).unwrap();
+    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
     assert_eq!(
         tc.face_selection, None,
         "Undo should restore face_selection to None"
@@ -463,7 +463,7 @@ fn w4_face_selection_in_undo_snapshot() {
 
     // Redo should restore the face selection
     c.handle_internal_event(AppEvent::Redo);
-    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id.0).unwrap();
+    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
     assert!(
         tc.face_selection.is_some(),
         "Redo should restore face_selection"
@@ -501,7 +501,7 @@ fn w5_project_round_trip_preserves_step_face_selection() {
 
     let face_id = find_horizontal_face(&enriched);
     let tp_config = ToolpathConfig {
-        id: 0,
+        id: ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::new_default(OperationType::Pocket),

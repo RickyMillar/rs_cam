@@ -197,6 +197,7 @@ mod tests {
     use super::*;
     use crate::compute::catalog::{OperationConfig, OptimizationSurface};
     use crate::compute::operation_configs::PocketConfig;
+    use crate::ids::ToolpathId;
     use crate::tool_load::verdict::{Confidence, UnmodeledReason};
 
     fn pocket_with_feed_rpm(feed: f64, rpm: u32) -> OperationConfig {
@@ -297,7 +298,7 @@ mod tests {
             policy: &policy,
         };
         let verdict = ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload: within(0.05),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
@@ -348,7 +349,7 @@ mod tests {
             policy: &policy,
         };
         let verdict = ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload: exceeds_chipload(0.005),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
@@ -375,7 +376,7 @@ mod tests {
             policy: &policy,
         };
         let verdict = ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload: unmodeled(),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
@@ -403,7 +404,7 @@ mod tests {
             policy: &policy,
         };
         let verdict = ToolpathLoadVerdict {
-            toolpath_id: 0,
+            toolpath_id: ToolpathId(0),
             chipload: within(0.05),
             power: within_power(0.4),
             deflection: within_deflection(0.020),

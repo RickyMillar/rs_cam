@@ -15,6 +15,7 @@
     clippy::indexing_slicing
 )]
 
+use rs_cam_core::ids::ToolpathId;
 use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::catalog::OperationConfig;
@@ -37,7 +38,7 @@ fn make_drill_tool(diameter: f64) -> ToolConfig {
 
 fn make_drill_toolpath(tool_id: usize, peck_depth: f64) -> ToolpathConfig {
     ToolpathConfig {
-        id: 0,
+        id: ToolpathId(0),
         name: "Pin Drill".to_owned(),
         enabled: true,
         operation: OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
@@ -133,9 +134,9 @@ fn drill_session_produces_drill_summary_with_pecks() {
 
     // PR2 assertion 1: drill_summaries is populated for the drill toolpath.
     let summary = trace
-        .drill_summary_for(0)
+        .drill_summary_for(ToolpathId(0))
         .expect("drill summary for TP0 must be present");
-    assert_eq!(summary.toolpath_id, 0);
+    assert_eq!(summary.toolpath_id, ToolpathId(0));
     assert_eq!(summary.hole_count, 2);
     assert!(
         summary.peck_count >= 2,
@@ -156,7 +157,7 @@ fn drill_session_produces_drill_summary_with_pecks() {
     let drill_samples_for_tp: Vec<_> = trace
         .drill_samples
         .iter()
-        .filter(|s| s.toolpath_id == 0)
+        .filter(|s| s.toolpath_id == ToolpathId(0))
         .collect();
     assert_eq!(
         drill_samples_for_tp.len(),
@@ -179,7 +180,7 @@ fn drill_session_produces_drill_summary_with_pecks() {
     let verdict = report
         .per_toolpath
         .iter()
-        .find(|v| v.toolpath_id == 0)
+        .find(|v| v.toolpath_id == ToolpathId(0))
         .expect("tool-load verdict for drill TP");
     let drill_gates = verdict
         .drill_gates
@@ -239,7 +240,9 @@ fn drill_session_oversize_peck_trips_peck_adequacy_gate() {
         .simulation_result()
         .and_then(|s| s.cut_trace.as_ref())
         .expect("cut trace");
-    let summary = trace.drill_summary_for(0).expect("drill summary");
+    let summary = trace
+        .drill_summary_for(ToolpathId(0))
+        .expect("drill summary");
     assert!(
         !summary.peck_pattern_adequate,
         "13mm peck on Ø2 softwood (peck/D=6.5 vs threshold 6.0) should flag inadequate"
@@ -249,7 +252,7 @@ fn drill_session_oversize_peck_trips_peck_adequacy_gate() {
     let verdict = report
         .per_toolpath
         .iter()
-        .find(|v| v.toolpath_id == 0)
+        .find(|v| v.toolpath_id == ToolpathId(0))
         .expect("verdict for TP0");
     let drill_gates = verdict.drill_gates.as_ref().expect("drill_gates populated");
     assert!(

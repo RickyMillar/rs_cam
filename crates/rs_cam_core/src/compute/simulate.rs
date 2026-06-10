@@ -11,6 +11,7 @@ use crate::compute::transform::SetupTransformInfo;
 use crate::dexel_mesh::dexel_stock_to_mesh;
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
 use crate::geo::{BoundingBox3, P3};
+use crate::ids::ToolpathId;
 use crate::interrupt::Cancelled;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::radial_profile::RadialProfileLUT;
@@ -27,7 +28,7 @@ use crate::toolpath_spans::AnnotatedToolpath;
 /// A single toolpath prepared for simulation.
 pub struct SimToolpathEntry {
     /// Opaque identifier echoed back in boundaries.
-    pub id: usize,
+    pub id: ToolpathId,
     /// Human-readable name (for boundary labels).
     pub name: String,
     /// The toolpath moves to simulate, bundled with the structural spans
@@ -126,7 +127,7 @@ pub struct KinematicsContext {
 
 /// Metadata for one toolpath boundary in the simulation timeline.
 pub struct SimBoundary {
-    pub id: usize,
+    pub id: ToolpathId,
     pub name: String,
     pub tool_name: String,
     pub start_move: usize,
@@ -159,7 +160,7 @@ pub struct SimulationResult {
     /// Per-toolpath snapshots of the material stock *before* that toolpath
     /// carves. Keyed by toolpath id. Used by the dressup air-cut filter and
     /// rest-machining-aware generators.
-    pub prior_stocks: std::collections::HashMap<usize, Arc<TriDexelStock>>,
+    pub prior_stocks: std::collections::HashMap<ToolpathId, Arc<TriDexelStock>>,
 }
 
 /// Error type for simulation failures.
@@ -396,7 +397,7 @@ where
     // *previous* operations.
     let mut rapid_collisions: Vec<RapidCollision> = Vec::new();
     let mut rapid_collision_move_indices: Vec<usize> = Vec::new();
-    let mut prior_stocks: std::collections::HashMap<usize, Arc<TriDexelStock>> =
+    let mut prior_stocks: std::collections::HashMap<ToolpathId, Arc<TriDexelStock>> =
         std::collections::HashMap::new();
     // §6.E accumulators for analytic drill geometry. `group_drill_ops` is
     // reset per group (matches per-setup `group_stock` lifetime); the
@@ -644,7 +645,7 @@ where
             .collect();
         // P4: collect drill-kind toolpath ids so the trace builder
         // suppresses air-cut / low-engagement issue spam for them.
-        let metrics_not_applicable_ids: std::collections::BTreeSet<usize> = request
+        let metrics_not_applicable_ids: std::collections::BTreeSet<ToolpathId> = request
             .groups
             .iter()
             .flat_map(|g| g.toolpaths.iter())
@@ -724,7 +725,7 @@ fn apply_kinematics_cycle_time(
 ) {
     use crate::machine_kinematics::{compute_cycle_time, predicted_feeds_for_toolpath};
 
-    let mut per_toolpath_runtime: BTreeMap<usize, f64> = BTreeMap::new();
+    let mut per_toolpath_runtime: BTreeMap<ToolpathId, f64> = BTreeMap::new();
     // F-035 — when the flag is on, also build a per-(toolpath, move)
     // predicted-feed map so the gates can read achieved feed rather
     // than commanded. The same walk that produces cycle time
@@ -915,7 +916,7 @@ mod tests {
         );
 
         let entry = SimToolpathEntry {
-            id: 1,
+            id: ToolpathId(1),
             name: "Test".to_owned(),
             annotated: Arc::new(AnnotatedToolpath::new(tp)),
             tool,
@@ -1114,7 +1115,7 @@ mod tests {
         );
 
         let entry = SimToolpathEntry {
-            id: 1,
+            id: ToolpathId(1),
             name: "Pocket F-2 validation".to_owned(),
             annotated: Arc::new(AnnotatedToolpath::new(tp)),
             tool: tool_def,
@@ -1218,7 +1219,7 @@ mod tests {
 
         let top_group = SimGroupEntry {
             toolpaths: vec![SimToolpathEntry {
-                id: 1,
+                id: ToolpathId(1),
                 name: "Top Cut".into(),
                 annotated: Arc::new(AnnotatedToolpath::new(top_tp)),
                 tool: make_tool(),
@@ -1237,7 +1238,7 @@ mod tests {
 
         let bottom_group = SimGroupEntry {
             toolpaths: vec![SimToolpathEntry {
-                id: 2,
+                id: ToolpathId(2),
                 name: "Bottom Cut".into(),
                 annotated: Arc::new(AnnotatedToolpath::new(bottom_tp)),
                 tool: make_tool(),

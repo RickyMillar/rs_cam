@@ -17,7 +17,6 @@ use rs_cam_core::tool_load::optimize::{
 
 use super::components::FreshnessGate;
 use super::{AppEvent, theme};
-use crate::state::toolpath::ToolpathId;
 use crate::state::{AppState, OptimizeProjectState, OptimizeProjectStatus};
 
 /// Draw the Optimize-project rollup if `state.optimize_project` is set.
@@ -417,7 +416,7 @@ fn draw_needs_call_row(
             .on_hover_text("Open the per-toolpath optimize detail to inspect and apply.")
             .clicked()
         {
-            events.push(AppEvent::OpenOptimizeModal(ToolpathId(id)));
+            events.push(AppEvent::OpenOptimizeModal(id));
         }
     } else {
         ui.label("");

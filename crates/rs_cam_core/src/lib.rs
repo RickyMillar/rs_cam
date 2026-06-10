@@ -54,6 +54,7 @@ pub mod gcode;
 pub mod gcode_validator;
 pub mod geo;
 pub mod horizontal_finish;
+pub mod ids;
 pub mod inlay;
 pub mod interrupt;
 pub mod io;
@@ -97,3 +98,5 @@ pub mod vcarve;
 pub mod viz;
 pub mod waterline;
 pub mod zigzag;
+
+pub use ids::ToolpathId;

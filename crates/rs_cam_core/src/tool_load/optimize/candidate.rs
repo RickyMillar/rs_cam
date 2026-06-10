@@ -325,7 +325,7 @@ pub(crate) fn evaluate_candidate(
         Err(payload) => {
             let msg = panic_payload_message(payload.as_ref());
             tracing::warn!(
-                toolpath_id = ctx.toolpath_id,
+                toolpath_id = ctx.toolpath_id.0,
                 "candidate evaluation panicked; skipping candidate: {msg}"
             );
             Err(SessionError::OperationFailed(format!(
@@ -529,7 +529,7 @@ pub(crate) fn refine_stage2(
             }
             Err(e) => {
                 tracing::warn!(
-                    toolpath_id = ctx.toolpath_id,
+                    toolpath_id = ctx.toolpath_id.0,
                     "stage-2 refinement dropped a candidate: {e:?}"
                 );
             }

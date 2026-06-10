@@ -16,7 +16,7 @@ use rs_cam_core::compute::config::ToolpathStats;
 /// Cloning this releases the `state.session` borrow so `state.viewport` can be
 /// borrowed mutably inside the card body.
 struct CardInfo {
-    id: usize,
+    id: rs_cam_core::ToolpathId,
     name: String,
     enabled: bool,
     tool_id: usize,
@@ -138,7 +138,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             let dragged_tp_id: ToolpathId = Arc::unwrap_or_clone(payload);
             let source_setup = state
                 .session
-                .setup_of_toolpath_id(dragged_tp_id.0)
+                .setup_of_toolpath_id(dragged_tp_id)
                 .map(|idx| {
                     // SAFETY: setup_of_toolpath_id returns a valid index into list_setups
                     #[allow(clippy::indexing_slicing)]
@@ -264,7 +264,7 @@ fn draw_toolpath_card(
     global_idx: usize,
     _local_idx: usize,
 ) {
-    let tp_id = ToolpathId(tc.id);
+    let tp_id = tc.id;
     let selected = state.selection == Selection::Toolpath(tp_id);
     let visible = rt.is_none_or(|r| r.visible);
     let auto_regen = rt.is_none_or(|r| r.auto_regen);
@@ -654,7 +654,7 @@ fn draw_rest_badge(
     state: &AppState,
     tp_id: ToolpathId,
 ) {
-    let setup_idx = state.session.setup_of_toolpath_id(tp_id.0);
+    let setup_idx = state.session.setup_of_toolpath_id(tp_id);
     let prev_tool_id = rest_cfg.prev_tool_id;
 
     let (badge_text, badge_color) = if let Some(prev_id) = prev_tool_id {
@@ -665,7 +665,7 @@ fn draw_rest_badge(
                     state
                         .session
                         .get_toolpath_config(idx)
-                        .is_some_and(|other| other.id != tp_id.0 && other.tool_id == prev_id.0)
+                        .is_some_and(|other| other.id != tp_id && other.tool_id == prev_id.0)
                 })
             })
         });
@@ -676,7 +676,7 @@ fn draw_rest_badge(
                 state.session.list_setups().get(si).is_some_and(|setup| {
                     setup.toolpath_indices.iter().any(|&idx| {
                         state.session.get_toolpath_config(idx).is_some_and(|other| {
-                            other.id != tp_id.0
+                            other.id != tp_id
                                 && other.tool_id == prev_id.0
                                 && state.gui.toolpath_rt.get(&other.id).is_none_or(|rt| {
                                     matches!(rt.status, ComputeStatus::Pending)

@@ -78,6 +78,7 @@
 
 mod common;
 use common::repo_root;
+use rs_cam_core::ids::ToolpathId;
 
 use std::sync::atomic::AtomicBool;
 
@@ -139,7 +140,7 @@ fn build_as013_terrain_session() -> ProjectSession {
     };
 
     let tc = ToolpathConfig {
-        id: 0,
+        id: ToolpathId(0),
         name: "AS013 adaptive3d".to_owned(),
         enabled: true,
         operation: OperationConfig::Adaptive3d(adaptive3d),
@@ -268,7 +269,7 @@ fn as013_terrain_deflection_within_safe_band_f031() {
     let verdict = report
         .per_toolpath
         .iter()
-        .find(|v| v.toolpath_id == 0)
+        .find(|v| v.toolpath_id == ToolpathId(0))
         .expect("verdict for adaptive3d toolpath");
 
     let peak_mm = match &verdict.deflection {

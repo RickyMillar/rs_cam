@@ -168,7 +168,7 @@ impl RsCamApp {
     }
 
     fn collect_toolpath_outputs(&mut self) -> Result<Vec<(String, String)>, ()> {
-        let toolpaths: Vec<(usize, String)> = self
+        let toolpaths: Vec<(rs_cam_core::ToolpathId, String)> = self
             .controller
             .state()
             .session

@@ -35,6 +35,7 @@
 
 mod common;
 use common::make_endmill_6mm;
+use rs_cam_core::ids::ToolpathId;
 
 use std::f64::consts::TAU;
 use std::path::PathBuf;
@@ -129,7 +130,7 @@ fn build_as001_pocket_session() -> ProjectSession {
     };
 
     let tc = ToolpathConfig {
-        id: 0,
+        id: ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(pocket),
@@ -246,7 +247,7 @@ fn as001_pocket_deflection_gate_within_safe_band() {
     let verdict = report
         .per_toolpath
         .iter()
-        .find(|v| v.toolpath_id == 0)
+        .find(|v| v.toolpath_id == ToolpathId(0))
         .expect("verdict for pocket toolpath");
 
     let peak_mm = match &verdict.deflection {

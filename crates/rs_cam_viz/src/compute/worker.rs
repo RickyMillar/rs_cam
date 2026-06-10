@@ -228,7 +228,7 @@ pub enum OptimizeRequest {
         /// Stable id from the toolpath config — pass-through so the
         /// main thread can match the result to the open modal even if
         /// indices have shifted.
-        toolpath_id: usize,
+        toolpath_id: rs_cam_core::ToolpathId,
     },
     /// Run `optimize_project` over every enabled toolpath. Surfaces in
     /// the U3 rollup view.
@@ -250,7 +250,7 @@ pub struct OptimizeResult {
 
 pub enum OptimizeResultKind {
     Toolpath {
-        toolpath_id: usize,
+        toolpath_id: rs_cam_core::ToolpathId,
         outcome: rs_cam_core::tool_load::optimize::OptimizeOutcome,
     },
     Project {

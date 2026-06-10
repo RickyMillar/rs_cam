@@ -26,7 +26,7 @@ impl RsCamApp {
         match &state.selection {
             Selection::Toolpath(tp_id) => state
                 .session
-                .find_toolpath_config_by_id(tp_id.0)
+                .find_toolpath_config_by_id(*tp_id)
                 .and_then(|(_, tc)| tc.face_selection.clone())
                 .unwrap_or_default(),
             Selection::Face(_, face_id) => vec![*face_id],
@@ -133,7 +133,7 @@ impl RsCamApp {
                     // Map toolpath ID → setup via session
                     state
                         .session
-                        .setup_of_toolpath_id(tp_id.0)
+                        .setup_of_toolpath_id(*tp_id)
                         .and_then(|idx| state.session.list_setups().get(idx))
                         .map(|sd| SetupId(sd.id))
                 }
@@ -698,8 +698,8 @@ impl RsCamApp {
             // (envelope, per-move) pairing.
             #[allow(clippy::type_complexity)]
             let chipload_inputs: Option<(
-                HashMap<usize, Range<f64>>,
-                HashMap<usize, HashMap<usize, f64>>,
+                HashMap<rs_cam_core::ToolpathId, Range<f64>>,
+                HashMap<rs_cam_core::ToolpathId, HashMap<usize, f64>>,
             )> = if matches!(
                 state.viewport.toolpath_color_mode,
                 crate::state::viewport::ToolpathColorMode::Chipload
@@ -730,7 +730,7 @@ impl RsCamApp {
                 let rt = gui.toolpath_rt.get(&tc.id);
 
                 // Skip invisible toolpaths; also skip if not the isolated toolpath
-                let tp_id = crate::state::toolpath::ToolpathId(tc.id);
+                let tp_id = tc.id;
                 let visible = rt.is_none_or(|r| r.visible)
                     && match isolate {
                         Some(iso_id) => tp_id == iso_id,
@@ -840,7 +840,7 @@ impl RsCamApp {
         if let Selection::Toolpath(tp_id) = self.controller.state().selection {
             let state = self.controller.state();
             let session = &state.session;
-            if let Some((_, tc)) = session.find_toolpath_config_by_id(tp_id.0) {
+            if let Some((_, tc)) = session.find_toolpath_config_by_id(tp_id) {
                 let height_ctx = height_context_from_session(session, tc);
                 let heights = tc.heights.resolve(&height_ctx);
                 // Use the same stock bbox as the rest of the viewport (local or global)
@@ -872,7 +872,7 @@ impl RsCamApp {
 fn build_chipload_envelopes(
     session: &rs_cam_core::session::ProjectSession,
     sim_trace: Option<&rs_cam_core::simulation_cut::SimulationCutTrace>,
-) -> HashMap<usize, Range<f64>> {
+) -> HashMap<rs_cam_core::ToolpathId, Range<f64>> {
     rs_cam_core::tool_load::chipload_envelopes_for_session(session, sim_trace)
 }
 
@@ -882,8 +882,8 @@ fn build_chipload_envelopes(
 /// without an effective chip thickness (rapids, transients) are skipped.
 fn build_chipload_per_move(
     sim_trace: Option<&rs_cam_core::simulation_cut::SimulationCutTrace>,
-) -> HashMap<usize, HashMap<usize, f64>> {
-    let mut map: HashMap<usize, HashMap<usize, f64>> = HashMap::new();
+) -> HashMap<rs_cam_core::ToolpathId, HashMap<usize, f64>> {
+    let mut map: HashMap<rs_cam_core::ToolpathId, HashMap<usize, f64>> = HashMap::new();
     let Some(trace) = sim_trace else {
         return map;
     };
