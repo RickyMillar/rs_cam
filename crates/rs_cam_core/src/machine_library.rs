@@ -184,10 +184,24 @@ pub fn resolve_in(dir: &Path, machine_ref: Option<&str>, inline: MachineProfile)
         };
     };
     match load_from(dir, name) {
-        Ok(profile) => Resolved {
-            profile,
-            warning: None,
-        },
+        // F4.4 — the library file is the source of truth, but when it
+        // DIFFERS from the project's inline copy the override used to
+        // be silent: the user saw inline numbers in the file while the
+        // session ran different caps. Surface it.
+        Ok(profile) => {
+            let differs =
+                serde_json::to_string(&profile).ok() != serde_json::to_string(&inline).ok();
+            Resolved {
+                warning: differs.then(|| {
+                    format!(
+                        "machine reference {name:?}: library profile overrides the \
+                         project's inline machine copy (they differ; the library file \
+                         is the source of truth)"
+                    )
+                }),
+                profile,
+            }
+        }
         Err(e) => Resolved {
             profile: inline,
             warning: Some(format!(
@@ -283,7 +297,27 @@ mod tests {
 
         let r = resolve_in(&dir, Some("shapeoko"), inline);
         assert_eq!(r.profile.name, "From Library");
-        assert!(r.warning.is_none());
+        // F4.4 — the override is no longer silent: library != inline
+        // must surface a warning naming the source of truth.
+        let warning = r.warning.expect("differing override must warn");
+        assert!(warning.contains("overrides"), "got: {warning}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// F4.4 — when the library file and the inline copy agree, the
+    /// resolve stays quiet (no warning noise on every load).
+    #[test]
+    fn resolve_identical_library_and_inline_is_silent() {
+        let dir = temp_dir("resolve_identical");
+        let lib = MachineProfile::generic_wood_router();
+        save_to(&dir, "shapeoko", &lib).unwrap();
+
+        let r = resolve_in(
+            &dir,
+            Some("shapeoko"),
+            MachineProfile::generic_wood_router(),
+        );
+        assert!(r.warning.is_none(), "got: {:?}", r.warning);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

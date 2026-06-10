@@ -1394,11 +1394,13 @@ impl ProjectSession {
             crate::tool_load::ModulationSummary,
         > = std::collections::BTreeMap::new();
 
-        let max_feed = self.machine.max_feed_mm_min.max(1.0);
+        // F4: modulation raises/lowers CUTTING feed — its ceiling is
+        // the cutting ceiling. Rapids keep the travel rate.
+        let max_feed = self.machine.cutting_feed_ceiling_mm_min().max(1.0);
         let rapid_feed = if self.post.high_feedrate_mode {
             self.post.high_feedrate.max(1.0)
         } else {
-            max_feed
+            self.machine.max_feed_mm_min.max(1.0)
         };
 
         // Toolpath indices to walk: enabled, with a result, with at least

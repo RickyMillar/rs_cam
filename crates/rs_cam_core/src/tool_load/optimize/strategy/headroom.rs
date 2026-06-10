@@ -72,8 +72,8 @@ pub(crate) fn solve_headroom_scale(inputs: &Stage0Inputs<'_>) -> f64 {
     let (_min_rpm, max_rpm) = inputs.machine.rpm_range();
     let k_rpm_machine = max_rpm / rpm_baseline;
 
-    // 2. Machine feed cap.
-    let k_feed = inputs.machine.max_feed_mm_min / feed_baseline;
+    // 2. Machine feed cap (F4: cutting ceiling, not travel rate).
+    let k_feed = inputs.machine.cutting_feed_ceiling_mm_min() / feed_baseline;
 
     // 3. Power cap. `machine_max_power_kw × safety / peak_baseline`
     //    works for both `ConstantPower` (rhs is constant) and
@@ -446,6 +446,9 @@ mod stage0_solve_tests {
             power,
             chip_load: ChipLoadFormula::default(),
             max_feed_mm_min: max_feed,
+            // F4: tests drive the cutting ceiling directly so the
+            // synthetic `max_feed` knob keeps its pre-F4 meaning.
+            max_cutting_feed_mm_min: Some(max_feed),
             max_shank_mm: 7.0,
             rigidity: RigidityProfile::default(),
             safety_factor: safety,

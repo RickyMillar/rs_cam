@@ -114,7 +114,12 @@ impl MachineKinematics {
     /// toolpath. Tuning a per-axis kinematics struct is a F-034
     /// follow-up; until then this scalar absorbs the geometry mix.
     /// The `max_feed_mm_min` cap should be set on the `MachineProfile`
-    /// itself to match the user's `$110/$111 = 10000 mm/min`.
+    /// itself to match the user's `$110/$111 = 10000 mm/min`. F4
+    /// (2026-06-10): that field is the TRAVEL rate consumed here by
+    /// the cycle-time integrator; cutting feeds are bounded separately
+    /// by `MachineProfile::cutting_feed_ceiling_mm_min`, so setting
+    /// travel to 10000 no longer lets the optimizer propose cutting
+    /// hardwood at 10000.
     pub fn shapeoko_xxl_ricky_tuned() -> Self {
         Self {
             acceleration_mm_s2: 350.0,

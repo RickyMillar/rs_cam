@@ -99,6 +99,39 @@ pub struct OptimizeOutcome {
     /// `NoSafeImprovement` or `Skipped`; `None` for the other tiers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<RefuseReason>,
+    /// F4.3 — snapshot of the machine profile the run consumed (name +
+    /// caps), populated by [`super::optimize_toolpath`] on every
+    /// outcome so narratives are reconcilable with what the search
+    /// actually used (the session machine can change between the run
+    /// and the readout).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_snapshot: Option<MachineSnapshot>,
+}
+
+/// F4.3 — the machine caps an optimize run consumed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MachineSnapshot {
+    pub name: String,
+    /// Travel rate ($110-class) — rapid/linking cap.
+    pub max_feed_mm_min: f64,
+    /// Cutting-feed ceiling the search space was bounded by
+    /// ([`crate::machine::MachineProfile::cutting_feed_ceiling_mm_min`]).
+    pub cutting_feed_ceiling_mm_min: f64,
+    pub rpm_min: f64,
+    pub rpm_max: f64,
+}
+
+impl MachineSnapshot {
+    pub fn of(machine: &crate::machine::MachineProfile) -> Self {
+        let (rpm_min, rpm_max) = machine.rpm_range();
+        Self {
+            name: machine.name.clone(),
+            max_feed_mm_min: machine.max_feed_mm_min,
+            cutting_feed_ceiling_mm_min: machine.cutting_feed_ceiling_mm_min(),
+            rpm_min,
+            rpm_max,
+        }
+    }
 }
 
 impl OptimizeOutcome {
@@ -116,6 +149,7 @@ impl OptimizeOutcome {
             narrative: Box::new(narrative),
             recommended_index,
             reason: None,
+            machine_snapshot: None,
         }
     }
 
@@ -131,6 +165,7 @@ impl OptimizeOutcome {
             narrative: Box::new(narrative),
             recommended_index,
             reason: None,
+            machine_snapshot: None,
         }
     }
 
@@ -144,6 +179,7 @@ impl OptimizeOutcome {
             narrative: Box::new(narrative),
             recommended_index: None,
             reason: None,
+            machine_snapshot: None,
         }
     }
 
@@ -161,6 +197,7 @@ impl OptimizeOutcome {
             narrative: Box::new(narrative),
             recommended_index: None,
             reason: Some(reason),
+            machine_snapshot: None,
         }
     }
 
@@ -173,6 +210,7 @@ impl OptimizeOutcome {
             narrative: Box::default(),
             recommended_index: None,
             reason: Some(reason),
+            machine_snapshot: None,
         }
     }
 

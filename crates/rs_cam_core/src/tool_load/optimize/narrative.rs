@@ -477,7 +477,8 @@ fn filter_suggestions_by_envelope(
     machine: &MachineProfile,
 ) -> Vec<OperatorSuggestion> {
     let (rpm_min, rpm_max) = machine.rpm_range();
-    let feed_max = machine.max_feed_mm_min;
+    // F4: operator suggestions are about cutting feeds.
+    let feed_max = machine.cutting_feed_ceiling_mm_min();
 
     let mut dropped: Vec<String> = Vec::new();
     let mut kept: Vec<OperatorSuggestion> = Vec::new();

@@ -2068,10 +2068,13 @@ fn recalibrate_feed_for_chipload(
         {
             let target_nominal = target / pred_before.arc_fit_ratio;
             let target_feed = target_nominal * f64::from(rpm) * f64::from(tool.flute_count);
-            let mut new_feed = target_feed.min(machine.max_feed_mm_min);
+            // F4: recalibration raises CUTTING feed — cap at the
+            // cutting ceiling, not the travel rate.
+            let machine_cut_ceiling = machine.cutting_feed_ceiling_mm_min();
+            let mut new_feed = target_feed.min(machine_cut_ceiling);
             let mut cap_hit: Option<FeedRecalibrationCap> = None;
 
-            if target_feed > machine.max_feed_mm_min {
+            if target_feed > machine_cut_ceiling {
                 cap_hit = Some(FeedRecalibrationCap::MaxFeed);
             }
 
