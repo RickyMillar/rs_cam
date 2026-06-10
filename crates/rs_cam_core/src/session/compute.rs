@@ -1775,14 +1775,51 @@ impl ProjectSession {
     /// session's cached simulation. Consumers that hold sim evidence
     /// outside the core session (the GUI keeps it on viz-side state)
     /// should call [`Self::diagnostics_with_evidence`] instead.
+    ///
+    /// This batch entry point runs the holder/shank collision sweep
+    /// (one `collision_check` per computed toolpath) to build full
+    /// evidence — appropriate for CLI/export, NOT for per-frame UI.
     #[instrument(skip(self))]
     pub fn diagnostics(&self) -> ProjectDiagnostics {
+        let no_cancel = AtomicBool::new(false);
+        let holder_collisions = self.holder_collision_counts(&no_cancel);
         let evidence = self
             .simulation
             .as_ref()
-            .map(ProjectEvidence::from_simulation)
-            .unwrap_or_default();
+            .map(|sim| {
+                ProjectEvidence::from_simulation_with_holder_collisions(
+                    sim,
+                    holder_collisions.clone(),
+                )
+            })
+            .unwrap_or_else(|| ProjectEvidence {
+                holder_collisions: holder_collisions.clone(),
+                ..ProjectEvidence::default()
+            });
         self.diagnostics_with_evidence(&evidence)
+    }
+
+    /// Run the holder/shank collision check for every computed
+    /// toolpath and return `(toolpath_id, collision_count)` pairs.
+    /// Toolpaths whose check fails (missing mesh, etc.) count as 0,
+    /// matching the legacy in-diagnostics behavior.
+    ///
+    /// This is the expensive sweep (spatial-index build + interpolated
+    /// toolpath walk per toolpath). Interactive surfaces should reuse
+    /// their last dedicated check instead of calling this per frame.
+    pub fn holder_collision_counts(&self, cancel: &AtomicBool) -> Vec<(ToolpathId, usize)> {
+        self.toolpath_configs
+            .iter()
+            .enumerate()
+            .filter(|(idx, _)| self.results.contains_key(idx))
+            .map(|(idx, tc)| {
+                let count = self
+                    .collision_check(idx, cancel)
+                    .map(|r| r.collision_report.collisions.len())
+                    .unwrap_or(0);
+                (tc.id, count)
+            })
+            .collect()
     }
 
     /// Same as [`Self::diagnostics`] but takes a borrow view over
@@ -1798,7 +1835,6 @@ impl ProjectSession {
         let mut per_toolpath = Vec::new();
         let mut total_collision_count: usize = 0;
         let mut total_rapid_collision_count: usize = 0;
-        let no_cancel = AtomicBool::new(false);
 
         // Per-TP context collected in the toolpath loop for later verdict
         // emission. We index by `toolpath_id` (which equals `tc.id`).
@@ -1889,11 +1925,19 @@ impl ProjectSession {
                     ));
                 }
 
-                // Run holder/shank collision check; gracefully default to 0
-                // if model geometry is missing or check otherwise fails.
-                let holder_collision_count = self
-                    .collision_check(idx, &no_cancel)
-                    .map(|r| r.collision_report.collisions.len())
+                // Holder/shank collisions come from the supplied evidence
+                // (the caller's most recent dedicated check, or
+                // `holder_collision_counts` for batch paths). This used
+                // to run `collision_check` inline — a spatial-index
+                // build + full toolpath sweep PER TOOLPATH — which the
+                // GUI setup panel then executed every frame (2026-06-11
+                // setup-tab lag). Diagnostics consume evidence; they do
+                // not compute it.
+                let holder_collision_count = evidence
+                    .holder_collisions
+                    .iter()
+                    .find(|(id, _)| *id == tc.id)
+                    .map(|(_, count)| *count)
                     .unwrap_or(0);
                 total_collision_count += holder_collision_count;
 
@@ -2411,12 +2455,10 @@ impl ProjectSession {
     /// simulation. Consumers with sim evidence outside the session
     /// (the GUI) should call [`Self::diagnose_project_with_evidence`].
     pub fn diagnose_project(&self) -> Vec<crate::diagnostics::Diagnostic> {
-        let evidence = self
-            .simulation
-            .as_ref()
-            .map(ProjectEvidence::from_simulation)
-            .unwrap_or_default();
-        self.diagnose_project_with_evidence(&evidence)
+        // Batch entry point — same full-evidence semantics as
+        // `diagnostics()`, including the holder-collision sweep.
+        let diag = self.diagnostics();
+        crate::diagnostics::diagnose_project_diagnostics(&diag)
     }
 
     /// Same as [`Self::diagnose_project`] but takes a borrow view
@@ -3139,6 +3181,48 @@ mod tests {
             debug_trace: None,
             semantic_trace: None,
         }
+    }
+
+    /// Setup-tab lag fix (2026-06-11): holder/shank collisions are
+    /// EVIDENCE consumed by `diagnostics_with_evidence`, not something
+    /// it computes. Empty evidence → no holder verdict even though
+    /// results exist; supplied counts → verdict with exactly those
+    /// counts. (The old behavior ran a full `collision_check` sweep per
+    /// toolpath inside diagnostics, which the GUI setup panel then
+    /// executed every frame.)
+    #[test]
+    fn diagnostics_with_evidence_consumes_holder_counts_instead_of_computing() {
+        let mut s = make_session_with_two_tps();
+        let mut r = empty_result();
+        r.stats.cutting_distance = 100.0;
+        s.results.insert(0, r);
+
+        // No holder evidence → no holder verdict, zero count.
+        let diag = s.diagnostics_with_evidence(&ProjectEvidence::default());
+        assert_eq!(diag.collision_count, 0);
+        assert!(
+            !diag
+                .verdicts
+                .iter()
+                .any(|v| matches!(v.kind, crate::session::VerdictKind::HolderCollision)),
+            "no holder verdict without holder evidence"
+        );
+
+        // Supplied counts surface verbatim.
+        let tp0_id = s.toolpath_configs()[0].id;
+        let evidence = ProjectEvidence {
+            holder_collisions: vec![(tp0_id, 3)],
+            ..ProjectEvidence::default()
+        };
+        let diag = s.diagnostics_with_evidence(&evidence);
+        assert_eq!(diag.collision_count, 3);
+        let verdict = diag
+            .verdicts
+            .iter()
+            .find(|v| matches!(v.kind, crate::session::VerdictKind::HolderCollision))
+            .expect("holder verdict from supplied evidence");
+        assert_eq!(verdict.evidence.count, Some(3));
+        assert_eq!(verdict.offender_toolpath_ids, vec![tp0_id]);
     }
 
     /// A12: per-toolpath diagnostics carry an `op_kind` snake_case tag so

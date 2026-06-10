@@ -853,6 +853,28 @@ impl SimulationState {
         self.move_to_local_toolpath_move(self.playback.current_move)
     }
 
+    /// Per-toolpath holder/shank collision counts from the last
+    /// dedicated collision check, attributed via simulation boundaries.
+    /// Empty when no check has run. This is the holder evidence the
+    /// core's `diagnostics_with_evidence` consumes — derived from the
+    /// stored report (O(collisions)), never recomputed, so it is safe
+    /// to call at frame rate (the 2026-06-11 setup-tab lag was the
+    /// diagnostics path re-running the full collision sweep per frame).
+    pub fn holder_collision_counts_by_tp(&self) -> Vec<(ToolpathId, usize)> {
+        let mut counts: Vec<(ToolpathId, usize)> = Vec::new();
+        if let Some(report) = self.checks.collision_report.as_ref() {
+            for collision in &report.collisions {
+                if let Some((_, id, _)) = self.move_to_local_toolpath_move(collision.move_idx) {
+                    match counts.iter_mut().find(|(cid, _)| *cid == id) {
+                        Some((_, count)) => *count += 1,
+                        None => counts.push((id, 1)),
+                    }
+                }
+            }
+        }
+        counts
+    }
+
     pub fn boundary_for_toolpath_id(&self, toolpath_id: ToolpathId) -> Option<&ToolpathBoundary> {
         self.boundaries()
             .iter()

@@ -731,6 +731,18 @@ pub struct ProjectEvidence<'a> {
     pub rapid_collisions: &'a [crate::collision::RapidCollision],
     pub rapid_collision_move_indices: &'a [usize],
     pub cut_trace: Option<&'a crate::simulation_cut::SimulationCutTrace>,
+    /// Per-toolpath holder/shank collision counts, supplied by the
+    /// caller from its most recent dedicated collision check. Empty =
+    /// no holder evidence (no holder verdicts are emitted).
+    ///
+    /// Evidence is an INPUT here on purpose: `diagnostics_with_evidence`
+    /// used to run `collision_check` (spatial-index build + full
+    /// toolpath sweep) per toolpath internally, and the GUI's setup
+    /// panel calls project diagnostics every frame — on a generated
+    /// project that recomputed every toolpath's collision sweep at
+    /// frame rate (the 2026-06-11 setup-tab lag). Batch callers that
+    /// want the sweep use [`ProjectSession::holder_collision_counts`].
+    pub holder_collisions: Vec<(ToolpathId, usize)>,
 }
 
 impl<'a> ProjectEvidence<'a> {
@@ -746,6 +758,20 @@ impl<'a> ProjectEvidence<'a> {
             rapid_collisions: &sim.rapid_collisions,
             rapid_collision_move_indices: &sim.rapid_collision_move_indices,
             cut_trace: sim.cut_trace.as_deref(),
+            holder_collisions: Vec::new(),
+        }
+    }
+
+    /// Same as [`Self::from_simulation`] plus holder-collision counts
+    /// (see the `holder_collisions` field docs for why these are an
+    /// input rather than computed internally).
+    pub fn from_simulation_with_holder_collisions(
+        sim: &'a SimulationResult,
+        holder_collisions: Vec<(ToolpathId, usize)>,
+    ) -> Self {
+        Self {
+            holder_collisions,
+            ..Self::from_simulation(sim)
         }
     }
 }
