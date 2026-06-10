@@ -293,19 +293,37 @@ fn wanaka_suggest_baseline() {
         // (0.054 mm/tooth), post-fix lands 6912 mm/min on the same
         // target. The wanaka project's machine.max_feed is 10_000
         // mm/min, so no cap binds.
+        // F4 (2026-06-10): the wanaka machine's 10_000 mm/min is its
+        // TRAVEL rate; the cutting ceiling derives to 6_000
+        // (DEFAULT_CUTTING_FEED_CAP). The v3.0d solve wants 6912
+        // mm/min on the median target — pre-F4 it got it (cutting at
+        // a feed chosen against the gantry travel spec); post-F4 the
+        // recalibration caps at the cutting ceiling and honestly
+        // reports the shortfall. A profile that genuinely cuts faster
+        // sets max_cutting_feed_mm_min explicitly.
         assert!(
-            feed_after > 6500.0 && feed_after < 7500.0,
-            "{ctx}: post-recal feed must land in ~6500-7500 mm/min on Wanaka case (v3.0d RPM-idempotent median target), got {feed_after}"
+            (feed_after - 6000.0).abs() < 1e-6,
+            "{ctx}: post-recal feed must cap at the cutting ceiling (6000), got {feed_after}"
         );
         assert_eq!(
-            cap_hit, None,
-            "{ctx}: no cap should bind (machine.max_feed is 10_000 mm/min on this project's machine), got {cap_hit:?}"
+            cap_hit,
+            Some(FeedRecalibrationCap::MaxFeed),
+            "{ctx}: the cutting ceiling must bind, got {cap_hit:?}"
         );
-        // When uncapped, the closed-form solve lands observed at the
-        // policy target (median of the LUT band under v3.0c default).
         assert!(
-            (obs_after - lut_target).abs() < 1e-6 || obs_after >= lut_target * 0.95,
-            "{ctx}: predicted observed chipload after must be ≥ ~95% of LUT target, got {obs_after} vs lut_target {lut_target}"
+            obs_after < lut_target && obs_after > lut_target * 0.8,
+            "{ctx}: capped observed lands just under the target (~0.87×), got {obs_after} vs lut_target {lut_target}"
+        );
+        let still_low_cap = suggested.warnings.iter().find_map(|w| match w {
+            SuggestWarning::ChiploadStillLowAfterRecalibration { blocking_cap, .. } => {
+                Some(*blocking_cap)
+            }
+            _ => None,
+        });
+        assert_eq!(
+            still_low_cap,
+            Some(FeedRecalibrationCap::MaxFeed),
+            "{ctx}: still-low warning must name the binding cap, got {still_low_cap:?}"
         );
         assert!(
             obs_before < lut_target,
@@ -350,7 +368,8 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::DepthClampedToCuttingLength { .. }
                 | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
                 | SuggestWarning::StrategyRewrote { .. }
-                | SuggestWarning::AxialDocClampedByEnvelope { .. } => {}
+                | SuggestWarning::AxialDocClampedByEnvelope { .. }
+                | SuggestWarning::ChiploadStillLowAfterRecalibration { .. } => {}
                 other => {
                     panic!("{ctx}: unexpected SuggestWarning variant slipped through: {other:?}")
                 }
@@ -395,18 +414,19 @@ fn wanaka_suggest_baseline() {
         let (_, feed_after, obs_before, obs_after, lut_target, _) =
             assert_has_feed_raised(&suggested.warnings, &ctx);
         // v3.0d: same Wanaka geometry as Back Rough → same operating
-        // point (DPP 3.69 mm, feed 6912 mm/min on the median target).
+        // point. F4 (2026-06-10): the solve's 6912 mm/min target feed
+        // now caps at the 6000 cutting ceiling (see Back Rough above).
         assert!(
-            feed_after > 6500.0 && feed_after < 7500.0,
-            "{ctx}: post-recal feed must land in ~6500-7500 mm/min (v3.0d RPM-idempotent median), got {feed_after}"
+            (feed_after - 6000.0).abs() < 1e-6,
+            "{ctx}: post-recal feed must cap at the cutting ceiling (6000), got {feed_after}"
         );
         assert!(
             obs_before < lut_target,
             "{ctx}: pre-recal observed must be below LUT target, got {obs_before}"
         );
         assert!(
-            obs_after >= lut_target * 0.95,
-            "{ctx}: post-recal observed must be ≥ ~95% of LUT target, got {obs_after}"
+            obs_after < lut_target && obs_after > lut_target * 0.8,
+            "{ctx}: capped observed lands just under the target, got {obs_after}"
         );
     }
 

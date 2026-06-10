@@ -76,7 +76,23 @@ pub struct MachineProfile {
     pub spindle: SpindleConfig,
     pub power: PowerModel,
     pub chip_load: ChipLoadFormula,
+    /// Machine TRAVEL rate ($110-class) — what rapids, linking moves,
+    /// and the kinematics integrator can command. F4 (2026-06-10):
+    /// this is NOT the cutting ceiling. Pre-F4 the optimizer / suggest
+    /// / modulation all read this field as the cutting-feed cap, so a
+    /// 10 000 mm/min-travel profile could be told to CUT hardwood at
+    /// 10 000. Cutting consumers read
+    /// [`Self::cutting_feed_ceiling_mm_min`]. (Field name kept for
+    /// serde compatibility with existing project files and
+    /// machine-library TOMLs.)
     pub max_feed_mm_min: f64,
+    /// F4 — explicit ceiling for CUTTING feeds (optimizer search
+    /// space, suggest recalibration, adaptive feed modulation).
+    /// `None` derives the conservative default
+    /// `min(travel, DEFAULT_CUTTING_FEED_CAP_MM_MIN)`. Set explicitly
+    /// on rigid machines that genuinely cut faster.
+    #[serde(default)]
+    pub max_cutting_feed_mm_min: Option<f64>,
     pub max_shank_mm: f64,
     pub rigidity: RigidityProfile,
     pub safety_factor: f64,
@@ -97,7 +113,25 @@ impl Default for MachineProfile {
     }
 }
 
+/// F4 — conservative cutting-feed cap used when a profile doesn't set
+/// `max_cutting_feed_mm_min` explicitly. 6 000 mm/min sits above every
+/// vendor wood-routing recommendation in the embedded literature net
+/// (Onsrud industrial charts top out near 5 000–6 000 for the machine
+/// classes we model) while staying far under gantry travel rates
+/// (10 000+). A machine that genuinely cuts faster declares it.
+pub const DEFAULT_CUTTING_FEED_CAP_MM_MIN: f64 = 6000.0;
+
 impl MachineProfile {
+    /// F4 — the feed ceiling for CUTTING moves. Explicit
+    /// `max_cutting_feed_mm_min` when set, else
+    /// `min(travel, DEFAULT_CUTTING_FEED_CAP_MM_MIN)`. Never exceeds
+    /// the travel rate — a cut can't outrun the axes.
+    pub fn cutting_feed_ceiling_mm_min(&self) -> f64 {
+        self.max_cutting_feed_mm_min
+            .unwrap_or(DEFAULT_CUTTING_FEED_CAP_MM_MIN)
+            .min(self.max_feed_mm_min)
+    }
+
     /// Conservative generic wood router defaults.
     pub fn generic_wood_router() -> Self {
         MachineProfile {
@@ -109,6 +143,7 @@ impl MachineProfile {
             power: PowerModel::ConstantPower { power_kw: 0.8 },
             chip_load: ChipLoadFormula::default(),
             max_feed_mm_min: 4000.0,
+            max_cutting_feed_mm_min: None,
             max_shank_mm: 6.35,
             rigidity: RigidityProfile {
                 doc_roughing_factor: 0.20,
@@ -145,6 +180,7 @@ impl MachineProfile {
                 q: 1.26,
             },
             max_feed_mm_min: 5000.0,
+            max_cutting_feed_mm_min: None,
             max_shank_mm: 7.0,
             rigidity: RigidityProfile::default(),
             safety_factor: 0.80,
@@ -166,6 +202,7 @@ impl MachineProfile {
                 q: 1.26,
             },
             max_feed_mm_min: 5000.0,
+            max_cutting_feed_mm_min: None,
             max_shank_mm: 6.35,
             rigidity: RigidityProfile::default(),
             safety_factor: 0.80,
@@ -254,6 +291,34 @@ impl MachineProfile {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    /// F4 — the validation case from the defect-class tracker: a
+    /// profile with 10 000 mm/min travel ($110-class, the ricky-XXL
+    /// setup) must NOT expose 10 000 as the cutting ceiling — the
+    /// derived default caps cutting at 6 000 while rapids keep the
+    /// full travel rate. An explicit `max_cutting_feed_mm_min` wins,
+    /// but can never exceed travel.
+    #[test]
+    fn cutting_ceiling_split_from_travel_rate() {
+        let mut m = MachineProfile::generic_wood_router();
+        m.max_feed_mm_min = 10_000.0;
+        assert!(
+            (m.cutting_feed_ceiling_mm_min() - DEFAULT_CUTTING_FEED_CAP_MM_MIN).abs() < 1e-9,
+            "10k-travel profile must derive the conservative cutting cap"
+        );
+
+        // Explicit ceiling wins.
+        m.max_cutting_feed_mm_min = Some(8_000.0);
+        assert!((m.cutting_feed_ceiling_mm_min() - 8_000.0).abs() < 1e-9);
+
+        // ...but never exceeds travel.
+        m.max_feed_mm_min = 4_000.0;
+        assert!((m.cutting_feed_ceiling_mm_min() - 4_000.0).abs() < 1e-9);
+
+        // Built-ins (travel ≤ cap) keep pre-F4 behavior exactly.
+        let preset = MachineProfile::shapeoko_vfd();
+        assert!((preset.cutting_feed_ceiling_mm_min() - preset.max_feed_mm_min).abs() < 1e-9);
+    }
 
     #[test]
     fn test_vfd_power_scales_linearly() {
