@@ -7,30 +7,65 @@ start from concrete code.
 
 Priority order = expected source of the next live-run incident.
 
-## R1 — Optimizer candidate-evaluation isolation + generator robustness at extremes
+## R1 — Optimizer candidate-evaluation isolation + generator robustness at extremes — **DONE 2026-06-10**
 
-- Confirmed crash: `cavalier_contours 0.7.0 pline_view.rs:507` assert via
-  `polygon::offset_polygon` ← `adaptive::path::is_narrow_machinable` ←
-  `generate_adaptive3d` ← `optimize::run_grid_strategy` (repro in the
-  DEFECT_CLASS doc backlog — WANAKA Back Rough, one grid candidate).
-- Structural issue: `evaluate_candidate` regenerates toolpaths on the LIVE
-  session at parameters generators were never exercised at (search-space hard
-  floors: 0.05 mm DOC / 0.05 mm stepover). A panic anywhere in the geometry
-  stack kills the optimize run; restore depends on `BaselineRestoreGuard::drop`.
-  Related backlog item: `mem::replace` placeholder session (MCP observability).
-- Review shape: (a) decide candidate isolation (clone vs guard + catch_unwind at
-  the candidate boundary), (b) param-fuzz generators at search-space extremes —
-  the `param_sweep` harness sweeps sensible values, not optimizer extremes.
+Landed as a three-layer fix (deep-dive session, same day):
 
-## R2 — Error semantics that lie
+- **Candidate isolation (decided: guard + catch_unwind, not clone).**
+  `evaluate_candidate` wraps its inner apply→regen→sim→gate in
+  `catch_unwind`; a panic surfaces as `SessionError::OperationFailed` and
+  costs one candidate, not the optimize run. Session-clone was rejected —
+  `ToolpathConfig` is deliberately not `Clone` (see `optimize/mod.rs` walk
+  comment). Unwind safety verified: `generate_toolpath` / `run_simulation`
+  publish into session state only in their Ok arms, and the
+  `BaselineRestoreGuard` restores params on every exit. `refine_stage2`
+  now drops failed candidates (matching the grid/retarget loops) instead
+  of `?`-aborting the whole refinement; only cancellation propagates.
+- **Chokepoint containment.** All cavalier_contours calls go through
+  `polygon::offset_polygon`; it now catch_unwinds the offset and maps a
+  panic to "collapsed offset" (empty — every caller's under-cut-safe
+  path) with a `tracing::warn`. The captured WANAKA Back Rough slice
+  (86-vert exterior, 13 holes, inward 5.53 mm —
+  `test_data/cavalier_panic_polygon_r1.json`) still asserts inside
+  cavalier 0.7.0 (latest) even with clean input, so containment is the
+  only fix for that class.
+- **Root fix for the second class.** The new generator-extremes fuzz
+  found a *different* cavalier assert at pocket@0.05 mm floors ("repeat
+  position vertexes" — our input-contract violation via chained
+  `pocket_offsets`). Fixed at the root: `remove_repeat_pos(1e-5)` dedupe
+  before every cavalier offset call.
+- **Tests:** `offset_polygon_degenerate_inputs_r1.rs` (captured asset +
+  synthetic repeat-vertex, 0.02 s), `generator_extremes_fuzz_r1.rs`
+  (2D matrix at floors/ceilings in CI; adaptive3d-at-floors `#[ignore]`d
+  — ~40 min, run manually when touching clearing/offsetting),
+  panic-payload seam tests in `optimize/candidate.rs`.
+- **Release panic strategy: DECIDED 2026-06-10 — `panic = "unwind"`.**
+  Both cavalier asserts are `debug_assert!` (dev/test crash, release
+  silently proceeds; the dedupe fixes the known silent case), but
+  `profile.release` previously set `panic = "abort"`, which (a) made
+  every catch_unwind isolation boundary dead code in the shipped build
+  and (b) meant any panic in any compute-worker thread aborted the whole
+  GUI with the user's unsaved project. Removed the abort override —
+  robustness beats the marginal codegen/binary-size cost for a desktop
+  CAM app. Caveat recorded in Cargo.toml: F-034/F-036c cycle-time
+  anchors were calibrated under abort; re-pin if they drift.
+- Still open (unchanged): `mem::replace` placeholder session (MCP
+  observability) backlog item.
 
-- `generate_adaptive3d` (and siblings in `compute/execute.rs`) map ANY generator
-  error to `OperationError::Cancelled` via `.map_err(|_e| OperationError::Cancelled)`
-  — real failures surface to the user as "operation cancelled". Pattern, not typo.
-- `OperationError::Other(String)` stringly-typed errors make this easy to
-  reintroduce. `RefuseReason` conflation already in the DEFECT_CLASS backlog.
-- Review shape: grep `map_err(|_` in compute/, classify each swallow; consider a
-  `Cancelled` check that only fires when the cancel flag is actually set.
+## R2 — Error semantics that lie — **INVESTIGATED 2026-06-10: premise wrong, no fix needed**
+
+- Verdict: every `map_err(|_…| …Cancelled)` in the workspace (10 sites: 4 in
+  `compute/execute.rs`, 2 each in `compute/simulate.rs` / `collision_check.rs`,
+  2 in viz worker) wraps an error type that can ONLY mean cancellation —
+  `interrupt::Cancelled` is a unit struct, `CollisionCheckError` has exactly
+  one variant. Nothing is being swallowed; the mapping is honest.
+- The real lesson: the geometry stack has **no error channel at all**. Its
+  failure mode is panics (cavalier_contours asserts), which is R1's territory —
+  the two items merged. If a generator ever grows a real error type, the
+  `|_e|`-shaped closures here are where a swallow would silently appear;
+  `clippy::map_err_ignore` only catches `|_|`, not `|_e|`.
+- `OperationError::Other(String)` stringly-typing and `RefuseReason`
+  conflation remain backlog-tracked in the DEFECT_CLASS doc.
 
 ## R3 — Toolpath id vs index confusion
 

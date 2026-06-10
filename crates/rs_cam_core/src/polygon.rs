@@ -154,26 +154,82 @@ impl Polygon2 {
 /// Returns empty Vec if the polygon collapses entirely.
 /// May return multiple polygons if the offset splits the shape.
 pub fn offset_polygon(polygon: &Polygon2, distance: f64) -> Vec<Polygon2> {
+    // R1 (tech-debt review 2026-06-10): cavalier_contours 0.7.0 asserts
+    // on some degenerate offset inputs ("start index should be less
+    // than or equal to end index if polyline is open" in
+    // `Shape::parallel_offset`'s slice stitching — reproduced live by
+    // WANAKA Back Rough's terrain slices: 86-vertex exterior, 13 holes,
+    // inward 5.53 mm; asset at test_data/cavalier_panic_polygon_r1.json).
+    // This is the single chokepoint where the dependency is called, so
+    // contain the panic here: treat an offset that panics as a collapsed
+    // offset (empty result). Every caller already handles empty as
+    // "polygon collapsed" — pocket rings end, the adaptive machinability
+    // probe reports not-machinable — all under-cut directions, never a
+    // gouge.
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        offset_polygon_inner(polygon, distance)
+    })) {
+        Ok(v) => v,
+        Err(_payload) => {
+            tracing::warn!(
+                distance,
+                exterior_verts = polygon.exterior.len(),
+                holes = polygon.holes.len(),
+                "offset_polygon: cavalier_contours panicked on degenerate input; \
+                 treating as collapsed offset (empty result)"
+            );
+            Vec::new()
+        }
+    }
+}
+
+/// cavalier_contours' offset contract requires inputs with no
+/// repeat-position vertexes (`debug_assert!` in `pline_offset`; in
+/// release the invariant is silently assumed). Repeats appear when
+/// chained offsets feed cavalier output back in — `pocket_offsets` at
+/// small stepovers (found by the R1 generator-extremes fuzz,
+/// pocket@0.05 mm floors). Epsilon matches cavalier's
+/// `OffsetOptions::default().pos_equal_eps`.
+const PLINE_POS_EQUAL_EPS: f64 = 1e-5;
+
+fn dedupe_pline(pline: Polyline<f64>) -> Polyline<f64> {
+    pline
+        .remove_repeat_pos(PLINE_POS_EQUAL_EPS)
+        .unwrap_or(pline)
+}
+
+fn offset_polygon_inner(polygon: &Polygon2, distance: f64) -> Vec<Polygon2> {
     if polygon.exterior.len() < 3 {
         return Vec::new();
     }
 
     if polygon.holes.is_empty() {
         // Simple case: just offset the exterior
-        let pline = polygon.exterior_to_pline();
+        let pline = dedupe_pline(polygon.exterior_to_pline());
+        if pline.vertex_count() < 3 {
+            return Vec::new();
+        }
         let results = pline.parallel_offset(distance);
         results.iter().map(Polygon2::from_pline).collect()
     } else {
         // Polygon with holes: use Shape to handle hole interaction
         use cavalier_contours::shape_algorithms::Shape;
 
-        let mut plines = vec![polygon.exterior_to_pline()];
+        let exterior = dedupe_pline(polygon.exterior_to_pline());
+        if exterior.vertex_count() < 3 {
+            return Vec::new();
+        }
+        let mut plines = vec![exterior];
         for hole in &polygon.holes {
             let mut hole_pline = Polyline::with_capacity(hole.len(), true);
             for p in hole {
                 hole_pline.add(p.x, p.y, 0.0);
             }
-            plines.push(hole_pline);
+            let hole_pline = dedupe_pline(hole_pline);
+            // A hole that dedupes below a triangle is pure noise.
+            if hole_pline.vertex_count() >= 3 {
+                plines.push(hole_pline);
+            }
         }
 
         let shape = Shape::from_plines(plines);
