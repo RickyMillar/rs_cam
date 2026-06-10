@@ -285,7 +285,70 @@ pub(crate) fn build_scallop_height_variants(baseline_scallop_mm: f64) -> Vec<f64
 /// Cancellation (`cancel.load(Ordering::SeqCst) == true`) is honoured
 /// by the underlying generate/sim functions and surfaces here as
 /// `SessionError::Simulation(SimulationError::Cancelled)`.
+///
+/// **Panic isolation (R1, tech-debt review 2026-06-10).** Candidate
+/// evaluation regenerates toolpaths at parameters the generators were
+/// never exercised at interactively (the search space's hard floors —
+/// 0.05 mm DOC / stepover). A panic anywhere in the geometry stack
+/// (e.g. `cavalier_contours`' `parallel_offset` asserts on degenerate
+/// inputs) must cost one candidate, not the whole optimize run, so the
+/// inner evaluation runs under `catch_unwind` and a panic surfaces as
+/// `SessionError::OperationFailed`. Grid/retarget loops already skip
+/// `Err` candidates; `refine_stage2`'s caller degrades to a partial
+/// outcome. State safety: the params the panicking candidate applied
+/// are overwritten by the next candidate's apply (or by the guard's
+/// `Drop` restoring the baseline), and `generate_toolpath` /
+/// `run_simulation` only publish results on success, so a mid-panic
+/// leaves the previous (stale-tracked) result in place.
 pub(crate) fn evaluate_candidate(
+    guard: &mut BaselineRestoreGuard<'_>,
+    ctx: &EvaluationContext,
+    candidate_op: OperationConfig,
+    delta: ParamDelta,
+    stage: SearchStage,
+    sim_resolution_mm: f64,
+    cancel: &AtomicBool,
+) -> Result<OptimizeCandidate, SessionError> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        evaluate_candidate_inner(
+            guard,
+            ctx,
+            candidate_op,
+            delta,
+            stage,
+            sim_resolution_mm,
+            cancel,
+        )
+    }));
+    match result {
+        Ok(r) => r,
+        Err(payload) => {
+            let msg = panic_payload_message(payload.as_ref());
+            tracing::warn!(
+                toolpath_id = ctx.toolpath_id,
+                "candidate evaluation panicked; skipping candidate: {msg}"
+            );
+            Err(SessionError::OperationFailed(format!(
+                "candidate evaluation panicked: {msg}"
+            )))
+        }
+    }
+}
+
+/// Best-effort human-readable message from a `catch_unwind` payload.
+/// `panic!("...")` yields `&str`; `panic!("{x}")`-style formatting
+/// yields `String`; anything else gets a placeholder.
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_owned()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "non-string panic payload".to_owned()
+    }
+}
+
+fn evaluate_candidate_inner(
     guard: &mut BaselineRestoreGuard<'_>,
     ctx: &EvaluationContext,
     candidate_op: OperationConfig,
@@ -431,6 +494,12 @@ pub(crate) fn select_stage2_candidates(
 /// re-evaluation goes through `evaluate_candidate` so the Stage-2
 /// numbers come from the same simulator and gate as Stage 1 — there
 /// is no second model anywhere.
+///
+/// R1 isolation: a candidate that fails (or panics) at Stage-2
+/// resolution is dropped — matching the Stage-1 grid/retarget loops —
+/// rather than aborting the whole refinement. Only cancellation
+/// propagates as `Err`, which the orchestrator turns into a partial
+/// outcome.
 pub(crate) fn refine_stage2(
     guard: &mut BaselineRestoreGuard<'_>,
     ctx: &EvaluationContext,
@@ -443,7 +512,7 @@ pub(crate) fn refine_stage2(
         if cancel.load(Ordering::SeqCst) {
             break;
         }
-        let candidate = evaluate_candidate(
+        match evaluate_candidate(
             guard,
             ctx,
             c.params,
@@ -451,8 +520,65 @@ pub(crate) fn refine_stage2(
             SearchStage::Refined,
             search_policy().stages.refined_resolution_mm.value,
             cancel,
-        )?;
-        refined.push(candidate);
+        ) {
+            Ok(candidate) => refined.push(candidate),
+            Err(SessionError::Simulation(crate::compute::simulate::SimulationError::Cancelled)) => {
+                return Err(SessionError::Simulation(
+                    crate::compute::simulate::SimulationError::Cancelled,
+                ));
+            }
+            Err(e) => {
+                tracing::warn!(
+                    toolpath_id = ctx.toolpath_id,
+                    "stage-2 refinement dropped a candidate: {e:?}"
+                );
+            }
+        }
     }
     Ok(refined)
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::panic_payload_message;
+
+    // R1 isolation seam: the payload shapes catch_unwind hands back for
+    // the panic styles the geometry stack actually produces.
+
+    #[test]
+    fn panic_payload_message_reads_static_str() {
+        let payload = std::panic::catch_unwind(|| {
+            panic!("start index should be less than or equal to end index if polyline is open")
+        })
+        .unwrap_err();
+        assert_eq!(
+            panic_payload_message(payload.as_ref()),
+            "start index should be less than or equal to end index if polyline is open"
+        );
+    }
+
+    #[test]
+    fn panic_payload_message_reads_formatted_string() {
+        let payload =
+            std::panic::catch_unwind(|| panic!("assert failed at offset {}", 0.05)).unwrap_err();
+        assert_eq!(
+            panic_payload_message(payload.as_ref()),
+            "assert failed at offset 0.05"
+        );
+    }
+
+    #[test]
+    fn panic_payload_message_handles_non_string_payload() {
+        let payload = std::panic::catch_unwind(|| std::panic::panic_any(42_u32)).unwrap_err();
+        assert_eq!(
+            panic_payload_message(payload.as_ref()),
+            "non-string panic payload"
+        );
+    }
 }

@@ -125,10 +125,10 @@ actual mechanism behind the 622 µm sample. Original framing below kept for cont
   **deflection reads Within, peak 107.6 µm** (was 622 µm Exceeds →
   DeflectionSetupLocked; honest estimate was ~98 µm), and the optimizer
   proceeds into the retarget + grid search instead of refusing. The search
-  then hits a PRE-EXISTING third-party panic (see Backlog: cavalier
-  parallel_offset) on one grid candidate — unrelated to the C3 class. MCP
-  re-validation in a live GUI session still worthwhile for the full
-  narrate/screenshot loop.
+  then hit a PRE-EXISTING third-party panic (cavalier parallel_offset) on
+  one grid candidate — unrelated to the C3 class; resolved same day by the
+  R1 deep dive (see Backlog entry). MCP re-validation in a live GUI
+  session still worthwhile for the full narrate/screenshot loop.
 
 Confirmed behaviour: TP1 Back Rough peak sample carries ~9 mm axial engagement at slot arc
 (commanded DOC 3.0) → 622 µm verdict → preflight `DeflectionSetupLocked`. Honest reading
@@ -388,17 +388,17 @@ F2 fix order: (1) intent→span bridge, (2) honor `spans_valid` at the 4 call si
 ## Backlog (acknowledged, deliberately deferred)
 
 - **Optimizer-candidate adaptive3d crash (found by the F2 WANAKA probe,
-  2026-06-10):** `cavalier_contours 0.7.0 pline_view.rs:507` panics
-  ("start index should be less than or equal to end index if polyline is
-  open") inside `Shape::parallel_offset` via `polygon::offset_polygon` ←
-  `adaptive::path::is_narrow_machinable` ← `generate_adaptive3d` when the
-  optimizer's grid strategy regenerates WANAKA Back Rough at some
-  stepover/DOC combination. Pre-existing latent geometry crash (not one of
-  the five classes); a panic in candidate evaluation poisons the whole
-  optimize run. Candidate fixes: harden `offset_polygon` against the
-  upstream assert (catch the degenerate slice before calling), or upgrade
-  cavalier_contours. Repro: load wanaka_full_tuned.toml, generate all,
-  simulate, `optimize_toolpath(idx 1)`.
+  2026-06-10): RESOLVED same day** by the R1 deep dive (see
+  `planning/TECH_DEBT_REVIEW_2026-06-10.md` §R1). Three layers: candidate
+  boundary `catch_unwind` in `optimize/candidate.rs` (a panic costs one
+  candidate, not the run), cavalier containment at the
+  `polygon::offset_polygon` chokepoint (panic → collapsed-offset empty
+  result; upgrade not possible — 0.7.0 is latest and still asserts on the
+  captured input), and a `remove_repeat_pos` dedupe root-fixing a second
+  assert class the extremes fuzz found at pocket@0.05 mm floors. Failing
+  input captured live as `test_data/cavalier_panic_polygon_r1.json`;
+  sentries: `offset_polygon_degenerate_inputs_r1.rs`,
+  `generator_extremes_fuzz_r1.rs`.
 
 - Deflection model recalibration: force model is feed-independent (`F = Kc·ap·ae`,
   drag-cut physics, ~16–60× energy-balance force at WANAKA params), offset by co-tuned

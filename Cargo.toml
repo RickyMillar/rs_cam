@@ -82,7 +82,13 @@ incremental = false
 opt-level = 3
 lto = "fat"
 codegen-units = 1
-panic = "abort"
+# panic = "unwind" (default), deliberately NOT "abort" (R1, tech-debt review
+# 2026-06-10): the geometry stack's isolation boundaries (optimizer candidate
+# catch_unwind, polygon::offset_polygon cavalier containment, STEP-import face
+# guard) only work when panics unwind, and a panicking compute-worker thread
+# must not take the whole GUI (and the user's unsaved project) down with it.
+# Cost: unwind tables + marginal codegen differences — F-034/F-036c cycle-time
+# anchors were calibrated under panic="abort"; re-pin them if they drift.
 strip = "symbols"
 
 # Fast-iteration variant of release for GUI/MCP work. Keeps opt-level 3 so the
