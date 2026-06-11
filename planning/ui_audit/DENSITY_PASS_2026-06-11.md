@@ -543,7 +543,39 @@ All 8 items implemented. Notes against the plan:
 8. Mini feeds-modal window title "Feeds & Speeds — toolpath 4" →
    use toolpath NAME (main modal already does).
 
-### Batch 2 — structural (M, next session)
+### Batch 2 — structural (M) — LANDED 2026-06-12
+
+All 4 items implemented (same session as Batch 1, owner skipped the
+interim capture check). Notes against the plan:
+- (9) Row-4 controls gate on `selected || ui.rect_contains_pointer(
+  ui.min_rect())`. The row appends at the card's bottom edge so the
+  card grows *below* the pointer — hover state stays stable without
+  space reservation. Context menu still carries every action.
+- (10) Summary tier = "load vs limit": per-sample effective chipload
+  normalised by that TP's vendor-ceiling envelope (1.0 = at limit,
+  cross-TP comparable). TPs without vendor data contribute nothing
+  (already pilled unmodeled). Focused TP gets the floor→ceiling band;
+  project-wide only the 1.0 ceiling renders (per-TP burn floors
+  differ — no misleading project-wide burn zone). The 5 raw tracks
+  live under "Signal graphs (5)", default-closed; default-open only
+  when nothing is normalisable (vendor-data-less projects keep the
+  old behavior).
+- (11) Worst-of rollup: flags now carry a rank (collision/exceeds 0 →
+  unmodeled 4); row shows the single worst + "+N" with the full stack
+  on hover. Air-cut / low-engagement tallies removed from rows
+  entirely (emission noise; Inspector Informational owns them).
+  Unit-tested (ordering, suppression, per-TP scoping).
+- (12) `AppState::close_modals_for_exclusivity()` called from every
+  modal-open path (feeds / optimize / optimize-project / tool library
+  / preflight / export wizard). A *running* Optimize modal survives —
+  closing it would discard an in-flight search; settled outcomes
+  close like the rest. Unit-tested both ways.
+- Batch 3 item 15 root-caused in passing: with no sim trace,
+  open_optimize_modal opens `Ready(Skipped(SimulationRequired))` —
+  capture 10's spinner was the Loading state of a real run, not a
+  guard miss. Verify on the end sweep.
+
+### Batch 2 originally agreed as:
 9.  Toolpath cards: 6-glyph control row renders on hover/selection
     only (13 elements/card today).
 10. Timeline: single metric-resolved summary track; the 5 expert

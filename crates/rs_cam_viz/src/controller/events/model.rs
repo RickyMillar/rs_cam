@@ -90,6 +90,7 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn open_tool_library(&mut self) {
+        self.state.close_modals_for_exclusivity();
         self.load_tool_library_snapshot();
     }
 

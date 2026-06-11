@@ -225,10 +225,89 @@ impl AppState {
             tool_library_modal: None,
         }
     }
+
+    /// Modal exclusivity (density pass Batch 2): every modal-open path
+    /// calls this first, so opening one modal closes the others — the
+    /// 2026-06-11 capture sweep produced a 3-deep stack (Optimize
+    /// spinner over Tool Library over a feeds modal). A *running*
+    /// Optimize modal survives: it is a progress surface for an
+    /// expensive in-flight search, and closing it here would discard
+    /// the user's run; settled Optimize outcomes close like the rest.
+    pub fn close_modals_for_exclusivity(&mut self) {
+        self.feeds_modal = None;
+        self.tool_library_modal = None;
+        self.show_export_wizard = false;
+        self.show_preflight = false;
+        self.show_shortcuts = false;
+        if !self.is_optimizing {
+            self.optimize_modal = None;
+            self.optimize_project = None;
+        }
+    }
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    fn feeds_modal_fixture() -> FeedsModalState {
+        FeedsModalState {
+            toolpath_id: rs_cam_core::ToolpathId(0),
+            mode: FeedsModalMode::Toolpath,
+            explore: None,
+            show_provenance: false,
+            project_sort: ProjectFeedsSort::Index,
+            project_selected: std::collections::BTreeSet::new(),
+            project_show_scatter: false,
+        }
+    }
+
+    /// Density pass Batch 2 — opening any modal closes the others. The
+    /// 2026-06-11 capture sweep stacked Optimize over Tool Library over
+    /// a feeds modal; exclusivity makes that state unrepresentable.
+    #[test]
+    fn close_modals_for_exclusivity_closes_settled_modals() {
+        let mut state = AppState::new();
+        state.feeds_modal = Some(feeds_modal_fixture());
+        state.tool_library_modal = Some(ToolLibraryModalState { catalogs: vec![] });
+        state.show_export_wizard = true;
+        state.show_preflight = true;
+        state.optimize_project = Some(OptimizeProjectState {
+            status: OptimizeProjectStatus::Loading,
+            row_selected: Vec::new(),
+        });
+
+        state.close_modals_for_exclusivity();
+
+        assert!(state.feeds_modal.is_none());
+        assert!(state.tool_library_modal.is_none());
+        assert!(!state.show_export_wizard);
+        assert!(!state.show_preflight);
+        assert!(state.optimize_project.is_none(), "settled optimize closes");
+    }
+
+    /// A *running* Optimize modal must survive exclusivity — closing it
+    /// would silently discard an expensive in-flight search.
+    #[test]
+    fn close_modals_for_exclusivity_spares_running_optimize() {
+        let mut state = AppState::new();
+        state.is_optimizing = true;
+        state.optimize_modal = Some(OptimizeModalState {
+            toolpath_id: rs_cam_core::ToolpathId(0),
+            status: OptimizeRunStatus::Loading,
+        });
+        state.feeds_modal = Some(feeds_modal_fixture());
+
+        state.close_modals_for_exclusivity();
+
+        assert!(state.optimize_modal.is_some(), "running optimize survives");
+        assert!(state.feeds_modal.is_none(), "others still close");
     }
 }

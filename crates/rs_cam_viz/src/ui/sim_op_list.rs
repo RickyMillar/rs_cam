@@ -886,18 +886,29 @@ struct ToolpathStatusFlag {
     label: String,
     detail: String,
     color: egui::Color32,
+    /// Worst-of ordering for the row rollup — lower is worse.
+    /// 0 = collisions / exceeds, 1 = hotspot, 2 = notes,
+    /// 3 = approximate-within, 4 = unmodeled.
+    rank: u8,
 }
 
 impl ToolpathStatusFlag {
-    fn new(label: String, detail: String, color: egui::Color32) -> Self {
+    fn new(label: String, detail: String, color: egui::Color32, rank: u8) -> Self {
         Self {
             label,
             detail,
             color,
+            rank,
         }
     }
 }
 
+/// Density pass Batch 2 — worst-of rollup. A healthy-but-approximate op
+/// used to stack 4+ glyphs ("⚠ air×24800 ≈ chip ? load …"); the row now
+/// shows the single worst flag plus a "+N" whose hover carries the full
+/// stack. Air-cut / low-engagement tallies are suppressed at row level
+/// entirely (documented emission noise — the Inspector's Informational
+/// partition reports them as % of runtime).
 fn draw_toolpath_status_flags(
     ui: &mut egui::Ui,
     toolpath_id: ToolpathId,
@@ -906,7 +917,7 @@ fn draw_toolpath_status_flags(
 ) {
     let flags = toolpath_status_flags(toolpath_id, issues, verdict);
     ui.horizontal_wrapped(|ui| {
-        if flags.is_empty() {
+        let Some(worst) = flags.first() else {
             ui.label(
                 egui::RichText::new("✓ all clear")
                     .small()
@@ -916,27 +927,40 @@ fn draw_toolpath_status_flags(
                 "No simulation issues and all modeled tool-load criteria are within bounds.",
             );
             return;
-        }
-        for flag in flags {
-            ui.label(egui::RichText::new(flag.label).small().color(flag.color))
-                .on_hover_text(flag.detail);
+        };
+        ui.label(egui::RichText::new(&worst.label).small().color(worst.color))
+            .on_hover_text(&worst.detail);
+        if flags.len() > 1 {
+            let stack = flags
+                .iter()
+                .map(|f| format!("{} — {}", f.label, f.detail))
+                .collect::<Vec<_>>()
+                .join("\n");
+            ui.label(
+                egui::RichText::new(format!("+{}", flags.len() - 1))
+                    .small()
+                    .color(theme::TEXT_DIM),
+            )
+            .on_hover_text(stack);
         }
     });
 }
 
+/// Per-toolpath status flags, sorted worst-first (see
+/// [`ToolpathStatusFlag::rank`]).
 fn toolpath_status_flags(
     toolpath_id: ToolpathId,
     issues: &[SimulationIssue],
     verdict: Option<&ToolpathLoadVerdict>,
 ) -> Vec<ToolpathStatusFlag> {
     let mut flags = Vec::new();
-    for kind in [
-        SimulationIssueKind::RapidCollision,
-        SimulationIssueKind::HolderCollision,
-        SimulationIssueKind::Hotspot,
-        SimulationIssueKind::Annotation,
-        SimulationIssueKind::AirCut,
-        SimulationIssueKind::LowEngagement,
+    // AirCut / LowEngagement deliberately absent: per-sample emission
+    // tallies, not row-level signal (CLAUDE.md metric caveats).
+    for (kind, rank) in [
+        (SimulationIssueKind::RapidCollision, 0),
+        (SimulationIssueKind::HolderCollision, 0),
+        (SimulationIssueKind::Hotspot, 1),
+        (SimulationIssueKind::Annotation, 2),
     ] {
         let count = issues
             .iter()
@@ -947,6 +971,7 @@ fn toolpath_status_flags(
                 format!("⚠ {}×{count}", issue_kind_short_label(kind)),
                 issue_kind_detail(toolpath_id, issues, kind, count),
                 issue_kind_color(kind),
+                rank,
             ));
         }
     }
@@ -961,11 +986,13 @@ fn toolpath_status_flags(
                     format!("⚠ {}", criterion_short_label(status.kind)),
                     criterion_detail(&status),
                     theme::ERROR,
+                    0,
                 )),
                 LoadState::Unmodeled => flags.push(ToolpathStatusFlag::new(
                     format!("? {}", criterion_short_label(status.kind)),
                     criterion_detail(&status),
                     theme::TEXT_DIM,
+                    4,
                 )),
                 LoadState::Within => {
                     if matches!(status.confidence, Some(Confidence::Approximate(_))) {
@@ -973,6 +1000,7 @@ fn toolpath_status_flags(
                             format!("≈ {}", criterion_short_label(status.kind)),
                             criterion_detail(&status),
                             theme::WARNING_MILD,
+                            3,
                         ));
                     }
                 }
@@ -983,9 +1011,11 @@ fn toolpath_status_flags(
             "? load".to_owned(),
             "Tool-load report did not include this toolpath.".to_owned(),
             theme::TEXT_DIM,
+            4,
         ));
     }
 
+    flags.sort_by_key(|f| f.rank);
     flags
 }
 
@@ -1082,5 +1112,67 @@ fn criterion_detail(status: &rs_cam_core::tool_load::verdict::CriterionStatus<'_
             Some(reason) => format!("{} is unmodeled: {reason:?}.", status.kind.label()),
             None => format!("{} is unmodeled.", status.kind.label()),
         },
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+
+    fn issue(kind: SimulationIssueKind, tp: ToolpathId) -> SimulationIssue {
+        SimulationIssue {
+            kind,
+            toolpath_id: Some(tp),
+            move_index: 0,
+            label: String::new(),
+            semantic_item_id: None,
+            debug_span_id: None,
+            hotspot_index: None,
+            annotation_index: None,
+        }
+    }
+
+    /// Density pass Batch 2 — row flags roll up worst-first, and the
+    /// air-cut / low-engagement emission tallies never reach the row.
+    #[test]
+    fn toolpath_status_flags_sort_worst_first_and_suppress_emission_noise() {
+        let tp = ToolpathId(7);
+        let issues = vec![
+            issue(SimulationIssueKind::AirCut, tp),
+            issue(SimulationIssueKind::Hotspot, tp),
+            issue(SimulationIssueKind::LowEngagement, tp),
+            issue(SimulationIssueKind::RapidCollision, tp),
+        ];
+
+        let flags = toolpath_status_flags(tp, &issues, None);
+
+        assert!(
+            flags[0].label.contains("rapid"),
+            "collision outranks everything: {}",
+            flags[0].label
+        );
+        assert!(
+            !flags
+                .iter()
+                .any(|f| f.label.contains("air") || f.label.contains("low-eng")),
+            "emission-noise tallies must not appear as row flags"
+        );
+        // No verdict supplied -> trailing "? load" marker, ranked last.
+        assert!(flags.last().unwrap().label.contains("load"));
+        assert!(flags.windows(2).all(|w| w[0].rank <= w[1].rank));
+    }
+
+    /// Issues scoped to another toolpath must not leak into this row.
+    #[test]
+    fn toolpath_status_flags_scope_to_toolpath() {
+        let issues = vec![issue(SimulationIssueKind::RapidCollision, ToolpathId(1))];
+        let flags = toolpath_status_flags(ToolpathId(2), &issues, None);
+        assert!(!flags.iter().any(|f| f.label.contains("rapid")));
     }
 }
