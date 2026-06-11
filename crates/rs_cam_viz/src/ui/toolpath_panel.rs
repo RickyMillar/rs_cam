@@ -399,10 +399,20 @@ fn draw_toolpath_card(
                     );
                 }
 
-                draw_trace_badge(
-                    ui,
-                    SimulationState::trace_availability_for_toolpath(&state.gui, tp_id),
-                );
+                // Trace badges are generator-debug provenance. When every
+                // toolpath carries the identical availability the badge is
+                // wallpaper (8× "TRACE" said nothing in the 2026-06-11
+                // capture sweep) — show it only on cards that differ from
+                // the rest of the queue.
+                let availability =
+                    SimulationState::trace_availability_for_toolpath(&state.gui, tp_id);
+                let uniform = state.session.toolpath_configs().iter().all(|other| {
+                    SimulationState::trace_availability_for_toolpath(&state.gui, other.id)
+                        == availability
+                });
+                if !uniform {
+                    draw_trace_badge(ui, availability);
+                }
 
                 // Name
                 let text_color = if dim {

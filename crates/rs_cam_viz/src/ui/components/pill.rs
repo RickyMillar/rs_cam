@@ -7,13 +7,16 @@
 //! unifies the *renderer*, so the verdict HUD and every other count surface
 //! speak one grammar.
 //!
-//! Visual grammar (from `FINAL_DESIGN.md`):
-//! - `family` — `Verdict` (a pass/fail bucket, `[ … ]`) vs `Observation`
-//!   (a neutral tally, `{ … }`), so an observation tally can never read as a
-//!   load verdict (INS-003).
-//! - `role` — `ReadOnly` (flat label) vs `Actionable` (`( … → )`, a button
-//!   that returns a clickable [`egui::Response`]).
+//! Visual grammar (from `FINAL_DESIGN.md`, restyled in the 2026-06-11
+//! density pass — V4 retired the `[ … ]`/`{ … }` punctuation-as-UI):
+//! - `family` — `Verdict` (a pass/fail bucket: tinted fill + stroke) vs
+//!   `Observation` (a neutral tally: tinted fill, no stroke), so an
+//!   observation tally can never read as a load verdict (INS-003).
+//! - `role` — `ReadOnly` (flat pill) vs `Actionable` (`… →` button that
+//!   returns a clickable [`egui::Response`]).
 //! - `denom` — renders the `/T` proof that two counts share one universe.
+//! - `hide_when_zero` — zero-count chips self-hide instead of shipping
+//!   wallpaper ("exceeding 0/7" says nothing "within 7/7" doesn't).
 //!
 //! Colour stays explicit: the verdict HUD legitimately carries five tones
 //! (within=green, exceeds=red, unmodeled=amber, collisions=green/red,
@@ -26,17 +29,17 @@ use crate::ui::theme;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PillFamily {
-    /// A pass/fail bucket — bracketed `[ … ]`.
+    /// A pass/fail bucket — tinted fill + stroke.
     Verdict,
-    /// A neutral tally — braced `{ … }`.
+    /// A neutral tally — tinted fill only.
     Observation,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PillRole {
-    /// Flat label.
+    /// Flat pill.
     ReadOnly,
-    /// `( … → )` button; the returned response's `.clicked()` is the jump.
+    /// `… →` button; the returned response's `.clicked()` is the jump.
     Actionable,
 }
 
@@ -48,15 +51,16 @@ pub struct CountPill<'a> {
     family: PillFamily,
     role: PillRole,
     hover: &'a str,
+    hide_when_zero: bool,
 }
 
 impl<'a> CountPill<'a> {
-    /// A pass/fail bucket pill (`[ label N ]`).
+    /// A pass/fail bucket pill (tinted fill + stroke).
     pub fn verdict(label: &'a str, count: usize) -> Self {
         Self::new(label, count, PillFamily::Verdict)
     }
 
-    /// A neutral tally pill (`{ label N }`).
+    /// A neutral tally pill (tinted fill only).
     pub fn observation(label: &'a str, count: usize) -> Self {
         Self::new(label, count, PillFamily::Observation)
     }
@@ -70,6 +74,7 @@ impl<'a> CountPill<'a> {
             family,
             role: PillRole::ReadOnly,
             hover: "",
+            hide_when_zero: false,
         }
     }
 
@@ -84,7 +89,7 @@ impl<'a> CountPill<'a> {
         self
     }
 
-    /// Render as a clickable `( … → )` button.
+    /// Render as a clickable `… →` button.
     pub fn actionable(mut self) -> Self {
         self.role = PillRole::Actionable;
         self
@@ -94,15 +99,19 @@ impl<'a> CountPill<'a> {
         self.hover = text;
         self
     }
+
+    /// Self-hide at zero — render nothing instead of a zero-count chip.
+    pub fn hide_when_zero(mut self) -> Self {
+        self.hide_when_zero = true;
+        self
+    }
 }
 
 impl egui::Widget for CountPill<'_> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        let (open, close) = match (self.family, self.role) {
-            (_, PillRole::Actionable) => ("(", ")"),
-            (PillFamily::Verdict, PillRole::ReadOnly) => ("[", "]"),
-            (PillFamily::Observation, PillRole::ReadOnly) => ("{", "}"),
-        };
+        if self.hide_when_zero && self.count == 0 {
+            return ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover());
+        }
         let count_text = match self.denom {
             Some(d) => format!("{}/{d}", self.count),
             None => self.count.to_string(),
@@ -112,10 +121,23 @@ impl egui::Widget for CountPill<'_> {
         } else {
             ""
         };
-        let text = format!("{open} {} {count_text}{arrow} {close}", self.label);
+        let text = format!("{} {count_text}{arrow}", self.label);
         let rich = egui::RichText::new(text).small().color(self.color);
         let resp = match self.role {
-            PillRole::ReadOnly => ui.label(rich),
+            PillRole::ReadOnly => {
+                // Styled pill: tinted fill, verdicts additionally stroked.
+                let stroke = match self.family {
+                    PillFamily::Verdict => egui::Stroke::new(1.0, self.color.linear_multiply(0.55)),
+                    PillFamily::Observation => egui::Stroke::NONE,
+                };
+                egui::Frame::default()
+                    .fill(self.color.linear_multiply(0.10))
+                    .stroke(stroke)
+                    .inner_margin(egui::Margin::symmetric(5, 1))
+                    .corner_radius(6)
+                    .show(ui, |ui| ui.label(rich))
+                    .response
+            }
             PillRole::Actionable => ui.add(egui::Button::new(rich).small()),
         };
         if self.hover.is_empty() {

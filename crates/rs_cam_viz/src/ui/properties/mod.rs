@@ -2340,6 +2340,45 @@ enum RowTier {
 /// (uses the same direct-apply path the validator banner uses).
 /// `SetToolpathParam` fixes are advisory for now — the schema
 /// supports them but no adapter emits them yet.
+/// Merge load-gate stateful rows that carry the same status text into one
+/// "Gates: …" row (density pass V3). Pre-merge, every gate printed its own
+/// copy of "<gate>: simulation stale — re-run to verify" — three identical
+/// sentences for chipload/power/deflection on every stale toolpath. Gate
+/// rows with a unique status text (and all non-gate rows) pass through
+/// unchanged in the second slot.
+fn merge_stateful_gate_rows<'a>(
+    stateful: &[&'a rs_cam_core::diagnostics::Diagnostic],
+) -> (
+    Vec<rs_cam_core::diagnostics::Diagnostic>,
+    Vec<&'a rs_cam_core::diagnostics::Diagnostic>,
+) {
+    let mut merged: Vec<rs_cam_core::diagnostics::Diagnostic> = Vec::new();
+    let mut rest: Vec<&'a rs_cam_core::diagnostics::Diagnostic> = Vec::new();
+    let mut gate_groups: Vec<(&str, Vec<&'a rs_cam_core::diagnostics::Diagnostic>)> = Vec::new();
+    for &d in stateful {
+        let suffix = (d.source == rs_cam_core::diagnostics::Source::ToolLoad)
+            .then(|| d.message.split_once(": ").map(|(_, s)| s))
+            .flatten();
+        match suffix {
+            Some(suffix) => match gate_groups.iter_mut().find(|(s, _)| *s == suffix) {
+                Some((_, group)) => group.push(d),
+                None => gate_groups.push((suffix, vec![d])),
+            },
+            None => rest.push(d),
+        }
+    }
+    for (suffix, group) in gate_groups {
+        if let &[single] = group.as_slice() {
+            rest.push(single);
+        } else if let Some(first) = group.first() {
+            let mut row = (*first).clone();
+            row.message = format!("Gates: {suffix}");
+            merged.push(row);
+        }
+    }
+    (merged, rest)
+}
+
 fn render_diagnostic_row(
     ui: &mut egui::Ui,
     d: &rs_cam_core::diagnostics::Diagnostic,
@@ -2837,7 +2876,11 @@ fn draw_toolpath_panel(
     for d in &actionable {
         render_diagnostic_row(ui, d, RowTier::Actionable, entry, stale_default_defects);
     }
-    for d in &stateful {
+    let (merged_gate_rows, stateful_rest) = merge_stateful_gate_rows(&stateful);
+    for d in &merged_gate_rows {
+        render_diagnostic_row(ui, d, RowTier::Stateful, entry, stale_default_defects);
+    }
+    for d in &stateful_rest {
         render_diagnostic_row(ui, d, RowTier::Stateful, entry, stale_default_defects);
     }
     if !hints.is_empty() {
@@ -3834,17 +3877,13 @@ fn draw_linking_params(
     );
     if let Some(reason) = feed_opt_reason {
         cfg.feed_optimization = false;
+        // Why-disabled lives on hover only (density pass) — the greyed
+        // checkbox is the signal; a permanent italic paragraph was noise.
         ui.add_enabled(
             false,
             egui::Checkbox::new(&mut cfg.feed_optimization, "Feed rate optimization"),
         )
-        .on_hover_text(reason);
-        ui.label(
-            egui::RichText::new(reason)
-                .small()
-                .italics()
-                .color(egui::Color32::from_rgb(150, 150, 130)),
-        );
+        .on_disabled_hover_text(reason);
     } else {
         ui.checkbox(&mut cfg.feed_optimization, "Feed rate optimization")
             .on_hover_text("Dynamically adjust feed rate based on stock engagement. Higher feed in light cuts, lower in heavy cuts. Only available for fresh-stock 2D operations.");
@@ -3955,9 +3994,14 @@ fn draw_dressup_params(ui: &mut egui::Ui, cfg: &mut DressupConfig) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
-    use super::ToolpathTab;
+    use super::{ToolpathTab, merge_stateful_gate_rows};
 
     /// The MCP `set_ui_view` tool documents these tab keys — every
     /// documented key must parse, every tab must be reachable, and
@@ -4001,5 +4045,75 @@ mod tests {
             };
             assert!(ToolpathTab::parse(key).is_some());
         }
+    }
+
+    fn stateful_diag(
+        source: rs_cam_core::diagnostics::Source,
+        message: &str,
+    ) -> rs_cam_core::diagnostics::Diagnostic {
+        use rs_cam_core::diagnostics as dx;
+        dx::Diagnostic {
+            id: dx::DiagnosticId::new("test.gate"),
+            scope: dx::Scope::Toolpath {
+                id: rs_cam_core::ToolpathId(0),
+            },
+            category: dx::Category::State,
+            severity: dx::Severity::Info,
+            confidence: dx::Confidence::Static,
+            state: dx::DiagnosticState::StaleEvidence,
+            source,
+            message: message.to_owned(),
+            evidence: None,
+            fix: None,
+            supersedes: Vec::new(),
+            suppressed_diagnostics: Vec::new(),
+        }
+    }
+
+    /// Density pass V3 — three per-gate copies of the same stale-sim
+    /// sentence must collapse into one "Gates: …" row; gate rows with a
+    /// unique status and non-gate rows pass through untouched.
+    #[test]
+    fn stateful_gate_rows_with_shared_status_merge_into_one_gates_row() {
+        use rs_cam_core::diagnostics::Source;
+        let stale = "simulation stale — re-run to verify";
+        let chipload = stateful_diag(Source::ToolLoad, &format!("Chipload: {stale}"));
+        let power = stateful_diag(Source::ToolLoad, &format!("Power: {stale}"));
+        let deflection = stateful_diag(Source::ToolLoad, &format!("Deflection: {stale}"));
+        let unique_gate = stateful_diag(
+            Source::ToolLoad,
+            "Drill: no vendor LUT row matches this tool/material — supply vendor data \
+             to enable this gate",
+        );
+        let non_gate = stateful_diag(Source::StaticValidation, "Heights: needs simulation");
+
+        let stateful = vec![&chipload, &power, &deflection, &unique_gate, &non_gate];
+        let (merged, rest) = merge_stateful_gate_rows(&stateful);
+
+        assert_eq!(merged.len(), 1, "three shared-status gates → one row");
+        assert_eq!(merged[0].message, format!("Gates: {stale}"));
+        assert_eq!(rest.len(), 2, "unique gate + non-gate pass through");
+        assert!(rest.iter().any(|d| d.message.starts_with("Drill:")));
+        assert!(rest.iter().any(|d| d.message.starts_with("Heights:")));
+    }
+
+    /// Both wordings ship today — "run simulation to evaluate" (never
+    /// simulated) must merge independently of the stale wording.
+    #[test]
+    fn stateful_gate_rows_merge_groups_by_exact_status_text() {
+        use rs_cam_core::diagnostics::Source;
+        let chipload = stateful_diag(Source::ToolLoad, "Chipload: run simulation to evaluate");
+        let power = stateful_diag(Source::ToolLoad, "Power: run simulation to evaluate");
+        let deflection = stateful_diag(
+            Source::ToolLoad,
+            "Deflection: simulation stale — re-run to verify",
+        );
+
+        let stateful = vec![&chipload, &power, &deflection];
+        let (merged, rest) = merge_stateful_gate_rows(&stateful);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].message, "Gates: run simulation to evaluate");
+        assert_eq!(rest.len(), 1, "differently-worded gate stays separate");
     }
 }

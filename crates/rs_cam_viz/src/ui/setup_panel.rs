@@ -214,13 +214,18 @@ fn draw_setup_card(
                 );
             }
 
-            // Fresh-stock warning for non-first setups
+            // Fresh-stock note for non-first setups — a compact chip with the
+            // sentence on hover. The full italic line on every Setup-2+ card
+            // forever was warning-as-wallpaper (density pass 2026-06-11).
             if state.session.list_setups().first().map(|s| s.id) != Some(setup.id) {
                 ui.label(
-                    egui::RichText::new("Starts from uncut stock (prior setups not reflected)")
+                    egui::RichText::new("\u{24D8} uncut stock")
                         .small()
-                        .italics()
                         .color(theme::WARNING_MILD),
+                )
+                .on_hover_text(
+                    "This setup's simulation starts from uncut stock — material removed \
+                     by prior setups is not reflected.",
                 );
             }
         })
