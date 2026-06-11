@@ -435,3 +435,53 @@ scored as *behind disclosure*; everything in the always-run path as
 `properties/mod.rs:1546(false)/2809(false)/2823(conditional ✓)`,
 `feeds_modal.rs:1102(true ✗)`, `sim_diagnostics.rs:87/461/1228(true ✗✗△),
 682/1510/1585(false)/741(conditional ✓)`, `toolpath_panel.rs:180(false)`.
+
+---
+
+## Addendum — visual verification sweep (2026-06-11, screenshot_gui)
+
+First full-window capture sweep (15 surfaces, 1600×1000, WANAKA loaded
+with results; PNGs in /tmp/ui_sweep/, regenerate via set_ui_view +
+screenshot_gui). Confirms the code-led audit and adds findings only
+pixels could show.
+
+### Quick wins verified on screen
+- Feeds tab wall → three collapsed rows ("Feeds & Speeds", "Show the
+  math", "Vendor Cutting Data") + the modal button. The wall is gone.
+- Inspector: one section open (Project); "Selected: LinkBridge [25]"
+  and "View" collapsed. Pre-fix this was 3 sections / ~45 items.
+- Hints (1) collapsed; single Name field (duplicate heading gone).
+
+### New findings (visible only at native resolution)
+- **V1 — "issues 46751" HUD pill** (sim timeline): raw emission-noise
+  count (CLAUDE.md documents these per-sample air-cut "issues" as
+  noise) presented as a headline number. A standard user reads
+  "46,751 issues" as catastrophe. Show curated counts only (must-
+  address / hotspots), or nothing. S.
+- **V2 — TRACE badge wallpaper** (toolpath cards): every one of the 8
+  cards carries an identical "TRACE" badge — zero information,
+  ~10% of each card's visual budget. Show only when non-default. S.
+- **V3 — stale-gate triplication** (toolpath header): "Chipload:
+  simulation stale — re-run to verify" / "Power: …" / "Deflection: …"
+  — the same sentence three times. One line: "Gates: simulation
+  stale — re-run to verify". S.
+- **V4 — bracket-chip notation** ("[✓ within 2/7] [✗ exceeding 0/7]
+  {collisions 0}", inspector + readiness): punctuation-as-UI; chips
+  should be styled pills, zero-count chips should self-hide. S/M.
+- **V5 — raw sample counts as findings** (inspector "Low engagement
+  34614 / Air cut 12031"): expert-grade numerators with no unit or
+  denominator. Convert to %-of-cutting-time or move behind the
+  hotspots disclosure. S.
+- Readiness confirmed as the model surface on screen (one banner, six
+  rows, one action; "(3 tool changes)" annotation landed nicely).
+
+### Tooling notes
+- screenshot_gui + set_ui_view work end-to-end (commit 1cb9839).
+- **set_ui_view properties_tab race**: the one-shot tab override needs
+  one RENDERED frame before screenshot_gui fires, or the capture shows
+  the previous tab. Workaround: take a throwaway capture first (it
+  doubles as the flush frame). Proper fix: have a pending tab delay
+  the screenshot pump by one frame.
+- GUI interaction between user and agent shares one state: a user
+  clicking around mid-sweep changes selection/workspace under the
+  agent (observed live). Re-pin the full view per capture.
