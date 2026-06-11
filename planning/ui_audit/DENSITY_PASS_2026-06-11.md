@@ -586,7 +586,20 @@ interim capture check). Notes against the plan:
     the others (sweep produced a 3-deep stack: Optimize spinner over
     Tool Library over a floating feeds mini-modal).
 
-### Batch 3 — capture tooling (S, opportunistic)
+### Batch 3 — capture tooling (S) — items 13/14 landed 2026-06-12
+
+- (13) screenshot_gui now settles 2 frames before every un-resized
+  capture (resized captures already settled 3) — covers the event-
+  processing frame + render frame that set_ui_view mutations need to
+  reach pixels. The flush-shot workaround is dead.
+- (14) Done by construction: every set_ui_view modal param routes
+  through the Open* events, which now call
+  close_modals_for_exclusivity (Batch 2 item 12).
+- (15) Root-caused (see Batch 2 notes): the no-sim path opens
+  Ready(Skipped(SimulationRequired)) — capture 10's spinner was a
+  real run's Loading state. Confirm on the verification sweep.
+
+### Batch 3 originally agreed as:
 13. set_ui_view pending properties_tab should delay the screenshot
     pump one frame (kills the flush-shot workaround).
 14. set_ui_view modal param closes other modals before opening.
