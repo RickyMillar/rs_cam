@@ -36,72 +36,79 @@ pub fn draw(
             .toolpath_configs()
             .iter()
             .any(|tc| tc.debug_options.enabled);
-        ui.label(
+        // Recording settings are set-once: open until the first sim run,
+        // collapsed afterwards (density pass 2026-06-11). The Run button
+        // stays outside the collapse.
+        egui::CollapsingHeader::new(
             egui::RichText::new("Setup & run")
                 .small()
                 .strong()
                 .color(theme::TEXT_HEADING),
-        );
-        ui.checkbox(
-            &mut sim.metric_options.enabled,
-            "Capture cutting metrics",
         )
-        .on_hover_text(
-            "Records per-sample chipload, engagement, MRR during simulation. Required for the bottom-panel signal graphs to show data. Re-run simulation to apply.",
-        );
-        if ui
-            .checkbox(&mut capture_trace_all, "Record generator trace")
-            .on_hover_text(
-                "Captures the toolpath generator's step-by-step output, used to inspect how a toolpath was built. Re-generate the toolpaths to apply.",
+        .id_salt("sim_setup_run")
+        .default_open(sim.boundaries().is_empty())
+        .show(ui, |ui| {
+            ui.checkbox(
+                &mut sim.metric_options.enabled,
+                "Capture cutting metrics",
             )
-            .changed()
-        {
-            events.push(AppEvent::SetGeneratorTraceCaptureAll(capture_trace_all));
-        }
-        if sim.metric_options.enabled {
-            sim.metric_options.capture_arc_engagement = true;
-        }
-
-        // Resolution: defines how detailed the dexel grid records material
-        // removal. Belongs with the capture toggles since it's a recording
-        // setting, not a display setting.
-        ui.horizontal(|ui| {
-            ui.label("Resolution:");
-            if sim.auto_resolution {
-                ui.label(format!("{:.3} mm (auto)", sim.resolution));
-            } else {
-                ui.add(
-                    egui::Slider::new(&mut sim.resolution, 0.02..=1.0)
-                        .suffix(" mm")
-                        .logarithmic(true)
-                        .show_value(true),
-                );
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut sim.auto_resolution, "Auto from tool size");
-            if !sim.auto_resolution {
-                ui.label(
-                    egui::RichText::new("(re-run to apply)")
-                        .small()
-                        .color(theme::WARNING),
-                );
-            }
-        });
-        {
-            let sx = session.stock_config().x;
-            let sy = session.stock_config().y;
-            let res = sim.resolution;
-            if !sim.auto_resolution
-                && rs_cam_core::dexel::DexelGrid::would_exceed_grid(res, sx, sy).is_some()
+            .on_hover_text(
+                "Records per-sample chipload, engagement, MRR during simulation. Required for the bottom-panel signal graphs to show data. Re-run simulation to apply.",
+            );
+            if ui
+                .checkbox(&mut capture_trace_all, "Record generator trace")
+                .on_hover_text(
+                    "Captures the toolpath generator's step-by-step output, used to inspect how a toolpath was built. Re-generate the toolpaths to apply.",
+                )
+                .changed()
             {
-                ui.label(
-                    egui::RichText::new("Grid too large — resolution will be coarsened")
-                        .small()
-                        .color(theme::WARNING),
-                );
+                events.push(AppEvent::SetGeneratorTraceCaptureAll(capture_trace_all));
             }
-        }
+            if sim.metric_options.enabled {
+                sim.metric_options.capture_arc_engagement = true;
+            }
+
+            // Resolution: defines how detailed the dexel grid records material
+            // removal. Belongs with the capture toggles since it's a recording
+            // setting, not a display setting.
+            ui.horizontal(|ui| {
+                ui.label("Resolution:");
+                if sim.auto_resolution {
+                    ui.label(format!("{:.3} mm (auto)", sim.resolution));
+                } else {
+                    ui.add(
+                        egui::Slider::new(&mut sim.resolution, 0.02..=1.0)
+                            .suffix(" mm")
+                            .logarithmic(true)
+                            .show_value(true),
+                    );
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut sim.auto_resolution, "Auto from tool size");
+                if !sim.auto_resolution {
+                    ui.label(
+                        egui::RichText::new("(re-run to apply)")
+                            .small()
+                            .color(theme::WARNING),
+                    );
+                }
+            });
+            {
+                let sx = session.stock_config().x;
+                let sy = session.stock_config().y;
+                let res = sim.resolution;
+                if !sim.auto_resolution
+                    && rs_cam_core::dexel::DexelGrid::would_exceed_grid(res, sx, sy).is_some()
+                {
+                    ui.label(
+                        egui::RichText::new("Grid too large — resolution will be coarsened")
+                            .small()
+                            .color(theme::WARNING),
+                    );
+                }
+            }
+        });
 
         ui.add_space(4.0);
         let run_label = if sim.boundaries().is_empty() {

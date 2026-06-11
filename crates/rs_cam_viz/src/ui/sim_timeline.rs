@@ -196,11 +196,15 @@ fn draw_verdict_hud(
                         .color(egui::Color32::from_rgb(230, 190, 90))
                         .hover("Air cuts and low-engagement clusters detected during simulation."),
                 );
-                ui.add(
-                    CountPill::observation("traces", trace_count)
-                        .color(egui::Color32::from_rgb(150, 170, 230))
-                        .hover("Generator traces recorded for inspection."),
-                );
+                // Generator traces are debug-grade provenance: only pill them
+                // when at least one exists (density pass 2026-06-11).
+                if trace_count > 0 {
+                    ui.add(
+                        CountPill::observation("traces", trace_count)
+                            .color(egui::Color32::from_rgb(150, 170, 230))
+                            .hover("Generator traces recorded for inspection."),
+                    );
+                }
             });
         });
 }
