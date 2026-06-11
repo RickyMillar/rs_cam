@@ -485,3 +485,60 @@ pixels could show.
 - GUI interaction between user and agent shares one state: a user
   clicking around mid-sweep changes selection/workspace under the
   agent (observed live). Re-pin the full view per capture.
+
+---
+
+## Implementation plan (agreed 2026-06-12, after full capture review)
+
+Captures referenced live in /tmp/ui_sweep/ (regenerate any time:
+load WANAKA → generate_all → run_simulation → set_ui_view +
+screenshot_gui; tab override needs one flush frame — see Tooling
+notes above).
+
+### Batch 1 — polish (all S, pure UI, one session)
+1. Timeline "issues 46751" pill → curated counts only (must-address +
+   hotspots); raw emission-noise count never reaches the user.
+   (sim_timeline HUD pills)
+2. TRACE badge on toolpath cards → only when non-default (all 8 cards
+   show it identically today = wallpaper). (toolpath_panel)
+3. Stale-gate triplication → one line: "Gates: run simulation to
+   evaluate" / "Gates: simulation stale — re-run to verify". Both
+   wordings ship today as 3 lines each (chipload/power/deflection).
+   (properties/mod.rs toolpath header)
+4. Bracket-chip notation "[✓ within 2/7] {collisions 0}" → styled
+   pills; zero-count chips self-hide. Same notation in inspector
+   Findings row, readiness Tool load row, timeline HUD.
+5. Inspector "Low engagement 34614 / Air cut 12031" raw sample counts
+   → % of cutting time (or demote behind Top hotspots).
+6. Linking tab: disabled "Feed rate optimization" + 2-line italic
+   explanation → hover text on the disabled checkbox.
+7. Setup card "Starts from uncut stock (prior setups not reflected)"
+   permanent italic → hover on the card (shows on every non-first
+   setup forever).
+8. Mini feeds-modal window title "Feeds & Speeds — toolpath 4" →
+   use toolpath NAME (main modal already does).
+
+### Batch 2 — structural (M, next session)
+9.  Toolpath cards: 6-glyph control row renders on hover/selection
+    only (13 elements/card today).
+10. Timeline: single metric-resolved summary track; the 5 expert
+    tracks behind disclosure (the unlanded half of old W3.6).
+11. Sim op-list: worst-of status flag rollup per op (up to ~12 flags
+    today).
+12. Modal exclusivity: opening Feeds/Optimize/Library/Wizard closes
+    the others (sweep produced a 3-deep stack: Optimize spinner over
+    Tool Library over a floating feeds mini-modal).
+
+### Batch 3 — capture tooling (S, opportunistic)
+13. set_ui_view pending properties_tab should delay the screenshot
+    pump one frame (kills the flush-shot workaround).
+14. set_ui_view modal param closes other modals before opening.
+15. Verify optimizer pre-sim guard: capture 10 shows "Optimize is
+    running…" with NO sim present (expected a SimulationRequired
+    refusal; might be the spinner frame before refusal renders, but a
+    misfired real optimize blocks the GUI ~40 min).
+
+### Verified clean (no action)
+Heights tab (model surface: refs + computed absolutes + diagram),
+Linking, Geometry op form, Setup rail, Readiness, Export wizard
+(7-step breadcrumb incl. new "Tool change & spindle"), Tool Library.
