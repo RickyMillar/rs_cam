@@ -25,7 +25,7 @@ use rs_cam_mcp::server::{json_str, no_project_error, parse_operation_type, parse
 impl super::RsCamApp {
     /// Non-blocking drain of MCP requests from the channel.
     /// Called once per frame from `update()`.
-    pub(crate) fn drain_mcp_requests(&mut self) {
+    pub(crate) fn drain_mcp_requests(&mut self, ctx: &egui::Context) {
         // Garbage-collect expired MCP highlights (older than 3 seconds).
         self.controller
             .state_mut()
@@ -48,11 +48,11 @@ impl super::RsCamApp {
         }
 
         for request in requests {
-            self.handle_mcp_request(request);
+            self.handle_mcp_request(ctx, request);
         }
     }
 
-    fn handle_mcp_request(&mut self, request: McpRequest) {
+    fn handle_mcp_request(&mut self, ctx: &egui::Context, request: McpRequest) {
         let McpRequest {
             kind,
             response_tx,
@@ -598,6 +598,31 @@ impl super::RsCamApp {
                     height,
                     show_stock,
                     include_rapids,
+                );
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::ScreenshotGui {
+                path,
+                width,
+                height,
+            } => {
+                // Deferred response: the handler stores response_tx in the
+                // pending slot and the capture completes 1-2 frames later.
+                self.mcp_screenshot_gui(ctx, &path, width, height, response_tx);
+            }
+
+            // ── UI navigation ────────────────────────────────────────
+            McpRequestKind::SetUiView {
+                workspace,
+                toolpath_index,
+                properties_tab,
+                modal,
+            } => {
+                let resp = self.mcp_set_ui_view(
+                    workspace.as_deref(),
+                    toolpath_index,
+                    properties_tab.as_deref(),
+                    modal.as_deref(),
                 );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
@@ -3452,6 +3477,283 @@ impl super::RsCamApp {
         }
     }
 
+    // ── Full-window GUI screenshot (screenshot_gui) ──────────────────
+
+    /// Start a full-window GUI capture. Deferred-response pattern
+    /// (mirrors `pending.collision`): store the path + response sender
+    /// in `pending.gui_screenshot`, optionally resize the window, and
+    /// let the per-frame pump issue `ViewportCommand::Screenshot` once
+    /// the resize has settled. `complete_mcp_gui_screenshot` finishes
+    /// the response when the `egui::Event::Screenshot` result arrives
+    /// 1-2 frames later.
+    fn mcp_screenshot_gui(
+        &mut self,
+        ctx: &egui::Context,
+        path: &str,
+        width: Option<f32>,
+        height: Option<f32>,
+        response_tx: tokio::sync::oneshot::Sender<McpResponse>,
+    ) {
+        if !path.ends_with(".png") {
+            let _ = response_tx.send(McpResponse {
+                result: Ok(text(format!(
+                    "screenshot_gui only writes PNG — path must end in .png (got '{path}')"
+                ))),
+            });
+            return;
+        }
+        let Some(pending) = self.controller.pending_mcp.as_mut() else {
+            let _ = response_tx.send(McpResponse {
+                result: Err("MCP compute tracking not initialized".to_owned()),
+            });
+            return;
+        };
+        if pending.gui_screenshot.is_some() {
+            let _ = response_tx.send(McpResponse {
+                result: Ok(text(
+                    "Another screenshot_gui capture is already in flight — \
+                     retry after it completes.",
+                )),
+            });
+            return;
+        }
+
+        // Optional resize before capture (logical points). The capture is
+        // deferred a few frames so the window system has applied the new
+        // size. The size is NOT restored afterwards — it sticks (documented
+        // in the tool description).
+        let frames_before_capture = if width.is_some() || height.is_some() {
+            let current = ctx.input(|i| i.viewport().inner_rect).map(|r| r.size());
+            let w = width.unwrap_or_else(|| current.map_or(1400.0, |s| s.x));
+            let h = height.unwrap_or_else(|| current.map_or(900.0, |s| s.y));
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(w, h)));
+            3
+        } else {
+            0
+        };
+
+        pending.gui_screenshot = Some(crate::mcp_bridge::PendingGuiScreenshot {
+            path: path.to_owned(),
+            frames_before_capture,
+            capture_requested: false,
+            response_tx,
+        });
+        // Keep frames pumping while the app is headless-idle so the
+        // capture actually happens.
+        ctx.request_repaint();
+    }
+
+    /// Per-frame pump for an in-flight `screenshot_gui` capture. Issues
+    /// the `ViewportCommand::Screenshot` once the resize-settle countdown
+    /// drains, and keeps requesting repaints so frames pump while idle.
+    pub(crate) fn pump_mcp_gui_screenshot(&mut self, ctx: &egui::Context) {
+        let Some(pending) = self
+            .controller
+            .pending_mcp
+            .as_mut()
+            .and_then(|p| p.gui_screenshot.as_mut())
+        else {
+            return;
+        };
+        if pending.should_capture_now() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+        }
+        ctx.request_repaint();
+    }
+
+    /// Complete a pending `screenshot_gui` request with a captured frame.
+    /// Returns `true` when an MCP capture consumed the screenshot event
+    /// (suppressing the default F12 save-to-cwd path).
+    pub(crate) fn complete_mcp_gui_screenshot(&mut self, image: &egui::ColorImage) -> bool {
+        let Some(pending) = self.controller.pending_mcp.as_mut() else {
+            return false;
+        };
+        // Only consume the event once this slot has actually issued its
+        // Screenshot command (an F12 capture could land first otherwise).
+        if !pending
+            .gui_screenshot
+            .as_ref()
+            .is_some_and(|p| p.capture_requested)
+        {
+            return false;
+        }
+        let Some(slot) = pending.gui_screenshot.take() else {
+            return false;
+        };
+
+        let (w, h) = (image.size[0] as u32, image.size[1] as u32);
+        let pixels: Vec<u8> = image
+            .pixels
+            .iter()
+            .flat_map(|c| [c.r(), c.g(), c.b(), c.a()])
+            .collect();
+        let result = match image::save_buffer(
+            Path::new(&slot.path),
+            &pixels,
+            w,
+            h,
+            image::ColorType::Rgba8,
+        ) {
+            Ok(()) => text(format!("GUI window exported to {} ({w}x{h})", slot.path)),
+            Err(e) => text(format!("Failed to save PNG: {e}")),
+        };
+        let _ = slot.response_tx.send(McpResponse { result: Ok(result) });
+        true
+    }
+
+    // ── UI navigation (set_ui_view) ──────────────────────────────────
+
+    /// Apply a `set_ui_view` navigation request. Mutations route through
+    /// the same `AppEvent`s the GUI's own widgets push, so workspace
+    /// switches and modal opens behave identically to user clicks (they
+    /// land later this same frame via `handle_events`). Returns a JSON
+    /// echo of the resulting view state.
+    fn mcp_set_ui_view(
+        &mut self,
+        workspace: Option<&str>,
+        toolpath_index: Option<usize>,
+        properties_tab: Option<&str>,
+        modal: Option<&str>,
+    ) -> String {
+        // 1. Workspace.
+        let mut workspace_applied: Option<&'static str> = None;
+        if let Some(ws) = workspace {
+            let Some(target) = parse_workspace(ws) else {
+                return json_str(serde_json::json!({
+                    "error": format!(
+                        "Unknown workspace '{ws}'. Valid: setup, toolpaths, simulation, readiness"
+                    )
+                }));
+            };
+            self.controller
+                .events_mut()
+                .push(AppEvent::SwitchWorkspace(target));
+            workspace_applied = Some(workspace_key(target));
+        }
+
+        // 2. Toolpath selection (0-based index -> semantic id).
+        if let Some(idx) = toolpath_index {
+            let Some(tp_id) = self
+                .controller
+                .state()
+                .session
+                .toolpath_configs()
+                .get(idx)
+                .map(|tc| tc.id)
+            else {
+                let count = self.controller.state().session.toolpath_count();
+                return json_str(serde_json::json!({
+                    "error": format!(
+                        "Toolpath index {idx} out of range (project has {count} toolpaths)"
+                    )
+                }));
+            };
+            self.controller.state_mut().selection = Selection::Toolpath(tp_id);
+        }
+
+        // 3. Properties tab — one-shot override consumed by the
+        //    properties panel the next time it renders a selected
+        //    toolpath (so it only shows once a toolpath is selected).
+        let mut tab_applied: Option<&str> = None;
+        if let Some(tab) = properties_tab {
+            const VALID_TABS: &[&str] = &[
+                "geometry",
+                "feeds",
+                "feeds_speeds",
+                "linking",
+                "heights",
+                "dressup",
+            ];
+            if !VALID_TABS.contains(&tab) {
+                return json_str(serde_json::json!({
+                    "error": format!(
+                        "Unknown properties_tab '{tab}'. Valid: geometry, feeds, linking, heights, dressup"
+                    )
+                }));
+            }
+            self.controller.state_mut().gui.pending_toolpath_tab = Some(tab.to_owned());
+            tab_applied = Some(tab);
+        }
+
+        // 4. Modal.
+        if let Some(m) = modal {
+            match m {
+                "none" => {
+                    let events = self.controller.events_mut();
+                    events.push(AppEvent::CloseFeedsModal);
+                    events.push(AppEvent::CloseOptimizeModal);
+                    events.push(AppEvent::CloseOptimizeProject);
+                    events.push(AppEvent::CloseExportWizard);
+                    events.push(AppEvent::CloseToolLibrary);
+                    let state = self.controller.state_mut();
+                    state.show_preflight = false;
+                    state.show_shortcuts = false;
+                }
+                "feeds_modal" | "optimize_modal" => {
+                    let Selection::Toolpath(tp_id) = self.controller.state().selection else {
+                        return json_str(serde_json::json!({
+                            "error": format!(
+                                "'{m}' needs a toolpath — pass toolpath_index in this call \
+                                 or select a toolpath first"
+                            )
+                        }));
+                    };
+                    let event = if m == "feeds_modal" {
+                        AppEvent::OpenFeedsModal(tp_id)
+                    } else {
+                        AppEvent::OpenOptimizeModal(tp_id)
+                    };
+                    self.controller.events_mut().push(event);
+                }
+                "export_wizard" => {
+                    self.controller
+                        .events_mut()
+                        .push(AppEvent::OpenExportWizard);
+                }
+                "tool_library" => {
+                    self.controller.events_mut().push(AppEvent::OpenToolLibrary);
+                }
+                other => {
+                    return json_str(serde_json::json!({
+                        "error": format!(
+                            "Unknown modal '{other}'. Valid: feeds_modal, optimize_modal, \
+                             export_wizard, tool_library, none"
+                        )
+                    }));
+                }
+            }
+        }
+
+        // Echo the resulting view. Workspace/modal mutations route
+        // through the event queue and land later this same frame, so
+        // echo the requested targets plus the already-applied selection.
+        let state = self.controller.state();
+        let selected = match state.selection {
+            Selection::Toolpath(id) => state
+                .session
+                .toolpath_configs()
+                .iter()
+                .enumerate()
+                .find(|(_, tc)| tc.id == id)
+                .map(|(index, tc)| {
+                    serde_json::json!({
+                        "index": index,
+                        "id": id,
+                        "name": tc.name,
+                    })
+                }),
+            _ => None,
+        };
+        json_str(serde_json::json!({
+            "ok": true,
+            "workspace": workspace_applied.unwrap_or_else(|| workspace_key(state.workspace)),
+            "selected_toolpath": selected,
+            "properties_tab": tab_applied,
+            "modal": modal,
+            "note": "view changes render on the next frame; call screenshot_gui to capture",
+        }))
+    }
+
     // ── Simulation scrubbing implementations ────────────────────────
 
     fn mcp_sim_jump_to_move(&mut self, move_index: usize) -> String {
@@ -3879,6 +4181,28 @@ fn expand_span_kind_synonyms(span_kind: &str) -> Vec<String> {
         | "rapid_order_barrier" => Vec::new(),
         // Fallback: treat as a literal debug-trace kind.
         other => vec![other.to_owned()],
+    }
+}
+
+/// Parse the agent-facing workspace key used by the MCP `set_ui_view`
+/// tool into the GUI [`Workspace`] enum.
+fn parse_workspace(s: &str) -> Option<Workspace> {
+    match s {
+        "setup" => Some(Workspace::Setup),
+        "toolpaths" => Some(Workspace::Toolpaths),
+        "simulation" | "sim" => Some(Workspace::Simulation),
+        "readiness" => Some(Workspace::Readiness),
+        _ => None,
+    }
+}
+
+/// Inverse of [`parse_workspace`] for the `set_ui_view` JSON echo.
+fn workspace_key(w: Workspace) -> &'static str {
+    match w {
+        Workspace::Setup => "setup",
+        Workspace::Toolpaths => "toolpaths",
+        Workspace::Simulation => "simulation",
+        Workspace::Readiness => "readiness",
     }
 }
 
@@ -4321,5 +4645,24 @@ mod tests {
             None,
         );
         assert!(res.is_err());
+    }
+
+    /// `set_ui_view` documents these workspace keys — every key must
+    /// parse, every `Workspace` variant must round-trip through
+    /// `workspace_key` → `parse_workspace`, and unknown keys stay `None`.
+    #[test]
+    fn workspace_keys_round_trip() {
+        for ws in [
+            Workspace::Setup,
+            Workspace::Toolpaths,
+            Workspace::Simulation,
+            Workspace::Readiness,
+        ] {
+            assert_eq!(parse_workspace(workspace_key(ws)), Some(ws));
+        }
+        // "sim" alias accepted on input (matches the RS_CAM_SCREENSHOT
+        // env-var vocabulary).
+        assert_eq!(parse_workspace("sim"), Some(Workspace::Simulation));
+        assert_eq!(parse_workspace("not_a_workspace"), None);
     }
 }

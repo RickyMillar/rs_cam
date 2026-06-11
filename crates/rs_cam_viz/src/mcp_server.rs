@@ -17,11 +17,11 @@ use rs_cam_mcp::server::{
     CollisionCheckParam, CutTraceParam, ExportParam, GenDebugTraceParam, IndexParam,
     InspectSpansParam, ListToolCatalogParam, LoadProjectParam, ModelIdParam, OperationSchemaParam,
     OptimizeToolpathInput, RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam,
-    SaveProjectParam, ScreenshotSimParam, ScreenshotToolpathParam, SetBoundaryConfigParam,
-    SetDressupConfigParam, SetDressupFieldParam, SetSpindleStrategyParam, SetStockConfigParam,
-    SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam, SetToolpathHeightsParam,
-    SetToolpathParamInput, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam,
-    SimScrubToolpathParam, SimulationParam,
+    SaveProjectParam, ScreenshotGuiParam, ScreenshotSimParam, ScreenshotToolpathParam,
+    SetBoundaryConfigParam, SetDressupConfigParam, SetDressupFieldParam, SetSpindleStrategyParam,
+    SetStockConfigParam, SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam,
+    SetToolpathHeightsParam, SetToolpathParamInput, SetUiViewParam, SimJumpToMoveParam,
+    SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam,
 };
 
 /// Embedded MCP server that forwards requests to the GUI thread.
@@ -1066,6 +1066,52 @@ impl EmbeddedCamServer {
                 height,
                 show_stock,
                 include_rapids,
+            })
+            .await,
+        )
+    }
+
+    #[tool(
+        name = "screenshot_gui",
+        description = "Capture the FULL application window — all panels, menus, tabs, and open modals — to a PNG file (unlike screenshot_simulation/screenshot_toolpath, which render the 3D scene offscreen without the surrounding UI). Optional width/height (logical points) resize the window before capture; the new size persists afterwards (it is not restored). The capture lands 1-2 frames after the request. Pair with set_ui_view to navigate to the surface you want to capture first."
+    )]
+    async fn screenshot_gui(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(ScreenshotGuiParam {
+            path,
+            width,
+            height,
+        }): Parameters<ScreenshotGuiParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::ScreenshotGui {
+                path,
+                width,
+                height,
+            })
+            .await,
+        )
+    }
+
+    #[tool(
+        name = "set_ui_view",
+        description = "Navigate the GUI to a specific view so screenshot_gui can capture any UI surface. All params optional, applied in order: `workspace` switches the top-level workspace ('setup', 'toolpaths', 'simulation', 'readiness'); `toolpath_index` (0-based) selects that toolpath so its properties panel shows in the Toolpaths workspace; `properties_tab` activates a toolpath inspector tab ('geometry', 'feeds', 'linking', 'heights', 'dressup' — requires a selected toolpath to be visible); `modal` opens a modal ('feeds_modal', 'optimize_modal', 'export_wizard', 'tool_library') or 'none' closes all modals. Preconditions: feeds_modal and optimize_modal need a toolpath — pass toolpath_index in the same call or have one selected; optimize_modal starts a REAL Optimize run (long, ~1-2 min — without a prior simulation it shows a 'simulation required' outcome instead). Returns a JSON echo of the resulting view state. Changes render on the next frame, so call screenshot_gui after this returns."
+    )]
+    async fn set_ui_view(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(SetUiViewParam {
+            workspace,
+            toolpath_index,
+            properties_tab,
+            modal,
+        }): Parameters<SetUiViewParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::SetUiView {
+                workspace,
+                toolpath_index,
+                properties_tab,
+                modal,
             })
             .await,
         )

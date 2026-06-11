@@ -490,6 +490,15 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .find(|v| v.toolpath_id == id)
                 .cloned();
 
+            // One-shot tab override from the MCP set_ui_view tool. Taken
+            // (consumed) here so it applies to exactly one frame; the tab
+            // bar then persists it via the regular temp-memory path.
+            let tab_override = state
+                .gui
+                .pending_toolpath_tab
+                .take()
+                .and_then(|s| ToolpathTab::parse(&s));
+
             // Build a temporary ToolpathEntry from session config + gui runtime
             // so the existing draw_toolpath_panel can work unchanged.
             if let Some(mut entry) =
@@ -512,6 +521,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     height_ctx.as_ref(),
                     &stale_default_defects,
                     load_verdict_for_tp.as_ref(),
+                    tab_override,
                     events,
                 );
 
@@ -2216,6 +2226,19 @@ impl ToolpathTab {
             ToolpathTab::Dressup => "Dressup",
         }
     }
+
+    /// Parse the agent-facing tab key used by the MCP `set_ui_view` tool
+    /// (stored in `GuiState::pending_toolpath_tab`).
+    fn parse(s: &str) -> Option<Self> {
+        match s {
+            "geometry" => Some(ToolpathTab::Geometry),
+            "feeds" | "feeds_speeds" => Some(ToolpathTab::FeedsSpeeds),
+            "linking" => Some(ToolpathTab::Linking),
+            "heights" => Some(ToolpathTab::Heights),
+            "dressup" => Some(ToolpathTab::Dressup),
+            _ => None,
+        }
+    }
 }
 
 /// Per-tab badge state for the tab bar.
@@ -2681,6 +2704,7 @@ fn draw_toolpath_panel(
     height_ctx: Option<&HeightContext>,
     stale_default_defects: &[rs_cam_core::compute::validate::StaleDefault],
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
+    tab_override: Option<ToolpathTab>,
     events: &mut Vec<AppEvent>,
 ) {
     // ── Shared header (always visible above tabs) ───────────────────
@@ -2943,9 +2967,10 @@ fn draw_toolpath_panel(
 
     ui.add_space(8.0);
     let tab_id = ui.id().with("tp_tab").with(entry.id.0);
-    let mut active_tab: ToolpathTab = ui
-        .memory(|mem| mem.data.get_temp(tab_id))
-        .unwrap_or(ToolpathTab::Geometry);
+    let mut active_tab: ToolpathTab = tab_override.unwrap_or_else(|| {
+        ui.memory(|mem| mem.data.get_temp(tab_id))
+            .unwrap_or(ToolpathTab::Geometry)
+    });
     let tab_badges = compute_tab_badges(entry, &diagnostics, height_ctx);
     draw_toolpath_tabs(ui, &mut active_tab, &tab_badges);
     ui.memory_mut(|mem| mem.data.insert_temp(tab_id, active_tab));
@@ -3926,5 +3951,55 @@ fn draw_dressup_params(ui: &mut egui::Ui, cfg: &mut DressupConfig) {
                 );
             });
         draw_dogbone_diagram(ui, cfg.dogbone_angle);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::ToolpathTab;
+
+    /// The MCP `set_ui_view` tool documents these tab keys — every
+    /// documented key must parse, every tab must be reachable, and
+    /// unknown keys must stay `None` (set_ui_view validates upstream,
+    /// this is the backstop).
+    #[test]
+    fn toolpath_tab_parse_covers_all_documented_keys() {
+        assert!(matches!(
+            ToolpathTab::parse("geometry"),
+            Some(ToolpathTab::Geometry)
+        ));
+        assert!(matches!(
+            ToolpathTab::parse("feeds"),
+            Some(ToolpathTab::FeedsSpeeds)
+        ));
+        assert!(matches!(
+            ToolpathTab::parse("feeds_speeds"),
+            Some(ToolpathTab::FeedsSpeeds)
+        ));
+        assert!(matches!(
+            ToolpathTab::parse("linking"),
+            Some(ToolpathTab::Linking)
+        ));
+        assert!(matches!(
+            ToolpathTab::parse("heights"),
+            Some(ToolpathTab::Heights)
+        ));
+        assert!(matches!(
+            ToolpathTab::parse("dressup"),
+            Some(ToolpathTab::Dressup)
+        ));
+        assert!(ToolpathTab::parse("not_a_tab").is_none());
+        // Every variant in ALL is reachable through some key.
+        for &tab in ToolpathTab::ALL {
+            let key = match tab {
+                ToolpathTab::Geometry => "geometry",
+                ToolpathTab::FeedsSpeeds => "feeds",
+                ToolpathTab::Linking => "linking",
+                ToolpathTab::Heights => "heights",
+                ToolpathTab::Dressup => "dressup",
+            };
+            assert!(ToolpathTab::parse(key).is_some());
+        }
     }
 }

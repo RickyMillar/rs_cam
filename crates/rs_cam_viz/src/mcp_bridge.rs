@@ -289,6 +289,28 @@ pub enum McpRequestKind {
         show_stock: Option<bool>,
         include_rapids: Option<bool>,
     },
+    /// Capture the full application window (all panels) to a PNG. The
+    /// response is deferred: the GUI issues
+    /// `ViewportCommand::Screenshot` and completes the response 1-2
+    /// frames later when `egui::Event::Screenshot` arrives.
+    ScreenshotGui {
+        path: String,
+        /// Optional window resize (logical points) applied before capture.
+        /// The new size persists after the capture.
+        width: Option<f32>,
+        height: Option<f32>,
+    },
+
+    // ── UI navigation ────────────────────────────────────────────────
+    /// Drive the GUI to a specific view state (workspace, toolpath
+    /// selection, properties tab, modal) so `ScreenshotGui` can capture
+    /// any UI surface. Fields are applied in declaration order.
+    SetUiView {
+        workspace: Option<String>,
+        toolpath_index: Option<usize>,
+        properties_tab: Option<String>,
+        modal: Option<String>,
+    },
 }
 
 /// Response from the GUI thread to the MCP server.
@@ -337,6 +359,41 @@ pub struct PendingMcpCompute {
     pub collision: Option<tokio::sync::oneshot::Sender<McpResponse>>,
     /// For generate_all: track pending toolpaths and a final response sender.
     pub generate_all: Option<PendingGenerateAll>,
+    /// For screenshot_gui: the in-flight full-window capture. The GUI
+    /// pumps this every frame (`pump_mcp_gui_screenshot`) until the
+    /// `egui::Event::Screenshot` result lands and the response is sent.
+    pub gui_screenshot: Option<PendingGuiScreenshot>,
+}
+
+/// State for a pending full-window GUI screenshot (`screenshot_gui`).
+pub struct PendingGuiScreenshot {
+    /// Output PNG path.
+    pub path: String,
+    /// Frames to wait before issuing `ViewportCommand::Screenshot`.
+    /// Non-zero when the request resized the window first, so the
+    /// resize has settled by the time the backend captures. 0 = issue
+    /// on the next pump.
+    pub frames_before_capture: u8,
+    /// Set once the `ViewportCommand::Screenshot` has been sent; the
+    /// next `egui::Event::Screenshot` in raw input completes this slot.
+    pub capture_requested: bool,
+    pub response_tx: tokio::sync::oneshot::Sender<McpResponse>,
+}
+
+impl PendingGuiScreenshot {
+    /// Advance the per-frame countdown. Returns `true` exactly once —
+    /// on the frame the `ViewportCommand::Screenshot` should be issued.
+    pub fn should_capture_now(&mut self) -> bool {
+        if self.capture_requested {
+            return false;
+        }
+        if self.frames_before_capture > 0 {
+            self.frames_before_capture -= 1;
+            return false;
+        }
+        self.capture_requested = true;
+        true
+    }
 }
 
 /// State for tracking a "generate all" MCP request.
@@ -354,5 +411,70 @@ pub struct PendingGenerateAll {
 impl PendingMcpCompute {
     pub fn new() -> Self {
         Self::default()
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    fn pending(
+        frames: u8,
+    ) -> (
+        PendingGuiScreenshot,
+        tokio::sync::oneshot::Receiver<McpResponse>,
+    ) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        (
+            PendingGuiScreenshot {
+                path: "/tmp/test.png".to_owned(),
+                frames_before_capture: frames,
+                capture_requested: false,
+                response_tx: tx,
+            },
+            rx,
+        )
+    }
+
+    /// No-resize request: the Screenshot command fires on the first pump
+    /// and never again.
+    #[test]
+    fn gui_screenshot_captures_immediately_without_resize() {
+        let (mut p, _rx) = pending(0);
+        assert!(p.should_capture_now(), "first pump must request capture");
+        assert!(p.capture_requested);
+        assert!(!p.should_capture_now(), "capture must be requested once");
+        assert!(!p.should_capture_now());
+    }
+
+    /// Resize request: the countdown defers the Screenshot command so the
+    /// InnerSize resize settles first, then fires exactly once.
+    #[test]
+    fn gui_screenshot_countdown_defers_capture_after_resize() {
+        let (mut p, _rx) = pending(3);
+        assert!(!p.should_capture_now());
+        assert!(!p.should_capture_now());
+        assert!(!p.should_capture_now());
+        assert!(
+            p.should_capture_now(),
+            "capture fires after the countdown drains"
+        );
+        assert!(!p.should_capture_now(), "and only once");
+    }
+
+    /// The pending slot starts empty and `take()` empties it again —
+    /// the per-frame scan relies on this to complete at most one
+    /// response per Screenshot event.
+    #[test]
+    fn pending_compute_gui_screenshot_slot_take_semantics() {
+        let mut pending_mcp = PendingMcpCompute::new();
+        assert!(pending_mcp.gui_screenshot.is_none());
+
+        let (slot, _rx) = pending(0);
+        pending_mcp.gui_screenshot = Some(slot);
+        let taken = pending_mcp.gui_screenshot.take();
+        assert!(taken.is_some());
+        assert!(pending_mcp.gui_screenshot.is_none());
     }
 }

@@ -276,6 +276,13 @@ pub struct GuiState {
     /// Key: "toolpath_{id}_{param}" or "tool_{id}_{param}" or "stock_{param}"
     #[cfg(feature = "mcp")]
     pub mcp_highlights: HashMap<String, std::time::Instant>,
+    /// One-shot toolpath-properties tab override, set by the MCP
+    /// `set_ui_view` tool and consumed (taken) the next time the
+    /// properties panel renders a selected toolpath. Canonical values:
+    /// "geometry", "feeds", "linking", "heights", "dressup". Not
+    /// cfg-gated on `mcp` so the properties panel can consume it
+    /// unconditionally.
+    pub pending_toolpath_tab: Option<String>,
 }
 
 impl GuiState {
@@ -290,6 +297,7 @@ impl GuiState {
             tool_load_overrides: ToolLoadOverrides::default(),
             #[cfg(feature = "mcp")]
             mcp_highlights: HashMap::new(),
+            pending_toolpath_tab: None,
         }
     }
 

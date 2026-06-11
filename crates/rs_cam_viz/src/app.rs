@@ -453,10 +453,17 @@ impl RsCamApp {
             self.show_quit_dialog = true;
         }
 
-        // Handle screenshot results from previous frame
+        // Handle screenshot results from previous frame. An in-flight MCP
+        // screenshot_gui request consumes the event (writes to its own
+        // path + completes the deferred response); otherwise fall back to
+        // the F12 save-to-cwd path.
         ctx.input(|i| {
             for event in &i.raw.events {
                 if let egui::Event::Screenshot { image, .. } = event {
+                    #[cfg(feature = "mcp")]
+                    if self.complete_mcp_gui_screenshot(image) {
+                        continue;
+                    }
                     Self::save_screenshot(image);
                 }
             }
@@ -472,7 +479,13 @@ impl RsCamApp {
         self.controller.drain_compute_results();
 
         #[cfg(feature = "mcp")]
-        self.drain_mcp_requests();
+        self.drain_mcp_requests(ctx);
+
+        // Pump an in-flight screenshot_gui capture: issues the viewport
+        // Screenshot command after any resize settles and keeps frames
+        // pumping while headless-idle.
+        #[cfg(feature = "mcp")]
+        self.pump_mcp_gui_screenshot(ctx);
 
         // Request repaint while MCP highlights are fading or notifications are active.
         #[cfg(feature = "mcp")]
