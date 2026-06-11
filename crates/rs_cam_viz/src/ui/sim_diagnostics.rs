@@ -84,7 +84,7 @@ pub fn draw(
         .any(|rt| rt.debug_trace.is_some() || rt.semantic_trace.is_some());
 
     egui::CollapsingHeader::new("View")
-        .default_open(true)
+        .default_open(false)
         .show(ui, |ui| {
             // Stock appearance — opacity only. The show/hide *toggle* lives in
             // the viewport "Show ▼" menu (W4.3: one home for visibility); this
@@ -1225,7 +1225,7 @@ fn draw_span_section(
 
     egui::CollapsingHeader::new(title)
         .id_salt("inspector_span")
-        .default_open(true)
+        .default_open(locked_span_id.is_some())
         .show(ui, |ui| {
             // In-panel lock toggle (INS-008) — the panel's own entry point to
             // the span lock, writing the same span_scope field the ribbon does.

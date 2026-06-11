@@ -177,8 +177,10 @@ fn draw_alignment_pins(
         .strong()
         .color(egui::Color32::from_rgb(180, 180, 195));
 
+    // Pins only matter for two-sided work: open by default only when pins
+    // exist or a flip axis is set (density pass 2026-06-11).
     egui::CollapsingHeader::new(header)
-        .default_open(true)
+        .default_open(!stock.alignment_pins.is_empty() || stock.flip_axis.is_some())
         .show(ui, |ui| {
             let mut changed = false;
 

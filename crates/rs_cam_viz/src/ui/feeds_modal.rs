@@ -1099,7 +1099,7 @@ fn draw_chipload_breakdown(ui: &mut egui::Ui, explain: &FeedsExplain) {
             .strong()
             .color(theme::TEXT_STRONG),
     )
-    .default_open(true)
+    .default_open(false)
     .show(ui, |ui| {
         // ── Step 1: target chipload ──────────────────────────────────
         ui.label(

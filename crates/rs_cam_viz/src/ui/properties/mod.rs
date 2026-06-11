@@ -570,24 +570,6 @@ fn draw_model_properties(
 
         ui.add_space(8.0);
         ui.label(
-            egui::RichText::new("Mesh Info")
-                .strong()
-                .color(egui::Color32::from_rgb(180, 180, 195)),
-        );
-        egui::Grid::new("mesh_info")
-            .num_columns(2)
-            .spacing([8.0, 3.0])
-            .show(ui, |ui| {
-                ui.label("Vertices:");
-                ui.label(format!("{}", mesh.vertices.len()));
-                ui.end_row();
-                ui.label("Triangles:");
-                ui.label(format!("{}", mesh.triangles.len()));
-                ui.end_row();
-            });
-
-        ui.add_space(8.0);
-        ui.label(
             egui::RichText::new("Dimensions (after scaling)")
                 .strong()
                 .color(egui::Color32::from_rgb(180, 180, 195)),
@@ -647,53 +629,6 @@ fn draw_model_properties(
             );
         }
 
-        // BREP face metadata (STEP only)
-        if let Some(enriched) = &model.enriched_mesh {
-            ui.add_space(8.0);
-            ui.label(
-                egui::RichText::new("BREP Topology")
-                    .strong()
-                    .color(egui::Color32::from_rgb(180, 180, 195)),
-            );
-            egui::Grid::new("brep_info")
-                .num_columns(2)
-                .spacing([8.0, 3.0])
-                .show(ui, |ui| {
-                    ui.label("Faces:");
-                    ui.label(format!("{}", enriched.face_count()));
-                    ui.end_row();
-                    ui.label("Adjacency pairs:");
-                    ui.label(format!("{}", enriched.adjacency.len()));
-                    ui.end_row();
-
-                    // Surface type histogram
-                    use rs_cam_core::enriched_mesh::SurfaceType;
-                    let mut planes = 0;
-                    let mut cylinders = 0;
-                    let mut other = 0;
-                    for group in &enriched.face_groups {
-                        match group.surface_type {
-                            SurfaceType::Plane => planes += 1,
-                            SurfaceType::Cylinder => cylinders += 1,
-                            _ => other += 1,
-                        }
-                    }
-                    ui.label("Surface types:");
-                    let mut parts = Vec::new();
-                    if planes > 0 {
-                        parts.push(format!("{planes} plane"));
-                    }
-                    if cylinders > 0 {
-                        parts.push(format!("{cylinders} cyl"));
-                    }
-                    if other > 0 {
-                        parts.push(format!("{other} other"));
-                    }
-                    ui.label(parts.join(", "));
-                    ui.end_row();
-                });
-        }
-
         // Units / scale selector (all formats including STEP)
         {
             ui.add_space(8.0);
@@ -747,20 +682,97 @@ fn draw_model_properties(
         }
     }
 
-    if let Some(polys) = &model.polygons {
+    // Expert-grade internals — mesh counts, BREP topology, polygon listing —
+    // grouped under one default-closed disclosure (density pass 2026-06-11).
+    // Dimensions, warnings, and units/scale stay top-level above.
+    if model.mesh.is_some() || model.polygons.is_some() {
         ui.add_space(8.0);
-        ui.label(format!("Polygons: {}", polys.len()));
-        for (i, p) in polys.iter().enumerate().take(5) {
-            ui.label(format!(
-                "  #{}: {} pts, {} holes",
-                i + 1,
-                p.exterior.len(),
-                p.holes.len()
-            ));
-        }
-        if polys.len() > 5 {
-            ui.label(format!("  ... and {} more", polys.len() - 5));
-        }
+        egui::CollapsingHeader::new("Details")
+            .id_salt("model_details")
+            .default_open(false)
+            .show(ui, |ui| {
+                if let Some(mesh) = &model.mesh {
+                    ui.label(
+                        egui::RichText::new("Mesh Info")
+                            .strong()
+                            .color(egui::Color32::from_rgb(180, 180, 195)),
+                    );
+                    egui::Grid::new("mesh_info")
+                        .num_columns(2)
+                        .spacing([8.0, 3.0])
+                        .show(ui, |ui| {
+                            ui.label("Vertices:");
+                            ui.label(format!("{}", mesh.vertices.len()));
+                            ui.end_row();
+                            ui.label("Triangles:");
+                            ui.label(format!("{}", mesh.triangles.len()));
+                            ui.end_row();
+                        });
+                }
+
+                // BREP face metadata (STEP only)
+                if let Some(enriched) = &model.enriched_mesh {
+                    ui.add_space(8.0);
+                    ui.label(
+                        egui::RichText::new("BREP Topology")
+                            .strong()
+                            .color(egui::Color32::from_rgb(180, 180, 195)),
+                    );
+                    egui::Grid::new("brep_info")
+                        .num_columns(2)
+                        .spacing([8.0, 3.0])
+                        .show(ui, |ui| {
+                            ui.label("Faces:");
+                            ui.label(format!("{}", enriched.face_count()));
+                            ui.end_row();
+                            ui.label("Adjacency pairs:");
+                            ui.label(format!("{}", enriched.adjacency.len()));
+                            ui.end_row();
+
+                            // Surface type histogram
+                            use rs_cam_core::enriched_mesh::SurfaceType;
+                            let mut planes = 0;
+                            let mut cylinders = 0;
+                            let mut other = 0;
+                            for group in &enriched.face_groups {
+                                match group.surface_type {
+                                    SurfaceType::Plane => planes += 1,
+                                    SurfaceType::Cylinder => cylinders += 1,
+                                    _ => other += 1,
+                                }
+                            }
+                            ui.label("Surface types:");
+                            let mut parts = Vec::new();
+                            if planes > 0 {
+                                parts.push(format!("{planes} plane"));
+                            }
+                            if cylinders > 0 {
+                                parts.push(format!("{cylinders} cyl"));
+                            }
+                            if other > 0 {
+                                parts.push(format!("{other} other"));
+                            }
+                            ui.label(parts.join(", "));
+                            ui.end_row();
+                        });
+                }
+
+                if let Some(polys) = &model.polygons {
+                    ui.add_space(8.0);
+                    ui.label(format!("Polygons: {}", polys.len()));
+                    for (i, p) in polys.iter().enumerate().take(5) {
+                        ui.label(format!(
+                            "  #{}: {} pts, {} holes",
+                            i + 1,
+                            p.exterior.len(),
+                            p.holes.len()
+                        ));
+                    }
+                    if polys.len() > 5 {
+                        ui.label(format!("  ... and {} more", polys.len() - 5));
+                    }
+                }
+            });
     }
 }
 
@@ -2332,17 +2344,30 @@ fn render_diagnostic_row(
         RowTier::Hint => egui::Color32::from_rgb(130, 140, 150),
     };
 
+    // Evidence (sample ranges, observed-vs-threshold, locality tags) is
+    // expert payload: it rides on hover instead of an inline line below the
+    // row (density pass 2026-06-11; same pattern as
+    // ENGAGEMENT_PROVENANCE_HOVER in sim_diagnostics).
+    let evidence_hover = if matches!(tier, RowTier::Hint) {
+        None
+    } else {
+        d.evidence.as_ref().and_then(evidence_line)
+    };
+
     ui.horizontal_wrapped(|ui| {
         let prefix = if matches!(d.category, Category::State) && matches!(tier, RowTier::Stateful) {
             String::new()
         } else {
             format!("{category_label}: ")
         };
-        ui.label(
+        let row_label = ui.label(
             egui::RichText::new(format!("{prefix}{}", d.message))
                 .small()
                 .color(color),
         );
+        if let Some(line) = evidence_hover {
+            row_label.on_hover_text(line);
+        }
         if matches!(tier, RowTier::Actionable) {
             let chip_text = confidence_chip_label(d.confidence);
             if !chip_text.is_empty() {
@@ -2381,17 +2406,6 @@ fn render_diagnostic_row(
             entry.stale_since = Some(std::time::Instant::now());
         }
     });
-
-    if !matches!(tier, RowTier::Hint)
-        && let Some(ev) = &d.evidence
-        && let Some(line) = evidence_line(ev)
-    {
-        ui.label(
-            egui::RichText::new(line)
-                .small()
-                .color(egui::Color32::from_rgb(120, 125, 135)),
-        );
-    }
 }
 
 /// One-line evidence summary for the panel. Returns `None` when the
@@ -2669,12 +2683,10 @@ fn draw_toolpath_panel(
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
     events: &mut Vec<AppEvent>,
 ) {
-    ui.heading(&entry.name);
-    ui.separator();
-
     // ── Shared header (always visible above tabs) ───────────────────
 
-    // Name
+    // Name — single editable home for the toolpath name; the duplicate
+    // read-only heading was dropped (density pass 2026-06-11).
     ui.horizontal(|ui| {
         ui.label("Name:");
         ui.text_edit_singleline(&mut entry.name);
@@ -3297,56 +3309,65 @@ fn draw_toolpath_panel(
                 );
             }
             if let Some(result) = &entry.feeds_result {
-                // Formula breakdown — always visible, the key teaching tool
+                // Formula breakdown + engagement diagram — teaching material,
+                // behind a default-closed disclosure (density pass 2026-06-11).
                 ui.add_space(4.0);
-                let flute_count = tool_configs
-                    .iter()
-                    .find(|(id, _)| *id == entry.tool_id)
-                    .map(|(_, t)| t.flute_count)
-                    .unwrap_or(2);
-                let val = egui::Color32::from_rgb(170, 170, 185);
-                let font = egui::FontId::proportional(9.5);
+                egui::CollapsingHeader::new("Show the math")
+                    .id_salt("feeds_show_math")
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        let flute_count = tool_configs
+                            .iter()
+                            .find(|(id, _)| *id == entry.tool_id)
+                            .map(|(_, t)| t.flute_count)
+                            .unwrap_or(2);
+                        let val = egui::Color32::from_rgb(170, 170, 185);
+                        let font = egui::FontId::proportional(9.5);
 
-                ui.label(egui::RichText::new(format!(
-                    "Feed = RPM \u{00D7} flutes \u{00D7} chipload = {:.0} \u{00D7} {} \u{00D7} {:.4} = {:.0} mm/min",
-                    result.rpm, flute_count, result.chip_load_mm, result.feed_rate_mm_min
-                )).font(font.clone()).color(val));
+                        ui.label(egui::RichText::new(format!(
+                            "Feed = RPM \u{00D7} flutes \u{00D7} chipload = {:.0} \u{00D7} {} \u{00D7} {:.4} = {:.0} mm/min",
+                            result.rpm, flute_count, result.chip_load_mm, result.feed_rate_mm_min
+                        )).font(font.clone()).color(val));
 
-                ui.label(egui::RichText::new(format!(
-                    "MRR = DOC \u{00D7} WOC \u{00D7} Feed = {:.2} \u{00D7} {:.2} \u{00D7} {:.0} = {:.0} mm\u{00B3}/min",
-                    result.axial_depth_mm, result.radial_width_mm, result.feed_rate_mm_min, result.mrr_mm3_min
-                )).font(font.clone()).color(val));
+                        ui.label(egui::RichText::new(format!(
+                            "MRR = DOC \u{00D7} WOC \u{00D7} Feed = {:.2} \u{00D7} {:.2} \u{00D7} {:.0} = {:.0} mm\u{00B3}/min",
+                            result.axial_depth_mm, result.radial_width_mm, result.feed_rate_mm_min, result.mrr_mm3_min
+                        )).font(font.clone()).color(val));
 
-                ui.label(
-                    egui::RichText::new(format!(
-                        "Power = MRR \u{00D7} Kc / 60e6 = {:.2} kW (of {:.2} kW available)",
-                        result.power_kw, result.available_power_kw
-                    ))
-                    .font(font.clone())
-                    .color(val),
-                );
-
-                if result.power_limited {
-                    ui.label(
-                        egui::RichText::new("Feed was reduced to stay within spindle power")
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Power = MRR \u{00D7} Kc / 60e6 = {:.2} kW (of {:.2} kW available)",
+                                result.power_kw, result.available_power_kw
+                            ))
                             .font(font.clone())
-                            .color(egui::Color32::from_rgb(220, 170, 60)),
-                    );
-                }
+                            .color(val),
+                        );
 
-                ui.label(
-                    egui::RichText::new(format!(
-                        "Plunge = {:.0} mm/min ({:.0}% of feed)",
-                        result.plunge_rate_mm_min,
-                        result.plunge_rate_mm_min / result.feed_rate_mm_min.max(1.0) * 100.0
-                    ))
-                    .font(font)
-                    .color(val),
-                );
+                        if result.power_limited {
+                            ui.label(
+                                egui::RichText::new(
+                                    "Feed was reduced to stay within spindle power",
+                                )
+                                .font(font.clone())
+                                .color(egui::Color32::from_rgb(220, 170, 60)),
+                            );
+                        }
 
-                // Engagement diagram
-                ui.add_space(6.0);
-                draw_engagement_diagram(ui, result, tool_diameter, tool_type);
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Plunge = {:.0} mm/min ({:.0}% of feed)",
+                                result.plunge_rate_mm_min,
+                                result.plunge_rate_mm_min / result.feed_rate_mm_min.max(1.0)
+                                    * 100.0
+                            ))
+                            .font(font)
+                            .color(val),
+                        );
+
+                        // Engagement diagram
+                        ui.add_space(6.0);
+                        draw_engagement_diagram(ui, result, tool_diameter, tool_type);
+                    });
             }
 
             // Vendor cutting data viewer (always available, filtered by tool)
