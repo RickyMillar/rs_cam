@@ -34,12 +34,13 @@ G17 {units_word} G90 G40 G49 G80
 {wcs_line}M3 S{spindle_rpm}
 """
 
-# Postamble: spindle off, retract to literal safe Z, program end.
-# Mirrors the Grbl post; grblHAL accepts both M30 and M2 — M30 is the
-# canonical "program end + reset" that operators expect.
+# Postamble: spindle off, program end. The safe-Z retract is emitted by
+# the program builder (rapid to the highest Z the program used) just
+# before this block — see the Grbl post for the C2 rationale. grblHAL
+# accepts both M30 and M2 — M30 is the canonical "program end + reset"
+# that operators expect.
 postamble = """\
 M5
-G0 Z10.000
 M30
 """
 

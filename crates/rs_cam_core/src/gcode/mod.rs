@@ -168,7 +168,48 @@ pub(crate) fn emit_gcode_phased_with_overlay(
     post: &PostDefinition,
     overlay: &WizardOverlay,
 ) -> String {
-    emitter::emit_program_with_overlay(&program_builder::build_phased(phases), post, overlay)
+    let mut program = program_builder::build_phased(phases);
+    prepend_t_collision_warnings(&mut program, phases.iter(), post, overlay);
+    emitter::emit_program_with_overlay(&program, post, overlay)
+}
+
+/// A7 — distinct tools sharing a display T-number on an M6 post: the
+/// controller keys the physical swap on the T word, so `M6 T1` → `M6 T1`
+/// silently skips the change. Detection keys on the *effective* post
+/// (overlay tool-change override applied); pause-style posts name the
+/// incoming tool in the operator message, so they are not affected.
+fn prepend_t_collision_warnings<'a>(
+    program: &mut Program,
+    phases: impl Iterator<Item = &'a GcodePhase<'a>>,
+    post: &PostDefinition,
+    overlay: &WizardOverlay,
+) {
+    let effective_post = overlay.applied_post(post);
+    if !effective_post.tool_change.contains("M6") {
+        return;
+    }
+    // number → distinct tool config ids seen under that number.
+    let mut by_number: std::collections::BTreeMap<u32, Vec<usize>> =
+        std::collections::BTreeMap::new();
+    for phase in phases {
+        if let Some(tool) = phase.tool {
+            let ids = by_number.entry(tool.number).or_default();
+            if !ids.contains(&tool.id) {
+                ids.push(tool.id);
+            }
+        }
+    }
+    let mut warnings: Vec<Statement> = Vec::new();
+    for (number, ids) in &by_number {
+        if ids.len() > 1 {
+            warnings.push(Statement::Comment(format!(
+                "WARNING: distinct tools share T{number} — M6 will not trigger a physical change"
+            )));
+        }
+    }
+    for (offset, w) in warnings.into_iter().enumerate() {
+        program.statements.insert(offset, w);
+    }
 }
 
 /// Emit checked G-code from a project session.
@@ -183,7 +224,6 @@ pub fn export_gcode_checked(
     // no vendor row, drill kinematics) returns `Unmodeled` and is gated
     // behind `policy.accept_unmodeled`.
     let report = project_load_report(project, sim_trace);
-    enforce_load_policy(&report, &policy)?;
 
     let post_format = match project.post_config().format.to_ascii_lowercase().as_str() {
         "linuxcnc" | "linux_cnc" => PostFormat::LinuxCnc,
@@ -231,9 +271,10 @@ pub fn export_gcode_checked(
         })
         .collect();
 
-    // Phase-level checked emit is currently a no-op enforcer (the project
-    // gate above is the source of truth); pass policy through unchanged.
-    export_gcode_phases_checked(&phases, post, sim_trace, policy)
+    // The phase-level checked emit enforces `policy` against `report`
+    // (C1, 2026-06-11) — the single enforcement chokepoint shared with
+    // the viz / MCP / CLI callers.
+    export_gcode_phases_checked(&phases, post, &report, policy)
 }
 
 /// Check whether the cached sim trace's provenance still matches the
@@ -582,16 +623,24 @@ pub fn enforce_load_policy(
 }
 
 /// Emit checked G-code from pre-built phases.
+///
+/// `report` is the tool-load report the gate enforces `policy` against
+/// (C1, 2026-06-11). It is deliberately **non-optional** so no caller
+/// can silently skip the gate: callers with a `ProjectSession` build it
+/// via [`project_load_report`]; callers without load-evaluation context
+/// (the CLI job-file path) must pass an explicitly empty report
+/// (`ToolLoadReport { per_toolpath: vec![] }`), which documents at the
+/// call site that no evaluation was performed.
 pub fn export_gcode_phases_checked(
     phases: &[GcodePhase<'_>],
     post: &PostDefinition,
-    sim_trace: Option<&SimulationCutTrace>,
+    report: &crate::tool_load::ToolLoadReport,
     policy: ToolLoadExportPolicy,
 ) -> Result<String, ExportError> {
     export_gcode_phases_with_overlay_checked(
         phases,
         post,
-        sim_trace,
+        report,
         policy,
         &WizardOverlay::default(),
     )
@@ -600,16 +649,36 @@ pub fn export_gcode_phases_checked(
 /// Same as `export_gcode_phases_checked`, plus a `WizardOverlay` applied
 /// to the emit step. Default overlay is byte-identical to the no-overlay
 /// path (Cow::Borrowed both ways).
+///
+/// Enforces, in order:
+/// 1. effective units must be mm (A1 — inch output is a cosmetic G20
+///    today; refusing beats a silent 25.4× error),
+/// 2. `policy` against `report` (C1 — the tool-load gate).
 pub fn export_gcode_phases_with_overlay_checked(
     phases: &[GcodePhase<'_>],
     post: &PostDefinition,
-    _sim_trace: Option<&SimulationCutTrace>,
-    _policy: ToolLoadExportPolicy,
+    report: &crate::tool_load::ToolLoadReport,
+    policy: ToolLoadExportPolicy,
     overlay: &WizardOverlay,
 ) -> Result<String, ExportError> {
-    // TODO: enforced in tool_load follow-up. The policy and simulation trace
-    // are intentionally accepted but ignored in this refactor.
+    refuse_inch_units(post, overlay)?;
+    enforce_load_policy(report, &policy)?;
     Ok(emit_gcode_phased_with_overlay(phases, post, overlay))
+}
+
+/// A1 — inch output is not implemented: a units override to `Inch` only
+/// swaps the modal word (G21 → G20) while every coordinate stays in
+/// millimeters, a silent 25.4× scale error. Hard-refuse until a real
+/// conversion lands (backlogged).
+fn refuse_inch_units(post: &PostDefinition, overlay: &WizardOverlay) -> Result<(), ExportError> {
+    let effective_units = overlay.units_override.unwrap_or(post.units);
+    if effective_units == Units::Inch {
+        return Err(ExportError::new(
+            "inch output not yet supported — coordinates are millimeters; \
+             set units back to mm (G21) to export",
+        ));
+    }
+    Ok(())
 }
 
 fn controller_comp_for_project_toolpath(
@@ -642,34 +711,38 @@ pub struct GcodeSetupPhase<'a> {
 }
 
 /// Emit checked G-code for multiple setups with M0 pauses between them.
+///
+/// See [`export_gcode_phases_checked`] for the `report` contract — it is
+/// non-optional by design so the tool-load gate cannot be skipped.
 pub fn export_gcode_multi_setup_checked(
     setups: &[GcodeSetupPhase<'_>],
     post: &PostDefinition,
     safe_z: f64,
-    sim_trace: Option<&SimulationCutTrace>,
+    report: &crate::tool_load::ToolLoadReport,
     policy: ToolLoadExportPolicy,
 ) -> Result<String, ExportError> {
     export_gcode_multi_setup_with_overlay_checked(
         setups,
         post,
         safe_z,
-        sim_trace,
+        report,
         policy,
         &WizardOverlay::default(),
     )
 }
 
 /// Same as `export_gcode_multi_setup_checked`, plus a `WizardOverlay`.
+/// Enforces the same gates as [`export_gcode_phases_with_overlay_checked`].
 pub fn export_gcode_multi_setup_with_overlay_checked(
     setups: &[GcodeSetupPhase<'_>],
     post: &PostDefinition,
     safe_z: f64,
-    _sim_trace: Option<&SimulationCutTrace>,
-    _policy: ToolLoadExportPolicy,
+    report: &crate::tool_load::ToolLoadReport,
+    policy: ToolLoadExportPolicy,
     overlay: &WizardOverlay,
 ) -> Result<String, ExportError> {
-    // TODO: enforced in tool_load follow-up. The policy and simulation trace
-    // are intentionally accepted but ignored in this refactor.
+    refuse_inch_units(post, overlay)?;
+    enforce_load_policy(report, &policy)?;
     Ok(emit_gcode_multi_setup_with_overlay(
         setups, post, safe_z, overlay,
     ))
@@ -699,23 +772,44 @@ pub(crate) fn emit_gcode_multi_setup_with_overlay(
     overlay: &WizardOverlay,
 ) -> String {
     let effective_safe_z = overlay.safe_z_override.unwrap_or(safe_z);
-    emitter::emit_program_with_overlay(
-        &program_builder::build_multi_setup(setups, effective_safe_z),
+    let mut program = program_builder::build_multi_setup(setups, effective_safe_z);
+    prepend_t_collision_warnings(
+        &mut program,
+        setups.iter().flat_map(|s| s.phases.iter()),
         post,
         overlay,
-    )
+    );
+    emitter::emit_program_with_overlay(&program, post, overlay)
 }
 
 /// Replace G0 rapid moves with G1 at a high feedrate.
 /// Used for machines with unpredictable rapid behavior (e.g., GRBL "dogleg" rapids).
-pub fn replace_rapids_with_feed(gcode: &str, high_feedrate: f64) -> String {
+///
+/// The inserted feed is clamped to `post.limits.max_feed` when set, and
+/// the rewrite is a no-op when `high_feedrate <= 0` (a `F0.0` word would
+/// stall the machine).
+///
+/// Known limits (sound for emitter output, documented for user snippets):
+/// - lines after the final `M5` are rewritten too — since the postamble
+///   safe-Z retract moved *before* `M5` (C2, 2026-06-11) the shipped
+///   posts have no bare `G0` after `M5`, but custom postambles might;
+/// - `G00` / lowercase `g0` spellings in user pre/post snippets are not
+///   recognized and pass through unchanged.
+pub fn replace_rapids_with_feed(gcode: &str, high_feedrate: f64, post: &PostDefinition) -> String {
+    if high_feedrate <= 0.0 {
+        return gcode.to_owned();
+    }
+    let feed = post
+        .limits
+        .max_feed
+        .map_or(high_feedrate, |max| high_feedrate.min(max.get()));
     let mut output = String::with_capacity(gcode.len());
     for line in gcode.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("G0 ") || trimmed.starts_with("G0X") {
             // Replace G0 with G1 and append feedrate
-            let rest = &trimmed[2..];
-            output.push_str(&format!("G1{rest} F{high_feedrate:.1}\n"));
+            let rest = trimmed.get(2..).unwrap_or("");
+            let _ = writeln!(output, "G1{rest} F{feed:.1}");
         } else {
             output.push_str(line);
             output.push('\n');
@@ -783,6 +877,14 @@ mod tests {
     use crate::ids::ToolpathId;
     use crate::toolpath::Toolpath;
 
+    /// "No load evaluation performed" report — what callers without a
+    /// `ProjectSession` (CLI job path, fixture captures) pass.
+    fn empty_report() -> crate::tool_load::ToolLoadReport {
+        crate::tool_load::ToolLoadReport {
+            per_toolpath: vec![],
+        }
+    }
+
     #[test]
     fn checked_phased_export_is_byte_identical_to_legacy_emitter() {
         let mut tp1 = Toolpath::new();
@@ -828,7 +930,7 @@ mod tests {
         let checked = export_gcode_phases_checked(
             &phases,
             post::grbl(),
-            None,
+            &empty_report(),
             ToolLoadExportPolicy::default(),
         )
         .expect("checked export should succeed");
@@ -890,7 +992,7 @@ mod tests {
             &setups,
             post::grbl(),
             15.0,
-            None,
+            &empty_report(),
             ToolLoadExportPolicy::default(),
         )
         .expect("checked export should succeed");
@@ -1837,5 +1939,238 @@ mod tests {
             .to_string();
         assert!(m1.contains("SimulationRequired"));
         assert!(m2.contains("NoVendorData"));
+    }
+
+    // ── C1: gate enforcement on the phase-level checked exports ──────
+
+    fn power_within() -> PowerVerdict {
+        PowerVerdict::Within {
+            peak_kw: 0.5,
+            available_kw: 0.71,
+            evidence: SampleEvidence::empty(),
+            confidence: Confidence::Validated,
+            entry_spike: None,
+        }
+    }
+
+    /// Report whose only failure is a modeled `Exceeds` — so only the
+    /// `accept_exceeded` flag is needed to override.
+    fn exceeds_only_report() -> ToolLoadReport {
+        report_with(
+            chipload_within(0.05),
+            power_within(),
+            deflection_exceeds(10.0),
+        )
+    }
+
+    fn one_phase_fixture() -> Toolpath {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+        tp.feed_to(P3::new(10.0, 0.0, 0.0), 1000.0);
+        tp
+    }
+
+    #[test]
+    fn phases_checked_blocks_exceeds_and_honours_accept_exceeded() {
+        let tp = one_phase_fixture();
+        let phases = vec![GcodePhase {
+            toolpath: &tp,
+            spindle_rpm: 18_000,
+            label: "Op 0",
+            pre_gcode: None,
+            post_gcode: None,
+            tool: None,
+            coolant: CoolantMode::Off,
+            controller_compensation: None,
+        }];
+        let report = exceeds_only_report();
+
+        let err = export_gcode_phases_with_overlay_checked(
+            &phases,
+            post::grbl(),
+            &report,
+            ToolLoadExportPolicy::default(),
+            &WizardOverlay::default(),
+        )
+        .expect_err("default policy must refuse an Exceeds report on the phases path");
+        assert!(err.to_string().contains("tool load exceeded"), "{err}");
+
+        let ok = export_gcode_phases_with_overlay_checked(
+            &phases,
+            post::grbl(),
+            &report,
+            ToolLoadExportPolicy {
+                accept_unmodeled: false,
+                accept_exceeded: true,
+            },
+            &WizardOverlay::default(),
+        );
+        assert!(ok.is_ok(), "accept_exceeded=true must export: {ok:?}");
+    }
+
+    #[test]
+    fn multi_setup_checked_blocks_exceeds_and_honours_accept_exceeded() {
+        let tp = one_phase_fixture();
+        let setups = vec![GcodeSetupPhase {
+            setup_label: "Top",
+            phases: vec![GcodePhase {
+                toolpath: &tp,
+                spindle_rpm: 18_000,
+                label: "Op 0",
+                pre_gcode: None,
+                post_gcode: None,
+                tool: None,
+                coolant: CoolantMode::Off,
+                controller_compensation: None,
+            }],
+            pause_message: None,
+        }];
+        let report = exceeds_only_report();
+
+        let err = export_gcode_multi_setup_with_overlay_checked(
+            &setups,
+            post::grbl(),
+            15.0,
+            &report,
+            ToolLoadExportPolicy::default(),
+            &WizardOverlay::default(),
+        )
+        .expect_err("default policy must refuse an Exceeds report on the multi-setup path");
+        assert!(err.to_string().contains("tool load exceeded"), "{err}");
+
+        let ok = export_gcode_multi_setup_with_overlay_checked(
+            &setups,
+            post::grbl(),
+            15.0,
+            &report,
+            ToolLoadExportPolicy {
+                accept_unmodeled: false,
+                accept_exceeded: true,
+            },
+            &WizardOverlay::default(),
+        );
+        assert!(ok.is_ok(), "accept_exceeded=true must export: {ok:?}");
+    }
+
+    // ── A1: inch units hard-refuse ────────────────────────────────────
+
+    #[test]
+    fn inch_units_override_refuses_export() {
+        let tp = one_phase_fixture();
+        let phases = vec![GcodePhase {
+            toolpath: &tp,
+            spindle_rpm: 18_000,
+            label: "Op 0",
+            pre_gcode: None,
+            post_gcode: None,
+            tool: None,
+            coolant: CoolantMode::Off,
+            controller_compensation: None,
+        }];
+        let overlay = WizardOverlay {
+            units_override: Some(Units::Inch),
+            ..Default::default()
+        };
+        let err = export_gcode_phases_with_overlay_checked(
+            &phases,
+            post::grbl(),
+            &empty_report(),
+            ToolLoadExportPolicy::default(),
+            &overlay,
+        )
+        .expect_err("inch override must refuse export");
+        assert!(
+            err.to_string().contains("inch output not yet supported"),
+            "{err}"
+        );
+
+        // Multi-setup path refuses too.
+        let setups = vec![GcodeSetupPhase {
+            setup_label: "Top",
+            phases,
+            pause_message: None,
+        }];
+        let err = export_gcode_multi_setup_with_overlay_checked(
+            &setups,
+            post::grbl(),
+            15.0,
+            &empty_report(),
+            ToolLoadExportPolicy::default(),
+            &overlay,
+        )
+        .expect_err("inch override must refuse multi-setup export");
+        assert!(
+            err.to_string().contains("inch output not yet supported"),
+            "{err}"
+        );
+    }
+
+    // ── A7: colliding display T-numbers on an M6 post ────────────────
+
+    #[test]
+    fn t_number_collision_warns_on_m6_post_only() {
+        let mut tp1 = Toolpath::new();
+        tp1.rapid_to(P3::new(0.0, 0.0, 10.0));
+        let mut tp2 = Toolpath::new();
+        tp2.rapid_to(P3::new(20.0, 0.0, 10.0));
+
+        let phases = vec![
+            GcodePhase {
+                toolpath: &tp1,
+                spindle_rpm: 18_000,
+                label: "Rough",
+                pre_gcode: None,
+                post_gcode: None,
+                tool: Some(PhaseTool {
+                    id: 1,
+                    number: 1,
+                    label: "End Mill",
+                }),
+                coolant: CoolantMode::Off,
+                controller_compensation: None,
+            },
+            GcodePhase {
+                toolpath: &tp2,
+                spindle_rpm: 10_610,
+                label: "Finish",
+                pre_gcode: None,
+                post_gcode: None,
+                tool: Some(PhaseTool {
+                    id: 2,
+                    number: 1, // SAME display number, different tool
+                    label: "Tapered Ball 2mm",
+                }),
+                coolant: CoolantMode::Off,
+                controller_compensation: None,
+            },
+        ];
+
+        // M6 post (LinuxCNC): warning comment at program start.
+        let lcnc = emit_gcode_phased(&phases, post::linuxcnc());
+        assert!(
+            lcnc.contains("WARNING: distinct tools share T1"),
+            "M6 post must warn on T-number collision:\n{lcnc}"
+        );
+        assert!(
+            lcnc.starts_with("(WARNING"),
+            "warning must be prepended at program start:\n{lcnc}"
+        );
+
+        // Pause-style post (GRBL): operator message names the tool, no warning.
+        let grbl = emit_gcode_phased(&phases, post::grbl());
+        assert!(
+            !grbl.contains("WARNING: distinct tools share"),
+            "pause-style post must not warn:\n{grbl}"
+        );
+
+        // Distinct numbers on an M6 post: no warning.
+        let mut distinct = phases;
+        if let Some(p) = distinct.get_mut(1)
+            && let Some(t) = p.tool.as_mut()
+        {
+            t.number = 2;
+        }
+        let lcnc2 = emit_gcode_phased(&distinct, post::linuxcnc());
+        assert!(!lcnc2.contains("WARNING: distinct tools share"));
     }
 }

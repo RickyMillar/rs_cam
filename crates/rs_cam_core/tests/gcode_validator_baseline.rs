@@ -1,18 +1,21 @@
-//! Phase 1 validator baseline: runs `gcode_validator::validate` on each
-//! captured fixture and asserts the finding count + kinds match what we
-//! expect from `planning/gcode_gap_report.md`.
+//! Validator baseline: runs `gcode_validator::validate` on each captured
+//! fixture and asserts the finding counts match expectations.
 //!
-//! Phase 4b: dialect set grew from 3 to 4 (added grblHAL) and corpus
-//! grew from 6 to 16 fixtures. grblHAL captures all read 0 findings;
-//! the new fixtures inherit the same per-dialect issues as F1–F6.
-//! Current baseline: 80 findings across 64 captures (was 98 before the
-//! Grbl post gained explicit G54, clearing 16 MissingWcs findings; then
-//! 82 before the Grbl post's tool_change template replaced M6 with an
-//! M0 pause, clearing the 2 UnsupportedM6 findings on F5/F12).
+//! History of driving the baseline to zero:
+//! - Phase 1 captured 98 findings across the corpus.
+//! - Grbl post gained explicit G54 → cleared 16 MissingWcs.
+//! - Grbl tool_change became an M0 pause → cleared 2 UnsupportedM6.
+//! - Post-layer audit fixes (2026-06-11, A5+A6): Mach3 gained a G54
+//!   preamble line (cleared 16 MissingWcs), LinuxCNC gained G91.1
+//!   (cleared 16 MissingG91_1), the `%`-bracket requirement was dropped
+//!   (modern LinuxCNC streamers don't need it; cleared 32
+//!   MissingProgramBrackets), and the M2-vs-M30 rule was retired (M2 and
+//!   M30 are both valid RS274 program ends; cleared 16
+//!   WrongProgramEndCode).
 //!
-//! The goal of subsequent phases is to drive each of these counts to
-//! zero. This test acts as the regression suite: when Phase 2/3 fixes
-//! the emitter, update the expected counts here in the same commit.
+//! **Current baseline: ZERO findings across all 64 captures.** This test
+//! is the regression net: any reappearing finding is a real emitter /
+//! post / validator change and must be reviewed in the same commit.
 //!
 //! Run with:
 //!
@@ -32,8 +35,34 @@
 )]
 
 use rs_cam_core::gcode::PostFormat;
-use rs_cam_core::gcode_validator::{Finding, FindingKind, validate};
+use rs_cam_core::gcode_validator::validate;
 use std::path::PathBuf;
+
+const FIXTURES: &[&str] = &[
+    "f1_basic_lines",
+    "f2_arcs_xy",
+    "f3_helical_ramp",
+    "f4_profile_multipass",
+    "f5_two_tool_changes",
+    "f6_two_setups",
+    "f7_full_circle",
+    "f8_x_only_feed",
+    "f9_ramp_into_arc",
+    "f10_tiny_arcs",
+    "f11_depth_step_boundary",
+    "f12_tool_change_at_z_zero",
+    "f13_climb_vs_conventional",
+    "f14_multi_line_pause_message",
+    "f15_embedded_newline_snippets",
+    "f16_comp_round_trip",
+];
+
+const DIALECTS: &[(&str, PostFormat)] = &[
+    ("grbl", PostFormat::Grbl),
+    ("grblhal", PostFormat::GrblHal),
+    ("linuxcnc", PostFormat::LinuxCnc),
+    ("mach3", PostFormat::Mach3),
+];
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -51,519 +80,37 @@ fn read_capture(fixture: &str, dialect: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
-fn dialect_to_post(dialect: &str) -> PostFormat {
-    match dialect {
-        "grbl" => PostFormat::Grbl,
-        "grblhal" => PostFormat::GrblHal,
-        "linuxcnc" => PostFormat::LinuxCnc,
-        "mach3" => PostFormat::Mach3,
-        other => panic!("unknown dialect: {other}"),
-    }
-}
-
-fn count_kind(findings: &[Finding], kind: FindingKind) -> usize {
-    findings.iter().filter(|f| f.kind == kind).count()
-}
-
-/// One row of the expected baseline: counts of each finding kind for
-/// (fixture, dialect). Anything not listed is expected to be 0.
-struct Expected {
-    fixture: &'static str,
-    dialect: &'static str,
-    /// (kind, count) pairs.
-    findings: &'static [(FindingKind, usize)],
-}
-
-/// Phase 1 baseline — what each capture currently produces. Numbers
-/// here come from the gap report's "still-pending bugs" list; driving
-/// them to zero is the Phase 2/3 work.
-const BASELINE: &[Expected] = &[
-    // ── Grbl: emits explicit G54 (matches grblHAL), so no MissingWcs.
-    //    Tool changes are now templated as M5 + message + M0 pause
-    //    (Grbl 1.1 rejects M6 with error:20), so the multi-tool
-    //    fixtures (F5/F12) no longer raise UnsupportedM6 either.
-    Expected {
-        fixture: "f1_basic_lines",
-        dialect: "grbl",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f2_arcs_xy",
-        dialect: "grbl",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f3_helical_ramp",
-        dialect: "grbl",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f4_profile_multipass",
-        dialect: "grbl",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f5_two_tool_changes",
-        dialect: "grbl",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f6_two_setups",
-        dialect: "grbl",
-        findings: &[],
-    },
-    // ── grblHAL: emits G54 + supports M6 + M30 program end →
-    //    zero findings across the existing F1–F6 corpus.
-    Expected {
-        fixture: "f1_basic_lines",
-        dialect: "grblhal",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f2_arcs_xy",
-        dialect: "grblhal",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f3_helical_ramp",
-        dialect: "grblhal",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f4_profile_multipass",
-        dialect: "grblhal",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f5_two_tool_changes",
-        dialect: "grblhal",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f6_two_setups",
-        dialect: "grblhal",
-        findings: &[],
-    },
-    // ── LinuxCNC: missing G91.1, missing % (×2 leading + trailing),
-    //    M2 instead of M30. G54 IS emitted by the LinuxCNC post so
-    //    MissingWcs should be 0. M6 is supported on LinuxCNC so F5
-    //    doesn't add an UnsupportedM6.
-    Expected {
-        fixture: "f1_basic_lines",
-        dialect: "linuxcnc",
-        findings: &[
-            (FindingKind::MissingG91_1, 1),
-            (FindingKind::MissingProgramBrackets, 2),
-            (FindingKind::WrongProgramEndCode, 1),
-        ],
-    },
-    Expected {
-        fixture: "f2_arcs_xy",
-        dialect: "linuxcnc",
-        findings: &[
-            (FindingKind::MissingG91_1, 1),
-            (FindingKind::MissingProgramBrackets, 2),
-            (FindingKind::WrongProgramEndCode, 1),
-        ],
-    },
-    Expected {
-        fixture: "f3_helical_ramp",
-        dialect: "linuxcnc",
-        findings: &[
-            (FindingKind::MissingG91_1, 1),
-            (FindingKind::MissingProgramBrackets, 2),
-            (FindingKind::WrongProgramEndCode, 1),
-        ],
-    },
-    Expected {
-        fixture: "f4_profile_multipass",
-        dialect: "linuxcnc",
-        findings: &[
-            (FindingKind::MissingG91_1, 1),
-            (FindingKind::MissingProgramBrackets, 2),
-            (FindingKind::WrongProgramEndCode, 1),
-        ],
-    },
-    Expected {
-        fixture: "f5_two_tool_changes",
-        dialect: "linuxcnc",
-        findings: &[
-            (FindingKind::MissingG91_1, 1),
-            (FindingKind::MissingProgramBrackets, 2),
-            (FindingKind::WrongProgramEndCode, 1),
-        ],
-    },
-    Expected {
-        fixture: "f6_two_setups",
-        dialect: "linuxcnc",
-        findings: &[
-            (FindingKind::MissingG91_1, 1),
-            (FindingKind::MissingProgramBrackets, 2),
-            (FindingKind::WrongProgramEndCode, 1),
-        ],
-    },
-    // ── Mach3: only MissingWcs (Mach3 post also doesn't emit G54).
-    //    M6 supported, M30 emitted, G91.1 not required, % not required.
-    Expected {
-        fixture: "f1_basic_lines",
-        dialect: "mach3",
-        findings: &[(FindingKind::MissingWcs, 1)],
-    },
-    Expected {
-        fixture: "f2_arcs_xy",
-        dialect: "mach3",
-        findings: &[(FindingKind::MissingWcs, 1)],
-    },
-    Expected {
-        fixture: "f3_helical_ramp",
-        dialect: "mach3",
-        findings: &[(FindingKind::MissingWcs, 1)],
-    },
-    Expected {
-        fixture: "f4_profile_multipass",
-        dialect: "mach3",
-        findings: &[(FindingKind::MissingWcs, 1)],
-    },
-    Expected {
-        fixture: "f5_two_tool_changes",
-        dialect: "mach3",
-        findings: &[(FindingKind::MissingWcs, 1)],
-    },
-    Expected {
-        fixture: "f6_two_setups",
-        dialect: "mach3",
-        findings: &[(FindingKind::MissingWcs, 1)],
-    },
-    // ── Phase 4b broadened corpus (F7-F16). Expected counts derive
-    //    from the same per-dialect rules as F1-F6. Probed empirically
-    //    on first run; any drift here is a real validator/emitter
-    //    change and must be reviewed in the same commit.
-
-    // F7  full-circle CCW
-    Expected {
-        fixture: "f7_full_circle",
-        dialect: "grbl",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f7_full_circle",
-        dialect: "grblhal",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f7_full_circle",
-        dialect: "linuxcnc",
-        findings: &[
-            (FindingKind::MissingG91_1, 1),
-            (FindingKind::MissingProgramBrackets, 2),
-            (FindingKind::WrongProgramEndCode, 1),
-        ],
-    },
-    Expected {
-        fixture: "f7_full_circle",
-        dialect: "mach3",
-        findings: &[(FindingKind::MissingWcs, 1)],
-    },
-    // F8  X-only feed (5 linear moves, no arcs)
-    Expected {
-        fixture: "f8_x_only_feed",
-        dialect: "grbl",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f8_x_only_feed",
-        dialect: "grblhal",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f8_x_only_feed",
-        dialect: "linuxcnc",
-        findings: &[
-            (FindingKind::MissingG91_1, 1),
-            (FindingKind::MissingProgramBrackets, 2),
-            (FindingKind::WrongProgramEndCode, 1),
-        ],
-    },
-    Expected {
-        fixture: "f8_x_only_feed",
-        dialect: "mach3",
-        findings: &[(FindingKind::MissingWcs, 1)],
-    },
-    // F9  Ramp into arc
-    Expected {
-        fixture: "f9_ramp_into_arc",
-        dialect: "grbl",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f9_ramp_into_arc",
-        dialect: "grblhal",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f9_ramp_into_arc",
-        dialect: "linuxcnc",
-        findings: &[
-            (FindingKind::MissingG91_1, 1),
-            (FindingKind::MissingProgramBrackets, 2),
-            (FindingKind::WrongProgramEndCode, 1),
-        ],
-    },
-    Expected {
-        fixture: "f9_ramp_into_arc",
-        dialect: "mach3",
-        findings: &[(FindingKind::MissingWcs, 1)],
-    },
-    // F10 Tiny arcs (sub-0.05mm)
-    Expected {
-        fixture: "f10_tiny_arcs",
-        dialect: "grbl",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f10_tiny_arcs",
-        dialect: "grblhal",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f10_tiny_arcs",
-        dialect: "linuxcnc",
-        findings: &[
-            (FindingKind::MissingG91_1, 1),
-            (FindingKind::MissingProgramBrackets, 2),
-            (FindingKind::WrongProgramEndCode, 1),
-        ],
-    },
-    Expected {
-        fixture: "f10_tiny_arcs",
-        dialect: "mach3",
-        findings: &[(FindingKind::MissingWcs, 1)],
-    },
-    // F11 Depth-step boundary
-    Expected {
-        fixture: "f11_depth_step_boundary",
-        dialect: "grbl",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f11_depth_step_boundary",
-        dialect: "grblhal",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f11_depth_step_boundary",
-        dialect: "linuxcnc",
-        findings: &[
-            (FindingKind::MissingG91_1, 1),
-            (FindingKind::MissingProgramBrackets, 2),
-            (FindingKind::WrongProgramEndCode, 1),
-        ],
-    },
-    Expected {
-        fixture: "f11_depth_step_boundary",
-        dialect: "mach3",
-        findings: &[(FindingKind::MissingWcs, 1)],
-    },
-    // F12 Tool change at Z=0 (multi-tool). Grbl emits the M0-pause
-    // change block, not M6 — no UnsupportedM6.
-    Expected {
-        fixture: "f12_tool_change_at_z_zero",
-        dialect: "grbl",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f12_tool_change_at_z_zero",
-        dialect: "grblhal",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f12_tool_change_at_z_zero",
-        dialect: "linuxcnc",
-        findings: &[
-            (FindingKind::MissingG91_1, 1),
-            (FindingKind::MissingProgramBrackets, 2),
-            (FindingKind::WrongProgramEndCode, 1),
-        ],
-    },
-    Expected {
-        fixture: "f12_tool_change_at_z_zero",
-        dialect: "mach3",
-        findings: &[(FindingKind::MissingWcs, 1)],
-    },
-    // F13 Climb vs conventional (single tool, two phases)
-    Expected {
-        fixture: "f13_climb_vs_conventional",
-        dialect: "grbl",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f13_climb_vs_conventional",
-        dialect: "grblhal",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f13_climb_vs_conventional",
-        dialect: "linuxcnc",
-        findings: &[
-            (FindingKind::MissingG91_1, 1),
-            (FindingKind::MissingProgramBrackets, 2),
-            (FindingKind::WrongProgramEndCode, 1),
-        ],
-    },
-    Expected {
-        fixture: "f13_climb_vs_conventional",
-        dialect: "mach3",
-        findings: &[(FindingKind::MissingWcs, 1)],
-    },
-    // F14 Multi-line pause message — surfaces a real comment-syntax
-    //     bug (newline inside () comment block), but the validator's
-    //     5 priority rules don't cover that yet; finding count
-    //     matches F6 (multi-setup with WCS issue per dialect).
-    Expected {
-        fixture: "f14_multi_line_pause_message",
-        dialect: "grbl",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f14_multi_line_pause_message",
-        dialect: "grblhal",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f14_multi_line_pause_message",
-        dialect: "linuxcnc",
-        findings: &[
-            (FindingKind::MissingG91_1, 1),
-            (FindingKind::MissingProgramBrackets, 2),
-            (FindingKind::WrongProgramEndCode, 1),
-        ],
-    },
-    Expected {
-        fixture: "f14_multi_line_pause_message",
-        dialect: "mach3",
-        findings: &[(FindingKind::MissingWcs, 1)],
-    },
-    // F15 Embedded-newline pre/post snippets
-    Expected {
-        fixture: "f15_embedded_newline_snippets",
-        dialect: "grbl",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f15_embedded_newline_snippets",
-        dialect: "grblhal",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f15_embedded_newline_snippets",
-        dialect: "linuxcnc",
-        findings: &[
-            (FindingKind::MissingG91_1, 1),
-            (FindingKind::MissingProgramBrackets, 2),
-            (FindingKind::WrongProgramEndCode, 1),
-        ],
-    },
-    Expected {
-        fixture: "f15_embedded_newline_snippets",
-        dialect: "mach3",
-        findings: &[(FindingKind::MissingWcs, 1)],
-    },
-    // F16 Cutter compensation round-trip (G41 / G40)
-    Expected {
-        fixture: "f16_comp_round_trip",
-        dialect: "grbl",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f16_comp_round_trip",
-        dialect: "grblhal",
-        findings: &[],
-    },
-    Expected {
-        fixture: "f16_comp_round_trip",
-        dialect: "linuxcnc",
-        findings: &[
-            (FindingKind::MissingG91_1, 1),
-            (FindingKind::MissingProgramBrackets, 2),
-            (FindingKind::WrongProgramEndCode, 1),
-        ],
-    },
-    Expected {
-        fixture: "f16_comp_round_trip",
-        dialect: "mach3",
-        findings: &[(FindingKind::MissingWcs, 1)],
-    },
-];
-
-const ALL_KINDS: &[FindingKind] = &[
-    FindingKind::UnsupportedM6,
-    FindingKind::MissingG91_1,
-    FindingKind::WrongProgramEndCode,
-    FindingKind::MissingProgramBrackets,
-    FindingKind::MissingWcs,
-];
-
 #[test]
 fn baseline_findings_match_expected() {
-    let mut total_findings: usize = 0;
     let mut failures: Vec<String> = Vec::new();
+    let mut captures = 0usize;
 
-    for expected in BASELINE {
-        let gcode = read_capture(expected.fixture, expected.dialect);
-        let findings = validate(&gcode, dialect_to_post(expected.dialect));
-        total_findings += findings.len();
-
-        // For each kind, check actual count matches expected (default 0).
-        for &kind in ALL_KINDS {
-            let actual = count_kind(&findings, kind);
-            let expected_count = expected
-                .findings
-                .iter()
-                .find(|(k, _)| *k == kind)
-                .map(|(_, n)| *n)
-                .unwrap_or(0);
-            if actual != expected_count {
+    for fixture in FIXTURES {
+        for (dialect, post) in DIALECTS {
+            captures += 1;
+            let gcode = read_capture(fixture, dialect);
+            let findings = validate(&gcode, *post);
+            println!("{fixture:32} {dialect:9} {} finding(s)", findings.len());
+            if !findings.is_empty() {
+                let summary: Vec<String> = findings
+                    .iter()
+                    .map(|f| format!("line {} {:?}", f.line, f.kind))
+                    .collect();
                 failures.push(format!(
-                    "{}_{}: expected {} {:?} finding(s), got {}",
-                    expected.fixture, expected.dialect, expected_count, kind, actual
+                    "{fixture}_{dialect}: expected 0 findings, got {} — {}",
+                    findings.len(),
+                    summary.join("; ")
                 ));
             }
         }
-
-        // Print so the test log captures progress on driving findings down.
-        let summary: Vec<String> = ALL_KINDS
-            .iter()
-            .filter_map(|&k| {
-                let n = count_kind(&findings, k);
-                if n > 0 {
-                    Some(format!("{n}×{k:?}"))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        println!(
-            "{:24} {:9} {} finding(s){}",
-            expected.fixture,
-            expected.dialect,
-            findings.len(),
-            if summary.is_empty() {
-                String::new()
-            } else {
-                format!(" — {}", summary.join(", "))
-            }
-        );
     }
 
-    println!(
-        "\nTotal findings across {} captures: {total_findings}",
-        BASELINE.len()
-    );
+    println!("\nTotal captures checked: {captures}");
 
     assert!(
         failures.is_empty(),
-        "Baseline mismatch ({} discrepancies):\n  {}\n\n\
-         If you intentionally changed the emitter, update BASELINE in this file in the same commit.",
+        "Baseline regression ({} captures with findings; baseline is ZERO):\n  {}\n\n\
+         If you intentionally changed the emitter/posts/validator, review and update this test in the same commit.",
         failures.len(),
         failures.join("\n  ")
     );

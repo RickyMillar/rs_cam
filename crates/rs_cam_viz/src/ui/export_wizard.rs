@@ -376,7 +376,18 @@ fn step_coord_units(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
         events.push(AppEvent::WizardSetUnitsOverride(units_selected));
     }
 
-    if let Some(u) = units_selected
+    if units_selected == Some(Units::Inch) {
+        // A1 (2026-06-11): inch output is blocked at export — the
+        // emitter would only swap the modal word while coordinates stay
+        // in millimeters (a silent 25.4× scale error). Proper
+        // conversion is backlogged.
+        ui.colored_label(
+            egui::Color32::from_rgb(220, 60, 60),
+            "⚠ Inch output (G20) is not supported yet — coordinates are \
+             millimeters and are not converted. Export is blocked until \
+             units are set back to mm.",
+        );
+    } else if let Some(u) = units_selected
         && u != post.units
     {
         ui.colored_label(

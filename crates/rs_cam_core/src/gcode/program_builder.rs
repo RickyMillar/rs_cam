@@ -127,6 +127,7 @@ pub fn build_single(toolpath: &Toolpath, spindle_rpm: u32) -> Program {
         prev_pos = Some((m.target.x, m.target.y, m.target.z));
     }
 
+    push_final_retract(&mut program);
     program.push(Statement::Postamble);
     program
 }
@@ -146,6 +147,11 @@ pub fn build_phased(phases: &[GcodePhase<'_>]) -> Program {
         spindle_rpm: first_rpm,
     });
 
+    // A11 — announce the first tool right after the preamble (the first
+    // phase never emits a ToolChange; without this the operator never
+    // sees which tool the program assumes is loaded).
+    push_initial_tool_comment(&mut program, first_phase.tool);
+
     let first_coolant = first_phase.coolant;
     if first_coolant.is_active() {
         program.push(Statement::Raw(first_coolant.start_gcode().to_owned()));
@@ -159,11 +165,13 @@ pub fn build_phased(phases: &[GcodePhase<'_>]) -> Program {
         // Tool change: emit the post's tool-change block if the tool
         // *identity* (config id) changed (skip first phase). Display
         // T-numbers may collide across distinct tools — never key on them.
+        let mut tool_change_fired = false;
         if idx > 0
             && let Some(tool) = phase.tool
             && state.current_tool != Some(tool.id)
         {
             push_tool_change(&mut program, &mut state, tool, phase);
+            tool_change_fired = true;
         }
 
         // Spindle speed change (only if we didn't already emit it in the tool change block).
@@ -174,22 +182,24 @@ pub fn build_phased(phases: &[GcodePhase<'_>]) -> Program {
             state.current_rpm = phase.spindle_rpm;
         }
 
-        // Coolant mode change (only if we didn't already handle it in tool change).
-        if idx > 0
-            && phase.coolant != state.current_coolant
-            && !(phase.tool.is_some() && state.current_tool == phase.tool.map(|t| t.id))
-        {
+        // Coolant mode change. Skipped only when the tool-change block
+        // fired *this phase* (push_tool_change already synced coolant).
+        // A3 fix (2026-06-11): the old guard keyed on "tool unchanged",
+        // which suppressed coolant changes between consecutive same-tool
+        // phases — exactly the case that needs an M9 / restart.
+        if idx > 0 && phase.coolant != state.current_coolant && !tool_change_fired {
             push_coolant_change(&mut program, &mut state, phase.coolant);
         }
 
-        push_pre_gcode(&mut program, phase.pre_gcode);
+        push_pre_gcode(&mut program, phase.pre_gcode, &mut state);
         push_phase_moves(&mut program, phase, &mut state);
-        push_post_gcode(&mut program, phase.post_gcode);
+        push_post_gcode(&mut program, phase.post_gcode, &mut state);
     }
 
     if state.current_coolant.is_active() {
         program.push(Statement::Raw("M9\n".to_owned()));
     }
+    push_final_retract(&mut program);
     program.push(Statement::Postamble);
     program
 }
@@ -211,21 +221,22 @@ pub fn build_multi_setup(setups: &[GcodeSetupPhase<'_>], safe_z: f64) -> Program
         spindle_rpm: first_rpm,
     });
 
-    let first_coolant = setups
-        .iter()
-        .flat_map(|setup| setup.phases.iter())
+    // A11 — seed the initial tool from the FIRST phase only (matching
+    // build_phased). The old `find_map` across all phases seeded from
+    // the first tool-ful phase *anywhere*, which suppressed the
+    // ToolChange when an untooled phase preceded it.
+    let first_phase = setups.iter().flat_map(|setup| setup.phases.iter()).next();
+    let initial_tool: Option<PhaseTool<'_>> = first_phase.and_then(|phase| phase.tool);
+    push_initial_tool_comment(&mut program, initial_tool);
+
+    let first_coolant = first_phase
         .map(|phase| phase.coolant)
-        .next()
         .unwrap_or(CoolantMode::Off);
     if first_coolant.is_active() {
         program.push(Statement::Raw(first_coolant.start_gcode().to_owned()));
     }
 
-    let initial_tool: Option<usize> = setups
-        .iter()
-        .flat_map(|setup| setup.phases.iter())
-        .find_map(|phase| phase.tool.map(|t| t.id));
-    let mut state = ModalState::new(first_rpm, initial_tool, first_coolant);
+    let mut state = ModalState::new(first_rpm, initial_tool.map(|t| t.id), first_coolant);
 
     for (setup_index, setup) in setups.iter().enumerate() {
         if setup_index > 0 {
@@ -274,10 +285,12 @@ pub fn build_multi_setup(setups: &[GcodeSetupPhase<'_>], safe_z: f64) -> Program
             // emitter relied on `current_tool` already matching the very
             // first phase's tool to avoid spuriously emitting a change).
             // Keyed on tool config id — display T-numbers may collide.
+            let mut tool_change_fired = false;
             if let Some(tool) = phase.tool
                 && state.current_tool != Some(tool.id)
             {
                 push_tool_change(&mut program, &mut state, tool, phase);
+                tool_change_fired = true;
             }
 
             if phase.spindle_rpm != state.current_rpm {
@@ -287,21 +300,22 @@ pub fn build_multi_setup(setups: &[GcodeSetupPhase<'_>], safe_z: f64) -> Program
                 state.current_rpm = phase.spindle_rpm;
             }
 
-            if phase.coolant != state.current_coolant
-                && !(phase.tool.is_some() && state.current_tool == phase.tool.map(|t| t.id))
-            {
+            // A3 fix — see build_phased: skip only when a tool change
+            // fired this phase (it already synced coolant).
+            if phase.coolant != state.current_coolant && !tool_change_fired {
                 push_coolant_change(&mut program, &mut state, phase.coolant);
             }
 
-            push_pre_gcode(&mut program, phase.pre_gcode);
+            push_pre_gcode(&mut program, phase.pre_gcode, &mut state);
             push_phase_moves(&mut program, phase, &mut state);
-            push_post_gcode(&mut program, phase.post_gcode);
+            push_post_gcode(&mut program, phase.post_gcode, &mut state);
         }
     }
 
     if state.current_coolant.is_active() {
         program.push(Statement::Raw("M9\n".to_owned()));
     }
+    push_final_retract(&mut program);
     program.push(Statement::Postamble);
     program
 }
@@ -352,27 +366,136 @@ fn push_coolant_change(program: &mut Program, state: &mut ModalState, new_coolan
     state.current_coolant = new_coolant;
 }
 
-fn push_pre_gcode(program: &mut Program, pre: Option<&str>) {
-    if let Some(pre) = pre
-        && !pre.is_empty()
-    {
-        let mut s = pre.to_owned();
-        if !s.ends_with('\n') {
-            s.push('\n');
-        }
-        program.push(Statement::Raw(s));
+/// A11 — `(LOAD: <label> [T<n>])` comment right after the preamble so
+/// the operator knows which tool the program assumes is already loaded
+/// (the first phase never emits a ToolChange block).
+fn push_initial_tool_comment(program: &mut Program, tool: Option<PhaseTool<'_>>) {
+    if let Some(tool) = tool {
+        program.push(Statement::Comment(format!(
+            "LOAD: {} [T{}]",
+            tool.label, tool.number
+        )));
     }
 }
 
-fn push_post_gcode(program: &mut Program, post_gc: Option<&str>) {
+/// C2 — final safe-Z retract before the postamble: rapid back up to the
+/// highest Z this program ever commanded (conservative and frame-
+/// agnostic, unlike the old hardcoded `G0 Z10.000` postamble literal
+/// which rapided DOWN into positive-Z parts). Skipped when the program
+/// has no motion, or when the last motion already sits at that height.
+fn push_final_retract(program: &mut Program) {
+    let z_of = |s: &Statement| match *s {
+        Statement::Rapid { z, .. }
+        | Statement::Linear { z, .. }
+        | Statement::LinearModal { z, .. }
+        | Statement::ArcCw { z, .. }
+        | Statement::ArcCcw { z, .. }
+        | Statement::SafeZRetract { z } => Some(z),
+        _ => None,
+    };
+    let max_z = program
+        .statements
+        .iter()
+        .filter_map(z_of)
+        .fold(None, |acc: Option<f64>, z| {
+            Some(acc.map_or(z, |a| a.max(z)))
+        });
+    let Some(max_z) = max_z else {
+        return; // no motion in the program — nothing to retract from
+    };
+    let last_z = program.statements.iter().rev().find_map(z_of);
+    if last_z == Some(max_z) {
+        return; // already at the program's highest height
+    }
+    program.push(Statement::SafeZRetract { z: max_z });
+}
+
+/// A2 — modal words in a user snippet that the emitter cannot track:
+/// incremental mode, unit switches, WCS / machine-frame selection.
+/// Returns the offending words (deduped, in scan order) for the
+/// warning comment. G53–G59 extended frames (G54.1 …) are matched on
+/// the integer part; `G91.1` (arc-center mode) is NOT G91 and is
+/// excluded, matching the validator's word semantics.
+fn dangerous_modal_words(snippet: &str) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for line in snippet.lines() {
+        let cleaned = crate::gcode_validator::strip_comments(line).to_uppercase();
+        let bytes = cleaned.as_bytes();
+        let mut i = 0;
+        while let Some(&b) = bytes.get(i) {
+            if b == b'G' {
+                let start = i + 1;
+                let mut j = start;
+                while bytes.get(j).is_some_and(u8::is_ascii_digit) {
+                    j += 1;
+                }
+                if j > start {
+                    let int_part: u32 = cleaned
+                        .get(start..j)
+                        .and_then(|d| d.parse().ok())
+                        .unwrap_or(u32::MAX);
+                    let has_decimal = bytes.get(j).copied() == Some(b'.');
+                    let word = match int_part {
+                        91 if !has_decimal => Some("G91".to_owned()),
+                        20 if !has_decimal => Some("G20".to_owned()),
+                        21 if !has_decimal => Some("G21".to_owned()),
+                        53..=59 => Some(format!("G{int_part}")),
+                        _ => None,
+                    };
+                    if let Some(w) = word
+                        && !found.contains(&w)
+                    {
+                        found.push(w);
+                    }
+                }
+                i = j;
+            } else {
+                i += 1;
+            }
+        }
+    }
+    found
+}
+
+/// Push a user g-code snippet as a `Raw` splice, with the A2 modal
+/// resync: the emitter has no idea what the snippet did, so the
+/// F-elision tracker and the rapid-split position are both reset, and a
+/// warning comment is prepended when the snippet contains words that
+/// change modal state the surrounding program depends on (G91, G20/G21,
+/// G53–G59.x). The warning never blocks.
+fn push_raw_snippet(program: &mut Program, snippet: &str, state: &mut ModalState) {
+    let dangerous = dangerous_modal_words(snippet);
+    if !dangerous.is_empty() {
+        program.push(Statement::Comment(format!(
+            "WARNING: user G-code snippet contains modal-state words ({}) — \
+             verify following moves run in the expected frame/units/mode",
+            dangerous.join(", ")
+        )));
+    }
+    let mut s = snippet.to_owned();
+    if !s.ends_with('\n') {
+        s.push('\n');
+    }
+    program.push(Statement::Raw(s));
+    // The snippet may have issued F words or motion: re-emit F on the
+    // next feed move and sequence the next rapid Z-first.
+    state.reset_feed();
+    state.reset_position();
+}
+
+fn push_pre_gcode(program: &mut Program, pre: Option<&str>, state: &mut ModalState) {
+    if let Some(pre) = pre
+        && !pre.is_empty()
+    {
+        push_raw_snippet(program, pre, state);
+    }
+}
+
+fn push_post_gcode(program: &mut Program, post_gc: Option<&str>, state: &mut ModalState) {
     if let Some(post_gc) = post_gc
         && !post_gc.is_empty()
     {
-        let mut s = post_gc.to_owned();
-        if !s.ends_with('\n') {
-            s.push('\n');
-        }
-        program.push(Statement::Raw(s));
+        push_raw_snippet(program, post_gc, state);
     }
 }
 
@@ -757,6 +880,8 @@ mod tests {
                     y: 40.0,
                     z: 2.0
                 },
+                // C2: final retract back to the program's max height
+                Statement::SafeZRetract { z: 10.0 },
             ]
         );
     }
@@ -915,6 +1040,9 @@ mod tests {
                     y: 0.0,
                     z: 5.0
                 },
+                // C2: final retract to the program's max height (the
+                // inter-setup safe-Z was the highest Z commanded)
+                Statement::SafeZRetract { z: 15.0 },
             ]
         );
     }
@@ -944,5 +1072,300 @@ mod tests {
         let tc = idx_of(|s| matches!(s, Statement::ToolChange { tool_number: 2, .. }));
         let spin = idx_of(|s| matches!(s, Statement::SpindleSet { rpm: 24_000 }));
         assert!(m9 < tc && tc < spin, "M9 → ToolChange → SpindleSet order");
+    }
+
+    // ── C2: final retract to the program's max Z ─────────────────────
+
+    /// Positive-Z program (terrain above the old hardcoded Z10): the
+    /// final retract must be at or above the program's max Z, and the
+    /// builder must emit it before the postamble.
+    #[test]
+    fn final_retract_reaches_positive_z_program_max() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 25.0)); // approach above Z10 terrain
+        tp.feed_to(P3::new(10.0, 0.0, 14.0), 600.0); // cutting at Z14
+        tp.feed_to(P3::new(20.0, 0.0, 12.0), 600.0);
+
+        for prog in [
+            build_single(&tp, 18_000),
+            build_phased(&[phase_for(&tp, 1)]),
+        ] {
+            let postamble_idx = prog
+                .statements
+                .iter()
+                .position(|s| matches!(s, Statement::Postamble))
+                .expect("postamble");
+            let retract = prog.statements.get(postamble_idx - 1);
+            match retract {
+                Some(Statement::SafeZRetract { z }) => {
+                    assert!(
+                        *z >= 25.0 - 1e-9,
+                        "final retract must be >= program max Z (25.0), got {z}"
+                    );
+                }
+                other => panic!("expected final SafeZRetract before Postamble, got {other:?}"),
+            }
+        }
+    }
+
+    /// When the program already ends at its max height, no duplicate
+    /// retract is appended.
+    #[test]
+    fn final_retract_skipped_when_already_at_max() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 5.0));
+        tp.feed_to(P3::new(10.0, 0.0, -1.0), 600.0);
+        tp.rapid_to(P3::new(10.0, 0.0, 5.0)); // ends at max height
+
+        let prog = build_single(&tp, 18_000);
+        let retract_count = prog
+            .statements
+            .iter()
+            .filter(|s| matches!(s, Statement::SafeZRetract { .. }))
+            .count();
+        // Only the program-start Z-first retract; no trailing duplicate.
+        assert_eq!(retract_count, 1, "{:?}", prog.statements);
+    }
+
+    // ── A2: raw-splice modal resync ──────────────────────────────────
+
+    /// A pre/post snippet may carry an F word: the F-elision tracker
+    /// must reset so the next feed move re-emits F even at an unchanged
+    /// rate.
+    #[test]
+    fn raw_splice_resets_feed_elision() {
+        let mut tp1 = Toolpath::new();
+        tp1.rapid_to(P3::new(0.0, 0.0, 5.0));
+        tp1.feed_to(P3::new(10.0, 0.0, -1.0), 600.0);
+
+        let mut tp2 = Toolpath::new();
+        tp2.feed_to(P3::new(20.0, 0.0, -1.0), 600.0); // same feed rate
+
+        let mut p1 = phase_for(&tp1, 1);
+        p1.post_gcode = Some("G4 P0.5 F300"); // snippet touches F
+        let p2 = phase_for(&tp2, 1);
+
+        let prog = build_phased(&[p1, p2]);
+        let raw_idx = prog
+            .statements
+            .iter()
+            .position(|s| matches!(s, Statement::Raw(t) if t.contains("G4 P0.5")))
+            .expect("snippet raw");
+        let next_feed = prog.statements.iter().skip(raw_idx).find_map(|s| match s {
+            Statement::Linear { feed, .. } => Some(*feed),
+            Statement::LinearModal { .. } => {
+                panic!("feed move after a raw splice must re-emit F (modal state unknown)")
+            }
+            _ => None,
+        });
+        assert_eq!(next_feed, Some(600.0));
+    }
+
+    /// Snippets containing dangerous modal words (G91, units, WCS) get
+    /// a warning comment prepended — never blocked.
+    #[test]
+    fn raw_splice_with_dangerous_words_warns() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 5.0));
+
+        let mut p = phase_for(&tp, 1);
+        p.pre_gcode = Some("G91\nG0 Z2\nG90");
+        let prog = build_phased(&[p]);
+
+        let warn = prog.statements.iter().find_map(|s| match s {
+            Statement::Comment(t) if t.starts_with("WARNING") => Some(t.as_str()),
+            _ => None,
+        });
+        let warn = warn.expect("dangerous snippet must produce a warning comment");
+        assert!(warn.contains("G91"), "warning names the word: {warn}");
+
+        // Warning precedes the Raw splice.
+        let warn_idx = prog
+            .statements
+            .iter()
+            .position(|s| matches!(s, Statement::Comment(t) if t.starts_with("WARNING")))
+            .expect("warning idx");
+        let raw_idx = prog
+            .statements
+            .iter()
+            .position(|s| matches!(s, Statement::Raw(t) if t.contains("G91")))
+            .expect("raw idx");
+        assert!(warn_idx < raw_idx);
+
+        // Benign snippet: no warning. (G91.1 is arc-center mode, not
+        // incremental-distance G91 — must not trip the scan; nor do
+        // comments mentioning G91.)
+        let mut tp2 = Toolpath::new();
+        tp2.rapid_to(P3::new(0.0, 0.0, 5.0));
+        let mut p2 = phase_for(&tp2, 1);
+        p2.pre_gcode = Some("(G91 in a comment)\nG91.1\nM8");
+        let prog2 = build_phased(&[p2]);
+        assert!(
+            !prog2
+                .statements
+                .iter()
+                .any(|s| matches!(s, Statement::Comment(t) if t.starts_with("WARNING"))),
+            "benign snippet must not warn: {:?}",
+            prog2.statements
+        );
+    }
+
+    /// Snippet motion invalidates the rapid-split position: the next
+    /// rapid must be sequenced Z-first like a program start.
+    #[test]
+    fn raw_splice_resets_rapid_split_position() {
+        let mut tp1 = Toolpath::new();
+        tp1.rapid_to(P3::new(0.0, 0.0, 5.0));
+        tp1.feed_to(P3::new(10.0, 0.0, -1.0), 600.0);
+
+        // Z-only rapid from tp1's carried position — would NOT split if
+        // position carried across the splice.
+        let mut tp2 = Toolpath::new();
+        tp2.rapid_to(P3::new(10.0, 0.0, 5.0));
+
+        let mut p1 = phase_for(&tp1, 1);
+        p1.post_gcode = Some("G0 X50"); // snippet moves the machine
+        let p2 = phase_for(&tp2, 1);
+
+        let prog = build_phased(&[p1, p2]);
+        let raw_idx = prog
+            .statements
+            .iter()
+            .position(|s| matches!(s, Statement::Raw(t) if t.contains("G0 X50")))
+            .expect("raw idx");
+        // The first motion statement after the splice must be the
+        // Z-first SafeZRetract (program-start sequencing).
+        let next_motion = prog
+            .statements
+            .iter()
+            .skip(raw_idx + 1)
+            .find(|s| matches!(s, Statement::Rapid { .. } | Statement::SafeZRetract { .. }));
+        assert!(
+            matches!(next_motion, Some(Statement::SafeZRetract { .. })),
+            "rapid after a raw splice must be Z-first, got {next_motion:?}"
+        );
+    }
+
+    // ── A3: coolant changes between consecutive same-tool phases ─────
+
+    #[test]
+    fn coolant_off_between_same_tool_phases_emits_m9() {
+        let mut tp1 = Toolpath::new();
+        tp1.rapid_to(P3::new(0.0, 0.0, 5.0));
+        let mut tp2 = Toolpath::new();
+        tp2.rapid_to(P3::new(10.0, 0.0, 5.0));
+
+        let make_phases = || {
+            let mut p1 = phase_for(&tp1, 1);
+            p1.coolant = CoolantMode::Flood;
+            let mut p2 = phase_for(&tp2, 1); // SAME tool id
+            p2.coolant = CoolantMode::Off;
+            (p1, p2)
+        };
+
+        let (p1, p2) = make_phases();
+        let prog = build_phased(&[p1, p2]);
+        let m9_count = prog
+            .statements
+            .iter()
+            .filter(|s| matches!(s, Statement::Raw(t) if t == "M9\n"))
+            .count();
+        assert_eq!(
+            m9_count, 1,
+            "Flood→Off between same-tool phases must emit M9: {:?}",
+            prog.statements
+        );
+
+        // Same scenario through the multi-setup builder.
+        let (p1, p2) = make_phases();
+        let setups = vec![GcodeSetupPhase {
+            setup_label: "Top",
+            phases: vec![p1, p2],
+            pause_message: None,
+        }];
+        let prog = build_multi_setup(&setups, 15.0);
+        let m9_count = prog
+            .statements
+            .iter()
+            .filter(|s| matches!(s, Statement::Raw(t) if t == "M9\n"))
+            .count();
+        assert_eq!(
+            m9_count, 1,
+            "multi-setup same-tool Flood→Off must emit M9: {:?}",
+            prog.statements
+        );
+    }
+
+    // ── A11: first-tool LOAD comment + multi-setup seeding ───────────
+
+    #[test]
+    fn first_tool_load_comment_follows_preamble() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 5.0));
+
+        let prog = build_phased(&[phase_for(&tp, 3)]);
+        assert!(matches!(
+            prog.statements.first(),
+            Some(Statement::Preamble { .. })
+        ));
+        match prog.statements.get(1) {
+            Some(Statement::Comment(t)) => {
+                assert_eq!(t, "LOAD: Tool [T3]");
+            }
+            other => panic!("expected LOAD comment after preamble, got {other:?}"),
+        }
+
+        // Multi-setup builder emits it too.
+        let setups = vec![GcodeSetupPhase {
+            setup_label: "Top",
+            phases: vec![phase_for(&tp, 3)],
+            pause_message: None,
+        }];
+        let prog = build_multi_setup(&setups, 15.0);
+        match prog.statements.get(1) {
+            Some(Statement::Comment(t)) => assert_eq!(t, "LOAD: Tool [T3]"),
+            other => panic!("expected LOAD comment after preamble, got {other:?}"),
+        }
+
+        // No tool on the first phase → no LOAD comment.
+        let mut bare = phase_for(&tp, 1);
+        bare.tool = None;
+        let prog = build_phased(&[bare]);
+        assert!(
+            !prog
+                .statements
+                .iter()
+                .any(|s| matches!(s, Statement::Comment(t) if t.starts_with("LOAD:"))),
+            "untooled first phase must not announce a load"
+        );
+    }
+
+    /// Multi-setup initial-tool seeding must come from the FIRST phase
+    /// only: an untooled first phase followed by a tooled one must fire
+    /// the ToolChange (the old find_map-anywhere seeding suppressed it).
+    #[test]
+    fn multi_setup_seeds_initial_tool_from_first_phase_only() {
+        let mut tp1 = Toolpath::new();
+        tp1.rapid_to(P3::new(0.0, 0.0, 5.0));
+        let mut tp2 = Toolpath::new();
+        tp2.rapid_to(P3::new(10.0, 0.0, 5.0));
+
+        let mut untooled = phase_for(&tp1, 1);
+        untooled.tool = None;
+        let tooled = phase_for(&tp2, 7);
+
+        let setups = vec![GcodeSetupPhase {
+            setup_label: "Top",
+            phases: vec![untooled, tooled],
+            pause_message: None,
+        }];
+        let prog = build_multi_setup(&setups, 15.0);
+        assert!(
+            prog.statements
+                .iter()
+                .any(|s| matches!(s, Statement::ToolChange { tool_number: 7, .. })),
+            "tool change must fire when the first tooled phase is not phase 0: {:?}",
+            prog.statements
+        );
     }
 }
