@@ -3522,6 +3522,13 @@ impl super::RsCamApp {
         // deferred a few frames so the window system has applied the new
         // size. The size is NOT restored afterwards — it sticks (documented
         // in the tool description).
+        //
+        // Even without a resize, captures settle 2 frames: view mutations
+        // queued by a preceding set_ui_view (one-shot tab overrides, modal
+        // opens routed through the event queue) take an event-processing
+        // frame plus a render frame to reach pixels. Capturing at 0 raced
+        // that pipeline — the 2026-06-11 sweep needed a throwaway "flush
+        // shot" per tab change (Batch 3 item 13).
         let frames_before_capture = if width.is_some() || height.is_some() {
             let current = ctx.input(|i| i.viewport().inner_rect).map(|r| r.size());
             let w = width.unwrap_or_else(|| current.map_or(1400.0, |s| s.x));
@@ -3529,7 +3536,7 @@ impl super::RsCamApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(w, h)));
             3
         } else {
-            0
+            2
         };
 
         pending.gui_screenshot = Some(crate::mcp_bridge::PendingGuiScreenshot {
