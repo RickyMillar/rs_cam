@@ -403,6 +403,7 @@ impl<B: ComputeBackend> AppController<B> {
             .as_ref()
             .and_then(|r| r.cut_trace.clone());
         let Some(trace) = trace_clone else {
+            self.state.close_modals_for_exclusivity();
             self.state.optimize_modal = Some(crate::state::OptimizeModalState {
                 toolpath_id,
                 status: crate::state::OptimizeRunStatus::Ready(OptimizeOutcome::skipped(
@@ -428,6 +429,7 @@ impl<B: ComputeBackend> AppController<B> {
             &mut self.state.session,
             rs_cam_core::session::ProjectSession::new_empty(),
         );
+        self.state.close_modals_for_exclusivity();
         self.state.is_optimizing = true;
         self.state.optimize_modal = Some(crate::state::OptimizeModalState {
             toolpath_id,
@@ -696,6 +698,7 @@ impl<B: ComputeBackend> AppController<B> {
             .filter(|tc| tc.enabled)
             .map(|tc| tc.id)
             .collect();
+        self.state.close_modals_for_exclusivity();
         self.state.feeds_modal = Some(crate::state::FeedsModalState {
             toolpath_id,
             mode: existing_mode,
@@ -979,6 +982,7 @@ impl<B: ComputeBackend> AppController<B> {
             &mut self.state.session,
             rs_cam_core::session::ProjectSession::new_empty(),
         );
+        self.state.close_modals_for_exclusivity();
         self.state.is_optimizing = true;
         self.state.optimize_project = Some(crate::state::OptimizeProjectState {
             status: crate::state::OptimizeProjectStatus::Loading,

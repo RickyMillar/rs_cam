@@ -492,16 +492,25 @@ fn draw_toolpath_card(
             }
 
             // Row 4: shared per-toolpath row controls (eye / C / R / isolate).
-            ui.horizontal(|ui| {
-                crate::ui::toolpath_row_controls::draw(
-                    ui,
-                    tp_id,
-                    visible,
-                    Some(tc.enabled),
-                    &mut state.viewport,
-                    events,
-                );
-            });
+            // Hover/selection only (density Batch 2) — six always-on glyphs
+            // per card made an 8-op rail ~100 touch targets when a scan
+            // needs swatch + name + status. The row appends at the card's
+            // bottom edge, so the card grows *below* the pointer and the
+            // hover state stays stable; every action also remains reachable
+            // from the right-click context menu.
+            let controls_visible = selected || ui.rect_contains_pointer(ui.min_rect());
+            if controls_visible {
+                ui.horizontal(|ui| {
+                    crate::ui::toolpath_row_controls::draw(
+                        ui,
+                        tp_id,
+                        visible,
+                        Some(tc.enabled),
+                        &mut state.viewport,
+                        events,
+                    );
+                });
+            }
 
             // Context menu
             card_resp.context_menu(|ui| {

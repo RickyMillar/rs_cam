@@ -482,34 +482,95 @@ fn draw_signal_spine(
         });
     }
 
-    // Stacked scroll area: each track is taller (90 px) and gets vertical
-    // separation, so the user can read 2–3 at once and scroll to the rest
-    // without losing their X-axis lock.
-    egui::ScrollArea::vertical()
-        .id_salt("signal_spine_scroll")
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
-            for (label, value_fn, color, env) in tracks {
-                let track_color = if stale { desaturate(color) } else { color };
-                draw_signal_track(
-                    ui,
-                    label,
-                    &groups,
-                    value_fn,
-                    track_color,
-                    active_x,
-                    display_x,
-                    &mut new_hovered,
-                    env,
-                    &hotspots,
-                    x_range,
-                    &pass_bands,
-                    &mut clicked_hotspot,
-                    &mut signal_drag_active,
-                    events,
-                );
-                ui.add_space(8.0);
+    // Summary tier (density Batch 2 — the unlanded half of W3.6): one
+    // metric-resolved track answering "where is it in trouble?" — per-sample
+    // effective chipload normalised by that toolpath's vendor-ceiling
+    // envelope, so 1.0 reads "at the limit" across toolpaths with different
+    // tools. Toolpaths without vendor data contribute nothing here (they're
+    // already pilled as unmodeled in the HUD); the raw per-metric tracks
+    // live one click below.
+    let has_normalizable = groups
+        .iter()
+        .any(|g| !g.samples.is_empty() && chipload_envelopes.contains_key(&g.toolpath_id));
+    if has_normalizable {
+        let summary_fn = |s: &SimulationCutSample| -> Option<f64> {
+            if s.engagement.radial_woc_fraction < 0.02 {
+                return None;
             }
+            let chip = s.effective_chip_thickness_mm?;
+            let env = chipload_envelopes.get(&s.toolpath_id)?;
+            (env.end > 0.0).then(|| chip / env.end)
+        };
+        // Band: vendor floor→ceiling in normalised space for the focused
+        // TP. Project-wide the burn floor varies per toolpath, so the
+        // ceiling at 1.0 is the only honest bound (floor pinned to 0 —
+        // no burn zone rather than a misleading one).
+        let summary_env = envelope
+            .filter(|(_, hi)| *hi > 0.0)
+            .map(|(lo, hi)| (lo / hi, 1.0))
+            .or(Some((0.0, 1.0)));
+        let summary_color = if stale {
+            desaturate(egui::Color32::from_rgb(235, 160, 70))
+        } else {
+            egui::Color32::from_rgb(235, 160, 70)
+        };
+        draw_signal_track(
+            ui,
+            "load vs limit",
+            &groups,
+            summary_fn,
+            summary_color,
+            active_x,
+            display_x,
+            &mut new_hovered,
+            summary_env,
+            &hotspots,
+            x_range,
+            &pass_bands,
+            &mut clicked_hotspot,
+            &mut signal_drag_active,
+            events,
+        );
+        ui.add_space(4.0);
+    }
+
+    // Expert spine behind disclosure: five co-equal raw-metric tracks
+    // (~90 px each) used to consume a third of the screen even when every
+    // gate was green. The summary track above + HUD pills + gate-trip dots
+    // carry the default story; the per-metric graphs are one click away.
+    egui::CollapsingHeader::new("Signal graphs (5)")
+        .id_salt("signal_spine_expert")
+        .default_open(!has_normalizable)
+        .show(ui, |ui| {
+            // Stacked scroll area: each track is taller (90 px) and gets
+            // vertical separation, so the user can read 2–3 at once and
+            // scroll to the rest without losing their X-axis lock.
+            egui::ScrollArea::vertical()
+                .id_salt("signal_spine_scroll")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for (label, value_fn, color, env) in tracks {
+                        let track_color = if stale { desaturate(color) } else { color };
+                        draw_signal_track(
+                            ui,
+                            label,
+                            &groups,
+                            value_fn,
+                            track_color,
+                            active_x,
+                            display_x,
+                            &mut new_hovered,
+                            env,
+                            &hotspots,
+                            x_range,
+                            &pass_bands,
+                            &mut clicked_hotspot,
+                            &mut signal_drag_active,
+                            events,
+                        );
+                        ui.add_space(8.0);
+                    }
+                });
         });
 
     if signal_drag_active {

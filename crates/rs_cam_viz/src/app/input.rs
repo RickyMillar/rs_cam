@@ -155,7 +155,9 @@ impl RsCamApp {
 
                 // Export events (need file dialogs)
                 AppEvent::ExportGcode => {
-                    self.controller.state_mut().show_preflight = true;
+                    let s = self.controller.state_mut();
+                    s.close_modals_for_exclusivity();
+                    s.show_preflight = true;
                 }
                 AppEvent::ExportGcodeConfirmed => {
                     self.export_gcode_with_summary();
@@ -169,6 +171,7 @@ impl RsCamApp {
                         .last_step_visited
                         .min(crate::ui::export_wizard::STEP_COUNT - 1);
                     let s = self.controller.state_mut();
+                    s.close_modals_for_exclusivity();
                     s.show_export_wizard = true;
                     s.wizard_active_step = resume;
                 }
