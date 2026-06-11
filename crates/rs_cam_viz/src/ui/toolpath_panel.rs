@@ -494,11 +494,21 @@ fn draw_toolpath_card(
             // Row 4: shared per-toolpath row controls (eye / C / R / isolate).
             // Hover/selection only (density Batch 2) — six always-on glyphs
             // per card made an 8-op rail ~100 touch targets when a scan
-            // needs swatch + name + status. The row appends at the card's
-            // bottom edge, so the card grows *below* the pointer and the
-            // hover state stays stable; every action also remains reachable
-            // from the right-click context menu.
-            let controls_visible = selected || ui.rect_contains_pointer(ui.min_rect());
+            // needs swatch + name + status. Every action also remains
+            // reachable from the right-click context menu.
+            //
+            // The hover test runs against the FULL card rect from the
+            // previous frame (stored in temp memory), and geometrically
+            // (`rect_contains_pointer`, not `Response::hovered`): testing
+            // only the content drawn so far made the row vanish the moment
+            // the pointer entered it, and a hit-test-layered check would
+            // flicker when the row's own buttons take hover priority.
+            let card_rect_id = egui::Id::new("tp_card_full_rect").with(tc.id);
+            let hovered_card = ui
+                .ctx()
+                .data_mut(|d| d.get_temp::<egui::Rect>(card_rect_id))
+                .is_some_and(|r| ui.rect_contains_pointer(r));
+            let controls_visible = selected || hovered_card;
             if controls_visible {
                 ui.horizontal(|ui| {
                     crate::ui::toolpath_row_controls::draw(
@@ -511,6 +521,10 @@ fn draw_toolpath_card(
                     );
                 });
             }
+            // Remember this card's full extent (rows 1–4 as drawn this
+            // frame, padded by the frame margin) for next frame's test.
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(card_rect_id, ui.min_rect().expand(4.0)));
 
             // Context menu
             card_resp.context_menu(|ui| {
