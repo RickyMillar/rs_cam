@@ -122,6 +122,36 @@ pub struct ScreenshotToolpathParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct ScreenshotGuiParam {
+    /// Output file path (must end in .png)
+    pub path: String,
+    /// Optional window width in logical points. When given, the window is
+    /// resized before capture. The new size persists after the capture
+    /// (it is not restored).
+    pub width: Option<f32>,
+    /// Optional window height in logical points. Same persistence note as
+    /// `width`.
+    pub height: Option<f32>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct SetUiViewParam {
+    /// Workspace to switch to: "setup", "toolpaths", "simulation",
+    /// or "readiness".
+    pub workspace: Option<String>,
+    /// Toolpath index (0-based) to select. Selecting a toolpath makes its
+    /// properties panel visible in the Toolpaths workspace.
+    pub toolpath_index: Option<usize>,
+    /// Toolpath properties tab to activate: "geometry", "feeds",
+    /// "linking", "heights", or "dressup". Takes effect the next time the
+    /// properties panel renders a selected toolpath.
+    pub properties_tab: Option<String>,
+    /// Modal to open: "feeds_modal", "optimize_modal", "export_wizard",
+    /// "tool_library", or "none" to close all modals.
+    pub modal: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SetToolpathParamInput {
     /// Toolpath index (0-based)
     pub index: usize,
@@ -520,6 +550,11 @@ pub fn build_info() -> serde_json::Value {
             // add_tool_from_library. Probe to confirm agent-driven tool
             // selection from the user's catalogs is available.
             "tool_library_mcp",
+            // GUI capture surface (2026-06-11): screenshot_gui (full-window
+            // PNG capture) + set_ui_view (workspace/selection/tab/modal
+            // navigation). Probe to confirm agent-driven UI inspection.
+            "gui_screenshot",
+            "set_ui_view",
         ],
     })
 }
@@ -586,6 +621,8 @@ mod tests {
             "gradient_follow_narrow_strip",
             "spiral_cleanup_overlap",
             "tool_library_mcp",
+            "gui_screenshot",
+            "set_ui_view",
         ] {
             assert!(
                 features.contains(&flag),
@@ -628,5 +665,46 @@ mod tests {
         // historical loader aliases parse instead of erroring.
         assert_eq!(parse_tool_type("ball"), Ok(ToolType::BallNose));
         assert_eq!(parse_tool_type("flat"), Ok(ToolType::EndMill));
+    }
+
+    /// GUI-capture surface (2026-06-11): `ScreenshotGuiParam` must accept
+    /// path-only requests (no resize) and full path+size requests.
+    #[test]
+    fn screenshot_gui_param_deserializes() {
+        let p: ScreenshotGuiParam =
+            serde_json::from_value(serde_json::json!({"path": "/tmp/gui.png"})).unwrap();
+        assert_eq!(p.path, "/tmp/gui.png");
+        assert!(p.width.is_none());
+        assert!(p.height.is_none());
+
+        let p: ScreenshotGuiParam = serde_json::from_value(serde_json::json!({
+            "path": "/tmp/gui.png", "width": 1600.0, "height": 1000.0
+        }))
+        .unwrap();
+        assert_eq!(p.width, Some(1600.0));
+        assert_eq!(p.height, Some(1000.0));
+    }
+
+    /// `SetUiViewParam` is all-optional — an empty object is a valid no-op
+    /// request, and each field deserializes independently.
+    #[test]
+    fn set_ui_view_param_deserializes() {
+        let p: SetUiViewParam = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(p.workspace.is_none());
+        assert!(p.toolpath_index.is_none());
+        assert!(p.properties_tab.is_none());
+        assert!(p.modal.is_none());
+
+        let p: SetUiViewParam = serde_json::from_value(serde_json::json!({
+            "workspace": "toolpaths",
+            "toolpath_index": 2,
+            "properties_tab": "heights",
+            "modal": "feeds_modal",
+        }))
+        .unwrap();
+        assert_eq!(p.workspace.as_deref(), Some("toolpaths"));
+        assert_eq!(p.toolpath_index, Some(2));
+        assert_eq!(p.properties_tab.as_deref(), Some("heights"));
+        assert_eq!(p.modal.as_deref(), Some("feeds_modal"));
     }
 }
