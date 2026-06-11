@@ -507,10 +507,10 @@ fn draw_project_section(
             // Project-wide findings counts — the same `CountPill` grammar + `/T`
             // denominator the verdict HUD uses, reading the same `summary()` producer
             // so the two rollups cannot diverge (W3.3 carry-over, P4-001/002). Load
-            // buckets are verdicts (`[ … ]`); collisions is an observation (`{ … }`).
-            // The exceeding pill is actionable (`( … → )`) when any TP exceeds — it
-            // jumps straight to the project-level Optimize, replacing the separate
-            // ⚡ Optimize-all button (FINAL_DESIGN §5.1).
+            // buckets are verdicts (stroked pills); collisions is an observation
+            // (fill-only pill). The exceeding pill is actionable (`… →` button) when
+            // any TP exceeds — it jumps straight to the project-level Optimize,
+            // replacing the separate ⚡ Optimize-all button (FINAL_DESIGN §5.1).
             ui.label(egui::RichText::new("Findings").small().strong());
             ui.horizontal_wrapped(|ui| {
                 ui.add(
@@ -528,22 +528,21 @@ fn draw_project_section(
                         events.push(AppEvent::OpenOptimizeProject);
                     }
                 } else {
-                    ui.add(exceeds_pill);
+                    ui.add(exceeds_pill.hide_when_zero());
                 }
                 ui.add(
             CountPill::verdict("\u{26A0} unmodeled", unmodeled)
                 .denom(total_tp)
                 .color(egui::Color32::from_rgb(210, 170, 80))
+                .hide_when_zero()
                 .hover("Toolpaths the gate could not model (drill cycles, no vendor data, etc.)."),
         );
-                let collision_color = if collision_count == 0 {
-                    theme::SUCCESS
-                } else {
-                    theme::ERROR
-                };
+                // Zero-count chips self-hide (density pass V4); the header's
+                // within/exceeding line carries the all-clear.
                 ui.add(
                     CountPill::observation("collisions", collision_count)
-                        .color(collision_color)
+                        .color(theme::ERROR)
+                        .hide_when_zero()
                         .hover("Rapid/holder collisions detected during simulation."),
                 );
             });
@@ -622,7 +621,27 @@ fn draw_project_section(
                         }
                     });
             }
-            if informational.iter().any(|(_, c)| *c > 0) {
+            // Density pass V5 — informational rows report % of runtime from
+            // the trace summary's time-weighted tallies, not raw per-sample
+            // counts ("Air cut 12031" is an expert numerator with no
+            // denominator; "Air cut 12% of runtime" is a judgment a standard
+            // user can act on). Raw sample counts stay reachable on hover.
+            let time_pcts = sim
+                .results
+                .as_ref()
+                .and_then(|r| r.cut_trace.as_ref())
+                .map(|trace| {
+                    let s = &trace.summary;
+                    let pct = |t: f64| {
+                        if s.total_runtime_s > 0.0 {
+                            t / s.total_runtime_s * 100.0
+                        } else {
+                            0.0
+                        }
+                    };
+                    (pct(s.air_cut_time_s), pct(s.low_engagement_time_s))
+                });
+            if let Some((air_pct, low_eng_pct)) = time_pcts {
                 ui.add_space(2.0);
                 ui.label(
                     egui::RichText::new("Informational")
@@ -633,13 +652,39 @@ fn draw_project_section(
                     .num_columns(2)
                     .spacing([8.0, 2.0])
                     .show(ui, |ui| {
-                        for (kind, count) in &informational {
+                        let count_for = |kind: SimulationIssueKind| {
+                            informational
+                                .iter()
+                                .find(|(k, _)| *k == kind)
+                                .map(|(_, c)| *c)
+                                .unwrap_or(0)
+                        };
+                        let rows = [
+                            (
+                                SimulationIssueKind::AirCut,
+                                air_pct,
+                                "Time the tool spends moving at cutting feed without \
+                                 removing material.",
+                            ),
+                            (
+                                SimulationIssueKind::LowEngagement,
+                                low_eng_pct,
+                                "Time spent cutting at very light radial engagement \
+                                 (< 2% of diameter).",
+                            ),
+                        ];
+                        for (kind, pct, what) in rows {
                             ui.label(
-                                egui::RichText::new(issue_kind_label(*kind))
+                                egui::RichText::new(issue_kind_label(kind))
                                     .small()
                                     .color(theme::TEXT_MUTED),
                             );
-                            ui.label(egui::RichText::new(format!("{count}")).small());
+                            ui.label(egui::RichText::new(format!("{pct:.0}% of runtime")).small())
+                                .on_hover_text(format!(
+                                    "{what}\n{} flagged samples — a per-sample emission \
+                                     tally, not a defect count.",
+                                    count_for(kind)
+                                ));
                             ui.end_row();
                         }
                     });

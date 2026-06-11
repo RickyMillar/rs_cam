@@ -495,7 +495,32 @@ load WANAKA → generate_all → run_simulation → set_ui_view +
 screenshot_gui; tab override needs one flush frame — see Tooling
 notes above).
 
-### Batch 1 — polish (all S, pure UI, one session)
+### Batch 1 — polish (all S, pure UI, one session) — LANDED 2026-06-12
+
+All 8 items implemented. Notes against the plan:
+- (1) HUD `issues` pill replaced by a `hotspots` pill (the one curated,
+  not-already-pilled issue kind); hidden at zero.
+- (4) `CountPill` itself was the bracket-notation source — restyled the
+  one renderer (verdict = tinted fill + stroke, observation = fill only)
+  and added `hide_when_zero()`; exceeds/unmodeled/collisions self-hide
+  at zero in HUD + Inspector (readiness already gated).
+- (3) merge implemented in viz (`merge_stateful_gate_rows`, unit-tested)
+  grouping Source::ToolLoad stateful rows by exact status text — both
+  wordings collapse, differently-worded gates stay separate.
+- (5) Informational rows now read "N% of runtime" from the trace
+  summary's time-weighted tallies; raw sample counts moved to hover.
+- (6) bonus fix: the disabled checkbox's reason hover used
+  `on_hover_text`, which never fires on disabled widgets — switched to
+  `on_disabled_hover_text` (pre-fix the hover was dead code).
+- (8) root cause was a stale modal, not a title bug: the title already
+  used the name; "toolpath 4" was the fallback firing after the project
+  changed under an open modal. The modal now closes itself when its
+  toolpath no longer resolves.
+- (2) TRACE badge hidden when every toolpath shares the same
+  availability; in mixed states all badges show (the contrast is the
+  signal).
+
+### Batch 1 originally agreed as:
 1. Timeline "issues 46751" pill → curated counts only (must-address +
    hotspots); raw emission-noise count never reaches the user.
    (sim_timeline HUD pills)

@@ -39,10 +39,16 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
 
     let mut still_open = true;
     let title = match modal.mode {
-        FeedsModalMode::Toolpath => format!(
-            "Feeds & Speeds — {}",
-            toolpath_name(state, toolpath_id).unwrap_or_else(|| format!("toolpath {toolpath_id}"))
-        ),
+        FeedsModalMode::Toolpath => {
+            let Some(name) = toolpath_name(state, toolpath_id) else {
+                // The toolpath is gone (project changed under an open
+                // modal). Pre-fix this rendered a broken shell titled
+                // "toolpath N" — caught by the 2026-06-11 capture sweep.
+                events.push(AppEvent::CloseFeedsModal);
+                return;
+            };
+            format!("Feeds & Speeds — {name}")
+        }
         FeedsModalMode::Project => "Feeds & Speeds — All toolpaths".to_owned(),
     };
 

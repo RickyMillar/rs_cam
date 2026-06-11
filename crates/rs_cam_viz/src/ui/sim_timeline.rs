@@ -3,7 +3,9 @@ use super::components::{CountPill, FreshnessGate};
 use super::sim_debug::semantic_kind_color;
 use crate::render::toolpath_render::palette_color;
 use crate::state::runtime::GuiState;
-use crate::state::simulation::{ActiveSemanticItem, SimulationAnalyticsTab, SimulationState};
+use crate::state::simulation::{
+    ActiveSemanticItem, SimulationAnalyticsTab, SimulationIssueKind, SimulationState,
+};
 use egui_plot::{Line, Plot, PlotPoints, Polygon};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::simulation_cut::SimulationCutSample;
@@ -96,7 +98,16 @@ fn draw_verdict_hud(
     load_report: &ToolLoadReport,
     events: &mut Vec<AppEvent>,
 ) {
-    let issue_count = sim.issues(gui, max_feed).len();
+    // Curated count only (density pass V1): the raw issues() length is
+    // dominated by per-sample air-cut / low-engagement emission noise
+    // (tens of thousands on a real job) — a headline "issues 46751" pill
+    // reads as catastrophe. Hotspots are the one issue kind that is both
+    // curated and not already pilled (collisions have their own pill).
+    let hotspot_count = sim
+        .issues(gui, max_feed)
+        .iter()
+        .filter(|i| i.kind == SimulationIssueKind::Hotspot)
+        .count();
 
     // TIM-005 — the pills *are* the navigation, not a sign pointing at the
     // markers below. Pre-compute the first offending move for the exceeds and
@@ -141,7 +152,7 @@ fn draw_verdict_hud(
         .show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 // Load buckets are verdicts (pass/fail of a modeled limit);
-                // collisions/issues/traces are observations (tallies). One
+                // collisions/hotspots/traces are observations (tallies). One
                 // CountPill renderer, the same summary() producer the Inspector
                 // reads — the two rollups cannot diverge (W0.4 + P4-001/002).
                 ui.add(
@@ -168,20 +179,19 @@ fn draw_verdict_hud(
                     CountPill::verdict("\u{26A0} unmodeled", unmodeled)
                         .denom(total_tp)
                         .color(egui::Color32::from_rgb(210, 170, 80))
+                        .hide_when_zero()
                         .hover(
                             "Toolpaths the gate could not model (drill cycles, no vendor data, \
                              etc.).",
                         ),
                 );
-                let collision_color = if collision_count == 0 {
-                    egui::Color32::from_rgb(120, 210, 140)
-                } else {
-                    egui::Color32::from_rgb(255, 120, 110)
-                };
                 // Collisions is likewise a navigation control: click seeks to
                 // the first collision and focuses the Safety tab (TIM-005).
+                // Zero-count chips self-hide (density pass V4) — at zero the
+                // within-pill plus the readiness checks carry the all-clear.
                 let collisions_pill = CountPill::observation("collisions", collision_count)
-                    .color(collision_color)
+                    .color(egui::Color32::from_rgb(255, 120, 110))
+                    .hide_when_zero()
                     .hover("Rapid/holder collisions detected during simulation.");
                 if let Some(move_idx) = first_collision_move.filter(|_| collision_count > 0) {
                     if ui.add(collisions_pill.actionable()).clicked() {
@@ -192,9 +202,13 @@ fn draw_verdict_hud(
                     ui.add(collisions_pill);
                 }
                 ui.add(
-                    CountPill::observation("issues", issue_count)
+                    CountPill::observation("hotspots", hotspot_count)
                         .color(egui::Color32::from_rgb(230, 190, 90))
-                        .hover("Air cuts and low-engagement clusters detected during simulation."),
+                        .hide_when_zero()
+                        .hover(
+                            "Sustained high-load clusters — triage in the Inspector's \
+                             Top hotspots list.",
+                        ),
                 );
                 // Generator traces are debug-grade provenance: only pill them
                 // when at least one exists (density pass 2026-06-11).
