@@ -130,6 +130,18 @@ fn viz_sim_trace(
     sim.results.as_ref().and_then(|r| r.cut_trace.as_deref())
 }
 
+/// Build the tool-load report the checked export functions enforce the
+/// policy against (C1, 2026-06-11). Evaluated from the shared session +
+/// the viz-side cut trace — the same inputs the readiness panel and the
+/// MCP `tool_load_report` tool use, so what the user sees is what the
+/// gate enforces.
+fn viz_load_report(
+    session: &ProjectSession,
+    sim: &SimulationState,
+) -> rs_cam_core::tool_load::ToolLoadReport {
+    rs_cam_core::gcode::project_load_report(session, viz_sim_trace(sim))
+}
+
 /// Export all enabled toolpaths as a single G-code file (session-based).
 pub fn export_gcode_from_session(
     session: &ProjectSession,
@@ -167,7 +179,7 @@ pub fn export_gcode_from_session_with_policy(
     let mut gcode = export_gcode_phases_with_overlay_checked(
         &phases,
         post,
-        viz_sim_trace(sim),
+        &viz_load_report(session, sim),
         policy,
         &overlay_for(session, gui),
     )
@@ -176,7 +188,7 @@ pub fn export_gcode_from_session_with_policy(
     log_machine_safety(&gcode, gui.post.safe_z);
 
     if gui.post.high_feedrate_mode {
-        gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate);
+        gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
     }
 
     Ok(gcode)
@@ -223,7 +235,7 @@ pub fn export_combined_gcode_from_session(
         &setup_phases,
         post,
         gui.post.safe_z,
-        viz_sim_trace(sim),
+        &viz_load_report(session, sim),
         gui.tool_load_overrides.as_policy(),
         &overlay_for(session, gui),
     )
@@ -232,7 +244,7 @@ pub fn export_combined_gcode_from_session(
     log_machine_safety(&gcode, gui.post.safe_z);
 
     if gui.post.high_feedrate_mode {
-        gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate);
+        gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
     }
 
     Ok(gcode)
@@ -272,7 +284,7 @@ pub fn export_single_toolpath_from_session(
     let mut gcode = export_gcode_phases_with_overlay_checked(
         std::slice::from_ref(&phase),
         post,
-        viz_sim_trace(sim),
+        &viz_load_report(session, sim),
         gui.tool_load_overrides.as_policy(),
         &overlay_for(session, gui),
     )
@@ -281,7 +293,7 @@ pub fn export_single_toolpath_from_session(
     log_machine_safety(&gcode, gui.post.safe_z);
 
     if gui.post.high_feedrate_mode {
-        gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate);
+        gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
     }
 
     Ok(gcode)
@@ -320,7 +332,7 @@ pub fn export_setup_gcode_from_session(
     let mut gcode = export_gcode_phases_with_overlay_checked(
         &phases,
         post,
-        viz_sim_trace(sim),
+        &viz_load_report(session, sim),
         gui.tool_load_overrides.as_policy(),
         &overlay_for(session, gui),
     )
@@ -329,7 +341,7 @@ pub fn export_setup_gcode_from_session(
     log_machine_safety(&gcode, gui.post.safe_z);
 
     if gui.post.high_feedrate_mode {
-        gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate);
+        gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
     }
 
     Ok(gcode)

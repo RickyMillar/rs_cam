@@ -64,11 +64,24 @@ fn capture_single(fixture: &str, tp: &Toolpath, rpm: u32) {
     }
 }
 
+/// Fixture captures have no project/session: pass the explicitly empty
+/// "no load evaluation performed" report (C1 — the parameter is
+/// non-optional by design).
+fn no_load_evaluation() -> rs_cam_core::tool_load::ToolLoadReport {
+    rs_cam_core::tool_load::ToolLoadReport {
+        per_toolpath: vec![],
+    }
+}
+
 fn capture_phased(fixture: &str, phases: &[GcodePhase<'_>]) {
     for (dialect, post) in dialects() {
-        let gcode =
-            export_gcode_phases_checked(phases, post, None, ToolLoadExportPolicy::default())
-                .expect("phased emit");
+        let gcode = export_gcode_phases_checked(
+            phases,
+            post,
+            &no_load_evaluation(),
+            ToolLoadExportPolicy::default(),
+        )
+        .expect("phased emit");
         write_capture(fixture, dialect, &gcode);
     }
 }
@@ -79,7 +92,7 @@ fn capture_multi_setup(fixture: &str, setups: &[GcodeSetupPhase<'_>], safe_z: f6
             setups,
             post,
             safe_z,
-            None,
+            &no_load_evaluation(),
             ToolLoadExportPolicy::default(),
         )
         .expect("multi-setup emit");

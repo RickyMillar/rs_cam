@@ -56,10 +56,14 @@ pub enum FindingKind {
     UnsupportedM6,
     /// `G91.1` (incremental IJK) absent on a post that requires it.
     MissingG91_1,
-    /// Program end M-code doesn't match the post's required code
-    /// (e.g. emitting `M2` where `M30` is required).
+    /// Program end M-code doesn't match the post's required code.
+    /// Retired 2026-06-11 (A6): both `M2` and `M30` are valid RS274
+    /// program ends on every shipped post; the rule no longer fires.
+    /// Variant kept for downstream matches / serialized findings.
     WrongProgramEndCode,
     /// Program tape brackets (`%`) missing on a post that requires them.
+    /// No shipped post requires them since 2026-06-11 (A6): modern
+    /// LinuxCNC GUIs/streamers don't need `%` wrapping.
     MissingProgramBrackets,
     /// No `G54`-`G59` block before the first cutting move.
     MissingWcs,
@@ -103,11 +107,10 @@ struct PostInvariants {
     /// LinuxCNC requires this; Grbl and Mach3 default to incremental.
     requires_g91_1: bool,
     /// Whether the program must be wrapped in `%` tape brackets.
-    /// LinuxCNC requires this for many streamers.
+    /// A6 (2026-06-11): no shipped post requires them — modern LinuxCNC
+    /// GUIs and streamers accept bare programs. The rule machinery is
+    /// kept for future custom posts.
     requires_percent_brackets: bool,
-    /// The numeric M-code that ends the program (M30 = end with
-    /// modal reset; M2 = end without). All three Fusion posts use 30.
-    program_end_code: u32,
     /// Whether a WCS code (G54-G59) must appear before the first
     /// cutting move. All shipped posts: yes.
     requires_wcs: bool,
@@ -119,21 +122,18 @@ const fn invariants_for(post: PostFormat) -> PostInvariants {
             supports_m6: false,
             requires_g91_1: false,
             requires_percent_brackets: false,
-            program_end_code: 30,
             requires_wcs: true,
         },
         PostFormat::LinuxCnc => PostInvariants {
             supports_m6: true,
             requires_g91_1: true,
-            requires_percent_brackets: true,
-            program_end_code: 30,
+            requires_percent_brackets: false,
             requires_wcs: true,
         },
         PostFormat::Mach3 => PostInvariants {
             supports_m6: true,
             requires_g91_1: false,
             requires_percent_brackets: false,
-            program_end_code: 30,
             requires_wcs: true,
         },
         // grblHAL is a strict superset of Grbl 1.1 with full M6 ATC
@@ -143,7 +143,6 @@ const fn invariants_for(post: PostFormat) -> PostInvariants {
             supports_m6: true,
             requires_g91_1: false,
             requires_percent_brackets: false,
-            program_end_code: 30,
             requires_wcs: true,
         },
     }
@@ -158,7 +157,9 @@ pub fn validate(gcode: &str, post: PostFormat) -> Vec<Finding> {
 
     rule_unsupported_m6(&inv, &lines, post, &mut findings);
     rule_missing_g91_1(&inv, &lines, post, &mut findings);
-    rule_wrong_program_end_code(&inv, &lines, post, &mut findings);
+    // A6 (2026-06-11): the wrong-program-end-code rule was removed —
+    // M2 and M30 are both valid RS274 program ends on every shipped
+    // post (LinuxCNC's own post emits M2 by convention).
     rule_missing_program_brackets(&inv, &lines, post, &mut findings);
     rule_missing_wcs(&inv, &lines, post, &mut findings);
 
@@ -169,7 +170,9 @@ pub fn validate(gcode: &str, post: PostFormat) -> Vec<Finding> {
 
 /// Strip `(...)` comment ranges (and trailing `;` line comments)
 /// before scanning for codes. G-code comments must not trigger rules.
-fn strip_comments(line: &str) -> String {
+/// `pub(crate)`: also used by the gcode emitter / program builder for
+/// word-scanning user snippets (A2 splice warnings, M-code denylist).
+pub(crate) fn strip_comments(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut depth: i32 = 0;
     for ch in line.chars() {
@@ -301,54 +304,6 @@ fn rule_missing_g91_1(
                  Without it, G2/G3 I.. J.. blocks may be interpreted as absolute IJK and the toolpath will deviate \
                  from the intended arc — latent machine-crash risk.",
                 post.label()
-            ),
-        });
-    }
-}
-
-fn rule_wrong_program_end_code(
-    inv: &PostInvariants,
-    lines: &[&str],
-    post: PostFormat,
-    findings: &mut Vec<Finding>,
-) {
-    // Look at the last non-blank, non-comment-only line for the end code.
-    let mut last_meaningful: Option<(usize, &str)> = None;
-    for (i, line) in lines.iter().enumerate() {
-        let cleaned = strip_comments(line);
-        if !cleaned.trim().is_empty() {
-            last_meaningful = Some((i, line));
-        }
-    }
-    let Some((idx, line)) = last_meaningful else {
-        return;
-    };
-
-    // Found end code → check it's the right one.
-    let has_m30 = has_word_int(line, 'M', 30);
-    let has_m2 = has_word_int(line, 'M', 2);
-    if !has_m30 && !has_m2 {
-        // No end code at all — separate concern; not what this rule covers.
-        return;
-    }
-    let actual = if has_m30 {
-        30
-    } else if has_m2 {
-        2
-    } else {
-        return;
-    };
-    if actual != inv.program_end_code {
-        findings.push(Finding {
-            severity: Severity::Error,
-            kind: FindingKind::WrongProgramEndCode,
-            line: idx + 1,
-            message: format!(
-                "{} should end with M{} (modal reset), not M{}. M2 ends without resetting modal state, \
-                 which can cause the next program to inherit unexpected G-codes (G91, G54-relative offsets, etc.).",
-                post.label(),
-                inv.program_end_code,
-                actual
             ),
         });
     }
@@ -760,51 +715,34 @@ mod tests {
     }
 
     #[test]
-    fn wrong_program_end_code_flags_m2_for_linuxcnc() {
-        let bad = "G90 G91.1\nG54\nG1 X10 F600\nM2\n";
-        let good = "G90 G91.1\nG54\nG1 X10 F600\nM30\n";
-        assert_eq!(
-            count_kind(
-                &validate(bad, PostFormat::LinuxCnc),
-                FindingKind::WrongProgramEndCode
-            ),
-            1
-        );
-        assert_eq!(
-            count_kind(
-                &validate(good, PostFormat::LinuxCnc),
-                FindingKind::WrongProgramEndCode
-            ),
-            0
-        );
+    fn m2_and_m30_both_accepted_as_program_end() {
+        // A6: the wrong-end-code rule was retired — both M2 and M30 are
+        // valid RS274 program ends; neither raises a finding anywhere.
+        let with_m2 = "G90 G91.1\nG54\nG1 X10 F600\nM2\n";
+        let with_m30 = "G90 G91.1\nG54\nG1 X10 F600\nM30\n";
+        for &post in PostFormat::ALL {
+            for prog in [with_m2, with_m30] {
+                assert_eq!(
+                    count_kind(&validate(prog, post), FindingKind::WrongProgramEndCode),
+                    0,
+                    "{post:?} must accept both M2 and M30"
+                );
+            }
+        }
     }
 
     #[test]
-    fn missing_program_brackets_flags_linuxcnc_without_percent() {
-        let bad = "G90 G91.1\nG54\nG1 X10 F600\nM30\n";
-        let good = "%\nG90 G91.1\nG54\nG1 X10 F600\nM30\n%\n";
-        assert_eq!(
-            count_kind(
-                &validate(bad, PostFormat::LinuxCnc),
-                FindingKind::MissingProgramBrackets
-            ),
-            2
-        );
-        assert_eq!(
-            count_kind(
-                &validate(good, PostFormat::LinuxCnc),
-                FindingKind::MissingProgramBrackets
-            ),
-            0
-        );
-        // Grbl/Mach3 don't need brackets.
-        assert_eq!(
-            count_kind(
-                &validate(bad, PostFormat::Grbl),
-                FindingKind::MissingProgramBrackets
-            ),
-            0
-        );
+    fn percent_brackets_not_required_on_any_shipped_post() {
+        // A6: LinuxCNC no longer requires % tape brackets (modern GUIs /
+        // streamers accept bare programs); no shipped post requires them.
+        let bare = "G90 G91.1\nG54\nG1 X10 F600\nM30\n";
+        for &post in PostFormat::ALL {
+            assert_eq!(
+                count_kind(&validate(bare, post), FindingKind::MissingProgramBrackets),
+                0,
+                "{post:?} must not require %-brackets"
+            );
+        }
     }
 
     #[test]

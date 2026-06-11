@@ -21,8 +21,14 @@ use super::wizard_overlay::WizardOverlay;
 /// Render a `Program` to g-code text using the given `PostDefinition`.
 pub fn emit_program(program: &Program, post: &PostDefinition) -> String {
     let mut output = String::new();
+    // XY position cursor: arcs need their START point to detect the
+    // degenerate cases (full circle vs equal-rounded-endpoints). `None`
+    // = unknown (program start, after Raw splices / tool changes /
+    // pauses where motion state can't be trusted) → arc emission falls
+    // back to the plain non-degenerate path.
+    let mut pos: Option<(f64, f64)> = None;
     for statement in &program.statements {
-        emit_statement(&mut output, statement, post);
+        emit_statement(&mut output, statement, post, &mut pos);
     }
     output
 }
@@ -87,16 +93,38 @@ fn should_linearize_arc(post: &PostDefinition, i: f64, j: f64) -> bool {
 
 /// Scan a single line of `Statement::Raw` text and return `Some(n)` if
 /// it issues an M-code listed in `post.unsupported_mcodes`.
+///
+/// Word-scans the comment-stripped line (mirrors `gcode_validator`'s
+/// word semantics) instead of whitespace-splitting, so `M6(msg)`,
+/// `T1M6`, and lowercase `m6` are all caught. Decimal extensions
+/// (`M6.1`) are NOT matched — they're distinct codes.
 fn unsupported_mcode_in_line(line: &str, denylist: &[u32]) -> Option<u32> {
     if denylist.is_empty() {
         return None;
     }
-    for token in line.split_whitespace() {
-        if let Some(rest) = token.strip_prefix('M').or_else(|| token.strip_prefix('m'))
-            && let Ok(n) = rest.parse::<u32>()
-            && denylist.contains(&n)
-        {
-            return Some(n);
+    let cleaned = crate::gcode_validator::strip_comments(line).to_uppercase();
+    let bytes = cleaned.as_bytes();
+    let mut i = 0;
+    while let Some(&b) = bytes.get(i) {
+        if b == b'M' {
+            let start = i + 1;
+            let mut j = start;
+            while bytes.get(j).is_some_and(u8::is_ascii_digit) {
+                j += 1;
+            }
+            if j > start {
+                let n: u32 = cleaned
+                    .get(start..j)
+                    .and_then(|d| d.parse().ok())
+                    .unwrap_or(u32::MAX);
+                let has_decimal = bytes.get(j).copied() == Some(b'.');
+                if !has_decimal && denylist.contains(&n) {
+                    return Some(n);
+                }
+            }
+            i = j.max(i + 1);
+        } else {
+            i += 1;
         }
     }
     None
@@ -166,10 +194,14 @@ fn filter_raw(text: &str, post: &PostDefinition) -> String {
     out
 }
 
-fn emit_statement(output: &mut String, statement: &Statement, post: &PostDefinition) {
+fn emit_statement(
+    output: &mut String,
+    statement: &Statement,
+    post: &PostDefinition,
+    pos: &mut Option<(f64, f64)>,
+) {
     let xyz = post.decimals.xyz;
     let feed_dp = post.decimals.feed;
-    let ijk = post.decimals.ijk;
 
     match *statement {
         Statement::Preamble { spindle_rpm } => {
@@ -183,6 +215,8 @@ fn emit_statement(output: &mut String, statement: &Statement, post: &PostDefinit
         Statement::Postamble => output.push_str(&post.render_postamble()),
         Statement::ProgramPause { ref message } => {
             output.push_str(&post.render_program_pause(message));
+            // Operator may jog during the pause.
+            *pos = None;
         }
         Statement::Comment(ref text) => output.push_str(&post.render_comment(text)),
         Statement::ToolChange {
@@ -190,10 +224,18 @@ fn emit_statement(output: &mut String, statement: &Statement, post: &PostDefinit
             ref label,
         } => {
             output.push_str(&post.render_tool_change(tool_number, label));
+            // Manual change — position no longer trustworthy.
+            *pos = None;
         }
-        Statement::Raw(ref text) => output.push_str(&filter_raw(text, post)),
+        Statement::Raw(ref text) => {
+            output.push_str(&filter_raw(text, post));
+            // User snippets / modal lines may contain motion we don't
+            // parse — invalidate the arc-start cursor conservatively.
+            *pos = None;
+        }
         Statement::Rapid { x, y, z } => {
             let _ = writeln!(output, "G0 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$}");
+            *pos = Some((x, y));
         }
         Statement::Linear { x, y, z, feed } => {
             let feed = clamp_feed(output, post, feed);
@@ -201,9 +243,11 @@ fn emit_statement(output: &mut String, statement: &Statement, post: &PostDefinit
                 output,
                 "G1 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} F{feed:.feed_dp$}"
             );
+            *pos = Some((x, y));
         }
         Statement::LinearModal { x, y, z } => {
             let _ = writeln!(output, "G1 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$}");
+            *pos = Some((x, y));
         }
         Statement::ArcCw {
             x,
@@ -213,20 +257,8 @@ fn emit_statement(output: &mut String, statement: &Statement, post: &PostDefinit
             j,
             feed,
         } => {
-            let feed = clamp_feed(output, post, feed);
-            if should_linearize_arc(post, i, j) {
-                // Sub-threshold arc — emit as a chord. Some controllers
-                // (Grbl 1.1, rs274ngc) reject sub-mm arcs outright.
-                let _ = writeln!(
-                    output,
-                    "G1 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} F{feed:.feed_dp$}"
-                );
-            } else {
-                let _ = writeln!(
-                    output,
-                    "G2 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} I{i:.ijk$} J{j:.ijk$} F{feed:.feed_dp$}"
-                );
-            }
+            emit_arc(output, post, ArcDir::Cw, x, y, z, i, j, feed, *pos);
+            *pos = Some((x, y));
         }
         Statement::ArcCcw {
             x,
@@ -236,22 +268,133 @@ fn emit_statement(output: &mut String, statement: &Statement, post: &PostDefinit
             j,
             feed,
         } => {
-            let feed = clamp_feed(output, post, feed);
-            if should_linearize_arc(post, i, j) {
-                let _ = writeln!(
-                    output,
-                    "G1 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} F{feed:.feed_dp$}"
-                );
-            } else {
-                let _ = writeln!(
-                    output,
-                    "G3 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} I{i:.ijk$} J{j:.ijk$} F{feed:.feed_dp$}"
-                );
-            }
+            emit_arc(output, post, ArcDir::Ccw, x, y, z, i, j, feed, *pos);
+            *pos = Some((x, y));
         }
         Statement::SafeZRetract { z } => {
             let _ = writeln!(output, "G0 Z{z:.xyz$}");
         }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum ArcDir {
+    Cw,
+    Ccw,
+}
+
+impl ArcDir {
+    fn word(self) -> &'static str {
+        match self {
+            ArcDir::Cw => "G2",
+            ArcDir::Ccw => "G3",
+        }
+    }
+}
+
+/// True when `a` and `b` format to the same word at `dp` decimals.
+fn rounds_equal(a: f64, b: f64, dp: usize) -> bool {
+    let scale = 10f64.powi(dp as i32);
+    (a * scale).round() == (b * scale).round()
+}
+
+/// Directional sweep angle of an arc from `start` to `end` around
+/// `center`, normalized to [0, 2π). A coincident start/end reads as 0.
+fn arc_sweep(dir: ArcDir, start: (f64, f64), end: (f64, f64), center: (f64, f64)) -> f64 {
+    use std::f64::consts::TAU;
+    let a0 = (start.1 - center.1).atan2(start.0 - center.0);
+    let a1 = (end.1 - center.1).atan2(end.0 - center.0);
+    let raw = match dir {
+        ArcDir::Ccw => a1 - a0,
+        ArcDir::Cw => a0 - a1,
+    };
+    raw.rem_euclid(TAU)
+}
+
+/// Emit a G2/G3 arc, guarding the two degenerate cases the 2026-06-11
+/// post-layer audit flagged:
+///
+/// 1. **Sub-threshold full circle** (unrounded endpoints equal, radius
+///    below the linearize threshold): the old path linearized it into a
+///    zero-length chord, silently dropping the geometry. Now split into
+///    two half-circle arcs so material removal is preserved.
+/// 2. **Tiny-sweep arc whose ROUNDED endpoints coincide** (endpoints
+///    within formatting resolution, sweep < ~1 rad): emitted verbatim,
+///    GRBL-family parsers read equal endpoints as a FULL circle. Now
+///    emitted as the linearized chord instead (which is sub-resolution
+///    by construction — a safe no-op line rather than a 360° cut).
+///
+/// Intentional full circles (equal unrounded endpoints, radius at or
+/// above the threshold) still emit as a single G2/G3 — that encoding is
+/// the standard full-circle form.
+///
+/// When the arc's start point is unknown (`pos = None`; can't happen on
+/// builder output, which always opens with a rapid) both guards are
+/// skipped and the legacy threshold-only behaviour applies.
+#[allow(clippy::too_many_arguments)]
+fn emit_arc(
+    output: &mut String,
+    post: &PostDefinition,
+    dir: ArcDir,
+    x: f64,
+    y: f64,
+    z: f64,
+    i: f64,
+    j: f64,
+    feed: f64,
+    pos: Option<(f64, f64)>,
+) {
+    let xyz = post.decimals.xyz;
+    let feed_dp = post.decimals.feed;
+    let ijk = post.decimals.ijk;
+    let feed = clamp_feed(output, post, feed);
+
+    let chord = |output: &mut String| {
+        let _ = writeln!(
+            output,
+            "G1 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} F{feed:.feed_dp$}"
+        );
+    };
+    let arc = |output: &mut String, x: f64, y: f64, z: f64, i: f64, j: f64| {
+        let _ = writeln!(
+            output,
+            "{} X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} I{i:.ijk$} J{j:.ijk$} F{feed:.feed_dp$}",
+            dir.word()
+        );
+    };
+
+    if let Some((sx, sy)) = pos {
+        let full_circle = (x - sx).abs() < 1e-9 && (y - sy).abs() < 1e-9;
+        if full_circle {
+            if should_linearize_arc(post, i, j) {
+                // Degenerate case 1: linearizing would emit a zero-length
+                // chord and drop the circle — split into two halves.
+                let ox = sx + 2.0 * i;
+                let oy = sy + 2.0 * j;
+                arc(output, ox, oy, z, i, j);
+                arc(output, x, y, z, -i, -j);
+            } else {
+                // Intentional full circle — standard single-block form.
+                arc(output, x, y, z, i, j);
+            }
+            return;
+        }
+        let center = (sx + i, sy + j);
+        let sweep = arc_sweep(dir, (sx, sy), (x, y), center);
+        if rounds_equal(x, sx, xyz) && rounds_equal(y, sy, xyz) && sweep < 1.0 {
+            // Degenerate case 2: the formatted words coincide and the
+            // controller would read a full circle — emit the chord.
+            chord(output);
+            return;
+        }
+    }
+
+    if should_linearize_arc(post, i, j) {
+        // Sub-threshold arc — emit as a chord. Some controllers
+        // (Grbl 1.1, rs274ngc) reject sub-mm arcs outright.
+        chord(output);
+    } else {
+        arc(output, x, y, z, i, j);
     }
 }
 
@@ -521,6 +664,106 @@ M3 S{spindle_rpm}
         assert!(
             !gcode.contains("G0 Z15.000"),
             "baseline 15.0 should be replaced: {gcode}"
+        );
+    }
+
+    // ── Arc degeneracy guards (post-layer audit 2026-06-11) ──────────
+
+    fn arc_test_program(start: (f64, f64, f64), arc: Statement) -> Program {
+        Program {
+            statements: vec![
+                Statement::Rapid {
+                    x: start.0,
+                    y: start.1,
+                    z: start.2,
+                },
+                arc,
+            ],
+            ..Default::default()
+        }
+    }
+
+    /// Sub-threshold FULL circle: linearizing used to produce a
+    /// zero-length chord (geometry silently dropped). It must now split
+    /// into two half-circle arcs.
+    #[test]
+    fn sub_threshold_full_circle_splits_into_two_halves() {
+        let r = 0.02; // below the 0.05 linearize threshold
+        let prog = arc_test_program(
+            (1.0, 0.0, -1.0),
+            Statement::ArcCw {
+                x: 1.0,
+                y: 0.0,
+                z: -1.0,
+                i: -r,
+                j: 0.0,
+                feed: 400.0,
+            },
+        );
+        let gcode = emit_program(&prog, post::grbl());
+        let g2_count = gcode.lines().filter(|l| l.starts_with("G2 ")).count();
+        assert_eq!(
+            g2_count, 2,
+            "sub-threshold full circle must split into two G2 halves:\n{gcode}"
+        );
+        // The midpoint of the split is the diametrically opposite point.
+        assert!(
+            gcode.contains("G2 X0.960 Y0.000"),
+            "first half ends at the opposite point:\n{gcode}"
+        );
+    }
+
+    /// Above-threshold full circle stays a single G2/G3 block — equal
+    /// endpoints + IJ centre is the standard full-circle encoding.
+    #[test]
+    fn intentional_full_circle_is_preserved() {
+        let prog = arc_test_program(
+            (10.0, 0.0, -2.0),
+            Statement::ArcCcw {
+                x: 10.0,
+                y: 0.0,
+                z: -2.0,
+                i: -10.0,
+                j: 0.0,
+                feed: 600.0,
+            },
+        );
+        let gcode = emit_program(&prog, post::grbl());
+        let g3_count = gcode.lines().filter(|l| l.starts_with("G3 ")).count();
+        assert_eq!(g3_count, 1, "full circle must stay one block:\n{gcode}");
+        assert!(gcode.contains("G3 X10.000 Y0.000"));
+    }
+
+    /// Tiny-sweep arc whose endpoints ROUND to the same words: emitted
+    /// verbatim it reads as a full circle to GRBL. Must come out as a
+    /// linearized chord (G1) instead.
+    #[test]
+    fn tiny_sweep_arc_with_equal_rounded_endpoints_emits_chord() {
+        // Radius 10 arc sweeping ~0.00004 rad: endpoints differ by
+        // ~0.0004 mm — equal after 3 dp rounding, far above the radius
+        // linearize threshold.
+        let (sx, sy) = (10.0, 0.0);
+        let sweep = 4.0e-5_f64;
+        let (ex, ey) = (10.0 * sweep.cos(), 10.0 * sweep.sin());
+        let prog = arc_test_program(
+            (sx, sy, -1.0),
+            Statement::ArcCcw {
+                x: ex,
+                y: ey,
+                z: -1.0,
+                i: -10.0,
+                j: 0.0,
+                feed: 600.0,
+            },
+        );
+        let gcode = emit_program(&prog, post::grbl());
+        assert!(
+            !gcode.lines().any(|l| l.starts_with("G3")),
+            "rounded-equal tiny arc must not emit G3 (full-circle trap):\n{gcode}"
+        );
+        assert!(
+            gcode.contains("G1 X10.000 Y0.000 Z-1.000 F600"),
+            "tiny arc must emit the (sub-resolution) chord:\n{gcode}"
         );
     }
 

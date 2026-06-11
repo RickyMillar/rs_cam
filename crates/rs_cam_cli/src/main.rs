@@ -532,10 +532,16 @@ fn main() -> Result<()> {
                             ))
                         });
 
+                    // The job-file pipeline has no ProjectSession / load
+                    // evaluation context: pass an explicitly empty report
+                    // ("no load evaluation performed") so the gate is
+                    // visible at the call site rather than skippable.
                     let gcode = export_gcode_phases_checked(
                         &setup_phases,
                         post_def,
-                        None,
+                        &rs_cam_core::tool_load::ToolLoadReport {
+                            per_toolpath: vec![],
+                        },
                         ToolLoadExportPolicy::default(),
                     )?;
                     std::fs::write(&setup_output, &gcode)
@@ -570,10 +576,14 @@ fn main() -> Result<()> {
                     })
                     .collect();
                 info!("Emitting G-code ({})...", post_def.name);
+                // See the per-setup branch above: the job-file path has no
+                // load-evaluation context — explicitly empty report.
                 let gcode = export_gcode_phases_checked(
                     &phases,
                     post_def,
-                    None,
+                    &rs_cam_core::tool_load::ToolLoadReport {
+                        per_toolpath: vec![],
+                    },
                     ToolLoadExportPolicy::default(),
                 )?;
                 std::fs::write(&output, &gcode).context("Failed to write output file")?;

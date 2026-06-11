@@ -21,11 +21,14 @@ G17 {units_word} G90 G40 G49 G80
 {wcs_line}M3 S{spindle_rpm}
 """
 
-# Postamble: spindle off, retract to safe Z (literal value, not a
-# parameter — matches legacy behaviour), program end.
+# Postamble: spindle off, program end. The safe-Z retract is no longer
+# a hardcoded `G0 Z10.000` literal (C2, 2026-06-11): on positive-Z jobs
+# (e.g. terrain above Z10) that literal commanded a rapid DOWN into the
+# part with a stopped spindle. The program builder now emits a
+# SafeZRetract to the highest Z the program ever used, just before this
+# postamble.
 postamble = """\
 M5
-G0 Z10.000
 M30
 """
 

@@ -35,9 +35,14 @@ pub enum ToolChangeMode {
     Pause,
     /// Native `M5` + `M6 T{n}` change. (The LinuxCNC/Mach3 default.)
     M6,
-    /// Strip `ToolChange` statements entirely — the following
-    /// `SpindleSet` is kept so per-tool RPM still applies. For
-    /// operators who handle changes outside the program.
+    /// Suppress the post's tool-change block. Each `ToolChange`
+    /// statement is replaced by a bare `ProgramPause` (M5 + operator
+    /// message + M0) so a multi-tool program still STOPS at every
+    /// change point instead of flowing into the next op with the wrong
+    /// tool (A10); the following `SpindleSet` is kept so per-tool RPM
+    /// still applies. Single-tool programs have no `ToolChange`
+    /// statements and strip clean. For operators who handle changes
+    /// outside the program.
     Suppress,
 }
 
@@ -70,9 +75,12 @@ pub struct WizardOverlay {
     pub safe_z_override: Option<f64>,
     pub spindle_warmup_secs: u32,
     /// When `Some`, dry-run mode is enabled and every cutting move's Z
-    /// is clamped to this value so the spindle stays in air for the
-    /// entire program. Rapids and `SafeZRetract` statements are left
-    /// alone (they already operate above material).
+    /// is replaced by this value so the spindle stays in air for the
+    /// entire program. `Rapid` and `SafeZRetract` Z values are clamped
+    /// up to this floor too (C3, 2026-06-11): in a dry run the material
+    /// is never removed, so e.g. drill peck re-entry rapids — which
+    /// target just above the previous peck bottom — would otherwise
+    /// drive G0 moves into solid stock.
     ///
     /// The viz layer resolves this from `wizard.dry_run` plus the
     /// effective safe-Z (`wizard.safe_z_override.unwrap_or(gui.post.safe_z)`)
@@ -80,8 +88,8 @@ pub struct WizardOverlay {
     pub dry_run_safe_z: Option<f64>,
     /// Tool-change handling override. `None` = post default.
     /// `Pause`/`M6` replace the post's `tool_change` template;
-    /// `Suppress` strips `ToolChange` statements from the program
-    /// (keeping the per-tool `SpindleSet`).
+    /// `Suppress` replaces `ToolChange` statements with bare M0 pauses
+    /// (keeping the per-tool `SpindleSet`) — see [`ToolChangeMode`].
     pub tool_change_override: Option<ToolChangeMode>,
 }
 
@@ -133,50 +141,81 @@ impl WizardOverlay {
     ///
     /// **Warmup**: when `spindle_warmup_secs > 0`, inserts a
     /// `G4 P{secs}` `Statement::Raw` immediately after the program's
-    /// first `Preamble` so the spindle has time to come up to speed
-    /// before the first cut.
+    /// first `Preamble`, AND after every `SpindleSet` that resumes from
+    /// a `ToolChange` or `ProgramPause` (A4, 2026-06-11) — a spindle
+    /// restarted after a manual change / M0 needs the same spin-up time
+    /// as the first start.
     ///
     /// **Dry-run**: when `dry_run_safe_z = Some(z)`, replaces the Z
     /// component of every cutting move (`Linear`, `LinearModal`,
-    /// `ArcCw`, `ArcCcw`) with `z`. `Rapid` and `SafeZRetract` are
-    /// left untouched — those already operate above material and
-    /// changing them would break the entry/exit kinematics.
+    /// `ArcCw`, `ArcCcw`) with `z`, and clamps `Rapid` / `SafeZRetract`
+    /// Z up to `max(z_original, z)` (C3) — dry runs never remove
+    /// material, so rapids that re-enter previously "cut" pockets would
+    /// otherwise drive into solid stock.
     pub fn apply_to_program<'a>(&self, program: &'a Program) -> Cow<'a, Program> {
         let needs_warmup = self.spindle_warmup_secs > 0;
         let needs_dry_run = self.dry_run_safe_z.is_some();
-        let needs_tc_strip = self.tool_change_override == Some(ToolChangeMode::Suppress);
-        if !needs_warmup && !needs_dry_run && !needs_tc_strip {
+        let needs_tc_suppress = self.tool_change_override == Some(ToolChangeMode::Suppress);
+        if !needs_warmup && !needs_dry_run && !needs_tc_suppress {
             return Cow::Borrowed(program);
         }
         let mut p = program.clone();
-        if needs_tc_strip {
-            // Strip the change blocks only — the SpindleSet that the
-            // builder emits right after each ToolChange stays, so the
-            // incoming tool's RPM still applies.
-            p.statements
-                .retain(|s| !matches!(s, Statement::ToolChange { .. }));
+        if needs_tc_suppress {
+            // A10 — replace the change block with a bare M0 pause so a
+            // multi-tool program still stops at every change point; the
+            // SpindleSet that the builder emits right after each
+            // ToolChange stays, so the incoming tool's RPM still
+            // applies. Programs with a single tool have no ToolChange
+            // statements, so they strip clean.
+            for s in &mut p.statements {
+                if let Statement::ToolChange { tool_number, label } = s {
+                    *s = Statement::ProgramPause {
+                        message: format!(
+                            "Tool change suppressed — verify correct tool: {label} [T{tool_number}]"
+                        ),
+                    };
+                }
+            }
         }
-        if needs_warmup
-            && let Some(idx) = p
-                .statements
-                .iter()
-                .position(|s| matches!(s, Statement::Preamble { .. }))
-        {
-            let dwell = Statement::Raw(format!("G4 P{}\n", self.spindle_warmup_secs));
-            p.statements.insert(idx + 1, dwell);
+        if needs_warmup {
+            let dwell_text = format!("G4 P{}\n", self.spindle_warmup_secs);
+            let mut out: Vec<Statement> = Vec::with_capacity(p.statements.len() + 2);
+            let mut pending_resume = false;
+            for s in p.statements {
+                let after_preamble = matches!(s, Statement::Preamble { .. });
+                let starts_resume = matches!(
+                    s,
+                    Statement::ToolChange { .. } | Statement::ProgramPause { .. }
+                );
+                let is_spindle_set = matches!(s, Statement::SpindleSet { .. });
+                out.push(s);
+                if after_preamble {
+                    out.push(Statement::Raw(dwell_text.clone()));
+                }
+                if starts_resume {
+                    pending_resume = true;
+                }
+                if is_spindle_set && pending_resume {
+                    out.push(Statement::Raw(dwell_text.clone()));
+                    pending_resume = false;
+                }
+            }
+            p.statements = out;
         }
         if let Some(safe_z) = self.dry_run_safe_z {
             for s in &mut p.statements {
-                clamp_cutting_z(s, safe_z);
+                clamp_dry_run_z(s, safe_z);
             }
         }
         Cow::Owned(p)
     }
 }
 
-/// Clamp the Z component of cutting-move statements to `safe_z`.
-/// Rapids, retracts, and non-move statements are left alone.
-fn clamp_cutting_z(s: &mut Statement, safe_z: f64) {
+/// Dry-run Z transform: cutting moves are pinned to `safe_z`; rapids
+/// and retracts are clamped *up* to it (`max`) so re-entry rapids never
+/// descend below the dry-run floor (C3). Non-move statements are left
+/// alone.
+fn clamp_dry_run_z(s: &mut Statement, safe_z: f64) {
     match s {
         Statement::Linear { z, .. }
         | Statement::LinearModal { z, .. }
@@ -184,15 +223,16 @@ fn clamp_cutting_z(s: &mut Statement, safe_z: f64) {
         | Statement::ArcCcw { z, .. } => {
             *z = safe_z;
         }
+        Statement::Rapid { z, .. } | Statement::SafeZRetract { z } => {
+            *z = z.max(safe_z);
+        }
         Statement::Preamble { .. }
         | Statement::SpindleSet { .. }
         | Statement::Postamble
         | Statement::ProgramPause { .. }
         | Statement::Comment(_)
         | Statement::ToolChange { .. }
-        | Statement::Raw(_)
-        | Statement::Rapid { .. }
-        | Statement::SafeZRetract { .. } => {}
+        | Statement::Raw(_) => {}
     }
 }
 
@@ -292,7 +332,7 @@ mod tests {
     }
 
     #[test]
-    fn dry_run_clamps_cutting_z_only() {
+    fn dry_run_clamps_cutting_z_and_rapid_floor() {
         let o = WizardOverlay {
             dry_run_safe_z: Some(7.5),
             ..Default::default()
@@ -341,12 +381,17 @@ mod tests {
         };
         let cow = o.apply_to_program(&prog);
         let stmts = &cow.statements;
-        // Rapid kept at original Z (entry/exit kinematics intact).
+        // C3: a rapid BELOW the dry-run floor is clamped up to it — the
+        // material is never removed in a dry run, so a sub-floor G0
+        // (e.g. drill peck re-entry) would drive into solid stock.
         match stmts[1] {
-            Statement::Rapid { z, .. } => assert!((z - 5.0).abs() < 1e-9),
+            Statement::Rapid { z, .. } => assert!(
+                (z - 7.5).abs() < 1e-9,
+                "rapid below the dry-run floor must clamp up to it, got {z}"
+            ),
             ref other => panic!("expected Rapid, got {other:?}"),
         }
-        // Cutting moves all clamped to 7.5.
+        // Cutting moves all pinned to 7.5.
         for idx in [2, 3, 4, 5] {
             let z = match stmts[idx] {
                 Statement::Linear { z, .. }
@@ -360,11 +405,149 @@ mod tests {
                 "stmt {idx}: dry-run should clamp Z to 7.5, got {z}"
             );
         }
-        // SafeZRetract left alone (already above material).
+        // SafeZRetract above the floor is left alone (max-clamp no-op).
         match stmts[6] {
             Statement::SafeZRetract { z } => assert!((z - 10.0).abs() < 1e-9),
             ref other => panic!("expected SafeZRetract, got {other:?}"),
         }
+    }
+
+    /// C3 regression: a program whose rapids descend below the dry-run
+    /// floor (drill peck re-entry shape) comes out with every Rapid and
+    /// SafeZRetract at or above the floor.
+    #[test]
+    fn dry_run_clamps_sub_floor_rapids_and_retracts() {
+        let o = WizardOverlay {
+            dry_run_safe_z: Some(6.0),
+            ..Default::default()
+        };
+        let prog = Program {
+            statements: vec![
+                Statement::Rapid {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 5.0,
+                },
+                // peck 1 bottom
+                Statement::Linear {
+                    x: 0.0,
+                    y: 0.0,
+                    z: -3.0,
+                    feed: 200.0,
+                },
+                // retract + re-entry rapid just above the peck bottom —
+                // in dry-run this is solid stock.
+                Statement::SafeZRetract { z: 2.0 },
+                Statement::Rapid {
+                    x: 0.0,
+                    y: 0.0,
+                    z: -2.5,
+                },
+                Statement::Linear {
+                    x: 0.0,
+                    y: 0.0,
+                    z: -6.0,
+                    feed: 200.0,
+                },
+            ],
+            ..Default::default()
+        };
+        let cow = o.apply_to_program(&prog);
+        for (idx, s) in cow.statements.iter().enumerate() {
+            match *s {
+                Statement::Rapid { z, .. } | Statement::SafeZRetract { z } => {
+                    assert!(
+                        z >= 6.0 - 1e-9,
+                        "stmt {idx}: rapid/retract Z must be >= dry-run floor, got {z}"
+                    );
+                }
+                Statement::Linear { z, .. } => {
+                    assert!((z - 6.0).abs() < 1e-9, "stmt {idx}: cut pinned to floor");
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// A4: with warmup configured, the same G4 dwell that follows the
+    /// preamble is emitted after every SpindleSet that resumes from a
+    /// ToolChange or ProgramPause.
+    #[test]
+    fn warmup_dwell_after_tool_change_and_pause_resume() {
+        let o = WizardOverlay {
+            spindle_warmup_secs: 5,
+            ..Default::default()
+        };
+        let prog = Program {
+            statements: vec![
+                Statement::Preamble {
+                    spindle_rpm: 18_000,
+                },
+                Statement::Linear {
+                    x: 1.0,
+                    y: 0.0,
+                    z: -1.0,
+                    feed: 600.0,
+                },
+                Statement::ToolChange {
+                    tool_number: 2,
+                    label: "Ball".to_owned(),
+                },
+                Statement::SpindleSet { rpm: 10_610 },
+                Statement::ProgramPause {
+                    message: "Setup change: Bottom".to_owned(),
+                },
+                Statement::SpindleSet { rpm: 18_000 },
+                Statement::Postamble,
+            ],
+            ..Default::default()
+        };
+        let cow = o.apply_to_program(&prog);
+        let dwell = |s: &Statement| matches!(s, Statement::Raw(t) if t == "G4 P5\n");
+        let dwell_count = cow.statements.iter().filter(|s| dwell(s)).count();
+        assert_eq!(
+            dwell_count, 3,
+            "one dwell after preamble + one after each resume SpindleSet: {:?}",
+            cow.statements
+        );
+        // Each dwell directly follows its trigger.
+        let positions: Vec<usize> = cow
+            .statements
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| dwell(s).then_some(i))
+            .collect();
+        assert!(matches!(
+            cow.statements[positions[0] - 1],
+            Statement::Preamble { .. }
+        ));
+        assert!(matches!(
+            cow.statements[positions[1] - 1],
+            Statement::SpindleSet { rpm: 10_610 }
+        ));
+        assert!(matches!(
+            cow.statements[positions[2] - 1],
+            Statement::SpindleSet { rpm: 18_000 }
+        ));
+        // A mid-program SpindleSet NOT preceded by a change/pause gets
+        // no dwell: rerun with such a program.
+        let prog2 = Program {
+            statements: vec![
+                Statement::Preamble {
+                    spindle_rpm: 18_000,
+                },
+                Statement::SpindleSet { rpm: 24_000 },
+                Statement::Postamble,
+            ],
+            ..Default::default()
+        };
+        let cow2 = o.apply_to_program(&prog2);
+        assert_eq!(
+            cow2.statements.iter().filter(|s| dwell(s)).count(),
+            1,
+            "plain RPM change must not dwell: {:?}",
+            cow2.statements
+        );
     }
 
     #[test]
@@ -450,7 +633,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_change_suppress_strips_statement_keeps_spindle() {
+    fn tool_change_suppress_keeps_pause_and_spindle() {
         let o = WizardOverlay {
             tool_change_override: Some(ToolChangeMode::Suppress),
             ..Default::default()
@@ -458,8 +641,9 @@ mod tests {
         // Suppress does NOT touch the post (template-level Cow stays
         // borrowed)…
         assert!(matches!(o.applied_post(post::grbl()), Cow::Borrowed(_)));
-        // …but strips ToolChange statements from the program, keeping
-        // the SpindleSet that follows.
+        // …but replaces ToolChange statements with a bare M0 pause
+        // (A10 — a multi-tool program must still stop at every change
+        // point), keeping the SpindleSet that follows.
         let prog = Program {
             statements: vec![
                 Statement::Preamble {
@@ -475,18 +659,46 @@ mod tests {
             ..Default::default()
         };
         let cow = o.apply_to_program(&prog);
-        assert_eq!(cow.statements.len(), 3);
+        assert_eq!(cow.statements.len(), 4);
         assert!(
             !cow.statements
                 .iter()
                 .any(|s| matches!(s, Statement::ToolChange { .. })),
-            "ToolChange must be stripped"
+            "ToolChange must be replaced"
+        );
+        let pause = cow.statements.iter().find_map(|s| match s {
+            Statement::ProgramPause { message } => Some(message.as_str()),
+            _ => None,
+        });
+        let pause = pause.expect("suppressed change must leave an M0 pause");
+        assert!(
+            pause.contains("Tool change suppressed") && pause.contains("[T2]"),
+            "pause names the incoming tool: {pause}"
         );
         assert!(
             cow.statements
                 .iter()
                 .any(|s| matches!(s, Statement::SpindleSet { rpm: 10_610 })),
             "SpindleSet must survive suppression"
+        );
+
+        // Single-tool program: no ToolChange statements → strips clean
+        // (no pauses added).
+        let single = Program {
+            statements: vec![
+                Statement::Preamble {
+                    spindle_rpm: 18_000,
+                },
+                Statement::Postamble,
+            ],
+            ..Default::default()
+        };
+        let cow = o.apply_to_program(&single);
+        assert!(
+            !cow.statements
+                .iter()
+                .any(|s| matches!(s, Statement::ProgramPause { .. })),
+            "single-tool program must not gain pauses"
         );
     }
 

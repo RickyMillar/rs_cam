@@ -403,6 +403,11 @@ fn controller_save_open_and_export_smoke() {
         drill_op: None,
     });
 
+    // C1 (2026-06-11): the export gate now enforces the tool-load policy
+    // on the viz path. This smoke test never simulates, so accept the
+    // Unmodeled(SimulationRequired) verdicts like a user would.
+    controller.state.gui.tool_load_overrides.accept_unmodeled = true;
+
     let gcode = controller.export_gcode().expect("export gcode");
     assert!(gcode.contains("G"));
 

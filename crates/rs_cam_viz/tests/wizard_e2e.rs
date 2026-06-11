@@ -124,6 +124,13 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
     });
     gui.toolpath_rt.insert(tp_id, rt);
 
+    // C1 (2026-06-11): the phase-level checked exports now enforce the
+    // tool-load gate. This harness never runs a simulation, so every
+    // criterion reads Unmodeled(SimulationRequired) — accept it, exactly
+    // as a user would via the export gate override toggle. The gate
+    // itself is covered by dedicated tests in core and below.
+    gui.tool_load_overrides.accept_unmodeled = true;
+
     (session, gui, SimulationState::new())
 }
 
@@ -226,11 +233,10 @@ fn wizard_overlay_overrides_reflect_in_emitted_gcode() {
     let (mut session, mut gui, sim) = build_session();
 
     // grblHAL preamble emits {wcs_line} + {units_word} + M3 S{rpm}, so
-    // overrides on those three words show up in the rendered preamble.
+    // overrides on those words show up in the rendered preamble.
     gui.post.format = rs_cam_core::gcode::PostFormat::GrblHal;
 
     session.wizard_mut().wcs_override = Some(rs_cam_core::gcode::WcsCode::G56);
-    session.wizard_mut().units_override = Some(rs_cam_core::gcode::Units::Inch);
     session.wizard_mut().spindle_warmup_secs = 9;
 
     let gcode = export_gcode_from_session(&session, &gui, &sim).expect("overlay export succeeds");
@@ -238,10 +244,6 @@ fn wizard_overlay_overrides_reflect_in_emitted_gcode() {
     assert!(
         gcode.contains("G56\n"),
         "WCS override should land in preamble: {gcode}"
-    );
-    assert!(
-        gcode.contains("G20"),
-        "units override should flip G21→G20: {gcode}"
     );
     assert!(
         gcode.contains("G4 P9\n"),
@@ -253,6 +255,29 @@ fn wizard_overlay_overrides_reflect_in_emitted_gcode() {
     let dwell = gcode.find("G4 P9").expect("warmup dwell");
     let first_move = gcode.find("G0 X").expect("first move");
     assert!(m3 < dwell && dwell < first_move);
+}
+
+/// A1 (2026-06-11): an inch units override must hard-refuse the export —
+/// the emitter only swaps the G21 word for G20 while every coordinate
+/// stays in millimeters (a silent 25.4× scale error on a real machine).
+#[test]
+fn wizard_inch_units_override_blocks_export() {
+    let (mut session, gui, sim) = build_session();
+    session.wizard_mut().units_override = Some(rs_cam_core::gcode::Units::Inch);
+
+    let err = export_gcode_from_session(&session, &gui, &sim)
+        .expect_err("inch override must refuse export");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("inch output not yet supported"),
+        "error explains the refusal: {msg}"
+    );
+
+    // Back to mm (or post default): export works again.
+    session.wizard_mut().units_override = Some(rs_cam_core::gcode::Units::Mm);
+    export_gcode_from_session(&session, &gui, &sim).expect("mm override exports");
+    session.wizard_mut().units_override = None;
+    export_gcode_from_session(&session, &gui, &sim).expect("post-default exports");
 }
 
 /// Default `WizardState` (no overrides) must produce byte-identical
@@ -311,7 +336,11 @@ fn default_wizard_state_does_not_mutate_export() {
     let baseline = export_gcode_phases_with_overlay_checked(
         &phases,
         gui.post.format.definition(),
-        None,
+        // No load evaluation on the hand-built baseline path (C1 — the
+        // report parameter is non-optional; empty = nothing evaluated).
+        &rs_cam_core::tool_load::ToolLoadReport {
+            per_toolpath: vec![],
+        },
         ToolLoadExportPolicy::default(),
         &Default::default(),
     )
@@ -415,11 +444,13 @@ fn wizard_state_mutations_round_trip() {
 }
 
 /// Dry-run mode must clamp every cutting move's Z to the effective
-/// safe-Z. Build a session with a toolpath that descends below the
-/// surface (Z=-1.0), enable dry-run + a safe-Z override of 12.5,
-/// and parse every G1/G2/G3 line of the emitted output. None of
-/// them may have a Z value other than 12.500. G0 rapids must keep
-/// their original Z values (entry/exit kinematics intact).
+/// safe-Z, and clamp every rapid UP to that floor too (C3, 2026-06-11:
+/// dry runs never remove material, so rapids that descend below the
+/// floor — e.g. drill peck re-entry — would drive into solid stock).
+/// Build a session with a toolpath that descends below the surface
+/// (Z=-1.0), enable dry-run + a safe-Z override of 12.5, and parse
+/// every motion line of the emitted output: no Z word may be below
+/// 12.500, and cutting moves sit exactly at 12.500.
 #[test]
 fn wizard_dry_run_clamps_cutting_moves_to_safe_z() {
     let (mut session, gui, sim) = build_session();
@@ -430,7 +461,7 @@ fn wizard_dry_run_clamps_cutting_moves_to_safe_z() {
     let gcode = export_gcode_from_session(&session, &gui, &sim).expect("dry-run export succeeds");
 
     let mut g1_count = 0usize;
-    let mut rapid_z5_count = 0usize;
+    let mut clamped_rapid_count = 0usize;
     for line in gcode.lines() {
         let tline = line.trim_start();
         let leading = tline
@@ -452,14 +483,17 @@ fn wizard_dry_run_clamps_cutting_moves_to_safe_z() {
             );
             g1_count += 1;
         }
-        // build_session emits rapids at Z=5.0 — those must stay at 5.0
-        // (NOT get rewritten to 12.5). A G0 Z line at exactly 5.0 is
-        // proof that the rapid kinematics weren't touched.
-        if is_rapid
-            && let Some(z) = z
-            && (z - 5.0).abs() < 1e-6
-        {
-            rapid_z5_count += 1;
+        // build_session emits rapids at Z=5.0 — below the dry-run floor,
+        // so they must be clamped UP to 12.5 (C3). No motion line may
+        // command a Z below the floor.
+        if is_rapid && let Some(z) = z {
+            assert!(
+                z >= 12.5 - 1e-6,
+                "dry-run rapid must not descend below the floor: {line}"
+            );
+            if (z - 12.5).abs() < 1e-6 {
+                clamped_rapid_count += 1;
+            }
         }
     }
     assert!(
@@ -467,9 +501,9 @@ fn wizard_dry_run_clamps_cutting_moves_to_safe_z() {
         "test fixture should have produced at least one cutting move"
     );
     assert!(
-        rapid_z5_count >= 1,
-        "build_session emits at least one rapid at Z=5.0; dry-run must \
-         leave it intact (got {rapid_z5_count} matching rapids)"
+        clamped_rapid_count >= 1,
+        "build_session emits rapids at Z=5.0; dry-run must clamp them \
+         up to the 12.5 floor (got {clamped_rapid_count} clamped rapids)"
     );
 }
 
