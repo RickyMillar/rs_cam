@@ -108,6 +108,12 @@ pub struct Adaptive3dParams {
     pub tolerance: f64,
     pub min_cutting_radius: f64,
     pub stock_top_z: f64,
+    /// User-pinned floor for the Z-level plan (heights audit 2026-06-12,
+    /// finding 2). `Some(z)` clamps `z_bottom` — no pass is planned below
+    /// it, even where the surface heightmap reads deeper (e.g. through
+    /// holes in an open mesh). `None` (heights Auto) keeps the
+    /// surface-derived floor.
+    pub z_floor: Option<f64>,
     /// Entry strategy (default: Plunge for backward compat).
     pub entry_style: EntryStyle3d,
     /// Fine stepdown: when set, insert intermediate Z levels at this interval.
@@ -591,6 +597,7 @@ mod tests {
         Adaptive3dParams {
             tool_radius: 3.175,
             envelope_radius: 3.175,
+            z_floor: None,
             stepover: 2.0,
             depth_per_pass: 3.0,
             stock_to_leave: 0.5,
@@ -1086,6 +1093,7 @@ mod tests {
         }
 
         let shm = SurfaceHeightmap {
+            covered: vec![true; z_values.len()],
             z_values,
             rows,
             cols,
@@ -1179,6 +1187,7 @@ mod tests {
         // Surface at z=0 everywhere
         let surface_hm = SurfaceHeightmap {
             z_values: vec![0.0; rows * cols],
+            covered: vec![true; rows * cols],
             rows,
             cols,
             origin_x: material_stock.z_grid.origin_u,
@@ -1227,6 +1236,7 @@ mod tests {
         let hm = make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &mat_cells);
         let surface_hm = SurfaceHeightmap {
             z_values: vec![0.0; rows * cols],
+            covered: vec![true; rows * cols],
             rows,
             cols,
             origin_x: 0.0,
@@ -1258,6 +1268,7 @@ mod tests {
         let hm = make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &mat_cells);
         let surface_hm = SurfaceHeightmap {
             z_values: vec![0.0; rows * cols],
+            covered: vec![true; rows * cols],
             rows,
             cols,
             origin_x: 0.0,

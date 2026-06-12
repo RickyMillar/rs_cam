@@ -367,9 +367,17 @@ pub(super) fn adaptive_3d_segments(
             {
                 continue;
             }
-            // Clear material above the surface Z at this cell
+            // Clear material above the surface Z at this cell. Uncovered
+            // cells (no triangle under the ray) carry a BFS rim-fill in
+            // `z_values` post-audit; pre-audit they read the drop-cutter
+            // floor, which made this a full-ray clear — preserve that by
+            // clearing from the grid bottom for uncovered cells.
             let i = row * material_stock.z_grid.cols + col;
-            let clear_z = surface_hm.z_values[i] as f32;
+            let clear_z = if surface_hm.covered[i] {
+                surface_hm.z_values[i] as f32
+            } else {
+                material_stock.stock_bbox.min.z as f32
+            };
             ray_subtract_above(material_stock.z_grid.ray_mut(row, col), clear_z);
             border_cleared += 1;
         }
@@ -403,8 +411,15 @@ pub(super) fn adaptive_3d_segments(
             for col in 0..material_stock.z_grid.cols {
                 let (x, y) = material_stock.z_grid.cell_to_world(row, col);
                 if !boundary.contains_point(&crate::geo::P2::new(x, y)) {
+                    // Same covered/uncovered split as the border clear:
+                    // uncovered cells outside the boundary must stay fully
+                    // cleared or O5b's unstamped-cell deep bite returns.
                     let i = row * material_stock.z_grid.cols + col;
-                    let clear_z = surface_hm.z_values[i] as f32;
+                    let clear_z = if surface_hm.covered[i] {
+                        surface_hm.z_values[i] as f32
+                    } else {
+                        material_stock.stock_bbox.min.z as f32
+                    };
                     ray_subtract_above(material_stock.z_grid.ray_mut(row, col), clear_z);
                     boundary_cleared += 1;
                 }
@@ -418,17 +433,24 @@ pub(super) fn adaptive_3d_segments(
         }
     }
 
-    // Compute Z levels: stock_top down to surface bottom + stock_to_leave
+    // Compute Z levels: stock_top down to surface bottom + stock_to_leave.
+    // A user-pinned heights `bottom_z` (params.z_floor) clamps the plan —
+    // the surface heightmap reads the mesh-bbox floor through holes in
+    // open meshes, and pre-clamp there was no lever to stop the final
+    // level diving there (heights audit 2026-06-12, findings 2 + 3).
     let z_plan_scope = debug_ctx.map(|ctx| ctx.start_span("z_level_plan", "Compute Z levels"));
     let surface_bottom = surface_hm.min_z();
-    let z_bottom = surface_bottom + params.stock_to_leave;
+    let z_bottom =
+        (surface_bottom + params.stock_to_leave).max(params.z_floor.unwrap_or(f64::NEG_INFINITY));
     let mut z_levels = Vec::new();
     let mut z = params.stock_top_z - params.depth_per_pass;
     while z > z_bottom {
         z_levels.push(z);
         z -= params.depth_per_pass;
     }
-    z_levels.push(z_bottom); // Always include final level at the surface
+    if z_bottom < params.stock_top_z {
+        z_levels.push(z_bottom); // Always include final level at the surface
+    }
 
     // Fix 5: Flat area detection — histogram surface Z, insert levels at shelves
     if params.detect_flat_areas {
@@ -1470,6 +1492,7 @@ mod tests {
             tolerance: 0.1,
             min_cutting_radius: 0.0,
             stock_top_z: 5.0,
+            z_floor: None,
             entry_style: EntryStyle3d::Plunge,
             fine_stepdown: None,
             detect_flat_areas: false,

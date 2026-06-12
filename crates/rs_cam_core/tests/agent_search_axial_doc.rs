@@ -97,6 +97,7 @@ fn agent_search_axial_doc_diag() {
         tolerance: 0.1,
         min_cutting_radius: 0.0,
         stock_top_z: stock_top,
+        z_floor: None,
         entry_style: EntryStyle3d::Plunge,
         fine_stepdown: None,
         detect_flat_areas: false,

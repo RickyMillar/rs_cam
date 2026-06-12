@@ -56,13 +56,10 @@ fn generate_via_core(
     let polys = req.polygons.as_deref().map(|v| v.as_slice());
     let default_bbox = rs_cam_core::geo::BoundingBox3::empty();
     let stock_bbox = req.stock_bbox.as_ref().unwrap_or(&default_bbox);
-    let heights = rs_cam_core::compute::config::ResolvedHeights {
-        clearance_z: req.heights.clearance_z,
-        retract_z: req.heights.retract_z,
-        feed_z: req.heights.feed_z,
-        top_z: req.heights.top_z,
-        bottom_z: req.heights.bottom_z,
-    };
+    // `state::toolpath::ResolvedHeights` is a re-export of the core type —
+    // copy it whole so new fields (e.g. the pinned flags from the heights
+    // audit) flow through without this bridge silently dropping them.
+    let heights = req.heights;
 
     // Add top-level semantic scope for the operation
     let op_scope = semantic_root

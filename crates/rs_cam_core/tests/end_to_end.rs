@@ -527,6 +527,7 @@ fn test_adaptive3d_rapids_lift_before_xy_traverse() {
         tolerance: 0.1,
         min_cutting_radius: 0.0,
         stock_top_z: mesh.bbox.max.z + 5.0,
+        z_floor: None,
         entry_style: EntryStyle3d::Plunge,
         fine_stepdown: None,
         detect_flat_areas: false,

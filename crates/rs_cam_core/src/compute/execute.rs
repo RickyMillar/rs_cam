@@ -896,7 +896,24 @@ pub(crate) fn generate_adaptive3d(
         plunge_rate: op.plunge_rate(),
         tolerance: cfg.tolerance,
         min_cutting_radius: cfg.min_cutting_radius,
+        // Heights audit 2026-06-12, finding 2: the rough always anchors
+        // its top on the stock bbox — a pinned `top_z` is deliberately
+        // NOT honored here. Roughing must start from the real material
+        // top: anchoring lower leaves the overhead band unplanned while
+        // the simulator still carries it, and the first pass would sweep
+        // the full pre-stamp ray in one bite (the F-027 failure shape).
+        // It would also rewrite tuned historical projects whose pinned
+        // tops were vacuous while heights were ignored (wanaka100 Back
+        // Rough pins `top_z = model_top` under an 18 mm overhead — the
+        // F-034 machine-calibration anchor measures that exact path).
         stock_top_z: ctx.stock_bbox.max.z,
+        // A user-pinned `bottom_z` IS honored: it floors the Z-level
+        // plan (raising the floor only removes deep passes — always
+        // safe; it's the lever that stops a rough descending through
+        // holes in open meshes). Auto leaves the floor to the surface
+        // heightmap (Auto resolves to `top - op_depth`, which has no
+        // meaning for surface-driven roughing).
+        z_floor: ctx.heights.bottom_pinned.then_some(ctx.heights.bottom_z),
         entry_style,
         fine_stepdown: if cfg.fine_stepdown > 0.0 {
             Some(cfg.fine_stepdown)
@@ -2089,6 +2106,8 @@ mod tests {
             feed_z: 28.0,
             top_z: 25.0,
             bottom_z: 0.0,
+            top_pinned: false,
+            bottom_pinned: false,
         }
     }
 
