@@ -16,6 +16,19 @@ use crate::tool::MillingCutter;
 /// One parallel batch of drop-cutter queries at init, then O(1) lookups.
 pub struct SurfaceHeightmap {
     pub z_values: Vec<f64>,
+    /// True when the vertical ray at the cell center passes through at
+    /// least one triangle footprint — false for holes in open meshes and
+    /// for cells outside the mesh XY extent. `point_drop_cutter` happily
+    /// reports rim contact on such cells (the cutter has radius), so the
+    /// drop-cutter Z alone can't distinguish "surface" from "no surface".
+    /// Uncovered cells keep the `min_z` clamp in `z_values` — clearing
+    /// strategies rely on that floor to rough out stock beside/around
+    /// the model (and through mesh holes; the user-facing lever to stop
+    /// a rough descending into holes is a pinned heights `bottom_z`).
+    /// The mask lets consumers tell the two cases apart — e.g. full-ray
+    /// border clears, or future enclosed-hole handling (heights audit
+    /// 2026-06-12, finding 3).
+    pub covered: Vec<bool>,
     pub rows: usize,
     pub cols: usize,
     pub origin_x: f64,
@@ -68,38 +81,49 @@ impl SurfaceHeightmap {
         cancel: &dyn CancelCheck,
     ) -> Result<Self, Cancelled> {
         let total = rows * cols;
-        let compute_z = |i: usize| {
+        let compute_cell = |i: usize| -> (f64, bool) {
             let row = i / cols;
             let col = i % cols;
             let x = origin_x + col as f64 * cell_size;
             let y = origin_y + row as f64 * cell_size;
             let cl = point_drop_cutter(x, y, mesh, index, cutter);
-            cl.z.max(min_z)
+            // Coverage: does the *vertical ray* pass through a triangle?
+            // (Same predicate drop_cutter finish and project_curve use to
+            // reject hole/rim-riding points.)
+            let covered = index.query(x, y, 0.0).iter().any(|&idx| {
+                #[allow(clippy::indexing_slicing)] // index stores valid face indices
+                mesh.faces[idx].contains_point_xy(x, y)
+            });
+            (cl.z.max(min_z), covered)
         };
 
         // Parallel drop-cutter: each cell is independent.
         #[cfg(not(target_arch = "wasm32"))]
-        let z_values = {
+        let (z_values, covered) = {
             use rayon::prelude::*;
-            let results: Vec<f64> = (0..total).into_par_iter().map(compute_z).collect();
+            let results: Vec<(f64, bool)> = (0..total).into_par_iter().map(compute_cell).collect();
             // Check cancel after parallel work completes
             check_cancel(cancel)?;
-            results
+            results.into_iter().unzip::<f64, bool, Vec<_>, Vec<_>>()
         };
         #[cfg(target_arch = "wasm32")]
-        let z_values = {
-            let mut vals = Vec::with_capacity(total);
+        let (z_values, covered) = {
+            let mut zs = Vec::with_capacity(total);
+            let mut cov = Vec::with_capacity(total);
             for i in 0..total {
                 if i % 64 == 0 {
                     check_cancel(cancel)?;
                 }
-                vals.push(compute_z(i));
+                let (z, c) = compute_cell(i);
+                zs.push(z);
+                cov.push(c);
             }
-            vals
+            (zs, cov)
         };
 
         Ok(Self {
             z_values,
+            covered,
             rows,
             cols,
             origin_x,
@@ -131,9 +155,20 @@ impl SurfaceHeightmap {
         self.z_values[row as usize * self.cols + col as usize]
     }
 
-    /// Minimum surface Z across all cells (bottom of the mesh surface).
+    /// Minimum Z across all cells. Uncovered cells contribute the `min_z`
+    /// clamp floor by design: adaptive clearing plans its deepest level
+    /// from this value, and stock beside/around the model (uncovered)
+    /// must be cleared down to the floor (see the hemisphere clearing
+    /// tests). Use `covered` to reason about real-surface-only minima.
     pub fn min_z(&self) -> f64 {
         self.z_values.iter().copied().fold(f64::INFINITY, f64::min)
+    }
+
+    /// Whether the cell's vertical ray actually passes through the mesh.
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[inline]
+    pub fn covered_at(&self, row: usize, col: usize) -> bool {
+        self.covered[row * self.cols + col]
     }
 
     /// Compute a slope map from this surface heightmap.
@@ -424,6 +459,7 @@ mod tests {
     fn test_surface_heightmap_z_lookup() {
         let z_values = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]; // 2 rows × 3 cols
         let shm = SurfaceHeightmap {
+            covered: vec![true; z_values.len()],
             z_values,
             rows: 2,
             cols: 3,
@@ -440,6 +476,7 @@ mod tests {
     fn test_surface_heightmap_world_lookup() {
         let z_values = vec![10.0, 20.0, 30.0, 40.0];
         let shm = SurfaceHeightmap {
+            covered: vec![true; z_values.len()],
             z_values,
             rows: 2,
             cols: 2,
@@ -456,6 +493,7 @@ mod tests {
     fn test_surface_heightmap_min_z() {
         let shm = SurfaceHeightmap {
             z_values: vec![5.0, 2.0, 8.0, 1.0],
+            covered: vec![true; 4],
             rows: 2,
             cols: 2,
             origin_x: 0.0,
@@ -676,5 +714,78 @@ mod tests {
         // Curvature accessor
         let k = sm.curvature_at_world(10.0, 10.0);
         assert!(k.is_some());
+    }
+    // ── Hole-mask tests (heights audit 2026-06-12, finding 3) ──────
+
+    /// Flat ring plate at z=5: outer square (0,0)-(30,30) with a square
+    /// hole (10,10)-(20,20). Open mesh — the hole has no geometry.
+    fn ring_plate_mesh(z: f64) -> crate::mesh::TriangleMesh {
+        use crate::geo::P3;
+        let v = vec![
+            P3::new(0.0, 0.0, z),
+            P3::new(30.0, 0.0, z),
+            P3::new(30.0, 30.0, z),
+            P3::new(0.0, 30.0, z),
+            P3::new(10.0, 10.0, z),
+            P3::new(20.0, 10.0, z),
+            P3::new(20.0, 20.0, z),
+            P3::new(10.0, 20.0, z),
+        ];
+        let t = vec![
+            [0u32, 1, 5],
+            [0, 5, 4],
+            [1, 2, 6],
+            [1, 6, 5],
+            [2, 3, 7],
+            [2, 7, 6],
+            [3, 0, 4],
+            [3, 4, 7],
+        ];
+        crate::mesh::TriangleMesh::from_raw(v, t)
+    }
+
+    #[test]
+    fn hole_cells_are_uncovered_plate_cells_are_covered() {
+        use crate::mesh::SpatialIndex;
+        use crate::tool::FlatEndmill;
+
+        let mesh = ring_plate_mesh(5.0);
+        let index = SpatialIndex::build_auto(&mesh);
+        let cutter = FlatEndmill::new(4.0, 10.0);
+        // 31x31 grid at 1mm covering the plate; drop-cutter clamp floor 0.
+        // Cutter radius 2: rim-riding reaches 2mm into the hole, while the
+        // hole center (5mm from the rim) stays out of reach.
+        let shm = SurfaceHeightmap::from_mesh(&mesh, &index, &cutter, 0.0, 0.0, 31, 31, 1.0, 0.0);
+
+        // Plate cell: covered, on the surface.
+        assert!(shm.covered_at(5, 5), "plate cell should be covered");
+        assert!(
+            (shm.surface_z_at(5, 5) - 5.0).abs() < 1e-6,
+            "plate cell should read the surface at 5.0"
+        );
+
+        // Hole center: NOT covered (the vertical ray passes through the
+        // hole). Its Z keeps the clamp floor — clearing strategies rely
+        // on that to rough stock where there is no model surface; the
+        // covered mask is what distinguishes "hole/no-surface" from
+        // "real surface" for consumers that need the difference.
+        assert!(
+            !shm.covered_at(15, 15),
+            "hole-center cell must be uncovered"
+        );
+        assert!(
+            (shm.surface_z_at(15, 15) - 0.0).abs() < 1e-6,
+            "hole cell keeps the clamp floor, got {}",
+            shm.surface_z_at(15, 15)
+        );
+
+        // Hole rim within cutter radius: the cutter rides the rim, so the
+        // CL height is the plate height even though the ray may miss —
+        // exactly why coverage can't be derived from the Z value.
+        assert!(
+            (shm.surface_z_at(15, 19) - 5.0).abs() < 1e-6,
+            "rim-riding cell reads the plate height, got {}",
+            shm.surface_z_at(15, 19)
+        );
     }
 }
