@@ -227,6 +227,7 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
         tolerance: 0.25,
         min_cutting_radius: 0.0,
         stock_top_z,
+        z_floor: None,
         entry_style: EntryStyle3d::Plunge,
         fine_stepdown: None,
         detect_flat_areas: false,

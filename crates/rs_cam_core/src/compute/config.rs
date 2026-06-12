@@ -195,6 +195,8 @@ impl HeightsConfig {
             feed_z: self.feed_z.resolve_value(retract - 2.0, ctx),
             top_z,
             bottom_z: self.bottom_z.resolve_value(top_z - ctx.op_depth.abs(), ctx),
+            top_pinned: !self.top_z.is_auto(),
+            bottom_pinned: !self.bottom_z.is_auto(),
         }
     }
 }
@@ -207,6 +209,15 @@ pub struct ResolvedHeights {
     pub feed_z: f64,
     pub top_z: f64,
     pub bottom_z: f64,
+    /// True when `top_z` came from a user choice (Manual / FromReference)
+    /// rather than Auto. Carried for ops that distinguish user intent from
+    /// the Auto default; note adaptive3d deliberately ignores a pinned top
+    /// (see `generate_adaptive3d` — roughing must start from the real
+    /// material top or the simulator carries unplanned overhead).
+    pub top_pinned: bool,
+    /// True when `bottom_z` came from a user choice. adaptive3d honors
+    /// this as a floor on its Z-level plan (audit 2026-06-12, finding 2).
+    pub bottom_pinned: bool,
 }
 
 impl ResolvedHeights {

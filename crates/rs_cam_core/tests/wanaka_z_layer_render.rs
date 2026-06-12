@@ -212,6 +212,7 @@ fn wanaka_back_rough_first_and_last_z_layers() {
         tolerance: 0.1,
         min_cutting_radius: 0.0,
         stock_top_z,
+        z_floor: None,
         entry_style: EntryStyle3d::Plunge,
         fine_stepdown: None,
         detect_flat_areas: false,

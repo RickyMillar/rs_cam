@@ -1469,6 +1469,7 @@ fn default_adaptive3d_params() -> Adaptive3dParams {
         tolerance: 0.1,
         min_cutting_radius: 0.0,
         stock_top_z: 22.0,
+        z_floor: None,
         entry_style: rs_cam_core::adaptive3d::EntryStyle3d::Plunge,
         fine_stepdown: None,
         detect_flat_areas: false,

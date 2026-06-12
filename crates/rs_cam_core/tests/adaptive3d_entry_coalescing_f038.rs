@@ -154,6 +154,7 @@ fn make_params(tool_radius: f64, min_region_cut_length_mm: f64) -> Adaptive3dPar
         tolerance: 0.1,
         min_cutting_radius: 0.0,
         stock_top_z: PEAK_Z,
+        z_floor: None,
         entry_style: EntryStyle3d::Plunge,
         fine_stepdown: None,
         detect_flat_areas: false,
