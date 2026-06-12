@@ -740,6 +740,41 @@ fn sweep_adaptive_min_cutting_radius() {
     }
 }
 
+#[test]
+#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+fn sweep_adaptive_engagement_measure() {
+    // F1 A/B (algorithm review 2026-06-12): DiskArea is the historical
+    // measure, LeadingArc the units-correct one. The path MUST change —
+    // the disk-area controller converges on a different effective
+    // stepover than commanded.
+    let poly = rect_polygon();
+    let cutter = FlatEndmill::new(6.35, 25.0);
+
+    let result = run_sweep_with_sim(
+        "adaptive",
+        "engagement_measure",
+        serde_json::json!("DiskArea"),
+        &[serde_json::json!("LeadingArc")],
+        &stock_bounds_2d(),
+        0.5,
+        &cutter,
+        StockCutDirection::FromTop,
+        |override_val| {
+            let mut p = default_adaptive_params();
+            if override_val.is_some() {
+                p.engagement_measure = rs_cam_core::adaptive::EngagementMeasure::LeadingArc;
+            }
+            rs_cam_core::adaptive::adaptive_toolpath(&poly, &p)
+        },
+    );
+
+    for v in &result.variants {
+        let ctx = format!("adaptive engagement_measure={}", v.value);
+        assert_any_change(&v.diff, &ctx);
+        assert_has_change(&v.diff, "cutting_distance_mm", &ctx);
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // DROP CUTTER (3D FINISH) SWEEPS
 // ═══════════════════════════════════════════════════════════════════════
@@ -1585,6 +1620,33 @@ fn sweep_adaptive3d_z_blend() {
     );
     for v in &result.variants {
         let ctx = format!("adaptive3d z_blend={}", v.value);
+        assert_any_change(&v.diff, &ctx);
+    }
+}
+
+#[test]
+#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+fn sweep_adaptive3d_engagement_measure() {
+    // F1 A/B for the 3D AgentSearch dispatch (delegates per-slice to the
+    // 2D adaptive engine, so the measure flows through ClearZLevelContext).
+    let (mesh, index) = hemisphere_mesh();
+    let cutter = FlatEndmill::new(6.35, 25.0);
+    let result = run_sweep(
+        "adaptive3d",
+        "engagement_measure",
+        serde_json::json!("DiskArea"),
+        &[serde_json::json!("LeadingArc")],
+        |ov| {
+            let mut p = default_adaptive3d_params();
+            p.clearing_strategy = ClearingStrategy3d::AgentSearch;
+            if ov.is_some() {
+                p.engagement_measure = rs_cam_core::adaptive::EngagementMeasure::LeadingArc;
+            }
+            rs_cam_core::adaptive3d::adaptive_3d_toolpath(&mesh, &index, &cutter, &p)
+        },
+    );
+    for v in &result.variants {
+        let ctx = format!("adaptive3d engagement_measure={}", v.value);
         assert_any_change(&v.diff, &ctx);
     }
 }

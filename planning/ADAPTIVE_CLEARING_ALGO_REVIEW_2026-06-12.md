@@ -80,6 +80,25 @@ correct units. (The docstring's claim that area sampling "is more precise than
 circumference-only sampling" is backwards: it is more *stable*, but it measures the
 wrong quantity against this target.)
 
+**Stage 0 verification (2026-06-12, `experiment/adaptive-spiral`):**
+`compute_engagement_arc` landed behind `EngagementMeasure::LeadingArc`
+(default `DiskArea`, untouched behavior). Closed-form oracle tests on an
+exact-lattice steady-state scene pass at s ∈ {0.17R, 0.5R, R, 2R}; the
+disk-area measure reads <70% of the α/2π target on the identical scene
+(`adaptive/search.rs`, `engagement_measure_tests`). A/B sweeps
+(`sweep_adaptive_engagement_measure`, `sweep_adaptive3d_engagement_measure`,
+artifacts under `target/param_sweeps/*/engagement_measure/`) confirm the
+prediction's magnitude: on the rect-pocket fixture at stepover 2.0
+(s ≈ 0.63R), DiskArea cleared the pocket with **551 mm** of cutting where
+LeadingArc needs **835 mm** — the historical controller was converging on
+roughly **1.5× the commanded stepover**. The 6-view stock renders match
+(both fully clear), so the delta is pass spacing, not coverage. On the
+hemisphere AgentSearch A/B: cutting +13%, rapid distance −4%, rapid
+fraction 0.55 → 0.51. Note the corollary: LeadingArc at the same commanded
+stepover cuts *more conservatively* (correct load, longer cycle time) —
+users effectively had a hidden ~1.5× stepover multiplier, so feeds tuned
+under DiskArea bake that in (cf. F-034 anchor drift).
+
 ### F2 — Reactive greedy architecture has no global structure
 
 The agent decides one step at a time with no lookahead and no decomposition of the
