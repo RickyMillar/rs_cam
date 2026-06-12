@@ -3,7 +3,6 @@
 use crate::dexel_stock::TriDexelStock;
 use crate::geo::P2;
 use crate::polygon::Polygon2;
-use std::collections::VecDeque;
 
 /// 2D boolean grid tracking material presence for engagement calculation.
 ///
@@ -282,46 +281,25 @@ impl MaterialGrid {
 
     // ── Boundary distance field ───────────────────────────────────────
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-    /// Compute distance-to-boundary for every cell using BFS.
+    /// Compute distance-to-boundary for every cell (world units).
     ///
-    /// AIR cells have distance 0; material/cleared cells get their
-    /// Manhattan-grid distance to the nearest AIR cell (in world units).
-    /// Computed once at startup, O(cells).
+    /// AIR cells have distance 0; material/cleared cells get their true
+    /// **Euclidean** distance to the nearest AIR cell, via the shared
+    /// Felzenszwalb EDT in `contour_extract`. O(cells).
+    ///
+    /// Pre-Stage-0 this was a 4-connected BFS — a Manhattan metric that
+    /// over-read up to ~41% wherever the nearest boundary is diagonal
+    /// (the old `is_narrow_machinable` comment documented "~12 mm
+    /// Manhattan vs ~8 mm Euclidean" on a donut-ring corner). The wall
+    /// bias, the gradient-mode switch and the strip-centerline follower
+    /// all consume this field, so they fired late near angled walls
+    /// (algorithm review 2026-06-12, F4).
     pub fn compute_boundary_distances(&self) -> Vec<f64> {
-        let n = self.rows * self.cols;
-        let mut dist = vec![f64::INFINITY; n];
-        let mut queue = VecDeque::new();
-
-        // Seed: all AIR cells have distance 0
-        for row in 0..self.rows {
-            for col in 0..self.cols {
-                let idx = row * self.cols + col;
-                if self.cells[idx] == CELL_AIR {
-                    dist[idx] = 0.0;
-                    queue.push_back((row, col));
-                }
-            }
+        let air: Vec<bool> = self.cells.iter().map(|&c| c == CELL_AIR).collect();
+        let mut dist = crate::contour_extract::distance_transform_2d(&air, self.rows, self.cols);
+        for d in &mut dist {
+            *d *= self.cell_size;
         }
-
-        // BFS (4-connected), uniform edge weight = cell_size
-        while let Some((row, col)) = queue.pop_front() {
-            let curr = dist[row * self.cols + col];
-            let next = curr + self.cell_size;
-            for &(dr, dc) in &[(-1i32, 0), (1, 0), (0, -1i32), (0, 1)] {
-                let nr = row as i32 + dr;
-                let nc = col as i32 + dc;
-                if nr < 0 || nc < 0 || nr >= self.rows as i32 || nc >= self.cols as i32 {
-                    continue;
-                }
-                let nidx = nr as usize * self.cols + nc as usize;
-                if dist[nidx] == f64::INFINITY {
-                    dist[nidx] = next;
-                    queue.push_back((nr as usize, nc as usize));
-                }
-            }
-        }
-
         dist
     }
 
