@@ -1243,9 +1243,17 @@ pass per region. Property harness (`tests/adaptive_property_harness.rs`,
 independent replay oracle on generated geometry) gates the Stage 1
 contract: 1 plunge / 0 rapids per region, coverage parity with the agent,
 load never worse — and empirically confirms F1/F2 (agent p99 engagement
-≈ 2.5× target on every shape). Stage 2 next: trochoidal corner inserts +
-side-branch handling to convert the comparative load bars into absolute
-α-bounds.
+≈ 2.5× target on every shape). Stage 2 (same night): **trochoidal
+inserts** — predicted-engagement-triggered loops biased toward the cleared
+side; over-1.3×target samples collapsed to 2.8–4.1% (agent: 11–37%) and
+absolute load bars are now asserted (over ≤ 5%, p99 ≤ 2×target; slot-class
+exempt pending medial-axis trochoids). wanaka200 head-to-head via CLI:
+verdict WARNING (53.7% air) → **OK** (26%), identity-rough rapids 85.3 km
+→ 7.6 km (11×), at ~2× cutting distance (trochoid trade — feed modulation
+/ Suggest re-dial reclaims it; see the review doc's honest ledger).
+Remaining stages: 3 (2-opt tour, ByArea default decision, slice-coherent
+annulus), 4 (planner-predicted engagement → feed modulation, agent
+retirement on sweep parity), plus cycloid-advance refinement.
 
 ## Known open work
 
