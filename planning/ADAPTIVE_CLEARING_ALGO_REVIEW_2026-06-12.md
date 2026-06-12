@@ -265,3 +265,26 @@ already drifting). To make "all shapes/sizes" a tested property:
 
 The agent stays available behind its flag until Stage 1–2 beat it on the sweep
 suite across *generated* geometry — that's the overfit test.
+
+## wanaka200 head-to-head (2026-06-13, CLI, identical project file)
+
+Both roughs switched to `contour_spiral` vs the original strategies
+(`adaptive` EDT on Rough Identity, `agent_search` on Rough Flipped):
+
+| | baseline | contour_spiral |
+|---|---|---|
+| Verdict | **WARNING: 53.7% air cutting** | **OK** (air-cut 26.0%) |
+| Rapid collisions | 0 | 0 |
+| Rough Identity rapids | **85,339 mm** | **7,564 mm** (11× less) |
+| Rough Identity cutting | 158,251 mm | 299,251 mm |
+| Rough Flipped rapids | 8,386 mm | 7,176 mm |
+| Rough Flipped cutting | 32,374 mm | 114,872 mm |
+
+Honest ledger: travel and air-cut collapse and the verdict goes clean, but
+raw cutting distance roughly doubles (the trochoid trade), so at *equal
+feeds* the spiral is ~40% slower wall-clock on the identity rough. The
+point of flat load is that feeds need not be tuned for spikes anymore —
+Stage 4 (planner-predicted engagement → feed modulation) and a Suggest
+re-dial at the now-honest engagement are where the cycle time comes back.
+Recommended next validation: cut both on the Shapeoko and compare load
+sound/finish, not just wall-clock.
