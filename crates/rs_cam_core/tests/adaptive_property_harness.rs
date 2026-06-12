@@ -379,7 +379,7 @@ fn target() -> f64 {
     ((1.0 - STEPOVER / R).clamp(-1.0, 1.0)).acos() / std::f64::consts::TAU
 }
 
-/// Stage 1 contract for the contour spiral, asserted shape-by-shape
+/// Stage 1+2 contract for the contour spiral, asserted shape-by-shape
 /// against the agent on identical geometry:
 ///
 /// - **travel**: spiral plunges ≤ 3 and rapid distance ≤ 5% of cutting
@@ -388,14 +388,16 @@ fn target() -> f64 {
 ///   keeps a thin ring of "reachable" corner cells no strategy clears —
 ///   the production agent reads 0.977–0.995 on these shapes), and never
 ///   more than 1.5 % below the agent on the same shape;
-/// - **load**: p99 leading-arc engagement and the over-1.3×target sample
-///   fraction never worse than the agent's.
-///
-/// Absolute α-bounds (p99 ≤ 1.3 × target) are deliberately NOT asserted
-/// yet: the measured excursions are concave-corner wrap-around and EDT
-/// side-branch first-contact — exactly the Stage 2 work (trochoidal
-/// inserts). The harness already measures them; Stage 2 tightens these
-/// bars to absolute ones.
+/// - **load, comparative**: p99 engagement and over-1.3×target fraction
+///   never worse than the agent's;
+/// - **load, absolute (Stage 2 trochoids)**: ≥ 95% of cut samples within
+///   1.3× target, p99 ≤ 2× target. The strict 1.3×-target p99 is NOT
+///   asserted: a structural ~1% of samples at trochoid loop-tangent
+///   instants reads ~0.28–0.35 regardless of pitch — true cycloid
+///   advance and/or feed modulation territory, tracked in the review
+///   doc. Slot-class shapes (machinable width below the narrow gate) are
+///   exempt from load bars: both strategies route to contour-parallel
+///   there and near-slot engagement is inherent to slotting.
 #[test]
 fn contour_spiral_dominates_agent() {
     let mut failures: Vec<String> = Vec::new();
@@ -452,6 +454,22 @@ fn contour_spiral_dominates_agent() {
             failures.push(format!(
                 "{name}: over-fraction {:.3} worse than agent {:.3}",
                 s.over_target_fraction, a.over_target_fraction
+            ));
+        }
+        // Absolute load bars (Stage 2 trochoids). Slot-class shapes are
+        // exempt — see the test doc comment.
+        let slot_class = name == "narrow_slot";
+        if !slot_class && s.over_target_fraction > 0.05 {
+            failures.push(format!(
+                "{name}: {:.1}% of samples over 1.3×target (absolute cap 5%)",
+                s.over_target_fraction * 100.0
+            ));
+        }
+        if !slot_class && s.p99_engagement > target() * 2.0 {
+            failures.push(format!(
+                "{name}: p99 {:.3} > 2×target {:.3}",
+                s.p99_engagement,
+                target() * 2.0
             ));
         }
         if a.coverage < 0.975 {
