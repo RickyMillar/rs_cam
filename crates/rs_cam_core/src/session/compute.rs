@@ -627,37 +627,25 @@ impl ProjectSession {
             }
         }
 
-        // Build effective stock bbox in setup-local coordinates.
-        // F-030: provided by `SetupEvalContext` (zero-rooted local bbox
-        // after face-up + Z-rotation).
-        let effective_stock_bbox = ctx.local_stock_bbox;
+        // Stock bbox in the frame the toolpath is emitted in (world for
+        // identity setups, zero-rooted local for non-identity). Ops read
+        // `OpContext::stock_bbox` for depth anchoring (adaptive3d's
+        // `stock_top_z`, face/drill tops), boundary resolution, and dressup
+        // stock-top clamps — all of which must live in the emission frame.
+        // The GUI controller already forwards this frame
+        // (`controller/events/compute.rs` passes `ctx.heights_stock_bbox`
+        // as the request bbox); pre-fix this path passed the zero-rooted
+        // `local_stock_bbox` even for identity setups, so CLI/session
+        // generation diverged from the GUI by `-origin` whenever
+        // `stock.origin != 0` (heights/setup-frame audit 2026-06-12,
+        // finding 4).
+        let emission_stock_bbox = ctx.heights_stock_bbox;
 
-        // F-028 (2026-05-25): the height context's `stock_top_z` must reflect
-        // the frame the toolpath is emitted in. For identity setups
-        // (`face_up=Top`, `z_rotation=Deg0`) no transform is applied to the
-        // toolpath before stamping, so the toolpath effectively lives in the
-        // *world* frame — and `heights.top_z` (which 2D ops consume as the
-        // depth-stepping reference) must therefore be the world stock top
-        // (`stock.origin_z + stock.z`), not the zero-rooted
-        // `effective_stock_bbox.max.z`. Mirrors the GUI viz controller
-        // (`controller/events/compute.rs` ~line 244-246), which already
-        // forwards the world bbox to its `HeightContext` for identity setups.
-        //
-        // Pre-fix the face op (and any 2.5D op using `heights.top_z`) cut at
-        // world Z=[-depth, 0] regardless of where the stock actually sat in
-        // world Z — fine when `stock.origin_z + stock.z == 0` (the AS001
-        // convention, stock top at world Z=0), but on projects with the
-        // *3D* `auto_from_model` convention `origin_z = bbox.min.z` the stock
-        // top sits at world Z=15 (`ux_step_plate_mdf.toml`) and face/pocket
-        // were cutting in air below the stock — see F-028 evidence.
-        //
-        // Non-identity setups continue to use the local (zero-rooted) bbox.
-        // Their toolpaths are still emitted in setup-local frame and the
-        // session's `local_to_global` transform translates back to world.
-        //
-        // F-030: provided by `SetupEvalContext::heights_stock_bbox`
-        // (world bbox for identity, local for non-identity).
-        let heights_stock_bbox = ctx.heights_stock_bbox;
+        // F-028 (2026-05-25) established this frame for the height context
+        // (heights.top_z anchors 2.5D depth stepping and must match where
+        // the toolpath actually emits); the 2026-06-12 audit extended it to
+        // the op/boundary/dressup bbox above, which had been left on the
+        // zero-rooted local bbox.
 
         // Resolve heights. `effective_safe_z` floors the user-configured
         // `post.safe_z` at `stock_top + clearance` so rapids clear the stock.
@@ -672,8 +660,8 @@ impl ProjectSession {
         let height_ctx = HeightContext {
             safe_z,
             op_depth: tc.operation.default_depth_for_heights(),
-            stock_top_z: heights_stock_bbox.max.z,
-            stock_bottom_z: heights_stock_bbox.min.z,
+            stock_top_z: emission_stock_bbox.max.z,
+            stock_bottom_z: emission_stock_bbox.min.z,
             model_top_z: model_bbox.map(|b| b.max.z),
             model_bottom_z: model_bbox.map(|b| b.min.z),
         };
@@ -736,7 +724,7 @@ impl ProjectSession {
         let pre_boundary: Option<crate::polygon::Polygon2> = if boundary_config.enabled {
             Self::resolve_containment_polygon(
                 &boundary_config,
-                &effective_stock_bbox,
+                &emission_stock_bbox,
                 mesh.as_deref(),
                 &keep_out_footprints,
             )
@@ -756,7 +744,7 @@ impl ProjectSession {
             &tool,
             &heights,
             &cutting_levels,
-            &effective_stock_bbox,
+            &emission_stock_bbox,
             prev_tool_radius,
             Some(&core_ctx),
             cancel,
@@ -799,7 +787,7 @@ impl ProjectSession {
                     // check operates on this same Z; using a different frame
                     // (e.g. `heights.top_z`) here re-introduces the
                     // false-positive rapids the fix targets.
-                    effective_stock_bbox.max.z,
+                    emission_stock_bbox.max.z,
                     prior_stock_ref,
                     None,
                     None,
@@ -818,7 +806,7 @@ impl ProjectSession {
                     let clipped = Self::apply_boundary_clip(
                         annotated,
                         &boundary_config,
-                        &effective_stock_bbox,
+                        &emission_stock_bbox,
                         mesh.as_deref(),
                         &keep_out_footprints,
                         tool_def.diameter(),
@@ -848,7 +836,7 @@ impl ProjectSession {
                     polygons.as_deref().map(|v| v.as_slice()),
                     &tool_def,
                     &tool,
-                    &effective_stock_bbox,
+                    &emission_stock_bbox,
                     self.stock.material.clone(),
                 );
                 let annotated_arc = Arc::new(annotated);
