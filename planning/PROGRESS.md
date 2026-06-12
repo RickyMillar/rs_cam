@@ -1202,8 +1202,24 @@ single-setup performance within 20% of the current heightmap. Six-phase
 implementation plan from core data types through multi-setup carry-forward.
 See `architecture/TRI_DEXEL_SIMULATION.md`.
 
+### Heights/setup-frame audit (2026-06-12)
+
+"Roughing renders way below the mesh" (wanaka200) audited end-to-end: the
+G-code was always gouge-free; the symptom was the viewport drawing
+identity-setup toolpaths (world frame since F-028) against an
+origin-subtracted local-frame mesh. Four fixes landed: emission→display
+shift adapter across all viewport uploads (F1); adaptive3d honors pinned
+heights `top_z`/`bottom_z` (F2); session compute feeds ops the
+emission-frame stock bbox, ending GUI-vs-CLI divergence for identity
+setups with `origin != 0` (F4); `SurfaceHeightmap.covered` hole mask (F3,
+revised — hole-diving during roughing is intended clear-everything
+semantics; the lever is a pinned `bottom_z`). Full audit + repro:
+`planning/HEIGHTS_SETUP_FRAME_AUDIT_2026-06-12.md`.
+
 ## Known open work
 
+- **F-034 cycle-time re-bench** — the 827 s Shapeoko wall-clock anchor is stale and the calibration test now flakes near its widened floor (0.30); re-measure per `planning/cycle_time_rebench.md`
+- **enclosed-hole detection for adaptive3d** — optional "uncovered region not touching the grid border = hole, don't descend" mode on top of `SurfaceHeightmap.covered`
 - **tri-dexel contour-tiling mesh** — full surface reconstruction for non-heightmap views (current side-grid mesh uses ray_top heightmap)
 - emit per-operation manual pre/post G-code in export
 - wire profile controller compensation (`G41` / `G42`)
