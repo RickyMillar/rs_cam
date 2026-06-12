@@ -728,12 +728,22 @@ mod tests {
         );
 
         // First entry: no previous endpoints
-        let e1 = find_entry_point(&grid, &mask, &machinable[0], tool_radius, None, &[]);
+        let empty = super::search::EndpointGrid::new(tool_radius * 3.0);
+        let e1 = find_entry_point(&grid, &mask, &machinable[0], tool_radius, None, &empty);
         assert!(e1.is_some());
         let e1 = e1.unwrap();
 
         // Second entry: should avoid being close to the first
-        let e2 = find_entry_point(&grid, &mask, &machinable[0], tool_radius, Some(e1), &[e1]);
+        let mut visited = super::search::EndpointGrid::new(tool_radius * 3.0);
+        visited.insert(e1);
+        let e2 = find_entry_point(
+            &grid,
+            &mask,
+            &machinable[0],
+            tool_radius,
+            Some(e1),
+            &visited,
+        );
         assert!(e2.is_some());
         let e2 = e2.unwrap();
 

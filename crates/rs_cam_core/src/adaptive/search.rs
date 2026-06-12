@@ -489,6 +489,66 @@ pub(super) fn search_direction_with_metrics(
 
 // ── Entry point finding ────────────────────────────────────────────────
 
+/// Spatial hash over pass endpoints for the exclusion-radius test.
+///
+/// The endpoint list is append-only over a run; the old `&[P2]` linear
+/// scan made every probed cell / boundary sample O(endpoints), i.e.
+/// O(passes × cells) over a job (algorithm review 2026-06-12, F5).
+/// Bin size = exclusion radius, so a query only inspects the 3×3
+/// neighbourhood of bins. Same membership decisions, bounded cost.
+pub(crate) struct EndpointGrid {
+    bin: f64,
+    min_dist_sq: f64,
+    bins: std::collections::HashMap<(i64, i64), Vec<P2>>,
+    len: usize,
+}
+
+impl EndpointGrid {
+    /// `min_dist` is the exclusion radius (callers use 3 × tool radius).
+    pub(crate) fn new(min_dist: f64) -> Self {
+        let bin = min_dist.max(1e-6);
+        Self {
+            bin,
+            min_dist_sq: min_dist * min_dist,
+            bins: std::collections::HashMap::new(),
+            len: 0,
+        }
+    }
+
+    fn key(&self, x: f64, y: f64) -> (i64, i64) {
+        ((x / self.bin).floor() as i64, (y / self.bin).floor() as i64)
+    }
+
+    pub(crate) fn insert(&mut self, p: P2) {
+        let key = self.key(p.x, p.y);
+        self.bins.entry(key).or_default().push(p);
+        self.len += 1;
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// True when any recorded endpoint lies within the exclusion radius.
+    fn any_within(&self, x: f64, y: f64) -> bool {
+        let (bx, by) = self.key(x, y);
+        for dx in -1..=1i64 {
+            for dy in -1..=1i64 {
+                if let Some(points) = self.bins.get(&(bx + dx, by + dy))
+                    && points.iter().any(|ep| {
+                        let ex = x - ep.x;
+                        let ey = y - ep.y;
+                        ex * ex + ey * ey < self.min_dist_sq
+                    })
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
 /// Find the nearest material cell that is not near any of the given endpoints.
 /// Uses growing-radius search. Falls back to plain nearest material if
 /// everything is near an endpoint.
@@ -496,8 +556,7 @@ fn find_nearest_material_spread(
     grid: &MaterialGrid,
     x: f64,
     y: f64,
-    pass_endpoints: &[P2],
-    min_dist_sq: f64,
+    pass_endpoints: &EndpointGrid,
 ) -> Option<(f64, f64)> {
     let initial_radius = grid.cell_size * 8.0;
     let max_radius =
@@ -506,13 +565,13 @@ fn find_nearest_material_spread(
     let mut radius = initial_radius;
     while radius <= max_radius {
         if let Some(result) =
-            find_nearest_material_spread_in_radius(grid, x, y, pass_endpoints, min_dist_sq, radius)
+            find_nearest_material_spread_in_radius(grid, x, y, pass_endpoints, radius)
         {
             return Some(result);
         }
         radius *= 2.0;
     }
-    find_nearest_material_spread_in_radius(grid, x, y, pass_endpoints, min_dist_sq, max_radius)
+    find_nearest_material_spread_in_radius(grid, x, y, pass_endpoints, max_radius)
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -520,8 +579,7 @@ fn find_nearest_material_spread_in_radius(
     grid: &MaterialGrid,
     x: f64,
     y: f64,
-    pass_endpoints: &[P2],
-    min_dist_sq: f64,
+    pass_endpoints: &EndpointGrid,
     radius: f64,
 ) -> Option<(f64, f64)> {
     let col_min = ((x - radius - grid.origin_x) / grid.cell_size)
@@ -548,12 +606,7 @@ fn find_nearest_material_spread_in_radius(
             }
             let cx = grid.origin_x + col as f64 * grid.cell_size;
 
-            let near = pass_endpoints.iter().any(|ep| {
-                let dx = cx - ep.x;
-                let dy = cy - ep.y;
-                dx * dx + dy * dy < min_dist_sq
-            });
-            if near {
+            if pass_endpoints.any_within(cx, cy) {
                 continue;
             }
 
@@ -582,8 +635,7 @@ fn walk_boundary_for_entry(
     grid: &MaterialGrid,
     tool_radius: f64,
     step: f64,
-    pass_endpoints: &[P2],
-    min_endpoint_dist_sq: f64,
+    pass_endpoints: &EndpointGrid,
 ) -> Option<(P2, f64)> {
     let mut best: Option<(P2, f64)> = None; // (position, engagement)
     let engage_threshold = 0.005;
@@ -605,12 +657,7 @@ fn walk_boundary_for_entry(
             let y = a.y + t * dy;
 
             // Skip if near a previous endpoint
-            let near = pass_endpoints.iter().any(|ep| {
-                let ex = x - ep.x;
-                let ey = y - ep.y;
-                ex * ex + ey * ey < min_endpoint_dist_sq
-            });
-            if near {
+            if pass_endpoints.any_within(x, y) {
                 continue;
             }
 
@@ -707,9 +754,8 @@ pub(crate) fn find_entry_point(
     machinable: &Polygon2,
     tool_radius: f64,
     last_pos: Option<P2>,
-    pass_endpoints: &[P2],
+    pass_endpoints: &EndpointGrid,
 ) -> Option<P2> {
-    let min_endpoint_dist_sq = (tool_radius * 3.0) * (tool_radius * 3.0);
     let walk_step = grid.cell_size * 2.0;
 
     // Phase 1: Walk the machinable boundary contours
@@ -720,19 +766,13 @@ pub(crate) fn find_entry_point(
         tool_radius,
         walk_step,
         pass_endpoints,
-        min_endpoint_dist_sq,
     );
 
     // Check hole boundaries
     for hole in &machinable.holes {
-        if let Some((p, eng)) = walk_boundary_for_entry(
-            hole,
-            grid,
-            tool_radius,
-            walk_step,
-            pass_endpoints,
-            min_endpoint_dist_sq,
-        ) && best_boundary.is_none_or(|b| eng > b.1)
+        if let Some((p, eng)) =
+            walk_boundary_for_entry(hole, grid, tool_radius, walk_step, pass_endpoints)
+            && best_boundary.is_none_or(|b| eng > b.1)
         {
             best_boundary = Some((p, eng));
         }
@@ -750,14 +790,8 @@ pub(crate) fn find_entry_point(
     });
 
     let (mx, my) = if !pass_endpoints.is_empty() {
-        find_nearest_material_spread(
-            grid,
-            search_from.x,
-            search_from.y,
-            pass_endpoints,
-            min_endpoint_dist_sq,
-        )
-        .or_else(|| grid.find_nearest_material(search_from.x, search_from.y))
+        find_nearest_material_spread(grid, search_from.x, search_from.y, pass_endpoints)
+            .or_else(|| grid.find_nearest_material(search_from.x, search_from.y))
     } else {
         grid.find_nearest_material(search_from.x, search_from.y)
     }?;

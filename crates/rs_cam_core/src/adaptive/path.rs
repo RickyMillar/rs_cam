@@ -181,7 +181,7 @@ pub(crate) fn adaptive_segments_with_debug(
     let step_len = cell_size * 3.0;
     let mut segments = Vec::new();
     let mut last_pos: Option<P2> = None;
-    let mut pass_endpoints: Vec<P2> = Vec::new();
+    let mut pass_endpoints = super::search::EndpointGrid::new(tool_radius * 3.0);
 
     // ── Slot clearing (Fusion-style first pass) ───────────────────────
     // Generate sparse zigzag lines at wide spacing to open pockets across
@@ -508,11 +508,11 @@ pub(crate) fn adaptive_segments_with_debug(
             #[allow(clippy::expect_used)]
             let endpoint = *path.last().expect("path is non-empty after loop");
             last_pos = Some(endpoint);
-            pass_endpoints.push(endpoint);
+            pass_endpoints.insert(endpoint);
             segments.push(AdaptiveSegment::Cut(path));
         } else {
             last_pos = Some(entry);
-            pass_endpoints.push(entry);
+            pass_endpoints.insert(entry);
         }
 
         // If the pass ended due to idle detection, the remaining material
