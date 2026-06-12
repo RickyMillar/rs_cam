@@ -655,13 +655,22 @@ fn edt_1d(f: &mut [f64]) {
         }
     }
 
+    // Output pass must read the ORIGINAL f values: writing in place
+    // corrupts f[v[k]] for parabola centers whose own cell is won by a
+    // neighboring parabola (q = v[k] lies left of the envelope segment
+    // where v[k] wins), and every later q on that segment then reads the
+    // already-lowered value and under-reports the distance. Found via
+    // the diamond-polygon oracle in the Stage 0 EDT-sharing work
+    // (algorithm review 2026-06-12, F4): the 45°-edge diamond's center
+    // read 5.83 instead of h/√2 ≈ 7.07.
+    let orig: Vec<f64> = f.to_vec();
     k = 0;
-    for q in 0..n {
+    for (q, out) in f.iter_mut().enumerate() {
         while z[k + 1] < q as f64 {
             k += 1;
         }
         let vk = v[k];
-        f[q] = (q as f64 - vk as f64).powi(2) + f[vk];
+        *out = (q as f64 - vk as f64).powi(2) + orig[vk];
     }
 }
 

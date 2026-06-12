@@ -317,6 +317,47 @@ mod tests {
     }
 
     #[test]
+    fn boundary_distances_are_euclidean_not_manhattan() {
+        // F4 (algorithm review 2026-06-12): the boundary-distance field
+        // is consumed by the wall bias, the gradient-mode switch and the
+        // strip-centerline follower. A diamond's edges are all at 45° to
+        // the grid, so its center reads h/√2 ≈ 7.07 under the Euclidean
+        // metric but ≈ h = 10 under the old 4-connected BFS (Manhattan).
+        let h = 10.0;
+        let diamond = Polygon2::new(vec![
+            P2::new(0.0, -h),
+            P2::new(h, 0.0),
+            P2::new(0.0, h),
+            P2::new(-h, 0.0),
+        ]);
+        let grid = MaterialGrid::from_polygon(&diamond, 0.5);
+        for (x, y) in [
+            (3.0, 5.0),
+            (-3.0, 5.0),
+            (3.0, -5.0),
+            (-3.0, -5.0),
+            (5.0, 3.0),
+            (-5.0, 3.0),
+            (5.0, -3.0),
+            (-5.0, -3.0),
+            (0.0, 9.5),
+        ] {
+            assert!(
+                grid.is_material(x, y),
+                "interior lattice point ({x},{y}) rasterised as air"
+            );
+        }
+        let dist = grid.compute_boundary_distances();
+        let center = grid.boundary_distance_at(&dist, 0.0, 0.0);
+        let expected = h / std::f64::consts::SQRT_2;
+        assert!(
+            (center - expected).abs() < 0.8,
+            "diamond-center boundary distance must be Euclidean \
+             (expected ≈{expected:.2}, Manhattan would read ≈{h:.1}); got {center:.2}"
+        );
+    }
+
+    #[test]
     fn test_material_grid_with_hole() {
         let hole = vec![
             P2::new(-3.0, -3.0),
