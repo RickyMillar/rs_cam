@@ -257,7 +257,7 @@ already drifting). To make "all shapes/sizes" a tested property:
 
 | Stage | Work | Risk |
 |---|---|---|
-| 0 (days) | F1 leading-arc measure behind a flag + A/B on sweeps; fix `is_clear_path_3d` ignored params; compute link crossover from feed/rapid; share true EDT into 2D engine; prune `pass_endpoints` | Low — bug-class fixes |
+| 0 (days) | **DONE 2026-06-12** (`experiment/adaptive-spiral`, commits ab481a6..0c140ef): F1 leading-arc measure behind `EngagementMeasure` flag + A/B sweeps (DiskArea ran ~1.5× commanded stepover); `is_clear_path_3d` three-tier floor predicate; feed/plunge/depth-derived air-run crossover (retired the 70 mm const); true EDT in the 2D engine — which exposed and fixed a real **output-pass corruption bug in `edt_1d`** (in-place write under-reported distances in corner configurations; the default ContourParallel strategy planned on that field); `EndpointGrid` spatial hash for the entry-exclusion scans | Low — bug-class fixes |
 | 1 | Spiral generator over the existing EDT offset family (wide regions, no islands), as a 4th `ClearingStrategy3d`; property-test harness from §4 | Medium |
 | 2 | Island banding + trochoidal corner inserts + medial-axis trochoids for narrow regions | Medium-high |
 | 3 | Region tour 2-opt, ByArea default, slice-coherent annulus clearing | Low |
