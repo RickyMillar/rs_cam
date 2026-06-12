@@ -153,15 +153,37 @@ pub(super) fn material_remaining_in_region(
 
 // ── Link vs retract ───────────────────────────────────────────────────
 
+/// Vertical allowance absorbing dexel/heightmap discretisation noise
+/// (~0.5 mm at standard sim resolution — same rationale as the F-038b
+/// `stay_down_clearance_mm` default). Stock within this band of the
+/// travel line is treated as free travel, not a cut.
+const LINK_DEXEL_NOISE_MM: f64 = 0.5;
+
 /// Check if the tool can safely feed from `from` to `to` without hitting
-/// excessive material above the cutting plane.
+/// excessive material above the travel line.
+///
+/// Three-tier predicate per sample (algorithm review 2026-06-12, Stage 0
+/// fix — pre-fix the surface heightmap and `stock_to_leave` parameters
+/// were accepted and ignored, the block test was a hardcoded
+/// `travel + 1.0 mm`, and any <20% of the samples could sit arbitrarily
+/// high above the line):
+/// - **protected surface** (`surf_z + stock_to_leave`) above the travel
+///   line ⇒ reject outright. Feeding through would gouge the finished
+///   surface, not removable residue — the stock top alone cannot tell
+///   the two apart.
+/// - stock more than `max_bite` (depth-per-pass) above the travel line ⇒
+///   reject outright. The link would take a bigger axial bite than any
+///   planned pass, regardless of how few samples it covers.
+/// - stock within `(noise, max_bite]` above ⇒ a skim of removable
+///   residue at feed rate. Allowed while skims cover < 20% of the
+///   samples — a link that mostly cuts should be a retract instead.
 pub(super) fn is_clear_path_3d(
     material_stock: &TriDexelStock,
-    _surface_hm: &SurfaceHeightmap,
+    surface_hm: &SurfaceHeightmap,
     from: P3,
     to: P3,
-    _z_level: f64,
-    _stock_to_leave: f64,
+    stock_to_leave: f64,
+    max_bite: f64,
 ) -> bool {
     let dx = to.x - from.x;
     let dy = to.y - from.y;
@@ -173,7 +195,7 @@ pub(super) fn is_clear_path_3d(
     let grid = &material_stock.z_grid;
     let n_samples = (len / (grid.cell_size * 2.0)).ceil() as usize;
     let n_samples = n_samples.max(2);
-    let mut blocked = 0u32;
+    let mut skims = 0u32;
 
     for i in 0..=n_samples {
         let t = i as f64 / n_samples as f64;
@@ -182,16 +204,22 @@ pub(super) fn is_clear_path_3d(
         let z = from.z + t * (to.z - from.z);
 
         if let Some((row, col)) = grid.world_to_cell(x, y) {
+            let surf_z = surface_hm.surface_z_at_world(x, y);
+            if surf_z.is_finite() && surf_z + stock_to_leave > z + LINK_DEXEL_NOISE_MM {
+                return false;
+            }
             let mat_z = stock_top_z_at(material_stock, row, col);
-            // Material significantly above our travel Z means collision
-            if mat_z > z + 1.0 {
-                blocked += 1;
+            if mat_z > z + max_bite.max(LINK_DEXEL_NOISE_MM) {
+                return false;
+            }
+            if mat_z > z + LINK_DEXEL_NOISE_MM {
+                skims += 1;
             }
         }
     }
 
-    let blocked_frac = blocked as f64 / (n_samples + 1) as f64;
-    blocked_frac < 0.2
+    let skim_frac = skims as f64 / (n_samples + 1) as f64;
+    skim_frac < 0.2
 }
 
 // ── 3D path simplification ───────────────────────────────────────────
@@ -261,4 +289,159 @@ fn interpolate_z_from_path(path: &[P3], x: f64, y: f64) -> f64 {
     }
 
     best_z
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod link_gate_tests {
+    //! Sentries for the `is_clear_path_3d` floor fix (algorithm review
+    //! 2026-06-12, Stage 0). Pre-fix the function ignored the surface
+    //! heightmap and `stock_to_leave`, used a hardcoded 1.0 mm clearance,
+    //! and allowed any <20% of samples to sit arbitrarily high — a tall
+    //! uncut ridge covering a sliver of the link was fed through at full
+    //! depth, and links could gouge the protected (stock-to-leave)
+    //! surface.
+
+    use super::is_clear_path_3d;
+    use crate::dexel_stock::TriDexelStock;
+    use crate::geo::P3;
+    use crate::slope::SurfaceHeightmap;
+
+    const STOCK_TOP: f64 = 10.0;
+    const CELL: f64 = 1.0;
+
+    /// 60×60 stock, everything carved down to `carved_z`, with a flat
+    /// "surface" heightmap at `surf_z` matching the dexel grid layout.
+    fn scene(carved_z: f32, surf_z: f64) -> (TriDexelStock, SurfaceHeightmap) {
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 60.0, 60.0, 0.0, STOCK_TOP, CELL);
+        let (rows, cols) = (stock.z_grid.rows, stock.z_grid.cols);
+        for row in 0..rows {
+            for col in 0..cols {
+                stock.clear_above_at(row, col, carved_z);
+            }
+        }
+        let hm = SurfaceHeightmap {
+            z_values: vec![surf_z; rows * cols],
+            covered: vec![true; rows * cols],
+            rows,
+            cols,
+            origin_x: stock.z_grid.origin_u,
+            origin_y: stock.z_grid.origin_v,
+            cell_size: stock.z_grid.cell_size,
+        };
+        (stock, hm)
+    }
+
+    /// Re-raise stock to `top` on a band of columns (a ridge crossing
+    /// the link line). `clear_above_at` only removes material, so the
+    /// ridge is built by carving everything else in `scene` and
+    /// rebuilding the stock fresh for ridge cells.
+    fn scene_with_ridge(
+        carved_z: f32,
+        surf_z: f64,
+        ridge_cols: std::ops::Range<usize>,
+    ) -> (TriDexelStock, SurfaceHeightmap) {
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 60.0, 60.0, 0.0, STOCK_TOP, CELL);
+        let (rows, cols) = (stock.z_grid.rows, stock.z_grid.cols);
+        for row in 0..rows {
+            for col in 0..cols {
+                if !ridge_cols.contains(&col) {
+                    stock.clear_above_at(row, col, carved_z);
+                }
+            }
+        }
+        let hm = SurfaceHeightmap {
+            z_values: vec![surf_z; rows * cols],
+            covered: vec![true; rows * cols],
+            rows,
+            cols,
+            origin_x: stock.z_grid.origin_u,
+            origin_y: stock.z_grid.origin_v,
+            cell_size: stock.z_grid.cell_size,
+        };
+        (stock, hm)
+    }
+
+    fn link_from() -> P3 {
+        P3::new(5.0, 30.0, 5.0)
+    }
+    fn link_to() -> P3 {
+        P3::new(55.0, 30.0, 5.0)
+    }
+    const STOCK_TO_LEAVE: f64 = 0.5;
+    const MAX_BITE: f64 = 3.0; // depth_per_pass
+
+    #[test]
+    fn clear_carved_path_links() {
+        // Everything carved to 4.0, travel at 5.0, surface far below.
+        let (stock, hm) = scene(4.0, 0.0);
+        assert!(is_clear_path_3d(
+            &stock,
+            &hm,
+            link_from(),
+            link_to(),
+            STOCK_TO_LEAVE,
+            MAX_BITE
+        ));
+    }
+
+    #[test]
+    fn tall_ridge_on_a_sliver_of_the_link_rejects() {
+        // Pre-fix sentry: an uncut full-height ridge (top = 10.0, travel
+        // at 5.0) covering ~3 of 50 mm — well under the 20% sample
+        // fraction — was fed through at a 5 mm bite. Must reject.
+        let (stock, hm) = scene_with_ridge(4.0, 0.0, 28..31);
+        assert!(!is_clear_path_3d(
+            &stock,
+            &hm,
+            link_from(),
+            link_to(),
+            STOCK_TO_LEAVE,
+            MAX_BITE
+        ));
+    }
+
+    #[test]
+    fn protected_surface_above_travel_rejects() {
+        // Stock carved to the travel height, but the *surface* sits at
+        // 5.2 with stock_to_leave 0.5 ⇒ protected top 5.7 > 5.0 + noise.
+        // Pre-fix this linked (surface param was ignored); the feed
+        // would gouge the finished surface. Must reject.
+        let (stock, hm) = scene(4.0, 5.2);
+        assert!(!is_clear_path_3d(
+            &stock,
+            &hm,
+            link_from(),
+            link_to(),
+            STOCK_TO_LEAVE,
+            MAX_BITE
+        ));
+    }
+
+    #[test]
+    fn shallow_residue_skim_on_a_sliver_links() {
+        // A 1.5 mm-proud residue strip (top 6.5, travel 5.0, bite ≤ 3.0,
+        // surface far below) covering ~6% of the link: a legitimate
+        // feed-rate skim of removable material — must still link.
+        let (mut stock, hm) = scene_with_ridge(4.0, 0.0, 28..31);
+        let rows = stock.z_grid.rows;
+        for row in 0..rows {
+            for col in 28..31 {
+                stock.clear_above_at(row, col, 6.5);
+            }
+        }
+        assert!(is_clear_path_3d(
+            &stock,
+            &hm,
+            link_from(),
+            link_to(),
+            STOCK_TO_LEAVE,
+            MAX_BITE
+        ));
+    }
 }

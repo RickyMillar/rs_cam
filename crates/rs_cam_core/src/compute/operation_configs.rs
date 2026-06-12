@@ -311,6 +311,11 @@ pub struct AdaptiveConfig {
     /// behaviour can be restored by setting this to `Legacy`.
     #[serde(default)]
     pub cleanup_strategy: crate::adaptive::CleanupStrategy,
+    /// Engagement quantity the direction search measures against the
+    /// α/2π target. Defaults to the historical `DiskArea`; `LeadingArc`
+    /// is the units-correct measure (algorithm review 2026-06-12, F1).
+    #[serde(default)]
+    pub engagement_measure: crate::adaptive::EngagementMeasure,
 }
 
 impl Default for AdaptiveConfig {
@@ -326,6 +331,7 @@ impl Default for AdaptiveConfig {
             min_cutting_radius: 0.0,
             spindle_rpm: None,
             cleanup_strategy: crate::adaptive::CleanupStrategy::ContourParallelHybrid,
+            engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
         }
     }
 }
@@ -504,6 +510,12 @@ pub struct Adaptive3dConfig {
     pub region_ordering: RegionOrdering,
     #[serde(default = "default_clearing_strategy")]
     pub clearing_strategy: ClearingStrategy,
+    /// Engagement quantity for the AgentSearch 2D sub-pass. Defaults to
+    /// the historical `DiskArea`; `LeadingArc` is the units-correct
+    /// measure (algorithm review 2026-06-12, F1). Ignored by the
+    /// ContourParallel/Adaptive strategies.
+    #[serde(default)]
+    pub engagement_measure: crate::adaptive::EngagementMeasure,
     #[serde(default)]
     pub z_blend: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -585,6 +597,7 @@ impl Default for Adaptive3dConfig {
             detect_flat_areas: false,
             region_ordering: RegionOrdering::Global,
             clearing_strategy: ClearingStrategy::ContourParallel,
+            engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
             z_blend: false,
             spindle_rpm: None,
             mill_shallow_areas: false,

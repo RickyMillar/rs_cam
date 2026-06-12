@@ -113,6 +113,7 @@ fn build_as013_terrain_session() -> ProjectSession {
         .expect("ux_3d_terrain.toml must load terrain_small.stl");
 
     let adaptive3d = Adaptive3dConfig {
+        engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         stepover: 1.2,
         depth_per_pass: 3.0,
         stock_to_leave_axial: 0.5,

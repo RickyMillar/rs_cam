@@ -256,6 +256,8 @@ pub(super) struct ClearZLevelContext<'a> {
     pub(super) bbox_y_min: f64,
     pub(super) bbox_y_max: f64,
     pub(super) clearing_strategy: ClearingStrategy3d,
+    /// Engagement quantity for the AgentSearch 2D sub-pass (F1).
+    pub(super) engagement_measure: crate::adaptive::EngagementMeasure,
     pub(super) z_blend: bool,
     /// Minimum corner radius for `blend_corners_3d` — needed inside
     /// `stamp_emitted_segment` so the planner stamps the SAME path the
@@ -714,8 +716,8 @@ pub(super) fn clear_z_level_contour_parallel(
                             surface_hm,
                             lp,
                             *first,
-                            z_level,
                             ctx.stock_to_leave,
+                            ctx.depth_per_pass,
                         )
                 });
                 let entry_seg = if should_link {
@@ -1039,8 +1041,8 @@ pub(super) fn clear_z_level_adaptive(
                             surface_hm,
                             lp,
                             *first,
-                            z_level,
                             ctx.stock_to_leave,
+                            ctx.depth_per_pass,
                         )
                 });
                 let entry_seg = if should_link {
@@ -1487,6 +1489,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
         min_cutting_radius: 0.0,
         initial_stock: None,
         cleanup_strategy: crate::adaptive::CleanupStrategy::ContourParallelHybrid,
+        engagement_measure: ctx.engagement_measure,
     };
 
     // 5. Lift 2D points to 3D, respecting terrain peaks above z_level.

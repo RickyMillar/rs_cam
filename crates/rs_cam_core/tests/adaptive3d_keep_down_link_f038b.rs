@@ -139,6 +139,7 @@ fn make_params(
     // the cutter, not the params.
     let _ = cutting_length_safe;
     Adaptive3dParams {
+        engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         tool_radius,
         envelope_radius: tool_radius,
         stepover: tool_radius * 0.6,

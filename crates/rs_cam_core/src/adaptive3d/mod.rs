@@ -129,6 +129,10 @@ pub struct Adaptive3dParams {
     pub initial_stock: Option<TriDexelStock>,
     /// Clearing strategy per Z level (default: ContourParallel).
     pub clearing_strategy: ClearingStrategy3d,
+    /// Engagement quantity the AgentSearch 2D sub-pass measures against
+    /// the α/2π target. See `crate::adaptive::EngagementMeasure` (F1,
+    /// algorithm review 2026-06-12). Ignored by ContourParallel/Adaptive.
+    pub engagement_measure: crate::adaptive::EngagementMeasure,
     /// Blend Z toward terrain surface across contour offsets.
     /// When true, outer contours stay near z_level and inner contours
     /// progressively descend toward the surface. Best for terrain/relief.
@@ -612,6 +616,7 @@ mod tests {
             detect_flat_areas: false,
             max_stay_down_dist: None,
             region_ordering: RegionOrdering::Global,
+            engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
             initial_stock: None,
             // Matches the GUI/MCP default (ContourParallel) so the bulk of
             // adaptive3d unit tests exercise the code path most users reach

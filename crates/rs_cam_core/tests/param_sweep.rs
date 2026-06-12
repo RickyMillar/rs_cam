@@ -314,6 +314,7 @@ fn default_profile_params() -> ProfileParams {
 
 fn default_adaptive_params() -> AdaptiveParams {
     AdaptiveParams {
+        engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         tool_radius: 3.175,
         stepover: 2.0,
         cut_depth: -3.0,
@@ -1458,6 +1459,7 @@ fn sweep_rest_prev_tool_radius() {
 
 fn default_adaptive3d_params() -> Adaptive3dParams {
     Adaptive3dParams {
+        engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         tool_radius: 3.175,
         envelope_radius: 3.175,
         stepover: 2.0,

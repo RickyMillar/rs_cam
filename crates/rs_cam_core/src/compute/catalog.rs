@@ -1047,6 +1047,9 @@ const ADAPTIVE_PARAMS: &[ParamDef] = &[
         "cleanup_strategy",
         "enum:Legacy|ResidueMop|ContourParallelNarrow|ContourParallelHybrid",
     ),
+    // F1 (algorithm review 2026-06-12): which engagement quantity the
+    // direction search compares against the α/2π target.
+    ParamDef::required("engagement_measure", "enum:DiskArea|LeadingArc"),
 ];
 
 const VCARVE_PARAMS: &[ParamDef] = &[
@@ -1154,6 +1157,9 @@ const ADAPTIVE3D_PARAMS: &[ParamDef] = &[
         "clearing_strategy",
         "enum:contour_parallel|adaptive|agent_search",
     ),
+    // F1 (algorithm review 2026-06-12): engagement quantity for the
+    // AgentSearch 2D sub-pass.
+    ParamDef::required("engagement_measure", "enum:DiskArea|LeadingArc"),
     ParamDef::required("z_blend", "bool"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
     ParamDef::required("mill_shallow_areas", "bool"),
