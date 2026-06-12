@@ -13,13 +13,21 @@
 //! radial seam steps (≤ ~stepover) between consecutive wraps. One plunge
 //! per region instead of per-ring restarts.
 //!
+//! Stage 2 (same review, §5): trochoidal inserts. Where the predicted
+//! leading-arc engagement along a wrap exceeds the cap — concave-corner
+//! wrap-around, EDT side-branch first contact — the straight traversal
+//! switches to circular loops biased toward the cleared side, bounding
+//! the instantaneous bite by the loop pitch instead of the local
+//! material width.
+//!
 //! Out of scope here (handled by the shared machinery or later stages):
 //! - residue, side lobes not containing the EDT max, and island-collar
 //!   rings — the `ContourParallelHybrid` residue cleanup mops them;
 //! - narrow regions — the caller's narrow gate routes those to
 //!   contour-parallel before this module is reached, and regions whose
 //!   EDT max can't fit the starter pocket fall back to the agent;
-//! - trochoidal corner inserts and seam-morphing (Stage 2).
+//! - true cycloid advance (the residual ~1% loop-tangent transient) and
+//!   medial-axis trochoids for slot-class regions.
 
 use crate::geo::P2;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
@@ -109,6 +117,29 @@ pub(super) fn spiral_passes(
     let mut path: Vec<P2> = Vec::new();
     let mut cur = starter_end;
 
+    // Stage 2: load excursions — concave-corner wrap-around and EDT
+    // side-branch first contact — are absorbed by trochoidal inserts.
+    // Where the predicted leading-arc engagement exceeds the cap, the
+    // straight traversal is replaced by circular loops biased toward the
+    // cleared side, advancing at a pitch that bounds the radial bite.
+    // (A drop-the-points filter was tried first and reverted: drops
+    // cascade into the next wrap and swiss-cheese the coverage. The
+    // trochoid keeps cutting — it just caps the instantaneous bite.)
+    // Tuning measured by the property harness (2026-06-13): cap 1.2× /
+    // pitch 0.6×s holds >96% of samples under 1.3×target with p99
+    // ≈ 0.31–0.35 at ~2–2.7× the agent's cutting distance. Tightening to
+    // 1.1× / 0.4×s only nudged p99 (structural ~1% at loop-tangent
+    // instants) while inflating cutting distance another ~60% — the
+    // residual transient is cycloid-advance / feed-modulation territory,
+    // not pitch territory.
+    let target = crate::adaptive_shared::target_engagement_fraction(stepover, tool_radius);
+    let eng_cap = (target * 1.2).min(0.45);
+    let troch = TrochoidParams {
+        radius: stepover.max(tool_radius * 0.4),
+        pitch: stepover * 0.6,
+        cap: eng_cap,
+    };
+
     for &offset in &offsets {
         check_cancel(cancel)?;
         let tau = d_max - offset;
@@ -123,19 +154,38 @@ pub(super) fn spiral_passes(
         // current position, lap it fully, and close back on the seam.
         // Each lap cuts with the cleared region on its inner side
         // (radial WOC = stepover); the seam step is a short radial feed.
-        //
-        // Known load excursions, accepted for Stage 1 and measured by
-        // the property harness: concave-corner wrap-around (Stage 2
-        // trochoid territory) and EDT side branches (arms/lobes) whose
-        // iso-contours bite more than one stepover on first contact.
-        // A per-point engagement filter was tried and reverted — drops
-        // cascade into the next wrap and swiss-cheese the coverage.
         let seam = nearest_index(&wrap, cur);
         let n = wrap.len();
+        // `since_loop` is ∞ while cutting straight so the first heavy
+        // sample emits a loop immediately; afterwards loops repeat every
+        // `pitch` of heavy arc length.
+        let mut since_loop = f64::INFINITY;
+        let mut prev_p = cur;
         for k in 0..=n {
             let p = wrap[(seam + k) % n];
-            path.push(p);
-            grid.clear_circle(p.x, p.y, tool_radius);
+            let step_len = {
+                let dx = p.x - prev_p.x;
+                let dy = p.y - prev_p.y;
+                (dx * dx + dy * dy).sqrt()
+            };
+            let dir = (p.y - prev_p.y).atan2(p.x - prev_p.x);
+            let eng = super::search::compute_engagement_arc(grid, p.x, p.y, tool_radius, dir);
+            if eng <= troch.cap {
+                path.push(p);
+                grid.clear_circle(p.x, p.y, tool_radius);
+                since_loop = f64::INFINITY;
+            } else {
+                since_loop = if since_loop.is_finite() {
+                    since_loop + step_len
+                } else {
+                    troch.pitch
+                };
+                if since_loop >= troch.pitch {
+                    emit_trochoid_loop(grid, tool_radius, troch.radius, p, &mut path);
+                    since_loop = 0.0;
+                }
+            }
+            prev_p = p;
         }
         cur = wrap[seam];
     }
@@ -154,6 +204,73 @@ pub(super) fn spiral_passes(
     segments.push(AdaptiveSegment::Cut(path));
     *last_pos = Some(end);
     Ok(true)
+}
+
+/// Trochoidal-insert tuning.
+struct TrochoidParams {
+    /// Loop radius (mm). Loops are tangent to the nominal wrap at the
+    /// trigger point and extend toward the cleared side.
+    radius: f64,
+    /// Heavy-arc length between consecutive loops (mm) — the per-loop
+    /// frontier advance, which bounds the bite per revolution.
+    pitch: f64,
+    /// Leading-arc engagement (α/2π) above which the straight traversal
+    /// switches to loops.
+    cap: f64,
+}
+
+/// Emit one trochoid loop tangent to the nominal point `p`, extending
+/// toward the most-cleared side. The loop sweeps from cleared material
+/// into the frontier, so the instantaneous bite is bounded by the
+/// frontier advance (`pitch`) rather than the local material width.
+/// Skipped (straight cut instead) when no cleared side exists nearby —
+/// a full-material loop would just be a circular slot.
+#[allow(clippy::indexing_slicing)] // fixed-size direction/loop sampling
+fn emit_trochoid_loop(
+    grid: &mut MaterialGrid,
+    tool_radius: f64,
+    loop_radius: f64,
+    p: P2,
+    path: &mut Vec<P2>,
+) {
+    // Pick the offset direction whose tool disk reads the least material.
+    let mut best_dir = (0.0f64, 0.0f64);
+    let mut best_fill = f64::INFINITY;
+    for i in 0..16 {
+        let theta = (i as f64 / 16.0) * std::f64::consts::TAU;
+        let (dx, dy) = (theta.cos(), theta.sin());
+        let fill = super::search::compute_engagement(
+            grid,
+            p.x + dx * loop_radius,
+            p.y + dy * loop_radius,
+            tool_radius,
+        );
+        if fill < best_fill {
+            best_fill = fill;
+            best_dir = (dx, dy);
+        }
+    }
+    if best_fill > 0.8 {
+        // Nowhere cleared in reach: looping would slot a full circle.
+        path.push(p);
+        grid.clear_circle(p.x, p.y, tool_radius);
+        return;
+    }
+    let center = P2::new(
+        p.x + best_dir.0 * loop_radius,
+        p.y + best_dir.1 * loop_radius,
+    );
+    let theta0 = (p.y - center.y).atan2(p.x - center.x);
+    let n = 20;
+    for i in 0..=n {
+        let theta = theta0 + (i as f64 / n as f64) * std::f64::consts::TAU;
+        let q = P2::new(
+            center.x + loop_radius * theta.cos(),
+            center.y + loop_radius * theta.sin(),
+        );
+        path.push(q);
+        grid.clear_circle(q.x, q.y, tool_radius);
+    }
 }
 
 /// Marching-squares iso-contour of `edt > tau`, selecting the loop that
