@@ -1050,6 +1050,8 @@ const ADAPTIVE_PARAMS: &[ParamDef] = &[
     // F1 (algorithm review 2026-06-12): which engagement quantity the
     // direction search compares against the α/2π target.
     ParamDef::required("engagement_measure", "enum:DiskArea|LeadingArc"),
+    // Stage 1: reactive agent vs constructive contour spiral.
+    ParamDef::required("path_strategy", "enum:Agent|ContourSpiral"),
 ];
 
 const VCARVE_PARAMS: &[ParamDef] = &[
@@ -1155,7 +1157,7 @@ const ADAPTIVE3D_PARAMS: &[ParamDef] = &[
     ParamDef::required("region_ordering", "enum:global|by_area"),
     ParamDef::required(
         "clearing_strategy",
-        "enum:contour_parallel|adaptive|agent_search",
+        "enum:contour_parallel|adaptive|agent_search|contour_spiral",
     ),
     // F1 (algorithm review 2026-06-12): engagement quantity for the
     // AgentSearch 2D sub-pass.

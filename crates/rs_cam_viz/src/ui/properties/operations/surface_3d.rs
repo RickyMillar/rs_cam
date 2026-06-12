@@ -183,6 +183,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                     ClearingStrategy::ContourParallel => "Contour Parallel",
                     ClearingStrategy::Adaptive => "Adaptive",
                     ClearingStrategy::AgentSearch => "Agent Search",
+                    ClearingStrategy::ContourSpiral => "Contour Spiral",
                 })
                 .show_ui(ui, |ui| {
                     ui.selectable_value(
@@ -204,6 +205,16 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                         "Per-step direction search with preflight skip and widen-band \
                          recovery. Slow to generate — use when Contour Parallel or \
                          Adaptive leave uncut bands on difficult geometry.",
+                    );
+                    ui.selectable_value(
+                        &mut cfg.clearing_strategy,
+                        ClearingStrategy::ContourSpiral,
+                        "Contour Spiral",
+                    )
+                    .on_hover_text(
+                        "Constructive inside-out spiral per slice: one continuous \
+                         stay-down pass per region with engagement bounded by the \
+                         stepover. Experimental (Stage 1, algorithm review 2026-06-12).",
                     );
                 });
             ui.end_row();

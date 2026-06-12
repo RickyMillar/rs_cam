@@ -716,7 +716,7 @@ pub(super) fn adaptive_3d_segments(
                                 cancel,
                             )?;
                         }
-                        ClearingStrategy3d::AgentSearch => {
+                        ClearingStrategy3d::AgentSearch | ClearingStrategy3d::ContourSpiral => {
                             clear_z_level_agent_2d_slice(
                                 &ctx,
                                 &mut material_stock,
@@ -860,7 +860,7 @@ pub(super) fn adaptive_3d_segments(
                             cancel,
                         )?;
                     }
-                    ClearingStrategy3d::AgentSearch => {
+                    ClearingStrategy3d::AgentSearch | ClearingStrategy3d::ContourSpiral => {
                         clear_z_level_agent_2d_slice(
                             &ctx,
                             &mut material_stock,

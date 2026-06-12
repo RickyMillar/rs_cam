@@ -17,6 +17,7 @@
 mod material_grid;
 pub(crate) mod path;
 mod search;
+mod spiral;
 
 pub(crate) use material_grid::MaterialGrid;
 pub(crate) use path::{AdaptiveSegment, adaptive_segments_with_debug};
@@ -89,6 +90,23 @@ pub enum EngagementMeasure {
     LeadingArc,
 }
 
+/// How the main clearing passes are generated (Stage 1 of the adaptive
+/// algorithm review).
+///
+/// `Agent` is the historical reactive per-step engagement search.
+/// `ContourSpiral` is constructive: iso-contours of the machinable-region
+/// EDT at stepover increments, traced inside-out from the helical starter
+/// pocket as one continuous stay-down pass — engagement bounded by wrap
+/// spacing, one plunge per region. Shares the narrow gate, starter
+/// pocket, residue cleanup and toolpath emission with the agent path;
+/// falls back to the agent when no starter-pocket position exists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum PathStrategy2d {
+    #[default]
+    Agent,
+    ContourSpiral,
+}
+
 /// Parameters for adaptive clearing.
 pub struct AdaptiveParams {
     pub tool_radius: f64,
@@ -113,6 +131,8 @@ pub struct AdaptiveParams {
     /// Which engagement quantity the direction search measures. See
     /// `EngagementMeasure`.
     pub engagement_measure: EngagementMeasure,
+    /// How the main clearing passes are generated. See `PathStrategy2d`.
+    pub path_strategy: PathStrategy2d,
 }
 
 /// A segment of the adaptive path: cutting, rapid reposition, or link (tool-down reposition).
@@ -299,6 +319,7 @@ mod tests {
             initial_stock: None,
             cleanup_strategy: CleanupStrategy::Legacy,
             engagement_measure: EngagementMeasure::DiskArea,
+            path_strategy: PathStrategy2d::Agent,
         }
     }
 

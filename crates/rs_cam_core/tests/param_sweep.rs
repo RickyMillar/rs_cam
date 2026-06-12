@@ -315,6 +315,7 @@ fn default_profile_params() -> ProfileParams {
 fn default_adaptive_params() -> AdaptiveParams {
     AdaptiveParams {
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
+        path_strategy: rs_cam_core::adaptive::PathStrategy2d::Agent,
         tool_radius: 3.175,
         stepover: 2.0,
         cut_depth: -3.0,
@@ -1585,11 +1586,18 @@ fn sweep_adaptive3d_clearing_strategy() {
         "adaptive3d",
         "clearing_strategy",
         serde_json::json!("contour_parallel"),
-        &[serde_json::json!("adaptive")],
+        &[
+            serde_json::json!("adaptive"),
+            serde_json::json!("contour_spiral"),
+        ],
         |ov| {
             let mut p = default_adaptive3d_params();
-            if ov.is_some() {
-                p.clearing_strategy = ClearingStrategy3d::Adaptive;
+            match ov.and_then(|v| v.as_str()) {
+                Some("adaptive") => p.clearing_strategy = ClearingStrategy3d::Adaptive,
+                Some("contour_spiral") => {
+                    p.clearing_strategy = ClearingStrategy3d::ContourSpiral;
+                }
+                _ => {}
             }
             rs_cam_core::adaptive3d::adaptive_3d_toolpath(&mesh, &index, &cutter, &p)
         },

@@ -44,6 +44,10 @@ pub enum ClearingStrategy {
     /// recovery. Slow to generate — reach for it when ContourParallel
     /// and Adaptive leave uncut bands on difficult geometry.
     AgentSearch,
+    /// Constructive inside-out contour spiral per slice: one continuous
+    /// stay-down pass per region, engagement bounded by wrap spacing
+    /// (Stage 1, algorithm review 2026-06-12).
+    ContourSpiral,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -316,6 +320,10 @@ pub struct AdaptiveConfig {
     /// is the units-correct measure (algorithm review 2026-06-12, F1).
     #[serde(default)]
     pub engagement_measure: crate::adaptive::EngagementMeasure,
+    /// How the main clearing passes are generated: the historical
+    /// reactive `Agent`, or the constructive `ContourSpiral` (Stage 1).
+    #[serde(default)]
+    pub path_strategy: crate::adaptive::PathStrategy2d,
 }
 
 impl Default for AdaptiveConfig {
@@ -332,6 +340,7 @@ impl Default for AdaptiveConfig {
             spindle_rpm: None,
             cleanup_strategy: crate::adaptive::CleanupStrategy::ContourParallelHybrid,
             engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
+            path_strategy: crate::adaptive::PathStrategy2d::Agent,
         }
     }
 }

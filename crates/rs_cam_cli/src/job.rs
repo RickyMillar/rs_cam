@@ -788,6 +788,7 @@ fn job_params_for(
             let strategy = match op.strategy.as_deref().unwrap_or("contour") {
                 "adaptive" => "adaptive",
                 "agent" | "agent_search" => "agent_search",
+                "spiral" | "contour_spiral" => "contour_spiral",
                 _ => "contour_parallel",
             };
             p.push(("clearing_strategy", json!(strategy)));

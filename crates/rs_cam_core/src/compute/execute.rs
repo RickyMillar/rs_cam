@@ -781,6 +781,7 @@ pub(crate) fn generate_adaptive(
                 initial_stock: ctx.initial_stock.cloned(),
                 cleanup_strategy: cfg.cleanup_strategy,
                 engagement_measure: cfg.engagement_measure,
+                path_strategy: cfg.path_strategy,
             };
             let (level_tp, mut annotations) =
                 crate::adaptive::adaptive_toolpath_structured_annotated_traced_with_cancel(
@@ -880,6 +881,9 @@ pub(crate) fn generate_adaptive3d(
         }
         crate::compute::operation_configs::ClearingStrategy::AgentSearch => {
             crate::adaptive3d::ClearingStrategy3d::AgentSearch
+        }
+        crate::compute::operation_configs::ClearingStrategy::ContourSpiral => {
+            crate::adaptive3d::ClearingStrategy3d::ContourSpiral
         }
     };
     // Adaptive3d spaces passes by the tool's *engagement* radius at
