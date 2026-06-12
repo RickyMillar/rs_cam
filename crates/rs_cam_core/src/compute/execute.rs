@@ -780,6 +780,7 @@ pub(crate) fn generate_adaptive(
                 min_cutting_radius: cfg.min_cutting_radius,
                 initial_stock: ctx.initial_stock.cloned(),
                 cleanup_strategy: cfg.cleanup_strategy,
+                engagement_measure: cfg.engagement_measure,
             };
             let (level_tp, mut annotations) =
                 crate::adaptive::adaptive_toolpath_structured_annotated_traced_with_cancel(
@@ -926,6 +927,7 @@ pub(crate) fn generate_adaptive3d(
         initial_stock: ctx.initial_stock.cloned(),
         safe_z: ctx.heights.retract_z,
         clearing_strategy,
+        engagement_measure: cfg.engagement_measure,
         z_blend: cfg.z_blend,
         boundary: ctx.boundary.cloned(),
         mill_shallow_areas: cfg.mill_shallow_areas,

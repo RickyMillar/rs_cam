@@ -516,6 +516,7 @@ fn test_adaptive3d_rapids_lift_before_xy_traverse() {
     // Match the Phase 2 probe: 6.35mm flat, stepover=2, z_blend=true,
     // ContourParallel. Use stock_top_z just above the mesh top.
     let params = Adaptive3dParams {
+        engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         tool_radius: tool.radius(),
         envelope_radius: tool.radius(),
         stepover: 2.0,

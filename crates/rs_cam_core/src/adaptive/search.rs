@@ -4,7 +4,7 @@
 //! functions) and by `mod.rs` tests.
 
 use super::material_grid::CELL_MATERIAL;
-use super::{MaterialGrid, angle_diff, refine_angle_bracket};
+use super::{EngagementMeasure, MaterialGrid, angle_diff, refine_angle_bracket};
 use crate::debug_trace::ToolpathDebugBounds2;
 use crate::geo::P2;
 use crate::polygon::Polygon2;
@@ -64,6 +64,160 @@ pub(crate) fn compute_engagement(grid: &MaterialGrid, cx: f64, cy: f64, radius: 
     material_cells as f64 / total_cells as f64
 }
 
+/// Leading-arc engagement: the fraction of the full cutter circle whose
+/// **leading semicircle** (relative to the move direction `dir_angle`)
+/// lies in uncut material.
+///
+/// This is the same physical quantity as `target_engagement_fraction`
+/// (contact angle α / 2π): in steady state cutting alongside a cleared
+/// swath at radial stepover `s`, the reading is `acos(1 − s/R) / 2π`
+/// exactly. `compute_engagement` above measures disk-*area* fraction,
+/// which is a different quantity and only coincides with the angle
+/// fraction at full slot — comparing it against the α/2π target makes
+/// the effective stepover deviate from the commanded one (see
+/// planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md, finding F1).
+///
+/// Sampling is on the flute circle itself (radius R): the trailing
+/// semicircle is excluded because it only ever passes through material
+/// already counted as the leading edge swept it. Points are taken at
+/// arc midpoints so the estimate is unbiased w.r.t. quantisation.
+pub(crate) fn compute_engagement_arc(
+    grid: &MaterialGrid,
+    cx: f64,
+    cy: f64,
+    radius: f64,
+    dir_angle: f64,
+) -> f64 {
+    // ~2 samples per grid cell along the leading arc, bounded for cost.
+    let n = ((2.0 * PI * radius / grid.cell_size).ceil() as usize).clamp(32, 128);
+    let mut hits = 0usize;
+    for i in 0..n {
+        let t = (i as f64 + 0.5) / n as f64;
+        let theta = dir_angle - std::f64::consts::FRAC_PI_2 + t * PI;
+        let x = cx + radius * theta.cos();
+        let y = cy + radius * theta.sin();
+        if grid.is_material(x, y) {
+            hits += 1;
+        }
+    }
+    // The leading semicircle is half the circle: scale the in-material
+    // fraction of the semicircle to a fraction of the full circle so the
+    // value compares directly against α/2π.
+    0.5 * (hits as f64 / n as f64)
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod engagement_measure_tests {
+    //! Closed-form oracle for the engagement measures (adaptive algorithm
+    //! review 2026-06-12, finding F1).
+    //!
+    //! Steady-state scene, built exactly on the cell lattice so the
+    //! oracle carries no fixture-rasterisation slack: the cutter at
+    //! `(cx, cy)` moves in +x alongside a previous parallel pass whose
+    //! swath cleared everything at `y ≥ y_edge`, with its own swath
+    //! (`|y − cy| ≤ R, x ≤ cx`) cleared behind it. The radial stepover
+    //! is `s = y_edge − (cy − R)` (chord height of the material cap),
+    //! the contact angle is `α = acos(1 − s/R)` analytically, and a
+    //! measure in the same units as `target_engagement_fraction` must
+    //! read `α/2π` at the next position.
+
+    use super::super::material_grid::{CELL_CLEARED, MaterialGrid};
+    use super::{compute_engagement, compute_engagement_arc};
+    use crate::adaptive_shared::target_engagement_fraction;
+    use crate::geo::P2;
+    use crate::polygon::Polygon2;
+
+    const R: f64 = 3.0;
+    const CELL: f64 = R / 6.0; // production floor: max(R/6, tolerance)
+    const STEP: f64 = CELL * 3.0; // production step length (path.rs)
+
+    /// Build the exact steady-state scene for radial stepover `s`
+    /// (must be a multiple of CELL so `y_edge` lands on the lattice).
+    /// Returns the grid and the *next* candidate position — the search
+    /// evaluates candidates there, against the pre-move grid.
+    fn steady_state_grid(stepover: f64) -> (MaterialGrid, f64, f64) {
+        let size = 60.0;
+        let square = Polygon2::new(vec![
+            P2::new(0.0, 0.0),
+            P2::new(size, 0.0),
+            P2::new(size, size),
+            P2::new(0.0, size),
+        ]);
+        let mut grid = MaterialGrid::from_polygon(&square, CELL);
+
+        let (cx, cy) = (size / 2.0, size / 2.0);
+        let y_edge = cy - R + stepover;
+
+        // MaterialGrid samples cell (row, col) at the lattice point
+        // (origin + col·cell, origin + row·cell) — mark cells by that
+        // same convention so the material boundary is exact.
+        for row in 0..grid.rows {
+            let cell_y = grid.origin_y + row as f64 * grid.cell_size;
+            for col in 0..grid.cols {
+                let cell_x = grid.origin_x + col as f64 * grid.cell_size;
+                let prev_swath = cell_y >= y_edge - 1e-9;
+                let own_swath = cell_x <= cx + 1e-9 && (cell_y - cy).abs() <= R + 1e-9;
+                if prev_swath || own_swath {
+                    let idx = row * grid.cols + col;
+                    if grid.cells[idx] != CELL_CLEARED {
+                        grid.cells[idx] = CELL_CLEARED;
+                    }
+                }
+            }
+        }
+        (grid, cx + STEP, cy)
+    }
+
+    #[test]
+    fn leading_arc_matches_contact_angle_oracle() {
+        // s = CELL multiples: 0.5 (s/R ≈ 0.17), 1.5 (0.5R), 3.0 (R),
+        // 6.0 (2R, full slot).
+        for stepover in [0.5, 1.5, 3.0, 6.0] {
+            let expected = target_engagement_fraction(stepover, R);
+            let (grid, nx, ny) = steady_state_grid(stepover);
+            let got = compute_engagement_arc(&grid, nx, ny, R, 0.0);
+            assert!(
+                (got - expected).abs() < 0.02,
+                "leading-arc measure must read the contact-angle fraction: \
+                 stepover {stepover:.2} expected {expected:.4}, got {got:.4}"
+            );
+        }
+    }
+
+    #[test]
+    fn disk_area_measure_deviates_from_contact_angle_target() {
+        // Documents finding F1: the area measure is a different physical
+        // quantity from the α/2π target it is compared against. At a
+        // commanded ~0.17R stepover the controller's target is ~0.094
+        // but the area reading sits far below it — so the search steers
+        // toward a much wider radial cut than commanded.
+        let stepover = 0.5;
+        let target = target_engagement_fraction(stepover, R);
+        let (grid, nx, ny) = steady_state_grid(stepover);
+        let area = compute_engagement(&grid, nx, ny, R);
+        assert!(
+            area < target * 0.7,
+            "expected the disk-area reading ({area:.4}) to sit well below the \
+             contact-angle target ({target:.4}); if this starts passing, the \
+             area measure changed and F1 should be re-evaluated"
+        );
+
+        // And the arc measure does hit the target on the identical scene.
+        let arc = compute_engagement_arc(&grid, nx, ny, R, 0.0);
+        assert!(
+            (arc - target).abs() < 0.02,
+            "arc measure should hit the target on the same scene: \
+             target {target:.4}, got {arc:.4}"
+        );
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(super) struct SearchDirectionResult {
     pub(super) angle: f64,
@@ -116,6 +270,7 @@ pub(crate) fn search_direction(
         target_frac,
         prev_angle,
         boundary_distances,
+        EngagementMeasure::DiskArea,
     )
     .map(|result| result.angle)
 }
@@ -179,6 +334,7 @@ pub(super) fn search_direction_with_metrics(
     target_frac: f64,
     prev_angle: f64,
     boundary_distances: &[f64],
+    measure: EngagementMeasure,
 ) -> Option<SearchDirectionResult> {
     let tolerance = 0.05; // allow ±5% of target (matches libactp reference)
     let min_frac = (target_frac * (1.0 - tolerance)).max(0.005);
@@ -197,7 +353,12 @@ pub(super) fn search_direction_with_metrics(
             return None;
         }
 
-        let engagement = compute_engagement(grid, nx, ny, tool_radius);
+        let engagement = match measure {
+            EngagementMeasure::DiskArea => compute_engagement(grid, nx, ny, tool_radius),
+            EngagementMeasure::LeadingArc => {
+                compute_engagement_arc(grid, nx, ny, tool_radius, angle)
+            }
+        };
         if engagement < 0.005 {
             return None;
         }

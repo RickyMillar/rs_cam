@@ -72,6 +72,23 @@ pub enum CleanupStrategy {
     ContourParallelHybrid,
 }
 
+/// Which engagement quantity the direction search measures and compares
+/// against `target_engagement_fraction` (contact angle α / 2π).
+///
+/// `DiskArea` is the historical measure: the fraction of the cutter
+/// *disk area* lying in material. That is a different physical quantity
+/// from the angle-fraction target — the two only coincide at full slot —
+/// so the effective stepover the controller converges on deviates from
+/// the commanded one (algorithm review 2026-06-12, finding F1).
+/// `LeadingArc` samples the leading half of the flute circle and reads
+/// α/2π directly, matching the target's units.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum EngagementMeasure {
+    #[default]
+    DiskArea,
+    LeadingArc,
+}
+
 /// Parameters for adaptive clearing.
 pub struct AdaptiveParams {
     pub tool_radius: f64,
@@ -93,6 +110,9 @@ pub struct AdaptiveParams {
     pub initial_stock: Option<TriDexelStock>,
     /// How residue is mopped up after the main spiral. See `CleanupStrategy`.
     pub cleanup_strategy: CleanupStrategy,
+    /// Which engagement quantity the direction search measures. See
+    /// `EngagementMeasure`.
+    pub engagement_measure: EngagementMeasure,
 }
 
 /// A segment of the adaptive path: cutting, rapid reposition, or link (tool-down reposition).
@@ -278,6 +298,7 @@ mod tests {
             min_cutting_radius: 0.0,
             initial_stock: None,
             cleanup_strategy: CleanupStrategy::Legacy,
+            engagement_measure: EngagementMeasure::DiskArea,
         }
     }
 

@@ -103,6 +103,7 @@ pub(super) fn adaptive_segments(
         min_cutting_radius: 0.0,
         initial_stock: None,
         cleanup_strategy: crate::adaptive::CleanupStrategy::Legacy,
+        engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
     };
     adaptive_segments_with_debug(polygon, &params, cancel, None)
 }
@@ -459,6 +460,7 @@ pub(crate) fn adaptive_segments_with_debug(
                     target_frac,
                     smoothed_angle,
                     &boundary_distances,
+                    params.engagement_measure,
                 )
             };
             let Some(search_result) = search_result_opt else {
