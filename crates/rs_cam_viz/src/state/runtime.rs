@@ -277,12 +277,16 @@ pub struct GuiState {
     #[cfg(feature = "mcp")]
     pub mcp_highlights: HashMap<String, std::time::Instant>,
     /// One-shot toolpath-properties tab override, set by the MCP
-    /// `set_ui_view` tool and consumed (taken) the next time the
-    /// properties panel renders a selected toolpath. Canonical values:
-    /// "geometry", "feeds", "linking", "heights", "dressup". Not
-    /// cfg-gated on `mcp` so the properties panel can consume it
+    /// `set_ui_view` tool: `(target toolpath, tab key)`. Consumed the
+    /// next time the properties panel renders *that* toolpath — scoping
+    /// to the target makes the override survive whatever frame the
+    /// workspace-switch / selection events land on (pre-fix an
+    /// intervening render of the previously selected toolpath consumed
+    /// it and persisted the tab onto the wrong toolpath). Canonical tab
+    /// values: "geometry", "feeds", "linking", "heights", "dressup".
+    /// Not cfg-gated on `mcp` so the properties panel can consume it
     /// unconditionally.
-    pub pending_toolpath_tab: Option<String>,
+    pub pending_toolpath_tab: Option<(crate::state::toolpath::ToolpathId, String)>,
 }
 
 impl GuiState {

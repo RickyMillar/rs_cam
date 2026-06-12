@@ -3678,7 +3678,17 @@ impl super::RsCamApp {
                     )
                 }));
             }
-            self.controller.state_mut().gui.pending_toolpath_tab = Some(tab.to_owned());
+            // Scope the override to its target toolpath (the one selected
+            // above, or the pre-existing selection) so an intervening
+            // render of another toolpath can't consume it.
+            let Selection::Toolpath(target_id) = self.controller.state().selection else {
+                return json_str(serde_json::json!({
+                    "error": "properties_tab needs a toolpath — pass toolpath_index in this \
+                              call or select a toolpath first"
+                }));
+            };
+            self.controller.state_mut().gui.pending_toolpath_tab =
+                Some((target_id, tab.to_owned()));
             tab_applied = Some(tab);
         }
 

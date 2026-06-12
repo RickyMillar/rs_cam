@@ -490,14 +490,21 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .find(|v| v.toolpath_id == id)
                 .cloned();
 
-            // One-shot tab override from the MCP set_ui_view tool. Taken
-            // (consumed) here so it applies to exactly one frame; the tab
-            // bar then persists it via the regular temp-memory path.
-            let tab_override = state
-                .gui
-                .pending_toolpath_tab
-                .take()
-                .and_then(|s| ToolpathTab::parse(&s));
+            // One-shot tab override from the MCP set_ui_view tool. Consumed
+            // only when the panel renders the override's TARGET toolpath —
+            // a blind take() here used to fire on whatever toolpath rendered
+            // first (workspace/selection changes from the same set_ui_view
+            // call land on different frames), persisting the tab onto the
+            // wrong toolpath. The tab bar persists the applied value via
+            // the regular temp-memory path.
+            let tab_override = match state.gui.pending_toolpath_tab.as_ref() {
+                Some((target, tab)) if *target == id => {
+                    let parsed = ToolpathTab::parse(tab);
+                    state.gui.pending_toolpath_tab = None;
+                    parsed
+                }
+                _ => None,
+            };
 
             // Build a temporary ToolpathEntry from session config + gui runtime
             // so the existing draw_toolpath_panel can work unchanged.

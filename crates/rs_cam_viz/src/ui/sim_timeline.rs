@@ -173,7 +173,10 @@ fn draw_verdict_hud(
                         events.push(AppEvent::SimJumpToMove(move_idx));
                     }
                 } else {
-                    ui.add(exceeds_pill);
+                    // Self-hide at zero like the Inspector copy (V4) — the
+                    // 2026-06-12 sweep caught "✗ exceeds 0/7" still shipping
+                    // in the HUD while the Inspector hid it.
+                    ui.add(exceeds_pill.hide_when_zero());
                 }
                 ui.add(
                     CountPill::verdict("\u{26A0} unmodeled", unmodeled)
