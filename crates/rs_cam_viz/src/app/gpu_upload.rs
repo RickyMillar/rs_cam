@@ -83,8 +83,17 @@ impl RsCamApp {
         }
     }
 
-    /// Transform a global-frame `StockMesh` to the active setup's local
-    /// frame for the given simulation `move_idx`.  No-op for identity setups.
+    /// Transform a `StockMesh` from its simulation frame to the setup-local
+    /// display frame for the given simulation `move_idx`.
+    ///
+    /// Non-identity setups: the checkpoint mesh arrives stock-relative
+    /// (the simulator's `local_to_global` does not re-add origin), so the
+    /// face/rotation transform applies directly. Identity setups: the
+    /// F-024 dexel grid is rooted at the *world* stock bbox, so the mesh
+    /// arrives in world coordinates and must shift by `-stock.origin` to
+    /// land in the zero-rooted display frame (heights/setup-frame audit
+    /// 2026-06-12, finding 1 — pre-fix this was a no-op and the sim stock
+    /// rendered offset from the stock outline by exactly `origin`).
     // SAFETY: step_by(3) loop with i+1, i+2 bounded by vertices.len() (always multiple of 3)
     #[allow(clippy::indexing_slicing)]
     pub(super) fn transform_mesh_to_local_frame(
@@ -92,21 +101,40 @@ impl RsCamApp {
         mesh: &mut rs_cam_core::simulation::StockMesh,
         move_idx: usize,
     ) {
-        if let Some((face_up, z_rot, true)) = self.active_setup_orientation(move_idx) {
-            let stock_cfg = self.controller.state().session.stock_config();
-            let (eff_w, eff_d, _) = face_up.effective_stock(stock_cfg.x, stock_cfg.y, stock_cfg.z);
-            for i in (0..mesh.vertices.len()).step_by(3) {
-                let p = rs_cam_core::geo::P3::new(
-                    mesh.vertices[i] as f64,
-                    mesh.vertices[i + 1] as f64,
-                    mesh.vertices[i + 2] as f64,
-                );
-                let flipped = face_up.transform_point(p, stock_cfg.x, stock_cfg.y, stock_cfg.z);
-                let local = z_rot.transform_point(flipped, eff_w, eff_d);
-                mesh.vertices[i] = local.x as f32;
-                mesh.vertices[i + 1] = local.y as f32;
-                mesh.vertices[i + 2] = local.z as f32;
+        match self.active_setup_orientation(move_idx) {
+            Some((face_up, z_rot, true)) => {
+                let stock_cfg = self.controller.state().session.stock_config();
+                let (eff_w, eff_d, _) =
+                    face_up.effective_stock(stock_cfg.x, stock_cfg.y, stock_cfg.z);
+                for i in (0..mesh.vertices.len()).step_by(3) {
+                    let p = rs_cam_core::geo::P3::new(
+                        mesh.vertices[i] as f64,
+                        mesh.vertices[i + 1] as f64,
+                        mesh.vertices[i + 2] as f64,
+                    );
+                    let flipped = face_up.transform_point(p, stock_cfg.x, stock_cfg.y, stock_cfg.z);
+                    let local = z_rot.transform_point(flipped, eff_w, eff_d);
+                    mesh.vertices[i] = local.x as f32;
+                    mesh.vertices[i + 1] = local.y as f32;
+                    mesh.vertices[i + 2] = local.z as f32;
+                }
             }
+            Some((_, _, false)) => {
+                let stock_cfg = self.controller.state().session.stock_config();
+                let (ox, oy, oz) = (
+                    stock_cfg.origin_x as f32,
+                    stock_cfg.origin_y as f32,
+                    stock_cfg.origin_z as f32,
+                );
+                if ox != 0.0 || oy != 0.0 || oz != 0.0 {
+                    for i in (0..mesh.vertices.len()).step_by(3) {
+                        mesh.vertices[i] -= ox;
+                        mesh.vertices[i + 1] -= oy;
+                        mesh.vertices[i + 2] -= oz;
+                    }
+                }
+            }
+            None => {}
         }
     }
 
@@ -158,6 +186,19 @@ impl RsCamApp {
         let selected_faces = self.selected_face_ids();
         let hovered_face = self.hovered_face_id();
         let stock = self.controller.state().session.stock_config().clone();
+
+        // Emission-frame → display-frame shift for the active setup.
+        // Identity setups emit toolpaths (and sim positions) in world
+        // coordinates while the viewport draws everything zero-rooted;
+        // the difference is exactly -stock.origin. Zero for non-identity
+        // setups and for stocks with origin at (0,0,0).
+        let display_shift = active_setup_ref
+            .as_ref()
+            .map_or(rs_cam_core::geo::P3::new(0.0, 0.0, 0.0), |s| {
+                s.emission_to_display_shift(&stock)
+            });
+        let has_display_shift =
+            display_shift.x != 0.0 || display_shift.y != 0.0 || display_shift.z != 0.0;
         for model in self.controller.state().session.models() {
             // If model has enriched mesh (STEP), use face-colored rendering
             if let Some(enriched) = &model.enriched_mesh {
@@ -626,6 +667,14 @@ impl RsCamApp {
                     );
                     break;
                 }
+                // Collision positions come from the sim trace in the
+                // emission frame — shift identity-setup markers into the
+                // display frame alongside the toolpath lines below.
+                let p = [
+                    p[0] + display_shift.x as f32,
+                    p[1] + display_shift.y as f32,
+                    p[2] + display_shift.z as f32,
+                ];
                 // SAFETY: densities has same length as positions
                 #[allow(clippy::indexing_slicing)]
                 let t = densities[i] as f32 / max_density as f32;
@@ -740,10 +789,17 @@ impl RsCamApp {
                 if visible && let Some(result) = result {
                     let selected = selected_tp_id == Some(tp_id);
 
-                    // In Setup/Toolpaths workspace (local frame), toolpaths are already
-                    // Toolpaths are always in local coords, viewport is always in
-                    // local frame — use directly, no transform needed.
-                    let render_tp = result.toolpath();
+                    // Toolpaths arrive in their emission frame: setup-local
+                    // for non-identity setups, *world* for identity setups
+                    // (F-028). The viewport draws zero-rooted local, so
+                    // identity toolpaths must shift by -stock.origin to land
+                    // on the mesh (heights/setup-frame audit 2026-06-12,
+                    // finding 1 — pre-fix they rendered "through the stock
+                    // floor" on any origin != 0 project).
+                    let shifted_annotated = has_display_shift
+                        .then(|| translate_annotated(&result.annotated, display_shift));
+                    let render_annotated = shifted_annotated.as_ref().unwrap_or(&result.annotated);
+                    let render_tp = &render_annotated.toolpath;
 
                     let color_mode = state.viewport.toolpath_color_mode;
                     let mut gpu_data = match color_mode {
@@ -776,7 +832,7 @@ impl RsCamApp {
                             ToolpathGpuData::from_toolpath(
                                 &render_state.device,
                                 &resources.gpu_limits,
-                                &result.annotated,
+                                render_annotated,
                                 i,
                                 selected,
                                 &state.viewport.span_kind_filter,
@@ -802,11 +858,13 @@ impl RsCamApp {
                             helix_pitch: tc.dressups.helix_pitch,
                             lead_in_out: tc.dressups.lead_in_out,
                             lead_radius: tc.dressups.lead_radius,
-                            feed_z: resolved.feed_z,
-                            top_z: resolved.top_z,
+                            // Heights resolve in the emission frame; shift
+                            // alongside the toolpath the preview rides on.
+                            feed_z: resolved.feed_z + display_shift.z,
+                            top_z: resolved.top_z + display_shift.z,
                         };
                         let preview_verts =
-                            toolpath_render::entry_preview_vertices(result.toolpath(), &config);
+                            toolpath_render::entry_preview_vertices(render_tp, &config);
                         gpu_data.attach_entry_preview(
                             &render_state.device,
                             &resources.gpu_limits,
@@ -819,10 +877,8 @@ impl RsCamApp {
                                 session.tools().iter().find(|t| t.id.0 == tc.tool_id)
                         {
                             let cutter = rs_cam_core::compute::build_cutter(tool);
-                            let profile_verts = toolpath_render::tool_profile_preview_vertices(
-                                result.toolpath(),
-                                &cutter,
-                            );
+                            let profile_verts =
+                                toolpath_render::tool_profile_preview_vertices(render_tp, &cutter);
                             gpu_data.attach_tool_profile_preview(
                                 &render_state.device,
                                 &resources.gpu_limits,
@@ -843,17 +899,19 @@ impl RsCamApp {
             if let Some((_, tc)) = session.find_toolpath_config_by_id(tp_id) {
                 let height_ctx = height_context_from_session(session, tc);
                 let heights = tc.heights.resolve(&height_ctx);
-                // Use the same stock bbox as the rest of the viewport (local or global)
+                // Use the same stock bbox as the rest of the viewport (local
+                // or global). Heights resolve in the emission frame, so
+                // identity setups shift by -origin_z to match it.
                 let hp_stock_bbox = stock_bbox;
                 resources.height_planes_data = Some(
                     crate::render::height_planes::HeightPlanesGpuData::from_heights(
                         &render_state.device,
                         &hp_stock_bbox,
-                        heights.clearance_z,
-                        heights.retract_z,
-                        heights.feed_z,
-                        heights.top_z,
-                        heights.bottom_z,
+                        heights.clearance_z + display_shift.z,
+                        heights.retract_z + display_shift.z,
+                        heights.feed_z + display_shift.z,
+                        heights.top_z + display_shift.z,
+                        heights.bottom_z + display_shift.z,
                     ),
                 );
             } else {
@@ -863,6 +921,23 @@ impl RsCamApp {
             resources.height_planes_data = None;
         }
     }
+}
+
+/// Translate an annotated toolpath by `shift` — the display-frame adapter
+/// for identity setups, whose toolpaths emit in world coordinates while the
+/// viewport draws zero-rooted local. Arc center offsets (`i`/`j` on the
+/// `MoveType`) are relative and survive translation unchanged.
+fn translate_annotated(
+    annotated: &rs_cam_core::toolpath_spans::AnnotatedToolpath,
+    shift: rs_cam_core::geo::P3,
+) -> rs_cam_core::toolpath_spans::AnnotatedToolpath {
+    let mut out = annotated.clone();
+    for m in &mut out.toolpath.moves {
+        m.target.x += shift.x;
+        m.target.y += shift.y;
+        m.target.z += shift.z;
+    }
+    out
 }
 
 /// Build a `toolpath_id -> [cl_min, cl_max]` map from the suggest module's
@@ -905,4 +980,50 @@ fn build_chipload_per_move(
             .or_insert(ct);
     }
     map
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+mod tests {
+    use super::translate_annotated;
+    use rs_cam_core::geo::P3;
+    use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
+    use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+
+    #[test]
+    fn translate_annotated_shifts_targets_and_preserves_arc_offsets() {
+        let mut tp = Toolpath::new();
+        tp.moves.push(Move {
+            target: P3::new(1.0, 2.0, 3.0),
+            move_type: MoveType::Rapid,
+            intent: MoveIntent::Unknown,
+        });
+        tp.moves.push(Move {
+            target: P3::new(4.0, 5.0, -2.0),
+            move_type: MoveType::ArcCW {
+                i: 0.5,
+                j: -0.5,
+                feed_rate: 1000.0,
+            },
+            intent: MoveIntent::Unknown,
+        });
+        let annotated = AnnotatedToolpath {
+            toolpath: tp,
+            spans: Vec::new(),
+            spans_valid: true,
+        };
+
+        let shifted = translate_annotated(&annotated, P3::new(0.0, 0.0, 19.0));
+        assert_eq!(shifted.toolpath.moves[0].target.z, 22.0);
+        assert_eq!(shifted.toolpath.moves[1].target.z, 17.0);
+        // Arc center offsets are relative — translation must not touch them.
+        match shifted.toolpath.moves[1].move_type {
+            MoveType::ArcCW { i, j, .. } => {
+                assert_eq!((i, j), (0.5, -0.5));
+            }
+            _ => panic!("arc move type changed"),
+        }
+        // Original untouched.
+        assert_eq!(annotated.toolpath.moves[0].target.z, 3.0);
+    }
 }

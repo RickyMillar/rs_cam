@@ -435,7 +435,27 @@ impl RsCamApp {
                         )
                     })
             });
-            Some((motion.target, tool_info, deflection_mm))
+            // Toolpath moves are in the emission frame (world for identity
+            // setups); the display frame is zero-rooted local. Shift
+            // identity-setup positions by -stock.origin so the tool marker
+            // rides the displayed stock (audit 2026-06-12, finding 1).
+            let display_shift = session
+                .setup_of_toolpath_id(toolpath_id)
+                .and_then(|idx| session.list_setups().get(idx))
+                .map_or(rs_cam_core::geo::P3::new(0.0, 0.0, 0.0), |sd| {
+                    crate::state::job::Setup::for_transforms(
+                        crate::state::job::SetupId(sd.id),
+                        sd.face_up,
+                        sd.z_rotation,
+                    )
+                    .emission_to_display_shift(session.stock_config())
+                });
+            let pos = rs_cam_core::geo::P3::new(
+                motion.target.x + display_shift.x,
+                motion.target.y + display_shift.y,
+                motion.target.z + display_shift.z,
+            );
+            Some((pos, tool_info, deflection_mm))
         })();
 
         let Some((pos, tool_info, deflection_mm)) = found else {

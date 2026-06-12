@@ -412,6 +412,26 @@ impl Setup {
         self.z_rotation.effective_stock(w, d, h)
     }
 
+    /// Shift that takes data in this setup's *emission* frame into the
+    /// viewport's zero-rooted local display frame.
+    ///
+    /// Identity setups (Top / 0°) emit toolpaths — and root their dexel
+    /// grid (F-024) — in the world frame, which differs from the
+    /// zero-rooted "machine view" the viewport displays by exactly
+    /// `-stock.origin`. Non-identity setups already emit in the local
+    /// frame, so their shift is zero. (Heights/setup-frame audit
+    /// 2026-06-12, finding 1: drawing identity toolpaths unshifted made
+    /// every rough on an `origin != 0` project render below the mesh —
+    /// "through the stock floor" on thick stocks.)
+    pub fn emission_to_display_shift(&self, stock: &StockConfig) -> rs_cam_core::geo::P3 {
+        use rs_cam_core::geo::P3;
+        if self.face_up == FaceUp::Top && self.z_rotation == ZRotation::Deg0 {
+            P3::new(-stock.origin_x, -stock.origin_y, -stock.origin_z)
+        } else {
+            P3::new(0.0, 0.0, 0.0)
+        }
+    }
+
     /// Inverse transform: from this setup's local frame back to world coords.
     /// Undoes ZRotation, then FaceUp, then translates back to world coords.
     pub fn inverse_transform_point(
@@ -1059,6 +1079,39 @@ mod tests {
             origin_y: -40.0,
             origin_z: 0.0,
             ..StockConfig::default()
+        }
+    }
+
+    /// Identity setups emit in world frame: the display shift must move
+    /// them by exactly -origin so they land on the origin-subtracted
+    /// mesh/stock the viewport draws.
+    #[test]
+    fn emission_shift_identity_is_negated_origin() {
+        let stock = StockConfig {
+            x: 200.0,
+            y: 171.5,
+            z: 25.0,
+            origin_x: 3.0,
+            origin_y: -4.0,
+            origin_z: -19.0,
+            ..StockConfig::default()
+        };
+        let setup = Setup::for_transforms(SetupId(0), FaceUp::Top, ZRotation::Deg0);
+        let shift = setup.emission_to_display_shift(&stock);
+        assert_eq!((shift.x, shift.y, shift.z), (-3.0, 4.0, 19.0));
+    }
+
+    /// Non-identity setups already emit in the local display frame —
+    /// shifting them again would double-transform.
+    #[test]
+    fn emission_shift_non_identity_is_zero() {
+        let stock = stock_with_offset();
+        for setup in [
+            Setup::for_transforms(SetupId(0), FaceUp::Bottom, ZRotation::Deg0),
+            Setup::for_transforms(SetupId(0), FaceUp::Top, ZRotation::Deg90),
+        ] {
+            let shift = setup.emission_to_display_shift(&stock);
+            assert_eq!((shift.x, shift.y, shift.z), (0.0, 0.0, 0.0));
         }
     }
 
