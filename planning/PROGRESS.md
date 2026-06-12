@@ -1216,6 +1216,25 @@ revised — hole-diving during roughing is intended clear-everything
 semantics; the lever is a pinned `bottom_z`). Full audit + repro:
 `planning/HEIGHTS_SETUP_FRAME_AUDIT_2026-06-12.md`.
 
+### Adaptive clearing algorithm review + Stage 0 (2026-06-12)
+
+Full code review of the per-slice adaptive engine after wanaka200 quality
+regressed (overfit-to-wanaka100 suspicion confirmed — constants inventory
+in the doc). Headline finding F1: the engagement *target* is an
+angle fraction (`acos(1−s/R)/2π`) but the search *measured* a disk-area
+fraction — different quantities; A/B sweeps showed DiskArea converging on
+~1.5× the commanded stepover. Recommendation: constructive offset-spiral +
+trochoid clearing on the existing EDT machinery (Stage 1+), per
+`planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`. Stage 0 landed on
+`experiment/adaptive-spiral`: `EngagementMeasure::LeadingArc` behind a flag
+with closed-form oracle tests + A/B sweeps; `is_clear_path_3d` three-tier
+floor predicate (was ignoring its surface/stock_to_leave params);
+feed/plunge/depth-derived air-run crossover (retired `MIN_AIR_RUN_MM=70`);
+true Euclidean boundary distances in the 2D engine — exposing and fixing a
+real `edt_1d` output-pass corruption bug that under-reported distances for
+the default ContourParallel strategy; `EndpointGrid` spatial hash for
+entry-exclusion scans.
+
 ## Known open work
 
 - **F-034 cycle-time re-bench** — the 827 s Shapeoko wall-clock anchor is stale and the calibration test now flakes near its widened floor (0.30); re-measure per `planning/cycle_time_rebench.md`
