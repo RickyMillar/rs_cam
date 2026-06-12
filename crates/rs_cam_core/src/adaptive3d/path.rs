@@ -578,6 +578,8 @@ pub(super) fn adaptive_3d_segments(
         stock_to_leave: params.stock_to_leave,
         depth_per_pass: params.depth_per_pass,
         tolerance: params.tolerance,
+        feed_rate: params.feed_rate,
+        plunge_rate: params.plunge_rate,
         target_frac,
         step_len,
         max_link_dist,

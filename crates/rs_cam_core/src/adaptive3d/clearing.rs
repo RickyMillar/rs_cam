@@ -243,6 +243,11 @@ pub(super) struct ClearZLevelContext<'a> {
     pub(super) stock_to_leave: f64,
     pub(super) depth_per_pass: f64,
     pub(super) tolerance: f64,
+    /// Op cutting feed (mm/min) — used for the feed-vs-rapid air-run
+    /// crossover, not for emission (segments carry no feeds here).
+    pub(super) feed_rate: f64,
+    /// Op plunge feed (mm/min) — same crossover use.
+    pub(super) plunge_rate: f64,
     pub(super) target_frac: f64,
     pub(super) step_len: f64,
     pub(super) max_link_dist: f64,
@@ -1296,6 +1301,45 @@ fn polygon_signed_area(points: &[P2]) -> f64 {
 /// is that the tool stays at a fixed Z within each slab (no per-step
 /// terrain follow) — acceptable for roughing; finish passes handle
 /// the staircase.
+/// Machine rapid rate (mm/min) assumed for the feed-vs-rapid crossover.
+/// The planner has no machine context at this layer; 5000 mm/min matches
+/// the Shapeoko-class grbl default the retired 70 mm constant was tuned
+/// against. Worst case of a wrong guess is a suboptimal link/retract
+/// choice, never an unsafe move.
+const ASSUMED_RAPID_MM_MIN: f64 = 5000.0;
+
+/// Final-approach distance descended at plunge rate after the rapid
+/// descent (mirrors `RAPID_DESCENT_BUFFER_MM` in `path.rs`).
+const CROSSOVER_PLUNGE_BUFFER_MM: f64 = 0.5;
+
+/// XY length above which demoting an in-slice air run to a
+/// retract + rapid + re-plunge cycle is faster than feeding through it.
+///
+/// Solves `len/feed = len/rapid + overhead(retract_depth)` for `len`,
+/// where the overhead is the retract cycle: climb `retract_depth` at
+/// rapid, rapid back down to the cleared floor + buffer, final buffer at
+/// plunge rate. Replaces the hardcoded `MIN_AIR_RUN_MM = 70.0` (tuned to
+/// a 6 mm tool at 3150 mm/min feed — Stage 0, algorithm review
+/// 2026-06-12 F3).
+pub(super) fn air_run_crossover_mm(
+    feed_mm_min: f64,
+    plunge_mm_min: f64,
+    retract_depth_mm: f64,
+) -> f64 {
+    let feed = feed_mm_min.max(1.0) / 60.0;
+    let rapid = ASSUMED_RAPID_MM_MIN / 60.0;
+    let plunge = plunge_mm_min.max(1.0) / 60.0;
+    if feed >= rapid {
+        // Feeding is at least as fast as rapiding: a demotion never pays.
+        return f64::INFINITY;
+    }
+    let depth = retract_depth_mm.max(0.0);
+    let overhead_s = depth / rapid
+        + (depth - CROSSOVER_PLUNGE_BUFFER_MM).max(0.0) / rapid
+        + CROSSOVER_PLUNGE_BUFFER_MM.min(depth) / plunge;
+    overhead_s / (1.0 / feed - 1.0 / rapid)
+}
+
 #[allow(clippy::too_many_arguments, clippy::indexing_slicing)]
 pub(super) fn clear_z_level_agent_2d_slice(
     ctx: &ClearZLevelContext<'_>,
@@ -1934,15 +1978,20 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         })
                         .collect();
                     // Re-promote short air runs back to engaged: rapid-mode
-                    // is only faster than feed-mode for transit > ~70mm
-                    // because each rapid carries retract+plunge overhead
-                    // (~0.5s). For a 6mm tool at 3150mm/min feed and
-                    // 5000mm/min rapid, the crossover is around 70mm.
-                    // Below that, feeding through air is cheaper than
-                    // demoting to rapid. Threshold is XY toolpath
-                    // distance, so we walk forward summing segment
-                    // lengths until we exceed it or change classification.
-                    const MIN_AIR_RUN_MM: f64 = 70.0;
+                    // is only faster than feed-mode above a crossover
+                    // length, because each demotion carries a full
+                    // retract + rapid-reposition + re-plunge overhead.
+                    // Computed from the op's actual feed/plunge rates and
+                    // this level's retract depth (replaces a 70 mm
+                    // constant tuned to one 6 mm/3150/5000 combo).
+                    // Threshold is XY toolpath distance, so we walk
+                    // forward summing segment lengths until we exceed it
+                    // or change classification.
+                    let min_air_run_mm = air_run_crossover_mm(
+                        ctx.feed_rate,
+                        ctx.plunge_rate,
+                        (ctx.safe_z - z_level).max(0.0),
+                    );
                     if !engaged.is_empty() {
                         let mut i = 0;
                         while i < engaged.len() {
@@ -1969,7 +2018,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                                 let dy = path_3d[run_start].y - path_3d[run_start - 1].y;
                                 run_len_mm += (dx * dx + dy * dy).sqrt();
                             }
-                            if run_len_mm < MIN_AIR_RUN_MM {
+                            if run_len_mm < min_air_run_mm {
                                 for is_engaged in
                                     engaged.iter_mut().take(run_end + 1).skip(run_start)
                                 {
@@ -1988,7 +2037,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                     // threshold the cut is roughing-irrelevant — finishing
                     // passes clean the residual.
                     //
-                    // Asymmetric with MIN_AIR_RUN_MM on purpose: the air-run
+                    // Asymmetric with min_air_run_mm on purpose: the air-run
                     // smoother promotes air → engaged to avoid retract
                     // overhead on short bridges; this engaged-run filter
                     // demotes engaged → air to merge the bordering air runs
@@ -2376,7 +2425,43 @@ fn polyline_length_3d(path: &[P3]) -> f64 {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod region_order_tests {
-    use super::nearest_neighbor_order;
+    use super::{air_run_crossover_mm, nearest_neighbor_order};
+
+    #[test]
+    fn crossover_reproduces_the_retired_70mm_anchor() {
+        // The old constant assumed ~0.5 s of retract overhead at
+        // 3150 mm/min feed / 5000 mm/min rapid → ~71 mm crossover.
+        // overhead(d) = 2d/rapid − buf/rapid + buf/plunge = 0.5 s at
+        // d ≈ 18.7 mm (plunge 500).
+        let got = air_run_crossover_mm(3150.0, 500.0, 18.7);
+        assert!(
+            (got - 71.0).abs() < 3.0,
+            "expected ≈71 mm at the old constant's operating point, got {got:.1}"
+        );
+    }
+
+    #[test]
+    fn crossover_scales_with_retract_depth_and_feed() {
+        // Deeper retract ⇒ more overhead ⇒ longer crossover.
+        let shallow = air_run_crossover_mm(3150.0, 500.0, 5.0);
+        let deep = air_run_crossover_mm(3150.0, 500.0, 30.0);
+        assert!(shallow < deep, "shallow {shallow:.1} !< deep {deep:.1}");
+
+        // Faster feed narrows the feed-vs-rapid gap ⇒ longer crossover.
+        let slow_feed = air_run_crossover_mm(1000.0, 500.0, 10.0);
+        let fast_feed = air_run_crossover_mm(4500.0, 500.0, 10.0);
+        assert!(
+            slow_feed < fast_feed,
+            "slow {slow_feed:.1} !< fast {fast_feed:.1}"
+        );
+    }
+
+    #[test]
+    fn crossover_is_infinite_when_feed_beats_rapid() {
+        // Feed ≥ assumed rapid: demoting to a rapid never pays.
+        assert!(air_run_crossover_mm(5000.0, 500.0, 10.0).is_infinite());
+        assert!(air_run_crossover_mm(8000.0, 500.0, 10.0).is_infinite());
+    }
 
     #[test]
     fn nn_visits_nearest_first_from_start() {
