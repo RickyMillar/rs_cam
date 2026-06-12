@@ -1235,6 +1235,18 @@ real `edt_1d` output-pass corruption bug that under-reported distances for
 the default ContourParallel strategy; `EndpointGrid` spatial hash for
 entry-exclusion scans.
 
+Stage 1 (2026-06-13, overnight): constructive **contour spiral** landed as
+`PathStrategy2d::ContourSpiral` (2D engine) + `ClearingStrategy3d::
+ContourSpiral` (per-slice 3D, via the AgentSearch dispatch) — inside-out
+EDT iso-contour wraps from the helical starter as one continuous stay-down
+pass per region. Property harness (`tests/adaptive_property_harness.rs`,
+independent replay oracle on generated geometry) gates the Stage 1
+contract: 1 plunge / 0 rapids per region, coverage parity with the agent,
+load never worse — and empirically confirms F1/F2 (agent p99 engagement
+≈ 2.5× target on every shape). Stage 2 next: trochoidal corner inserts +
+side-branch handling to convert the comparative load bars into absolute
+α-bounds.
+
 ## Known open work
 
 - **F-034 cycle-time re-bench** — the 827 s Shapeoko wall-clock anchor is stale and the calibration test now flakes near its widened floor (0.30); re-measure per `planning/cycle_time_rebench.md`

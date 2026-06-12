@@ -74,6 +74,12 @@ pub enum ClearingStrategy3d {
     ContourParallel,
     /// Curvature-adjusted adaptive clearing via variable-offset EDT.
     Adaptive,
+    /// Constructive inside-out contour spiral per slice (Stage 1 of the
+    /// adaptive algorithm review): one continuous stay-down pass per
+    /// region with engagement bounded by wrap spacing. Routes through
+    /// the AgentSearch slice dispatch with the spiral as the 2D
+    /// generator; falls back to the agent where no starter pocket fits.
+    ContourSpiral,
 }
 
 /// Entry strategy for 3D adaptive (replaces vertical plunge).

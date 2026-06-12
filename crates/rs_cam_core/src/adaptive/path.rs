@@ -104,6 +104,7 @@ pub(super) fn adaptive_segments(
         initial_stock: None,
         cleanup_strategy: crate::adaptive::CleanupStrategy::Legacy,
         engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
+        path_strategy: crate::adaptive::PathStrategy2d::Agent,
     };
     adaptive_segments_with_debug(polygon, &params, cancel, None)
 }
@@ -256,6 +257,36 @@ pub(crate) fn adaptive_segments_with_debug(
         } else {
             None
         };
+
+    // ── Contour-spiral passes (Stage 1, constructive) ─────────────────
+    // Replaces only the agent loop below; the narrow gate, starter
+    // pocket, residue cleanup and emission stay shared. Requires the
+    // starter pocket (the first wrap rides flush with its cleared rim);
+    // when it isn't available — or the spiral degenerates — fall through
+    // to the agent loop.
+    if matches!(
+        params.path_strategy,
+        crate::adaptive::PathStrategy2d::ContourSpiral
+    ) && let Some(starter_end) = helical_entry_pos
+    {
+        let spiral_scope = debug.map(|ctx| ctx.start_span("contour_spiral", "Contour spiral"));
+        let applied = super::spiral::spiral_passes(
+            &mut grid,
+            &machinable_mask,
+            tool_radius,
+            stepover,
+            starter_end,
+            &mut segments,
+            &mut last_pos,
+            cancel,
+        )?;
+        if let Some(scope) = spiral_scope.as_ref() {
+            scope.set_counter("applied", if applied { 1.0 } else { 0.0 });
+        }
+        if applied {
+            return Ok(segments);
+        }
+    }
 
     // ── Adaptive passes ───────────────────────────────────────────────
     let max_passes = 500; // safety limit

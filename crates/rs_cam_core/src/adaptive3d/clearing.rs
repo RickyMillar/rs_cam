@@ -81,17 +81,19 @@ pub(super) fn clear_z_level_dispatch_no_marker(
             region,
             cancel,
         ),
-        ClearingStrategy3d::AgentSearch => clear_z_level_agent_2d_slice(
-            ctx,
-            material_stock,
-            surface_hm,
-            z_level,
-            segments,
-            last_pos,
-            region,
-            None,
-            cancel,
-        ),
+        ClearingStrategy3d::AgentSearch | ClearingStrategy3d::ContourSpiral => {
+            clear_z_level_agent_2d_slice(
+                ctx,
+                material_stock,
+                surface_hm,
+                z_level,
+                segments,
+                last_pos,
+                region,
+                None,
+                cancel,
+            )
+        }
     }
 }
 
@@ -1534,6 +1536,13 @@ pub(super) fn clear_z_level_agent_2d_slice(
         initial_stock: None,
         cleanup_strategy: crate::adaptive::CleanupStrategy::ContourParallelHybrid,
         engagement_measure: ctx.engagement_measure,
+        // ContourSpiral (3D) routes through this same dispatch with the
+        // spiral as the per-slice generator; AgentSearch keeps the agent.
+        path_strategy: if matches!(ctx.clearing_strategy, ClearingStrategy3d::ContourSpiral) {
+            crate::adaptive::PathStrategy2d::ContourSpiral
+        } else {
+            crate::adaptive::PathStrategy2d::Agent
+        },
     };
 
     // 5. Lift 2D points to 3D, respecting terrain peaks above z_level.
