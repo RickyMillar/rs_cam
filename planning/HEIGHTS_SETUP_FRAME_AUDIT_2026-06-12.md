@@ -203,6 +203,12 @@ floor of the stock". The machine output was always correct.
   it for explicit full-ray clearing of uncovered cells. The fill/min_z half
   of the original finding was reverted as wrong (see the correction note
   under finding 3). Tests in `slope.rs`.
+**Live verification (rebuilt release GUI, same repro project):** identity
+rough renders ON the terrain in the Toolpaths workspace (was: outline at the
+stock floor 19 mm down); simulation stock + tool cursor align with the stock
+outline; sim verdict OK, 0 rapid collisions (both setups); CLI `project` run
+plans the same world-anchored Z levels (3.0 → −2.32) as the GUI.
+
 - **F-034 flake** — `cycle_time_calibrated_against_shapeoko_reference`
   failed at ratio 0.339 then passed on an identical build (AgentSearch
   run-to-run variance straddles the 0.40 floor of the stale 827 s anchor).
