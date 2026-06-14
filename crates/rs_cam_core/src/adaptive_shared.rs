@@ -3,7 +3,11 @@ use std::f64::consts::{PI, TAU};
 use crate::geo::P2;
 
 /// Compute the target engagement fraction from stepover and tool radius.
-pub(crate) fn target_engagement_fraction(stepover: f64, tool_radius: f64) -> f64 {
+///
+/// `pub` (not `pub(crate)`): the viz crate's "Optimal load" slider uses
+/// this and its inverse [`radial_woc_fraction_from_leading_arc`] to map
+/// between operator-facing leading-arc load and raw stepover.
+pub fn target_engagement_fraction(stepover: f64, tool_radius: f64) -> f64 {
     let woc = stepover.min(2.0 * tool_radius);
     let alpha = (1.0 - woc / tool_radius).clamp(-1.0, 1.0).acos();
     alpha / TAU
@@ -29,7 +33,7 @@ pub(crate) fn target_engagement_fraction(stepover: f64, tool_radius: f64) -> f64
 /// into `session::compute::apply_adaptive_feed_modulation`; see
 /// `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md` §"Stage 4
 /// implementation spec".
-pub(crate) fn radial_woc_fraction_from_leading_arc(f_arc: f64) -> f64 {
+pub fn radial_woc_fraction_from_leading_arc(f_arc: f64) -> f64 {
     let f = f_arc.clamp(0.0, 0.5);
     (1.0 - (TAU * f).cos()) / 2.0
 }

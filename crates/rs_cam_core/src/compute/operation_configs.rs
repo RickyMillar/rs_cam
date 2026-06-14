@@ -519,6 +519,17 @@ pub struct Adaptive3dConfig {
     pub region_ordering: RegionOrdering,
     #[serde(default = "default_clearing_strategy")]
     pub clearing_strategy: ClearingStrategy,
+    /// Trochoid trigger cap for the ContourSpiral strategy: trochoidal
+    /// relief loops fire when predicted leading-arc engagement exceeds
+    /// `target × this`. Low (≈1.0–1.2) = flattest load, more loops, more
+    /// travel; high (≈2.0–3.0) = relaxed, fewer loops, less travel.
+    /// Surfaced in the GUI as the "Nibble" dial. Default 1.6 is the
+    /// balanced knee (load still flat, ~25-30% less distance than 1.2 —
+    /// see the trochoid-cap sweep in
+    /// `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`). Ignored by
+    /// the ContourParallel/Adaptive/AgentSearch strategies.
+    #[serde(default = "default_trochoid_cap_mult")]
+    pub trochoid_cap_mult: f64,
     /// Engagement quantity for the AgentSearch 2D sub-pass. Defaults to
     /// the historical `DiskArea`; `LeadingArc` is the units-correct
     /// measure (algorithm review 2026-06-12, F1). Ignored by the
@@ -606,6 +617,7 @@ impl Default for Adaptive3dConfig {
             detect_flat_areas: false,
             region_ordering: RegionOrdering::Global,
             clearing_strategy: ClearingStrategy::ContourParallel,
+            trochoid_cap_mult: default_trochoid_cap_mult(),
             engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
             z_blend: false,
             spindle_rpm: None,
@@ -620,6 +632,15 @@ impl Default for Adaptive3dConfig {
             stay_down_clearance_mm: default_stay_down_clearance_mm(),
         }
     }
+}
+
+/// Tuned trochoid trigger cap for the ContourSpiral strategy. 1.6 is the
+/// balanced knee from the cap sweep — load stays flat (p99 well under the
+/// spiky strategies) while cutting ~25-30% less distance than the
+/// flattest-load 1.2. Matches `adaptive3d::clearing::TROCHOID_CAP_MULT_3D`
+/// (the const this default replaces, kept as the in-engine fallback).
+fn default_trochoid_cap_mult() -> f64 {
+    1.6
 }
 
 fn default_clearing_strategy() -> ClearingStrategy {

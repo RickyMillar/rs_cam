@@ -216,6 +216,7 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
     let depth_per_pass: f64 = 3.0;
     let stock_to_leave: f64 = 0.5;
     let params = Adaptive3dParams {
+        trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         tool_radius: cutter.radius(),
         envelope_radius: cutter.radius(),

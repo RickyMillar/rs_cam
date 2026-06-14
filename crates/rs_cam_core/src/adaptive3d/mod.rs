@@ -136,6 +136,13 @@ pub struct Adaptive3dParams {
     pub initial_stock: Option<TriDexelStock>,
     /// Clearing strategy per Z level (default: ContourParallel).
     pub clearing_strategy: ClearingStrategy3d,
+    /// Trochoid trigger cap for the ContourSpiral slice path: relief loops
+    /// fire when predicted leading-arc engagement exceeds `target × this`.
+    /// Low (≈1.0–1.2) = flattest load + more travel; high (≈2.0–3.0) =
+    /// relaxed + less travel. Surfaced as the GUI "Nibble" dial; ignored
+    /// by the other strategies. See the cap sweep in
+    /// `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`.
+    pub trochoid_cap_mult: f64,
     /// Engagement quantity the AgentSearch 2D sub-pass measures against
     /// the α/2π target. See `crate::adaptive::EngagementMeasure` (F1,
     /// algorithm review 2026-06-12). Ignored by ContourParallel/Adaptive.
@@ -615,6 +622,7 @@ mod tests {
 
     fn default_params() -> Adaptive3dParams {
         Adaptive3dParams {
+            trochoid_cap_mult: 1.6,
             tool_radius: 3.175,
             envelope_radius: 3.175,
             z_floor: None,

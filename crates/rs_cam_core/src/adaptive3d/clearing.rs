@@ -39,12 +39,17 @@ use crate::toolpath::simplify_path_3d;
 /// would skip it. Matches `min_cells = 4` in `detect_material_regions`.
 pub(super) const MIN_CELLS_TO_CLEAR: u64 = 4;
 
-/// Trochoid trigger cap for the 3D ContourSpiral slice path. Loops fire
-/// when predicted leading-arc engagement exceeds `target × this`. Tuned
-/// (not a user knob): 1.2 is flattest-possible load but high travel; 1.6
-/// is the balanced knee — load still flat (p99 well under the spiky
+/// In-engine fallback for the 3D ContourSpiral trochoid trigger cap.
+/// Loops fire when predicted leading-arc engagement exceeds
+/// `target × this`: 1.2 is flattest-possible load but high travel; 1.6 is
+/// the balanced knee — load still flat (p99 well under the spiky
 /// strategies) while cutting ~25-30% less distance. See the trochoid-cap
 /// sweep in `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`.
+///
+/// As of the "Optimal load + Nibble" UI reframe this is operator-tunable
+/// via `Adaptive3dConfig::trochoid_cap_mult` (GUI "Nibble" dial); the
+/// const remains the default and a sanity fallback for any context built
+/// with a non-finite or non-positive cap.
 const TROCHOID_CAP_MULT_3D: f64 = 1.6;
 
 /// Stage 4 — quantise a world coordinate to a fixed-point key (0.001 mm)
@@ -285,6 +290,10 @@ pub(super) struct ClearZLevelContext<'a> {
     pub(super) bbox_y_min: f64,
     pub(super) bbox_y_max: f64,
     pub(super) clearing_strategy: ClearingStrategy3d,
+    /// Trochoid trigger cap for the ContourSpiral slice ("Nibble" dial).
+    /// Replaces the historical `TROCHOID_CAP_MULT_3D` const so the value
+    /// is operator-tunable; the const survives as the in-engine fallback.
+    pub(super) trochoid_cap_mult: f64,
     /// Engagement quantity for the AgentSearch 2D sub-pass (F1).
     pub(super) engagement_measure: crate::adaptive::EngagementMeasure,
     pub(super) z_blend: bool,
@@ -1569,8 +1578,14 @@ pub(super) fn clear_z_level_agent_2d_slice(
         } else {
             crate::adaptive::PathStrategy2d::Agent
         },
-        // Tuned trochoid cap for the 3D slice (named const, not a knob).
-        trochoid_cap_mult: TROCHOID_CAP_MULT_3D,
+        // Operator-tunable trochoid cap ("Nibble" dial). Fall back to the
+        // tuned const for any non-finite / non-positive value so a bad
+        // config can never disable load capping outright.
+        trochoid_cap_mult: if ctx.trochoid_cap_mult.is_finite() && ctx.trochoid_cap_mult > 0.0 {
+            ctx.trochoid_cap_mult
+        } else {
+            TROCHOID_CAP_MULT_3D
+        },
     };
 
     // 5. Lift 2D points to 3D, respecting terrain peaks above z_level.

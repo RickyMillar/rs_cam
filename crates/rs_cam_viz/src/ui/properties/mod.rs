@@ -3130,7 +3130,14 @@ fn draw_toolpath_panel(
                     draw_dropcutter_params(ui, cfg, feeds_for_pills);
                 }
                 OperationConfig::Adaptive3d(cfg) => {
-                    draw_adaptive3d_params(ui, cfg, feeds_for_pills);
+                    // The "Optimal load" knob needs the active tool's
+                    // radius to map engagement ↔ stepover.
+                    let tool_radius = tool_configs
+                        .iter()
+                        .find(|(id, _)| *id == entry.tool_id)
+                        .map(|(_, t)| t.diameter / 2.0)
+                        .unwrap_or(0.0);
+                    draw_adaptive3d_params(ui, cfg, tool_radius, feeds_for_pills);
                 }
                 OperationConfig::Waterline(cfg) => {
                     draw_waterline_params(ui, cfg, feeds_for_pills);

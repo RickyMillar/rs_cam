@@ -1496,6 +1496,7 @@ fn sweep_rest_prev_tool_radius() {
 
 fn default_adaptive3d_params() -> Adaptive3dParams {
     Adaptive3dParams {
+        trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         tool_radius: 3.175,
         envelope_radius: 3.175,
