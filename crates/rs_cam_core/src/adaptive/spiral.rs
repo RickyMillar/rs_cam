@@ -58,6 +58,9 @@ pub(super) fn spiral_passes(
     tool_radius: f64,
     stepover: f64,
     starter_end: P2,
+    // Trochoid trigger multiplier: loops fire above `target × cap_mult`
+    // (clamped 0.45). Higher → fewer loops → less distance, higher peak load.
+    cap_mult: f64,
     segments: &mut Vec<AdaptiveSegment>,
     last_pos: &mut Option<P2>,
     // Stage 4 — when `Some`, the predicted leading-arc engagement (α/2π)
@@ -143,7 +146,7 @@ pub(super) fn spiral_passes(
     // residual transient is cycloid-advance / feed-modulation territory,
     // not pitch territory.
     let target = crate::adaptive_shared::target_engagement_fraction(stepover, tool_radius);
-    let eng_cap = (target * 1.2).min(0.45);
+    let eng_cap = (target * cap_mult.max(0.0)).min(0.45);
     let troch = TrochoidParams {
         radius: stepover.max(tool_radius * 0.4),
         pitch: stepover * 0.6,

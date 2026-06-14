@@ -105,6 +105,7 @@ pub(super) fn adaptive_segments(
         cleanup_strategy: crate::adaptive::CleanupStrategy::Legacy,
         engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
         path_strategy: crate::adaptive::PathStrategy2d::Agent,
+        trochoid_cap_mult: 1.2,
     };
     adaptive_segments_with_debug(polygon, &params, cancel, None, None)
 }
@@ -281,6 +282,7 @@ pub(crate) fn adaptive_segments_with_debug(
             tool_radius,
             stepover,
             starter_end,
+            params.trochoid_cap_mult,
             &mut segments,
             &mut last_pos,
             engagement_sink,

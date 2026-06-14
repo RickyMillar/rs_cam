@@ -343,6 +343,10 @@ fn replay(polygon: &Polygon2, tp: &Toolpath) -> Metrics {
 }
 
 fn run_strategy(polygon: &Polygon2, strategy: PathStrategy2d) -> Metrics {
+    run_strategy_capped(polygon, strategy, 1.2)
+}
+
+fn run_strategy_capped(polygon: &Polygon2, strategy: PathStrategy2d, cap_mult: f64) -> Metrics {
     let params = AdaptiveParams {
         tool_radius: R,
         stepover: STEPOVER,
@@ -357,6 +361,7 @@ fn run_strategy(polygon: &Polygon2, strategy: PathStrategy2d) -> Metrics {
         cleanup_strategy: CleanupStrategy::ContourParallelHybrid,
         engagement_measure: EngagementMeasure::LeadingArc,
         path_strategy: strategy,
+        trochoid_cap_mult: cap_mult,
     };
     let tp = adaptive_toolpath(polygon, &params);
     replay(polygon, &tp)
@@ -484,4 +489,43 @@ fn contour_spiral_dominates_agent() {
         "stage-1 property violations:\n{}",
         failures.join("\n")
     );
+}
+
+/// Stage 4 trochoid-distance lever (exploratory, `#[ignore]`d — run with
+/// `cargo test -p rs_cam_core --test adaptive_property_harness -- --ignored
+/// --nocapture trochoid_cap`). Maps cutting distance vs load as the
+/// trochoid trigger cap is relaxed: higher `cap_mult` fires fewer loops →
+/// less distance (faster on the machine) but higher peak engagement. The
+/// agent row is the distance/​load reference. Use it to find the knee
+/// where distance drops without load blowing past the gate bars.
+#[test]
+#[ignore]
+fn trochoid_cap_distance_load_tradeoff() {
+    let tgt = target();
+    println!("\n=== trochoid cap sweep (target a/2pi = {tgt:.3}, over% = >1.3x target) ===");
+    println!(
+        "{:<13} {:>8} {:>9} {:>6} {:>6} {:>6}",
+        "shape", "cap_mult", "cut_mm", "p99", "over%", "cov"
+    );
+    for (name, poly) in shapes() {
+        for cap in [1.0_f64, 1.2, 1.5, 2.0, 3.0, 10.0] {
+            let s = run_strategy_capped(&poly, PathStrategy2d::ContourSpiral, cap);
+            println!(
+                "{name:<13} {cap:>8.1} {:>9.0} {:>6.3} {:>6.1} {:>6.3}",
+                s.cut_mm,
+                s.p99_engagement,
+                s.over_target_fraction * 100.0,
+                s.coverage
+            );
+        }
+        let a = run_strategy(&poly, PathStrategy2d::Agent);
+        println!(
+            "{name:<13} {:>8} {:>9.0} {:>6.3} {:>6.1} {:>6.3}",
+            "agent",
+            a.cut_mm,
+            a.p99_engagement,
+            a.over_target_fraction * 100.0,
+            a.coverage
+        );
+    }
 }
