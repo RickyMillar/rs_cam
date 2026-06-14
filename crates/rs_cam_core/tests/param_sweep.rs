@@ -316,6 +316,7 @@ fn default_adaptive_params() -> AdaptiveParams {
     AdaptiveParams {
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         path_strategy: rs_cam_core::adaptive::PathStrategy2d::Agent,
+        trochoid_cap_mult: 1.2,
         tool_radius: 3.175,
         stepover: 2.0,
         cut_depth: -3.0,

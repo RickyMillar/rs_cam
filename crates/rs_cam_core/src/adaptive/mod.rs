@@ -133,6 +133,13 @@ pub struct AdaptiveParams {
     pub engagement_measure: EngagementMeasure,
     /// How the main clearing passes are generated. See `PathStrategy2d`.
     pub path_strategy: PathStrategy2d,
+    /// ContourSpiral trochoid trigger: a wrap point switches to looping
+    /// when its predicted leading-arc engagement exceeds
+    /// `target_engagement × this` (clamped to 0.45). The default 1.2 holds
+    /// load tightest; raising it fires fewer loops → less cutting distance
+    /// (faster) at the cost of higher peak load. Stage 4 lever for trading
+    /// load-constancy against wall-clock. Ignored by the agent path.
+    pub trochoid_cap_mult: f64,
 }
 
 /// A segment of the adaptive path: cutting, rapid reposition, or link (tool-down reposition).
@@ -320,6 +327,7 @@ mod tests {
             cleanup_strategy: CleanupStrategy::Legacy,
             engagement_measure: EngagementMeasure::DiskArea,
             path_strategy: PathStrategy2d::Agent,
+            trochoid_cap_mult: 1.2,
         }
     }
 

@@ -1561,6 +1561,10 @@ pub(super) fn clear_z_level_agent_2d_slice(
         } else {
             crate::adaptive::PathStrategy2d::Agent
         },
+        // Default trochoid cap for the 3D slice path; the 2D property
+        // harness varies it to map the distance/load tradeoff. Wire to
+        // Adaptive3dConfig only once a non-default value proves out.
+        trochoid_cap_mult: 1.2,
     };
 
     // 5. Lift 2D points to 3D, respecting terrain peaks above z_level.

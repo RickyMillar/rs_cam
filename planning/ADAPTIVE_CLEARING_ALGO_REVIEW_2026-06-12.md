@@ -457,3 +457,42 @@ keep the per-point sampler for correctness + foundation, or revert the
 spiral's wall-clock is **reducing the trochoid distance** (cycloid
 advance / wider cap), not feed modulation — that's the next experiment
 if cycle time must improve.
+
+## Stage 4 trochoid-cap sweep (2026-06-15) — the gap IS recoverable
+
+Made the trochoid trigger tunable: `AdaptiveParams.trochoid_cap_mult`
+(loops fire above `target × mult`, clamped 0.45; default 1.2 = prior
+behaviour). Exploratory harness sweep `trochoid_cap_distance_load_tradeoff`
+(`#[ignore]`, run with `--ignored --nocapture`) maps cutting distance vs
+load as the cap relaxes (target α/2π = 0.190):
+
+| shape | cap 1.2 (cut / p99 / over%) | cap 2.0 | cap 3.0 | agent |
+|---|---|---|---|---|
+| square60 | 3023 / .328 / 3.9 | 2033 / .391 / 6.9 | 1631 / .422 / 9.8 | 1621 / .469 / 10.9 |
+| star_a | 2266 / .336 / 4.1 | 1092 / .414 / 9.3 | 847 / .445 / 13.1 | 680 / .477 / 16.6 |
+| star_b | 2595 / .312 / 3.8 | 1232 / .391 / 9.4 | 999 / .406 / 12.5 | 804 / .477 / 17.3 |
+| l_shape | 2166 / .312 / 3.1 | 1627 / .375 / 6.7 | 1211 / .430 / 11.2 | 795 / .484 / 25.4 |
+| u_shape | 2122 / .320 / 2.8 | 1704 / .367 / 6.6 | 995 / .430 / 20.3 | 689 / .484 / 36.0 |
+| annulus | 2723 / .352 / 3.6 | 2052 / .383 / 5.7 | 1649 / .406 / 8.0 | 1019 / .492 / 37.4 |
+
+Coverage holds ~constant (0.978–0.995) across the whole sweep. cap ≥ ~2.4
+saturates (the 0.45 clamp binds → cap 3.0 ≈ cap 10.0 ≈ trochoids nearly
+off). narrow_slot is flat (routes to contour-parallel, no trochoids).
+
+**Finding: the spiral's wall-clock gap is recoverable via geometry, not
+feeds.** At **cap ≈ 2.0** cutting distance drops **30–50%** vs the 1.2
+default while p99 load stays at ~0.37–0.41 — still comfortably *under*
+the agent's 0.47–0.49 — and the spiral keeps its stay-down / low-rapid
+wins. At cap 3.0 the distance approaches the agent's outright (square60
+1631 vs 1621) at lower peak load and far lower over-target fraction. The
+1.2 default was tuned for flattest-possible load; **cap ~1.5–2.0 is the
+balanced knee** — most of the speed, load still flatter than the spiky
+strategies.
+
+This reframes the Stage 4 v1/v2 conclusion: feed modulation can't recover
+wall-clock (load already flat), but **relaxing the trochoid cap can** —
+it trades a little load-constancy for a large distance cut. Recommended
+next: wire `trochoid_cap_mult` to `Adaptive3dConfig` (currently hardcoded
+1.2 in the 3D slice), default ~1.6, and re-run the wanaka200 head-to-head
+to confirm the 3D wall-clock recovery. The load bars in the gated harness
+test stay on the 1.2 default; the sweep documents the speed band above it.

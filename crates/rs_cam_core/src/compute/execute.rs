@@ -782,6 +782,7 @@ pub(crate) fn generate_adaptive(
                 cleanup_strategy: cfg.cleanup_strategy,
                 engagement_measure: cfg.engagement_measure,
                 path_strategy: cfg.path_strategy,
+                trochoid_cap_mult: 1.2,
             };
             let (level_tp, mut annotations) =
                 crate::adaptive::adaptive_toolpath_structured_annotated_traced_with_cancel(
