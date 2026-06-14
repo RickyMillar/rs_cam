@@ -973,7 +973,7 @@ pub(crate) fn generate_adaptive3d(
         max_stay_down_distance_mm: cfg.max_stay_down_distance_mm,
         stay_down_clearance_mm: cfg.stay_down_clearance_mm,
     };
-    let (tp, annotations) =
+    let (tp, annotations, planner_engagement) =
         crate::adaptive3d::adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
             m,
             idx,
@@ -988,7 +988,11 @@ pub(crate) fn generate_adaptive3d(
     }
     let spans =
         crate::compute::spans::spans_from_adaptive3d_annotations(&annotations, tp.moves.len());
-    Ok(generated_with_spans(tp, spans))
+    // Stage 4 — carry the planner-predicted engagement samples on the
+    // AnnotatedToolpath so the feed modulator can read them post-dressup.
+    let mut annotated = generated_with_spans(tp, spans);
+    annotated.planner_engagement = planner_engagement;
+    Ok(annotated)
 }
 
 /// ProjectCurve family adapter. Builds its own cutter from
@@ -2044,6 +2048,7 @@ pub fn apply_dressups(
         toolpath: current.toolpath,
         spans: current.spans,
         spans_valid: input_valid && current.spans_valid,
+        planner_engagement: current.planner_engagement,
     }
 }
 

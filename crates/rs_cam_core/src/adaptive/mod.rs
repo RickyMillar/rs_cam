@@ -252,7 +252,7 @@ pub fn adaptive_toolpath_structured_annotated_traced_with_cancel(
     cancel: &dyn CancelCheck,
     debug: Option<&ToolpathDebugContext>,
 ) -> Result<(Toolpath, Vec<AdaptiveRuntimeAnnotation>), Cancelled> {
-    let segments = adaptive_segments_with_debug(polygon, params, cancel, debug)?;
+    let segments = adaptive_segments_with_debug(polygon, params, cancel, debug, None)?;
     let segments = match params.cleanup_strategy {
         CleanupStrategy::Legacy => segments,
         CleanupStrategy::ResidueMop | CleanupStrategy::ContourParallelNarrow => {
@@ -321,6 +321,51 @@ mod tests {
             engagement_measure: EngagementMeasure::DiskArea,
             path_strategy: PathStrategy2d::Agent,
         }
+    }
+
+    /// Stage 4 — the ContourSpiral path records a planner-engagement
+    /// sample for every emitted cut point, the values are valid
+    /// leading-arc fractions in `[0, 0.5]`, and the median sits near the
+    /// commanded target. This is the per-move signal the feed modulator
+    /// looks up positionally; if the sink ever comes back empty the
+    /// modulator silently falls back to the uniform floor, so this test
+    /// guards the wiring end-to-end through the 2D engine.
+    #[test]
+    fn contour_spiral_populates_planner_engagement_sink() {
+        let poly = square_polygon(60.0);
+        let params = AdaptiveParams {
+            path_strategy: PathStrategy2d::ContourSpiral,
+            cleanup_strategy: CleanupStrategy::ContourParallelHybrid,
+            engagement_measure: EngagementMeasure::LeadingArc,
+            ..default_params(3.0, 1.2)
+        };
+        let never_cancel = || false;
+        let mut sink: Vec<(P2, f64)> = Vec::new();
+        let segs =
+            adaptive_segments_with_debug(&poly, &params, &never_cancel, None, Some(&mut sink))
+                .expect("spiral should not cancel");
+        assert!(
+            segs.iter().any(|s| matches!(s, AdaptiveSegment::Cut(_))),
+            "spiral should emit a Cut segment"
+        );
+        assert!(
+            !sink.is_empty(),
+            "spiral must record planner engagement samples"
+        );
+        for (_, f) in &sink {
+            assert!(
+                (0.0..=0.5 + 1e-9).contains(f),
+                "leading-arc fraction {f} outside [0, 0.5]"
+            );
+        }
+        let mut vals: Vec<f64> = sink.iter().map(|(_, f)| *f).collect();
+        vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let median = vals[vals.len() / 2];
+        let target = crate::adaptive_shared::target_engagement_fraction(1.2, 3.0);
+        assert!(
+            median > 0.3 * target && median < 2.5 * target,
+            "median engagement {median} far from target {target}"
+        );
     }
 
     // ── MaterialGrid tests ─────────────────────────────────────────────
@@ -1456,7 +1501,7 @@ mod tests {
             ..default_params(tool_radius, stepover)
         };
         let never_cancel = || false;
-        let segments = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None)
+        let segments = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None)
             .expect("adaptive should not cancel");
 
         let mut cut_count = 0usize;
@@ -1619,7 +1664,7 @@ mod tests {
             ..default_params(tool_radius, stepover)
         };
         let never_cancel = || false;
-        let segments = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None)
+        let segments = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None)
             .expect("adaptive should not cancel");
         write_segments_svg(
             &segments,
@@ -1987,7 +2032,7 @@ mod tests {
             ..default_params(tool_radius, stepover)
         };
         let never_cancel = || false;
-        let baseline = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None)
+        let baseline = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None)
             .expect("adaptive should not cancel");
 
         let machinable = crate::polygon::offset_polygon(&polygon, tool_radius)
@@ -2057,7 +2102,7 @@ mod tests {
             ..default_params(tool_radius, stepover)
         };
         let never_cancel = || false;
-        let baseline = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None)
+        let baseline = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None)
             .expect("adaptive should not cancel");
 
         let machinable = crate::polygon::offset_polygon(&polygon, tool_radius)
@@ -2204,8 +2249,9 @@ mod tests {
                 continue;
             }
             let _machinable = machinable_vec[0].clone();
-            let baseline = adaptive_segments_with_debug(polygon, &params, &never_cancel, None)
-                .expect("adaptive should not cancel");
+            let baseline =
+                adaptive_segments_with_debug(polygon, &params, &never_cancel, None, None)
+                    .expect("adaptive should not cancel");
             let mop_params = AdaptiveParams {
                 cleanup_strategy: CleanupStrategy::ResidueMop,
                 ..default_params(tool_radius, stepover)
@@ -2222,7 +2268,7 @@ mod tests {
                 ..default_params(tool_radius, stepover)
             };
             let narrow_segs =
-                adaptive_segments_with_debug(polygon, &narrow_params, &never_cancel, None)
+                adaptive_segments_with_debug(polygon, &narrow_params, &never_cancel, None, None)
                     .expect("adaptive should not cancel");
             let narrow = path::apply_residue_mop_cleanup(polygon, &narrow_params, &narrow_segs);
             // ContourParallelHybrid: spiral runs on whole machinable
@@ -2236,7 +2282,7 @@ mod tests {
                 ..default_params(tool_radius, stepover)
             };
             let hybrid_segs =
-                adaptive_segments_with_debug(polygon, &hybrid_params, &never_cancel, None)
+                adaptive_segments_with_debug(polygon, &hybrid_params, &never_cancel, None, None)
                     .expect("adaptive should not cancel");
             let hybrid =
                 path::apply_contour_parallel_residue_cleanup(polygon, &hybrid_params, &hybrid_segs);
@@ -2300,7 +2346,7 @@ mod tests {
             ..default_params(tool_radius, stepover)
         };
         let never_cancel = || false;
-        let segments = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None)
+        let segments = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None)
             .expect("adaptive should not cancel");
 
         // Find the first Cut group; take its first N points.

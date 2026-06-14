@@ -40,6 +40,7 @@ pub fn fit_arcs(
         toolpath,
         spans,
         spans_valid,
+        planner_engagement,
     } = annotated;
     let moves = &toolpath.moves;
 
@@ -48,6 +49,7 @@ pub fn fit_arcs(
             toolpath: Toolpath::new(),
             spans,
             spans_valid,
+            planner_engagement,
         };
     }
 
@@ -237,6 +239,7 @@ pub fn fit_arcs(
         toolpath: result,
         spans: new_spans,
         spans_valid,
+        planner_engagement,
     }
 }
 

@@ -9,6 +9,7 @@ use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
 
+use crate::geo::P3;
 use crate::toolpath::Toolpath;
 
 // ── SpanId ──────────────────────────────────────────────────────────────
@@ -178,6 +179,13 @@ pub struct AnnotatedToolpath {
     pub toolpath: Toolpath,
     pub spans: Vec<Span>,
     pub spans_valid: bool,
+    /// Stage 4 — planner-predicted leading-arc engagement `(cut_point,
+    /// α/2π)` for adaptive ContourSpiral toolpaths; empty otherwise. The
+    /// feed modulator looks these up by `Move.target` position (the
+    /// samples are positional, so they survive simplify / arcfit / dressup
+    /// / TSP-reorder reshaping without per-move re-indexing). See
+    /// `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md` §"Stage 4".
+    pub planner_engagement: Vec<(P3, f64)>,
 }
 
 impl AnnotatedToolpath {
@@ -188,6 +196,7 @@ impl AnnotatedToolpath {
             toolpath,
             spans: Vec::new(),
             spans_valid: true,
+            planner_engagement: Vec::new(),
         }
     }
 
@@ -196,6 +205,7 @@ impl AnnotatedToolpath {
             toolpath,
             spans,
             spans_valid: true,
+            planner_engagement: Vec::new(),
         }
     }
 

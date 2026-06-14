@@ -957,6 +957,7 @@ impl ProjectSession {
             toolpath,
             spans,
             spans_valid,
+            planner_engagement,
         } = annotated;
 
         // Resolve the source polygon for the boundary. ModelSilhouette and
@@ -1061,6 +1062,7 @@ impl ProjectSession {
             toolpath: clipped,
             spans: remapped,
             spans_valid,
+            planner_engagement,
         }
     }
 
@@ -1434,53 +1436,76 @@ impl ProjectSession {
             }
 
             // Stage 4 — planner-predicted engagement for the constructive
-            // contour-spiral. The spiral holds leading-arc engagement at
-            // the commanded target by construction (Stages 0-2: p99 ≈
-            // target, trochoidal inserts cap excursions at ~1.2× target),
-            // so the planner's per-move prediction on lateral clearing
-            // cuts is the target engagement itself — recovered here from
-            // the op's stepover and the tool radius via the F1 leading-arc
-            // → radial-WOC bridge. This is the clean engagement signal the
-            // dexel simulator cannot give: its cylinder-side
-            // `radial_woc_fraction` reads ~10× low for adaptive ops
-            // (CLAUDE.md), so feed modulation on the sim scalar alone never
-            // lets the flat-load spiral run faster. The per-move radial WOC
-            // is floored at the planner target (`max`) so any genuine spike
-            // the simulator *does* resolve still wins — never feeding above
-            // the higher of the two estimates. Gated strictly to the
+            // contour-spiral, in two layers:
+            //
+            //  (a) Per-move: the spiral's own leading-arc engagement (α/2π)
+            //      computed on its clean 2D material grid, carried
+            //      positionally on the AnnotatedToolpath and looked up by
+            //      cut-move target. RDP simplification keeps a subset of the
+            //      emitted points verbatim, so kept cut moves hit exactly.
+            //  (b) Uniform fallback: the op's target engagement
+            //      (stepover/diameter via the F1 leading-arc → radial-WOC
+            //      bridge), used for cut moves whose position isn't in the
+            //      sampler (arc-fit / lead-in points) and for the 2D
+            //      Adaptive spiral op, which carries no 3D sampler.
+            //
+            // The dexel simulator's cylinder-side `radial_woc_fraction`
+            // reads ~10× low for adaptive ops (CLAUDE.md), so modulation on
+            // the sim scalar alone never lets the flat-load spiral run
+            // faster. Per move we take `max(sim, planner)` so any genuine
+            // spike the simulator *does* resolve still wins — never feeding
+            // above the higher of the two estimates. Gated strictly to the
             // ContourSpiral strategy: the Agent / AgentSearch path has real
-            // ~2.5× target engagement spikes that a uniform target floor
-            // would dangerously over-feed. See
-            // planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md §"Stage 4
-            // implementation spec".
-            let planner_radial_woc: Option<f64> = {
-                let spiral_stepover = match &tc.operation {
-                    crate::compute::OperationConfig::Adaptive3d(c)
-                        if matches!(
-                            c.clearing_strategy,
-                            crate::compute::operation_configs::ClearingStrategy::ContourSpiral
-                        ) =>
-                    {
-                        Some(c.stepover)
-                    }
-                    crate::compute::OperationConfig::Adaptive(c)
-                        if matches!(
-                            c.path_strategy,
-                            crate::adaptive::PathStrategy2d::ContourSpiral
-                        ) =>
-                    {
-                        Some(c.stepover)
-                    }
+            // ~2.5× target engagement spikes that a planner floor would
+            // dangerously over-feed. See
+            // planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md §"Stage 4".
+            let is_contour_spiral = matches!(
+                &tc.operation,
+                crate::compute::OperationConfig::Adaptive3d(c)
+                    if matches!(
+                        c.clearing_strategy,
+                        crate::compute::operation_configs::ClearingStrategy::ContourSpiral
+                    )
+            ) || matches!(
+                &tc.operation,
+                crate::compute::OperationConfig::Adaptive(c)
+                    if matches!(c.path_strategy, crate::adaptive::PathStrategy2d::ContourSpiral)
+            );
+            let planner_uniform_woc: Option<f64> = if is_contour_spiral {
+                let stepover = match &tc.operation {
+                    crate::compute::OperationConfig::Adaptive3d(c) => Some(c.stepover),
+                    crate::compute::OperationConfig::Adaptive(c) => Some(c.stepover),
                     _ => None,
                 };
-                spiral_stepover.and_then(|s| {
+                stepover.and_then(|s| {
                     let r = tool_cfg.diameter * 0.5;
                     (r > 0.0 && s > 0.0).then(|| {
                         let f = crate::adaptive_shared::target_engagement_fraction(s, r);
                         crate::adaptive_shared::radial_woc_fraction_from_leading_arc(f)
                     })
                 })
+            } else {
+                None
             };
+            // Position key for the per-move planner-engagement lookup
+            // (0.001 mm grid — far finer than the cut-point spacing).
+            let pos_key = |p: &crate::geo::P3| -> (i64, i64, i64) {
+                (
+                    (p.x * 1000.0).round() as i64,
+                    (p.y * 1000.0).round() as i64,
+                    (p.z * 1000.0).round() as i64,
+                )
+            };
+            let planner_map: std::collections::HashMap<(i64, i64, i64), f64> =
+                if is_contour_spiral && !annotated_arc.planner_engagement.is_empty() {
+                    annotated_arc
+                        .planner_engagement
+                        .iter()
+                        .map(|(p, f)| (pos_key(p), *f))
+                        .collect()
+                } else {
+                    std::collections::HashMap::new()
+                };
 
             // Aggregate per-move engagement (time-weighted mean over the
             // move's samples). Samples filter on `is_cutting` so air-cut
@@ -1528,19 +1553,28 @@ impl ProjectSession {
                     #[allow(clippy::indexing_slicing)]
                     // SAFETY: i < move_count by construction.
                     let axial = axial_num[i] / w;
-                    // Floor the radial WOC at the planner target on lateral
-                    // clearing / finishing cuts only — entry helix, ramp,
-                    // and linking moves are not the spiral's flat-load
-                    // wraps, so they keep the sim-measured reading.
-                    let radial = match (
-                        planner_radial_woc,
-                        annotated_arc.toolpath.moves.get(i).map(|m| m.intent),
+                    // Apply the planner engagement on lateral clearing /
+                    // finishing cuts only — entry helix, ramp, and linking
+                    // moves are not the spiral's flat-load wraps, so they
+                    // keep the sim-measured reading. Per-move sampler first,
+                    // uniform target floor as fallback; `max` with sim keeps
+                    // any genuine spike the simulator resolves.
+                    let m = annotated_arc.toolpath.moves.get(i);
+                    let radial = if matches!(
+                        m.map(|m| m.intent),
+                        Some(crate::toolpath::MoveIntent::ClearingCut)
+                            | Some(crate::toolpath::MoveIntent::FinishingCut)
                     ) {
-                        (Some(p), Some(crate::toolpath::MoveIntent::ClearingCut))
-                        | (Some(p), Some(crate::toolpath::MoveIntent::FinishingCut)) => {
-                            sim_radial.max(p)
+                        let planner_woc = m
+                            .and_then(|m| planner_map.get(&pos_key(&m.target)).copied())
+                            .map(crate::adaptive_shared::radial_woc_fraction_from_leading_arc)
+                            .or(planner_uniform_woc);
+                        match planner_woc {
+                            Some(pw) => sim_radial.max(pw),
+                            None => sim_radial,
                         }
-                        _ => sim_radial,
+                    } else {
+                        sim_radial
                     };
                     PerMoveEngagement {
                         radial_woc_fraction: radial,
@@ -1646,6 +1680,9 @@ impl ProjectSession {
                 toolpath: modulated_toolpath,
                 spans: annotated_arc.spans.clone(),
                 spans_valid: annotated_arc.spans_valid,
+                // Modulation rewrites feeds, not geometry — the planner
+                // engagement samples stay valid by position.
+                planner_engagement: annotated_arc.planner_engagement.clone(),
             };
             let new_arc = Arc::new(new_annotated);
             // Rebuild the op_data variant with the swapped Arc.

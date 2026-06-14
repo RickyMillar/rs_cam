@@ -106,7 +106,7 @@ pub(super) fn adaptive_segments(
         engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
         path_strategy: crate::adaptive::PathStrategy2d::Agent,
     };
-    adaptive_segments_with_debug(polygon, &params, cancel, None)
+    adaptive_segments_with_debug(polygon, &params, cancel, None, None)
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -116,6 +116,11 @@ pub(crate) fn adaptive_segments_with_debug(
     params: &AdaptiveParams,
     cancel: &dyn CancelCheck,
     debug: Option<&ToolpathDebugContext>,
+    // Stage 4 — optional sink for the contour-spiral's per-point predicted
+    // leading-arc engagement (α/2π), collected 1:1 with the emitted Cut
+    // path. `None` for every caller except the adaptive3d slice assembly,
+    // which feeds it into the planner-engagement sampler.
+    engagement_sink: Option<&mut Vec<(P2, f64)>>,
 ) -> Result<Vec<AdaptiveSegment>, Cancelled> {
     let tool_radius = params.tool_radius;
     let stepover = params.stepover;
@@ -278,6 +283,7 @@ pub(crate) fn adaptive_segments_with_debug(
             starter_end,
             &mut segments,
             &mut last_pos,
+            engagement_sink,
             cancel,
         )?;
         if let Some(scope) = spiral_scope.as_ref() {
