@@ -39,6 +39,14 @@ use crate::toolpath::simplify_path_3d;
 /// would skip it. Matches `min_cells = 4` in `detect_material_regions`.
 pub(super) const MIN_CELLS_TO_CLEAR: u64 = 4;
 
+/// Trochoid trigger cap for the 3D ContourSpiral slice path. Loops fire
+/// when predicted leading-arc engagement exceeds `target × this`. Tuned
+/// (not a user knob): 1.2 is flattest-possible load but high travel; 1.6
+/// is the balanced knee — load still flat (p99 well under the spiky
+/// strategies) while cutting ~25-30% less distance. See the trochoid-cap
+/// sweep in `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`.
+const TROCHOID_CAP_MULT_3D: f64 = 1.6;
+
 /// Stage 4 — quantise a world coordinate to a fixed-point key (0.001 mm)
 /// for the planner-engagement position lookup. Distinct spiral sample
 /// points are spaced far wider than this, so the key is collision-free
@@ -1561,10 +1569,8 @@ pub(super) fn clear_z_level_agent_2d_slice(
         } else {
             crate::adaptive::PathStrategy2d::Agent
         },
-        // Default trochoid cap for the 3D slice path; the 2D property
-        // harness varies it to map the distance/load tradeoff. Wire to
-        // Adaptive3dConfig only once a non-default value proves out.
-        trochoid_cap_mult: 1.2,
+        // Tuned trochoid cap for the 3D slice (named const, not a knob).
+        trochoid_cap_mult: TROCHOID_CAP_MULT_3D,
     };
 
     // 5. Lift 2D points to 3D, respecting terrain peaks above z_level.
