@@ -491,8 +491,35 @@ strategies.
 
 This reframes the Stage 4 v1/v2 conclusion: feed modulation can't recover
 wall-clock (load already flat), but **relaxing the trochoid cap can** —
-it trades a little load-constancy for a large distance cut. Recommended
-next: wire `trochoid_cap_mult` to `Adaptive3dConfig` (currently hardcoded
-1.2 in the 3D slice), default ~1.6, and re-run the wanaka200 head-to-head
-to confirm the 3D wall-clock recovery. The load bars in the gated harness
-test stay on the 1.2 default; the sweep documents the speed band above it.
+it trades a little load-constancy for a large distance cut. The load bars
+in the gated harness test stay on the 1.2 default; the sweep documents
+the speed band above it.
+
+### wanaka200 confirmation at cap 1.6 (2026-06-15) — spiral now WINS outright
+
+Baked `TROCHOID_CAP_MULT_3D = 1.6` into the 3D slice path (named const in
+`adaptive3d/clearing.rs`, **not** a GUI/CLI knob — the user wanted one
+tuned value, no param surface). wanaka200, modulation ON:
+
+| config | cycle time | cut mm | rapid mm | air % | collisions |
+|---|---|---|---|---|---|
+| **spiral cap 1.6** | **12 075 s** | 247 553 | **24 310** | **15.6** | 0 |
+| spiral cap 1.2 (old) | 21 533 s | 421 704 | 30 931 | 26.0 | 0 |
+| original (agent) | 17 839 s | 230 713 | 86 995 | 39.6 | 0 |
+
+**The spiral now wins on every metric.** 44% faster than the old spiral
+and **32% faster than the agent** — the wall-clock gap didn't just close,
+it inverted. It cuts ~7% more distance than the agent (247k vs 230k) but
+wins anyway on **3.6× less rapid travel** (24k vs 87k mm): the agent
+burns huge time on retract/replunge cycles the stay-down spiral avoids.
+Load stays flat (avg engagement 0.11, no spikes), lowest air-cut (15.6%),
+verdict OK, 0 collisions. avg engagement rose 0.07→0.11 as designed
+(fewer trochoid loops = slightly higher but still-low load).
+
+**Net Stage 4 outcome:** the contour-spiral at cap 1.6 + planner-driven
+feed modulation is faster, shorter-travel, lower-air-cut, and flatter-load
+than the agent/adaptive strategies on wanaka200. The agent-retirement gate
+(beat it on generated geometry) is now arguably met for roughing; promote
+to default is a real option (pending the user's call + the Shapeoko/7i
+cut). The wall-clock lever was geometry (trochoid cap), confirmed end to
+end — feeds made it *safe*, the cap made it *fast*.
