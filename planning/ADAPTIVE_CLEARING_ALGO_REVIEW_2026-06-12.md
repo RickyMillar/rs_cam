@@ -288,3 +288,127 @@ Stage 4 (planner-predicted engagement → feed modulation) and a Suggest
 re-dial at the now-honest engagement are where the cycle time comes back.
 Recommended next validation: cut both on the Shapeoko and compare load
 sound/finish, not just wall-clock.
+
+## Stage 4 implementation spec (2026-06-14)
+
+Goal: drive the existing F-036/F-039 feed-modulation pipeline with
+**planner-predicted** leading-arc engagement so the spiral's flat load
+buys back the trochoid cutting-distance trade. The modulator already
+raises feed in light engagement — Stage 4 gives it a *correct,
+geometry-derived* engagement signal instead of the cylinder-side
+`radial_woc_fraction` scalar that reads ~10× low for adaptive ops
+(CLAUDE.md caveat), and that today is also off by default.
+
+### The conversion bridge (exact, landed first)
+
+`adaptive_shared::target_engagement_fraction(s, R) = acos(1 − s/R)/2π`
+maps stepover → leading-arc fraction `f = α/2π`. Its inverse, expressed
+as the radial width-of-cut fraction `a_e/D` the modulator's
+chip-thinning model (`1/√woc`) consumes, is:
+
+```
+radial_woc_fraction = (1 − cos(2π · f)) / 2,   f ∈ [0, 0.5]
+```
+
+Checks: full slot f=0.5 → 1.0; half-immersion f=0.25 → 0.5; air f=0 → 0.
+Lives in `adaptive_shared` with a closed-form round-trip oracle test.
+
+### Carrier — geometric sampler, NOT an index-parallel vector
+
+A `Vec<engagement>` parallel to `toolpath.moves` desyncs: lead-in/out
+dressups and `arcfit` change move counts, and `simplify_path_3d` (inside
+`push_segment_with_stamp`) drops points. Adding a field to
+`AnnotatedToolpath` also rippling to ~15 constructors that each reshape
+moves. So carry predicted engagement **geometrically**: a small set of
+`(x, y, z, f_arc)` frontier samples the spiral already computes
+(`compute_engagement_arc` per emitted point, line ~172 of
+`adaptive/spiral.rs` — currently discarded after the trochoid decision).
+At modulation time the per-move engagement is a nearest-sample lookup
+(spatial hash, keyed near in XY at the move's slice Z) — invariant to
+simplify/blend/arcfit because it's positional, not index-based.
+
+Why the planner value beats recomputing at assembly time: within one
+region the spiral emits a *single* continuous `Cut` path that
+`push_segment_with_stamp` only stamps into the dexel *after* the whole
+sub-run is pushed, so sampling `material_stock` mid-run reads full
+material on both sides → ~full-slot everywhere (wrong). The spiral's
+live 2D `MaterialGrid` is the only place that sees the frontier (inner
+side cleared by the previous wrap), so the value must originate there.
+
+### Wiring
+
+1. `spiral.rs`: collect the `eng` it already computes into a per-region
+   `Vec<(P2, f64)>` and surface it (alongside the slice Z) up through
+   the 3D clearing assembly to a per-toolpath sampler.
+2. `session/compute.rs::apply_adaptive_feed_modulation`: when a toolpath
+   has a planner sampler, build `PerMoveEngagement.radial_woc_fraction`
+   from the nearest sample via the bridge above; keep `axial_doc_fraction`
+   from the trace. Fall back to the sim-measured aggregation when no
+   sampler exists (agent path, finishing ops) — fully back-compatible.
+3. Default `adaptive_feed_modulation` stays opt-in; the wanaka200
+   head-to-head + sweeps run with it ON to measure recovery.
+
+### Verification (before each commit)
+
+- `adaptive_property_harness`: assert (a) the planner sampler is
+  populated and in-band (`f ≤ target × 1.15` off trochoid loops) on the
+  generated shapes, and (b) modulated cut time ≤ unmodulated at equal
+  safety (load gates still pass).
+- wanaka200 CLI head-to-head with modulation ON: cutting-time delta vs
+  the equal-feed baseline; confirm 0 rapid collisions and load-gate
+  verdict stays OK/clean.
+- `param_sweep` + `analyze_sweep.py` parity report on generated
+  geometry. The agent path retires only once the spiral wins there.
+
+### Then: Suggest re-dial + agent retirement (Stage 4 tail) → Stage 3.
+
+## Stage 4 v1 results (2026-06-14) — premise partly falsified
+
+Carrier-free v1 landed: the modulator (`apply_adaptive_feed_modulation`)
+floors per-move radial WOC at the planner target for `ContourSpiral`
+lateral clearing cuts (`max(sim_measured, stepover/D)` via the F1
+bridge). Gated to the spiral strategy; `max` keeps any genuine spike the
+sim resolves. wanaka200, identical feed/LUT/kinematics, only
+`clearing_strategy` differing (D=6 mm, stepover 1.2 → planner floor
+radial = 0.20 vs the sim's under-reported avg 0.071):
+
+| config | cycle time | cut mm | rapid mm | air % | collisions |
+|---|---|---|---|---|---|
+| spiral, **mod ON (safe)** | **21 533 s** | 421 704 | 30 931 | 17.3 | 0 |
+| original (adaptive+agent), **mod ON (safe)** | **17 839 s** | 230 713 | 86 995 | 39.6 | 0 |
+| spiral, mod OFF (reckless 6000 mm/min) | 14 338 s | 421 704 | 30 931 | 26.0 | 0 |
+
+**Honest finding.** At equal *safe* (modulated) feeds the spiral is
+~21 % **slower** wall-clock than the spiky strategies. Chip-thinning
+feed elevation does **not** recover the trochoid's 1.83× cutting-distance
+trade (421 704 vs 230 713 mm) — the distance dominates. The Stage 4
+premise ("feed modulation is where cycle time comes back") is **partly
+false** on this part.
+
+What Stage 4 v1 *does* deliver, and why it still ships:
+
+1. **Safety / correctness.** Without the planner floor, modulation runs
+   the spiral on the sim's ~10×-low engagement, so chip-thinning
+   (`1/√woc`) over-estimates the safe feed by √(0.20/0.071) ≈ 1.7× —
+   the spiral would cut at ~1.7× the real chip load (tool abuse). The
+   floor makes the modulated feeds physically correct.
+2. **The spiral's real wins are travel + load shape, not wall-clock:**
+   2.8× less rapid travel (30.9 k vs 87 k mm), lower air-cut (17 % vs
+   40 %), and constant spike-free load (the Stages 0-2 result) — better
+   finish / quieter cut / less deflection risk, verdict OK with 0
+   collisions.
+
+**Implication for the product decision** (carry into Stage 3's ByArea
+default question + the agent-retirement gate): the contour-spiral should
+**not** be promoted to default on a wall-clock basis. Promote it where
+load constancy / finish / travel matter more than raw cycle time, and
+keep the spiky strategies available where wall-clock dominates. The
+agent path does **not** retire on these numbers.
+
+Open levers that could still close the wall-clock gap (future work, not
+v1): reduce the trochoid distance penalty (only insert loops where
+engagement *actually* exceeds cap per-point rather than per-wrap — needs
+the per-point planner sampler from the spec above so the modulator and
+the trochoid trigger share one engagement field), and the per-point
+sampler would also let feeds rise through the genuinely-light frontier
+samples the uniform floor currently holds at target.
