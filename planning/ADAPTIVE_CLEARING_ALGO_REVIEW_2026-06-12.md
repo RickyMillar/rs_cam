@@ -412,3 +412,48 @@ the per-point planner sampler from the spec above so the modulator and
 the trochoid trigger share one engagement field), and the per-point
 sampler would also let feeds rise through the genuinely-light frontier
 samples the uniform floor currently holds at target.
+
+## Stage 4 v2 results (2026-06-15) — per-point sampler: no wall-clock gain
+
+Built the per-point planner-engagement sampler end to end: `spiral.rs`
+collects the leading-arc engagement it already computes at each emitted
+cut point → threaded through the 2D engine sink → 3D slice assembly
+(positional `(x,y,z)` lookup, survives RDP / arc-fit / dressup / TSP) →
+`Adaptive3dSegmentsResult` → `AnnotatedToolpath.planner_engagement` →
+the modulator looks it up per cut move (uniform target floor as
+fallback). Verified flowing: wanaka200 carried **824 202** planner
+samples (612 450 + 211 752) into modulation. Gate green (clippy
+`-D warnings`, fmt, full `rs_cam_core` suite, new sink unit test).
+
+wanaka200, modulation ON, identical inputs:
+
+| config | cycle time | Δ vs v1 |
+|---|---|---|
+| spiral **v2 (per-move sampler)** | 21 533.16 s | **+0.1 s (+0.0005 %)** |
+| spiral v1 (uniform target floor) | 21 533.06 s | — |
+| original (adaptive+agent) | 17 839 s | −17 % |
+
+**Finding: the per-point sampler closes none of the gap.** v2 and v1 are
+identical to 0.1 s, and every per-toolpath metric is byte-identical. The
+reason is structural: the constructive spiral holds leading-arc
+engagement at *exactly* the commanded target on its steady wraps
+(spacing = stepover ⇒ α = target by construction), so the per-move
+planner value equals the uniform floor on the overwhelming majority of
+cut moves — there is no genuinely-light frontier to feed up and no spiky
+region to feed down beyond the ~4 % trochoid samples, whose feed
+reductions are negligible in aggregate. Feed modulation cannot recover
+the ~21 % wall-clock gap because the load is already flat at target; the
+gap is the trochoid's 1.83× **distance**, not feed.
+
+What v2 leaves in the tree: a correct, tested per-move planner-engagement
+channel (trochoid zones now feed for their actual engagement, a small
+safety refinement) and the accurate foundation for any future strategy
+whose load is *not* uniform. But on the contour-spiral itself it buys no
+wall-clock, so the simpler v1 uniform floor is functionally equivalent.
+
+**Decision pending (kept on `experiment/adaptive-spiral` either way):**
+keep the per-point sampler for correctness + foundation, or revert the
+~7-file threading and retain the leaner v1. The real lever for the
+spiral's wall-clock is **reducing the trochoid distance** (cycloid
+advance / wider cap), not feed modulation — that's the next experiment
+if cycle time must improve.

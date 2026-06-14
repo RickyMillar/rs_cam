@@ -140,6 +140,10 @@ fn tally_segments_for_z_level(segments: &[Adaptive3dSegment]) -> ZLevelSegmentTa
 /// `tests/adaptive3d_planner_sim_dexel_parity.rs`.
 pub(super) struct Adaptive3dSegmentsResult {
     pub segments: Vec<Adaptive3dSegment>,
+    /// Stage 4 — planner-predicted leading-arc engagement `(cut_point,
+    /// α/2π)` collected across all ContourSpiral slices. Empty for other
+    /// strategies. Consumed by the feed modulator via positional lookup.
+    pub planner_engagement: Vec<(P3, f64)>,
     /// Test-only: planner's internal dexel state at the end of the run.
     #[allow(dead_code)]
     pub final_material_stock: TriDexelStock,
@@ -599,6 +603,10 @@ pub(super) fn adaptive_3d_segments(
     };
 
     let mut segments = Vec::new();
+    // Stage 4 — planner-predicted leading-arc engagement samples
+    // `(cut_point, α/2π)`, accumulated across all spiral slices and
+    // returned for the feed modulator's positional lookup.
+    let mut planner_eng: Vec<(P3, f64)> = Vec::new();
     let mut last_pos: Option<P3> = None;
 
     match params.region_ordering {
@@ -724,6 +732,7 @@ pub(super) fn adaptive_3d_segments(
                                 z_level,
                                 &mut segments,
                                 &mut last_pos,
+                                &mut planner_eng,
                                 Some(region),
                                 Some(level_event),
                                 cancel,
@@ -749,6 +758,7 @@ pub(super) fn adaptive_3d_segments(
                                 sub_z,
                                 &mut segments,
                                 &mut last_pos,
+                                &mut planner_eng,
                                 Some(region),
                                 cancel,
                             )?;
@@ -868,6 +878,7 @@ pub(super) fn adaptive_3d_segments(
                             z_level,
                             &mut segments,
                             &mut last_pos,
+                            &mut planner_eng,
                             None,
                             Some(level_event),
                             cancel,
@@ -890,6 +901,7 @@ pub(super) fn adaptive_3d_segments(
                             sub_z,
                             &mut segments,
                             &mut last_pos,
+                            &mut planner_eng,
                             None,
                             cancel,
                         )?;
@@ -950,6 +962,7 @@ pub(super) fn adaptive_3d_segments(
 
     Ok(Adaptive3dSegmentsResult {
         segments,
+        planner_engagement: planner_eng,
         final_material_stock: material_stock,
         surface_heightmap: surface_hm,
     })

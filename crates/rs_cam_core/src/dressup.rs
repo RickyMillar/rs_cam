@@ -50,6 +50,7 @@ pub fn apply_entry(
         toolpath,
         spans,
         spans_valid,
+        planner_engagement,
     } = annotated;
 
     let mut result = Toolpath::new();
@@ -127,6 +128,7 @@ pub fn apply_entry(
         toolpath: result,
         spans: new_spans,
         spans_valid,
+        planner_engagement,
     }
 }
 
@@ -576,6 +578,7 @@ pub fn apply_lead_in_out_with_feeds(
         toolpath,
         spans,
         spans_valid,
+        planner_engagement,
     } = annotated;
     let mut result = Toolpath::new();
     let moves = &toolpath.moves;
@@ -584,6 +587,7 @@ pub fn apply_lead_in_out_with_feeds(
             toolpath: result,
             spans,
             spans_valid,
+            planner_engagement,
         };
     }
 
@@ -774,6 +778,7 @@ pub fn apply_lead_in_out_with_feeds(
         toolpath: result,
         spans: new_spans,
         spans_valid,
+        planner_engagement,
     }
 }
 
@@ -803,6 +808,7 @@ pub fn apply_dogbones(
         toolpath,
         spans,
         spans_valid,
+        planner_engagement,
     } = annotated;
     let max_angle_rad = max_angle_deg.to_radians();
     let mut result = Toolpath::new();
@@ -814,6 +820,7 @@ pub fn apply_dogbones(
             toolpath,
             spans,
             spans_valid,
+            planner_engagement,
         };
     }
 
@@ -917,6 +924,7 @@ pub fn apply_dogbones(
         toolpath: result,
         spans: new_spans,
         spans_valid,
+        planner_engagement,
     }
 }
 
@@ -959,6 +967,7 @@ pub fn apply_link_moves(
         toolpath,
         spans,
         spans_valid,
+        planner_engagement,
     } = annotated;
     let moves = &toolpath.moves;
     if moves.len() < 4 {
@@ -966,6 +975,7 @@ pub fn apply_link_moves(
             toolpath,
             spans,
             spans_valid,
+            planner_engagement,
         };
     }
 
@@ -1075,6 +1085,7 @@ pub fn apply_link_moves(
         toolpath: result,
         spans: new_spans,
         spans_valid,
+        planner_engagement,
     }
 }
 
@@ -1132,6 +1143,7 @@ pub fn filter_air_cuts(
         toolpath,
         spans,
         spans_valid,
+        planner_engagement,
     } = annotated;
     let moves = &toolpath.moves;
     if moves.is_empty() {
@@ -1139,6 +1151,7 @@ pub fn filter_air_cuts(
             toolpath,
             spans,
             spans_valid,
+            planner_engagement,
         };
     }
 
@@ -1244,6 +1257,7 @@ pub fn filter_air_cuts(
         toolpath: result,
         spans: new_spans,
         spans_valid,
+        planner_engagement,
     }
 }
 

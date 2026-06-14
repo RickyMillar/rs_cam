@@ -15,6 +15,7 @@
 use crate::debug_trace::ToolpathDebugContext;
 use crate::dexel::ray_top;
 use crate::dexel_stock::TriDexelStock;
+use crate::geo::P3;
 use crate::interrupt::{CancelCheck, Cancelled};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::MillingCutter;
@@ -456,6 +457,12 @@ pub fn adaptive_3d_toolpath_annotated_with_cancel(
     adaptive_3d_toolpath_annotated_traced_with_cancel(mesh, index, cutter, params, cancel, None)
 }
 
+// Stage 4 — the third tuple element carries planner-predicted leading-arc
+// engagement samples `(cut_point, α/2π)`; empty for non-ContourSpiral
+// strategies. The return is a 3-tuple rather than a named struct to keep
+// the existing callers' destructuring; the `type_complexity` allow is
+// scoped to this one signature.
+#[allow(clippy::type_complexity)]
 pub fn adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -463,9 +470,10 @@ pub fn adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
     params: &Adaptive3dParams,
     cancel: &dyn CancelCheck,
     debug: Option<&ToolpathDebugContext>,
-) -> Result<(Toolpath, Vec<Adaptive3dRuntimeAnnotation>), Cancelled> {
+) -> Result<(Toolpath, Vec<Adaptive3dRuntimeAnnotation>, Vec<(P3, f64)>), Cancelled> {
     let result = adaptive_3d_segments(mesh, index, cutter, params, debug, cancel)?;
     let segments = result.segments;
+    let planner_engagement = result.planner_engagement;
     // F-038b: pass mesh + spatial index + cutter so segments_to_toolpath
     // can query the heightfield along each candidate stay-down link.
     let (tp, annotations) = segments_to_toolpath(&segments, params, mesh, index, cutter);
@@ -480,10 +488,11 @@ pub fn adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
         annotations = annotations.len(),
         cutting_mm = tp.total_cutting_distance(),
         rapid_mm = tp.total_rapid_distance(),
+        planner_eng_samples = planner_engagement.len(),
         "3D adaptive toolpath complete"
     );
 
-    Ok((tp, annotations))
+    Ok((tp, annotations, planner_engagement))
 }
 
 pub fn adaptive_3d_toolpath_annotated_traced_with_cancel(
@@ -494,9 +503,10 @@ pub fn adaptive_3d_toolpath_annotated_traced_with_cancel(
     cancel: &dyn CancelCheck,
     debug: Option<&ToolpathDebugContext>,
 ) -> Result<(Toolpath, Vec<(usize, String)>), Cancelled> {
-    let (tp, annotations) = adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
-        mesh, index, cutter, params, cancel, debug,
-    )?;
+    let (tp, annotations, _planner_engagement) =
+        adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
+            mesh, index, cutter, params, cancel, debug,
+        )?;
     Ok((tp, runtime_annotations_to_labels(&annotations)))
 }
 

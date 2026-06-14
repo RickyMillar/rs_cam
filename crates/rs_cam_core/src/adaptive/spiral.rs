@@ -60,6 +60,12 @@ pub(super) fn spiral_passes(
     starter_end: P2,
     segments: &mut Vec<AdaptiveSegment>,
     last_pos: &mut Option<P2>,
+    // Stage 4 — when `Some`, the predicted leading-arc engagement (α/2π)
+    // computed at every emitted cut point is collected here, 1:1 with the
+    // emitted Cut path. Consumed by the 3D assembly to build the
+    // planner-engagement sampler the feed modulator reads (see
+    // planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md §"Stage 4").
+    eng_sink: Option<&mut Vec<(P2, f64)>>,
     cancel: &dyn CancelCheck,
 ) -> Result<bool, Cancelled> {
     let cell = grid.cell_size;
@@ -115,6 +121,10 @@ pub(super) fn spiral_passes(
 
     let sample_step = cell * WRAP_SAMPLE_CELLS;
     let mut path: Vec<P2> = Vec::new();
+    // Stage 4 — predicted leading-arc engagement per emitted path point,
+    // kept 1:1 with `path`. Only materialised when a sink was supplied.
+    let mut path_engs: Vec<f64> = Vec::new();
+    let collect_eng = eng_sink.is_some();
     let mut cur = starter_end;
 
     // Stage 2: load excursions — concave-corner wrap-around and EDT
@@ -172,6 +182,9 @@ pub(super) fn spiral_passes(
             let eng = super::search::compute_engagement_arc(grid, p.x, p.y, tool_radius, dir);
             if eng <= troch.cap {
                 path.push(p);
+                if collect_eng {
+                    path_engs.push(eng);
+                }
                 grid.clear_circle(p.x, p.y, tool_radius);
                 since_loop = f64::INFINITY;
             } else {
@@ -181,7 +194,15 @@ pub(super) fn spiral_passes(
                     troch.pitch
                 };
                 if since_loop >= troch.pitch {
+                    let before = path.len();
                     emit_trochoid_loop(grid, tool_radius, troch.radius, p, &mut path);
+                    if collect_eng {
+                        // Trochoid loop points are bounded by the engagement
+                        // cap by construction; tag each with the trigger
+                        // engagement so the sampler reads ~cap there.
+                        path_engs.resize(before, 0.0);
+                        path_engs.resize(path.len(), eng);
+                    }
                     since_loop = 0.0;
                 }
             }
@@ -201,6 +222,10 @@ pub(super) fn spiral_passes(
         entry_y: entry.y,
     }));
     let end = path[path.len() - 1];
+    if let Some(sink) = eng_sink {
+        // 1:1 with `path` by construction; defensively zip to the shorter.
+        sink.extend(path.iter().copied().zip(path_engs.iter().copied()));
+    }
     segments.push(AdaptiveSegment::Cut(path));
     *last_pos = Some(end);
     Ok(true)

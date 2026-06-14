@@ -39,6 +39,16 @@ use crate::toolpath::simplify_path_3d;
 /// would skip it. Matches `min_cells = 4` in `detect_material_regions`.
 pub(super) const MIN_CELLS_TO_CLEAR: u64 = 4;
 
+/// Stage 4 — quantise a world coordinate to a fixed-point key (0.001 mm)
+/// for the planner-engagement position lookup. Distinct spiral sample
+/// points are spaced far wider than this, so the key is collision-free
+/// while tolerating any benign float round-trip between the 2D emit and
+/// the 3D lift.
+#[inline]
+fn quantize_coord(v: f64) -> i64 {
+    (v * 1000.0).round() as i64
+}
+
 // ── Strategy-agnostic dispatch ────────────────────────────────────────
 
 /// Run a single Z-level clear pass via the strategy on `ctx`, with no
@@ -57,6 +67,9 @@ pub(super) fn clear_z_level_dispatch_no_marker(
     z_level: f64,
     segments: &mut Vec<Adaptive3dSegment>,
     last_pos: &mut Option<P3>,
+    // Stage 4 — forwarded to the spiral arm only (the other strategies
+    // produce no planner engagement).
+    planner_eng: &mut Vec<(P3, f64)>,
     region: Option<&MaterialRegion>,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
@@ -89,6 +102,7 @@ pub(super) fn clear_z_level_dispatch_no_marker(
                 z_level,
                 segments,
                 last_pos,
+                planner_eng,
                 region,
                 None,
                 cancel,
@@ -1350,6 +1364,10 @@ pub(super) fn clear_z_level_agent_2d_slice(
     z_level: f64,
     segments: &mut Vec<Adaptive3dSegment>,
     last_pos: &mut Option<P3>,
+    // Stage 4 — per-toolpath planner-engagement sampler accumulator. The
+    // ContourSpiral strategy appends `(lifted_point, leading_arc_frac)` for
+    // every emitted cut point; other strategies leave it untouched.
+    planner_eng: &mut Vec<(P3, f64)>,
     region: Option<&MaterialRegion>,
     level_marker: Option<Adaptive3dRuntimeEvent>,
     cancel: &dyn CancelCheck,
@@ -1634,6 +1652,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                     &params_2d,
                     cancel,
                     None,
+                    None,
                 )?;
                 for seg in &segs_forecast {
                     if let crate::adaptive::AdaptiveSegment::Cut(path_2d) = seg {
@@ -1847,12 +1866,26 @@ pub(super) fn clear_z_level_agent_2d_slice(
             &smoothed_polygons[0]
         };
 
+        // Stage 4 — collect the contour-spiral's per-point predicted
+        // leading-arc engagement for this slice (empty for non-spiral
+        // strategies). Keyed by 2D position below so it survives the
+        // residue-cleanup segment reshuffling, then lifted to 3D and
+        // appended to the per-toolpath planner-engagement sampler.
+        let mut slice_eng_2d: Vec<(P2, f64)> = Vec::new();
         let segs_2d_raw = crate::adaptive::adaptive_segments_with_debug(
             polygon_for_adaptive,
             &params_2d,
             cancel,
             region_scope.as_ref().map(|s| s.context()).as_ref(),
+            Some(&mut slice_eng_2d),
         )?;
+        // Spatial lookup: quantised 2D position → predicted engagement.
+        // Positions are exact f64 from the spiral's own emit, so a
+        // fixed-point key reproduces them without float-equality hazard.
+        let eng_lookup: std::collections::HashMap<(i64, i64), f64> = slice_eng_2d
+            .iter()
+            .map(|(p, e)| ((quantize_coord(p.x), quantize_coord(p.y)), *e))
+            .collect();
 
         // For non-Legacy cleanup strategies, run the same cleanup
         // post-process the 2D top-level entry point runs. adaptive3d
@@ -1967,6 +2000,19 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         continue;
                     }
                     let path_3d: Vec<P3> = path_2d.iter().map(|&p| lift(p)).collect();
+                    // Stage 4 — record the planner's predicted leading-arc
+                    // engagement at each lifted cut point (looked up by 2D
+                    // position; misses, e.g. residue-mop cleanup cuts, are
+                    // simply absent and the modulator falls back there).
+                    if !eng_lookup.is_empty() {
+                        for (&p2, &p3) in path_2d.iter().zip(path_3d.iter()) {
+                            if let Some(&e) =
+                                eng_lookup.get(&(quantize_coord(p2.x), quantize_coord(p2.y)))
+                            {
+                                planner_eng.push((p3, e));
+                            }
+                        }
+                    }
                     level_metrics.agent_walk_cut_length_mm += polyline_length_3d(&path_3d);
                     // Per-point classification (BEFORE any stamping):
                     // cutter is "engaged" if the current dexel ray top at
