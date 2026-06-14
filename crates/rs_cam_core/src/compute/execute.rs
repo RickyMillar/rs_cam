@@ -932,6 +932,8 @@ pub(crate) fn generate_adaptive3d(
         initial_stock: ctx.initial_stock.cloned(),
         safe_z: ctx.heights.retract_z,
         clearing_strategy,
+        // "Nibble" dial — forwarded to the ContourSpiral slice path.
+        trochoid_cap_mult: cfg.trochoid_cap_mult,
         engagement_measure: cfg.engagement_measure,
         z_blend: cfg.z_blend,
         boundary: ctx.boundary.cloned(),

@@ -1159,6 +1159,10 @@ const ADAPTIVE3D_PARAMS: &[ParamDef] = &[
         "clearing_strategy",
         "enum:contour_parallel|adaptive|agent_search|contour_spiral",
     ),
+    // "Nibble" dial — trochoid trigger cap for the ContourSpiral strategy
+    // (low = flat load/more travel, high = relaxed/less travel). Default
+    // 1.6. Ignored by the other strategies.
+    ParamDef::required("trochoid_cap_mult", "f64"),
     // F1 (algorithm review 2026-06-12): engagement quantity for the
     // AgentSearch 2D sub-pass.
     ParamDef::required("engagement_measure", "enum:DiskArea|LeadingArc"),

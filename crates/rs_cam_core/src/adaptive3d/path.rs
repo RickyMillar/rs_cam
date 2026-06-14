@@ -592,6 +592,7 @@ pub(super) fn adaptive_3d_segments(
         bbox_y_min,
         bbox_y_max,
         clearing_strategy: params.clearing_strategy,
+        trochoid_cap_mult: params.trochoid_cap_mult,
         engagement_measure: params.engagement_measure,
         z_blend: params.z_blend,
         safe_z: params.safe_z,
@@ -1497,6 +1498,7 @@ mod tests {
 
     fn minimal_params() -> Adaptive3dParams {
         Adaptive3dParams {
+            trochoid_cap_mult: 1.6,
             tool_radius: 3.175,
             envelope_radius: 3.175,
             stepover: 2.0,
