@@ -976,18 +976,6 @@ impl ProjectSession {
         self.results.get(&index)
     }
 
-    /// Nibble visualisation — world-XYZ centres of the contour-spiral's
-    /// trochoidal relief loops for the toolpath with this id, taken from
-    /// the last successful generation. `None` when the toolpath isn't
-    /// generated; an empty slice when it generated but fired no loops
-    /// (e.g. a non-spiral strategy, or a spiral whose load never exceeded
-    /// the cap). The GUI "Nibble" widget reads this to draw the real loop
-    /// count + placement rather than an indicative cartoon.
-    pub fn trochoid_loops_for_id(&self, id: ToolpathId) -> Option<&[crate::geo::P3]> {
-        let (idx, _) = self.find_toolpath_config_by_id(id)?;
-        Some(self.get_result(idx)?.annotated().trochoid_loops.as_slice())
-    }
-
     /// Get the simulation result, if one has been run.
     pub fn simulation_result(&self) -> Option<&SimulationResult> {
         self.simulation.as_ref()

@@ -1012,7 +1012,6 @@ mod tests {
             spans: Vec::new(),
             spans_valid: true,
             planner_engagement: Vec::new(),
-            trochoid_loops: Vec::new(),
         };
 
         let shifted = translate_annotated(&annotated, P3::new(0.0, 0.0, 19.0));

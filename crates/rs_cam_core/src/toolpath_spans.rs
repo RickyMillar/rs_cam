@@ -186,14 +186,6 @@ pub struct AnnotatedToolpath {
     /// / TSP-reorder reshaping without per-move re-indexing). See
     /// `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md` §"Stage 4".
     pub planner_engagement: Vec<(P3, f64)>,
-    /// Nibble visualisation — world-XYZ centres of the contour-spiral's
-    /// trochoidal relief loops (one entry per fired loop); empty for other
-    /// strategies. Like `planner_engagement` these are positional markers,
-    /// so they survive simplify / arcfit / dressup / TSP reshaping without
-    /// re-indexing. Read by the GUI "Nibble" widget to draw the real loop
-    /// count + placement (see the cap sweep in
-    /// `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`).
-    pub trochoid_loops: Vec<P3>,
 }
 
 impl AnnotatedToolpath {
@@ -205,7 +197,6 @@ impl AnnotatedToolpath {
             spans: Vec::new(),
             spans_valid: true,
             planner_engagement: Vec::new(),
-            trochoid_loops: Vec::new(),
         }
     }
 
@@ -215,7 +206,6 @@ impl AnnotatedToolpath {
             spans,
             spans_valid: true,
             planner_engagement: Vec::new(),
-            trochoid_loops: Vec::new(),
         }
     }
 

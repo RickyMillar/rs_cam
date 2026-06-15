@@ -1,5 +1,3 @@
-use std::f64::consts::TAU;
-
 use rs_cam_core::adaptive_shared::{
     radial_woc_fraction_from_leading_arc, target_engagement_fraction,
 };
@@ -11,16 +9,6 @@ use crate::state::toolpath::{
 };
 
 use super::super::{dv, dv_pill};
-
-/// Trochoid-cap endpoints the "Nibble" slider interpolates between. More
-/// nibble → tighter cap (`NIBBLE_CAP_TIGHT`) → more trochoidal relief
-/// loops, flattest load, most travel. Less nibble → relaxed cap
-/// (`NIBBLE_CAP_RELAXED`) → fewer loops, least travel. The stored value is
-/// `Adaptive3dConfig::trochoid_cap_mult`; the slider is the inverse map so
-/// "more nibble" reads left→right as the user expects. See the cap sweep
-/// in `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`.
-const NIBBLE_CAP_TIGHT: f64 = 1.0;
-const NIBBLE_CAP_RELAXED: f64 = 3.0;
 
 /// Fallback tool radius (1/8" endmill) when the active tool's radius is
 /// unavailable or non-physical — keeps the load↔stepover bridge finite.
@@ -62,12 +50,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
     ui: &mut egui::Ui,
     cfg: &mut Adaptive3dConfig,
     tool_radius: f64,
-    // Nibble visualisation — real trochoidal relief-loop centres (world
-    // XYZ) from the last generation, and whether they're current (vs from
-    // a pre-edit generation). `None`/stale ⇒ the widget shows an
-    // indicative preview instead of measured loops.
-    trochoid_loops: Option<&[rs_cam_core::geo::P3]>,
-    loops_current: bool,
     feeds_result: Option<&FeedsResult>,
 ) {
     // Spec: pill stepover + depth_per_pass; leave fine_stepdown alone
@@ -75,16 +57,16 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
     let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
     let dpp_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
     // The ContourSpiral strategy holds engagement flat by construction, so
-    // its primary knobs are the friendly "Optimal load" + "Nibble" pair
-    // (load derives the stepover; nibble drives the trochoid cap). The raw
-    // stepover pill is retired for that strategy and shown derived instead.
+    // its primary knob is the friendly "Optimal load" slider (it derives
+    // the stepover). The raw stepover pill is retired for that strategy and
+    // shown derived instead.
     let spiral = matches!(cfg.clearing_strategy, ClearingStrategy::ContourSpiral);
     egui::Grid::new("a3d_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
             if spiral {
-                draw_spiral_load_controls(ui, cfg, tool_radius);
+                draw_spiral_load_control(ui, cfg, tool_radius);
             } else {
                 dv_pill(
                     ui,
@@ -299,18 +281,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                 ui.end_row();
             }
         });
-    // The load/nibble paint widget spans the full panel width, so it lives
-    // below the grid. Only meaningful for the spiral strategy.
-    if spiral {
-        let r = sane_tool_radius(tool_radius);
-        let load = target_engagement_fraction(cfg.stepover, r).clamp(0.05, 0.45);
-        // Real loop centres only count when current (generated AND not
-        // edited since); otherwise the widget shows a "regenerate" hint
-        // rather than a stale or fabricated count.
-        let real_loops = if loops_current { trochoid_loops } else { None };
-        ui.add_space(4.0);
-        draw_load_nibble_diagram(ui, load, real_loops);
-    }
 }
 
 /// Clamp the active tool's radius to a finite, positive value for the
@@ -323,24 +293,16 @@ fn sane_tool_radius(tool_radius: f64) -> f64 {
     }
 }
 
-/// Slider position (0 = relaxed, 1 = max nibble) for a stored trochoid cap.
-fn nibble_from_cap(cap: f64) -> f64 {
-    let cap = if cap.is_finite() && cap > 0.0 {
-        cap
-    } else {
-        NIBBLE_CAP_RELAXED - (NIBBLE_CAP_RELAXED - NIBBLE_CAP_TIGHT) * 0.7
-    };
-    ((NIBBLE_CAP_RELAXED - cap) / (NIBBLE_CAP_RELAXED - NIBBLE_CAP_TIGHT)).clamp(0.0, 1.0)
-}
-
-/// "Optimal load" + "Nibble" rows for the ContourSpiral strategy. The load
-/// slider derives `cfg.stepover` from a leading-arc engagement fraction via
-/// the [`target_engagement_fraction`] bridge; the nibble slider drives
-/// `cfg.trochoid_cap_mult` through the inverse of [`nibble_from_cap`].
-fn draw_spiral_load_controls(ui: &mut egui::Ui, cfg: &mut Adaptive3dConfig, tool_radius: f64) {
+/// "Optimal load" row for the ContourSpiral strategy: the slider derives
+/// `cfg.stepover` from a leading-arc engagement fraction via the
+/// [`target_engagement_fraction`] bridge, so the operator dials the load
+/// the spiral holds rather than a raw stepover. (The trochoidal relief cap
+/// `trochoid_cap_mult` stays at its tuned engine default — it's a
+/// corner-relief mechanism that rarely fires on open roughing, so it's not
+/// surfaced as a knob.)
+fn draw_spiral_load_control(ui: &mut egui::Ui, cfg: &mut Adaptive3dConfig, tool_radius: f64) {
     let r = sane_tool_radius(tool_radius);
 
-    // ── Optimal load ───────────────────────────────────────────────
     // Derived live from the raw stepover so existing projects (and the
     // feeds suggestion that wrote `stepover`) round-trip through the knob.
     let mut load_pct = (target_engagement_fraction(cfg.stepover, r) * 100.0).clamp(5.0, 45.0);
@@ -363,173 +325,6 @@ fn draw_spiral_load_controls(ui: &mut egui::Ui, cfg: &mut Adaptive3dConfig, tool
             .color(egui::Color32::from_rgb(140, 140, 150)),
     );
     ui.end_row();
-
-    // ── Nibble ─────────────────────────────────────────────────────
-    let mut nibble_pct = nibble_from_cap(cfg.trochoid_cap_mult) * 100.0;
-    ui.label("Nibble:").on_hover_text(
-        "How hard the spiral works to keep the load flat. More nibble = \
-         more trochoidal relief loops = gentler, flatter cut but more \
-         travel (slower). Less = relaxed, fewer loops, faster.",
-    );
-    if ui
-        .add(egui::Slider::new(&mut nibble_pct, 0.0..=100.0).suffix("%"))
-        .changed()
-    {
-        let nibble = nibble_pct / 100.0;
-        cfg.trochoid_cap_mult =
-            NIBBLE_CAP_RELAXED - nibble * (NIBBLE_CAP_RELAXED - NIBBLE_CAP_TIGHT);
-    }
-    ui.end_row();
-    ui.label("");
-    ui.label(
-        egui::RichText::new(format!("trochoid cap ×{:.2}", cfg.trochoid_cap_mult))
-            .small()
-            .color(egui::Color32::from_rgb(140, 140, 150)),
-    );
-    ui.end_row();
-}
-
-/// Load/nibble graphic for the ContourSpiral strategy. The left half is
-/// always live: a cutter circle with an engaged wedge whose angle is the
-/// real leading-arc load fraction. The right half is **measured only** —
-/// no fabricated preview:
-///
-/// - `real_loops = Some(centres)` → the measured relief loops from the
-///   last generation, scattered by their true XY footprint (downsampled
-///   for paint), with the exact count. `Some(&[])` means the spiral fired
-///   no loops — load held flat on wrap spacing alone.
-/// - `real_loops = None` (not generated, or edited since) → a quiet
-///   "regenerate to measure loops" hint, never a fabricated cartoon.
-const NIBBLE_LOOP_GLYPH_CAP: usize = 80;
-
-fn draw_load_nibble_diagram(
-    ui: &mut egui::Ui,
-    load: f64,
-    real_loops: Option<&[rs_cam_core::geo::P3]>,
-) {
-    let w = ui.available_width().min(240.0);
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 96.0), egui::Sense::hover());
-    let p = ui.painter_at(rect);
-    p.rect_filled(rect, 5.0, egui::Color32::from_rgb(24, 24, 30));
-
-    let center = egui::pos2(rect.left() + 54.0, rect.center().y);
-    let radius = 32.0_f32;
-    let frontier_x = center.x + radius * 0.55;
-    let loop_color = egui::Color32::from_rgb(255, 180, 90);
-
-    // Uncut material band to the right of the frontier — also the canvas
-    // for the loop scatter / preview.
-    let mat = egui::Rect::from_min_max(
-        egui::pos2(frontier_x + 4.0, rect.top() + 6.0),
-        egui::pos2(rect.right() - 6.0, rect.bottom() - 6.0),
-    );
-    p.rect_filled(mat, 2.0, egui::Color32::from_rgb(40, 44, 36));
-
-    // Engaged wedge — sector of angle = TAU*load, centred on +x (cut dir).
-    #[allow(clippy::cast_possible_truncation)]
-    let span = (TAU * load).clamp(0.0, TAU) as f32;
-    let steps = 24;
-    let mut pts = Vec::with_capacity(steps + 2);
-    pts.push(center);
-    for i in 0..=steps {
-        #[allow(clippy::cast_precision_loss)]
-        let a = -span / 2.0 + span * (i as f32 / steps as f32);
-        pts.push(egui::pos2(
-            center.x + radius * a.cos(),
-            center.y + radius * a.sin(),
-        ));
-    }
-    p.add(egui::Shape::convex_polygon(
-        pts,
-        egui::Color32::from_rgba_unmultiplied(90, 170, 255, 70),
-        egui::Stroke::new(1.5, egui::Color32::from_rgb(110, 190, 255)),
-    ));
-
-    // Cutter outline.
-    p.circle_stroke(
-        center,
-        radius,
-        egui::Stroke::new(1.5, egui::Color32::from_rgb(200, 200, 210)),
-    );
-
-    // Right half: real measured loops when available, else preview.
-    match real_loops {
-        Some(centres) if !centres.is_empty() => {
-            // Map each loop centre's world XY into the material band by its
-            // true footprint (independent-axis fit — schematic, but the
-            // clustering is real). Downsample for paint.
-            let (mut min_x, mut max_x) = (f64::INFINITY, f64::NEG_INFINITY);
-            let (mut min_y, mut max_y) = (f64::INFINITY, f64::NEG_INFINITY);
-            for c in centres {
-                min_x = min_x.min(c.x);
-                max_x = max_x.max(c.x);
-                min_y = min_y.min(c.y);
-                max_y = max_y.max(c.y);
-            }
-            let span_x = (max_x - min_x).max(1e-6);
-            let span_y = (max_y - min_y).max(1e-6);
-            let pad = 8.0_f32;
-            let inner = egui::Rect::from_min_max(
-                egui::pos2(mat.left() + pad, mat.top() + pad),
-                egui::pos2(mat.right() - pad, mat.bottom() - pad),
-            );
-            let step = centres.len().div_ceil(NIBBLE_LOOP_GLYPH_CAP).max(1);
-            for c in centres.iter().step_by(step) {
-                #[allow(clippy::cast_possible_truncation)]
-                let nx = ((c.x - min_x) / span_x) as f32;
-                #[allow(clippy::cast_possible_truncation)]
-                let ny = ((c.y - min_y) / span_y) as f32;
-                let pos = egui::pos2(
-                    inner.left() + nx * inner.width(),
-                    // Flip Y: world +Y up, screen +Y down.
-                    inner.bottom() - ny * inner.height(),
-                );
-                p.circle_filled(pos, 2.5, loop_color);
-            }
-            let label = if centres.len() == 1 {
-                "1 relief loop".to_owned()
-            } else {
-                format!("{} relief loops", centres.len())
-            };
-            p.text(
-                egui::pos2(mat.right() - 4.0, mat.top() + 2.0),
-                egui::Align2::RIGHT_TOP,
-                label,
-                egui::FontId::proportional(10.0),
-                loop_color,
-            );
-        }
-        Some(_) => {
-            // Generated, zero loops fired — flat load, no relief needed.
-            p.text(
-                mat.center(),
-                egui::Align2::CENTER_CENTER,
-                "0 loops · load held flat",
-                egui::FontId::proportional(10.0),
-                egui::Color32::from_rgb(150, 170, 140),
-            );
-        }
-        None => {
-            // Not generated (or edited since): no measured loops to show.
-            // Quiet hint instead of a fabricated cartoon.
-            p.text(
-                mat.center(),
-                egui::Align2::CENTER_CENTER,
-                "regenerate to measure loops",
-                egui::FontId::proportional(10.0),
-                egui::Color32::from_rgb(110, 110, 120),
-            );
-        }
-    }
-
-    // Legend.
-    p.text(
-        egui::pos2(center.x, rect.bottom() - 8.0),
-        egui::Align2::CENTER_BOTTOM,
-        "load",
-        egui::FontId::proportional(10.0),
-        egui::Color32::from_rgb(110, 190, 255),
-    );
 }
 
 pub(in crate::ui::properties) fn draw_waterline_params(
