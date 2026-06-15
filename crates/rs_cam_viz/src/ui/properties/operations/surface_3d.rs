@@ -304,13 +304,12 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
     if spiral {
         let r = sane_tool_radius(tool_radius);
         let load = target_engagement_fraction(cfg.stepover, r).clamp(0.05, 0.45);
-        let nibble = nibble_from_cap(cfg.trochoid_cap_mult);
         // Real loop centres only count when current (generated AND not
-        // edited since). Otherwise the widget falls back to the indicative
-        // preview so it never claims a stale loop count is live.
+        // edited since); otherwise the widget shows a "regenerate" hint
+        // rather than a stale or fabricated count.
         let real_loops = if loops_current { trochoid_loops } else { None };
         ui.add_space(4.0);
-        draw_load_nibble_diagram(ui, load, nibble, real_loops);
+        draw_load_nibble_diagram(ui, load, real_loops);
     }
 }
 
@@ -392,22 +391,20 @@ fn draw_spiral_load_controls(ui: &mut egui::Ui, cfg: &mut Adaptive3dConfig, tool
 
 /// Load/nibble graphic for the ContourSpiral strategy. The left half is
 /// always live: a cutter circle with an engaged wedge whose angle is the
-/// real leading-arc load fraction. The right half shows the nibble:
+/// real leading-arc load fraction. The right half is **measured only** —
+/// no fabricated preview:
 ///
-/// - `real_loops = Some(centres)` → the **measured** relief loops from the
+/// - `real_loops = Some(centres)` → the measured relief loops from the
 ///   last generation, scattered by their true XY footprint (downsampled
 ///   for paint), with the exact count. `Some(&[])` means the spiral fired
-///   no loops — load held flat on wrap spacing alone, which is shown as
-///   such rather than as an empty cartoon.
-/// - `real_loops = None` (not generated, or edited since) → an indicative
-///   preview whose loop count tracks the nibble slider, tagged "preview"
-///   so it never masquerades as measured.
+///   no loops — load held flat on wrap spacing alone.
+/// - `real_loops = None` (not generated, or edited since) → a quiet
+///   "regenerate to measure loops" hint, never a fabricated cartoon.
 const NIBBLE_LOOP_GLYPH_CAP: usize = 80;
 
 fn draw_load_nibble_diagram(
     ui: &mut egui::Ui,
     load: f64,
-    nibble: f64,
     real_loops: Option<&[rs_cam_core::geo::P3]>,
 ) {
     let w = ui.available_width().min(240.0);
@@ -513,28 +510,14 @@ fn draw_load_nibble_diagram(
             );
         }
         None => {
-            // Indicative preview — loop count tracks the nibble slider.
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let loops = 2 + (nibble * 6.0).round() as i32;
-            let lx = mat.left() + 10.0;
-            let top = mat.top() + 8.0;
-            let bot = mat.bottom() - 8.0;
-            let loop_stroke = egui::Stroke::new(1.5, loop_color);
-            for i in 0..loops {
-                #[allow(clippy::cast_precision_loss)]
-                let t = if loops > 1 {
-                    i as f32 / (loops - 1) as f32
-                } else {
-                    0.5
-                };
-                p.circle_stroke(egui::pos2(lx, top + (bot - top) * t), 6.0, loop_stroke);
-            }
+            // Not generated (or edited since): no measured loops to show.
+            // Quiet hint instead of a fabricated cartoon.
             p.text(
-                egui::pos2(mat.right() - 4.0, mat.top() + 2.0),
-                egui::Align2::RIGHT_TOP,
-                "preview",
+                mat.center(),
+                egui::Align2::CENTER_CENTER,
+                "regenerate to measure loops",
                 egui::FontId::proportional(10.0),
-                egui::Color32::from_rgb(150, 150, 120),
+                egui::Color32::from_rgb(110, 110, 120),
             );
         }
     }
