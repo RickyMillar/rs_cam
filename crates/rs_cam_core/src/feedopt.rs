@@ -99,6 +99,7 @@ pub fn optimize_feed_rates(
         spans,
         spans_valid,
         planner_engagement,
+        trochoid_loops,
     } = annotated;
     let result = optimize_feed_rates_inner(&toolpath, cutter, stock, params);
     debug_assert_eq!(
@@ -111,6 +112,7 @@ pub fn optimize_feed_rates(
         spans,
         spans_valid,
         planner_engagement,
+        trochoid_loops,
     }
 }
 

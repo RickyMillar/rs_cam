@@ -958,6 +958,7 @@ impl ProjectSession {
             spans,
             spans_valid,
             planner_engagement,
+            trochoid_loops,
         } = annotated;
 
         // Resolve the source polygon for the boundary. ModelSilhouette and
@@ -1063,6 +1064,7 @@ impl ProjectSession {
             spans: remapped,
             spans_valid,
             planner_engagement,
+            trochoid_loops,
         }
     }
 
@@ -1681,8 +1683,10 @@ impl ProjectSession {
                 spans: annotated_arc.spans.clone(),
                 spans_valid: annotated_arc.spans_valid,
                 // Modulation rewrites feeds, not geometry — the planner
-                // engagement samples stay valid by position.
+                // engagement samples (and trochoid loop centres) stay
+                // valid by position.
                 planner_engagement: annotated_arc.planner_engagement.clone(),
+                trochoid_loops: annotated_arc.trochoid_loops.clone(),
             };
             let new_arc = Arc::new(new_annotated);
             // Rebuild the op_data variant with the swapped Arc.

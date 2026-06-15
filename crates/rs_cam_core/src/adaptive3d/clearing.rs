@@ -83,6 +83,8 @@ pub(super) fn clear_z_level_dispatch_no_marker(
     // Stage 4 — forwarded to the spiral arm only (the other strategies
     // produce no planner engagement).
     planner_eng: &mut Vec<(P3, f64)>,
+    // Nibble visualisation — forwarded to the spiral arm only.
+    trochoid_loops: &mut Vec<P3>,
     region: Option<&MaterialRegion>,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
@@ -116,6 +118,7 @@ pub(super) fn clear_z_level_dispatch_no_marker(
                 segments,
                 last_pos,
                 planner_eng,
+                trochoid_loops,
                 region,
                 None,
                 cancel,
@@ -1385,6 +1388,10 @@ pub(super) fn clear_z_level_agent_2d_slice(
     // ContourSpiral strategy appends `(lifted_point, leading_arc_frac)` for
     // every emitted cut point; other strategies leave it untouched.
     planner_eng: &mut Vec<(P3, f64)>,
+    // Nibble visualisation — per-toolpath trochoidal relief-loop centres
+    // (world XYZ, one per loop). The ContourSpiral strategy appends; other
+    // strategies leave it untouched.
+    trochoid_loops: &mut Vec<P3>,
     region: Option<&MaterialRegion>,
     level_marker: Option<Adaptive3dRuntimeEvent>,
     cancel: &dyn CancelCheck,
@@ -1678,6 +1685,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                     cancel,
                     None,
                     None,
+                    None,
                 )?;
                 for seg in &segs_forecast {
                     if let crate::adaptive::AdaptiveSegment::Cut(path_2d) = seg {
@@ -1897,13 +1905,22 @@ pub(super) fn clear_z_level_agent_2d_slice(
         // residue-cleanup segment reshuffling, then lifted to 3D and
         // appended to the per-toolpath planner-engagement sampler.
         let mut slice_eng_2d: Vec<(P2, f64)> = Vec::new();
+        // Nibble visualisation — the spiral's trochoidal relief-loop trigger
+        // points (one per loop) for this slice, lifted to world XYZ below.
+        let mut slice_loops_2d: Vec<P2> = Vec::new();
         let segs_2d_raw = crate::adaptive::adaptive_segments_with_debug(
             polygon_for_adaptive,
             &params_2d,
             cancel,
             region_scope.as_ref().map(|s| s.context()).as_ref(),
             Some(&mut slice_eng_2d),
+            Some(&mut slice_loops_2d),
         )?;
+        // Lift each loop trigger point to 3D and append to the per-toolpath
+        // loop set the GUI "Nibble" widget reads.
+        for p2 in &slice_loops_2d {
+            trochoid_loops.push(lift(*p2));
+        }
         // Spatial lookup: quantised 2D position → predicted engagement.
         // Positions are exact f64 from the spiral's own emit, so a
         // fixed-point key reproduces them without float-equality hazard.

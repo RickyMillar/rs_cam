@@ -466,9 +466,11 @@ pub fn adaptive_3d_toolpath_annotated_with_cancel(
 
 // Stage 4 — the third tuple element carries planner-predicted leading-arc
 // engagement samples `(cut_point, α/2π)`; empty for non-ContourSpiral
-// strategies. The return is a 3-tuple rather than a named struct to keep
-// the existing callers' destructuring; the `type_complexity` allow is
-// scoped to this one signature.
+// strategies. The fourth element (Nibble visualisation) carries the
+// trochoidal relief-loop centres (world XYZ, one per loop) for the GUI
+// widget; likewise empty for other strategies. The return is a tuple
+// rather than a named struct to keep the existing callers' destructuring;
+// the `type_complexity` allow is scoped to this one signature.
 #[allow(clippy::type_complexity)]
 pub fn adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
     mesh: &TriangleMesh,
@@ -477,10 +479,19 @@ pub fn adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
     params: &Adaptive3dParams,
     cancel: &dyn CancelCheck,
     debug: Option<&ToolpathDebugContext>,
-) -> Result<(Toolpath, Vec<Adaptive3dRuntimeAnnotation>, Vec<(P3, f64)>), Cancelled> {
+) -> Result<
+    (
+        Toolpath,
+        Vec<Adaptive3dRuntimeAnnotation>,
+        Vec<(P3, f64)>,
+        Vec<P3>,
+    ),
+    Cancelled,
+> {
     let result = adaptive_3d_segments(mesh, index, cutter, params, debug, cancel)?;
     let segments = result.segments;
     let planner_engagement = result.planner_engagement;
+    let trochoid_loops = result.trochoid_loops;
     // F-038b: pass mesh + spatial index + cutter so segments_to_toolpath
     // can query the heightfield along each candidate stay-down link.
     let (tp, annotations) = segments_to_toolpath(&segments, params, mesh, index, cutter);
@@ -496,10 +507,11 @@ pub fn adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
         cutting_mm = tp.total_cutting_distance(),
         rapid_mm = tp.total_rapid_distance(),
         planner_eng_samples = planner_engagement.len(),
+        trochoid_loops = trochoid_loops.len(),
         "3D adaptive toolpath complete"
     );
 
-    Ok((tp, annotations, planner_engagement))
+    Ok((tp, annotations, planner_engagement, trochoid_loops))
 }
 
 pub fn adaptive_3d_toolpath_annotated_traced_with_cancel(
@@ -510,7 +522,7 @@ pub fn adaptive_3d_toolpath_annotated_traced_with_cancel(
     cancel: &dyn CancelCheck,
     debug: Option<&ToolpathDebugContext>,
 ) -> Result<(Toolpath, Vec<(usize, String)>), Cancelled> {
-    let (tp, annotations, _planner_engagement) =
+    let (tp, annotations, _planner_engagement, _trochoid_loops) =
         adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
             mesh, index, cutter, params, cancel, debug,
         )?;
