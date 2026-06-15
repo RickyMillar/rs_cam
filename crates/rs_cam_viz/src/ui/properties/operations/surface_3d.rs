@@ -62,6 +62,12 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
     ui: &mut egui::Ui,
     cfg: &mut Adaptive3dConfig,
     tool_radius: f64,
+    // Nibble visualisation — real trochoidal relief-loop centres (world
+    // XYZ) from the last generation, and whether they're current (vs from
+    // a pre-edit generation). `None`/stale ⇒ the widget shows an
+    // indicative preview instead of measured loops.
+    trochoid_loops: Option<&[rs_cam_core::geo::P3]>,
+    loops_current: bool,
     feeds_result: Option<&FeedsResult>,
 ) {
     // Spec: pill stepover + depth_per_pass; leave fine_stepdown alone
@@ -299,8 +305,12 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
         let r = sane_tool_radius(tool_radius);
         let load = target_engagement_fraction(cfg.stepover, r).clamp(0.05, 0.45);
         let nibble = nibble_from_cap(cfg.trochoid_cap_mult);
+        // Real loop centres only count when current (generated AND not
+        // edited since). Otherwise the widget falls back to the indicative
+        // preview so it never claims a stale loop count is live.
+        let real_loops = if loops_current { trochoid_loops } else { None };
         ui.add_space(4.0);
-        draw_load_nibble_diagram(ui, load, nibble);
+        draw_load_nibble_diagram(ui, load, nibble, real_loops);
     }
 }
 
@@ -380,12 +390,26 @@ fn draw_spiral_load_controls(ui: &mut egui::Ui, cfg: &mut Adaptive3dConfig, tool
     ui.end_row();
 }
 
-/// Communicative cartoon for the load/nibble pair: a cutter circle with an
-/// engaged wedge (its angle = the leading-arc load fraction) biting into a
-/// material band, and a looped frontier whose loop count grows with the
-/// nibble setting (more relief loops = flatter load). Mirrors the
-/// stepover-diagram idiom in `properties/tool.rs`.
-fn draw_load_nibble_diagram(ui: &mut egui::Ui, load: f64, nibble: f64) {
+/// Load/nibble graphic for the ContourSpiral strategy. The left half is
+/// always live: a cutter circle with an engaged wedge whose angle is the
+/// real leading-arc load fraction. The right half shows the nibble:
+///
+/// - `real_loops = Some(centres)` → the **measured** relief loops from the
+///   last generation, scattered by their true XY footprint (downsampled
+///   for paint), with the exact count. `Some(&[])` means the spiral fired
+///   no loops — load held flat on wrap spacing alone, which is shown as
+///   such rather than as an empty cartoon.
+/// - `real_loops = None` (not generated, or edited since) → an indicative
+///   preview whose loop count tracks the nibble slider, tagged "preview"
+///   so it never masquerades as measured.
+const NIBBLE_LOOP_GLYPH_CAP: usize = 80;
+
+fn draw_load_nibble_diagram(
+    ui: &mut egui::Ui,
+    load: f64,
+    nibble: f64,
+    real_loops: Option<&[rs_cam_core::geo::P3]>,
+) {
     let w = ui.available_width().min(240.0);
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 96.0), egui::Sense::hover());
     let p = ui.painter_at(rect);
@@ -394,10 +418,12 @@ fn draw_load_nibble_diagram(ui: &mut egui::Ui, load: f64, nibble: f64) {
     let center = egui::pos2(rect.left() + 54.0, rect.center().y);
     let radius = 32.0_f32;
     let frontier_x = center.x + radius * 0.55;
+    let loop_color = egui::Color32::from_rgb(255, 180, 90);
 
-    // Uncut material band to the right of the frontier.
+    // Uncut material band to the right of the frontier — also the canvas
+    // for the loop scatter / preview.
     let mat = egui::Rect::from_min_max(
-        egui::pos2(frontier_x, rect.top() + 6.0),
+        egui::pos2(frontier_x + 4.0, rect.top() + 6.0),
         egui::pos2(rect.right() - 6.0, rect.bottom() - 6.0),
     );
     p.rect_filled(mat, 2.0, egui::Color32::from_rgb(40, 44, 36));
@@ -429,37 +455,97 @@ fn draw_load_nibble_diagram(ui: &mut egui::Ui, load: f64, nibble: f64) {
         egui::Stroke::new(1.5, egui::Color32::from_rgb(200, 200, 210)),
     );
 
-    // Looped frontier — trochoidal relief loops; count grows with nibble.
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let loops = 2 + (nibble * 6.0).round() as i32;
-    let top = rect.top() + 14.0;
-    let bot = rect.bottom() - 14.0;
-    let loop_stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(255, 180, 90));
-    for i in 0..loops {
-        #[allow(clippy::cast_precision_loss)]
-        let t = if loops > 1 {
-            i as f32 / (loops - 1) as f32
-        } else {
-            0.5
-        };
-        let y = top + (bot - top) * t;
-        p.circle_stroke(egui::pos2(frontier_x, y), 6.0, loop_stroke);
+    // Right half: real measured loops when available, else preview.
+    match real_loops {
+        Some(centres) if !centres.is_empty() => {
+            // Map each loop centre's world XY into the material band by its
+            // true footprint (independent-axis fit — schematic, but the
+            // clustering is real). Downsample for paint.
+            let (mut min_x, mut max_x) = (f64::INFINITY, f64::NEG_INFINITY);
+            let (mut min_y, mut max_y) = (f64::INFINITY, f64::NEG_INFINITY);
+            for c in centres {
+                min_x = min_x.min(c.x);
+                max_x = max_x.max(c.x);
+                min_y = min_y.min(c.y);
+                max_y = max_y.max(c.y);
+            }
+            let span_x = (max_x - min_x).max(1e-6);
+            let span_y = (max_y - min_y).max(1e-6);
+            let pad = 8.0_f32;
+            let inner = egui::Rect::from_min_max(
+                egui::pos2(mat.left() + pad, mat.top() + pad),
+                egui::pos2(mat.right() - pad, mat.bottom() - pad),
+            );
+            let step = centres.len().div_ceil(NIBBLE_LOOP_GLYPH_CAP).max(1);
+            for c in centres.iter().step_by(step) {
+                #[allow(clippy::cast_possible_truncation)]
+                let nx = ((c.x - min_x) / span_x) as f32;
+                #[allow(clippy::cast_possible_truncation)]
+                let ny = ((c.y - min_y) / span_y) as f32;
+                let pos = egui::pos2(
+                    inner.left() + nx * inner.width(),
+                    // Flip Y: world +Y up, screen +Y down.
+                    inner.bottom() - ny * inner.height(),
+                );
+                p.circle_filled(pos, 2.5, loop_color);
+            }
+            let label = if centres.len() == 1 {
+                "1 relief loop".to_owned()
+            } else {
+                format!("{} relief loops", centres.len())
+            };
+            p.text(
+                egui::pos2(mat.right() - 4.0, mat.top() + 2.0),
+                egui::Align2::RIGHT_TOP,
+                label,
+                egui::FontId::proportional(10.0),
+                loop_color,
+            );
+        }
+        Some(_) => {
+            // Generated, zero loops fired — flat load, no relief needed.
+            p.text(
+                mat.center(),
+                egui::Align2::CENTER_CENTER,
+                "0 loops · load held flat",
+                egui::FontId::proportional(10.0),
+                egui::Color32::from_rgb(150, 170, 140),
+            );
+        }
+        None => {
+            // Indicative preview — loop count tracks the nibble slider.
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let loops = 2 + (nibble * 6.0).round() as i32;
+            let lx = mat.left() + 10.0;
+            let top = mat.top() + 8.0;
+            let bot = mat.bottom() - 8.0;
+            let loop_stroke = egui::Stroke::new(1.5, loop_color);
+            for i in 0..loops {
+                #[allow(clippy::cast_precision_loss)]
+                let t = if loops > 1 {
+                    i as f32 / (loops - 1) as f32
+                } else {
+                    0.5
+                };
+                p.circle_stroke(egui::pos2(lx, top + (bot - top) * t), 6.0, loop_stroke);
+            }
+            p.text(
+                egui::pos2(mat.right() - 4.0, mat.top() + 2.0),
+                egui::Align2::RIGHT_TOP,
+                "preview",
+                egui::FontId::proportional(10.0),
+                egui::Color32::from_rgb(150, 150, 120),
+            );
+        }
     }
 
-    // Tiny legends.
+    // Legend.
     p.text(
         egui::pos2(center.x, rect.bottom() - 8.0),
         egui::Align2::CENTER_BOTTOM,
         "load",
         egui::FontId::proportional(10.0),
         egui::Color32::from_rgb(110, 190, 255),
-    );
-    p.text(
-        egui::pos2(frontier_x + 12.0, rect.top() + 8.0),
-        egui::Align2::LEFT_TOP,
-        "nibble",
-        egui::FontId::proportional(10.0),
-        egui::Color32::from_rgb(255, 180, 90),
     );
 }
 

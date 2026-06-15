@@ -144,6 +144,10 @@ pub(super) struct Adaptive3dSegmentsResult {
     /// α/2π)` collected across all ContourSpiral slices. Empty for other
     /// strategies. Consumed by the feed modulator via positional lookup.
     pub planner_engagement: Vec<(P3, f64)>,
+    /// Nibble visualisation — world-XYZ centres of the contour-spiral's
+    /// trochoidal relief loops (one per loop). Empty for other strategies.
+    /// Carried on the toolpath for the GUI "Nibble" widget.
+    pub trochoid_loops: Vec<P3>,
     /// Test-only: planner's internal dexel state at the end of the run.
     #[allow(dead_code)]
     pub final_material_stock: TriDexelStock,
@@ -608,6 +612,10 @@ pub(super) fn adaptive_3d_segments(
     // `(cut_point, α/2π)`, accumulated across all spiral slices and
     // returned for the feed modulator's positional lookup.
     let mut planner_eng: Vec<(P3, f64)> = Vec::new();
+    // Nibble visualisation — world-XYZ centres of the contour-spiral's
+    // trochoidal relief loops (one per loop), accumulated across all
+    // slices and carried on the toolpath for the GUI "Nibble" widget.
+    let mut trochoid_loops: Vec<P3> = Vec::new();
     let mut last_pos: Option<P3> = None;
 
     match params.region_ordering {
@@ -734,6 +742,7 @@ pub(super) fn adaptive_3d_segments(
                                 &mut segments,
                                 &mut last_pos,
                                 &mut planner_eng,
+                                &mut trochoid_loops,
                                 Some(region),
                                 Some(level_event),
                                 cancel,
@@ -760,6 +769,7 @@ pub(super) fn adaptive_3d_segments(
                                 &mut segments,
                                 &mut last_pos,
                                 &mut planner_eng,
+                                &mut trochoid_loops,
                                 Some(region),
                                 cancel,
                             )?;
@@ -880,6 +890,7 @@ pub(super) fn adaptive_3d_segments(
                             &mut segments,
                             &mut last_pos,
                             &mut planner_eng,
+                            &mut trochoid_loops,
                             None,
                             Some(level_event),
                             cancel,
@@ -903,6 +914,7 @@ pub(super) fn adaptive_3d_segments(
                             &mut segments,
                             &mut last_pos,
                             &mut planner_eng,
+                            &mut trochoid_loops,
                             None,
                             cancel,
                         )?;
@@ -964,6 +976,7 @@ pub(super) fn adaptive_3d_segments(
     Ok(Adaptive3dSegmentsResult {
         segments,
         planner_engagement: planner_eng,
+        trochoid_loops,
         final_material_stock: material_stock,
         surface_heightmap: surface_hm,
     })

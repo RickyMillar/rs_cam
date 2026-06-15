@@ -41,6 +41,7 @@ pub fn fit_arcs(
         spans,
         spans_valid,
         planner_engagement,
+        trochoid_loops,
     } = annotated;
     let moves = &toolpath.moves;
 
@@ -50,6 +51,7 @@ pub fn fit_arcs(
             spans,
             spans_valid,
             planner_engagement,
+            trochoid_loops,
         };
     }
 
@@ -240,6 +242,7 @@ pub fn fit_arcs(
         spans: new_spans,
         spans_valid,
         planner_engagement,
+        trochoid_loops,
     }
 }
 
