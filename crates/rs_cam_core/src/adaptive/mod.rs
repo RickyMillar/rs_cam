@@ -259,7 +259,7 @@ pub fn adaptive_toolpath_structured_annotated_traced_with_cancel(
     cancel: &dyn CancelCheck,
     debug: Option<&ToolpathDebugContext>,
 ) -> Result<(Toolpath, Vec<AdaptiveRuntimeAnnotation>), Cancelled> {
-    let segments = adaptive_segments_with_debug(polygon, params, cancel, debug, None, None)?;
+    let segments = adaptive_segments_with_debug(polygon, params, cancel, debug, None)?;
     let segments = match params.cleanup_strategy {
         CleanupStrategy::Legacy => segments,
         CleanupStrategy::ResidueMop | CleanupStrategy::ContourParallelNarrow => {
@@ -349,15 +349,9 @@ mod tests {
         };
         let never_cancel = || false;
         let mut sink: Vec<(P2, f64)> = Vec::new();
-        let segs = adaptive_segments_with_debug(
-            &poly,
-            &params,
-            &never_cancel,
-            None,
-            Some(&mut sink),
-            None,
-        )
-        .expect("spiral should not cancel");
+        let segs =
+            adaptive_segments_with_debug(&poly, &params, &never_cancel, None, Some(&mut sink))
+                .expect("spiral should not cancel");
         assert!(
             segs.iter().any(|s| matches!(s, AdaptiveSegment::Cut(_))),
             "spiral should emit a Cut segment"
@@ -379,64 +373,6 @@ mod tests {
         assert!(
             median > 0.3 * target && median < 2.5 * target,
             "median engagement {median} far from target {target}"
-        );
-    }
-
-    /// Nibble visualisation — the ContourSpiral records a loop centre for
-    /// every trochoidal relief loop it fires, the centres are finite and
-    /// inside the part, and the count is monotone in the cap (tighter cap
-    /// ⇒ more loops). Guards the GUI "Nibble" widget's data source end to
-    /// end through the 2D engine.
-    #[test]
-    fn contour_spiral_populates_trochoid_loops_sink() {
-        let poly = square_polygon(60.0);
-        let run = |cap: f64| -> Vec<P2> {
-            let params = AdaptiveParams {
-                path_strategy: PathStrategy2d::ContourSpiral,
-                cleanup_strategy: CleanupStrategy::ContourParallelHybrid,
-                engagement_measure: EngagementMeasure::LeadingArc,
-                trochoid_cap_mult: cap,
-                ..default_params(3.0, 1.2)
-            };
-            let never_cancel = || false;
-            let mut loops: Vec<P2> = Vec::new();
-            adaptive_segments_with_debug(
-                &poly,
-                &params,
-                &never_cancel,
-                None,
-                None,
-                Some(&mut loops),
-            )
-            .expect("spiral should not cancel");
-            loops
-        };
-
-        // A very low cap drops the trigger under even the spiral's
-        // (measured-low) steady-wrap engagement, so relief loops MUST fire
-        // on a plain convex square; assert the sink captured them in-bounds.
-        let tight = run(0.05);
-        assert!(
-            !tight.is_empty(),
-            "a near-zero cap must fire (and record) relief loops"
-        );
-        // square_polygon(60) is centred at the origin: x, y ∈ [-30, 30].
-        for c in &tight {
-            assert!(c.x.is_finite() && c.y.is_finite(), "loop centre non-finite");
-            assert!(
-                c.x.abs() <= 30.0 + 1.0 && c.y.abs() <= 30.0 + 1.0,
-                "loop centre ({}, {}) outside the part",
-                c.x,
-                c.y
-            );
-        }
-        // Relaxing the cap can only reduce (never increase) the loop count.
-        let relaxed = run(3.0);
-        assert!(
-            relaxed.len() <= tight.len(),
-            "relaxed cap fired more loops ({}) than tight ({})",
-            relaxed.len(),
-            tight.len()
         );
     }
 
@@ -1573,9 +1509,8 @@ mod tests {
             ..default_params(tool_radius, stepover)
         };
         let never_cancel = || false;
-        let segments =
-            adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None, None)
-                .expect("adaptive should not cancel");
+        let segments = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None)
+            .expect("adaptive should not cancel");
 
         let mut cut_count = 0usize;
         let mut cut_steps_total = 0usize;
@@ -1737,9 +1672,8 @@ mod tests {
             ..default_params(tool_radius, stepover)
         };
         let never_cancel = || false;
-        let segments =
-            adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None, None)
-                .expect("adaptive should not cancel");
+        let segments = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None)
+            .expect("adaptive should not cancel");
         write_segments_svg(
             &segments,
             &polygon,
@@ -2106,9 +2040,8 @@ mod tests {
             ..default_params(tool_radius, stepover)
         };
         let never_cancel = || false;
-        let baseline =
-            adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None, None)
-                .expect("adaptive should not cancel");
+        let baseline = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None)
+            .expect("adaptive should not cancel");
 
         let machinable = crate::polygon::offset_polygon(&polygon, tool_radius)
             .into_iter()
@@ -2177,9 +2110,8 @@ mod tests {
             ..default_params(tool_radius, stepover)
         };
         let never_cancel = || false;
-        let baseline =
-            adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None, None)
-                .expect("adaptive should not cancel");
+        let baseline = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None)
+            .expect("adaptive should not cancel");
 
         let machinable = crate::polygon::offset_polygon(&polygon, tool_radius)
             .into_iter()
@@ -2326,7 +2258,7 @@ mod tests {
             }
             let _machinable = machinable_vec[0].clone();
             let baseline =
-                adaptive_segments_with_debug(polygon, &params, &never_cancel, None, None, None)
+                adaptive_segments_with_debug(polygon, &params, &never_cancel, None, None)
                     .expect("adaptive should not cancel");
             let mop_params = AdaptiveParams {
                 cleanup_strategy: CleanupStrategy::ResidueMop,
@@ -2343,15 +2275,9 @@ mod tests {
                 slot_clearing: false,
                 ..default_params(tool_radius, stepover)
             };
-            let narrow_segs = adaptive_segments_with_debug(
-                polygon,
-                &narrow_params,
-                &never_cancel,
-                None,
-                None,
-                None,
-            )
-            .expect("adaptive should not cancel");
+            let narrow_segs =
+                adaptive_segments_with_debug(polygon, &narrow_params, &never_cancel, None, None)
+                    .expect("adaptive should not cancel");
             let narrow = path::apply_residue_mop_cleanup(polygon, &narrow_params, &narrow_segs);
             // ContourParallelHybrid: spiral runs on whole machinable
             // (unless the narrow gate fires for the whole region —
@@ -2363,15 +2289,9 @@ mod tests {
                 slot_clearing: false,
                 ..default_params(tool_radius, stepover)
             };
-            let hybrid_segs = adaptive_segments_with_debug(
-                polygon,
-                &hybrid_params,
-                &never_cancel,
-                None,
-                None,
-                None,
-            )
-            .expect("adaptive should not cancel");
+            let hybrid_segs =
+                adaptive_segments_with_debug(polygon, &hybrid_params, &never_cancel, None, None)
+                    .expect("adaptive should not cancel");
             let hybrid =
                 path::apply_contour_parallel_residue_cleanup(polygon, &hybrid_params, &hybrid_segs);
             let (bc, br, bl) = count_segs(&baseline);
@@ -2434,9 +2354,8 @@ mod tests {
             ..default_params(tool_radius, stepover)
         };
         let never_cancel = || false;
-        let segments =
-            adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None, None)
-                .expect("adaptive should not cancel");
+        let segments = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None)
+            .expect("adaptive should not cancel");
 
         // Find the first Cut group; take its first N points.
         let first_cut = segments

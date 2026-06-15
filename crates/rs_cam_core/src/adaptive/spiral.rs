@@ -69,12 +69,6 @@ pub(super) fn spiral_passes(
     // planner-engagement sampler the feed modulator reads (see
     // planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md §"Stage 4").
     eng_sink: Option<&mut Vec<(P2, f64)>>,
-    // Nibble visualisation — when `Some`, the nominal wrap point at which
-    // each trochoidal relief loop fires is collected here (one entry per
-    // loop, NOT per loop sample point). The 3D assembly lifts these to
-    // world XYZ and carries them on the toolpath so the GUI "Nibble"
-    // widget can draw the real loop count + placement (not a cartoon).
-    loops_sink: Option<&mut Vec<P2>>,
     cancel: &dyn CancelCheck,
 ) -> Result<bool, Cancelled> {
     let cell = grid.cell_size;
@@ -134,10 +128,6 @@ pub(super) fn spiral_passes(
     // kept 1:1 with `path`. Only materialised when a sink was supplied.
     let mut path_engs: Vec<f64> = Vec::new();
     let collect_eng = eng_sink.is_some();
-    // Nibble visualisation — one entry per fired relief loop (loop trigger
-    // point), materialised only when a sink was supplied.
-    let mut loop_centers: Vec<P2> = Vec::new();
-    let collect_loops = loops_sink.is_some();
     let mut cur = starter_end;
 
     // Stage 2: load excursions — concave-corner wrap-around and EDT
@@ -207,9 +197,6 @@ pub(super) fn spiral_passes(
                     troch.pitch
                 };
                 if since_loop >= troch.pitch {
-                    if collect_loops {
-                        loop_centers.push(p);
-                    }
                     let before = path.len();
                     emit_trochoid_loop(grid, tool_radius, troch.radius, p, &mut path);
                     if collect_eng {
@@ -241,9 +228,6 @@ pub(super) fn spiral_passes(
     if let Some(sink) = eng_sink {
         // 1:1 with `path` by construction; defensively zip to the shorter.
         sink.extend(path.iter().copied().zip(path_engs.iter().copied()));
-    }
-    if let Some(sink) = loops_sink {
-        sink.extend(loop_centers);
     }
     segments.push(AdaptiveSegment::Cut(path));
     *last_pos = Some(end);

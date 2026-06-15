@@ -51,7 +51,6 @@ pub fn apply_entry(
         spans,
         spans_valid,
         planner_engagement,
-        trochoid_loops,
     } = annotated;
 
     let mut result = Toolpath::new();
@@ -130,7 +129,6 @@ pub fn apply_entry(
         spans: new_spans,
         spans_valid,
         planner_engagement,
-        trochoid_loops,
     }
 }
 
@@ -581,7 +579,6 @@ pub fn apply_lead_in_out_with_feeds(
         spans,
         spans_valid,
         planner_engagement,
-        trochoid_loops,
     } = annotated;
     let mut result = Toolpath::new();
     let moves = &toolpath.moves;
@@ -591,7 +588,6 @@ pub fn apply_lead_in_out_with_feeds(
             spans,
             spans_valid,
             planner_engagement,
-            trochoid_loops,
         };
     }
 
@@ -783,7 +779,6 @@ pub fn apply_lead_in_out_with_feeds(
         spans: new_spans,
         spans_valid,
         planner_engagement,
-        trochoid_loops,
     }
 }
 
@@ -814,7 +809,6 @@ pub fn apply_dogbones(
         spans,
         spans_valid,
         planner_engagement,
-        trochoid_loops,
     } = annotated;
     let max_angle_rad = max_angle_deg.to_radians();
     let mut result = Toolpath::new();
@@ -827,7 +821,6 @@ pub fn apply_dogbones(
             spans,
             spans_valid,
             planner_engagement,
-            trochoid_loops,
         };
     }
 
@@ -932,7 +925,6 @@ pub fn apply_dogbones(
         spans: new_spans,
         spans_valid,
         planner_engagement,
-        trochoid_loops,
     }
 }
 
@@ -976,7 +968,6 @@ pub fn apply_link_moves(
         spans,
         spans_valid,
         planner_engagement,
-        trochoid_loops,
     } = annotated;
     let moves = &toolpath.moves;
     if moves.len() < 4 {
@@ -985,7 +976,6 @@ pub fn apply_link_moves(
             spans,
             spans_valid,
             planner_engagement,
-            trochoid_loops,
         };
     }
 
@@ -1096,7 +1086,6 @@ pub fn apply_link_moves(
         spans: new_spans,
         spans_valid,
         planner_engagement,
-        trochoid_loops,
     }
 }
 
@@ -1155,7 +1144,6 @@ pub fn filter_air_cuts(
         spans,
         spans_valid,
         planner_engagement,
-        trochoid_loops,
     } = annotated;
     let moves = &toolpath.moves;
     if moves.is_empty() {
@@ -1164,7 +1152,6 @@ pub fn filter_air_cuts(
             spans,
             spans_valid,
             planner_engagement,
-            trochoid_loops,
         };
     }
 
@@ -1271,7 +1258,6 @@ pub fn filter_air_cuts(
         spans: new_spans,
         spans_valid,
         planner_engagement,
-        trochoid_loops,
     }
 }
 

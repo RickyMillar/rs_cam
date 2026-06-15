@@ -107,7 +107,7 @@ pub(super) fn adaptive_segments(
         path_strategy: crate::adaptive::PathStrategy2d::Agent,
         trochoid_cap_mult: 1.2,
     };
-    adaptive_segments_with_debug(polygon, &params, cancel, None, None, None)
+    adaptive_segments_with_debug(polygon, &params, cancel, None, None)
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -122,11 +122,6 @@ pub(crate) fn adaptive_segments_with_debug(
     // path. `None` for every caller except the adaptive3d slice assembly,
     // which feeds it into the planner-engagement sampler.
     engagement_sink: Option<&mut Vec<(P2, f64)>>,
-    // Nibble visualisation — optional sink for the contour-spiral's
-    // trochoidal relief-loop trigger points (one per loop). `None` for
-    // every caller except the adaptive3d slice assembly, which lifts them
-    // to world XYZ for the GUI "Nibble" widget.
-    loops_sink: Option<&mut Vec<P2>>,
 ) -> Result<Vec<AdaptiveSegment>, Cancelled> {
     let tool_radius = params.tool_radius;
     let stepover = params.stepover;
@@ -291,7 +286,6 @@ pub(crate) fn adaptive_segments_with_debug(
             &mut segments,
             &mut last_pos,
             engagement_sink,
-            loops_sink,
             cancel,
         )?;
         if let Some(scope) = spiral_scope.as_ref() {

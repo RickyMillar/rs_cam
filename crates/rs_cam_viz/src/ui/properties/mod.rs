@@ -528,10 +528,6 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     height_ctx.as_ref(),
                     &stale_default_defects,
                     load_verdict_for_tp.as_ref(),
-                    // Nibble visualisation — real loop centres from the last
-                    // generation (None until generated). Borrow lives only
-                    // for this call, released before the &mut writeback below.
-                    state.session.trochoid_loops_for_id(id),
                     tab_override,
                     events,
                 );
@@ -2754,11 +2750,6 @@ fn draw_toolpath_panel(
     height_ctx: Option<&HeightContext>,
     stale_default_defects: &[rs_cam_core::compute::validate::StaleDefault],
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
-    // Nibble visualisation — real trochoidal relief-loop centres from the
-    // last generation (None until generated). The Adaptive3d spiral params
-    // panel draws these; `entry.stale_since` tells it whether they're
-    // current or from a pre-edit generation.
-    trochoid_loops: Option<&[rs_cam_core::geo::P3]>,
     tab_override: Option<ToolpathTab>,
     events: &mut Vec<AppEvent>,
 ) {
@@ -3146,17 +3137,7 @@ fn draw_toolpath_panel(
                         .find(|(id, _)| *id == entry.tool_id)
                         .map(|(_, t)| t.diameter / 2.0)
                         .unwrap_or(0.0);
-                    // Real loop centres are current only when the toolpath
-                    // hasn't been edited since its last generation.
-                    let loops_current = entry.stale_since.is_none();
-                    draw_adaptive3d_params(
-                        ui,
-                        cfg,
-                        tool_radius,
-                        trochoid_loops,
-                        loops_current,
-                        feeds_for_pills,
-                    );
+                    draw_adaptive3d_params(ui, cfg, tool_radius, feeds_for_pills);
                 }
                 OperationConfig::Waterline(cfg) => {
                     draw_waterline_params(ui, cfg, feeds_for_pills);
