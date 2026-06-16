@@ -53,13 +53,38 @@
 > makes this non-trivial — see `wanaka_axial_doc.rs`. Do this BEFORE
 > committing to a fix direction.
 
-> ## ✅ RESOLVED 2026-06-16 (forensic run) — it's a MESH DEFECT, not an engine bug
+> ## ✅ RESOLVED 2026-06-16 — by-design ocean-wave trench in the mesh, not an engine bug (and NOT a seam/hole)
 >
-> Ran the wanaka ground-truth diagnostic with frame-correct mesh probing
-> (`wanaka_axial_doc.rs`, extended). Verdict: **the rough is conforming to
-> the mesh correctly; the visible "gouge" is a deep narrow channel that
-> exists IN THE MESH at a seam/hole, not an engine over-cut.** Both the
-> radius-dilation theory AND the planner↔sim-parity theory are moot.
+> **Final answer, confirmed by the rivmap/mesh-generator owner:** the deep
+> coastline channel is **real, by-design geometry** — rivmap's ocean-wave
+> baking carves the entire sea surface BELOW the coastal land plane
+> (`features.rs` `bake_ocean_waves`: sea Z = base − wave_offset at peaks,
+> base − (wave_offset + wave_depth) at troughs; land sits at ≥ base). With
+> studio defaults the sea spans ~2.8 → −0.2 mm while abutting land starts at
+> 3.0 mm → a continuous ~3 mm step right at the shoreline (larger on
+> Wanaka's scale, matching the ~5–6 mm CAM measured). The coastline carries
+> the highest mesh weight (10.0) so the greedy mesher renders that drop in
+> full fidelity → "a deep narrow channel along the coastline." The mesh is
+> **one watertight 2.5D surface — no seam, no hole, no two-part join.**
+>
+> Corrections to my earlier forensic write-up below:
+> - The "mesh seam / hole" framing was **wrong**. There is no defect; the
+>   trench is intentional wave geometry.
+> - The `-inf` drop-cutter reading at local (26,20) was a **frame/coordinate
+>   EDGE artifact (outside the XY footprint), NOT a hole** — exactly the
+>   frame-sensitivity I flagged on the probe itself. Do not cite it as a hole.
+>
+> What DID hold up (the engine verdict is unchanged): the rough conforms to
+> the mesh within 0.3 mm, the 6.125 mm peak is a transit/entry sample, and
+> steady-state load is ~DPP. **The engine faithfully cuts a real trench; it
+> is not over-cutting.**
+>
+> **Fix is a rivmap parameter, not a mesh repair and not an engine change:**
+> set `wave_offset = 0` (+ `wave_depth = 0`, or a small 0.5–1 mm for gentle
+> texture) so the sea sits flush at base instead of undercutting the coast.
+> The "Coastline offset" / "Wave depth" sliders in rivmap studio are these.
+>
+> The radius-dilation theory AND the planner↔sim-parity theory remain moot.
 >
 > Hard evidence (Back Rough, setup face_up=Bottom, setup-local frame):
 > - **The 6.125 mm peak `axial_doc` is a TRANSIT/ENTRY sample**
@@ -100,10 +125,12 @@
 
 ---
 
-**Status:** ~~root-caused~~ **RESOLVED 2026-06-16 — mesh-seam defect, not an
-engine over-cut.** No engine over-cut fix needed; remedy is mesh repair or a
-pinned `bottom_z`. Two earlier root-cause theories (radius-dilation;
-planner↔sim parity) both refuted above.
+**Status:** ~~root-caused~~ **RESOLVED 2026-06-16 — by-design rivmap
+ocean-wave trench, not an engine over-cut (and not a seam/hole).** No engine
+fix needed; remedy is the rivmap `wave_offset`/`wave_depth` params (or a
+pinned `bottom_z` if keeping the trench). Three earlier theories
+(radius-dilation; planner↔sim parity; mesh seam/hole) all refuted above; the
+`-inf` "hole" was a frame-edge probe artifact.
 **Repro source:** wanaka100 `terrain.stl` (rivmap DEM, mountains + coastline),
 `planning/airrun_2026-06-01/wanaka.toml`, Back Rough op (adaptive3d, 6mm flat
 endmill, DPP 3, stepover 2.53, stock_to_leave 4mm, `face_up=Bottom` setup).
