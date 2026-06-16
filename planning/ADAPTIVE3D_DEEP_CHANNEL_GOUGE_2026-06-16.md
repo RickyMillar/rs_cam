@@ -137,6 +137,31 @@
 >    only triggered by the texture. Worth a look if robustness over messy/
 >    textured meshes is wanted; not blocking this job (fix the wave param).
 >
+> ### ✅ ENGINE FIX LANDED 2026-06-16 (commit fa27b08) — leave now held
+>
+> The user's call: changing the mesh is a workaround; generic CAM must hold
+> the leave regardless of mesh. Fixed in `segments_to_toolpath`
+> (`adaptive3d/path.rs`). Root cause (mapped, not the earlier guesses): the
+> lift reads a SINGLE grid cell (`surface_z_at_world` rounds to one cell) and
+> straight cut segments are emitted between sparse points, so segment
+> interiors / between-cell points dip below `surface + leave` on textured
+> meshes (sub-heightmap-cell aliasing on the 220k-tri DEM). Entries plunged
+> to the un-draped Z; stay-down links cleared only `terrain + clearance`.
+>
+> Three guards, all only ever RAISE Z (a legitimately deep cut is preserved):
+> - `drape_path_to_leave`: densify each cut to `<= tool radius`, lift every
+>   point to `max(cut_z, point_drop_cutter(xy) + leave)`. At step ≤ radius no
+>   peak hides between samples.
+> - `drape_point` on entry destinations (peck/helix/ramp) via a shadow bind.
+> - stay-down link Z clears `terrain + stock_to_leave` (was `+ clearance`).
+>
+> Result on wanaka Back Rough (final dexel surface vs mesh keep-surface):
+> over-cut same-height cells **67 → 0**; worst leave **−1.9 mm → +2.03 mm**
+> (nothing cut below the keep surface). All adaptive3d sentries pass; clippy
+> + fmt clean. `wanaka_final_surface_vs_mesh` (#[ignore]) now ASSERTS the
+> leave is held (0 over-cut, worst leave > −0.5) as the regression gate — no
+> fast synthetic reproduces the DEM aliasing, so the fixture test is the guard.
+>
 > Hard evidence (Back Rough, setup face_up=Bottom, setup-local frame):
 > - **The 6.125 mm peak `axial_doc` is a TRANSIT/ENTRY sample**
 >   (`in_transit_span = true`, move 3158, 97.8% through the toolpath).
