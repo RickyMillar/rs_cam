@@ -15,6 +15,334 @@ use rs_cam_core::session::ProjectSession;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
+/// Answers the user's question: "why does the rest of the surface that is
+/// about the same height not get the same treatment?" — i.e. are there mesh
+/// cells at the SAME height as the deep gouge that did NOT get cut deep
+/// (engine bug), or is the gouge genuinely the deepest mesh point and every
+/// equally-low cell is cut equally deep (mesh-driven, engine correct)?
+///
+/// Sim-free: generates the Back Rough toolpath, then for a coarse XY grid
+/// reports the mesh keep-surface (drop-cutter, setup-local) vs the deepest
+/// toolpath feed Z in that cell. Groups cells by mesh-height bucket and
+/// shows the spread of cut depth per bucket. A tight spread per bucket =
+/// equal heights cut equally (engine conforms to mesh). A wide spread =
+/// equal heights cut unequally (the user is right; engine bug).
+#[test]
+#[ignore = "expensive WANAKA diagnostic; run with `cargo test --test wanaka_axial_doc -- --ignored`"]
+fn wanaka_deep_region_localization() {
+    use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+    use rs_cam_core::mesh::SpatialIndex;
+    use rs_cam_core::tool::FlatEndmill;
+    use rs_cam_core::toolpath::MoveType;
+
+    let toml_path = Path::new("/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml");
+    if !toml_path.exists() {
+        eprintln!("skip: wanaka.toml not found");
+        return;
+    }
+    let mut session = ProjectSession::load(toml_path).expect("load wanaka");
+    let cancel = AtomicBool::new(false);
+    session.generate_toolpath(0, &cancel).expect("gen pin drill");
+    session.generate_toolpath(1, &cancel).expect("gen back rough");
+
+    let tp_id = session.list_toolpaths()[1].id;
+    let tp_result = session.get_result(1).expect("back rough result");
+    let moves = &tp_result.toolpath().moves;
+
+    // Setup-local mesh for drop-cutter.
+    let tp_setup_idx = session
+        .setup_of_toolpath_id(tp_id)
+        .expect("setup for back rough");
+    let (face_up, z_rot) = session
+        .list_setups()
+        .get(tp_setup_idx)
+        .map(|s| (s.face_up, s.z_rotation))
+        .unwrap_or((FaceUp::Bottom, ZRotation::Deg0));
+    let model_mesh = session
+        .models()
+        .iter()
+        .find_map(|m| m.mesh.as_ref().map(|mm| mm.as_ref().clone()))
+        .expect("wanaka has a mesh model");
+    let local_mesh = session
+        .setup_transform_info(face_up, z_rot)
+        .apply_to_mesh(&model_mesh);
+    let index = SpatialIndex::build(&local_mesh, 5.0);
+    let cutter = FlatEndmill::new(6.0, 25.0);
+
+    // Feed-move targets → XY bbox + per-cell deepest feed Z.
+    let is_feed = |m: &rs_cam_core::toolpath::Move| {
+        matches!(
+            m.move_type,
+            MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
+        )
+    };
+    let (mut xmin, mut xmax, mut ymin, mut ymax) =
+        (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
+    for m in moves.iter().filter(|m| is_feed(m)) {
+        xmin = xmin.min(m.target.x);
+        xmax = xmax.max(m.target.x);
+        ymin = ymin.min(m.target.y);
+        ymax = ymax.max(m.target.y);
+    }
+    let cell = 3.0_f64;
+    let cols = ((xmax - xmin) / cell).ceil() as usize + 1;
+    let rows = ((ymax - ymin) / cell).ceil() as usize + 1;
+    let idx = |r: usize, c: usize| r * cols + c;
+    let mut min_cut_z = vec![f64::INFINITY; rows * cols];
+    for m in moves.iter().filter(|m| is_feed(m)) {
+        let c = ((m.target.x - xmin) / cell) as usize;
+        let r = ((m.target.y - ymin) / cell) as usize;
+        if r < rows && c < cols && m.target.z < min_cut_z[idx(r, c)] {
+            min_cut_z[idx(r, c)] = m.target.z;
+        }
+    }
+
+    // Per-cell mesh height + collect (mesh_z, cut_z) for cut cells.
+    let mut pairs: Vec<(f64, f64, f64, f64)> = Vec::new(); // (mesh_z, cut_z, x, y)
+    for r in 0..rows {
+        for c in 0..cols {
+            let cz = min_cut_z[idx(r, c)];
+            if !cz.is_finite() {
+                continue; // cell never cut
+            }
+            let x = xmin + c as f64 * cell;
+            let y = ymin + r as f64 * cell;
+            let mz = point_drop_cutter(x, y, &local_mesh, &index, &cutter).z;
+            if mz.is_finite() {
+                pairs.push((mz, cz, x, y));
+            }
+        }
+    }
+    println!(
+        "grid {}x{} cells @ {}mm over X[{:.1},{:.1}] Y[{:.1},{:.1}]; {} cut cells with valid mesh",
+        rows, cols, cell, xmin, xmax, ymin, ymax, pairs.len()
+    );
+
+    // Group by mesh-height bucket (2mm) → spread of cut depth.
+    use std::collections::BTreeMap;
+    let mut buckets: BTreeMap<i32, Vec<f64>> = BTreeMap::new();
+    for &(mz, cz, _, _) in &pairs {
+        buckets.entry((mz / 2.0).round() as i32).or_default().push(cz);
+    }
+    println!("mesh-height bucket (2mm) → cut-Z spread [n: min/mean/max, delta(mean cut - mesh)]:");
+    for (b, czs) in &buckets {
+        let mesh_h = *b as f64 * 2.0;
+        let n = czs.len();
+        let cmin = czs.iter().cloned().fold(f64::INFINITY, f64::min);
+        let cmax = czs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let cmean = czs.iter().sum::<f64>() / n as f64;
+        println!(
+            "  mesh≈{:>6.1}: n={:<5} cut min/mean/max = {:>6.2}/{:>6.2}/{:>6.2}  Δmean={:>6.2}  span={:>5.2}",
+            mesh_h, n, cmin, cmean, cmax, cmean - mesh_h, cmax - cmin
+        );
+    }
+
+    // Direct test of "same height, different treatment": take cells whose
+    // MESH height is in a tight band (4-6mm, where the bulk of the surface
+    // sits) and split them by how deep they were actually cut. If both a
+    // deep-cut group AND a shallow-cut group exist at the same mesh height,
+    // the engine is treating identical heights unequally.
+    let band_cells: Vec<&(f64, f64, f64, f64)> =
+        pairs.iter().filter(|p| p.0 >= 4.0 && p.0 <= 6.0).collect();
+    let deep: Vec<&&(f64, f64, f64, f64)> =
+        band_cells.iter().filter(|p| p.1 <= 7.0).collect();
+    let shallow: Vec<&&(f64, f64, f64, f64)> =
+        band_cells.iter().filter(|p| p.1 >= 10.0).collect();
+    println!(
+        "SAME-HEIGHT TEST — cells with mesh height in [4,6]mm: {} total; \
+         {} cut DEEP (cut_z<=7, ate the leave) vs {} cut SHALLOW (cut_z>=10, kept the leave)",
+        band_cells.len(),
+        deep.len(),
+        shallow.len()
+    );
+    // XY centroid + extent of the deep-cut group (is it one localized patch?).
+    if !deep.is_empty() {
+        let n = deep.len() as f64;
+        let cx = deep.iter().map(|p| p.2).sum::<f64>() / n;
+        let cy = deep.iter().map(|p| p.3).sum::<f64>() / n;
+        let (mut dxmin, mut dxmax, mut dymin, mut dymax) =
+            (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
+        for p in &deep {
+            dxmin = dxmin.min(p.2);
+            dxmax = dxmax.max(p.2);
+            dymin = dymin.min(p.3);
+            dymax = dymax.max(p.3);
+        }
+        println!(
+            "  deep-cut group centroid ({:.1},{:.1}), bbox X[{:.1},{:.1}] Y[{:.1},{:.1}] \
+             ({:.0}x{:.0}mm) — localized patch if small vs the {:.0}x{:.0}mm working area",
+            cx, cy, dxmin, dxmax, dymin, dymax, dxmax - dxmin, dymax - dymin,
+            xmax - xmin, ymax - ymin
+        );
+    }
+}
+
+/// DEFINITIVE test of "same height, different treatment": simulate the full
+/// Back Rough onto a dexel and read the ACTUAL final stock surface left at
+/// each cell (real removed material — immune to transit moves and the
+/// drop-cutter smoothing that confound the move-target proxy). Then, among
+/// cells at the same mesh keep-surface height, ask whether the final stock
+/// is left at the same height. If equal-height cells are left at very
+/// different final heights, the engine is over-cutting some same-height
+/// stock (the user's complaint); if not, the rough is uniform and the deep
+/// bits are genuinely deeper mesh.
+#[test]
+#[ignore = "expensive WANAKA diagnostic; run with `cargo test --test wanaka_axial_doc -- --ignored`"]
+fn wanaka_final_surface_vs_mesh() {
+    use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+    use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
+    use rs_cam_core::geo::BoundingBox3 as Bbox3;
+    use rs_cam_core::geo::P3;
+    use rs_cam_core::mesh::SpatialIndex;
+    use rs_cam_core::tool::FlatEndmill;
+
+    let toml_path = Path::new("/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml");
+    if !toml_path.exists() {
+        eprintln!("skip: wanaka.toml not found");
+        return;
+    }
+    let mut session = ProjectSession::load(toml_path).expect("load wanaka");
+    let cancel = AtomicBool::new(false);
+    session.generate_toolpath(0, &cancel).expect("gen pin drill");
+    session.generate_toolpath(1, &cancel).expect("gen back rough");
+    let tp_id = session.list_toolpaths()[1].id;
+    let tp_result = session.get_result(1).expect("back rough result");
+
+    // Setup-local mesh for drop-cutter.
+    let tp_setup_idx = session
+        .setup_of_toolpath_id(tp_id)
+        .expect("setup for back rough");
+    let (face_up, z_rot) = session
+        .list_setups()
+        .get(tp_setup_idx)
+        .map(|s| (s.face_up, s.z_rotation))
+        .unwrap_or((FaceUp::Bottom, ZRotation::Deg0));
+    let model_mesh = session
+        .models()
+        .iter()
+        .find_map(|m| m.mesh.as_ref().map(|mm| mm.as_ref().clone()))
+        .expect("wanaka has a mesh model");
+    let local_mesh = session
+        .setup_transform_info(face_up, z_rot)
+        .apply_to_mesh(&model_mesh);
+    let index = SpatialIndex::build(&local_mesh, 5.0);
+    let cutter = FlatEndmill::new(6.0, 25.0);
+
+    // Simulate the FULL Back Rough onto a fresh dexel (setup-local stock).
+    let sb = session.stock_bbox();
+    let (sx, sy, sz) = (sb.max.x - sb.min.x, sb.max.y - sb.min.y, sb.max.z - sb.min.z);
+    let local_bbox = Bbox3 {
+        min: P3::new(0.0, 0.0, 0.0),
+        max: P3::new(sx, sy, sz),
+    };
+    println!("local stock bbox max = ({sx:.1},{sy:.1},{sz:.1})");
+    let mut stock = TriDexelStock::from_bounds(&local_bbox, 0.5);
+    let scancel = || false;
+    let _ = stock.simulate_toolpath_with_metrics_with_cancel(
+        tp_result.toolpath(),
+        &cutter,
+        StockCutDirection::FromTop,
+        tp_id,
+        18000,
+        2,
+        5000.0,
+        0.5,
+        None,
+        &[],
+        &[],
+        true,
+        &scancel,
+    );
+
+    // Per dexel cell: final stock top (max exit) and mesh keep-surface.
+    // Collect (mesh_z, final_top) for cells inside the toolpath footprint.
+    let g = &stock.z_grid;
+    let cs = g.cell_size;
+    let mut pairs: Vec<(f64, f64, f64, f64)> = Vec::new(); // (mesh_z, final_top, x, y)
+    // Sample every 6th cell (~3mm) to keep the analysis light.
+    for row in (0..g.rows).step_by(6) {
+        let y = g.origin_v + row as f64 * cs;
+        for col in (0..g.cols).step_by(6) {
+            let x = g.origin_u + col as f64 * cs;
+            let ray = &g.rays[row * g.cols + col];
+            let top = ray.iter().map(|s| s.exit).fold(f32::NEG_INFINITY, f32::max);
+            if !top.is_finite() {
+                continue; // fully cut away / empty
+            }
+            let mz = point_drop_cutter(x, y, &local_mesh, &index, &cutter).z;
+            if !mz.is_finite() {
+                continue;
+            }
+            // Restrict to the working footprint (skip untouched stock far from
+            // any cut): final_top well below the virgin stock top.
+            if (top as f64) > sz - 1.0 {
+                continue;
+            }
+            pairs.push((mz, top as f64, x, y));
+        }
+    }
+    println!("{} sampled cut cells with valid mesh", pairs.len());
+
+    // Group by mesh-height bucket → spread of FINAL stock top (the real
+    // measure of "what's left"). leave = final_top - mesh_z. Correct rough
+    // keeps leave ~constant; over-cut shows a wide spread / leave near 0.
+    use std::collections::BTreeMap;
+    let mut buckets: BTreeMap<i32, Vec<f64>> = BTreeMap::new();
+    for &(mz, top, _, _) in &pairs {
+        buckets.entry((mz / 2.0).round() as i32).or_default().push(top - mz);
+    }
+    println!("mesh-height bucket (2mm) → LEAVE (final_top - mesh) [n: min/mean/max, span]:");
+    for (b, leaves) in &buckets {
+        let n = leaves.len();
+        let lmin = leaves.iter().cloned().fold(f64::INFINITY, f64::min);
+        let lmax = leaves.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let lmean = leaves.iter().sum::<f64>() / n as f64;
+        println!(
+            "  mesh≈{:>6.1}: n={:<5} leave min/mean/max = {:>6.2}/{:>6.2}/{:>6.2}  span={:>5.2}",
+            *b as f64 * 2.0,
+            n,
+            lmin,
+            lmean,
+            lmax,
+            lmax - lmin
+        );
+    }
+
+    // Same-height test on the real final surface: cells at mesh in [4,6]mm,
+    // split by leave. Over-cut = leave < 1mm (ate the ~4mm leave); proper =
+    // leave >= 3mm.
+    let band: Vec<&(f64, f64, f64, f64)> =
+        pairs.iter().filter(|p| p.0 >= 4.0 && p.0 <= 6.0).collect();
+    let overcut: Vec<&&(f64, f64, f64, f64)> =
+        band.iter().filter(|p| (p.1 - p.0) < 1.0).collect();
+    let proper: Vec<&&(f64, f64, f64, f64)> =
+        band.iter().filter(|p| (p.1 - p.0) >= 3.0).collect();
+    println!(
+        "SAME-HEIGHT (final surface) — mesh in [4,6]mm: {} cells; {} OVER-CUT (leave<1mm) vs {} PROPER (leave>=3mm)",
+        band.len(),
+        overcut.len(),
+        proper.len()
+    );
+    if !overcut.is_empty() {
+        let n = overcut.len() as f64;
+        let (mut xmn, mut xmx, mut ymn, mut ymx) =
+            (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
+        for p in &overcut {
+            xmn = xmn.min(p.2);
+            xmx = xmx.max(p.2);
+            ymn = ymn.min(p.3);
+            ymx = ymx.max(p.3);
+        }
+        println!(
+            "  over-cut group: n={} bbox X[{:.1},{:.1}] Y[{:.1},{:.1}] ({:.0}x{:.0}mm); centroid ({:.1},{:.1})",
+            overcut.len(),
+            xmn, xmx, ymn, ymx, xmx - xmn, ymx - ymn,
+            overcut.iter().map(|p| p.2).sum::<f64>() / n,
+            overcut.iter().map(|p| p.3).sum::<f64>() / n,
+        );
+    }
+}
+
 #[test]
 #[ignore = "expensive WANAKA diagnostic; run with `cargo test --test wanaka_axial_doc -- --ignored`"]
 fn wanaka_back_rough_axial_doc() {
