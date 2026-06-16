@@ -104,6 +104,39 @@
 >
 > The radius-dilation theory AND the planner↔sim-parity theory remain moot.
 >
+> ### Addendum 2026-06-16 (definitive final-surface measurement)
+>
+> Followed up on "why doesn't same-height stock get the same treatment?"
+> with a SIM-BASED test (`wanaka_final_surface_vs_mesh`, `#[ignore]`):
+> simulate the full Back Rough onto a dexel, read the ACTUAL final stock top
+> per cell, compare to the mesh keep-surface (6 mm drop-cutter, setup-local).
+> This measures real removed material — immune to the move-target/transit
+> confounds of the earlier proxy.
+>
+> Result — **same-height stock IS cut unequally** (the user was right):
+> - 642 cells at mesh height [4,6] mm: **67 over-cut** (leave < 1 mm — the
+>   ~4 mm stock-to-leave eaten), incl. cells at **leave = −1.9 mm (cut BELOW
+>   the keep surface, a real ~2 mm gouge)**; **573 proper** (leave ≥ 3 mm).
+> - Leave left behind spans **0 → 14 mm at the same mesh height** — an
+>   uneven roughed surface, not a uniform offset.
+> - The over-cut cells are **scattered across the whole 93×84 mm area**
+>   (centroid centred), tracking the wave-texture troughs — NOT one channel.
+>
+> **Mechanism:** each deep wave-trough forces a deep planned Z-level; when
+> the 6 mm flat tool drops to cut the trough, its footprint laps sideways
+> and eats the leave on the higher same-height stock around it (and cuts
+> ~2 mm below the keep surface in places). Scattered troughs → scattered
+> over-cuts; between troughs the leave is kept.
+>
+> **So two things are both true:**
+> 1. INPUT: `wave_depth` makes the troughs. `wave_depth → 0` removes them →
+>    uniform rough, no scatter (the primary fix, as the mesh owner said).
+> 2. ENGINE: the rough does NOT hold a uniform stock-to-leave over a
+>    troughed/textured mesh — it over-cuts (and slightly gouges, ~2 mm) the
+>    leave around deep narrow features. A real secondary roughing weakness,
+>    only triggered by the texture. Worth a look if robustness over messy/
+>    textured meshes is wanted; not blocking this job (fix the wave param).
+>
 > Hard evidence (Back Rough, setup face_up=Bottom, setup-local frame):
 > - **The 6.125 mm peak `axial_doc` is a TRANSIT/ENTRY sample**
 >   (`in_transit_span = true`, move 3158, 97.8% through the toolpath).
