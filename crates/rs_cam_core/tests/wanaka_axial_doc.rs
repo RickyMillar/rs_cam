@@ -10,6 +10,7 @@
     clippy::print_stdout
 )]
 
+use rs_cam_core::dropcutter::point_drop_cutter;
 use rs_cam_core::session::ProjectSession;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
@@ -82,6 +83,98 @@ fn wanaka_back_rough_axial_doc() {
         peak.arc_engagement_radians.unwrap_or(0.0),
         peak.effective_chip_thickness_mm.unwrap_or(0.0)
     );
+    // FORENSIC 1 — classify the peak sample. Is the 6mm "gouge" a steady
+    // lateral cut, or a transit/entry/link sample (which bypasses the
+    // surface lift and dives to a target Z)?
+    println!(
+        "  peak sample: kinematics={:?}  in_transit_span={}  axial_doc={:.3}  axial_engagement={:.3}  plunge_descent={:.3}",
+        peak.cut_kinematics,
+        peak.in_transit_span,
+        peak.axial_doc_mm,
+        peak.axial_engagement_mm,
+        peak.plunge_descent_mm,
+    );
+    // Also find the worst STEADY-STATE (non-transit, non-plunge) sample — if
+    // that's far lower than the global peak, the gouge is a transit artifact.
+    {
+        use rs_cam_core::simulation_cut::CutKinematics;
+        let mut steady_peak: Option<&rs_cam_core::simulation_cut::SimulationCutSample> = None;
+        for s in &cut_trace.samples {
+            if s.toolpath_id != tp_id
+                || !s.is_cutting
+                || s.cut_kinematics == CutKinematics::Plunge
+                || s.in_transit_span
+            {
+                continue;
+            }
+            match steady_peak {
+                None => steady_peak = Some(s),
+                Some(p) if s.axial_engagement_mm > p.axial_engagement_mm => steady_peak = Some(s),
+                _ => {}
+            }
+        }
+        if let Some(sp) = steady_peak {
+            println!(
+                "  worst STEADY-STATE sample: axial_engagement={:.3} at ({:.2},{:.2},{:.2}) kin={:?}",
+                sp.axial_engagement_mm, sp.position[0], sp.position[1], sp.position[2], sp.cut_kinematics
+            );
+        }
+    }
+    // FORENSIC 2 — the mesh keep-surface at the peak XY, in the SAME setup-
+    // local frame the toolpath uses. If the channel "should be level with the
+    // hills", the mesh surface here should be HIGH (~hill level). If the cut
+    // Z is far below it, drop-cutter was bypassed → real sub-surface gouge.
+    // If the mesh surface here is ~the cut Z, the cut depth is correct and the
+    // high axial came from shearing uncleared neighbour stock (parity gap).
+    {
+        use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+        use rs_cam_core::mesh::SpatialIndex;
+        use rs_cam_core::tool::FlatEndmill;
+
+        // Resolve the Back Rough's setup face/rotation.
+        let tp_setup_idx = session.setup_of_toolpath_id(tp_id).expect("setup for back rough");
+        let (face_up, z_rot) = session
+            .list_setups()
+            .get(tp_setup_idx)
+            .map(|s| (s.face_up, s.z_rotation))
+            .unwrap_or((FaceUp::Bottom, ZRotation::Deg0));
+        println!(
+            "  Back Rough setup {}: face_up={:?} z_rot={:?}",
+            tp_setup_idx, face_up, z_rot
+        );
+
+        let model_mesh = session
+            .models()
+            .iter()
+            .find_map(|m| m.mesh.as_ref().map(|mm| mm.as_ref().clone()))
+            .expect("wanaka has a mesh model");
+        let local_mesh = session
+            .setup_transform_info(face_up, z_rot)
+            .apply_to_mesh(&model_mesh);
+        let index = SpatialIndex::build(&local_mesh, 5.0);
+        let cutter = FlatEndmill::new(6.0, 25.0);
+
+        let surf_at = |x: f64, y: f64| -> f64 {
+            point_drop_cutter(x, y, &local_mesh, &index, &cutter).z
+        };
+        let px = peak.position[0];
+        let py = peak.position[1];
+        println!(
+            "  mesh keep-surface (setup-local) at peak XY ({:.2},{:.2}) = {:.3} ; cut Z = {:.3} ; \
+             delta(cut below surface) = {:.3}",
+            px, py, surf_at(px, py), peak.position[2], surf_at(px, py) - peak.position[2]
+        );
+        // Cross-channel profile: mesh surface across +/-9mm in X and Y around
+        // the peak, to see whether the mesh really is ~level here (hills) or
+        // genuinely dips (channel).
+        println!("  mesh keep-surface profile around peak (offset: surfX / surfY):");
+        for d in [-9.0, -6.0, -3.0, 0.0, 3.0, 6.0, 9.0] {
+            println!(
+                "    d={:+.1}: surf(x{:+.0})={:.2}  surf(y{:+.0})={:.2}",
+                d, d, surf_at(px + d, py), d, surf_at(px, py + d)
+            );
+        }
+    }
 
     // Get the actual toolpath move at peak.move_index.
     let tp_result = session.get_result(1).expect("back rough result");

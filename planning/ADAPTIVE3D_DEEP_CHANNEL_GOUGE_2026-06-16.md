@@ -53,10 +53,57 @@
 > makes this non-trivial — see `wanaka_axial_doc.rs`. Do this BEFORE
 > committing to a fix direction.
 
+> ## ✅ RESOLVED 2026-06-16 (forensic run) — it's a MESH DEFECT, not an engine bug
+>
+> Ran the wanaka ground-truth diagnostic with frame-correct mesh probing
+> (`wanaka_axial_doc.rs`, extended). Verdict: **the rough is conforming to
+> the mesh correctly; the visible "gouge" is a deep narrow channel that
+> exists IN THE MESH at a seam/hole, not an engine over-cut.** Both the
+> radius-dilation theory AND the planner↔sim-parity theory are moot.
+>
+> Hard evidence (Back Rough, setup face_up=Bottom, setup-local frame):
+> - **The 6.125 mm peak `axial_doc` is a TRANSIT/ENTRY sample**
+>   (`in_transit_span = true`, move 3158, 97.8% through the toolpath).
+>   Move 3155 rapids to safe-Z, 3156 plunges 31→5.053, 3157/3158 are the
+>   first laterals that shear uncleared stock (`ray_top 11.18` in the
+>   footprint). The deflection/load gates already EXCLUDE transit samples.
+> - **The worst STEADY-STATE sample is only 3.456 mm** (~commanded DPP 3).
+>   Steady-state load is fine.
+> - **The cut conforms to the mesh:** at the peak XY (26.04, 29.01) the
+>   mesh keep-surface (drop-cutter, setup-local) = 5.351 mm and the cut Z
+>   = 5.053 mm → the tool cut only **0.297 mm** below the surface. There is
+>   NO sub-surface over-cut.
+> - **The mesh genuinely dips here.** Cross-channel profile of the mesh
+>   surface around the peak reads ~5.0–6.7 mm — a real channel in the mesh,
+>   ~6 mm below the hill levels (which the Z-histogram shows at z≈11/15/18/22,
+>   ~630 feeds each; the z≈5 channel has only 53 feeds, cut dead last).
+> - **There is a HOLE in the mesh next to it:** drop-cutter returns
+>   `-inf` (no triangle) at local (26, 20). This is the user-reported
+>   "seam where my mesh generator joins 2 mesh parts." Drop-cutter over a
+>   hole clamps to `min_z`, so the rough descends into the gap.
+>
+> **Conclusion.** The user's FIRST instinct was correct: the artifact tracks
+> a mesh seam. The deep narrow channel is (almost certainly) a fold/crack
+> from the bad join, and the rough faithfully mills it. The engine did not
+> over-cut — final geometry matches the (defective) mesh within 0.3 mm.
+>
+> **Remedies (input/robustness, not an over-cut fix):**
+> 1. Repair the mesh seam (watertight join, no hole) — upstream fix.
+> 2. Pin a heights `bottom_z` to stop the rough descending into the
+>    hole/channel (the documented lever; see the `SurfaceHeightmap.covered`
+>    note in slope.rs and the heights audit 2026-06-12 findings 2+3).
+> 3. (Optional engine robustness) treat `covered == false` (hole) cells as
+>    non-cutting / clamp them to neighbour surface instead of `min_z`, so a
+>    mesh hole can't pull a deep dive. Tracked but not required for this job.
+>
+> The forensic probes live in `wanaka_axial_doc.rs` (still `#[ignore]`).
+
 ---
 
-**Status:** ~~root-caused (data-backed)~~ **root cause REFUTED 2026-06-16**;
-re-pointed at planner↔sim interior-cell parity. Engine fix not yet implemented.
+**Status:** ~~root-caused~~ **RESOLVED 2026-06-16 — mesh-seam defect, not an
+engine over-cut.** No engine over-cut fix needed; remedy is mesh repair or a
+pinned `bottom_z`. Two earlier root-cause theories (radius-dilation;
+planner↔sim parity) both refuted above.
 **Repro source:** wanaka100 `terrain.stl` (rivmap DEM, mountains + coastline),
 `planning/airrun_2026-06-01/wanaka.toml`, Back Rough op (adaptive3d, 6mm flat
 endmill, DPP 3, stepover 2.53, stock_to_leave 4mm, `face_up=Bottom` setup).
