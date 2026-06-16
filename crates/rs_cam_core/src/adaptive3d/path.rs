@@ -1036,6 +1036,7 @@ fn try_emit_stay_down_link(
     cutter: &dyn crate::tool::MillingCutter,
     max_stay_down_distance_mm: f64,
     clearance_mm: f64,
+    stock_to_leave: f64,
     safe_z: f64,
     feed_rate: f64,
 ) -> bool {
@@ -1054,7 +1055,12 @@ fn try_emit_stay_down_link(
     // If the line is entirely off-mesh, the terrain doesn't constrain
     // us; fall back to from.z/to.z as the height ceiling.
     let terrain_max = max_mesh.unwrap_or(f64::NEG_INFINITY);
-    let link_z = terrain_max.max(from.z).max(to.z) + clearance_mm;
+    // Hold the stock-to-leave under the link, not just a bare clearance: the
+    // link must clear `terrain + stock_to_leave` so it doesn't shave the leave
+    // off material it passes over. Still at least `clearance_mm` above terrain.
+    let link_z = (terrain_max + stock_to_leave.max(clearance_mm))
+        .max(from.z)
+        .max(to.z);
 
     // Safety guard 1: link Z above safe_z means the terrain peak is
     // above the safe height. Retract is the right answer.
@@ -1097,6 +1103,87 @@ fn try_emit_stay_down_link(
 /// — the F-038b probe is a no-op when `params.max_stay_down_distance_mm`
 /// resolves to 0.0, so the cutter/mesh values don't affect behaviour in
 /// that case.
+/// Hold the stock-to-leave along a cut path ("drape" / gouge guard).
+///
+/// The per-Z-level lift sets each cut point's Z from a SINGLE grid-cell
+/// surface lookup (`SurfaceHeightmap::surface_z_at_world` rounds to one cell),
+/// and straight segments are emitted between possibly-sparse points. Over a
+/// textured / high-frequency surface this leaks two ways: (1) a point that
+/// rounds to a lower neighbouring cell, and (2) a segment whose interior
+/// crosses a surface peak that neither endpoint sampled — both let the flat
+/// tool's footprint cut below `surface + stock_to_leave`, eating the leave or
+/// gouging the part. (Measured on wanaka: scattered cells cut to/below the
+/// keep surface vs a held ~4 mm leave elsewhere.)
+///
+/// This resamples the path to `<= max_step` XY spacing and lifts every point
+/// (original and inserted) to at least the radius-aware tool rest height
+/// (`point_drop_cutter`, the true footprint maximum) plus `stock_to_leave`.
+/// It only ever RAISES Z (`max` with the planned cut Z), so a legitimately
+/// deep cut into a genuinely deep, tool-reachable region is preserved while a
+/// dip into adjacent higher material is lifted back to the leave. With
+/// `max_step <= tool_radius`, no surface peak can hide between samples: any
+/// point between two samples is within a tool radius of one of them, whose
+/// drop-cutter footprint already accounts for it, so both lifted endpoints sit
+/// at/above that peak + leave and the straight segment between them cannot dip
+/// under it.
+/// Single-point counterpart of [`drape_path_to_leave`]: lift one point to at
+/// least the radius-aware rest height + `stock_to_leave`. Used to protect
+/// entry destinations (peck-plunge / helix / ramp descend to this Z) so an
+/// entry whose footprint laps higher neighbouring material can't plunge below
+/// the leave. Only ever raises Z.
+fn drape_point(
+    p: &P3,
+    mesh: &crate::mesh::TriangleMesh,
+    index: &crate::mesh::SpatialIndex,
+    cutter: &dyn crate::tool::MillingCutter,
+    stock_to_leave: f64,
+) -> P3 {
+    let cl = crate::dropcutter::point_drop_cutter(p.x, p.y, mesh, index, cutter);
+    if cl.contacted && cl.z.is_finite() {
+        P3::new(p.x, p.y, p.z.max(cl.z + stock_to_leave))
+    } else {
+        *p
+    }
+}
+
+fn drape_path_to_leave(
+    path: &[P3],
+    mesh: &crate::mesh::TriangleMesh,
+    index: &crate::mesh::SpatialIndex,
+    cutter: &dyn crate::tool::MillingCutter,
+    stock_to_leave: f64,
+    max_step: f64,
+) -> Vec<P3> {
+    if path.len() < 2 {
+        return path.to_vec();
+    }
+    let step = max_step.max(0.1);
+    let drape_pt = |x: f64, y: f64, z: f64| -> P3 {
+        let cl = crate::dropcutter::point_drop_cutter(x, y, mesh, index, cutter);
+        if cl.contacted && cl.z.is_finite() {
+            P3::new(x, y, z.max(cl.z + stock_to_leave))
+        } else {
+            P3::new(x, y, z)
+        }
+    };
+    let mut out: Vec<P3> = Vec::with_capacity(path.len() * 2);
+    if let Some(p0) = path.first() {
+        out.push(drape_pt(p0.x, p0.y, p0.z));
+    }
+    for w in path.windows(2) {
+        if let [a, b] = w {
+            let (dx, dy) = (b.x - a.x, b.y - a.y);
+            let dist = (dx * dx + dy * dy).sqrt();
+            let n = (dist / step).ceil().max(1.0) as usize;
+            for i in 1..=n {
+                let t = i as f64 / n as f64;
+                out.push(drape_pt(a.x + t * dx, a.y + t * dy, a.z + t * (b.z - a.z)));
+            }
+        }
+    }
+    out
+}
+
 pub(super) fn segments_to_toolpath(
     segments: &[Adaptive3dSegment],
     params: &Adaptive3dParams,
@@ -1160,6 +1247,13 @@ pub(super) fn segments_to_toolpath(
                 });
             }
             Adaptive3dSegment::Rapid(entry) => {
+                // Gouge guard: lift the entry destination to hold the leave, so
+                // a peck-plunge / helix / ramp whose footprint laps higher
+                // neighbouring material can't descend below `surface + leave`.
+                // Shadows the matched ref so every downstream use (stay-down
+                // link, plunge, annotations) sees the protected Z.
+                let entry_owned = drape_point(entry, mesh, index, cutter, params.stock_to_leave);
+                let entry = &entry_owned;
                 let entry_start = tp.moves.len();
                 // F-038b: try a keep-tool-down feed link from the previous
                 // tool position to `entry` before falling back to retract.
@@ -1179,6 +1273,7 @@ pub(super) fn segments_to_toolpath(
                             cutter,
                             stay_down_dist,
                             stay_down_clearance,
+                            params.stock_to_leave,
                             params.safe_z,
                             params.feed_rate,
                         )
@@ -1285,6 +1380,7 @@ pub(super) fn segments_to_toolpath(
                             cutter,
                             stay_down_dist,
                             stay_down_clearance,
+                            params.stock_to_leave,
                             params.safe_z,
                             params.feed_rate,
                         )
@@ -1439,7 +1535,22 @@ pub(super) fn segments_to_toolpath(
                 if path.len() < 2 {
                     continue;
                 }
-                let simplified = simplify_path_3d(path, params.tolerance);
+                // Gouge guard: drape the cut to hold `stock_to_leave` against
+                // the radius-aware surface BEFORE simplification, so neither a
+                // grid-rounded point nor a straight segment interior can cut
+                // below the leave on textured / high-frequency meshes. Sample
+                // at <= tool radius so no peak hides between points. Drape
+                // first (densify + lift), then RDP-simplify away the points the
+                // drape didn't need to move.
+                let draped = drape_path_to_leave(
+                    path,
+                    mesh,
+                    index,
+                    cutter,
+                    params.stock_to_leave,
+                    cutter.radius(),
+                );
+                let simplified = simplify_path_3d(&draped, params.tolerance);
                 let blended = blend_corners_3d(&simplified, params.min_cutting_radius);
                 for pt in blended.iter().skip(1) {
                     tp.feed_to_with_intent(
