@@ -79,10 +79,28 @@
 > steady-state load is ~DPP. **The engine faithfully cuts a real trench; it
 > is not over-cutting.**
 >
-> **Fix is a rivmap parameter, not a mesh repair and not an engine change:**
-> set `wave_offset = 0` (+ `wave_depth = 0`, or a small 0.5–1 mm for gentle
-> texture) so the sea sits flush at base instead of undercutting the coast.
-> The "Coastline offset" / "Wave depth" sliders in rivmap studio are these.
+> **Slider semantics (confirmed against rivmap source — `features.rs`
+> `bake_ocean_waves`, gated ONLY on `island_mask`, applied uniformly to all
+> ocean pixels — there is NO coastline-distance term / shore groove):**
+> - `wave_offset` = how far the WHOLE sea sits below the land base = the
+>   sea-vs-island STEP. This is the offset you want to keep.
+> - `wave_depth` = peak-to-trough amplitude of the Voronoi wave TEXTURE on
+>   top of the sea. Troughs reach `base − (wave_offset + wave_depth)`. This
+>   is what dips deep (the ~6 mm CAM measured ≈ offset + depth at trough
+>   floors). This is the "gouge".
+>
+> The CAM 53-feed deepest sliver = the deepest Voronoi-trough cells reaching
+> the bottom roughing slab (scattered, NOT a continuous coastline outline) +
+> finishing feeds concentrating on the steep land→sea wall. The bulk of the
+> sea is caught by the intermediate slabs (z≈11/15/18).
+>
+> **Fix (rivmap params, NOT mesh repair, NOT engine change):** keep
+> `wave_offset` = the step you want (e.g. 1.5–2 mm); set `wave_depth = 0`
+> (flat sea, clean two-level step) or `wave_depth ≤ wave_offset` (e.g. 0.5
+> mm) so troughs never reach the land plane. **Do NOT zero `wave_offset`** —
+> that removes the step and makes sea tops flush with land while troughs
+> still gouge (the worst case; an earlier suggestion to zero offset was
+> backwards).
 >
 > The radius-dilation theory AND the planner↔sim-parity theory remain moot.
 >
@@ -126,11 +144,13 @@
 ---
 
 **Status:** ~~root-caused~~ **RESOLVED 2026-06-16 — by-design rivmap
-ocean-wave trench, not an engine over-cut (and not a seam/hole).** No engine
-fix needed; remedy is the rivmap `wave_offset`/`wave_depth` params (or a
-pinned `bottom_z` if keeping the trench). Three earlier theories
-(radius-dilation; planner↔sim parity; mesh seam/hole) all refuted above; the
-`-inf` "hole" was a frame-edge probe artifact.
+ocean-wave geometry, not an engine over-cut (and not a seam/hole).** The sea
+sits `wave_offset` below land (the step) with `wave_depth` Voronoi texture on
+top; the deep cuts are the texture troughs (`offset + depth`). No engine fix.
+Remedy: keep `wave_offset` as the step, set `wave_depth → 0` (or ≤ offset) —
+NOT zero offset. Earlier theories (radius-dilation; planner↔sim parity; mesh
+seam/hole; coastline-only groove) all refuted; the `-inf` "hole" was a
+frame-edge probe artifact.
 **Repro source:** wanaka100 `terrain.stl` (rivmap DEM, mountains + coastline),
 `planning/airrun_2026-06-01/wanaka.toml`, Back Rough op (adaptive3d, 6mm flat
 endmill, DPP 3, stepover 2.53, stock_to_leave 4mm, `face_up=Bottom` setup).
