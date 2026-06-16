@@ -228,7 +228,9 @@ fn build_session() -> ProjectSession {
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
     };
-    session.add_toolpath(0, tc).expect("add adaptive3d toolpath");
+    session
+        .add_toolpath(0, tc)
+        .expect("add adaptive3d toolpath");
 
     session
 }
@@ -321,11 +323,7 @@ fn subtool_valley_floor_pass_does_not_gouge_walls() {
     for s in steady.iter().rev().take(8) {
         eprintln!(
             "  axial={:.3}  pos=({:.2},{:.2},{:.2})  kin={:?}",
-            s.axial_engagement_mm,
-            s.position[0],
-            s.position[1],
-            s.position[2],
-            s.cut_kinematics,
+            s.axial_engagement_mm, s.position[0], s.position[1], s.position[2], s.cut_kinematics,
         );
     }
 
