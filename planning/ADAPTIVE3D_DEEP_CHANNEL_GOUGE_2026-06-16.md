@@ -1,6 +1,62 @@
 # Adaptive3d deep-channel gouge — root cause + engine-fix research
 
-**Status:** root-caused (data-backed) 2026-06-16. Engine fix not yet implemented.
+> ## ⚠️ UPDATE 2026-06-16 (later) — the radius-dilation root cause below is REFUTED
+>
+> The "PRECISE mechanism + fix" section (dilate the leave-surface by the
+> cutter radius) is **wrong** and must not be implemented. Two findings kill it:
+>
+> 1. **The `SurfaceHeightmap` is ALREADY cutter-radius-dilated.** It is built
+>    by `point_drop_cutter` (slope.rs:89). For a flat endmill, drop-cutter
+>    returns the tool's *rest height* = the max mesh Z under the full tool
+>    footprint. So the `(surf_z + leave)` floor the lift/mask already use is
+>    the radius-dilated surface. There is no missing dilation to add.
+>
+> 2. **Synthetic experiment confirms drop-cutter protects against the gouge.**
+>    `tests/adaptive3d_subtool_channel_gouge.rs` builds a deep (-12 mm),
+>    sub-tool-width V-valley with tall walls and roughs it with a 6 mm flat
+>    endmill, DPP 3. Result: the tool descends only to z=-9 (NOT the -12
+>    floor — drop-cutter stops it where it rests), the deepest samples have
+>    the *lowest* axial (0.41 mm), and peak steady-state axial is 2.46 mm
+>    (< DPP). **No gouge.** A flat tool cannot be driven below its rest
+>    height by the lift, because the lift reads that rest height.
+>
+> So the wanaka gouge is NOT "flat tool draped into a sub-tool notch via a
+> point-surface lift." The surface heightmap is mesh-based and correct.
+>
+> **Real mechanism (now the lead hypothesis): planner↔simulator STOCK-STATE
+> parity gap — the F-027 "interior cell" caveat.** The dexel simulator
+> carries UNCLEARED stock standing *above* the mesh keep-surface (material
+> the planner's own `material_stock` believes was cleared, or never
+> scheduled to clear progressively). A later deep pass — whose cut Z is the
+> correct mesh depth — sweeps its footprint through that tall uncleared
+> column and removes it in ONE bite → `axial_engagement_mm`/`axial_doc_mm`
+> reads the full column height (the 6–20 mm "gouge"). This is the same
+> family as F-027 (model-edge cells) and F-031 (helix-entry stamping
+> mismatch), both of which were planner↔sim stamping-divergence bugs. The
+> F-027 sentry even documents this exact out-of-scope class:
+> "interior cells inside the mesh XY footprint that the planner thinks are
+> cleared but the simulator hasn't stamped before a deep-Z dive."
+>
+> The wanaka probe evidence (`ray_top=11.18` in footprint, cut to 5.05)
+> fits this: 11.18 is uncleared STOCK above the ~5 mm mesh surface, not a
+> mesh wall (a mesh wall would have raised drop-cutter's rest height and
+> the tool would never have descended).
+>
+> **OPEN QUESTION before any fix — is the final geometry actually gouged,
+> or is the cut depth correct (just taken in one big bite)?** If 5.05 mm is
+> the correct mesh depth at that XY, the FINAL surface is fine and the bug
+> is only a DPP-violation / deflection-gate over-fire (metric + tool-load
+> safety), not a visible over-cut. But the user reports a VISIBLE channel
+> milled deeper than the surrounding hills. Resolving this needs ground
+> truth: drop-cutter the (setup-transformed) wanaka mesh at the peak gouge
+> XY and compare to the final dexel height. Frame handling (face_up=Bottom)
+> makes this non-trivial — see `wanaka_axial_doc.rs`. Do this BEFORE
+> committing to a fix direction.
+
+---
+
+**Status:** ~~root-caused (data-backed)~~ **root cause REFUTED 2026-06-16**;
+re-pointed at planner↔sim interior-cell parity. Engine fix not yet implemented.
 **Repro source:** wanaka100 `terrain.stl` (rivmap DEM, mountains + coastline),
 `planning/airrun_2026-06-01/wanaka.toml`, Back Rough op (adaptive3d, 6mm flat
 endmill, DPP 3, stepover 2.53, stock_to_leave 4mm, `face_up=Bottom` setup).
