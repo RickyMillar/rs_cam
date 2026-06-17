@@ -495,6 +495,20 @@ impl RsCamApp {
             ctx.request_repaint();
         }
 
+        // MCP heartbeat: while the MCP server is wired, keep a low-frequency
+        // repaint scheduled so the request channel is drained within ~100 ms.
+        // `drain_mcp_requests` only runs inside `update()`, and `update()` only
+        // runs on a repaint — but the cross-thread `request_repaint()` from the
+        // server thread (`McpServer::send_request`) does not reliably wake a
+        // sleeping winit loop. Without this heartbeat, a request issued while
+        // the GUI is idle (notably the one right after a long `run_simulation`,
+        // once highlights/notifications have faded) stalls in the channel until
+        // an OS event or an operator `/mcp` reconnect wakes the loop.
+        #[cfg(feature = "mcp")]
+        if self.mcp_receiver.is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+
         // Re-upload toolpath GPU data when color mode changes
         let current_tp_mode = self.controller.state().viewport.toolpath_color_mode;
         if current_tp_mode != self.last_tp_color_mode {
