@@ -1,6 +1,7 @@
 # Strategy advisor — suggest the operation, don't make the user pick
 
-**Status:** DESIGN (concept; no code)
+**Status:** DECISION CORE IMPLEMENTED 2026-06-17 (`crate::strategy_advisor`);
+candidate-generation orchestration + UI surfacing remain (build order 3-orch / 4).
 **Date:** 2026-06-17
 **Depends on:** KC_MILLING_CALIBRATION_2026-06-17 (real loads) + a machine
 acceleration model (new, see §4).
@@ -118,14 +119,26 @@ separate knob/auto-derivation; it tunes *how* a strategy runs, not *which* one.
 
 ## Build order
 
-1. Add `max_accel_mm_s2` (+ optional junction deviation) to `MachineProfile`;
-   populate the shipped presets (Shapeoko low, VMC high).
-2. `effective_feed` / wall-clock estimator (accel-aware) — reusable for the
-   smoothness knob too.
-3. Strategy advisor: run the existing Suggest params-optimise per candidate
-   strategy, estimate `T_hat`, pick min; emit strategy + params + regime reason.
+1. ~~Add `max_accel_mm_s2` to `MachineProfile`~~ — **DONE** as
+   `MachineProfile::effective_kinematics()` (F-034 `MachineKinematics`, explicit
+   or `generic_wood_router()` 200 mm/s² default).
+2. ~~`effective_feed` / wall-clock estimator (accel-aware)~~ — **DONE**, reuses
+   the F-034 `machine_kinematics::compute_cycle_time` trapezoidal integrator.
+3. **Decision core — DONE** (`crate::strategy_advisor`, 2026-06-17):
+   `recommend_strategy(&[StrategyCandidate], &MachineProfile) ->
+   StrategyRecommendation`. Times each candidate's load-limited toolpath through
+   `compute_cycle_time` at `effective_kinematics()`, picks min wall-clock (a
+   `geometry_forced` candidate overrides), emits chosen strategy + `LoadRegime`
+   reason + ranked list + speed margin. **Remaining (3-orch):** the orchestration
+   that *builds* each `StrategyCandidate` — run Suggest's params-optimise per
+   `ClearingStrategy3d` and plan the toolpath — lives with the planner / GUI
+   worker (like the existing sweep infra); the core consumes the candidates.
 4. Surface as an advisory in the op UI (accept / override), not an auto-apply.
-5. Sentry: on a Shapeoko-class profile + wood + the wanaka rough, advisor picks
-   Parallel; flip the profile to a high-accel preset and it picks Spiral — pins
-   the accel-dependence so it can't regress to a naïve regime lookup.
+   **Remaining.**
+5. ~~Sentry: accel flips the winner~~ — **DONE**
+   (`strategy_advisor::tests::winner_flips_with_machine_acceleration`): same two
+   candidates → low-accel (80 mm/s²) picks Parallel, high-accel (5000 mm/s²)
+   picks Spiral. Pins the accel-dependence against a naïve regime lookup. Built
+   on synthetic long-straight vs corner-dense toolpaths so it exercises the real
+   integrator, not a stubbed time.
 ```

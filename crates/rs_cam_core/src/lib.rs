@@ -86,6 +86,7 @@ pub mod steep_shallow;
 #[cfg(feature = "step")]
 pub mod step_input;
 pub mod stock_mesh;
+pub mod strategy_advisor;
 pub mod svg_input;
 pub mod tool;
 pub mod tool_library;
