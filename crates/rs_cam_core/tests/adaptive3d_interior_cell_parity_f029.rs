@@ -254,17 +254,28 @@ fn as013_terrain_whole_toolpath_axial_within_commanded_dpp_f031() {
     );
 }
 
-/// F-031 acceptance bar 2 — deflection.peak_mm < 0.2 on the AS013
-/// adaptive3d tool-load verdict.
+/// F-031 acceptance bar 2 — AS013 adaptive3d deflection reads its TRUE
+/// engagement-driven value, not the un-stamped-cell parity artifact.
 ///
-/// Pre-fix: 0.66 mm (Exceeds), driven by the planner-↔-dressup helix
-/// parity gap that left cells un-stamped between intermediate Z passes.
-/// Post-fix: < 0.15 mm (Within) — the dressup no longer rewrites
-/// planner-emitted plunges into helices, so the planner's
-/// `stamp_emitted_segment(Rapid)` vertical-cylinder pre-stamp matches
-/// the simulator's actual peck-plunge stamps.
+/// The F-031 parity fix closed a planner-↔-dressup helix gap that left
+/// cells un-stamped between intermediate Z passes and inflated deflection
+/// to a false ~0.66 mm (Exceeds). With the gap closed the reading reflects
+/// the real geometry.
+///
+/// Milling-Kc calibration (2026-06-17, `MILLING_KC_FACTOR = 2.7`,
+/// `material.rs`) then lifted the deflection force ~2.7×, moving the true
+/// reading ~0.118 → ~0.32 mm — past the 200 µm bound. AS013 at
+/// `depth_per_pass=3` in hardwood is therefore genuinely **tool-limited**
+/// under milling Kc (the same regime flip the wanaka Back Rough shows;
+/// pre-calibration this read ~0.12 mm `Within`). This is a post-sim GATE
+/// reading at the raw configured DPP — no Suggest back-off — so the honest
+/// verdict is `Exceeds`.
+///
+/// The test now pins both invariants: the parity gap stays closed (the
+/// reading is the real ~0.32 mm, NOT the ~0.66 mm un-stamped artifact) AND
+/// the milling-Kc physics (`Exceeds`, ~0.32 mm).
 #[test]
-fn as013_terrain_deflection_within_safe_band_f031() {
+fn as013_terrain_deflection_milling_kc_tool_limited_f031() {
     let session = run_as013_simulation();
 
     let report = session.tool_load_report();
@@ -285,16 +296,22 @@ fn as013_terrain_deflection_within_safe_band_f031() {
         }
     };
 
+    // The reading is the real milling-Kc value (~0.32 mm): far below the
+    // ~0.66 mm un-stamped-cell artifact (parity gap stays closed) and well
+    // above an artificially-low reading (milling-Kc force is applied).
     assert!(
-        peak_mm < 0.2,
-        "F-031: deflection.peak_mm = {peak_mm:.4} mm exceeds the 0.2 mm safety band on \
-         AS013 adaptive3d. Pre-fix sat at ~0.66 mm (Exceeds), driven by the
-         planner-↔-dressup helix entry-style mismatch documented in F-031."
+        (0.25..=0.45).contains(&peak_mm),
+        "F-031: AS013 deflection should read the true milling-Kc value (~0.32 mm); got \
+         peak_mm = {peak_mm:.4} mm. Above ~0.45 mm would signal the ~0.66 mm un-stamped-cell \
+         parity artifact has returned; below ~0.25 mm would signal the milling-Kc force is \
+         under-reading."
     );
 
+    // Under milling Kc, AS013 at DPP=3 in hardwood is genuinely tool-limited.
     assert!(
-        matches!(verdict.deflection, DeflectionVerdict::Within { .. }),
-        "F-031: AS013 deflection verdict must be Within (peak_mm < 0.2 mm), got {:?}",
+        matches!(verdict.deflection, DeflectionVerdict::Exceeds { .. }),
+        "F-031: AS013 deflection is tool-limited under milling Kc (peak ~0.32 mm > 200 µm bound); \
+         expected Exceeds, got {:?}",
         verdict.deflection
     );
 }
