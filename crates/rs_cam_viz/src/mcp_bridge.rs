@@ -90,6 +90,13 @@ pub enum McpRequestKind {
     NarrateToolpath {
         index: usize,
     },
+    /// Strategy advisor (`STRATEGY_ADVISOR_2026-06-17`): compare clearing
+    /// strategies for the `Adaptive3d` toolpath at `index` and recommend the
+    /// one with the minimum acceleration-aware wall-clock at the load limit.
+    /// Plans one toolpath per candidate strategy, so it is heavy (~30-60 s).
+    RecommendClearingStrategy {
+        index: usize,
+    },
     /// v3.2 (2026-06-04): Run the combined-Suggest orchestrator
     /// against the toolpath at `index` and return the
     /// [`rs_cam_core::feeds::rationale::SuggestRationale`] tree as JSON.
