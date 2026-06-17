@@ -132,6 +132,23 @@ impl MachineProfile {
             .min(self.max_feed_mm_min)
     }
 
+    /// Acceleration-aware kinematics for estimators that opt into them —
+    /// the F-034 cycle-time integrator on demand, and the strategy
+    /// advisor's wall-clock comparison (STRATEGY_ADVISOR_2026-06-17).
+    /// Returns the profile's explicit [`MachineKinematics`] when set,
+    /// else a conservative wood-router default (200 mm/s²).
+    ///
+    /// Distinct from the `kinematics` field: that field's `None` is the
+    /// F-034 feature flag that keeps *live-sim* `total_runtime_s`
+    /// byte-identical, so presets must keep it `None`. This accessor
+    /// always yields a usable model so accel-aware consumers (which
+    /// estimate, not replay) don't special-case unconfigured profiles —
+    /// without changing what the live sim does.
+    pub fn effective_kinematics(&self) -> MachineKinematics {
+        self.kinematics
+            .unwrap_or_else(MachineKinematics::generic_wood_router)
+    }
+
     /// Conservative generic wood router defaults.
     pub fn generic_wood_router() -> Self {
         MachineProfile {
