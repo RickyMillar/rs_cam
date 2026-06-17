@@ -675,10 +675,10 @@ mod tests {
         };
         // Hand compute: engagement_radius(1.0) for 90° V-bit = 1.0 mm;
         // radial_width = (arc/π)·2·1.0 = 1.0; triangular area = 0.5·1·1 =
-        // 0.5 mm². Kc_eff = 2.0 · 16 = 32.0 (Phase 2B grain anisotropy ×
-        // HardMaple Kc 16 N/mm² after Phase 5 Step 5.4 FPL Ch.5 pin —
-        // Sugar maple shear ∥ grain). P = 32.0·0.5·1000/60e6.
-        let expected = 32.0 * 0.5 * 1.0 * feed / 60_000_000.0;
+        // 0.5 mm². Kc_eff = 2.0 · (16 × 2.7) = 86.4 (GRAIN_ANISOTROPY_FACTOR
+        // × HardMaple MILLING Kc: FPL shear 16 lifted by MILLING_KC_FACTOR
+        // 2.7, KC_MILLING_CALIBRATION_2026-06-17). P = 86.4·0.5·1000/60e6.
+        let expected = 86.4 * 0.5 * 1.0 * feed / 60_000_000.0;
         assert!(
             (peak - expected).abs() / expected < 0.02,
             "V-bit triangular power {peak} should match {expected}"
@@ -709,22 +709,31 @@ mod tests {
         }
     }
 
-    /// Same fixture as `heavy_cut_exceeds_machine_with_available_kw` but
-    /// with `power_breach` set generously enough to admit the candidate.
-    /// Confirms the tolerance band actually widens the gate trigger;
-    /// `power_breach = 0` (the default) preserves today's strict ceiling.
+    /// A borderline cut that Exceeds the strict ceiling (power_breach = 0)
+    /// but lands Within once `power_breach` is set generously. Confirms the
+    /// tolerance band actually widens the gate trigger; the default
+    /// preserves today's strict ceiling.
+    ///
+    /// Milling-Kc calibration (2026-06-17, MILLING_KC_FACTOR = 2.7): the
+    /// old fixture (Ipe full slot, 20 mm DOC, 6000 mm/min) now predicts
+    /// ~1.92 kW — beyond reach even with power_breach = 1.0 (which admits
+    /// up to 2× the 0.568 kW available). The test's intent is "the band
+    /// admits a *borderline* cut", not "Ipe full slot is fine". Retune to
+    /// HardMaple at 14 mm DOC ≈ 0.77 kW: above the 0.568 strict ceiling
+    /// (Exceeds at default) but under the 1.136 kW widened ceiling (Within
+    /// at power_breach = 1.0).
     #[test]
     fn heavy_cut_within_with_power_breach_tolerance() {
-        let trace = trace_with(vec![cutting_sample(0, 20.0, std::f64::consts::PI, 6000.0)]);
+        let trace = trace_with(vec![cutting_sample(0, 14.0, std::f64::consts::PI, 6000.0)]);
         let bands = crate::tool_load::ToleranceBands {
-            power_breach: 1.0, // widen by 100 % so the heavy-cut probe lands Within
+            power_breach: 1.0, // widen by 100 % so the borderline probe lands Within
             ..crate::tool_load::ToleranceBands::default()
         };
         let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
-                species: WoodSpecies::Ipe,
+                species: WoodSpecies::HardMaple,
             },
             &shapeoko_makita(),
             Some(&trace),

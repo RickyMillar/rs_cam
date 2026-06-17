@@ -536,16 +536,18 @@ mod tests {
     }
 
     #[test]
-    fn wanaka_endmill_back_rough_lands_in_approximate_band() {
+    fn wanaka_endmill_back_rough_is_tool_limited() {
         // Wanaka TP 4: 6 mm carbide flat, 45 mm stickout, hardwood,
-        // slot at 3 mm peak DOC. Live MCP report (2026-05-08) measured
-        // 158 µm — a slot-engaged sample at peak DOC. Pin the test in
-        // the 100–200 µm Approximate band so threshold tweaks have
-        // headroom without breaking this regression.
-        // 2.5 mm slot DOC — a half-step below the operator's peak,
-        // representative of the average-engagement samples that drive
-        // the wanaka 158 µm live measurement (peak DOC samples are
-        // typically not full-slot in the real sim).
+        // slot at 2.5 mm DOC. Under the milling-Kc calibration
+        // (MILLING_KC_FACTOR = 2.7, material.rs 2026-06-17) the deflection
+        // gate now reads the peripheral-milling regime, ~2.7× the old FPL
+        // shear Kc. Peak tip deflection moves to ~494 µm — well past the
+        // 200 µm Exceeds bound. This is the calibration's whole point: a
+        // 6 mm flat at L/D 7.5 hammering a hardwood slot IS genuinely
+        // tool-limited, and this test is now the tool-limited sentry for
+        // the wanaka Back Rough case. (Pre-calibration this read ~158 µm
+        // and looked machine-limited — the regime flip is the corrected
+        // physics.)
         let trace = trace_with(vec![cutting_sample(
             0,
             0,
@@ -566,22 +568,21 @@ mod tests {
             &crate::tool_load::ToleranceBands::default(),
         );
         match v {
-            DeflectionVerdict::Within {
-                peak_mm,
-                confidence: Confidence::Approximate(detail),
-                ..
+            DeflectionVerdict::Exceeds {
+                peak_mm, evidence, ..
             } => {
                 let um = peak_mm * 1000.0;
                 assert!(
-                    (100.0..=200.0).contains(&um),
-                    "wanaka-like End-Mill slot at hardwood should land 100-200 µm; got {um:.1} µm"
+                    (450.0..=550.0).contains(&um),
+                    "wanaka-like End-Mill slot at hardwood is tool-limited under milling Kc; expected ~494 µm, got {um:.1} µm"
                 );
-                assert!(
-                    detail.contains("slot"),
-                    "slot annotation expected, got: {detail}"
+                assert_eq!(
+                    evidence.locality.as_deref(),
+                    Some("slot section"),
+                    "slot annotation expected, got: {evidence:?}"
                 );
             }
-            other => panic!("expected Within(Approximate), got {other:?}"),
+            other => panic!("expected Exceeds (tool-limited), got {other:?}"),
         }
     }
 
@@ -623,17 +624,20 @@ mod tests {
 
     #[test]
     fn small_engraver_low_feed_in_hardwood_passes() {
-        // 1 mm carbide flat at 25 mm stickout (geometric L/D = 25, the
-        // gap doc's "should still pass" workflow). Tiny chip cross-
-        // section keeps force low; predicted δ stays under threshold.
-        // Phase 5 Step 5.4 (2026-06-01): axial reduced 0.3 → 0.2 mm
-        // after HardMaple Kc shifted from folklore 15.0 → FPL-cited
-        // 16.0 N/mm². The previous 0.3 mm axial sat at ~197 µm with
-        // the old Kc (just under the 200 µm bound by design); the new
-        // Kc pushes it to ~210 µm. A genuinely-light engraver cut at
-        // the new Kc is ~0.2 mm axial — same test intent, honest
-        // margin.
-        let tool = carbide_flat(1.0, 25.0);
+        // 1 mm carbide flat engraver, light cut in hardwood — the gap
+        // doc's "should still pass" workflow. Tiny chip cross-section
+        // keeps force low; predicted δ stays under threshold.
+        // History: Phase 5 Step 5.4 (2026-06-01) reduced axial 0.3 → 0.2
+        // after HardMaple Kc shifted 15.0 → 16.0 N/mm².
+        // Milling-Kc calibration (2026-06-17): MILLING_KC_FACTOR = 2.7
+        // lifts the deflection force ~2.7×. A 1 mm tool at 25 mm stickout
+        // (L/D 25) now genuinely deflects ~380 µm — that L/D is no longer
+        // a "still passes" engraver, it's tool-limited. Retune stickout
+        // 25 → 15 mm (a realistic short-reach engraver). δ ∝ stickout³,
+        // so 15/25 cubes the predicted deflection down by ~4.6×, landing
+        // a genuinely-light engraver cut comfortably under 200 µm. Same
+        // test intent (light engraver passes), honest geometry.
+        let tool = carbide_flat(1.0, 15.0);
         let trace = trace_with(vec![cutting_sample(
             0,
             0,
@@ -797,7 +801,14 @@ mod tests {
         use crate::toolpath_spans::Span;
         use std::borrow::Cow;
 
-        let tool = carbide_flat(6.0, 45.0);
+        // Milling-Kc calibration (2026-06-17, MILLING_KC_FACTOR = 2.7)
+        // lifts the deflection force ~2.7×; the original 45 mm-stickout
+        // steady sample now reads ~399 µm and Exceeds. This test is about
+        // phantom-sample FILTERING (entry_spike must stay None), not the
+        // deflection magnitude — so shorten stickout 45 → 30 mm (δ ∝
+        // stickout³ → ~0.30×) to keep the steady sample Within and keep
+        // the phantom-filter assertion the thing under test.
+        let tool = carbide_flat(6.0, 30.0);
         // Steady-state sample: in DepthPass, healthy 2 mm axial DOC.
         let mut steady = cutting_sample(0, 0, 2.0, std::f64::consts::PI, 1500.0, 1.0);
         steady.span_path = vec![
@@ -864,9 +875,10 @@ mod tests {
                 // the 20 mm phantom. Tip deflection scales linearly
                 // with axial engagement → if the phantom leaked into
                 // the steady-state track, peak would be ~10× the
-                // steady-only value (roughly 1.5 mm for these inputs).
+                // steady-only value for these inputs).
                 // The realistic 2 mm-axial slot peak for a 6 mm carbide
-                // flat at 1500 mm/min in HardMaple lands around 148 µm.
+                // flat at 30 mm stickout, 1500 mm/min in HardMaple lands
+                // around ~120 µm under the milling-Kc calibration.
                 assert!(
                     peak_mm < 0.5,
                     "steady-state peak should reflect the 2 mm steady sample (~150 µm), \
