@@ -14,9 +14,9 @@
 //!
 //! > minimise wall-clock `T`, subject to peak tool load ≤ limit.
 //!
-//! A backed-off [`ContourParallel`](ClearingStrategy3d::ContourParallel)
+//! A backed-off [`ContourParallel`](ClearingStrategy::ContourParallel)
 //! lays down more path but holds commanded feed along its long straights;
-//! a [`ContourSpiral`](ClearingStrategy3d::ContourSpiral) lays down less
+//! a [`ContourSpiral`](ClearingStrategy::ContourSpiral) lays down less
 //! path but the machine decelerates into every loop. Which wins is set by
 //! **acceleration**, so the decision is *measured*, not looked up: run the
 //! real accel-aware integrator
@@ -37,7 +37,7 @@
 //! "Build order" items 3–4). Keeping the decision pure makes the
 //! accel-dependence directly testable (see the sentry below).
 
-use crate::adaptive3d::ClearingStrategy3d;
+use crate::compute::operation_configs::ClearingStrategy;
 use crate::machine::MachineProfile;
 use crate::machine_kinematics::compute_cycle_time;
 use crate::toolpath::Toolpath;
@@ -61,7 +61,7 @@ pub enum LoadRegime {
 /// candidate by running Suggest for the strategy and planning the path;
 /// the advisor measures and ranks them.
 pub struct StrategyCandidate<'a> {
-    pub strategy: ClearingStrategy3d,
+    pub strategy: ClearingStrategy,
     /// Toolpath generated at the strategy's load-limited params.
     pub toolpath: &'a Toolpath,
     /// Which constraint bound the params for this candidate.
@@ -76,7 +76,7 @@ pub struct StrategyCandidate<'a> {
 /// One candidate's measured standing in the ranking.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RankedStrategy {
-    pub strategy: ClearingStrategy3d,
+    pub strategy: ClearingStrategy,
     /// Accel-aware wall-clock estimate (seconds) for this candidate's
     /// toolpath on the target machine.
     pub wall_clock_s: f64,
@@ -88,7 +88,7 @@ pub struct RankedStrategy {
 /// a one-line *why*, and every measurable candidate ranked by wall-clock.
 #[derive(Debug, Clone)]
 pub struct StrategyRecommendation {
-    pub chosen: ClearingStrategy3d,
+    pub chosen: ClearingStrategy,
     pub regime: LoadRegime,
     pub reason: String,
     /// Candidates sorted ascending by wall-clock (fastest first).
@@ -104,20 +104,20 @@ pub struct StrategyRecommendation {
 /// continuous, even-load path; conventional strategies trade straighter
 /// motion for more path. This drives only the recommendation's *why*
 /// string — the *choice* is always the measured wall-clock minimum.
-fn is_constant_engagement(strategy: ClearingStrategy3d) -> bool {
+fn is_constant_engagement(strategy: ClearingStrategy) -> bool {
     matches!(
         strategy,
-        ClearingStrategy3d::ContourSpiral | ClearingStrategy3d::AgentSearch
+        ClearingStrategy::ContourSpiral | ClearingStrategy::AgentSearch
     )
 }
 
 /// Stable display label for the recommendation text.
-fn strategy_label(strategy: ClearingStrategy3d) -> &'static str {
+fn strategy_label(strategy: ClearingStrategy) -> &'static str {
     match strategy {
-        ClearingStrategy3d::AgentSearch => "Agent Search",
-        ClearingStrategy3d::ContourParallel => "Contour Parallel",
-        ClearingStrategy3d::Adaptive => "Adaptive",
-        ClearingStrategy3d::ContourSpiral => "Contour Spiral",
+        ClearingStrategy::AgentSearch => "Agent Search",
+        ClearingStrategy::ContourParallel => "Contour Parallel",
+        ClearingStrategy::Adaptive => "Adaptive",
+        ClearingStrategy::ContourSpiral => "Contour Spiral",
     }
 }
 
@@ -288,14 +288,15 @@ mod tests {
     }
 
     fn machine_with_accel(accel_mm_s2: f64) -> MachineProfile {
-        let mut m = MachineProfile::default();
-        m.max_feed_mm_min = 10_000.0;
-        m.kinematics = Some(MachineKinematics {
-            acceleration_mm_s2: accel_mm_s2,
-            jerk_mm_s3: None,
-            max_junction_velocity_mm_min: None,
-        });
-        m
+        MachineProfile {
+            max_feed_mm_min: 10_000.0,
+            kinematics: Some(MachineKinematics {
+                acceleration_mm_s2: accel_mm_s2,
+                jerk_mm_s3: None,
+                max_junction_velocity_mm_min: None,
+            }),
+            ..MachineProfile::default()
+        }
     }
 
     /// The doc's core sentry: the winner FLIPS with machine acceleration.
@@ -312,13 +313,13 @@ mod tests {
 
         let candidates = [
             StrategyCandidate {
-                strategy: ClearingStrategy3d::ContourParallel,
+                strategy: ClearingStrategy::ContourParallel,
                 toolpath: &parallel,
                 regime: LoadRegime::ToolLimited,
                 geometry_forced: false,
             },
             StrategyCandidate {
-                strategy: ClearingStrategy3d::ContourSpiral,
+                strategy: ClearingStrategy::ContourSpiral,
                 toolpath: &spiral,
                 regime: LoadRegime::ToolLimited,
                 geometry_forced: false,
@@ -330,7 +331,7 @@ mod tests {
         let rec_low = recommend_strategy(&candidates, &low).unwrap();
         assert_eq!(
             rec_low.chosen,
-            ClearingStrategy3d::ContourParallel,
+            ClearingStrategy::ContourParallel,
             "low accel: backed-off parallel should win (spiral decelerates into every loop); reason: {}",
             rec_low.reason
         );
@@ -341,7 +342,7 @@ mod tests {
         let rec_high = recommend_strategy(&candidates, &high).unwrap();
         assert_eq!(
             rec_high.chosen,
-            ClearingStrategy3d::ContourSpiral,
+            ClearingStrategy::ContourSpiral,
             "high accel: shorter-path spiral should win; reason: {}",
             rec_high.reason
         );
@@ -359,20 +360,20 @@ mod tests {
         // here — the advisor must still pick parallel.
         let candidates = [
             StrategyCandidate {
-                strategy: ClearingStrategy3d::ContourParallel,
+                strategy: ClearingStrategy::ContourParallel,
                 toolpath: &parallel,
                 regime: LoadRegime::ToolLimited,
                 geometry_forced: true,
             },
             StrategyCandidate {
-                strategy: ClearingStrategy3d::ContourSpiral,
+                strategy: ClearingStrategy::ContourSpiral,
                 toolpath: &spiral,
                 regime: LoadRegime::ToolLimited,
                 geometry_forced: false,
             },
         ];
         let rec = recommend_strategy(&candidates, &high).unwrap();
-        assert_eq!(rec.chosen, ClearingStrategy3d::ContourParallel);
+        assert_eq!(rec.chosen, ClearingStrategy::ContourParallel);
         assert!(
             rec.reason.contains("geometry forces"),
             "forced pick must explain itself by geometry, got: {}",
@@ -394,20 +395,20 @@ mod tests {
         let machine = machine_with_accel(250.0);
         let candidates = [
             StrategyCandidate {
-                strategy: ClearingStrategy3d::ContourSpiral,
+                strategy: ClearingStrategy::ContourSpiral,
                 toolpath: &empty,
                 regime: LoadRegime::ToolLimited,
                 geometry_forced: false,
             },
             StrategyCandidate {
-                strategy: ClearingStrategy3d::ContourParallel,
+                strategy: ClearingStrategy::ContourParallel,
                 toolpath: &parallel,
                 regime: LoadRegime::ToolLimited,
                 geometry_forced: false,
             },
         ];
         let rec = recommend_strategy(&candidates, &machine).unwrap();
-        assert_eq!(rec.chosen, ClearingStrategy3d::ContourParallel);
+        assert_eq!(rec.chosen, ClearingStrategy::ContourParallel);
         assert_eq!(rec.ranked.len(), 1, "the empty candidate must be dropped");
     }
 
@@ -417,7 +418,7 @@ mod tests {
         let empty = Toolpath::new();
         let machine = machine_with_accel(250.0);
         let candidates = [StrategyCandidate {
-            strategy: ClearingStrategy3d::ContourParallel,
+            strategy: ClearingStrategy::ContourParallel,
             toolpath: &empty,
             regime: LoadRegime::ToolLimited,
             geometry_forced: false,

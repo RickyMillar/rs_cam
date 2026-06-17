@@ -1,7 +1,8 @@
 # Strategy advisor — suggest the operation, don't make the user pick
 
-**Status:** DECISION CORE IMPLEMENTED 2026-06-17 (`crate::strategy_advisor`);
-candidate-generation orchestration + UI surfacing remain (build order 3-orch / 4).
+**Status:** DECISION CORE + ORCHESTRATION IMPLEMENTED 2026-06-17
+(`crate::strategy_advisor` + `ProjectSession::recommend_clearing_strategy`);
+op-UI advisory surface remains (build order 4).
 **Date:** 2026-06-17
 **Depends on:** KC_MILLING_CALIBRATION_2026-06-17 (real loads) + a machine
 acceleration model (new, see §4).
@@ -131,8 +132,16 @@ separate knob/auto-derivation; it tunes *how* a strategy runs, not *which* one.
    `geometry_forced` candidate overrides), emits chosen strategy + `LoadRegime`
    reason + ranked list + speed margin. **Remaining (3-orch):** the orchestration
    that *builds* each `StrategyCandidate` — run Suggest's params-optimise per
-   `ClearingStrategy3d` and plan the toolpath — lives with the planner / GUI
-   worker (like the existing sweep infra); the core consumes the candidates.
+   `ClearingStrategy` and plan the toolpath — **DONE** as
+   `ProjectSession::recommend_clearing_strategy` (2026-06-17). It extracts a
+   shared `resolve_generation_inputs` core from `generate_toolpath` (the main
+   pipeline stays byte-identical — parity + frame sentries green), resolves
+   the generation inputs once, then per candidate strategy runs
+   `suggest_for_operation` (load-limited params) + `execute_operation_annotated`
+   off that single resolution and ranks via `recommend_strategy`. Candidate set
+   = `ContourParallel` vs `ContourSpiral` (the speed/load endpoints; extensible
+   via `ADVISOR_CANDIDATE_STRATEGIES`). End-to-end smoke:
+   `tests/strategy_advisor_smoke.rs` on the AS013 terrain fixture.
 4. Surface as an advisory in the op UI (accept / override), not an auto-apply.
    **Remaining.**
 5. ~~Sentry: accel flips the winner~~ — **DONE**

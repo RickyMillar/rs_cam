@@ -11,6 +11,7 @@ use crate::compute::collision_check::{
 };
 use crate::compute::config::{HeightContext, ToolpathStats};
 use crate::compute::cutter::build_cutter;
+use crate::compute::operation_configs::ClearingStrategy;
 use crate::compute::simulate::{
     SimGroupEntry, SimToolpathEntry, SimulationRequest, run_simulation,
 };
@@ -132,6 +133,67 @@ fn translate_mesh(mesh: &TriangleMesh, dx: f64, dy: f64, dz: f64) -> TriangleMes
         .map(|v| P3::new(v.x + dx, v.y + dy, v.z + dz))
         .collect();
     TriangleMesh::from_raw(verts, mesh.triangles.clone())
+}
+
+/// Fully-owned, per-generation inputs resolved from session state by
+/// [`ProjectSession::resolve_generation_inputs`]. Owning everything (mesh /
+/// polygons via `Arc`, an owned [`SpatialIndex`](crate::mesh::SpatialIndex))
+/// lets a caller generate one *or many* toolpaths off a single resolution
+/// without re-deriving any frame-sensitive value: `generate_toolpath`
+/// consumes it once; the strategy advisor reuses it across candidate
+/// strategies (only the `operation`'s clearing strategy varies per candidate).
+struct ResolvedGenInputs {
+    tool: ToolConfig,
+    mesh: Option<Arc<TriangleMesh>>,
+    polygons: Option<Arc<Vec<crate::polygon::Polygon2>>>,
+    keep_out_footprints: Vec<crate::polygon::Polygon2>,
+    boundary_config: crate::compute::config::BoundaryConfig,
+    emission_stock_bbox: BoundingBox3,
+    heights: crate::compute::config::ResolvedHeights,
+    tool_def: crate::tool::ToolDefinition,
+    spatial_index: Option<crate::mesh::SpatialIndex>,
+    cutting_levels: Vec<f64>,
+    prev_tool_radius: Option<f64>,
+    operation: crate::compute::OperationConfig,
+    pre_boundary: Option<crate::polygon::Polygon2>,
+}
+
+/// Clearing strategies the advisor compares for a 3D roughing op — the two
+/// endpoints of the speed/load trade-off: conventional offset clearing
+/// ([`ContourParallel`](ClearingStrategy::ContourParallel)) vs
+/// constant-engagement trochoidal ([`ContourSpiral`](ClearingStrategy::ContourSpiral)).
+/// `recommend_clearing_strategy` times both at their load-limited params and
+/// lets machine acceleration decide. Extend by adding variants here.
+const ADVISOR_CANDIDATE_STRATEGIES: [ClearingStrategy; 2] = [
+    ClearingStrategy::ContourParallel,
+    ClearingStrategy::ContourSpiral,
+];
+
+/// Map a Suggest pass's warnings to the binding [`LoadRegime`] for the
+/// advisor's *why* string. Deflection-binding warnings mean the tool is the
+/// limit (tool-limited); everything else reads as unconstrained here.
+///
+/// Machine-limited (power-binding) detection is deliberately not inferred
+/// from Suggest warnings — Suggest does not emit a power-cap warning, and the
+/// regime label only colours the explanation (the *choice* is always the
+/// measured wall-clock minimum), so a conservative "unconstrained" default is
+/// honest until a power-gate signal is threaded in.
+///
+/// [`LoadRegime`]: crate::strategy_advisor::LoadRegime
+fn regime_from_suggest_warnings(
+    warnings: &[crate::feeds::suggest::SuggestWarning],
+) -> crate::strategy_advisor::LoadRegime {
+    use crate::feeds::suggest::SuggestWarning;
+    let deflection_bound = warnings.iter().any(|w| match w {
+        SuggestWarning::DppCappedByDeflection { .. } => true,
+        SuggestWarning::AxialDocClampedByEnvelope { binding, .. } => *binding == "deflection",
+        _ => false,
+    });
+    if deflection_bound {
+        crate::strategy_advisor::LoadRegime::ToolLimited
+    } else {
+        crate::strategy_advisor::LoadRegime::Unconstrained
+    }
 }
 
 impl ProjectSession {
@@ -530,13 +592,136 @@ impl ProjectSession {
 
     // ── Compute ────────────────────────────────────────────────────
 
-    /// Generate a single toolpath by index.
-    #[instrument(skip(self, cancel))]
-    pub fn generate_toolpath(
-        &mut self,
+    /// Compare clearing strategies for an `Adaptive3d` toolpath and recommend
+    /// the one that minimises wall-clock at the load limit on this machine
+    /// (`planning/STRATEGY_ADVISOR_2026-06-17.md`).
+    ///
+    /// For each candidate [`ClearingStrategy`] it (1) runs Suggest to
+    /// back the params off to the deflection / power limits, (2) plans the
+    /// clearing toolpath off a *single shared* [`resolve_generation_inputs`]
+    /// resolution (only the strategy varies — geometry / heights / stock
+    /// frame are resolved once), and (3) ranks them via
+    /// [`crate::strategy_advisor::recommend_strategy`], which times each path
+    /// through the accel-aware integrator at this machine's
+    /// [`effective_kinematics`](crate::machine::MachineProfile::effective_kinematics).
+    ///
+    /// Raw clearing paths (no dressups / recorders / persistence) are the
+    /// wall-clock comparison unit. Returns `Ok(None)` when the op is not an
+    /// `Adaptive3d` op or no candidate plans a usable path. The candidate set
+    /// is intentionally the two endpoints of the speed/load trade-off
+    /// (conventional vs constant-engagement); it extends by adding to
+    /// [`ADVISOR_CANDIDATE_STRATEGIES`].
+    ///
+    /// [`resolve_generation_inputs`]: Self::resolve_generation_inputs
+    pub fn recommend_clearing_strategy(
+        &self,
         index: usize,
         cancel: &AtomicBool,
-    ) -> Result<&ToolpathComputeResult, SessionError> {
+    ) -> Result<Option<crate::strategy_advisor::StrategyRecommendation>, SessionError> {
+        use crate::strategy_advisor::{StrategyCandidate, recommend_strategy};
+
+        let resolved = self.resolve_generation_inputs(index)?;
+        // Only Adaptive3d carries a clearing strategy.
+        if !matches!(
+            resolved.operation,
+            crate::compute::OperationConfig::Adaptive3d(_)
+        ) {
+            return Ok(None);
+        }
+
+        let machine = self.machine();
+        let material = &self.stock_config().material;
+        let workholding = self.stock_config().workholding_rigidity;
+
+        // Plan each candidate at its load-limited params. Collect OWNED
+        // toolpaths so the `StrategyCandidate` borrows outlive the ranking.
+        let mut planned: Vec<(
+            ClearingStrategy,
+            crate::toolpath::Toolpath,
+            crate::strategy_advisor::LoadRegime,
+        )> = Vec::new();
+        for &strategy in ADVISOR_CANDIDATE_STRATEGIES.iter() {
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
+            // Override the clearing strategy on a clone of the resolved op.
+            let mut op = resolved.operation.clone();
+            if let crate::compute::OperationConfig::Adaptive3d(ref mut cfg) = op {
+                cfg.clearing_strategy = strategy;
+            }
+            // Back the params off to the load limit via Suggest.
+            let suggested = crate::feeds::suggest::suggest_for_operation(
+                crate::feeds::suggest::SuggestForOperationInput {
+                    operation: &op,
+                    tool: &resolved.tool,
+                    machine,
+                    material,
+                    workholding,
+                    lut: crate::feeds::embedded_vendor_lut(),
+                    spindle_strategy: crate::feeds::SpindleStrategy::default(),
+                    context: crate::feeds::suggest::SuggestContext::default(),
+                },
+            );
+            let (op_loadlimited, regime) = match suggested {
+                Ok(s) => {
+                    let regime = regime_from_suggest_warnings(&s.warnings);
+                    (s.operation, regime)
+                }
+                // Suggest refused (e.g. a material without primary-source Kc).
+                // Still worth timing at the raw params; regime is unknown.
+                Err(_) => (op, crate::strategy_advisor::LoadRegime::Unconstrained),
+            };
+            // Plan the clearing toolpath — no recorders / dressups / persist;
+            // the raw path is what we time.
+            let result = crate::compute::execute::execute_operation_annotated(
+                &op_loadlimited,
+                resolved.mesh.as_deref(),
+                resolved.spatial_index.as_ref(),
+                resolved.polygons.as_deref().map(|v| v.as_slice()),
+                &resolved.tool_def,
+                &resolved.tool,
+                &resolved.heights,
+                &resolved.cutting_levels,
+                &resolved.emission_stock_bbox,
+                resolved.prev_tool_radius,
+                None,
+                cancel,
+                None,
+                None,
+                resolved.pre_boundary.as_ref(),
+            );
+            if let Ok(annotated) = result {
+                planned.push((strategy, annotated.toolpath, regime));
+            }
+        }
+
+        let candidates: Vec<StrategyCandidate<'_>> = planned
+            .iter()
+            .map(|(strategy, toolpath, regime)| StrategyCandidate {
+                strategy: *strategy,
+                toolpath,
+                regime: *regime,
+                geometry_forced: false,
+            })
+            .collect();
+
+        Ok(recommend_strategy(&candidates, machine))
+    }
+
+    /// Resolve every per-generation input from session state for toolpath
+    /// `index`: tool + cutter, geometry (mesh / polygons, setup-transformed),
+    /// spatial index, resolved heights, cutting levels, emission-frame stock
+    /// bbox, keep-outs, boundary + pre-clip polygon, rest-machining prev-tool
+    /// radius, and the compute-time-patched operation. A pure read of `self`
+    /// returning a fully-owned [`ResolvedGenInputs`] so callers can generate
+    /// one or many toolpaths off a single resolution (the strategy advisor's
+    /// per-strategy candidates) without re-deriving frame-sensitive values.
+    ///
+    /// [`generate_toolpath`](Self::generate_toolpath) destructures this and
+    /// then owns the per-generation recorders + dressup/persist tail; the
+    /// extraction keeps that pipeline byte-identical (the recorders simply
+    /// move after the resolution, which never depended on them).
+    fn resolve_generation_inputs(&self, index: usize) -> Result<ResolvedGenInputs, SessionError> {
         let tc = self
             .toolpath_configs
             .get(index)
@@ -675,18 +860,6 @@ impl ProjectSession {
             .as_ref()
             .map(|m| crate::mesh::SpatialIndex::build_auto(m));
 
-        // Create recorders
-        let debug_recorder = ToolpathDebugRecorder::new(tc.name.clone(), tc.operation.label());
-        let semantic_recorder =
-            ToolpathSemanticRecorder::new(tc.name.clone(), tc.operation.label());
-        let debug_root = debug_recorder.root_context();
-        let semantic_root = semantic_recorder.root_context();
-
-        let core_scope = debug_root.start_span("core_generate", tc.operation.label());
-        let core_ctx = core_scope.context();
-
-        let op_label = tc.operation.label().to_owned();
-
         // Compute cutting levels from the operation config (empty for 3D ops,
         // actual depth levels for 2D ops like Profile, Pocket, Adaptive, etc.)
         let cutting_levels = tc.operation.cutting_levels(heights.top_z);
@@ -731,6 +904,68 @@ impl ProjectSession {
         } else {
             None
         };
+
+        Ok(ResolvedGenInputs {
+            tool,
+            mesh,
+            polygons,
+            keep_out_footprints,
+            boundary_config,
+            emission_stock_bbox,
+            heights,
+            tool_def,
+            spatial_index,
+            cutting_levels,
+            prev_tool_radius,
+            operation,
+            pre_boundary,
+        })
+    }
+
+    /// Generate a single toolpath by index.
+    #[instrument(skip(self, cancel))]
+    pub fn generate_toolpath(
+        &mut self,
+        index: usize,
+        cancel: &AtomicBool,
+    ) -> Result<&ToolpathComputeResult, SessionError> {
+        let ResolvedGenInputs {
+            tool,
+            mesh,
+            polygons,
+            keep_out_footprints,
+            boundary_config,
+            emission_stock_bbox,
+            heights,
+            tool_def,
+            spatial_index,
+            cutting_levels,
+            prev_tool_radius,
+            operation,
+            pre_boundary,
+        } = self.resolve_generation_inputs(index)?;
+
+        // Re-borrow the config for the per-generation recorder labels and the
+        // dressup/persist tail below. The resolved bundle owns everything
+        // else; this borrow touches only `self.toolpath_configs`, leaving the
+        // `self.results` write that ends the method field-disjoint — the same
+        // borrow shape as before `resolve_generation_inputs` was extracted.
+        let tc = self
+            .toolpath_configs
+            .get(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+
+        // Create recorders
+        let debug_recorder = ToolpathDebugRecorder::new(tc.name.clone(), tc.operation.label());
+        let semantic_recorder =
+            ToolpathSemanticRecorder::new(tc.name.clone(), tc.operation.label());
+        let debug_root = debug_recorder.root_context();
+        let semantic_root = semantic_recorder.root_context();
+
+        let core_scope = debug_root.start_span("core_generate", tc.operation.label());
+        let core_ctx = core_scope.context();
+
+        let op_label = tc.operation.label().to_owned();
 
         // Execute the operation via the shared compute::execute module (annotated variant)
         let op_scope = semantic_root.start_item(ToolpathSemanticKind::Operation, &op_label);
