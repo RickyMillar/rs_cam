@@ -3027,28 +3027,33 @@ mod tests {
         );
     }
 
-    /// v1.1 combined-Suggest step 2: deflection-aware DPP back-off.
-    /// Wanaka Back Rough motivating case — 6 mm carbide endmill at
-    /// 45 mm stickout in HardMaple. The back-off loop in
-    /// `enforce_invariants` should engage and drive DPP / predicted
-    /// deflection down, emitting `DppCappedByDeflection`.
+    /// v1.1 combined-Suggest: deflection-aware DPP selection for the
+    /// Wanaka Back Rough motivating case — 6 mm carbide endmill at 45 mm
+    /// stickout in HardMaple, 9 mm commanded DPP. The Suggest pass must
+    /// produce a *deflection-safe* DPP (predicted peak ≤ the 200 µm bound).
     ///
-    /// Milling-Kc calibration (2026-06-17, MILLING_KC_FACTOR = 2.7): with
-    /// the deflection force now ~2.7× higher, the role-agnostic axial
-    /// envelope (pick_axial_envelope) pre-clamps DPP to its own δ=200 µm
-    /// point (~6.57 mm) BEFORE the back-off runs, so the back-off's
-    /// `requested_mm` is that pre-clamp value, not the operator's 9 mm.
-    /// And because the closed-form `predict_peak_deflection_um` reads the
-    /// regime ~3× hotter than the envelope's bound at the same DPP, the
-    /// 5-iteration back-off cap no longer drives predicted δ all the way
-    /// under 200 µm in one shot — it bottoms out around ~350 µm at
-    /// DPP≈2.15 mm. The test's intent is "the back-off engages and helps":
-    /// assert it reduces DPP substantially and drives δ a long way toward
-    /// the bound, rather than demanding it clears 200 µm in 5 steps under
-    /// the hotter physics. (Driving it fully under 200 in one Suggest pass
-    /// is a back-off-iteration-budget question, tracked separately.)
+    /// Deflection-model reconciliation (2026-06-17): the closed-form
+    /// `predict_peak_deflection_um` now delegates its cantilever to the
+    /// same integrated two-section model the axial envelope
+    /// (`pick_axial_envelope` → `invert_deflection`) uses. The two no
+    /// longer disagree, which changes *which mechanism* does the clamping
+    /// and dissolves the old back-off convergence problem:
+    ///
+    /// - The axial envelope finds the DPP where integrated δ = 200 µm
+    ///   (~6.57 mm at WOC 1.2 mm) and clamps the 9 mm command to it in one
+    ///   shot, emitting `AxialDocClampedByEnvelope { binding: "deflection" }`.
+    /// - The back-off loop then evaluates the *same* integrated physics at
+    ///   that DPP, sees it is already at/under the 200 µm bound, and does
+    ///   nothing (0 iterations, no `DppCappedByDeflection`).
+    ///
+    /// Pre-reconciliation the closed-form read ~3× hotter than the
+    /// envelope's bound, so the back-off chased a phantom target down to
+    /// ~2.15 mm and still bottomed out at ~350 µm against its 5-iteration
+    /// cap. The fix is the envelope and predictor agreeing — the DPP is
+    /// chosen correctly once, not thrashed. This is the sentry for "the
+    /// Suggest pass lands the wanaka rough deflection-safe in one pass."
     #[test]
-    fn deflection_back_off_caps_dpp_for_wanaka_back_rough_case() {
+    fn deflection_machinery_caps_dpp_for_wanaka_back_rough_case() {
         use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
         use crate::material::WoodSpecies;
         // Synthetic Wanaka Back Rough: 6 mm carbide endmill, 45 mm
@@ -3071,7 +3076,7 @@ mod tests {
         tool.flute_count = 2;
         let mut machine = MachineProfile::default();
         // Pin the rigidity factors so the rigidity clamp does NOT
-        // pre-clamp DPP — we want to see the deflection back-off
+        // pre-clamp DPP — we want to see the deflection machinery
         // applied to the 9 mm starting point directly.
         machine.rigidity.doc_roughing_factor = 0.20;
         machine.rigidity.adaptive_doc_factor = 1.60; // 1.6 × 6 = 9.6 > 9, no rigidity clamp
@@ -3089,23 +3094,26 @@ mod tests {
         );
 
         let dpp_after = op.depth_per_pass().expect("dpp set");
+        // DPP is clamped below the 9 mm command, but to the deflection
+        // bound (~6.57 mm) — NOT thrashed down to ~2 mm as the old
+        // phantom-hot back-off did.
         assert!(
-            dpp_after < 9.0,
-            "deflection back-off must drop DPP below the 9 mm starting point, got {dpp_after}"
+            (5.5..9.0).contains(&dpp_after),
+            "DPP must be clamped to the ~6.57 mm deflection bound (below 9 mm, not over-cut), got {dpp_after} mm"
         );
-        // The back-off must engage hard: under the milling-Kc regime it
-        // drives DPP down to ~2.15 mm (well below half the 9 mm command).
-        assert!(
-            dpp_after < 4.5,
-            "back-off must cut DPP substantially (< half the 9 mm command), got {dpp_after} mm"
-        );
+        // The whole point: the resulting DPP is deflection-safe. Predicted
+        // peak at the chosen DPP sits at/under the 200 µm bound (allow a
+        // hair of binary-search tolerance).
         let predicted_after =
             crate::feeds::predict::predict_peak_deflection_um(&op, &tool, &material, &machine)
                 .predicted_um;
-        // Back-off helps materially: the unclamped 9 mm command predicts
-        // well over 1 mm of tip deflection; the capped DPP drives that
-        // down toward the 200 µm bound (lands ~350 µm at the 5-iteration
-        // cap under milling Kc — see the doc comment).
+        assert!(
+            predicted_after <= 205.0,
+            "Suggest must land the wanaka rough deflection-safe (≤ 200 µm bound), \
+             got {predicted_after:.1} µm at DPP={dpp_after:.2} mm"
+        );
+        // And it genuinely backed off from the command: the 9 mm command
+        // predicts well over the bound.
         let predicted_at_command = {
             let mut probe = op.clone();
             probe.set_depth_per_pass(9.0);
@@ -3113,66 +3121,30 @@ mod tests {
                 .predicted_um
         };
         assert!(
-            predicted_after < predicted_at_command * 0.5,
-            "back-off must cut predicted deflection by more than half ({predicted_at_command:.0} µm \
-             at 9 mm → {predicted_after:.0} µm at {dpp_after:.2} mm)"
+            predicted_at_command > DEFLECTION_BACKOFF_TARGET_UM,
+            "the 9 mm command must exceed the 200 µm bound (otherwise nothing to clamp), got {predicted_at_command:.1} µm"
         );
-        assert!(
-            predicted_after < 400.0,
-            "back-off must drive predicted deflection a long way toward the 200 µm bound, \
-             got {predicted_after:.1} µm at DPP={dpp_after} mm"
-        );
-        let warning = warnings.iter().find_map(|w| match w {
-            SuggestWarning::DppCappedByDeflection {
-                requested_mm,
-                capped_mm,
-                predicted_um_at_requested,
-                predicted_um_at_capped,
-                iterations,
-            } => Some((
-                *requested_mm,
-                *capped_mm,
-                *predicted_um_at_requested,
-                *predicted_um_at_capped,
-                *iterations,
-            )),
+        // The axial envelope is the mechanism that clamps it, bound by
+        // deflection. (The back-off loop is now a confirming no-op since
+        // it shares the envelope's physics — so we assert the envelope
+        // warning, not `DppCappedByDeflection`.)
+        let clamp = warnings.iter().find_map(|w| match w {
+            SuggestWarning::AxialDocClampedByEnvelope {
+                clamped_mm,
+                binding,
+                ..
+            } => Some((*clamped_mm, *binding)),
             _ => None,
         });
-        let (
-            requested_mm,
-            capped_mm,
-            predicted_um_at_requested,
-            predicted_um_at_capped,
-            iterations,
-        ) = warning.expect("DppCappedByDeflection warning must fire on Wanaka case");
-        // Under milling Kc the role-agnostic axial envelope pre-clamps DPP
-        // to ~6.57 mm before the back-off runs, so requested_mm captures
-        // that pre-clamp DPP (between the back-off floor and the 9 mm
-        // command), not the raw command.
-        assert!(
-            (DEFLECTION_BACKOFF_DPP_FLOOR_MM..9.0).contains(&requested_mm),
-            "warning.requested_mm must capture the pre-back-off DPP (post axial-envelope clamp), got {requested_mm}"
+        let (clamped_mm, binding) =
+            clamp.expect("AxialDocClampedByEnvelope must fire on the wanaka case");
+        assert_eq!(
+            binding, "deflection",
+            "the binding constraint must be deflection, got {binding}"
         );
         assert!(
-            (capped_mm - dpp_after).abs() < 1e-9,
-            "warning.capped_mm must match the post-back-off DPP, got {capped_mm} vs {dpp_after}"
-        );
-        assert!(
-            predicted_um_at_requested > DEFLECTION_BACKOFF_TARGET_UM,
-            "warning.predicted_um_at_requested must exceed the 200 µm target (otherwise loop wouldn't have started), got {predicted_um_at_requested:.1}"
-        );
-        // The back-off drives the prediction down hard but hits its
-        // 5-iteration cap before fully clearing 200 µm under milling Kc;
-        // assert it at least halves the predicted deflection.
-        assert!(
-            predicted_um_at_capped < predicted_um_at_requested * 0.5,
-            "warning.predicted_um_at_capped must be far below the at-requested value \
-             ({predicted_um_at_requested:.0} → {predicted_um_at_capped:.0} µm)"
-        );
-        assert!(
-            (1..=DEFLECTION_BACKOFF_MAX_ITERATIONS).contains(&iterations),
-            "iterations must fall inside [1, {}], got {iterations}",
-            DEFLECTION_BACKOFF_MAX_ITERATIONS
+            (clamped_mm - dpp_after).abs() < 1e-9,
+            "envelope clamp value must match the post-Suggest DPP, got {clamped_mm} vs {dpp_after}"
         );
     }
 
@@ -3846,13 +3818,15 @@ mod tests {
         // in the (190, 200) µm window — above the 190 µm guard but
         // below the 200 µm v1.1 back-off target (so v1.1 doesn't fire
         // first and lower DPP underneath us).
-        // Milling-Kc calibration (2026-06-17, MILLING_KC_FACTOR = 2.7):
-        // the deflection force is now ~2.7× higher, so the previous
-        // 43.2 mm stickout overshoots to ~525 µm. δ ∝ stickout³, so cut
-        // stickout to ~31.35 mm to land the pre-loop prediction back in
-        // the [190, 200) µm window (the in-test setup guard below asserts
-        // this and tells the next editor to retune if Kc shifts again).
-        tool.stickout = 31.35;
+        // Deflection-model reconciliation (2026-06-17): the predictor now
+        // delegates to the integrated two-section cantilever (the gate's
+        // model) instead of its old single-section `0.7·D` formula, which
+        // dropped the magnitude ~4× (it had relieved the whole stickout,
+        // not just the flutes). δ ∝ stickout³, so the stickout that lands
+        // the pre-loop prediction in the [190, 200) µm window grew to
+        // ~53.2 mm (the in-test setup guard below asserts this and tells
+        // the next editor to retune if the physics shifts again).
+        tool.stickout = 53.2;
         tool.flute_count = 2;
         let mut machine = MachineProfile::default();
         machine.rigidity.doc_roughing_factor = 0.20;
@@ -3994,12 +3968,12 @@ mod tests {
         tool.cutting_length = 25.0;
         // Same stickout tuning as feed_recalibration_caps_on_deflection:
         // pre-loop deflection inside the (190, 200) µm refusal window.
-        // Milling-Kc calibration (2026-06-17, MILLING_KC_FACTOR = 2.7):
-        // the deflection force is ~2.7× higher, so the previous 43.2 mm
-        // stickout overshoots to ~525 µm. δ ∝ stickout³ → ~31.35 mm lands
-        // the pre-loop prediction back in the [190, 200) µm window (the
-        // setup guard below asserts it).
-        tool.stickout = 31.35;
+        // Deflection-model reconciliation (2026-06-17): the predictor now
+        // shares the gate's integrated two-section cantilever, ~4× cooler
+        // than the old single-section `0.7·D` formula. δ ∝ stickout³ →
+        // ~53.2 mm lands the pre-loop prediction back in the [190, 200) µm
+        // window (the setup guard below asserts it).
+        tool.stickout = 53.2;
         tool.flute_count = 2;
         let mut machine = MachineProfile::default();
         machine.rigidity.doc_roughing_factor = 0.20;
