@@ -162,6 +162,8 @@ pub enum McpRequestKind {
         path: String,
         accept_unmodeled_tool_load: bool,
         accept_exceeded_tool_load: bool,
+        tool_change_mode: Option<String>,
+        split_setups: bool,
     },
     SetToolpathParam {
         index: usize,

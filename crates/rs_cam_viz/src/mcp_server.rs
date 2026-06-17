@@ -525,6 +525,8 @@ impl EmbeddedCamServer {
             path,
             accept_unmodeled_tool_load,
             accept_exceeded_tool_load,
+            tool_change_mode,
+            split_setups,
         }): Parameters<ExportParam>,
     ) -> String {
         Self::format_result(
@@ -532,6 +534,8 @@ impl EmbeddedCamServer {
                 path,
                 accept_unmodeled_tool_load,
                 accept_exceeded_tool_load,
+                tool_change_mode,
+                split_setups,
             })
             .await,
         )

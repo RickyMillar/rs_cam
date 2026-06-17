@@ -257,11 +257,15 @@ impl super::RsCamApp {
                 path,
                 accept_unmodeled_tool_load,
                 accept_exceeded_tool_load,
+                tool_change_mode,
+                split_setups,
             } => {
                 let resp = self.mcp_export_gcode(
                     &path,
                     accept_unmodeled_tool_load,
                     accept_exceeded_tool_load,
+                    tool_change_mode.as_deref(),
+                    split_setups,
                 );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
@@ -2410,11 +2414,36 @@ impl super::RsCamApp {
     }
 
     fn mcp_export_gcode(
-        &self,
+        &mut self,
         path: &str,
         accept_unmodeled_tool_load: bool,
         accept_exceeded_tool_load: bool,
+        tool_change_mode: Option<&str>,
+        split_setups: bool,
     ) -> String {
+        // Apply the requested tool-change handling to the session wizard
+        // before export so `overlay_for` picks it up — the MCP equivalent
+        // of the export wizard's Tool Change dropdown. Without this, MCP
+        // exports always used the post default (M0 manual pause), which is
+        // wrong for gSender/BitSetter setups that need M6 to trigger the
+        // tool-length probe on every change.
+        if let Some(mode_str) = tool_change_mode {
+            let mode = match mode_str.to_ascii_lowercase().as_str() {
+                "pause" | "m0" | "manual" => rs_cam_core::gcode::ToolChangeMode::Pause,
+                "m6" | "atc" => rs_cam_core::gcode::ToolChangeMode::M6,
+                "suppress" | "none" => rs_cam_core::gcode::ToolChangeMode::Suppress,
+                other => {
+                    return text(format!(
+                        "Export failed: unknown tool_change_mode '{other}' (expected 'pause', 'm6', or 'suppress')"
+                    ));
+                }
+            };
+            self.controller
+                .state_mut()
+                .session
+                .wizard_mut()
+                .tool_change_override = Some(mode);
+        }
         // Route through the viz-side exporter so the gate sees viz worker
         // results (`gui.toolpath_rt[id].result`) and the viz cut trace
         // (`state.simulation.results.cut_trace`). The core-side
@@ -2427,6 +2456,79 @@ impl super::RsCamApp {
             accept_unmodeled: accept_unmodeled_tool_load,
             accept_exceeded: accept_exceeded_tool_load,
         };
+
+        // Two-sided / multi-setup split: one self-contained file per setup,
+        // each with a header naming the setup (+ a flip/re-zero reminder on
+        // setups after the first), so the operator runs setup 1 → flip &
+        // re-zero → setup 2. Separate program runs are safer than an in-stream
+        // M0 because the Z re-zero after a flip is a fresh job, not a
+        // mid-program jog. tool_change_mode (set on the wizard above) still
+        // applies within each file.
+        if split_setups {
+            let setups: Vec<(usize, String)> = state
+                .session
+                .list_setups()
+                .iter()
+                .map(|s| (s.id, s.name.clone()))
+                .collect();
+            if setups.len() > 1 {
+                let path_buf = Path::new(path);
+                let stem = path_buf
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("export");
+                let ext = path_buf
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("nc");
+                let parent = path_buf.parent();
+                let post = state.gui.post.format.definition();
+                let total = setups.len();
+                let mut written: Vec<String> = Vec::new();
+                for (i, (id, name)) in setups.iter().enumerate() {
+                    let gcode = match crate::io::export::export_setup_gcode_from_session_with_policy(
+                        &state.session,
+                        &state.gui,
+                        &state.simulation,
+                        crate::state::job::SetupId(*id),
+                        rs_cam_core::gcode::ToolLoadExportPolicy {
+                            accept_unmodeled: accept_unmodeled_tool_load,
+                            accept_exceeded: accept_exceeded_tool_load,
+                        },
+                    ) {
+                        Ok(g) => g,
+                        Err(e) => return text(format!("Export failed (setup '{name}'): {e}")),
+                    };
+                    let reminder = if i > 0 {
+                        " -- FLIP PART + RE-ZERO Z BEFORE RUNNING"
+                    } else {
+                        ""
+                    };
+                    let header = post.render_comment(&format!(
+                        "rs_cam setup {}/{total}: \"{name}\"{reminder}",
+                        i + 1
+                    ));
+                    let safe_name: String = name
+                        .chars()
+                        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+                        .collect();
+                    let file_name = format!("{stem}_{}_{safe_name}.{ext}", i + 1);
+                    let out_path = match parent {
+                        Some(p) => p.join(file_name),
+                        None => std::path::PathBuf::from(file_name),
+                    };
+                    if let Err(e) = std::fs::write(&out_path, format!("{header}{gcode}")) {
+                        return text(format!("Export failed writing {}: {e}", out_path.display()));
+                    }
+                    written.push(out_path.display().to_string());
+                }
+                return text(format!(
+                    "Exported {total} per-setup G-code files:\n{}",
+                    written.join("\n")
+                ));
+            }
+        }
+
         let gcode = match crate::io::export::export_gcode_from_session_with_policy(
             &state.session,
             &state.gui,

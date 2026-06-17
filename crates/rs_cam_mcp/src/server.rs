@@ -87,6 +87,26 @@ pub struct ExportParam {
     /// `accept_unmodeled_tool_load`.
     #[serde(default)]
     pub accept_exceeded_tool_load: bool,
+    /// Tool-change handling for this export. One of: `"pause"` (manual
+    /// `M5` + operator message + `M0` — the GRBL-family default),
+    /// `"m6"` (native `M5` + `M6 T{n}` — what Fusion emits and what a
+    /// gSender/BitSetter setup needs so each tool is probed), or
+    /// `"suppress"` (replace each change with a bare `M0` pause).
+    /// Omit to keep the project's current setting. This is the MCP
+    /// equivalent of the export wizard's Tool Change dropdown. Note:
+    /// for `"m6"` each tool must have a distinct tool number or the
+    /// controller won't re-trigger the change.
+    #[serde(default)]
+    pub tool_change_mode: Option<String>,
+    /// When true and the project has more than one setup, write one
+    /// G-code file per setup instead of a single combined program. Each
+    /// file is self-contained and carries a header comment naming the
+    /// setup (with a FLIP + RE-ZERO reminder on setups after the first),
+    /// so a two-sided job is run as `setup1` → flip & re-zero → `setup2`.
+    /// Output files are named `<stem>_<n>_<setup name>.<ext>` next to
+    /// `path`. Ignored for single-setup projects.
+    #[serde(default)]
+    pub split_setups: bool,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
