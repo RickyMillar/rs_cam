@@ -137,6 +137,10 @@ impl super::RsCamApp {
                 let resp = self.mcp_narrate_toolpath(index);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::RecommendClearingStrategy { index } => {
+                let resp = self.mcp_recommend_clearing_strategy(index);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::GetSuggestRationale { index } => {
                 let resp = self.mcp_get_suggest_rationale(index);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
@@ -1046,6 +1050,46 @@ impl super::RsCamApp {
                 "toolpath_id": tc.id,
                 "toolpath_name": tc.name,
                 "error": format!("Suggest refused: {e}"),
+            })),
+        }
+    }
+
+    /// Strategy advisor (`STRATEGY_ADVISOR_2026-06-17`): plan each candidate
+    /// clearing strategy for the Adaptive3d toolpath at `index` at its
+    /// load-limited params and recommend the one with the minimum
+    /// acceleration-aware wall-clock. Returns chosen strategy, the binding
+    /// regime as the *why*, every candidate ranked by wall-clock, and the
+    /// speed margin. Heavy (plans one toolpath per candidate) and runs
+    /// synchronously, so the GUI is unresponsive while it computes. Does not
+    /// mutate the project.
+    fn mcp_recommend_clearing_strategy(&self, index: usize) -> String {
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let state = self.controller.state();
+        match state.session.recommend_clearing_strategy(index, &cancel) {
+            Ok(Some(rec)) => json_str(serde_json::json!({
+                "chosen": format!("{:?}", rec.chosen),
+                "regime": format!("{:?}", rec.regime),
+                "reason": rec.reason,
+                "time_ratio_vs_runner_up": rec.time_ratio_vs_runner_up,
+                "ranked": rec
+                    .ranked
+                    .iter()
+                    .map(|r| {
+                        serde_json::json!({
+                            "strategy": format!("{:?}", r.strategy),
+                            "wall_clock_s": r.wall_clock_s,
+                            "regime": format!("{:?}", r.regime),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            })),
+            Ok(None) => json_str(serde_json::json!({
+                "error": format!(
+                    "Toolpath {index} is not an Adaptive3d op (or no candidate planned a usable path); the strategy advisor only applies to 3D adaptive roughing"
+                ),
+            })),
+            Err(e) => json_str(serde_json::json!({
+                "error": format!("{e}"),
             })),
         }
     }

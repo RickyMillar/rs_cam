@@ -243,6 +243,20 @@ impl EmbeddedCamServer {
     }
 
     #[tool(
+        name = "recommend_clearing_strategy",
+        description = "Strategy advisor: for the Adaptive3d roughing toolpath at `index`, compare clearing strategies (ContourParallel vs ContourSpiral) by planning each at its load-limited (Suggest-backed-off) params and timing it through the acceleration-aware cycle-time integrator at the machine's effective kinematics. Returns the recommended strategy, the binding regime (tool-/machine-limited) as the human-readable why, every candidate ranked by wall-clock seconds, and the speed margin. KEY: it decides parallel-vs-spiral by MACHINE ACCELERATION, not the load regime — on a low-accel router a backed-off ContourParallel beats the spiral even when tool-limited. Only applies to Adaptive3d ops. HEAVY: it plans one toolpath per candidate, so expect ~30-60 s and a GUI freeze while it computes."
+    )]
+    async fn recommend_clearing_strategy(
+        &self,
+        Parameters(IndexParam { index }): Parameters<IndexParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::RecommendClearingStrategy { index })
+                .await,
+        )
+    }
+
+    #[tool(
         name = "get_suggest_rationale",
         description = "Run combined-Suggest against the toolpath at `index` and return the structured rationale tree explaining every parameter the orchestrator backed off or rewrote: DPP deflection back-off, runtime stepover floor, plunge-entry warnings, chipload-target feed lift, etc. Each entry carries param + reason + from/to values + a human-readable headline. Read this before set_toolpath_param when you want to know why Suggest chose a value. Does not mutate the project."
     )]
