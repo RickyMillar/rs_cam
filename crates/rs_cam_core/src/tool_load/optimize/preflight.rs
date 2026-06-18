@@ -164,10 +164,31 @@ fn deflection_at_min_force_corner(
         .or_else(|| baseline_op.stepover())
         .unwrap_or_else(|| ctx.tool.radius() * 2.0);
 
+    // Minimum-force corner: lowest feed and highest RPM both minimise feed
+    // per tooth (chip thickness), so the feed-aware force is smallest here.
+    // If even this corner exceeds the limit, no operating point is safe.
+    let min_feed_mm_min = space
+        .axis(SearchAxis::FeedRate)
+        .map(|b| b.hard.lo)
+        .unwrap_or_else(|| baseline_op.feed_rate());
+    let max_rpm = space
+        .axis(SearchAxis::SpindleRpm)
+        .map(|b| b.hard.hi)
+        .or_else(|| baseline_op.spindle_rpm().map(|r| r as f64))
+        .unwrap_or(axis_ctx.project_default_rpm as f64);
+    let flutes = ctx.tool.flute_count.max(1) as f64;
+    let fz_min_mm = if max_rpm > 0.0 {
+        min_feed_mm_min / (max_rpm * flutes)
+    } else {
+        0.0
+    };
+    let immersion_rad = crate::feeds::force::immersion_angle(min_woc_mm, ctx.tool.radius());
+
     crate::feeds::predict::tip_deflection_from_engagement(
         &ctx.tool,
         &ctx.material,
         min_doc_mm,
-        min_woc_mm,
+        immersion_rad,
+        fz_min_mm,
     )
 }
