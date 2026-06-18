@@ -17,6 +17,7 @@
 
 pub mod cutter_constraints;
 pub mod explain;
+pub mod force;
 pub mod geometry;
 pub mod geometry_class;
 pub mod predict;
