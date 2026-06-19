@@ -811,6 +811,64 @@ mod tests {
     }
 
     #[test]
+    fn deflection_chain_matches_hand_calc_from_published_formulas() {
+        // End-to-end external cross-check: the production deflection a user
+        // sees (`feeds::predict::tip_deflection_from_engagement`) must equal
+        // an independent hand calculation built from two published formulas
+        // and nothing from the model internals:
+        //   1. Wood force (woodresearch.sk): F = ap·(49.95·h + 5.30),
+        //      h = fz·sin(θ_peak). At full immersion θ_peak = π/2 ⇒ h = fz.
+        //   2. Textbook cantilever, point load at distance a from the clamp,
+        //      tip deflection: δ = F·a²·(3L − a)/(6·E·I), a = L − ap/2.
+        // Material/E are shared inputs (documented properties, not the thing
+        // under test); the FORMULAS are what this pins. GenericHardwood is
+        // the literature anchor wood, so its coefficients are the raw
+        // 49.95 / 5.30 published values.
+        use crate::material::{Material, WoodSpecies};
+        let d = 6.0_f64;
+        let l = 45.0_f64;
+        // Uniform cylinder (cutting_length covers stickout) ⇒ the two-section
+        // integrator reduces to the single-section textbook beam.
+        let tool = ToolDefinition::new(
+            Box::new(FlatEndmill::new(d, l)),
+            d,
+            0.0,
+            25.0,
+            l,
+            2,
+            ToolMaterial::Carbide,
+        );
+        let mat = Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        };
+        let e = tool.tool_material.youngs_modulus_n_per_mm2();
+        let ap = 3.0_f64;
+        let fz = 0.05_f64;
+        let immersion = std::f64::consts::PI; // full slot
+
+        // (1) hand force from the published wood equation.
+        let h = fz; // sin(π/2) = 1
+        let force_hand = ap * (49.95 * h + 5.30);
+        // (2) hand beam from the textbook cantilever formula.
+        let a = l - ap / 2.0;
+        let i = std::f64::consts::PI * d.powi(4) / 64.0;
+        let delta_hand_mm = force_hand * a * a * (3.0 * l - a) / (6.0 * e * i);
+
+        // Production path (force model + integrated beam, the real code).
+        let delta_model_mm =
+            crate::feeds::predict::tip_deflection_from_engagement(&tool, &mat, ap, immersion, fz)
+                .expect("modeled deflection");
+
+        let rel_err = (delta_model_mm - delta_hand_mm).abs() / delta_hand_mm;
+        assert!(
+            rel_err < 0.01,
+            "production deflection chain must match hand calc from published formulas within 1%: \
+             model {delta_model_mm:.6} mm, hand {delta_hand_mm:.6} mm (force {force_hand:.2} N), \
+             rel_err {rel_err:.4}"
+        );
+    }
+
+    #[test]
     fn tip_deflection_two_segment_stepped_matches_hand_calc() {
         // Cutter diameter 6 mm, cutting_length 20 mm; shank 12 mm;
         // stickout 40 mm; load at axial_doc/2 = 5 from tip → a = 35.
