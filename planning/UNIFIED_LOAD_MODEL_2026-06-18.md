@@ -191,8 +191,11 @@ not gospel) but "what is the best, most honest UX for *any* generic cut."
   *instantaneous* bending force (chip area `ap·h`), ~9× lower than the old
   milling-lifted `Kc·ap·ae` aggregate. So each load constraint binds where it
   physically should: **roughing is chipload/power-bound; deflection gates only
-  long/thin tools** (a 3 mm endmill at 30 mm stickout reads ~370 µm Exceeds; a
-  stubby 6 mm at 45 mm reads ~17 µm Within). The old inflated model fired the
+  long/thin tools and aggressive small-tool cuts.** Cross-checked numbers
+  (a 3 mm DOC full-slot in hardwood): a stubby 6 mm @ 45 mm reads ~18 µm
+  (Validated); a 3 mm tool at L/D 10 reads ~82 µm (Within, finish-degradation
+  note); Exceeds (>200 µm) needs L/D ~14+ or a deep/over-fed cut. The old
+  inflated model fired the
   deflection gate on routine roughing and hid the real limiter — bad feeds
   advice. The honest model is exactly the clean per-path decomposition the
   "bomber feeds/speeds" UX needs.

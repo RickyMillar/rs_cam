@@ -688,9 +688,9 @@ mod tests {
         // keeps the instantaneous force low; under the feed-aware
         // literature-absolute force model a light 1 mm engraver cut at
         // 15 mm stickout reads ~50 µm — Within. (Note: deflection DOES
-        // gate genuinely long/thin tools — e.g. a 3 mm endmill at 30 mm
-        // stickout full-slotting hardwood reads ~370 µm Exceeds — so the
-        // gate is appropriately scoped, not dead.)
+        // gate genuinely long/thin tools and aggressive small-tool cuts —
+        // a 3 mm tool crosses 200 µm Exceeds by L/D ~14, or sooner under a
+        // deep/over-fed cut — so the gate is appropriately scoped, not dead.)
         let tool = carbide_flat(1.0, 15.0);
         let trace = trace_with(vec![cutting_sample(
             0,
