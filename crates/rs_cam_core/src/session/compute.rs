@@ -196,6 +196,38 @@ fn regime_from_suggest_warnings(
     }
 }
 
+/// Map a modulated path's per-move binding-constraint distribution to the
+/// advisor's [`LoadRegime`]. The dominant (most-frequent) binding constraint
+/// decides: deflection → tool-limited; power / machine-max-feed /
+/// kinematic-reach → machine-limited; the chipload band (max or min) →
+/// unconstrained (the comfortable regime, neither the tool nor the machine
+/// stressed). This is the unified-load-model upgrade over
+/// [`regime_from_suggest_warnings`]: the label now comes from the actual
+/// per-move binding signal of the *optimized* path, not a Suggest-warning
+/// heuristic (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §5.4).
+fn regime_from_binding(
+    summary: &crate::tool_load::ModulationSummary,
+) -> crate::strategy_advisor::LoadRegime {
+    use crate::strategy_advisor::LoadRegime;
+    use crate::tool_load::BindingConstraint;
+    let dominant = summary
+        .binding_constraint_distribution
+        .iter()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(binding, _)| *binding);
+    match dominant {
+        Some(BindingConstraint::DeflectionMax) => LoadRegime::ToolLimited,
+        Some(
+            BindingConstraint::PowerMax
+            | BindingConstraint::MachineMaxFeed
+            | BindingConstraint::KinematicReach,
+        ) => LoadRegime::MachineLimited,
+        Some(BindingConstraint::ChiploadMax | BindingConstraint::ChiploadMin) | None => {
+            LoadRegime::Unconstrained
+        }
+    }
+}
+
 impl ProjectSession {
     // ── Mutation ──────────────────────────────────────────────────
 
@@ -691,7 +723,26 @@ impl ProjectSession {
                 resolved.pre_boundary.as_ref(),
             );
             if let Ok(annotated) = result {
-                planned.push((strategy, annotated.toolpath, regime));
+                let annotated_arc = Arc::new(annotated);
+                // Compare OPTIMIZED candidates: simulate the path, run F-039
+                // modulation, and time the MODULATED toolpath so the spiral's
+                // flatter, lighter engagement (which modulation can exploit
+                // harder than the parallel path's corner spikes) shows up in
+                // wall-clock. The regime label falls out of the per-move
+                // binding constraint of the optimized path. Falls back to the
+                // raw path + Suggest-warning regime when the machine carries
+                // no kinematics or the candidate can't be simulated/modulated.
+                let (toolpath, regime) = match self.optimized_candidate(
+                    index,
+                    &annotated_arc,
+                    &resolved.tool,
+                    &op_loadlimited,
+                    cancel,
+                ) {
+                    Some(opt) => opt,
+                    None => (annotated_arc.toolpath.clone(), regime),
+                };
+                planned.push((strategy, toolpath, regime));
             }
         }
 
@@ -706,6 +757,153 @@ impl ProjectSession {
             .collect();
 
         Ok(recommend_strategy(&candidates, machine))
+    }
+
+    /// Strategy-advisor companion to
+    /// [`recommend_clearing_strategy`](Self::recommend_clearing_strategy):
+    /// turn a raw candidate path into the *optimized* path the user would
+    /// actually run, plus its binding [`LoadRegime`]. Simulates the candidate
+    /// in isolation to capture per-move engagement, then routes it through the
+    /// shared F-039 core
+    /// ([`modulate_annotated_against_trace`](Self::modulate_annotated_against_trace))
+    /// so the timed path carries modulated feeds. Returns `None` (caller times
+    /// the raw path with the Suggest-warning regime) when the machine has no
+    /// kinematics block, the candidate can't be simulated, no chipload band is
+    /// available, or modulation refuses.
+    fn optimized_candidate(
+        &self,
+        index: usize,
+        annotated: &Arc<crate::toolpath_spans::AnnotatedToolpath>,
+        tool_cfg: &ToolConfig,
+        operation: &crate::compute::OperationConfig,
+        cancel: &AtomicBool,
+    ) -> Option<(
+        crate::toolpath::Toolpath,
+        crate::strategy_advisor::LoadRegime,
+    )> {
+        // Modulate against the SAME kinematics + feed envelope
+        // [`recommend_strategy`](crate::strategy_advisor::recommend_strategy)
+        // times the candidate with, so the optimized feeds are clamped to the
+        // exact ceilings they're then timed against. `effective_kinematics`
+        // (never `None` — falls back to the generic-wood-router profile) is
+        // also why the advisor can optimize machines that carry no explicit
+        // kinematics block, unlike the production post-sim pass.
+        let kinematics = self.machine.effective_kinematics();
+        let max_feed = self.machine.max_feed_mm_min.max(1.0);
+        let rapid_feed = max_feed;
+
+        let cut_trace = self.simulate_candidate_isolated(
+            index,
+            Arc::clone(annotated),
+            tool_cfg,
+            operation,
+            cancel,
+        )?;
+        let toolpath_id = self.toolpath_configs.get(index)?.id;
+        let band_range = crate::tool_load::chipload_envelopes_for_session(self, Some(&cut_trace))
+            .get(&toolpath_id)
+            .cloned()?;
+        let band = crate::feed_modulation::ChiploadBand::new(band_range.start, band_range.end)?;
+        // ConstrainedMax @ aggressiveness 1.0 — the "bomber feeds" operating
+        // point and the `SimulationOptions` default, so the advisor times the
+        // same path the user gets after a default sim.
+        let strategy = crate::feed_modulation::ModulationStrategy::ConstrainedMax;
+        let aggressiveness = 1.0;
+
+        let (modulated, outcome) = self.modulate_annotated_against_trace(
+            annotated.as_ref(),
+            operation,
+            tool_cfg,
+            toolpath_id,
+            &cut_trace,
+            band,
+            kinematics,
+            max_feed,
+            rapid_feed,
+            strategy,
+            aggressiveness,
+        )?;
+        let regime = outcome
+            .build_summary(operation.feed_rate(), aggressiveness, strategy)
+            .map(|s| regime_from_binding(&s))
+            .unwrap_or(crate::strategy_advisor::LoadRegime::Unconstrained);
+        Some((modulated, regime))
+    }
+
+    /// Simulate a single throwaway toolpath in isolation (one setup group,
+    /// one entry) and return its cut trace, with arc-engagement capture on so
+    /// the per-move engagement the modulator needs is present. Used by the
+    /// strategy advisor to evaluate candidate strategies that are not (yet)
+    /// persisted in `self.results`; mirrors the request build of
+    /// [`run_simulation`](Self::run_simulation) for the single-path case.
+    fn simulate_candidate_isolated(
+        &self,
+        index: usize,
+        annotated: Arc<crate::toolpath_spans::AnnotatedToolpath>,
+        tool_cfg: &ToolConfig,
+        operation: &crate::compute::OperationConfig,
+        cancel: &AtomicBool,
+    ) -> Option<Arc<crate::simulation_cut::SimulationCutTrace>> {
+        let tc = self.toolpath_configs.get(index)?;
+        if annotated.toolpath.moves.len() < 2 {
+            return None;
+        }
+        let stock_bbox = self.stock_bbox();
+        let setup = self.find_setup_for_toolpath_index(index);
+        let setup_ctx = super::SetupEvalContext::build_for_setup(self, setup);
+        let direction = match setup_ctx.face_up {
+            FaceUp::Bottom => StockCutDirection::FromBottom,
+            _ => StockCutDirection::FromTop,
+        };
+
+        let entry = SimToolpathEntry {
+            id: tc.id,
+            name: tc.name.clone(),
+            annotated,
+            tool: build_cutter(tool_cfg),
+            flute_count: tool_cfg.flute_count,
+            tool_summary: tool_cfg.summary(),
+            semantic_trace: None,
+            spindle_rpm: operation.spindle_rpm(),
+            metrics_not_applicable: false,
+            drill_op: None,
+            operation_config_hash: crate::compute::simulate::hash_operation_config(operation),
+        };
+        let local_stock_bbox = setup_ctx.sim_local_stock_bbox();
+        let groups = vec![SimGroupEntry {
+            toolpaths: vec![entry],
+            direction,
+            local_stock_bbox,
+            local_to_global: setup_ctx.local_to_global,
+        }];
+        let resolution = auto_resolution_for_groups(&groups, &stock_bbox);
+        let rapid_feed_mm_min = if self.post.high_feedrate_mode {
+            self.post.high_feedrate
+        } else {
+            self.machine.max_feed_mm_min.max(1.0)
+        };
+        let request = SimulationRequest {
+            groups,
+            stock_bbox,
+            stock_top_z: stock_bbox.max.z,
+            resolution,
+            metric_options: SimulationMetricOptions {
+                enabled: true,
+                capture_arc_engagement: true,
+            },
+            spindle_rpm: self.post.spindle_speed,
+            rapid_feed_mm_min,
+            // Deviation (model_mesh) is not needed for engagement capture.
+            model_mesh: None,
+            kinematics: self.machine.kinematics.map(|kin| {
+                crate::compute::simulate::KinematicsContext {
+                    kinematics: kin,
+                    max_feed_mm_min: self.machine.max_feed_mm_min.max(1.0),
+                    use_predicted_feed_in_gates: false,
+                }
+            }),
+        };
+        run_simulation(&request, cancel).ok()?.cut_trace
     }
 
     /// Resolve every per-generation input from session state for toolpath
@@ -1587,15 +1785,294 @@ impl ProjectSession {
     /// helper the chipload viewport coloring + timeline envelope readout
     /// already use, so band semantics match the rest of the load-gates
     /// surface.
+    /// Modulate ONE toolpath's per-move feeds against a simulation cut
+    /// trace, returning the modulated [`Toolpath`] and the raw
+    /// [`ModulationOutcome`] (per-move binding map + summary inputs).
+    ///
+    /// This is the shared F-039 core consumed by two callers:
+    /// [`apply_adaptive_feed_modulation`](Self::apply_adaptive_feed_modulation)
+    /// (the production post-sim pass, which stamps the result back onto
+    /// `self.results`) and
+    /// [`recommend_clearing_strategy`](Self::recommend_clearing_strategy)
+    /// (the strategy advisor, which times the *modulated* path so it
+    /// compares optimized candidates rather than raw Suggest-feed ones).
+    /// Keeping the engagement aggregation + `ModulationContext` build in
+    /// one place is the anti-drift discipline of the unified load model
+    /// (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §5) — the deflection
+    /// cap, power cap, and chipload band are derived here once.
+    ///
+    /// Returns `None` when the op carries no usable RPM, has no moves, or
+    /// the modulator refuses (e.g. an empty engagement vector).
+    #[allow(clippy::too_many_arguments)]
+    fn modulate_annotated_against_trace(
+        &self,
+        annotated: &crate::toolpath_spans::AnnotatedToolpath,
+        operation: &crate::compute::OperationConfig,
+        tool_cfg: &ToolConfig,
+        toolpath_id: ToolpathId,
+        cut_trace: &crate::simulation_cut::SimulationCutTrace,
+        band: crate::feed_modulation::ChiploadBand,
+        kinematics: crate::machine_kinematics::MachineKinematics,
+        max_feed: f64,
+        rapid_feed: f64,
+        strategy: crate::feed_modulation::ModulationStrategy,
+        aggressiveness: f64,
+    ) -> Option<(
+        crate::toolpath::Toolpath,
+        crate::feed_modulation::ModulationOutcome,
+    )> {
+        use crate::feed_modulation::{
+            DeflectionLimitInputs, ModulationContext, PerMoveEngagement, PowerLimitInputs,
+            adaptive_feed_modulate,
+        };
+
+        let flute_count = tool_cfg.flute_count.max(1);
+        let spindle_rpm = operation.spindle_rpm().unwrap_or(self.post.spindle_speed);
+        if spindle_rpm == 0 {
+            return None;
+        }
+        let move_count = annotated.toolpath.moves.len();
+        if move_count == 0 {
+            return None;
+        }
+
+        // Stage 4 — planner-predicted engagement for the constructive
+        // contour-spiral, in two layers:
+        //
+        //  (a) Per-move: the spiral's own leading-arc engagement (α/2π)
+        //      computed on its clean 2D material grid, carried
+        //      positionally on the AnnotatedToolpath and looked up by
+        //      cut-move target. RDP simplification keeps a subset of the
+        //      emitted points verbatim, so kept cut moves hit exactly.
+        //  (b) Uniform fallback: the op's target engagement
+        //      (stepover/diameter via the F1 leading-arc → radial-WOC
+        //      bridge), used for cut moves whose position isn't in the
+        //      sampler (arc-fit / lead-in points) and for the 2D
+        //      Adaptive spiral op, which carries no 3D sampler.
+        //
+        // The dexel simulator's cylinder-side `radial_woc_fraction`
+        // reads ~10× low for adaptive ops (CLAUDE.md), so modulation on
+        // the sim scalar alone never lets the flat-load spiral run
+        // faster. Per move we take `max(sim, planner)` so any genuine
+        // spike the simulator *does* resolve still wins — never feeding
+        // above the higher of the two estimates. Gated strictly to the
+        // ContourSpiral strategy: the Agent / AgentSearch path has real
+        // ~2.5× target engagement spikes that a planner floor would
+        // dangerously over-feed. See
+        // planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md §"Stage 4".
+        let is_contour_spiral = matches!(
+            operation,
+            crate::compute::OperationConfig::Adaptive3d(c)
+                if matches!(
+                    c.clearing_strategy,
+                    crate::compute::operation_configs::ClearingStrategy::ContourSpiral
+                )
+        ) || matches!(
+            operation,
+            crate::compute::OperationConfig::Adaptive(c)
+                if matches!(c.path_strategy, crate::adaptive::PathStrategy2d::ContourSpiral)
+        );
+        let planner_uniform_woc: Option<f64> = if is_contour_spiral {
+            let stepover = match operation {
+                crate::compute::OperationConfig::Adaptive3d(c) => Some(c.stepover),
+                crate::compute::OperationConfig::Adaptive(c) => Some(c.stepover),
+                _ => None,
+            };
+            stepover.and_then(|s| {
+                let r = tool_cfg.diameter * 0.5;
+                (r > 0.0 && s > 0.0).then(|| {
+                    let f = crate::adaptive_shared::target_engagement_fraction(s, r);
+                    crate::adaptive_shared::radial_woc_fraction_from_leading_arc(f)
+                })
+            })
+        } else {
+            None
+        };
+        // Position key for the per-move planner-engagement lookup
+        // (0.001 mm grid — far finer than the cut-point spacing).
+        let pos_key = |p: &crate::geo::P3| -> (i64, i64, i64) {
+            (
+                (p.x * 1000.0).round() as i64,
+                (p.y * 1000.0).round() as i64,
+                (p.z * 1000.0).round() as i64,
+            )
+        };
+        let planner_map: std::collections::HashMap<(i64, i64, i64), f64> =
+            if is_contour_spiral && !annotated.planner_engagement.is_empty() {
+                annotated
+                    .planner_engagement
+                    .iter()
+                    .map(|(p, f)| (pos_key(p), *f))
+                    .collect()
+            } else {
+                std::collections::HashMap::new()
+            };
+
+        // Aggregate per-move engagement (time-weighted mean over the
+        // move's samples). Samples filter on `is_cutting` so air-cut
+        // and rapid moves stay at default `(0.0, 0.0)` engagement —
+        // the modulator skips them via its own `should_skip` /
+        // zero-engagement short-circuits.
+        let mut radial_num = vec![0.0_f64; move_count];
+        let mut axial_num = vec![0.0_f64; move_count];
+        let mut weight_sum = vec![0.0_f64; move_count];
+        for sample in &cut_trace.samples {
+            if sample.toolpath_id != toolpath_id {
+                continue;
+            }
+            if !sample.is_cutting {
+                continue;
+            }
+            if sample.move_index >= move_count {
+                continue;
+            }
+            let w = sample.segment_time_s.max(0.0);
+            if w <= 0.0 {
+                continue;
+            }
+            #[allow(clippy::indexing_slicing)]
+            // SAFETY: move_index < move_count checked above.
+            {
+                radial_num[sample.move_index] += sample.engagement.radial_woc_fraction.max(0.0) * w;
+                axial_num[sample.move_index] += sample.engagement.axial_doc_fraction.max(0.0) * w;
+                weight_sum[sample.move_index] += w;
+            }
+        }
+        let engagements: Vec<PerMoveEngagement> = (0..move_count)
+            .map(|i| {
+                #[allow(clippy::indexing_slicing)]
+                // SAFETY: i < move_count by construction.
+                let w = weight_sum[i];
+                if w <= 0.0 {
+                    return PerMoveEngagement::default();
+                }
+                #[allow(clippy::indexing_slicing)]
+                // SAFETY: i < move_count by construction.
+                let sim_radial = radial_num[i] / w;
+                #[allow(clippy::indexing_slicing)]
+                // SAFETY: i < move_count by construction.
+                let axial = axial_num[i] / w;
+                // Apply the planner engagement on lateral clearing /
+                // finishing cuts only — entry helix, ramp, and linking
+                // moves are not the spiral's flat-load wraps, so they
+                // keep the sim-measured reading. Per-move sampler first,
+                // uniform target floor as fallback; `max` with sim keeps
+                // any genuine spike the simulator resolves.
+                let m = annotated.toolpath.moves.get(i);
+                let radial = if matches!(
+                    m.map(|m| m.intent),
+                    Some(crate::toolpath::MoveIntent::ClearingCut)
+                        | Some(crate::toolpath::MoveIntent::FinishingCut)
+                ) {
+                    let planner_woc = m
+                        .and_then(|m| planner_map.get(&pos_key(&m.target)).copied())
+                        .map(crate::adaptive_shared::radial_woc_fraction_from_leading_arc)
+                        .or(planner_uniform_woc);
+                    match planner_woc {
+                        Some(pw) => sim_radial.max(pw),
+                        None => sim_radial,
+                    }
+                } else {
+                    sim_radial
+                };
+                PerMoveEngagement {
+                    radial_woc_fraction: radial,
+                    axial_doc_fraction: axial,
+                }
+            })
+            .collect();
+
+        // F-039 — wire optional deflection + power constraint
+        // inputs. Material + tool data is enough to recover Kc,
+        // stickout, engagement diameter, and Young's modulus; the
+        // machine's `power_at_rpm × safety_factor` gives the
+        // available power.
+        let material = &self.stock.material;
+        // Materials without a primary-source Kc disable both the
+        // deflection and power constraints in the constrained-max
+        // solver; the solver falls through to chipload + machine +
+        // kinematics caps. See `Material::kc_n_per_mm2`.
+        let kc_opt = material.kc_n_per_mm2();
+        let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
+        // Use the per-toolpath max axial DOC from the cut trace
+        // as the deflection / power reference; falls back to
+        // diameter when unavailable (no cutting samples → no
+        // constraint active).
+        let max_axial = cut_trace
+            .samples
+            .iter()
+            .filter(|s| s.toolpath_id == toolpath_id && s.is_cutting)
+            .map(|s| s.axial_engagement_mm.max(0.0))
+            .fold(0.0_f64, f64::max);
+        let nominal_axial = if max_axial > 0.0 { max_axial } else { 0.0 };
+        let engagement_dia = tool_def.lookup_diameter_at(max_axial.max(0.0));
+        let stickout = tool_def.stickout.max(0.0);
+        let youngs = tool_def.tool_material.youngs_modulus_n_per_mm2();
+        // Feed-aware deflection cap: the optimizer solves its feed cap
+        // from the SAME affine force model (Ks/F_edge) and integrated
+        // beam compliance the post-sim deflection gate uses, so the two
+        // agree on a cut. Compliance is δ-per-newton at the toolpath's
+        // peak axial DOC; deflection is linear in force so one scalar
+        // suffices.
+        let deflection_inputs = match crate::feeds::force::affine_coefficients(material) {
+            Some((ks, f_edge)) if stickout > 0.0 && youngs > 0.0 => {
+                let compliance = tool_def.tip_deflection_mm(1.0, max_axial.max(0.0), youngs);
+                if compliance.is_finite() && compliance > 0.0 {
+                    Some(DeflectionLimitInputs {
+                        ks_n_per_mm2: ks,
+                        f_edge_n_per_mm: f_edge,
+                        compliance_mm_per_n: compliance,
+                        max_tip_deflection_mm: crate::tool_load::deflection::EXCEEDS_BOUND_MM,
+                    })
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        let machine_profile = &self.machine;
+        let available_kw =
+            machine_profile.power_at_rpm(spindle_rpm as f64) * machine_profile.safety_factor;
+        let power_inputs = match kc_opt {
+            Some(kc) if available_kw > 0.0 => Some(PowerLimitInputs {
+                // S2-9 (2026-05-31): pass raw Kc; the solver applies
+                // GRAIN_ANISOTROPY_FACTOR internally so this site
+                // doesn't re-encode the multiplier literal.
+                kc_n_per_mm2: kc,
+                engagement_diameter_mm: engagement_dia,
+                available_kw,
+            }),
+            _ => None,
+        };
+
+        let ctx = ModulationContext {
+            spindle_rpm: spindle_rpm as f64,
+            flute_count,
+            max_feed_mm_min: max_feed,
+            rapid_feed_mm_min: rapid_feed,
+            chipload_band: band,
+            kinematics: &kinematics,
+            strategy,
+            aggressiveness,
+            deflection_inputs,
+            power_inputs,
+            nominal_axial_doc_mm: nominal_axial,
+        };
+
+        let mut modulated_toolpath = annotated.toolpath.clone();
+        let outcome = adaptive_feed_modulate(&mut modulated_toolpath, &engagements, &ctx).ok()?;
+        Some((modulated_toolpath, outcome))
+    }
+
     fn apply_adaptive_feed_modulation(
         &mut self,
         sim_result: &mut crate::compute::simulate::SimulationResult,
         opts: &super::SimulationOptions,
     ) {
-        use crate::feed_modulation::{
-            ChiploadBand, DeflectionLimitInputs, ModulationContext, PerMoveEngagement,
-            PowerLimitInputs, adaptive_feed_modulate,
-        };
+        // Engagement aggregation + `ModulationContext` build now live in the
+        // shared `modulate_annotated_against_trace`; this pass only needs the
+        // chipload band to gate which toolpaths are eligible.
+        use crate::feed_modulation::ChiploadBand;
 
         let Some(cut_trace) = sim_result.cut_trace.as_deref() else {
             return;
@@ -1652,258 +2129,27 @@ impl ProjectSession {
             let Some(tool_cfg) = self.find_tool_by_raw_id(tc.tool_id) else {
                 continue;
             };
-            let flute_count = tool_cfg.flute_count.max(1);
-            let spindle_rpm = tc
-                .operation
-                .spindle_rpm()
-                .unwrap_or(self.post.spindle_speed);
-            if spindle_rpm == 0 {
-                continue;
-            }
-
             let Some(result) = self.results.get(&idx) else {
                 continue;
             };
             let annotated_arc = result.annotated();
-            let move_count = annotated_arc.toolpath.moves.len();
-            if move_count == 0 {
-                continue;
-            }
-
-            // Stage 4 — planner-predicted engagement for the constructive
-            // contour-spiral, in two layers:
-            //
-            //  (a) Per-move: the spiral's own leading-arc engagement (α/2π)
-            //      computed on its clean 2D material grid, carried
-            //      positionally on the AnnotatedToolpath and looked up by
-            //      cut-move target. RDP simplification keeps a subset of the
-            //      emitted points verbatim, so kept cut moves hit exactly.
-            //  (b) Uniform fallback: the op's target engagement
-            //      (stepover/diameter via the F1 leading-arc → radial-WOC
-            //      bridge), used for cut moves whose position isn't in the
-            //      sampler (arc-fit / lead-in points) and for the 2D
-            //      Adaptive spiral op, which carries no 3D sampler.
-            //
-            // The dexel simulator's cylinder-side `radial_woc_fraction`
-            // reads ~10× low for adaptive ops (CLAUDE.md), so modulation on
-            // the sim scalar alone never lets the flat-load spiral run
-            // faster. Per move we take `max(sim, planner)` so any genuine
-            // spike the simulator *does* resolve still wins — never feeding
-            // above the higher of the two estimates. Gated strictly to the
-            // ContourSpiral strategy: the Agent / AgentSearch path has real
-            // ~2.5× target engagement spikes that a planner floor would
-            // dangerously over-feed. See
-            // planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md §"Stage 4".
-            let is_contour_spiral = matches!(
-                &tc.operation,
-                crate::compute::OperationConfig::Adaptive3d(c)
-                    if matches!(
-                        c.clearing_strategy,
-                        crate::compute::operation_configs::ClearingStrategy::ContourSpiral
-                    )
-            ) || matches!(
-                &tc.operation,
-                crate::compute::OperationConfig::Adaptive(c)
-                    if matches!(c.path_strategy, crate::adaptive::PathStrategy2d::ContourSpiral)
-            );
-            let planner_uniform_woc: Option<f64> = if is_contour_spiral {
-                let stepover = match &tc.operation {
-                    crate::compute::OperationConfig::Adaptive3d(c) => Some(c.stepover),
-                    crate::compute::OperationConfig::Adaptive(c) => Some(c.stepover),
-                    _ => None,
-                };
-                stepover.and_then(|s| {
-                    let r = tool_cfg.diameter * 0.5;
-                    (r > 0.0 && s > 0.0).then(|| {
-                        let f = crate::adaptive_shared::target_engagement_fraction(s, r);
-                        crate::adaptive_shared::radial_woc_fraction_from_leading_arc(f)
-                    })
-                })
-            } else {
-                None
-            };
-            // Position key for the per-move planner-engagement lookup
-            // (0.001 mm grid — far finer than the cut-point spacing).
-            let pos_key = |p: &crate::geo::P3| -> (i64, i64, i64) {
-                (
-                    (p.x * 1000.0).round() as i64,
-                    (p.y * 1000.0).round() as i64,
-                    (p.z * 1000.0).round() as i64,
-                )
-            };
-            let planner_map: std::collections::HashMap<(i64, i64, i64), f64> =
-                if is_contour_spiral && !annotated_arc.planner_engagement.is_empty() {
-                    annotated_arc
-                        .planner_engagement
-                        .iter()
-                        .map(|(p, f)| (pos_key(p), *f))
-                        .collect()
-                } else {
-                    std::collections::HashMap::new()
-                };
-
-            // Aggregate per-move engagement (time-weighted mean over the
-            // move's samples). Samples filter on `is_cutting` so air-cut
-            // and rapid moves stay at default `(0.0, 0.0)` engagement —
-            // the modulator skips them via its own `should_skip` /
-            // zero-engagement short-circuits.
-            let mut radial_num = vec![0.0_f64; move_count];
-            let mut axial_num = vec![0.0_f64; move_count];
-            let mut weight_sum = vec![0.0_f64; move_count];
-            for sample in &cut_trace.samples {
-                if sample.toolpath_id != toolpath_id {
-                    continue;
-                }
-                if !sample.is_cutting {
-                    continue;
-                }
-                if sample.move_index >= move_count {
-                    continue;
-                }
-                let w = sample.segment_time_s.max(0.0);
-                if w <= 0.0 {
-                    continue;
-                }
-                #[allow(clippy::indexing_slicing)]
-                // SAFETY: move_index < move_count checked above.
-                {
-                    radial_num[sample.move_index] +=
-                        sample.engagement.radial_woc_fraction.max(0.0) * w;
-                    axial_num[sample.move_index] +=
-                        sample.engagement.axial_doc_fraction.max(0.0) * w;
-                    weight_sum[sample.move_index] += w;
-                }
-            }
-            let engagements: Vec<PerMoveEngagement> = (0..move_count)
-                .map(|i| {
-                    #[allow(clippy::indexing_slicing)]
-                    // SAFETY: i < move_count by construction.
-                    let w = weight_sum[i];
-                    if w <= 0.0 {
-                        return PerMoveEngagement::default();
-                    }
-                    #[allow(clippy::indexing_slicing)]
-                    // SAFETY: i < move_count by construction.
-                    let sim_radial = radial_num[i] / w;
-                    #[allow(clippy::indexing_slicing)]
-                    // SAFETY: i < move_count by construction.
-                    let axial = axial_num[i] / w;
-                    // Apply the planner engagement on lateral clearing /
-                    // finishing cuts only — entry helix, ramp, and linking
-                    // moves are not the spiral's flat-load wraps, so they
-                    // keep the sim-measured reading. Per-move sampler first,
-                    // uniform target floor as fallback; `max` with sim keeps
-                    // any genuine spike the simulator resolves.
-                    let m = annotated_arc.toolpath.moves.get(i);
-                    let radial = if matches!(
-                        m.map(|m| m.intent),
-                        Some(crate::toolpath::MoveIntent::ClearingCut)
-                            | Some(crate::toolpath::MoveIntent::FinishingCut)
-                    ) {
-                        let planner_woc = m
-                            .and_then(|m| planner_map.get(&pos_key(&m.target)).copied())
-                            .map(crate::adaptive_shared::radial_woc_fraction_from_leading_arc)
-                            .or(planner_uniform_woc);
-                        match planner_woc {
-                            Some(pw) => sim_radial.max(pw),
-                            None => sim_radial,
-                        }
-                    } else {
-                        sim_radial
-                    };
-                    PerMoveEngagement {
-                        radial_woc_fraction: radial,
-                        axial_doc_fraction: axial,
-                    }
-                })
-                .collect();
-
-            // F-039 — wire optional deflection + power constraint
-            // inputs. Material + tool data is enough to recover Kc,
-            // stickout, engagement diameter, and Young's modulus; the
-            // machine's `power_at_rpm × safety_factor` gives the
-            // available power.
-            let material = &self.stock.material;
-            // Materials without a primary-source Kc disable both the
-            // deflection and power constraints in the constrained-max
-            // solver; the solver falls through to chipload + machine +
-            // kinematics caps. See `Material::kc_n_per_mm2`.
-            let kc_opt = material.kc_n_per_mm2();
-            let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
-            // Use the per-toolpath max axial DOC from the cut trace
-            // as the deflection / power reference; falls back to
-            // diameter when unavailable (no cutting samples → no
-            // constraint active).
-            let max_axial = cut_trace
-                .samples
-                .iter()
-                .filter(|s| s.toolpath_id == toolpath_id && s.is_cutting)
-                .map(|s| s.axial_engagement_mm.max(0.0))
-                .fold(0.0_f64, f64::max);
-            let nominal_axial = if max_axial > 0.0 { max_axial } else { 0.0 };
-            let engagement_dia = tool_def.lookup_diameter_at(max_axial.max(0.0));
-            let stickout = tool_def.stickout.max(0.0);
-            let youngs = tool_def.tool_material.youngs_modulus_n_per_mm2();
-            // Feed-aware deflection cap: the optimizer solves its feed cap
-            // from the SAME affine force model (Ks/F_edge) and integrated
-            // beam compliance the post-sim deflection gate uses, so the two
-            // agree on a cut. Compliance is δ-per-newton at the toolpath's
-            // peak axial DOC; deflection is linear in force so one scalar
-            // suffices.
-            let deflection_inputs = match crate::feeds::force::affine_coefficients(material) {
-                Some((ks, f_edge)) if stickout > 0.0 && youngs > 0.0 => {
-                    let compliance = tool_def.tip_deflection_mm(1.0, max_axial.max(0.0), youngs);
-                    if compliance.is_finite() && compliance > 0.0 {
-                        Some(DeflectionLimitInputs {
-                            ks_n_per_mm2: ks,
-                            f_edge_n_per_mm: f_edge,
-                            compliance_mm_per_n: compliance,
-                            max_tip_deflection_mm: crate::tool_load::deflection::EXCEEDS_BOUND_MM,
-                        })
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            };
-            let machine_profile = &self.machine;
-            let available_kw =
-                machine_profile.power_at_rpm(spindle_rpm as f64) * machine_profile.safety_factor;
-            let power_inputs = match kc_opt {
-                Some(kc) if available_kw > 0.0 => Some(PowerLimitInputs {
-                    // S2-9 (2026-05-31): pass raw Kc; the solver applies
-                    // GRAIN_ANISOTROPY_FACTOR internally so this site
-                    // doesn't re-encode the multiplier literal.
-                    kc_n_per_mm2: kc,
-                    engagement_diameter_mm: engagement_dia,
-                    available_kw,
-                }),
-                _ => None,
-            };
-
-            let ctx = ModulationContext {
-                spindle_rpm: spindle_rpm as f64,
-                flute_count,
-                max_feed_mm_min: max_feed,
-                rapid_feed_mm_min: rapid_feed,
-                chipload_band: band,
-                kinematics: &kinematics,
-                strategy: opts.modulation_strategy,
-                aggressiveness: opts.modulation_aggressiveness,
-                deflection_inputs,
-                power_inputs,
-                nominal_axial_doc_mm: nominal_axial,
-            };
-
-            // Clone the toolpath out of its Arc<AnnotatedToolpath> so we
-            // don't mutate the trace's view of the pre-modulation IR.
-            // Swap the result's Arc atomically with a freshly-built
-            // AnnotatedToolpath that carries the modulated Toolpath
-            // (spans + spans_valid preserved from the source).
-            let mut modulated_toolpath = annotated_arc.toolpath.clone();
             let commanded_feed_for_summary = tc.operation.feed_rate();
-            let Ok(outcome) = adaptive_feed_modulate(&mut modulated_toolpath, &engagements, &ctx)
-            else {
+            // F-039 core (shared with the strategy advisor): aggregate
+            // engagement + build the deflection / power / chipload context
+            // and modulate this toolpath's per-move feeds in one place.
+            let Some((modulated_toolpath, outcome)) = self.modulate_annotated_against_trace(
+                annotated_arc.as_ref(),
+                &tc.operation,
+                tool_cfg,
+                toolpath_id,
+                cut_trace,
+                band,
+                kinematics,
+                max_feed,
+                rapid_feed,
+                opts.modulation_strategy,
+                opts.modulation_aggressiveness,
+            ) else {
                 continue;
             };
             // Stamp per-move map onto the trace-wide accumulator
@@ -1913,9 +2159,11 @@ impl ProjectSession {
             for (move_idx, value) in &outcome.per_move {
                 modulated_feeds.insert((toolpath_id, *move_idx), *value);
             }
-            if let Some(summary) =
-                outcome.build_summary(commanded_feed_for_summary, ctx.aggressiveness, ctx.strategy)
-            {
+            if let Some(summary) = outcome.build_summary(
+                commanded_feed_for_summary,
+                opts.modulation_aggressiveness,
+                opts.modulation_strategy,
+            ) {
                 modulation_summaries.insert(toolpath_id, summary);
             }
             if outcome.changed == 0 {
@@ -4052,5 +4300,177 @@ mod tests {
         let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
         assert_eq!(offenders.len(), 1);
         assert_eq!(offenders[0].0, "Bad Rough");
+    }
+
+    // ── strategy advisor: optimized-candidate modulation (step 5) ────
+
+    /// Load `ux_3d_terrain.toml` and add an AS013-shape adaptive3d op with the
+    /// given clearing strategy — mirrors the `strategy_advisor_smoke` fixture
+    /// so the advisor's per-candidate optimization can be exercised in-crate
+    /// (the private `optimized_candidate` is not reachable from the integration
+    /// test).
+    fn terrain_adaptive3d_session(strategy: ClearingStrategy) -> ProjectSession {
+        use crate::compute::operation_configs::{
+            Adaptive3dConfig, Adaptive3dEntryStyle, RegionOrdering,
+        };
+        let toml_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../test_data/ux_3d_terrain.toml");
+        let mut session = ProjectSession::load(&toml_path).expect("load ux_3d_terrain");
+        let tool_id = session
+            .tools()
+            .iter()
+            .find(|t| (t.diameter - 6.0).abs() < 1e-6)
+            .map(|t| t.id.0)
+            .expect("ux_3d_terrain.toml defines a 6 mm end mill");
+        let model_id = session
+            .models()
+            .iter()
+            .find(|m| m.mesh.is_some())
+            .map(|m| m.id)
+            .expect("ux_3d_terrain.toml loads terrain_small.stl");
+        let adaptive3d = Adaptive3dConfig {
+            trochoid_cap_mult: 1.6,
+            engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
+            stepover: 1.2,
+            depth_per_pass: 3.0,
+            stock_to_leave_axial: 0.5,
+            stock_to_leave_radial: 0.5,
+            feed_rate: 2500.0,
+            plunge_rate: 500.0,
+            tolerance: 0.25,
+            min_cutting_radius: 0.0,
+            entry_style: Adaptive3dEntryStyle::Plunge,
+            ramp_angle_deg: 3.0,
+            helix_radius_factor: 0.4,
+            helix_pitch: 1.0,
+            fine_stepdown: 0.0,
+            detect_flat_areas: false,
+            region_ordering: RegionOrdering::Global,
+            clearing_strategy: strategy,
+            z_blend: false,
+            mill_shallow_areas: false,
+            shallow_angle_deg: None,
+            shallow_stepdown: None,
+            spindle_rpm: Some(18_000),
+            min_region_cut_length_mm: 0.0,
+            max_stay_down_distance_mm: Some(0.0),
+            stay_down_clearance_mm: 0.5,
+        };
+        let tc = ToolpathConfig {
+            id: ToolpathId(0),
+            name: "AS013 adaptive3d".to_owned(),
+            enabled: true,
+            operation: OperationConfig::Adaptive3d(adaptive3d),
+            dressups: DressupConfig::for_op(crate::compute::catalog::OperationType::Adaptive3d),
+            heights: HeightsConfig::default(),
+            tool_id,
+            model_id,
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: BoundaryConfig::default(),
+            boundary_inherit: true,
+            stock_source: crate::compute::config::StockSource::default(),
+            coolant: CoolantMode::Off,
+            face_selection: None,
+            debug_options: ToolpathDebugOptions::default(),
+            feeds_provenance: crate::feeds::FeedsProvenance::default(),
+        };
+        session
+            .add_toolpath(0, tc)
+            .expect("add adaptive3d toolpath");
+        session
+    }
+
+    fn cut_move_feed(m: &crate::toolpath::Move) -> Option<f64> {
+        match m.move_type {
+            crate::toolpath::MoveType::Linear { feed_rate }
+            | crate::toolpath::MoveType::ArcCW { feed_rate, .. }
+            | crate::toolpath::MoveType::ArcCCW { feed_rate, .. } => Some(feed_rate),
+            crate::toolpath::MoveType::Rapid => None,
+        }
+    }
+
+    /// Step-5 sentry: the advisor times the *modulated* path, not the raw
+    /// Suggest-feed path. Proves `optimized_candidate` rewrites at least one
+    /// cut-move feed (so the wall-clock the advisor compares reflects F-039
+    /// optimization) and returns a modelled binding regime. If step 5 were
+    /// reverted to timing raw paths this test fails: feeds would be untouched.
+    #[test]
+    fn advisor_modulates_candidate_feeds_before_timing() {
+        let session = terrain_adaptive3d_session(ClearingStrategy::ContourSpiral);
+        let cancel = AtomicBool::new(false);
+        let resolved = session
+            .resolve_generation_inputs(0)
+            .expect("resolve generation inputs for the adaptive3d op");
+
+        // Build the raw candidate path exactly as `recommend_clearing_strategy`
+        // does (minus the Suggest load-limit — modulation rewrites whatever
+        // feeds the planned path carries, so the commanded 2500 mm/min is a
+        // fair starting point for the "did feeds change?" check).
+        let annotated = crate::compute::execute::execute_operation_annotated(
+            &resolved.operation,
+            resolved.mesh.as_deref(),
+            resolved.spatial_index.as_ref(),
+            resolved.polygons.as_deref().map(|v| v.as_slice()),
+            &resolved.tool_def,
+            &resolved.tool,
+            &resolved.heights,
+            &resolved.cutting_levels,
+            &resolved.emission_stock_bbox,
+            resolved.prev_tool_radius,
+            None,
+            &cancel,
+            None,
+            None,
+            resolved.pre_boundary.as_ref(),
+        )
+        .expect("plan the spiral candidate");
+        let annotated_arc = Arc::new(annotated);
+        let raw_feeds: Vec<Option<f64>> = annotated_arc
+            .toolpath
+            .moves
+            .iter()
+            .map(cut_move_feed)
+            .collect();
+
+        let (modulated, regime) = session
+            .optimized_candidate(
+                0,
+                &annotated_arc,
+                &resolved.tool,
+                &resolved.operation,
+                &cancel,
+            )
+            .expect("advisor optimizes the candidate (effective_kinematics is always Some)");
+
+        // Geometry is untouched; only feeds change.
+        assert_eq!(
+            modulated.moves.len(),
+            annotated_arc.toolpath.moves.len(),
+            "modulation rewrites feeds, not geometry"
+        );
+        let changed = modulated
+            .moves
+            .iter()
+            .zip(&raw_feeds)
+            .filter(|(m, raw)| match (cut_move_feed(m), raw) {
+                (Some(a), Some(b)) => (a - b).abs() > 0.5,
+                _ => false,
+            })
+            .count();
+        assert!(
+            changed > 0,
+            "ConstrainedMax modulation must rewrite at least one cut-move feed \
+             before the advisor times the path (else it's timing the raw path)"
+        );
+        assert!(
+            matches!(
+                regime,
+                crate::strategy_advisor::LoadRegime::ToolLimited
+                    | crate::strategy_advisor::LoadRegime::MachineLimited
+                    | crate::strategy_advisor::LoadRegime::Unconstrained
+            ),
+            "regime must be a modelled binding value derived from the optimized path"
+        );
     }
 }
