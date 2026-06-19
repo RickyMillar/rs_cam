@@ -259,23 +259,24 @@ fn as013_terrain_whole_toolpath_axial_within_commanded_dpp_f031() {
 ///
 /// The F-031 parity fix closed a planner-↔-dressup helix gap that left
 /// cells un-stamped between intermediate Z passes and inflated deflection
-/// to a false ~0.66 mm (Exceeds). With the gap closed the reading reflects
-/// the real geometry.
+/// to a false ~0.66 mm. With the gap closed the reading reflects the real
+/// geometry — which is the calibration-independent invariant this test
+/// guards.
 ///
-/// Milling-Kc calibration (2026-06-17, `MILLING_KC_FACTOR = 2.7`,
-/// `material.rs`) then lifted the deflection force ~2.7×, moving the true
-/// reading ~0.118 → ~0.32 mm — past the 200 µm bound. AS013 at
-/// `depth_per_pass=3` in hardwood is therefore genuinely **tool-limited**
-/// under milling Kc (the same regime flip the wanaka Back Rough shows;
-/// pre-calibration this read ~0.12 mm `Within`). This is a post-sim GATE
-/// reading at the raw configured DPP — no Suggest back-off — so the honest
-/// verdict is `Exceeds`.
+/// Under the feed-aware literature-absolute force model (`feeds::force`,
+/// 2026-06-18) the deflection is the physically-honest *instantaneous*
+/// bending force (chip area `ap·h`), so AS013's stubby ~6 mm tool reads
+/// ~0.0165 mm (16 µm) — comfortably `Within`. Deflection is NOT the
+/// binding constraint for this terrain rough; its limiter is chipload /
+/// power. (The old `Kc·ap·ae` aggregate over-stated the force ~9× and read
+/// ~0.32 mm `Exceeds` here — the deflection gate crying tool-limited on a
+/// cut that isn't. Same regime correction as the wanaka Back Rough.)
 ///
-/// The test now pins both invariants: the parity gap stays closed (the
-/// reading is the real ~0.32 mm, NOT the ~0.66 mm un-stamped artifact) AND
-/// the milling-Kc physics (`Exceeds`, ~0.32 mm).
+/// The test pins both invariants: the parity gap stays closed (the reading
+/// is the real ~0.0165 mm, NOT the inflated ~0.09 mm un-stamped artifact)
+/// AND the feed-aware physics (`Within` — deflection isn't the limiter).
 #[test]
-fn as013_terrain_deflection_milling_kc_tool_limited_f031() {
+fn as013_terrain_deflection_within_parity_closed_f031() {
     let session = run_as013_simulation();
 
     let report = session.tool_load_report();
@@ -296,22 +297,22 @@ fn as013_terrain_deflection_milling_kc_tool_limited_f031() {
         }
     };
 
-    // The reading is the real milling-Kc value (~0.32 mm): far below the
-    // ~0.66 mm un-stamped-cell artifact (parity gap stays closed) and well
-    // above an artificially-low reading (milling-Kc force is applied).
+    // The reading is the real feed-aware value (~0.0165 mm): well below the
+    // inflated un-stamped-cell artifact (parity gap stays closed) and a
+    // genuine non-zero signal (the force model is applied).
     assert!(
-        (0.25..=0.45).contains(&peak_mm),
-        "F-031: AS013 deflection should read the true milling-Kc value (~0.32 mm); got \
-         peak_mm = {peak_mm:.4} mm. Above ~0.45 mm would signal the ~0.66 mm un-stamped-cell \
-         parity artifact has returned; below ~0.25 mm would signal the milling-Kc force is \
-         under-reading."
+        (0.005..=0.05).contains(&peak_mm),
+        "F-031: AS013 deflection should read the real feed-aware value (~0.0165 mm); got \
+         peak_mm = {peak_mm:.4} mm. Above ~0.05 mm would signal the un-stamped-cell parity \
+         artifact has returned; below ~0.005 mm would signal the force model is not applied."
     );
 
-    // Under milling Kc, AS013 at DPP=3 in hardwood is genuinely tool-limited.
+    // Under the feed-aware force model, AS013's stubby tool is NOT
+    // deflection-limited — the cut is chipload/power-bound.
     assert!(
-        matches!(verdict.deflection, DeflectionVerdict::Exceeds { .. }),
-        "F-031: AS013 deflection is tool-limited under milling Kc (peak ~0.32 mm > 200 µm bound); \
-         expected Exceeds, got {:?}",
+        matches!(verdict.deflection, DeflectionVerdict::Within { .. }),
+        "F-031: AS013 deflection is not the limiter under the feed-aware model (peak ~0.0165 mm \
+         < 200 µm bound); expected Within, got {:?}",
         verdict.deflection
     );
 }

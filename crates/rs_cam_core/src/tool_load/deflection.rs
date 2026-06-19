@@ -594,19 +594,19 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "feed-aware recalibration pending — UNIFIED_LOAD_MODEL_2026-06-18 step 2 re-baselines this absolute deflection magnitude"]
-    fn wanaka_endmill_back_rough_is_tool_limited() {
-        // Wanaka TP 4: 6 mm carbide flat, 45 mm stickout, hardwood,
-        // slot at 2.5 mm DOC. Under the milling-Kc calibration
-        // (MILLING_KC_FACTOR = 2.7, material.rs 2026-06-17) the deflection
-        // gate now reads the peripheral-milling regime, ~2.7× the old FPL
-        // shear Kc. Peak tip deflection moves to ~494 µm — well past the
-        // 200 µm Exceeds bound. This is the calibration's whole point: a
-        // 6 mm flat at L/D 7.5 hammering a hardwood slot IS genuinely
-        // tool-limited, and this test is now the tool-limited sentry for
-        // the wanaka Back Rough case. (Pre-calibration this read ~158 µm
-        // and looked machine-limited — the regime flip is the corrected
-        // physics.)
+    fn wanaka_endmill_back_rough_deflection_is_within() {
+        // A stubby roughing endmill (6 mm carbide flat, 45 mm stickout)
+        // full-slotting hardwood at 2.5 mm DOC. Under the feed-aware
+        // literature-absolute force model the instantaneous bending force
+        // is modest (~18 N: ap 2.5 · (Ks·fz + F_edge) at full immersion),
+        // so peak tip deflection is ~17 µm — comfortably Within. Deflection
+        // is NOT the binding constraint for a stubby 6 mm flat at L/D 7.5;
+        // the real limiter for full-slotting hardwood is chipload / power /
+        // chip evacuation. (The old `Kc·ap·ae` aggregate read ~494 µm here
+        // — ~4× the honest instantaneous force, which made the deflection
+        // gate cry tool-limited on a cut that isn't.) The slot annotation
+        // still rides on the verdict so downstream surfaces can name the
+        // engagement.
         let trace = trace_with(vec![cutting_sample(
             0,
             0,
@@ -627,13 +627,13 @@ mod tests {
             &crate::tool_load::ToleranceBands::default(),
         );
         match v {
-            DeflectionVerdict::Exceeds {
+            DeflectionVerdict::Within {
                 peak_mm, evidence, ..
             } => {
                 let um = peak_mm * 1000.0;
                 assert!(
-                    (450.0..=550.0).contains(&um),
-                    "wanaka-like End-Mill slot at hardwood is tool-limited under milling Kc; expected ~494 µm, got {um:.1} µm"
+                    (8.0..=40.0).contains(&um),
+                    "stubby roughing endmill full-slot is deflection-safe (~17 µm) under the feed-aware force model; got {um:.1} µm"
                 );
                 assert_eq!(
                     evidence.locality.as_deref(),
@@ -641,7 +641,7 @@ mod tests {
                     "slot annotation expected, got: {evidence:?}"
                 );
             }
-            other => panic!("expected Exceeds (tool-limited), got {other:?}"),
+            other => panic!("expected Within (deflection not the limiter), got {other:?}"),
         }
     }
 
@@ -682,21 +682,15 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "feed-aware recalibration pending — UNIFIED_LOAD_MODEL_2026-06-18 step 2 re-baselines this; the edge-floor magnitude is over-scaled for sub-2mm tools (calibration analysis owed in step 2)"]
     fn small_engraver_low_feed_in_hardwood_passes() {
         // 1 mm carbide flat engraver, light cut in hardwood — the gap
         // doc's "should still pass" workflow. Tiny chip cross-section
-        // keeps force low; predicted δ stays under threshold.
-        // History: Phase 5 Step 5.4 (2026-06-01) reduced axial 0.3 → 0.2
-        // after HardMaple Kc shifted 15.0 → 16.0 N/mm².
-        // Milling-Kc calibration (2026-06-17): MILLING_KC_FACTOR = 2.7
-        // lifts the deflection force ~2.7×. A 1 mm tool at 25 mm stickout
-        // (L/D 25) now genuinely deflects ~380 µm — that L/D is no longer
-        // a "still passes" engraver, it's tool-limited. Retune stickout
-        // 25 → 15 mm (a realistic short-reach engraver). δ ∝ stickout³,
-        // so 15/25 cubes the predicted deflection down by ~4.6×, landing
-        // a genuinely-light engraver cut comfortably under 200 µm. Same
-        // test intent (light engraver passes), honest geometry.
+        // keeps the instantaneous force low; under the feed-aware
+        // literature-absolute force model a light 1 mm engraver cut at
+        // 15 mm stickout reads ~50 µm — Within. (Note: deflection DOES
+        // gate genuinely long/thin tools — e.g. a 3 mm endmill at 30 mm
+        // stickout full-slotting hardwood reads ~370 µm Exceeds — so the
+        // gate is appropriately scoped, not dead.)
         let tool = carbide_flat(1.0, 15.0);
         let trace = trace_with(vec![cutting_sample(
             0,

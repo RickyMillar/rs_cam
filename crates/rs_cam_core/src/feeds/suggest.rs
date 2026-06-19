@@ -3053,13 +3053,15 @@ mod tests {
     /// chosen correctly once, not thrashed. This is the sentry for "the
     /// Suggest pass lands the wanaka rough deflection-safe in one pass."
     #[test]
-    #[ignore = "feed-aware recalibration pending — UNIFIED_LOAD_MODEL_2026-06-18 step 2 re-baselines this absolute deflection magnitude"]
-    fn deflection_machinery_caps_dpp_for_wanaka_back_rough_case() {
+    fn deflection_machinery_caps_dpp_for_long_reach_tool() {
         use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
         use crate::material::WoodSpecies;
-        // Synthetic Wanaka Back Rough: 6 mm carbide endmill, 45 mm
-        // stickout, DPP 9 mm (LUT × adaptive_doc_factor), WOC 1.2 mm,
-        // feed 911 mm/min @ 16 kRPM, HardMaple.
+        // Deflection binds only on long/thin tools under the feed-aware
+        // literature-absolute force model. Long-reach 6 mm carbide endmill,
+        // 75 mm stickout, DPP 9 mm command, WOC 1.2 mm, feed 911 mm/min @
+        // 16 kRPM, HardMaple — the 9 mm command predicts past the 200 µm
+        // bound, so the axial-DOC envelope clamps it to the deflection-safe
+        // DPP in one shot (no phantom back-off thrash).
         let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
             feed_rate: 911.0,
             plunge_rate: 300.0,
@@ -3073,7 +3075,7 @@ mod tests {
         let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
         tool.diameter = 6.0;
         tool.cutting_length = 25.0;
-        tool.stickout = 45.0;
+        tool.stickout = 85.0;
         tool.flute_count = 2;
         let mut machine = MachineProfile::default();
         // Pin the rigidity factors so the rigidity clamp does NOT
@@ -3095,12 +3097,11 @@ mod tests {
         );
 
         let dpp_after = op.depth_per_pass().expect("dpp set");
-        // DPP is clamped below the 9 mm command, but to the deflection
-        // bound (~6.57 mm) — NOT thrashed down to ~2 mm as the old
-        // phantom-hot back-off did.
+        // DPP is clamped below the 9 mm command, to the deflection-safe
+        // bound — in one shot, NOT thrashed down by a phantom-hot back-off.
         assert!(
-            (5.5..9.0).contains(&dpp_after),
-            "DPP must be clamped to the ~6.57 mm deflection bound (below 9 mm, not over-cut), got {dpp_after} mm"
+            (4.0..9.0).contains(&dpp_after),
+            "DPP must be clamped to the deflection-safe bound (below the 9 mm command, not over-cut), got {dpp_after} mm"
         );
         // The whole point: the resulting DPP is deflection-safe. Predicted
         // peak at the chosen DPP sits at/under the 200 µm bound (allow a
@@ -3329,7 +3330,7 @@ mod tests {
         // 200 µm threshold even at the 0.5 mm DPP floor.
         tool.diameter = 2.0;
         tool.cutting_length = 25.0;
-        tool.stickout = 150.0;
+        tool.stickout = 220.0;
         tool.flute_count = 2;
         let mut machine = MachineProfile::default();
         // Disable the rigidity clamp so 1.0 mm starting DPP survives
@@ -3798,7 +3799,6 @@ mod tests {
     /// already exceeds 190 µm; the verify check then trips and the
     /// recalibration reverts before any feed change lands.
     #[test]
-    #[ignore = "feed-aware recalibration pending — UNIFIED_LOAD_MODEL_2026-06-18 step 2 re-baselines this; test-setup stickout needs retuning to the feed-aware magnitude"]
     fn feed_recalibration_caps_on_deflection() {
         use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
         use crate::feeds::ChiploadBounds;
@@ -3816,19 +3816,16 @@ mod tests {
         let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
         tool.diameter = 6.0;
         tool.cutting_length = 25.0;
-        // Stickout tuned so the pre-loop predicted deflection lands
-        // in the (190, 200) µm window — above the 190 µm guard but
-        // below the 200 µm v1.1 back-off target (so v1.1 doesn't fire
-        // first and lower DPP underneath us).
-        // Deflection-model reconciliation (2026-06-17): the predictor now
-        // delegates to the integrated two-section cantilever (the gate's
-        // model) instead of its old single-section `0.7·D` formula, which
-        // dropped the magnitude ~4× (it had relieved the whole stickout,
-        // not just the flutes). δ ∝ stickout³, so the stickout that lands
-        // the pre-loop prediction in the [190, 200) µm window grew to
-        // ~53.2 mm (the in-test setup guard below asserts this and tells
-        // the next editor to retune if the physics shifts again).
-        tool.stickout = 53.2;
+        // Deflection genuinely binds only on long/thin tools under the
+        // feed-aware literature-absolute force model, so this code-path
+        // fixture uses a long-reach 6 mm endmill: the stickout is tuned so
+        // the pre-loop predicted deflection lands in the (190, 200) µm
+        // window — above the 190 µm guard but below the 200 µm v1.1 back-off
+        // target (so v1.1 doesn't fire first and lower DPP underneath us).
+        // δ ∝ stickout³, so retune this value if the force physics shifts;
+        // the in-test setup guard below asserts the window and tells the
+        // next editor.
+        tool.stickout = 100.0;
         tool.flute_count = 2;
         let mut machine = MachineProfile::default();
         machine.rigidity.doc_roughing_factor = 0.20;
@@ -3951,7 +3948,6 @@ mod tests {
     /// target (not Conservative's min / Default's midpoint) is what got
     /// gated.
     #[test]
-    #[ignore = "feed-aware recalibration pending — UNIFIED_LOAD_MODEL_2026-06-18 step 2 re-baselines this; test-setup stickout needs retuning to the feed-aware magnitude"]
     fn speed_gated_by_deflection_fires() {
         use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
         use crate::feeds::ChiploadBounds;
@@ -3969,14 +3965,13 @@ mod tests {
         let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
         tool.diameter = 6.0;
         tool.cutting_length = 25.0;
-        // Same stickout tuning as feed_recalibration_caps_on_deflection:
-        // pre-loop deflection inside the (190, 200) µm refusal window.
-        // Deflection-model reconciliation (2026-06-17): the predictor now
-        // shares the gate's integrated two-section cantilever, ~4× cooler
-        // than the old single-section `0.7·D` formula. δ ∝ stickout³ →
-        // ~53.2 mm lands the pre-loop prediction back in the [190, 200) µm
-        // window (the setup guard below asserts it).
-        tool.stickout = 53.2;
+        // Same long-reach fixture as feed_recalibration_caps_on_deflection:
+        // under the feed-aware literature-absolute force model deflection
+        // binds only on long/thin tools, so a 100 mm-stickout 6 mm endmill
+        // lands the pre-loop prediction in the (190, 200) µm refusal window
+        // (the setup guard below asserts it). δ ∝ stickout³ — retune if the
+        // force physics shifts.
+        tool.stickout = 100.0;
         tool.flute_count = 2;
         let mut machine = MachineProfile::default();
         machine.rigidity.doc_roughing_factor = 0.20;
