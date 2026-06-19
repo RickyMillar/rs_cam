@@ -172,14 +172,16 @@ fn constrained_max_binds_on_deflection_for_long_tool() {
     let k = shapeoko();
     let mut ctx = ctx_basic(&k, band(0.02, 0.08));
     // Stiffness-limited small tool: 3 mm diameter, 60 mm stickout
-    // (L/D = 20). Hardwood Kc ≈ 30 N/mm². At full chipload-max +
-    // full axial DOC 2 mm + full WOC 3 mm, the tip will deflect far
-    // past 0.2 mm.
+    // (L/D = 20). Feed-aware affine coefficients scaled to Kc ≈ 30
+    // (Ks = 49.95·30/35.1 ≈ 42.7, F_edge = 5.30·30/35.1 ≈ 4.53) and the
+    // beam compliance for a uniform 3 mm cantilever, load at ~59 mm:
+    // a²·(3L−a)/(6·E·I) ≈ 0.029 mm/N. At full chipload-max + 2 mm axial
+    // DOC + full slot the tip deflects ~0.47 mm > 0.2 mm, so DeflectionMax
+    // binds.
     ctx.deflection_inputs = Some(DeflectionLimitInputs {
-        kc_n_per_mm2: 30.0,
-        stickout_mm: 60.0,
-        engagement_diameter_mm: 3.0,
-        youngs_modulus_n_per_mm2: 600_000.0, // carbide
+        ks_n_per_mm2: 42.7,
+        f_edge_n_per_mm: 4.53,
+        compliance_mm_per_n: 0.029,
         max_tip_deflection_mm: 0.2,
     });
     ctx.nominal_axial_doc_mm = 2.0;

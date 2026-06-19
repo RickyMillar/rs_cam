@@ -148,19 +148,27 @@ pub struct PerMoveEngagement {
 /// Optional deflection-cap inputs for the constrained-max solver.
 /// When `None` the deflection constraint is skipped (typical for
 /// unit tests and band-mid runs).
+///
+/// These carry the **same feed-aware affine force model + beam compliance
+/// the post-sim deflection gate uses**, so the optimizer and gate agree on
+/// a cut. The lateral force is affine in feed per tooth
+/// `F = ap·(Ks·fz·sin θ_peak + F_edge)` and tip deflection is linear in
+/// force `δ = compliance · F`, so the solver inverts `δ ≤ bound` for the
+/// feed cap in closed form. `Ks`/`F_edge` come from
+/// [`crate::feeds::force::affine_coefficients`]; `compliance` is evaluated
+/// once at the toolpath's peak axial DOC from the integrated two-section
+/// cantilever ([`crate::tool::ToolDefinition::tip_deflection_mm`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DeflectionLimitInputs {
-    /// Material specific cutting energy (`Kc`) in `N/mm²`.
-    pub kc_n_per_mm2: f64,
-    /// Tool stickout (mm) — distance from the collet face to the
-    /// tool tip.
-    pub stickout_mm: f64,
-    /// Effective diameter at the engagement depth (mm). Drives the
-    /// engagement-radius / radial-width calculation.
-    pub engagement_diameter_mm: f64,
-    /// Young's modulus of the tool material in `N/mm²`. Carbide
-    /// ≈ 600 000, HSS ≈ 200 000.
-    pub youngs_modulus_n_per_mm2: f64,
+    /// Affine force slope `Ks` (N/mm²) — feeds::force literature-absolute.
+    pub ks_n_per_mm2: f64,
+    /// Affine edge intercept `F_edge` (N per mm of axial engagement) — the
+    /// feed-independent force floor.
+    pub f_edge_n_per_mm: f64,
+    /// Tip deflection per newton of lateral force (mm/N), from the same
+    /// integrated cantilever the gate uses, at the toolpath's peak axial
+    /// DOC. Deflection is linear in force, so one scalar suffices.
+    pub compliance_mm_per_n: f64,
     /// Maximum allowed tip displacement (mm). F-039 uses 0.2 mm
     /// matching [`crate::tool_load::deflection::EXCEEDS_BOUND_MM`].
     pub max_tip_deflection_mm: f64,
@@ -365,44 +373,39 @@ fn max_safe_feed_for_move(
         BindingConstraint::ChiploadMax,
     ));
 
-    // 2. Deflection cap. Force scales linearly with feed (force =
-    // Kc × axial × WOC), and tip deflection scales linearly with
-    // force, so the inverse relationship lets us solve for the feed
-    // that hits the max deflection bound.
+    // 2. Deflection cap (feed-aware, gate-consistent). The lateral force
+    // is AFFINE in feed per tooth:
+    //   F = ap · (Ks · fz·sin θ_peak + F_edge),   cos ψ = 1 − 2·woc_frac
+    // and tip deflection is linear in force: δ = compliance · F. So solve
+    // δ ≤ bound for the feed cap in closed form — the same affine force
+    // model + beam compliance the post-sim deflection gate uses, so the
+    // optimizer and gate cannot disagree on the cut (unlike the old
+    // feed-blind `Kc·ap·ae` reference force this replaced).
     if let Some(defl) = ctx.deflection_inputs {
         let axial_mm = effective_axial_mm(engagement, ctx);
-        if axial_mm > 0.0 && woc_eff > 0.0 {
-            let radial_width = (woc_eff * std::f64::consts::PI).min(std::f64::consts::PI)
-                / std::f64::consts::PI
-                * defl.engagement_diameter_mm.max(0.0);
-            // Reference force at this engagement geometry.
-            let ref_force_n = defl.kc_n_per_mm2 * axial_mm * radial_width.max(1e-6);
-            if ref_force_n > 0.0 {
-                // Use the cutter's stepped-cantilever closed form:
-                // δ_ref = tip_deflection(ref_force, axial_mm, E).
-                // Since δ ∝ F ∝ feed (Kc and geometry held fixed),
-                // the safe feed is the chipload feed at deflection
-                // bound scaled by the linear relationship. The
-                // reference force here is *not* feed-scaled — it's the
-                // force at full chip thickness × full geometry. The
-                // deflection limit corresponds to that reference
-                // force directly; once force exceeds the cap, no
-                // feed will rescue it. So we use δ_ref vs the bound
-                // as a multiplier: if δ_ref <= bound, no deflection
-                // cap (feed = chipload_max). If δ_ref > bound, feed
-                // must shrink proportionally to δ_ref / bound (since
-                // tip displacement is linear in force and force is
-                // linear in chipload, which is linear in feed).
-                let delta_ref_mm = simple_tip_deflection(
-                    ref_force_n,
-                    axial_mm,
-                    defl.stickout_mm,
-                    defl.engagement_diameter_mm,
-                    defl.youngs_modulus_n_per_mm2,
-                );
-                if delta_ref_mm > defl.max_tip_deflection_mm && delta_ref_mm.is_finite() {
-                    let scale = defl.max_tip_deflection_mm / delta_ref_mm;
-                    let defl_cap = target_chipload * ctx.spindle_rpm * flutes * scale.max(0.0);
+        if axial_mm > 0.0 && defl.compliance_mm_per_n > 0.0 {
+            // Peak-chip immersion from the radial engagement fraction
+            // (diameter cancels): cos ψ = 1 − 2·woc, θ_peak = min(ψ, π/2).
+            let cos_psi = (1.0 - 2.0 * woc_eff).clamp(-1.0, 1.0);
+            let sin_theta_peak = cos_psi.acos().min(std::f64::consts::FRAC_PI_2).sin();
+            // Max lateral force the tip can take within the bound, and the
+            // feed-independent edge force floor at this DOC.
+            let budget_force_n = defl.max_tip_deflection_mm / defl.compliance_mm_per_n;
+            let edge_force_n = axial_mm * defl.f_edge_n_per_mm;
+            if sin_theta_peak <= 0.0 || edge_force_n >= budget_force_n {
+                // Even zero feed exceeds the bound (the edge floor alone is
+                // over budget), or no lateral engagement: feed cannot rescue
+                // deflection — pin to the chipload-min floor and let the
+                // binding tag name deflection. Dropping DOC/stepover is the
+                // real fix (out of scope for per-move feed).
+                let floor = band.min_mm_per_tooth * ctx.spindle_rpm * flutes;
+                limits.push((floor.max(1e-9), BindingConstraint::DeflectionMax));
+            } else if defl.ks_n_per_mm2 > 0.0 {
+                // fz_cap = (budget_force/ap − F_edge) / (Ks · sin θ_peak)
+                let fz_cap = (budget_force_n / axial_mm - defl.f_edge_n_per_mm)
+                    / (defl.ks_n_per_mm2 * sin_theta_peak);
+                if fz_cap.is_finite() && fz_cap > 0.0 {
+                    let defl_cap = fz_cap * ctx.spindle_rpm * flutes;
                     limits.push((defl_cap, BindingConstraint::DeflectionMax));
                 }
             }
@@ -483,44 +486,16 @@ fn effective_axial_mm(engagement: PerMoveEngagement, ctx: &ModulationContext<'_>
     if axial > 0.0 {
         axial * engagement.axial_doc_fraction.clamp(0.0, 1.0)
     } else {
+        // No nominal axial signal (no cutting samples): fall back to the
+        // power-cap's engagement diameter as a proxy DOC. The deflection
+        // cap carries no diameter now (it works off compliance + the
+        // affine coefficients), so only `power_inputs` contributes here.
         engagement.axial_doc_fraction.clamp(0.0, 1.0)
             * ctx
-                .deflection_inputs
-                .map(|d| d.engagement_diameter_mm)
-                .or_else(|| ctx.power_inputs.map(|p| p.engagement_diameter_mm))
+                .power_inputs
+                .map(|p| p.engagement_diameter_mm)
                 .unwrap_or(0.0)
     }
-}
-
-/// Simple stepped-cantilever tip-deflection closed form for the
-/// constrained-max solver. Treats the tool as a uniform cantilever of
-/// length `stickout_mm` and section diameter `diameter_mm` with the
-/// load applied at the midpoint of the engaged axial length.
-/// Returns the tip displacement in mm. Used as a *relative* scaling
-/// factor — its absolute accuracy matters less than its proportionality
-/// to force.
-fn simple_tip_deflection(
-    force_n: f64,
-    axial_mm: f64,
-    stickout_mm: f64,
-    diameter_mm: f64,
-    youngs_modulus_n_per_mm2: f64,
-) -> f64 {
-    if stickout_mm <= 0.0 || diameter_mm <= 0.0 || youngs_modulus_n_per_mm2 <= 0.0 {
-        return 0.0;
-    }
-    let radius = diameter_mm / 2.0;
-    // Second moment of area for solid cylinder.
-    let i = std::f64::consts::PI * radius.powi(4) / 4.0;
-    // Load applied at midpoint of engagement region from the tip.
-    let a = stickout_mm - axial_mm / 2.0;
-    if a <= 0.0 {
-        return 0.0;
-    }
-    // δ = F · a² · (3·L − a) / (6·E·I) for a point load at distance a
-    // from the fixed end (collet face), measured at the free end (tip)
-    // — standard cantilever deflection formula.
-    force_n * a * a * (3.0 * stickout_mm - a) / (6.0 * youngs_modulus_n_per_mm2 * i)
 }
 
 /// F-036 — "target band-mid" per-move feed (legacy heuristic).
@@ -792,6 +767,56 @@ mod tests {
         assert_eq!(
             adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap_err(),
             ModulationError::InvalidContext
+        );
+    }
+
+    /// Step-3 convergence sentry: the feed-aware deflection cap is the
+    /// EXACT inverse of the affine force model — plugging the capped feed
+    /// back through `δ = compliance · ap · (Ks·fz·sinθ + F_edge)` lands on
+    /// the deflection bound. This is what makes the optimizer and the
+    /// post-sim gate agree on a cut (they share the model now); the old
+    /// `δ ∝ feed` scaling against a feed-blind reference force could not.
+    #[test]
+    fn deflection_cap_inverts_affine_model_onto_the_bound() {
+        let k = shapeoko();
+        let mut ctx = make_ctx(&k, band());
+        ctx.strategy = ModulationStrategy::ConstrainedMax;
+        ctx.nominal_axial_doc_mm = 2.0;
+        // Long-reach tool where the edge floor fits under budget but the
+        // chipload-max feed would overshoot, so the affine SOLVE fires
+        // (not the can't-satisfy floor branch).
+        let bound = 0.2_f64;
+        let ks = 42.7_f64;
+        let f_edge = 4.53_f64;
+        let compliance = 0.015_f64; // mm/N
+        ctx.deflection_inputs = Some(DeflectionLimitInputs {
+            ks_n_per_mm2: ks,
+            f_edge_n_per_mm: f_edge,
+            compliance_mm_per_n: compliance,
+            max_tip_deflection_mm: bound,
+        });
+        // Full slot, full axial: woc = 1 ⇒ θ_peak = π/2 (sin = 1), ap = 2.
+        let engagement = PerMoveEngagement {
+            radial_woc_fraction: 1.0,
+            axial_doc_fraction: 1.0,
+        };
+        // Large kinematic cap so deflection is the binding constraint.
+        let (feed_cap, binding) = max_safe_feed_for_move(engagement, &ctx, 1.0e9);
+        assert_eq!(
+            binding,
+            BindingConstraint::DeflectionMax,
+            "deflection should bind on this long-reach tool; got {binding:?} at feed {feed_cap}"
+        );
+        // Plug the capped feed back through the affine model + compliance.
+        let flutes = ctx.flute_count as f64;
+        let fz = feed_cap / (ctx.spindle_rpm * flutes);
+        let ap = 2.0; // nominal × axial_doc_fraction
+        let force = ap * (ks * fz * 1.0 + f_edge); // sinθ_peak = 1 at full slot
+        let delta_mm = compliance * force;
+        assert!(
+            (delta_mm - bound).abs() < 1.0e-3,
+            "capped feed must invert onto the deflection bound: δ={delta_mm:.4} mm vs bound {bound} \
+             (feed {feed_cap:.1}, fz {fz:.4})"
         );
     }
 

@@ -101,6 +101,15 @@ fn affine_coeffs(material: &Material) -> Option<(f64, f64)> {
     Some((LIT_KS_N_PER_MM2 * scale, LIT_FEDGE_N_PER_MM * scale))
 }
 
+/// Public accessor for the affine wood-force coefficients `(Ks, F_edge)`
+/// (N/mm², N per mm of axial engagement). The feed-modulation optimizer
+/// uses these to solve its per-move feed cap from the **same** force model
+/// the post-sim deflection gate consumes, so the optimizer and gate agree
+/// on the cut. `None` when the material has no primary-source `Kc`.
+pub fn affine_coefficients(material: &Material) -> Option<(f64, f64)> {
+    affine_coeffs(material)
+}
+
 /// Feed-aware lateral (deflection-causing) cutting force in newtons.
 ///
 /// `axial_mm` is the axial DOC (`ap`); `immersion_rad` is the engagement

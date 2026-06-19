@@ -1844,15 +1844,25 @@ impl ProjectSession {
             let engagement_dia = tool_def.lookup_diameter_at(max_axial.max(0.0));
             let stickout = tool_def.stickout.max(0.0);
             let youngs = tool_def.tool_material.youngs_modulus_n_per_mm2();
-            let deflection_inputs = match kc_opt {
-                Some(kc) if stickout > 0.0 && engagement_dia > 0.0 && youngs > 0.0 => {
-                    Some(DeflectionLimitInputs {
-                        kc_n_per_mm2: kc,
-                        stickout_mm: stickout,
-                        engagement_diameter_mm: engagement_dia,
-                        youngs_modulus_n_per_mm2: youngs,
-                        max_tip_deflection_mm: crate::tool_load::deflection::EXCEEDS_BOUND_MM,
-                    })
+            // Feed-aware deflection cap: the optimizer solves its feed cap
+            // from the SAME affine force model (Ks/F_edge) and integrated
+            // beam compliance the post-sim deflection gate uses, so the two
+            // agree on a cut. Compliance is δ-per-newton at the toolpath's
+            // peak axial DOC; deflection is linear in force so one scalar
+            // suffices.
+            let deflection_inputs = match crate::feeds::force::affine_coefficients(material) {
+                Some((ks, f_edge)) if stickout > 0.0 && youngs > 0.0 => {
+                    let compliance = tool_def.tip_deflection_mm(1.0, max_axial.max(0.0), youngs);
+                    if compliance.is_finite() && compliance > 0.0 {
+                        Some(DeflectionLimitInputs {
+                            ks_n_per_mm2: ks,
+                            f_edge_n_per_mm: f_edge,
+                            compliance_mm_per_n: compliance,
+                            max_tip_deflection_mm: crate::tool_load::deflection::EXCEEDS_BOUND_MM,
+                        })
+                    } else {
+                        None
+                    }
                 }
                 _ => None,
             };
