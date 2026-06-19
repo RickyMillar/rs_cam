@@ -1046,7 +1046,6 @@ mod orchestration_skip_tests {
     /// pre-flight, contradicting the `DeflectionDocRetargeter` (which
     /// existed to fix exactly this case) and leaving it dead code.
     #[test]
-    #[ignore = "feed-aware recalibration pending — UNIFIED_LOAD_MODEL_2026-06-18 step 2 re-baselines this; the min-force-corner magnitude is over-scaled (edge floor) so the reachable corner reads >200µm until recalibration"]
     fn deflection_exceeds_with_reachable_corner_searches_instead_of_refusing() {
         // Default endmill (stickout 45 mm, diameter 6.35 mm), 6 mm slot
         // in HardMaple: baseline δ ≈ 350 µm → Exceeds. But at the

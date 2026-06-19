@@ -35,37 +35,46 @@
 //! thickness saturates at full immersion, so a wider slot does not keep
 //! raising the bending force once the cutter is past half-immersion.
 //!
-//! ## Calibration
+//! ## Calibration — literature-absolute
 //!
-//! The wood literature fixes the *shape* (slope:edge ratio ≈ 9.42 /mm,
-//! affine in `fz·sin θ`). The *magnitude* is pinned to our existing
-//! milling-Kc reference: `Ks` and `F_edge` are scaled together so this
-//! model reproduces the old `Kc·ap·ae` force at one healthy-roughing
-//! operating point, then varies correctly with feed and immersion away
-//! from it. One validated point + a literature-fixed ratio sets both
-//! constants, no new bench data required. See the plan §6 and
-//! `planning/KC_MILLING_CALIBRATION_2026-06-17.md`.
+//! Both the *shape* (slope:edge ratio ≈ 9.42 /mm) and the *magnitude* come
+//! straight from the woodresearch.sk quasi-orthogonal fit `Fc1z =
+//! 49.95·h_m + 5.30`, attached to our `GenericHardwood` Kc as the anchor
+//! wood and scaled to other materials linearly by `Kc / anchor_Kc`. This
+//! is the physically-correct *instantaneous* bending force (chip area
+//! `ap·h`), which is ~9× lower than the old milling-lifted `Kc·ap·ae`
+//! aggregate — so deflection reads much cooler and the gate fires only
+//! for genuinely catastrophic geometry (long/thin tools), not routine
+//! roughing. Consequently most cuts are limited by **chipload/power**,
+//! not deflection; the deflection gate is correctly quiet. Absolute
+//! magnitude is "approximate / verify on a test cut" — same honesty bar
+//! as the milling-Kc factor. See `planning/UNIFIED_LOAD_MODEL_2026-06-18.md`
+//! §6 and `planning/KC_MILLING_CALIBRATION_2026-06-17.md`.
 
 use crate::material::Material;
 
-/// Literature slope-to-edge ratio for wood (`49.95 : 5.30 ≈ 9.42`, per
-/// mm), the dimensionless shape we preserve while scaling magnitude to
-/// our milling-Kc reference. woodresearch.sk 201905/12.
-const WOOD_SLOPE_TO_EDGE_RATIO: f64 = 9.42;
+/// Literature-absolute affine slope `Ks` (N/mm²) for the anchor wood —
+/// the woodresearch.sk 201905/12 quasi-orthogonal conventional fit
+/// `Fc1z = 49.95·h_m + 5.30` (R² ≈ 0.99). The slope:edge ratio
+/// `LIT_KS / LIT_FEDGE ≈ 9.42` /mm is the dimensionless shape; below the
+/// crossover chip thickness (`h ≈ 1/9.42 ≈ 0.106 mm`, i.e. most wood
+/// roughing) the edge term dominates — the size effect.
+const LIT_KS_N_PER_MM2: f64 = 49.95;
 
-/// Reference radial immersion fraction (`ae / D`) for magnitude pinning —
-/// a typical roughing engagement (the predictor's non-adaptive WOC
-/// fallback is also 0.35·D).
-const REF_IMMERSION_FRACTION: f64 = 0.35;
+/// Literature-absolute affine edge intercept `F_edge` (N/mm of axial
+/// engagement) for the anchor wood — the `+5.30` term of the same fit.
+const LIT_FEDGE_N_PER_MM: f64 = 5.30;
 
-/// Reference feed-per-tooth (mm) for magnitude pinning — a healthy wood
-/// roughing chipload near the top of the LUT band.
-const REF_FZ_MM: f64 = 0.05;
-
-/// Reference radial width of cut (mm) for magnitude pinning — a
-/// representative roughing WOC. With `ap` cancelling on both sides of
-/// the pin, this is the only absolute length the calibration carries.
-const REF_AE_MM: f64 = 2.0;
+/// `Kc` of the anchor wood the literature coefficients are attached to —
+/// our `GenericHardwood` (`MILLING_KC_FACTOR 2.7 × FPL shear 13.0 N/mm²`
+/// = 35.1), a mid-hardwood close to the study's species class. Other
+/// materials scale the literature coefficients linearly by their own
+/// `Kc / LIT_ANCHOR_KC`, preserving relative material ordering while
+/// anchoring the absolute magnitude to a real wood-milling measurement
+/// rather than the milling-lifted `Kc·ap·ae` aggregate (which over-
+/// stated the instantaneous bending force ~9×). Approximate — verify on
+/// a test cut. See `planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §6.
+const LIT_ANCHOR_KC_N_PER_MM2: f64 = 35.1;
 
 /// Engagement (immersion) arc angle ψ in radians for a radial width of
 /// cut `ae_mm` on a cutter of radius `radius_mm`: `cos ψ = 1 − ae/r`,
@@ -82,20 +91,14 @@ pub fn immersion_angle(ae_mm: f64, radius_mm: f64) -> f64 {
     cos_psi.acos()
 }
 
-/// Affine wood-force coefficients `(Ks, F_edge)` for `material`, pinned so
-/// that `F_lat(REF_FZ, REF_IMMERSION) == Kc · ap · REF_AE` at the
-/// reference operating point. Returns `None` when the material has no
-/// primary-source `Kc`.
+/// Affine wood-force coefficients `(Ks, F_edge)` for `material`: the
+/// literature-absolute anchor values scaled linearly by the material's
+/// `Kc` relative to the anchor wood. Returns `None` when the material has
+/// no primary-source `Kc`.
 fn affine_coeffs(material: &Material) -> Option<(f64, f64)> {
     let kc = material.kc_n_per_mm2()?;
-    let cos_psi = 1.0 - 2.0 * REF_IMMERSION_FRACTION;
-    let psi = cos_psi.clamp(-1.0, 1.0).acos();
-    let theta_peak = psi.min(std::f64::consts::FRAC_PI_2);
-    let h_ref = REF_FZ_MM * theta_peak.sin();
-    // kc·ae_ref = F_edge·(ratio·h_ref + 1)   (ap cancels)
-    let f_edge = kc * REF_AE_MM / (WOOD_SLOPE_TO_EDGE_RATIO * h_ref + 1.0);
-    let ks = WOOD_SLOPE_TO_EDGE_RATIO * f_edge;
-    Some((ks, f_edge))
+    let scale = kc / LIT_ANCHOR_KC_N_PER_MM2;
+    Some((LIT_KS_N_PER_MM2 * scale, LIT_FEDGE_N_PER_MM * scale))
 }
 
 /// Feed-aware lateral (deflection-causing) cutting force in newtons.
@@ -143,25 +146,43 @@ mod tests {
         }
     }
 
-    /// Pinning sanity: at the reference operating point the feed-aware
-    /// force reproduces the old `Kc · ap · ae` magnitude (within the
-    /// rounding of the affine ratio). This is what keeps step 1 a
-    /// magnitude-preserving landing rather than a recalibration.
+    /// Literature-absolute anchor: at the anchor wood (`GenericHardwood`)
+    /// the coefficients equal the woodresearch.sk fit `Fc1z = 49.95·h +
+    /// 5.30`, and the slope:edge ratio is ≈ 9.42 /mm. This pins the
+    /// magnitude to a real wood-milling measurement rather than the
+    /// milling-Kc aggregate.
     #[test]
-    fn force_matches_legacy_kc_form_at_reference_point() {
+    fn anchor_wood_matches_literature_coefficients() {
         let mat = hardwood();
-        let kc = mat.kc_n_per_mm2().unwrap();
-        let ap = 2.0;
-        let diameter = REF_AE_MM / REF_IMMERSION_FRACTION; // so ae/D = 0.35
-        let radius = diameter / 2.0;
-        let psi = immersion_angle(REF_AE_MM, radius);
-        let f_new = lateral_cutting_force(&mat, ap, psi, REF_FZ_MM).unwrap();
-        let f_legacy = kc * ap * REF_AE_MM;
-        let rel = (f_new - f_legacy).abs() / f_legacy;
+        let (ks, f_edge) = affine_coeffs(&mat).unwrap();
+        // GenericHardwood is the anchor → coefficients are the raw
+        // literature values (its Kc == LIT_ANCHOR_KC).
+        assert!((ks - LIT_KS_N_PER_MM2).abs() < 0.5, "Ks {ks:.2} ≈ 49.95");
         assert!(
-            rel < 0.02,
-            "feed-aware force {f_new:.1} N should match legacy {f_legacy:.1} N at the pin (rel {rel:.3})"
+            (f_edge - LIT_FEDGE_N_PER_MM).abs() < 0.1,
+            "F_edge {f_edge:.2} ≈ 5.30"
         );
+        let ratio = ks / f_edge;
+        assert!(
+            (ratio - 9.42).abs() < 0.05,
+            "slope:edge ratio {ratio:.2} ≈ 9.42"
+        );
+    }
+
+    /// Per-material scaling: a denser wood (higher Kc) yields proportionally
+    /// larger coefficients, preserving relative material ordering.
+    #[test]
+    fn coefficients_scale_with_material_kc() {
+        let soft = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
+        let (ks_soft, _) = affine_coeffs(&soft).unwrap();
+        let (ks_hard, _) = affine_coeffs(&hardwood()).unwrap();
+        let kc_soft = soft.kc_n_per_mm2().unwrap();
+        let kc_hard = hardwood().kc_n_per_mm2().unwrap();
+        assert!(ks_hard > ks_soft, "denser wood ⇒ larger slope");
+        // Linear in Kc.
+        assert!((ks_hard / ks_soft - kc_hard / kc_soft).abs() < 1e-9);
     }
 
     /// Agreement sentry (input-derivation half): the force is identical

@@ -137,6 +137,35 @@ Visible sources recorded there include:
 
 The manifest includes URLs, titles, coverage notes, and access dates.
 
+### Feed-aware lateral cutting-force model (deflection)
+
+`crates/rs_cam_core/src/feeds/force.rs` (the canonical force the tip-deflection
+gate, Suggest predictor, axial-DOC envelope, and optimize preflight consume)
+replaced the feed-blind `F = Kc · ap · ae` with the feed-aware affine model
+`F_lat = ap · (Ks · fz·sin θ_peak + F_edge)`, `cos ψ = 1 − ae/r`. Sources
+(deep-research verification 2026-06-18, see
+`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §11):
+
+- **Wood affine coefficients (primary anchor):** woodresearch.sk 2019, vol. 64
+  no. 5, art. 12 — quasi-orthogonal CNC wood milling, `Fc1z = 49.95·h_m + 5.30`
+  (conventional), R² ≈ 0.99; `h_m = fz·sin(ψ/2)`, `cos ψ = 1 − e/r`. These are
+  the literature-absolute `Ks`/`F_edge` values, attached to `GenericHardwood`
+  and scaled per-material by Kc.
+- **Mechanistic milling force (chip-thickness + arc):** ScienceDirect
+  `S100093611300054X` (`h = fz·sin θ`, KT/KR/KA per element integrated over the
+  engaged arc) and `S2666496825000482` (coefficients as power functions of
+  instantaneous chip thickness).
+- **MDF / feed-per-tooth dominance:** MDPI *Coatings* `2079-6412/14/9/1085`.
+- **Affine intercept = edge/fracture-toughness term:** Springer *Eur. J. Wood
+  Prod.* `s00107-021-01667-5`.
+- **Kienzle size-effect reference (not used for the final form — wood `mc`
+  unconfirmed):** Machining Doctor specific-cutting-force chart / Kc glossary;
+  ctemag "Understanding tangential cutting force when milling" (radial WOC via
+  engaged-tooth count).
+
+Magnitude is anchored to a single quasi-orthogonal study, so it is documented
+in-code as "approximate / verify on a test cut."
+
 2026-05-29 ingest added three Amana charts as bundled runtime rows
 (`amana_vgroove_engraving.json`, `amana_compression.json`): the AMS-159
 V-Groove chart, the Spektra 15/30/45/120° Engraving chart, and the

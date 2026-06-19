@@ -173,31 +173,46 @@ point (§6), and label suggestions "verify on a test cut."
    *optimized* paths, not raw Suggest-feed paths. Regime label falls out of the
    per-move binding constraint, not a heuristic.
 
-## 6. Recalibration plan
+## 6. Recalibration plan — DECIDED: literature-absolute (2026-06-20)
 
-Exposing fz changes the force magnitude at every operating point, so the
-milling-Kc band shifts (the 258µm wanaka reading, the F-031 0.32mm, the
-`tip_deflection_*` sentries). The affine form has **two** constants (`Ks`,
-`F_edge`) where today there was one (`Kc`), so calibration must set both.
-Approach mirrors [[KC_MILLING_CALIBRATION_2026-06-17]]:
-- **Preserve the literature shape, scale to our reference.** Take the wood
-  slope:intercept ratio (≈ 49.95 : 5.30 ≈ 9.4 : 1, woodresearch.sk) as the fixed
-  shape, then scale `Ks` + `F_edge` together (with `k_dir`) so the new
-  `F_lat(fz_ref, ae_ref)` equals today's milling-Kc-calibrated force at one
-  reference operating point. One validated point + a literature-fixed ratio = both
-  constants, no new bench data required.
-- Re-baseline the deflection sentries (lib + the F-024/27/28/31 integration sims)
-  to the feed-aware values. Per
-  [[feedback_run_integration_after_physics_change]], run the `--test` sims, not
-  just `--lib`.
-- **Headline validation, with the edge floor honest:** the wanaka rough at the
-  over-fed 6000 (fz ≈ 0.19) reads EXCEEDS; dropping to the LUT feed (~900,
-  fz ≈ 0.03) should bring it **within** 200µm — but because of the edge
-  intercept the force only falls ~1.9× (≈ 258 → ~140µm), *not* the ~6.6× a naive
-  proportional model would predict. So feed genuinely moves deflection (the whole
-  point) **but cannot feed-starve it to zero** — past a point you must drop DOC or
-  stepover. That floor is a feature: it's why the optimizer can't cheat the limit
-  with feed alone, and it matches shop reality.
+Exposing fz changes the force magnitude at every operating point. The affine
+form has **two** constants (`Ks`, `F_edge`) where today there was one (`Kc`),
+so calibration must set both. Two anchors were on the table — pin to our
+existing milling-Kc force (preserve the old hot readings), or anchor to the
+literature absolute. **Decision: literature-absolute.** The question that
+settled it was not "match the wanaka benchmark" (wanaka is just a playground,
+not gospel) but "what is the best, most honest UX for *any* generic cut."
+
+- **What landed (`feeds::force`):** `Ks = 49.95`, `F_edge = 5.30 N/mm`
+  (woodresearch.sk affine fit, R²≈0.99) attached to our `GenericHardwood` Kc
+  as the anchor wood and scaled to other materials linearly by `Kc/anchor_Kc`.
+  Both shape (9.42:1) and magnitude come straight from the wood measurement.
+- **Why it's the best generic UX:** this is the physically-honest
+  *instantaneous* bending force (chip area `ap·h`), ~9× lower than the old
+  milling-lifted `Kc·ap·ae` aggregate. So each load constraint binds where it
+  physically should: **roughing is chipload/power-bound; deflection gates only
+  long/thin tools** (a 3 mm endmill at 30 mm stickout reads ~370 µm Exceeds; a
+  stubby 6 mm at 45 mm reads ~17 µm Within). The old inflated model fired the
+  deflection gate on routine roughing and hid the real limiter — bad feeds
+  advice. The honest model is exactly the clean per-path decomposition the
+  "bomber feeds/speeds" UX needs.
+- **Consequence — the deflection gate goes quiet for normal tools.** That is
+  correct, not a regression: a gate that cries wolf on every roughing cut is
+  worse than one that fires only when deflection is genuinely the limiter. The
+  recent F-031 "wanaka is deflection-tool-limited" framing was an artifact of
+  the inflated force; it is reversed here (wanaka reads Within; chipload is the
+  limiter — which matches the sim, power idle at ~13%).
+- **Sentry re-baseline (done):** the wanaka/AS013 "tool-limited / Exceeds"
+  sentries were *re-conceived* (not deleted) to assert the honest "deflection
+  Within; chipload is the limiter"; the Suggest deflection-back-off code-path
+  tests were *re-tooled* to long-reach fixtures (where deflection genuinely
+  binds) so they keep exercising their path. Lib suite green; the F-024/27/28
+  integration sims still read `< 0.2 mm` (cooler, pass), F-029 AS013 re-pointed
+  to Within. Per [[feedback_run_integration_after_physics_change]] the `--test`
+  sims were run, not just `--lib`.
+- **Honesty bar:** anchored to one quasi-orthogonal wood study, so absolute
+  magnitude stays "approximate / verify on a test cut" — same bar as the
+  milling-Kc factor.
 
 ## 7. Sentries (lock the convergence so it can't re-drift)
 

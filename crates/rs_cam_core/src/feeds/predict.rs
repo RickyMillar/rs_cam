@@ -932,30 +932,22 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "feed-aware recalibration pending — UNIFIED_LOAD_MODEL_2026-06-18 step 2 re-baselines this absolute deflection magnitude"]
     fn wanaka_back_rough_predicts_within_post_sim_band() {
-        // Wanaka Back Rough: 6 mm flat, 45 mm stickout, hardwood, 9 mm DPP.
-        // This test mirrors the live post-sim deflection measurement —
-        // and that is now literally true: as of 2026-06-17 the predictor
-        // delegates its cantilever to the same integrated two-section model
-        // (`tip_deflection_from_engagement`) the post-sim gate uses, so it
-        // forecasts what the gate will measure rather than its own stiffer-
-        // shank approximation.
+        // A roughing endmill (6 mm flat, 45 mm stickout, hardwood, 9 mm DPP,
+        // 1.2 mm radial). The predictor delegates its cantilever to the same
+        // integrated two-section model the post-sim gate uses, so it
+        // forecasts what the gate will measure.
         //
-        // Under the milling-Kc calibration (MILLING_KC_FACTOR = 2.7) plus
-        // the integrated cantilever, the predicted peak is ~316 µm — a
-        // genuinely tool-limited 9 mm DPP at L/D 7.5 in hardwood, well past
-        // the 200 µm bound. (Pre-reconciliation this read ~1315 µm; the
-        // bespoke single-section formula applied the 0.7 end-mill flute-
-        // relief factor to the *whole* 45 mm stickout, including the stiff
-        // shank, over-softening the beam by (1/0.7)⁴ ≈ 4.2× and reading
-        // ~3× hotter than the gate it exists to predict. That phantom hot
-        // reading is what starved the Suggest back-off loop's convergence.)
-        //
-        // This case (9 mm DOC, 1.2 mm radial) reads lower than the gate
-        // sentry's ~494 µm at 2.5 mm DOC full-slot because its force is
-        // lower (10.8·Kc vs 15·Kc) and its deeper load-point sits closer to
-        // the clamped collet — same model, different operating point.
+        // Under the feed-aware literature-absolute force model
+        // (`feeds::force`, woodresearch.sk affine fit), the instantaneous
+        // bending force here is ~58 N (ap 9 · (Ks·h_eff + F_edge), h_eff ≈
+        // 0.023 mm at this chipload/immersion), and the stiff-shank
+        // two-section beam puts the predicted peak at ~48 µm — comfortably
+        // Within. A stubby 6 mm flat at L/D 7.5 is NOT deflection-limited;
+        // its limiter is chipload/power, not tip wander. (The old
+        // `Kc·ap·ae` aggregate read ~316 µm here — ~4× the honest
+        // instantaneous force, which is why the deflection gate used to
+        // cry wolf on routine roughing.)
         let tool = carbide_endmill(6.0, 45.0, 25.0);
         let op = wanaka_adaptive_op(9.0, 1.2, 911.0, 16_000);
         let mat = hardwood();
@@ -963,8 +955,8 @@ mod tests {
         let pred = predict_peak_deflection_um(&op, &tool, &mat, &machine);
         let um = pred.predicted_um;
         assert!(
-            (260.0..=380.0).contains(&um),
-            "Wanaka Back Rough should land near the integrated-gate value (~316 µm, tool-limited); got {um:.1} µm"
+            (30.0..=70.0).contains(&um),
+            "stubby roughing endmill is deflection-safe (~48 µm Within) under the feed-aware force model; got {um:.1} µm"
         );
         // Sanity: the breakdown should record the inputs we passed.
         assert!((pred.breakdown.axial_doc_mm - 9.0).abs() < 1e-9);
@@ -977,17 +969,13 @@ mod tests {
 
     #[test]
     fn shallow_dpp_predicts_well_below_threshold() {
-        // A genuinely-shallow cut: DPP=3 mm on a shorter-reach tool.
+        // A genuinely-shallow cut: DPP=3 mm on a 30 mm-reach tool.
         // Deflection is roughly linear in axial DOC (force scales
-        // linearly; load_pos shifts only ~5%).
-        // Milling-Kc calibration (2026-06-17, MILLING_KC_FACTOR = 2.7)
-        // lifts the force ~2.7×; at the original 45 mm stickout even a
-        // 3 mm DPP now reads ~490 µm — that fixture is no longer
-        // "shallow", it's tool-limited at L/D 7.5. Retune the tool to a
-        // realistic short-reach 30 mm stickout (δ ∝ stickout³ →
-        // (30/45)³ ≈ 0.30×), which lands a genuinely-shallow 3 mm cut at
-        // ~145 µm — well clear of the 200 µm critical threshold. Same
-        // test intent: a shallow cut clears the bound.
+        // linearly; load_pos shifts only ~5%). Under the feed-aware
+        // literature-absolute force model the instantaneous force is
+        // modest, so a shallow 3 mm cut on a short-reach tool reads ~5 µm
+        // — deeply Within. Test intent: a shallow cut clears the bound by
+        // a wide margin.
         let tool = carbide_endmill(6.0, 30.0, 25.0);
         let op = wanaka_adaptive_op(3.0, 1.2, 911.0, 16_000);
         let mat = hardwood();
@@ -999,8 +987,8 @@ mod tests {
             "Shallow-DPP prediction should clear the 200 µm critical threshold; got {um:.1} µm"
         );
         assert!(
-            (10.0..=200.0).contains(&um),
-            "Shallow-DPP prediction should land in the 10-200 µm 'Within' / 'Approximate' band; got {um:.1} µm"
+            (1.0..=50.0).contains(&um),
+            "Shallow-DPP prediction should land in a low Within band (real signal, not zero); got {um:.1} µm"
         );
     }
 
