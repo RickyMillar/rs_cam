@@ -1192,6 +1192,7 @@ fn calculate_and_apply_feeds(
     workholding: rs_cam_core::feeds::WorkholdingRigidity,
     spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
     project_default_rpm: u32,
+    load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
 ) {
     match rs_cam_core::feeds::suggest::feeds_result_for_operation(
         &entry.operation,
@@ -1204,7 +1205,15 @@ fn calculate_and_apply_feeds(
     ) {
         Ok(result) => {
             entry.feeds_result = Some(result);
-            draw_feeds_card(ui, entry, tool, machine, material, project_default_rpm);
+            draw_feeds_card(
+                ui,
+                entry,
+                tool,
+                machine,
+                material,
+                project_default_rpm,
+                load_verdict,
+            );
         }
         Err(e) => {
             // Engine refused — the tool × operation combination is
@@ -1253,6 +1262,81 @@ fn calculate_and_apply_feeds(
     }
 }
 
+/// F-039 — read-only "solved operating point" for this toolpath: the single
+/// constraint that bound feed across the most cuts, how far modulation moved
+/// the feed off the commanded value, and how much of the path it touched. The
+/// *measured* counterpart to the Suggest-predicted "Derived" rollup; the data
+/// is the per-toolpath modulation summary captured during simulation
+/// (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §10.6). Display-only — it is
+/// the optimizer's result, not a field to edit.
+fn draw_operating_point(ui: &mut egui::Ui, summary: &rs_cam_core::tool_load::ModulationSummary) {
+    use rs_cam_core::tool_load::ModulationStrategyTag;
+    ui.named_section("OPERATING POINT \u{2014} measured", |ui| {
+        // Hero line: the one constraint that bound feed on the most cuts —
+        // the "why" behind these feeds.
+        if let Some((binding, frac)) = summary
+            .binding_constraint_distribution
+            .iter()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+        {
+            ui.label(
+                egui::RichText::new(format!(
+                    "Limited by {} ({:.0}% of cuts)",
+                    binding.label(),
+                    frac * 100.0
+                ))
+                .strong(),
+            );
+        }
+        egui::Grid::new("feeds_card_operating_point")
+            .num_columns(2)
+            .spacing([8.0, 3.0])
+            .show(ui, |ui| {
+                ui.label("Feed vs commanded:");
+                let d = summary.median_feed_delta_pct;
+                let sign = if d >= 0.0 { "+" } else { "" };
+                ui.label(format!("{sign}{d:.0}% median"));
+                ui.end_row();
+
+                ui.label("Modulated:");
+                ui.label(format!(
+                    "{} / {} cuts",
+                    summary.moves_touched, summary.moves_total
+                ));
+                ui.end_row();
+
+                ui.label("Strategy:");
+                let strat = match summary.strategy {
+                    ModulationStrategyTag::ConstrainedMax => "constrained-max",
+                    ModulationStrategyTag::BandMid => "band-mid",
+                };
+                ui.label(format!(
+                    "{strat} \u{00b7} aggr {:.1}",
+                    summary.aggressiveness
+                ));
+                ui.end_row();
+            });
+        // Full per-constraint breakdown, collapsed by default — only when more
+        // than one constraint actually bound somewhere on the path.
+        if summary.binding_constraint_distribution.len() > 1 {
+            egui::CollapsingHeader::new("Constraint breakdown")
+                .default_open(false)
+                .show(ui, |ui| {
+                    for (binding, frac) in &summary.binding_constraint_distribution {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{}: {:.0}%",
+                                binding.label(),
+                                frac * 100.0
+                            ))
+                            .small(),
+                        );
+                    }
+                });
+        }
+    });
+}
+
 fn draw_feeds_card(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
@@ -1260,6 +1344,7 @@ fn draw_feeds_card(
     machine: &rs_cam_core::machine::MachineProfile,
     material: &rs_cam_core::material::Material,
     project_default_rpm: u32,
+    load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
 ) {
     ui.add_space(8.0);
     ui.collapsing("Feeds & Speeds", |ui| {
@@ -1439,6 +1524,16 @@ fn draw_feeds_card(
             power_bar(ui, result.power_kw, result.available_power_kw);
             mrr_row(ui, result.mrr_mm3_min);
         });
+
+        // ── Operating point (read-only) — the F-039 optimizer's MEASURED
+        // result for this path, the post-sim counterpart to the Suggest-
+        // predicted "Derived" rollup above. Present only after a simulation
+        // where adaptive feed modulation actually ran (the rollup rides on
+        // the load verdict). No edit affordances: it's the solved result,
+        // not a field to tune.
+        if let Some(summary) = load_verdict.and_then(|v| v.modulation_summary.as_ref()) {
+            draw_operating_point(ui, summary);
+        }
 
         {
             // W4.1: provenance is now per field (the compact badges on the Feed
@@ -3388,6 +3483,7 @@ fn draw_toolpath_panel(
                     workholding,
                     spindle_strategy,
                     project_default_rpm,
+                    load_verdict,
                 );
             }
             if let Some(result) = &entry.feeds_result {
