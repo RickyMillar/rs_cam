@@ -48,17 +48,17 @@ use crate::simulation_cut::SimulationCutSample;
 /// replaces commanded. Otherwise the sample's own
 /// `feed_rate_mm_min` is returned — byte-identical to pre-F-035.
 ///
-/// Every per-sample gate (chipload + power) MUST call this helper
-/// rather than reading `feed_rate_mm_min` directly, so the three
-/// gates stay in lockstep. F-024's audit named site-level
+/// Every per-sample gate (chipload + power **+ deflection**) MUST call
+/// this helper rather than reading `feed_rate_mm_min` directly, so the
+/// three gates stay in lockstep. F-024's audit named site-level
 /// duplication as a recurring class of bug.
 ///
-/// Note: `deflection::evaluate` uses the
-/// `F = Kc · DOC · WOC` formulation which is feed-independent — the
-/// tip-displacement integral has no feed term — so the deflection
-/// gate doesn't call this helper. The flag's behaviour on the
-/// deflection criterion is "no change", which is asserted by
-/// `tests/predicted_feed_gates_f035.rs::flag_on_extends_existing_f024_test_invariants`.
+/// Deflection joined this set with the unified feed-aware load model
+/// (2026-06-20): the tip-displacement force is now affine in feed per
+/// tooth (`F = ap·(Ks·fz·sinθ + F_edge)`), so the deflection gate must
+/// evaluate at the same effective feed as power/chipload — that is what
+/// lets a path the F-039 optimizer feeds down for deflection read `Within`
+/// at the gate (the optimizer↔gate consistency the unified model closes).
 #[inline]
 pub fn effective_feed_for_sample(
     sample: &SimulationCutSample,

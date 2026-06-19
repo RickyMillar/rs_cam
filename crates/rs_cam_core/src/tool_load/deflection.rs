@@ -81,6 +81,7 @@ pub fn sample_tip_deflection_mm(
     tool: &ToolDefinition,
     material: &Material,
     sample: &SimulationCutSample,
+    feed_per_tooth_mm: f64,
 ) -> Option<f64> {
     if !sample.is_cutting
         || sample.engagement.radial_woc_fraction < 0.02
@@ -97,15 +98,17 @@ pub fn sample_tip_deflection_mm(
     // Canonical feed-aware force + cantilever model lives in
     // `feeds::force`/`feeds::predict` so the pre-sim cutter-axial-
     // constraints envelope, the Suggest predictor, and this post-sim gate
-    // cannot drift apart. Feed per tooth comes from the sample's commanded
-    // chipload; a sample with no chipload signal yields `None` and is
-    // skipped (it carries no deflection-relevant cutting load).
+    // cannot drift apart. `feed_per_tooth_mm` is the *effective* chipload
+    // (after kinematic prediction / F-039 modulation) the caller resolves
+    // via `effective_feed_for_sample`, so a path the optimizer feeds down
+    // for deflection reads safe here too. A sample with no chipload signal
+    // yields `None` and is skipped (no deflection-relevant cutting load).
     crate::feeds::predict::tip_deflection_from_engagement(
         tool,
         material,
         sample.axial_engagement_mm,
         immersion_rad,
-        sample.chipload_mm_per_tooth,
+        feed_per_tooth_mm,
     )
 }
 
@@ -212,7 +215,19 @@ pub fn evaluate(
         };
         any_arc_captured = true;
 
-        let Some(delta_mm) = sample_tip_deflection_mm(tool, material, s) else {
+        // Effective feed per tooth (after kinematic prediction / F-039
+        // modulation), mirroring the power + chipload gates so all three
+        // evaluate the cut that will actually run. With no predicted-feed
+        // map this is the sample's commanded chipload (unchanged).
+        let eff_feed = super::effective_feed_for_sample(s, &trace.predicted_feeds);
+        let flutes = s.flute_count.max(1) as f64;
+        let eff_fz = if s.spindle_rpm > 0 {
+            eff_feed / (s.spindle_rpm as f64 * flutes)
+        } else {
+            s.chipload_mm_per_tooth
+        };
+
+        let Some(delta_mm) = sample_tip_deflection_mm(tool, material, s, eff_fz) else {
             continue;
         };
 
@@ -486,8 +501,10 @@ mod tests {
         let arc = std::f64::consts::FRAC_PI_2;
         let slow = cutting_sample(0, 0, 3.0, arc, 900.0, 0.5);
         let fast = cutting_sample(0, 0, 3.0, arc, 1800.0, 0.5); // 2× feed
-        let d_slow = sample_tip_deflection_mm(&tool, &mat, &slow).expect("slow δ");
-        let d_fast = sample_tip_deflection_mm(&tool, &mat, &fast).expect("fast δ");
+        let d_slow = sample_tip_deflection_mm(&tool, &mat, &slow, slow.chipload_mm_per_tooth)
+            .expect("slow δ");
+        let d_fast = sample_tip_deflection_mm(&tool, &mat, &fast, fast.chipload_mm_per_tooth)
+            .expect("fast δ");
         assert!(d_fast > d_slow, "2× feed must raise δ: {d_slow} → {d_fast}");
         assert!(
             d_fast < 2.0 * d_slow,
@@ -509,7 +526,8 @@ mod tests {
         };
         let arc = 1.2_f64;
         let s = cutting_sample(0, 0, 2.5, arc, 1200.0, 0.5);
-        let via_gate = sample_tip_deflection_mm(&tool, &mat, &s).expect("gate δ");
+        let via_gate =
+            sample_tip_deflection_mm(&tool, &mat, &s, s.chipload_mm_per_tooth).expect("gate δ");
         let via_canonical = crate::feeds::predict::tip_deflection_from_engagement(
             &tool,
             &mat,
@@ -519,6 +537,78 @@ mod tests {
         )
         .expect("canonical δ");
         assert!((via_gate - via_canonical).abs() < 1e-12);
+    }
+
+    /// Step-4 optimizer↔gate consistency: a long/thin tool full-slotting
+    /// at the commanded feed Exceeds, but stamping the deflection-safe feed
+    /// the F-039 optimizer would produce (computed here from the SAME
+    /// affine-inverse formula the optimizer uses) into the trace's
+    /// `predicted_feeds` flips the gate to `Within`. This is the dead-end
+    /// the unified model closes: before, the gate ignored the optimizer's
+    /// feed-down (feed-blind) and kept reading Exceeds.
+    #[test]
+    fn gate_honors_optimizer_feed_down_into_within() {
+        let tool = carbide_flat(3.0, 45.0); // L/D 15, uniform 3 mm beam
+        let mat = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let ap = 1.5_f64;
+        // Full-slot sample (arc = π) at a high commanded feed.
+        let commanded_feed = 5000.0_f64;
+        let sample = cutting_sample(0, 0, ap, std::f64::consts::PI, commanded_feed, 1.0);
+
+        // Commanded (no predicted-feed map): the gate Exceeds.
+        let trace_cmd = trace_with(vec![sample.clone()]);
+        let v_cmd = evaluate_args(
+            0,
+            &tool,
+            &mat,
+            Some(&trace_cmd),
+            None,
+            OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        assert!(
+            matches!(v_cmd, DeflectionVerdict::Exceeds { .. }),
+            "long/thin tool at full commanded feed must Exceed; got {v_cmd:?}"
+        );
+
+        // The optimizer's deflection-safe feed (affine inverse, full slot
+        // ⇒ sinθ_peak = 1), with a small margin so we land clearly Within.
+        let (ks, f_edge) = crate::feeds::force::affine_coefficients(&mat).expect("coeffs");
+        let e = tool.tool_material.youngs_modulus_n_per_mm2();
+        let compliance = tool.tip_deflection_mm(1.0, ap, e);
+        let budget_force = EXCEEDS_BOUND_MM / compliance;
+        let safe_fz = (budget_force / ap - f_edge) / ks;
+        let safe_feed = safe_fz * sample.spindle_rpm as f64 * sample.flute_count as f64 * 0.98;
+        assert!(
+            safe_feed > 0.0 && safe_feed < commanded_feed,
+            "safe feed should be a real feed-down: {safe_feed}"
+        );
+
+        // Stamp it as the predicted (modulated) feed for the cutting move.
+        let mut trace_safe = trace_with(vec![sample.clone()]);
+        trace_safe
+            .predicted_feeds
+            .insert((ToolpathId(0), sample.move_index), safe_feed);
+        let v_safe = evaluate_args(
+            0,
+            &tool,
+            &mat,
+            Some(&trace_safe),
+            None,
+            OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        match v_safe {
+            DeflectionVerdict::Within { peak_mm, .. } => {
+                assert!(
+                    peak_mm <= EXCEEDS_BOUND_MM,
+                    "optimizer feed-down must read Within: {peak_mm} mm"
+                );
+            }
+            other => panic!("expected Within after optimizer feed-down, got {other:?}"),
+        }
     }
 
     #[test]
