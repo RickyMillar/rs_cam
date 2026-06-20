@@ -537,6 +537,43 @@ impl<B: ComputeBackend> AppController<B> {
                             cut_trace_path: simulation.cut_trace_path,
                         });
 
+                        // F-039 — apply adaptive feed modulation to the
+                        // just-completed sim trace (unified load model §10.6,
+                        // option A). The async worker runs the dexel sim only;
+                        // modulation needs session context (material / machine
+                        // / vendor LUT) so it runs here on the main thread. The
+                        // post-pass stamps `modulation_summaries` onto the trace
+                        // — so the Feeds-tab "operating point" card + the
+                        // tool-load report populate — and swaps the modulated
+                        // toolpaths into `session.results`, which G-code export
+                        // reads, so exported feeds are the optimized per-move
+                        // schedule. Default-on in the GUI. Take the trace out
+                        // and put it back so the session (results) and the
+                        // viz-side cut_trace are borrowed disjointly.
+                        {
+                            let opts = rs_cam_core::session::SimulationOptions {
+                                adaptive_feed_modulation: true,
+                                modulation_strategy:
+                                    rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+                                modulation_aggressiveness: 1.0,
+                                ..Default::default()
+                            };
+                            let mut cut_trace = self
+                                .state
+                                .simulation
+                                .results
+                                .as_mut()
+                                .and_then(|r| r.cut_trace.take());
+                            if cut_trace.is_some() {
+                                self.state
+                                    .session
+                                    .modulate_simulation_trace(&mut cut_trace, &opts);
+                                if let Some(results) = self.state.simulation.results.as_mut() {
+                                    results.cut_trace = cut_trace;
+                                }
+                            }
+                        }
+
                         let inspect_target =
                             self.state.simulation.debug.pending_inspect_toolpath.take();
                         if let Some(move_index) = inspect_target.and_then(|toolpath_id| {

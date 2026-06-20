@@ -1738,15 +1738,17 @@ impl ProjectSession {
         //  - `opts.adaptive_feed_modulation == false` (the default; the
         //    smoke baseline and every legacy test pass with this
         //    branch skipped, byte-identical).
-        //  - `machine.kinematics.is_none()` (every shipped preset).
         //  - The vendor LUT has no `chip_load_min_mm` /
         //    `chip_load_max_mm` row for the active
         //    `(tool family, material, op family, pass role, diameter)`
         //    tuple — modulator gets no `ChiploadBand`, the per-toolpath
         //    call is skipped, the IR is untouched.
-        if opts.adaptive_feed_modulation && self.machine.kinematics.is_some() {
-            self.apply_adaptive_feed_modulation(&mut result, opts);
-        }
+        //
+        // Modulation no longer requires an explicit machine `kinematics`
+        // block — it falls back to `effective_kinematics` (the generic
+        // wood-router profile), matching the strategy advisor. The GUI/MCP
+        // sim path applies the same pass via [`modulate_simulation_trace`].
+        self.modulate_simulation_trace(&mut result.cut_trace, opts);
 
         self.simulation = Some(result);
         // SAFETY: we just assigned Some
@@ -2064,9 +2066,29 @@ impl ProjectSession {
         Some((modulated_toolpath, outcome))
     }
 
+    /// F-039 — apply the adaptive feed-modulation post-pass to an
+    /// already-computed simulation cut trace. The public entry point for the
+    /// GUI/MCP sim path (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §10.6):
+    /// the in-process worker produces the trace, this applies modulation on
+    /// the main thread where the session lives. Mutates the modulated
+    /// toolpaths into `self.results` (so G-code export carries the optimized
+    /// per-move feeds) and stamps `modulation_summaries` + re-timed runtimes
+    /// onto the trace in place. Gated on `opts.adaptive_feed_modulation`;
+    /// otherwise a no-op (the byte-identical baseline).
+    pub fn modulate_simulation_trace(
+        &mut self,
+        cut_trace: &mut Option<Arc<crate::simulation_cut::SimulationCutTrace>>,
+        opts: &super::SimulationOptions,
+    ) {
+        if !opts.adaptive_feed_modulation {
+            return;
+        }
+        self.apply_adaptive_feed_modulation(cut_trace, opts);
+    }
+
     fn apply_adaptive_feed_modulation(
         &mut self,
-        sim_result: &mut crate::compute::simulate::SimulationResult,
+        cut_trace: &mut Option<Arc<crate::simulation_cut::SimulationCutTrace>>,
         opts: &super::SimulationOptions,
     ) {
         // Engagement aggregation + `ModulationContext` build now live in the
@@ -2074,13 +2096,14 @@ impl ProjectSession {
         // chipload band to gate which toolpaths are eligible.
         use crate::feed_modulation::ChiploadBand;
 
-        let Some(cut_trace) = sim_result.cut_trace.as_deref() else {
+        let Some(cut_trace_ref) = cut_trace.as_deref() else {
             return;
         };
-        let Some(kinematics) = self.machine.kinematics else {
-            return;
-        };
-        let envelopes = crate::tool_load::chipload_envelopes_for_session(self, Some(cut_trace));
+        // Modulation runs against the machine's effective kinematics — the
+        // generic-wood-router fallback when no explicit block is set — so it
+        // applies on every machine, matching the strategy advisor (step 5).
+        let kinematics = self.machine.effective_kinematics();
+        let envelopes = crate::tool_load::chipload_envelopes_for_session(self, Some(cut_trace_ref));
         if envelopes.is_empty() {
             return;
         }
@@ -2142,7 +2165,7 @@ impl ProjectSession {
                 &tc.operation,
                 tool_cfg,
                 toolpath_id,
-                cut_trace,
+                cut_trace_ref,
                 band,
                 kinematics,
                 max_feed,
@@ -2198,7 +2221,7 @@ impl ProjectSession {
         // the trace's per-toolpath + project-total runtime so callers
         // (F-036c regression test, GUI panel, diagnostics summary) see
         // the modulated cycle time.
-        let Some(trace_arc) = sim_result.cut_trace.as_mut() else {
+        let Some(trace_arc) = cut_trace.as_mut() else {
             return;
         };
         let trace = Arc::make_mut(trace_arc);
