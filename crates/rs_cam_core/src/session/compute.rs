@@ -2257,6 +2257,39 @@ impl ProjectSession {
         // the maps are re-derivable when modulation re-runs.
         trace.modulated_feeds = modulated_feeds;
         trace.modulation_summaries = modulation_summaries;
+        // Make the load gates grade the MODULATED feed, not the pre-modulation
+        // sample feed. The cut-trace samples carry the feed the sim ran at
+        // (modulation is a post-pass), so without this the chipload / power /
+        // deflection gates — which read `effective_feed_for_sample`, backed by
+        // `predicted_feeds` — would report the *un-modulated* load: an under-fed
+        // path reads chipload-low even though modulation raised it into band.
+        // Stamping the per-move modulated feed into `predicted_feeds` closes
+        // that gap, the gate↔modulation agreement the unified load model targets
+        // (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §7).
+        for (&key, &(feed, _binding)) in &trace.modulated_feeds {
+            trace.predicted_feeds.insert(key, feed);
+        }
+        // Modulation rewrote per-move feeds, so each modulated toolpath now
+        // hashes differently than the pre-modulation value captured in the
+        // trace's provenance — which would make `sim_trace_is_fresh` (and the
+        // load report) read `StaleSimulation`, dropping the very
+        // `modulation_summary` this pass just stamped. Refresh the provenance
+        // toolpath hashes against the modulated IR so the trace stays FRESH
+        // relative to the toolpaths it now describes. Only toolpaths the
+        // trace already covers are touched (others aren't part of this sim).
+        if let Some(provenance) = trace.provenance.as_mut() {
+            for (idx, tc) in self.toolpath_configs.iter().enumerate() {
+                if !provenance.toolpath_hashes.contains_key(&tc.id) {
+                    continue;
+                }
+                if let Some(slot) = self.results.get(&idx) {
+                    provenance.toolpath_hashes.insert(
+                        tc.id,
+                        crate::compute::simulate::hash_toolpath(&slot.annotated().toolpath),
+                    );
+                }
+            }
+        }
     }
 
     /// Run a collision check for a specific toolpath by index.
