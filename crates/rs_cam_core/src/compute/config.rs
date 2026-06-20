@@ -329,6 +329,11 @@ pub enum RetractStrategy {
     Minimum,
 }
 
+/// Default deviation budget (mm) for [`DressupConfig::segment_merge`].
+fn default_segment_merge_tolerance() -> f64 {
+    0.3
+}
+
 /// Configurable dressups applied after toolpath generation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DressupConfig {
@@ -356,6 +361,18 @@ pub struct DressupConfig {
     pub link_feed_rate: f64,
     pub arc_fitting: bool,
     pub arc_tolerance: f64,
+    /// Phase 1 (accel-friendly toolpaths): merge dense runs of consecutive
+    /// same-feed linear cut moves whose interior points lie within
+    /// `segment_merge_tolerance` of the retained chord, so a low-acceleration
+    /// controller can ramp to the commanded feed instead of stalling on
+    /// sub-millimetre segments. Runs after arc-fitting. Default on for
+    /// roughing; `#[serde(default)]` keeps older project files loadable.
+    #[serde(default)]
+    pub segment_merge: bool,
+    /// Deviation budget (mm) for `segment_merge`. Sits between the generation
+    /// tolerance and stock-to-leave (roughing leaves ≥0.5 mm). Default 0.3.
+    #[serde(default = "default_segment_merge_tolerance")]
+    pub segment_merge_tolerance: f64,
     pub feed_optimization: bool,
     pub feed_max_rate: f64,
     pub feed_ramp_rate: f64,
@@ -385,6 +402,8 @@ impl Default for DressupConfig {
             link_feed_rate: 500.0,
             arc_fitting: false,
             arc_tolerance: 0.05,
+            segment_merge: false,
+            segment_merge_tolerance: 0.3,
             feed_optimization: true,
             feed_max_rate: 3000.0,
             feed_ramp_rate: 200.0,
@@ -408,6 +427,11 @@ impl DressupConfig {
             UiProcessRole::Roughing => Self {
                 entry_style: DressupEntryStyle::Ramp,
                 arc_fitting: true,
+                // Phase 1: roughing leaves ≥0.5 mm stock, so a 0.3 mm merge
+                // deviation never touches the finish surface — pure win for
+                // controller tracking. Finish/SemiFinish stay off (surface
+                // fidelity).
+                segment_merge: true,
                 link_moves: true,
                 optimize_rapid_order: true,
                 ..base

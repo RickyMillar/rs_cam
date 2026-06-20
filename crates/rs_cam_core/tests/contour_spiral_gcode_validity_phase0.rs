@@ -31,9 +31,11 @@ use rs_cam_core::adaptive::{
     AdaptiveParams, CleanupStrategy, EngagementMeasure, PathStrategy2d, adaptive_toolpath,
 };
 use rs_cam_core::arcfit::fit_arcs;
+use rs_cam_core::condition::merge_linear_runs;
 use rs_cam_core::gcode::{emit_gcode, post};
-use rs_cam_core::geo::P2;
+use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::polygon::Polygon2;
+use rs_cam_core::toolpath::{MoveType, Toolpath, simplify_path_3d};
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 
 const R: f64 = 3.175;
@@ -273,6 +275,152 @@ fn phase0_contour_spiral_gcode_defect_profile() {
     ];
     for (name, poly) in &cases {
         run_case(name, poly);
+    }
+}
+
+fn dist3(a: P3, b: P3) -> f64 {
+    ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
+}
+
+/// Prototype the Phase-1 segment-merge: per run of consecutive linear cut
+/// moves, RDP-simplify at `tol` and recount. Returns
+/// `(cut_before, cut_after, short_before, short_after)`. RDP guarantees every
+/// dropped point lies within `tol` of the retained chord, so deviation is
+/// bounded by `tol` (≤ stock-to-leave for roughing).
+fn measure_merge(tp: &Toolpath, tol: f64) -> (usize, usize, usize, usize) {
+    let lmin = l_min();
+    let (mut cut_b, mut cut_a, mut short_b, mut short_a) = (0usize, 0usize, 0usize, 0usize);
+    let moves = &tp.moves;
+    let mut prev: Option<P3> = None;
+    let mut i = 0;
+    while i < moves.len() {
+        if matches!(moves[i].move_type, MoveType::Linear { .. }) {
+            let mut pts: Vec<P3> = Vec::new();
+            if let Some(s) = prev {
+                pts.push(s);
+            }
+            while i < moves.len() {
+                if matches!(moves[i].move_type, MoveType::Linear { .. }) {
+                    pts.push(moves[i].target);
+                    i += 1;
+                } else {
+                    break;
+                }
+            }
+            for w in pts.windows(2) {
+                cut_b += 1;
+                let d = dist3(w[0], w[1]);
+                if d > 1e-9 && d < lmin {
+                    short_b += 1;
+                }
+            }
+            let simp = simplify_path_3d(&pts, tol);
+            for w in simp.windows(2) {
+                cut_a += 1;
+                let d = dist3(w[0], w[1]);
+                if d > 1e-9 && d < lmin {
+                    short_a += 1;
+                }
+            }
+            if let Some(last) = pts.last() {
+                prev = Some(*last);
+            }
+        } else {
+            prev = Some(moves[i].target);
+            i += 1;
+        }
+    }
+    (cut_b, cut_a, short_b, short_a)
+}
+
+/// Quantify the Phase-1 ceiling: how much a tolerance-bounded RDP merge of
+/// linear cut runs cuts segment count and sub-ramp density on the real spiral.
+/// Diagnostic only (prints; never fails) — informs whether the merge lever is
+/// worth a full library pass vs. going straight to arc-fitting (Phase 2).
+#[test]
+fn phase1_segment_merge_ceiling() {
+    let cases: Vec<(&str, Polygon2)> = vec![
+        ("square60", square(60.0)),
+        ("star5", star(5, 35.0, 14.0, 40.0, 40.0)),
+        ("star7", star(7, 40.0, 13.0, 45.0, 45.0)),
+    ];
+    for (name, poly) in &cases {
+        let tp = adaptive_toolpath(poly, &spiral_params());
+        println!(
+            "── Phase-1 merge ceiling: {name} (L_min={:.2}mm @1500mm/min) ──",
+            l_min()
+        );
+        for tol in [0.1, 0.3, 0.5] {
+            let (cb, ca, sb, sa) = measure_merge(&tp, tol);
+            let pct = |n: usize, d: usize| {
+                if d > 0 {
+                    100.0 * n as f64 / d as f64
+                } else {
+                    0.0
+                }
+            };
+            println!(
+                "  tol={tol:.1}mm: cut {cb}→{ca} ({:.0}% fewer)  sub-ramp {sb}({:.0}%)→{sa}({:.0}%)",
+                pct(cb.saturating_sub(ca), cb),
+                pct(sb, cb),
+                pct(sa, ca),
+            );
+        }
+    }
+}
+
+/// Phase-1 sentry: the real `condition::merge_linear_runs` pass, run in the
+/// production order (arc-fit → merge) at the roughing default tolerance, must
+/// cut the sub-ramp segment density on the spiral while keeping the emitted
+/// G-code GRBL-valid and the spans well-formed.
+#[test]
+fn phase1_merge_cuts_subramp_and_stays_grbl_valid() {
+    let cases: Vec<(&str, Polygon2)> = vec![
+        ("square60", square(60.0)),
+        ("star5", star(5, 35.0, 14.0, 40.0, 40.0)),
+        ("star7", star(7, 40.0, 13.0, 45.0, 45.0)),
+    ];
+    const MERGE_TOL: f64 = 0.3; // DressupConfig roughing default
+    for (name, poly) in &cases {
+        let tp = adaptive_toolpath(poly, &spiral_params());
+        let fitted = fit_arcs(AnnotatedToolpath::new(tp), ARC_TOL, R);
+
+        let base_rep = validate_gcode(&emit_gcode(&fitted.toolpath, post::grbl(), 18000));
+
+        let merged = merge_linear_runs(fitted, MERGE_TOL);
+        merged
+            .check_invariants()
+            .expect("post-merge spans pass invariants");
+        let merged_rep = validate_gcode(&emit_gcode(&merged.toolpath, post::grbl(), 18000));
+
+        let base_short = base_rep.short_cut_moves;
+        let merged_short = merged_rep.short_cut_moves;
+        println!(
+            "  Phase-1 {name}: cut {}→{}, sub-ramp {}→{}",
+            base_rep.cut_moves, merged_rep.cut_moves, base_short, merged_short
+        );
+
+        // Density must drop (these shapes all carry sub-ramp segments).
+        assert!(
+            merged_short < base_short,
+            "{name}: merge should cut sub-ramp segments ({base_short}→{merged_short})"
+        );
+        assert!(
+            merged_rep.cut_moves <= base_rep.cut_moves,
+            "{name}: merge must not add cut moves"
+        );
+        // Still controller-safe.
+        assert_eq!(
+            merged_rep.arc_radius_violations.len(),
+            0,
+            "{name}: arc validity"
+        );
+        assert_eq!(
+            merged_rep.undefined_feed_lines.len(),
+            0,
+            "{name}: feed validity"
+        );
+        assert_eq!(merged_rep.nonfinite_lines.len(), 0, "{name}: finite coords");
     }
 }
 

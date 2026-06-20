@@ -317,13 +317,27 @@ impl Toolpath {
 /// Removes points that deviate less than `tolerance` from the line between
 /// their neighbors. Uses 3D perpendicular distance via cross product for
 /// accurate distance computation on slopes.
+pub fn simplify_path_3d(points: &[P3], tolerance: f64) -> Vec<P3> {
+    let keep = simplify_path_3d_keep_mask(points, tolerance);
+    points
+        .iter()
+        .zip(keep.iter())
+        .filter(|&(_, &k)| k)
+        .map(|(p, _)| *p)
+        .collect()
+}
+
+/// Douglas-Peucker keep-mask: `result[i] == true` iff point `i` is retained by
+/// [`simplify_path_3d`]. Exposed so toolpath-conditioning passes can map the
+/// retained points back to their source moves (for feed/intent) rather than
+/// re-matching by coordinate.
 ///
 /// Iterative stack-based implementation avoids per-recursion Vec allocations.
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-pub fn simplify_path_3d(points: &[P3], tolerance: f64) -> Vec<P3> {
+pub fn simplify_path_3d_keep_mask(points: &[P3], tolerance: f64) -> Vec<bool> {
     let n = points.len();
     if n <= 2 {
-        return points.to_vec();
+        return vec![true; n];
     }
 
     // Mark which points to keep. First and last are always kept.
@@ -414,12 +428,7 @@ pub fn simplify_path_3d(points: &[P3], tolerance: f64) -> Vec<P3> {
         }
     }
 
-    points
-        .iter()
-        .zip(keep.iter())
-        .filter(|&(_, &k)| k)
-        .map(|(p, _)| *p)
-        .collect()
+    keep
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
