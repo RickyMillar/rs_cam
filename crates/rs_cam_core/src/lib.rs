@@ -29,6 +29,7 @@ pub mod build_info;
 pub mod chamfer;
 pub mod collision;
 pub mod compute;
+pub mod condition;
 pub mod contour_extract;
 pub mod debug_trace;
 pub mod depth;

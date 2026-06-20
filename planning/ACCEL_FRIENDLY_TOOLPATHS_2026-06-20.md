@@ -117,13 +117,41 @@ sim/modulation or debug-trace assembly choking on the dense path). Tracked as a
 separate perf bug; Phases 1-2 (which shrink the path) should relieve it. Revisit if it
 persists after conditioning.
 
-### Phase 1 — Minimum segment-length floor *(highest impact; missing)*
-Toolpath-conditioning pass that **collinear-merges** then **floors** cut segments
-shorter than `L_min = F²/(2A)` (`A` from `MachineKinematics`, `F` the move's target
-feed). Slot into the dressup pipeline (`execute.rs` between arc-fit step 5 `~1955` and
-rapid-order step 6 `~1974`) via `apply_dressup_traced`; wire a `DressupConfig` flag
-(default on for Roughing role). Must preserve cut geometry within tolerance — don't cut
-corners off features.
+### Phase 1 — Segment merge (conditioning) — **LANDED 2026-06-21**
+Toolpath-conditioning pass `condition::merge_linear_runs(at, tolerance)`: per maximal
+run of consecutive **same-feed linear cut moves** (never crossing a `RapidOrderBarrier`
+/ `DepthPass`), RDP-simplify at a conditioning tolerance so every dropped point stays
+within `tolerance` of the retained chord. Span-aware exactly like `arcfit::fit_arcs`
+(remaps spans through the N-to-M collapse). Slotted into `apply_dressups` right **after
+arc-fit** (curves become G2/G3 first; this cleans the residual linears).
+
+- Reused `simplify_path_3d` by extracting `simplify_path_3d_keep_mask` (so survivors map
+  back to source moves for feed/intent) — byte-identical to the old RDP.
+- `DressupConfig.segment_merge` (bool, `#[serde(default)]` false) +
+  `segment_merge_tolerance` (0.3 mm). **Default on for the Roughing role only** — finish
+  leaves ≈0 stock, roughing leaves ≥0.5 mm so a 0.3 mm merge never touches the surface.
+  Follows the same per-op-serialized convention as `arc_fitting`: **new** roughing ops
+  get it; **existing serialized projects keep their saved value** (opt-in by re-creating
+  the op or toggling the field — e.g. via MCP `set_dressup_field`). This is why the
+  wanaka cycle-time number is unchanged by the flag (the loaded back-rough op has the
+  field absent → false).
+
+**Why a pure floor isn't enough on its own (measured):** RDP at the generation tolerance
+(0.1 mm) merges nothing; at 0.3 mm sub-ramp density drops 5-12% → 2-4% and block count
+4-15%; at 0.5 mm → 0-1% / 16-40%. Genuine curvature can't be straightened without
+exceeding tolerance — that's Phase 2's arc-fitting job. On the 2D spiral arc-fit barely
+fires today (0-2 arcs), so merge is the active lever until Phase 2.
+
+**Verified:** sub-ramp 58-79% lower on the spiral sentry (square 38→16, star5 92→19,
+star7 81→32) with G-code still GRBL-valid; 19 `condition` unit tests + the Phase-1
+sentry green. Full `rs_cam_core` suite (1901 lib + 80 integration targets) shows **zero
+new failures** — the only two reds (`wanaka_suggest_baseline`,
+`modulated_cycle_time_prediction_within_25_percent_of_machine`) **fail identically on
+clean HEAD** and are pre-existing unified-load-model drift (deflection recalibration /
+modulation-through-shared-model), needing the user's re-bench — out of Phase-1 scope.
+
+Sentries: `condition::tests::*` (merge/corner/feed-boundary/barrier/span-invariants),
+`tests/contour_spiral_gcode_validity_phase0.rs::phase1_merge_cuts_subramp_and_stays_grbl_valid`.
 
 ### Phase 2 — 3D / helical arc fitting *(biggest Grbl bandwidth win)*
 Extend `arcfit::fit_arcs` (or add a sibling) to fit arcs on Z-varying paths — helical

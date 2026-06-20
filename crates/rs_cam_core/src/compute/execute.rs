@@ -1971,6 +1971,28 @@ pub fn apply_dressups(
         );
     }
 
+    // 5b. Segment merge (accel-friendly) — collapse dense same-feed linear cut
+    // runs so a low-acceleration controller can ramp to feed. Runs after
+    // arc-fitting (curves are already G2/G3; this cleans up residual linears).
+    if cfg.segment_merge {
+        let merge_tol = cfg.segment_merge_tolerance;
+        current = apply_dressup_traced(
+            current,
+            debug_ctx,
+            semantic_ctx,
+            DressupTraceInfo {
+                debug_key: "segment_merge",
+                debug_label: "Merge short segments",
+                kind: ToolpathSemanticKind::Optimization,
+                semantic_label: "Segment merge",
+            },
+            |scope| {
+                scope.set_param("tolerance", merge_tol);
+            },
+            |at| crate::condition::merge_linear_runs(at, merge_tol),
+        );
+    }
+
     // 6. Rapid order optimization (unbarriered fallback)
     if cfg.optimize_rapid_order
         && rapid_order_barriers.is_empty()
