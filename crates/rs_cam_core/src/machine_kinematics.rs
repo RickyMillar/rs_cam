@@ -16,11 +16,12 @@
 //! per-toolpath time estimate from the `Toolpath` IR. The integrator
 //! is deliberately conservative for v1:
 //!
-//! * Junction velocity is treated as the projection of the incoming
-//!   velocity vector onto the outgoing one, capped by the smaller
-//!   commanded feed of the two moves, and optionally clamped by
-//!   `MachineKinematics::max_junction_velocity_mm_min`. Direction
-//!   reversals therefore collapse to a full stop.
+//! * Junction velocity uses GRBL's junction-deviation cornering model
+//!   (`v = √(accel · R)`, `R = δ·sin(θ/2)/(1−sin(θ/2))`, δ = `$11`), so
+//!   the predicted feeds and cycle time match the real GRBL planner;
+//!   capped by the smaller commanded feed and optionally clamped by
+//!   `MachineKinematics::max_junction_velocity_mm_min`. Straight-through
+//!   runs at the commanded feed; direction reversals full-stop.
 //! * Arc moves are treated as straight moves of equal arc length
 //!   with the commanded feed. The cornering at the endpoints uses
 //!   the chord tangent for junction-velocity geometry.
@@ -69,11 +70,10 @@ pub struct MachineKinematics {
     /// `Some`, a small fixed time penalty is added per accel/decel
     /// segment to approximate the rounding the jerk limit introduces.
     pub jerk_mm_s3: Option<f64>,
-    /// Maximum junction velocity (mm/min) the planner allows through
-    /// a non-tangential corner. When `None`, the integrator derives
-    /// junction velocity from the dot product of the in/out direction
-    /// vectors capped by the smaller commanded feed. When `Some`, the
-    /// derived value is additionally clamped by this constant.
+    /// Optional hard cap (mm/min) on junction velocity through any corner.
+    /// When `None`, the integrator uses GRBL's junction-deviation model alone
+    /// (`v = √(accel · R)`, capped by the smaller commanded feed). When `Some`,
+    /// that result is additionally clamped by this constant.
     pub max_junction_velocity_mm_min: Option<f64>,
 }
 
@@ -219,6 +219,7 @@ pub fn compute_cycle_time(
                 &digests[i + 1].dir,
                 v_cmd,
                 digests[i + 1].v_cmd_mm_s,
+                accel,
                 kinematics.max_junction_velocity_mm_min,
                 digests[i].is_rapid || digests[i + 1].is_rapid,
             )
@@ -369,6 +370,7 @@ pub fn predicted_feeds_for_toolpath(
                 &digests[i + 1].dir,
                 v_cmd,
                 digests[i + 1].v_cmd_mm_s,
+                accel,
                 kinematics.max_junction_velocity_mm_min,
                 digests[i].is_rapid || digests[i + 1].is_rapid,
             )
@@ -453,41 +455,66 @@ fn unit_vec(p0: &P3, p1: &P3) -> [f64; 3] {
     [dx / len, dy / len, dz / len]
 }
 
-/// Estimate the junction velocity between two moves. The geometry:
+/// GRBL junction-deviation ($11) in mm. Sets how far the virtual cornering
+/// arc may bow from the exact corner; GRBL's stock default is 0.010 mm and
+/// few users change it. Held as a constant for now (a per-machine
+/// `MachineKinematics` field is a clean follow-up if a user runs a non-default
+/// `$11`).
+const JUNCTION_DEVIATION_MM: f64 = 0.010;
+
+/// Estimate the junction velocity (mm/s) between two moves using GRBL's
+/// **junction-deviation** cornering model — the same one the Shapeoko's GRBL
+/// planner runs, so the predicted feeds and cycle time match what the machine
+/// actually does (replacing the old dot-product heuristic that full-stopped at
+/// every ≥90° corner).
 ///
-/// * dot < 0 → direction reversal, full stop.
-/// * dot ≥ ~1 → tangential, no decel — both moves can run at the
-///   smaller of the two commanded feeds.
-/// * intermediate → linear interpolation between full-stop and
-///   tangential.
+/// GRBL fits a virtual arc of radius `R` into the corner that deviates from the
+/// exact vertex by at most `JUNCTION_DEVIATION_MM` ($11), then limits the
+/// corner speed to the centripetal bound `v = √(accel · R)`:
 ///
-/// Rapid junctions: when either move is a rapid, the planner
-/// typically full-stops between cutting and rapid to keep the
-/// accel-decel transitions clean. We follow that conservative
-/// convention.
+/// ```text
+///   cos θ = dir_in · dir_out       (aligned = +1, 90° = 0, reversal = −1)
+///   sin(θ/2) = √((1 + cos θ) / 2)
+///   R = δ · sin(θ/2) / (1 − sin(θ/2))
+///   v_junction = √(accel · R)
+/// ```
+///
+/// * Aligned / straight-through → `R → ∞` → no slowdown (capped by the smaller
+///   commanded feed).
+/// * 90° turn → `v = √(accel · 2.414 · δ)` (≈ 2.9 mm/s at 350 mm/s², δ=0.01).
+/// * Reversal → `R = 0` → full stop.
+///
+/// Result is capped by the smaller of the two commanded feeds and any explicit
+/// `max_junction_velocity_mm_min`. Rapid-adjacent junctions full-stop, matching
+/// the conservative planner convention (clean accel/decel transition).
 fn junction_velocity(
     dir_in: &[f64; 3],
     dir_out: &[f64; 3],
     v_cmd_in: f64,
     v_cmd_out: f64,
+    accel: f64,
     max_junction_velocity_mm_min: Option<f64>,
     rapid_adjacent: bool,
 ) -> f64 {
     if rapid_adjacent {
         return 0.0;
     }
-    let dot = dir_in[0] * dir_out[0] + dir_in[1] * dir_out[1] + dir_in[2] * dir_out[2];
-    let dot_clamped = dot.clamp(-1.0, 1.0);
-    if dot_clamped <= 0.0 {
-        return 0.0;
-    }
     let cap = v_cmd_in.min(v_cmd_out);
-    let mut v = cap * dot_clamped;
-    if let Some(limit_mm_min) = max_junction_velocity_mm_min {
-        let limit_mm_s = limit_mm_min / 60.0;
-        v = v.min(limit_mm_s);
+    let apply_clamp = |v: f64| match max_junction_velocity_mm_min {
+        Some(limit_mm_min) => v.min(limit_mm_min / 60.0),
+        None => v,
+    };
+    let dot =
+        (dir_in[0] * dir_out[0] + dir_in[1] * dir_out[1] + dir_in[2] * dir_out[2]).clamp(-1.0, 1.0);
+    let sin_half = (0.5 * (1.0 + dot)).max(0.0).sqrt();
+    if sin_half <= 1e-9 {
+        return 0.0; // direction reversal → full stop
     }
-    v
+    if sin_half >= 1.0 - 1e-9 {
+        return apply_clamp(cap); // straight-through → no cornering limit
+    }
+    let r = JUNCTION_DEVIATION_MM * sin_half / (1.0 - sin_half);
+    apply_clamp((accel * r).sqrt().min(cap))
 }
 
 /// Trapezoidal-profile time for a single move of length `length`
@@ -546,6 +573,56 @@ mod tests {
 
     fn shapeoko() -> MachineKinematics {
         MachineKinematics::shapeoko_xxl_stock()
+    }
+
+    /// Phase 4: junction velocity follows GRBL's junction-deviation closed form.
+    #[test]
+    fn junction_velocity_matches_grbl_deviation_closed_form() {
+        let accel = 350.0;
+        let delta = JUNCTION_DEVIATION_MM;
+        let big = 1e9; // commanded feeds high → corner geometry binds, not the cap
+        let x = [1.0, 0.0, 0.0];
+        let y = [0.0, 1.0, 0.0];
+        let neg_x = [-1.0, 0.0, 0.0];
+
+        // Straight-through: no cornering limit → capped by the commanded feed.
+        let straight = junction_velocity(&x, &x, 50.0, 50.0, accel, None, false);
+        assert!(
+            (straight - 50.0).abs() < 1e-9,
+            "straight = cap, got {straight}"
+        );
+
+        // 90° turn: sin(45°)=√0.5, R = δ·s/(1−s), v = √(accel·R).
+        let s = 0.5_f64.sqrt();
+        let expected_90 = (accel * (delta * s / (1.0 - s))).sqrt();
+        let got_90 = junction_velocity(&x, &y, big, big, accel, None, false);
+        assert!(
+            (got_90 - expected_90).abs() < 1e-6,
+            "90°: expected {expected_90}, got {got_90}"
+        );
+
+        // Reversal → full stop.
+        let rev = junction_velocity(&x, &neg_x, big, big, accel, None, false);
+        assert!(rev.abs() < 1e-9, "reversal = 0, got {rev}");
+
+        // A shallow (10°) turn must corner faster than a 90° turn.
+        let ten = 10.0_f64.to_radians();
+        let shallow = [ten.cos(), ten.sin(), 0.0];
+        let v_shallow = junction_velocity(&x, &shallow, big, big, accel, None, false);
+        assert!(
+            v_shallow > got_90,
+            "shallow turn must corner faster than 90°: {v_shallow} vs {got_90}"
+        );
+
+        // The smaller commanded feed caps the geometric limit when lower.
+        let capped = junction_velocity(&x, &y, 0.5, 0.5, accel, None, false);
+        assert!(
+            (capped - 0.5).abs() < 1e-9,
+            "commanded-feed cap should bind, got {capped}"
+        );
+
+        // Rapid-adjacent junctions full-stop.
+        assert_eq!(junction_velocity(&x, &x, big, big, accel, None, true), 0.0);
     }
 
     #[test]
