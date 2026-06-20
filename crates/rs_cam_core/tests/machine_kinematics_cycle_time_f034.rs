@@ -320,21 +320,29 @@ fn cycle_time_calibrated_against_shapeoko_reference() {
     // The 827s wall-clock anchors a .nc the planner no longer emits.
     // Successive shortenings of the emitted path dropped the model
     // prediction far below it: pre-F-038 ~789s (≈827s wall-clock); after
-    // F-038/F-038b ~405s; after ContourParallelHybrid in adaptive3d +
-    // helical entry + #149b nearest-vertex offset ordering it now
-    // predicts ~360s (ratio ~0.435). This is genuine path improvement,
-    // not a regression — the anchor is stale. Lower bound dropped 0.45 →
-    // 0.40, then 0.40 → 0.30 on 2026-06-12: back-to-back runs of the
-    // SAME build predicted 280s (ratio 0.339, FAIL) and then passed —
-    // AgentSearch run-to-run variance straddles the 0.40 floor, so the
-    // bound flakes. The net still catches a gross model break (<248s or
-    // >1034s) until the user re-benches and tightens back to ±15 %.
+    // F-038/F-038b ~405s; after ContourParallelHybrid + helical entry it
+    // predicted ~360s (ratio ~0.435).
+    //
+    // PHASE 4 (2026-06-21, accel-friendly toolpaths): the junction model
+    // switched from an optimistic dot-product heuristic (ran shallow corners
+    // at ≈cosθ·feed) to GRBL's real junction-deviation model — every corner is
+    // now capped at v=√(accel·R), R=δ·sin(θ/2)/(1−sin(θ/2)), δ=$11=0.01. That
+    // is physically correct (a real Shapeoko crawls dense corner-chains: ~174
+    // mm/min through a 90° corner, ~910 through a 10° one) and is exactly why
+    // this toolpath feels "slow and acceleraty". It raised the prediction to
+    // ~1348s (ratio ~1.63). So BOTH the old optimism (0.435) and the new
+    // conservatism (1.63) bracket the STALE 827s anchor — the truth needs a
+    // fresh real-machine re-bench of the CURRENT path, plus confirming the
+    // user's actual $11/$120-122. Upper bound widened 1.25 → 2.0 to admit the
+    // honest model; the net still catches a gross break (<248s or >1654s).
+    // NOTE: arc-fit (Phase 2) + segment-merge (Phase 1) reduce junction count,
+    // so enabling conditioning on this op should pull the prediction back down.
     assert!(
-        (0.30..=1.25).contains(&ratio),
+        (0.30..=2.0).contains(&ratio),
         "F-034: model predicted {model_predicted_s:.1}s vs measured {BACK_ROUGH_MEASURED_S:.1}s \
-         (ratio {ratio:.3}) — outside widened tolerance [0.30, 1.25]. \
+         (ratio {ratio:.3}) — outside widened tolerance [0.30, 2.0]. \
          max_feed used: {max_feed} mm/min. The MEASURED constant is a pre-F-038 wall-clock \
-         and needs re-bench (planning/cycle_time_rebench.md)."
+         and needs re-bench after the Phase-4 junction model (planning/cycle_time_rebench.md)."
     );
 }
 

@@ -190,12 +190,35 @@ Smooths tight inner-wrap corners into native G2/G3 (2D path) so `v_junction = �
 isn't ≈0. Sensible non-zero default for contour-spiral roughing; verify it composes
 with Phases 1–2.
 
-### Phase 4 — Grbl junction-deviation kinematic model
-Replace the dot-product `junction_velocity` with `v = √(A·R)`,
-`R = δ·sin(θ/2)/(1−sin(θ/2))`, `δ` from a new `junction_deviation_mm` field on
-`MachineKinematics` (default ~0.01). Makes the operating-point card's predicted feeds +
-F-039 modulation match the real Shapeoko, and makes "kinematic-reach" honest.
-Re-baseline F-034/F-035 cycle-time sentries (this changes predicted feeds).
+### Phase 4 — Grbl junction-deviation kinematic model — **LANDED 2026-06-21**
+`machine_kinematics::junction_velocity` now uses GRBL's real junction-deviation model:
+`cos θ = dir_in·dir_out`, `sin(θ/2) = √((1+cosθ)/2)`, `R = δ·sin(θ/2)/(1−sin(θ/2))`,
+`v = √(accel·R)`, capped by the smaller commanded feed. `δ = JUNCTION_DEVIATION_MM =
+0.010` (GRBL `$11` default, a module const for now — a per-machine field is a clean
+follow-up). Replaces the old dot-product heuristic (`v = cap·cosθ`, full-stop ≥90°).
+Both `compute_cycle_time` and `predicted_feeds_for_toolpath` consume it. Unit test
+`junction_velocity_matches_grbl_deviation_closed_form` pins straight→cap, 90°→√(a·2.414δ),
+reversal→0, monotonic-in-angle, feed-cap.
+
+**Key finding — the old model was OPTIMISTIC, not the reverse.** It ran shallow/moderate
+corners at `cosθ·feed`; the real GRBL model crawls *every* corner (≈174 mm/min through a
+90° corner at δ=0.01/A=350, ≈910 through a 10° one). On the dense wanaka path the
+prediction therefore *rose*: F-034 360s→**1348s** (ratio 0.435→1.63), F-036c
+1598s→**1932s** (1.31→1.58). This is physically honest and **explains the "very
+acceleraty and slow" symptom directly** — a real Shapeoko crawls dense corner-chains.
+It also **validates Phases 1-2**: a fitted G2/G3 arc is one move traversed smoothly (no
+per-vertex junction penalty), and merging removes corners — both cut junction count, so
+conditioning pulls the honest prediction back down.
+
+**Calibration is now BLOCKED on a fresh re-bench.** The F-034/F-036c reference wall-clocks
+(827s/1224s, 2026-05-26) pre-date F-038/Hybrid/conditioning AND the old optimistic model
+they were co-tuned with — so neither the old 0.435 nor the new 1.63 matches them; the
+truth needs the user to (a) confirm the machine's actual `$11`/`$120-122`, (b) time the
+current Back Rough on the real machine. Both sentries' upper bounds widened 1.25 → 2.0
+with thorough comments (they still catch a gross model break); they are NOT a clean
+calibration until re-bench. F-035 gate sentries unaffected (no value assertions broke).
+
+Sentry: `machine_kinematics::tests::junction_velocity_matches_grbl_deviation_closed_form`.
 
 ## 5. Verification (the measurement loop)
 
