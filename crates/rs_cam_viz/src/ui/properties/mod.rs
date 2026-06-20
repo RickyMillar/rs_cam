@@ -1347,7 +1347,12 @@ fn draw_feeds_card(
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
 ) {
     ui.add_space(8.0);
-    ui.collapsing("Feeds & Speeds", |ui| {
+    // Open by default: on the Feeds & Speeds tab the operator wants the feed
+    // picture — including the read-only "operating point" the F-039 optimizer
+    // solved — visible without an extra expand.
+    egui::CollapsingHeader::new("Feeds & Speeds")
+        .default_open(true)
+        .show(ui, |ui| {
         // Read-only snapshot of the cached LUT result so we can borrow
         // `entry.operation` mutably from the recipe buttons below.
         let Some(result) = entry.feeds_result.clone() else {
