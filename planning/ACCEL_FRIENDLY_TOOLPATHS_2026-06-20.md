@@ -185,10 +185,24 @@ arcs directly (sidesteps the off-circle-anchor recovery). Neither blocks the win
 Sentries: `arcfit::tests::test_fit_arcs_helix_descent` / `_helix_entry_structure` /
 `test_fit_arc_rejects_nonlinear_z` (22 `arcfit` unit tests total).
 
-### Phase 3 — Default `min_cutting_radius` ON for the spiral *(~0.3× tool radius)*
-Smooths tight inner-wrap corners into native G2/G3 (2D path) so `v_junction = √(A·R)`
-isn't ≈0. Sensible non-zero default for contour-spiral roughing; verify it composes
-with Phases 1–2.
+### Phase 3 — Default `min_cutting_radius` ON for the spiral — **LANDED 2026-06-21**
+`adaptive::path::segments_to_toolpath` now computes an effective corner-blend radius:
+when `path_strategy == ContourSpiral` AND the user left `min_cutting_radius` at 0, it
+defaults to `0.3 × tool_radius` (`SPIRAL_DEFAULT_MIN_CUTTING_RADIUS_FACTOR`) and emits
+the rounded corners as **native G2/G3** via `blend_corners_to_moves`, so the inner-wrap
+reversals are taken at `√(A·R) > 0` instead of a full stop. 0.3× is well inside the
+tool's own corner fillet, so it removes no extra material. Other strategies and any
+explicit user value are untouched.
+
+**Scope = the 2D adaptive ContourSpiral only.** The 3D `adaptive3d` spiral blends via
+`blend_corners_3d`, which **linearises** (adds short segments) rather than emitting
+native arcs — enabling it there would be counterproductive for acceleration. So the 3D
+contour-spiral (the user's 3D Rough) does NOT get this; making `blend_corners_3d` emit
+native helical arcs is the real 3D lever and is a **follow-up** tied to the Phase-2 3D
+arc work. Documented honestly rather than shipping the linearised-blend regression.
+
+**Verified:** `adaptive_property_harness::contour_spiral_dominates_agent` (coverage +
+engagement bars) still green; full `rs_cam_core` suite shows **zero new failures**.
 
 ### Phase 4 — Grbl junction-deviation kinematic model — **LANDED 2026-06-21**
 `machine_kinematics::junction_velocity` now uses GRBL's real junction-deviation model:

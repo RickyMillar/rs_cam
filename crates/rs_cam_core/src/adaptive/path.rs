@@ -1477,12 +1477,33 @@ pub(crate) fn simplify_path(points: &[P2], tolerance: f64) -> Vec<P2> {
     }
 }
 
+/// Phase 3: default contour-spiral corner-blend radius as a fraction of the
+/// tool radius when the user leaves `min_cutting_radius` at 0. Kept well below
+/// 1.0 so the rounded centerline stays inside the tool's own corner fillet.
+const SPIRAL_DEFAULT_MIN_CUTTING_RADIUS_FACTOR: f64 = 0.3;
+
 pub(super) fn segments_to_toolpath(
     segments: &[AdaptiveSegment],
     params: &AdaptiveParams,
 ) -> (Toolpath, Vec<AdaptiveRuntimeAnnotation>) {
     let mut tp = Toolpath::new();
     let mut annotations = Vec::new();
+
+    // Phase 3 (accel-friendly): the contour spiral's tight inner-wrap reversals
+    // otherwise force the controller to a near-stop (junction velocity √(A·R)→0
+    // as the corner radius → 0). When the user hasn't pinned a corner radius,
+    // default the spiral to rounding centerline corners at 0.3× the tool radius
+    // — well inside the tool's own fillet, so it removes no extra material — and
+    // emit them as native G2/G3 (`blend_corners_to_moves`). Other strategies and
+    // an explicit user value are untouched.
+    let effective_min_cutting_radius = if params.path_strategy
+        == crate::adaptive::PathStrategy2d::ContourSpiral
+        && params.min_cutting_radius <= 0.0
+    {
+        SPIRAL_DEFAULT_MIN_CUTTING_RADIUS_FACTOR * params.tool_radius
+    } else {
+        params.min_cutting_radius
+    };
 
     for segment in segments {
         match segment {
@@ -1512,8 +1533,8 @@ pub(super) fn segments_to_toolpath(
             }
             AdaptiveSegment::Cut(path) => {
                 let simplified = simplify_path(path, params.tolerance);
-                if params.min_cutting_radius > 0.0 {
-                    let moves = blend_corners_to_moves(&simplified, params.min_cutting_radius);
+                if effective_min_cutting_radius > 0.0 {
+                    let moves = blend_corners_to_moves(&simplified, effective_min_cutting_radius);
                     for m in moves.iter().skip(1) {
                         match m {
                             BlendedMove::Linear(p) => {
