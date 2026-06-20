@@ -97,15 +97,15 @@ pub fn fit_arcs(
 
         let start = &moves[i - 1].target;
 
-        // Collect consecutive linear moves at same feed rate and approximately same Z
+        // Collect consecutive linear moves at the same feed rate. Z may vary:
+        // `try_fit_arc` accepts a run only if it forms a valid planar arc
+        // (constant Z) OR a helix (Z linear with swept angle), so runs no longer
+        // split on every Z change — helical entries and spiral descents now
+        // arc-fit into G2/G3 with a Z endpoint instead of dozens of tiny G1s.
         let mut end_idx = i;
         while end_idx < moves.len() {
             match moves[end_idx].move_type {
                 MoveType::Linear { feed_rate: f } if (f - feed_rate).abs() < 1e-6 => {
-                    // Check Z is approximately constant
-                    if (moves[end_idx].target.z - start.z).abs() > tolerance {
-                        break;
-                    }
                     end_idx += 1;
                 }
                 _ => break,
@@ -156,7 +156,12 @@ pub fn fit_arcs(
 
         if let Some(arc) = best_arc {
             let end_pt = &moves[best_arc_end - 1].target;
-            let z = start.z; // Use start Z (constant within tolerance)
+            // Helical-aware: emit the run's END Z. GRBL interpolates Z linearly
+            // from the current position (start.z) to this commanded Z over the
+            // swept angle — and try_fit_arc only accepted the run if its Z is
+            // linear with swept angle, so the helix matches the source path.
+            // For a constant-Z run end_pt.z == start.z (unchanged behaviour).
+            let z = end_pt.z;
 
             // I, J = offset from start point to center
             let ij_i = arc.cx - start.x;
@@ -392,6 +397,43 @@ fn try_fit_arc(points: &[&P3], tolerance: f64, tool_radius: f64) -> Option<ArcPa
 
     // Negative cross product = CW (G2), positive = CCW (G3)
     let clockwise = cross < 0.0;
+
+    // Helical / planar Z validity. GRBL interpolates Z linearly with the swept
+    // angle along a G2/G3 arc, so a Z-varying run is a valid arc only if it is a
+    // true helix (Z linear with cumulative swept angle). A constant-Z run
+    // (|z_end - z_start| <= tolerance) trivially passes. Reject everything else
+    // so terrain/ramp paths whose Z wanders fall back to linear segments.
+    let z_start = p_first.z;
+    let z_end = p_last.z;
+    if (z_end - z_start).abs() > tolerance {
+        // Cumulative swept angle per point, in the arc's travel direction.
+        let mut swept = Vec::with_capacity(points.len());
+        let mut cum = 0.0_f64;
+        let mut prev_ang = (points[0].y - cy).atan2(points[0].x - cx);
+        swept.push(0.0);
+        for pt in &points[1..] {
+            let a = (pt.y - cy).atan2(pt.x - cx);
+            let step = if clockwise {
+                prev_ang - a
+            } else {
+                a - prev_ang
+            };
+            cum += step.rem_euclid(std::f64::consts::TAU);
+            swept.push(cum);
+            prev_ang = a;
+        }
+        if cum < 1e-9 {
+            // No net sweep but Z changed → a vertical/degenerate move, not a helix.
+            return None;
+        }
+        for (pt, &s) in points.iter().zip(swept.iter()) {
+            let frac = s / cum;
+            let expected_z = z_start + (z_end - z_start) * frac;
+            if (pt.z - expected_z).abs() > tolerance {
+                return None;
+            }
+        }
+    }
 
     Some(ArcParams { cx, cy, clockwise })
 }
@@ -995,5 +1037,142 @@ mod tests {
 
         let gcode = emit_gcode(&tp, post::grbl(), 18000);
         assert!(gcode.contains("G2"), "Should contain G2 for CW arc");
+    }
+
+    /// Phase 2: a clean helix (circle in XY, Z linear with swept angle) arc-fits
+    /// into G2/G3 with a Z endpoint — the case that lets helical descents and
+    /// (lead-separated) helix entries collapse from dozens of G1s to a few arcs.
+    #[test]
+    fn test_fit_arcs_helix_descent() {
+        let r = 10.0;
+        let n = 27; // 10° steps over 270°
+        let pt = |k: usize| {
+            let frac = k as f64 / n as f64;
+            let ang = frac * 0.75 * std::f64::consts::TAU; // 270°
+            P3::new(r * ang.cos(), r * ang.sin(), -3.0 * frac)
+        };
+        let mut tp = Toolpath::new();
+        // Anchor ON the circle at the run's start Z (no vertical lead in the run).
+        tp.rapid_to(pt(0));
+        for k in 1..=n {
+            tp.feed_to(pt(k), 500.0);
+        }
+        let result = fit_arcs(AnnotatedToolpath::new(tp.clone()), 0.05, f64::INFINITY).toolpath;
+        let arc_count = result
+            .moves
+            .iter()
+            .filter(|m| {
+                matches!(
+                    m.move_type,
+                    MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
+                )
+            })
+            .count();
+        assert!(
+            arc_count >= 1,
+            "clean helix must arc-fit; got {} moves, 0 arcs",
+            result.moves.len()
+        );
+        assert!(
+            result.moves.len() < tp.moves.len(),
+            "helix should reduce moves"
+        );
+        // The fitted arc carries the descended Z (GRBL helically interpolates).
+        let last_arc_z = result
+            .moves
+            .iter()
+            .rev()
+            .find_map(|m| match m.move_type {
+                MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => Some(m.target.z),
+                _ => None,
+            })
+            .unwrap();
+        assert!(
+            last_arc_z < -2.0,
+            "helix arc must descend in Z, end z={last_arc_z}"
+        );
+    }
+
+    /// Phase 2 (real-impact): replicate `dressup::emit_helix`'s exact structure
+    /// — rapid to the center, then orbit the center at `radius` descending in Z
+    /// (36 steps/rev), then a final return to center. The orbit anchor (center)
+    /// and the return move are OFF the circle, so this verifies the greedy fitter
+    /// recovers and still collapses the bulk of the helix into arcs (a roughing
+    /// plunge goes from dozens of G1s to a couple of G2/G3s).
+    #[test]
+    fn test_fit_arcs_helix_entry_structure() {
+        let (cx, cy, radius) = (0.0, 0.0, 2.0);
+        let steps_per_rev = 36usize;
+        let revs = 2.0;
+        let total_steps = (revs * steps_per_rev as f64) as usize;
+        let z_top = 1.0;
+        let dz = 2.0;
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(cx, cy, z_top)); // anchor AT center (off-circle)
+        for i in 1..=total_steps {
+            let t = i as f64 / total_steps as f64;
+            let ang = revs * std::f64::consts::TAU * t;
+            let z = z_top - dz * t;
+            tp.feed_to(
+                P3::new(cx + radius * ang.cos(), cy + radius * ang.sin(), z),
+                300.0,
+            );
+        }
+        tp.feed_to(P3::new(cx, cy, z_top - dz), 300.0); // return to center
+        let n_in = tp.moves.len();
+        let result = fit_arcs(AnnotatedToolpath::new(tp), 0.05, f64::INFINITY).toolpath;
+        let arc_count = result
+            .moves
+            .iter()
+            .filter(|m| {
+                matches!(
+                    m.move_type,
+                    MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
+                )
+            })
+            .count();
+        assert!(
+            arc_count >= 1,
+            "helix entry must arc-fit despite the center anchor; {n_in} in -> {} out, {arc_count} arcs",
+            result.moves.len()
+        );
+        // 73 input moves (rapid + 72 helix + return) must collapse substantially.
+        assert!(
+            result.moves.len() < n_in / 2,
+            "helix entry should at least halve the move count: {n_in} -> {}",
+            result.moves.len()
+        );
+    }
+
+    /// Phase 2: a run that is circular in XY but whose Z does NOT vary linearly
+    /// with swept angle is not a helix — it must fall back to linear segments,
+    /// not emit a G2/G3 that GRBL would interpolate into the wrong Z path.
+    #[test]
+    fn test_fit_arc_rejects_nonlinear_z() {
+        let r = 10.0;
+        let n = 12;
+        let mut tp = Toolpath::new();
+        let pt = |k: usize, z: f64| {
+            let ang = (k as f64 / n as f64) * 0.5 * std::f64::consts::TAU; // 180°
+            P3::new(r * ang.cos(), r * ang.sin(), z)
+        };
+        tp.rapid_to(pt(0, 0.0));
+        for k in 1..=n {
+            // Z oscillates between 0 and -2 — circular in XY, non-linear in Z.
+            let z = if k % 2 == 0 { -2.0 } else { 0.0 };
+            tp.feed_to(pt(k, z), 500.0);
+        }
+        let result = fit_arcs(AnnotatedToolpath::new(tp), 0.05, f64::INFINITY).toolpath;
+        let arc_count = result
+            .moves
+            .iter()
+            .filter(|m| {
+                matches!(
+                    m.move_type,
+                    MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
+                )
+            })
+            .count();
+        assert_eq!(arc_count, 0, "non-helical Z variation must not arc-fit");
     }
 }

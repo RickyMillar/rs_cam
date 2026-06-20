@@ -153,11 +153,37 @@ modulation-through-shared-model), needing the user's re-bench — out of Phase-1
 Sentries: `condition::tests::*` (merge/corner/feed-boundary/barrier/span-invariants),
 `tests/contour_spiral_gcode_validity_phase0.rs::phase1_merge_cuts_subramp_and_stays_grbl_valid`.
 
-### Phase 2 — 3D / helical arc fitting *(biggest Grbl bandwidth win)*
-Extend `arcfit::fit_arcs` (or add a sibling) to fit arcs on Z-varying paths — helical
-arc fit, or arc-fit within a small Z-band per wrap. The spiral's concentric wraps and
-3D contours are near-circular but currently skip arc-fit (not constant-Z). Emit a
-recommended `$12` (~0.01–0.02 mm) in the post / setup sheet.
+### Phase 2 — Helical arc fitting — **LANDED 2026-06-21**
+`arcfit::fit_arcs` no longer splits runs on Z change. `try_fit_arc` now accepts a
+Z-varying run when it is a true **helix** — XY points on the circle (as before) AND Z
+linear with cumulative swept angle within `tolerance` (GRBL interpolates Z linearly over
+a G2/G3 arc, so a helix emits as one `G2/G3 … Z… I… J…`). Constant-Z runs pass trivially
+(unchanged). Non-helical Z wander (terrain contours, ramp jitter) is rejected → falls
+back to linear, so no bad arcs. The emitted arc carries the run's **end Z**.
+
+**Why it matters (measured):** the guaranteed beneficiary is the **helix entry** —
+`dressup::emit_helix` emits **36 linear G1s per revolution** (10°/step, ~0.35 mm each at
+r≈2 mm), i.e. every roughing plunge is a wall of sub-ramp segments. The structural test
+(`test_fit_arcs_helix_entry_structure`, replicating emit_helix's center-anchor + orbit +
+return) confirms the greedy fitter recovers from the off-circle anchor and collapses a
+73-move helix to <36 — a couple of G2/G3 helical arcs instead of dozens of G1s. Clean
+helical spiral descents benefit likewise. (Spiral *wraps* within a Z-level were already
+constant-Z; their offset-contour geometry isn't circular, so arc-fit still mostly skips
+them — that's Phase 3's `min_cutting_radius` job, not this one.)
+
+Reused `simplify_path_3d_keep_mask` is unrelated here; the change is entirely in
+`arcfit.rs` (run detection + helix check + end-Z emit). **Verified:** 23 `arcfit` unit
+tests incl. `test_fit_arcs_helix_descent` / `_entry_structure` / `_rejects_nonlinear_z`,
+existing `test_fit_arcs_different_z_breaks_arc` still green. Full `rs_cam_core` suite
+(1904 lib + 80 integration targets) shows **zero new failures** — the more-aggressive
+arc-fit broke no fingerprint/move-count sentry; only the same 5 pre-existing reds remain.
+
+TODO (deferred): emit a recommended `$12` (~0.01–0.02 mm) in the post / setup sheet so
+the controller's arc re-tessellation matches; and consider `emit_helix` emitting native
+arcs directly (sidesteps the off-circle-anchor recovery). Neither blocks the win.
+
+Sentries: `arcfit::tests::test_fit_arcs_helix_descent` / `_helix_entry_structure` /
+`test_fit_arc_rejects_nonlinear_z` (22 `arcfit` unit tests total).
 
 ### Phase 3 — Default `min_cutting_radius` ON for the spiral *(~0.3× tool radius)*
 Smooths tight inner-wrap corners into native G2/G3 (2D path) so `v_junction = √(A·R)`
