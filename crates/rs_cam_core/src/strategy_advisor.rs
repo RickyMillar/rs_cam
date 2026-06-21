@@ -292,8 +292,7 @@ mod tests {
             max_feed_mm_min: 10_000.0,
             kinematics: Some(MachineKinematics {
                 acceleration_mm_s2: accel_mm_s2,
-                jerk_mm_s3: None,
-                max_junction_velocity_mm_min: None,
+                ..MachineKinematics::default()
             }),
             ..MachineProfile::default()
         }
