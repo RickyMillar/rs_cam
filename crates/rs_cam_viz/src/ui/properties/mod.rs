@@ -1066,7 +1066,11 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
 
     ui.add_space(8.0);
 
-    // Show machine specs (read-only)
+    // Machine specs — RPM/Power stay read-only (preset/spindle-driven);
+    // Max Feed (travel rate, $110-class) and Max Shank are editable.
+    let mut max_feed = state.session.machine().max_feed_mm_min;
+    let mut max_shank = state.session.machine().max_shank_mm;
+    let mut specs_changed = false;
     egui::Grid::new("machine_specs")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -1087,16 +1091,39 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
             ui.end_row();
 
             ui.label("Max Feed:");
-            ui.label(format!(
-                "{:.0} mm/min",
-                state.session.machine().max_feed_mm_min
-            ));
+            specs_changed |= ui
+                .add(
+                    egui::DragValue::new(&mut max_feed)
+                        .speed(50.0)
+                        .range(100.0..=30000.0)
+                        .suffix(" mm/min"),
+                )
+                .on_hover_text(
+                    "Travel/rapid rate ($110-class). Cutting feeds are capped separately.",
+                )
+                .changed();
             ui.end_row();
 
             ui.label("Max Shank:");
-            ui.label(format!("{:.1} mm", state.session.machine().max_shank_mm));
+            specs_changed |= ui
+                .add(
+                    egui::DragValue::new(&mut max_shank)
+                        .speed(0.1)
+                        .range(1.0..=25.0)
+                        .suffix(" mm"),
+                )
+                .changed();
             ui.end_row();
         });
+    if specs_changed {
+        let m = state.session.machine_mut();
+        m.max_feed_mm_min = max_feed;
+        m.max_shank_mm = max_shank;
+        events.push(AppEvent::MachineChanged);
+    }
+
+    ui.add_space(8.0);
+    draw_machine_kinematics(ui, state, events);
 
     ui.add_space(8.0);
 
@@ -1174,6 +1201,241 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
         .small()
         .color(egui::Color32::from_rgb(140, 140, 150)),
     );
+}
+
+/// Kinematics editor (per-axis accel + junction deviation + optional
+/// jerk) plus the GRBL `$$` import. Editing a value or applying an import
+/// materializes the machine's `kinematics: Some(..)`, which opts the live
+/// sim into the acceleration-aware cycle-time model (the `None` default
+/// is the F-034 feature flag that keeps runtime byte-identical).
+fn draw_machine_kinematics(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+    ui.label(
+        egui::RichText::new("Kinematics (cycle-time model)")
+            .strong()
+            .color(egui::Color32::from_rgb(180, 180, 195)),
+    );
+
+    if state.session.machine().kinematics.is_none() {
+        ui.label(
+            egui::RichText::new(
+                "Not set — showing defaults. Editing a value or importing $$ enables the \
+                 acceleration-aware cycle-time model for this machine.",
+            )
+            .small()
+            .color(egui::Color32::from_rgb(200, 170, 90)),
+        );
+    }
+
+    let mut kin = state.session.machine().effective_kinematics();
+    let scalar = kin.acceleration_mm_s2.max(1.0);
+    let mut axes = kin
+        .acceleration_xyz_mm_s2
+        .unwrap_or([scalar, scalar, scalar]);
+    let mut delta = kin.junction_deviation_mm;
+    let mut jerk_enabled = kin.jerk_mm_s3.is_some();
+    let mut jerk_val = kin.jerk_mm_s3.unwrap_or(500.0);
+    let mut changed = false;
+
+    let accel_row = |ui: &mut egui::Ui, label: &str, v: &mut f64, hint: &str| -> bool {
+        ui.label(label);
+        let edited = ui
+            .add(
+                egui::DragValue::new(v)
+                    .speed(5.0)
+                    .range(10.0..=20000.0)
+                    .suffix(" mm/s²"),
+            )
+            .on_hover_text(hint)
+            .changed();
+        ui.end_row();
+        edited
+    };
+
+    egui::Grid::new("machine_kinematics")
+        .num_columns(2)
+        .spacing([8.0, 4.0])
+        .show(ui, |ui| {
+            changed |= accel_row(ui, "Accel X:", &mut axes[0], "GRBL $120");
+            changed |= accel_row(ui, "Accel Y:", &mut axes[1], "GRBL $121");
+            changed |= accel_row(ui, "Accel Z:", &mut axes[2], "GRBL $122");
+
+            ui.label("Junction dev:");
+            changed |= ui
+                .add(
+                    egui::DragValue::new(&mut delta)
+                        .speed(0.001)
+                        .range(0.001..=1.0)
+                        .max_decimals(4)
+                        .suffix(" mm"),
+                )
+                .on_hover_text("GRBL $11 — how far the cornering arc may bow from the vertex")
+                .changed();
+            ui.end_row();
+
+            ui.label("Jerk limit:");
+            ui.horizontal(|ui| {
+                changed |= ui.checkbox(&mut jerk_enabled, "").changed();
+                if jerk_enabled {
+                    changed |= ui
+                        .add(
+                            egui::DragValue::new(&mut jerk_val)
+                                .speed(10.0)
+                                .range(1.0..=100_000.0)
+                                .suffix(" mm/s³"),
+                        )
+                        .changed();
+                } else {
+                    ui.label(egui::RichText::new("off (trapezoidal)").small().weak());
+                }
+            });
+            ui.end_row();
+        });
+
+    if changed {
+        kin.acceleration_xyz_mm_s2 = Some(axes);
+        kin.acceleration_mm_s2 = (axes[0] + axes[1] + axes[2]) / 3.0;
+        kin.junction_deviation_mm = delta;
+        kin.jerk_mm_s3 = if jerk_enabled { Some(jerk_val) } else { None };
+        state.session.machine_mut().kinematics = Some(kin);
+        events.push(AppEvent::MachineChanged);
+    }
+
+    ui.add_space(4.0);
+    draw_grbl_import(ui, state, events);
+}
+
+/// "Import GRBL `$$`" — paste or load a settings dump, preview the mapped
+/// values, then Apply (the confirm step; reversible via the machine undo
+/// snapshot). Applying sets kinematics + Max Feed and breaks any library
+/// link, since the values are now inline.
+fn draw_grbl_import(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+    let buf_id = egui::Id::new("machine_grbl_paste");
+    let status_id = egui::Id::new("machine_grbl_status");
+
+    ui.collapsing("Import GRBL $$", |ui| {
+        let mut buf: String = ui.data(|d| d.get_temp::<String>(buf_id).unwrap_or_default());
+
+        ui.horizontal(|ui| {
+            if ui.button("Load from file…").clicked()
+                && let Some(path) = rfd::FileDialog::new()
+                    .add_filter("GRBL settings", &["txt", "nc", "gcode", "cfg"])
+                    .pick_file()
+            {
+                match std::fs::read_to_string(&path) {
+                    Ok(content) => {
+                        buf = content;
+                        ui.data_mut(|d| d.insert_temp(buf_id, buf.clone()));
+                    }
+                    Err(e) => {
+                        tracing::error!("read $$ file failed: {e}");
+                        ui.data_mut(|d| {
+                            d.insert_temp(status_id, format!("Read failed: {e}"));
+                        });
+                    }
+                }
+            }
+            if ui.button("Clear").clicked() {
+                buf.clear();
+                ui.data_mut(|d| {
+                    d.insert_temp(buf_id, String::new());
+                    d.insert_temp(status_id, String::new());
+                });
+            }
+        });
+
+        let resp = ui.add(
+            egui::TextEdit::multiline(&mut buf)
+                .desired_rows(4)
+                .desired_width(f32::INFINITY)
+                .hint_text("Paste $$ output here ($11=…, $120=…, …)"),
+        );
+        if resp.changed() {
+            ui.data_mut(|d| d.insert_temp(buf_id, buf.clone()));
+        }
+
+        if !buf.trim().is_empty() {
+            let imp = rs_cam_core::machine_kinematics::MachineKinematics::from_grbl_settings(&buf);
+            let default_delta = rs_cam_core::machine_kinematics::default_junction_deviation_mm();
+            let recognized = imp.kinematics.acceleration_xyz_mm_s2.is_some()
+                || imp.max_feed_mm_min.is_some()
+                || imp.arc_tolerance_mm.is_some()
+                || imp.max_spindle_rpm.is_some()
+                || (imp.kinematics.junction_deviation_mm - default_delta).abs() > 1e-12;
+
+            if !recognized {
+                ui.label(
+                    egui::RichText::new("No GRBL settings recognised in this text.")
+                        .small()
+                        .color(egui::Color32::from_rgb(220, 120, 120)),
+                );
+            } else {
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new("Will apply:").small().strong());
+                if let Some(a) = imp.kinematics.acceleration_xyz_mm_s2 {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "• Accel X/Y/Z = {:.0}/{:.0}/{:.0} mm/s²",
+                            a[0], a[1], a[2]
+                        ))
+                        .small(),
+                    );
+                }
+                ui.label(
+                    egui::RichText::new(format!(
+                        "• Junction dev ($11) = {:.3} mm",
+                        imp.kinematics.junction_deviation_mm
+                    ))
+                    .small(),
+                );
+                if let Some(mf) = imp.max_feed_mm_min {
+                    let cur = state.session.machine().max_feed_mm_min;
+                    ui.label(
+                        egui::RichText::new(format!("• Max Feed: {cur:.0} → {mf:.0} mm/min"))
+                            .small(),
+                    );
+                }
+                if let Some(at) = imp.arc_tolerance_mm {
+                    ui.label(
+                        egui::RichText::new(format!("• Arc tol ($12) = {at:.3} mm (advisory)"))
+                            .small()
+                            .weak(),
+                    );
+                }
+                if imp.ignored_count > 0 {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "({} unrelated $ settings ignored)",
+                            imp.ignored_count
+                        ))
+                        .small()
+                        .weak(),
+                    );
+                }
+
+                if ui.button("Apply import").clicked() {
+                    let max_feed = imp.max_feed_mm_min;
+                    let m = state.session.machine_mut();
+                    m.kinematics = Some(imp.kinematics);
+                    if let Some(mf) = max_feed {
+                        m.max_feed_mm_min = mf;
+                    }
+                    events.push(AppEvent::MachineChanged);
+                    // Inline values now — drop any library link.
+                    state.session.set_machine_ref(None);
+                    ui.data_mut(|d| {
+                        d.insert_temp(buf_id, String::new());
+                        d.insert_temp(status_id, "Imported $$ settings".to_owned());
+                    });
+                }
+            }
+        }
+
+        if let Some(msg) = ui.data(|d| d.get_temp::<String>(status_id))
+            && !msg.is_empty()
+        {
+            ui.label(egui::RichText::new(msg).small().weak());
+        }
+    });
 }
 
 /// Map OperationConfig variant to (OperationFamily, PassRole) for the feeds calculator.
