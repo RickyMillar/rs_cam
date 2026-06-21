@@ -1086,6 +1086,35 @@ mod tests {
         assert_eq!(imp.ignored_count, 1);
     }
 
+    // ---- serde IO contract (project file + machine library) --------
+
+    #[test]
+    fn kinematics_json_round_trips_with_per_axis() {
+        let kin = MachineKinematics {
+            acceleration_mm_s2: 423.3,
+            acceleration_xyz_mm_s2: Some([500.0, 500.0, 270.0]),
+            junction_deviation_mm: 0.02,
+            jerk_mm_s3: Some(1000.0),
+            max_junction_velocity_mm_min: None,
+        };
+        let json = serde_json::to_string(&kin).expect("serialize");
+        let back: MachineKinematics = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(kin, back);
+    }
+
+    #[test]
+    fn legacy_kinematics_json_defaults_new_fields() {
+        // A pre-per-axis project file / library entry carries only the
+        // three original fields. The serde defaults must fill the rest
+        // so old files load with byte-identical behaviour.
+        let legacy =
+            r#"{"acceleration_mm_s2":250.0,"jerk_mm_s3":null,"max_junction_velocity_mm_min":null}"#;
+        let kin: MachineKinematics = serde_json::from_str(legacy).expect("legacy deserialize");
+        assert_eq!(kin.acceleration_xyz_mm_s2, None);
+        assert!((kin.junction_deviation_mm - 0.010).abs() < 1e-12);
+        assert!((kin.acceleration_mm_s2 - 250.0).abs() < 1e-12);
+    }
+
     #[test]
     fn from_grbl_settings_partial_and_garbage_are_tolerated() {
         // Only $11 present; no axis accels → no per-axis array, default
