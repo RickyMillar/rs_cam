@@ -42,6 +42,33 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     });
 
     ui.add_space(6.0);
+
+    // Machine card — the only entry point to the Machine Setup panel
+    // (preset, feeds, kinematics, GRBL $$ import). Without it the
+    // Selection::Machine properties view is unreachable.
+    theme::card_frame(false).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("Machine")
+                    .strong()
+                    .color(theme::TEXT_HEADING),
+            );
+            ui.label(
+                egui::RichText::new(state.session.machine().name.as_str())
+                    .small()
+                    .color(theme::TEXT_MUTED),
+            );
+        });
+        let selected = state.selection == Selection::Machine;
+        if ui
+            .selectable_label(selected, "Edit machine & kinematics")
+            .clicked()
+        {
+            events.push(AppEvent::Select(Selection::Machine));
+        }
+    });
+
+    ui.add_space(6.0);
     ui.separator();
 
     // Setup cards — the rail's primary navigation job (SHE-007), promoted
