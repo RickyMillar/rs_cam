@@ -4,6 +4,7 @@ pub mod automation;
 pub mod components;
 pub mod export_wizard;
 pub mod feeds_modal;
+pub mod machine_library_modal;
 pub mod menu_bar;
 pub mod optimize_modal;
 pub mod optimize_project;
@@ -119,6 +120,24 @@ pub enum AppEvent {
     },
     /// De-duplicate the tools in a catalog (keep first of each geometry).
     DedupeToolCatalog(String),
+
+    // Machine Library modal (snapshot model — mirrors the tool library)
+    /// Open the Machine Library management modal.
+    OpenMachineLibrary,
+    /// Close the Machine Library modal.
+    CloseMachineLibrary,
+    /// Import the named library machine into the project as a snapshot
+    /// copy (no live link), making it the inline machine.
+    ImportMachineFromLibrary(String),
+    /// Save the project's current machine into the library under `name`.
+    SaveMachineToLibrary(String),
+    /// Delete the named machine file from the library.
+    DeleteMachineFromLibrary(String),
+    /// Rename a machine file in the library.
+    RenameMachineInLibrary {
+        old: String,
+        new: String,
+    },
 
     // Setups
     AddSetup,

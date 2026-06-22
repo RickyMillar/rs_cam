@@ -88,6 +88,11 @@ pub struct AppState {
     /// controller refreshes the snapshot after any mutation so the
     /// modal can render without per-frame disk I/O.
     pub tool_library_modal: Option<ToolLibraryModalState>,
+    /// Whether the Machine Library modal is open. Unlike the tool library
+    /// (which caches a catalog snapshot), the machine modal reads the
+    /// one-file-per-machine library directly each frame (cheap), so a bool
+    /// is enough.
+    pub machine_library_open: bool,
 }
 
 /// Persistent state for the Tool Library modal. The `catalogs` snapshot
@@ -223,6 +228,7 @@ impl AppState {
             pending_apply_resim: None,
             feeds_modal: None,
             tool_library_modal: None,
+            machine_library_open: false,
         }
     }
 
@@ -236,6 +242,7 @@ impl AppState {
     pub fn close_modals_for_exclusivity(&mut self) {
         self.feeds_modal = None;
         self.tool_library_modal = None;
+        self.machine_library_open = false;
         self.show_export_wizard = false;
         self.show_preflight = false;
         self.show_shortcuts = false;

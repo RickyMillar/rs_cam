@@ -68,6 +68,20 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::DeleteToolCatalog(name) => self.delete_tool_catalog(&name),
             AppEvent::RenameToolCatalog { old, new } => self.rename_tool_catalog(&old, &new),
             AppEvent::DedupeToolCatalog(name) => self.dedupe_tool_catalog(&name),
+
+            // --- Machine Library modal (snapshot model) ---
+            AppEvent::OpenMachineLibrary => {
+                self.state.close_modals_for_exclusivity();
+                self.state.machine_library_open = true;
+            }
+            AppEvent::CloseMachineLibrary => self.state.machine_library_open = false,
+            AppEvent::ImportMachineFromLibrary(name) => self.import_machine_from_library(&name),
+            AppEvent::SaveMachineToLibrary(name) => self.save_machine_to_library(&name),
+            AppEvent::DeleteMachineFromLibrary(name) => self.delete_machine_from_library(&name),
+            AppEvent::RenameMachineInLibrary { old, new } => {
+                self.rename_machine_in_library(&old, &new);
+            }
+
             AppEvent::AddSetup => self.handle_add_setup(),
             AppEvent::SetupTwoSided => self.handle_setup_two_sided(),
             AppEvent::RemoveSetup(setup_id) => self.handle_remove_setup(setup_id),

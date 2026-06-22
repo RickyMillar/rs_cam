@@ -641,6 +641,12 @@ impl RsCamApp {
             crate::ui::tool_library_modal::draw(ctx, state, events);
         }
 
+        // Machine Library management modal
+        if self.controller.state().machine_library_open {
+            let (state, events) = self.controller.state_ref_and_events_mut();
+            crate::ui::machine_library_modal::draw(ctx, state, events);
+        }
+
         // Keyboard shortcuts reference window
         if self.controller.state().show_shortcuts {
             let mut show = true;
