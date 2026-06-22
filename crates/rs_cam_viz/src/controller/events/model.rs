@@ -153,6 +153,53 @@ impl<B: ComputeBackend> AppController<B> {
         self.refresh_tool_library_snapshot();
     }
 
+    // ── Machine library (snapshot model) ────────────────────────────────
+
+    /// Import a library machine as a SNAPSHOT copy into the project's
+    /// inline machine (no live link), then invalidate machine-dependent
+    /// state — mirrors `MachineChanged`.
+    pub(crate) fn import_machine_from_library(&mut self, name: &str) {
+        match rs_cam_core::machine_library::load(name) {
+            Ok(profile) => {
+                *self.state.session.machine_mut() = profile;
+                self.state.session.invalidate_machine();
+                self.state.gui.mark_edited();
+                self.set_status(format!("Imported machine '{name}' (snapshot copy)"));
+            }
+            Err(e) => self.report_machine_library_error("Import machine failed", &e),
+        }
+    }
+
+    pub(crate) fn save_machine_to_library(&mut self, name: &str) {
+        match rs_cam_core::machine_library::save(name, self.state.session.machine()) {
+            Ok(path) => self.set_status(format!("Saved machine to {}", path.display())),
+            Err(e) => self.report_machine_library_error("Save machine failed", &e),
+        }
+    }
+
+    pub(crate) fn delete_machine_from_library(&mut self, name: &str) {
+        match rs_cam_core::machine_library::delete(name) {
+            Ok(()) => self.set_status(format!("Deleted machine '{name}' from library")),
+            Err(e) => self.report_machine_library_error("Delete machine failed", &e),
+        }
+    }
+
+    pub(crate) fn rename_machine_in_library(&mut self, old: &str, new: &str) {
+        match rs_cam_core::machine_library::rename(old, new) {
+            Ok(()) => self.set_status(format!("Renamed machine '{old}' → '{new}'")),
+            Err(e) => self.report_machine_library_error("Rename machine failed", &e),
+        }
+    }
+
+    fn report_machine_library_error(
+        &mut self,
+        context: &str,
+        err: &rs_cam_core::machine_library::MachineLibraryError,
+    ) {
+        tracing::error!("{context}: {err}");
+        self.push_notification(format!("{context}: {err}"), super::super::Severity::Error);
+    }
+
     pub(crate) fn handle_duplicate_tool(&mut self, tool_id: crate::state::job::ToolId) {
         if let Some(src) = self
             .state

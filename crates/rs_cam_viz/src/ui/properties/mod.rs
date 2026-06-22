@@ -938,52 +938,37 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, _events: &mut 
     }
 }
 
-/// Machine-library UX: reference a reusable machine file (single source
-/// of truth) or save the current machine into the library. Selecting a
-/// library machine loads its values and links the project to it
-/// (`machine_ref`); the link is persisted on save and the library file
-/// overrides the inline copy on reload.
+/// Machine-library UX (SNAPSHOT model, like the tool library): import a
+/// machine *out of* the library (copied into the project's inline machine,
+/// no live link) or save the current machine into the library as a
+/// reusable starting point. Later edits to a library file never reach
+/// existing projects — re-import to pick up a change.
 fn draw_machine_library_row(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
     let status_id = egui::Id::new("machine_lib_status");
     let name_id = egui::Id::new("machine_lib_save_name");
 
     let machines = rs_cam_core::machine_library::list();
-    let current_ref = state.session.machine_ref().map(str::to_owned);
 
     ui.horizontal(|ui| {
         ui.label("Library:");
-        let selected_text = current_ref
-            .clone()
-            .unwrap_or_else(|| "— none (inline copy) —".to_owned());
-        egui::ComboBox::from_id_salt("machine_library_ref")
-            .selected_text(selected_text)
+        egui::ComboBox::from_id_salt("machine_library_import")
+            .selected_text("Import a machine…")
             .show_ui(ui, |ui| {
-                if ui
-                    .selectable_label(current_ref.is_none(), "— none (inline copy) —")
-                    .clicked()
-                {
-                    state.session.set_machine_ref(None);
-                    state.gui.mark_edited();
-                }
                 for name in &machines {
-                    let is_sel = current_ref.as_deref() == Some(name.as_str());
-                    if ui.selectable_label(is_sel, name).clicked() {
+                    if ui.selectable_label(false, name).clicked() {
                         match rs_cam_core::machine_library::load(name) {
                             Ok(profile) => {
+                                // Snapshot copy into the inline machine — no ref.
                                 *state.session.machine_mut() = profile;
-                                state.session.set_machine_ref(Some(name.clone()));
                                 events.push(AppEvent::MachineChanged);
                                 ui.data_mut(|d| {
-                                    d.insert_temp(
-                                        status_id,
-                                        format!("Loaded '{name}' from library"),
-                                    );
+                                    d.insert_temp(status_id, format!("Imported '{name}' (copy)"));
                                 });
                             }
                             Err(e) => {
                                 tracing::error!("machine library load failed: {e}");
                                 ui.data_mut(|d| {
-                                    d.insert_temp(status_id, format!("Load failed: {e}"));
+                                    d.insert_temp(status_id, format!("Import failed: {e}"));
                                 });
                             }
                         }
@@ -992,6 +977,9 @@ fn draw_machine_library_row(ui: &mut egui::Ui, state: &mut AppState, events: &mu
             });
         if machines.is_empty() {
             ui.label(egui::RichText::new("(library empty)").small().weak());
+        }
+        if ui.button("Manage…").clicked() {
+            events.push(AppEvent::OpenMachineLibrary);
         }
     });
 
@@ -1013,7 +1001,6 @@ fn draw_machine_library_row(ui: &mut egui::Ui, state: &mut AppState, events: &mu
         {
             match rs_cam_core::machine_library::save(&trimmed, state.session.machine()) {
                 Ok(path) => {
-                    state.session.set_machine_ref(Some(trimmed.clone()));
                     state.gui.mark_edited();
                     ui.data_mut(|d| {
                         d.insert_temp(status_id, format!("Saved to {}", path.display()));
@@ -1027,15 +1014,6 @@ fn draw_machine_library_row(ui: &mut egui::Ui, state: &mut AppState, events: &mu
         }
     });
 
-    if let Some(name) = state.session.machine_ref() {
-        ui.label(
-            egui::RichText::new(format!(
-                "Linked to library '{name}' — edits to the file apply on reload"
-            ))
-            .small()
-            .color(egui::Color32::from_rgb(120, 160, 120)),
-        );
-    }
     if let Some(msg) = ui.data(|d| d.get_temp::<String>(status_id)) {
         ui.label(egui::RichText::new(msg).small().weak());
     }
@@ -1063,10 +1041,8 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
                         .selectable_label(selected_idx == Some(i), *label)
                         .clicked()
                     {
+                        // Snapshot: copy the preset into the inline machine.
                         *state.session.machine_mut() = presets[i].1.clone();
-                        // Loading a built-in preset breaks any library
-                        // link — the values no longer come from the file.
-                        state.session.set_machine_ref(None);
                         events.push(AppEvent::MachineChanged);
                     }
                 }
@@ -1431,8 +1407,6 @@ fn draw_grbl_import(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<Ap
                         m.max_feed_mm_min = mf;
                     }
                     events.push(AppEvent::MachineChanged);
-                    // Inline values now — drop any library link.
-                    state.session.set_machine_ref(None);
                     ui.data_mut(|d| {
                         d.insert_temp(buf_id, String::new());
                         d.insert_temp(status_id, "Imported $$ settings".to_owned());

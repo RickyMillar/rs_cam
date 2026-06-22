@@ -28,6 +28,8 @@ pub enum MachineLibraryError {
     InvalidName(String),
     #[error("machine {0:?} not found in the library")]
     NotFound(String),
+    #[error("a machine named {0:?} already exists in the library")]
+    AlreadyExists(String),
     #[error("i/o error for machine {name:?}: {source}")]
     Io {
         name: String,
@@ -156,6 +158,42 @@ pub fn save_to(
 pub fn save(name: &str, profile: &MachineProfile) -> Result<PathBuf, MachineLibraryError> {
     let dir = library_dir().ok_or(MachineLibraryError::NoLibraryDir)?;
     save_to(&dir, name, profile)
+}
+
+/// Delete the machine file `name` in `dir`.
+pub fn delete_from(dir: &Path, name: &str) -> Result<(), MachineLibraryError> {
+    let path = path_in(dir, name)?;
+    std::fs::remove_file(&path).map_err(|source| MachineLibraryError::Io {
+        name: name.to_owned(),
+        source,
+    })?;
+    Ok(())
+}
+
+/// Delete the machine file `name` in the resolved library dir.
+pub fn delete(name: &str) -> Result<(), MachineLibraryError> {
+    let dir = library_dir().ok_or(MachineLibraryError::NoLibraryDir)?;
+    delete_from(&dir, name)
+}
+
+/// Rename machine `old` to `new` in `dir`. Errors if `new` already exists.
+pub fn rename_in(dir: &Path, old: &str, new: &str) -> Result<(), MachineLibraryError> {
+    let old_path = path_in(dir, old)?;
+    let new_path = path_in(dir, new)?;
+    if new_path.exists() {
+        return Err(MachineLibraryError::AlreadyExists(new.to_owned()));
+    }
+    std::fs::rename(&old_path, &new_path).map_err(|source| MachineLibraryError::Io {
+        name: old.to_owned(),
+        source,
+    })?;
+    Ok(())
+}
+
+/// Rename a machine in the resolved library dir.
+pub fn rename(old: &str, new: &str) -> Result<(), MachineLibraryError> {
+    let dir = library_dir().ok_or(MachineLibraryError::NoLibraryDir)?;
+    rename_in(&dir, old, new)
 }
 
 // NOTE: machines use SNAPSHOT semantics (like `[[tools]]`) — the project's
