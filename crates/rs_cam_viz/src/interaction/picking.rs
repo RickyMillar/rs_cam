@@ -43,6 +43,12 @@ pub enum PickHit {
         model_id: ModelId,
         face_id: FaceGroupId,
     },
+    /// Hit a drill target (DXF point / circle centre) while a drill toolpath
+    /// is the active selection. `xy` is the target position in model space.
+    DrillTarget {
+        toolpath_id: ToolpathId,
+        xy: [f64; 2],
+    },
 }
 
 /// Context for a pick operation, bundling camera and viewport parameters.
@@ -64,10 +70,20 @@ pub fn pick(
     collision_positions: &[[f32; 3]],
     workspace: Workspace,
     isolate_toolpath: Option<ToolpathId>,
+    drill_pick_toolpath: Option<ToolpathId>,
 ) -> Option<PickHit> {
     // 1. Screen-space picks (small targets first)
     if workspace == Workspace::Simulation
         && let Some(hit) = pick_collision_markers(ctx, collision_positions)
+    {
+        return Some(hit);
+    }
+
+    // Drill targets take priority while a drill op is being edited, so the
+    // user can click points/holes to (de)select them.
+    if workspace == Workspace::Toolpaths
+        && let Some(tp_id) = drill_pick_toolpath
+        && let Some(hit) = pick_drill_targets(ctx, session, tp_id)
     {
         return Some(hit);
     }
@@ -234,6 +250,46 @@ fn pick_alignment_pins(ctx: &PickContext<'_>, session: &ProjectSession) -> Optio
     }
 
     best_hit
+}
+
+/// Pick the nearest drill target (DXF point / circle centre) of the model
+/// referenced by the active drill toolpath. Targets are picked at the stock
+/// top plane in raw model XY — the same frame the drill toolpath emits holes.
+fn pick_drill_targets(
+    ctx: &PickContext<'_>,
+    session: &ProjectSession,
+    toolpath_id: ToolpathId,
+) -> Option<PickHit> {
+    let model_id = session
+        .toolpath_configs()
+        .iter()
+        .find(|tc| tc.id == toolpath_id)
+        .map(|tc| tc.model_id)?;
+    let model = session.models().iter().find(|m| m.id == model_id)?;
+    if model.drill_targets.is_empty() {
+        return None;
+    }
+    let stock = session.stock_config();
+    let top_z = (stock.origin_z + stock.z) as f32;
+
+    let mut best_dist = PICK_THRESHOLD_POINT;
+    let mut best: Option<[f64; 2]> = None;
+    for t in model.drill_targets.iter() {
+        let world = [t.x as f32, t.y as f32, top_z];
+        if let Some(screen) = ctx
+            .camera
+            .project_to_screen(world, ctx.aspect, ctx.vw, ctx.vh)
+        {
+            let dx = screen[0] - ctx.screen_x;
+            let dy = screen[1] - ctx.screen_y;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist < best_dist {
+                best_dist = dist;
+                best = Some([t.x, t.y]);
+            }
+        }
+    }
+    best.map(|xy| PickHit::DrillTarget { toolpath_id, xy })
 }
 
 // SAFETY: j bounded by 0..moves.len() via step_by loop

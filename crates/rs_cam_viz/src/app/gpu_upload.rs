@@ -256,6 +256,34 @@ impl RsCamApp {
             resources.polygon_data.clear();
             let color = crate::render::colors::POLYGON_OUTLINE;
 
+            // When a drill op is selected, draw its model's drill targets
+            // (DXF points / circle centres) as pickable markers — bright when
+            // selected, dim otherwise — so the user can see and click them.
+            let active_drill: Option<(usize, Vec<[f64; 2]>)> = {
+                use crate::state::selection::Selection;
+                use rs_cam_core::compute::catalog::OperationConfig;
+                let st = self.controller.state();
+                if st.workspace == Workspace::Toolpaths
+                    && let Selection::Toolpath(id) = st.selection
+                {
+                    st.session
+                        .toolpath_configs()
+                        .iter()
+                        .find(|tc| tc.id == id)
+                        .and_then(|tc| match &tc.operation {
+                            OperationConfig::Drill(c) => {
+                                Some((tc.model_id, c.selected_holes.clone().unwrap_or_default()))
+                            }
+                            OperationConfig::AlignmentPinDrill(c) => {
+                                Some((tc.model_id, c.selected_holes.clone().unwrap_or_default()))
+                            }
+                            _ => None,
+                        })
+                } else {
+                    None
+                }
+            };
+
             let setup_for_model = |model_id: usize| -> Option<Setup> {
                 let state = self.controller.state();
                 let tc = state
@@ -346,6 +374,45 @@ impl RsCamApp {
                         ring_to_lines(hole, true, setup_ref, poly_z, &mut verts);
                     }
                 }
+
+                // Drill target markers for the active drill op's model.
+                if let Some((mid, selected)) = active_drill.as_ref()
+                    && model.id == *mid
+                {
+                    use rs_cam_core::dxf_input::DrillTargetKind;
+                    for t in model.drill_targets.iter() {
+                        let (tx, ty) = if let Some(setup) = setup_ref {
+                            let tp = setup
+                                .transform_point(rs_cam_core::geo::P3::new(t.x, t.y, 0.0), &stock);
+                            (tp.x, tp.y)
+                        } else {
+                            (t.x, t.y)
+                        };
+                        let is_sel = selected
+                            .iter()
+                            .any(|h| (h[0] - t.x).abs() < 1e-6 && (h[1] - t.y).abs() < 1e-6);
+                        let marker_color = if is_sel {
+                            [0.2_f32, 0.95, 0.4] // bright green = selected
+                        } else {
+                            [0.95_f32, 0.55, 0.15] // orange = available
+                        };
+                        let radius = match t.kind {
+                            DrillTargetKind::CircleCenter { diameter } => (diameter / 2.0) as f32,
+                            DrillTargetKind::Point => 1.5,
+                        }
+                        .max(1.0);
+                        super::push_circle_vertices(
+                            &mut verts,
+                            tx as f32,
+                            ty as f32,
+                            poly_z,
+                            radius,
+                            marker_color,
+                            16,
+                        );
+                    }
+                }
+
                 if !verts.is_empty() {
                     let buffer = render_state.device.create_buffer_init(
                         &egui_wgpu::wgpu::util::BufferInitDescriptor {

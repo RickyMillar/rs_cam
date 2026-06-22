@@ -531,6 +531,40 @@ impl ProjectSession {
         Ok(())
     }
 
+    /// Set the explicitly-selected drill holes (DXF point / circle-centre
+    /// picks) for a `Drill` or `AlignmentPinDrill` toolpath, invalidating its
+    /// cached result. `None` reverts a `Drill` op to its legacy
+    /// all-polygon-centroids behaviour.
+    ///
+    /// Errors if the toolpath's operation is not a drilling op.
+    #[instrument(skip(self, selected_holes))]
+    pub fn set_drill_selected_holes(
+        &mut self,
+        index: usize,
+        selected_holes: Option<Vec<[f64; 2]>>,
+    ) -> Result<(), SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get_mut(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        match tc.operation {
+            OperationConfig::Drill(ref mut cfg) => {
+                cfg.selected_holes = selected_holes;
+            }
+            OperationConfig::AlignmentPinDrill(ref mut cfg) => {
+                cfg.selected_holes = selected_holes;
+            }
+            _ => {
+                return Err(SessionError::InvalidParam(
+                    "Toolpath is not a drilling operation".to_owned(),
+                ));
+            }
+        }
+        self.results.remove(&index);
+        self.simulation = None;
+        Ok(())
+    }
+
     // ── Setup mutations ──────────────────────────────────────────
 
     /// Rename a setup. This is metadata-only and does not affect compute.

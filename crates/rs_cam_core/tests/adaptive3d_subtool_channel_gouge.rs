@@ -171,6 +171,8 @@ fn build_session() -> ProjectSession {
         name: "subtool_valley".to_owned(),
         mesh: Some(Arc::new(mesh)),
         polygons: None,
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         path: PathBuf::from("synthetic://subtool_valley.stl"),
         kind: None,
         units: None,

@@ -305,9 +305,7 @@ impl MachineProfile {
     /// project files serialize the full profile inline
     /// (`ProjectFile.job.machine`), so no key is written anywhere
     /// (`from_key` above only reads legacy files); structural equality
-    /// (same serde-JSON form, the comparison
-    /// `machine_library::resolve_in` already uses for its override
-    /// warning) is the honest preset test.
+    /// (same serde-JSON form) is the honest preset test.
     pub fn matching_preset_index(&self) -> Option<usize> {
         let self_json = serde_json::to_string(self).ok()?;
         Self::presets()

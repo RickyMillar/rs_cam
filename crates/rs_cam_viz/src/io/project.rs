@@ -671,17 +671,18 @@ fn load_typed_project(
     job.name = project.job.name;
     job.stock = project.job.stock;
     job.post = project.job.post;
-    // A machine_ref makes the library file authoritative; fall back to
-    // the inline copy (with a warning) when the referenced file is gone.
-    job.machine_ref = project.job.machine_ref.clone();
-    let resolved = rs_cam_core::machine_library::resolve(
-        project.job.machine_ref.as_deref(),
-        project.job.machine,
-    );
-    job.machine = resolved.profile;
-    if let Some(detail) = resolved.warning {
-        warnings.push(ProjectLoadWarning::MachineRefFallback { detail });
+    // Snapshot semantics (like `[[tools]]`): the inline `[job.machine]`
+    // is authoritative. A legacy `machine_ref` is dropped on load — the
+    // inline machine migrates forward as-is; re-save clears the ref.
+    if project.job.machine_ref.is_some() {
+        warnings.push(ProjectLoadWarning::MachineRefFallback {
+            detail: "legacy machine_ref dropped — the machine is now stored inline \
+                     (snapshot model). Re-save to clear it from the file."
+                .to_owned(),
+        });
     }
+    job.machine_ref = None;
+    job.machine = project.job.machine;
     job.file_path = Some(path.to_path_buf());
     job.dirty = false;
 

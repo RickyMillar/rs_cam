@@ -54,10 +54,10 @@ pub struct ProjectJobSection {
     pub post: ProjectPostConfig,
     #[serde(default)]
     pub machine: crate::machine::MachineProfile,
-    /// Optional reference to a machine in the per-user library
-    /// (`machine_library`). When set, the library file is the source of
-    /// truth and overrides `machine` on load; `machine` is kept as an
-    /// offline fallback. `None` → the inline `machine` is used directly.
+    /// LEGACY. Machines now use snapshot semantics (the inline `machine`
+    /// is authoritative; see `machine_library`). This field is retained
+    /// only so old project files still parse — it is read then dropped on
+    /// load, and never written back (snapshot files omit it).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub machine_ref: Option<String>,
 }
@@ -573,13 +573,17 @@ pub(crate) fn load_model_geometry(
             Ok(LoadedGeometry::Mesh(mesh))
         }
         ModelKind::Dxf => {
-            let polys = crate::dxf_input::load_dxf(&full_path, 5.0).map_err(|e| {
+            let import = crate::dxf_input::load_dxf_full(&full_path, 5.0).map_err(|e| {
                 SessionError::ModelLoad {
                     name: model.name.clone(),
                     detail: format!("DXF load failed: {e}"),
                 }
             })?;
-            Ok(LoadedGeometry::Polygons(polys))
+            Ok(LoadedGeometry::Polygons(
+                import.polygons,
+                import.drill_targets,
+                import.layers,
+            ))
         }
         ModelKind::Svg => {
             let polys = crate::svg_input::load_svg(&full_path, 0.1).map_err(|e| {
@@ -588,7 +592,7 @@ pub(crate) fn load_model_geometry(
                     detail: format!("SVG load failed: {e}"),
                 }
             })?;
-            Ok(LoadedGeometry::Polygons(polys))
+            Ok(LoadedGeometry::Polygons(polys, Vec::new(), Vec::new()))
         }
         ModelKind::Step => {
             #[cfg(feature = "step")]
@@ -768,6 +772,8 @@ pub(super) fn build_session_from_project(
                     name: model_section.name.clone(),
                     mesh: Some(Arc::new(mesh)),
                     polygons: None,
+                    drill_targets: Arc::new(Vec::new()),
+                    layers: Arc::new(Vec::new()),
                     path: model_path,
                     kind: model_kind,
                     units: model_units,
@@ -776,10 +782,11 @@ pub(super) fn build_session_from_project(
                     load_error: None,
                 });
             }
-            Ok(LoadedGeometry::Polygons(polys)) => {
+            Ok(LoadedGeometry::Polygons(polys, drill_targets, layers)) => {
                 tracing::info!(
                     name = %model_section.name,
                     polygons = polys.len(),
+                    drill_targets = drill_targets.len(),
                     "Loaded 2D model"
                 );
                 models.push(LoadedModel {
@@ -787,6 +794,8 @@ pub(super) fn build_session_from_project(
                     name: model_section.name.clone(),
                     mesh: None,
                     polygons: Some(Arc::new(polys)),
+                    drill_targets: Arc::new(drill_targets),
+                    layers: Arc::new(layers),
                     path: model_path,
                     kind: model_kind,
                     units: model_units,
@@ -808,6 +817,8 @@ pub(super) fn build_session_from_project(
                     name: model_section.name.clone(),
                     mesh: Some(mesh_arc),
                     polygons: None,
+                    drill_targets: Arc::new(Vec::new()),
+                    layers: Arc::new(Vec::new()),
                     path: model_path,
                     kind: model_kind,
                     units: model_units,
@@ -827,6 +838,8 @@ pub(super) fn build_session_from_project(
                     name: model_section.name.clone(),
                     mesh: None,
                     polygons: None,
+                    drill_targets: Arc::new(Vec::new()),
+                    layers: Arc::new(Vec::new()),
                     path: model_path,
                     kind: model_kind,
                     units: model_units,
@@ -985,21 +998,24 @@ pub(super) fn build_session_from_project(
     let next_setup_id = setups.iter().map(|s| s.id).max().map_or(0, |m| m + 1);
     let next_model_id = models.iter().map(|m| m.id).max().map_or(0, |m| m + 1);
 
-    // Resolve the active machine: a `machine_ref` makes the library file
-    // the source of truth, falling back to the inline copy (with a
-    // warning) when the referenced file is missing.
-    let machine_ref = project.job.machine_ref.clone();
-    let resolved = crate::machine_library::resolve(machine_ref.as_deref(), project.job.machine);
-    if let Some(warning) = resolved.warning {
-        tracing::warn!("{warning}");
+    // Machines use snapshot semantics (like `[[tools]]`): the inline
+    // `[job.machine]` copy is authoritative. A legacy `machine_ref` is no
+    // longer a live link — it's dropped on load (the inline machine is
+    // migrated forward as-is). Re-save to persist the snapshot.
+    if let Some(name) = &project.job.machine_ref {
+        tracing::info!(
+            "project '{}': legacy machine_ref {name:?} dropped — machines are now stored \
+             inline (snapshot model). Re-save to clear it from the file.",
+            project.job.name
+        );
     }
 
     Ok(super::ProjectSession {
         name: project.job.name.clone(),
         stock,
         post: project.job.post,
-        machine: resolved.profile,
-        machine_ref,
+        machine: project.job.machine,
+        machine_ref: None,
         models,
         tools,
         setups,

@@ -95,22 +95,14 @@ pub fn build_drill_op_for_config(
 
     match op {
         OperationConfig::Drill(cfg) => {
-            let polys = polygons?;
-            let mut hole_xys = Vec::new();
-            for poly in polys {
-                if poly.exterior.is_empty() {
-                    continue;
-                }
-                let (sx, sy) = poly
-                    .exterior
-                    .iter()
-                    .fold((0.0, 0.0), |(ax, ay), pt| (ax + pt.x, ay + pt.y));
-                let n = poly.exterior.len() as f64;
-                hole_xys.push([sx / n, sy / n]);
-            }
-            if hole_xys.is_empty() {
-                return None;
-            }
+            // Selected targets (DXF picks) drill exactly those and round-trip
+            // as a snapshot; otherwise fall back to polygon centroids.
+            let hole_xys = drill_holes_for_config(cfg, polygons).ok()?;
+            let hole_source = if cfg.selected_holes.is_some() {
+                HoleSource::Snapshot(hole_xys.clone())
+            } else {
+                HoleSource::ModelDerived
+            };
             let top_z = stock_bbox.max.z;
             let bottom_z = top_z - cfg.depth;
             let holes = hole_xys
@@ -123,7 +115,7 @@ pub fn build_drill_op_for_config(
                 .collect();
             Some(DrillOp {
                 holes,
-                hole_source: HoleSource::ModelDerived,
+                hole_source,
                 tool_profile: ToolProfile::Flat,
                 tool_diameter_mm,
                 cycle: cfg.cycle.to_core(cfg),
@@ -134,14 +126,17 @@ pub fn build_drill_op_for_config(
             })
         }
         OperationConfig::AlignmentPinDrill(cfg) => {
-            if cfg.holes.is_empty() {
+            let mut hole_xys = cfg.holes.clone();
+            if let Some(selected) = &cfg.selected_holes {
+                hole_xys.extend_from_slice(selected);
+            }
+            if hole_xys.is_empty() {
                 return None;
             }
             let top_z = stock_bbox.max.z;
             let bottom_z = stock_bbox.min.z - cfg.spoilboard_penetration;
             let cycle = cfg.drill_cycle();
-            let holes = cfg
-                .holes
+            let holes = hole_xys
                 .iter()
                 .map(|&xy| DrillHole {
                     xy,
@@ -151,7 +146,7 @@ pub fn build_drill_op_for_config(
                 .collect();
             Some(DrillOp {
                 holes,
-                hole_source: HoleSource::Snapshot(cfg.holes.clone()),
+                hole_source: HoleSource::Snapshot(hole_xys.clone()),
                 tool_profile: ToolProfile::Flat,
                 tool_diameter_mm,
                 cycle,
@@ -220,17 +215,30 @@ pub struct ExecutionContext<'a> {
 pub type GenerateFn =
     fn(&ExecutionContext<'_>, &OperationConfig) -> Result<GeneratedToolpath, OperationError>;
 
-/// Drill family adapter (holes from polygon centroids).
-pub(crate) fn generate_drill(
-    ctx: &ExecutionContext<'_>,
-    op: &OperationConfig,
-) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Drill(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_drill received a non-Drill config".into(),
-        ));
-    };
-    let polys = require_polygons(ctx.polygons)?;
+/// Resolve the drill hole positions for a [`DrillConfig`].
+///
+/// When `cfg.selected_holes` is set the user has explicitly picked targets
+/// (DXF points / circle centres, in the viewport or by layer) — drill exactly
+/// those. An empty selection is an error rather than "all centroids", so a
+/// stale or cleared selection doesn't silently revert to drilling everything.
+///
+/// When it is `None` (the legacy default), fall back to the centroid of every
+/// closed polygon in the model.
+fn drill_holes_for_config(
+    cfg: &crate::compute::operation_configs::DrillConfig,
+    polygons: Option<&[Polygon2]>,
+) -> Result<Vec<[f64; 2]>, OperationError> {
+    if let Some(selected) = &cfg.selected_holes {
+        if selected.is_empty() {
+            return Err(OperationError::MissingGeometry(
+                "No drill targets selected (pick points/holes in the viewport \
+                 or choose a layer)"
+                    .to_owned(),
+            ));
+        }
+        return Ok(selected.clone());
+    }
+    let polys = require_polygons(polygons)?;
     let mut holes = Vec::new();
     for poly in polys {
         if poly.exterior.is_empty() {
@@ -245,9 +253,23 @@ pub(crate) fn generate_drill(
     }
     if holes.is_empty() {
         return Err(OperationError::MissingGeometry(
-            "No hole positions found (import SVG with circles)".to_owned(),
+            "No hole positions found (import SVG/DXF with circles, or pick targets)".to_owned(),
         ));
     }
+    Ok(holes)
+}
+
+/// Drill family adapter (holes from polygon centroids).
+pub(crate) fn generate_drill(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let OperationConfig::Drill(cfg) = op else {
+        return Err(OperationError::Other(
+            "registry adapter mismatch: generate_drill received a non-Drill config".into(),
+        ));
+    };
+    let holes = drill_holes_for_config(cfg, ctx.polygons)?;
     let cycle = cfg.cycle.to_core(cfg);
     let params = crate::drill::DrillParams {
         depth: cfg.depth,
@@ -276,7 +298,12 @@ pub(crate) fn generate_alignment_pin_drill(
                 .into(),
         ));
     };
-    if cfg.holes.is_empty() {
+    // Stock alignment pins plus any extra targets picked from the model.
+    let mut holes = cfg.holes.clone();
+    if let Some(selected) = &cfg.selected_holes {
+        holes.extend_from_slice(selected);
+    }
+    if holes.is_empty() {
         return Err(OperationError::MissingGeometry(
             "No alignment pin positions defined".to_owned(),
         ));
@@ -292,7 +319,7 @@ pub(crate) fn generate_alignment_pin_drill(
         safe_z: ctx.heights.retract_z,
         retract_z: crate::compute::config::effective_safe_z(cfg.retract_z, ctx.stock_bbox.max.z),
     };
-    let generated = generated_with_drill_spans(crate::drill::drill_toolpath(&cfg.holes, &params));
+    let generated = generated_with_drill_spans(crate::drill::drill_toolpath(&holes, &params));
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_drill_spans(&generated.spans, &generated.toolpath, sem);
     }
@@ -2126,6 +2153,40 @@ mod tests {
     use crate::mesh::{SpatialIndex, TriangleMesh, make_test_flat, make_test_hemisphere};
     use crate::polygon::Polygon2;
     use crate::toolpath_spans::SpanKind;
+
+    #[test]
+    fn drill_holes_selection_overrides_centroids() {
+        use crate::compute::operation_configs::DrillConfig;
+        // A 10×10 square whose centroid is (5,5).
+        let square = Polygon2::new(vec![
+            crate::geo::P2::new(0.0, 0.0),
+            crate::geo::P2::new(10.0, 0.0),
+            crate::geo::P2::new(10.0, 10.0),
+            crate::geo::P2::new(0.0, 10.0),
+        ]);
+        let polys = [square];
+
+        // None => legacy centroid behaviour.
+        let legacy = DrillConfig::default();
+        let holes = drill_holes_for_config(&legacy, Some(&polys)).unwrap();
+        assert_eq!(holes.len(), 1);
+        assert!((holes[0][0] - 5.0).abs() < 1e-9 && (holes[0][1] - 5.0).abs() < 1e-9);
+
+        // Some(picks) => drill exactly the picks, ignoring centroids.
+        let picked = DrillConfig {
+            selected_holes: Some(vec![[1.0, 2.0], [7.0, 8.0]]),
+            ..DrillConfig::default()
+        };
+        let holes = drill_holes_for_config(&picked, Some(&polys)).unwrap();
+        assert_eq!(holes, vec![[1.0, 2.0], [7.0, 8.0]]);
+
+        // Some(empty) => explicit "nothing selected" error, not all-centroids.
+        let empty = DrillConfig {
+            selected_holes: Some(Vec::new()),
+            ..DrillConfig::default()
+        };
+        assert!(drill_holes_for_config(&empty, Some(&polys)).is_err());
+    }
 
     /// Build a default tool definition and config for a given tool type.
     fn make_tool(tool_type: ToolType) -> (crate::tool::ToolDefinition, ToolConfig) {

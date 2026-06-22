@@ -89,6 +89,8 @@ fn build_identity_origin_session_with_heights(heights: HeightsConfig) -> Project
         name: "flat_plate".to_owned(),
         mesh: Some(Arc::new(mesh)),
         polygons: None,
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         path: PathBuf::from("synthetic://flat_plate.stl"),
         kind: None,
         units: None,

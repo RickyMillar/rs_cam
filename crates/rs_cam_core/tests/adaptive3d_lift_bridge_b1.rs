@@ -82,6 +82,8 @@ fn build_adaptive3d_session() -> ProjectSession {
         name: "hemisphere".to_owned(),
         mesh: Some(Arc::new(mesh)),
         polygons: None,
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         path: PathBuf::from("synthetic://hemisphere.stl"),
         kind: None,
         units: None,

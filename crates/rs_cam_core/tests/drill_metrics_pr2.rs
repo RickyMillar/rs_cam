@@ -49,6 +49,8 @@ fn make_drill_toolpath(tool_id: usize, peck_depth: f64) -> ToolpathConfig {
             feed_rate: 300.0,
             retract_z: 2.0,
             spindle_rpm: Some(18_000),
+            selected_holes: None,
+            selected_layers: Vec::new(),
         }),
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),

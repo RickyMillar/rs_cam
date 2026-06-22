@@ -70,6 +70,8 @@ fn build_drill_session(material: Material) -> ProjectSession {
         name: "holes".to_owned(),
         mesh: None,
         polygons: Some(Arc::new(vec![unit_square_at(50.0, 50.0)])),
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         path: PathBuf::from("synthetic://f016_drill_holes.svg"),
         kind: None,
         units: None,

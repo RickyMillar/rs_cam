@@ -433,6 +433,15 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 })
                 .unwrap_or(false);
 
+            // Snapshot the toolpath model's drill targets + layers (DXF point /
+            // circle-centre picking) for the drill-op panels.
+            let drill_layers: Vec<String> = model_for_panel
+                .map(|m| (*m.layers).clone())
+                .unwrap_or_default();
+            let drill_targets: Vec<rs_cam_core::dxf_input::DrillTarget> = model_for_panel
+                .map(|m| (*m.drill_targets).clone())
+                .unwrap_or_default();
+
             // Snapshot height context before mutable borrow. Use the shared
             // helper so model_top/bottom_z are in the setup-local frame.
             let height_ctx = state
@@ -529,6 +538,8 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     &stale_default_defects,
                     load_verdict_for_tp.as_ref(),
                     tab_override,
+                    &drill_layers,
+                    &drill_targets,
                     events,
                 );
 
@@ -3113,6 +3124,8 @@ fn draw_toolpath_panel(
     stale_default_defects: &[rs_cam_core::compute::validate::StaleDefault],
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
     tab_override: Option<ToolpathTab>,
+    drill_layers: &[String],
+    drill_targets: &[rs_cam_core::dxf_input::DrillTarget],
     events: &mut Vec<AppEvent>,
 ) {
     // ── Shared header (always visible above tabs) ───────────────────
@@ -3486,7 +3499,9 @@ fn draw_toolpath_panel(
                 OperationConfig::Inlay(cfg) => draw_inlay_params(ui, cfg, feeds_for_pills),
                 OperationConfig::Zigzag(cfg) => draw_zigzag_params(ui, cfg, feeds_for_pills),
                 OperationConfig::Trace(cfg) => draw_trace_params(ui, cfg, feeds_for_pills),
-                OperationConfig::Drill(cfg) => draw_drill_params(ui, cfg, feeds_for_pills),
+                OperationConfig::Drill(cfg) => {
+                    draw_drill_params(ui, cfg, drill_layers, drill_targets, feeds_for_pills);
+                }
                 OperationConfig::Chamfer(cfg) => draw_chamfer_params(ui, cfg, feeds_for_pills),
                 OperationConfig::DropCutter(cfg) => {
                     draw_dropcutter_params(ui, cfg, feeds_for_pills);
@@ -3525,7 +3540,13 @@ fn draw_toolpath_panel(
                     draw_project_curve_params(ui, cfg, models, feeds_for_pills);
                 }
                 OperationConfig::AlignmentPinDrill(cfg) => {
-                    draw_alignment_pin_drill_params(ui, cfg, feeds_for_pills);
+                    draw_alignment_pin_drill_params(
+                        ui,
+                        cfg,
+                        drill_layers,
+                        drill_targets,
+                        feeds_for_pills,
+                    );
                 }
             }
 

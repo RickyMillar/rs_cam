@@ -29,6 +29,10 @@ pub struct RsCamApp {
     /// Track toolpath color mode changes to trigger re-upload.
     last_tp_color_mode: crate::state::viewport::ToolpathColorMode,
     last_span_kind_filter: crate::state::viewport::SpanKindFilter,
+    /// Track the active drill op's target selection (toolpath id + picked
+    /// holes) so the viewport markers re-upload when it changes from any
+    /// source (viewport pick, panel buttons, selection change).
+    last_drill_marker_key: Option<(usize, Vec<[f64; 2]>)>,
     /// MCP request receiver (populated when `--mcp` is passed).
     #[cfg(feature = "mcp")]
     mcp_receiver: Option<std::sync::mpsc::Receiver<crate::mcp_bridge::McpRequest>>,
@@ -142,6 +146,7 @@ impl RsCamApp {
             show_quit_dialog: false,
             last_tp_color_mode: crate::state::viewport::ToolpathColorMode::Normal,
             last_span_kind_filter: crate::state::viewport::SpanKindFilter::default(),
+            last_drill_marker_key: None,
             #[cfg(feature = "mcp")]
             mcp_receiver,
         }
@@ -521,6 +526,14 @@ impl RsCamApp {
         let current_filter = self.controller.state().viewport.span_kind_filter;
         if current_filter != self.last_span_kind_filter {
             self.last_span_kind_filter = current_filter;
+            self.controller.set_pending_upload();
+        }
+        // Re-upload drill target markers when the active drill op's selection
+        // changes (panel buttons, layer select, viewport pick, or selecting a
+        // different drill toolpath).
+        let current_drill_key = self.current_drill_marker_key();
+        if current_drill_key != self.last_drill_marker_key {
+            self.last_drill_marker_key = current_drill_key;
             self.controller.set_pending_upload();
         }
 
