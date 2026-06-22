@@ -326,6 +326,14 @@ pub enum McpRequestKind {
     ImportMachineSettings {
         dump: String,
     },
+    /// List the reusable machines in the per-user machine library, each
+    /// with a compact spec summary. No project required.
+    ListMachineLibrary,
+    /// Snapshot-import the named library machine into the project (copies
+    /// it into the inline machine; no live link).
+    LoadMachineFromLibrary {
+        name: String,
+    },
 }
 
 /// Response from the GUI thread to the MCP server.
