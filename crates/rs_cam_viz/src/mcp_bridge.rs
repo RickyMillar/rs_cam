@@ -318,7 +318,13 @@ pub enum McpRequestKind {
         workspace: Option<String>,
         toolpath_index: Option<usize>,
         properties_tab: Option<String>,
+        select: Option<String>,
         modal: Option<String>,
+    },
+    /// Import a GRBL `$$` settings dump onto the live machine profile
+    /// (headless equivalent of the GUI Machine panel's `$$` import).
+    ImportMachineSettings {
+        dump: String,
     },
 }
 

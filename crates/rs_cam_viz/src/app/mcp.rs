@@ -624,14 +624,23 @@ impl super::RsCamApp {
                 workspace,
                 toolpath_index,
                 properties_tab,
+                select,
                 modal,
             } => {
                 let resp = self.mcp_set_ui_view(
                     workspace.as_deref(),
                     toolpath_index,
                     properties_tab.as_deref(),
+                    select.as_deref(),
                     modal.as_deref(),
                 );
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::ImportMachineSettings { dump } => {
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Setup));
+                let resp = self.mcp_import_machine_settings(&dump);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
         }
@@ -1865,14 +1874,40 @@ impl super::RsCamApp {
             }
         };
 
+        // Acceleration-aware kinematics ($11 + per-axis $120-122). `None`
+        // means the cycle-time model falls back to the naive distance/feed
+        // sum (the F-034 feature flag).
+        let kinematics = match &machine.kinematics {
+            Some(k) => {
+                let per_axis = match k.acceleration_xyz_mm_s2 {
+                    Some([ax, ay, az]) => serde_json::json!([ax, ay, az]),
+                    None => serde_json::Value::Null,
+                };
+                serde_json::json!({
+                    "configured": true,
+                    "acceleration_mm_s2": k.acceleration_mm_s2,
+                    "acceleration_xyz_mm_s2": per_axis,
+                    "junction_deviation_mm": k.junction_deviation_mm,
+                    "jerk_mm_s3": k.jerk_mm_s3,
+                    "max_junction_velocity_mm_min": k.max_junction_velocity_mm_min,
+                })
+            }
+            None => serde_json::json!({
+                "configured": false,
+                "note": "no kinematics set — cycle time uses the naive distance/feed sum",
+            }),
+        };
+
         let r = &machine.rigidity;
         json_str(serde_json::json!({
             "name": machine.name,
             "max_feed_mm_min": machine.max_feed_mm_min,
+            "cutting_feed_ceiling_mm_min": machine.cutting_feed_ceiling_mm_min(),
             "max_shank_mm": machine.max_shank_mm,
             "safety_factor": machine.safety_factor,
             "spindle": spindle,
             "power": power,
+            "kinematics": kinematics,
             "rigidity": {
                 "doc_roughing_factor": r.doc_roughing_factor,
                 "doc_finishing_factor": r.doc_finishing_factor,
@@ -1882,6 +1917,59 @@ impl super::RsCamApp {
                 "adaptive_doc_factor": r.adaptive_doc_factor,
                 "adaptive_woc_factor": r.adaptive_woc_factor,
             },
+        }))
+    }
+
+    /// Import a GRBL `$$` dump onto the live machine: sets kinematics +
+    /// max feed, breaks any library link. Headless twin of the GUI Machine
+    /// panel's `$$` import.
+    fn mcp_import_machine_settings(&mut self, dump: &str) -> String {
+        use rs_cam_core::machine_kinematics::{MachineKinematics, default_junction_deviation_mm};
+        let imp = MachineKinematics::from_grbl_settings(dump);
+        let recognized = imp.kinematics.acceleration_xyz_mm_s2.is_some()
+            || imp.max_feed_mm_min.is_some()
+            || imp.arc_tolerance_mm.is_some()
+            || imp.max_spindle_rpm.is_some()
+            || (imp.kinematics.junction_deviation_mm - default_junction_deviation_mm()).abs()
+                > 1e-12;
+        if !recognized {
+            return json_str(serde_json::json!({
+                "ok": false,
+                "error": "No GRBL settings recognised in the dump (expected $N=value lines, \
+                          e.g. $11=…, $120=…).",
+            }));
+        }
+
+        let prev_max_feed = self.controller.state().session.machine().max_feed_mm_min;
+        {
+            let session = &mut self.controller.state_mut().session;
+            let machine = session.machine_mut();
+            machine.kinematics = Some(imp.kinematics);
+            if let Some(mf) = imp.max_feed_mm_min {
+                machine.max_feed_mm_min = mf;
+            }
+            // Inline values now — drop any machine-library link.
+            session.set_machine_ref(None);
+        }
+        self.controller.events_mut().push(AppEvent::MachineChanged);
+
+        let per_axis = match imp.kinematics.acceleration_xyz_mm_s2 {
+            Some([ax, ay, az]) => serde_json::json!([ax, ay, az]),
+            None => serde_json::Value::Null,
+        };
+        let new_max_feed = self.controller.state().session.machine().max_feed_mm_min;
+        json_str(serde_json::json!({
+            "ok": true,
+            "applied": {
+                "acceleration_xyz_mm_s2": per_axis,
+                "acceleration_mm_s2": imp.kinematics.acceleration_mm_s2,
+                "junction_deviation_mm": imp.kinematics.junction_deviation_mm,
+                "max_feed_mm_min": { "from": prev_max_feed, "to": new_max_feed },
+                "arc_tolerance_mm": imp.arc_tolerance_mm,
+                "max_spindle_rpm": imp.max_spindle_rpm,
+                "ignored_settings": imp.ignored_count,
+            },
+            "note": "kinematics applied; machine-library link cleared. Verify with inspect_machine.",
         }))
     }
 
@@ -3766,6 +3854,7 @@ impl super::RsCamApp {
         workspace: Option<&str>,
         toolpath_index: Option<usize>,
         properties_tab: Option<&str>,
+        select: Option<&str>,
         modal: Option<&str>,
     ) -> String {
         // 1. Workspace.
@@ -3838,6 +3927,30 @@ impl super::RsCamApp {
             tab_applied = Some(tab);
         }
 
+        // 3b. Non-toolpath properties selection (machine / stock). These
+        //     panels render in the Setup workspace's properties pane, so
+        //     switch there if the caller didn't pick a workspace.
+        let mut select_applied: Option<&str> = None;
+        if let Some(sel) = select {
+            let target = match sel {
+                "machine" => Selection::Machine,
+                "stock" => Selection::Stock,
+                other => {
+                    return json_str(serde_json::json!({
+                        "error": format!("Unknown select '{other}'. Valid: machine, stock")
+                    }));
+                }
+            };
+            if workspace.is_none() {
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Setup));
+                workspace_applied = Some(workspace_key(Workspace::Setup));
+            }
+            self.controller.state_mut().selection = target;
+            select_applied = Some(sel);
+        }
+
         // 4. Modal.
         if let Some(m) = modal {
             match m {
@@ -3907,10 +4020,19 @@ impl super::RsCamApp {
                 }),
             _ => None,
         };
+        let selection_kind = match state.selection {
+            Selection::Machine => "machine",
+            Selection::Stock => "stock",
+            Selection::Toolpath(_) => "toolpath",
+            Selection::Tool(_) => "tool",
+            _ => "other",
+        };
         json_str(serde_json::json!({
             "ok": true,
             "workspace": workspace_applied.unwrap_or_else(|| workspace_key(state.workspace)),
             "selected_toolpath": selected,
+            "selection": selection_kind,
+            "select": select_applied,
             "properties_tab": tab_applied,
             "modal": modal,
             "note": "view changes render on the next frame; call screenshot_gui to capture",

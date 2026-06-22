@@ -166,9 +166,24 @@ pub struct SetUiViewParam {
     /// "linking", "heights", or "dressup". Takes effect the next time the
     /// properties panel renders a selected toolpath.
     pub properties_tab: Option<String>,
+    /// Non-toolpath properties panel to select: "machine" (machine setup +
+    /// kinematics + GRBL $$ import) or "stock". Switches to the Setup
+    /// workspace so the panel is visible on the right.
+    pub select: Option<String>,
     /// Modal to open: "feeds_modal", "optimize_modal", "export_wizard",
     /// "tool_library", or "none" to close all modals.
     pub modal: Option<String>,
+}
+
+/// GRBL `$$` settings dump to import onto the live machine profile.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct ImportMachineSettingsParam {
+    /// The full `$$` settings dump text (`$N=value` lines). Tolerates
+    /// grblHAL `(description)` comments, CRLF, and unrelated `$N` lines.
+    /// Maps `$11`→junction deviation, `$120/$121/$122`→per-axis accel,
+    /// `$110/$111`→max feed (travel). Applying breaks any machine-library
+    /// link since the values are now inline.
+    pub dump: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]

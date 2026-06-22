@@ -14,14 +14,15 @@ use crate::mcp_bridge::{McpRequest, McpRequestKind, ProgressUpdate};
 // Re-use parameter structs from the standalone MCP crate.
 use rs_cam_mcp::server::{
     AddAlignmentPinParam, AddToolFromLibraryParam, AddToolParam, AddToolpathParam,
-    CollisionCheckParam, CutTraceParam, ExportParam, GenDebugTraceParam, IndexParam,
-    InspectSpansParam, ListToolCatalogParam, LoadProjectParam, ModelIdParam, OperationSchemaParam,
-    OptimizeToolpathInput, RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam,
-    SaveProjectParam, ScreenshotGuiParam, ScreenshotSimParam, ScreenshotToolpathParam,
-    SetBoundaryConfigParam, SetDressupConfigParam, SetDressupFieldParam, SetSpindleStrategyParam,
-    SetStockConfigParam, SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam,
-    SetToolpathHeightsParam, SetToolpathParamInput, SetUiViewParam, SimJumpToMoveParam,
-    SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam,
+    CollisionCheckParam, CutTraceParam, ExportParam, GenDebugTraceParam,
+    ImportMachineSettingsParam, IndexParam, InspectSpansParam, ListToolCatalogParam,
+    LoadProjectParam, ModelIdParam, OperationSchemaParam, OptimizeToolpathInput,
+    RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam, SaveProjectParam,
+    ScreenshotGuiParam, ScreenshotSimParam, ScreenshotToolpathParam, SetBoundaryConfigParam,
+    SetDressupConfigParam, SetDressupFieldParam, SetSpindleStrategyParam, SetStockConfigParam,
+    SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam, SetToolpathHeightsParam,
+    SetToolpathParamInput, SetUiViewParam, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam,
+    SimScrubToolpathParam, SimulationParam,
 };
 
 /// Embedded MCP server that forwards requests to the GUI thread.
@@ -1113,7 +1114,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_ui_view",
-        description = "Navigate the GUI to a specific view so screenshot_gui can capture any UI surface. All params optional, applied in order: `workspace` switches the top-level workspace ('setup', 'toolpaths', 'simulation', 'readiness'); `toolpath_index` (0-based) selects that toolpath so its properties panel shows in the Toolpaths workspace; `properties_tab` activates a toolpath inspector tab ('geometry', 'feeds', 'linking', 'heights', 'dressup' — requires a selected toolpath to be visible); `modal` opens a modal ('feeds_modal', 'optimize_modal', 'export_wizard', 'tool_library') or 'none' closes all modals. Preconditions: feeds_modal and optimize_modal need a toolpath — pass toolpath_index in the same call or have one selected; optimize_modal starts a REAL Optimize run (long, ~1-2 min — without a prior simulation it shows a 'simulation required' outcome instead). Returns a JSON echo of the resulting view state. Changes render on the next frame, so call screenshot_gui after this returns."
+        description = "Navigate the GUI to a specific view so screenshot_gui can capture any UI surface. All params optional, applied in order: `workspace` switches the top-level workspace ('setup', 'toolpaths', 'simulation', 'readiness'); `toolpath_index` (0-based) selects that toolpath so its properties panel shows in the Toolpaths workspace; `properties_tab` activates a toolpath inspector tab ('geometry', 'feeds', 'linking', 'heights', 'dressup' — requires a selected toolpath to be visible); `select` chooses a non-toolpath properties panel ('machine' for machine setup + kinematics + GRBL $$ import, or 'stock') and switches to the Setup workspace; `modal` opens a modal ('feeds_modal', 'optimize_modal', 'export_wizard', 'tool_library') or 'none' closes all modals. Preconditions: feeds_modal and optimize_modal need a toolpath — pass toolpath_index in the same call or have one selected; optimize_modal starts a REAL Optimize run (long, ~1-2 min — without a prior simulation it shows a 'simulation required' outcome instead). Returns a JSON echo of the resulting view state. Changes render on the next frame, so call screenshot_gui after this returns."
     )]
     async fn set_ui_view(
         &self,
@@ -1121,6 +1122,7 @@ impl EmbeddedCamServer {
             workspace,
             toolpath_index,
             properties_tab,
+            select,
             modal,
         }): Parameters<SetUiViewParam>,
     ) -> String {
@@ -1129,9 +1131,27 @@ impl EmbeddedCamServer {
                 workspace,
                 toolpath_index,
                 properties_tab,
+                select,
                 modal,
             })
             .await,
+        )
+    }
+
+    #[tool(
+        name = "import_machine_settings",
+        description = "Import a GRBL `$$` settings dump onto the live machine profile (headless equivalent of the GUI Machine panel's '$$' import). Parses `$N=value` lines — `$11`→junction deviation, `$120/$121/$122`→per-axis acceleration, `$110/$111`→max feed — tolerating grblHAL `(description)` comments, CRLF, and unrelated settings. Sets the machine's kinematics + max feed, opting the cycle-time model into the acceleration-aware path, and breaks any machine-library link. Returns a JSON summary of what was applied. Verify afterwards with inspect_machine."
+    )]
+    async fn import_machine_settings(
+        &self,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(ImportMachineSettingsParam { dump }): Parameters<
+            ImportMachineSettingsParam,
+        >,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::ImportMachineSettings { dump })
+                .await,
         )
     }
 }
