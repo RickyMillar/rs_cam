@@ -206,19 +206,21 @@ fn modulated_cycle_time_prediction_within_25_percent_of_machine() {
     // it back to ~1598 s (ratio ~1.31).
     //
     // PHASE 4 (2026-06-21): switching to GRBL's real junction-deviation
-    // cornering model (every corner capped at v=√(accel·R), δ=$11=0.01, vs the
-    // old optimistic dot-product) raised the modulated prediction to ~1932 s
-    // (ratio ~1.58) — physically honest (the dense path crawls every corner on
-    // a real Shapeoko), but the 1224 s anchor is a stale pre-F-038 wall-clock.
-    // Upper bound widened 1.25 → 2.0 to admit the honest model; needs a fresh
-    // real-machine re-bench of the current path (+ confirm $11). See F-034's
-    // note and planning/ACCEL_FRIENDLY_TOOLPATHS_2026-06-20.md (Phase 4).
+    // cornering model (every corner capped at v=√(accel·R)) at the assumed
+    // δ=0.01 raised the modulated prediction to ~1932 s (ratio ~1.58).
+    //
+    // PHASE E (2026-06-21): the user's real $$ (δ=$11=0.020, per-axis accel
+    // 500/500/270 — now in `shapeoko_xxl_ricky_tuned`) pulled it down to
+    // ~1657 s (ratio ~1.354). Better, but the 1224 s anchor is still a stale
+    // pre-F-038 wall-clock, so closing to ±10% needs a fresh real-machine
+    // re-bench of the current path (planning/cycle_time_rebench.md). Upper
+    // bound tightened 2.0 → 1.7 now that the real δ/accel are in.
     assert!(
-        (0.45..=2.0).contains(&ratio),
+        (0.45..=1.7).contains(&ratio),
         "F-036c: model predicted modulated cycle {mod_predicted:.0}s vs measured \
-         {:.0}s (ratio {ratio:.3}) — outside widened tolerance [0.45, 2.0]. \
-         The MEASURED constant is a pre-F-038 wall-clock and needs re-bench \
-         after the Phase-4 junction model.",
+         {:.0}s (ratio {ratio:.3}) — outside tolerance [0.45, 1.7]. \
+         The MEASURED constant is a stale pre-F-038 wall-clock; re-bench the \
+         current path before tightening further.",
         MEASURED_MODULATED_S
     );
 }

@@ -189,15 +189,21 @@ impl MachineKinematics {
     /// by `MachineProfile::cutting_feed_ceiling_mm_min`, so setting
     /// travel to 10000 no longer lets the optimizer propose cutting
     /// hardwood at 10000.
-    /// Per-axis accel limits (`$120/$121/$122 = 500/500/270`) are now
-    /// representable via `acceleration_xyz_mm_s2`, but this preset keeps
-    /// the calibrated **scalar 350** until Phase E re-benches the
-    /// per-axis model against a fresh wall-clock — switching to per-axis
-    /// shifts the cycle-time prediction and must be validated, not
-    /// assumed (see `planning/ACCEL_FRIENDLY_TOOLPATHS_2026-06-20.md`).
+    /// Phase E (2026-06-21): superseded the calibration blend with the
+    /// machine's **actual** `$$` — per-axis accel `$120/$121/$122 =
+    /// 500/500/270` and junction deviation `$11 = 0.020` (Shapeoko XXL
+    /// community/standard values, confirmed against the user's dump).
+    /// The direction-aware integrator now reads the real per-axis limits
+    /// (XY at 500, Z at 270) instead of the hand-tuned scalar 350, so the
+    /// scalar below is only the direction-less fallback (their mean). The
+    /// doubled δ (0.020 vs the old 0.010 const) widens the cornering arc
+    /// and pulls the Phase-4 over-prediction back down toward the real
+    /// wall-clock.
     pub fn shapeoko_xxl_ricky_tuned() -> Self {
         Self {
-            acceleration_mm_s2: 350.0,
+            acceleration_mm_s2: (500.0 + 500.0 + 270.0) / 3.0,
+            acceleration_xyz_mm_s2: Some([500.0, 500.0, 270.0]),
+            junction_deviation_mm: 0.020,
             ..Self::default()
         }
     }
@@ -1113,6 +1119,42 @@ mod tests {
         assert_eq!(kin.acceleration_xyz_mm_s2, None);
         assert!((kin.junction_deviation_mm - 0.010).abs() < 1e-12);
         assert!((kin.acceleration_mm_s2 - 250.0).abs() < 1e-12);
+    }
+
+    /// Phase E fixture: the user's real Shapeoko XXL `$$` dump (community
+    /// values, 2026-06-21). Guards that the parser maps the calibration
+    /// settings the cycle-time model now depends on, and that
+    /// `shapeoko_xxl_ricky_tuned` stays in sync with it.
+    #[test]
+    fn from_grbl_settings_parses_real_shapeoko_xxl_dump() {
+        let dump = "\
+$0=10\n$1=255\n$2=0\n$3=5\n$4=0\n$5=0\n$6=0\n$10=255\n\
+$11=0.020 (junction deviation, mm)\n$12=0.010 (arc tolerance, mm)\n\
+$13=0\n$20=0\n$21=0\n$22=1\n$23=0\n$24=100.000\n$25=2000.000\n$26=25\n\
+$27=3.000\n$30=1000 (max spindle speed, RPM)\n$31=0\n$32=0\n\
+$100=40.000\n$101=40.000\n$102=200.000\n\
+$110=10000.000\n$111=10000.000\n$112=1000.000\n\
+$120=500.000\n$121=500.000\n$122=270.000\n\
+$130=845.000\n$131=850.000\n$132=95.000\n";
+        let imp = MachineKinematics::from_grbl_settings(dump);
+        assert_eq!(
+            imp.kinematics.acceleration_xyz_mm_s2,
+            Some([500.0, 500.0, 270.0])
+        );
+        assert!((imp.kinematics.junction_deviation_mm - 0.020).abs() < 1e-9);
+        assert_eq!(imp.max_feed_mm_min, Some(10000.0));
+        assert_eq!(imp.max_z_feed_mm_min, Some(1000.0));
+        assert_eq!(imp.arc_tolerance_mm, Some(0.010));
+        assert_eq!(imp.max_spindle_rpm, Some(1000.0));
+
+        // The canonical preset must equal what importing this dump produces
+        // (per-axis accel + δ) — keeps preset and parser from drifting.
+        let preset = MachineKinematics::shapeoko_xxl_ricky_tuned();
+        assert_eq!(
+            preset.acceleration_xyz_mm_s2,
+            imp.kinematics.acceleration_xyz_mm_s2
+        );
+        assert!((preset.junction_deviation_mm - imp.kinematics.junction_deviation_mm).abs() < 1e-9);
     }
 
     #[test]
