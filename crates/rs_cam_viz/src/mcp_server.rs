@@ -16,13 +16,13 @@ use rs_cam_mcp::server::{
     AddAlignmentPinParam, AddToolFromLibraryParam, AddToolParam, AddToolpathParam,
     CollisionCheckParam, CutTraceParam, ExportParam, GenDebugTraceParam,
     ImportMachineSettingsParam, IndexParam, InspectSpansParam, ListToolCatalogParam,
-    LoadProjectParam, ModelIdParam, OperationSchemaParam, OptimizeToolpathInput,
-    RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam, SaveProjectParam,
-    ScreenshotGuiParam, ScreenshotSimParam, ScreenshotToolpathParam, SetBoundaryConfigParam,
-    SetDressupConfigParam, SetDressupFieldParam, SetSpindleStrategyParam, SetStockConfigParam,
-    SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam, SetToolpathHeightsParam,
-    SetToolpathParamInput, SetUiViewParam, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam,
-    SimScrubToolpathParam, SimulationParam,
+    LoadMachineFromLibraryParam, LoadProjectParam, ModelIdParam, OperationSchemaParam,
+    OptimizeToolpathInput, RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam,
+    SaveProjectParam, ScreenshotGuiParam, ScreenshotSimParam, ScreenshotToolpathParam,
+    SetBoundaryConfigParam, SetDressupConfigParam, SetDressupFieldParam, SetSpindleStrategyParam,
+    SetStockConfigParam, SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam,
+    SetToolpathHeightsParam, SetToolpathParamInput, SetUiViewParam, SimJumpToMoveParam,
+    SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam,
 };
 
 /// Embedded MCP server that forwards requests to the GUI thread.
@@ -1151,6 +1151,31 @@ impl EmbeddedCamServer {
     ) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::ImportMachineSettings { dump })
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "list_machine_library",
+        description = "List the reusable machines in the per-user machine library (~/.config/rs_cam/machines/*.toml), each with a compact spec summary (name, max feed, and kinematics: per-axis acceleration + junction deviation when set). The library uses SNAPSHOT semantics like the tool library — import one with `load_machine_from_library` to COPY it into the project. Does NOT require a loaded project."
+    )]
+    async fn list_machine_library(&self) -> String {
+        Self::format_result(self.send_request(McpRequestKind::ListMachineLibrary).await)
+    }
+
+    #[tool(
+        name = "load_machine_from_library",
+        description = "Snapshot-import a machine from the library (by name from `list_machine_library`) into the project: it is COPIED into the project's inline machine (no live link), becoming authoritative. Invalidates machine-dependent state. Verify with inspect_machine."
+    )]
+    async fn load_machine_from_library(
+        &self,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(LoadMachineFromLibraryParam { name }): Parameters<
+            LoadMachineFromLibraryParam,
+        >,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::LoadMachineFromLibrary { name })
                 .await,
         )
     }

@@ -643,6 +643,17 @@ impl super::RsCamApp {
                 let resp = self.mcp_import_machine_settings(&dump);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::ListMachineLibrary => {
+                let resp = self.mcp_list_machine_library();
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::LoadMachineFromLibrary { name } => {
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Setup));
+                let resp = self.mcp_load_machine_from_library(&name);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
         }
     }
 
@@ -1970,6 +1981,66 @@ impl super::RsCamApp {
                 "ignored_settings": imp.ignored_count,
             },
             "note": "kinematics applied; machine-library link cleared. Verify with inspect_machine.",
+        }))
+    }
+
+    /// List the per-user machine library with a compact spec summary per
+    /// entry (snapshot model — these are import sources, not live links).
+    fn mcp_list_machine_library(&self) -> String {
+        let names = rs_cam_core::machine_library::list();
+        let machines: Vec<serde_json::Value> = names
+            .iter()
+            .map(|name| match rs_cam_core::machine_library::load(name) {
+                Ok(p) => {
+                    let kinematics = match &p.kinematics {
+                        Some(k) => {
+                            let per_axis = match k.acceleration_xyz_mm_s2 {
+                                Some([ax, ay, az]) => serde_json::json!([ax, ay, az]),
+                                None => serde_json::Value::Null,
+                            };
+                            serde_json::json!({
+                                "acceleration_xyz_mm_s2": per_axis,
+                                "acceleration_mm_s2": k.acceleration_mm_s2,
+                                "junction_deviation_mm": k.junction_deviation_mm,
+                            })
+                        }
+                        None => serde_json::Value::Null,
+                    };
+                    serde_json::json!({
+                        "name": name,
+                        "profile_name": p.name,
+                        "max_feed_mm_min": p.max_feed_mm_min,
+                        "kinematics": kinematics,
+                    })
+                }
+                Err(e) => serde_json::json!({ "name": name, "error": e.to_string() }),
+            })
+            .collect();
+        let count = machines.len();
+        json_str(serde_json::json!({ "count": count, "machines": machines }))
+    }
+
+    /// Snapshot-import the named library machine into the project's inline
+    /// machine (a COPY; no live link), then invalidate machine-dependent
+    /// state via `MachineChanged`.
+    fn mcp_load_machine_from_library(&mut self, name: &str) -> String {
+        let profile = match rs_cam_core::machine_library::load(name) {
+            Ok(p) => p,
+            Err(e) => {
+                return json_str(serde_json::json!({
+                    "ok": false,
+                    "error": format!("could not load machine '{name}' from the library: {e}"),
+                }));
+            }
+        };
+        let profile_name = profile.name.clone();
+        *self.controller.state_mut().session.machine_mut() = profile;
+        self.controller.events_mut().push(AppEvent::MachineChanged);
+        json_str(serde_json::json!({
+            "ok": true,
+            "imported": name,
+            "profile_name": profile_name,
+            "note": "snapshot copy applied to the project's inline machine; verify with inspect_machine",
         }))
     }
 

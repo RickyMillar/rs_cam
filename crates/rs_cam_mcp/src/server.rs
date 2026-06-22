@@ -186,6 +186,14 @@ pub struct ImportMachineSettingsParam {
     pub dump: String,
 }
 
+/// Name of a machine in the per-user library to snapshot-import.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct LoadMachineFromLibraryParam {
+    /// Library machine name (file stem) from `list_machine_library`. The
+    /// machine is COPIED into the project (snapshot, no live link).
+    pub name: String,
+}
+
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SetToolpathParamInput {
     /// Toolpath index (0-based)
