@@ -53,6 +53,8 @@ fn polygon_model(id: usize) -> LoadedModel {
         name: format!("curve_{id}"),
         mesh: None,
         polygons: Some(Arc::new(vec![unit_square()])),
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         path: PathBuf::from(format!("synthetic://curve_{id}.svg")),
         kind: None,
         units: None,

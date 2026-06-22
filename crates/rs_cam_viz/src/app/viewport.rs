@@ -28,6 +28,7 @@ impl RsCamApp {
 
         let workspace = self.controller.state().workspace;
         let isolate = self.controller.state().viewport.isolate_toolpath;
+        let drill_pick = self.active_drill_toolpath();
 
         let hit = {
             let state = self.controller.state();
@@ -38,6 +39,7 @@ impl RsCamApp {
                 self.controller.collision_positions(),
                 workspace,
                 isolate,
+                drill_pick,
             )
         };
 
@@ -46,6 +48,50 @@ impl RsCamApp {
         } else {
             self.controller.state_mut().selection = Selection::None;
         }
+    }
+
+    /// If the current selection is a drill / alignment-pin-drill toolpath in
+    /// the Toolpaths workspace, return its id so the viewport offers drill
+    /// target picking. Otherwise `None`.
+    fn active_drill_toolpath(&self) -> Option<crate::state::toolpath::ToolpathId> {
+        use rs_cam_core::compute::catalog::OperationConfig;
+        let state = self.controller.state();
+        if state.workspace != Workspace::Toolpaths {
+            return None;
+        }
+        let Selection::Toolpath(id) = state.selection else {
+            return None;
+        };
+        let tc = state
+            .session
+            .toolpath_configs()
+            .iter()
+            .find(|tc| tc.id == id)?;
+        matches!(
+            tc.operation,
+            OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
+        )
+        .then_some(id)
+    }
+
+    /// A cheap key describing the active drill op's target selection, used to
+    /// trigger a GPU re-upload of the viewport markers when it changes from
+    /// any source. `None` when no drill op is selected.
+    pub(super) fn current_drill_marker_key(&self) -> Option<(usize, Vec<[f64; 2]>)> {
+        use rs_cam_core::compute::catalog::OperationConfig;
+        let id = self.active_drill_toolpath()?;
+        let state = self.controller.state();
+        let tc = state
+            .session
+            .toolpath_configs()
+            .iter()
+            .find(|tc| tc.id == id)?;
+        let selected = match &tc.operation {
+            OperationConfig::Drill(c) => c.selected_holes.clone(),
+            OperationConfig::AlignmentPinDrill(c) => c.selected_holes.clone(),
+            _ => None,
+        };
+        Some((id.0, selected.unwrap_or_default()))
     }
 
     fn handle_simulation_semantic_pick(&mut self, click_pos: egui::Pos2) -> bool {
@@ -151,6 +197,12 @@ impl RsCamApp {
             (_, PickHit::Toolpath { id, .. }) => {
                 self.controller.state_mut().selection = Selection::Toolpath(id);
             }
+            (Workspace::Toolpaths, PickHit::DrillTarget { toolpath_id, xy }) => {
+                // Toggle this target in the drill op's selection (undo-tracked).
+                self.controller
+                    .events_mut()
+                    .push(crate::ui::AppEvent::ToggleDrillTarget { toolpath_id, xy });
+            }
             (Workspace::Toolpaths, PickHit::ModelFace { model_id, face_id }) => {
                 // Route face toggle through controller event for undo support.
                 // The controller handler also updates visual selection and pending_upload.
@@ -245,6 +297,7 @@ impl RsCamApp {
                     self.controller.collision_positions(),
                     state.workspace,
                     state.viewport.isolate_toolpath,
+                    None,
                 )
             {
                 self.last_hover_face = Some(face_id);
@@ -278,6 +331,7 @@ impl RsCamApp {
                     self.controller.collision_positions(),
                     state.workspace,
                     state.viewport.isolate_toolpath,
+                    None,
                 )
                 && let Some(tip) = span_path_tooltip(state, id, move_index)
             {

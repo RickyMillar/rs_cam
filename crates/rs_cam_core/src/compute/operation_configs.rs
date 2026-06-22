@@ -143,6 +143,20 @@ pub struct DrillConfig {
     pub retract_z: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// Explicit drill locations (XY, mm) picked from the model — DXF POINT
+    /// entities or circle/arc centres, chosen in the viewport or by layer.
+    ///
+    /// `None` (the default) preserves the legacy behaviour of drilling the
+    /// centroid of every closed polygon in the model. `Some(_)` means the
+    /// user has taken control of the selection; an empty list then means
+    /// "no targets selected" rather than "all centroids".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_holes: Option<Vec<[f64; 2]>>,
+    /// Layer name(s) the user bulk-selected with "select all in layer".
+    /// Display/round-trip only — the resolved positions live in
+    /// [`Self::selected_holes`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub selected_layers: Vec<String>,
 }
 
 impl Default for DrillConfig {
@@ -156,6 +170,8 @@ impl Default for DrillConfig {
             feed_rate: 300.0,
             retract_z: 2.0,
             spindle_rpm: None,
+            selected_holes: None,
+            selected_layers: Vec::new(),
         }
     }
 }
@@ -173,6 +189,14 @@ pub struct AlignmentPinDrillConfig {
     pub retract_z: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// Extra drill locations (XY, mm) picked from the model — DXF POINT
+    /// entities or circle/arc centres. These are drilled in addition to the
+    /// stock alignment pins in [`Self::holes`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_holes: Option<Vec<[f64; 2]>>,
+    /// Layer name(s) bulk-selected with "select all in layer" (display/round-trip).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub selected_layers: Vec<String>,
 }
 
 impl AlignmentPinDrillConfig {
@@ -203,6 +227,8 @@ impl Default for AlignmentPinDrillConfig {
             feed_rate: 300.0,
             retract_z: 2.0,
             spindle_rpm: None,
+            selected_holes: None,
+            selected_layers: Vec::new(),
         }
     }
 }
@@ -1724,5 +1750,41 @@ mod tests {
         assert_eq!(json, "\"agent_search\"");
         let from_wire: ClearingStrategy = serde_json::from_str("\"agent_search\"").unwrap();
         assert_eq!(from_wire, ClearingStrategy::AgentSearch);
+    }
+
+    /// Drill selection fields must round-trip, and legacy TOML/JSON that
+    /// predates them must deserialize to the legacy "all centroids" behaviour
+    /// (`selected_holes: None`, empty `selected_layers`).
+    #[test]
+    fn drill_selection_serde_round_trip_and_backcompat() {
+        // Legacy payload with neither selection key present.
+        let legacy = r#"{
+            "depth": 10.0,
+            "cycle": "peck",
+            "peck_depth": 3.0,
+            "dwell_time": 0.5,
+            "retract_amount": 0.5,
+            "feed_rate": 300.0,
+            "retract_z": 2.0
+        }"#;
+        let cfg: DrillConfig = serde_json::from_str(legacy).unwrap();
+        assert_eq!(cfg.selected_holes, None, "legacy => all-centroids (None)");
+        assert!(cfg.selected_layers.is_empty());
+
+        // Round-trip with an explicit selection.
+        let chosen = DrillConfig {
+            selected_holes: Some(vec![[1.0, 2.0], [3.0, 4.0]]),
+            selected_layers: vec!["holes".to_owned()],
+            ..DrillConfig::default()
+        };
+        let json = serde_json::to_string(&chosen).unwrap();
+        let back: DrillConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.selected_holes, chosen.selected_holes);
+        assert_eq!(back.selected_layers, chosen.selected_layers);
+
+        // None must be omitted from the wire form (skip_serializing_if).
+        let default_json = serde_json::to_string(&DrillConfig::default()).unwrap();
+        assert!(!default_json.contains("selected_holes"));
+        assert!(!default_json.contains("selected_layers"));
     }
 }

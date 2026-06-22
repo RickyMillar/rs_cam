@@ -416,6 +416,8 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
                 name: m.name.clone(),
                 mesh: m.mesh.clone(),
                 polygons: m.polygons.clone(),
+                drill_targets: std::sync::Arc::clone(&m.drill_targets),
+                layers: std::sync::Arc::clone(&m.layers),
                 path: m.path.clone(),
                 kind: m.kind,
                 units: m.units,

@@ -78,6 +78,8 @@ fn build_pocket_session() -> Option<(ProjectSession, usize)> {
         name: "demo_pocket".to_owned(),
         mesh: None,
         polygons: Some(Arc::new(polygons)),
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         path: svg_path,
         kind: Some(ModelKind::Svg),
         units: Some(ModelUnits::Millimeters),

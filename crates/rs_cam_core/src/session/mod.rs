@@ -43,6 +43,7 @@ use crate::compute::stock_config::{FixtureId, KeepOutId, ModelKind, ModelUnits, 
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::debug_trace::{ToolpathDebugOptions, ToolpathDebugTrace};
+use crate::dxf_input::DrillTarget;
 use crate::enriched_mesh::{EnrichedMesh, FaceGroupId};
 use crate::gcode::CoolantMode;
 use crate::geo::{BoundingBox3, P3};
@@ -149,7 +150,9 @@ impl From<CollisionCheckError> for SessionError {
 /// Geometry loaded from a model file.
 pub(crate) enum LoadedGeometry {
     Mesh(TriangleMesh),
-    Polygons(Vec<Polygon2>),
+    /// 2D polygons plus pickable drill targets and their layer names
+    /// (DXF imports; SVG passes empty target/layer lists).
+    Polygons(Vec<Polygon2>, Vec<DrillTarget>, Vec<String>),
     /// Mesh + BREP face groups (STEP / CAD models). The enriched form
     /// is required for face-selective operations; downgrading to a
     /// flat `Mesh` silently strips topology and breaks face pickers.
@@ -166,6 +169,12 @@ pub struct LoadedModel {
     pub name: String,
     pub mesh: Option<Arc<TriangleMesh>>,
     pub polygons: Option<Arc<Vec<Polygon2>>>,
+    /// Pickable drill targets extracted from the source (DXF POINT entities
+    /// and circle/arc centres). Empty for meshes and SVG.
+    pub drill_targets: Arc<Vec<DrillTarget>>,
+    /// Distinct layer names that contain drill targets (sorted). Empty for
+    /// formats without layers.
+    pub layers: Arc<Vec<String>>,
     /// Original file path (for save round-trip).
     pub path: std::path::PathBuf,
     /// File kind (stl, svg, dxf, step).
@@ -207,9 +216,15 @@ impl LoadedModel {
         };
         let resolved_kind = kind.or_else(|| project_file::infer_model_kind(path));
         let geometry = project_file::load_model_geometry(&section, base_dir)?;
+        let mut drill_targets: Arc<Vec<DrillTarget>> = Arc::new(Vec::new());
+        let mut layers: Arc<Vec<String>> = Arc::new(Vec::new());
         let (mesh, polygons, enriched_mesh) = match geometry {
             LoadedGeometry::Mesh(mesh) => (Some(Arc::new(mesh)), None, None),
-            LoadedGeometry::Polygons(polys) => (None, Some(Arc::new(polys)), None),
+            LoadedGeometry::Polygons(polys, targets, layer_names) => {
+                drill_targets = Arc::new(targets);
+                layers = Arc::new(layer_names);
+                (None, Some(Arc::new(polys)), None)
+            }
             LoadedGeometry::Enriched(enriched) => {
                 let mesh_arc = Arc::clone(&enriched.mesh);
                 (Some(mesh_arc), None, Some(Arc::new(enriched)))
@@ -220,6 +235,8 @@ impl LoadedModel {
             name: name.to_owned(),
             mesh,
             polygons,
+            drill_targets,
+            layers,
             path: path.to_path_buf(),
             kind: resolved_kind,
             units,
@@ -246,6 +263,8 @@ impl LoadedModel {
             name,
             mesh: None,
             polygons: None,
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
             path,
             kind: Some(kind),
             units: Some(units),
@@ -1513,8 +1532,12 @@ mod tests {
         assert_eq!(tp.operation.op_type(), expected.op_type());
     }
 
+    /// Snapshot model: the `machine_ref` field is retained on the file
+    /// struct only so legacy projects still PARSE — it is no longer a
+    /// live link (the session loader drops it; see
+    /// `legacy_machine_ref_dropped_on_session_load`).
     #[test]
-    fn machine_ref_round_trips_through_project_file() {
+    fn legacy_machine_ref_field_still_parses_for_backcompat() {
         use super::project_file::{ProjectFile, ProjectJobSection};
         let make = |job: ProjectJobSection| ProjectFile {
             format_version: 3,
@@ -1524,28 +1547,66 @@ mod tests {
             setups: Vec::new(),
             toolpaths: Vec::new(),
         };
-        // machine_ref set → persists and round-trips.
+        // An old file with machine_ref must still deserialize (we read the
+        // field, then drop it on load).
         let project = make(ProjectJobSection {
             name: "Ref Job".to_owned(),
             machine_ref: Some("shapeoko_pro_xxl".to_owned()),
             ..ProjectJobSection::default()
         });
         let toml_str = toml::to_string_pretty(&project).unwrap();
-        assert!(
-            toml_str.contains("machine_ref = \"shapeoko_pro_xxl\""),
-            "machine_ref should serialize: {toml_str}"
-        );
         let back: ProjectFile = toml::from_str(&toml_str).unwrap();
         assert_eq!(back.job.machine_ref.as_deref(), Some("shapeoko_pro_xxl"));
 
-        // No machine_ref → key omitted (skip_serializing_if), so old
-        // projects stay byte-compatible.
+        // No machine_ref → key omitted (skip_serializing_if), so files
+        // written under the snapshot model never carry it.
         let plain = make(ProjectJobSection::default());
         let plain_toml = toml::to_string_pretty(&plain).unwrap();
         assert!(
             !plain_toml.contains("machine_ref"),
             "absent machine_ref should be omitted: {plain_toml}"
         );
+    }
+
+    /// Snapshot migration: loading a project that carries a legacy
+    /// `machine_ref` drops the ref (session reports `None`) and keeps the
+    /// inline `[job.machine]` as authoritative.
+    #[test]
+    fn legacy_machine_ref_dropped_on_session_load() {
+        use super::project_file::{ProjectFile, ProjectJobSection};
+        let mut inline = crate::machine::MachineProfile::generic_wood_router();
+        inline.name = "Inline Wins".to_owned();
+        let project = ProjectFile {
+            format_version: 3,
+            job: ProjectJobSection {
+                name: "Legacy Ref".to_owned(),
+                machine: inline,
+                machine_ref: Some("some_library_machine".to_owned()),
+                ..ProjectJobSection::default()
+            },
+            tools: Vec::new(),
+            models: Vec::new(),
+            setups: Vec::new(),
+            toolpaths: Vec::new(),
+        };
+        let toml_str = toml::to_string_pretty(&project).unwrap();
+        let dir = std::env::temp_dir().join(format!("rscam_snap_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("legacy_ref.toml");
+        std::fs::write(&path, toml_str).unwrap();
+
+        let session = ProjectSession::load(&path).unwrap();
+        assert_eq!(
+            session.machine_ref(),
+            None,
+            "legacy machine_ref must be dropped on load (snapshot model)"
+        );
+        assert_eq!(
+            session.machine().name,
+            "Inline Wins",
+            "inline machine must remain authoritative"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

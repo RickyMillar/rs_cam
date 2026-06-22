@@ -25,7 +25,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 | 2.5D | Inlay | `inlay.rs` | Yes | Yes | Shipped |
 | 2.5D | Zigzag | `zigzag.rs` | Yes | No | Shipped |
 | 2.5D | Trace | `trace.rs` | Yes | No | Shipped |
-| 2.5D | Drill | `drill.rs` | Yes | No | Shipped — first-class `OperationFamily` with peck cycles, diameter-scaled `peck_depth` / `plunge_rate_base`, and drill-native metrics (`DrillToolpathSummary` + `drill_gates`) in place of engagement axes |
+| 2.5D | Drill | `drill.rs` | Yes | No | Shipped — first-class `OperationFamily` with peck cycles, diameter-scaled `peck_depth` / `plunge_rate_base`, and drill-native metrics (`DrillToolpathSummary` + `drill_gates`) in place of engagement axes. Hole targets can be picked from imported DXF (POINT entities + circle/arc centres, with layer attribution) via viewport click or per-layer "select all"; default (no selection) drills every closed-polygon centroid |
 | 2.5D | Chamfer | `chamfer.rs` | Yes | No | Shipped |
 | 3D | 3D Finish | `dropcutter.rs` | Yes | Yes | Shipped |
 | 3D | 3D Rough | `adaptive3d.rs` | Yes | Yes | Shipped |

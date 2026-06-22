@@ -74,6 +74,8 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
         kind: Some(ModelKind::Stl),
         mesh: Some(Arc::clone(&mesh)),
         polygons: None,
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         enriched_mesh: None,
         units: Some(ModelUnits::Millimeters),
         winding_report: None,

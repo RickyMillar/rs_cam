@@ -97,6 +97,8 @@ fn build_vcarve_session() -> ProjectSession {
         name: "demo_star".to_owned(),
         mesh: None,
         polygons: Some(Arc::new(vec![polygon])),
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         path: PathBuf::from("synthetic://demo_star.svg"),
         kind: None,
         units: None,

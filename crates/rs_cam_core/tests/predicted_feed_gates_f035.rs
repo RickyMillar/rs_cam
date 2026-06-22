@@ -326,6 +326,8 @@ fn build_as001_pocket_session(kinematics: Option<MachineKinematics>) -> ProjectS
         name: "as001_pocket".to_owned(),
         mesh: None,
         polygons: Some(Arc::new(vec![polygon])),
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         path: PathBuf::from("synthetic://as001_pocket.svg"),
         kind: None,
         units: None,

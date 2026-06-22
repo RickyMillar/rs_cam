@@ -166,6 +166,43 @@ impl<B: ComputeBackend> AppController<B> {
                 }
             }
 
+            // --- Drill target selection ---
+            AppEvent::ToggleDrillTarget { toolpath_id, xy } => {
+                use rs_cam_core::compute::catalog::OperationConfig;
+                if let Some((idx, tc)) = self.state.session.find_toolpath_config_by_id(toolpath_id)
+                {
+                    let current = match &tc.operation {
+                        OperationConfig::Drill(c) => c.selected_holes.clone(),
+                        OperationConfig::AlignmentPinDrill(c) => c.selected_holes.clone(),
+                        _ => None,
+                    };
+                    let mut holes = current.unwrap_or_default();
+                    // Toggle membership with a tolerance (no float == on picks).
+                    const EPS: f64 = 1e-6;
+                    if let Some(pos) = holes
+                        .iter()
+                        .position(|h| (h[0] - xy[0]).abs() < EPS && (h[1] - xy[1]).abs() < EPS)
+                    {
+                        holes.remove(pos);
+                    } else {
+                        holes.push(xy);
+                    }
+                    // Empty selection reverts to the legacy default (None) so a
+                    // viewport deselect doesn't leave a confusing "nothing" state.
+                    let new_selection = if holes.is_empty() { None } else { Some(holes) };
+                    let _ = self
+                        .state
+                        .session
+                        .set_drill_selected_holes(idx, new_selection);
+                    if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
+                        rt.stale_since = Some(std::time::Instant::now());
+                    }
+                    self.state.selection = Selection::Toolpath(toolpath_id);
+                    self.state.gui.mark_edited();
+                    self.pending_upload = true;
+                }
+            }
+
             // --- Undo / redo ---
             AppEvent::Undo => self.undo(),
             AppEvent::Redo => self.redo(),

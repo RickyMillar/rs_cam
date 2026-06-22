@@ -350,6 +350,12 @@ pub enum AppEvent {
         face_id: FaceGroupId,
     },
 
+    // Drill target selection (DXF point / circle centre picked in viewport)
+    ToggleDrillTarget {
+        toolpath_id: ToolpathId,
+        xy: [f64; 2],
+    },
+
     // Edit
     StockChanged,
     StockMaterialChanged,

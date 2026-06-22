@@ -1977,6 +1977,8 @@ mod tests {
             polygons: Some(Arc::new(vec![Polygon2::rectangle(
                 -10.0, -10.0, 10.0, 10.0,
             )])),
+            drill_targets: std::sync::Arc::new(Vec::new()),
+            layers: std::sync::Arc::new(Vec::new()),
             enriched_mesh: None,
             units: Some(ModelUnits::Millimeters),
             winding_report: None,
@@ -1992,6 +1994,8 @@ mod tests {
             kind: Some(ModelKind::Stl),
             mesh: Some(Arc::new(make_test_flat(20.0))),
             polygons: None,
+            drill_targets: std::sync::Arc::new(Vec::new()),
+            layers: std::sync::Arc::new(Vec::new()),
             enriched_mesh: None,
             units: Some(ModelUnits::Millimeters),
             winding_report: None,
