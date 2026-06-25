@@ -1677,6 +1677,7 @@ fn default_pencil_params() -> PencilParams {
         plunge_rate: 400.0,
         safe_z: 30.0,
         stock_to_leave: 0.0,
+        min_valley_depth: 0.0,
     }
 }
 

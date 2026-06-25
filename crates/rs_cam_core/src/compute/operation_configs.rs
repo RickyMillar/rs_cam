@@ -720,6 +720,11 @@ pub struct PencilConfig {
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub stock_to_leave: f64,
+    /// Reach-gap tolerance (mm): minimum uncut valley depth for the tool-radius-
+    /// aware gate to keep a concave seam. Higher = ignore shallow surface texture,
+    /// keep only deeper channels. `#[serde(default)]` so older project files load.
+    #[serde(default = "crate::pencil::reach_gap_threshold")]
+    pub min_valley_depth: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
 }
@@ -736,6 +741,7 @@ impl Default for PencilConfig {
             feed_rate: 800.0,
             plunge_rate: 400.0,
             stock_to_leave: 0.0,
+            min_valley_depth: crate::pencil::reach_gap_threshold(),
             spindle_rpm: None,
         }
     }
