@@ -437,6 +437,8 @@ fn pencil_link_moves_preserves_material_state() {
             // 0 = keep any genuinely-bridged concavity (pre-gate behaviour); this
             // suite exercises link_moves, not the reach-gap gate.
             min_valley_depth: 0.0,
+            // 0 = no bisector shift; this suite exercises link_moves, not corner nestling.
+            bisector_strength: 0.0,
         },
     );
     if raw.moves.is_empty() {
