@@ -485,7 +485,18 @@ impl SpatialIndex {
         let extent_x = bbox.max.x - bbox.min.x;
         let extent_y = bbox.max.y - bbox.min.y;
         let max_extent = extent_x.max(extent_y);
-        let cell_size = (max_extent / 50.0).max(1.0);
+        // Density-aware cell size: target a handful of triangles per cell so
+        // per-query work stays small on dense meshes. The old `extent/50` rule
+        // ignored triangle count and gave very coarse cells — e.g. ~4mm / ~400
+        // triangles per cell on a 661k-triangle terrain — which dominated
+        // drop-cutter time (pencil, scallop, waterline, simulate, collision).
+        let tri_count = (mesh.triangles.len().max(1)) as f64;
+        let area = (extent_x * extent_y).max(1e-6);
+        let density_cell = (8.0 * area / tri_count).sqrt();
+        let coarse_cell = (max_extent / 50.0).max(1.0);
+        // Memory guard: keep the grid under ~1M cells.
+        let min_cell = (area / 1_000_000.0).sqrt();
+        let cell_size = density_cell.min(coarse_cell).max(min_cell).max(0.1);
         Self::build(mesh, cell_size)
     }
 
