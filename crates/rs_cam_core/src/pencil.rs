@@ -20,7 +20,7 @@ use tracing::info;
 
 use crate::debug_trace::ToolpathDebugContext;
 use crate::dropcutter::point_drop_cutter;
-use crate::geo::P3;
+use crate::geo::{P3, V3};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
@@ -57,6 +57,15 @@ pub struct PencilParams {
     /// surface texture and keep only deeper channels; lower it to catch fine
     /// detail. Default 0.05mm (see [`reach_gap_threshold`]).
     pub min_valley_depth: f64,
+    /// Bisector positioning strength (0 = off, 1 = geometrically correct). In an
+    /// asymmetric internal corner (steep wall + flat floor, e.g. a lake edge) the
+    /// seam line is NOT where a vertical ball nestles — it rides up the steep wall
+    /// and leaves the fillet uncut. This shifts the trace X,Y out along the
+    /// bisector of the two walls (zero for symmetric valleys) so the drop rests
+    /// tangent to both. 1.0 = the exact `r·(n1+n2)/(1+n1·n2)` offset; lower to
+    /// under-shoot, raise to over-shoot when dialing. Default 1.0
+    /// (see [`bisector_strength_default`]).
+    pub bisector_strength: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -124,10 +133,8 @@ impl EdgeKey {
 struct SharedEdge {
     /// Sorted vertex indices
     key: EdgeKey,
-    /// Indices of the two faces sharing this edge (kept for future offset pass direction)
-    #[allow(dead_code)]
+    /// Indices of the two faces sharing this edge (used for bisector positioning)
     face_a: usize,
-    #[allow(dead_code)]
     face_b: usize,
     /// Dihedral angle in radians (0 = coplanar, π = fully folded)
     dihedral_angle: f64,
@@ -393,6 +400,9 @@ fn chain_concave_edges(
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[allow(dead_code)]
+// superseded by sample_chain_bisected; retained as the
+// un-offset reference and exercised by test_sample_chain_spacing
 /// Sample points along a vertex chain at the given spacing.
 /// Returns 3D points interpolated along the polyline.
 fn sample_chain(mesh: &TriangleMesh, chain: &[u32], spacing: f64) -> Vec<P3> {
@@ -511,6 +521,100 @@ fn fair_polyline_xy(points: &[P3], passes: usize, strength: f64) -> Vec<P3> {
         }
     }
     pts
+}
+
+/// Default bisector positioning strength (1.0 = the geometrically-correct offset).
+pub(crate) fn bisector_strength_default() -> f64 {
+    1.0
+}
+
+/// Horizontal (XY) bisector offset that nestles a radius-`r` ball into the concave
+/// corner between two faces with outward unit normals `n1`,`n2`. For a *symmetric*
+/// valley the seam line already is the bisector and `(n1+n2)` points straight up,
+/// so this is ~zero; for an *asymmetric* corner (steep wall + flat floor) it shifts
+/// the trace out over the shallower face. Derivation: the ball-centre in two-point
+/// tangency is `C = S + r·(n1+n2)/(1 + n1·n2)`; we keep its X,Y and let drop-cutter
+/// re-solve Z gouge-safely. Magnitude is capped at `r` (a sharper asymmetric corner
+/// a ball can't enter anyway) and scaled by `strength` for tuning. Near-opposite
+/// normals (a near-flat fold, denominator → 0) yield no shift.
+fn bisector_offset_xy(n1: &V3, n2: &V3, r: f64, strength: f64) -> (f64, f64) {
+    let denom = 1.0 + n1.dot(n2);
+    if denom <= 1e-3 || strength <= 0.0 || r <= 0.0 {
+        return (0.0, 0.0);
+    }
+    let sum = n1 + n2;
+    let mut ox = r * sum.x / denom * strength;
+    let mut oy = r * sum.y / denom * strength;
+    let mag = (ox * ox + oy * oy).sqrt();
+    if mag > r {
+        let s = r / mag;
+        ox *= s;
+        oy *= s;
+    }
+    (ox, oy)
+}
+
+/// Sample points along a vertex chain at the given spacing, applying the per-edge
+/// bisector offset (see [`bisector_offset_xy`]) to each point's X,Y so the trace
+/// nestles into asymmetric corners. Mirrors [`sample_chain`] but shifts each
+/// segment's points by that segment's offset; Z is left as the interpolated seam
+/// height (the later `lift_to_surface` drop re-solves it). Offset jumps at vertices
+/// are smoothed by the subsequent fairing pass. With `strength == 0` (or no edge
+/// normals) this reduces to plain `sample_chain`.
+#[allow(clippy::indexing_slicing)] // chain entries are valid vertex indices
+fn sample_chain_bisected(
+    mesh: &TriangleMesh,
+    chain: &[u32],
+    spacing: f64,
+    edge_norms: &HashMap<EdgeKey, (V3, V3)>,
+    radius: f64,
+    strength: f64,
+) -> Vec<P3> {
+    if chain.len() < 2 {
+        return Vec::new();
+    }
+    let off_for = |i: usize, j: usize| -> (f64, f64) {
+        edge_norms
+            .get(&EdgeKey::new(chain[i], chain[j]))
+            .map(|(n1, n2)| bisector_offset_xy(n1, n2, radius, strength))
+            .unwrap_or((0.0, 0.0))
+    };
+
+    let mut points = Vec::new();
+    let (ox0, oy0) = off_for(0, 1);
+    let p0 = mesh.vertices[chain[0] as usize];
+    points.push(P3::new(p0.x + ox0, p0.y + oy0, p0.z));
+
+    let mut accumulated = 0.0;
+    for i in 0..chain.len() - 1 {
+        let a = mesh.vertices[chain[i] as usize];
+        let b = mesh.vertices[chain[i + 1] as usize];
+        let seg_len = (b - a).norm();
+        if seg_len < 1e-10 {
+            continue;
+        }
+        let (ox, oy) = off_for(i, i + 1);
+        let dir = (b - a) / seg_len;
+        let mut dist_along = spacing - accumulated;
+        while dist_along <= seg_len {
+            let pt = a + dir * dist_along;
+            points.push(P3::new(pt.x + ox, pt.y + oy, pt.z));
+            dist_along += spacing;
+        }
+        accumulated = seg_len - (dist_along - spacing);
+    }
+
+    if let Some(&last_idx) = chain.last() {
+        let last = mesh.vertices[last_idx as usize];
+        let (oxl, oyl) = off_for(chain.len() - 2, chain.len() - 1);
+        let lp = P3::new(last.x + oxl, last.y + oyl, last.z);
+        if let Some(prev) = points.last()
+            && (lp - prev).norm() > spacing * 0.1
+        {
+            points.push(lp);
+        }
+    }
+    points
 }
 
 /// Lift 2D polyline points to the mesh surface using drop-cutter. The per-point
@@ -841,6 +945,26 @@ pub fn pencil_toolpath_structured_annotated(
     let chains_all = chain_concave_edges(&concave_owned, mesh, params.min_cut_length);
     let chains = gate_chains_by_depth(chains_all, mesh, index, cutter, gap_threshold);
 
+    // Per-edge outward face normals, for bisector positioning (Step 5). Built from
+    // the filtered concave edges so the offset uses the exact two walls that define
+    // each crease. Empty/strength-0 → sampling falls back to the plain seam line.
+    #[allow(clippy::indexing_slicing)] // face_a/face_b are valid mesh face indices
+    let edge_norms: HashMap<EdgeKey, (V3, V3)> = concave_owned
+        .iter()
+        .map(|e| {
+            (
+                e.key,
+                (mesh.faces[e.face_a].normal, mesh.faces[e.face_b].normal),
+            )
+        })
+        .collect();
+    // Contact radius of the tool: the tip/ball corner radius where it nestles into
+    // the corner (falls back to the nominal radius for a flat end mill).
+    let contact_radius = {
+        let cr = cutter.corner_radius_mm();
+        if cr > 1e-6 { cr } else { cutter.radius() }
+    };
+
     if chains.is_empty() {
         info!(
             "No tool-unreachable valley chains (gap > {:.3}mm) over {:.1}mm",
@@ -861,12 +985,21 @@ pub fn pencil_toolpath_structured_annotated(
     let mut all_paths: Vec<PencilPath> = Vec::new();
 
     for (chain_index, chain) in chains.iter().enumerate() {
-        let sampled = sample_chain(mesh, chain, params.sampling);
+        // Sample with bisector positioning so asymmetric corners nestle correctly
+        // (no-op for symmetric valleys / strength 0).
+        let sampled = sample_chain_bisected(
+            mesh,
+            chain,
+            params.sampling,
+            &edge_norms,
+            contact_radius,
+            params.bisector_strength,
+        );
         if sampled.len() < 2 {
             continue;
         }
-        // De-jag the facet-scale zig-zag before lifting; offsets derive from the
-        // faired centerline so they inherit the smoothing.
+        // De-jag the facet-scale zig-zag (and any per-segment offset jumps) before
+        // lifting; offsets derive from the faired centerline so they inherit it.
         let sampled = fair_polyline_xy(&sampled, FAIRING_PASSES, FAIRING_STRENGTH);
 
         let offset_total = 1 + params.num_offset_passes * 2;
@@ -1239,6 +1372,7 @@ mod tests {
             safe_z: 15.0,
             stock_to_leave: 0.0,
             min_valley_depth: reach_gap_threshold(),
+            bisector_strength: bisector_strength_default(),
         };
 
         let tp = pencil_toolpath(&mesh, &index, &tool, &params);
@@ -1266,6 +1400,7 @@ mod tests {
             safe_z: 15.0,
             stock_to_leave: 0.0,
             min_valley_depth: reach_gap_threshold(),
+            bisector_strength: bisector_strength_default(),
         };
 
         let tp = pencil_toolpath(&mesh, &index, &tool, &params);
@@ -1293,6 +1428,7 @@ mod tests {
             safe_z: 15.0,
             stock_to_leave: 0.0,
             min_valley_depth: reach_gap_threshold(),
+            bisector_strength: bisector_strength_default(),
         };
 
         let params_offset = PencilParams {
@@ -1379,6 +1515,7 @@ mod tests {
             safe_z: 15.0,
             stock_to_leave: 0.0,
             min_valley_depth: reach_gap_threshold(),
+            bisector_strength: bisector_strength_default(),
         }
     }
 
@@ -1437,6 +1574,7 @@ mod tests {
             safe_z: mesh.bbox.max.z + 5.0,
             stock_to_leave: 0.0,
             min_valley_depth: reach_gap_threshold(),
+            bisector_strength: bisector_strength_default(),
         };
 
         let edge_map = build_edge_adjacency(&mesh);
@@ -1566,6 +1704,7 @@ mod tests {
         params.min_valley_depth = env_f64("RS_CAM_PENCIL_MVD", 0.05);
         params.min_cut_length = env_f64("RS_CAM_PENCIL_MINLEN", 2.0);
         params.hookup_distance = env_f64("RS_CAM_PENCIL_HOOKUP", params.hookup_distance);
+        params.bisector_strength = env_f64("RS_CAM_PENCIL_BISECTOR", params.bisector_strength);
         params.safe_z = mesh.bbox.max.z + 5.0;
 
         // Phase timings for the detection sub-steps (the suspected hot path).
@@ -1772,6 +1911,7 @@ mod tests {
             safe_z: 15.0,
             stock_to_leave: 0.0,
             min_valley_depth: reach_gap_threshold(),
+            bisector_strength: bisector_strength_default(),
         };
 
         let unlinked = pencil_toolpath(&mesh, &index, &tool, &mk(0.0));
@@ -1784,6 +1924,40 @@ mod tests {
             linked.total_rapid_distance(),
             unlinked.total_rapid_distance()
         );
+    }
+
+    /// Bisector offset: zero for a symmetric valley, shifts +r over the floor for
+    /// a 90° L-corner, and scales with strength.
+    #[test]
+    fn test_bisector_offset_symmetric_zero_asymmetric_shifts() {
+        let r = 2.0;
+
+        // Symmetric V-valley: normals mirror about Z → (n1+n2) is vertical → no shift.
+        let a = 0.6_f64;
+        let b = (1.0 - a * a).sqrt();
+        let (sx, sy) = bisector_offset_xy(&V3::new(-a, 0.0, b), &V3::new(a, 0.0, b), r, 1.0);
+        assert!(
+            sx.abs() < 1e-9 && sy.abs() < 1e-9,
+            "symmetric valley must not shift: ({sx},{sy})"
+        );
+
+        // Asymmetric 90° L-corner: vertical wall (+x) + flat floor (+z) → shift +r in x.
+        let n_wall = V3::new(1.0, 0.0, 0.0);
+        let n_floor = V3::new(0.0, 0.0, 1.0);
+        let (lx, ly) = bisector_offset_xy(&n_wall, &n_floor, r, 1.0);
+        assert!(
+            (lx - r).abs() < 1e-9 && ly.abs() < 1e-9,
+            "L-corner must shift +r out over the floor: ({lx},{ly})"
+        );
+
+        // Strength scales it; 0 disables.
+        let (hx, _) = bisector_offset_xy(&n_wall, &n_floor, r, 0.5);
+        assert!(
+            (hx - r * 0.5).abs() < 1e-9,
+            "strength should scale the offset"
+        );
+        let (zx, zy) = bisector_offset_xy(&n_wall, &n_floor, r, 0.0);
+        assert!(zx == 0.0 && zy == 0.0, "strength 0 disables the shift");
     }
 
     #[test]
@@ -1805,6 +1979,7 @@ mod tests {
             safe_z: 25.0,
             stock_to_leave: 0.0,
             min_valley_depth: reach_gap_threshold(),
+            bisector_strength: bisector_strength_default(),
         };
 
         let edge_map = build_edge_adjacency(&mesh);

@@ -1197,6 +1197,7 @@ const PENCIL_PARAMS: &[ParamDef] = &[
     ParamDef::required("plunge_rate", "f64"),
     ParamDef::required("stock_to_leave", "f64"),
     ParamDef::required("min_valley_depth", "f64"),
+    ParamDef::required("bisector_strength", "f64"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 

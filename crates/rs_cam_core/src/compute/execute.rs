@@ -1118,6 +1118,7 @@ pub(crate) fn generate_pencil(
         safe_z: ctx.heights.retract_z,
         stock_to_leave: cfg.stock_to_leave,
         min_valley_depth: cfg.min_valley_depth,
+        bisector_strength: cfg.bisector_strength,
     };
     let (tp, annotations) = crate::pencil::pencil_toolpath_structured_annotated(
         m,

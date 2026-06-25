@@ -725,6 +725,12 @@ pub struct PencilConfig {
     /// keep only deeper channels. `#[serde(default)]` so older project files load.
     #[serde(default = "crate::pencil::reach_gap_threshold")]
     pub min_valley_depth: f64,
+    /// Bisector positioning strength (0 = off, 1 = geometrically correct). Shifts
+    /// the trace out along the wall bisector in asymmetric corners so the ball
+    /// nestles instead of riding up the steep wall. `#[serde(default)]` so older
+    /// project files load.
+    #[serde(default = "crate::pencil::bisector_strength_default")]
+    pub bisector_strength: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
 }
@@ -742,6 +748,7 @@ impl Default for PencilConfig {
             plunge_rate: 400.0,
             stock_to_leave: 0.0,
             min_valley_depth: crate::pencil::reach_gap_threshold(),
+            bisector_strength: crate::pencil::bisector_strength_default(),
             spindle_rpm: None,
         }
     }
