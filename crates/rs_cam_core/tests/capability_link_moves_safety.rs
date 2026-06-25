@@ -439,6 +439,9 @@ fn pencil_link_moves_preserves_material_state() {
             min_valley_depth: 0.0,
             // 0 = no bisector shift; this suite exercises link_moves, not corner nestling.
             bisector_strength: 0.0,
+            // 0 = self-referenced gap (no bigger reference tool); preserves the
+            // pre-reference-gate behaviour this link_moves suite was written against.
+            reference_tool_diameter: 0.0,
         },
     );
     if raw.moves.is_empty() {
