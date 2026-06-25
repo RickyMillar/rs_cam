@@ -66,6 +66,15 @@ pub struct PencilParams {
     /// under-shoot, raise to over-shoot when dialing. Default 1.0
     /// (see [`bisector_strength_default`]).
     pub bisector_strength: f64,
+    /// Diameter (mm) of the bigger *reference* tool the pencil pass cleans up after
+    /// (typically the finishing tool). The gate keeps a seam by how much DEEPER the
+    /// pencil tool reaches than this reference could —
+    /// `rest_depth = reference_gap − pencil_gap` — so it traces the valleys the big
+    /// tool missed but the pencil tool can enter, and skips both big-tool-reachable
+    /// walls and sub-pencil-scale texture (where both tools float). When `<=` the
+    /// pencil tool's own diameter, falls back to the self-referenced gap. Default 6.0
+    /// (see [`reference_tool_diameter_default`]).
+    pub reference_tool_diameter: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -674,18 +683,24 @@ fn reach_gap_at_point(
     Some(cl.z - surf_z)
 }
 
-/// Does a chain sit in a genuine valley the tool bridges? Samples up to 8
-/// vertices along it and keeps it if the MEDIAN reach-gap exceeds the depth
-/// threshold. Chain points lie on the surface, so their own Z is the true
-/// surface height (no extra probe). Gating whole chains (not every edge) is the
-/// hot-path win — far fewer drops — and drops shallow surface-texture chains
-/// wholesale, giving cleaner valley lines.
+/// Does a chain sit in genuine rest material the pencil tool can clean? Samples up
+/// to 8 vertices and keeps the chain if the MEDIAN *rest depth* exceeds the
+/// threshold, where
+///   `rest_depth = reference_gap − pencil_gap`
+/// is how much DEEPER the pencil tool reaches than the bigger `reference` (finish)
+/// tool could. This is the literature's reference-tool rest region: it keeps the
+/// valleys the big tool missed but the pencil tool enters, and rejects both
+/// big-tool-reachable walls (`reference_gap ≈ 0`) and sub-pencil-scale texture
+/// (both tools float, so `reference_gap ≈ pencil_gap`). With `reference == None`
+/// it falls back to the self-referenced gap (pencil tool vs bare surface). Gating
+/// whole chains (not every edge) is the hot-path win — far fewer drops.
 #[allow(clippy::indexing_slicing)] // chain entries are valid vertex indices
 fn chain_passes_depth(
     chain: &[u32],
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
+    reference: Option<&dyn MillingCutter>,
     threshold: f64,
 ) -> bool {
     let n = chain.len();
@@ -693,20 +708,30 @@ fn chain_passes_depth(
         return false;
     }
     let step = (n / 8).max(1);
-    let mut gaps: Vec<f64> = Vec::new();
+    let mut depths: Vec<f64> = Vec::new();
     let mut i = 0;
     while i < n {
         let v = mesh.vertices[chain[i] as usize];
-        if let Some(g) = reach_gap_at_point(v.x, v.y, v.z, mesh, index, cutter) {
-            gaps.push(g);
+        if let Some(pencil_gap) = reach_gap_at_point(v.x, v.y, v.z, mesh, index, cutter) {
+            let rest = match reference {
+                Some(rc) => match reach_gap_at_point(v.x, v.y, v.z, mesh, index, rc) {
+                    // How much further the pencil tool drops past the big tool.
+                    Some(ref_gap) => (ref_gap - pencil_gap).max(0.0),
+                    // Big tool can't even contact here → treat the whole pencil gap
+                    // as rest the big tool left.
+                    None => pencil_gap,
+                },
+                None => pencil_gap,
+            };
+            depths.push(rest);
         }
         i += step;
     }
-    if gaps.is_empty() {
+    if depths.is_empty() {
         return false;
     }
-    gaps.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    gaps[gaps.len() / 2] > threshold
+    depths.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    depths[depths.len() / 2] > threshold
 }
 
 /// Surface tolerance (mm): uncut depth at a concave seam above which we treat it
@@ -720,10 +745,16 @@ pub(crate) fn reach_gap_threshold() -> f64 {
     0.05
 }
 
-/// Keep only chains that sit in a genuine valley the tool bridges. The hot path
-/// on dense meshes is the `drop_cutter` work, so gating whole chains (a handful
-/// of sample drops each) instead of every candidate edge slashes the drop count.
-/// Parallelised across cores when the `parallel` feature is on
+/// Default reference-tool diameter (mm): the bigger finishing tool the pencil pass
+/// cleans up after. A typical 1/4" finish ball.
+pub(crate) fn reference_tool_diameter_default() -> f64 {
+    6.0
+}
+
+/// Keep only chains that sit in genuine rest material (see [`chain_passes_depth`]).
+/// The hot path on dense meshes is the `drop_cutter` work, so gating whole chains
+/// (a handful of sample drops each) instead of every candidate edge slashes the
+/// drop count. Parallelised across cores when the `parallel` feature is on
 /// (`MillingCutter: Send + Sync`).
 #[cfg(feature = "parallel")]
 fn gate_chains_by_depth(
@@ -731,12 +762,13 @@ fn gate_chains_by_depth(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
+    reference: Option<&dyn MillingCutter>,
     threshold: f64,
 ) -> Vec<Vec<u32>> {
     use rayon::prelude::*;
     chains
         .into_par_iter()
-        .filter(|c| chain_passes_depth(c, mesh, index, cutter, threshold))
+        .filter(|c| chain_passes_depth(c, mesh, index, cutter, reference, threshold))
         .collect()
 }
 
@@ -746,11 +778,12 @@ fn gate_chains_by_depth(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
+    reference: Option<&dyn MillingCutter>,
     threshold: f64,
 ) -> Vec<Vec<u32>> {
     chains
         .into_iter()
-        .filter(|c| chain_passes_depth(c, mesh, index, cutter, threshold))
+        .filter(|c| chain_passes_depth(c, mesh, index, cutter, reference, threshold))
         .collect()
 }
 
@@ -938,12 +971,34 @@ pub fn pencil_toolpath_structured_annotated(
         return (tp, annotations);
     }
 
-    // Step 4: Chain concave edges into polylines, then keep only the chains the
-    // tool genuinely bridges (deep enough valleys). Gating whole chains rather
-    // than every candidate edge is far cheaper (a few sample drops per chain vs
-    // one per edge) and drops shallow surface-texture chains wholesale.
+    // Step 4: Chain concave edges into polylines, then keep only the chains that
+    // hold genuine REST material — where the pencil tool reaches deeper than the
+    // bigger reference (finish) tool could (rest_depth = reference_gap − pencil_gap
+    // > min_valley_depth). This is what traces the valleys a bigger bit missed and
+    // skips both reachable walls and sub-pencil-scale texture. The reference tool
+    // is only used when it is genuinely bigger than the pencil tool; otherwise the
+    // gate self-references (pencil tool vs bare surface).
     let chains_all = chain_concave_edges(&concave_owned, mesh, params.min_cut_length);
-    let chains = gate_chains_by_depth(chains_all, mesh, index, cutter, gap_threshold);
+    let reference_cutter = if params.reference_tool_diameter > cutter.diameter() + 1e-6 {
+        // Length is irrelevant to the drop-cutter rest height (only the ball tip
+        // matters); a fixed value keeps the reference geometry simple.
+        Some(crate::tool::BallEndmill::new(
+            params.reference_tool_diameter,
+            25.0,
+        ))
+    } else {
+        None
+    };
+    let reference_ref: Option<&dyn MillingCutter> =
+        reference_cutter.as_ref().map(|c| c as &dyn MillingCutter);
+    let chains = gate_chains_by_depth(
+        chains_all,
+        mesh,
+        index,
+        cutter,
+        reference_ref,
+        gap_threshold,
+    );
 
     // Per-edge outward face normals, for bisector positioning (Step 5). Built from
     // the filtered concave edges so the offset uses the exact two walls that define
@@ -1373,6 +1428,7 @@ mod tests {
             stock_to_leave: 0.0,
             min_valley_depth: reach_gap_threshold(),
             bisector_strength: bisector_strength_default(),
+            reference_tool_diameter: reference_tool_diameter_default(),
         };
 
         let tp = pencil_toolpath(&mesh, &index, &tool, &params);
@@ -1401,6 +1457,7 @@ mod tests {
             stock_to_leave: 0.0,
             min_valley_depth: reach_gap_threshold(),
             bisector_strength: bisector_strength_default(),
+            reference_tool_diameter: reference_tool_diameter_default(),
         };
 
         let tp = pencil_toolpath(&mesh, &index, &tool, &params);
@@ -1429,6 +1486,7 @@ mod tests {
             stock_to_leave: 0.0,
             min_valley_depth: reach_gap_threshold(),
             bisector_strength: bisector_strength_default(),
+            reference_tool_diameter: reference_tool_diameter_default(),
         };
 
         let params_offset = PencilParams {
@@ -1499,7 +1557,22 @@ mod tests {
             .filter(|e| e.is_concave && e.dihedral_angle > (std::f64::consts::PI - threshold_rad))
             .collect();
         let chains_all = chain_concave_edges(&concave, mesh, params.min_cut_length);
-        gate_chains_by_depth(chains_all, mesh, &index, tool, params.min_valley_depth).len()
+        let reference = if params.reference_tool_diameter > tool.diameter() + 1e-6 {
+            Some(BallEndmill::new(params.reference_tool_diameter, 25.0))
+        } else {
+            None
+        };
+        let reference_ref: Option<&dyn MillingCutter> =
+            reference.as_ref().map(|c| c as &dyn MillingCutter);
+        gate_chains_by_depth(
+            chains_all,
+            mesh,
+            &index,
+            tool,
+            reference_ref,
+            params.min_valley_depth,
+        )
+        .len()
     }
 
     fn default_pencil_params_1mm() -> PencilParams {
@@ -1516,6 +1589,7 @@ mod tests {
             stock_to_leave: 0.0,
             min_valley_depth: reach_gap_threshold(),
             bisector_strength: bisector_strength_default(),
+            reference_tool_diameter: reference_tool_diameter_default(),
         }
     }
 
@@ -1575,6 +1649,7 @@ mod tests {
             stock_to_leave: 0.0,
             min_valley_depth: reach_gap_threshold(),
             bisector_strength: bisector_strength_default(),
+            reference_tool_diameter: reference_tool_diameter_default(),
         };
 
         let edge_map = build_edge_adjacency(&mesh);
@@ -1705,6 +1780,8 @@ mod tests {
         params.min_cut_length = env_f64("RS_CAM_PENCIL_MINLEN", 2.0);
         params.hookup_distance = env_f64("RS_CAM_PENCIL_HOOKUP", params.hookup_distance);
         params.bisector_strength = env_f64("RS_CAM_PENCIL_BISECTOR", params.bisector_strength);
+        params.reference_tool_diameter =
+            env_f64("RS_CAM_PENCIL_REFD", params.reference_tool_diameter);
         params.safe_z = mesh.bbox.max.z + 5.0;
 
         // Phase timings for the detection sub-steps (the suspected hot path).
@@ -1912,6 +1989,7 @@ mod tests {
             stock_to_leave: 0.0,
             min_valley_depth: reach_gap_threshold(),
             bisector_strength: bisector_strength_default(),
+            reference_tool_diameter: reference_tool_diameter_default(),
         };
 
         let unlinked = pencil_toolpath(&mesh, &index, &tool, &mk(0.0));
@@ -1980,6 +2058,7 @@ mod tests {
             stock_to_leave: 0.0,
             min_valley_depth: reach_gap_threshold(),
             bisector_strength: bisector_strength_default(),
+            reference_tool_diameter: reference_tool_diameter_default(),
         };
 
         let edge_map = build_edge_adjacency(&mesh);

@@ -1679,6 +1679,7 @@ fn default_pencil_params() -> PencilParams {
         stock_to_leave: 0.0,
         min_valley_depth: 0.0,
         bisector_strength: 0.0,
+        reference_tool_diameter: 0.0,
     }
 }
 

@@ -731,6 +731,13 @@ pub struct PencilConfig {
     /// project files load.
     #[serde(default = "crate::pencil::bisector_strength_default")]
     pub bisector_strength: f64,
+    /// Diameter (mm) of the bigger reference (finishing) tool this pencil pass
+    /// cleans up after. The gate keeps a seam by how much deeper the pencil tool
+    /// reaches than this reference could, so it traces the valleys a bigger bit
+    /// missed and skips reachable walls + sub-pencil texture. `#[serde(default)]`
+    /// so older project files load.
+    #[serde(default = "crate::pencil::reference_tool_diameter_default")]
+    pub reference_tool_diameter: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
 }
@@ -749,6 +756,7 @@ impl Default for PencilConfig {
             stock_to_leave: 0.0,
             min_valley_depth: crate::pencil::reach_gap_threshold(),
             bisector_strength: crate::pencil::bisector_strength_default(),
+            reference_tool_diameter: crate::pencil::reference_tool_diameter_default(),
             spindle_rpm: None,
         }
     }
