@@ -356,18 +356,64 @@ pub(in crate::ui::properties) fn draw_pencil_params(
     // Pencil's offset_stepover is a parallel-pass spacing, not the same
     // shape as a clearing radial WOC; leave it alone. Feed/plunge live on
     // the Feeds tab (W3.2).
+    let curvature = cfg.detector.trim().eq_ignore_ascii_case("curvature");
     egui::Grid::new("pen_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
-            dv(
-                ui,
-                "Bitangency Angle:",
-                &mut cfg.bitangency_angle,
-                " deg",
-                1.0,
-                90.0..=180.0,
-            );
+            // Valley-detection front-end. Dihedral = mesh-crease detection
+            // (clean CAD-style corners); Curvature = curvature crest lines
+            // (best for dense organic relief, dialled by Valley Saliency).
+            ui.label("Detector:");
+            egui::ComboBox::from_id_salt("pen_detector")
+                .selected_text(if curvature {
+                    "Curvature (crest)"
+                } else {
+                    "Dihedral (crease)"
+                })
+                .show_ui(ui, |ui| {
+                    if ui
+                        .selectable_label(!curvature, "Dihedral (crease)")
+                        .clicked()
+                    {
+                        cfg.detector = "dihedral".to_owned();
+                    }
+                    if ui
+                        .selectable_label(curvature, "Curvature (crest)")
+                        .clicked()
+                    {
+                        cfg.detector = "curvature".to_owned();
+                    }
+                });
+            ui.end_row();
+            if curvature {
+                // Curvature-detector dials. Valley Saliency is the significance
+                // knob: min concave curvature |κ₂| (1/mm) a valley must reach —
+                // low traces every seam, high keeps only deep sharp valleys.
+                dv(
+                    ui,
+                    "Valley Saliency:",
+                    &mut cfg.valley_saliency,
+                    " 1/mm",
+                    0.01,
+                    0.0..=2.0,
+                );
+                ui.label("Curv. Smoothing:");
+                let mut s = cfg.curvature_smoothing as i32;
+                if ui.add(egui::DragValue::new(&mut s).range(0..=20)).changed() {
+                    cfg.curvature_smoothing = s.max(0) as usize;
+                }
+                ui.end_row();
+            } else {
+                dv(
+                    ui,
+                    "Bitangency Angle:",
+                    &mut cfg.bitangency_angle,
+                    " deg",
+                    1.0,
+                    90.0..=180.0,
+                );
+            }
             dv(
                 ui,
                 "Min Cut Length:",
@@ -399,6 +445,31 @@ pub(in crate::ui::properties) fn draw_pencil_params(
                 0.05..=10.0,
             );
             dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
+            // Reference-tool rest gate: keep only valleys the pencil tool (the
+            // op's own tool) reaches more than this deeper than the bigger
+            // reference finish tool. 0 = off (trace every detected valley); raise
+            // to skip shallow/already-reachable seams.
+            dv(
+                ui,
+                "Min Valley Depth:",
+                &mut cfg.min_valley_depth,
+                " mm",
+                0.05,
+                0.0..=5.0,
+            );
+            // The reference tool the rest gate measures "deeper than" — only
+            // meaningful while the gate is on (Min Valley Depth > 0). The pencil
+            // tool itself is the op's selected tool (top of this panel).
+            if cfg.min_valley_depth > 0.0 {
+                dv(
+                    ui,
+                    "Reference Tool Ø:",
+                    &mut cfg.reference_tool_diameter,
+                    " mm",
+                    0.5,
+                    0.5..=25.0,
+                );
+            }
             dv(
                 ui,
                 "Stock to Leave:",
