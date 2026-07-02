@@ -1680,6 +1680,9 @@ fn default_pencil_params() -> PencilParams {
         min_valley_depth: 0.0,
         bisector_strength: 0.0,
         reference_tool_diameter: 0.0,
+        detector: rs_cam_core::pencil::PencilDetector::Dihedral,
+        valley_saliency: 0.05,
+        curvature_smoothing: 3,
     }
 }
 
