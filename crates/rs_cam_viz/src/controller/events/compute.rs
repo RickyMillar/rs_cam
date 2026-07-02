@@ -4,7 +4,7 @@ use rs_cam_core::dexel_stock::TriDexelStock;
 
 use crate::compute::{ComputeBackend, ComputeError, ComputeMessage, ComputeRequest};
 use crate::state::simulation::{SimulationResults, SimulationRunMeta};
-use crate::state::toolpath::{ComputeStatus, OperationConfig, ToolpathId};
+use crate::state::toolpath::{ComputeStatus, OperationConfig, StockSource, ToolpathId};
 
 use super::super::AppController;
 
@@ -301,7 +301,34 @@ impl<B: ComputeBackend> AppController<B> {
             }
         }
 
-        let prior_stock: Option<TriDexelStock> = None;
+        // Rest machining: when this toolpath cuts the stock left by previous
+        // ops, seed generation with the simulated stock as it stood *before*
+        // this op (= the checkpoint after the previous toolpath in sim order).
+        // adaptive3d initialises its material model from this, so it only cuts
+        // the leftover. Requires a prior simulation to have produced the
+        // checkpoint; if absent the op falls back to fresh-stock generation.
+        let prior_stock: Option<TriDexelStock> = if stock_source == StockSource::FromRemainingStock
+        {
+            let sim = &self.state.simulation;
+            let found = sim
+                .boundaries()
+                .iter()
+                .position(|b| b.id == tp_id)
+                .and_then(|pos| pos.checked_sub(1))
+                .and_then(|prev| sim.checkpoints().iter().find(|c| c.boundary_index == prev))
+                .and_then(|c| c.stock.clone());
+            if found.is_none() {
+                self.push_notification(
+                    "Rest machining: no prior simulated stock — run a simulation \
+                         first, then regenerate this toolpath."
+                        .into(),
+                    super::super::Severity::Warning,
+                );
+            }
+            found
+        } else {
+            None
+        };
         let cutting_levels = operation.cutting_levels(heights.top_z);
         let material = stock_snapshot.material;
 
