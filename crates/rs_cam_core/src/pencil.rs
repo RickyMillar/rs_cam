@@ -25,6 +25,43 @@ use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
+/// Which valley-detection front-end the pencil generator uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PencilDetector {
+    /// Mesh-dihedral crease detection (Ohtake-Belyaev-Seidel-style discrete
+    /// curvature creases). Robust on clean CAD-style meshes with sharp internal
+    /// corners; on dense noisy relief it fires on every triangulation crease and
+    /// fragments. The historical default.
+    #[default]
+    Dihedral,
+    /// Curvature crest-line extraction (Ohtake-Belyaev-Seidel 2004 / Yoshizawa
+    /// 2005, curvature via Rusinkiewicz 2004): per-vertex principal curvatures →
+    /// minimal-curvature extremality → zero-crossing valley lines, filtered by a
+    /// single `valley_saliency` (|κ₂|) dial. Traces every concave seam on dense
+    /// organic relief and dials cleanly from "all seams" to "deep sharp valleys
+    /// only". See [`crate::crest_lines`]. The right choice for noisy meshes.
+    Curvature,
+}
+
+impl PencilDetector {
+    /// Parse from a lowercase config string; unknown values fall back to the
+    /// default (Dihedral) so older project files keep loading.
+    pub fn parse(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "curvature" | "crest" | "ridgevalley" | "ridge_valley" => PencilDetector::Curvature,
+            _ => PencilDetector::Dihedral,
+        }
+    }
+
+    /// Canonical lowercase token for serialisation.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PencilDetector::Dihedral => "dihedral",
+            PencilDetector::Curvature => "curvature",
+        }
+    }
+}
+
 /// Parameters for pencil finishing.
 pub struct PencilParams {
     /// Dihedral angle threshold in degrees. Edges with concave angles below this
@@ -75,6 +112,20 @@ pub struct PencilParams {
     /// pencil tool's own diameter, falls back to the self-referenced gap. Default 6.0
     /// (see [`reference_tool_diameter_default`]).
     pub reference_tool_diameter: f64,
+    /// Which valley-detection algorithm to use (see [`PencilDetector`]). Default
+    /// `Dihedral` (crease detection); `Curvature` extracts curvature crest lines
+    /// and is the right choice for noisy organic relief.
+    pub detector: PencilDetector,
+    /// Minimum concave curvature |κ₂| (1/mm) a valley must reach to be traced by
+    /// the `Curvature` detector — THE significance dial. Low → every concave
+    /// seam; high → only deep sharp valleys (a flat basin has κ₂ ≈ 0 and drops
+    /// out at any positive value). Default 0.05 (see [`valley_saliency_default`]).
+    pub valley_saliency: f64,
+    /// Curvature-tensor smoothing iterations for the `Curvature` detector — the
+    /// literature denoise (smooths the curvature field, not the geometry). More
+    /// suppresses triangulation noise at the cost of blurring nearby valleys.
+    /// Default 3 (see [`curvature_smoothing_default`]).
+    pub curvature_smoothing: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -751,6 +802,28 @@ pub(crate) fn reference_tool_diameter_default() -> f64 {
     6.0
 }
 
+/// Default valley saliency (min |κ₂| in 1/mm) for the curvature detector. 0.15
+/// traces the full dendritic valley network on dense organic relief without
+/// carpeting the inter-valley wave/triangulation texture (validated on the
+/// wanaka rivermap mesh: ~0.05 carpets, ~0.2 the coherent network, ~0.8 only the
+/// deepest trunks). Raise to keep only deep sharp valleys, lower to trace finer
+/// seams.
+pub(crate) fn valley_saliency_default() -> f64 {
+    0.15
+}
+
+/// Default curvature-tensor smoothing iterations for the curvature detector —
+/// enough to suppress rivermap wave/triangulation texture while preserving
+/// genuine valleys.
+pub(crate) fn curvature_smoothing_default() -> usize {
+    4
+}
+
+/// Default detector token for project-file serde (the historical crease detector).
+pub(crate) fn detector_string_default() -> String {
+    PencilDetector::Dihedral.as_str().to_owned()
+}
+
 /// Keep only chains that sit in genuine rest material (see [`chain_passes_depth`]).
 /// The hot path on dense meshes is the `drop_cutter` work, so gating whole chains
 /// (a handful of sample drops each) instead of every candidate edge slashes the
@@ -935,6 +1008,165 @@ fn runtime_annotations_to_labels(annotations: &[PencilRuntimeAnnotation]) -> Vec
         .collect()
 }
 
+/// Total XY/Z length of a polyline (mm).
+fn polyline_length(points: &[P3]) -> f64 {
+    points
+        .windows(2)
+        .map(|w| {
+            #[allow(clippy::indexing_slicing)] // windows(2) yields len-2 slices
+            let (a, b) = (w[0], w[1]);
+            ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt()
+        })
+        .sum()
+}
+
+/// Resample a polyline to ~`spacing` mm between points (linear interpolation),
+/// preserving the first and last vertices. Curvature crest lines arrive at
+/// mesh-edge resolution; this decouples cut-point spacing from mesh density.
+#[allow(clippy::indexing_slicing)] // first/last + windows(2) indices are bounded
+fn resample_polyline(points: &[P3], spacing: f64) -> Vec<P3> {
+    if points.len() < 2 || spacing <= 1e-6 {
+        return points.to_vec();
+    }
+    let mut out = vec![points[0]];
+    // Distance already travelled past the last emitted point along the current
+    // walk, so spacing is continuous across segment boundaries.
+    let mut carry = 0.0;
+    for w in points.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let seg = ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt();
+        if seg < 1e-9 {
+            continue;
+        }
+        let mut d = spacing - carry;
+        while d < seg {
+            let t = d / seg;
+            out.push(P3::new(
+                a.x + (b.x - a.x) * t,
+                a.y + (b.y - a.y) * t,
+                a.z + (b.z - a.z) * t,
+            ));
+            d += spacing;
+        }
+        carry = seg - (d - spacing);
+    }
+    let last = points[points.len() - 1];
+    let need_last = out
+        .last()
+        .is_none_or(|p| (p.x - last.x).abs() > 1e-6 || (p.y - last.y).abs() > 1e-6);
+    if need_last {
+        out.push(last);
+    }
+    out
+}
+
+/// Build the centreline + offset `PencilPath`s for one already-sampled valley
+/// polyline. Shared by both detectors: it fairs the XY line, lifts it to the
+/// surface with the real cutter, and emits the centreline plus symmetric offset
+/// passes. `chain_index` is 1-based.
+#[allow(clippy::too_many_arguments)] // cohesive per-chain emit; splitting hurts clarity
+fn paths_from_sampled(
+    sampled: &[P3],
+    chain_index: usize,
+    chain_total: usize,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &PencilParams,
+    all_paths: &mut Vec<PencilPath>,
+) {
+    if sampled.len() < 2 {
+        return;
+    }
+    // De-jag the facet-scale zig-zag before lifting; offsets derive from the
+    // faired centreline so they inherit it.
+    let sampled = fair_polyline_xy(sampled, FAIRING_PASSES, FAIRING_STRENGTH);
+    let offset_total = 1 + params.num_offset_passes * 2;
+
+    let centerline = lift_to_surface(&sampled, mesh, index, cutter, params.stock_to_leave);
+    all_paths.push(PencilPath {
+        points: centerline,
+        chain_index,
+        chain_total,
+        offset_index: 1,
+        offset_total,
+        offset_mm: 0.0,
+        is_centerline: true,
+    });
+
+    for pass_num in 1..=params.num_offset_passes {
+        let offset = pass_num as f64 * params.offset_stepover;
+
+        let left = offset_polyline(&sampled, offset);
+        let left_lifted = lift_to_surface(&left, mesh, index, cutter, params.stock_to_leave);
+        all_paths.push(PencilPath {
+            points: left_lifted,
+            chain_index,
+            chain_total,
+            offset_index: pass_num * 2,
+            offset_total,
+            offset_mm: offset,
+            is_centerline: false,
+        });
+
+        let right = offset_polyline(&sampled, -offset);
+        let right_lifted = lift_to_surface(&right, mesh, index, cutter, params.stock_to_leave);
+        all_paths.push(PencilPath {
+            points: right_lifted,
+            chain_index,
+            chain_total,
+            offset_index: pass_num * 2 + 1,
+            offset_total,
+            offset_mm: -offset,
+            is_centerline: false,
+        });
+    }
+}
+
+/// Rest-depth gate over a P3 polyline (curvature crest lines have no mesh-vertex
+/// chain). Identical metric to [`chain_passes_depth`]: keeps the line if the
+/// median *rest depth* (`reference_gap − pencil_gap`, i.e. how much deeper the
+/// pencil tool reaches than the bigger reference tool) exceeds `threshold`. The
+/// surface height cancels in reference mode, so it tolerates the smoothed DEM Z.
+fn polyline_passes_depth(
+    pts: &[P3],
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    reference: Option<&dyn MillingCutter>,
+    threshold: f64,
+) -> bool {
+    let n = pts.len();
+    if n == 0 {
+        return false;
+    }
+    let step = (n / 8).max(1);
+    let mut depths: Vec<f64> = Vec::new();
+    let mut i = 0;
+    while i < n {
+        #[allow(clippy::indexing_slicing)] // i < n by loop guard
+        let v = pts[i];
+        if let Some(pencil_gap) = reach_gap_at_point(v.x, v.y, v.z, mesh, index, cutter) {
+            let rest = match reference {
+                Some(rc) => match reach_gap_at_point(v.x, v.y, v.z, mesh, index, rc) {
+                    Some(ref_gap) => (ref_gap - pencil_gap).max(0.0),
+                    None => pencil_gap,
+                },
+                None => pencil_gap,
+            };
+            depths.push(rest);
+        }
+        i += step;
+    }
+    if depths.is_empty() {
+        return false;
+    }
+    depths.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    #[allow(clippy::indexing_slicing)] // depths non-empty → index < len
+    let median = depths[depths.len() / 2];
+    median > threshold
+}
+
 pub fn pencil_toolpath_structured_annotated(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -945,43 +1177,13 @@ pub fn pencil_toolpath_structured_annotated(
     let mut tp = Toolpath::new();
     let mut annotations = Vec::new();
 
-    // Step 1: Build edge adjacency
-    let edge_map = build_edge_adjacency(mesh);
-
-    // Step 2: Compute shared edges with dihedral angles
-    let shared_edges = compute_shared_edges(mesh, &edge_map);
-
-    // Step 3: Filter to concave edges below the angle threshold (candidate set),
-    // (the candidate set). The angle filter alone floods dense organic meshes —
-    // every triangulation crease passes — so the real selection is the
-    // tool-radius-aware reach-gap gate applied per CHAIN below.
-    let threshold_rad = params.bitangency_angle.to_radians();
-    let total_shared = shared_edges.len();
     let gap_threshold = params.min_valley_depth;
-    let concave_owned: Vec<SharedEdge> = shared_edges
-        .into_iter()
-        .filter(|e| e.is_concave && e.dihedral_angle > (std::f64::consts::PI - threshold_rad))
-        .collect();
 
-    if concave_owned.is_empty() {
-        info!(
-            "No concave edges under {:.0}° threshold",
-            params.bitangency_angle
-        );
-        return (tp, annotations);
-    }
-
-    // Step 4: Chain concave edges into polylines, then keep only the chains that
-    // hold genuine REST material — where the pencil tool reaches deeper than the
-    // bigger reference (finish) tool could (rest_depth = reference_gap − pencil_gap
-    // > min_valley_depth). This is what traces the valleys a bigger bit missed and
-    // skips both reachable walls and sub-pencil-scale texture. The reference tool
-    // is only used when it is genuinely bigger than the pencil tool; otherwise the
-    // gate self-references (pencil tool vs bare surface).
-    let chains_all = chain_concave_edges(&concave_owned, mesh, params.min_cut_length);
+    // The bigger reference (finish) tool the pencil pass cleans up after — shared
+    // by both detectors' rest-depth gate. Only used when genuinely bigger than
+    // the pencil tool (length is irrelevant to the ball-tip rest height);
+    // otherwise the gate self-references (pencil tool vs bare surface).
     let reference_cutter = if params.reference_tool_diameter > cutter.diameter() + 1e-6 {
-        // Length is irrelevant to the drop-cutter rest height (only the ball tip
-        // matters); a fixed value keeps the reference geometry simple.
         Some(crate::tool::BallEndmill::new(
             params.reference_tool_diameter,
             25.0,
@@ -991,116 +1193,161 @@ pub fn pencil_toolpath_structured_annotated(
     };
     let reference_ref: Option<&dyn MillingCutter> =
         reference_cutter.as_ref().map(|c| c as &dyn MillingCutter);
-    let chains = gate_chains_by_depth(
-        chains_all,
-        mesh,
-        index,
-        cutter,
-        reference_ref,
-        gap_threshold,
-    );
 
-    // Per-edge outward face normals, for bisector positioning (Step 5). Built from
-    // the filtered concave edges so the offset uses the exact two walls that define
-    // each crease. Empty/strength-0 → sampling falls back to the plain seam line.
-    #[allow(clippy::indexing_slicing)] // face_a/face_b are valid mesh face indices
-    let edge_norms: HashMap<EdgeKey, (V3, V3)> = concave_owned
-        .iter()
-        .map(|e| {
-            (
-                e.key,
-                (mesh.faces[e.face_a].normal, mesh.faces[e.face_b].normal),
-            )
-        })
-        .collect();
-    // Contact radius of the tool: the tip/ball corner radius where it nestles into
-    // the corner (falls back to the nominal radius for a flat end mill).
-    let contact_radius = {
-        let cr = cutter.corner_radius_mm();
-        if cr > 1e-6 { cr } else { cutter.radius() }
-    };
-
-    if chains.is_empty() {
-        info!(
-            "No tool-unreachable valley chains (gap > {:.3}mm) over {:.1}mm",
-            gap_threshold, params.min_cut_length
-        );
-        return (tp, annotations);
-    }
-
-    info!(
-        total_shared,
-        chains = chains.len(),
-        gap_threshold,
-        "Pencil detection complete (chain-level reach-gap gate)"
-    );
-
-    // Step 5: Sample points along each chain
-    let chain_total = chains.len();
     let mut all_paths: Vec<PencilPath> = Vec::new();
 
-    for (chain_index, chain) in chains.iter().enumerate() {
-        // Sample with bisector positioning so asymmetric corners nestle correctly
-        // (no-op for symmetric valleys / strength 0).
-        let sampled = sample_chain_bisected(
-            mesh,
-            chain,
-            params.sampling,
-            &edge_norms,
-            contact_radius,
-            params.bisector_strength,
-        );
-        if sampled.len() < 2 {
-            continue;
+    match params.detector {
+        PencilDetector::Curvature => {
+            // Curvature crest-line detection (see crate::crest_lines): trace the
+            // zero-set of the minimal-curvature extremality, filtered by the
+            // single `valley_saliency` (|κ₂|) dial. Keep lines long enough, then
+            // optionally apply the reference-tool rest-depth gate (only when
+            // `min_valley_depth > 0`, so saliency alone can drive selection),
+            // resample to cut spacing, and build paths. No bisector — the crest
+            // line already sits on the valley floor.
+            let cp = crate::crest_lines::CrestParams {
+                valley_saliency: params.valley_saliency,
+                smoothing_iters: params.curvature_smoothing,
+                min_line_length: params.min_cut_length,
+            };
+            let lines = crate::crest_lines::detect_valley_lines(mesh, &cp);
+            let apply_rest_gate = gap_threshold > 0.0;
+            let kept: Vec<Vec<P3>> = lines
+                .into_iter()
+                .filter(|l| polyline_length(l) >= params.min_cut_length)
+                .filter(|l| {
+                    !apply_rest_gate
+                        || polyline_passes_depth(
+                            l,
+                            mesh,
+                            index,
+                            cutter,
+                            reference_ref,
+                            gap_threshold,
+                        )
+                })
+                .collect();
+            if kept.is_empty() {
+                info!("Curvature detector: no valley lines passed length/rest-depth gate");
+                return (tp, annotations);
+            }
+            let chain_total = kept.len();
+            info!(
+                valley_lines = chain_total,
+                gap_threshold,
+                valley_saliency = params.valley_saliency,
+                "Curvature detector: valley crest lines built"
+            );
+            for (ci, line) in kept.iter().enumerate() {
+                let sampled = resample_polyline(line, params.sampling);
+                paths_from_sampled(
+                    &sampled,
+                    ci + 1,
+                    chain_total,
+                    mesh,
+                    index,
+                    cutter,
+                    params,
+                    &mut all_paths,
+                );
+            }
         }
-        // De-jag the facet-scale zig-zag (and any per-segment offset jumps) before
-        // lifting; offsets derive from the faired centerline so they inherit it.
-        let sampled = fair_polyline_xy(&sampled, FAIRING_PASSES, FAIRING_STRENGTH);
+        PencilDetector::Dihedral => {
+            // Step 1: edge adjacency. Step 2: shared edges + dihedral angles.
+            let edge_map = build_edge_adjacency(mesh);
+            let shared_edges = compute_shared_edges(mesh, &edge_map);
 
-        let offset_total = 1 + params.num_offset_passes * 2;
+            // Step 3: concave-edge candidate set (angle filter only; the real
+            // selection is the per-chain rest-depth gate). The angle filter alone
+            // floods dense organic meshes — every triangulation crease passes.
+            let threshold_rad = params.bitangency_angle.to_radians();
+            let total_shared = shared_edges.len();
+            let concave_owned: Vec<SharedEdge> = shared_edges
+                .into_iter()
+                .filter(|e| {
+                    e.is_concave && e.dihedral_angle > (std::f64::consts::PI - threshold_rad)
+                })
+                .collect();
+            if concave_owned.is_empty() {
+                info!(
+                    "No concave edges under {:.0}° threshold",
+                    params.bitangency_angle
+                );
+                return (tp, annotations);
+            }
 
-        // Lift centerline to surface
-        let centerline = lift_to_surface(&sampled, mesh, index, cutter, params.stock_to_leave);
-        all_paths.push(PencilPath {
-            points: centerline,
-            chain_index: chain_index + 1,
-            chain_total,
-            offset_index: 1,
-            offset_total,
-            offset_mm: 0.0,
-            is_centerline: true,
-        });
+            // Step 4: chain concave edges, then keep only chains holding genuine
+            // REST material (rest_depth = reference_gap − pencil_gap > threshold).
+            let chains_all = chain_concave_edges(&concave_owned, mesh, params.min_cut_length);
+            let chains = gate_chains_by_depth(
+                chains_all,
+                mesh,
+                index,
+                cutter,
+                reference_ref,
+                gap_threshold,
+            );
 
-        // Generate offset passes
-        for pass_num in 1..=params.num_offset_passes {
-            let offset = pass_num as f64 * params.offset_stepover;
+            // Per-edge wall normals for bisector positioning; built from the
+            // filtered concave edges so the offset uses the exact two walls.
+            #[allow(clippy::indexing_slicing)] // face_a/face_b are valid mesh face indices
+            let edge_norms: HashMap<EdgeKey, (V3, V3)> = concave_owned
+                .iter()
+                .map(|e| {
+                    (
+                        e.key,
+                        (mesh.faces[e.face_a].normal, mesh.faces[e.face_b].normal),
+                    )
+                })
+                .collect();
+            // Tool contact radius: the ball/corner radius that nestles into the
+            // corner (falls back to nominal radius for a flat end mill).
+            let contact_radius = {
+                let cr = cutter.corner_radius_mm();
+                if cr > 1e-6 { cr } else { cutter.radius() }
+            };
 
-            // Positive offset (left side)
-            let left = offset_polyline(&sampled, offset);
-            let left_lifted = lift_to_surface(&left, mesh, index, cutter, params.stock_to_leave);
-            all_paths.push(PencilPath {
-                points: left_lifted,
-                chain_index: chain_index + 1,
-                chain_total,
-                offset_index: pass_num * 2,
-                offset_total,
-                offset_mm: offset,
-                is_centerline: false,
-            });
+            if chains.is_empty() {
+                info!(
+                    "No tool-unreachable valley chains (gap > {:.3}mm) over {:.1}mm",
+                    gap_threshold, params.min_cut_length
+                );
+                return (tp, annotations);
+            }
+            info!(
+                total_shared,
+                chains = chains.len(),
+                gap_threshold,
+                "Pencil detection complete (chain-level reach-gap gate)"
+            );
 
-            // Negative offset (right side)
-            let right = offset_polyline(&sampled, -offset);
-            let right_lifted = lift_to_surface(&right, mesh, index, cutter, params.stock_to_leave);
-            all_paths.push(PencilPath {
-                points: right_lifted,
-                chain_index: chain_index + 1,
-                chain_total,
-                offset_index: pass_num * 2 + 1,
-                offset_total,
-                offset_mm: -offset,
-                is_centerline: false,
-            });
+            // Step 5: sample each chain (bisector-positioned) → paths.
+            let chain_total = chains.len();
+            for (chain_index, chain) in chains.iter().enumerate() {
+                let sampled = sample_chain_bisected(
+                    mesh,
+                    chain,
+                    params.sampling,
+                    &edge_norms,
+                    contact_radius,
+                    params.bisector_strength,
+                );
+                paths_from_sampled(
+                    &sampled,
+                    chain_index + 1,
+                    chain_total,
+                    mesh,
+                    index,
+                    cutter,
+                    params,
+                    &mut all_paths,
+                );
+            }
         }
+    }
+
+    if all_paths.is_empty() {
+        return (tp, annotations);
     }
 
     // Step 6: Order paths by nearest-neighbor
@@ -1429,6 +1676,9 @@ mod tests {
             min_valley_depth: reach_gap_threshold(),
             bisector_strength: bisector_strength_default(),
             reference_tool_diameter: reference_tool_diameter_default(),
+            detector: PencilDetector::Dihedral,
+            valley_saliency: valley_saliency_default(),
+            curvature_smoothing: curvature_smoothing_default(),
         };
 
         let tp = pencil_toolpath(&mesh, &index, &tool, &params);
@@ -1458,6 +1708,9 @@ mod tests {
             min_valley_depth: reach_gap_threshold(),
             bisector_strength: bisector_strength_default(),
             reference_tool_diameter: reference_tool_diameter_default(),
+            detector: PencilDetector::Dihedral,
+            valley_saliency: valley_saliency_default(),
+            curvature_smoothing: curvature_smoothing_default(),
         };
 
         let tp = pencil_toolpath(&mesh, &index, &tool, &params);
@@ -1487,6 +1740,9 @@ mod tests {
             min_valley_depth: reach_gap_threshold(),
             bisector_strength: bisector_strength_default(),
             reference_tool_diameter: reference_tool_diameter_default(),
+            detector: PencilDetector::Dihedral,
+            valley_saliency: valley_saliency_default(),
+            curvature_smoothing: curvature_smoothing_default(),
         };
 
         let params_offset = PencilParams {
@@ -1590,6 +1846,9 @@ mod tests {
             min_valley_depth: reach_gap_threshold(),
             bisector_strength: bisector_strength_default(),
             reference_tool_diameter: reference_tool_diameter_default(),
+            detector: PencilDetector::Dihedral,
+            valley_saliency: valley_saliency_default(),
+            curvature_smoothing: curvature_smoothing_default(),
         }
     }
 
@@ -1650,6 +1909,9 @@ mod tests {
             min_valley_depth: reach_gap_threshold(),
             bisector_strength: bisector_strength_default(),
             reference_tool_diameter: reference_tool_diameter_default(),
+            detector: PencilDetector::Dihedral,
+            valley_saliency: valley_saliency_default(),
+            curvature_smoothing: curvature_smoothing_default(),
         };
 
         let edge_map = build_edge_adjacency(&mesh);
@@ -1782,6 +2044,14 @@ mod tests {
         params.bisector_strength = env_f64("RS_CAM_PENCIL_BISECTOR", params.bisector_strength);
         params.reference_tool_diameter =
             env_f64("RS_CAM_PENCIL_REFD", params.reference_tool_diameter);
+        // Detector selection + curvature tuning (RS_CAM_PENCIL_DETECTOR=curvature).
+        params.detector = match std::env::var("RS_CAM_PENCIL_DETECTOR").ok().as_deref() {
+            Some(s) => PencilDetector::parse(s),
+            None => PencilDetector::Dihedral,
+        };
+        params.valley_saliency = env_f64("RS_CAM_PENCIL_SAL", params.valley_saliency);
+        params.curvature_smoothing =
+            env_f64("RS_CAM_PENCIL_SMOOTH", params.curvature_smoothing as f64) as usize;
         params.safe_z = mesh.bbox.max.z + 5.0;
 
         // Phase timings for the detection sub-steps (the suspected hot path).
@@ -1990,6 +2260,9 @@ mod tests {
             min_valley_depth: reach_gap_threshold(),
             bisector_strength: bisector_strength_default(),
             reference_tool_diameter: reference_tool_diameter_default(),
+            detector: PencilDetector::Dihedral,
+            valley_saliency: valley_saliency_default(),
+            curvature_smoothing: curvature_smoothing_default(),
         };
 
         let unlinked = pencil_toolpath(&mesh, &index, &tool, &mk(0.0));
@@ -2059,6 +2332,9 @@ mod tests {
             min_valley_depth: reach_gap_threshold(),
             bisector_strength: bisector_strength_default(),
             reference_tool_diameter: reference_tool_diameter_default(),
+            detector: PencilDetector::Dihedral,
+            valley_saliency: valley_saliency_default(),
+            curvature_smoothing: curvature_smoothing_default(),
         };
 
         let edge_map = build_edge_adjacency(&mesh);

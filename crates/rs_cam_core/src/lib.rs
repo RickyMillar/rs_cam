@@ -31,6 +31,7 @@ pub mod collision;
 pub mod compute;
 pub mod condition;
 pub mod contour_extract;
+pub mod crest_lines;
 pub mod debug_trace;
 pub mod depth;
 pub mod dexel;

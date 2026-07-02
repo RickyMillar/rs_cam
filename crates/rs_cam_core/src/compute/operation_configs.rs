@@ -738,6 +738,21 @@ pub struct PencilConfig {
     /// so older project files load.
     #[serde(default = "crate::pencil::reference_tool_diameter_default")]
     pub reference_tool_diameter: f64,
+    /// Valley-detection algorithm: `"dihedral"` (mesh crease detection, default)
+    /// or `"curvature"` (curvature crest lines, best for noisy organic relief).
+    /// `#[serde(default)]` so older project files load.
+    #[serde(default = "crate::pencil::detector_string_default")]
+    pub detector: String,
+    /// Minimum concave curvature |κ₂| (1/mm) a valley must reach for the
+    /// `curvature` detector to trace it — the valley significance dial. Low →
+    /// every concave seam; high → only deep sharp valleys. `#[serde(default)]`.
+    #[serde(default = "crate::pencil::valley_saliency_default")]
+    pub valley_saliency: f64,
+    /// Curvature-tensor smoothing iterations for the `curvature` detector (the
+    /// literature denoise — smooths the curvature field, not the geometry).
+    /// `#[serde(default)]` so older project files load.
+    #[serde(default = "crate::pencil::curvature_smoothing_default")]
+    pub curvature_smoothing: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
 }
@@ -757,6 +772,9 @@ impl Default for PencilConfig {
             min_valley_depth: crate::pencil::reach_gap_threshold(),
             bisector_strength: crate::pencil::bisector_strength_default(),
             reference_tool_diameter: crate::pencil::reference_tool_diameter_default(),
+            detector: crate::pencil::detector_string_default(),
+            valley_saliency: crate::pencil::valley_saliency_default(),
+            curvature_smoothing: crate::pencil::curvature_smoothing_default(),
             spindle_rpm: None,
         }
     }

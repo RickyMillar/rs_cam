@@ -1120,6 +1120,9 @@ pub(crate) fn generate_pencil(
         min_valley_depth: cfg.min_valley_depth,
         bisector_strength: cfg.bisector_strength,
         reference_tool_diameter: cfg.reference_tool_diameter,
+        detector: crate::pencil::PencilDetector::parse(&cfg.detector),
+        valley_saliency: cfg.valley_saliency,
+        curvature_smoothing: cfg.curvature_smoothing,
     };
     let (tp, annotations) = crate::pencil::pencil_toolpath_structured_annotated(
         m,

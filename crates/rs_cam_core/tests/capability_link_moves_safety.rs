@@ -442,6 +442,11 @@ fn pencil_link_moves_preserves_material_state() {
             // 0 = self-referenced gap (no bigger reference tool); preserves the
             // pre-reference-gate behaviour this link_moves suite was written against.
             reference_tool_diameter: 0.0,
+            // Crease detector — this suite exercises link_moves on a synthetic
+            // V-groove, not the curvature path.
+            detector: rs_cam_core::pencil::PencilDetector::Dihedral,
+            valley_saliency: 0.05,
+            curvature_smoothing: 3,
         },
     );
     if raw.moves.is_empty() {
