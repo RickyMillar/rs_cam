@@ -1166,6 +1166,21 @@ impl ProjectSession {
         let op_label = tc.operation.label().to_owned();
 
         // Execute the operation via the shared compute::execute module (annotated variant)
+        // Rest machining: when this toolpath cuts the stock previous ops left
+        // (`StockSource::FromRemainingStock`), seed generation with the per-op
+        // simulated snapshot so adaptive3d clears only the leftover. The same
+        // snapshot is reused for dressup air-cut filtering below. Requires a
+        // prior simulation; when absent (`None`) the op falls back to
+        // fresh-stock generation.
+        let prior_stock_arc = self
+            .simulation
+            .as_ref()
+            .and_then(|sim| sim.prior_stocks.get(&tc.id).cloned());
+        let gen_initial_stock = match tc.stock_source {
+            crate::session::StockSource::FromRemainingStock => prior_stock_arc.as_deref(),
+            crate::session::StockSource::Fresh => None,
+        };
+
         let op_scope = semantic_root.start_item(ToolpathSemanticKind::Operation, &op_label);
         let child_ctx = op_scope.context();
         let tp_result = crate::compute::execute::execute_operation_annotated(
@@ -1181,7 +1196,7 @@ impl ProjectSession {
             prev_tool_radius,
             Some(&core_ctx),
             cancel,
-            None, // no initial_stock for session path
+            gen_initial_stock,
             Some(&child_ctx),
             pre_boundary.as_ref(),
         );
@@ -1200,13 +1215,8 @@ impl ProjectSession {
                 }
                 drop(core_scope);
 
-                // Apply dressups. Pass `prior_stock` if a simulation has
-                // already produced a snapshot for this toolpath id (enables
-                // air-cut filter + rest-machining-aware dressups).
-                let prior_stock_arc = self
-                    .simulation
-                    .as_ref()
-                    .and_then(|sim| sim.prior_stocks.get(&tc.id).cloned());
+                // Apply dressups. Reuse the `prior_stock` snapshot hoisted above
+                // (enables air-cut filter + rest-machining-aware dressups).
                 let prior_stock_ref = prior_stock_arc.as_deref();
                 let dressed = crate::compute::execute::apply_dressups(
                     annotated,
