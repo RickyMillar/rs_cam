@@ -447,6 +447,8 @@ fn pencil_link_moves_preserves_material_state() {
             detector: rs_cam_core::pencil::PencilDetector::Dihedral,
             valley_saliency: 0.05,
             curvature_smoothing: 3,
+            rest_cell_mm: 0.5,
+            route_width_factor: 2.0,
         },
     );
     if raw.moves.is_empty() {

@@ -41,6 +41,15 @@ pub enum PencilDetector {
     /// organic relief and dials cleanly from "all seams" to "deep sharp valleys
     /// only". See [`crate::crest_lines`]. The right choice for noisy meshes.
     Curvature,
+    /// Rest-depth-field detection (the tool-offset-space one; see
+    /// [`crate::rest_field`]). Computes `rest = drop_z(reference) − drop_z(pencil)`
+    /// on an XY grid — the dual-tool comparison every commercial CAM uses — and
+    /// traces the skeleton of each rest region. Unlike the other three detectors
+    /// it is NOT tool-radius-blind: the field is zero wherever the reference tool
+    /// already reached, and the `reference_tool_diameter` dial visibly moves the
+    /// detection. Routes narrow regions to pencil centrelines and wide regions to
+    /// clearing. The aligned detector — recommended on relief.
+    RestDepth,
 }
 
 impl PencilDetector {
@@ -49,6 +58,7 @@ impl PencilDetector {
     pub fn parse(s: &str) -> Self {
         match s.trim().to_ascii_lowercase().as_str() {
             "curvature" | "crest" | "ridgevalley" | "ridge_valley" => PencilDetector::Curvature,
+            "rest_depth" | "restdepth" | "rest" => PencilDetector::RestDepth,
             _ => PencilDetector::Dihedral,
         }
     }
@@ -58,6 +68,7 @@ impl PencilDetector {
         match self {
             PencilDetector::Dihedral => "dihedral",
             PencilDetector::Curvature => "curvature",
+            PencilDetector::RestDepth => "rest_depth",
         }
     }
 }
@@ -126,6 +137,13 @@ pub struct PencilParams {
     /// suppresses triangulation noise at the cost of blurring nearby valleys.
     /// Default 3 (see [`curvature_smoothing_default`]).
     pub curvature_smoothing: usize,
+    /// XY grid cell size (mm) for the `RestDepth` detector's rest field. Smaller
+    /// = finer regions and more drops. Default 0.5 (see [`rest_cell_default`]).
+    pub rest_cell_mm: f64,
+    /// `RestDepth` routing threshold: a rest region routes to a pencil centreline
+    /// when its half-width `≤ route_width_factor × pencil_radius`, else to
+    /// clearing. Default 2.0 (see [`route_width_factor_default`]).
+    pub route_width_factor: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -819,6 +837,19 @@ pub(crate) fn curvature_smoothing_default() -> usize {
     4
 }
 
+/// Default XY cell size (mm) for the rest-depth field. 0.5 mm gives ~160k drops
+/// on the 200 mm wanaka mesh (release: ~2 s) with fine enough regions.
+pub(crate) fn rest_cell_default() -> f64 {
+    0.5
+}
+
+/// Default rest-region routing threshold: a region whose half-width exceeds
+/// `2.0 × pencil_radius` (one pencil diameter) routes to clearing rather than a
+/// single pencil centreline.
+pub(crate) fn route_width_factor_default() -> f64 {
+    2.0
+}
+
 /// Default detector token for project-file serde (the historical crease detector).
 pub(crate) fn detector_string_default() -> String {
     PencilDetector::Dihedral.as_str().to_owned()
@@ -1238,6 +1269,89 @@ pub fn pencil_toolpath_structured_annotated(
                 valley_saliency = params.valley_saliency,
                 "Curvature detector: valley crest lines built"
             );
+            for (ci, line) in kept.iter().enumerate() {
+                let sampled = resample_polyline(line, params.sampling);
+                paths_from_sampled(
+                    &sampled,
+                    ci + 1,
+                    chain_total,
+                    mesh,
+                    index,
+                    cutter,
+                    params,
+                    &mut all_paths,
+                );
+            }
+        }
+        PencilDetector::RestDepth => {
+            // Rest-depth-field detection (see crate::rest_field): build the
+            // dual-tool rest field, threshold at `min_valley_depth`, thin each
+            // region to a skeleton, and route by width. The per-polyline
+            // `polyline_passes_depth` gate is REDUNDANT here (the field threshold
+            // IS that same quantity, pointwise over the whole grid) — skip it.
+            //
+            // The reference cutter must exist even when it is not bigger than the
+            // pencil tool: in that degenerate case fall back to a self-referenced
+            // rest against a tiny bare-surface probe (matches how the drainage DEM
+            // probed the raw surface).
+            let bigger = params.reference_tool_diameter > cutter.diameter() + 1e-6;
+            let probe_mode = !bigger;
+            let ref_tool = if bigger {
+                crate::tool::BallEndmill::new(params.reference_tool_diameter, 25.0)
+            } else {
+                crate::tool::BallEndmill::new(0.1, 10.0)
+            };
+            let rf_params = crate::rest_field::RestFieldParams {
+                cell_mm: params.rest_cell_mm,
+                min_valley_depth: params.min_valley_depth,
+                route_width_factor: params.route_width_factor,
+                pencil_radius: cutter.radius(),
+                min_cut_length: params.min_cut_length,
+                reference_is_surface_probe: probe_mode,
+            };
+            let rf =
+                crate::rest_field::detect_rest_valleys(mesh, index, cutter, &ref_tool, &rf_params);
+            let report = &rf.report;
+            info!(
+                rest_volume_mm3 = format!("{:.1}", report.total_rest_volume_mm3),
+                pencil_regions = report.pencil_region_count,
+                clearing_regions = report.clearing_region_count,
+                centerlines = rf.centerlines.len(),
+                coverage = format!("{:.2}", report.coverage()),
+                probe_mode,
+                "Rest-depth detector: rest field built"
+            );
+            if let Some(dbg) = debug {
+                let scope = dbg.start_span("rest_field", "rest-depth report");
+                scope.set_counter("rest_volume_mm3", report.total_rest_volume_mm3);
+                scope.set_counter("rest_pencil_regions", report.pencil_region_count as f64);
+                scope.set_counter("rest_clearing_regions", report.clearing_region_count as f64);
+                scope.set_counter("rest_skeleton_mm", report.skeleton_length_mm);
+                scope.set_counter("rest_traced_mm", report.traced_length_mm);
+                scope.set_counter("rest_coverage", report.coverage());
+                scope.finish();
+            }
+            for reg in &rf.clearing_regions {
+                info!(
+                    bbox = format!(
+                        "[{:.1},{:.1}]..[{:.1},{:.1}]",
+                        reg.bbox[0], reg.bbox[1], reg.bbox[2], reg.bbox[3]
+                    ),
+                    cells = reg.cell_count,
+                    peak_rest_mm = format!("{:.2}", reg.peak_rest_mm),
+                    "Rest-depth detector: wide region routed to clearing (Phase D: adaptive3d)"
+                );
+            }
+            let kept: Vec<Vec<P3>> = rf
+                .centerlines
+                .into_iter()
+                .filter(|l| polyline_length(l) >= params.min_cut_length)
+                .collect();
+            if kept.is_empty() {
+                info!("Rest-depth detector: no centerlines passed length gate");
+                return (tp, annotations);
+            }
+            let chain_total = kept.len();
             for (ci, line) in kept.iter().enumerate() {
                 let sampled = resample_polyline(line, params.sampling);
                 paths_from_sampled(
@@ -1679,6 +1793,8 @@ mod tests {
             detector: PencilDetector::Dihedral,
             valley_saliency: valley_saliency_default(),
             curvature_smoothing: curvature_smoothing_default(),
+            rest_cell_mm: rest_cell_default(),
+            route_width_factor: route_width_factor_default(),
         };
 
         let tp = pencil_toolpath(&mesh, &index, &tool, &params);
@@ -1711,6 +1827,8 @@ mod tests {
             detector: PencilDetector::Dihedral,
             valley_saliency: valley_saliency_default(),
             curvature_smoothing: curvature_smoothing_default(),
+            rest_cell_mm: rest_cell_default(),
+            route_width_factor: route_width_factor_default(),
         };
 
         let tp = pencil_toolpath(&mesh, &index, &tool, &params);
@@ -1743,6 +1861,8 @@ mod tests {
             detector: PencilDetector::Dihedral,
             valley_saliency: valley_saliency_default(),
             curvature_smoothing: curvature_smoothing_default(),
+            rest_cell_mm: rest_cell_default(),
+            route_width_factor: route_width_factor_default(),
         };
 
         let params_offset = PencilParams {
@@ -1849,6 +1969,8 @@ mod tests {
             detector: PencilDetector::Dihedral,
             valley_saliency: valley_saliency_default(),
             curvature_smoothing: curvature_smoothing_default(),
+            rest_cell_mm: rest_cell_default(),
+            route_width_factor: route_width_factor_default(),
         }
     }
 
@@ -1912,6 +2034,8 @@ mod tests {
             detector: PencilDetector::Dihedral,
             valley_saliency: valley_saliency_default(),
             curvature_smoothing: curvature_smoothing_default(),
+            rest_cell_mm: rest_cell_default(),
+            route_width_factor: route_width_factor_default(),
         };
 
         let edge_map = build_edge_adjacency(&mesh);
@@ -2263,6 +2387,8 @@ mod tests {
             detector: PencilDetector::Dihedral,
             valley_saliency: valley_saliency_default(),
             curvature_smoothing: curvature_smoothing_default(),
+            rest_cell_mm: rest_cell_default(),
+            route_width_factor: route_width_factor_default(),
         };
 
         let unlinked = pencil_toolpath(&mesh, &index, &tool, &mk(0.0));
@@ -2335,6 +2461,8 @@ mod tests {
             detector: PencilDetector::Dihedral,
             valley_saliency: valley_saliency_default(),
             curvature_smoothing: curvature_smoothing_default(),
+            rest_cell_mm: rest_cell_default(),
+            route_width_factor: route_width_factor_default(),
         };
 
         let edge_map = build_edge_adjacency(&mesh);

@@ -797,7 +797,13 @@ pub fn detect_valley_lines(mesh: &TriangleMesh, params: &CrestParams) -> Vec<Vec
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::print_stdout,
+    clippy::print_stderr
+)]
 mod tests {
     use super::*;
     use crate::geo::P3;
