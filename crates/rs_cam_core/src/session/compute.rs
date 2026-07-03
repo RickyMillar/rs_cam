@@ -154,6 +154,10 @@ struct ResolvedGenInputs {
     spatial_index: Option<crate::mesh::SpatialIndex>,
     cutting_levels: Vec<f64>,
     prev_tool_radius: Option<f64>,
+    /// R1 (pencil): the resolved real reference tool config when the Pencil op's
+    /// `reference_tool_id` names a library tool. Resolved here (the context has
+    /// no tool list) exactly like `prev_tool_radius`.
+    reference_tool_cfg: Option<ToolConfig>,
     operation: crate::compute::OperationConfig,
     pre_boundary: Option<crate::polygon::Polygon2>,
 }
@@ -716,6 +720,8 @@ impl ProjectSession {
                 &resolved.cutting_levels,
                 &resolved.emission_stock_bbox,
                 resolved.prev_tool_radius,
+                // Strategy-timing path plans clearing ops only, never pencil.
+                None,
                 None,
                 cancel,
                 None,
@@ -1076,6 +1082,27 @@ impl ProjectSession {
             None
         };
 
+        // R1 (pencil): resolve the real reference tool config from the Pencil
+        // op's `reference_tool_id`, mirroring the prev_tool_radius resolution
+        // above. `None` (unset id, or id not found) falls back to the nominal
+        // `reference_tool_diameter` ball downstream — never an error.
+        let reference_tool_cfg =
+            if let crate::compute::OperationConfig::Pencil(ref cfg) = tc.operation {
+                cfg.reference_tool_id.and_then(|ref_id| {
+                    let found = self.tools.iter().find(|t| t.id == ref_id).cloned();
+                    if found.is_none() {
+                        tracing::warn!(
+                            ?ref_id,
+                            "Pencil reference_tool_id not found in tool list; \
+                             falling back to nominal reference diameter"
+                        );
+                    }
+                    found
+                })
+            } else {
+                None
+            };
+
         // Clone operation so we can patch `setup_z_flipped` on ProjectCurve.
         // This flag is #[serde(skip)] and set at compute time — single source of
         // truth is the setup transform's `is_z_flipped()`.
@@ -1115,6 +1142,7 @@ impl ProjectSession {
             spatial_index,
             cutting_levels,
             prev_tool_radius,
+            reference_tool_cfg,
             operation,
             pre_boundary,
         })
@@ -1139,6 +1167,7 @@ impl ProjectSession {
             spatial_index,
             cutting_levels,
             prev_tool_radius,
+            reference_tool_cfg,
             operation,
             pre_boundary,
         } = self.resolve_generation_inputs(index)?;
@@ -1194,6 +1223,7 @@ impl ProjectSession {
             &cutting_levels,
             &emission_stock_bbox,
             prev_tool_radius,
+            reference_tool_cfg,
             Some(&core_ctx),
             cancel,
             gen_initial_stock,
@@ -4484,6 +4514,7 @@ mod tests {
             &resolved.cutting_levels,
             &resolved.emission_stock_bbox,
             resolved.prev_tool_radius,
+            None,
             None,
             &cancel,
             None,

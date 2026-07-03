@@ -144,6 +144,13 @@ pub struct PencilParams {
     /// when its half-width `≤ route_width_factor × pencil_radius`, else to
     /// clearing. Default 2.0 (see [`route_width_factor_default`]).
     pub route_width_factor: f64,
+    /// R1: a real reference tool (from the library) whose *true* cutter geometry
+    /// defines the rest reference, shared by all three detectors. `Some`
+    /// overrides the nominal `reference_tool_diameter` ball — a flat end mill,
+    /// vbit, or tapered ball leaves a completely different rest shape than a ball
+    /// of the same diameter. `None` = legacy nominal-diameter behaviour.
+    /// `ToolDefinition` implements `MillingCutter`, so it drops directly.
+    pub reference_cutter: Option<crate::tool::ToolDefinition>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1210,20 +1217,23 @@ pub fn pencil_toolpath_structured_annotated(
 
     let gap_threshold = params.min_valley_depth;
 
-    // The bigger reference (finish) tool the pencil pass cleans up after — shared
-    // by both detectors' rest-depth gate. Only used when genuinely bigger than
-    // the pencil tool (length is irrelevant to the ball-tip rest height);
-    // otherwise the gate self-references (pencil tool vs bare surface).
-    let reference_cutter = if params.reference_tool_diameter > cutter.diameter() + 1e-6 {
-        Some(crate::tool::BallEndmill::new(
-            params.reference_tool_diameter,
-            25.0,
-        ))
-    } else {
-        None
-    };
+    // Unified rest-depth reference resolution, shared by ALL THREE detectors.
+    // Priority (R1): a real library tool (`reference_cutter`, true geometry) →
+    // a nominal ball at `reference_tool_diameter` when bigger than the pencil →
+    // a tiny bare-surface probe (degenerate self-reference; RestDepth arm only).
+    // Length is irrelevant to the ball-tip rest height. The gate detectors
+    // (Dihedral/Curvature) take `Option<&dyn MillingCutter>` where `None` means
+    // self-reference; the RestDepth field always needs a concrete reference plus
+    // the `is_surface_probe` sign-flip flag it builds below.
+    let real_ref: Option<&dyn MillingCutter> = params
+        .reference_cutter
+        .as_ref()
+        .map(|t| t as &dyn MillingCutter);
+    let bigger_nominal = params.reference_tool_diameter > cutter.diameter() + 1e-6;
+    let nominal_ball =
+        bigger_nominal.then(|| crate::tool::BallEndmill::new(params.reference_tool_diameter, 25.0));
     let reference_ref: Option<&dyn MillingCutter> =
-        reference_cutter.as_ref().map(|c| c as &dyn MillingCutter);
+        real_ref.or_else(|| nominal_ball.as_ref().map(|b| b as &dyn MillingCutter));
 
     let mut all_paths: Vec<PencilPath> = Vec::new();
 
@@ -1290,17 +1300,21 @@ pub fn pencil_toolpath_structured_annotated(
             // `polyline_passes_depth` gate is REDUNDANT here (the field threshold
             // IS that same quantity, pointwise over the whole grid) — skip it.
             //
-            // The reference cutter must exist even when it is not bigger than the
-            // pencil tool: in that degenerate case fall back to a self-referenced
-            // rest against a tiny bare-surface probe (matches how the drainage DEM
-            // probed the raw surface).
-            let bigger = params.reference_tool_diameter > cutter.diameter() + 1e-6;
-            let probe_mode = !bigger;
-            let ref_tool = if bigger {
-                crate::tool::BallEndmill::new(params.reference_tool_diameter, 25.0)
-            } else {
-                crate::tool::BallEndmill::new(0.1, 10.0)
-            };
+            // Rest-field reference (unified resolution above): a real reference
+            // tool or the bigger nominal ball → `is_surface_probe = false`;
+            // otherwise a tiny bare-surface probe with the sign flipped (matches
+            // how the drainage DEM probed the raw surface). NOTE the sign-flip
+            // trap: a *real* reference equal to the pencil tool must still yield
+            // rest ≈ 0 (nothing to clean) via `ref_z − pencil_z`, NOT probe mode —
+            // so probe mode is reserved for the genuinely degenerate case where
+            // there is neither a real tool nor a bigger nominal diameter.
+            let probe_ball = crate::tool::BallEndmill::new(0.1, 10.0);
+            let (rest_reference, probe_mode): (&dyn MillingCutter, bool) =
+                match (real_ref, nominal_ball.as_ref()) {
+                    (Some(r), _) => (r, false),
+                    (None, Some(b)) => (b as &dyn MillingCutter, false),
+                    (None, None) => (&probe_ball as &dyn MillingCutter, true),
+                };
             let rf_params = crate::rest_field::RestFieldParams {
                 cell_mm: params.rest_cell_mm,
                 min_valley_depth: params.min_valley_depth,
@@ -1309,8 +1323,13 @@ pub fn pencil_toolpath_structured_annotated(
                 min_cut_length: params.min_cut_length,
                 reference_is_surface_probe: probe_mode,
             };
-            let rf =
-                crate::rest_field::detect_rest_valleys(mesh, index, cutter, &ref_tool, &rf_params);
+            let rf = crate::rest_field::detect_rest_valleys(
+                mesh,
+                index,
+                cutter,
+                rest_reference,
+                &rf_params,
+            );
             let report = &rf.report;
             info!(
                 rest_volume_mm3 = format!("{:.1}", report.total_rest_volume_mm3),
@@ -1795,6 +1814,7 @@ mod tests {
             curvature_smoothing: curvature_smoothing_default(),
             rest_cell_mm: rest_cell_default(),
             route_width_factor: route_width_factor_default(),
+            reference_cutter: None,
         };
 
         let tp = pencil_toolpath(&mesh, &index, &tool, &params);
@@ -1829,6 +1849,7 @@ mod tests {
             curvature_smoothing: curvature_smoothing_default(),
             rest_cell_mm: rest_cell_default(),
             route_width_factor: route_width_factor_default(),
+            reference_cutter: None,
         };
 
         let tp = pencil_toolpath(&mesh, &index, &tool, &params);
@@ -1863,10 +1884,14 @@ mod tests {
             curvature_smoothing: curvature_smoothing_default(),
             rest_cell_mm: rest_cell_default(),
             route_width_factor: route_width_factor_default(),
+            reference_cutter: None,
         };
 
         let params_offset = PencilParams {
             num_offset_passes: 2,
+            // Set explicitly so `..params_center` never moves the non-Copy
+            // `reference_cutter`, keeping `params_center` usable below.
+            reference_cutter: None,
             ..params_center
         };
 
@@ -1971,6 +1996,7 @@ mod tests {
             curvature_smoothing: curvature_smoothing_default(),
             rest_cell_mm: rest_cell_default(),
             route_width_factor: route_width_factor_default(),
+            reference_cutter: None,
         }
     }
 
@@ -2036,6 +2062,7 @@ mod tests {
             curvature_smoothing: curvature_smoothing_default(),
             rest_cell_mm: rest_cell_default(),
             route_width_factor: route_width_factor_default(),
+            reference_cutter: None,
         };
 
         let edge_map = build_edge_adjacency(&mesh);
@@ -2389,6 +2416,7 @@ mod tests {
             curvature_smoothing: curvature_smoothing_default(),
             rest_cell_mm: rest_cell_default(),
             route_width_factor: route_width_factor_default(),
+            reference_cutter: None,
         };
 
         let unlinked = pencil_toolpath(&mesh, &index, &tool, &mk(0.0));
@@ -2463,6 +2491,7 @@ mod tests {
             curvature_smoothing: curvature_smoothing_default(),
             rest_cell_mm: rest_cell_default(),
             route_width_factor: route_width_factor_default(),
+            reference_cutter: None,
         };
 
         let edge_map = build_edge_adjacency(&mesh);
