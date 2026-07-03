@@ -137,6 +137,7 @@ fn generate_via_core(
         &req.cutting_levels,
         stock_bbox,
         req.prev_tool_radius,
+        req.reference_tool_cfg.clone(),
         debug_ctx,
         cancel,
         req.prior_stock.as_ref(),
@@ -697,6 +698,7 @@ mod tests {
             tool,
             safe_z: 10.0,
             prev_tool_radius: None,
+            reference_tool_cfg: None,
             stock_bbox: Some(BoundingBox3 {
                 min: P3::new(-25.0, -25.0, -10.0),
                 max: P3::new(25.0, 25.0, 10.0),
