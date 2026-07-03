@@ -357,23 +357,39 @@ pub(in crate::ui::properties) fn draw_pencil_params(
     // shape as a clearing radial WOC; leave it alone. Feed/plunge live on
     // the Feeds tab (W3.2).
     let curvature = cfg.detector.trim().eq_ignore_ascii_case("curvature");
+    let rest_depth = {
+        let d = cfg.detector.trim();
+        d.eq_ignore_ascii_case("rest_depth")
+            || d.eq_ignore_ascii_case("restdepth")
+            || d.eq_ignore_ascii_case("rest")
+    };
     egui::Grid::new("pen_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
-            // Valley-detection front-end. Dihedral = mesh-crease detection
-            // (clean CAD-style corners); Curvature = curvature crest lines
-            // (best for dense organic relief, dialled by Valley Saliency).
+            // Valley-detection front-end. Rest depth = dual-tool rest field (the
+            // aligned detector — the reference tool decides where pencil runs);
+            // Dihedral = mesh-crease detection (clean CAD-style corners);
+            // Curvature = curvature crest lines (dialled by Valley Saliency).
             ui.label("Detector:");
+            let selected = if rest_depth {
+                "Rest depth (recommended)"
+            } else if curvature {
+                "Curvature (crest)"
+            } else {
+                "Dihedral (crease)"
+            };
             egui::ComboBox::from_id_salt("pen_detector")
-                .selected_text(if curvature {
-                    "Curvature (crest)"
-                } else {
-                    "Dihedral (crease)"
-                })
+                .selected_text(selected)
                 .show_ui(ui, |ui| {
                     if ui
-                        .selectable_label(!curvature, "Dihedral (crease)")
+                        .selectable_label(rest_depth, "Rest depth (recommended)")
+                        .clicked()
+                    {
+                        cfg.detector = "rest_depth".to_owned();
+                    }
+                    if ui
+                        .selectable_label(!curvature && !rest_depth, "Dihedral (crease)")
                         .clicked()
                     {
                         cfg.detector = "dihedral".to_owned();
@@ -386,7 +402,28 @@ pub(in crate::ui::properties) fn draw_pencil_params(
                     }
                 });
             ui.end_row();
-            if curvature {
+            if rest_depth {
+                // Rest-depth dials. Rest Cell is the XY grid resolution; Route
+                // Width × sets how wide a rest region may be before it routes to
+                // clearing instead of a single pencil centreline (× pencil radius).
+                dv(
+                    ui,
+                    "Rest Cell:",
+                    &mut cfg.rest_cell_mm,
+                    " mm",
+                    0.05,
+                    0.1..=2.0,
+                );
+                dv(
+                    ui,
+                    "Route Width ×:",
+                    &mut cfg.route_width_factor,
+                    "",
+                    0.1,
+                    0.5..=10.0,
+                );
+                ui.end_row();
+            } else if curvature {
                 // Curvature-detector dials. Valley Saliency is the significance
                 // knob: min concave curvature |κ₂| (1/mm) a valley must reach —
                 // low traces every seam, high keeps only deep sharp valleys.
@@ -457,10 +494,12 @@ pub(in crate::ui::properties) fn draw_pencil_params(
                 0.05,
                 0.0..=5.0,
             );
-            // The reference tool the rest gate measures "deeper than" — only
-            // meaningful while the gate is on (Min Valley Depth > 0). The pencil
-            // tool itself is the op's selected tool (top of this panel).
-            if cfg.min_valley_depth > 0.0 {
+            // The reference tool the rest gate measures "deeper than". For
+            // rest_depth it is the core input (the field is defined by it), so
+            // show it always; for the other detectors it only matters while the
+            // gate is on (Min Valley Depth > 0). The pencil tool itself is the
+            // op's selected tool (top of this panel).
+            if rest_depth || cfg.min_valley_depth > 0.0 {
                 dv(
                     ui,
                     "Reference Tool Ø:",
