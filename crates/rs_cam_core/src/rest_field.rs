@@ -26,10 +26,44 @@
 
 use tracing::info;
 
+use crate::dexel_stock::TriDexelStock;
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::P3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::MillingCutter;
+
+/// What the pencil rest is measured "deeper than". `Copy` so the sample closure
+/// (possibly parallel) can capture it by value.
+#[derive(Clone, Copy)]
+pub enum RestReference<'a> {
+    /// A milling cutter: a genuinely bigger finish tool, the nominal ball, or —
+    /// when `is_surface_probe` — a tiny bare-surface probe whose sign is flipped
+    /// (`rest = pencil_z − probe_z`, how far the pencil floats above bare stock).
+    Cutter {
+        tool: &'a dyn MillingCutter,
+        is_surface_probe: bool,
+    },
+    /// The ACTUAL machined stock left by prior toolpaths (R2): the rest is the
+    /// remaining material height above the pencil drop,
+    /// `rest = stock_top_z(x, y) − pencil_z`. Strictly better than any nominal
+    /// tool drop — it bakes in the prior TOOLPATH pattern (scallop cusps,
+    /// skipped boundaries, walls the finish never visited), not just the prior
+    /// tool's shape.
+    Stock(&'a TriDexelStock),
+}
+
+impl RestReference<'_> {
+    /// Radius by which the boundary trust region is eroded because the reference
+    /// overhangs the part edge. A cutter's ball hangs off and reads false-high
+    /// rest; stock has no overhanging ball, so it contributes nothing (the
+    /// pencil radius still erodes via the caller's `max`).
+    fn erosion_radius(&self) -> f64 {
+        match self {
+            RestReference::Cutter { tool, .. } => tool.radius(),
+            RestReference::Stock(_) => 0.0,
+        }
+    }
+}
 
 /// Minimum cell count for a rest region to be kept (drop isolated noise cells).
 const MIN_REGION_CELLS: usize = 4;
@@ -65,12 +99,6 @@ pub struct RestFieldParams {
     /// Minimum kept-cut length (mm) — used only for the coverage report; the
     /// caller applies the real `min_cut_length` filter downstream.
     pub min_cut_length: f64,
-    /// When `false` the reference cutter is a genuinely bigger finish tool and
-    /// `rest = reference_z − pencil_z`. When `true` the reference is a tiny
-    /// bare-surface probe (degenerate fallback where the configured reference is
-    /// not bigger than the pencil tool) and the sign flips:
-    /// `rest = pencil_z − probe_z` (how far the pencil floats above bare stock).
-    pub reference_is_surface_probe: bool,
 }
 
 /// A wide rest region routed to clearing rather than pencil centrelines. v1
@@ -151,14 +179,14 @@ fn mask_at(mask: &[bool], nx: usize, ny: usize, r: isize, c: isize) -> bool {
 
 /// Build the rest field and extract routed valley centrelines + clearing regions.
 ///
-/// `reference` is always supplied by the caller: either a genuinely bigger
-/// finish tool, or (when the configured reference is not bigger than the pencil)
-/// a tiny bare-surface probe with `reference_is_surface_probe = true`.
+/// `reference` is a [`RestReference`]: a bigger finish tool, the nominal ball, a
+/// degenerate bare-surface probe, or (R2) the actual machined stock the prior
+/// toolpaths left.
 pub fn detect_rest_valleys(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     pencil: &dyn MillingCutter,
-    reference: &dyn MillingCutter,
+    reference: RestReference<'_>,
     params: &RestFieldParams,
 ) -> RestFieldResult {
     let cell = params.cell_mm.max(1e-3);
@@ -176,8 +204,8 @@ pub fn detect_rest_valleys(
     let ny = ((bbox.max.y - bbox.min.y) / cell).ceil().max(0.0) as usize + 2 * margin_cells + 1;
     let n = nx * ny;
 
-    // --- 1. Grid build: drop both tools at every cell centre. ---
-    let probe = params.reference_is_surface_probe;
+    // --- 1. Grid build: drop the pencil (and the reference, or query stock) at
+    // every cell centre. ---
     let sample = |i: usize| -> (f64, bool, f64) {
         let r = i / nx;
         let c = i % nx;
@@ -187,18 +215,39 @@ pub fn detect_rest_valleys(
         if !pc.contacted {
             return (0.0, false, f64::NAN);
         }
-        let rc = point_drop_cutter(x, y, mesh, index, reference);
-        if !rc.contacted {
-            // Either drop non-contact ⇒ invalid (avoids boundary artefacts).
-            return (0.0, false, f64::NAN);
-        }
-        // Tool mode: bigger reference floats higher, rest = ref_z − pencil_z > 0
-        // where the pencil reaches deeper. Surface-probe mode: reference ≈ bare
-        // surface (low), rest = pencil_z − probe_z > 0 where the pencil floats.
-        let rest = if probe {
-            (pc.z - rc.z).max(0.0)
-        } else {
-            (rc.z - pc.z).max(0.0)
+        let rest = match reference {
+            RestReference::Cutter {
+                tool,
+                is_surface_probe,
+            } => {
+                let rc = point_drop_cutter(x, y, mesh, index, tool);
+                if !rc.contacted {
+                    // Reference non-contact ⇒ invalid (avoids boundary artefacts).
+                    return (0.0, false, f64::NAN);
+                }
+                // Tool mode: bigger reference floats higher, rest = ref_z −
+                // pencil_z > 0 where the pencil reaches deeper. Surface-probe
+                // mode: reference ≈ bare surface (low), rest = pencil_z − probe_z
+                // > 0 where the pencil floats.
+                if is_surface_probe {
+                    (pc.z - rc.z).max(0.0)
+                } else {
+                    (rc.z - pc.z).max(0.0)
+                }
+            }
+            RestReference::Stock(stock) => {
+                // Remaining material height above the pencil drop. No cell (out
+                // of the stock grid) or no material in the column ⇒ invalid,
+                // same as reference non-contact. Nearest-cell lookup only — do
+                // NOT interpolate dexel tops across steep walls (smears cliffs).
+                let Some((row, col)) = stock.z_grid.world_to_cell(x, y) else {
+                    return (0.0, false, f64::NAN);
+                };
+                let Some(top_z) = stock.z_grid.top_z_at(row, col) else {
+                    return (0.0, false, f64::NAN);
+                };
+                (top_z as f64 - pc.z).max(0.0)
+            }
         };
         (rest, true, pc.z)
     };
@@ -230,7 +279,7 @@ pub fn detect_rest_valleys(
     // and rests on it, reading a false-high `rest` that is not real material —
     // it would otherwise ring the part in a spurious rest "moat". The reading is
     // only trustworthy where the overhanging tool is fully supported.
-    let erode_cells = (pencil.radius().max(reference.radius()) / cell).ceil();
+    let erode_cells = (pencil.radius().max(reference.erosion_radius()) / cell).ceil();
     let boundary_dt = chamfer_distance(&contact, nx, ny);
     let mut mask = vec![false; n];
     for i in 0..n {
@@ -852,7 +901,6 @@ mod tests {
             route_width_factor: 2.0,
             pencil_radius: pencil_r,
             min_cut_length: 2.0,
-            reference_is_surface_probe: false,
         }
     }
 
@@ -867,7 +915,7 @@ mod tests {
         let reference = BallEndmill::new(6.0, 25.0);
         let mut p = default_params(0.5);
         p.route_width_factor = 10.0;
-        let res = detect_rest_valleys(&mesh, &index, &pencil, &reference, &p);
+        let res = detect_rest_valleys(&mesh, &index, &pencil, RestReference::Cutter { tool: &reference, is_surface_probe: false }, &p);
         assert!(
             !res.centerlines.is_empty(),
             "sharp V-valley should yield a pencil centerline; report = {:?}",
@@ -893,7 +941,7 @@ mod tests {
         let index = SpatialIndex::build_auto(&mesh);
         let pencil = BallEndmill::new(1.0, 25.0);
         let reference = BallEndmill::new(6.0, 25.0);
-        let res = detect_rest_valleys(&mesh, &index, &pencil, &reference, &default_params(0.5));
+        let res = detect_rest_valleys(&mesh, &index, &pencil, RestReference::Cutter { tool: &reference, is_surface_probe: false }, &default_params(0.5));
         assert!(
             res.centerlines.is_empty(),
             "a gentle ridge has no rest material; got {} centerlines (peaks {:?})",
@@ -908,7 +956,7 @@ mod tests {
         let index = SpatialIndex::build_auto(&mesh);
         let pencil = BallEndmill::new(1.0, 25.0);
         let reference = BallEndmill::new(6.0, 25.0);
-        let res = detect_rest_valleys(&mesh, &index, &pencil, &reference, &default_params(0.5));
+        let res = detect_rest_valleys(&mesh, &index, &pencil, RestReference::Cutter { tool: &reference, is_surface_probe: false }, &default_params(0.5));
         assert!(res.centerlines.is_empty(), "flat plate has no valleys");
         assert_eq!(res.report.total_rest_volume_mm3, 0.0);
     }
@@ -920,7 +968,7 @@ mod tests {
         let index = SpatialIndex::build_auto(&mesh);
         let pencil = BallEndmill::new(1.0, 25.0);
         let reference = BallEndmill::new(6.0, 25.0);
-        let res = detect_rest_valleys(&mesh, &index, &pencil, &reference, &default_params(0.5));
+        let res = detect_rest_valleys(&mesh, &index, &pencil, RestReference::Cutter { tool: &reference, is_surface_probe: false }, &default_params(0.5));
         assert!(
             res.centerlines.is_empty(),
             "a gentle reachable valley should read ≈0 rest; got {} centerlines",
@@ -937,7 +985,7 @@ mod tests {
         let count = |mvd: f64| {
             let mut p = default_params(0.5);
             p.min_valley_depth = mvd;
-            let r = detect_rest_valleys(&mesh, &index, &pencil, &reference, &p);
+            let r = detect_rest_valleys(&mesh, &index, &pencil, RestReference::Cutter { tool: &reference, is_surface_probe: false }, &p);
             r.centerlines.iter().map(|l| l.len()).sum::<usize>()
         };
         let low = count(0.05);
@@ -960,7 +1008,7 @@ mod tests {
         let pencil = BallEndmill::new(1.0, 25.0);
         let peak = |ref_d: f64| {
             let reference = BallEndmill::new(ref_d, 25.0);
-            let res = detect_rest_valleys(&mesh, &index, &pencil, &reference, &default_params(0.5));
+            let res = detect_rest_valleys(&mesh, &index, &pencil, RestReference::Cutter { tool: &reference, is_surface_probe: false }, &default_params(0.5));
             res.report
                 .region_peak_rest_mm
                 .iter()
@@ -1068,10 +1116,13 @@ mod tests {
             route_width_factor: routew,
             pencil_radius: pencil.radius(),
             min_cut_length: 2.0,
-            reference_is_surface_probe: probe_mode,
+        };
+        let reference = RestReference::Cutter {
+            tool: &reference,
+            is_surface_probe: probe_mode,
         };
         let t = std::time::Instant::now();
-        let res = detect_rest_valleys(&mesh, &index, &pencil, &reference, &params);
+        let res = detect_rest_valleys(&mesh, &index, &pencil, reference, &params);
         let gen_ms = t.elapsed().as_millis();
 
         // Hillshade DEM (tiny-ball probe grid).
