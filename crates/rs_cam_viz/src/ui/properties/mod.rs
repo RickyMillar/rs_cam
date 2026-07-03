@@ -3493,7 +3493,7 @@ fn draw_toolpath_panel(
                 OperationConfig::Waterline(cfg) => {
                     draw_waterline_params(ui, cfg, feeds_for_pills);
                 }
-                OperationConfig::Pencil(cfg) => draw_pencil_params(ui, cfg, feeds_for_pills),
+                OperationConfig::Pencil(cfg) => draw_pencil_params(ui, cfg, tools, feeds_for_pills),
                 OperationConfig::Scallop(cfg) => draw_scallop_params(ui, cfg, feeds_for_pills),
                 OperationConfig::SteepShallow(cfg) => {
                     draw_steep_shallow_params(ui, cfg, feeds_for_pills);

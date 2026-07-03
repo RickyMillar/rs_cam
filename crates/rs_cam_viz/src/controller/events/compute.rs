@@ -223,6 +223,22 @@ impl<B: ComputeBackend> AppController<B> {
             None
         };
 
+        // R1 (pencil): resolve the real reference tool config from the Pencil
+        // op's `reference_tool_id`, mirroring prev_tool_radius above. `None`
+        // (unset or not found) falls back to the nominal reference diameter.
+        let reference_tool_cfg = if let OperationConfig::Pencil(config) = &operation {
+            config.reference_tool_id.and_then(|ref_id| {
+                self.state
+                    .session
+                    .tools()
+                    .iter()
+                    .find(|t| t.id == ref_id)
+                    .cloned()
+            })
+        } else {
+            None
+        };
+
         // Refresh pin drill holes from current stock state before submitting.
         if let OperationConfig::AlignmentPinDrill(ref mut cfg) = operation {
             cfg.holes = self
@@ -346,6 +362,7 @@ impl<B: ComputeBackend> AppController<B> {
             tool,
             safe_z,
             prev_tool_radius,
+            reference_tool_cfg,
             stock_bbox: Some(stock_bbox),
             boundary,
             keep_out_footprints,

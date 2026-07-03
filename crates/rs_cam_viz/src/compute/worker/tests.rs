@@ -26,6 +26,7 @@ fn sample_request(operation: OperationConfig, stock_source: StockSource) -> Comp
         tool,
         safe_z: 10.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(10.0, 20.0, -5.0),
             max: P3::new(40.0, 60.0, 12.0),
@@ -106,6 +107,7 @@ fn quick_pocket_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 10.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-25.0, -25.0, -5.0),
             max: P3::new(25.0, 25.0, 10.0),
@@ -143,6 +145,7 @@ fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 10.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-60.0, -60.0, -5.0),
             max: P3::new(60.0, 60.0, 10.0),
@@ -180,6 +183,7 @@ fn waterline_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 10.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-30.0, -30.0, -5.0),
             max: P3::new(30.0, 30.0, 10.0),
@@ -218,6 +222,7 @@ fn adaptive3d_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 10.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-30.0, -30.0, -5.0),
             max: P3::new(30.0, 30.0, 10.0),
@@ -276,6 +281,7 @@ fn drill_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 10.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-20.0, -20.0, -15.0),
             max: P3::new(20.0, 20.0, 10.0),
@@ -306,6 +312,7 @@ fn steep_shallow_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 10.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-20.0, -20.0, -20.0),
             max: P3::new(20.0, 20.0, 20.0),
@@ -349,6 +356,7 @@ fn pencil_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 10.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(0.0, -15.0, -10.0),
             max: P3::new(40.0, 15.0, 10.0),
@@ -385,6 +393,7 @@ fn scallop_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 20.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-25.0, -25.0, -5.0),
             max: P3::new(25.0, 25.0, 25.0),
@@ -422,6 +431,7 @@ fn ramp_finish_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 20.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-25.0, -25.0, -5.0),
             max: P3::new(25.0, 25.0, 25.0),
@@ -457,6 +467,7 @@ fn spiral_finish_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 20.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-25.0, -25.0, -5.0),
             max: P3::new(25.0, 25.0, 25.0),
@@ -493,6 +504,7 @@ fn radial_finish_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 15.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-40.0, -40.0, -5.0),
             max: P3::new(40.0, 40.0, 15.0),
@@ -528,6 +540,7 @@ fn horizontal_finish_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 15.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-40.0, -40.0, -5.0),
             max: P3::new(40.0, 40.0, 15.0),
@@ -567,6 +580,7 @@ fn project_curve_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 15.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-25.0, -25.0, -5.0),
             max: P3::new(25.0, 25.0, 25.0),

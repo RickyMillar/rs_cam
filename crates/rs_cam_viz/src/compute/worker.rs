@@ -49,6 +49,10 @@ pub struct ComputeRequest {
     pub tool: ToolConfig,
     pub safe_z: f64,
     pub prev_tool_radius: Option<f64>,
+    /// R1 (pencil): resolved real reference tool config when the Pencil op names
+    /// one via `reference_tool_id`. Resolved in the controller (which has the
+    /// tool list), threaded to `execute_operation_annotated`. `None` = nominal.
+    pub reference_tool_cfg: Option<ToolConfig>,
     pub stock_bbox: Option<BoundingBox3>,
     pub boundary: crate::state::toolpath::BoundaryConfig,
     /// Fixture and keep-out footprints to subtract from the machining boundary.

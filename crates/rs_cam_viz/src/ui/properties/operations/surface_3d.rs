@@ -351,6 +351,7 @@ pub(in crate::ui::properties) fn draw_waterline_params(
 pub(in crate::ui::properties) fn draw_pencil_params(
     ui: &mut egui::Ui,
     cfg: &mut PencilConfig,
+    tools: &[(crate::state::job::ToolId, String, f64)],
     _feeds_result: Option<&FeedsResult>,
 ) {
     // Pencil's offset_stepover is a parallel-pass spacing, not the same
@@ -494,20 +495,51 @@ pub(in crate::ui::properties) fn draw_pencil_params(
                 0.05,
                 0.0..=5.0,
             );
-            // The reference tool the rest gate measures "deeper than". For
+            // The reference the rest gate/field measures "deeper than". For
             // rest_depth it is the core input (the field is defined by it), so
             // show it always; for the other detectors it only matters while the
             // gate is on (Min Valley Depth > 0). The pencil tool itself is the
             // op's selected tool (top of this panel).
+            //
+            // R1: "Nominal Ø" = a synthetic ball at Reference Tool Ø; or pick a
+            // real library tool whose TRUE geometry (flat/vbit/tapered) defines
+            // the rest — a flat leaves a different rest shape than a ball of the
+            // same diameter. Shown for all detectors; the gate benefits equally.
             if rest_depth || cfg.min_valley_depth > 0.0 {
-                dv(
-                    ui,
-                    "Reference Tool Ø:",
-                    &mut cfg.reference_tool_diameter,
-                    " mm",
-                    0.5,
-                    0.5..=25.0,
-                );
+                ui.label("Reference:");
+                let ref_label = cfg
+                    .reference_tool_id
+                    .and_then(|rid| tools.iter().find(|(id, _, _)| *id == rid))
+                    .map(|(_, s, _)| s.as_str())
+                    .unwrap_or("Nominal Ø");
+                egui::ComboBox::from_id_salt("pen_reference_tool")
+                    .selected_text(ref_label)
+                    .show_ui(ui, |ui| {
+                        if ui
+                            .selectable_label(cfg.reference_tool_id.is_none(), "Nominal Ø")
+                            .clicked()
+                        {
+                            cfg.reference_tool_id = None;
+                        }
+                        for (id, name, _) in tools {
+                            let selected = cfg.reference_tool_id == Some(*id);
+                            if ui.selectable_label(selected, name.as_str()).clicked() {
+                                cfg.reference_tool_id = Some(*id);
+                            }
+                        }
+                    });
+                ui.end_row();
+                // The nominal diameter only applies when no real tool is chosen.
+                if cfg.reference_tool_id.is_none() {
+                    dv(
+                        ui,
+                        "Reference Tool Ø:",
+                        &mut cfg.reference_tool_diameter,
+                        " mm",
+                        0.5,
+                        0.5..=25.0,
+                    );
+                }
             }
             dv(
                 ui,
