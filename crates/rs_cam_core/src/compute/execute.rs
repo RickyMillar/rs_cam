@@ -198,6 +198,11 @@ pub struct ExecutionContext<'a> {
     pub cutting_levels: &'a [f64],
     pub stock_bbox: &'a BoundingBox3,
     pub prev_tool_radius: Option<f64>,
+    /// R1 (pencil): the resolved *real* reference tool config, when the pencil
+    /// op's `reference_tool_id` names a library tool. Owned clone (small);
+    /// resolution happens upstream because the context has no tool list, exactly
+    /// like `prev_tool_radius`. `generate_pencil` turns it into a `ToolDefinition`.
+    pub reference_tool_cfg: Option<ToolConfig>,
     pub debug_ctx: Option<&'a ToolpathDebugContext>,
     pub cancel: &'a AtomicBool,
     pub initial_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
@@ -1125,6 +1130,12 @@ pub(crate) fn generate_pencil(
         curvature_smoothing: cfg.curvature_smoothing,
         rest_cell_mm: cfg.rest_cell_mm,
         route_width_factor: cfg.route_width_factor,
+        // R1: real reference tool geometry when the op names one; else None →
+        // the pencil detectors fall back to the nominal `reference_tool_diameter`.
+        reference_cutter: ctx
+            .reference_tool_cfg
+            .as_ref()
+            .map(crate::compute::cutter::build_cutter),
     };
     let (tp, annotations) = crate::pencil::pencil_toolpath_structured_annotated(
         m,
@@ -1573,6 +1584,7 @@ pub fn execute_operation(
     cutting_levels: &[f64],
     stock_bbox: &BoundingBox3,
     prev_tool_radius: Option<f64>,
+    reference_tool_cfg: Option<ToolConfig>,
     debug_ctx: Option<&ToolpathDebugContext>,
     cancel: &AtomicBool,
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
@@ -1588,6 +1600,7 @@ pub fn execute_operation(
         cutting_levels,
         stock_bbox,
         prev_tool_radius,
+        reference_tool_cfg,
         debug_ctx,
         cancel,
         initial_stock,
@@ -1614,6 +1627,7 @@ pub fn execute_operation_annotated(
     cutting_levels: &[f64],
     stock_bbox: &BoundingBox3,
     prev_tool_radius: Option<f64>,
+    reference_tool_cfg: Option<ToolConfig>,
     debug_ctx: Option<&ToolpathDebugContext>,
     cancel: &AtomicBool,
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
@@ -1645,6 +1659,7 @@ pub fn execute_operation_annotated(
         cutting_levels,
         stock_bbox,
         prev_tool_radius,
+        reference_tool_cfg,
         debug_ctx,
         cancel,
         initial_stock,
@@ -2635,6 +2650,7 @@ mod tests {
             &bbox,
             None,
             None,
+            None,
             &cancel,
             None,
         );
@@ -2665,6 +2681,7 @@ mod tests {
             &heights,
             &[],
             &bbox,
+            None,
             None,
             None,
             &cancel,
@@ -2700,6 +2717,7 @@ mod tests {
             &bbox,
             None,
             None,
+            None,
             &cancel,
             None,
         );
@@ -2733,6 +2751,7 @@ mod tests {
             &bbox,
             None,
             None,
+            None,
             &cancel,
             None,
         );
@@ -2763,6 +2782,7 @@ mod tests {
             &heights,
             &[],
             &bbox,
+            None,
             None,
             None,
             &cancel,
@@ -2800,6 +2820,7 @@ mod tests {
             &heights,
             &[],
             &bbox,
+            None,
             None,
             None,
             &cancel,
@@ -2862,6 +2883,7 @@ mod tests {
                 &cutting_levels,
                 &bbox,
                 case.prev_tool_radius,
+                None,
                 None,
                 &cancel,
                 None,
@@ -3030,6 +3052,7 @@ mod tests {
                 &bbox,
                 None,
                 None,
+                None,
                 &cancel,
                 None,
                 None,
@@ -3069,6 +3092,7 @@ mod tests {
             &heights,
             &levels,
             &bbox,
+            None,
             None,
             None,
             &cancel,
@@ -3120,6 +3144,7 @@ mod tests {
             &heights,
             &[],
             &bbox,
+            None,
             None,
             None,
             &cancel,
@@ -3178,6 +3203,7 @@ mod tests {
             &bbox,
             None,
             None,
+            None,
             &cancel,
             None,
             Some(&ctx),
@@ -3223,6 +3249,7 @@ mod tests {
             &heights,
             &[],
             &bbox,
+            None,
             None,
             None,
             &cancel,

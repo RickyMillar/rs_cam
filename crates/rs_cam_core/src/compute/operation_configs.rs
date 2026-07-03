@@ -762,6 +762,13 @@ pub struct PencilConfig {
     /// clearing. `#[serde(default)]` so older files load.
     #[serde(default = "crate::pencil::route_width_factor_default")]
     pub route_width_factor: f64,
+    /// R1: optional library tool id whose *real* cutter geometry defines the
+    /// rest reference (all three detectors). `None` = legacy nominal-diameter
+    /// behaviour via `reference_tool_diameter`. Mirrors `RestConfig.prev_tool_id`
+    /// — `#[serde(default, skip_serializing_if)]` so older project files load
+    /// and files that never set it stay byte-identical on save.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_tool_id: Option<ToolId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
 }
@@ -786,6 +793,7 @@ impl Default for PencilConfig {
             curvature_smoothing: crate::pencil::curvature_smoothing_default(),
             rest_cell_mm: crate::pencil::rest_cell_default(),
             route_width_factor: crate::pencil::route_width_factor_default(),
+            reference_tool_id: None,
             spindle_rpm: None,
         }
     }

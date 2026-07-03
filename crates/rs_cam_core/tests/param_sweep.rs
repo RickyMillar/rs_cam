@@ -1685,6 +1685,7 @@ fn default_pencil_params() -> PencilParams {
         curvature_smoothing: 3,
         rest_cell_mm: 0.5,
         route_width_factor: 2.0,
+        reference_cutter: None,
     }
 }
 

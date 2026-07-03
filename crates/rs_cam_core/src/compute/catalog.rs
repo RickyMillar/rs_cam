@@ -1204,6 +1204,11 @@ const PENCIL_PARAMS: &[ParamDef] = &[
     ParamDef::required("curvature_smoothing", "usize"),
     ParamDef::required("rest_cell_mm", "f64"),
     ParamDef::required("route_width_factor", "f64"),
+    ParamDef::optional_desc(
+        "reference_tool_id",
+        "option<usize>",
+        "Library tool id whose real geometry defines the pencil rest reference (else nominal diameter)",
+    ),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
