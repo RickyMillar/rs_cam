@@ -16,7 +16,7 @@
 
 use std::collections::HashMap;
 
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::debug_trace::ToolpathDebugContext;
 use crate::dropcutter::point_drop_cutter;
@@ -1035,7 +1035,7 @@ pub fn pencil_toolpath(
     cutter: &dyn MillingCutter,
     params: &PencilParams,
 ) -> Toolpath {
-    let (tp, _) = pencil_toolpath_structured_annotated(mesh, index, cutter, params, None);
+    let (tp, _) = pencil_toolpath_structured_annotated(mesh, index, cutter, params, None, None);
     tp
 }
 
@@ -1210,6 +1210,11 @@ pub fn pencil_toolpath_structured_annotated(
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &PencilParams,
+    // R2: the actual machined stock left by prior toolpaths, when this pencil op
+    // cuts `FromRemainingStock` and a prior simulation exists. The RestDepth
+    // detector prefers it as the rest reference (it captures the real prior
+    // toolpath pattern). `None` ⇒ fall back to the tool/nominal reference (R1).
+    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
     debug: Option<&ToolpathDebugContext>,
 ) -> (Toolpath, Vec<PencilRuntimeAnnotation>) {
     let mut tp = Toolpath::new();
@@ -1300,36 +1305,87 @@ pub fn pencil_toolpath_structured_annotated(
             // `polyline_passes_depth` gate is REDUNDANT here (the field threshold
             // IS that same quantity, pointwise over the whole grid) — skip it.
             //
-            // Rest-field reference (unified resolution above): a real reference
-            // tool or the bigger nominal ball → `is_surface_probe = false`;
-            // otherwise a tiny bare-surface probe with the sign flipped (matches
-            // how the drainage DEM probed the raw surface). NOTE the sign-flip
-            // trap: a *real* reference equal to the pencil tool must still yield
-            // rest ≈ 0 (nothing to clean) via `ref_z − pencil_z`, NOT probe mode —
-            // so probe mode is reserved for the genuinely degenerate case where
-            // there is neither a real tool nor a bigger nominal diameter.
+            // Rest-field reference. R2: prefer the ACTUAL machined stock the
+            // prior toolpaths left (`initial_stock`, when this op cuts
+            // FromRemainingStock and a prior sim exists) — it captures the real
+            // prior toolpath pattern (scallop cusps, skipped boundaries, walls
+            // the finish never visited), not just a tool's shape. Frame guard
+            // (the F-024 lesson): the stock z_grid and the mesh the pencil drops
+            // against must share a frame; require their XY bboxes to overlap or a
+            // silent frame mismatch would read garbage rest everywhere. On no
+            // stock / non-overlap, fall back to the R1 cutter resolution: real
+            // reference tool or the bigger nominal ball (`is_surface_probe =
+            // false`), else a tiny bare-surface probe with the sign flipped.
+            // NOTE the sign-flip trap: a *real* reference equal to the pencil
+            // tool still yields rest ≈ 0 via `ref_z − pencil_z`, NOT probe mode.
+            let stock_ref = initial_stock.filter(|stock| {
+                let (sb, mb) = (&stock.stock_bbox, &mesh.bbox);
+                let overlap = sb.min.x <= mb.max.x
+                    && sb.max.x >= mb.min.x
+                    && sb.min.y <= mb.max.y
+                    && sb.max.y >= mb.min.y;
+                if !overlap {
+                    warn!(
+                        stock = format!(
+                            "[{:.1},{:.1}]..[{:.1},{:.1}]",
+                            sb.min.x, sb.min.y, sb.max.x, sb.max.y
+                        ),
+                        mesh = format!(
+                            "[{:.1},{:.1}]..[{:.1},{:.1}]",
+                            mb.min.x, mb.min.y, mb.max.x, mb.max.y
+                        ),
+                        "Rest-depth detector: stock/mesh XY frames do not overlap; \
+                         falling back to tool reference"
+                    );
+                }
+                overlap
+            });
             let probe_ball = crate::tool::BallEndmill::new(0.1, 10.0);
-            let (rest_reference, probe_mode): (&dyn MillingCutter, bool) =
+            // reference-mode counter: 0 = nominal ball / probe, 1 = real tool,
+            // 2 = machined stock.
+            let (reference, probe_mode, rest_reference_mode): (
+                crate::rest_field::RestReference<'_>,
+                bool,
+                u8,
+            ) = if let Some(stock) = stock_ref {
+                (crate::rest_field::RestReference::Stock(stock), false, 2)
+            } else {
                 match (real_ref, nominal_ball.as_ref()) {
-                    (Some(r), _) => (r, false),
-                    (None, Some(b)) => (b as &dyn MillingCutter, false),
-                    (None, None) => (&probe_ball as &dyn MillingCutter, true),
-                };
+                    (Some(r), _) => (
+                        crate::rest_field::RestReference::Cutter {
+                            tool: r,
+                            is_surface_probe: false,
+                        },
+                        false,
+                        1,
+                    ),
+                    (None, Some(b)) => (
+                        crate::rest_field::RestReference::Cutter {
+                            tool: b as &dyn MillingCutter,
+                            is_surface_probe: false,
+                        },
+                        false,
+                        0,
+                    ),
+                    (None, None) => (
+                        crate::rest_field::RestReference::Cutter {
+                            tool: &probe_ball as &dyn MillingCutter,
+                            is_surface_probe: true,
+                        },
+                        true,
+                        0,
+                    ),
+                }
+            };
             let rf_params = crate::rest_field::RestFieldParams {
                 cell_mm: params.rest_cell_mm,
                 min_valley_depth: params.min_valley_depth,
                 route_width_factor: params.route_width_factor,
                 pencil_radius: cutter.radius(),
                 min_cut_length: params.min_cut_length,
-                reference_is_surface_probe: probe_mode,
             };
-            let rf = crate::rest_field::detect_rest_valleys(
-                mesh,
-                index,
-                cutter,
-                rest_reference,
-                &rf_params,
-            );
+            let rf =
+                crate::rest_field::detect_rest_valleys(mesh, index, cutter, reference, &rf_params);
             let report = &rf.report;
             info!(
                 rest_volume_mm3 = format!("{:.1}", report.total_rest_volume_mm3),
@@ -1338,7 +1394,8 @@ pub fn pencil_toolpath_structured_annotated(
                 centerlines = rf.centerlines.len(),
                 coverage = format!("{:.2}", report.coverage()),
                 probe_mode,
-                "Rest-depth detector: rest field built"
+                rest_reference_mode,
+                "Rest-depth detector: rest field built (mode 0=nominal 1=tool 2=stock)"
             );
             if let Some(dbg) = debug {
                 let scope = dbg.start_span("rest_field", "rest-depth report");
@@ -1348,6 +1405,7 @@ pub fn pencil_toolpath_structured_annotated(
                 scope.set_counter("rest_skeleton_mm", report.skeleton_length_mm);
                 scope.set_counter("rest_traced_mm", report.traced_length_mm);
                 scope.set_counter("rest_coverage", report.coverage());
+                scope.set_counter("rest_reference_mode", rest_reference_mode as f64);
                 scope.finish();
             }
             for reg in &rf.clearing_regions {
@@ -1605,7 +1663,7 @@ pub fn pencil_toolpath_annotated(
     debug: Option<&ToolpathDebugContext>,
 ) -> (Toolpath, Vec<(usize, String)>) {
     let (tp, annotations) =
-        pencil_toolpath_structured_annotated(mesh, index, cutter, params, debug);
+        pencil_toolpath_structured_annotated(mesh, index, cutter, params, None, debug);
     (tp, runtime_annotations_to_labels(&annotations))
 }
 

@@ -1142,6 +1142,9 @@ pub(crate) fn generate_pencil(
         idx,
         ctx.tool_def,
         &params,
+        // R2: the prior-op machined stock (FromRemainingStock + a prior sim);
+        // the RestDepth detector prefers it as the rest reference.
+        ctx.initial_stock,
         ctx.debug_ctx,
     );
     if let Some(sem) = ctx.semantic_ctx {
