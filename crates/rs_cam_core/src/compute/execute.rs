@@ -1123,6 +1123,8 @@ pub(crate) fn generate_pencil(
         detector: crate::pencil::PencilDetector::parse(&cfg.detector),
         valley_saliency: cfg.valley_saliency,
         curvature_smoothing: cfg.curvature_smoothing,
+        rest_cell_mm: cfg.rest_cell_mm,
+        route_width_factor: cfg.route_width_factor,
     };
     let (tp, annotations) = crate::pencil::pencil_toolpath_structured_annotated(
         m,

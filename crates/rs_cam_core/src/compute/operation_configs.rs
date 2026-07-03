@@ -753,6 +753,15 @@ pub struct PencilConfig {
     /// `#[serde(default)]` so older project files load.
     #[serde(default = "crate::pencil::curvature_smoothing_default")]
     pub curvature_smoothing: usize,
+    /// XY grid cell size (mm) for the `rest_depth` detector's rest field. Smaller
+    /// = finer regions, more drops. `#[serde(default)]` so older files load.
+    #[serde(default = "crate::pencil::rest_cell_default")]
+    pub rest_cell_mm: f64,
+    /// `rest_depth` routing threshold: a rest region routes to a pencil centreline
+    /// when its half-width `≤ route_width_factor × pencil_radius`, else to
+    /// clearing. `#[serde(default)]` so older files load.
+    #[serde(default = "crate::pencil::route_width_factor_default")]
+    pub route_width_factor: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
 }
@@ -775,6 +784,8 @@ impl Default for PencilConfig {
             detector: crate::pencil::detector_string_default(),
             valley_saliency: crate::pencil::valley_saliency_default(),
             curvature_smoothing: crate::pencil::curvature_smoothing_default(),
+            rest_cell_mm: crate::pencil::rest_cell_default(),
+            route_width_factor: crate::pencil::route_width_factor_default(),
             spindle_rpm: None,
         }
     }

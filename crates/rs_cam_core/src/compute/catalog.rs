@@ -1202,6 +1202,8 @@ const PENCIL_PARAMS: &[ParamDef] = &[
     ParamDef::required("detector", "string"),
     ParamDef::required("valley_saliency", "f64"),
     ParamDef::required("curvature_smoothing", "usize"),
+    ParamDef::required("rest_cell_mm", "f64"),
+    ParamDef::required("route_width_factor", "f64"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
