@@ -394,12 +394,16 @@ pub struct SetBoundaryConfigParam {
     pub index: usize,
     /// Enable or disable boundary
     pub enabled: bool,
-    /// Boundary source: "stock" or "model_silhouette"
+    /// Boundary source: "stock", "model_silhouette", or "derived_rest_regions"
     pub source: Option<String>,
     /// Containment mode: "center", "inside", or "outside"
     pub containment: Option<String>,
     /// Additional offset in mm (positive = expand, negative = shrink)
     pub offset: Option<f64>,
+    /// Required when `source` is "derived_rest_regions": the stable id
+    /// (from `get_toolpath_params`'s `id` field, not an index) of the
+    /// toolpath whose pencil rest-depth result supplies the boundary.
+    pub source_toolpath_id: Option<usize>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]

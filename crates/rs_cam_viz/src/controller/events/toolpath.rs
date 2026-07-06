@@ -317,6 +317,12 @@ impl<B: ComputeBackend> AppController<B> {
         if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id) {
             let _ = self.state.session.remove_toolpath(tp_idx);
             self.state.gui.toolpath_rt.remove(&tp_id);
+            // Any toolpath whose `DerivedRestRegions` boundary referenced
+            // this one just lost its source entirely — force a regenerate
+            // so it fails hard with the "source toolpath no longer exists"
+            // message instead of silently keeping a clip built from the
+            // now-orphaned cached regions.
+            self.mark_derived_rest_dependents_stale(tp_id);
         }
         if self.state.selection == Selection::Toolpath(tp_id) {
             self.state.selection = Selection::None;

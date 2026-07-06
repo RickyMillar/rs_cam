@@ -11,9 +11,10 @@
 
 use crate::contour_extract::weave_contours;
 use crate::fiber::Fiber;
-use crate::geo::P3;
+use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::polygon::Polygon2;
 use crate::pushcutter::batch_push_cutter;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveIntent, Toolpath};
@@ -90,11 +91,22 @@ pub fn waterline_toolpath(
         final_z,
         z_step,
         params,
+        None,
         &never_cancel,
     )
     .expect("non-cancellable waterline should never be cancelled")
 }
 
+/// `boundary_regions` (P2.3): after each Z level's closed contours come back
+/// from [`waterline_contours_with_cancel`], every contour is run through the
+/// shared run-splitter with a "point is inside a boundary region" keep
+/// predicate. A contour where every point survives is still a genuine
+/// closed loop — emitted via [`Toolpath::emit_closed_contour_with_intent`]
+/// exactly as before. A contour with only a partial survivor set is an open
+/// run: emitted via [`Toolpath::emit_path_segment_with_intent`] instead, so
+/// the excluded stretch becomes a retract/replunge gap rather than a
+/// straight-line close across material outside the boundary. `None`
+/// reproduces today's unconditional closed-contour emission byte-for-byte.
 #[allow(clippy::too_many_arguments)]
 pub fn waterline_toolpath_with_cancel(
     mesh: &TriangleMesh,
@@ -104,6 +116,7 @@ pub fn waterline_toolpath_with_cancel(
     final_z: f64,
     z_step: f64,
     params: &WaterlineParams,
+    boundary_regions: Option<&[Polygon2]>,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     let mut toolpath = Toolpath::new();
@@ -117,13 +130,51 @@ pub fn waterline_toolpath_with_cancel(
             if contour.len() < 3 {
                 continue;
             }
-            toolpath.emit_closed_contour_with_intent(
-                contour,
-                params.safe_z,
-                params.feed_rate,
-                params.plunge_rate,
-                MoveIntent::FinishingCut,
-            );
+            match boundary_regions {
+                None => {
+                    toolpath.emit_closed_contour_with_intent(
+                        contour,
+                        params.safe_z,
+                        params.feed_rate,
+                        params.plunge_rate,
+                        MoveIntent::FinishingCut,
+                    );
+                }
+                Some(regions) => {
+                    let runs = crate::point_runs::split_runs(
+                        contour,
+                        |_, p: &P3| regions.iter().any(|r| r.contains_point(&P2::new(p.x, p.y))),
+                        crate::point_runs::RunTopology::Closed,
+                        2,
+                    );
+                    for run in runs {
+                        if run.len() < 2 {
+                            continue;
+                        }
+                        if run.len() == contour.len() {
+                            // The whole loop survived — safe to close it.
+                            toolpath.emit_closed_contour_with_intent(
+                                &run,
+                                params.safe_z,
+                                params.feed_rate,
+                                params.plunge_rate,
+                                MoveIntent::FinishingCut,
+                            );
+                        } else {
+                            // Partial survivor: an open run, not a closed
+                            // loop — closing it would chord straight across
+                            // the excluded stretch.
+                            toolpath.emit_path_segment_with_intent(
+                                &run,
+                                params.safe_z,
+                                params.feed_rate,
+                                params.plunge_rate,
+                                MoveIntent::FinishingCut,
+                            );
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -309,5 +360,92 @@ mod tests {
                 mean_r
             );
         }
+    }
+
+    // ── P2.3: boundary_regions pre-clip ──────────────────────────────
+
+    #[test]
+    fn waterline_boundary_regions_none_matches_call_without_param() {
+        let mesh = make_test_hemisphere(20.0, 32);
+        let index = SpatialIndex::build(&mesh, 10.0);
+        let tool = BallEndmill::new(6.0, 25.0);
+        let params = WaterlineParams {
+            sampling: 2.0,
+            feed_rate: 1000.0,
+            plunge_rate: 500.0,
+            safe_z: 25.0,
+        };
+        let never_cancel = || false;
+
+        let tp_default = waterline_toolpath(&mesh, &index, &tool, 15.0, 5.0, 5.0, &params);
+        let tp_none = waterline_toolpath_with_cancel(
+            &mesh,
+            &index,
+            &tool,
+            15.0,
+            5.0,
+            5.0,
+            &params,
+            None,
+            &never_cancel,
+        )
+        .unwrap();
+
+        assert_eq!(tp_default.moves.len(), tp_none.moves.len());
+        for (a, b) in tp_default.moves.iter().zip(tp_none.moves.iter()) {
+            assert!((a.target.x - b.target.x).abs() < 1e-9);
+            assert!((a.target.y - b.target.y).abs() < 1e-9);
+            assert!((a.target.z - b.target.z).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn waterline_boundary_regions_confines_cuts_to_region() {
+        let mesh = make_test_hemisphere(20.0, 32);
+        let index = SpatialIndex::build(&mesh, 10.0);
+        let tool = BallEndmill::new(6.0, 25.0);
+        let params = WaterlineParams {
+            sampling: 2.0,
+            feed_rate: 1000.0,
+            plunge_rate: 500.0,
+            safe_z: 25.0,
+        };
+        let never_cancel = || false;
+
+        // Left half of the hemisphere's XY footprint.
+        let bbox = &mesh.bbox;
+        let left_half = crate::polygon::Polygon2::new(vec![
+            crate::geo::P2::new(bbox.min.x, bbox.min.y),
+            crate::geo::P2::new(0.0, bbox.min.y),
+            crate::geo::P2::new(0.0, bbox.max.y),
+            crate::geo::P2::new(bbox.min.x, bbox.max.y),
+        ]);
+
+        let tp = waterline_toolpath_with_cancel(
+            &mesh,
+            &index,
+            &tool,
+            15.0,
+            5.0,
+            5.0,
+            &params,
+            Some(std::slice::from_ref(&left_half)),
+            &never_cancel,
+        )
+        .unwrap();
+
+        let tol = 1e-6;
+        let mut saw_cut = false;
+        for m in &tp.moves {
+            if let MoveType::Linear { .. } = m.move_type {
+                saw_cut = true;
+                assert!(
+                    m.target.x <= tol,
+                    "feed move X={:.3} escaped the left-half boundary region",
+                    m.target.x
+                );
+            }
+        }
+        assert!(saw_cut, "expected at least one feed move");
     }
 }

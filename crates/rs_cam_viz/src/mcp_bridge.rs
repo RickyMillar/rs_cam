@@ -228,6 +228,10 @@ pub enum McpRequestKind {
         source: Option<String>,
         containment: Option<String>,
         offset: Option<f64>,
+        /// Required when `source` is `"derived_rest_regions"` — the stable
+        /// id (`ToolpathConfig.id`, not an index) of the toolpath whose
+        /// cached pencil rest-depth result supplies the boundary polygons.
+        source_toolpath_id: Option<usize>,
     },
     SetDressupConfig {
         index: usize,

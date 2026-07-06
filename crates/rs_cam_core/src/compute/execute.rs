@@ -223,6 +223,14 @@ pub struct ExecutionContext<'a> {
     pub initial_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
     pub semantic_ctx: Option<&'a ToolpathSemanticContext>,
     pub boundary: Option<&'a Polygon2>,
+    /// P2.3: sibling of `boundary` — the multi-region set the mesh-finish
+    /// family (scallop / radial / spiral / steep-shallow / ramp / horizontal
+    /// / waterline) pre-clips generation to, so sampling never wastes work
+    /// outside the machining boundary and never has to be discarded at
+    /// post-clip. `boundary` remains the adaptive3d single-polygon pre-clear
+    /// path; the two carry independent semantics today and consolidating
+    /// them is deferred.
+    pub boundary_regions: Option<&'a [Polygon2]>,
 }
 
 /// A family adapter: generate the toolpath (with spans + annotations)
@@ -1131,6 +1139,7 @@ pub(crate) fn generate_pencil(
             .map(crate::compute::cutter::build_cutter),
     };
     let mut rest_grid_out: Option<crate::rest_field::RestGrid> = None;
+    let mut rest_regions_out: Option<Vec<Polygon2>> = None;
     let (tp, annotations) = crate::pencil::pencil_toolpath_structured_annotated_with_cancel(
         m,
         idx,
@@ -1141,6 +1150,7 @@ pub(crate) fn generate_pencil(
         ctx.initial_stock,
         ctx.debug_ctx,
         &mut rest_grid_out,
+        &mut rest_regions_out,
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
     .map_err(|_e| OperationError::Cancelled)?;
@@ -1156,6 +1166,9 @@ pub(crate) fn generate_pencil(
     let mut generated = generated_with_spans(tp, spans);
     // Attach the RestDepth heatmap grid (if any) for the GUI overlay.
     generated.rest_grid = rest_grid_out.map(std::sync::Arc::new);
+    // Attach the derived machining-region polygons (if any) — P2.2
+    // selective-finishing boundary source.
+    generated.rest_regions = rest_regions_out.map(std::sync::Arc::new);
     Ok(generated)
 }
 
@@ -1200,6 +1213,7 @@ pub(crate) fn generate_scallop(
         ctx.tool_def,
         &params,
         ctx.debug_ctx,
+        ctx.boundary_regions,
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
     .map_err(|_e| OperationError::Cancelled)?;
@@ -1244,6 +1258,7 @@ pub(crate) fn generate_steep_shallow(
         idx,
         ctx.tool_def,
         &params,
+        ctx.boundary_regions,
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
     .map_err(|_e| OperationError::Cancelled)?;
@@ -1283,6 +1298,7 @@ pub(crate) fn generate_ramp_finish(
             ctx.tool_def,
             &params,
             ctx.debug_ctx,
+            ctx.boundary_regions,
             &(|| ctx.cancel.load(Ordering::SeqCst)),
         )
         .map_err(|_e| OperationError::Cancelled)?;
@@ -1326,6 +1342,7 @@ pub(crate) fn generate_spiral_finish(
             ctx.tool_def,
             &params,
             ctx.debug_ctx,
+            ctx.boundary_regions,
             &(|| ctx.cancel.load(Ordering::SeqCst)),
         )
         .map_err(|_e| OperationError::Cancelled)?;
@@ -1364,6 +1381,7 @@ pub(crate) fn generate_radial_finish(
         idx,
         ctx.tool_def,
         &params,
+        ctx.boundary_regions,
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
     .map_err(|_e| OperationError::Cancelled)?;
@@ -1396,6 +1414,7 @@ pub(crate) fn generate_horizontal_finish(
         idx,
         ctx.tool_def,
         &params,
+        ctx.boundary_regions,
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
     .map_err(|_e| OperationError::Cancelled)?;
@@ -1537,6 +1556,7 @@ pub(crate) fn generate_waterline(
         ctx.heights.bottom_z,
         cfg.z_step,
         &params,
+        ctx.boundary_regions,
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
     .map_err(|_e| OperationError::Cancelled)?;
@@ -1602,6 +1622,11 @@ pub fn execute_operation(
 ///
 /// This is the single source-of-truth dispatch; [`execute_operation`] delegates
 /// here and discards the spans for backwards compatibility.
+///
+/// Thin wrapper over [`execute_operation_annotated_with_regions`] with
+/// `boundary_regions = None` — kept as a stable, unchanged signature for the
+/// pre-existing callers (the GUI compute worker, the strategy advisor) that
+/// don't participate in the P2.3 mesh-finish pre-clip.
 #[allow(clippy::too_many_arguments)]
 pub fn execute_operation_annotated(
     op: &OperationConfig,
@@ -1629,6 +1654,55 @@ pub fn execute_operation_annotated(
     // material with full-depth axial DOC.
     boundary: Option<&Polygon2>,
 ) -> Result<GeneratedToolpath, OperationError> {
+    execute_operation_annotated_with_regions(
+        op,
+        mesh,
+        index,
+        polygons,
+        tool_def,
+        tool_cfg,
+        heights,
+        cutting_levels,
+        stock_bbox,
+        prev_tool_radius,
+        reference_tool_cfg,
+        debug_ctx,
+        cancel,
+        initial_stock,
+        semantic_ctx,
+        boundary,
+        None,
+    )
+}
+
+/// [`execute_operation_annotated`] plus `boundary_regions` (P2.3): the
+/// multi-region machining-boundary set the mesh-finish family (scallop /
+/// radial / spiral / steep-shallow / ramp / horizontal / waterline)
+/// pre-clips generation to. Session's `generate_toolpath` is the one caller
+/// that resolves a `DerivedRestRegions` boundary and has real regions to
+/// pass; every other caller passes `None` through [`execute_operation_annotated`]'s
+/// unchanged signature, which is a byte-identical no-op for those families
+/// (see each op's own `boundary_regions` doc comment).
+#[allow(clippy::too_many_arguments)]
+pub fn execute_operation_annotated_with_regions(
+    op: &OperationConfig,
+    mesh: Option<&TriangleMesh>,
+    index: Option<&SpatialIndex>,
+    polygons: Option<&[Polygon2]>,
+    tool_def: &ToolDefinition,
+    tool_cfg: &ToolConfig,
+    heights: &ResolvedHeights,
+    cutting_levels: &[f64],
+    stock_bbox: &BoundingBox3,
+    prev_tool_radius: Option<f64>,
+    reference_tool_cfg: Option<ToolConfig>,
+    debug_ctx: Option<&ToolpathDebugContext>,
+    cancel: &AtomicBool,
+    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    semantic_ctx: Option<&ToolpathSemanticContext>,
+    boundary: Option<&Polygon2>,
+    boundary_regions: Option<&[Polygon2]>,
+) -> Result<GeneratedToolpath, OperationError> {
     // Phase-5 (T11) family adapters: when the registry carries a
     // GenerateFn for this op's family, dispatch through it. The
     // exhaustive match below remains the fallback for unmigrated
@@ -1652,6 +1726,7 @@ pub fn execute_operation_annotated(
         initial_stock,
         semantic_ctx,
         boundary,
+        boundary_regions,
     };
     if let Some(generate) = op.op_type().registry_entry().generate {
         return generate(&ctx, op);
@@ -2107,6 +2182,7 @@ pub fn apply_dressups(
         spans_valid: input_valid && current.spans_valid,
         planner_engagement: current.planner_engagement,
         rest_grid: current.rest_grid,
+        rest_regions: current.rest_regions,
     }
 }
 

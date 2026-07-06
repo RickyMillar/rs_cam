@@ -41,6 +41,14 @@ pub struct ColoredMeshUniforms {
     pub opacity: f32,
 }
 
+/// Fixed opacity for the rest-depth heatmap overlay (pencil detector #4),
+/// independent of `sim_mesh_opacity` / the shared solid-stock / height-plane
+/// translucency. Deliberately higher than the 0.15 those overlays use in the
+/// non-highlighted state — the heatmap's whole purpose is to be read at a
+/// glance over a textured model in the Toolpaths workspace, so it needs to
+/// stay clearly visible rather than blend into the surface.
+const REST_HEATMAP_OPACITY: f32 = 0.6;
+
 /// GPU uniform data for line rendering.
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -129,6 +137,19 @@ pub struct RenderResources {
     mesh_bind_group: wgpu::BindGroup,
     sim_mesh_bind_group: wgpu::BindGroup,
     line_bind_group: wgpu::BindGroup,
+    /// Dedicated uniform buffer + bind group for the rest-depth heatmap
+    /// overlay, carrying its own fixed opacity independent of
+    /// `sim_mesh_uniform_buffer`. That buffer is shared by sim mesh, solid
+    /// stock, AND height planes — writing a single opacity into it each
+    /// frame (`sim_mesh_opacity` when the sim mesh is shown, else a
+    /// hardcoded 0.15 "translucency" value) meant the heatmap, drawn with
+    /// the same `height_plane_pipeline` + `sim_mesh_bind_group`, inherited
+    /// whatever the *other* overlays wanted — 0.15 in the Toolpaths
+    /// workspace, which reads as invisible over a textured model. A
+    /// separate buffer/bind-group lets the heatmap always draw at its own
+    /// clearly-visible opacity.
+    rest_heatmap_uniform_buffer: wgpu::Buffer,
+    rest_heatmap_bind_group: wgpu::BindGroup,
 
     // Blit pipeline (copy offscreen to egui render pass)
     blit_pipeline: wgpu::RenderPipeline,
@@ -149,6 +170,13 @@ pub struct RenderResources {
     pub toolpath_data: Vec<ToolpathGpuData>,
     pub sim_mesh_data: Option<SimMeshGpuData>,
     pub height_planes_data: Option<HeightPlanesGpuData>,
+    /// Rest-depth heatmap overlay mesh (pencil detector #4) — uploaded only
+    /// when a toolpath with a populated `rest_grid` is selected. Reuses
+    /// `SimMeshGpuData`'s chunked-upload machinery since it's the same
+    /// `ColoredMeshVertex` layout as the sim stock mesh; drawn with the
+    /// `height_plane_pipeline` (depth-read-only, alpha-blended) so it drapes
+    /// over the model without z-fighting or occluding it.
+    pub rest_heatmap_data: Option<SimMeshGpuData>,
     pub tool_model_data: Option<ToolModelGpuData>,
     pub polygon_data: Vec<PolygonGpuData>,
     pub collision_vertex_buffer: Option<wgpu::Buffer>,
@@ -271,6 +299,24 @@ impl RenderResources {
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: sim_mesh_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
+        // --- Rest-depth heatmap uniform buffer + bind group (own opacity,
+        // see the `rest_heatmap_uniform_buffer` field doc) ---
+        let rest_heatmap_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rest_heatmap_uniforms"),
+            size: std::mem::size_of::<ColoredMeshUniforms>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let rest_heatmap_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("rest_heatmap_bg"),
+            layout: &mesh_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: rest_heatmap_uniform_buffer.as_entire_binding(),
             }],
         });
 
@@ -557,6 +603,8 @@ impl RenderResources {
             mesh_bind_group,
             sim_mesh_bind_group,
             line_bind_group,
+            rest_heatmap_uniform_buffer,
+            rest_heatmap_bind_group,
             blit_pipeline,
             blit_bind_group_layout,
             blit_sampler,
@@ -572,6 +620,7 @@ impl RenderResources {
             toolpath_data: Vec::new(),
             sim_mesh_data: None,
             height_planes_data: None,
+            rest_heatmap_data: None,
             tool_model_data: None,
             collision_vertex_buffer: None,
             collision_vertex_count: 0,
@@ -661,6 +710,10 @@ pub struct ViewportCallback {
     pub show_polygons: bool,
     pub show_solid_stock: bool,
     pub show_height_planes: bool,
+    /// Rest-depth heatmap overlay (pencil detector #4). Derived as
+    /// `viewport.show_rest_heatmap && workspace == Toolpaths && <selected
+    /// toolpath has a rest_grid>` — see `app/viewport.rs`.
+    pub show_rest_heatmap: bool,
     pub show_sim_mesh: bool,
     pub sim_mesh_opacity: f32,
     pub show_cutting: bool,
@@ -729,6 +782,23 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 &resources.sim_mesh_uniform_buffer,
                 0,
                 bytemuck::bytes_of(&sim_uniforms),
+            );
+        }
+        // Rest-depth heatmap: own uniform buffer/bind-group (see the
+        // `rest_heatmap_uniform_buffer` field doc) so its opacity never
+        // inherits the 0.15 solid-stock/height-plane translucency above.
+        if self.show_rest_heatmap {
+            let heatmap_uniforms = ColoredMeshUniforms {
+                view_proj: self.mesh_uniforms.view_proj,
+                light_dir: self.mesh_uniforms.light_dir,
+                _pad0: 0.0,
+                camera_pos: self.mesh_uniforms.camera_pos,
+                opacity: REST_HEATMAP_OPACITY,
+            };
+            queue.write_buffer(
+                &resources.rest_heatmap_uniform_buffer,
+                0,
+                bytemuck::bytes_of(&heatmap_uniforms),
             );
         }
         queue.write_buffer(
@@ -885,6 +955,21 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 pass.set_vertex_buffer(0, hp.vertex_buffer.slice(..));
                 pass.set_index_buffer(hp.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..hp.index_count, 0, 0..1);
+            }
+
+            // Draw rest-depth heatmap overlay (pencil detector #4) — same
+            // depth-read-only, alpha-blended treatment as height planes so it
+            // drapes over the model/stock without z-fighting or occluding it.
+            if self.show_rest_heatmap
+                && let Some(heatmap) = &resources.rest_heatmap_data
+            {
+                pass.set_pipeline(&resources.height_plane_pipeline);
+                pass.set_bind_group(0, &resources.rest_heatmap_bind_group, &[]);
+                for chunk in &heatmap.chunks {
+                    pass.set_vertex_buffer(0, chunk.vertex_buffer.slice(..));
+                    pass.set_index_buffer(chunk.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..chunk.index_count, 0, 0..1);
+                }
             }
 
             // Draw polygon/DXF/SVG lines

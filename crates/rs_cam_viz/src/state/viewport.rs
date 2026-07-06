@@ -60,6 +60,11 @@ pub struct ViewportState {
     /// Render a ghost of the cutter silhouette stacked along the selected
     /// toolpath — visualizes swept material before running a simulation.
     pub show_tool_profile_preview: bool,
+    /// Rest-depth heatmap overlay (pencil detector #4). Only ever visible
+    /// when the selected toolpath actually carries a `rest_grid`, so
+    /// defaulting to `true` doesn't clutter unrelated workspaces — see the
+    /// derived gate on `ViewportCallback::show_rest_heatmap`.
+    pub show_rest_heatmap: bool,
     /// When set, only this toolpath is visible (isolation mode, toggle with I).
     pub isolate_toolpath: Option<ToolpathId>,
     /// Color mode for toolpath lines.
@@ -105,6 +110,7 @@ impl ViewportState {
             show_rapids: true,
             show_collisions: true,
             show_tool_profile_preview: false,
+            show_rest_heatmap: true,
             isolate_toolpath: None,
             toolpath_color_mode: ToolpathColorMode::Normal,
             toolpath_move_visibility: HashMap::new(),

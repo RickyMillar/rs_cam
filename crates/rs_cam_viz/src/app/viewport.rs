@@ -236,6 +236,34 @@ impl RsCamApp {
                     .map(|tc| tc.name.clone())
             })
         };
+        // Rest-depth heatmap legend info (threshold, peak rest mm) for the
+        // currently selected toolpath, if it carries a `rest_grid` — read
+        // once here (outside the mutable-borrow block below) so both the
+        // Show ▼ checkbox gating and the legend can use it without
+        // re-fetching. `None` when nothing's selected or the selection has
+        // no rest data (most toolpaths — only the pencil rest-depth
+        // detector populates this).
+        let selected_rest_grid_info: Option<(f64, f32)> = {
+            let state = self.controller.state();
+            match state.selection {
+                Selection::Toolpath(tp_id) => state
+                    .gui
+                    .toolpath_rt
+                    .get(&tp_id)
+                    .and_then(|rt| rt.result.as_ref())
+                    .and_then(|r| r.annotated.rest_grid.as_ref())
+                    .map(|grid| {
+                        let peak = grid
+                            .rest
+                            .iter()
+                            .copied()
+                            .filter(|v| v.is_finite())
+                            .fold(0.0_f32, f32::max);
+                        (grid.threshold, peak)
+                    }),
+                _ => None,
+            }
+        };
         {
             let (state, events) = self.controller.state_and_events_mut();
             crate::ui::viewport_overlay::draw(
@@ -247,6 +275,7 @@ impl RsCamApp {
                 &mut state.viewport,
                 &lane_snapshots,
                 events,
+                selected_rest_grid_info,
             );
         }
 
@@ -411,6 +440,9 @@ impl RsCamApp {
             show_solid_stock: state.viewport.show_stock && state.workspace == Workspace::Setup,
             show_height_planes: state.workspace == Workspace::Toolpaths
                 && matches!(state.selection, Selection::Toolpath(_)),
+            show_rest_heatmap: state.viewport.show_rest_heatmap
+                && state.workspace == Workspace::Toolpaths
+                && selected_rest_grid_info.is_some(),
             show_sim_mesh: state.workspace == Workspace::Simulation
                 && state.simulation.has_results(),
             sim_mesh_opacity: state.simulation.stock_opacity,

@@ -81,9 +81,35 @@ pub fn clip_toolpath_to_boundary(tp: &Toolpath, boundary: &Polygon2, safe_z: f64
 /// Every input move produces ≥1 output move (no drops), so `mapping` is
 /// non-decreasing and a half-open input range `[a, b)` remaps to the
 /// half-open output range `[mapping[a], mapping[b])`.
+///
+/// Thin wrapper over [`clip_toolpath_to_boundary_set_with_provenance`] with a
+/// single-element boundary set — see that function for the shared walk.
 pub fn clip_toolpath_to_boundary_with_provenance(
     tp: &Toolpath,
     boundary: &Polygon2,
+    safe_z: f64,
+) -> (Toolpath, Vec<usize>) {
+    clip_toolpath_to_boundary_set_with_provenance(tp, std::slice::from_ref(boundary), safe_z)
+}
+
+/// Clip a toolpath to stay within the union of a *set* of boundary polygons,
+/// returning the same `(clipped, mapping)` shape as
+/// [`clip_toolpath_to_boundary_with_provenance`].
+///
+/// A point is considered inside the boundary if it is inside ANY polygon of
+/// `boundaries` — this is the correct membership test for a set of disjoint
+/// regions (e.g. the islands a marching-squares rest-region detector
+/// produces): merging them into one polygon-with-holes first would be wrong
+/// (there's no shared exterior), but "inside island A OR inside island B" is
+/// exactly what "the tool may cut here" means for that source.
+///
+/// [`clip_toolpath_to_boundary_with_provenance`] delegates here with a
+/// one-element slice, so the two can never disagree on move-order or
+/// retract/re-entry behaviour — this function is the sole implementation of
+/// the walk.
+pub fn clip_toolpath_to_boundary_set_with_provenance(
+    tp: &Toolpath,
+    boundaries: &[Polygon2],
     safe_z: f64,
 ) -> (Toolpath, Vec<usize>) {
     let mut result = Toolpath::new();
@@ -97,11 +123,13 @@ pub fn clip_toolpath_to_boundary_with_provenance(
     let mut prev_inside = false;
     let mut prev_pos: Option<P3> = None;
 
+    let inside_any = |p: &P2| boundaries.iter().any(|b| b.contains_point(p));
+
     for m in &tp.moves {
         mapping.push(result.moves.len());
 
         let target_xy = P2::new(m.target.x, m.target.y);
-        let cur_inside = boundary.contains_point(&target_xy);
+        let cur_inside = inside_any(&target_xy);
 
         match (prev_inside, cur_inside) {
             (_, true) if prev_pos.is_none() => {
@@ -430,35 +458,6 @@ mod tests {
     use super::*;
     use crate::toolpath::Move;
 
-    /// Ray-casting point-in-polygon test for a single ring (test helper).
-    fn point_in_ring(px: f64, py: f64, ring: &[P2]) -> bool {
-        let n = ring.len();
-        if n < 3 {
-            return false;
-        }
-        let mut inside = false;
-        let mut j = n - 1;
-        for i in 0..n {
-            let pi = &ring[i];
-            let pj = &ring[j];
-            if ((pi.y > py) != (pj.y > py))
-                && (px < (pj.x - pi.x) * (py - pi.y) / (pj.y - pi.y) + pi.x)
-            {
-                inside = !inside;
-            }
-            j = i;
-        }
-        inside
-    }
-
-    /// Full point-in-polygon test: inside exterior and outside all holes (test helper).
-    fn point_in_polygon(px: f64, py: f64, polygon: &Polygon2) -> bool {
-        if !point_in_ring(px, py, &polygon.exterior) {
-            return false;
-        }
-        !polygon.holes.iter().any(|h| point_in_ring(px, py, h))
-    }
-
     /// Helper: build a CCW square boundary centered at origin.
     fn square_boundary(size: f64) -> Polygon2 {
         let h = size / 2.0;
@@ -663,15 +662,15 @@ mod tests {
     #[test]
     fn test_point_in_polygon_inside() {
         let sq = square_boundary(10.0);
-        assert!(point_in_polygon(0.0, 0.0, &sq));
-        assert!(point_in_polygon(4.0, 4.0, &sq));
+        assert!(sq.contains_point(&P2::new(0.0, 0.0)));
+        assert!(sq.contains_point(&P2::new(4.0, 4.0)));
     }
 
     #[test]
     fn test_point_in_polygon_outside() {
         let sq = square_boundary(10.0);
-        assert!(!point_in_polygon(10.0, 10.0, &sq));
-        assert!(!point_in_polygon(-6.0, 0.0, &sq));
+        assert!(!sq.contains_point(&P2::new(10.0, 10.0)));
+        assert!(!sq.contains_point(&P2::new(-6.0, 0.0)));
     }
 
     #[test]
@@ -685,9 +684,9 @@ mod tests {
         ]; // CW
         let poly = Polygon2::with_holes(square_boundary(20.0).exterior, vec![hole]);
         // Inside exterior but outside hole
-        assert!(point_in_polygon(8.0, 0.0, &poly));
+        assert!(poly.contains_point(&P2::new(8.0, 0.0)));
         // Inside the hole
-        assert!(!point_in_polygon(0.0, 0.0, &poly));
+        assert!(!poly.contains_point(&P2::new(0.0, 0.0)));
     }
 
     #[test]
@@ -877,6 +876,130 @@ mod tests {
                 p.has_correct_winding(),
                 "Polygon should have correct winding"
             );
+        }
+    }
+
+    // --- clip_toolpath_to_boundary_set_with_provenance tests ---
+
+    #[test]
+    fn set_clip_single_element_matches_single_polygon_clip() {
+        // Property test: a 1-element boundary set must produce byte-identical
+        // results to the single-polygon clip on a path that crosses in and
+        // out — the single-polygon function is now a thin wrapper over the
+        // set version with `std::slice::from_ref`, so this pins that the
+        // delegation didn't change behaviour.
+        let boundary = Polygon2::rectangle(0.0, 0.0, 100.0, 100.0);
+
+        // A simple "L" path: outside -> inside -> inside (corner) -> outside.
+        let mut tp = Toolpath::new();
+        tp.feed_to(P3::new(-10.0, 50.0, -5.0), 1000.0); // outside
+        tp.feed_to(P3::new(50.0, 50.0, -5.0), 1000.0); // inside (crossing in)
+        tp.feed_to(P3::new(50.0, 90.0, -5.0), 1000.0); // inside (corner)
+        tp.feed_to(P3::new(150.0, 90.0, -5.0), 1000.0); // outside (crossing out)
+
+        let (single_clipped, single_mapping) =
+            clip_toolpath_to_boundary_with_provenance(&tp, &boundary, 20.0);
+        let (set_clipped, set_mapping) =
+            clip_toolpath_to_boundary_set_with_provenance(&tp, &[boundary], 20.0);
+
+        assert_eq!(single_mapping, set_mapping);
+        assert_eq!(single_clipped.moves.len(), set_clipped.moves.len());
+        for (a, b) in single_clipped.moves.iter().zip(set_clipped.moves.iter()) {
+            assert_eq!(a.move_type, b.move_type);
+            assert!((a.target.x - b.target.x).abs() < 1e-10);
+            assert!((a.target.y - b.target.y).abs() < 1e-10);
+            assert!((a.target.z - b.target.z).abs() < 1e-10);
+        }
+    }
+
+    #[test]
+    fn set_clip_two_disjoint_regions_keeps_moves_inside_either() {
+        // Two disjoint 10x10 squares, far apart. A path visiting a point in
+        // each region should keep both moves; the "island A" test alone
+        // (single-polygon clip against just square A) would reject the
+        // square-B move, which is exactly the gap the set version closes.
+        let region_a = Polygon2::rectangle(0.0, 0.0, 10.0, 10.0);
+        let region_b = Polygon2::rectangle(100.0, 100.0, 110.0, 110.0);
+        let regions = [region_a, region_b];
+
+        let mut tp = Toolpath::new();
+        tp.feed_to(P3::new(5.0, 5.0, -5.0), 1000.0); // inside region A
+        tp.feed_to(P3::new(105.0, 105.0, -5.0), 1000.0); // inside region B
+
+        let (clipped, _mapping) =
+            clip_toolpath_to_boundary_set_with_provenance(&tp, &regions, 20.0);
+
+        // Both targets should survive as cutting moves (not converted to
+        // rapids), since each is inside at least one region of the set.
+        for target in [(5.0, 5.0), (105.0, 105.0)] {
+            let kept = clipped.moves.iter().any(|m| {
+                m.move_type != MoveType::Rapid
+                    && (m.target.x - target.0).abs() < 1e-10
+                    && (m.target.y - target.1).abs() < 1e-10
+            });
+            assert!(kept, "move to {target:?} should be preserved as a cut");
+        }
+    }
+
+    #[test]
+    fn set_clip_gap_between_regions_becomes_retract() {
+        // A move that lands strictly between two disjoint regions (inside
+        // neither) must be converted to a rapid at safe_z, same as the
+        // single-polygon "outside" case.
+        let region_a = Polygon2::rectangle(0.0, 0.0, 10.0, 10.0);
+        let region_b = Polygon2::rectangle(100.0, 100.0, 110.0, 110.0);
+        let regions = [region_a, region_b];
+        let safe_z = 20.0;
+
+        let mut tp = Toolpath::new();
+        tp.feed_to(P3::new(5.0, 5.0, -5.0), 1000.0); // inside region A
+        tp.feed_to(P3::new(50.0, 50.0, -5.0), 1000.0); // in the gap (inside neither)
+        tp.feed_to(P3::new(105.0, 105.0, -5.0), 1000.0); // inside region B
+
+        let (clipped, _mapping) =
+            clip_toolpath_to_boundary_set_with_provenance(&tp, &regions, safe_z);
+
+        let gap_moves: Vec<&Move> = clipped
+            .moves
+            .iter()
+            .filter(|m| (m.target.x - 50.0).abs() < 1e-10 && (m.target.y - 50.0).abs() < 1e-10)
+            .collect();
+        assert!(
+            !gap_moves.is_empty(),
+            "should have a move targeting the gap position"
+        );
+        for m in &gap_moves {
+            assert_eq!(
+                m.move_type,
+                MoveType::Rapid,
+                "gap-between-regions move should be converted to rapid"
+            );
+            assert!(
+                (m.target.z - safe_z).abs() < 1e-10,
+                "gap move should be at safe_z, got z={}",
+                m.target.z
+            );
+        }
+    }
+
+    #[test]
+    fn set_clip_empty_set_treats_everything_as_outside() {
+        // An empty boundary set has no "inside" anywhere — every move should
+        // become a rapid, matching `test_clip_all_outside`'s single-polygon
+        // behaviour with a boundary that excludes the whole path.
+        let regions: [Polygon2; 0] = [];
+        let safe_z = 20.0;
+
+        let mut tp = Toolpath::new();
+        tp.feed_to(P3::new(5.0, 5.0, -5.0), 1000.0);
+        tp.feed_to(P3::new(6.0, 5.0, -5.0), 1000.0);
+
+        let (clipped, _mapping) =
+            clip_toolpath_to_boundary_set_with_provenance(&tp, &regions, safe_z);
+
+        for m in &clipped.moves {
+            assert_eq!(m.move_type, MoveType::Rapid);
+            assert!((m.target.z - safe_z).abs() < 1e-10);
         }
     }
 }

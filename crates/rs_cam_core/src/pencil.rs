@@ -31,6 +31,7 @@ use crate::pencil_dihedral::{
     EdgeKey, SharedEdge, build_edge_adjacency, chain_concave_edges, compute_shared_edges,
     sample_chain_bisected,
 };
+use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
@@ -611,8 +612,9 @@ pub fn pencil_toolpath(
     cutter: &dyn MillingCutter,
     params: &PencilParams,
 ) -> Toolpath {
-    let (tp, _) =
-        pencil_toolpath_structured_annotated(mesh, index, cutter, params, None, None, &mut None);
+    let (tp, _) = pencil_toolpath_structured_annotated(
+        mesh, index, cutter, params, None, None, &mut None, &mut None,
+    );
     tp
 }
 
@@ -912,6 +914,10 @@ pub fn pencil_toolpath_structured_annotated(
     // Out: the RestDepth detector's rest-field grid, for the GUI heatmap
     // overlay. Set only when `detector == RestDepth`; left untouched otherwise.
     rest_grid_out: &mut Option<crate::rest_field::RestGrid>,
+    // Out: the RestDepth detector's derived machining-region polygons (P2.2
+    // selective-finishing boundary source). Set only when
+    // `detector == RestDepth`; left untouched otherwise.
+    rest_regions_out: &mut Option<Vec<Polygon2>>,
 ) -> (Toolpath, Vec<PencilRuntimeAnnotation>) {
     let never_cancel = || false;
     pencil_toolpath_structured_annotated_with_cancel(
@@ -922,6 +928,7 @@ pub fn pencil_toolpath_structured_annotated(
         initial_stock,
         debug,
         rest_grid_out,
+        rest_regions_out,
         &never_cancel,
     )
     .expect("non-cancellable pencil toolpath should never be cancelled")
@@ -1085,6 +1092,7 @@ fn rest_depth_arm(
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
     debug: Option<&ToolpathDebugContext>,
     rest_grid_out: &mut Option<crate::rest_field::RestGrid>,
+    rest_regions_out: &mut Option<Vec<Polygon2>>,
     cancel: &dyn CancelCheck,
 ) -> Result<Vec<PencilPath>, Cancelled> {
     let mut all_paths: Vec<PencilPath> = Vec::new();
@@ -1155,6 +1163,9 @@ fn rest_depth_arm(
         route_width_factor: params.route_width_factor,
         pencil_radius: cutter.radius(),
         min_cut_length: params.min_cut_length,
+        // No dedicated PencilParams dial yet — the default margin (P2.1
+        // scope: derive region_polygons, not expose a new user-facing knob).
+        ..Default::default()
     };
     let rf = crate::rest_field::detect_rest_valleys(mesh, index, cutter, reference, &rf_params);
     let report = &rf.report;
@@ -1193,6 +1204,10 @@ fn rest_depth_arm(
     // Hand the rest-field grid to the caller for the GUI heatmap overlay
     // (set even when no centreline survives the length gate below).
     *rest_grid_out = Some(rf.rest_grid);
+    // Same for the derived machining-region polygons (P2.2 selective-finishing
+    // boundary source) — set alongside the grid, independent of whether any
+    // centreline survives the length gate.
+    *rest_regions_out = Some(rf.region_polygons);
     let kept: Vec<Vec<P3>> = rf
         .centerlines
         .into_iter()
@@ -1347,6 +1362,7 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
     debug: Option<&ToolpathDebugContext>,
     rest_grid_out: &mut Option<crate::rest_field::RestGrid>,
+    rest_regions_out: &mut Option<Vec<Polygon2>>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<PencilRuntimeAnnotation>), Cancelled> {
     check_cancel(cancel)?;
@@ -1363,6 +1379,7 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
             initial_stock,
             debug,
             rest_grid_out,
+            rest_regions_out,
             cancel,
         )?,
         PencilDetector::Dihedral => dihedral_arm(mesh, index, cutter, params, cancel)?,
@@ -1403,8 +1420,9 @@ pub fn pencil_toolpath_annotated(
     params: &PencilParams,
     debug: Option<&ToolpathDebugContext>,
 ) -> (Toolpath, Vec<(usize, String)>) {
-    let (tp, annotations) =
-        pencil_toolpath_structured_annotated(mesh, index, cutter, params, None, debug, &mut None);
+    let (tp, annotations) = pencil_toolpath_structured_annotated(
+        mesh, index, cutter, params, None, debug, &mut None, &mut None,
+    );
     (tp, runtime_annotations_to_labels(&annotations))
 }
 

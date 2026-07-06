@@ -138,25 +138,63 @@ fn average_stepover_for_ring(
     }
 }
 
-/// Lift a 2D polygon ring to 3D by drop-cutter Z queries.
-/// Points with non-finite Z (outside mesh footprint) get clamped to `min_z`.
+/// Whether `(x, y)` lands on a [`crate::slope::SurfaceHeightmap`] cell whose
+/// vertical ray actually hit the mesh (`SurfaceHeightmap::covered`).
+/// Mirrors `SlopeMap::world_to_cell`'s nearest-cell rounding so lookups
+/// resolve consistently with the sibling `slope_map` built from the same
+/// heightmap grid (both share `origin_x`/`origin_y`/`cell_size`/`rows`/`cols`).
+fn heightmap_covered_at_world(hm: &crate::slope::SurfaceHeightmap, x: f64, y: f64) -> bool {
+    let col_f = (x - hm.origin_x) / hm.cell_size;
+    let row_f = (y - hm.origin_y) / hm.cell_size;
+    if col_f < -0.5 || row_f < -0.5 {
+        return false;
+    }
+    let col = col_f.round();
+    let row = row_f.round();
+    if col < 0.0 || row < 0.0 || col >= hm.cols as f64 || row >= hm.rows as f64 {
+        return false;
+    }
+    // SAFETY: bounds checked above against hm.cols/hm.rows.
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+    let covered = hm.covered_at(row as usize, col as usize);
+    covered
+}
+
+/// Lift a 2D polygon ring to 3D by drop-cutter Z queries, pairing each point
+/// with whether it sits over real mesh surface.
+///
+/// The `bool` is `true` only when `point_drop_cutter` found a finite contact
+/// AND the surface heightmap's per-cell `covered` mask agrees the vertical
+/// ray at that XY actually passed through the mesh — `point_drop_cutter`
+/// alone can't tell that apart from cutter-radius rim contact just past a
+/// hole or the mesh edge (see `SurfaceHeightmap::covered`'s doc comment).
+///
+/// Excluded (`false`) points still carry a Z (`min_z + stock_to_leave`) so
+/// the tuple is always well-formed, but callers must run rings through the
+/// shared run-splitter (`crate::point_runs`) and treat `false` stretches as
+/// gaps — feeding straight through them used to dive the cutter to `min_z`
+/// at every off-footprint corner instead of retracting around the gap
+/// (P2.3 bonus fix; tracker `planning/finishing_stack_review_2026-07.md`).
 fn ring_to_3d(
     ring: &[P2],
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
+    heightmap: &crate::slope::SurfaceHeightmap,
     stock_to_leave: f64,
     min_z: f64,
-) -> Vec<P3> {
+) -> Vec<(P3, bool)> {
     ring.iter()
         .map(|p| {
             let cl = point_drop_cutter(p.x, p.y, mesh, index, cutter);
-            let z = if cl.z.is_finite() {
+            let finite = cl.z.is_finite();
+            let kept = finite && heightmap_covered_at_world(heightmap, p.x, p.y);
+            let z = if finite {
                 cl.z + stock_to_leave
             } else {
                 min_z + stock_to_leave
             };
-            P3::new(p.x, p.y, z)
+            (P3::new(p.x, p.y, z), kept)
         })
         .collect()
 }
@@ -177,12 +215,13 @@ fn generate_scallop_rings(
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     slope_map: &crate::slope::SlopeMap,
+    heightmap: &crate::slope::SurfaceHeightmap,
     tool_radius: f64,
     scallop_height: f64,
     stock_to_leave: f64,
     min_z: f64,
     max_rings: usize,
-) -> Vec<Vec<P3>> {
+) -> Vec<Vec<(P3, bool)>> {
     let never_cancel = || false;
     generate_scallop_rings_with_cancel(
         boundary,
@@ -190,6 +229,7 @@ fn generate_scallop_rings(
         index,
         cutter,
         slope_map,
+        heightmap,
         tool_radius,
         scallop_height,
         stock_to_leave,
@@ -210,14 +250,15 @@ fn generate_scallop_rings_with_cancel(
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     slope_map: &crate::slope::SlopeMap,
+    heightmap: &crate::slope::SurfaceHeightmap,
     tool_radius: f64,
     scallop_height: f64,
     stock_to_leave: f64,
     min_z: f64,
     max_rings: usize,
     cancel: &dyn CancelCheck,
-) -> Result<Vec<Vec<P3>>, Cancelled> {
-    let mut rings_3d: Vec<Vec<P3>> = Vec::new();
+) -> Result<Vec<Vec<(P3, bool)>>, Cancelled> {
+    let mut rings_3d: Vec<Vec<(P3, bool)>> = Vec::new();
 
     // First ring: the boundary itself, lifted to 3D
     let first_ring = ring_to_3d(
@@ -225,6 +266,7 @@ fn generate_scallop_rings_with_cancel(
         mesh,
         index,
         cutter,
+        heightmap,
         stock_to_leave,
         min_z,
     );
@@ -283,7 +325,15 @@ fn generate_scallop_rings_with_cancel(
             if poly.exterior.len() < 3 {
                 continue;
             }
-            let ring_3d = ring_to_3d(&poly.exterior, mesh, index, cutter, stock_to_leave, min_z);
+            let ring_3d = ring_to_3d(
+                &poly.exterior,
+                mesh,
+                index,
+                cutter,
+                heightmap,
+                stock_to_leave,
+                min_z,
+            );
             if ring_3d.len() >= 3 {
                 rings_3d.push(ring_3d);
             }
@@ -295,21 +345,31 @@ fn generate_scallop_rings_with_cancel(
     Ok(rings_3d)
 }
 
-/// Find the closest point index on `ring` to `target`.
-fn closest_point_idx(ring: &[P3], target: &P3) -> usize {
+/// Index of the point on `ring` closest to `target` among points that
+/// satisfy `keep`; `None` when nothing on the ring survives the predicate.
+///
+/// Continuous mode rotates each ring to start here so the ring-to-ring
+/// hop is as short as the *surviving* geometry allows — rotating to the
+/// globally-closest point (kept or not) let the connector target an
+/// excluded point while the tool's real position sat elsewhere, which is
+/// exactly the long-cutting-chord shape the P0.4 regression tests pin.
+fn closest_kept_point_idx<F>(ring: &[(P3, bool)], target: &P3, keep: F) -> Option<usize>
+where
+    F: Fn(&(P3, bool)) -> bool,
+{
     ring.iter()
         .enumerate()
+        .filter(|(_, pt)| keep(pt))
         .min_by(|(_, a), (_, b)| {
-            let da = (a.x - target.x).powi(2) + (a.y - target.y).powi(2);
-            let db = (b.x - target.x).powi(2) + (b.y - target.y).powi(2);
+            let da = (a.0.x - target.x).powi(2) + (a.0.y - target.y).powi(2);
+            let db = (b.0.x - target.x).powi(2) + (b.0.y - target.y).powi(2);
             da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
         })
         .map(|(i, _)| i)
-        .unwrap_or(0)
 }
 
 /// Reorder a ring to start at the given index.
-fn rotate_ring(ring: &[P3], start_idx: usize) -> Vec<P3> {
+fn rotate_ring(ring: &[(P3, bool)], start_idx: usize) -> Vec<(P3, bool)> {
     let n = ring.len();
     if n == 0 || start_idx == 0 {
         return ring.to_vec();
@@ -362,6 +422,7 @@ pub fn scallop_toolpath_structured_annotated(
         cutter,
         params,
         debug,
+        None,
         &never_cancel,
     )
     .expect("non-cancellable scallop toolpath should never be cancelled")
@@ -371,12 +432,22 @@ pub fn scallop_toolpath_structured_annotated(
 /// `cancel` once per ring during 3D ring generation (`ring_to_3d`'s
 /// per-point drop-cutter queries are the expensive step) and once per ring
 /// again while chaining rings into the toolpath.
+///
+/// `boundary_regions` (P2.3): when `Some`, generation is pre-clipped to
+/// these machining-boundary regions instead of the full mesh footprint —
+/// exactly one region is used directly as the ring boundary (replacing the
+/// hardcoded mesh-bbox rectangle below); multiple disjoint regions each get
+/// their own independent ring set, concatenated (regions are disjoint by
+/// construction, so no de-duplication is needed). `None` reproduces
+/// today's single mesh-bbox-rectangle behavior byte-for-byte.
+#[allow(clippy::too_many_arguments)]
 pub fn scallop_toolpath_structured_annotated_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &ScallopParams,
     debug: Option<&ToolpathDebugContext>,
+    boundary_regions: Option<&[Polygon2]>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>), Cancelled> {
     check_cancel(cancel)?;
@@ -391,6 +462,7 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
         params.tolerance,
         cancel,
     )?;
+    let surface_hm = surface.heightmap;
     let slope_map = surface.slope_map;
 
     // Kept alongside the shared heightmap builder above (which derives the
@@ -461,20 +533,39 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
         "Generating scallop rings"
     );
 
-    // Generate 3D rings
-    let mut rings = generate_scallop_rings_with_cancel(
-        &boundary,
-        mesh,
-        index,
-        cutter,
-        &slope_map,
-        tool_radius,
-        params.scallop_height,
-        params.stock_to_leave,
-        bbox.min.z,
-        max_rings,
-        cancel,
-    )?;
+    // P2.3: scan the machining-boundary regions instead of the hardcoded
+    // mesh-bbox rectangle when they're available. A single region is used
+    // directly as the ring boundary; multiple disjoint regions each get an
+    // independent ring set (still bounded by the same `max_rings` safety
+    // valve — it's an upper bound on ring count, not an exact prediction, so
+    // reusing it per-region is safe). `None`/empty falls back to exactly the
+    // one hardcoded-rectangle boundary generated above, so the ring output
+    // is byte-identical to pre-P2.3 behavior in that case.
+    let region_boundaries: Vec<Polygon2> = match boundary_regions {
+        Some(regions) if !regions.is_empty() => regions.to_vec(),
+        _ => vec![boundary],
+    };
+
+    // Generate 3D rings, one region at a time, concatenated in region order.
+    let mut rings: Vec<Vec<(P3, bool)>> = Vec::new();
+    for region_boundary in &region_boundaries {
+        check_cancel(cancel)?;
+        let region_rings = generate_scallop_rings_with_cancel(
+            region_boundary,
+            mesh,
+            index,
+            cutter,
+            &slope_map,
+            &surface_hm,
+            tool_radius,
+            params.scallop_height,
+            params.stock_to_leave,
+            bbox.min.z,
+            max_rings,
+            cancel,
+        )?;
+        rings.extend(region_rings);
+    }
 
     info!(rings = rings.len(), "Scallop rings generated");
 
@@ -493,25 +584,67 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
     let slope_from_rad = params.slope_from.to_radians();
     let slope_to_rad = params.slope_to.to_radians();
 
+    // Combined per-point keep predicate: real mesh coverage (P2.3 bonus
+    // fix — see `ring_to_3d`) AND, when active, the slope band AND the
+    // machining-boundary regions. Always run points through this (rather
+    // than only when a filter is "active") — with every filter a no-op the
+    // run-splitter below degenerates to "the whole ring survives as one
+    // run", which is byte-identical to the plain unfiltered emission this
+    // replaces.
+    let region_ok = |p: &P3| -> bool {
+        boundary_regions
+            .is_none_or(|regions| regions.iter().any(|r| r.contains_point(&P2::new(p.x, p.y))))
+    };
+    let keep_point = |pt: &(P3, bool)| -> bool {
+        let (p, covered) = pt;
+        *covered
+            && (!use_slope_filter
+                || slope_map
+                    .angle_at_world(p.x, p.y)
+                    .is_some_and(|a| a >= slope_from_rad && a <= slope_to_rad))
+            && region_ok(p)
+    };
+
     // Convert rings to toolpath
     let mut tp = Toolpath::new();
     let mut annotations = Vec::new();
 
     if params.continuous && rings.len() >= 2 {
-        // Continuous spiral mode: connect adjacent rings at their nearest points
-        // Start from the first ring
-        // SAFETY: rings.len() >= 2 checked above
+        // Continuous spiral mode: connect adjacent rings at their nearest
+        // KEPT points. A ring-to-ring connector is a *cutting* feed only
+        // when it is a genuine helical transition — the tool is already
+        // down and the hop is no longer than the widest ring spacing the
+        // generator can produce (its stepover is clamped to at most
+        // `tool_radius * 3.0` above). Anything longer — a kept set that
+        // shifted to the far side of the ring under the combined keep
+        // predicate, or the gap between two disjoint P2.3 boundary regions
+        // — gets a retract/rapid/replunge link instead of chording across
+        // excluded material at cutting feed (the P0.4 gouge class the
+        // no-chord regression tests pin).
+        let link_threshold = tool_radius * 3.0;
+        // The tool's last emitted position. Seeded from the first ring's
+        // geometric end (the pre-existing rotation seed) and updated to the
+        // REAL last emitted point after every run — anchoring rotation on
+        // the geometric ring end let the connector hop diverge arbitrarily
+        // far from where the tool actually stopped.
+        // SAFETY: rings.len() >= 2 checked above; rings entries have >= 3 points.
         #[allow(clippy::indexing_slicing)]
-        let mut prev_end = rings[0].last().copied().unwrap_or(rings[0][0]);
+        let mut anchor: P3 = rings[0].last().map_or(rings[0][0].0, |&(p, _)| p);
+        let mut tool_down = false;
 
         for (i, ring) in rings.iter().enumerate() {
             check_cancel(cancel)?;
-            // Rotate ring to start at the closest point to the previous endpoint
-            let start_idx = closest_point_idx(ring, &prev_end);
+            // Rotate the ring to start at the kept point closest to the
+            // tool position. A ring with no kept points emits nothing —
+            // pre-P2.3 this still plunged to the ring's rotation start,
+            // which for an off-footprint boundary corner meant diving on a
+            // rim-contact Z (see `ring_to_3d`).
+            let Some(start_idx) = closest_kept_point_idx(ring, &anchor, |pt| keep_point(pt)) else {
+                continue;
+            };
             let rotated = rotate_ring(ring, start_idx);
-            let move_index = tp.moves.len();
             annotations.push(ScallopRuntimeAnnotation {
-                move_index,
+                move_index: tp.moves.len(),
                 event: ScallopRuntimeEvent::Ring {
                     ring_index: i + 1,
                     ring_total: rings.len(),
@@ -519,114 +652,87 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
                 },
             });
 
-            // SAFETY: rotated is non-empty (ring is non-empty)
-            #[allow(clippy::indexing_slicing)]
-            if i == 0 {
-                // First ring: rapid to start
-                tp.rapid_to_with_intent(
-                    P3::new(rotated[0].x, rotated[0].y, params.safe_z),
-                    MoveIntent::Linking,
-                );
-                tp.feed_to_with_intent(rotated[0], params.plunge_rate, MoveIntent::EntryPlunge);
-            } else {
-                // Connect from previous ring end to this ring start (helical transition)
-                tp.feed_to_with_intent(rotated[0], params.feed_rate, MoveIntent::FinishingCut);
-            }
-
-            // Follow the ring. `rotated[0]` (the connector point above) is
-            // always emitted regardless of slope; only the rest of the ring
-            // is subject to the slope filter, split into contiguous
-            // in-range runs so an excluded stretch breaks the chain with a
-            // retract/replunge instead of being chorded through at cutting
-            // feed.
-            let rest = rotated.get(1..).unwrap_or(&[]);
-            if use_slope_filter {
-                let idx_runs = crate::point_runs::split_run_ranges(
-                    rest,
-                    |_, pt: &P3| {
-                        slope_map
-                            .angle_at_world(pt.x, pt.y)
-                            .is_some_and(|a| a >= slope_from_rad && a <= slope_to_rad)
-                    },
-                    1,
-                );
-                for (run_idx, (s, e)) in idx_runs.into_iter().enumerate() {
-                    let Some(run) = rest.get(s..=e) else {
-                        continue;
-                    };
-                    // The very first run is contiguous with the connector
-                    // point emitted above only when it starts right at
-                    // index 0 of `rest` (no excluded stretch in between).
-                    let contiguous_with_prev = run_idx == 0 && s == 0;
-                    let mut iter = run.iter();
-                    if !contiguous_with_prev && let Some(&run_first) = iter.next() {
-                        if let Some(last_move) = tp.moves.last() {
-                            tp.rapid_to_with_intent(
-                                P3::new(last_move.target.x, last_move.target.y, params.safe_z),
-                                MoveIntent::Retract,
-                            );
-                        }
+            // Contiguous kept runs across the whole rotated ring (index 0
+            // is kept by construction, so the first run starts at 0).
+            let idx_runs = crate::point_runs::split_run_ranges(
+                &rotated,
+                |_, pt: &(P3, bool)| keep_point(pt),
+                1,
+            );
+            for (run_idx, (s, e)) in idx_runs.into_iter().enumerate() {
+                let Some(run) = rotated.get(s..=e) else {
+                    continue;
+                };
+                let Some(&(run_first, _)) = run.first() else {
+                    continue;
+                };
+                let hop =
+                    ((run_first.x - anchor.x).powi(2) + (run_first.y - anchor.y).powi(2)).sqrt();
+                // Helical transition: only the ring's FIRST run can continue
+                // the previous ring's cut, and only when the tool is down
+                // and the hop is within one ring spacing.
+                let helical_link = run_idx == 0 && s == 0 && tool_down && hop <= link_threshold;
+                let mut iter = run.iter();
+                if helical_link {
+                    if let Some(&(p, _)) = iter.next() {
+                        tp.feed_to_with_intent(p, params.feed_rate, MoveIntent::FinishingCut);
+                    }
+                } else {
+                    if tool_down {
                         tp.rapid_to_with_intent(
-                            P3::new(run_first.x, run_first.y, params.safe_z),
+                            P3::new(anchor.x, anchor.y, params.safe_z),
+                            MoveIntent::Retract,
+                        );
+                        tool_down = false;
+                    }
+                    if let Some(&(p, _)) = iter.next() {
+                        tp.rapid_to_with_intent(
+                            P3::new(p.x, p.y, params.safe_z),
                             MoveIntent::Linking,
                         );
-                        tp.feed_to_with_intent(
-                            run_first,
-                            params.plunge_rate,
-                            MoveIntent::EntryPlunge,
-                        );
-                    }
-                    for pt in iter {
-                        tp.feed_to_with_intent(*pt, params.feed_rate, MoveIntent::FinishingCut);
+                        tp.feed_to_with_intent(p, params.plunge_rate, MoveIntent::EntryPlunge);
                     }
                 }
-            } else {
-                for pt in rest {
-                    tp.feed_to_with_intent(*pt, params.feed_rate, MoveIntent::FinishingCut);
+                for &(pt, _) in iter {
+                    tp.feed_to_with_intent(pt, params.feed_rate, MoveIntent::FinishingCut);
+                }
+                if let Some(&(last, _)) = run.last() {
+                    anchor = last;
+                    tool_down = true;
                 }
             }
-
-            prev_end = rotated
-                .last()
-                .or_else(|| rotated.first())
-                .copied()
-                .unwrap_or(P3::new(0.0, 0.0, 0.0));
         }
 
-        // Final retract
-        tp.rapid_to_with_intent(
-            P3::new(prev_end.x, prev_end.y, params.safe_z),
-            MoveIntent::Retract,
-        );
+        // Final retract from wherever the tool actually ended.
+        if tool_down {
+            tp.rapid_to_with_intent(
+                P3::new(anchor.x, anchor.y, params.safe_z),
+                MoveIntent::Retract,
+            );
+        }
     } else {
         // Discrete ring mode: rapid between rings. Each ring is split into
-        // contiguous slope-confined runs — a ring is only safe to close
-        // back to its own start when EVERY point on it survived the slope
-        // filter (a partial survivor set closing across the excluded gap
-        // would chord straight through material this pass must not touch).
+        // contiguous runs that survive the combined keep predicate — a
+        // ring is only safe to close back to its own start when EVERY
+        // point on it survives (a partial survivor set closing across the
+        // excluded gap would chord straight through material this pass
+        // must not touch).
         let mut emitted_runs: Vec<(Vec<P3>, bool)> = Vec::new();
         for ring in &rings {
             if ring.len() < 3 {
                 continue;
             }
 
-            if use_slope_filter {
-                let runs = crate::point_runs::split_runs(
-                    ring,
-                    |_, pt: &P3| {
-                        slope_map
-                            .angle_at_world(pt.x, pt.y)
-                            .is_some_and(|a| a >= slope_from_rad && a <= slope_to_rad)
-                    },
-                    crate::point_runs::RunTopology::Closed,
-                    3,
-                );
-                for run in runs {
-                    let is_closed_loop = run.len() == ring.len();
-                    emitted_runs.push((run, is_closed_loop));
-                }
-            } else {
-                emitted_runs.push((ring.clone(), true));
+            let runs = crate::point_runs::split_runs(
+                ring,
+                |_, pt: &(P3, bool)| keep_point(pt),
+                crate::point_runs::RunTopology::Closed,
+                3,
+            );
+            for run in runs {
+                let is_closed_loop = run.len() == ring.len();
+                let pts: Vec<P3> = run.iter().map(|&(p, _)| p).collect();
+                emitted_runs.push((pts, is_closed_loop));
             }
         }
 
@@ -852,6 +958,7 @@ mod tests {
             &never_cancel,
         )
         .unwrap();
+        let surface_hm = surface.heightmap;
         let slope_map = surface.slope_map;
 
         let rings = generate_scallop_rings(
@@ -860,6 +967,7 @@ mod tests {
             &si,
             &cutter,
             &slope_map,
+            &surface_hm,
             tool_radius,
             0.1,
             0.0,
@@ -1074,30 +1182,192 @@ mod tests {
     // ── Helper tests ────────────────────────────────────────────────
 
     #[test]
-    fn test_closest_point_idx() {
+    fn test_closest_kept_point_idx() {
         let ring = vec![
-            P3::new(0.0, 0.0, 0.0),
-            P3::new(10.0, 0.0, 0.0),
-            P3::new(10.0, 10.0, 0.0),
-            P3::new(0.0, 10.0, 0.0),
+            (P3::new(0.0, 0.0, 0.0), true),
+            (P3::new(10.0, 0.0, 0.0), true),
+            (P3::new(10.0, 10.0, 0.0), true),
+            (P3::new(0.0, 10.0, 0.0), true),
         ];
         let target = P3::new(9.0, 9.0, 0.0);
-        let idx = closest_point_idx(&ring, &target);
-        assert_eq!(idx, 2, "Closest to (9,9) should be index 2 (10,10)");
+        let idx = closest_kept_point_idx(&ring, &target, |pt| pt.1);
+        assert_eq!(idx, Some(2), "Closest to (9,9) should be index 2 (10,10)");
+
+        // Excluding the geometrically-closest point must fall through to
+        // the next-closest KEPT point, not return the excluded one.
+        let mut masked = ring.clone();
+        masked[2].1 = false;
+        let idx = closest_kept_point_idx(&masked, &target, |pt| pt.1);
+        assert_eq!(
+            idx,
+            Some(1),
+            "With (10,10) excluded, closest kept to (9,9) is index 1 (10,0)"
+        );
+
+        // Nothing kept -> None (the caller skips the ring entirely).
+        let idx = closest_kept_point_idx(&ring, &target, |_| false);
+        assert_eq!(idx, None);
     }
 
     #[test]
     fn test_rotate_ring() {
         let ring = vec![
-            P3::new(0.0, 0.0, 0.0),
-            P3::new(1.0, 0.0, 0.0),
-            P3::new(2.0, 0.0, 0.0),
-            P3::new(3.0, 0.0, 0.0),
+            (P3::new(0.0, 0.0, 0.0), true),
+            (P3::new(1.0, 0.0, 0.0), true),
+            (P3::new(2.0, 0.0, 0.0), true),
+            (P3::new(3.0, 0.0, 0.0), true),
         ];
         let rotated = rotate_ring(&ring, 2);
-        assert!((rotated[0].x - 2.0).abs() < 0.01);
-        assert!((rotated[1].x - 3.0).abs() < 0.01);
-        assert!((rotated[2].x - 0.0).abs() < 0.01);
-        assert!((rotated[3].x - 1.0).abs() < 0.01);
+        assert!((rotated[0].0.x - 2.0).abs() < 0.01);
+        assert!((rotated[1].0.x - 3.0).abs() < 0.01);
+        assert!((rotated[2].0.x - 0.0).abs() < 0.01);
+        assert!((rotated[3].0.x - 1.0).abs() < 0.01);
+    }
+
+    // ── P2.3: boundary_regions pre-clip ──────────────────────────────
+
+    /// `boundary_regions = None` reproduces the unrestricted toolpath
+    /// (behaviorally — the P2.3 bonus covered-fix changes the *baseline*
+    /// slightly from pre-P2.3 code, but the parameter itself must be a
+    /// no-op): every cutting move on a flat mesh with no boundary passed
+    /// should land somewhere on the mesh footprint.
+    #[test]
+    fn scallop_boundary_regions_none_is_unrestricted() {
+        let (mesh, si) = make_flat_mesh();
+        let cutter = ball_cutter();
+        let params = ScallopParams {
+            scallop_height: 0.5,
+            tolerance: 0.5,
+            ..ScallopParams::default()
+        };
+        let never_cancel = || false;
+
+        let (tp, _) = scallop_toolpath_structured_annotated_with_cancel(
+            &mesh,
+            &si,
+            &cutter,
+            &params,
+            None,
+            None,
+            &never_cancel,
+        )
+        .unwrap();
+
+        assert!(
+            tp.moves.len() > 10,
+            "unrestricted scallop should produce moves, got {}",
+            tp.moves.len()
+        );
+    }
+
+    /// `boundary_regions = Some(&[left-half])` confines every cutting move's
+    /// XY to that region (a small containment tolerance absorbs the ring's
+    /// own point spacing landing right on the region edge).
+    #[test]
+    fn scallop_boundary_regions_confines_cuts_to_region() {
+        let (mesh, si) = make_flat_mesh();
+        let cutter = ball_cutter();
+        let bbox = &mesh.bbox;
+        let left_half = Polygon2::new(vec![
+            P2::new(bbox.min.x, bbox.min.y),
+            P2::new(0.0, bbox.min.y),
+            P2::new(0.0, bbox.max.y),
+            P2::new(bbox.min.x, bbox.max.y),
+        ]);
+        let params = ScallopParams {
+            scallop_height: 0.5,
+            tolerance: 0.5,
+            ..ScallopParams::default()
+        };
+        let never_cancel = || false;
+
+        let (tp, _) = scallop_toolpath_structured_annotated_with_cancel(
+            &mesh,
+            &si,
+            &cutter,
+            &params,
+            None,
+            Some(std::slice::from_ref(&left_half)),
+            &never_cancel,
+        )
+        .unwrap();
+
+        let tol = 1e-6;
+        let mut saw_cut = false;
+        for m in &tp.moves {
+            if let crate::toolpath::MoveType::Linear { .. } = m.move_type
+                && m.intent == MoveIntent::FinishingCut
+            {
+                saw_cut = true;
+                assert!(
+                    m.target.x <= tol,
+                    "cutting move X={:.3} escaped the left-half boundary region",
+                    m.target.x
+                );
+            }
+        }
+        assert!(saw_cut, "expected at least one cutting move");
+    }
+
+    /// Two disjoint boundary regions each get their own ring set — cuts
+    /// land in both regions and never in the excluded gap between them.
+    #[test]
+    fn scallop_boundary_regions_two_disjoint_regions_both_cut() {
+        let (mesh, si) = make_flat_mesh();
+        let cutter = ball_cutter();
+        let bbox = &mesh.bbox;
+        // Left third and right third of the mesh, with a gap in the middle.
+        let left = Polygon2::new(vec![
+            P2::new(bbox.min.x, bbox.min.y),
+            P2::new(-15.0, bbox.min.y),
+            P2::new(-15.0, bbox.max.y),
+            P2::new(bbox.min.x, bbox.max.y),
+        ]);
+        let right = Polygon2::new(vec![
+            P2::new(15.0, bbox.min.y),
+            P2::new(bbox.max.x, bbox.min.y),
+            P2::new(bbox.max.x, bbox.max.y),
+            P2::new(15.0, bbox.max.y),
+        ]);
+        let regions = vec![left, right];
+        let params = ScallopParams {
+            scallop_height: 0.5,
+            tolerance: 0.5,
+            ..ScallopParams::default()
+        };
+        let never_cancel = || false;
+
+        let (tp, _) = scallop_toolpath_structured_annotated_with_cancel(
+            &mesh,
+            &si,
+            &cutter,
+            &params,
+            None,
+            Some(&regions),
+            &never_cancel,
+        )
+        .unwrap();
+
+        let mut saw_left = false;
+        let mut saw_right = false;
+        for m in &tp.moves {
+            if let crate::toolpath::MoveType::Linear { .. } = m.move_type
+                && m.intent == MoveIntent::FinishingCut
+            {
+                assert!(
+                    m.target.x <= -15.0 + 1e-6 || m.target.x >= 15.0 - 1e-6,
+                    "cutting move X={:.3} landed in the excluded gap between regions",
+                    m.target.x
+                );
+                if m.target.x <= -15.0 + 1e-6 {
+                    saw_left = true;
+                }
+                if m.target.x >= 15.0 - 1e-6 {
+                    saw_right = true;
+                }
+            }
+        }
+        assert!(saw_left, "expected at least one cut in the left region");
+        assert!(saw_right, "expected at least one cut in the right region");
     }
 }

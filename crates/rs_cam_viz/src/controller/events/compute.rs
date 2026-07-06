@@ -9,8 +9,40 @@ use crate::state::toolpath::{ComputeStatus, OperationConfig, StockSource, Toolpa
 use super::super::AppController;
 
 impl<B: ComputeBackend> AppController<B> {
+    /// Fail a toolpath generation at *submit* time — i.e. before the
+    /// request ever reaches the compute worker. Every precondition
+    /// rejection inside `submit_toolpath_compute` (missing tool, failed
+    /// validation, no 3D mesh, no prior simulated stock for rest
+    /// machining, a `DerivedRestRegions` boundary whose source is
+    /// missing/self-referential/ungenerated/regionless, ...) must funnel
+    /// through here.
+    ///
+    /// Without this, an MCP `generate_toolpath` / `generate_all` caller
+    /// hangs forever: `notify_mcp_toolpath_complete` was previously only
+    /// invoked from `drain_compute_results`, which only ever runs for
+    /// requests that actually made it to the compute worker. A submit-time
+    /// early return produced no worker result, so nothing ever drained,
+    /// and the MCP oneshot channel was never resolved (confirmed live: an
+    /// MCP `generate_toolpath` call sat unresolved for ~9 hours while the
+    /// GUI correctly showed the toolpath in `Error` state).
+    ///
+    /// Sets `rt.status = Error(msg)` (matching what `drain_compute_results`
+    /// does for a compute `Err`) and resolves any pending MCP waiter for
+    /// this toolpath with the same error. If no MCP request is pending
+    /// (GUI-initiated generate), `notify_mcp_toolpath_complete` is a no-op,
+    /// matching existing behavior.
+    fn fail_toolpath_submit(&mut self, tp_id: ToolpathId, msg: impl Into<String>) {
+        let msg = msg.into();
+        let rt = self.state.gui.toolpath_rt_or_default(tp_id);
+        rt.status = ComputeStatus::Error(msg);
+        rt.result = None;
+        #[cfg(feature = "mcp")]
+        self.notify_mcp_toolpath_complete(tp_id);
+    }
+
     pub(crate) fn submit_toolpath_compute(&mut self, tp_id: ToolpathId) {
         let Some((tp_idx, tc)) = self.state.session.find_toolpath_config_by_id(tp_id) else {
+            self.fail_toolpath_submit(tp_id, "Toolpath config not found".to_owned());
             return;
         };
 
@@ -37,6 +69,7 @@ impl<B: ComputeBackend> AppController<B> {
                 "Cannot generate: no tool assigned to this toolpath".into(),
                 super::super::Severity::Warning,
             );
+            self.fail_toolpath_submit(tp_id, "No tool assigned to this toolpath".to_owned());
             return;
         };
 
@@ -47,9 +80,7 @@ impl<B: ComputeBackend> AppController<B> {
             if let Some((_, tc)) = self.state.session.find_toolpath_config_by_id(tp_id) {
                 let errs = crate::ui::properties::validate_toolpath_config(tc, &validation);
                 if !errs.is_empty() {
-                    if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id) {
-                        rt.status = ComputeStatus::Error(errs.join("; "));
-                    }
+                    self.fail_toolpath_submit(tp_id, errs.join("; "));
                     return;
                 }
             }
@@ -196,17 +227,14 @@ impl<B: ComputeBackend> AppController<B> {
 
         let is_3d = operation.is_3d();
         if is_3d && mesh.is_none() {
-            if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id) {
-                rt.status = ComputeStatus::Error("No 3D mesh (import STL or STEP)".to_owned());
-            }
+            self.fail_toolpath_submit(tp_id, "No 3D mesh (import STL or STEP)".to_owned());
             return;
         }
         if !is_3d && !operation.is_stock_based() && polygons.is_none() {
-            if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id) {
-                rt.status = ComputeStatus::Error(
-                    "No 2D geometry (import SVG/DXF or select STEP faces)".to_owned(),
-                );
-            }
+            self.fail_toolpath_submit(
+                tp_id,
+                "No 2D geometry (import SVG/DXF or select STEP faces)".to_owned(),
+            );
             return;
         }
 
@@ -336,13 +364,14 @@ impl<B: ComputeBackend> AppController<B> {
                 .and_then(|prev| sim.checkpoints().iter().find(|c| c.boundary_index == prev))
                 .and_then(|c| c.stock.clone());
             let Some(found) = found else {
-                if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id) {
-                    rt.status = ComputeStatus::Error(format!(
+                self.fail_toolpath_submit(
+                    tp_id,
+                    format!(
                         "'{toolpath_name}' uses remaining stock (rest machining) but no prior \
                          simulated stock is available — run a simulation of the preceding \
                          operations first, then regenerate. (Not falling back to fresh stock.)"
-                    ));
-                }
+                    ),
+                );
                 self.push_notification(
                     format!(
                         "Rest machining: '{toolpath_name}' has no prior simulated stock — run a \
@@ -358,6 +387,119 @@ impl<B: ComputeBackend> AppController<B> {
         };
         let cutting_levels = operation.cutting_levels(heights.top_z);
         let material = stock_snapshot.material;
+
+        // P2.2/P2.3 (rest-region boundary): resolve `DerivedRestRegions` now,
+        // while we still have full session + gui access — mirrors
+        // `prev_tool_radius` / `reference_tool_cfg` above. The worker's
+        // `ComputeRequest` is scoped to this one toolpath, so any
+        // cross-toolpath lookup has to happen here, not in the worker.
+        //
+        // Fail-hard precondition, same shape and wording as core's
+        // `ProjectSession::resolve_derived_rest_region_polys`
+        // (session/compute.rs): a toolpath whose enabled boundary
+        // references a missing / self-referential / ungenerated /
+        // regionless source toolpath refuses to generate rather than
+        // silently falling back to the stock rectangle. The previous
+        // silent fallback let a full-part toolpath through with no error
+        // before the source ever ran, and again after the source ran
+        // whenever its rest regions (genuine terrain rest analysis
+        // commonly yields many disjoint islands) didn't union down to
+        // exactly one polygon.
+        let derived_rest_regions: Option<Vec<rs_cam_core::polygon::Polygon2>> = if boundary.enabled
+            && let crate::state::toolpath::BoundarySource::DerivedRestRegions { source_toolpath_id } =
+                &boundary.source
+        {
+            let source_id = *source_toolpath_id;
+            if source_id == tp_id {
+                self.fail_toolpath_submit(
+                    tp_id,
+                    "Boundary references this toolpath's own rest regions — a toolpath \
+                     cannot use itself as the source for a derived-rest-regions \
+                     boundary. Pick a different source toolpath."
+                        .to_owned(),
+                );
+                self.push_notification(
+                    format!(
+                        "'{toolpath_name}': boundary references its own rest regions — pick \
+                         a different source toolpath."
+                    ),
+                    super::super::Severity::Error,
+                );
+                return;
+            }
+            let Some((_, source_tc)) = self.state.session.find_toolpath_config_by_id(source_id)
+            else {
+                self.fail_toolpath_submit(
+                    tp_id,
+                    format!(
+                        "Boundary references toolpath id {} for its rest regions, but no \
+                         toolpath with that id exists anymore. Pick a different source \
+                         toolpath for the boundary, or disable the boundary.",
+                        source_id.0
+                    ),
+                );
+                self.push_notification(
+                    format!(
+                        "'{toolpath_name}': rest-regions boundary source (id {}) no longer \
+                         exists — pick a different source toolpath.",
+                        source_id.0
+                    ),
+                    super::super::Severity::Error,
+                );
+                return;
+            };
+            let source_name = source_tc.name.clone();
+            let Some(source_result) = self
+                .state
+                .gui
+                .toolpath_rt
+                .get(&source_id)
+                .and_then(|rt| rt.result.as_ref())
+            else {
+                self.fail_toolpath_submit(
+                    tp_id,
+                    format!(
+                        "'{source_name}' has no generated result yet — generate \
+                         '{source_name}' first; its rest analysis produces the regions this \
+                         boundary needs.",
+                    ),
+                );
+                self.push_notification(
+                    format!(
+                        "'{toolpath_name}': rest-regions source '{source_name}' has no \
+                         generated result yet — generate it first."
+                    ),
+                    super::super::Severity::Error,
+                );
+                return;
+            };
+            match source_result.annotated.rest_regions.as_ref() {
+                Some(regions) if !regions.is_empty() => Some((**regions).clone()),
+                _ => {
+                    self.fail_toolpath_submit(
+                        tp_id,
+                        format!(
+                            "'{source_name}' produced no rest regions — it must be a pencil \
+                             operation with the rest-depth detector enabled, and its rest \
+                             analysis must have found material above the threshold. Check \
+                             the pencil rest-depth settings on '{source_name}' and \
+                             regenerate it.",
+                        ),
+                    );
+                    self.push_notification(
+                        format!(
+                            "'{toolpath_name}': rest-regions source '{source_name}' produced \
+                             no rest regions — check its pencil rest-depth settings and \
+                             regenerate it."
+                        ),
+                        super::super::Severity::Error,
+                    );
+                    return;
+                }
+            }
+        } else {
+            None
+        };
 
         self.compute.submit_toolpath(ComputeRequest {
             toolpath_id: tp_id,
@@ -381,7 +523,45 @@ impl<B: ComputeBackend> AppController<B> {
             cutting_levels,
             prior_stock,
             material,
+            derived_rest_regions,
         });
+    }
+
+    /// Mark every toolpath whose *enabled* boundary is `DerivedRestRegions`
+    /// referencing `source_id` as stale, using the same `stale_since`
+    /// mechanism `mcp_apply_stale` uses for direct config edits
+    /// (`app/mcp.rs::mcp_apply_stale`). A `DerivedRestRegions` boundary's
+    /// clip depends entirely on the source toolpath's cached
+    /// `rest_regions` — any regeneration of the source (regions changed,
+    /// vanished, or newly appeared) or its removal invalidates every
+    /// dependent's cached result just as surely as editing the dependent's
+    /// own boundary config would, so this sweep is called from both the
+    /// generation-completion handler (`drain_compute_results`, below) and
+    /// `handle_remove_toolpath` (`controller/events/toolpath.rs`).
+    pub(crate) fn mark_derived_rest_dependents_stale(&mut self, source_id: ToolpathId) {
+        let dependent_ids: Vec<ToolpathId> = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .filter(|tc| {
+                tc.boundary.enabled
+                    && matches!(
+                        tc.boundary.source,
+                        crate::state::toolpath::BoundarySource::DerivedRestRegions {
+                            source_toolpath_id,
+                        } if source_toolpath_id == source_id
+                    )
+            })
+            .map(|tc| tc.id)
+            .collect();
+        if dependent_ids.is_empty() {
+            return;
+        }
+        let now = std::time::Instant::now();
+        for id in dependent_ids {
+            self.state.gui.toolpath_rt_or_default(id).stale_since = Some(now);
+        }
     }
 
     // SAFETY: tp_index from position() within setup.toolpaths, slice always in bounds
@@ -445,6 +625,13 @@ impl<B: ComputeBackend> AppController<B> {
                                 let _ = self.state.session.insert_result(tp_index, core_result);
                             }
                             rt.result = Some(computed);
+                            // Any toolpath whose `DerivedRestRegions` boundary
+                            // depends on this one just saw its source result
+                            // replaced (rest_regions may have appeared,
+                            // changed, or vanished) — force a regenerate so
+                            // the dependent re-resolves against the fresh
+                            // regions instead of clipping against a stale set.
+                            self.mark_derived_rest_dependents_stale(tp_id);
                         }
                         Err(ComputeError::Cancelled) => {
                             rt.status = ComputeStatus::Pending;

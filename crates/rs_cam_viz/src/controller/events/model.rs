@@ -24,7 +24,17 @@ impl<B: ComputeBackend> AppController<B> {
             Selection::Toolpath(tp_id) => self.setup_of_toolpath(*tp_id),
             _ => None,
         };
-        if old_setup != new_setup {
+        // `upload_gpu_data` (app/gpu_upload.rs) keys the height-plane and
+        // rest-heatmap overlays off "whichever toolpath is currently
+        // `Selection::Toolpath`", rebuilt only when `pending_upload` fires —
+        // not every frame. The setup-changed check above catches switching
+        // setups, but switching the selected *toolpath within the same
+        // setup* (e.g. selecting a pencil rest-analysis toolpath right
+        // after a scallop in the same setup) left both overlays showing
+        // stale data from whichever toolpath was selected the last time
+        // something else happened to set `pending_upload`. Any actual
+        // selection change needs the same treatment.
+        if old_setup != new_setup || self.state.selection != *selection {
             self.pending_upload = true;
         }
         self.state.selection = selection.clone();

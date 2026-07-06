@@ -83,6 +83,7 @@ pub mod radial_profile;
 pub mod ramp_finish;
 pub mod rest;
 pub mod rest_field;
+pub mod rest_heatmap_mesh;
 pub mod scallop;
 pub mod scallop_math;
 pub mod semantic_trace;

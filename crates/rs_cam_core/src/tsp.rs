@@ -144,6 +144,7 @@ pub fn optimize_rapid_order(annotated: AnnotatedToolpath, safe_z: f64) -> Annota
         spans_valid: input_valid,
         planner_engagement,
         rest_grid,
+        rest_regions,
     } = annotated;
 
     if toolpath.moves.is_empty() {
@@ -153,6 +154,7 @@ pub fn optimize_rapid_order(annotated: AnnotatedToolpath, safe_z: f64) -> Annota
             spans_valid: input_valid,
             planner_engagement,
             rest_grid,
+            rest_regions,
         };
     }
 
@@ -220,6 +222,7 @@ pub fn optimize_rapid_order(annotated: AnnotatedToolpath, safe_z: f64) -> Annota
         spans_valid: new_valid,
         planner_engagement,
         rest_grid,
+        rest_regions,
     }
 }
 

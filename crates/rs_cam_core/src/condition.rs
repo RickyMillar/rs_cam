@@ -50,6 +50,7 @@ pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Annota
         spans_valid,
         planner_engagement,
         rest_grid,
+        rest_regions,
     } = annotated;
 
     if toolpath.moves.len() < 2 || tolerance <= 0.0 {
@@ -59,6 +60,7 @@ pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Annota
             spans_valid,
             planner_engagement,
             rest_grid,
+            rest_regions,
         };
     }
 
@@ -157,6 +159,7 @@ pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Annota
         spans_valid,
         planner_engagement,
         rest_grid,
+        rest_regions,
     }
 }
 
