@@ -153,6 +153,7 @@ impl<B: ComputeBackend> AppController<B> {
                 }
             },
             boundary_inherit: true,
+            rest_analysis: crate::state::toolpath::RestAnalysisConfig::default(),
             stock_source: crate::state::toolpath::StockSource::Fresh,
             coolant: rs_cam_core::gcode::CoolantMode::Off,
             face_selection: None,
@@ -203,6 +204,7 @@ impl<B: ComputeBackend> AppController<B> {
                     post_gcode: src.post_gcode.clone(),
                     boundary: src.boundary.clone(),
                     boundary_inherit: src.boundary_inherit,
+                    rest_analysis: src.rest_analysis.clone(),
                     stock_source: src.stock_source,
                     coolant: src.coolant,
                     face_selection: src.face_selection.clone(),

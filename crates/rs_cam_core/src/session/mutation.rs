@@ -327,6 +327,24 @@ impl ProjectSession {
         Ok(())
     }
 
+    /// Replace the rest-analysis config (P2.5) for a toolpath, invalidating
+    /// its cached result. Mirrors `set_boundary_config`.
+    #[instrument(skip(self, rest_analysis))]
+    pub fn set_rest_analysis_config(
+        &mut self,
+        index: usize,
+        rest_analysis: crate::compute::config::RestAnalysisConfig,
+    ) -> Result<(), SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get_mut(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        tc.rest_analysis = rest_analysis;
+        self.results.remove(&index);
+        self.simulation = None;
+        Ok(())
+    }
+
     // ── Model CRUD ────────────────────────────────────────────────
 
     /// Add a model and return its ID.
@@ -927,6 +945,7 @@ mod tests {
             face_selection: None,
             debug_options: ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
         }
     }
 

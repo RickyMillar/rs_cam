@@ -19,10 +19,11 @@ use rs_cam_mcp::server::{
     LoadMachineFromLibraryParam, LoadProjectParam, ModelIdParam, OperationSchemaParam,
     OptimizeToolpathInput, RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam,
     SaveProjectParam, ScreenshotGuiParam, ScreenshotSimParam, ScreenshotToolpathParam,
-    SetBoundaryConfigParam, SetDressupConfigParam, SetDressupFieldParam, SetSpindleStrategyParam,
-    SetStockConfigParam, SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam,
-    SetToolpathHeightsParam, SetToolpathParamInput, SetUiViewParam, SimJumpToMoveParam,
-    SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam,
+    SetBoundaryConfigParam, SetDressupConfigParam, SetDressupFieldParam,
+    SetRestAnalysisConfigParam, SetSpindleStrategyParam, SetStockConfigParam, SetStockSourceParam,
+    SetToolParamInput, SetToolpathEnabledParam, SetToolpathHeightsParam, SetToolpathParamInput,
+    SetUiViewParam, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam, SimScrubToolpathParam,
+    SimulationParam,
 };
 
 /// Embedded MCP server that forwards requests to the GUI thread.
@@ -807,6 +808,34 @@ impl EmbeddedCamServer {
                 containment,
                 offset,
                 source_toolpath_id,
+            })
+            .await,
+        )
+    }
+
+    #[tool(
+        name = "set_rest_analysis_config",
+        description = "Enable/configure op-agnostic rest analysis on a toolpath: runs the rest-depth detector against THIS toolpath's own tool after generation, attaching a heatmap grid + derived machining regions (usable as a 'derived_rest_regions' boundary source on another toolpath) without emitting a pencil centerline toolpath. reference_tool_id (optional) names a real library tool for the rest reference; unset prefers the machined stock, else a self-referenced probe. cell_mm/min_valley_depth/region_margin_mm default to 0.5/0.05/0.5mm. Invalidates cached result."
+    )]
+    async fn set_rest_analysis_config(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(SetRestAnalysisConfigParam {
+            index,
+            enabled,
+            reference_tool_id,
+            cell_mm,
+            min_valley_depth,
+            region_margin_mm,
+        }): Parameters<SetRestAnalysisConfigParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::SetRestAnalysisConfig {
+                index,
+                enabled,
+                reference_tool_id,
+                cell_mm,
+                min_valley_depth,
+                region_margin_mm,
             })
             .await,
         )

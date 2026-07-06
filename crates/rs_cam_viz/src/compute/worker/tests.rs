@@ -39,6 +39,7 @@ fn sample_request(operation: OperationConfig, stock_source: StockSource) -> Comp
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
+        rest_analysis: Default::default(),
     }
 }
 
@@ -121,6 +122,7 @@ fn quick_pocket_request(id: usize) -> ComputeRequest {
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
+        rest_analysis: Default::default(),
     }
 }
 
@@ -160,6 +162,7 @@ fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
+        rest_analysis: Default::default(),
     }
 }
 
@@ -199,6 +202,7 @@ fn waterline_request(id: usize) -> ComputeRequest {
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
+        rest_analysis: Default::default(),
     }
 }
 
@@ -239,6 +243,7 @@ fn adaptive3d_request(id: usize) -> ComputeRequest {
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
+        rest_analysis: Default::default(),
     }
 }
 
@@ -299,6 +304,7 @@ fn drill_request(id: usize) -> ComputeRequest {
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
+        rest_analysis: Default::default(),
     }
 }
 
@@ -331,6 +337,7 @@ fn steep_shallow_request(id: usize) -> ComputeRequest {
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
+        rest_analysis: Default::default(),
     }
 }
 
@@ -376,6 +383,7 @@ fn pencil_request(id: usize) -> ComputeRequest {
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
+        rest_analysis: Default::default(),
     }
 }
 
@@ -414,6 +422,7 @@ fn scallop_request(id: usize) -> ComputeRequest {
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
+        rest_analysis: Default::default(),
     }
 }
 
@@ -453,6 +462,7 @@ fn ramp_finish_request(id: usize) -> ComputeRequest {
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
+        rest_analysis: Default::default(),
     }
 }
 
@@ -490,6 +500,7 @@ fn spiral_finish_request(id: usize) -> ComputeRequest {
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
+        rest_analysis: Default::default(),
     }
 }
 
@@ -528,6 +539,7 @@ fn radial_finish_request(id: usize) -> ComputeRequest {
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
+        rest_analysis: Default::default(),
     }
 }
 
@@ -565,6 +577,7 @@ fn horizontal_finish_request(id: usize) -> ComputeRequest {
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
+        rest_analysis: Default::default(),
     }
 }
 
@@ -606,6 +619,7 @@ fn project_curve_request(id: usize) -> ComputeRequest {
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
+        rest_analysis: Default::default(),
     }
 }
 
@@ -1077,6 +1091,147 @@ fn derived_rest_regions_boundary_clips_to_all_disjoint_regions() {
         !saw_cut_in_gap,
         "cutting moves must stay within the two derived rest regions, not the gap between \
          them (a single-polygon-union fallback would cut the whole pocket rectangle)"
+    );
+}
+
+/// P2.4 regression: the GUI worker's `generate_via_core` bridge must thread
+/// `derived_rest_regions` into `execute_operation_annotated_with_regions`
+/// (not just the post-generation enforcement clip), the same way
+/// `ProjectSession::generate_toolpath` does on the core session path. Before
+/// this fix, `generate_via_core` always called the plain
+/// `execute_operation_annotated` wrapper (`boundary_regions = None`), so
+/// scallop generated concentric rings over the WHOLE hemisphere and only the
+/// post-generation clip trimmed the result down to the two islands — same
+/// final containment as the sibling test above proves, but full-part
+/// generation cost. Confining generation itself to two small islands (a
+/// tiny fraction of the hemisphere's footprint) must produce a materially
+/// smaller toolpath than generating over the whole hemisphere, not just a
+/// clipped-down copy of the full-part path.
+#[test]
+fn derived_rest_regions_boundary_shrinks_generation_not_just_clips_it() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+
+    // Baseline: no boundary at all — scallop covers the whole hemisphere
+    // footprint (~pi * 20^2 ~= 1257 sq mm).
+    let baseline_request = scallop_request(300);
+    let baseline = super::execute::run_compute(&baseline_request, &cancel)
+        .result
+        .expect("baseline scallop compute should succeed");
+    let baseline_moves = baseline.annotated.toolpath.moves.len();
+
+    // Bounded: two small 6x6 islands (72 sq mm total) in opposite quadrants,
+    // well inside the hemisphere's footprint, with a large untouched gap
+    // between them.
+    let mut bounded_request = scallop_request(301);
+    bounded_request.boundary.enabled = true;
+    bounded_request.boundary.source = crate::state::toolpath::BoundarySource::DerivedRestRegions {
+        source_toolpath_id: ToolpathId(999),
+    };
+    bounded_request.derived_rest_regions = Some(vec![
+        Polygon2::rectangle(-15.0, -15.0, -9.0, -9.0),
+        Polygon2::rectangle(9.0, 9.0, 15.0, 15.0),
+    ]);
+    let bounded = super::execute::run_compute(&bounded_request, &cancel)
+        .result
+        .expect("derived-rest-regions scallop compute should succeed");
+    let bounded_moves = bounded.annotated.toolpath.moves.len();
+
+    // Post-clip containment still holds (mirrors the sibling disjoint-region
+    // test above): every cutting move stays within the two islands.
+    let in_region_a = |x: f64, y: f64| (-15.5..=-8.5).contains(&x) && (-15.5..=-8.5).contains(&y);
+    let in_region_b = |x: f64, y: f64| (8.5..=15.5).contains(&x) && (8.5..=15.5).contains(&y);
+    let mut saw_cut_at_all = false;
+    let mut saw_cut_outside_regions = false;
+    for mv in &bounded.annotated.toolpath.moves {
+        if matches!(mv.move_type, rs_cam_core::toolpath::MoveType::Linear { .. }) {
+            saw_cut_at_all = true;
+            let (x, y) = (mv.target.x, mv.target.y);
+            if !in_region_a(x, y) && !in_region_b(x, y) {
+                saw_cut_outside_regions = true;
+            }
+        }
+    }
+    assert!(saw_cut_at_all, "expected at least some cutting moves");
+    assert!(
+        !saw_cut_outside_regions,
+        "cutting moves must stay within the two derived rest regions"
+    );
+
+    // The real regression check: generation itself must have skipped the
+    // area outside the two islands, not merely clipped a full-hemisphere
+    // toolpath down after the fact. A post-hoc-only clip keeps (or grows,
+    // via crossing rapids) the total move count relative to the unbounded
+    // baseline; a generation-level pre-clip produces a toolpath an order of
+    // magnitude smaller because scallop never rings the empty gap at all.
+    assert!(
+        bounded_moves < baseline_moves,
+        "boundary-confined generation ({bounded_moves} moves) must produce fewer moves than \
+         unbounded full-hemisphere generation ({baseline_moves} moves) — otherwise generation \
+         is scanning the whole part and only the post-generation clip is trimming it"
+    );
+    assert!(
+        bounded_moves * 4 < baseline_moves,
+        "boundary-confined generation ({bounded_moves} moves) should be a small fraction of \
+         the unbounded baseline ({baseline_moves} moves), matching the ~17x area reduction \
+         (72 sq mm of islands vs ~1257 sq mm of hemisphere footprint) — a small reduction would \
+         suggest the pre-clip isn't actually reaching the generator"
+    );
+}
+
+/// P2.5 end-to-end: a `derived_rest_regions` boundary source no longer has
+/// to come from a pencil `RestDepth` toolpath — ANY op with `rest_analysis`
+/// enabled produces the same `rest_regions` shape, and a downstream
+/// toolpath boundary-sources off it exactly the same way. Generates a
+/// Scallop toolpath with generic rest analysis enabled, takes the
+/// `rest_regions` it produced, and feeds them into a second toolpath's
+/// `DerivedRestRegions` boundary — the consumer side (`apply_boundary_clip_multi`
+/// / `clip_toolpath_to_boundary_set_with_provenance`) never even sees which
+/// op produced the regions, but this proves the *producer* side (a
+/// non-pencil op) genuinely emits a usable set, not just an empty `Some(vec![])`.
+#[test]
+fn non_pencil_rest_analysis_source_feeds_a_downstream_boundary() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+
+    let mut source_request = scallop_request(400);
+    source_request.rest_analysis = crate::state::toolpath::RestAnalysisConfig {
+        enabled: true,
+        reference_tool_id: None,
+        cell_mm: 1.0,
+        min_valley_depth: 0.05,
+        region_margin_mm: 0.5,
+    };
+    let source_result = super::execute::run_compute(&source_request, &cancel)
+        .result
+        .expect("scallop with rest_analysis enabled should succeed");
+    let source_regions = std::sync::Arc::clone(
+        source_result
+            .annotated
+            .rest_regions
+            .as_ref()
+            .expect("non-pencil op with rest_analysis enabled should produce rest_regions"),
+    );
+    assert!(
+        !source_regions.is_empty(),
+        "a hemisphere mesh should yield at least one non-trivial rest region"
+    );
+
+    // Feed those exact regions into a downstream toolpath's boundary, same
+    // shape a controller would resolve from `source_result.annotated.rest_regions`.
+    let mut downstream_request = quick_pocket_request(401);
+    downstream_request.boundary.enabled = true;
+    downstream_request.boundary.source =
+        crate::state::toolpath::BoundarySource::DerivedRestRegions {
+            source_toolpath_id: ToolpathId(400),
+        };
+    downstream_request.derived_rest_regions = Some((*source_regions).clone());
+
+    let downstream = super::execute::run_compute(&downstream_request, &cancel)
+        .result
+        .expect("downstream toolpath sourcing a non-pencil rest-regions boundary should succeed");
+    assert!(
+        !downstream.annotated.toolpath.moves.is_empty(),
+        "downstream toolpath should still produce moves when confined to the scallop-sourced \
+         rest regions"
     );
 }
 

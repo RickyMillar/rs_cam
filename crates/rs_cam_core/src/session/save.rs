@@ -177,6 +177,7 @@ impl ProjectSession {
                         _legacy_feeds_auto: None,
                         debug_options: tc.debug_options,
                         feeds_provenance: tc.feeds_provenance.clone(),
+                        rest_analysis: tc.rest_analysis.clone(),
                     })
                     .collect();
 
@@ -273,6 +274,7 @@ mod tests {
             face_selection: None,
             debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
         }
     }
 

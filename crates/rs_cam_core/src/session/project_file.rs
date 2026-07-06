@@ -437,6 +437,14 @@ pub struct ProjectToolpathSection {
     /// projects saved before provenance tracking — defaults to all-`None`.
     #[serde(default, skip_serializing_if = "feeds_provenance_is_empty")]
     pub feeds_provenance: crate::feeds::FeedsProvenance,
+    /// Op-agnostic rest analysis (P2.5). Absent in projects saved before this
+    /// config existed — defaults to disabled.
+    #[serde(default, skip_serializing_if = "rest_analysis_is_default")]
+    pub rest_analysis: crate::compute::config::RestAnalysisConfig,
+}
+
+fn rest_analysis_is_default(r: &crate::compute::config::RestAnalysisConfig) -> bool {
+    *r == crate::compute::config::RestAnalysisConfig::default()
 }
 
 fn feeds_provenance_is_empty(p: &crate::feeds::FeedsProvenance) -> bool {
@@ -660,6 +668,7 @@ fn toolpath_config_from_section(
             .map(|ids| ids.iter().copied().map(FaceGroupId).collect()),
         debug_options: tp.debug_options,
         feeds_provenance: tp.feeds_provenance.clone(),
+        rest_analysis: tp.rest_analysis.clone(),
     }
 }
 

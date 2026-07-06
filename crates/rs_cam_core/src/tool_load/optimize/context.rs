@@ -356,6 +356,7 @@ mod restore_guard_tests {
             face_selection: None,
             debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
         }
     }
 

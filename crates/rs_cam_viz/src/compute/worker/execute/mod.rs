@@ -15,7 +15,7 @@ use crate::state::toolpath::{
     FaceConfig, FaceDirection, HeightContext, HeightsConfig, InlayConfig, ProfileConfig,
     RestConfig, ZigzagConfig,
 };
-use rs_cam_core::compute::execute::execute_operation_annotated;
+use rs_cam_core::compute::execute::execute_operation_annotated_with_regions;
 use rs_cam_core::compute::{build_cutter, compute_stats};
 #[cfg(test)]
 use rs_cam_core::geo::P3;
@@ -65,6 +65,41 @@ fn generate_via_core(
     }
     let op_child_ctx = op_scope.as_ref().map(|scope| scope.context());
 
+    // P2.4/RegionSet: pre-resolve the *set* of DerivedRestRegions (each
+    // region individually keep-out-subtracted + offset via
+    // `RegionSet::processed` — same per-region processing as
+    // `session/compute.rs::resolve_generation_inputs`'s `pre_boundary_regions`,
+    // which core's session path threads into `ExecutionContext.boundary_regions`)
+    // so the GUI worker can do the same. Before P2.4, `generate_via_core` only
+    // ever called the plain `execute_operation_annotated` wrapper
+    // (`boundary_regions = None`), so the 7 finish ops that pre-clip
+    // generation on `boundary_regions` (scallop's per-island concentric
+    // rings, drop-cutter's sampling skip) generated across the WHOLE part on
+    // the GUI path — only the post-generation enforcement clip below
+    // (`apply_boundary_clip_multi`) trimmed the result. Same final
+    // containment, but full-part generation cost, and a scallop toolpath
+    // that visibly "does the whole area" before being cut down instead of
+    // concentric per-island rings. This now matches the core session path
+    // (`ProjectSession::generate_toolpath`). Computed before `pre_boundary`
+    // below so the single-polygon collapse for adaptive3d's pre-clip can
+    // reuse this exact processed set instead of re-deriving it.
+    let pre_boundary_regions: Option<Vec<rs_cam_core::polygon::Polygon2>> = if req.boundary.enabled
+        && matches!(
+            req.boundary.source,
+            rs_cam_core::compute::config::BoundarySource::DerivedRestRegions { .. }
+        ) {
+        req.derived_rest_regions.as_deref().and_then(|regions| {
+            (!regions.is_empty()).then(|| {
+                rs_cam_core::region_set::RegionSet::from_slice(regions)
+                    .processed(&req.keep_out_footprints, req.boundary.offset)
+                    .as_slice()
+                    .to_vec()
+            })
+        })
+    } else {
+        None
+    };
+
     // Pre-resolve containment polygon (silhouette/stock + keep-outs + offset)
     // for adaptive3d's internal stock pre-clip. The post-generation boundary
     // clip (later in this function) does its own tool-radius inset for cutter
@@ -82,8 +117,27 @@ fn generate_via_core(
                 stock_bbox.max.y,
             ))
         };
-        let mut poly =
-            if let (Some(face_ids), Some(enriched)) = (&req.face_selection, &req.enriched_mesh) {
+        if matches!(
+            req.boundary.source,
+            BoundarySource::DerivedRestRegions { .. }
+        ) {
+            // P2.2/P2.3/RegionSet: adaptive3d's internal-stock pre-clip
+            // wants a single containment polygon — reuse the
+            // `pre_boundary_regions` set computed above (already
+            // keep-out-subtracted + offset, per region) and collapse it
+            // via `RegionSet::single_union` only when it resolves to
+            // exactly one polygon. `None` just skips this pre-clip
+            // optimization (costs adaptive3d some discarded pre-clearing,
+            // not correctness); the real enforcement clip further down
+            // uses the full region set via `apply_boundary_clip_multi`
+            // regardless of whether this union collapsed.
+            pre_boundary_regions.as_deref().and_then(|regions| {
+                rs_cam_core::region_set::RegionSet::from_slice(regions).single_union()
+            })
+        } else {
+            let mut poly = if let (Some(face_ids), Some(enriched)) =
+                (&req.face_selection, &req.enriched_mesh)
+            {
                 enriched
                     .faces_boundary_as_polygon(face_ids)
                     .or_else(stock_rect)
@@ -95,52 +149,38 @@ fn generate_via_core(
                         .partial_cmp(&b.area())
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
-            } else if matches!(
-                req.boundary.source,
-                BoundarySource::DerivedRestRegions { .. }
-            ) {
-                // P2.2/P2.3: the full region set is resolved by the
-                // controller (this worker has no cross-toolpath
-                // visibility, only what `ComputeRequest` carries).
-                // adaptive3d's internal-stock pre-clip wants a single
-                // containment polygon, so union the regions and use the
-                // result only when it collapses to exactly one polygon —
-                // mirrors `session/compute.rs::resolve_generation_inputs`.
-                // `None` just skips this pre-clip optimization (costs
-                // adaptive3d some discarded pre-clearing, not
-                // correctness); the real enforcement clip further down
-                // uses the full region set via `apply_boundary_clip_multi`
-                // regardless of whether this union collapsed.
-                req.derived_rest_regions.as_deref().and_then(|regions| {
-                    let mut unioned = rs_cam_core::polygon::Polygon2::union_all(regions);
-                    (unioned.len() == 1).then(|| unioned.remove(0))
-                })
             } else {
                 stock_rect()
             };
-        if let Some(p) = poly.as_mut()
-            && !req.keep_out_footprints.is_empty()
-        {
-            *p = subtract_keepouts(p, &req.keep_out_footprints);
-        }
-        if let Some(p) = poly.as_mut()
-            && req.boundary.offset.abs() > 1e-9
-        {
-            let offset_polys = rs_cam_core::polygon::offset_polygon(p, -req.boundary.offset);
-            if let Some(largest) = offset_polys.into_iter().max_by(|a, b| {
-                a.area()
-                    .partial_cmp(&b.area())
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            }) {
-                *p = largest;
+            if let Some(p) = poly.as_mut()
+                && !req.keep_out_footprints.is_empty()
+            {
+                *p = subtract_keepouts(p, &req.keep_out_footprints);
             }
+            if let Some(p) = poly.as_mut()
+                && req.boundary.offset.abs() > 1e-9
+            {
+                let offset_polys = rs_cam_core::polygon::offset_polygon(p, -req.boundary.offset);
+                if let Some(largest) = offset_polys.into_iter().max_by(|a, b| {
+                    a.area()
+                        .partial_cmp(&b.area())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                }) {
+                    *p = largest;
+                }
+            }
+            poly
         }
-        poly
     } else {
         None
     };
 
-    let result = execute_operation_annotated(
+    // P2.5: `rest_analysis` needs to flow through regardless of whether
+    // `pre_boundary_regions` resolved to anything, so this always goes
+    // through the `_with_regions` variant now (unconditional `None` for
+    // `boundary_regions` is a byte-identical no-op, matching what the
+    // plain `execute_operation_annotated` wrapper did before P2.5).
+    let result = execute_operation_annotated_with_regions(
         &req.operation,
         mesh_ref,
         index_ref,
@@ -157,6 +197,8 @@ fn generate_via_core(
         req.prior_stock.as_ref(),
         op_child_ctx.as_ref(),
         pre_boundary.as_ref(),
+        pre_boundary_regions.as_deref(),
+        Some(&req.rest_analysis),
     )
     .map_err(ComputeError::from)?;
 
@@ -788,6 +830,7 @@ mod tests {
             prior_stock: None,
             material: rs_cam_core::material::Material::default(),
             derived_rest_regions: None,
+            rest_analysis: Default::default(),
         }
     }
 

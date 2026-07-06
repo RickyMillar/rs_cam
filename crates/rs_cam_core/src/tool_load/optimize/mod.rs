@@ -837,6 +837,7 @@ mod orchestration_skip_tests {
             face_selection: None,
             debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
         }
     }
 
@@ -1291,6 +1292,7 @@ mod project_rollup_tests {
             face_selection: None,
             debug_options: ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
         }
     }
 

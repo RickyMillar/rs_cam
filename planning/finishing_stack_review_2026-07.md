@@ -235,6 +235,31 @@ rough-finish → fine-tool detail only where it adds detail** on freeform relief
   - Alternative detail signal for parts without a rest reference:
     `classify_steep_shallow` (`slope.rs:405`) + dilate + marching squares = steep/shallow
     region polygons; `SlopeMap::curvature_at_world` as a "high-detail" detector.
+- [x] **P2.5 RegionSet consolidation + op-agnostic rest analysis** — DONE 2026-07-07:
+  new `region_set.rs` (`RegionSet` newtype over `Vec<Polygon2>`, Cow-backed so hot paths
+  borrow instead of clone) replaces 4+ hand-rolled copies of "point-in-any-region",
+  "union-and-collapse-to-one", and "per-region keepout+offset": `session/compute.rs`'s
+  `resolve_derived_region_polygons` + the `resolve_generation_inputs` union-collapse, the
+  GUI worker's two copies in `worker/execute/mod.rs` (fixed a latent divergence in the
+  process — the worker's `pre_boundary` union used to union RAW regions then keepout+offset
+  the union, while `pre_boundary_regions` did correct per-region processing; both now share
+  one `RegionSet::processed(...).single_union()` call), and the 7 mesh-finish ops'
+  `regions.iter().any(|r| r.contains_point(p))` closures (`ExecutionContext.boundary_regions`
+  + each op's own param is now `Option<&RegionSet>`).
+- [x] **P2.5 generic rest analysis** — DONE 2026-07-07: `RestAnalysisConfig` (compute/config.rs;
+  `enabled`, `reference_tool_id`, `cell_mm`, `min_valley_depth`, `region_margin_mm`, defaults
+  mirroring `RestFieldParams`) on `ToolpathConfig`/`ToolpathEntry` — ANY operation can now
+  enable rest analysis against its OWN tool, not just pencil's `RestDepth` detector arm.
+  Runs as a shared post-generation step in `execute_operation_annotated_with_regions`
+  (new `attach_generic_rest_analysis` helper, reusing `rest_field::detect_rest_valleys` +
+  pencil's exact reference-resolution order: machined stock → real reference tool →
+  self-referenced probe). Precedence: skipped when the op already attached its own rest
+  artifacts (pencil), so there is one source of truth per toolpath. GUI: "Rest Analysis"
+  section (sibling of Machining Boundary) with enable checkbox + reference-tool picker +
+  cell/threshold/margin fields; threaded through `ComputeRequest` like boundary. MCP:
+  `set_rest_analysis_config` mirrors `set_boundary_config`; `rest_analysis` added to
+  `get_toolpath_params`. Verified a non-pencil (scallop) source feeds a downstream
+  `DerivedRestRegions` boundary end-to-end (worker test).
 
 ## P3 — Opportunistic tidiness (do when touching the file anyway)
 
@@ -708,3 +733,34 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   latent "no tool assigned leaves status stuck" bug). viz 208/208.
   Minor follow-up noted: pencil marks ITSELF stale after generating (cosmetic);
   rapid-linking between region islands is TSP-naive (7.9 m rapids — optimization target).
+- 2026-07-07 (P2.5 — RegionSet consolidation + generic rest analysis): new
+  `region_set.rs` replaces every hand-rolled copy of point-in-any-region /
+  union-collapse / per-region keepout+offset (session/compute.rs's two, the GUI worker's
+  two — fixing a latent divergence between them — and the 7 mesh-finish ops' containment
+  closures); `RestAnalysisConfig` makes rest-depth analysis op-agnostic (any toolpath, its
+  OWN tool as fine cutter), wired as a shared post-generation step in
+  `execute_operation_annotated_with_regions` with pencil-detector precedence (skip if the
+  op already attached its own rest artifacts). Full plumbing: `ToolpathConfig`/
+  `ToolpathEntry` field, project-IO round-trip (core + viz, both new `#[serde(default)]`
+  fields), GUI "Rest Analysis" panel section, `ComputeRequest` threading, MCP
+  `set_rest_analysis_config` + `get_toolpath_params` surface. Verified: core lib 2069
+  pass / 3 pre-existing reds (adaptive3d peck-plunge/rapid-segment/planner-sim-parity,
+  unrelated to this work) / 12 ignored; viz lib 211/211 (one `cancelled_toolpath_returns_
+  partial_debug_trace` flake reproduced in isolation as a pass — timing-sensitive,
+  unrelated). rs_cam_cli / rs_cam_mcp edited mechanically (ToolpathConfig literal sites)
+  but NOT compiled under this session's cargo permissions — flag for a follow-up
+  `cargo check -p rs_cam_cli` / `-p rs_cam_mcp` before commit. Deferred: advisor +
+  steep/shallow alternative signal (pre-existing P2.4 items, untouched); region-island
+  rapid linking (pre-existing follow-up, untouched).
+- 2026-07-07 (B+C live validation round 2, new binary): generic chain CONFIRMED live —
+  scallop w/ rest_analysis (self/machined-stock reference) renders heatmap (0.15→3.04mm)
+  + feeds DerivedRestRegions on a fine scallop directly (3895mm cutting vs 7788 baseline),
+  no pencil middleman. Learning: region QUALITY is the knob — self-probe depth threshold
+  0.15 yields one giant half-part region (rings fill it → only 50% saved vs pencil-derived
+  islands' 80%); threshold BELOW the coarse cusp height (0.05 < 0.1) yields hundreds of
+  cusp-stripe slivers and minutes-long per-region generation. NEW FOLLOW-UPS:
+  - [ ] MCP cancel/timeout for in-flight generate (no way to abort over MCP; calls block)
+  - [ ] sliver/region-count guard in region_polygons_from_mask (min area, merge, cap+warn)
+  - [ ] per-region scallop cost warning when region set is pathological
+  - [ ] region-quality advisor: threshold/detector choice per part (ties into P2.4 +
+    the pencil valley-detection investigation)

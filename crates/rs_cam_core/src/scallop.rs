@@ -21,6 +21,7 @@ use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::{Polygon2, offset_polygon};
+use crate::region_set::RegionSet;
 use crate::scallop_math::variable_stepover;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveIntent, Toolpath};
@@ -447,7 +448,7 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
     cutter: &dyn MillingCutter,
     params: &ScallopParams,
     debug: Option<&ToolpathDebugContext>,
-    boundary_regions: Option<&[Polygon2]>,
+    boundary_regions: Option<&RegionSet<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>), Cancelled> {
     check_cancel(cancel)?;
@@ -542,7 +543,7 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
     // one hardcoded-rectangle boundary generated above, so the ring output
     // is byte-identical to pre-P2.3 behavior in that case.
     let region_boundaries: Vec<Polygon2> = match boundary_regions {
-        Some(regions) if !regions.is_empty() => regions.to_vec(),
+        Some(regions) if !regions.is_empty() => regions.as_slice().to_vec(),
         _ => vec![boundary],
     };
 
@@ -592,8 +593,7 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
     // run", which is byte-identical to the plain unfiltered emission this
     // replaces.
     let region_ok = |p: &P3| -> bool {
-        boundary_regions
-            .is_none_or(|regions| regions.iter().any(|r| r.contains_point(&P2::new(p.x, p.y))))
+        boundary_regions.is_none_or(|regions| regions.contains(&P2::new(p.x, p.y)))
     };
     let keep_point = |pt: &(P3, bool)| -> bool {
         let (p, covered) = pt;
@@ -1281,13 +1281,15 @@ mod tests {
         };
         let never_cancel = || false;
 
+        let left_half_regions = std::slice::from_ref(&left_half);
+        let region_set = RegionSet::from_slice(left_half_regions);
         let (tp, _) = scallop_toolpath_structured_annotated_with_cancel(
             &mesh,
             &si,
             &cutter,
             &params,
             None,
-            Some(std::slice::from_ref(&left_half)),
+            Some(&region_set),
             &never_cancel,
         )
         .unwrap();
@@ -1330,6 +1332,7 @@ mod tests {
             P2::new(15.0, bbox.max.y),
         ]);
         let regions = vec![left, right];
+        let region_set = RegionSet::from_slice(&regions);
         let params = ScallopParams {
             scallop_height: 0.5,
             tolerance: 0.5,
@@ -1343,7 +1346,7 @@ mod tests {
             &cutter,
             &params,
             None,
-            Some(&regions),
+            Some(&region_set),
             &never_cancel,
         )
         .unwrap();

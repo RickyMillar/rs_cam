@@ -14,8 +14,8 @@ use crate::fiber::Fiber;
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::polygon::Polygon2;
 use crate::pushcutter::batch_push_cutter;
+use crate::region_set::RegionSet;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveIntent, Toolpath};
 
@@ -116,7 +116,7 @@ pub fn waterline_toolpath_with_cancel(
     final_z: f64,
     z_step: f64,
     params: &WaterlineParams,
-    boundary_regions: Option<&[Polygon2]>,
+    boundary_regions: Option<&RegionSet<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     let mut toolpath = Toolpath::new();
@@ -143,7 +143,7 @@ pub fn waterline_toolpath_with_cancel(
                 Some(regions) => {
                     let runs = crate::point_runs::split_runs(
                         contour,
-                        |_, p: &P3| regions.iter().any(|r| r.contains_point(&P2::new(p.x, p.y))),
+                        |_, p: &P3| regions.contains(&P2::new(p.x, p.y)),
                         crate::point_runs::RunTopology::Closed,
                         2,
                     );
@@ -421,6 +421,8 @@ mod tests {
             crate::geo::P2::new(bbox.min.x, bbox.max.y),
         ]);
 
+        let left_half_regions = std::slice::from_ref(&left_half);
+        let region_set = RegionSet::from_slice(left_half_regions);
         let tp = waterline_toolpath_with_cancel(
             &mesh,
             &index,
@@ -429,7 +431,7 @@ mod tests {
             5.0,
             5.0,
             &params,
-            Some(std::slice::from_ref(&left_half)),
+            Some(&region_set),
             &never_cancel,
         )
         .unwrap();

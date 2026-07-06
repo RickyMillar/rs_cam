@@ -3,5 +3,5 @@
 pub use rs_cam_core::compute::config::{
     BoundaryConfig, BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig,
     DressupEntryStyle, HeightContext, HeightMode, HeightReference, HeightsConfig, ReferenceOffset,
-    ResolvedHeights, RetractStrategy, StockSource, ToolpathId, ToolpathStats,
+    ResolvedHeights, RestAnalysisConfig, RetractStrategy, StockSource, ToolpathId, ToolpathStats,
 };

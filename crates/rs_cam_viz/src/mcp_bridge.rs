@@ -233,6 +233,14 @@ pub enum McpRequestKind {
         /// cached pencil rest-depth result supplies the boundary polygons.
         source_toolpath_id: Option<usize>,
     },
+    SetRestAnalysisConfig {
+        index: usize,
+        enabled: bool,
+        reference_tool_id: Option<usize>,
+        cell_mm: Option<f64>,
+        min_valley_depth: Option<f64>,
+        region_margin_mm: Option<f64>,
+    },
     SetDressupConfig {
         index: usize,
         dressup: serde_json::Value,

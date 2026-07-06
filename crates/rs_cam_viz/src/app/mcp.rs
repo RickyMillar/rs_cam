@@ -470,6 +470,24 @@ impl super::RsCamApp {
                 );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::SetRestAnalysisConfig {
+                index,
+                enabled,
+                reference_tool_id,
+                cell_mm,
+                min_valley_depth,
+                region_margin_mm,
+            } => {
+                let resp = self.mcp_set_rest_analysis_config(
+                    index,
+                    enabled,
+                    reference_tool_id,
+                    cell_mm,
+                    min_valley_depth,
+                    region_margin_mm,
+                );
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::SetDressupConfig { index, dressup } => {
                 let resp = self.mcp_set_dressup_config(index, dressup);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
@@ -925,6 +943,9 @@ impl super::RsCamApp {
                     // is no dedicated get_boundary_config tool, so this is
                     // the only MCP surface for reading it back.
                     "boundary": tc.boundary,
+                    // P2.5: op-agnostic rest analysis config — mirrors `boundary`'s
+                    // presence here; set via `set_rest_analysis_config`.
+                    "rest_analysis": tc.rest_analysis,
                     "runtime": self.mcp_runtime_status_for_toolpath_id(tc.id),
                 }))
             }
@@ -3100,6 +3121,7 @@ impl super::RsCamApp {
             post_gcode: None,
             boundary,
             boundary_inherit: true,
+            rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
             stock_source: rs_cam_core::compute::config::StockSource::default(),
             coolant: rs_cam_core::gcode::CoolantMode::default(),
             face_selection: None,
@@ -3321,6 +3343,71 @@ impl super::RsCamApp {
                 self.mcp_mutation_result(
                     format!("Boundary set on toolpath {index}. Regenerate to apply."),
                     serde_json::to_value(boundary).unwrap_or(serde_json::Value::Null),
+                    stale,
+                    &before,
+                )
+            }
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), None),
+        }
+    }
+
+    fn mcp_set_rest_analysis_config(
+        &mut self,
+        index: usize,
+        enabled: bool,
+        reference_tool_id: Option<usize>,
+        cell_mm: Option<f64>,
+        min_valley_depth: Option<f64>,
+        region_margin_mm: Option<f64>,
+    ) -> String {
+        let before = self.mcp_diagnostic_snapshot();
+        let resolved_reference_tool_id = match reference_tool_id {
+            Some(raw_id) => {
+                let tool_id = rs_cam_core::compute::tool_config::ToolId(raw_id);
+                if !self
+                    .controller
+                    .state()
+                    .session
+                    .tools()
+                    .iter()
+                    .any(|t| t.id == tool_id)
+                {
+                    return self.mcp_mutation_error(
+                        format!(
+                            "Error: reference_tool_id {raw_id} does not match any tool in \
+                             this project."
+                        ),
+                        Some("reference_tool_id".to_owned()),
+                    );
+                }
+                Some(tool_id)
+            }
+            None => None,
+        };
+
+        let defaults = rs_cam_core::compute::config::RestAnalysisConfig::default();
+        let rest_analysis = rs_cam_core::compute::config::RestAnalysisConfig {
+            enabled,
+            reference_tool_id: resolved_reference_tool_id,
+            cell_mm: cell_mm.unwrap_or(defaults.cell_mm),
+            min_valley_depth: min_valley_depth.unwrap_or(defaults.min_valley_depth),
+            region_margin_mm: region_margin_mm.unwrap_or(defaults.region_margin_mm),
+        };
+
+        match self
+            .controller
+            .state_mut()
+            .session
+            .set_rest_analysis_config(index, rest_analysis.clone())
+        {
+            Ok(()) => {
+                self.controller.state_mut().gui.mark_edited();
+                let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
+                    toolpath_index: index,
+                });
+                self.mcp_mutation_result(
+                    format!("Rest analysis set on toolpath {index}. Regenerate to apply."),
+                    serde_json::to_value(rest_analysis).unwrap_or(serde_json::Value::Null),
                     stale,
                     &before,
                 )

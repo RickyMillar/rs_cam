@@ -81,6 +81,7 @@ pub mod pushcutter;
 pub mod radial_finish;
 pub mod radial_profile;
 pub mod ramp_finish;
+pub mod region_set;
 pub mod rest;
 pub mod rest_field;
 pub mod rest_heatmap_mesh;

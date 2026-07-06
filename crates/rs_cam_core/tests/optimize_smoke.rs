@@ -115,6 +115,7 @@ fn build_pocket_session() -> Option<(ProjectSession, usize)> {
         face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+        rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
     };
     let toolpath_index = session.add_toolpath(0, tc).expect("add_toolpath");
     Some((session, toolpath_index))

@@ -334,6 +334,7 @@ fn materialize_case_toolpath(
         post_gcode: None,
         boundary: rs_cam_core::compute::config::BoundaryConfig::default(),
         boundary_inherit: true,
+        rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         stock_source,
         coolant: rs_cam_core::gcode::CoolantMode::Off,
         face_selection: None,

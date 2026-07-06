@@ -605,6 +605,7 @@ fn execute_op_via_session(
                 post_gcode: None,
                 boundary: BoundaryConfig::default(),
                 boundary_inherit: true,
+                rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
                 stock_source: StockSource::default(),
                 coolant: op.coolant,
                 face_selection: None,
