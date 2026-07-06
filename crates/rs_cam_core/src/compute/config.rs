@@ -307,6 +307,53 @@ impl Default for BoundaryConfig {
     }
 }
 
+/// Op-agnostic rest analysis: any toolpath can turn this on to run the
+/// rest-depth detector (`rest_field::detect_rest_valleys`) against ITS OWN
+/// tool as the fine cutter, using `reference_tool_id` (or the machined stock,
+/// or a nominal ball — same resolution order pencil's rest-depth detector
+/// already uses) as the reference. Before this config existed, only pencil's
+/// `RestDepth` detector arm populated `rest_grid` / `rest_regions` on the
+/// generated toolpath; this makes that analysis available to every family
+/// (scallop, waterline, adaptive3d, ...) without generating a pencil
+/// centerline toolpath at all — see `compute::execute`'s post-generation
+/// rest-analysis pass for the generic wiring, and `pencil.rs::rest_depth_arm`
+/// for the original detector this reuses.
+///
+/// Field defaults mirror `rest_field::RestFieldParams`'s own defaults
+/// (`cell_mm` = 0.5, `min_valley_depth` = 0.05, `region_margin_mm` = 0.5) —
+/// the two structs describe the same underlying algorithm from two call
+/// sites (config vs. detector internals) and should stay numerically in sync.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RestAnalysisConfig {
+    pub enabled: bool,
+    /// Real library tool whose geometry defines the rest reference. `None`
+    /// falls back to the machined stock (when available) or a nominal ball,
+    /// same resolution order as `PencilConfig::reference_tool_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_tool_id: Option<crate::compute::tool_config::ToolId>,
+    /// XY grid cell size (mm) for the rest field. Smaller = finer regions.
+    pub cell_mm: f64,
+    /// Rest-depth threshold (mm): a cell counts as REST material once the
+    /// reference floats more than this above the true surface.
+    pub min_valley_depth: f64,
+    /// Extra clearance (mm) added around detected rest regions beyond the
+    /// generating toolpath's own tool radius, when dilating the mask into
+    /// region polygons.
+    pub region_margin_mm: f64,
+}
+
+impl Default for RestAnalysisConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            reference_tool_id: None,
+            cell_mm: 0.5,
+            min_valley_depth: 0.05,
+            region_margin_mm: 0.5,
+        }
+    }
+}
+
 /// Entry style for plunge replacement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

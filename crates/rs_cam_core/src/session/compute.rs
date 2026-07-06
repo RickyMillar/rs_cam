@@ -1133,6 +1133,11 @@ impl ProjectSession {
         // op's `reference_tool_id`, mirroring the prev_tool_radius resolution
         // above. `None` (unset id, or id not found) falls back to the nominal
         // `reference_tool_diameter` ball downstream — never an error.
+        //
+        // P2.5: non-Pencil ops with `rest_analysis` enabled resolve their
+        // reference tool the same way, from `RestAnalysisConfig::reference_tool_id`
+        // — same slot, same fallback semantics (`None` = self-referenced probe
+        // downstream in `attach_generic_rest_analysis`, never an error).
         let reference_tool_cfg =
             if let crate::compute::OperationConfig::Pencil(ref cfg) = tc.operation {
                 cfg.reference_tool_id.and_then(|ref_id| {
@@ -1142,6 +1147,18 @@ impl ProjectSession {
                             ?ref_id,
                             "Pencil reference_tool_id not found in tool list; \
                              falling back to nominal reference diameter"
+                        );
+                    }
+                    found
+                })
+            } else if tc.rest_analysis.enabled {
+                tc.rest_analysis.reference_tool_id.and_then(|ref_id| {
+                    let found = self.tools.iter().find(|t| t.id == ref_id).cloned();
+                    if found.is_none() {
+                        tracing::warn!(
+                            ?ref_id,
+                            "RestAnalysis reference_tool_id not found in tool list; \
+                             falling back to self-referenced probe"
                         );
                     }
                     found
@@ -1185,25 +1202,21 @@ impl ProjectSession {
             {
                 match self.resolve_derived_rest_region_polys(index, *source_toolpath_id) {
                     Ok(regions) => {
-                        let processed = Self::resolve_derived_region_polygons(
-                            &regions,
-                            &keep_out_footprints,
-                            boundary_config.offset,
-                        );
-                        let unioned = crate::polygon::Polygon2::union_all(&processed);
+                        let processed_set = crate::region_set::RegionSet::from_slice(&regions)
+                            .processed(&keep_out_footprints, boundary_config.offset);
+                        let single = processed_set.single_union();
+                        let region_count = processed_set.len();
                         // P2.3: share this exact `processed` set with the
                         // mesh-finish family's pre-clip — it's the same set
                         // `apply_boundary_clip_multi` re-derives for the
                         // post-generation clip, resolved here once rather
                         // than a third time just for this field.
-                        pre_boundary_regions = Some(processed);
-                        if unioned.len() == 1 {
-                            unioned.into_iter().next()
+                        pre_boundary_regions = Some(processed_set.as_slice().to_vec());
+                        if single.is_some() {
+                            single
                         } else {
                             tracing::debug!(
-                                region_count =
-                                    pre_boundary_regions.as_ref().map_or(0, |rs| rs.len()),
-                                union_count = unioned.len(),
+                                region_count = region_count,
                                 "DerivedRestRegions pre-boundary union did not collapse to a \
                                  single polygon; skipping adaptive3d pre-clip (the \
                                  post-generation boundary clip still enforces the real \
@@ -1389,6 +1402,7 @@ impl ProjectSession {
             Some(&child_ctx),
             pre_boundary.as_ref(),
             pre_boundary_regions.as_deref(),
+            Some(&tc.rest_analysis),
         );
 
         match tp_result {
@@ -1584,41 +1598,6 @@ impl ProjectSession {
         }
     }
 
-    /// Per-region variant of [`Self::resolve_containment_polygon`] for
-    /// `BoundarySource::DerivedRestRegions`: rest regions from a marching
-    /// squares detector are disjoint islands, so each region is keep-out
-    /// subtracted and offset *independently* rather than merged into one
-    /// polygon first — merging would let `effective_boundary`'s tool-radius
-    /// inset bridge gaps between islands the detector reported as
-    /// unconnected. A region that fully collapses under the user offset is
-    /// simply dropped from the set (not treated as "boundary collapsed" —
-    /// that only happens when the whole resulting set is empty, handled by
-    /// the caller).
-    pub(crate) fn resolve_derived_region_polygons(
-        regions: &[crate::polygon::Polygon2],
-        keep_out_footprints: &[crate::polygon::Polygon2],
-        offset: f64,
-    ) -> Vec<crate::polygon::Polygon2> {
-        use crate::boundary::subtract_keepouts;
-        use crate::polygon::{largest_by_area, offset_polygon};
-
-        regions
-            .iter()
-            .filter_map(|region| {
-                let mut poly = region.clone();
-                if !keep_out_footprints.is_empty() {
-                    poly = subtract_keepouts(&poly, keep_out_footprints);
-                }
-                if offset.abs() > 1e-9 {
-                    let offset_polys = offset_polygon(&poly, -offset);
-                    // A region that vanishes under the offset is dropped.
-                    poly = largest_by_area(&offset_polys)?.clone();
-                }
-                Some(poly)
-            })
-            .collect()
-    }
-
     /// Resolve the boundary "containment polygon" — the polygon the cutter's
     /// footprint must stay inside (Containment=Inside) or outside (Outside).
     /// For ModelSilhouette source this returns the silhouette itself
@@ -1633,7 +1612,7 @@ impl ProjectSession {
     /// resolve to multiple disjoint polygons, which this single-polygon
     /// signature can't represent. See
     /// [`Self::resolve_derived_rest_region_polys`] +
-    /// [`Self::resolve_derived_region_polygons`] for that source's path,
+    /// [`crate::region_set::RegionSet::processed`] for that source's path,
     /// wired in by the two call sites below (`resolve_generation_inputs`'s
     /// `pre_boundary` and `generate_toolpath`'s post-dressup clip).
     pub(crate) fn resolve_containment_polygon(
@@ -1798,7 +1777,7 @@ impl ProjectSession {
     /// `regions` are the raw rest regions from
     /// [`Self::resolve_derived_rest_region_polys`]; keep-out subtraction and
     /// the user offset are applied per-region here (via
-    /// [`Self::resolve_derived_region_polygons`]), then each region runs
+    /// [`crate::region_set::RegionSet::processed`]), then each region runs
     /// through `effective_boundary` independently for the containment /
     /// tool-radius handling — a region that collapses under the inset is
     /// dropped from the set. If EVERY region collapses the boundary is
@@ -1835,11 +1814,8 @@ impl ProjectSession {
         // Per-region keep-out subtraction + user offset (regions that
         // collapse under the offset are dropped), mirroring what
         // `resolve_containment_polygon` does to its single polygon.
-        let processed = Self::resolve_derived_region_polygons(
-            regions,
-            keep_out_footprints,
-            boundary_config.offset,
-        );
+        let processed = crate::region_set::RegionSet::from_slice(regions)
+            .processed(keep_out_footprints, boundary_config.offset);
 
         // Map BoundaryContainment -> ToolContainment.
         let containment = match boundary_config.containment {
@@ -1853,6 +1829,7 @@ impl ProjectSession {
         // everything into one set; membership downstream is "inside ANY".
         let tool_radius = tool_diameter / 2.0;
         let boundaries: Vec<crate::polygon::Polygon2> = processed
+            .as_slice()
             .iter()
             .flat_map(|region| effective_boundary(region, containment, tool_radius))
             .collect();
@@ -3637,6 +3614,7 @@ mod tests {
             face_selection: None,
             debug_options: ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
         }
     }
 
@@ -4522,6 +4500,7 @@ mod tests {
             face_selection: None,
             debug_options: ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
         }
     }
 
@@ -4832,6 +4811,7 @@ mod tests {
             face_selection: None,
             debug_options: ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
         };
         session
             .add_toolpath(0, tc)

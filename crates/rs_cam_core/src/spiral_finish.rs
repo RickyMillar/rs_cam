@@ -17,7 +17,9 @@ use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+#[cfg(test)]
 use crate::polygon::Polygon2;
+use crate::region_set::RegionSet;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
@@ -131,7 +133,7 @@ pub fn spiral_finish_toolpath_structured_annotated(
     cutter: &dyn MillingCutter,
     params: &SpiralFinishParams,
     debug: Option<&ToolpathDebugContext>,
-    boundary_regions: Option<&[Polygon2]>,
+    boundary_regions: Option<&RegionSet<'_>>,
 ) -> (Toolpath, Vec<SpiralFinishRuntimeAnnotation>) {
     let never_cancel = || false;
     spiral_finish_toolpath_structured_annotated_with_cancel(
@@ -167,7 +169,7 @@ pub fn spiral_finish_toolpath_structured_annotated_with_cancel(
     cutter: &dyn MillingCutter,
     params: &SpiralFinishParams,
     debug: Option<&ToolpathDebugContext>,
-    boundary_regions: Option<&[Polygon2]>,
+    boundary_regions: Option<&RegionSet<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<SpiralFinishRuntimeAnnotation>), Cancelled> {
     check_cancel(cancel)?;
@@ -198,11 +200,8 @@ pub fn spiral_finish_toolpath_structured_annotated_with_cancel(
         if i % CANCEL_POLL_STRIDE == 0 {
             check_cancel(cancel)?;
         }
-        let in_region = boundary_regions.is_none_or(|regions| {
-            regions
-                .iter()
-                .any(|reg| reg.contains_point(&P2::new(sample.x, sample.y)))
-        });
+        let in_region =
+            boundary_regions.is_none_or(|regions| regions.contains(&P2::new(sample.x, sample.y)));
         if !in_region {
             samples.push(None);
             continue;
@@ -774,13 +773,15 @@ mod tests {
             P2::new(-25.0, 25.0),
         ]);
 
+        let left_half_regions = std::slice::from_ref(&left_half);
+        let region_set = RegionSet::from_slice(left_half_regions);
         let (tp, _) = spiral_finish_toolpath_structured_annotated_with_cancel(
             &mesh,
             &si,
             &cutter,
             &params,
             None,
-            Some(std::slice::from_ref(&left_half)),
+            Some(&region_set),
             &never_cancel,
         )
         .unwrap();

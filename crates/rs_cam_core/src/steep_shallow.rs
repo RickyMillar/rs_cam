@@ -18,7 +18,7 @@ use crate::dropcutter::batch_drop_cutter;
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::polygon::Polygon2;
+use crate::region_set::RegionSet;
 use crate::slope::{SlopeMap, classify_steep_shallow};
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
@@ -193,7 +193,7 @@ fn generate_steep_passes_with_cancel(
     feed_rate: f64,
     plunge_rate: f64,
     safe_z: f64,
-    boundary_regions: Option<&[Polygon2]>,
+    boundary_regions: Option<&RegionSet<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     let mut tp = Toolpath::new();
@@ -246,11 +246,8 @@ fn generate_steep_passes_with_cancel(
                     let in_steep_grid = slope_map
                         .world_to_cell(p.x, p.y)
                         .is_some_and(|(row, col)| steep_expanded[row * slope_map.cols + col]);
-                    let in_region = boundary_regions.is_none_or(|regions| {
-                        regions
-                            .iter()
-                            .any(|reg| reg.contains_point(&P2::new(p.x, p.y)))
-                    });
+                    let in_region =
+                        boundary_regions.is_none_or(|regions| regions.contains(&P2::new(p.x, p.y)));
                     in_steep_grid && in_region
                 })
                 .collect();
@@ -376,7 +373,7 @@ fn generate_shallow_passes_with_cancel(
     feed_rate: f64,
     plunge_rate: f64,
     safe_z: f64,
-    boundary_regions: Option<&[Polygon2]>,
+    boundary_regions: Option<&RegionSet<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     let mut tp = Toolpath::new();
@@ -415,7 +412,7 @@ fn generate_shallow_passes_with_cancel(
                 let idx = _r * slope_map.cols + _c;
                 idx < shallow_eroded.len() && shallow_eroded[idx]
             }) && boundary_regions
-                .is_none_or(|regions| regions.iter().any(|reg| reg.contains_point(&P2::new(x, y))));
+                .is_none_or(|regions| regions.contains(&P2::new(x, y)));
 
             if is_shallow {
                 let z = cl.z + stock_to_leave;
@@ -494,7 +491,7 @@ pub fn steep_shallow_toolpath_with_cancel(
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &SteepShallowParams,
-    boundary_regions: Option<&[Polygon2]>,
+    boundary_regions: Option<&RegionSet<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     check_cancel(cancel)?;
@@ -1209,12 +1206,14 @@ mod tests {
             crate::geo::P2::new(bbox.min.x, bbox.max.y),
         ]);
 
+        let left_half_regions = std::slice::from_ref(&left_half);
+        let region_set = RegionSet::from_slice(left_half_regions);
         let tp = steep_shallow_toolpath_with_cancel(
             &mesh,
             &si,
             &cutter,
             &params,
-            Some(std::slice::from_ref(&left_half)),
+            Some(&region_set),
             &never_cancel,
         )
         .unwrap();

@@ -86,6 +86,10 @@ pub struct ComputeRequest {
     /// — the adaptive3d pre-clip optimization in `generate_via_core` unions
     /// them down to one polygon only when that union collapses cleanly.
     pub derived_rest_regions: Option<Vec<Polygon2>>,
+    /// Op-agnostic rest analysis (P2.5). Mirrors `boundary` — resolved by
+    /// the controller from the toolpath's `ToolpathEntry::rest_analysis`
+    /// and threaded to `execute_operation_annotated_with_regions`.
+    pub rest_analysis: crate::state::toolpath::RestAnalysisConfig,
 }
 
 pub struct ComputeResult {

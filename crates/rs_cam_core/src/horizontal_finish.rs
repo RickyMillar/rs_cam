@@ -9,7 +9,7 @@ use crate::dropcutter::point_drop_cutter;
 use crate::geo::{BoundingBox3, P2, P3, V3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::polygon::Polygon2;
+use crate::region_set::RegionSet;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
@@ -95,7 +95,7 @@ pub fn horizontal_finish_toolpath_with_cancel(
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &HorizontalFinishParams,
-    boundary_regions: Option<&[Polygon2]>,
+    boundary_regions: Option<&RegionSet<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     check_cancel(cancel)?;
@@ -240,9 +240,8 @@ pub fn horizontal_finish_toolpath_with_cancel(
                     // P2.3: outside every machining-boundary region — skip
                     // both the drop-cutter query and the flat-face lookup
                     // below entirely and treat this column as a gap.
-                    let in_region = boundary_regions.is_none_or(|regions| {
-                        regions.iter().any(|reg| reg.contains_point(&P2::new(x, y)))
-                    });
+                    let in_region =
+                        boundary_regions.is_none_or(|regions| regions.contains(&P2::new(x, y)));
                     if !in_region {
                         return None;
                     }
@@ -615,12 +614,14 @@ mod tests {
             crate::geo::P2::new(-50.0, 50.0),
         ]);
 
+        let left_half_regions = std::slice::from_ref(&left_half);
+        let region_set = RegionSet::from_slice(left_half_regions);
         let tp = horizontal_finish_toolpath_with_cancel(
             &mesh,
             &index,
             &cutter,
             &params,
-            Some(std::slice::from_ref(&left_half)),
+            Some(&region_set),
             &never_cancel,
         )
         .unwrap();

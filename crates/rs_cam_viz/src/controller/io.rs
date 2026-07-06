@@ -346,6 +346,7 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
                 },
                 boundary: tp.boundary.clone(),
                 boundary_inherit: tp.boundary_inherit,
+                rest_analysis: tp.rest_analysis.clone(),
                 stock_source: tp.stock_source,
                 coolant: tp.coolant,
                 face_selection: tp.face_selection.clone(),

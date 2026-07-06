@@ -19,7 +19,9 @@ use crate::debug_trace::ToolpathDebugContext;
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+#[cfg(test)]
 use crate::polygon::Polygon2;
+use crate::region_set::RegionSet;
 use crate::tool::MillingCutter;
 use crate::toolpath::{Toolpath, simplify_path_3d};
 use crate::waterline::waterline_contours;
@@ -337,7 +339,7 @@ pub fn ramp_finish_toolpath_structured_annotated(
     cutter: &dyn MillingCutter,
     params: &RampFinishParams,
     debug: Option<&ToolpathDebugContext>,
-    boundary_regions: Option<&[Polygon2]>,
+    boundary_regions: Option<&RegionSet<'_>>,
 ) -> (Toolpath, Vec<RampFinishRuntimeAnnotation>) {
     let never_cancel = || false;
     ramp_finish_toolpath_structured_annotated_with_cancel(
@@ -369,7 +371,7 @@ pub fn ramp_finish_toolpath_structured_annotated_with_cancel(
     cutter: &dyn MillingCutter,
     params: &RampFinishParams,
     debug: Option<&ToolpathDebugContext>,
-    boundary_regions: Option<&[Polygon2]>,
+    boundary_regions: Option<&RegionSet<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<RampFinishRuntimeAnnotation>), Cancelled> {
     check_cancel(cancel)?;
@@ -483,11 +485,8 @@ pub fn ramp_finish_toolpath_structured_annotated_with_cancel(
                             || slope_map
                                 .angle_at_world(pt.x, pt.y)
                                 .is_some_and(|a| a >= slope_from_rad && a <= slope_to_rad);
-                        let region_ok = boundary_regions.is_none_or(|regions| {
-                            regions
-                                .iter()
-                                .any(|reg| reg.contains_point(&P2::new(pt.x, pt.y)))
-                        });
+                        let region_ok = boundary_regions
+                            .is_none_or(|regions| regions.contains(&P2::new(pt.x, pt.y)));
                         slope_ok && region_ok
                     },
                     crate::point_runs::RunTopology::Open,
@@ -1015,13 +1014,15 @@ mod tests {
             P2::new(bbox.min.x, bbox.max.y),
         ]);
 
+        let left_half_regions = std::slice::from_ref(&left_half);
+        let region_set = RegionSet::from_slice(left_half_regions);
         let (tp, _) = ramp_finish_toolpath_structured_annotated_with_cancel(
             &mesh,
             &si,
             &cutter,
             &params,
             None,
-            Some(std::slice::from_ref(&left_half)),
+            Some(&region_set),
             &never_cancel,
         )
         .unwrap();

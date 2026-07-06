@@ -13,6 +13,7 @@ use crate::debug_trace::ToolpathDebugContext;
 use crate::geo::BoundingBox3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
+use crate::region_set::RegionSet;
 use crate::semantic_trace::{ToolpathSemanticContext, ToolpathSemanticKind, ToolpathSemanticScope};
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
@@ -229,8 +230,9 @@ pub struct ExecutionContext<'a> {
     /// outside the machining boundary and never has to be discarded at
     /// post-clip. `boundary` remains the adaptive3d single-polygon pre-clear
     /// path; the two carry independent semantics today and consolidating
-    /// them is deferred.
-    pub boundary_regions: Option<&'a [Polygon2]>,
+    /// them is deferred. Consolidated onto `RegionSet` (region_set.rs) so
+    /// containment tests share one implementation across every family.
+    pub boundary_regions: Option<&'a RegionSet<'a>>,
 }
 
 /// A family adapter: generate the toolpath (with spans + annotations)
@@ -1672,6 +1674,7 @@ pub fn execute_operation_annotated(
         semantic_ctx,
         boundary,
         None,
+        None,
     )
 }
 
@@ -1683,6 +1686,14 @@ pub fn execute_operation_annotated(
 /// pass; every other caller passes `None` through [`execute_operation_annotated`]'s
 /// unchanged signature, which is a byte-identical no-op for those families
 /// (see each op's own `boundary_regions` doc comment).
+///
+/// Also carries `rest_analysis` (P2.5): when `Some` and `.enabled`, and the
+/// dispatched op didn't already attach its own rest artifacts (pencil's
+/// `RestDepth` detector arm does — see the precedence check right after
+/// dispatch below), this runs the same rest-depth detector generically
+/// against THIS toolpath's own tool as the fine cutter, attaching
+/// `rest_grid` / `rest_regions` to the result. `None` is a byte-identical
+/// no-op, same shape as `boundary_regions`.
 #[allow(clippy::too_many_arguments)]
 pub fn execute_operation_annotated_with_regions(
     op: &OperationConfig,
@@ -1702,6 +1713,7 @@ pub fn execute_operation_annotated_with_regions(
     semantic_ctx: Option<&ToolpathSemanticContext>,
     boundary: Option<&Polygon2>,
     boundary_regions: Option<&[Polygon2]>,
+    rest_analysis: Option<&crate::compute::config::RestAnalysisConfig>,
 ) -> Result<GeneratedToolpath, OperationError> {
     // Phase-5 (T11) family adapters: when the registry carries a
     // GenerateFn for this op's family, dispatch through it. The
@@ -1710,6 +1722,15 @@ pub fn execute_operation_annotated_with_regions(
     // compile until it has an arm — migrated arms delegate to the SAME
     // adapter fn the registry references, so the two paths cannot
     // diverge).
+    //
+    // This function's own signature stays slice-based (`Option<&[Polygon2]>`)
+    // — both callers (session's `generate_toolpath`, the GUI worker's
+    // `generate_via_core`) already resolve a plain `Vec<Polygon2>`/slice via
+    // `RegionSet::processed` and pass it straight through, so changing this
+    // signature to `&RegionSet` would only add a wrap/unwrap at both call
+    // sites for no benefit. The borrow into `RegionSet` happens right here,
+    // where it's used.
+    let region_set = boundary_regions.map(RegionSet::from_slice);
     let ctx = ExecutionContext {
         mesh,
         index,
@@ -1726,70 +1747,151 @@ pub fn execute_operation_annotated_with_regions(
         initial_stock,
         semantic_ctx,
         boundary,
-        boundary_regions,
+        boundary_regions: region_set.as_ref(),
     };
-    if let Some(generate) = op.op_type().registry_entry().generate {
-        return generate(&ctx, op);
-    }
-    match op {
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::Face(_) => generate_face(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::Pocket(_) => generate_pocket(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::Profile(_) => generate_profile(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::Adaptive(_) => generate_adaptive(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arms kept for the
-        // exhaustiveness net and delegate to the same adapters.
-        OperationConfig::Zigzag(_) => generate_zigzag(&ctx, op),
-        OperationConfig::Trace(_) => generate_trace(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::VCarve(_) => generate_vcarve(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arms kept for the
-        // exhaustiveness net and delegate to the same adapters.
-        OperationConfig::Rest(_) => generate_rest(&ctx, op),
-        OperationConfig::Inlay(_) => generate_inlay(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::Drill(_) => generate_drill(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::Chamfer(_) => generate_chamfer(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::AlignmentPinDrill(_) => generate_alignment_pin_drill(&ctx, op),
+    let mut generated = if let Some(generate) = op.op_type().registry_entry().generate {
+        generate(&ctx, op)
+    } else {
+        match op {
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::Face(_) => generate_face(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::Pocket(_) => generate_pocket(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::Profile(_) => generate_profile(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::Adaptive(_) => generate_adaptive(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arms kept for the
+            // exhaustiveness net and delegate to the same adapters.
+            OperationConfig::Zigzag(_) => generate_zigzag(&ctx, op),
+            OperationConfig::Trace(_) => generate_trace(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::VCarve(_) => generate_vcarve(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arms kept for the
+            // exhaustiveness net and delegate to the same adapters.
+            OperationConfig::Rest(_) => generate_rest(&ctx, op),
+            OperationConfig::Inlay(_) => generate_inlay(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::Drill(_) => generate_drill(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::Chamfer(_) => generate_chamfer(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::AlignmentPinDrill(_) => generate_alignment_pin_drill(&ctx, op),
 
-        // ── 3D operations ────────────────────────────────────────────
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::DropCutter(_) => generate_drop_cutter(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::Adaptive3d(_) => generate_adaptive3d(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::Waterline(_) => generate_waterline(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arms kept for the
-        // exhaustiveness net and delegate to the same adapters.
-        OperationConfig::Pencil(_) => generate_pencil(&ctx, op),
-        OperationConfig::Scallop(_) => generate_scallop(&ctx, op),
-        OperationConfig::SteepShallow(_) => generate_steep_shallow(&ctx, op),
-        OperationConfig::RampFinish(_) => generate_ramp_finish(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arms kept for the
-        // exhaustiveness net and delegate to the same adapters.
-        OperationConfig::SpiralFinish(_) => generate_spiral_finish(&ctx, op),
-        OperationConfig::RadialFinish(_) => generate_radial_finish(&ctx, op),
-        OperationConfig::HorizontalFinish(_) => generate_horizontal_finish(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::ProjectCurve(_) => generate_project_curve(&ctx, op),
+            // ── 3D operations ────────────────────────────────────────────
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::DropCutter(_) => generate_drop_cutter(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::Adaptive3d(_) => generate_adaptive3d(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::Waterline(_) => generate_waterline(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arms kept for the
+            // exhaustiveness net and delegate to the same adapters.
+            OperationConfig::Pencil(_) => generate_pencil(&ctx, op),
+            OperationConfig::Scallop(_) => generate_scallop(&ctx, op),
+            OperationConfig::SteepShallow(_) => generate_steep_shallow(&ctx, op),
+            OperationConfig::RampFinish(_) => generate_ramp_finish(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arms kept for the
+            // exhaustiveness net and delegate to the same adapters.
+            OperationConfig::SpiralFinish(_) => generate_spiral_finish(&ctx, op),
+            OperationConfig::RadialFinish(_) => generate_radial_finish(&ctx, op),
+            OperationConfig::HorizontalFinish(_) => generate_horizontal_finish(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::ProjectCurve(_) => generate_project_curve(&ctx, op),
+        }
+    }?;
+
+    // P2.5: op-agnostic rest analysis. Precedence — an op that already
+    // attached its own rest artifacts (pencil's `RestDepth` detector arm,
+    // via `generate_pencil`) is left alone: one source of truth per
+    // toolpath, and pencil's detector is parameterized for centerline
+    // extraction, a richer job than the generic pass below needs to redo.
+    // Only runs when a mesh (+ its spatial index) is present — 2D ops have
+    // no terrain to rest-analyze.
+    if let Some(ra) = rest_analysis
+        && ra.enabled
+        && generated.rest_grid.is_none()
+        && generated.rest_regions.is_none()
+        && let (Some(m), Some(idx)) = (mesh, index)
+    {
+        attach_generic_rest_analysis(
+            &mut generated,
+            m,
+            idx,
+            tool_def,
+            ctx.reference_tool_cfg.as_ref(),
+            initial_stock,
+            ra,
+        );
     }
+
+    Ok(generated)
+}
+
+/// P2.5: shared rest-analysis attach for any operation family. Runs the same
+/// rest-depth detector `pencil::rest_depth_arm` uses
+/// (`rest_field::detect_rest_valleys`), with THIS toolpath's own tool as the
+/// fine cutter, and attaches `rest_grid` / `rest_regions` to `generated` —
+/// no centerline toolpath is emitted, only the analysis artifacts. Reference
+/// resolution order mirrors `rest_depth_arm`: prefer the actual machined
+/// stock (when its XY frame overlaps the mesh), else the configured real
+/// reference tool (`reference_tool_cfg`, resolved upstream from
+/// `RestAnalysisConfig::reference_tool_id` the same way pencil's own
+/// `reference_tool_id` is resolved), else a self-referenced bare-surface
+/// probe.
+fn attach_generic_rest_analysis(
+    generated: &mut GeneratedToolpath,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    tool_def: &ToolDefinition,
+    reference_tool_cfg: Option<&ToolConfig>,
+    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    cfg: &crate::compute::config::RestAnalysisConfig,
+) {
+    let stock_ref = initial_stock.filter(|stock| {
+        let (sb, mb) = (&stock.stock_bbox, &mesh.bbox);
+        sb.min.x <= mb.max.x && sb.max.x >= mb.min.x && sb.min.y <= mb.max.y && sb.max.y >= mb.min.y
+    });
+    let reference_tool = reference_tool_cfg.map(build_cutter);
+    let probe_ball = crate::tool::BallEndmill::new(
+        crate::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
+        crate::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
+    );
+    let reference = if let Some(stock) = stock_ref {
+        crate::rest_field::RestReference::Stock(stock)
+    } else if let Some(tool) = reference_tool.as_ref() {
+        crate::rest_field::RestReference::Cutter {
+            tool: tool as &dyn MillingCutter,
+            is_surface_probe: false,
+        }
+    } else {
+        crate::rest_field::RestReference::Cutter {
+            tool: &probe_ball as &dyn MillingCutter,
+            is_surface_probe: true,
+        }
+    };
+    let rf_params = crate::rest_field::RestFieldParams {
+        cell_mm: cfg.cell_mm,
+        min_valley_depth: cfg.min_valley_depth,
+        region_margin_mm: cfg.region_margin_mm,
+        pencil_radius: tool_def.radius(),
+        ..Default::default()
+    };
+    let rf = crate::rest_field::detect_rest_valleys(mesh, index, tool_def, reference, &rf_params);
+    generated.rest_grid = Some(std::sync::Arc::new(rf.rest_grid));
+    generated.rest_regions = Some(std::sync::Arc::new(rf.region_polygons));
 }
 
 // ── Dressup tracing helper (Phase 4 / #44) ────────────────────────────
@@ -3620,6 +3722,192 @@ mod tests {
         assert!(
             !result.toolpath.moves.is_empty(),
             "apply_dressups with default config should preserve moves"
+        );
+    }
+
+    // ── P2.5: op-agnostic rest analysis ───────────────────────────────
+
+    /// A non-pencil op (Scallop) with `rest_analysis.enabled` gets
+    /// `rest_grid` / `rest_regions` attached generically, without emitting
+    /// a pencil centerline toolpath — the whole point of P2.5.
+    #[test]
+    fn rest_analysis_attaches_artifacts_for_non_pencil_op() {
+        let mesh = make_test_hemisphere(25.0, 16);
+        let index = SpatialIndex::build_auto(&mesh);
+        let (tool_def, tool_cfg) = make_tool(ToolType::BallNose);
+        let heights = test_heights();
+        let bbox = test_stock_bbox();
+        let cancel = AtomicBool::new(false);
+        let op = OperationConfig::new_default(OperationType::Scallop);
+        let levels = op.cutting_levels(heights.top_z);
+        let rest_analysis = crate::compute::config::RestAnalysisConfig {
+            enabled: true,
+            reference_tool_id: None,
+            cell_mm: 1.0,
+            min_valley_depth: 0.05,
+            region_margin_mm: 0.5,
+        };
+
+        let result = execute_operation_annotated_with_regions(
+            &op,
+            Some(&mesh),
+            Some(&index),
+            None,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &levels,
+            &bbox,
+            None,
+            None,
+            None,
+            &cancel,
+            None,
+            None,
+            None,
+            None,
+            Some(&rest_analysis),
+        )
+        .expect("scallop with rest_analysis enabled should succeed");
+
+        assert!(
+            result.rest_grid.is_some(),
+            "enabled rest_analysis should attach a rest_grid to a non-pencil op"
+        );
+        assert!(
+            result.rest_regions.is_some(),
+            "enabled rest_analysis should attach rest_regions to a non-pencil op"
+        );
+    }
+
+    /// `rest_analysis` disabled (or absent) is a byte-identical no-op:
+    /// neither `rest_grid` nor `rest_regions` gets attached.
+    #[test]
+    fn rest_analysis_disabled_leaves_artifacts_none() {
+        let mesh = make_test_hemisphere(25.0, 16);
+        let index = SpatialIndex::build_auto(&mesh);
+        let (tool_def, tool_cfg) = make_tool(ToolType::BallNose);
+        let heights = test_heights();
+        let bbox = test_stock_bbox();
+        let cancel = AtomicBool::new(false);
+        let op = OperationConfig::new_default(OperationType::Scallop);
+        let levels = op.cutting_levels(heights.top_z);
+        let rest_analysis = crate::compute::config::RestAnalysisConfig::default(); // disabled
+
+        let result = execute_operation_annotated_with_regions(
+            &op,
+            Some(&mesh),
+            Some(&index),
+            None,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &levels,
+            &bbox,
+            None,
+            None,
+            None,
+            &cancel,
+            None,
+            None,
+            None,
+            None,
+            Some(&rest_analysis),
+        )
+        .expect("scallop should succeed");
+
+        assert!(result.rest_grid.is_none());
+        assert!(result.rest_regions.is_none());
+
+        // `None` for the whole param is the same no-op.
+        let result_none = execute_operation_annotated_with_regions(
+            &op,
+            Some(&mesh),
+            Some(&index),
+            None,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &levels,
+            &bbox,
+            None,
+            None,
+            None,
+            &cancel,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("scallop should succeed");
+        assert!(result_none.rest_grid.is_none());
+        assert!(result_none.rest_regions.is_none());
+    }
+
+    /// Precedence: a Pencil op whose OWN `RestDepth` detector arm already
+    /// attached `rest_grid` / `rest_regions` must NOT have those
+    /// overwritten by the generic P2.5 pass — one source of truth per
+    /// toolpath. Proven by using deliberately different `cell_mm` values
+    /// for the pencil detector vs. the generic `rest_analysis` config and
+    /// checking the surviving grid's `cell_mm` is pencil's, not generic's.
+    #[test]
+    fn pencil_rest_depth_precedence_skips_generic_pass() {
+        use crate::compute::operation_configs::PencilConfig;
+
+        let mesh = make_test_hemisphere(25.0, 16);
+        let index = SpatialIndex::build_auto(&mesh);
+        let (tool_def, tool_cfg) = make_tool(ToolType::BallNose);
+        let heights = test_heights();
+        let bbox = test_stock_bbox();
+        let cancel = AtomicBool::new(false);
+        let pencil_cell_mm = 2.0;
+        let generic_cell_mm = 9.75; // deliberately distinct sentinel
+        let op = OperationConfig::Pencil(PencilConfig {
+            detector: "rest_depth".to_owned(),
+            rest_cell_mm: pencil_cell_mm,
+            ..PencilConfig::default()
+        });
+        let levels = op.cutting_levels(heights.top_z);
+        let rest_analysis = crate::compute::config::RestAnalysisConfig {
+            enabled: true,
+            reference_tool_id: None,
+            cell_mm: generic_cell_mm,
+            min_valley_depth: 0.05,
+            region_margin_mm: 0.5,
+        };
+
+        let result = execute_operation_annotated_with_regions(
+            &op,
+            Some(&mesh),
+            Some(&index),
+            None,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &levels,
+            &bbox,
+            None,
+            None,
+            None,
+            &cancel,
+            None,
+            None,
+            None,
+            None,
+            Some(&rest_analysis),
+        )
+        .expect("pencil rest_depth should succeed");
+
+        let grid = result
+            .rest_grid
+            .as_ref()
+            .expect("pencil RestDepth detector should attach a rest_grid");
+        assert!(
+            (grid.cell_mm - pencil_cell_mm).abs() < 1e-9,
+            "generic rest_analysis pass must not overwrite pencil's own rest_grid \
+             (got cell_mm={}, expected pencil's {pencil_cell_mm})",
+            grid.cell_mm
         );
     }
 }

@@ -9,7 +9,7 @@ use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::polygon::Polygon2;
+use crate::region_set::RegionSet;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
@@ -83,7 +83,7 @@ pub fn radial_finish_toolpath_with_cancel(
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &RadialFinishParams,
-    boundary_regions: Option<&[Polygon2]>,
+    boundary_regions: Option<&RegionSet<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     check_cancel(cancel)?;
@@ -112,8 +112,7 @@ pub fn radial_finish_toolpath_with_cancel(
             let r = i as f64 * params.point_spacing;
             let x = cx + r * cos_a;
             let y = cy + r * sin_a;
-            let in_region = boundary_regions
-                .is_none_or(|regions| regions.iter().any(|reg| reg.contains_point(&P2::new(x, y))));
+            let in_region = boundary_regions.is_none_or(|regions| regions.contains(&P2::new(x, y)));
             let z = if in_region {
                 let cl = point_drop_cutter(x, y, mesh, index, cutter);
                 if cl.contacted {
@@ -515,12 +514,14 @@ mod tests {
             crate::geo::P2::new(-50.0, 50.0),
         ]);
 
+        let left_half_regions = std::slice::from_ref(&left_half);
+        let region_set = RegionSet::from_slice(left_half_regions);
         let tp = radial_finish_toolpath_with_cancel(
             &mesh,
             &si,
             &cutter,
             &params,
-            Some(std::slice::from_ref(&left_half)),
+            Some(&region_set),
             &never_cancel,
         )
         .unwrap();

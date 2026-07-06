@@ -54,6 +54,7 @@ impl<B: ComputeBackend> AppController<B> {
         let stock_source = tc.stock_source;
         let toolpath_name = tc.name.clone();
         let boundary = tc.boundary.clone();
+        let rest_analysis = tc.rest_analysis.clone();
         let debug_options = tc.debug_options;
         let face_selection_for_toolpath = tc.face_selection.clone();
 
@@ -254,8 +255,22 @@ impl<B: ComputeBackend> AppController<B> {
         // R1 (pencil): resolve the real reference tool config from the Pencil
         // op's `reference_tool_id`, mirroring prev_tool_radius above. `None`
         // (unset or not found) falls back to the nominal reference diameter.
+        //
+        // P2.5: non-Pencil ops with `rest_analysis` enabled resolve their
+        // reference tool the same way, from `RestAnalysisConfig::reference_tool_id`
+        // — same slot core's `resolve_generation_inputs` reuses, so both
+        // paths agree on which real tool becomes the rest reference.
         let reference_tool_cfg = if let OperationConfig::Pencil(config) = &operation {
             config.reference_tool_id.and_then(|ref_id| {
+                self.state
+                    .session
+                    .tools()
+                    .iter()
+                    .find(|t| t.id == ref_id)
+                    .cloned()
+            })
+        } else if rest_analysis.enabled {
+            rest_analysis.reference_tool_id.and_then(|ref_id| {
                 self.state
                     .session
                     .tools()
@@ -524,6 +539,7 @@ impl<B: ComputeBackend> AppController<B> {
             prior_stock,
             material,
             derived_rest_regions,
+            rest_analysis,
         });
     }
 

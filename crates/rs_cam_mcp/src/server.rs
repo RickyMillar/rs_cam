@@ -407,6 +407,26 @@ pub struct SetBoundaryConfigParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct SetRestAnalysisConfigParam {
+    /// Toolpath index (0-based)
+    pub index: usize,
+    /// Enable or disable rest analysis
+    pub enabled: bool,
+    /// Real library tool id whose geometry defines the rest reference.
+    /// `None` = prefer the machined stock (when available), else a
+    /// self-referenced bare-surface probe.
+    pub reference_tool_id: Option<usize>,
+    /// XY grid cell size (mm) for the rest field. Smaller = finer regions.
+    pub cell_mm: Option<f64>,
+    /// Rest-depth threshold (mm): a cell counts as REST material once the
+    /// reference floats more than this above the true surface.
+    pub min_valley_depth: Option<f64>,
+    /// Extra clearance (mm) added around detected rest regions beyond this
+    /// toolpath's own tool radius.
+    pub region_margin_mm: Option<f64>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SetDressupConfigParam {
     /// Toolpath index (0-based)
     pub index: usize,

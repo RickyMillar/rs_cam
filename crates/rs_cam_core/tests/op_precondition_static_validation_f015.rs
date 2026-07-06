@@ -102,6 +102,7 @@ fn make_tp(name: &str, op: OperationConfig, tool_id: usize, model_id: usize) -> 
         face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+        rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
     }
 }
 

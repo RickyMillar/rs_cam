@@ -3053,6 +3053,7 @@ fn build_entry_from_session_and_gui(
         heights: tc.heights.clone(),
         boundary: tc.boundary.clone(),
         boundary_inherit: tc.boundary_inherit,
+        rest_analysis: tc.rest_analysis.clone(),
         coolant: tc.coolant,
         pre_gcode: tc.pre_gcode.clone().unwrap_or_default(),
         post_gcode: tc.post_gcode.clone().unwrap_or_default(),
@@ -3091,6 +3092,7 @@ fn write_entry_config_to_session(
         tc.heights = entry.heights.clone();
         tc.boundary = entry.boundary.clone();
         tc.boundary_inherit = entry.boundary_inherit;
+        tc.rest_analysis = entry.rest_analysis.clone();
         tc.coolant = entry.coolant;
         tc.pre_gcode = if entry.pre_gcode.is_empty() {
             None
@@ -3828,6 +3830,101 @@ fn draw_toolpath_panel(
                         );
                     });
                 }
+            }
+
+            // ── Rest Analysis (P2.5) ────────────────────────────────────
+            // Sibling of Machining Boundary: any toolpath can turn on the
+            // rest-depth detector against ITS OWN tool, attaching the
+            // heatmap grid + derived regions this op leaves behind — the
+            // same analysis that used to be pencil-only.
+            ui.add_space(8.0);
+            ui.label(
+                egui::RichText::new("Rest Analysis")
+                    .small()
+                    .strong()
+                    .color(egui::Color32::from_rgb(150, 155, 170)),
+            );
+            ui.checkbox(&mut entry.rest_analysis.enabled, "Enable rest analysis")
+                .on_hover_text(
+                    "Run the rest-depth detector against this toolpath's own tool \
+                     after generation, attaching a heatmap grid and derived \
+                     machining regions — usable as a `Rest Regions` boundary \
+                     source on another toolpath, same as pencil's rest-depth \
+                     detector.",
+                );
+            if entry.rest_analysis.enabled {
+                ui.horizontal(|ui| {
+                    ui.label("Reference:");
+                    let ref_label = entry
+                        .rest_analysis
+                        .reference_tool_id
+                        .and_then(|rid| tools.iter().find(|(id, _, _)| *id == rid))
+                        .map(|(_, name, _)| name.as_str())
+                        .unwrap_or("Self / machined stock");
+                    egui::ComboBox::from_id_salt("rest_analysis_reference_tool")
+                        .selected_text(ref_label)
+                        .show_ui(ui, |ui| {
+                            if ui
+                                .selectable_label(
+                                    entry.rest_analysis.reference_tool_id.is_none(),
+                                    "Self / machined stock",
+                                )
+                                .clicked()
+                            {
+                                entry.rest_analysis.reference_tool_id = None;
+                            }
+                            for (id, name, _) in tools {
+                                let selected = entry.rest_analysis.reference_tool_id == Some(*id);
+                                if ui.selectable_label(selected, name.as_str()).clicked() {
+                                    entry.rest_analysis.reference_tool_id = Some(*id);
+                                }
+                            }
+                        })
+                        .response
+                        .on_hover_text(
+                            "The reference the rest gate measures 'deeper than'. \
+                             Unset = prefer the actual machined stock from a prior \
+                             simulation, else a self-referenced bare-surface probe.",
+                        );
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Cell Size:");
+                    ui.add(
+                        egui::DragValue::new(&mut entry.rest_analysis.cell_mm)
+                            .speed(0.05)
+                            .range(0.05..=10.0)
+                            .suffix(" mm"),
+                    )
+                    .on_hover_text(
+                        "XY grid cell size for the rest field. Smaller = finer regions.",
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Min Valley Depth:");
+                    ui.add(
+                        egui::DragValue::new(&mut entry.rest_analysis.min_valley_depth)
+                            .speed(0.01)
+                            .range(0.0..=5.0)
+                            .suffix(" mm"),
+                    )
+                    .on_hover_text(
+                        "A cell counts as REST material once the reference floats \
+                         more than this above the true surface.",
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Region Margin:");
+                    ui.add(
+                        egui::DragValue::new(&mut entry.rest_analysis.region_margin_mm)
+                            .speed(0.05)
+                            .range(0.0..=10.0)
+                            .suffix(" mm"),
+                    )
+                    .on_hover_text(
+                        "Extra clearance added around detected rest regions beyond \
+                         this toolpath's own tool radius.",
+                    );
+                });
             }
         }
 

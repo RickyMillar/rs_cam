@@ -22,5 +22,5 @@ pub use entry::{ToolpathEntry, ToolpathEntryInit, ToolpathResult};
 pub use support::{
     BoundaryConfig, BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig,
     DressupEntryStyle, HeightContext, HeightMode, HeightReference, HeightsConfig, ReferenceOffset,
-    ResolvedHeights, RetractStrategy, StockSource, ToolpathId, ToolpathStats,
+    ResolvedHeights, RestAnalysisConfig, RetractStrategy, StockSource, ToolpathId, ToolpathStats,
 };

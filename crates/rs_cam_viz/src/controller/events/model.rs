@@ -661,6 +661,7 @@ impl<B: ComputeBackend> AppController<B> {
                     post_gcode: None,
                     boundary: crate::state::toolpath::BoundaryConfig::default(),
                     boundary_inherit: true,
+                    rest_analysis: crate::state::toolpath::RestAnalysisConfig::default(),
                     stock_source: crate::state::toolpath::StockSource::Fresh,
                     coolant: rs_cam_core::gcode::CoolantMode::Off,
                     face_selection: None,

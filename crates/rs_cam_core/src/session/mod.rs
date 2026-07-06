@@ -460,6 +460,12 @@ pub struct ToolpathConfig {
     pub boundary: BoundaryConfig,
     /// When true, inherit boundary from stock default.
     pub boundary_inherit: bool,
+    /// Op-agnostic rest analysis (P2.5): when enabled, runs the rest-depth
+    /// detector against this toolpath's own tool as the fine cutter after
+    /// generation, attaching `rest_grid` / `rest_regions` to the result —
+    /// available to every operation family, not just pencil's `RestDepth`
+    /// detector arm. See `compute::config::RestAnalysisConfig`.
+    pub rest_analysis: crate::compute::config::RestAnalysisConfig,
     /// Where this toolpath's stock material comes from.
     pub stock_source: StockSource,
     /// Coolant mode for G-code output.
@@ -1526,6 +1532,7 @@ mod tests {
                     _legacy_feeds_auto: None,
                     debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
                     feeds_provenance: crate::feeds::FeedsProvenance::default(),
+                    rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
                 }],
             }],
             toolpaths: Vec::new(),
@@ -1718,6 +1725,7 @@ mod tests {
                     _legacy_feeds_auto: None,
                     debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
                     feeds_provenance: crate::feeds::FeedsProvenance::default(),
+                    rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
                 }],
             }],
             toolpaths: Vec::new(),
@@ -1846,6 +1854,7 @@ mod tests {
             face_selection: None,
             debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
         };
 
         let idx = session.add_toolpath(0, new_tp).unwrap();
