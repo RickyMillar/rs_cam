@@ -4,9 +4,8 @@
 //! slope angles, curvature). These are the shared foundation for scallop finishing,
 //! steep & shallow, ramp finishing, and slope-aware adaptive improvements.
 
-use crate::dropcutter::point_drop_cutter;
 use crate::geo::V3;
-use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
+use crate::interrupt::{CancelCheck, Cancelled};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::MillingCutter;
 
@@ -81,20 +80,31 @@ impl SurfaceHeightmap {
         cancel: &dyn CancelCheck,
     ) -> Result<Self, Cancelled> {
         let total = rows * cols;
+        // Shared per-cell sampling (planning/finishing_stack_review_2026-07.md
+        // P1.3): the same "drop-cutter + min_z clamp (+ optional coverage)"
+        // cell computation `DropCutterGrid`'s batch layer uses, so the two
+        // grid layers no longer carry independent copies of the drop-cutter
+        // call + clamp. Coverage is computed in this same per-cell pass (not
+        // a second loop) — the one thing `DropCutterGrid` doesn't need, so it
+        // passes `with_coverage = false` at its own call sites.
+        //
+        // The outer parallel-batch dispatch stays heightmap-local rather
+        // than also routing through `dropcutter::batch_sample_grid`: that
+        // routine requires `cancel: &(dyn CancelCheck + Sync)` for its
+        // rayon closures, while every call site up the finish-op chain
+        // (`finish_setup.rs`, `scallop.rs`, `ramp_finish.rs`, `waterline.rs`,
+        // `adaptive3d/path.rs`) passes a plain `&dyn CancelCheck` — widening
+        // that bound would ripple signature changes through files outside
+        // this pass's scope. `compute_cell` below is the only remaining
+        // heightmap-specific glue; everything else is shared.
         let compute_cell = |i: usize| -> (f64, bool) {
             let row = i / cols;
             let col = i % cols;
             let x = origin_x + col as f64 * cell_size;
             let y = origin_y + row as f64 * cell_size;
-            let cl = point_drop_cutter(x, y, mesh, index, cutter);
-            // Coverage: does the *vertical ray* pass through a triangle?
-            // (Same predicate drop_cutter finish and project_curve use to
-            // reject hole/rim-riding points.)
-            let covered = index.query(x, y, 0.0).iter().any(|&idx| {
-                #[allow(clippy::indexing_slicing)] // index stores valid face indices
-                mesh.faces[idx].contains_point_xy(x, y)
-            });
-            (cl.z.max(min_z), covered)
+            let (cl, covered) =
+                crate::dropcutter::sample_grid_cell(x, y, mesh, index, cutter, min_z, true);
+            (cl.z, covered)
         };
 
         // Parallel drop-cutter: each cell is independent.
@@ -103,7 +113,7 @@ impl SurfaceHeightmap {
             use rayon::prelude::*;
             let results: Vec<(f64, bool)> = (0..total).into_par_iter().map(compute_cell).collect();
             // Check cancel after parallel work completes
-            check_cancel(cancel)?;
+            crate::interrupt::check_cancel(cancel)?;
             results.into_iter().unzip::<f64, bool, Vec<_>, Vec<_>>()
         };
         #[cfg(target_arch = "wasm32")]
@@ -112,7 +122,7 @@ impl SurfaceHeightmap {
             let mut cov = Vec::with_capacity(total);
             for i in 0..total {
                 if i % 64 == 0 {
-                    check_cancel(cancel)?;
+                    crate::interrupt::check_cancel(cancel)?;
                 }
                 let (z, c) = compute_cell(i);
                 zs.push(z);
@@ -193,8 +203,14 @@ pub struct SlopeMap {
     /// Slope angle from horizontal at each cell, in radians [0, PI/2].
     /// 0 = horizontal flat, PI/2 = vertical wall.
     pub angles: Vec<f64>,
-    /// Mean curvature at each cell (second derivatives).
-    /// Positive = convex, negative = concave.
+    /// Mean curvature at each cell, computed straight from the raw
+    /// `(d2z/dx2 + d2z/dy2) * 0.5` second derivatives.
+    /// Negative = physically convex (e.g. a dome peak, where the surface
+    /// curves downward away from the high point); positive = physically
+    /// concave (e.g. a bowl). This is the opposite of the convention used by
+    /// `scallop_math` (positive = convex there), so callers crossing that
+    /// boundary — see `scallop::average_stepover_for_ring` — must negate
+    /// this value before passing it to `scallop_math::variable_stepover`.
     pub curvatures: Vec<f64>,
     pub rows: usize,
     pub cols: usize,

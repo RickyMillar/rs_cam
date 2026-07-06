@@ -19,12 +19,15 @@
 
 use crate::geo::P3;
 use crate::toolpath::{MoveType, Toolpath, simplify_path_3d_keep_mask};
-use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
+use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap};
 use std::collections::BTreeSet;
 use std::ops::Range;
 
 /// Two feed rates within this many mm/min are treated as the same run.
-const FEED_EPS: f64 = 1e-6;
+///
+/// Shared with [`crate::arcfit`], which groups consecutive linear moves by
+/// the same same-feed criterion before fitting arcs.
+pub(crate) const FEED_EPS: f64 = 1e-6;
 
 /// Merge runs of consecutive same-feed linear cut moves, dropping points whose
 /// removal keeps the path within `tolerance` (mm) of the retained chord.
@@ -32,11 +35,21 @@ const FEED_EPS: f64 = 1e-6;
 /// `tolerance <= 0` (or a degenerate toolpath) is a no-op passthrough.
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> AnnotatedToolpath {
+    // Barriers we must not merge across — same set arc-fit honours. A barrier
+    // at index `b` sits before `moves[b]`; a run that included `b` would erase
+    // the boundary between `b-1` and `b`.
+    let barriers: BTreeSet<usize> = if annotated.spans_valid {
+        annotated.rapid_order_barriers().into_iter().collect()
+    } else {
+        BTreeSet::new()
+    };
+
     let AnnotatedToolpath {
         toolpath,
         spans,
         spans_valid,
         planner_engagement,
+        rest_grid,
     } = annotated;
 
     if toolpath.moves.len() < 2 || tolerance <= 0.0 {
@@ -45,25 +58,11 @@ pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Annota
             spans,
             spans_valid,
             planner_engagement,
+            rest_grid,
         };
     }
 
     let moves = &toolpath.moves;
-
-    // Barriers we must not merge across — same set arc-fit honours. A barrier
-    // at index `b` sits before `moves[b]`; a run that included `b` would erase
-    // the boundary between `b-1` and `b`.
-    let barriers: BTreeSet<usize> = if spans_valid {
-        spans
-            .iter()
-            .filter_map(|s| match s.kind {
-                SpanKind::RapidOrderBarrier | SpanKind::DepthPass => Some(s.start_move),
-                _ => None,
-            })
-            .collect()
-    } else {
-        BTreeSet::new()
-    };
 
     let mut result = Toolpath::new();
     let mut old_to_new: Vec<Option<Range<usize>>> = Vec::with_capacity(moves.len());
@@ -147,25 +146,7 @@ pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Annota
     let new_n_moves = result.moves.len();
     let new_spans = if spans_valid {
         let remap = MoveRemap { old_to_new };
-        spans
-            .into_iter()
-            .filter_map(|s| {
-                let payload = s.payload.clone();
-                let label = s.label.clone();
-                let mut new_span = if s.is_boundary() {
-                    let new_pos = remap.remap_boundary(s.start_move, new_n_moves);
-                    Span::new(new_pos, new_pos, s.kind)
-                } else {
-                    let r = remap.remap_range(s.start_move, s.end_move)?;
-                    Span::new(r.start, r.end, s.kind)
-                }
-                .with_label(label);
-                if let Some(p) = payload {
-                    new_span = new_span.with_payload(p);
-                }
-                Some(new_span)
-            })
-            .collect()
+        remap.remap_spans(&spans, new_n_moves)
     } else {
         spans
     };
@@ -175,6 +156,7 @@ pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Annota
         spans: new_spans,
         spans_valid,
         planner_engagement,
+        rest_grid,
     }
 }
 
@@ -188,6 +170,7 @@ pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Annota
 mod tests {
     use super::*;
     use crate::toolpath::Toolpath;
+    use crate::toolpath_spans::{Span, SpanKind};
 
     fn cut_move_count(tp: &Toolpath) -> usize {
         tp.moves

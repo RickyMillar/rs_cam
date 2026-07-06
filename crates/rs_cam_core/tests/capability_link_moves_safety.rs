@@ -330,6 +330,7 @@ fn vcarve_link_moves_preserves_material_state() {
             plunge_rate: 400.0,
             safe_z: 30.0,
             tolerance: 0.05,
+            top_z: 0.0,
         },
     );
     // VCarve emits a flat endmill-shaped pseudo-tool path; we use a
@@ -365,6 +366,7 @@ fn inlay_link_moves_preserves_material_state() {
             plunge_rate: 400.0,
             safe_z: 30.0,
             tolerance: 0.05,
+            top_z: 0.0,
         },
     );
     let cutter = FlatEndmill::new(2.0, 25.0);
@@ -390,10 +392,10 @@ fn chamfer_link_moves_preserves_material_state() {
             chamfer_width: 1.0,
             tip_offset: 0.1,
             tool_half_angle: std::f64::consts::FRAC_PI_4,
-            tool_radius: 6.35,
             feed_rate: 800.0,
             plunge_rate: 400.0,
             safe_z: 30.0,
+            top_z: 0.0,
         },
     );
     // Chamfer produces a single closed contour at fixed Z — there's only

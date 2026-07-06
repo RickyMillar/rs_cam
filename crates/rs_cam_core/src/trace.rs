@@ -3,10 +3,11 @@
 //! Follows polygon paths exactly at a specified depth, optionally offset
 //! by the tool radius for left/right cutter compensation.
 
-use crate::depth::{DepthStepping, depth_stepped_toolpath};
+use crate::depth::{DepthStepping, depth_stepped_toolpath_with_cancel};
 use crate::geo::{P2, P3};
+use crate::interrupt::{CancelCheck, Cancelled};
 use crate::polygon::{Polygon2, offset_polygon};
-use crate::toolpath::Toolpath;
+use crate::toolpath::{MoveIntent, Toolpath};
 
 /// Cutter compensation direction relative to the travel direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -80,64 +81,57 @@ pub fn trace_polygon_at_z(polygon: &Polygon2, z: f64, params: &TraceParams) -> T
 /// Convenience wrapper around [`trace_polygon_at_z`] that handles multi-pass
 /// depth stepping automatically when `depth > depth_per_pass`.
 pub fn trace_toolpath(polygon: &Polygon2, params: &TraceParams) -> Toolpath {
+    let never_cancel = || false;
+    // infallible: cancel closure always returns false, so Cancelled is unreachable
+    #[allow(clippy::expect_used)]
+    trace_toolpath_with_cancel(polygon, params, &never_cancel)
+        .expect("non-cancellable trace toolpath should never be cancelled")
+}
+
+/// Cancellable variant of [`trace_toolpath`]. Polls `cancel` once per Z
+/// level via the shared `depth::toolpath_at_levels_with_cancel` choke point
+/// (planning/finishing_stack_review_2026-07.md S.5).
+pub fn trace_toolpath_with_cancel(
+    polygon: &Polygon2,
+    params: &TraceParams,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
     let depth = DepthStepping::new(
         params.top_z,
         params.top_z - params.depth,
         params.depth_per_pass,
     );
 
-    depth_stepped_toolpath(&depth, params.safe_z, |z| {
-        trace_polygon_at_z(polygon, z, params)
-    })
+    depth_stepped_toolpath_with_cancel(
+        &depth,
+        params.safe_z,
+        |z| Ok(trace_polygon_at_z(polygon, z, params)),
+        cancel,
+    )
 }
 
 /// Trace a single closed ring at the given Z depth.
 ///
-/// Emits: rapid to safe_z -> rapid to XY of first point -> plunge ->
-/// feed along all points -> close loop -> retract.
+/// S.7 (planning/finishing_stack_review_2026-07.md): emits via the shared
+/// `emit_closed_contour_with_intent` rapid→plunge→feed→close→retract
+/// envelope. Byte-identical for every ring this crate actually produces
+/// (closed polygon exterior/hole rings are always >= 3 points); a
+/// theoretical 1- or 2-point ring would previously emit a degenerate loop
+/// and now no-ops instead — accepted, since `Polygon2` rings below 3 points
+/// don't occur via the public API.
 fn trace_ring(tp: &mut Toolpath, ring: &[P2], cut_z: f64, params: &TraceParams) {
     if ring.is_empty() {
         return;
     }
 
-    // SAFETY: ring is non-empty (checked above)
-    #[allow(clippy::indexing_slicing)]
-    let first = ring[0];
+    let points: Vec<P3> = ring.iter().map(|p| P3::new(p.x, p.y, cut_z)).collect();
 
-    use crate::toolpath::MoveIntent;
-    // Rapid to safe_z above the first point
-    tp.rapid_to_with_intent(
-        P3::new(first.x, first.y, params.safe_z),
-        MoveIntent::Linking,
-    );
-
-    // Plunge to cutting depth
-    tp.feed_to_with_intent(
-        P3::new(first.x, first.y, cut_z),
-        params.plunge_rate,
-        MoveIntent::EntryPlunge,
-    );
-
-    // Feed along all subsequent points
-    for pt in ring.iter().skip(1) {
-        tp.feed_to_with_intent(
-            P3::new(pt.x, pt.y, cut_z),
-            params.feed_rate,
-            MoveIntent::FinishingCut,
-        );
-    }
-
-    // Close the loop by feeding back to the first point
-    tp.feed_to_with_intent(
-        P3::new(first.x, first.y, cut_z),
+    tp.emit_closed_contour_with_intent(
+        &points,
+        params.safe_z,
         params.feed_rate,
+        params.plunge_rate,
         MoveIntent::FinishingCut,
-    );
-
-    // Retract to safe_z
-    tp.rapid_to_with_intent(
-        P3::new(first.x, first.y, params.safe_z),
-        MoveIntent::Retract,
     );
 }
 

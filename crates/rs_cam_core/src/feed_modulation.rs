@@ -525,12 +525,16 @@ fn band_mid_feed_for_move(
         return (cap.max(0.0), BindingConstraint::MachineMaxFeed);
     }
     let clamped = base_feed.clamp(band_floor, cap);
-    let binding = if (clamped - band_ceiling).abs() < 1e-6 {
+    // Machine-cap check comes first: when the machine cap ties the band
+    // ceiling (or another candidate) at the same clamped value, the feed
+    // is genuinely machine-limited and the diagnostic should say so
+    // rather than falling through to the first tied arm (ChiploadMax).
+    let binding = if (clamped - ctx.max_feed_mm_min).abs() < 1e-6 {
+        BindingConstraint::MachineMaxFeed
+    } else if (clamped - band_ceiling).abs() < 1e-6 {
         BindingConstraint::ChiploadMax
     } else if (clamped - band_floor).abs() < 1e-6 {
         BindingConstraint::ChiploadMin
-    } else if (clamped - ctx.max_feed_mm_min).abs() < 1e-6 {
-        BindingConstraint::MachineMaxFeed
     } else if (clamped - predicted_cap_mm_min).abs() < 1e-6 {
         BindingConstraint::KinematicReach
     } else {
@@ -575,22 +579,7 @@ pub fn adaptive_feed_modulate(
     let probe_feed = ctx.max_feed_mm_min.min(band_ceiling_feed).max(1e-3);
     let mut probe = toolpath.clone();
     for m in probe.moves.iter_mut() {
-        m.move_type = match m.move_type {
-            MoveType::Linear { .. } => MoveType::Linear {
-                feed_rate: probe_feed,
-            },
-            MoveType::ArcCW { i, j, .. } => MoveType::ArcCW {
-                i,
-                j,
-                feed_rate: probe_feed,
-            },
-            MoveType::ArcCCW { i, j, .. } => MoveType::ArcCCW {
-                i,
-                j,
-                feed_rate: probe_feed,
-            },
-            MoveType::Rapid => MoveType::Rapid,
-        };
+        m.move_type = m.move_type.with_feed_rate(probe_feed);
     }
     let predicted = predicted_feeds_for_toolpath(
         &probe,
@@ -636,23 +625,7 @@ pub fn adaptive_feed_modulate(
 
         outcome.per_move.insert(i, (new_feed, binding));
         if (new_feed - commanded).abs() > 1e-6 {
-            let new_move_type = match move_type {
-                MoveType::Linear { .. } => MoveType::Linear {
-                    feed_rate: new_feed,
-                },
-                MoveType::ArcCW { i: ai, j: aj, .. } => MoveType::ArcCW {
-                    i: ai,
-                    j: aj,
-                    feed_rate: new_feed,
-                },
-                MoveType::ArcCCW { i: ai, j: aj, .. } => MoveType::ArcCCW {
-                    i: ai,
-                    j: aj,
-                    feed_rate: new_feed,
-                },
-                MoveType::Rapid => MoveType::Rapid,
-            };
-            toolpath.moves[i].move_type = new_move_type;
+            toolpath.moves[i].move_type = move_type.with_feed_rate(new_feed);
             outcome.changed += 1;
         }
     }
@@ -939,6 +912,41 @@ mod tests {
         assert!(
             (f - 2880.0).abs() < 5.0,
             "expected band ceiling 2880, got {f}"
+        );
+    }
+
+    /// S.4 regression: when the machine cap ties the band ceiling at the
+    /// same clamped feed, `band_mid_feed_for_move` must report
+    /// `MachineMaxFeed`, not `ChiploadMax` — the machine cap is the
+    /// hard physical constraint and should win diagnostic priority over
+    /// a coincidentally-equal chipload ceiling. This pins the arm-order
+    /// fix (`MachineMaxFeed` checked before `ChiploadMax`).
+    #[test]
+    fn band_mid_tie_between_machine_cap_and_ceiling_reports_machine_cap() {
+        let k = shapeoko();
+        let mut ctx = make_ctx(&k, band());
+        ctx.strategy = ModulationStrategy::BandMid;
+        // band_ceiling = 0.08 * 18000 * 2 = 2880 — tie the machine cap
+        // to it exactly.
+        ctx.max_feed_mm_min = 2880.0;
+        let engagement = PerMoveEngagement {
+            radial_woc_fraction: 0.01,
+            axial_doc_fraction: 1.0,
+        };
+        // Light engagement inflates the chip-thinning target well past
+        // the cap, so the clamp — not the natural target — decides the
+        // feed and lands exactly on the tie.
+        let predicted_cap_mm_min = 10_000.0; // not the tightest constraint
+        let (feed, binding) =
+            band_mid_feed_for_move(1500.0, engagement, predicted_cap_mm_min, &ctx);
+        assert!(
+            (feed - 2880.0).abs() < 1e-6,
+            "expected tied cap 2880, got {feed}"
+        );
+        assert_eq!(
+            binding,
+            BindingConstraint::MachineMaxFeed,
+            "machine cap should win the tie, got {binding:?}"
         );
     }
 

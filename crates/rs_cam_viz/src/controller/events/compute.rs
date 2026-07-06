@@ -322,7 +322,9 @@ impl<B: ComputeBackend> AppController<B> {
         // this op (= the checkpoint after the previous toolpath in sim order).
         // adaptive3d initialises its material model from this, so it only cuts
         // the leftover. Requires a prior simulation to have produced the
-        // checkpoint; if absent the op falls back to fresh-stock generation.
+        // checkpoint; if absent we FAIL HARD (do not fall back to fresh stock —
+        // a fine rest tool would clear the whole part instead of the leftover:
+        // unbounded compute and a wrong result).
         let prior_stock: Option<TriDexelStock> = if stock_source == StockSource::FromRemainingStock
         {
             let sim = &self.state.simulation;
@@ -333,15 +335,24 @@ impl<B: ComputeBackend> AppController<B> {
                 .and_then(|pos| pos.checked_sub(1))
                 .and_then(|prev| sim.checkpoints().iter().find(|c| c.boundary_index == prev))
                 .and_then(|c| c.stock.clone());
-            if found.is_none() {
+            let Some(found) = found else {
+                if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id) {
+                    rt.status = ComputeStatus::Error(format!(
+                        "'{toolpath_name}' uses remaining stock (rest machining) but no prior \
+                         simulated stock is available — run a simulation of the preceding \
+                         operations first, then regenerate. (Not falling back to fresh stock.)"
+                    ));
+                }
                 self.push_notification(
-                    "Rest machining: no prior simulated stock — run a simulation \
-                         first, then regenerate this toolpath."
-                        .into(),
-                    super::super::Severity::Warning,
+                    format!(
+                        "Rest machining: '{toolpath_name}' has no prior simulated stock — run a \
+                         simulation first, then regenerate. (Not falling back to fresh stock.)"
+                    ),
+                    super::super::Severity::Error,
                 );
-            }
-            found
+                return;
+            };
+            Some(found)
         } else {
             None
         };

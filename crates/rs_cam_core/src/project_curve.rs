@@ -6,10 +6,16 @@
 
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::{Polygon2, offset_polygon};
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
+
+/// How many resampled points to process between cancel polls in
+/// `project_polygon_rings_with_cancel` — frequent enough to stay
+/// responsive, coarse enough to avoid an atomic load per point.
+const CANCEL_POLL_STRIDE: usize = 64;
 
 /// Direction from which the curve is projected onto the mesh.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -198,22 +204,50 @@ pub fn project_curve_toolpath(
     cutter: &dyn MillingCutter,
     params: &ProjectCurveParams,
 ) -> Toolpath {
+    let never_cancel = || false;
+    // infallible: cancel closure always returns false, so Cancelled is unreachable
+    #[allow(clippy::expect_used)]
+    project_curve_toolpath_with_cancel(polygon, mesh, index, cutter, params, &never_cancel)
+        .expect("non-cancellable project-curve toolpath should never be cancelled")
+}
+
+/// Cancellable variant of [`project_curve_toolpath`]. Polls `cancel` every
+/// [`CANCEL_POLL_STRIDE`] resampled points inside the per-ring drop-cutter
+/// loop (planning/finishing_stack_review_2026-07.md S.5: "project_curve
+/// (drop-cutter per point)" — the worst per-op loop of the flat-2D family).
+pub fn project_curve_toolpath_with_cancel(
+    polygon: &Polygon2,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &ProjectCurveParams,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
+    check_cancel(cancel)?;
     match params.direction {
         ProjectDirection::FromAbove => {
-            project_curve_inner(polygon, mesh, index, cutter, params, false)
+            project_curve_inner_with_cancel(polygon, mesh, index, cutter, params, false, cancel)
         }
         ProjectDirection::FromBelow => {
             if params.setup_z_flipped {
                 // The mesh is already Z-inverted by a bottom-facing setup transform.
                 // The drop cutter finds correct surface contact without an additional
                 // flip. Depth goes below the surface in local frame (same as FromAbove).
-                project_curve_inner(polygon, mesh, index, cutter, params, false)
+                project_curve_inner_with_cancel(polygon, mesh, index, cutter, params, false, cancel)
             } else {
                 // Standalone (no setup transform): flip the mesh Z so the bottom
                 // surface becomes the top for the drop cutter.
                 let flipped = mesh.z_flipped();
                 let flipped_index = SpatialIndex::build_auto(&flipped);
-                project_curve_inner(polygon, &flipped, &flipped_index, cutter, params, true)
+                project_curve_inner_with_cancel(
+                    polygon,
+                    &flipped,
+                    &flipped_index,
+                    cutter,
+                    params,
+                    true,
+                    cancel,
+                )
             }
         }
     }
@@ -222,27 +256,33 @@ pub fn project_curve_toolpath(
 /// Inner projection loop. When `z_flip` is true, the mesh was Z-flipped before
 /// calling, so the output Z coordinates are negated back to world space and
 /// depth goes upward (into the bottom surface).
-fn project_curve_inner(
+#[allow(clippy::too_many_arguments)]
+fn project_curve_inner_with_cancel(
     polygon: &Polygon2,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &ProjectCurveParams,
     z_flip: bool,
-) -> Toolpath {
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
     let mut tp = Toolpath::new();
 
     // Apply tool-radius compensation for closed polygons. Open polygons cannot
     // be meaningfully offset (no inside/outside) — fall back to Center.
     // Sign convention in offset_polygon: distance > 0 = inward (shrink),
-    // distance < 0 = outward (grow).
-    let offset_polys: Vec<Polygon2> = if polygon.closed && params.side != ProjectSide::Center {
-        let distance = match params.side {
-            ProjectSide::Inside => params.tool_radius,
-            ProjectSide::Outside => -params.tool_radius,
-            ProjectSide::Center => 0.0,
-        };
-        offset_polygon(polygon, distance)
+    // distance < 0 = outward (grow). Center carries no offset distance, so
+    // the match stays exhaustive without an unreachable arm.
+    let offset_distance = match params.side {
+        ProjectSide::Inside => Some(params.tool_radius),
+        ProjectSide::Outside => Some(-params.tool_radius),
+        ProjectSide::Center => None,
+    };
+    let offset_polys: Vec<Polygon2> = if polygon.closed {
+        match offset_distance {
+            Some(distance) => offset_polygon(polygon, distance),
+            None => Vec::new(),
+        }
     } else {
         Vec::new()
     };
@@ -254,14 +294,17 @@ fn project_curve_inner(
     };
 
     for poly in polys_iter {
-        project_polygon_rings(poly, mesh, index, cutter, params, z_flip, &mut tp);
+        project_polygon_rings_with_cancel(
+            poly, mesh, index, cutter, params, z_flip, &mut tp, cancel,
+        )?;
     }
 
     tp.final_retract(params.safe_z);
-    tp
+    Ok(tp)
 }
 
-fn project_polygon_rings(
+#[allow(clippy::too_many_arguments)]
+fn project_polygon_rings_with_cancel(
     polygon: &Polygon2,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -269,7 +312,8 @@ fn project_polygon_rings(
     params: &ProjectCurveParams,
     z_flip: bool,
     tp: &mut Toolpath,
-) {
+    cancel: &dyn CancelCheck,
+) -> Result<(), Cancelled> {
     // Collect all rings: exterior first, then holes
     let mut rings: Vec<&Vec<P2>> = Vec::with_capacity(1 + polygon.holes.len());
     rings.push(&polygon.exterior);
@@ -299,7 +343,10 @@ fn project_polygon_rings(
         // Project each 2D point onto the mesh
         let mut current_chain: Vec<P3> = Vec::new();
 
-        for pt in &resampled {
+        for (i, pt) in resampled.iter().enumerate() {
+            if i % CANCEL_POLL_STRIDE == 0 {
+                check_cancel(cancel)?;
+            }
             let cl = point_drop_cutter(pt.x, pt.y, mesh, index, cutter);
             // `point_drop_cutter` marks `contacted=true` whenever the cutter
             // (which has radius) touches ANY nearby triangle — including the
@@ -346,6 +393,8 @@ fn project_polygon_rings(
             );
         }
     }
+
+    Ok(())
 }
 
 #[cfg(test)]

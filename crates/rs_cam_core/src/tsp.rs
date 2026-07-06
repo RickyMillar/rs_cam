@@ -143,6 +143,7 @@ pub fn optimize_rapid_order(annotated: AnnotatedToolpath, safe_z: f64) -> Annota
         spans,
         spans_valid: input_valid,
         planner_engagement,
+        rest_grid,
     } = annotated;
 
     if toolpath.moves.is_empty() {
@@ -151,6 +152,7 @@ pub fn optimize_rapid_order(annotated: AnnotatedToolpath, safe_z: f64) -> Annota
             spans,
             spans_valid: input_valid,
             planner_engagement,
+            rest_grid,
         };
     }
 
@@ -217,6 +219,7 @@ pub fn optimize_rapid_order(annotated: AnnotatedToolpath, safe_z: f64) -> Annota
         spans: new_spans,
         spans_valid: new_valid,
         planner_engagement,
+        rest_grid,
     }
 }
 
@@ -443,6 +446,15 @@ fn fill_group_rapids(
 /// non-`Operation` spans that fragmented (foreign moves intruded into their
 /// new bounding range) are DROPPED rather than poisoning the whole vector.
 ///
+/// The per-span bounding remap (drop-if-fully-collapsed, boundary vs. range
+/// handling, label/payload carry-through) is the same contract every other
+/// span-preserving transform uses, so it's delegated to
+/// [`MoveRemap::remap_span`] (the canonical helper in `toolpath_spans`).
+/// What's unique to TSP is the foreign-move-intrusion check layered on top
+/// as a post-filter below — a permutation can interleave moves from other
+/// spans into a span's new bounding range, which a plain bounding remap
+/// can't detect on its own.
+///
 /// F2.2 (defect class C3): pre-F2 a single fragmented span flipped
 /// `spans_valid = false` for the entire toolpath, discarding every
 /// still-correct span (Entry, WaterlineCleanup) at the metrics stamper
@@ -455,66 +467,53 @@ fn fill_group_rapids(
 /// (`compute/simulate.rs`).
 #[allow(clippy::indexing_slicing)]
 fn remap_spans(spans: &[Span], remap: &MoveRemap, new_n: usize) -> Vec<Span> {
-    let mut out: Vec<Span> = Vec::with_capacity(spans.len());
+    spans
+        .iter()
+        .filter_map(|s| {
+            // Every move in the span got dropped — drop the span too.
+            let new_span = remap.remap_span(s, new_n)?;
 
-    for s in spans {
-        let payload = s.payload.clone();
-        let label = s.label.clone();
+            // Foreign-intrusion check only applies to non-boundary,
+            // non-Operation spans — boundary spans are always zero-width
+            // (nothing to intrude on), and Operation spans are exempt
+            // because the permutation is internal to them.
+            if !s.is_boundary() && s.kind != SpanKind::Operation {
+                let bounds = new_span.start_move..new_span.end_move;
 
-        let new_span = if s.is_boundary() {
-            let new_pos = remap.remap_boundary(s.start_move, new_n);
-            Span::new(new_pos, new_pos, s.kind)
-        } else {
-            // Bounding remap — the min..max of where the old moves landed.
-            let Some(bounds) = remap.remap_range(s.start_move, s.end_move) else {
-                // Every move in the span got dropped — drop the span too.
-                continue;
-            };
+                // Any old move *outside* the span that non-trivially
+                // overlaps `bounds` means the span's contents got
+                // interleaved with foreign moves by the reorder.
+                let foreign_intrusion = remap
+                    .old_to_new
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| *i < s.start_move || *i >= s.end_move)
+                    .any(|(_, slot)| {
+                        slot.as_ref().is_some_and(|r| {
+                            // Non-trivial overlap: the slot covers an actual
+                            // new-move index (start < end) AND that index is
+                            // inside `bounds`.
+                            r.start < r.end && r.start < bounds.end && r.end > bounds.start
+                        })
+                    });
 
-            // Foreign-intrusion check: any old move *outside* the span that
-            // non-trivially overlaps `bounds` means the span's contents got
-            // interleaved with foreign moves by the reorder. Operation
-            // spans are exempt because the permutation is internal to them.
-            let foreign_intrusion = remap
-                .old_to_new
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| *i < s.start_move || *i >= s.end_move)
-                .any(|(_, slot)| {
-                    slot.as_ref().is_some_and(|r| {
-                        // Non-trivial overlap: the slot covers an actual
-                        // new-move index (start < end) AND that index is
-                        // inside `bounds`.
-                        r.start < r.end && r.start < bounds.end && r.end > bounds.start
-                    })
-                });
-
-            if foreign_intrusion && s.kind != SpanKind::Operation {
-                tracing::debug!(
-                    span_kind = ?s.kind,
-                    span_label = %s.label,
-                    old_range = ?(s.start_move..s.end_move),
-                    new_bounds = ?bounds,
-                    "TSP rapid-order optimization split a non-Operation span; \
-                     dropping it (remaining spans stay valid; per-move intents \
-                     keep transit classification for its moves)"
-                );
-                continue;
+                if foreign_intrusion {
+                    tracing::debug!(
+                        span_kind = ?s.kind,
+                        span_label = %s.label,
+                        old_range = ?(s.start_move..s.end_move),
+                        new_bounds = ?bounds,
+                        "TSP rapid-order optimization split a non-Operation span; \
+                         dropping it (remaining spans stay valid; per-move intents \
+                         keep transit classification for its moves)"
+                    );
+                    return None;
+                }
             }
 
-            Span::new(bounds.start, bounds.end, s.kind)
-        };
-
-        let new_span = new_span.with_label(label);
-        let new_span = if let Some(p) = payload {
-            new_span.with_payload(p)
-        } else {
-            new_span
-        };
-        out.push(new_span);
-    }
-
-    out
+            Some(new_span)
+        })
+        .collect()
 }
 
 #[cfg(test)]

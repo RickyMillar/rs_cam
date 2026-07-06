@@ -1332,10 +1332,10 @@ fn default_chamfer_params() -> ChamferParams {
         chamfer_width: 1.0,
         tip_offset: 0.1,
         tool_half_angle: std::f64::consts::FRAC_PI_4, // 45 degrees
-        tool_radius: 6.35,
         feed_rate: 800.0,
         plunge_rate: 400.0,
         safe_z: 10.0,
+        top_z: 0.0,
     }
 }
 
@@ -1377,6 +1377,7 @@ fn default_vcarve_params() -> VCarveParams {
         plunge_rate: 400.0,
         safe_z: 10.0,
         tolerance: 0.05,
+        top_z: 0.0,
     }
 }
 
@@ -2109,6 +2110,7 @@ fn default_inlay_params() -> InlayParams {
         plunge_rate: 400.0,
         safe_z: 10.0,
         tolerance: 0.05,
+        top_z: 0.0,
     }
 }
 

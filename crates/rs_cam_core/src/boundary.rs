@@ -5,6 +5,7 @@
 //! silhouette extraction for automatic machining boundaries.
 
 use crate::geo::{P2, P3};
+use crate::marching_squares::{cell_case, cell_segments};
 use crate::mesh::TriangleMesh;
 use crate::polygon::{Polygon2, detect_containment, offset_polygon};
 use crate::toolpath::{MoveType, Toolpath};
@@ -166,6 +167,13 @@ const SILHOUETTE_CELL_SIZE: f64 = 0.5;
 ///
 /// `cell_size` controls grid resolution in mm (smaller = more detail, slower).
 /// Pass `None` for the default (0.5 mm).
+///
+/// Saddle cells (diagonal touch-points in the rasterized grid) resolve via
+/// the shared `marching_squares` convention — see that module's doc for the
+/// tie-break. This changed at the 2026-07 P1.7/R1.2 merge: silhouettes now
+/// pinch the same way `contour_extract`'s marching squares already did,
+/// rather than the opposite way this function used before. No test pinned
+/// the old behavior; see `planning/finishing_stack_review_2026-07.md` §R1.2.
 #[allow(clippy::indexing_slicing)] // bounded by grid dimensions computed from mesh bbox
 pub fn model_silhouette(mesh: &TriangleMesh, cell_size: Option<f64>) -> Vec<Polygon2> {
     let cell = cell_size.unwrap_or(SILHOUETTE_CELL_SIZE);
@@ -304,36 +312,26 @@ fn marching_squares_grid(
 
     for row in 0..rows {
         for col in 0..cols {
-            // Corners: bottom-left, bottom-right, top-right, top-left
-            let bl = val(row, col) as u8;
-            let br = val(row, col + 1) as u8;
-            let tr = val(row + 1, col + 1) as u8;
-            let tl = val(row + 1, col) as u8;
-            let case = bl | (br << 1) | (tr << 2) | (tl << 3);
+            // Corners: bottom-left, bottom-right, top-right, top-left. This
+            // is the same bl/br/tr/tl local frame `marching_squares::cell_case`
+            // expects (increasing row = up), so no adapter is needed — see
+            // that module's doc for the saddle (case 5/10) tie-break.
+            let bl = val(row, col);
+            let br = val(row, col + 1);
+            let tr = val(row + 1, col + 1);
+            let tl = val(row + 1, col);
+            let case = cell_case(bl, br, tr, tl);
 
-            // Canonical edge keys for this cell (row, col):
+            // Canonical edge keys for this cell (row, col), ordered to match
+            // `marching_squares`'s edge ids: 0=Left, 1=Bottom, 2=Right, 3=Top.
+            let left: EdgeKey = (row, col, 1); // v-edge at col, between row and row+1
             let bottom: EdgeKey = (row, col, 0); // h-edge at row, between col and col+1
             let right: EdgeKey = (row, col + 1, 1); // v-edge at col+1, between row and row+1
             let top: EdgeKey = (row + 1, col, 0); // h-edge at row+1, between col and col+1
-            let left: EdgeKey = (row, col, 1); // v-edge at col, between row and row+1
+            let edge_keys = [left, bottom, right, top];
 
-            match case {
-                0 | 15 => {}
-                1 | 14 => segments.push((bottom, left)),
-                2 | 13 => segments.push((right, bottom)),
-                3 | 12 => segments.push((right, left)),
-                4 | 11 => segments.push((top, right)),
-                6 | 9 => segments.push((top, bottom)),
-                7 | 8 => segments.push((top, left)),
-                5 => {
-                    segments.push((bottom, left));
-                    segments.push((top, right));
-                }
-                10 => {
-                    segments.push((right, bottom));
-                    segments.push((top, left));
-                }
-                _ => {}
+            for &(a, b) in cell_segments(case) {
+                segments.push((edge_keys[a as usize], edge_keys[b as usize]));
             }
         }
     }

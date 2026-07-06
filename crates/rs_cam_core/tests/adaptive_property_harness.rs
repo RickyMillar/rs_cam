@@ -25,8 +25,8 @@
 use rs_cam_core::adaptive::{
     AdaptiveParams, CleanupStrategy, EngagementMeasure, PathStrategy2d, adaptive_toolpath,
 };
-use rs_cam_core::contour_extract::distance_transform_2d;
 use rs_cam_core::geo::P2;
+use rs_cam_core::grid_field::distance_transform_2d;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 

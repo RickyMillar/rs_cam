@@ -14,7 +14,7 @@ use crate::fiber::Fiber;
 use crate::geo::P3;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::pushcutter::{batch_push_cutter, batch_push_cutter_with_cancel};
+use crate::pushcutter::batch_push_cutter;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveIntent, Toolpath};
 
@@ -33,6 +33,8 @@ pub struct WaterlineParams {
 /// Generate a single waterline contour at a given Z height.
 ///
 /// Returns boundary CL points organized as closed loops.
+// infallible: cancel closure always returns false, so Cancelled is unreachable
+#[allow(clippy::expect_used)]
 pub fn waterline_contours(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -40,47 +42,25 @@ pub fn waterline_contours(
     z: f64,
     sampling: f64,
 ) -> Vec<Vec<P3>> {
-    let bbox = &mesh.bbox;
-    let r = cutter.radius();
+    let never_cancel = || false;
+    waterline_contours_with_cancel(mesh, index, cutter, z, sampling, &never_cancel)
+        .expect("non-cancellable waterline contours should never be cancelled")
+}
 
-    // Expand bbox by cutter radius
-    let x_min = bbox.min.x - r;
-    let x_max = bbox.max.x + r;
-    let y_min = bbox.min.y - r;
-    let y_max = bbox.max.y + r;
-
-    // Generate X-fibers (horizontal, one per Y step)
-    let ny = ((y_max - y_min) / sampling).ceil() as usize + 1;
-    let mut x_fibers: Vec<Fiber> = (0..ny)
-        .map(|i| {
-            let y = y_min + i as f64 * sampling;
-            Fiber::new_x(y, z, x_min, x_max)
-        })
-        .collect();
-
-    // Generate Y-fibers (vertical, one per X step)
-    let nx = ((x_max - x_min) / sampling).ceil() as usize + 1;
-    let mut y_fibers: Vec<Fiber> = (0..nx)
-        .map(|i| {
-            let x = x_min + i as f64 * sampling;
-            Fiber::new_y(x, z, y_min, y_max)
-        })
-        .collect();
-
-    // Run push-cutter on both fiber sets
-    #[cfg(feature = "parallel")]
-    rayon::join(
-        || batch_push_cutter(&mut x_fibers, mesh, index, cutter),
-        || batch_push_cutter(&mut y_fibers, mesh, index, cutter),
-    );
-    #[cfg(not(feature = "parallel"))]
-    {
-        batch_push_cutter(&mut x_fibers, mesh, index, cutter);
-        batch_push_cutter(&mut y_fibers, mesh, index, cutter);
+/// Z levels a waterline pass will cut at, from `start_z` down to `final_z`
+/// (matching the generator's own `while z >= final_z - 1e-10 { .. z -= z_step }`
+/// ladder exactly). Exposed so callers building depth-run spans can pass
+/// waterline's REAL level ladder (R2.8) instead of an empty slice — the
+/// generator itself is refactored to consume this same helper below, so
+/// there is exactly one place the ladder math lives.
+pub fn waterline_z_levels(start_z: f64, final_z: f64, z_step: f64) -> Vec<f64> {
+    let mut levels = Vec::new();
+    let mut z = start_z;
+    while z >= final_z - 1e-10 {
+        levels.push(z);
+        z -= z_step;
     }
-
-    // Extract contour loops using the Weave graph (topologically correct)
-    weave_contours(&x_fibers, &y_fibers, z)
+    levels
 }
 
 /// Generate waterline toolpaths at multiple Z heights.
@@ -128,8 +108,7 @@ pub fn waterline_toolpath_with_cancel(
 ) -> Result<Toolpath, Cancelled> {
     let mut toolpath = Toolpath::new();
 
-    let mut z = start_z;
-    while z >= final_z - 1e-10 {
+    for z in waterline_z_levels(start_z, final_z, z_step) {
         check_cancel(cancel)?;
         let contours =
             waterline_contours_with_cancel(mesh, index, cutter, z, params.sampling, cancel)?;
@@ -138,48 +117,14 @@ pub fn waterline_toolpath_with_cancel(
             if contour.len() < 3 {
                 continue;
             }
-
-            // SAFETY: contour.len() >= 3 checked above; [0] and [1..] are valid
-            #[allow(clippy::indexing_slicing)]
-            {
-                // Rapid to above first point
-                toolpath.rapid_to_with_intent(
-                    P3::new(contour[0].x, contour[0].y, params.safe_z),
-                    MoveIntent::Linking,
-                );
-
-                // Plunge to Z
-                toolpath.feed_to_with_intent(
-                    P3::new(contour[0].x, contour[0].y, z),
-                    params.plunge_rate,
-                    MoveIntent::EntryPlunge,
-                );
-
-                // Follow contour
-                for pt in &contour[1..] {
-                    toolpath.feed_to_with_intent(
-                        P3::new(pt.x, pt.y, z),
-                        params.feed_rate,
-                        MoveIntent::FinishingCut,
-                    );
-                }
-
-                // Close the contour
-                toolpath.feed_to_with_intent(
-                    P3::new(contour[0].x, contour[0].y, z),
-                    params.feed_rate,
-                    MoveIntent::FinishingCut,
-                );
-
-                // Retract
-                toolpath.rapid_to_with_intent(
-                    P3::new(contour[0].x, contour[0].y, params.safe_z),
-                    MoveIntent::Retract,
-                );
-            }
+            toolpath.emit_closed_contour_with_intent(
+                contour,
+                params.safe_z,
+                params.feed_rate,
+                params.plunge_rate,
+                MoveIntent::FinishingCut,
+            );
         }
-
-        z -= z_step;
     }
 
     Ok(toolpath)
@@ -217,85 +162,31 @@ pub fn waterline_contours_with_cancel(
         })
         .collect();
 
-    batch_push_cutter_with_cancel(&mut x_fibers, mesh, index, cutter, cancel)?;
-    batch_push_cutter_with_cancel(&mut y_fibers, mesh, index, cutter, cancel)?;
+    // Run push-cutter on both fiber sets in parallel — this mirrors the
+    // rayon::join structure `waterline_contours` uses, restoring the
+    // parallelism this cancellable variant had lost (it previously pushed
+    // x- and y-fibers through `batch_push_cutter_with_cancel` one after the
+    // other). Cancellation is checked once the join completes rather than
+    // per-chunk inside each direction — the same trade-off
+    // `SurfaceHeightmap::from_mesh_with_cancel` makes for its parallel grid
+    // batch (slope.rs): a single Z-level's fiber batch is short enough that
+    // per-chunk polling isn't worth losing join concurrency for, and the
+    // per-Z-level `check_cancel` in `waterline_toolpath_with_cancel`'s loop
+    // still bounds how much uncancelled work a stale cancel signal can cost.
+    #[cfg(feature = "parallel")]
+    rayon::join(
+        || batch_push_cutter(&mut x_fibers, mesh, index, cutter),
+        || batch_push_cutter(&mut y_fibers, mesh, index, cutter),
+    );
+    #[cfg(not(feature = "parallel"))]
+    {
+        batch_push_cutter(&mut x_fibers, mesh, index, cutter);
+        batch_push_cutter(&mut y_fibers, mesh, index, cutter);
+    }
+
+    check_cancel(cancel)?;
 
     Ok(weave_contours(&x_fibers, &y_fibers, z))
-}
-
-/// Chain boundary points into closed contour loops using nearest-neighbor.
-///
-/// Points within `max_gap` distance are connected. Loops shorter than 3 points
-/// are discarded.
-///
-/// Public variant for use by the weave module's fallback path.
-pub fn chain_contours_pub(points: &[P3], max_gap: f64) -> Vec<Vec<P3>> {
-    chain_contours(points, max_gap)
-}
-
-// SAFETY: all indexing into points/used is guarded by iterator position or bounds checks
-#[allow(clippy::indexing_slicing)]
-fn chain_contours(points: &[P3], max_gap: f64) -> Vec<Vec<P3>> {
-    if points.is_empty() {
-        return Vec::new();
-    }
-
-    let max_gap_sq = max_gap * max_gap;
-    let mut used = vec![false; points.len()];
-    let mut contours = Vec::new();
-
-    while let Some(start) = used.iter().position(|&u| !u) {
-        let mut chain = vec![points[start]];
-        used[start] = true;
-
-        // Greedy nearest-neighbor chain
-        loop {
-            // Safety: chain always has at least one element (pushed on the line above
-            // on first iteration, or extended via `chain.push` before looping back).
-            #[allow(clippy::unwrap_used, clippy::panic)]
-            let last = chain.last().unwrap();
-            let mut best_idx = None;
-            let mut best_dist_sq = max_gap_sq;
-
-            for (i, pt) in points.iter().enumerate() {
-                if used[i] {
-                    continue;
-                }
-                let dx = pt.x - last.x;
-                let dy = pt.y - last.y;
-                let d_sq = dx * dx + dy * dy;
-                if d_sq < best_dist_sq {
-                    best_dist_sq = d_sq;
-                    best_idx = Some(i);
-                }
-            }
-
-            match best_idx {
-                Some(i) => {
-                    chain.push(points[i]);
-                    used[i] = true;
-                }
-                None => break,
-            }
-        }
-
-        // Only keep loops with enough points and that close back near the start
-        if chain.len() >= 3 {
-            let first = chain[0];
-            // Safety: chain.len() >= 3 guard above guarantees non-empty.
-            #[allow(clippy::unwrap_used, clippy::panic)]
-            let last = chain.last().unwrap();
-            let dx = first.x - last.x;
-            let dy = first.y - last.y;
-            let close_dist_sq = dx * dx + dy * dy;
-            // Accept if the loop roughly closes
-            if close_dist_sq < max_gap_sq * 4.0 {
-                contours.push(chain);
-            }
-        }
-    }
-
-    contours
 }
 
 #[cfg(test)]
@@ -305,6 +196,19 @@ mod tests {
     use crate::mesh::{SpatialIndex, make_test_hemisphere};
     use crate::tool::BallEndmill;
     use crate::toolpath::MoveType;
+
+    #[test]
+    fn z_levels_matches_generator_ladder() {
+        // R2.8: the exposed ladder must match the generator's own
+        // start-down-to-final stepping exactly (same 1e-10 tail epsilon).
+        let levels = waterline_z_levels(10.0, 0.0, 2.5);
+        assert_eq!(levels, vec![10.0, 7.5, 5.0, 2.5, 0.0]);
+    }
+
+    #[test]
+    fn z_levels_empty_when_start_below_final() {
+        assert!(waterline_z_levels(-1.0, 0.0, 1.0).is_empty());
+    }
 
     #[test]
     fn test_waterline_hemisphere_midheight() {
@@ -405,42 +309,5 @@ mod tests {
                 mean_r
             );
         }
-    }
-
-    #[test]
-    fn test_chain_contours_basic() {
-        // Simple square of points
-        let points = vec![
-            P3::new(0.0, 0.0, 5.0),
-            P3::new(10.0, 0.0, 5.0),
-            P3::new(10.0, 10.0, 5.0),
-            P3::new(0.0, 10.0, 5.0),
-        ];
-        let contours = chain_contours(&points, 15.0);
-        assert_eq!(contours.len(), 1, "Should form one loop");
-        assert_eq!(contours[0].len(), 4);
-    }
-
-    #[test]
-    fn test_chain_contours_two_separate() {
-        // Two clusters far apart
-        let points = vec![
-            P3::new(0.0, 0.0, 5.0),
-            P3::new(1.0, 0.0, 5.0),
-            P3::new(1.0, 1.0, 5.0),
-            P3::new(0.0, 1.0, 5.0),
-            P3::new(100.0, 100.0, 5.0),
-            P3::new(101.0, 100.0, 5.0),
-            P3::new(101.0, 101.0, 5.0),
-            P3::new(100.0, 101.0, 5.0),
-        ];
-        let contours = chain_contours(&points, 3.0);
-        assert_eq!(contours.len(), 2, "Should form two separate loops");
-    }
-
-    #[test]
-    fn test_chain_contours_empty() {
-        let contours = chain_contours(&[], 5.0);
-        assert!(contours.is_empty());
     }
 }

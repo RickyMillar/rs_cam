@@ -18,10 +18,10 @@
 use crate::debug_trace::ToolpathDebugContext;
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::{Polygon2, offset_polygon};
 use crate::scallop_math::variable_stepover;
-use crate::slope::SurfaceHeightmap;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveIntent, Toolpath};
 
@@ -120,7 +120,10 @@ fn average_stepover_for_ring(
 
     for pt in ring.iter().step_by(sample_step) {
         let angle = slope_map.angle_at_world(pt.x, pt.y).unwrap_or(0.0);
-        let curvature = slope_map.curvature_at_world(pt.x, pt.y).unwrap_or(0.0);
+        // SlopeMap convention: negative = physically convex (see slope.rs doc on
+        // `curvatures`). scallop_math::variable_stepover expects the opposite
+        // (positive = convex), so negate at this boundary.
+        let curvature = -slope_map.curvature_at_world(pt.x, pt.y).unwrap_or(0.0);
         let so = variable_stepover(tool_radius, scallop_height, angle, curvature);
         if so > 0.01 {
             sum += so;
@@ -163,7 +166,11 @@ fn ring_to_3d(
 /// Uses variable stepover: at each ring, samples the slope map to compute
 /// the average stepover that maintains constant scallop height, then offsets
 /// by that amount.
-#[allow(clippy::too_many_arguments)]
+// infallible: cancel closure always returns false, so Cancelled is unreachable
+#[allow(clippy::too_many_arguments, clippy::expect_used)]
+// Production goes through the _with_cancel variant; this never-cancel
+// convenience wrapper is exercised by the unit tests below.
+#[cfg_attr(not(test), allow(dead_code))]
 fn generate_scallop_rings(
     boundary: &Polygon2,
     mesh: &TriangleMesh,
@@ -176,6 +183,40 @@ fn generate_scallop_rings(
     min_z: f64,
     max_rings: usize,
 ) -> Vec<Vec<P3>> {
+    let never_cancel = || false;
+    generate_scallop_rings_with_cancel(
+        boundary,
+        mesh,
+        index,
+        cutter,
+        slope_map,
+        tool_radius,
+        scallop_height,
+        stock_to_leave,
+        min_z,
+        max_rings,
+        &never_cancel,
+    )
+    .expect("non-cancellable scallop ring generation should never be cancelled")
+}
+
+/// Cancellable variant of [`generate_scallop_rings`]. Polls `cancel` once per
+/// ring (the expensive step: `ring_to_3d` runs a `point_drop_cutter` query per
+/// ring point).
+#[allow(clippy::too_many_arguments)]
+fn generate_scallop_rings_with_cancel(
+    boundary: &Polygon2,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    slope_map: &crate::slope::SlopeMap,
+    tool_radius: f64,
+    scallop_height: f64,
+    stock_to_leave: f64,
+    min_z: f64,
+    max_rings: usize,
+    cancel: &dyn CancelCheck,
+) -> Result<Vec<Vec<P3>>, Cancelled> {
     let mut rings_3d: Vec<Vec<P3>> = Vec::new();
 
     // First ring: the boundary itself, lifted to 3D
@@ -188,7 +229,7 @@ fn generate_scallop_rings(
         min_z,
     );
     if first_ring.len() < 3 {
-        return rings_3d;
+        return Ok(rings_3d);
     }
     rings_3d.push(first_ring);
 
@@ -196,6 +237,7 @@ fn generate_scallop_rings(
     let mut current_polys = vec![boundary.clone()];
 
     for _ in 0..max_rings {
+        check_cancel(cancel)?;
         // Compute average stepover from the current ring's slope/curvature
         let avg_stepover = if current_polys.is_empty() {
             crate::scallop_math::stepover_from_scallop_flat(tool_radius, scallop_height)
@@ -250,7 +292,7 @@ fn generate_scallop_rings(
         current_polys = next_polys;
     }
 
-    rings_3d
+    Ok(rings_3d)
 }
 
 /// Find the closest point index on `ring` to `target`.
@@ -304,6 +346,8 @@ fn runtime_annotations_to_labels(annotations: &[ScallopRuntimeAnnotation]) -> Ve
         .collect()
 }
 
+// infallible: cancel closure always returns false, so Cancelled is unreachable
+#[allow(clippy::expect_used)]
 pub fn scallop_toolpath_structured_annotated(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -311,22 +355,51 @@ pub fn scallop_toolpath_structured_annotated(
     params: &ScallopParams,
     debug: Option<&ToolpathDebugContext>,
 ) -> (Toolpath, Vec<ScallopRuntimeAnnotation>) {
+    let never_cancel = || false;
+    scallop_toolpath_structured_annotated_with_cancel(
+        mesh,
+        index,
+        cutter,
+        params,
+        debug,
+        &never_cancel,
+    )
+    .expect("non-cancellable scallop toolpath should never be cancelled")
+}
+
+/// Cancellable variant of [`scallop_toolpath_structured_annotated`]. Polls
+/// `cancel` once per ring during 3D ring generation (`ring_to_3d`'s
+/// per-point drop-cutter queries are the expensive step) and once per ring
+/// again while chaining rings into the toolpath.
+pub fn scallop_toolpath_structured_annotated_with_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &ScallopParams,
+    debug: Option<&ToolpathDebugContext>,
+    cancel: &dyn CancelCheck,
+) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>), Cancelled> {
+    check_cancel(cancel)?;
     let tool_radius = cutter.radius();
     let bbox = &mesh.bbox;
 
-    // Build surface heightmap and slope map
-    let cell_size = (tool_radius / 4.0).max(params.tolerance);
+    // Build surface heightmap and slope map (shared setup, see finish_setup.rs)
+    let surface = crate::finish_setup::build_finish_surface_with_cancel(
+        mesh,
+        index,
+        cutter,
+        params.tolerance,
+        cancel,
+    )?;
+    let slope_map = surface.slope_map;
+
+    // Kept alongside the shared heightmap builder above (which derives the
+    // same values internally) because `max_rings` below still needs the raw
+    // extent — not just the resulting grid.
     let origin_x = bbox.min.x - tool_radius;
     let origin_y = bbox.min.y - tool_radius;
     let extent_x = bbox.max.x + tool_radius;
     let extent_y = bbox.max.y + tool_radius;
-    let cols = ((extent_x - origin_x) / cell_size).ceil() as usize + 1;
-    let rows = ((extent_y - origin_y) / cell_size).ceil() as usize + 1;
-
-    let surface_hm = SurfaceHeightmap::from_mesh(
-        mesh, index, cutter, origin_x, origin_y, rows, cols, cell_size, bbox.min.z,
-    );
-    let slope_map = surface_hm.slope_map();
 
     // Outer boundary: mesh footprint as a rectangle, sampled densely enough
     // for polygon offset to work correctly. Point spacing = stepover.
@@ -389,7 +462,7 @@ pub fn scallop_toolpath_structured_annotated(
     );
 
     // Generate 3D rings
-    let mut rings = generate_scallop_rings(
+    let mut rings = generate_scallop_rings_with_cancel(
         &boundary,
         mesh,
         index,
@@ -400,12 +473,13 @@ pub fn scallop_toolpath_structured_annotated(
         params.stock_to_leave,
         bbox.min.z,
         max_rings,
-    );
+        cancel,
+    )?;
 
     info!(rings = rings.len(), "Scallop rings generated");
 
     if rings.is_empty() {
-        return (Toolpath::new(), Vec::new());
+        return Ok((Toolpath::new(), Vec::new()));
     }
 
     // Apply direction
@@ -414,7 +488,8 @@ pub fn scallop_toolpath_structured_annotated(
     }
 
     // Slope confinement
-    let use_slope_filter = params.slope_from > 0.01 || params.slope_to < 89.99;
+    let use_slope_filter =
+        crate::finish_setup::slope_filter_active(params.slope_from, params.slope_to);
     let slope_from_rad = params.slope_from.to_radians();
     let slope_to_rad = params.slope_to.to_radians();
 
@@ -430,6 +505,7 @@ pub fn scallop_toolpath_structured_annotated(
         let mut prev_end = rings[0].last().copied().unwrap_or(rings[0][0]);
 
         for (i, ring) in rings.iter().enumerate() {
+            check_cancel(cancel)?;
             // Rotate ring to start at the closest point to the previous endpoint
             let start_idx = closest_point_idx(ring, &prev_end);
             let rotated = rotate_ring(ring, start_idx);
@@ -457,24 +533,64 @@ pub fn scallop_toolpath_structured_annotated(
                 tp.feed_to_with_intent(rotated[0], params.feed_rate, MoveIntent::FinishingCut);
             }
 
-            // Follow the ring
-            #[allow(clippy::indexing_slicing)]
-            for pt in &rotated[1..] {
-                if use_slope_filter {
-                    let in_range = slope_map
-                        .angle_at_world(pt.x, pt.y)
-                        .is_some_and(|a| a >= slope_from_rad && a <= slope_to_rad);
-                    if !in_range {
+            // Follow the ring. `rotated[0]` (the connector point above) is
+            // always emitted regardless of slope; only the rest of the ring
+            // is subject to the slope filter, split into contiguous
+            // in-range runs so an excluded stretch breaks the chain with a
+            // retract/replunge instead of being chorded through at cutting
+            // feed.
+            let rest = rotated.get(1..).unwrap_or(&[]);
+            if use_slope_filter {
+                let idx_runs = crate::point_runs::split_run_ranges(
+                    rest,
+                    |_, pt: &P3| {
+                        slope_map
+                            .angle_at_world(pt.x, pt.y)
+                            .is_some_and(|a| a >= slope_from_rad && a <= slope_to_rad)
+                    },
+                    1,
+                );
+                for (run_idx, (s, e)) in idx_runs.into_iter().enumerate() {
+                    let Some(run) = rest.get(s..=e) else {
                         continue;
+                    };
+                    // The very first run is contiguous with the connector
+                    // point emitted above only when it starts right at
+                    // index 0 of `rest` (no excluded stretch in between).
+                    let contiguous_with_prev = run_idx == 0 && s == 0;
+                    let mut iter = run.iter();
+                    if !contiguous_with_prev && let Some(&run_first) = iter.next() {
+                        if let Some(last_move) = tp.moves.last() {
+                            tp.rapid_to_with_intent(
+                                P3::new(last_move.target.x, last_move.target.y, params.safe_z),
+                                MoveIntent::Retract,
+                            );
+                        }
+                        tp.rapid_to_with_intent(
+                            P3::new(run_first.x, run_first.y, params.safe_z),
+                            MoveIntent::Linking,
+                        );
+                        tp.feed_to_with_intent(
+                            run_first,
+                            params.plunge_rate,
+                            MoveIntent::EntryPlunge,
+                        );
+                    }
+                    for pt in iter {
+                        tp.feed_to_with_intent(*pt, params.feed_rate, MoveIntent::FinishingCut);
                     }
                 }
-                tp.feed_to_with_intent(*pt, params.feed_rate, MoveIntent::FinishingCut);
+            } else {
+                for pt in rest {
+                    tp.feed_to_with_intent(*pt, params.feed_rate, MoveIntent::FinishingCut);
+                }
             }
 
-            #[allow(clippy::indexing_slicing)]
-            {
-                prev_end = rotated.last().copied().unwrap_or(rotated[0]);
-            }
+            prev_end = rotated
+                .last()
+                .or_else(|| rotated.first())
+                .copied()
+                .unwrap_or(P3::new(0.0, 0.0, 0.0));
         }
 
         // Final retract
@@ -483,57 +599,71 @@ pub fn scallop_toolpath_structured_annotated(
             MoveIntent::Retract,
         );
     } else {
-        // Discrete ring mode: rapid between rings
-        let mut emitted_rings = Vec::new();
+        // Discrete ring mode: rapid between rings. Each ring is split into
+        // contiguous slope-confined runs — a ring is only safe to close
+        // back to its own start when EVERY point on it survived the slope
+        // filter (a partial survivor set closing across the excluded gap
+        // would chord straight through material this pass must not touch).
+        let mut emitted_runs: Vec<(Vec<P3>, bool)> = Vec::new();
         for ring in &rings {
             if ring.len() < 3 {
                 continue;
             }
 
-            // Filter by slope if configured
-            let filtered: Vec<P3> = if use_slope_filter {
-                ring.iter()
-                    .filter(|pt| {
+            if use_slope_filter {
+                let runs = crate::point_runs::split_runs(
+                    ring,
+                    |_, pt: &P3| {
                         slope_map
                             .angle_at_world(pt.x, pt.y)
                             .is_some_and(|a| a >= slope_from_rad && a <= slope_to_rad)
-                    })
-                    .copied()
-                    .collect()
+                    },
+                    crate::point_runs::RunTopology::Closed,
+                    3,
+                );
+                for run in runs {
+                    let is_closed_loop = run.len() == ring.len();
+                    emitted_runs.push((run, is_closed_loop));
+                }
             } else {
-                ring.clone()
-            };
-
-            if filtered.len() < 3 {
-                continue;
+                emitted_runs.push((ring.clone(), true));
             }
-            emitted_rings.push(filtered);
         }
 
-        // SAFETY: filtered.len() >= 3 checked before pushing to emitted_rings
-        #[allow(clippy::indexing_slicing)]
-        for (ring_index, filtered) in emitted_rings.iter().enumerate() {
+        for (ring_index, (points, close_loop)) in emitted_runs.iter().enumerate() {
+            check_cancel(cancel)?;
+            let Some(&first) = points.first() else {
+                continue;
+            };
             let move_index = tp.moves.len();
             annotations.push(ScallopRuntimeAnnotation {
                 move_index,
                 event: ScallopRuntimeEvent::Ring {
                     ring_index: ring_index + 1,
-                    ring_total: emitted_rings.len(),
+                    ring_total: emitted_runs.len(),
                     continuous: false,
                 },
             });
             tp.rapid_to_with_intent(
-                P3::new(filtered[0].x, filtered[0].y, params.safe_z),
+                P3::new(first.x, first.y, params.safe_z),
                 MoveIntent::Linking,
             );
-            tp.feed_to_with_intent(filtered[0], params.plunge_rate, MoveIntent::EntryPlunge);
-            for pt in &filtered[1..] {
+            tp.feed_to_with_intent(first, params.plunge_rate, MoveIntent::EntryPlunge);
+            for pt in points.iter().skip(1) {
                 tp.feed_to_with_intent(*pt, params.feed_rate, MoveIntent::FinishingCut);
             }
-            // Close the ring
-            tp.feed_to_with_intent(filtered[0], params.feed_rate, MoveIntent::FinishingCut);
+            let retract_at = if *close_loop {
+                // Close the ring: the closing feed brings the cutter back
+                // to the first point, so retract from there.
+                tp.feed_to_with_intent(first, params.feed_rate, MoveIntent::FinishingCut);
+                first
+            } else {
+                // Open arc: the cutter is at the run's last point — retract
+                // there rather than chording back to the run's start.
+                points.last().copied().unwrap_or(first)
+            };
             tp.rapid_to_with_intent(
-                P3::new(filtered[0].x, filtered[0].y, params.safe_z),
+                P3::new(retract_at.x, retract_at.y, params.safe_z),
                 MoveIntent::Retract,
             );
         }
@@ -561,7 +691,7 @@ pub fn scallop_toolpath_structured_annotated(
         }
     }
 
-    (tp, annotations)
+    Ok((tp, annotations))
 }
 
 pub fn scallop_toolpath_annotated(
@@ -613,18 +743,17 @@ mod tests {
             crate::scallop_math::stepover_from_scallop_flat(tool_radius, scallop_height);
 
         let cell_size = 1.0;
-        let bbox = &mesh.bbox;
-        let origin_x = bbox.min.x - tool_radius;
-        let origin_y = bbox.min.y - tool_radius;
-        let extent_x = bbox.max.x + tool_radius;
-        let extent_y = bbox.max.y + tool_radius;
-        let cols = ((extent_x - origin_x) / cell_size).ceil() as usize + 1;
-        let rows = ((extent_y - origin_y) / cell_size).ceil() as usize + 1;
-
-        let surface_hm = SurfaceHeightmap::from_mesh(
-            &mesh, &si, &cutter, origin_x, origin_y, rows, cols, cell_size, bbox.min.z,
-        );
-        let slope_map = surface_hm.slope_map();
+        let never_cancel = || false;
+        // SAFETY: never_cancel always returns false
+        let surface = crate::finish_setup::build_finish_surface_with_cell_size_and_cancel(
+            &mesh,
+            &si,
+            &cutter,
+            cell_size,
+            &never_cancel,
+        )
+        .unwrap();
+        let slope_map = surface.slope_map;
 
         // Sample stepover from the slope map at the center
         let so = average_stepover_for_ring(
@@ -639,6 +768,61 @@ mod tests {
             "Flat surface stepover ({:.3}) should be near flat formula ({:.3})",
             so,
             expected_so
+        );
+    }
+
+    #[test]
+    fn test_convex_dome_curvature_sign_tightens_stepover() {
+        // Regression pin for the SlopeMap/scallop_math sign-convention mismatch:
+        // SlopeMap reports NEGATIVE curvature at a physically convex dome peak
+        // (see slope.rs::test_curvature_convex), but scallop_math::variable_stepover
+        // expects POSITIVE = convex. average_stepover_for_ring negates the raw
+        // SlopeMap value before calling variable_stepover. If that negation is
+        // ever removed, this test fails: a convex dome must produce a TIGHTER
+        // stepover than a flat surface, not a wider one.
+        fn make_dome_z_grid(rows: usize, cols: usize, cell_size: f64, radius: f64) -> Vec<f64> {
+            let cx = (cols - 1) as f64 * cell_size * 0.5;
+            let cy = (rows - 1) as f64 * cell_size * 0.5;
+            let mut z = vec![0.0; rows * cols];
+            for row in 0..rows {
+                for col in 0..cols {
+                    let x = col as f64 * cell_size - cx;
+                    let y = row as f64 * cell_size - cy;
+                    let r_sq = radius * radius - x * x - y * y;
+                    z[row * cols + col] = if r_sq > 0.0 { r_sq.sqrt() } else { 0.0 };
+                }
+            }
+            z
+        }
+
+        let z = make_dome_z_grid(20, 20, 1.0, 8.0);
+        let slope_map = crate::slope::SlopeMap::from_z_grid(&z, 20, 20, 0.0, 0.0, 1.0);
+
+        let tool_radius = ball_cutter().radius();
+        let scallop_height = 0.1;
+
+        // Dome peak, same cell used by slope.rs::test_curvature_convex.
+        let raw_curvature = slope_map.curvature_at(10, 10);
+        assert!(
+            raw_curvature < 0.0,
+            "Dome peak curvature should be negative in SlopeMap convention, got {:.6}",
+            raw_curvature
+        );
+
+        // Same negation applied at the production call site in
+        // average_stepover_for_ring.
+        let curvature = -raw_curvature;
+        let angle = slope_map.angle_at(10, 10);
+
+        let so_dome = variable_stepover(tool_radius, scallop_height, angle, curvature);
+        let so_flat = crate::scallop_math::stepover_from_scallop_flat(tool_radius, scallop_height);
+
+        assert!(
+            so_dome < so_flat,
+            "Convex dome stepover ({:.4}) should be tighter than flat stepover ({:.4}) \
+             once the sign convention is corrected",
+            so_dome,
+            so_flat
         );
     }
 
@@ -658,16 +842,17 @@ mod tests {
         ]);
 
         let cell_size = 1.0;
-        let origin_x = bbox.min.x - tool_radius;
-        let origin_y = bbox.min.y - tool_radius;
-        let extent_x = bbox.max.x + tool_radius;
-        let extent_y = bbox.max.y + tool_radius;
-        let cols = ((extent_x - origin_x) / cell_size).ceil() as usize + 1;
-        let rows = ((extent_y - origin_y) / cell_size).ceil() as usize + 1;
-        let surface_hm = SurfaceHeightmap::from_mesh(
-            &mesh, &si, &cutter, origin_x, origin_y, rows, cols, cell_size, bbox.min.z,
-        );
-        let slope_map = surface_hm.slope_map();
+        let never_cancel = || false;
+        // SAFETY: never_cancel always returns false
+        let surface = crate::finish_setup::build_finish_surface_with_cell_size_and_cancel(
+            &mesh,
+            &si,
+            &cutter,
+            cell_size,
+            &never_cancel,
+        )
+        .unwrap();
+        let slope_map = surface.slope_map;
 
         let rings = generate_scallop_rings(
             &boundary,
@@ -797,6 +982,93 @@ mod tests {
             "Inside-out scallop should produce moves, got {}",
             tp.moves.len()
         );
+    }
+
+    // ── Regression: slope-confined passes must not chord across gaps ──
+
+    /// Shared assertion: no consecutive pair of cutting (`FinishingCut`)
+    /// moves may be farther apart than `max_allowed` — a bigger jump means
+    /// a cutting move chorded across an excluded slope gap instead of
+    /// retracting. A rapid or plunge in between resets the check, since
+    /// that's exactly the retract/replunge link the fix introduces.
+    fn assert_no_chord_across_gap(tp: &Toolpath, max_allowed: f64) {
+        let mut prev_cut: Option<P3> = None;
+        let mut saw_any_cut = false;
+        for m in &tp.moves {
+            let is_cut = matches!(m.move_type, crate::toolpath::MoveType::Linear { .. })
+                && m.intent == MoveIntent::FinishingCut;
+            if is_cut {
+                saw_any_cut = true;
+                if let Some(prev) = prev_cut {
+                    let d = ((m.target.x - prev.x).powi(2) + (m.target.y - prev.y).powi(2)).sqrt();
+                    assert!(
+                        d <= max_allowed,
+                        "cutting move chorded across the excluded slope gap: {:.2}mm \
+                         (allowed {:.2}mm) from ({:.2},{:.2}) to ({:.2},{:.2})",
+                        d,
+                        max_allowed,
+                        prev.x,
+                        prev.y,
+                        m.target.x,
+                        m.target.y
+                    );
+                }
+                prev_cut = Some(m.target);
+            } else {
+                prev_cut = None;
+            }
+        }
+        assert!(saw_any_cut, "expected at least one cutting move");
+    }
+
+    /// Regression for the discrete-ring chording bug: a slope-confined ring
+    /// used to filter out-of-band points and feed straight between the
+    /// remaining survivors (and even close the loop back to the first
+    /// survivor), chording across the excluded stretch. A hemisphere's
+    /// slope varies continuously with radius, and a ring's own perimeter
+    /// varies in distance from center (it's an offset of the roughly
+    /// rectangular mesh-footprint boundary, not a circle), so a slope band
+    /// like 20-60° is guaranteed to include only part of most rings.
+    #[test]
+    fn test_scallop_discrete_no_chord_across_excluded_slope_gap() {
+        let (mesh, si) = make_hemisphere();
+        let cutter = ball_cutter();
+        let params = ScallopParams {
+            scallop_height: 0.3,
+            tolerance: 0.3,
+            continuous: false,
+            slope_from: 20.0,
+            slope_to: 60.0,
+            ..ScallopParams::default()
+        };
+
+        let tp = scallop_toolpath(&mesh, &si, &cutter, &params);
+
+        let stepover =
+            crate::scallop_math::stepover_from_scallop_flat(cutter.radius(), params.scallop_height);
+        assert_no_chord_across_gap(&tp, (stepover * 6.0).max(3.0));
+    }
+
+    /// Companion regression for continuous (spiral) mode: same slope band,
+    /// same hemisphere, `continuous: true` this time.
+    #[test]
+    fn test_scallop_continuous_no_chord_across_excluded_slope_gap() {
+        let (mesh, si) = make_hemisphere();
+        let cutter = ball_cutter();
+        let params = ScallopParams {
+            scallop_height: 0.3,
+            tolerance: 0.3,
+            continuous: true,
+            slope_from: 20.0,
+            slope_to: 60.0,
+            ..ScallopParams::default()
+        };
+
+        let tp = scallop_toolpath(&mesh, &si, &cutter, &params);
+
+        let stepover =
+            crate::scallop_math::stepover_from_scallop_flat(cutter.radius(), params.scallop_height);
+        assert_no_chord_across_gap(&tp, (stepover * 6.0).max(3.0));
     }
 
     // ── Helper tests ────────────────────────────────────────────────

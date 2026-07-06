@@ -75,6 +75,22 @@ impl MoveType {
             MoveType::Rapid => None,
         }
     }
+
+    /// Returns a copy of this `MoveType` with the feed rate rewritten to
+    /// `feed_rate`, preserving the variant and any arc `i`/`j` offsets.
+    /// `Rapid` carries no feed rate and is returned unchanged — callers
+    /// don't need to special-case rapids before calling this.
+    ///
+    /// Canonical helper for feed-rewriting dressups (feed optimization,
+    /// adaptive feed modulation) that must not disturb move geometry.
+    pub fn with_feed_rate(self, feed_rate: f64) -> MoveType {
+        match self {
+            MoveType::Rapid => MoveType::Rapid,
+            MoveType::Linear { .. } => MoveType::Linear { feed_rate },
+            MoveType::ArcCW { i, j, .. } => MoveType::ArcCW { i, j, feed_rate },
+            MoveType::ArcCCW { i, j, .. } => MoveType::ArcCCW { i, j, feed_rate },
+        }
+    }
 }
 
 /// A single toolpath move to a target position.
@@ -227,6 +243,44 @@ impl Toolpath {
         if let Some(last) = path.last() {
             self.rapid_to_with_intent(P3::new(last.x, last.y, safe_z), MoveIntent::Retract);
         }
+    }
+
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    /// Emit rapid(Linking)→plunge(EntryPlunge)→feed(`body_intent`)→close→rapid(Retract)
+    /// for a closed contour loop (e.g. waterline bands, steep/shallow boundaries).
+    ///
+    /// `points` are the ordered loop vertices, already carrying Z. The tool
+    /// rapids to `safe_z` above `points[0]`, plunges to `points[0]` at
+    /// `plunge`, feeds the remaining points at `feed` tagged `body_intent`,
+    /// then feeds back to `points[0]` to close the loop — that closing move
+    /// is part of the body and also carries `body_intent` — before
+    /// retracting to `safe_z`. Loops shorter than 3 points are a no-op (not
+    /// enough vertices to form a closed shape).
+    ///
+    /// Follow-up (tracker `planning/finishing_stack_review_2026-07.md` P1.4):
+    /// climb/conventional loop-direction orientation should eventually live
+    /// here too, instead of each caller pre-ordering (or not ordering, per
+    /// ramp_finish's naive segment-reversal) its own points.
+    pub fn emit_closed_contour_with_intent(
+        &mut self,
+        points: &[P3],
+        safe_z: f64,
+        feed: f64,
+        plunge: f64,
+        body_intent: MoveIntent,
+    ) {
+        if points.len() < 3 {
+            return;
+        }
+        let first = points[0];
+        self.rapid_to_with_intent(P3::new(first.x, first.y, safe_z), MoveIntent::Linking);
+        self.feed_to_with_intent(first, plunge, MoveIntent::EntryPlunge);
+        for pt in &points[1..] {
+            self.feed_to_with_intent(*pt, feed, body_intent);
+        }
+        // Close the loop — part of the body, tagged the same as the other body feeds.
+        self.feed_to_with_intent(first, feed, body_intent);
+        self.rapid_to_with_intent(P3::new(first.x, first.y, safe_z), MoveIntent::Retract);
     }
 
     /// Retract to safe_z if currently below it (0.001mm epsilon).
@@ -538,6 +592,11 @@ pub fn raster_toolpath_from_grid(
 ///
 /// When `min_z` is `Some(z)`, points clamped at that Z (zero engagement)
 /// are also treated as excluded.
+///
+/// Cutting moves along the row body are tagged `body_intent` (rather than
+/// the default `MoveIntent::Unknown` a plain `feed_to` would leave them
+/// with), so downstream engagement/air-cut metrics can distinguish this
+/// pass's cuts from retracts and other move kinds.
 #[allow(clippy::indexing_slicing, clippy::too_many_arguments)] // bounded by grid dimensions
 pub fn raster_toolpath_from_grid_with_slope_filter(
     grid: &DropCutterGrid,
@@ -548,6 +607,7 @@ pub fn raster_toolpath_from_grid_with_slope_filter(
     plunge_rate: f64,
     safe_z: f64,
     min_z: Option<f64>,
+    body_intent: MoveIntent,
 ) -> Toolpath {
     let mut tp = Toolpath::new();
 
@@ -575,10 +635,11 @@ pub fn raster_toolpath_from_grid_with_slope_filter(
         // Track clamped cells separately — bridging across slope-only gaps is
         // safe (the tool rides the surface through the gap), but bridging
         // across clamped gaps dives the tool to the min_z floor.
-        let mut segments: Vec<(usize, usize)> = Vec::new();
-        let mut seg_start: Option<usize> = None;
         let mut clamped = vec![false; grid.cols];
-        for (i, is_clamped) in clamped.iter_mut().enumerate().take(grid.cols) {
+        let mut in_range = vec![false; grid.cols];
+        for (i, (is_clamped, is_in_range)) in
+            clamped.iter_mut().zip(in_range.iter_mut()).enumerate()
+        {
             let col = col_at(i);
             let idx = row * grid.cols + col;
             let slope_ok = slope_angles
@@ -586,18 +647,9 @@ pub fn raster_toolpath_from_grid_with_slope_filter(
                 .is_none_or(|&angle| angle >= slope_from && angle <= slope_to);
             let z_ok = min_z.is_none_or(|clamp_z| grid.get(row, col).z > clamp_z + CLAMP_EPS);
             *is_clamped = !z_ok;
-            let in_range = slope_ok && z_ok;
-            if in_range {
-                if seg_start.is_none() {
-                    seg_start = Some(i);
-                }
-            } else if let Some(start) = seg_start.take() {
-                segments.push((start, i - 1));
-            }
+            *is_in_range = slope_ok && z_ok;
         }
-        if let Some(start) = seg_start {
-            segments.push((start, grid.cols - 1));
-        }
+        let segments = crate::point_runs::split_run_ranges(&in_range, |_, &keep| keep, 1);
 
         // Phase 2: Merge segments separated by small *slope-only* gaps.
         // Any gap containing a clamped point prevents the merge (cutting
@@ -610,20 +662,20 @@ pub fn raster_toolpath_from_grid_with_slope_filter(
             let first_pt = grid.get(row, first_col);
 
             // Rapid to segment start at safe Z, then plunge
-            tp.rapid_to(P3::new(first_pt.x, first_pt.y, safe_z));
-            tp.feed_to(first_pt.position(), plunge_rate);
+            tp.rapid_to_with_intent(P3::new(first_pt.x, first_pt.y, safe_z), MoveIntent::Linking);
+            tp.feed_to_with_intent(first_pt.position(), plunge_rate, MoveIntent::EntryPlunge);
 
             // Feed through all points in segment (including bridged gaps)
             for i in (seg_s + 1)..=seg_e {
                 let col = col_at(i);
                 let pt = grid.get(row, col);
-                tp.feed_to(pt.position(), feed_rate);
+                tp.feed_to_with_intent(pt.position(), feed_rate, body_intent);
             }
 
             // Retract at the last cutting point (vertical, no diagonal)
             let last_col = col_at(seg_e);
             let last_pt = grid.get(row, last_col);
-            tp.rapid_to(P3::new(last_pt.x, last_pt.y, safe_z));
+            tp.rapid_to_with_intent(P3::new(last_pt.x, last_pt.y, safe_z), MoveIntent::Retract);
         }
     }
 
@@ -713,6 +765,81 @@ mod tests {
         assert_eq!(tp.moves[0].move_type, MoveType::Rapid);
         assert!(matches!(tp.moves[1].move_type, MoveType::Linear { .. }));
         assert_eq!(tp.moves[2].move_type, MoveType::Rapid);
+    }
+
+    #[test]
+    fn test_emit_closed_contour_basic() {
+        let loop_pts = vec![
+            P3::new(0.0, 0.0, -2.0),
+            P3::new(10.0, 0.0, -2.0),
+            P3::new(10.0, 10.0, -2.0),
+            P3::new(0.0, 10.0, -2.0),
+        ];
+        let mut tp = Toolpath::new();
+        tp.emit_closed_contour_with_intent(
+            &loop_pts,
+            25.0,
+            1000.0,
+            500.0,
+            MoveIntent::FinishingCut,
+        );
+
+        // rapid(above first) + plunge(first) + 3 feeds(remaining) + 1 feed(close back
+        // to first) + rapid(retract) = 7 moves.
+        assert_eq!(tp.moves.len(), 7, "moves: {:?}", tp.moves);
+
+        assert_eq!(tp.moves[0].move_type, MoveType::Rapid);
+        assert_eq!(tp.moves[0].intent, MoveIntent::Linking);
+        assert!((tp.moves[0].target.x - loop_pts[0].x).abs() < 1e-10);
+        assert!((tp.moves[0].target.y - loop_pts[0].y).abs() < 1e-10);
+        assert!((tp.moves[0].target.z - 25.0).abs() < 1e-10);
+
+        assert!(
+            matches!(tp.moves[1].move_type, MoveType::Linear { feed_rate } if (feed_rate - 500.0).abs() < 1e-10)
+        );
+        assert_eq!(tp.moves[1].intent, MoveIntent::EntryPlunge);
+        assert!((tp.moves[1].target.z - loop_pts[0].z).abs() < 1e-10);
+
+        // Body feeds (points[1..]) tagged with body_intent.
+        for m in &tp.moves[2..5] {
+            assert!(
+                matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10)
+            );
+            assert_eq!(m.intent, MoveIntent::FinishingCut);
+        }
+        assert!((tp.moves[2].target.x - loop_pts[1].x).abs() < 1e-10);
+        assert!((tp.moves[3].target.x - loop_pts[2].x).abs() < 1e-10);
+        assert!((tp.moves[4].target.x - loop_pts[3].x).abs() < 1e-10);
+
+        // Closing move back to the first point — still body_intent.
+        assert!(
+            matches!(tp.moves[5].move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10)
+        );
+        assert_eq!(tp.moves[5].intent, MoveIntent::FinishingCut);
+        assert!((tp.moves[5].target.x - loop_pts[0].x).abs() < 1e-10);
+        assert!((tp.moves[5].target.y - loop_pts[0].y).abs() < 1e-10);
+
+        // Retract.
+        assert_eq!(tp.moves[6].move_type, MoveType::Rapid);
+        assert_eq!(tp.moves[6].intent, MoveIntent::Retract);
+        assert!((tp.moves[6].target.z - 25.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_emit_closed_contour_too_few_points_is_noop() {
+        let mut tp = Toolpath::new();
+        tp.emit_closed_contour_with_intent(
+            &[P3::new(0.0, 0.0, -1.0), P3::new(1.0, 0.0, -1.0)],
+            10.0,
+            1000.0,
+            500.0,
+            MoveIntent::FinishingCut,
+        );
+        assert!(tp.moves.is_empty(), "fewer than 3 points must emit nothing");
+
+        let mut tp_empty = Toolpath::new();
+        tp_empty.emit_closed_contour_with_intent(&[], 10.0, 1000.0, 500.0, MoveIntent::ClearingCut);
+        assert!(tp_empty.moves.is_empty());
     }
 
     #[test]
@@ -954,10 +1081,11 @@ mod tests {
             points,
             rows,
             cols,
-            x_start: 0.0,
-            y_start: 0.0,
+            u_start: 0.0,
+            v_start: 0.0,
             x_step: 1.0,
             y_step: 1.0,
+            direction_deg: 0.0,
         }
     }
 
@@ -971,7 +1099,15 @@ mod tests {
             *slope = 45.0;
         }
         let tp = raster_toolpath_from_grid_with_slope_filter(
-            &grid, &slopes, 30.0, 90.0, 1000.0, 500.0, 10.0, None,
+            &grid,
+            &slopes,
+            30.0,
+            90.0,
+            1000.0,
+            500.0,
+            10.0,
+            None,
+            MoveIntent::FinishingCut,
         );
         // Should emit: rapid to (0,0,10) → plunge → feed 1-4 → retract at (4,0,10)
         // The retract should be at x=4 (last in-range col), NOT x=5 (first excluded)
@@ -1003,7 +1139,15 @@ mod tests {
         }
 
         let tp = raster_toolpath_from_grid_with_slope_filter(
-            &grid, &slopes, 30.0, 90.0, 1000.0, 500.0, 10.0, None,
+            &grid,
+            &slopes,
+            30.0,
+            90.0,
+            1000.0,
+            500.0,
+            10.0,
+            None,
+            MoveIntent::FinishingCut,
         );
 
         // Count retract-plunge pairs (rapid moves at safe_z that aren't the first)
@@ -1029,7 +1173,15 @@ mod tests {
         let grid = make_test_grid(3, 10, |_, _| 0.0);
         let slopes = vec![0.0; 30]; // all flat
         let tp = raster_toolpath_from_grid_with_slope_filter(
-            &grid, &slopes, 30.0, 90.0, 1000.0, 500.0, 10.0, None,
+            &grid,
+            &slopes,
+            30.0,
+            90.0,
+            1000.0,
+            500.0,
+            10.0,
+            None,
+            MoveIntent::FinishingCut,
         );
         assert!(
             tp.moves.is_empty(),
@@ -1042,7 +1194,15 @@ mod tests {
         let grid = make_test_grid(3, 10, |_, col| col as f64 * 0.5);
         let slopes = vec![45.0; 30]; // all steep
         let tp_filtered = raster_toolpath_from_grid_with_slope_filter(
-            &grid, &slopes, 0.0, 90.0, 1000.0, 500.0, 10.0, None,
+            &grid,
+            &slopes,
+            0.0,
+            90.0,
+            1000.0,
+            500.0,
+            10.0,
+            None,
+            MoveIntent::FinishingCut,
         );
         let tp_unfiltered = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None);
         assert_eq!(

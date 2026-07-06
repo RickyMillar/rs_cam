@@ -5,7 +5,7 @@
 
 use crate::geo::{P2, P3};
 use crate::polygon::{Polygon2, offset_polygon};
-use crate::toolpath::Toolpath;
+use crate::toolpath::{MoveIntent, Toolpath};
 
 /// Which side of the boundary the tool cuts on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -85,6 +85,14 @@ pub fn profile_contour(polygon: &Polygon2, tool_radius: f64, side: ProfileSide) 
         .map(|p| p.exterior)
 }
 
+/// S.7 (planning/finishing_stack_review_2026-07.md): emits via the shared
+/// `emit_closed_contour_with_intent` rapid→plunge→feed→close→retract
+/// envelope. Byte-identical to the previous hand-rolled sequence: both
+/// callers of this function guarantee `contour.len() >= 3` before invoking
+/// it (`profile_contour` filters `exterior.len() >= 3`; the
+/// `compensate_in_controller` path checks `pts.len() < 3` and bails early),
+/// so the shared emitter's `< 3` no-op guard is never exercised differently
+/// than the old `is_empty()` guard was.
 fn contour_to_toolpath(contour: &[P2], params: &ProfileParams) -> Toolpath {
     let mut tp = Toolpath::new();
 
@@ -92,47 +100,23 @@ fn contour_to_toolpath(contour: &[P2], params: &ProfileParams) -> Toolpath {
         return tp;
     }
 
-    let pts: Vec<&P2> = if params.climb {
+    // Optionally reverse for climb milling.
+    let ordered: Vec<&P2> = if params.climb {
         contour.iter().rev().collect()
     } else {
         contour.iter().collect()
     };
+    let points: Vec<P3> = ordered
+        .iter()
+        .map(|p| P3::new(p.x, p.y, params.cut_depth))
+        .collect();
 
-    // SAFETY: contour is non-empty (checked above), so pts is non-empty
-    #[allow(clippy::indexing_slicing)]
-    let start = pts[0];
-
-    use crate::toolpath::MoveIntent;
-    // Rapid to start at safe Z
-    tp.rapid_to_with_intent(
-        P3::new(start.x, start.y, params.safe_z),
-        MoveIntent::Linking,
-    );
-    // Plunge to cut depth
-    tp.feed_to_with_intent(
-        P3::new(start.x, start.y, params.cut_depth),
-        params.plunge_rate,
-        MoveIntent::EntryPlunge,
-    );
-    // Feed around contour
-    #[allow(clippy::indexing_slicing)]
-    for pt in &pts[1..] {
-        tp.feed_to_with_intent(
-            P3::new(pt.x, pt.y, params.cut_depth),
-            params.feed_rate,
-            MoveIntent::FinishingCut,
-        );
-    }
-    // Close the loop
-    tp.feed_to_with_intent(
-        P3::new(start.x, start.y, params.cut_depth),
+    tp.emit_closed_contour_with_intent(
+        &points,
+        params.safe_z,
         params.feed_rate,
+        params.plunge_rate,
         MoveIntent::FinishingCut,
-    );
-    // Retract
-    tp.rapid_to_with_intent(
-        P3::new(start.x, start.y, params.safe_z),
-        MoveIntent::Retract,
     );
 
     tp

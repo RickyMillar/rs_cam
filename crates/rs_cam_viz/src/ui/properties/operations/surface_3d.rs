@@ -89,16 +89,8 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
             );
             dv(
                 ui,
-                "Floor Stock:",
+                "Stock to Leave:",
                 &mut cfg.stock_to_leave_axial,
-                " mm",
-                0.05,
-                0.0..=10.0,
-            );
-            dv(
-                ui,
-                "Wall Stock:",
-                &mut cfg.stock_to_leave_radial,
                 " mm",
                 0.05,
                 0.0..=10.0,

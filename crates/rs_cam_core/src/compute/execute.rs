@@ -185,9 +185,24 @@ impl From<String> for OperationError {
 /// [`execute_operation_annotated`] receives, minus the operation
 /// itself. Family adapters ([`GenerateFn`]) take this context so every
 /// migrated family shares ONE signature; in particular `cancel` is
-/// always in scope, so an adapter can't silently drop the cooperative
-/// cancellation closure (sentried by
-/// `cancellable_families_honour_a_preset_cancel_flag`).
+/// always in scope for every adapter to read.
+///
+/// Having `cancel` in scope does NOT by itself guarantee an adapter polls
+/// it — nothing stops a `GenerateFn` from ignoring the field entirely (that
+/// was exactly the 2026-07 incident: a fine-stepover mesh-finish generation
+/// hung the GUI for two hours because its adapter never rebuilt the
+/// `|| cancel.load(Ordering::SeqCst)` closure). The only families with a
+/// verified guarantee are the ones exercised by
+/// `cancellable_families_honour_a_preset_cancel_flag`: Adaptive, DropCutter,
+/// Adaptive3d, Waterline, Pencil, Scallop, SteepShallow, RampFinish,
+/// SpiralFinish, RadialFinish, HorizontalFinish (the 2026-07 mesh-finish
+/// fix's 11), plus Pocket, Profile, Zigzag, Trace, Face, ProjectCurve,
+/// VCarve, Inlay (the flat-2D S.5 fix,
+/// planning/finishing_stack_review_2026-07.md — 19 of 23 registered
+/// families as of that fix; the remaining four — Drill, AlignmentPinDrill,
+/// Rest, Chamfer — are still uncancellable). Adding cancel support to
+/// another family means adding it to that sentry's case list too, or the
+/// coverage claim here silently goes stale.
 pub struct ExecutionContext<'a> {
     pub mesh: Option<&'a TriangleMesh>,
     pub index: Option<&'a SpatialIndex>,
@@ -219,6 +234,28 @@ pub struct ExecutionContext<'a> {
 /// fine and are only caught by span-aware tests, not the compiler.
 pub type GenerateFn =
     fn(&ExecutionContext<'_>, &OperationConfig) -> Result<GeneratedToolpath, OperationError>;
+
+/// R2.3: the config-guard boilerplate duplicated 23× across every family
+/// adapter (`let OperationConfig::X(cfg) = op else { return Err(refusal) }`).
+/// Expands to the identical `let`-else guard; `$fn_name` is passed as a
+/// literal (macro hygiene has no way to recover the enclosing fn's name)
+/// so the error text stays byte-identical to what it was before the
+/// macro existed — nothing downstream matches on this string, but
+/// keeping it stable avoids surprising anyone grepping logs for it.
+macro_rules! config_guard {
+    ($op:expr, $variant:ident, $fn_name:literal) => {
+        match $op {
+            OperationConfig::$variant(cfg) => cfg,
+            _ => {
+                return Err(OperationError::Other(format!(
+                    "registry adapter mismatch: {} received a non-{} config",
+                    $fn_name,
+                    stringify!($variant)
+                )));
+            }
+        }
+    };
+}
 
 /// Resolve the drill hole positions for a [`DrillConfig`].
 ///
@@ -269,11 +306,7 @@ pub(crate) fn generate_drill(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Drill(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_drill received a non-Drill config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Drill, "generate_drill");
     let holes = drill_holes_for_config(cfg, ctx.polygons)?;
     let cycle = cfg.cycle.to_core(cfg);
     let params = crate::drill::DrillParams {
@@ -296,13 +329,7 @@ pub(crate) fn generate_alignment_pin_drill(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::AlignmentPinDrill(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_alignment_pin_drill received a \
-             non-AlignmentPinDrill config"
-                .into(),
-        ));
-    };
+    let cfg = config_guard!(op, AlignmentPinDrill, "generate_alignment_pin_drill");
     // Stock alignment pins plus any extra targets picked from the model.
     let mut holes = cfg.holes.clone();
     if let Some(selected) = &cfg.selected_holes {
@@ -337,11 +364,7 @@ pub(crate) fn generate_rest(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Rest(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_rest received a non-Rest config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Rest, "generate_rest");
     let polys = require_polygons(ctx.polygons)?;
     let ptr = ctx
         .prev_tool_radius
@@ -368,42 +391,29 @@ pub(crate) fn generate_rest(
         });
         combined.moves.extend(tp.moves);
     }
-    let generated = generated_with_depth_run_spans(combined, &levels);
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    Ok(with_depth_run_annotation(
+        generated_with_depth_run_spans(combined, &levels),
+        ctx.semantic_ctx,
+    ))
 }
 
 /// Inlay family adapter (female + male halves concatenated with a
-/// retract between; V-bit refusal preserved verbatim).
+/// retract between; V-bit refusal preserved verbatim). Cancellable: the
+/// cooperative cancel closure is rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_inlay(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Inlay(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_inlay received a non-Inlay config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Inlay, "generate_inlay");
     let polys = require_polygons(ctx.polygons)?;
-    let ha = match ctx.tool_cfg.tool_type {
-        ToolType::VBit => (ctx.tool_cfg.included_angle / 2.0).to_radians(),
-        _ => {
-            return Err(OperationError::InvalidTool(
-                "Inlay requires V-Bit tool".into(),
-            ));
-        }
-    };
+    let ha = vbit_half_angle(ctx.tool_cfg, "Inlay")?;
     let safe_z = ctx.heights.retract_z;
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut female_out = Toolpath::new();
     let mut male_out = Toolpath::new();
     for poly in polys {
-        let r = crate::inlay::inlay_toolpaths(
+        let r = crate::inlay::inlay_toolpaths_with_cancel(
             poly,
             &crate::inlay::InlayParams {
                 half_angle: ha,
@@ -417,8 +427,11 @@ pub(crate) fn generate_inlay(
                 plunge_rate: op.plunge_rate(),
                 safe_z,
                 tolerance: cfg.tolerance,
+                top_z: ctx.heights.top_z,
             },
-        );
+            &cancel_fn,
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
         female_out.moves.extend(r.female.moves);
         male_out.moves.extend(r.male.moves);
     }
@@ -427,41 +440,28 @@ pub(crate) fn generate_inlay(
         out.final_retract(safe_z);
         out.moves.extend(male_out.moves);
     }
-    let generated = generated_with_cut_run_spans(out, "Inlay run");
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    Ok(with_depth_run_annotation(
+        generated_with_cut_run_spans(out, "Inlay run"),
+        ctx.semantic_ctx,
+    ))
 }
 
 /// VCarve family adapter. Cut-run spans labeled "V-carve run"; refusal
-/// for non-V-bit tools preserved verbatim.
+/// for non-V-bit tools preserved verbatim. Cancellable: the cooperative
+/// cancel closure is rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_vcarve(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::VCarve(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_vcarve received a non-VCarve config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, VCarve, "generate_vcarve");
     let polys = require_polygons(ctx.polygons)?;
-    let ha = match ctx.tool_cfg.tool_type {
-        ToolType::VBit => (ctx.tool_cfg.included_angle / 2.0).to_radians(),
-        _ => {
-            return Err(OperationError::InvalidTool(
-                "VCarve requires V-Bit tool".into(),
-            ));
-        }
-    };
+    let ha = vbit_half_angle(ctx.tool_cfg, "VCarve")?;
     let safe_z = ctx.heights.retract_z;
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
     for poly in polys {
-        let tp = crate::vcarve::vcarve_toolpath(
+        let tp = crate::vcarve::vcarve_toolpath_with_cancel(
             poly,
             &crate::vcarve::VCarveParams {
                 half_angle: ha,
@@ -471,19 +471,17 @@ pub(crate) fn generate_vcarve(
                 plunge_rate: op.plunge_rate(),
                 safe_z,
                 tolerance: cfg.tolerance,
+                top_z: ctx.heights.top_z,
             },
-        );
+            &cancel_fn,
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
         combined.moves.extend(tp.moves);
     }
-    let generated = generated_with_cut_run_spans(combined, "V-carve run");
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    Ok(with_depth_run_annotation(
+        generated_with_cut_run_spans(combined, "V-carve run"),
+        ctx.semantic_ctx,
+    ))
 }
 
 /// Chamfer family adapter. Cut-run spans labeled "Chamfer run"; refusal
@@ -492,20 +490,9 @@ pub(crate) fn generate_chamfer(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Chamfer(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_chamfer received a non-Chamfer config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Chamfer, "generate_chamfer");
     let polys = require_polygons(ctx.polygons)?;
-    let ha = match ctx.tool_cfg.tool_type {
-        ToolType::VBit => (ctx.tool_cfg.included_angle / 2.0).to_radians(),
-        _ => {
-            return Err(OperationError::InvalidTool(
-                "Chamfer requires V-Bit tool".into(),
-            ));
-        }
-    };
+    let ha = vbit_half_angle(ctx.tool_cfg, "Chamfer")?;
     let safe_z = ctx.heights.retract_z;
     let mut combined = Toolpath::new();
     for poly in polys {
@@ -513,83 +500,77 @@ pub(crate) fn generate_chamfer(
             chamfer_width: cfg.chamfer_width,
             tip_offset: cfg.tip_offset,
             tool_half_angle: ha,
-            tool_radius: ctx.tool_def.radius(),
             feed_rate: op.feed_rate(),
             plunge_rate: op.plunge_rate(),
             safe_z,
+            top_z: ctx.heights.top_z,
         };
         let tp = crate::chamfer::chamfer_toolpath(poly, &params);
         combined.moves.extend(tp.moves);
     }
-    let generated = generated_with_cut_run_spans(combined, "Chamfer run");
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    Ok(with_depth_run_annotation(
+        generated_with_cut_run_spans(combined, "Chamfer run"),
+        ctx.semantic_ctx,
+    ))
 }
 
-/// Zigzag family adapter.
+/// Zigzag family adapter. Cancellable: the cooperative cancel closure is
+/// rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_zigzag(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Zigzag(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_zigzag received a non-Zigzag config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Zigzag, "generate_zigzag");
     let polys = require_polygons(ctx.polygons)?;
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
     let tool_radius = ctx.tool_def.radius();
     let safe_z = ctx.heights.retract_z;
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
     for poly in polys {
-        let tp = crate::depth::toolpath_at_levels(&levels, safe_z, |z| {
-            crate::zigzag::zigzag_toolpath(
-                poly,
-                &crate::zigzag::ZigzagParams {
-                    tool_radius,
-                    stepover: cfg.stepover,
-                    cut_depth: z,
-                    feed_rate: op.feed_rate(),
-                    plunge_rate: op.plunge_rate(),
-                    safe_z,
-                    angle: cfg.angle,
-                },
-            )
-        });
+        let tp = crate::depth::toolpath_at_levels_with_cancel(
+            &levels,
+            safe_z,
+            |z| {
+                Ok(crate::zigzag::zigzag_toolpath(
+                    poly,
+                    &crate::zigzag::ZigzagParams {
+                        tool_radius,
+                        stepover: cfg.stepover,
+                        cut_depth: z,
+                        feed_rate: op.feed_rate(),
+                        plunge_rate: op.plunge_rate(),
+                        safe_z,
+                        angle: cfg.angle,
+                    },
+                ))
+            },
+            &cancel_fn,
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
         combined.moves.extend(tp.moves);
     }
-    let generated = generated_with_depth_run_spans(combined, &levels);
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    Ok(with_depth_run_annotation(
+        generated_with_depth_run_spans(combined, &levels),
+        ctx.semantic_ctx,
+    ))
 }
 
 /// Trace family adapter. NOTE: trace uses `annotate_trace_spans`, not
 /// the generic depth-run annotator — the per-family annotate fn is
-/// part of the contract (plan §Phase-5 task 1).
+/// part of the contract (plan §Phase-5 task 1). Cancellable: the
+/// cooperative cancel closure is rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_trace(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Trace(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_trace received a non-Trace config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Trace, "generate_trace");
     let polys = require_polygons(ctx.polygons)?;
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
     let safe_z = ctx.heights.retract_z;
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
     for poly in polys {
         let params = crate::trace::TraceParams {
@@ -602,9 +583,13 @@ pub(crate) fn generate_trace(
             compensation: cfg.compensation,
             top_z: ctx.heights.top_z,
         };
-        let tp = crate::depth::toolpath_at_levels(&levels, safe_z, |z| {
-            crate::trace::trace_polygon_at_z(poly, z, &params)
-        });
+        let tp = crate::depth::toolpath_at_levels_with_cancel(
+            &levels,
+            safe_z,
+            |z| Ok(crate::trace::trace_polygon_at_z(poly, z, &params)),
+            &cancel_fn,
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
         combined.moves.extend(tp.moves);
     }
     let generated = generated_with_depth_run_spans(combined, &levels);
@@ -615,15 +600,21 @@ pub(crate) fn generate_trace(
 }
 
 /// Profile family adapter (per-level passes; tabs on the final level).
+/// Cancellable: the cooperative cancel closure is rebuilt from
+/// `ctx.cancel` (pinned by `cancellable_families_honour_a_preset_cancel_flag`).
+///
+/// Migrated onto the shared `toolpath_at_levels_with_cancel` choke point
+/// (planning/finishing_stack_review_2026-07.md S.5). The old manual
+/// `level_idx > 0 && !combined.moves.is_empty()` retract guard is
+/// equivalent to the helper's unconditional `i > 0` retract: every
+/// per-level pass already ends with its own retract-to-`safe_z` (via
+/// `profile_toolpath`'s emitter), so `Toolpath::final_retract` is always a
+/// no-op there regardless of which guard is used — byte-identical output.
 pub(crate) fn generate_profile(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Profile(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_profile received a non-Profile config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Profile, "generate_profile");
     let polys = require_polygons(ctx.polygons)?;
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
     let final_z = levels
@@ -632,125 +623,127 @@ pub(crate) fn generate_profile(
         .unwrap_or(ctx.heights.top_z - cfg.depth);
     let tool_radius = ctx.tool_def.radius();
     let safe_z = ctx.heights.retract_z;
+    let feed_rate = op.feed_rate();
+    let plunge_rate = op.plunge_rate();
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
     for poly in polys {
-        for (level_idx, &z) in levels.iter().enumerate() {
-            let pass_tp = crate::profile::profile_toolpath(
-                poly,
-                &crate::profile::ProfileParams {
-                    tool_radius,
-                    side: cfg.side,
-                    cut_depth: z,
-                    feed_rate: op.feed_rate(),
-                    plunge_rate: op.plunge_rate(),
-                    safe_z,
-                    climb: cfg.climb,
-                    compensate_in_controller: cfg.compensation
-                        == crate::compute::CompensationType::InControl,
-                },
-            );
-            if pass_tp.moves.is_empty() {
-                continue;
-            }
-            // Retract between levels (not before first)
-            if level_idx > 0 && !combined.moves.is_empty() {
-                combined.final_retract(safe_z);
-            }
-            let is_final = (z - final_z).abs() < 1e-9;
-            if cfg.tab_count > 0 && is_final {
-                let tabbed = crate::dressup::apply_tabs(
-                    pass_tp,
-                    &crate::dressup::even_tabs(cfg.tab_count, cfg.tab_width, cfg.tab_height),
-                    z,
+        let tp = crate::depth::toolpath_at_levels_with_cancel(
+            &levels,
+            safe_z,
+            |z| {
+                let pass_tp = crate::profile::profile_toolpath(
+                    poly,
+                    &crate::profile::ProfileParams {
+                        tool_radius,
+                        side: cfg.side,
+                        cut_depth: z,
+                        feed_rate,
+                        plunge_rate,
+                        safe_z,
+                        climb: cfg.climb,
+                        compensate_in_controller: cfg.compensation
+                            == crate::compute::CompensationType::InControl,
+                    },
                 );
-                combined.moves.extend(tabbed.moves);
-            } else {
-                combined.moves.extend(pass_tp.moves);
-            }
-        }
+                if pass_tp.moves.is_empty() {
+                    return Ok(pass_tp);
+                }
+                let is_final = (z - final_z).abs() < 1e-9;
+                if cfg.tab_count > 0 && is_final {
+                    Ok(crate::dressup::apply_tabs(
+                        pass_tp,
+                        &crate::dressup::even_tabs(cfg.tab_count, cfg.tab_width, cfg.tab_height),
+                        z,
+                    ))
+                } else {
+                    Ok(pass_tp)
+                }
+            },
+            &cancel_fn,
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
+        combined.moves.extend(tp.moves);
     }
-    let generated = generated_with_depth_run_spans(combined, &levels);
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    Ok(with_depth_run_annotation(
+        generated_with_depth_run_spans(combined, &levels),
+        ctx.semantic_ctx,
+    ))
 }
 
-/// Pocket family adapter (contour / zigzag pattern per config).
+/// Pocket family adapter (contour / zigzag pattern per config). Cancellable:
+/// the cooperative cancel closure is rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`). The Contour pattern
+/// additionally polls per offset ring via `pocket_toolpath_with_cancel`
+/// (planning/finishing_stack_review_2026-07.md S.5 — pocket's own
+/// unbounded `loop {}`).
 pub(crate) fn generate_pocket(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Pocket(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_pocket received a non-Pocket config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Pocket, "generate_pocket");
     let polys = require_polygons(ctx.polygons)?;
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
     let tool_radius = ctx.tool_def.radius();
     let safe_z = ctx.heights.retract_z;
     let feed_rate = op.feed_rate();
     let plunge_rate = op.plunge_rate();
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
     for poly in polys {
-        let tp = crate::depth::toolpath_at_levels(&levels, safe_z, |z| match cfg.pattern {
-            crate::compute::operation_configs::PocketPattern::Contour => {
-                crate::pocket::pocket_toolpath(
-                    poly,
-                    &crate::pocket::PocketParams {
-                        tool_radius,
-                        stepover: cfg.stepover,
-                        cut_depth: z,
-                        feed_rate,
-                        plunge_rate,
-                        safe_z,
-                        climb: cfg.climb,
-                    },
-                )
-            }
-            crate::compute::operation_configs::PocketPattern::Zigzag => {
-                crate::zigzag::zigzag_toolpath(
-                    poly,
-                    &crate::zigzag::ZigzagParams {
-                        tool_radius,
-                        stepover: cfg.stepover,
-                        cut_depth: z,
-                        feed_rate,
-                        plunge_rate,
-                        safe_z,
-                        angle: cfg.angle,
-                    },
-                )
-            }
-        });
+        let tp = crate::depth::toolpath_at_levels_with_cancel(
+            &levels,
+            safe_z,
+            |z| match cfg.pattern {
+                crate::compute::operation_configs::PocketPattern::Contour => {
+                    crate::pocket::pocket_toolpath_with_cancel(
+                        poly,
+                        &crate::pocket::PocketParams {
+                            tool_radius,
+                            stepover: cfg.stepover,
+                            cut_depth: z,
+                            feed_rate,
+                            plunge_rate,
+                            safe_z,
+                            climb: cfg.climb,
+                        },
+                        &cancel_fn,
+                    )
+                }
+                crate::compute::operation_configs::PocketPattern::Zigzag => {
+                    Ok(crate::zigzag::zigzag_toolpath(
+                        poly,
+                        &crate::zigzag::ZigzagParams {
+                            tool_radius,
+                            stepover: cfg.stepover,
+                            cut_depth: z,
+                            feed_rate,
+                            plunge_rate,
+                            safe_z,
+                            angle: cfg.angle,
+                        },
+                    ))
+                }
+            },
+            &cancel_fn,
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
         combined.moves.extend(tp.moves);
     }
-    let generated = generated_with_depth_run_spans(combined, &levels);
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    Ok(with_depth_run_annotation(
+        generated_with_depth_run_spans(combined, &levels),
+        ctx.semantic_ctx,
+    ))
 }
 
-/// Face family adapter.
+/// Face family adapter. Cancellable: the cooperative cancel closure is
+/// rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_face(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Face(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_face received a non-Face config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Face, "generate_face");
     // F-028: face anchors its depth stepping at `heights.top_z`
     // (which under Auto follows `ctx.stock_top_z` after F-028 — so
     // identity setups land at world stock top and non-identity
@@ -768,16 +761,13 @@ pub(crate) fn generate_face(
         direction: cfg.direction,
         stock_top_z: ctx.heights.top_z,
     };
-    let generated =
-        generated_with_depth_run_spans(crate::face::face_toolpath(ctx.stock_bbox, &params), &[]);
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
+    let tp = crate::face::face_toolpath_with_cancel(ctx.stock_bbox, &params, &cancel_fn)
+        .map_err(|_e| OperationError::Cancelled)?;
+    Ok(with_depth_run_annotation(
+        generated_with_depth_run_spans(tp, &[]),
+        ctx.semantic_ctx,
+    ))
 }
 
 /// Adaptive (2D) family adapter. Cancellable; per-level annotation
@@ -787,11 +777,7 @@ pub(crate) fn generate_adaptive(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Adaptive(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_adaptive received a non-Adaptive config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Adaptive, "generate_adaptive");
     let polys = require_polygons(ctx.polygons)?;
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
     let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
@@ -851,15 +837,39 @@ pub(crate) fn generate_adaptive(
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_adaptive2d(&all_annotations, &combined, sem);
     }
-    let generated = generated_with_depth_run_spans(combined, &levels);
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    Ok(with_depth_run_annotation(
+        generated_with_depth_run_spans(combined, &levels),
+        ctx.semantic_ctx,
+    ))
+}
+
+/// Collapse the two user-facing leave-stock dials into the single scalar
+/// the adaptive3d planner actually consumes.
+///
+/// The planner (`crate::adaptive3d::{path,clearing,search}`) is a
+/// drop-cutter / dexel heightmap engine: every use of `stock_to_leave`
+/// raises the "protected surface" (`surf_z + stock_to_leave`) purely in
+/// the Z direction — z-level floors, waterline lift, and gouge-guard
+/// drape all key off a single vertical offset from `point_drop_cutter`.
+/// There is no wall-normal / horizontal offset path (no polygon inset,
+/// no lateral shift of the EDT-derived contours), so a true *radial*
+/// (sidewall) leave allowance cannot be honored by this geometry engine
+/// today.
+///
+/// Given that, silently taking `max(axial, radial)` (the pre-fix
+/// behaviour) is dishonest: an operator who sets `radial = 0.5` with
+/// `axial = 0.0` (protect walls only, machine flats to true height)
+/// instead got a 0.5 mm floor raised everywhere, including flats with
+/// no adjacent wall. The axial-only policy below at least means the
+/// single dial the engine *does* implement (the Z leave) reflects
+/// exactly what the operator asked for on that axis; `stock_to_leave_radial`
+/// is kept on `Adaptive3dConfig` for file/GUI round-trip and to seed a
+/// future wall-offset implementation, but is deliberately NOT consumed
+/// here until the planner grows a real radial mechanism.
+fn adaptive3d_effective_stock_to_leave(
+    cfg: &crate::compute::operation_configs::Adaptive3dConfig,
+) -> f64 {
+    cfg.stock_to_leave_axial
 }
 
 /// Adaptive3d family adapter. Cancellable; consumes `ctx.boundary`
@@ -870,16 +880,9 @@ pub(crate) fn generate_adaptive3d(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Adaptive3d(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_adaptive3d received a non-Adaptive3d config"
-                .into(),
-        ));
-    };
+    let cfg = config_guard!(op, Adaptive3d, "generate_adaptive3d");
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("Adaptive3D requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "Adaptive3D")?;
 
     let entry_style = match cfg.entry_style {
         crate::compute::operation_configs::Adaptive3dEntryStyle::Plunge => {
@@ -929,7 +932,7 @@ pub(crate) fn generate_adaptive3d(
         envelope_radius: ctx.tool_def.radius(),
         stepover: cfg.stepover,
         depth_per_pass: cfg.depth_per_pass,
-        stock_to_leave: cfg.stock_to_leave_axial.max(cfg.stock_to_leave_radial),
+        stock_to_leave: adaptive3d_effective_stock_to_leave(cfg),
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
         tolerance: cfg.tolerance,
@@ -1034,22 +1037,17 @@ pub(crate) fn generate_adaptive3d(
 /// `tool_cfg` (generator API takes the boxed cutter); reads
 /// `cfg.setup_z_flipped`, which the session/viz drivers pre-set on the
 /// config BEFORE dispatch (caller-side mutation preserved — plan
-/// §Phase-5 task 4).
+/// §Phase-5 task 4). Cancellable: the cooperative cancel closure is
+/// rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_project_curve(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::ProjectCurve(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_project_curve received a non-ProjectCurve config"
-                .into(),
-        ));
-    };
+    let cfg = config_guard!(op, ProjectCurve, "generate_project_curve");
     let polys = require_polygons(ctx.polygons)?;
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("ProjectCurve requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "ProjectCurve")?;
     let cutter = build_cutter(ctx.tool_cfg);
     let direction = match cfg.direction {
         crate::compute::operation_configs::ProjectCurveDirection::FromAbove => {
@@ -1081,36 +1079,31 @@ pub(crate) fn generate_project_curve(
         side,
         setup_z_flipped: cfg.setup_z_flipped,
     };
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
     for poly in polys {
-        let tp = crate::project_curve::project_curve_toolpath(poly, m, idx, &cutter, &params);
+        let tp = crate::project_curve::project_curve_toolpath_with_cancel(
+            poly, m, idx, &cutter, &params, &cancel_fn,
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
         combined.moves.extend(tp.moves);
     }
-    let generated = generated_with_cut_run_spans(combined, "Projected curve");
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    Ok(with_depth_run_annotation(
+        generated_with_cut_run_spans(combined, "Projected curve"),
+        ctx.semantic_ctx,
+    ))
 }
 
 /// Pencil family adapter (labeled-event spans + annotate_pencil).
+/// Cancellable: the cooperative cancel closure is rebuilt from
+/// `ctx.cancel` (pinned by `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_pencil(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Pencil(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_pencil received a non-Pencil config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Pencil, "generate_pencil");
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("Pencil requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "Pencil")?;
     let params = crate::pencil::PencilParams {
         bitangency_angle: cfg.bitangency_angle,
         min_cut_length: cfg.min_cut_length,
@@ -1137,7 +1130,8 @@ pub(crate) fn generate_pencil(
             .as_ref()
             .map(crate::compute::cutter::build_cutter),
     };
-    let (tp, annotations) = crate::pencil::pencil_toolpath_structured_annotated(
+    let mut rest_grid_out: Option<crate::rest_field::RestGrid> = None;
+    let (tp, annotations) = crate::pencil::pencil_toolpath_structured_annotated_with_cancel(
         m,
         idx,
         ctx.tool_def,
@@ -1146,7 +1140,10 @@ pub(crate) fn generate_pencil(
         // the RestDepth detector prefers it as the rest reference.
         ctx.initial_stock,
         ctx.debug_ctx,
-    );
+        &mut rest_grid_out,
+        &(|| ctx.cancel.load(Ordering::SeqCst)),
+    )
+    .map_err(|_e| OperationError::Cancelled)?;
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_pencil(&annotations, &tp, sem);
     }
@@ -1156,21 +1153,22 @@ pub(crate) fn generate_pencil(
             .iter()
             .map(|ann| (ann.move_index, ann.event.label())),
     );
-    Ok(generated_with_spans(tp, spans))
+    let mut generated = generated_with_spans(tp, spans);
+    // Attach the RestDepth heatmap grid (if any) for the GUI overlay.
+    generated.rest_grid = rest_grid_out.map(std::sync::Arc::new);
+    Ok(generated)
 }
 
 /// Scallop family adapter (labeled-event spans + annotate_scallop).
 /// The ball-tip refusal reads the registry constraint list (T7 PR C)
-/// so refusal and published schema cannot drift.
+/// so refusal and published schema cannot drift. Cancellable: the
+/// cooperative cancel closure is rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_scallop(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Scallop(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_scallop received a non-Scallop config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Scallop, "generate_scallop");
     // Membership pinned by
     // `tool_constraints_allows_matches_runtime_refusal_semantics`.
     if !OperationType::Scallop
@@ -1183,9 +1181,7 @@ pub(crate) fn generate_scallop(
         ));
     }
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("Scallop requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "Scallop")?;
     let params = crate::scallop::ScallopParams {
         scallop_height: cfg.scallop_height,
         tolerance: cfg.tolerance,
@@ -1198,13 +1194,15 @@ pub(crate) fn generate_scallop(
         safe_z: ctx.heights.retract_z,
         stock_to_leave: cfg.stock_to_leave,
     };
-    let (tp, annotations) = crate::scallop::scallop_toolpath_structured_annotated(
+    let (tp, annotations) = crate::scallop::scallop_toolpath_structured_annotated_with_cancel(
         m,
         idx,
         ctx.tool_def,
         &params,
         ctx.debug_ctx,
-    );
+        &(|| ctx.cancel.load(Ordering::SeqCst)),
+    )
+    .map_err(|_e| OperationError::Cancelled)?;
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_scallop(&annotations, &tp, sem);
     }
@@ -1217,21 +1215,16 @@ pub(crate) fn generate_scallop(
     Ok(generated_with_spans(tp, spans))
 }
 
-/// SteepShallow family adapter.
+/// SteepShallow family adapter. Cancellable: the cooperative cancel
+/// closure is rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_steep_shallow(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::SteepShallow(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_steep_shallow received a non-SteepShallow config"
-                .into(),
-        ));
-    };
+    let cfg = config_guard!(op, SteepShallow, "generate_steep_shallow");
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("SteepShallow requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "SteepShallow")?;
     let params = crate::steep_shallow::SteepShallowParams {
         threshold_angle: cfg.threshold_angle,
         overlap_distance: cfg.overlap_distance,
@@ -1246,35 +1239,30 @@ pub(crate) fn generate_steep_shallow(
         stock_to_leave: cfg.stock_to_leave,
         tolerance: cfg.tolerance,
     };
-    let generated = generated_with_cut_run_spans(
-        crate::steep_shallow::steep_shallow_toolpath(m, idx, ctx.tool_def, &params),
-        "Steep/shallow run",
-    );
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    let tp = crate::steep_shallow::steep_shallow_toolpath_with_cancel(
+        m,
+        idx,
+        ctx.tool_def,
+        &params,
+        &(|| ctx.cancel.load(Ordering::SeqCst)),
+    )
+    .map_err(|_e| OperationError::Cancelled)?;
+    Ok(with_depth_run_annotation(
+        generated_with_cut_run_spans(tp, "Steep/shallow run"),
+        ctx.semantic_ctx,
+    ))
 }
 
 /// RampFinish family adapter (labeled-event spans + annotate_ramp_finish).
+/// Cancellable: the cooperative cancel closure is rebuilt from
+/// `ctx.cancel` (pinned by `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_ramp_finish(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::RampFinish(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_ramp_finish received a non-RampFinish config"
-                .into(),
-        ));
-    };
+    let cfg = config_guard!(op, RampFinish, "generate_ramp_finish");
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("RampFinish requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "RampFinish")?;
     let params = crate::ramp_finish::RampFinishParams {
         max_stepdown: cfg.max_stepdown,
         slope_from: cfg.slope_from,
@@ -1288,13 +1276,16 @@ pub(crate) fn generate_ramp_finish(
         stock_to_leave: cfg.stock_to_leave,
         tolerance: cfg.tolerance,
     };
-    let (tp, annotations) = crate::ramp_finish::ramp_finish_toolpath_structured_annotated(
-        m,
-        idx,
-        ctx.tool_def,
-        &params,
-        ctx.debug_ctx,
-    );
+    let (tp, annotations) =
+        crate::ramp_finish::ramp_finish_toolpath_structured_annotated_with_cancel(
+            m,
+            idx,
+            ctx.tool_def,
+            &params,
+            ctx.debug_ctx,
+            &(|| ctx.cancel.load(Ordering::SeqCst)),
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_ramp_finish(&annotations, &tp, sem);
     }
@@ -1310,21 +1301,16 @@ pub(crate) fn generate_ramp_finish(
 /// SpiralFinish family adapter. NOTE: spans come from
 /// `spans_from_labeled_events` over the generator's annotations, and
 /// the family annotate fn is `annotate_spiral_finish` — both part of
-/// the contract.
+/// the contract. Cancellable: the cooperative cancel closure is rebuilt
+/// from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_spiral_finish(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::SpiralFinish(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_spiral_finish received a non-SpiralFinish config"
-                .into(),
-        ));
-    };
+    let cfg = config_guard!(op, SpiralFinish, "generate_spiral_finish");
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("SpiralFinish requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "SpiralFinish")?;
     let params = crate::spiral_finish::SpiralFinishParams {
         stepover: cfg.stepover,
         direction: cfg.direction,
@@ -1333,13 +1319,16 @@ pub(crate) fn generate_spiral_finish(
         safe_z: ctx.heights.retract_z,
         stock_to_leave: cfg.stock_to_leave,
     };
-    let (tp, annotations) = crate::spiral_finish::spiral_finish_toolpath_structured_annotated(
-        m,
-        idx,
-        ctx.tool_def,
-        &params,
-        ctx.debug_ctx,
-    );
+    let (tp, annotations) =
+        crate::spiral_finish::spiral_finish_toolpath_structured_annotated_with_cancel(
+            m,
+            idx,
+            ctx.tool_def,
+            &params,
+            ctx.debug_ctx,
+            &(|| ctx.cancel.load(Ordering::SeqCst)),
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_spiral_finish(&annotations, &tp, sem);
     }
@@ -1352,21 +1341,16 @@ pub(crate) fn generate_spiral_finish(
     Ok(generated_with_spans(tp, spans))
 }
 
-/// RadialFinish family adapter.
+/// RadialFinish family adapter. Cancellable: the cooperative cancel
+/// closure is rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_radial_finish(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::RadialFinish(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_radial_finish received a non-RadialFinish config"
-                .into(),
-        ));
-    };
+    let cfg = config_guard!(op, RadialFinish, "generate_radial_finish");
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("RadialFinish requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "RadialFinish")?;
     let params = crate::radial_finish::RadialFinishParams {
         angular_step: cfg.angular_step,
         point_spacing: cfg.point_spacing,
@@ -1375,36 +1359,30 @@ pub(crate) fn generate_radial_finish(
         safe_z: ctx.heights.retract_z,
         stock_to_leave: cfg.stock_to_leave,
     };
-    let generated = generated_with_cut_run_spans(
-        crate::radial_finish::radial_finish_toolpath(m, idx, ctx.tool_def, &params),
-        "Radial ray",
-    );
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    let tp = crate::radial_finish::radial_finish_toolpath_with_cancel(
+        m,
+        idx,
+        ctx.tool_def,
+        &params,
+        &(|| ctx.cancel.load(Ordering::SeqCst)),
+    )
+    .map_err(|_e| OperationError::Cancelled)?;
+    Ok(with_depth_run_annotation(
+        generated_with_cut_run_spans(tp, "Radial ray"),
+        ctx.semantic_ctx,
+    ))
 }
 
-/// HorizontalFinish family adapter.
+/// HorizontalFinish family adapter. Cancellable: the cooperative
+/// cancel closure is rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_horizontal_finish(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::HorizontalFinish(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_horizontal_finish received a \
-             non-HorizontalFinish config"
-                .into(),
-        ));
-    };
+    let cfg = config_guard!(op, HorizontalFinish, "generate_horizontal_finish");
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("HorizontalFinish requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "HorizontalFinish")?;
     let params = crate::horizontal_finish::HorizontalFinishParams {
         angle_threshold: cfg.angle_threshold,
         stepover: cfg.stepover,
@@ -1413,18 +1391,18 @@ pub(crate) fn generate_horizontal_finish(
         safe_z: ctx.heights.retract_z,
         stock_to_leave: cfg.stock_to_leave,
     };
-    let generated = generated_with_cut_run_spans(
-        crate::horizontal_finish::horizontal_finish_toolpath(m, idx, ctx.tool_def, &params),
-        "Horizontal slice",
-    );
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    let tp = crate::horizontal_finish::horizontal_finish_toolpath_with_cancel(
+        m,
+        idx,
+        ctx.tool_def,
+        &params,
+        &(|| ctx.cancel.load(Ordering::SeqCst)),
+    )
+    .map_err(|_e| OperationError::Cancelled)?;
+    Ok(with_depth_run_annotation(
+        generated_with_cut_run_spans(tp, "Horizontal slice"),
+        ctx.semantic_ctx,
+    ))
 }
 
 /// DropCutter family adapter. Cancellable: the cooperative cancel
@@ -1434,16 +1412,9 @@ pub(crate) fn generate_drop_cutter(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::DropCutter(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_drop_cutter received a non-DropCutter config"
-                .into(),
-        ));
-    };
+    let cfg = config_guard!(op, DropCutter, "generate_drop_cutter");
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("DropCutter requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "DropCutter")?;
     // Floor the drop-cutter min_z to the mesh bottom. A 3D finish
     // should only tip-track the mesh surface — anything lower is either
     // a non-contact clamp or the tool's taper forcing the tip below
@@ -1488,21 +1459,44 @@ pub(crate) fn generate_drop_cutter(
     // at the mesh bottom). Filter them so the finish never cuts past
     // the mesh boundary.
     let min_z_filter = Some(effective_min_z);
-    let slope_filter_active = cfg.slope_from > 0.01 || cfg.slope_to < 89.99;
+    let slope_filter_active =
+        crate::finish_setup::slope_filter_active(cfg.slope_from, cfg.slope_to);
     let feed_rate = op.feed_rate();
     let plunge_rate = op.plunge_rate();
     let safe_z = ctx.heights.retract_z;
     let tp = if slope_filter_active {
-        let slope_angles = crate::dropcutter::compute_grid_slopes(&grid);
+        // P1.3 (planning/finishing_stack_review_2026-07.md): derive the
+        // slope filter from `SlopeMap` (radians + normals + curvature)
+        // instead of the retired degrees-only `compute_grid_slopes`. The
+        // grid above is always sampled at `direction_deg = 0.0`, so its
+        // rotated sampling frame coincides with world frame and its
+        // u_start/v_start read as world mins with square (x_step ==
+        // y_step) cells — safe to feed straight into `SlopeMap::from_z_grid`.
+        // Convert the config's degree bounds to radians at this boundary,
+        // since `SlopeMap::angles` is radians-native.
+        debug_assert!(
+            (grid.x_step - grid.y_step).abs() < 1e-9,
+            "drop_cutter grid must have square cells for SlopeMap conversion"
+        );
+        let z_values: Vec<f64> = grid.points.iter().map(|cl| cl.z).collect();
+        let slope_map = crate::slope::SlopeMap::from_z_grid(
+            &z_values,
+            grid.rows,
+            grid.cols,
+            grid.u_start,
+            grid.v_start,
+            grid.x_step,
+        );
         crate::toolpath::raster_toolpath_from_grid_with_slope_filter(
             &grid,
-            &slope_angles,
-            cfg.slope_from,
-            cfg.slope_to,
+            &slope_map.angles,
+            cfg.slope_from.to_radians(),
+            cfg.slope_to.to_radians(),
             feed_rate,
             plunge_rate,
             safe_z,
             min_z_filter,
+            crate::toolpath::MoveIntent::FinishingCut,
         )
     } else {
         crate::toolpath::raster_toolpath_from_grid(
@@ -1513,15 +1507,10 @@ pub(crate) fn generate_drop_cutter(
             min_z_filter,
         )
     };
-    let generated = generated_with_cut_run_spans(tp, "Raster row");
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    Ok(with_depth_run_annotation(
+        generated_with_cut_run_spans(tp, "Raster row"),
+        ctx.semantic_ctx,
+    ))
 }
 
 /// Waterline family adapter. Cancellable: the cooperative cancel
@@ -1531,15 +1520,9 @@ pub(crate) fn generate_waterline(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Waterline(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_waterline received a non-Waterline config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Waterline, "generate_waterline");
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("Waterline requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "Waterline")?;
     let params = crate::waterline::WaterlineParams {
         sampling: cfg.sampling,
         feed_rate: op.feed_rate(),
@@ -1557,17 +1540,18 @@ pub(crate) fn generate_waterline(
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
     .map_err(|_e| OperationError::Cancelled)?;
-    let generated = generated_with_depth_run_spans(tp, &[]);
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    // R2.8: waterline has a real Z-level ladder (unlike the single-level
+    // Face op) — pass it to the span builder instead of `&[]` so
+    // `spans_from_depth_runs`'s `nearest_level` snapping has real levels
+    // to snap to, matching the exact ladder `waterline_toolpath_with_cancel`
+    // cut at (same helper, one source of truth).
+    let levels =
+        crate::waterline::waterline_z_levels(ctx.heights.top_z, ctx.heights.bottom_z, cfg.z_step);
+    Ok(with_depth_run_annotation(
+        generated_with_depth_run_spans(tp, &levels),
+        ctx.semantic_ctx,
+    ))
 }
-
 // ── Public API ────────────────────────────────────────────────────────
 
 /// Execute a single operation, producing a raw toolpath.
@@ -1672,11 +1656,6 @@ pub fn execute_operation_annotated(
     if let Some(generate) = op.op_type().registry_entry().generate {
         return generate(&ctx, op);
     }
-
-    // Every family is registry-dispatched (T11 cutover complete); this
-    // match is the compile-time net — a new OperationConfig variant
-    // fails to compile until it gets an arm, and each arm delegates to
-    // the SAME adapter fn its registry entry references.
     match op {
         // Migrated to the registry GenerateFn (T11); arm kept for the
         // exhaustiveness net and delegates to the same adapter.
@@ -2127,6 +2106,7 @@ pub fn apply_dressups(
         spans: current.spans,
         spans_valid: input_valid && current.spans_valid,
         planner_engagement: current.planner_engagement,
+        rest_grid: current.rest_grid,
     }
 }
 
@@ -2140,6 +2120,49 @@ fn require_polygons(polygons: Option<&[Polygon2]>) -> Result<&[Polygon2], Operat
 
 fn require_mesh(mesh: Option<&TriangleMesh>) -> Result<&TriangleMesh, OperationError> {
     mesh.ok_or_else(|| OperationError::MissingGeometry("Operation requires a 3D mesh".into()))
+}
+
+/// R2.4: the spatial-index guard duplicated identically across every
+/// mesh-driven family adapter (Adaptive3d, ProjectCurve, Pencil, Scallop,
+/// SteepShallow, RampFinish, SpiralFinish, RadialFinish, HorizontalFinish,
+/// DropCutter, Waterline) — same refusal shape as [`require_mesh`] /
+/// [`require_polygons`], parameterized on the operation name for the
+/// error message.
+fn require_index<'a>(
+    index: Option<&'a SpatialIndex>,
+    op_name: &str,
+) -> Result<&'a SpatialIndex, OperationError> {
+    index.ok_or_else(|| OperationError::Other(format!("{op_name} requires a spatial index")))
+}
+
+/// R2.5: the V-Bit-only tool-geometry guard duplicated 3× (Inlay, VCarve,
+/// Chamfer) — resolve the half-angle or refuse with the operation name.
+fn vbit_half_angle(tool_cfg: &ToolConfig, op_name: &str) -> Result<f64, OperationError> {
+    match tool_cfg.tool_type {
+        ToolType::VBit => Ok((tool_cfg.included_angle / 2.0).to_radians()),
+        _ => Err(OperationError::InvalidTool(format!(
+            "{op_name} requires V-Bit tool"
+        ))),
+    }
+}
+
+/// R2.7: the `if let Some(sem) = ctx.semantic_ctx { annotate_depth_run_spans(..) }`
+/// postscript duplicated after every family adapter's span-building call
+/// (both the `generated_with_depth_run_spans` and `generated_with_cut_run_spans`
+/// bases end up here) — apply the generic depth-run semantic annotation
+/// when a context is present, then hand the toolpath back unchanged.
+fn with_depth_run_annotation(
+    generated: GeneratedToolpath,
+    semantic_ctx: Option<&ToolpathSemanticContext>,
+) -> GeneratedToolpath {
+    if let Some(sem) = semantic_ctx {
+        crate::compute::annotate::annotate_depth_run_spans(
+            &generated.spans,
+            &generated.toolpath,
+            sem,
+        );
+    }
+    generated
 }
 
 /// Compute effective depth levels from pre-computed cutting_levels or DepthStepping.
@@ -2214,6 +2237,39 @@ mod tests {
         assert!(drill_holes_for_config(&empty, Some(&polys)).is_err());
     }
 
+    /// F-XXX regression: adaptive3d's planner only supports a vertical
+    /// (Z) leave — `stock_to_leave_radial` must NOT silently raise the
+    /// effective leave via `max()`. A user protecting sidewalls only
+    /// (`radial = 0.5`, `axial = 0.0`) should get the Z floor they asked
+    /// for (0.0, i.e. no floor raise on flats), not the radial value
+    /// bleeding into the axial dial.
+    #[test]
+    fn adaptive3d_stock_to_leave_is_axial_only() {
+        use crate::compute::operation_configs::Adaptive3dConfig;
+
+        let sidewall_only = Adaptive3dConfig {
+            stock_to_leave_axial: 0.0,
+            stock_to_leave_radial: 0.5,
+            ..Adaptive3dConfig::default()
+        };
+        assert_eq!(adaptive3d_effective_stock_to_leave(&sidewall_only), 0.0);
+
+        let axial_only = Adaptive3dConfig {
+            stock_to_leave_axial: 0.3,
+            stock_to_leave_radial: 0.0,
+            ..Adaptive3dConfig::default()
+        };
+        assert_eq!(adaptive3d_effective_stock_to_leave(&axial_only), 0.3);
+
+        // Both set: still axial, not max().
+        let both = Adaptive3dConfig {
+            stock_to_leave_axial: 0.2,
+            stock_to_leave_radial: 0.8,
+            ..Adaptive3dConfig::default()
+        };
+        assert_eq!(adaptive3d_effective_stock_to_leave(&both), 0.2);
+    }
+
     /// Build a default tool definition and config for a given tool type.
     fn make_tool(tool_type: ToolType) -> (crate::tool::ToolDefinition, ToolConfig) {
         let cfg = ToolConfig::new_default(ToolId(0), tool_type);
@@ -2242,6 +2298,12 @@ mod tests {
         }
     }
 
+    // F.3: CCW winding so the wall facets face UP/outward (+Z normals) — a
+    // valid machinable surface, matching pencil.rs's own corrected copy of
+    // this fixture. The original winding produced downward normals, which
+    // drop_cutter rightly skips — starving the Pencil span-coverage case of
+    // any contacted geometry (the pre-existing red at HEAD, see F.3 in
+    // planning/finishing_stack_review_2026-07.md).
     fn make_v_groove_mesh(length: f64, depth: f64, width: f64) -> TriangleMesh {
         TriangleMesh::from_raw(
             vec![
@@ -2252,7 +2314,7 @@ mod tests {
                 P3::new(0.0, width, 0.0),
                 P3::new(length, width, 0.0),
             ],
-            vec![[0, 2, 1], [1, 2, 3], [2, 4, 3], [3, 4, 5]],
+            vec![[0, 1, 2], [1, 3, 2], [2, 3, 4], [3, 5, 4]],
         )
     }
 
@@ -2987,14 +3049,23 @@ mod tests {
     }
 
     /// Phase 5 (T11) cancellation net — written BEFORE the adapter
-    /// cutover per plan §Phase-5 task 6. Exactly four of the 23 arms
-    /// cooperatively poll `cancel`: Adaptive, DropCutter, Adaptive3d,
-    /// Waterline. A `GenerateFn` adapter that forgets to rebuild the
-    /// `|| cancel.load(Ordering::SeqCst)` closure silently makes the
-    /// op uncancellable — no compile error, invisible to fast unit
-    /// tests. This pins the contract: with `cancel` pre-set, each of
-    /// those families must return `Err(OperationError::Cancelled)`
-    /// rather than running to completion.
+    /// cutover per plan §Phase-5 task 6. Originally exactly four of the 23
+    /// arms cooperatively polled `cancel`: Adaptive, DropCutter, Adaptive3d,
+    /// Waterline. The 2026-07 mesh-finish incident (a fine-stepover
+    /// generation hung the GUI for two hours because none of the 3D
+    /// finishing families polled cancel) extended coverage to the seven
+    /// dense-heightmap/dense-loop finish families: Pencil, Scallop,
+    /// SteepShallow, RampFinish, SpiralFinish, RadialFinish,
+    /// HorizontalFinish — 11 of 23 arms total. The flat-2D S.5 fix
+    /// (planning/finishing_stack_review_2026-07.md — "Zero of 10 flat 2D
+    /// ops can be cancelled") extended coverage again to Pocket, Profile,
+    /// Zigzag, Trace, Face, ProjectCurve, VCarve, Inlay — 19 of 23 arms
+    /// total. A `GenerateFn` adapter that forgets to rebuild the
+    /// `|| cancel.load(Ordering::SeqCst)` closure silently makes the op
+    /// uncancellable — no compile error, invisible to fast unit tests.
+    /// This pins the contract: with `cancel` pre-set, each of those
+    /// families must return `Err(OperationError::Cancelled)` rather than
+    /// running to completion.
     #[test]
     fn cancellable_families_honour_a_preset_cancel_flag() {
         let heights = test_heights();
@@ -3036,6 +3107,121 @@ mod tests {
             ("DropCutter", drop_cutter, ToolType::BallNose, true, false),
             ("Adaptive3d", adaptive3d, ToolType::EndMill, true, false),
             ("Waterline", waterline, ToolType::BallNose, true, false),
+            // Mesh-finish families (2026-07 hang fix): cancel is checked as
+            // the very first statement of each `*_with_cancel` entry point,
+            // so a pre-set flag must short-circuit before any real work
+            // regardless of default params/mesh shape.
+            (
+                "Pencil",
+                OperationConfig::new_default(OperationType::Pencil),
+                ToolType::BallNose,
+                true,
+                false,
+            ),
+            (
+                "Scallop",
+                OperationConfig::new_default(OperationType::Scallop),
+                ToolType::BallNose,
+                true,
+                false,
+            ),
+            (
+                "SteepShallow",
+                OperationConfig::new_default(OperationType::SteepShallow),
+                ToolType::BallNose,
+                true,
+                false,
+            ),
+            (
+                "RampFinish",
+                OperationConfig::new_default(OperationType::RampFinish),
+                ToolType::BallNose,
+                true,
+                false,
+            ),
+            (
+                "SpiralFinish",
+                OperationConfig::new_default(OperationType::SpiralFinish),
+                ToolType::BallNose,
+                true,
+                false,
+            ),
+            (
+                "RadialFinish",
+                OperationConfig::new_default(OperationType::RadialFinish),
+                ToolType::BallNose,
+                true,
+                false,
+            ),
+            (
+                "HorizontalFinish",
+                OperationConfig::new_default(OperationType::HorizontalFinish),
+                ToolType::BallNose,
+                true,
+                false,
+            ),
+            // Flat-2D families (S.5 fix, planning/finishing_stack_review_2026-07.md):
+            // cancel is checked as the very first statement of every
+            // `*_with_cancel` entry point (and of the shared
+            // `depth::toolpath_at_levels_with_cancel` choke point pocket/
+            // profile/zigzag/trace/face route through), so a pre-set flag
+            // short-circuits regardless of default params/polygon shape.
+            (
+                "Pocket",
+                OperationConfig::new_default(OperationType::Pocket),
+                ToolType::EndMill,
+                false,
+                true,
+            ),
+            (
+                "Profile",
+                OperationConfig::new_default(OperationType::Profile),
+                ToolType::EndMill,
+                false,
+                true,
+            ),
+            (
+                "Zigzag",
+                OperationConfig::new_default(OperationType::Zigzag),
+                ToolType::EndMill,
+                false,
+                true,
+            ),
+            (
+                "Trace",
+                OperationConfig::new_default(OperationType::Trace),
+                ToolType::EndMill,
+                false,
+                true,
+            ),
+            (
+                "Face",
+                OperationConfig::new_default(OperationType::Face),
+                ToolType::EndMill,
+                false,
+                false,
+            ),
+            (
+                "ProjectCurve",
+                OperationConfig::new_default(OperationType::ProjectCurve),
+                ToolType::EndMill,
+                true,
+                true,
+            ),
+            (
+                "VCarve",
+                OperationConfig::new_default(OperationType::VCarve),
+                ToolType::VBit,
+                false,
+                true,
+            ),
+            (
+                "Inlay",
+                OperationConfig::new_default(OperationType::Inlay),
+                ToolType::VBit,
+                false,
+                true,
+            ),
         ];
 
         for (name, op, tool_type, needs_mesh, needs_polygons) in cases {

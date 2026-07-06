@@ -522,7 +522,19 @@ impl Default for DropCutterConfig {
 pub struct Adaptive3dConfig {
     pub stepover: f64,
     pub depth_per_pass: f64,
+    /// Deprecated + inert sidewall leave allowance. NOT honored by the
+    /// planner: `adaptive3d`'s drop-cutter / dexel heightmap engine only
+    /// supports a single vertical (Z) leave offset — see
+    /// `compute::execute::adaptive3d_effective_stock_to_leave`, which
+    /// consumes `stock_to_leave_axial` alone. The GUI dial for this field
+    /// was removed 2026-07-06 (finishing_stack_review_2026-07.md F.1 —
+    /// decided against building the wall-offset mechanism). The field is
+    /// kept solely so existing project `.toml` files with this key still
+    /// deserialize; changing it has no effect on generated toolpaths.
     pub stock_to_leave_radial: f64,
+    /// Vertical leave allowance above the surface heightmap. The only
+    /// leave-stock dial the `adaptive3d` planner actually applies (see
+    /// `stock_to_leave_radial` above).
     pub stock_to_leave_axial: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,

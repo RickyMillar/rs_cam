@@ -16,8 +16,9 @@
 
 use crate::dropcutter::batch_drop_cutter;
 use crate::geo::P3;
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::slope::{SlopeMap, SurfaceHeightmap, classify_steep_shallow};
+use crate::slope::{SlopeMap, classify_steep_shallow};
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 use crate::waterline::waterline_contours;
@@ -123,9 +124,16 @@ fn erode_grid(grid: &[bool], rows: usize, cols: usize, radius_cells: usize) -> V
     dilated_inv.iter().map(|&v| !v).collect()
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+// infallible: cancel closure always returns false, so Cancelled is unreachable
+#[allow(
+    clippy::indexing_slicing,
+    clippy::too_many_arguments,
+    clippy::expect_used
+)]
+// Production goes through the _with_cancel variant; this never-cancel
+// convenience wrapper is exercised by the unit tests below.
+#[cfg_attr(not(test), allow(dead_code))]
 /// Generate steep (waterline) passes filtered to steep+overlap region.
-#[allow(clippy::too_many_arguments)]
 fn generate_steep_passes(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -141,12 +149,61 @@ fn generate_steep_passes(
     plunge_rate: f64,
     safe_z: f64,
 ) -> Toolpath {
+    let never_cancel = || false;
+    generate_steep_passes_with_cancel(
+        mesh,
+        index,
+        cutter,
+        slope_map,
+        steep_expanded,
+        z_top,
+        z_bottom,
+        z_step,
+        sampling,
+        stock_to_leave,
+        feed_rate,
+        plunge_rate,
+        safe_z,
+        &never_cancel,
+    )
+    .expect("non-cancellable steep-pass generation should never be cancelled")
+}
+
+/// Cancellable variant of [`generate_steep_passes`]. Polls `cancel` once per
+/// Z level (the outer waterline-contour loop).
+#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+fn generate_steep_passes_with_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    slope_map: &SlopeMap,
+    steep_expanded: &[bool],
+    z_top: f64,
+    z_bottom: f64,
+    z_step: f64,
+    sampling: f64,
+    stock_to_leave: f64,
+    feed_rate: f64,
+    plunge_rate: f64,
+    safe_z: f64,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
     let mut tp = Toolpath::new();
 
     let steep_threshold = 30.0_f64.to_radians(); // Filter out contours that are mostly shallow
 
-    let mut z = z_top;
-    while z >= z_bottom - 0.01 {
+    // `snap_to_bottom = false`: matches the prior inline loop exactly — the
+    // ladder is not guaranteed to land exactly on `z_bottom` when the range
+    // isn't a whole multiple of `z_step` (see finish_setup::z_ladder docs).
+    let z_levels = crate::finish_setup::z_ladder(
+        z_top,
+        z_bottom,
+        z_step,
+        crate::finish_setup::Z_LADDER_DEFAULT_EPSILON,
+        false,
+    );
+    for z in z_levels {
+        check_cancel(cancel)?;
         let contours = waterline_contours(mesh, index, cutter, z, sampling);
 
         for contour in &contours {
@@ -171,63 +228,88 @@ fn generate_steep_passes(
                 continue; // Mostly shallow, skip
             }
 
-            // Further filter: only keep points within the expanded steep grid
-            let filtered: Vec<P3> = contour
+            // Further filter: mark which points fall within the expanded
+            // steep grid, preserving contour ordering so we can tell which
+            // survivors are contiguous.
+            let keep: Vec<bool> = contour
                 .iter()
-                .filter(|p| {
-                    if let Some((row, col)) = slope_map.world_to_cell(p.x, p.y) {
-                        steep_expanded[row * slope_map.cols + col]
-                    } else {
-                        false
-                    }
+                .map(|p| {
+                    slope_map
+                        .world_to_cell(p.x, p.y)
+                        .is_some_and(|(row, col)| steep_expanded[row * slope_map.cols + col])
                 })
-                .copied()
                 .collect();
 
-            if filtered.len() < 3 {
+            let kept_count = keep.iter().filter(|&&k| k).count();
+            if kept_count < 3 {
                 continue;
             }
 
             use crate::toolpath::MoveIntent;
-            // Emit toolpath for this contour
             let z_adjusted = z + stock_to_leave;
-            tp.rapid_to_with_intent(
-                P3::new(filtered[0].x, filtered[0].y, safe_z),
-                MoveIntent::Linking,
+            // Only a contour where every point survives is a genuinely
+            // closed loop — safe to close back to its start. Partial
+            // survivors are non-contiguous with the excluded shallow
+            // region: chording straight across that gap at cutting feed
+            // would gouge material that sits above this Z level. Split
+            // into contiguous runs and emit each as its own open pass with
+            // its own rapid/plunge/retract envelope.
+            let whole_contour_kept = kept_count == contour.len();
+            let runs = crate::point_runs::split_runs(
+                contour,
+                |i, _p| keep.get(i).copied().unwrap_or(false),
+                crate::point_runs::RunTopology::Closed,
+                2,
             );
-            tp.feed_to_with_intent(
-                P3::new(filtered[0].x, filtered[0].y, z_adjusted),
-                plunge_rate,
-                MoveIntent::EntryPlunge,
-            );
-            for pt in &filtered[1..] {
-                tp.feed_to_with_intent(
-                    P3::new(pt.x, pt.y, z_adjusted),
-                    feed_rate,
-                    MoveIntent::FinishingCut,
-                );
-            }
-            // Close the contour
-            tp.feed_to_with_intent(
-                P3::new(filtered[0].x, filtered[0].y, z_adjusted),
-                feed_rate,
-                MoveIntent::FinishingCut,
-            );
-            tp.rapid_to_with_intent(
-                P3::new(filtered[0].x, filtered[0].y, safe_z),
-                MoveIntent::Retract,
-            );
-        }
 
-        z -= z_step;
+            for run in &runs {
+                if run.len() < 2 {
+                    continue;
+                }
+                let path: Vec<P3> = run
+                    .iter()
+                    .map(|pt| P3::new(pt.x, pt.y, z_adjusted))
+                    .collect();
+
+                // Whole-contour survivors are a genuine closed loop — use
+                // the shared closed-contour emitter (rapid/plunge/feed/
+                // close/retract) instead of hand-closing the point list.
+                // Partial survivors are an open run: emit as a plain path
+                // segment with its own rapid/plunge/retract envelope.
+                if whole_contour_kept {
+                    tp.emit_closed_contour_with_intent(
+                        &path,
+                        safe_z,
+                        feed_rate,
+                        plunge_rate,
+                        MoveIntent::FinishingCut,
+                    );
+                } else {
+                    tp.emit_path_segment_with_intent(
+                        &path,
+                        safe_z,
+                        feed_rate,
+                        plunge_rate,
+                        MoveIntent::FinishingCut,
+                    );
+                }
+            }
+        }
     }
 
-    tp
+    Ok(tp)
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+// infallible: cancel closure always returns false, so Cancelled is unreachable
+#[allow(
+    clippy::indexing_slicing,
+    clippy::too_many_arguments,
+    clippy::expect_used
+)]
+// Production goes through the _with_cancel variant; this never-cancel
+// convenience wrapper is exercised by the unit tests below.
+#[cfg_attr(not(test), allow(dead_code))]
 /// Generate shallow (parallel raster) passes filtered to shallow+overlap region.
-#[allow(clippy::too_many_arguments)]
 fn generate_shallow_passes(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -240,13 +322,48 @@ fn generate_shallow_passes(
     plunge_rate: f64,
     safe_z: f64,
 ) -> Toolpath {
+    let never_cancel = || false;
+    generate_shallow_passes_with_cancel(
+        mesh,
+        index,
+        cutter,
+        shallow_eroded,
+        slope_map,
+        stepover,
+        stock_to_leave,
+        feed_rate,
+        plunge_rate,
+        safe_z,
+        &never_cancel,
+    )
+    .expect("non-cancellable shallow-pass generation should never be cancelled")
+}
+
+/// Cancellable variant of [`generate_shallow_passes`]. Polls `cancel` once
+/// per raster row.
+#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+fn generate_shallow_passes_with_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    shallow_eroded: &[bool],
+    slope_map: &SlopeMap,
+    stepover: f64,
+    stock_to_leave: f64,
+    feed_rate: f64,
+    plunge_rate: f64,
+    safe_z: f64,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
     let mut tp = Toolpath::new();
 
     // Generate drop-cutter raster grid
     let grid = batch_drop_cutter(mesh, index, cutter, stepover, 0.0, mesh.bbox.min.z);
+    check_cancel(cancel)?;
 
     // Walk rows in zigzag pattern, clipping to the shallow region
     for row in 0..grid.rows {
+        check_cancel(cancel)?;
         let reverse = row % 2 == 1;
         let mut in_region = false;
         let mut run: Vec<P3> = Vec::new();
@@ -259,8 +376,14 @@ fn generate_shallow_passes(
 
         for col in cols {
             let cl = grid.get(row, col);
-            let x = grid.x_start + col as f64 * grid.x_step;
-            let y = grid.y_start + row as f64 * grid.y_step;
+            // Read world coordinates straight off the CL point rather than
+            // reconstructing them from the grid origin/step — the grid's
+            // `u_start`/`v_start` are rotated-frame minima that only read as
+            // world X/Y when `direction_deg == 0.0` (which the call above
+            // hardcodes, but `cl.x`/`cl.y` are always world-frame regardless
+            // of sampling direction, so this removes that trap entirely).
+            let x = cl.x;
+            let y = cl.y;
 
             // Check if this point is in the shallow region
             let is_shallow = slope_map.world_to_cell(x, y).is_some_and(|(_r, _c)| {
@@ -310,7 +433,7 @@ fn generate_shallow_passes(
         }
     }
 
-    tp
+    Ok(tp)
 }
 
 /// Generate a steep-and-shallow finishing toolpath.
@@ -318,6 +441,8 @@ fn generate_shallow_passes(
 /// Splits the surface into steep and shallow regions based on slope angle,
 /// then generates waterline passes for steep areas and parallel raster passes
 /// for shallow areas, with configurable overlap and wall clearance.
+// infallible: cancel closure always returns false, so Cancelled is unreachable
+#[allow(clippy::expect_used)]
 #[tracing::instrument(skip(mesh, index, cutter, params), fields(threshold = params.threshold_angle))]
 pub fn steep_shallow_toolpath(
     mesh: &TriangleMesh,
@@ -325,22 +450,38 @@ pub fn steep_shallow_toolpath(
     cutter: &dyn MillingCutter,
     params: &SteepShallowParams,
 ) -> Toolpath {
-    let tool_radius = cutter.radius();
+    let never_cancel = || false;
+    steep_shallow_toolpath_with_cancel(mesh, index, cutter, params, &never_cancel)
+        .expect("non-cancellable steep/shallow toolpath should never be cancelled")
+}
+
+/// Cancellable variant of [`steep_shallow_toolpath`]. Propagates `cancel`
+/// into heightmap construction and both pass generators (per-Z-level for
+/// steep, per-raster-row for shallow).
+#[tracing::instrument(skip(mesh, index, cutter, params, cancel), fields(threshold = params.threshold_angle))]
+pub fn steep_shallow_toolpath_with_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &SteepShallowParams,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
+    check_cancel(cancel)?;
     let bbox = &mesh.bbox;
 
-    // Build surface heightmap and slope map
-    let cell_size = (tool_radius / 4.0).max(params.tolerance);
-    let origin_x = bbox.min.x - tool_radius;
-    let origin_y = bbox.min.y - tool_radius;
-    let extent_x = bbox.max.x + tool_radius;
-    let extent_y = bbox.max.y + tool_radius;
-    let cols = ((extent_x - origin_x) / cell_size).ceil() as usize + 1;
-    let rows = ((extent_y - origin_y) / cell_size).ceil() as usize + 1;
-
-    let surface_hm = SurfaceHeightmap::from_mesh(
-        mesh, index, cutter, origin_x, origin_y, rows, cols, cell_size, bbox.min.z,
-    );
-    let slope_map = surface_hm.slope_map();
+    // Build surface heightmap and slope map (shared setup, see finish_setup.rs)
+    let surface = crate::finish_setup::build_finish_surface_with_cancel(
+        mesh,
+        index,
+        cutter,
+        params.tolerance,
+        cancel,
+    )?;
+    let surface_hm = surface.heightmap;
+    let slope_map = surface.slope_map;
+    let cell_size = surface_hm.cell_size;
+    let rows = surface_hm.rows;
+    let cols = surface_hm.cols;
 
     // Classify steep vs shallow
     let steep_grid = classify_steep_shallow(&slope_map, params.threshold_angle);
@@ -379,7 +520,7 @@ pub fn steep_shallow_toolpath(
     );
 
     // Generate steep (waterline) passes
-    let steep_tp = generate_steep_passes(
+    let steep_tp = generate_steep_passes_with_cancel(
         mesh,
         index,
         cutter,
@@ -393,10 +534,11 @@ pub fn steep_shallow_toolpath(
         params.feed_rate,
         params.plunge_rate,
         params.safe_z,
-    );
+        cancel,
+    )?;
 
     // Generate shallow (parallel) passes
-    let shallow_tp = generate_shallow_passes(
+    let shallow_tp = generate_shallow_passes_with_cancel(
         mesh,
         index,
         cutter,
@@ -407,7 +549,8 @@ pub fn steep_shallow_toolpath(
         params.feed_rate,
         params.plunge_rate,
         params.safe_z,
-    );
+        cancel,
+    )?;
 
     info!(
         steep_moves = steep_tp.moves.len(),
@@ -434,14 +577,20 @@ pub fn steep_shallow_toolpath(
         "Steep and shallow toolpath complete"
     );
 
-    tp
+    Ok(tp)
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
     use crate::mesh::SpatialIndex;
+    use crate::slope::SurfaceHeightmap;
     use crate::tool::BallEndmill;
 
     fn make_hemisphere() -> (TriangleMesh, SpatialIndex) {
@@ -779,5 +928,201 @@ mod tests {
             tp_yes.total_cutting_distance(),
             tp_no.total_cutting_distance()
         );
+    }
+
+    // ── Regression: steep passes must not chord across excluded regions ──
+
+    /// Regression test for the gouge bug: `generate_steep_passes` used to
+    /// filter waterline contour points by the steep mask, then feed ALL
+    /// survivors sequentially and unconditionally close the loop back to
+    /// the first survivor. When survivors are non-contiguous (a shallow
+    /// gap sits between them), that closing/connecting move chords
+    /// straight across the excluded region at cutting feed, into material
+    /// that sits above the pass's Z level.
+    ///
+    /// Uses a real hemisphere waterline contour (a genuine closed circular
+    /// loop) with a hand-built steep mask (steep iff world X < 0) that has
+    /// nothing to do with the hemisphere's real slope — it exists purely to
+    /// force a deterministic half-kept / half-excluded split so the test
+    /// doesn't depend on the real classifier's grid resolution.
+    #[test]
+    fn test_steep_passes_no_chord_across_excluded_gap() {
+        let (mesh, si) = make_hemisphere();
+        let cutter = ball_cutter();
+        let tool_radius = cutter.radius();
+        let cell_size = 1.0;
+        let bbox = &mesh.bbox;
+
+        let origin_x = bbox.min.x - tool_radius;
+        let origin_y = bbox.min.y - tool_radius;
+        let extent_x = bbox.max.x + tool_radius;
+        let extent_y = bbox.max.y + tool_radius;
+        let cols = ((extent_x - origin_x) / cell_size).ceil() as usize + 1;
+        let rows = ((extent_y - origin_y) / cell_size).ceil() as usize + 1;
+
+        let surface_hm = SurfaceHeightmap::from_mesh(
+            &mesh, &si, &cutter, origin_x, origin_y, rows, cols, cell_size, bbox.min.z,
+        );
+        let slope_map = surface_hm.slope_map();
+
+        // Hand-built mask: steep iff the cell's world X coordinate is
+        // negative — a hard half-plane split unrelated to real slope.
+        let mut steep_mask = vec![false; rows * cols];
+        for row in 0..rows {
+            for col in 0..cols {
+                let x = origin_x + col as f64 * cell_size;
+                if x < 0.0
+                    && let Some(slot) = steep_mask.get_mut(row * cols + col)
+                {
+                    *slot = true;
+                }
+            }
+        }
+
+        let z_test = 8.0;
+        let sampling = 1.0;
+
+        // Capture the raw contour to establish the expected point spacing.
+        let raw_contours = waterline_contours(&mesh, &si, &cutter, z_test, sampling);
+        let contour = raw_contours
+            .iter()
+            .max_by_key(|c| c.len())
+            .expect("hemisphere should produce a contour at z=8");
+        assert!(
+            contour.len() >= 8,
+            "need a non-trivial contour to exercise the split, got {}",
+            contour.len()
+        );
+
+        let mut max_adjacent_spacing = 0.0_f64;
+        for i in 0..contour.len() {
+            let a = contour[i];
+            let b = contour[(i + 1) % contour.len()];
+            let d = ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt();
+            max_adjacent_spacing = max_adjacent_spacing.max(d);
+        }
+
+        let steep_tp = generate_steep_passes(
+            &mesh,
+            &si,
+            &cutter,
+            &slope_map,
+            &steep_mask,
+            z_test,
+            z_test - 0.5, // z_bottom: keeps the loop to a single Z level
+            100.0,        // z_step larger than the range: exactly one pass
+            sampling,
+            0.0,
+            1000.0,
+            500.0,
+            30.0,
+        );
+
+        // No consecutive pair of cutting (FinishingCut) moves may be farther
+        // apart than a small multiple of the contour's own point spacing —
+        // that would mean a cutting move chorded across the excluded half.
+        let max_allowed = (max_adjacent_spacing * 3.0).max(3.0);
+        let mut prev_cut: Option<P3> = None;
+        let mut saw_any_cut = false;
+        for m in &steep_tp.moves {
+            let is_cut = matches!(m.move_type, crate::toolpath::MoveType::Linear { .. })
+                && m.intent == crate::toolpath::MoveIntent::FinishingCut;
+            if is_cut {
+                saw_any_cut = true;
+                if let Some(prev) = prev_cut {
+                    let d = ((m.target.x - prev.x).powi(2) + (m.target.y - prev.y).powi(2)).sqrt();
+                    assert!(
+                        d <= max_allowed,
+                        "cutting move chorded across the excluded region: {:.2}mm \
+                         (allowed {:.2}mm) from ({:.2},{:.2}) to ({:.2},{:.2})",
+                        d,
+                        max_allowed,
+                        prev.x,
+                        prev.y,
+                        m.target.x,
+                        m.target.y
+                    );
+                }
+                prev_cut = Some(m.target);
+            } else {
+                // A rapid or plunge breaks the run — the next cutting move
+                // starts a fresh pass and shouldn't be distance-checked
+                // against whatever preceded the break.
+                prev_cut = None;
+            }
+        }
+        assert!(saw_any_cut, "expected at least one cutting move");
+    }
+
+    /// Companion to the gouge regression above: when every contour point
+    /// survives the steep filter (no excluded gap at all), each pass must
+    /// still close back to its own start — the closed-loop behavior must
+    /// be preserved for genuinely closed contours.
+    #[test]
+    fn test_steep_passes_still_close_loop_when_fully_steep() {
+        let (mesh, si) = make_hemisphere();
+        let cutter = ball_cutter();
+        let tool_radius = cutter.radius();
+        let cell_size = 1.0;
+        let bbox = &mesh.bbox;
+
+        let origin_x = bbox.min.x - tool_radius;
+        let origin_y = bbox.min.y - tool_radius;
+        let extent_x = bbox.max.x + tool_radius;
+        let extent_y = bbox.max.y + tool_radius;
+        let cols = ((extent_x - origin_x) / cell_size).ceil() as usize + 1;
+        let rows = ((extent_y - origin_y) / cell_size).ceil() as usize + 1;
+
+        let surface_hm = SurfaceHeightmap::from_mesh(
+            &mesh, &si, &cutter, origin_x, origin_y, rows, cols, cell_size, bbox.min.z,
+        );
+        let slope_map = surface_hm.slope_map();
+
+        // Every cell steep: the whole contour should survive the filter.
+        let all_steep = vec![true; rows * cols];
+
+        let steep_tp = generate_steep_passes(
+            &mesh, &si, &cutter, &slope_map, &all_steep, 8.0, 7.5, 100.0, 1.0, 0.0, 1000.0, 500.0,
+            30.0,
+        );
+
+        // Reconstruct each pass (a run of plunge+cut moves between rapids)
+        // and assert every pass returns to its own starting XY.
+        let mut passes: Vec<Vec<P3>> = Vec::new();
+        let mut current: Vec<P3> = Vec::new();
+        for m in &steep_tp.moves {
+            match m.move_type {
+                crate::toolpath::MoveType::Rapid => {
+                    if current.len() >= 2 {
+                        passes.push(std::mem::take(&mut current));
+                    } else {
+                        current.clear();
+                    }
+                }
+                crate::toolpath::MoveType::Linear { .. }
+                    if m.intent == crate::toolpath::MoveIntent::EntryPlunge
+                        || m.intent == crate::toolpath::MoveIntent::FinishingCut =>
+                {
+                    current.push(m.target);
+                }
+                _ => {}
+            }
+        }
+        if current.len() >= 2 {
+            passes.push(current);
+        }
+
+        assert!(!passes.is_empty(), "expected at least one steep pass");
+        for pass in &passes {
+            let first = pass.first().copied();
+            let last = pass.last().copied();
+            if let (Some(first), Some(last)) = (first, last) {
+                let d = ((first.x - last.x).powi(2) + (first.y - last.y).powi(2)).sqrt();
+                assert!(
+                    d < 1e-6,
+                    "fully-steep contour pass should close its loop, gap was {d:.4}mm"
+                );
+            }
+        }
     }
 }

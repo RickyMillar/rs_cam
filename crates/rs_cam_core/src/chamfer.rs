@@ -17,16 +17,18 @@ pub struct ChamferParams {
     pub tip_offset: f64,
     /// Half angle of the V-bit in radians (e.g., 45-degree V-bit = pi/4).
     pub tool_half_angle: f64,
-    /// Tool shank radius for clearance checks (mm). Not used for offset
-    /// calculation — the V-bit's effective cutting radius is computed from
-    /// the cut depth and half angle.
-    pub tool_radius: f64,
     /// Cutting feed rate (mm/min).
     pub feed_rate: f64,
     /// Plunge feed rate (mm/min).
     pub plunge_rate: f64,
     /// Safe Z height for rapid moves (mm).
     pub safe_z: f64,
+    /// Stock-top Z in the emission frame (F-028 / S.2). Chamfer cuts at
+    /// `top_z - depth`. Pre-S.2 this was implicitly `0.0` (chamfer
+    /// hardcoded `cut_depth = -depth`), which only produced cuts inside
+    /// the stock when the world stock top happened to sit at world Z=0.
+    /// Callers should pass `heights.top_z` from the resolved height stack.
+    pub top_z: f64,
 }
 
 /// Compute the cut depth for a chamfer.
@@ -76,7 +78,7 @@ pub fn chamfer_toolpath(polygon: &Polygon2, params: &ChamferParams) -> Toolpath 
     let profile_params = ProfileParams {
         tool_radius: effective_tool_radius,
         side: ProfileSide::Outside,
-        cut_depth: -depth,
+        cut_depth: params.top_z - depth,
         feed_rate: params.feed_rate,
         plunge_rate: params.plunge_rate,
         safe_z: params.safe_z,
@@ -99,10 +101,10 @@ mod tests {
             chamfer_width: 2.0,
             tip_offset: 0.1,
             tool_half_angle: FRAC_PI_4, // 45 degrees
-            tool_radius: 6.0,
             feed_rate: 800.0,
             plunge_rate: 400.0,
             safe_z: 10.0,
+            top_z: 0.0,
         }
     }
 
@@ -126,10 +128,10 @@ mod tests {
             chamfer_width: 2.0,
             tip_offset: 0.0,
             tool_half_angle: std::f64::consts::FRAC_PI_6,
-            tool_radius: 6.0,
             feed_rate: 800.0,
             plunge_rate: 400.0,
             safe_z: 10.0,
+            top_z: 0.0,
         };
         let depth = chamfer_depth(&params);
         let expected = 2.0 / (std::f64::consts::FRAC_PI_6).tan();
@@ -254,6 +256,46 @@ mod tests {
             "Tool center x_max={} should be outside boundary (> 40)",
             x_max
         );
+    }
+
+    #[test]
+    fn test_chamfer_cuts_relative_to_stock_top_s2() {
+        // S.2 / F-028: chamfer must cut relative to `top_z`, not world Z=0.
+        let square = Polygon2::rectangle(0.0, 0.0, 40.0, 40.0);
+        let params = ChamferParams {
+            top_z: 5.0,
+            ..default_chamfer_params()
+        };
+        let expected_depth = chamfer_depth(&params);
+        let tp = chamfer_toolpath(&square, &params);
+
+        assert!(!tp.moves.is_empty(), "Expected moves");
+
+        let mut saw_cut = false;
+        for m in &tp.moves {
+            match m.move_type {
+                MoveType::Rapid => {
+                    // Rapids (approach/retract) should stay at safe_z, unaffected by top_z.
+                    assert!(
+                        (m.target.z - params.safe_z).abs() < 1e-9,
+                        "Rapid should be at safe_z={}, got {}",
+                        params.safe_z,
+                        m.target.z
+                    );
+                }
+                MoveType::Linear { feed_rate } if (feed_rate - params.feed_rate).abs() < 1e-10 => {
+                    saw_cut = true;
+                    assert!(
+                        (m.target.z - (params.top_z - expected_depth)).abs() < 1e-10,
+                        "Cutting move at z={}, expected z={}",
+                        m.target.z,
+                        params.top_z - expected_depth
+                    );
+                }
+                _ => {}
+            }
+        }
+        assert!(saw_cut, "Expected at least one cutting move");
     }
 
     #[test]

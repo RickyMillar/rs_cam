@@ -451,6 +451,19 @@ fn polygon_bbox(pts: &[P2]) -> (f64, f64, f64, f64) {
 
 // --- helpers ---
 
+/// Pick the polygon with the largest `area()` out of a slice, NaN-safe.
+///
+/// Ties (equal area) resolve to the *last* maximal element — the same
+/// behavior `Iterator::max_by` gives for equal keys. Returns `None` for
+/// an empty slice.
+pub fn largest_by_area(polys: &[Polygon2]) -> Option<&Polygon2> {
+    polys.iter().max_by(|a, b| {
+        a.area()
+            .partial_cmp(&b.area())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    })
+}
+
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn shoelace_area(pts: &[P2]) -> f64 {
     let n = pts.len();
@@ -512,7 +525,12 @@ fn ring_perimeter(pts: &[P2]) -> f64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
@@ -944,5 +962,39 @@ mod tests {
         assert!(point_in_polygon(&P2::new(5.0, 5.0), &square));
         assert!(!point_in_polygon(&P2::new(15.0, 5.0), &square));
         assert!(!point_in_polygon(&P2::new(-1.0, 5.0), &square));
+    }
+
+    #[test]
+    fn test_largest_by_area_empty() {
+        let polys: Vec<Polygon2> = Vec::new();
+        assert!(largest_by_area(&polys).is_none());
+    }
+
+    #[test]
+    fn test_largest_by_area_single() {
+        let polys = vec![Polygon2::rectangle(0.0, 0.0, 10.0, 10.0)];
+        let picked = largest_by_area(&polys).expect("single element is Some");
+        assert_relative_eq!(picked.area(), 100.0);
+    }
+
+    #[test]
+    fn test_largest_by_area_picks_largest() {
+        let small = Polygon2::rectangle(0.0, 0.0, 5.0, 5.0);
+        let large = Polygon2::rectangle(0.0, 0.0, 20.0, 20.0);
+        let mid = Polygon2::rectangle(0.0, 0.0, 10.0, 10.0);
+        let polys = vec![small, large, mid];
+        let picked = largest_by_area(&polys).expect("non-empty slice is Some");
+        assert_relative_eq!(picked.area(), 400.0);
+    }
+
+    #[test]
+    fn test_largest_by_area_tie_picks_last() {
+        // Documents tie behavior: equal-area candidates resolve to the
+        // *last* one in the slice (matches `Iterator::max_by` semantics).
+        let a = Polygon2::rectangle(0.0, 0.0, 10.0, 10.0);
+        let b = Polygon2::rectangle(100.0, 100.0, 110.0, 110.0); // same area, different position
+        let polys = vec![a, b];
+        let picked = largest_by_area(&polys).expect("non-empty slice is Some");
+        assert_relative_eq!(picked.exterior[0].x, 100.0);
     }
 }

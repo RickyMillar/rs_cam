@@ -108,6 +108,13 @@ pub struct Adaptive3dParams {
     pub envelope_radius: f64,
     pub stepover: f64,
     pub depth_per_pass: f64,
+    /// Vertical (Z) leave-stock offset above the surface heightmap —
+    /// the only stock-to-leave axis this planner supports. All uses key
+    /// off `point_drop_cutter` / the surface heightmap in Z; there is no
+    /// wall-normal offset, so a distinct radial (sidewall) allowance
+    /// cannot be represented here. Adapter callers collapse a
+    /// user-facing axial/radial pair down to this single field — see
+    /// `compute::execute::adaptive3d_effective_stock_to_leave`.
     pub stock_to_leave: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,

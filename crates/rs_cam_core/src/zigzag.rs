@@ -6,7 +6,7 @@
 
 use crate::geo::{P2, P3};
 use crate::polygon::Polygon2;
-use crate::toolpath::Toolpath;
+use crate::toolpath::{MoveIntent, Toolpath};
 
 /// Parameters for zigzag/raster clearing.
 pub struct ZigzagParams {
@@ -189,6 +189,11 @@ fn scan_line_intersections(edges: &[(P2, P2)], perp_pos: f64, cos_a: f64, sin_a:
     intersections
 }
 
+/// S.7 (planning/finishing_stack_review_2026-07.md): each line is emitted
+/// via the shared `emit_path_segment_with_intent` rapid→plunge→feed→retract
+/// envelope instead of open-coding it — byte-identical to the previous
+/// hand-rolled sequence (a 2-point path yields exactly rapid, plunge, one
+/// feed, retract).
 pub fn lines_to_toolpath(lines: &[[P2; 2]], params: &ZigzagParams) -> Toolpath {
     let mut tp = Toolpath::new();
 
@@ -199,27 +204,18 @@ pub fn lines_to_toolpath(lines: &[[P2; 2]], params: &ZigzagParams) -> Toolpath {
     for line in lines {
         let start = &line[0];
         let end = &line[1];
-
-        use crate::toolpath::MoveIntent;
-        // Rapid to start of line at safe Z
-        tp.rapid_to_with_intent(
-            P3::new(start.x, start.y, params.safe_z),
-            MoveIntent::Linking,
-        );
-        // Plunge
-        tp.feed_to_with_intent(
+        let path = [
             P3::new(start.x, start.y, params.cut_depth),
-            params.plunge_rate,
-            MoveIntent::EntryPlunge,
-        );
-        // Cut across
-        tp.feed_to_with_intent(
             P3::new(end.x, end.y, params.cut_depth),
+        ];
+
+        tp.emit_path_segment_with_intent(
+            &path,
+            params.safe_z,
             params.feed_rate,
+            params.plunge_rate,
             MoveIntent::ClearingCut,
         );
-        // Retract
-        tp.rapid_to_with_intent(P3::new(end.x, end.y, params.safe_z), MoveIntent::Retract);
     }
 
     tp

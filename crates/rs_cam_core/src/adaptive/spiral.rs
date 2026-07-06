@@ -79,7 +79,7 @@ pub(super) fn spiral_passes(
     // carries a non-machinable margin border, so the transform is
     // well-defined.
     let inverse: Vec<bool> = machinable_mask.iter().map(|&m| !m).collect();
-    let mut edt = crate::contour_extract::distance_transform_2d(&inverse, rows, cols);
+    let mut edt = crate::grid_field::distance_transform_2d(&inverse, rows, cols);
     for d in &mut edt {
         *d *= cell;
     }

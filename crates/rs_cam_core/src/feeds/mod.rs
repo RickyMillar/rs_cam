@@ -105,6 +105,21 @@ impl ToolGeometryHint {
     /// This is the same calculation the vendor-LUT lookup uses to pick
     /// the chipload row, so the band shown in the UI applies to the
     /// returned diameter — not the tool tip.
+    ///
+    /// This is a **second, hand-maintained implementation** of the
+    /// same geometry as [`crate::tool::MillingCutter::lookup_diameter_at`]
+    /// (see that trait method's doc comment on
+    /// `tool::vbit::VBitEndmill` / `tool::tapered_ball::TaperedBallEndmill`
+    /// for the reverse pointer). It has to be: this hint-level path is
+    /// called from `feeds::calculate` / `vendor_normalize`, which only
+    /// carry a `ToolGeometryHint` (scalar shape params), not a full
+    /// `&dyn MillingCutter` instance — there's nothing to delegate to
+    /// cheaply. The two are kept honest by the cross-shape DOC-sweep
+    /// parity sentry `tests::engaged_diameter_at_doc_matches_lookup_diameter_at_across_shapes`
+    /// below. If that test ever fails, do not silently prefer one side
+    /// — the divergence means Suggest's chipload-band derating and the
+    /// post-sim gate's derating have quietly split, which can produce
+    /// false chipload trips (planning/finishing_stack_review_2026-07.md S.3).
     pub fn engaged_diameter_at_doc(
         self,
         axial_doc_mm: f64,
@@ -862,28 +877,34 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 // for milling doesn't apply to drill bands (peck depth,
                 // not engagement). Mirroring the gate's exclusion here
                 // keeps the two paths aligned for the cases where the
-                // gate actually fires.
-                let chipload_doc_scale = if input.operation == OperationFamily::Drill {
-                    1.0
+                // gate actually fires. Forcing `chipload_doc_ratio` to
+                // `0.0` bypasses derating (`doc_derating_scale` maps
+                // any ratio `<= 1.0` to a scale of `1.0`), same effect
+                // as the pre-S.8 `chipload_doc_scale = 1.0` branch.
+                //
+                // Validation + scaling both now live in
+                // `geometry::derate_chipload_bounds` — the single home
+                // for this wrapper (S.8), also used by
+                // `suggest::recompute_chipload_bounds_for_dpp` and both
+                // `tool_load` chipload sites.
+                let chipload_doc_ratio = if input.operation == OperationFamily::Drill {
+                    0.0
+                } else if effective_d > 0.0 {
+                    axial_doc_for_eff_d / effective_d
                 } else {
-                    let doc_ratio = if effective_d > 0.0 {
-                        axial_doc_for_eff_d / effective_d
-                    } else {
-                        0.0
-                    };
-                    geometry::doc_derating_scale(doc_ratio)
+                    0.0
                 };
-                let bounds = match (result.chip_load_min_mm, result.chip_load_max_mm) {
-                    (Some(min), Some(max))
-                        if min.is_finite() && max.is_finite() && min > 0.0 && max >= min =>
-                    {
-                        Some(ChiploadBounds {
-                            min_mm_per_tooth: min * chipload_doc_scale,
-                            max_mm_per_tooth: max * chipload_doc_scale,
-                        })
-                    }
-                    _ => None,
-                };
+                let bounds = geometry::derate_chipload_bounds(
+                    result.chip_load_min_mm,
+                    result.chip_load_max_mm,
+                    chipload_doc_ratio,
+                    geometry::ChiploadBoundPolicy::RequireBoth,
+                )
+                .and_then(geometry::DeratedChiploadBand::into_pair)
+                .map(|(min, max)| ChiploadBounds {
+                    min_mm_per_tooth: min,
+                    max_mm_per_tooth: max,
+                });
                 // RPM-only vendor rows (e.g. whiteside-rd5218h-roughing-down-
                 // spiral-3f-rpm) publish rpm_nominal/rpm_max as anchors but
                 // leave chipload_min/max unset — `chipload_midpoint` then
@@ -3429,5 +3450,103 @@ mod tests {
             assert_eq!(kind.tool_type().cutter_kind(), kind);
         }
         assert_eq!(ToolType::ALL.len(), CutterKind::ALL.len());
+    }
+
+    /// S.3 parity sentry (`planning/finishing_stack_review_2026-07.md`).
+    ///
+    /// `ToolGeometryHint::engaged_diameter_at_doc` (Suggest's path —
+    /// this module, ~line 108) and `MillingCutter::lookup_diameter_at`
+    /// (the post-sim gate's path — `tool::vbit::VBitEndmill` /
+    /// `tool::tapered_ball::TaperedBallEndmill`) are two hand-written
+    /// implementations of the same engaged-diameter geometry. They
+    /// agree today, but nothing enforces it — one edit to either side
+    /// could silently split Suggest's chipload-band targeting from the
+    /// gate's derating and produce false chipload trips.
+    ///
+    /// Sweeps DOC across 0.1×..2× nominal diameter (crossing the
+    /// ball/cone and flute/taper transitions) for every shape with
+    /// nontrivial engagement geometry (v-bit, tapered ball), plus flat
+    /// and ball as trivial always-nominal-diameter cases, and asserts
+    /// exact agreement (1e-9) at every sample. If this ever fails: DO
+    /// NOT silently pick one implementation over the other — report
+    /// the numeric disagreement and mark this `#[ignore]` with a
+    /// pointer to the report so the tree stays green while the
+    /// implementations are reconciled deliberately.
+    #[test]
+    fn engaged_diameter_at_doc_matches_lookup_diameter_at_across_shapes() {
+        use crate::tool::{
+            BallEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill,
+        };
+
+        struct Case {
+            name: &'static str,
+            diameter_mm: f64,
+            shank_mm: f64,
+            hint: ToolGeometryHint,
+            lookup: Box<dyn Fn(f64) -> f64>,
+        }
+
+        let flat = FlatEndmill::new(6.0, 20.0);
+        let ball = BallEndmill::new(6.0, 20.0);
+        let vbit = VBitEndmill::new(6.0, 90.0, 20.0);
+        // ball_diameter=6mm tip, taper_half_angle=20deg, shaft=10mm.
+        let tapered = TaperedBallEndmill::new(6.0, 20.0, 10.0, 30.0);
+
+        let cases: Vec<Case> = vec![
+            Case {
+                name: "flat (trivial: nominal diameter regardless of DOC)",
+                diameter_mm: 6.0,
+                shank_mm: 6.0,
+                hint: ToolGeometryHint::Flat,
+                lookup: Box::new(move |doc| flat.lookup_diameter_at(doc)),
+            },
+            Case {
+                name: "ball (trivial: nominal diameter regardless of DOC)",
+                diameter_mm: 6.0,
+                shank_mm: 6.0,
+                hint: ToolGeometryHint::Ball,
+                lookup: Box::new(move |doc| ball.lookup_diameter_at(doc)),
+            },
+            Case {
+                name: "vbit 90deg",
+                diameter_mm: 6.0,
+                shank_mm: 6.0,
+                hint: ToolGeometryHint::VBit {
+                    included_angle: 90.0,
+                    tip_diameter: 0.0,
+                },
+                lookup: Box::new(move |doc| vbit.lookup_diameter_at(doc)),
+            },
+            Case {
+                name: "tapered ball, tip r=3mm, taper=20deg, shaft=10mm",
+                diameter_mm: 10.0,
+                shank_mm: 10.0,
+                hint: ToolGeometryHint::TaperedBall {
+                    tip_radius: 3.0,
+                    taper_angle_deg: 20.0,
+                },
+                lookup: Box::new(move |doc| tapered.lookup_diameter_at(doc)),
+            },
+        ];
+
+        const STEPS: u32 = 40;
+        for case in &cases {
+            for i in 0..=STEPS {
+                let frac = 0.1 + (2.0 - 0.1) * f64::from(i) / f64::from(STEPS);
+                let doc_mm = frac * case.diameter_mm;
+                let hint_d =
+                    case.hint
+                        .engaged_diameter_at_doc(doc_mm, case.diameter_mm, case.shank_mm);
+                let trait_d = (case.lookup)(doc_mm);
+                let diff = (hint_d - trait_d).abs();
+                assert!(
+                    diff < 1e-9,
+                    "{}: at doc={doc_mm:.4}mm engaged_diameter_at_doc={hint_d:.9} \
+                     lookup_diameter_at={trait_d:.9} (diff={diff:.3e}) — S.3 divergence, \
+                     see planning/finishing_stack_review_2026-07.md",
+                    case.name,
+                );
+            }
+        }
     }
 }

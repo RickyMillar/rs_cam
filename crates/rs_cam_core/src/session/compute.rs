@@ -34,12 +34,6 @@ use super::{
     VerdictSeverity,
 };
 
-/// Translate a triangle mesh by (dx, dy, dz) and rebuild bbox/faces.
-/// Strip a single layer of surrounding ASCII double-quotes from a string
-/// if present. Used by the MCP coercion path to tolerate clients that
-/// double-encode scalar values (e.g. `"7"` arriving as the literal
-/// 3-char string `"7"`). Returns the input unchanged when there are no
-/// surrounding quotes or when the string isn't long enough to have any.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StaleSet {
     pub toolpath_indices: Vec<usize>,
@@ -86,6 +80,11 @@ pub fn compute_stale_set(session: &ProjectSession, mutation: MutationKind) -> St
     StaleSet { toolpath_indices }
 }
 
+/// Strip a single layer of surrounding ASCII double-quotes from a string
+/// if present. Used by the MCP coercion path to tolerate clients that
+/// double-encode scalar values (e.g. `"7"` arriving as the literal
+/// 3-char string `"7"`). Returns the input unchanged when there are no
+/// surrounding quotes or when the string isn't long enough to have any.
 pub(crate) fn strip_outer_quotes(s: &str) -> &str {
     if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
         &s[1..s.len() - 1]
@@ -126,6 +125,7 @@ fn transform_bbox_world_to_local(
     crate::geo::BoundingBox3 { min, max }
 }
 
+/// Translate a triangle mesh by (dx, dy, dz) and rebuild bbox/faces.
 fn translate_mesh(mesh: &TriangleMesh, dx: f64, dy: f64, dz: f64) -> TriangleMesh {
     let verts: Vec<P3> = mesh
         .vertices
@@ -616,12 +616,7 @@ impl ProjectSession {
 
         // Invalidate cached results for all toolpaths that use this tool
         let tool_raw_id = tool.id.0;
-        for (idx, tc) in self.toolpath_configs.iter().enumerate() {
-            if tc.tool_id == tool_raw_id {
-                self.results.remove(&idx);
-            }
-        }
-        self.simulation = None;
+        self.invalidate_tool(tool_raw_id);
 
         Ok(())
     }
@@ -836,12 +831,65 @@ impl ProjectSession {
         Some((modulated, regime))
     }
 
+    /// Shared `SimulationRequest` assembly for [`run_simulation`](Self::run_simulation)
+    /// and [`simulate_candidate_isolated`](Self::simulate_candidate_isolated) (S.12
+    /// dedup). Both build the request off an already-assembled `groups` +
+    /// `resolution` pair through the identical stock-frame / rapid-feed-ternary /
+    /// kinematics-map shape; only these knobs differ between the two callers:
+    ///
+    /// - `metrics_enabled` / `capture_arc_engagement`: `run_simulation` mirrors
+    ///   `SimulationOptions::metrics_enabled` into both fields (a single toggle
+    ///   the production path exposes). `simulate_candidate_isolated` force-enables
+    ///   both unconditionally — the strategy advisor's modulator needs per-move
+    ///   engagement on every candidate regardless of the session's default sim
+    ///   options.
+    /// - `model_mesh`: `run_simulation` supplies the translated model mesh so the
+    ///   simulator can compute sim-vs-model deviation; `simulate_candidate_isolated`
+    ///   passes `None` — a throwaway candidate path is scored on engagement/feed,
+    ///   not surface deviation.
+    /// - `use_predicted_feed_in_gates`: `run_simulation` mirrors
+    ///   `SimulationOptions::use_predicted_feed_in_gates`; the isolated path
+    ///   force-disables it, since it evaluates candidates *before* any
+    ///   feed-modulation pass exists to populate a predicted-feed map.
+    fn build_sim_request(
+        &self,
+        groups: Vec<SimGroupEntry>,
+        stock_bbox: BoundingBox3,
+        resolution: f64,
+        metric_options: SimulationMetricOptions,
+        model_mesh: Option<Arc<TriangleMesh>>,
+        use_predicted_feed_in_gates: bool,
+    ) -> SimulationRequest {
+        SimulationRequest {
+            groups,
+            stock_bbox,
+            stock_top_z: stock_bbox.max.z,
+            resolution,
+            metric_options,
+            spindle_rpm: self.post.spindle_speed,
+            rapid_feed_mm_min: if self.post.high_feedrate_mode {
+                self.post.high_feedrate
+            } else {
+                self.machine.max_feed_mm_min.max(1.0)
+            },
+            model_mesh,
+            kinematics: self.machine.kinematics.map(|kin| {
+                crate::compute::simulate::KinematicsContext {
+                    kinematics: kin,
+                    max_feed_mm_min: self.machine.max_feed_mm_min.max(1.0),
+                    use_predicted_feed_in_gates,
+                }
+            }),
+        }
+    }
+
     /// Simulate a single throwaway toolpath in isolation (one setup group,
     /// one entry) and return its cut trace, with arc-engagement capture on so
     /// the per-move engagement the modulator needs is present. Used by the
     /// strategy advisor to evaluate candidate strategies that are not (yet)
-    /// persisted in `self.results`; mirrors the request build of
-    /// [`run_simulation`](Self::run_simulation) for the single-path case.
+    /// persisted in `self.results`; shares its `SimulationRequest` assembly
+    /// with [`run_simulation`](Self::run_simulation) via
+    /// [`build_sim_request`](Self::build_sim_request) for the single-path case.
     fn simulate_candidate_isolated(
         &self,
         index: usize,
@@ -883,32 +931,22 @@ impl ProjectSession {
             local_to_global: setup_ctx.local_to_global,
         }];
         let resolution = auto_resolution_for_groups(&groups, &stock_bbox);
-        let rapid_feed_mm_min = if self.post.high_feedrate_mode {
-            self.post.high_feedrate
-        } else {
-            self.machine.max_feed_mm_min.max(1.0)
-        };
-        let request = SimulationRequest {
+        // Deviation (model_mesh) is not needed for engagement capture; both
+        // metrics flags force-on (modulator needs arc engagement regardless
+        // of session defaults); predicted-feed gates force-off (no modulation
+        // pass has run yet to populate a predicted-feed map). See
+        // `build_sim_request`'s doc comment for the full rationale.
+        let request = self.build_sim_request(
             groups,
             stock_bbox,
-            stock_top_z: stock_bbox.max.z,
             resolution,
-            metric_options: SimulationMetricOptions {
+            SimulationMetricOptions {
                 enabled: true,
                 capture_arc_engagement: true,
             },
-            spindle_rpm: self.post.spindle_speed,
-            rapid_feed_mm_min,
-            // Deviation (model_mesh) is not needed for engagement capture.
-            model_mesh: None,
-            kinematics: self.machine.kinematics.map(|kin| {
-                crate::compute::simulate::KinematicsContext {
-                    kinematics: kin,
-                    max_feed_mm_min: self.machine.max_feed_mm_min.max(1.0),
-                    use_predicted_feed_in_gates: false,
-                }
-            }),
-        };
+            None,
+            false,
+        );
         run_simulation(&request, cancel).ok()?.cut_trace
     }
 
@@ -1115,10 +1153,13 @@ impl ProjectSession {
         }
 
         // Pre-resolve the effective boundary polygon so adaptive3d can
-        // pre-clip its internal stock (mirrors apply_boundary_clip's
-        // computation at line ~570). Doing this before generation rather
-        // than after avoids the "cut moves outside boundary become rapids"
-        // failure mode that left dexel cells unstamped in deep passes.
+        // pre-clip its internal stock. `apply_boundary_clip` (below) resolves
+        // its source polygon through this same `resolve_containment_polygon`
+        // call (S.9 dedup — the two used to carry independent copies of this
+        // computation, which is why they could drift). Doing this before
+        // generation rather than after avoids the "cut moves outside
+        // boundary become rapids" failure mode that left dexel cells
+        // unstamped in deep passes.
         let pre_boundary: Option<crate::polygon::Polygon2> = if boundary_config.enabled {
             Self::resolve_containment_polygon(
                 &boundary_config,
@@ -1155,6 +1196,35 @@ impl ProjectSession {
         index: usize,
         cancel: &AtomicBool,
     ) -> Result<&ToolpathComputeResult, SessionError> {
+        // Rest-machining precondition, checked BEFORE any geometry work so we fail
+        // fast and NEVER fall back to fresh stock: a `FromRemainingStock` op must
+        // have a simulated remaining-stock snapshot. Absent it (no prior simulation,
+        // or the predecessor changed since the last sim), error out — a fine rest
+        // tool seeded with fresh stock clears the whole part instead of the leftover
+        // (unbounded compute + wrong result; the 6mm→1mm runaway that motivated this).
+        {
+            let tc = self
+                .toolpath_configs
+                .get(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            if tc.stock_source == crate::session::StockSource::FromRemainingStock
+                && self
+                    .simulation
+                    .as_ref()
+                    .and_then(|sim| sim.prior_stocks.get(&tc.id))
+                    .is_none()
+            {
+                return Err(SessionError::OperationFailed(format!(
+                    "'{}' is set to use remaining stock (rest machining) but no simulated \
+                     remaining-stock snapshot is available. Run a simulation of the preceding \
+                     operations first, then regenerate — or set the stock source to Fresh if \
+                     this is the first operation. (Refusing to fall back to fresh stock: a \
+                     fine tool would clear the whole part instead of the leftover.)",
+                    tc.name
+                )));
+            }
+        }
+
         let ResolvedGenInputs {
             tool,
             mesh,
@@ -1198,9 +1268,10 @@ impl ProjectSession {
         // Rest machining: when this toolpath cuts the stock previous ops left
         // (`StockSource::FromRemainingStock`), seed generation with the per-op
         // simulated snapshot so adaptive3d clears only the leftover. The same
-        // snapshot is reused for dressup air-cut filtering below. Requires a
-        // prior simulation; when absent (`None`) the op falls back to
-        // fresh-stock generation.
+        // snapshot is reused for dressup air-cut filtering below. The
+        // "snapshot present" precondition was enforced at function entry (a
+        // FromRemainingStock op with no snapshot already returned an error), so
+        // here `as_deref()` is guaranteed `Some` — never a fresh-stock fallback.
         let prior_stock_arc = self
             .simulation
             .as_ref()
@@ -1361,13 +1432,9 @@ impl ProjectSession {
             BoundarySource::ModelSilhouette if mesh.is_some() => {
                 #[allow(clippy::unwrap_used)]
                 let m = mesh.unwrap();
-                crate::boundary::model_silhouette(m, None)
-                    .into_iter()
-                    .max_by(|a, b| {
-                        a.area()
-                            .partial_cmp(&b.area())
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
+                let silhouettes = crate::boundary::model_silhouette(m, None);
+                crate::polygon::largest_by_area(&silhouettes)
+                    .cloned()
                     .unwrap_or_else(|| {
                         crate::polygon::Polygon2::rectangle(
                             stock_bbox.min.x,
@@ -1389,12 +1456,8 @@ impl ProjectSession {
         }
         if boundary_config.offset.abs() > 1e-9 {
             let offset_polys = crate::polygon::offset_polygon(&stock_poly, -boundary_config.offset);
-            if let Some(largest) = offset_polys.into_iter().max_by(|a, b| {
-                a.area()
-                    .partial_cmp(&b.area())
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            }) {
-                stock_poly = largest;
+            if let Some(largest) = crate::polygon::largest_by_area(&offset_polys) {
+                stock_poly = largest.clone();
             }
         }
         Some(stock_poly)
@@ -1422,70 +1485,39 @@ impl ProjectSession {
     ) -> crate::toolpath_spans::AnnotatedToolpath {
         use crate::boundary::{
             ToolContainment, clip_toolpath_to_boundary_with_provenance, effective_boundary,
-            subtract_keepouts,
         };
-        use crate::compute::config::BoundarySource;
 
         let crate::toolpath_spans::AnnotatedToolpath {
             toolpath,
             spans,
             spans_valid,
             planner_engagement,
+            rest_grid,
         } = annotated;
 
-        // Resolve the source polygon for the boundary. ModelSilhouette and
+        // Resolve the source polygon for the boundary (ModelSilhouette /
         // FaceSelection fall back to the stock rectangle when the required
-        // geometry isn't available.
-        let mut stock_poly = match &boundary_config.source {
-            BoundarySource::ModelSilhouette if mesh.is_some() => {
-                // SAFETY: matched `mesh.is_some()` in the pattern guard.
-                #[allow(clippy::unwrap_used)]
-                let m = mesh.unwrap();
-                crate::boundary::model_silhouette(m, None)
-                    .into_iter()
-                    .max_by(|a, b| {
-                        a.area()
-                            .partial_cmp(&b.area())
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                    .unwrap_or_else(|| {
-                        crate::polygon::Polygon2::rectangle(
-                            stock_bbox.min.x,
-                            stock_bbox.min.y,
-                            stock_bbox.max.x,
-                            stock_bbox.max.y,
-                        )
-                    })
-            }
-            _ => crate::polygon::Polygon2::rectangle(
+        // geometry isn't available), subtract keep-outs, and apply the
+        // user-configured offset. Shared with the adaptive3d pre-clip path
+        // in `resolve_generation_inputs` — see that function's doc comment
+        // for why the two must agree on the source polygon. `stock_bbox` is
+        // always provided here, so the rectangle fallback inside
+        // `resolve_containment_polygon` is unreachable in practice; kept for
+        // parity with that function's `Option` signature.
+        let stock_poly = Self::resolve_containment_polygon(
+            boundary_config,
+            stock_bbox,
+            mesh,
+            keep_out_footprints,
+        )
+        .unwrap_or_else(|| {
+            crate::polygon::Polygon2::rectangle(
                 stock_bbox.min.x,
                 stock_bbox.min.y,
                 stock_bbox.max.x,
                 stock_bbox.max.y,
-            ),
-        };
-
-        // Subtract keep-out footprints (fixtures + keep-out zones).
-        if !keep_out_footprints.is_empty() {
-            stock_poly = subtract_keepouts(&stock_poly, keep_out_footprints);
-        }
-
-        // Apply user-configured offset (positive = expand boundary outward,
-        // negative = shrink). cavalier_contours convention: positive distance
-        // is INWARD shrink, so flip the sign.
-        if boundary_config.offset.abs() > 1e-9 {
-            let offset_polys = crate::polygon::offset_polygon(&stock_poly, -boundary_config.offset);
-            if let Some(largest) = offset_polys.into_iter().max_by(|a, b| {
-                a.area()
-                    .partial_cmp(&b.area())
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            }) {
-                stock_poly = largest;
-            }
-            // If the offset collapsed the polygon, fall through with the
-            // unmodified stock_poly — the containment offset below may still
-            // collapse it, in which case the toolpath is returned uncut.
-        }
+            )
+        });
 
         // Map BoundaryContainment -> ToolContainment.
         let containment = match boundary_config.containment {
@@ -1536,6 +1568,7 @@ impl ProjectSession {
             spans: remapped,
             spans_valid,
             planner_engagement,
+            rest_grid,
         }
     }
 
@@ -1708,55 +1741,35 @@ impl ProjectSession {
             opts.resolution
         };
 
-        let request = SimulationRequest {
+        // Deviation comparison happens in the simulation's stock-relative
+        // global frame (0..stock_size). Translate the world-space model mesh
+        // by -stock_origin so the two sides of the comparison live in the
+        // same frame. For any setup, local_to_global ∘ world_to_local
+        // collapses to this translation because face/rotation transforms
+        // cancel — so this single shift is correct for all setups.
+        let model_mesh = self.models.iter().find_map(|m| m.mesh.clone()).map(|m| {
+            Arc::new(translate_mesh(
+                &m,
+                -self.stock.origin_x,
+                -self.stock.origin_y,
+                -self.stock.origin_z,
+            ))
+        });
+        // F-034: opt-in kinematics-aware cycle time / F-035 predicted-feed
+        // gates are threaded through as `opts.use_predicted_feed_in_gates`;
+        // see `build_sim_request`'s doc comment for how this path's knobs
+        // differ from `simulate_candidate_isolated`'s.
+        let request = self.build_sim_request(
             groups,
             stock_bbox,
-            stock_top_z: stock_bbox.max.z,
             resolution,
-            metric_options: SimulationMetricOptions {
+            SimulationMetricOptions {
                 enabled: opts.metrics_enabled,
                 capture_arc_engagement: opts.metrics_enabled,
             },
-            spindle_rpm: self.post.spindle_speed,
-            rapid_feed_mm_min: if self.post.high_feedrate_mode {
-                self.post.high_feedrate
-            } else {
-                self.machine.max_feed_mm_min.max(1.0)
-            },
-            model_mesh: self.models.iter().find_map(|m| m.mesh.clone()).map(|m| {
-                // Deviation comparison happens in the simulation's
-                // stock-relative global frame (0..stock_size). Translate the
-                // world-space model mesh by -stock_origin so the two sides of
-                // the comparison live in the same frame. For any setup,
-                // local_to_global ∘ world_to_local collapses to this
-                // translation because face/rotation transforms cancel — so
-                // this single shift is correct for all setups.
-                Arc::new(translate_mesh(
-                    &m,
-                    -self.stock.origin_x,
-                    -self.stock.origin_y,
-                    -self.stock.origin_z,
-                ))
-            }),
-            // F-034: opt-in kinematics-aware cycle time. Active iff
-            // the machine profile carries a kinematics block; absence
-            // is the flag and every built-in preset defaults to
-            // `None`, so behavior is byte-identical to pre-F-034 for
-            // every default-profile session.
-            kinematics: self.machine.kinematics.map(|kin| {
-                crate::compute::simulate::KinematicsContext {
-                    kinematics: kin,
-                    max_feed_mm_min: self.machine.max_feed_mm_min.max(1.0),
-                    // F-035: opt-in predicted-feed plumbing for gates.
-                    // Effective only when the active `MachineProfile`
-                    // also carries `kinematics` (the outer `.map`
-                    // already guarantees that). When `false`, the
-                    // gates see an empty `predicted_feeds` map and
-                    // fall back to commanded feed.
-                    use_predicted_feed_in_gates: opts.use_predicted_feed_in_gates,
-                }
-            }),
-        };
+            model_mesh,
+            opts.use_predicted_feed_in_gates,
+        );
 
         let mut result = run_simulation(&request, cancel)?;
 
@@ -1796,37 +1809,6 @@ impl ProjectSession {
         Ok(self.simulation.as_ref().unwrap())
     }
 
-    /// F-036b — apply the per-move adaptive feed modulator to every
-    /// computed toolpath after `run_simulation` produces its trace.
-    ///
-    /// Walks each toolpath's `SimulationCutSample`s, aggregates them
-    /// time-weighted into a `Vec<PerMoveEngagement>` keyed by
-    /// `move_index`, looks up the vendor LUT chipload band, builds the
-    /// `ModulationContext`, and calls
-    /// [`crate::feed_modulation::adaptive_feed_modulate`] on a `clone`
-    /// of the cached `Arc<AnnotatedToolpath>::toolpath`. When the
-    /// modulator reports any feed change, the `Arc<AnnotatedToolpath>`
-    /// in `self.results` is swapped for a new one wrapping the modulated
-    /// toolpath — `Arc::make_mut` is not used because the trace
-    /// `samples` still hold the legacy `Arc` and we want them to remain
-    /// pinned to the pre-modulation IR for diagnostic continuity.
-    ///
-    /// No-op (silently) when:
-    ///  - The simulation produced no `cut_trace` (`metrics_enabled =
-    ///    false`).
-    ///  - A toolpath has no cut samples (drill-only / all-rapid / etc.).
-    ///  - The vendor LUT has no chipload band for the toolpath.
-    ///  - The modulator returns
-    ///    `ModulationError::EngagementLengthMismatch` (defensive — only
-    ///    fires when the toolpath has been re-generated between sim and
-    ///    modulation; impossible inside `run_simulation`'s single
-    ///    transaction).
-    ///
-    /// The chipload band source is
-    /// [`crate::tool_load::chipload_envelopes_for_session`] — the same
-    /// helper the chipload viewport coloring + timeline envelope readout
-    /// already use, so band semantics match the rest of the load-gates
-    /// surface.
     /// Modulate ONE toolpath's per-move feeds against a simulation cut
     /// trace, returning the modulated [`Toolpath`] and the raw
     /// [`ModulationOutcome`] (per-move binding map + summary inputs).
@@ -2126,6 +2108,37 @@ impl ProjectSession {
         self.apply_adaptive_feed_modulation(cut_trace, opts);
     }
 
+    /// F-036b — apply the per-move adaptive feed modulator to every
+    /// computed toolpath after `run_simulation` produces its trace.
+    ///
+    /// Walks each toolpath's `SimulationCutSample`s, aggregates them
+    /// time-weighted into a `Vec<PerMoveEngagement>` keyed by
+    /// `move_index`, looks up the vendor LUT chipload band, builds the
+    /// `ModulationContext`, and calls
+    /// [`crate::feed_modulation::adaptive_feed_modulate`] on a `clone`
+    /// of the cached `Arc<AnnotatedToolpath>::toolpath`. When the
+    /// modulator reports any feed change, the `Arc<AnnotatedToolpath>`
+    /// in `self.results` is swapped for a new one wrapping the modulated
+    /// toolpath — `Arc::make_mut` is not used because the trace
+    /// `samples` still hold the legacy `Arc` and we want them to remain
+    /// pinned to the pre-modulation IR for diagnostic continuity.
+    ///
+    /// No-op (silently) when:
+    ///  - The simulation produced no `cut_trace` (`metrics_enabled =
+    ///    false`).
+    ///  - A toolpath has no cut samples (drill-only / all-rapid / etc.).
+    ///  - The vendor LUT has no chipload band for the toolpath.
+    ///  - The modulator returns
+    ///    `ModulationError::EngagementLengthMismatch` (defensive — only
+    ///    fires when the toolpath has been re-generated between sim and
+    ///    modulation; impossible inside `run_simulation`'s single
+    ///    transaction).
+    ///
+    /// The chipload band source is
+    /// [`crate::tool_load::chipload_envelopes_for_session`] — the same
+    /// helper the chipload viewport coloring + timeline envelope readout
+    /// already use, so band semantics match the rest of the load-gates
+    /// surface.
     fn apply_adaptive_feed_modulation(
         &mut self,
         cut_trace: &mut Option<Arc<crate::simulation_cut::SimulationCutTrace>>,
@@ -2239,6 +2252,9 @@ impl ProjectSession {
                 // Modulation rewrites feeds, not geometry — the planner
                 // engagement samples stay valid by position.
                 planner_engagement: annotated_arc.planner_engagement.clone(),
+                // Rest-field overlay grid is toolpath-wide metadata, unaffected
+                // by feed modulation — carry it through unchanged.
+                rest_grid: annotated_arc.rest_grid.clone(),
             };
             let new_arc = Arc::new(new_annotated);
             // Rebuild the op_data variant with the swapped Arc.
@@ -2849,12 +2865,8 @@ impl ProjectSession {
     /// policy (refuse on Exceeds or Unmodeled). For an override-capable
     /// variant see [`export_gcode_with_policy`].
     #[instrument(skip(self))]
-    pub fn export_gcode(&self, path: &Path, _setup_id: Option<usize>) -> Result<(), SessionError> {
-        self.export_gcode_with_policy(
-            path,
-            _setup_id,
-            crate::gcode::ToolLoadExportPolicy::default(),
-        )
+    pub fn export_gcode(&self, path: &Path) -> Result<(), SessionError> {
+        self.export_gcode_with_policy(path, crate::gcode::ToolLoadExportPolicy::default())
     }
 
     /// Export G-code with an explicit tool-load policy. Used by callers that
@@ -2864,7 +2876,6 @@ impl ProjectSession {
     pub fn export_gcode_with_policy(
         &self,
         path: &Path,
-        _setup_id: Option<usize>,
         policy: crate::gcode::ToolLoadExportPolicy,
     ) -> Result<(), SessionError> {
         let gcode = crate::gcode::export_gcode_checked(
@@ -3006,11 +3017,7 @@ impl ProjectSession {
         // Find the setup that owns this toolpath and collect prior
         // toolpaths in that setup (lower display index than `tc`).
         let mut prior_toolpaths_in_setup = Vec::new();
-        if let Some(setup) = self.setups.iter().find(|s| {
-            s.toolpath_indices
-                .iter()
-                .any(|&i| self.toolpath_configs.get(i).is_some_and(|t| t.id == tc.id))
-        }) {
+        if let Some(setup) = self.find_setup_for_toolpath_id(tc.id) {
             for &idx in &setup.toolpath_indices {
                 if let Some(other) = self.toolpath_configs.get(idx) {
                     if other.id == tc.id {
@@ -3065,11 +3072,7 @@ impl ProjectSession {
         &self,
         tc: &super::ToolpathConfig,
     ) -> crate::compute::config::HeightContext {
-        let setup = self.setups.iter().find(|s| {
-            s.toolpath_indices
-                .iter()
-                .any(|&i| self.toolpath_configs.get(i).is_some_and(|t| t.id == tc.id))
-        });
+        let setup = self.find_setup_for_toolpath_id(tc.id);
         let ctx = super::SetupEvalContext::build_for_setup(self, setup);
         let raw_mb = self
             .models
@@ -3824,6 +3827,29 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let result = s.generate_toolpath(99, &cancel);
         assert!(matches!(result, Err(SessionError::ToolpathNotFound(99))));
+    }
+
+    /// Rest machining FAILS HARD instead of silently clearing fresh stock.
+    /// A `FromRemainingStock` op with no simulated remaining-stock snapshot must
+    /// error at generate time — regression net for the fresh-fallback runaway
+    /// where a fine rest tool, seeded with fresh stock, cleared the whole part
+    /// (unbounded compute). The precondition is checked at `generate_toolpath`
+    /// entry, before any geometry work.
+    #[test]
+    fn generate_from_remaining_stock_without_sim_errors_hard() {
+        let mut s = make_session();
+        let mut tc = make_tc(s.tools()[0].id.0);
+        tc.stock_source = crate::session::StockSource::FromRemainingStock;
+        s.add_toolpath(0, tc).unwrap();
+        let cancel = AtomicBool::new(false);
+        match s.generate_toolpath(0, &cancel) {
+            Err(SessionError::OperationFailed(msg)) => assert!(
+                msg.contains("remaining stock"),
+                "error should name the missing rest-stock snapshot: {msg}"
+            ),
+            Err(other) => panic!("expected OperationFailed, got: {other}"),
+            Ok(_) => panic!("rest op without a prior sim must error, not clear fresh stock"),
+        }
     }
 
     // ── diagnostics ──────────────────────────────────────────────

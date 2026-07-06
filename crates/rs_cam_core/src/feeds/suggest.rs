@@ -1407,11 +1407,13 @@ fn pick_axial_envelope(
 }
 
 /// Re-derive `chipload_bounds` after the axial-envelope pass mutated
-/// DPP. Mirrors `feeds::calculate`'s in-place derivation (around
-/// `feeds/mod.rs:701`) so the post-mutation chipload-recalibration
-/// pass sees a bounds value consistent with the new DPP / effective-D
-/// ratio. No-op when the matched LUT row is absent or carries no
-/// chipload band (the original derivation would also be `None`).
+/// DPP. Uses the same shared helper as `feeds::calculate`'s in-place
+/// derivation (`geometry::derate_chipload_bounds`, S.8 — see
+/// `planning/finishing_stack_review_2026-07.md`) so the post-mutation
+/// chipload-recalibration pass sees a bounds value consistent with the
+/// new DPP / effective-D ratio. No-op when the matched LUT row is
+/// absent or carries no chipload band (the original derivation would
+/// also be `None`).
 fn recompute_chipload_bounds_for_dpp(
     matched_row: Option<&crate::feeds::vendor_lookup::LookupResult>,
     effective_diameter_mm: f64,
@@ -1419,26 +1421,28 @@ fn recompute_chipload_bounds_for_dpp(
     new_dpp_mm: f64,
 ) -> Option<crate::feeds::ChiploadBounds> {
     let row = matched_row?;
-    let (min, max) = match (row.chip_load_min_mm, row.chip_load_max_mm) {
-        (Some(min), Some(max)) if min.is_finite() && max.is_finite() && min > 0.0 && max >= min => {
-            (min, max)
-        }
-        _ => return None,
-    };
-    // Drill ops are excluded from doc-derating per
-    // `feeds::calculate` (same path), so leave bounds at the raw
-    // LUT values for them.
+    // Drill ops are excluded from doc-derating per `feeds::calculate`
+    // (same path), so leave bounds at the raw LUT values for them —
+    // forcing `doc_ratio` to `0.0` bypasses derating since
+    // `doc_derating_scale` maps any ratio `<= 1.0` to a scale of
+    // `1.0`.
     let op_family = operation.feeds_style().0;
-    let scale = if matches!(op_family, FeedsOperationFamily::Drill) || effective_diameter_mm <= 0.0
-    {
-        1.0
+    let is_drill = matches!(op_family, FeedsOperationFamily::Drill);
+    let doc_ratio = if is_drill || effective_diameter_mm <= 0.0 {
+        0.0
     } else {
-        let ratio = new_dpp_mm / effective_diameter_mm;
-        crate::feeds::geometry::doc_derating_scale(ratio)
+        new_dpp_mm / effective_diameter_mm
     };
+    let (min, max) = crate::feeds::geometry::derate_chipload_bounds(
+        row.chip_load_min_mm,
+        row.chip_load_max_mm,
+        doc_ratio,
+        crate::feeds::geometry::ChiploadBoundPolicy::RequireBoth,
+    )?
+    .into_pair()?;
     Some(crate::feeds::ChiploadBounds {
-        min_mm_per_tooth: min * scale,
-        max_mm_per_tooth: max * scale,
+        min_mm_per_tooth: min,
+        max_mm_per_tooth: max,
     })
 }
 

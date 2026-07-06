@@ -174,7 +174,10 @@ pub fn recommend_strategy(
         });
 
     // Runner-up = fastest candidate that isn't the chosen one.
-    let runner_up = ranked.iter().find(|r| r.strategy != chosen.strategy).copied();
+    let runner_up = ranked
+        .iter()
+        .find(|r| r.strategy != chosen.strategy)
+        .copied();
     let time_ratio_vs_runner_up = match runner_up {
         Some(r) if chosen.wall_clock_s > 0.0 => r.wall_clock_s / chosen.wall_clock_s,
         _ => 1.0,

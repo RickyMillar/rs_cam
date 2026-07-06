@@ -11,6 +11,7 @@
 //! feature is ~72mm. Pass `f64::INFINITY` to disable the cap (e.g. in tests
 //! that don't model a specific tool).
 
+use crate::condition::FEED_EPS;
 use crate::geo::P3;
 use crate::narrate::LARGE_ARC_RADIUS_MULTIPLIER;
 use crate::toolpath::{Move, MoveType, Toolpath};
@@ -36,11 +37,22 @@ pub fn fit_arcs(
     tolerance: f64,
     tool_radius: f64,
 ) -> AnnotatedToolpath {
+    // Barriers we must not collapse across. A barrier at index `b` sits before
+    // moves[b]; we treat it as cutting the arc-eligible run so any candidate
+    // window [start, end) must satisfy: no barrier in (start, end) — i.e. a
+    // barrier at index `b` with start < b < end blocks that window.
+    let barriers: std::collections::BTreeSet<usize> = if annotated.spans_valid {
+        annotated.rapid_order_barriers().into_iter().collect()
+    } else {
+        std::collections::BTreeSet::new()
+    };
+
     let AnnotatedToolpath {
         toolpath,
         spans,
         spans_valid,
         planner_engagement,
+        rest_grid,
     } = annotated;
     let moves = &toolpath.moves;
 
@@ -50,24 +62,9 @@ pub fn fit_arcs(
             spans,
             spans_valid,
             planner_engagement,
+            rest_grid,
         };
     }
-
-    // Barriers we must not collapse across. A barrier at index `b` sits before
-    // moves[b]; we treat it as cutting the arc-eligible run so any candidate
-    // window [start, end) must satisfy: no barrier in (start, end) — i.e. a
-    // barrier at index `b` with start < b < end blocks that window.
-    let barriers: std::collections::BTreeSet<usize> = if spans_valid {
-        spans
-            .iter()
-            .filter_map(|s| match s.kind {
-                SpanKind::RapidOrderBarrier | SpanKind::DepthPass => Some(s.start_move),
-                _ => None,
-            })
-            .collect()
-    } else {
-        std::collections::BTreeSet::new()
-    };
 
     let mut result = Toolpath::new();
     let mut old_to_new: Vec<Option<std::ops::Range<usize>>> = Vec::with_capacity(moves.len());
@@ -105,7 +102,7 @@ pub fn fit_arcs(
         let mut end_idx = i;
         while end_idx < moves.len() {
             match moves[end_idx].move_type {
-                MoveType::Linear { feed_rate: f } if (f - feed_rate).abs() < 1e-6 => {
+                MoveType::Linear { feed_rate: f } if (f - feed_rate).abs() < FEED_EPS => {
                     end_idx += 1;
                 }
                 _ => break,
@@ -213,25 +210,7 @@ pub fn fit_arcs(
     let new_n_moves = result.moves.len();
     let new_spans = if spans_valid {
         let remap = MoveRemap { old_to_new };
-        let mut remapped: Vec<Span> = spans
-            .into_iter()
-            .filter_map(|s| {
-                let payload = s.payload.clone();
-                let label = s.label.clone();
-                let mut new_span = if s.is_boundary() {
-                    let new_pos = remap.remap_boundary(s.start_move, new_n_moves);
-                    Span::new(new_pos, new_pos, s.kind)
-                } else {
-                    let r = remap.remap_range(s.start_move, s.end_move)?;
-                    Span::new(r.start, r.end, s.kind)
-                }
-                .with_label(label);
-                if let Some(p) = payload {
-                    new_span = new_span.with_payload(p);
-                }
-                Some(new_span)
-            })
-            .collect();
+        let mut remapped = remap.remap_spans(&spans, new_n_moves);
         for pos in arc_positions {
             remapped.push(Span::new(pos, pos + 1, SpanKind::DressupArtifact).with_label("arc-fit"));
         }
@@ -245,6 +224,7 @@ pub fn fit_arcs(
         spans: new_spans,
         spans_valid,
         planner_engagement,
+        rest_grid,
     }
 }
 

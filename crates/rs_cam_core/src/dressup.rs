@@ -11,6 +11,17 @@ use crate::geo::P3;
 use crate::toolpath::{Move, MoveType, Toolpath};
 use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
 
+/// Two Z heights within this many mm are treated as "the same cutting
+/// depth" — used to recognize a run of cutting moves at one Z level
+/// (tab placement, lead-in/lead-out cut-Z matching, dogbone corner
+/// detection). Not a geometry tolerance; a coarse "same level" test.
+const Z_LEVEL_EPS_MM: f64 = 0.01;
+
+/// Two XY positions within this many mm are treated as "the tool didn't
+/// move horizontally" — used by [`is_plunge`] to distinguish a vertical
+/// plunge from a ramped/angled entry.
+const XY_STATIONARY_EPS_MM: f64 = 0.01;
+
 // ---------------------------------------------------------------------------
 // Ramp / Helix entry
 // ---------------------------------------------------------------------------
@@ -51,6 +62,7 @@ pub fn apply_entry(
         spans,
         spans_valid,
         planner_engagement,
+        rest_grid,
     } = annotated;
 
     let mut result = Toolpath::new();
@@ -115,7 +127,7 @@ pub fn apply_entry(
     let new_n_moves = result.moves.len();
     let new_spans = if spans_valid {
         let remap = MoveRemap { old_to_new };
-        let mut remapped = remap_spans(spans, &remap, new_n_moves);
+        let mut remapped = remap.remap_spans(&spans, new_n_moves);
         for r in entry_ranges {
             remapped.push(Span::new(r.start, r.end, SpanKind::Entry));
         }
@@ -129,31 +141,8 @@ pub fn apply_entry(
         spans: new_spans,
         spans_valid,
         planner_engagement,
+        rest_grid,
     }
-}
-
-/// Apply a `MoveRemap` to a vector of spans, dropping spans that fully
-/// dropped out of the new toolpath. Used by every span-aware dressup.
-fn remap_spans(spans: Vec<Span>, remap: &MoveRemap, new_n_moves: usize) -> Vec<Span> {
-    spans
-        .into_iter()
-        .filter_map(|s| {
-            let payload = s.payload.clone();
-            let label = s.label.clone();
-            let mut new_span = if s.is_boundary() {
-                let new_pos = remap.remap_boundary(s.start_move, new_n_moves);
-                Span::new(new_pos, new_pos, s.kind)
-            } else {
-                let r = remap.remap_range(s.start_move, s.end_move)?;
-                Span::new(r.start, r.end, s.kind)
-            }
-            .with_label(label);
-            if let Some(p) = payload {
-                new_span = new_span.with_payload(p);
-            }
-            Some(new_span)
-        })
-        .collect()
 }
 
 fn is_plunge(prev: &Move, current: &Move) -> bool {
@@ -163,7 +152,7 @@ fn is_plunge(prev: &Move, current: &Move) -> bool {
         let pdy = current.target.y - prev.target.y;
         let dxy = (pdx * pdx + pdy * pdy).sqrt();
         // Downward move with negligible XY movement
-        dz < -0.1 && dxy < 0.01
+        dz < -0.1 && dxy < XY_STATIONARY_EPS_MM
     } else {
         false
     }
@@ -365,7 +354,8 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath 
         .iter()
         .enumerate()
         .filter(|(_, m)| {
-            matches!(m.move_type, MoveType::Linear { .. }) && (m.target.z - cut_depth).abs() < 0.01
+            matches!(m.move_type, MoveType::Linear { .. })
+                && (m.target.z - cut_depth).abs() < Z_LEVEL_EPS_MM
         })
         .map(|(i, _)| i)
         .collect();
@@ -579,6 +569,7 @@ pub fn apply_lead_in_out_with_feeds(
         spans,
         spans_valid,
         planner_engagement,
+        rest_grid,
     } = annotated;
     let mut result = Toolpath::new();
     let moves = &toolpath.moves;
@@ -588,6 +579,7 @@ pub fn apply_lead_in_out_with_feeds(
             spans,
             spans_valid,
             planner_engagement,
+            rest_grid,
         };
     }
 
@@ -606,7 +598,7 @@ pub fn apply_lead_in_out_with_feeds(
             // Find next horizontal cutting move to determine lead-in direction
             if let Some(first_cut_idx) = (i + 1..moves.len()).find(|&j| {
                 matches!(moves[j].move_type, MoveType::Linear { .. })
-                    && (moves[j].target.z - cut_z).abs() < 0.01
+                    && (moves[j].target.z - cut_z).abs() < Z_LEVEL_EPS_MM
             }) {
                 let cut_dir_x = moves[first_cut_idx].target.x - plunge_end.x;
                 let cut_dir_y = moves[first_cut_idx].target.y - plunge_end.y;
@@ -706,7 +698,7 @@ pub fn apply_lead_in_out_with_feeds(
                 let dir_y = cut_end.y - prev.y;
                 let dir_len = (dir_x * dir_x + dir_y * dir_y).sqrt();
 
-                if dir_len > 0.1 && (prev.z - cut_z).abs() < 0.01 {
+                if dir_len > 0.1 && (prev.z - cut_z).abs() < Z_LEVEL_EPS_MM {
                     let ux = dir_x / dir_len;
                     let uy = dir_y / dir_len;
                     let perp_x = -uy;
@@ -762,7 +754,7 @@ pub fn apply_lead_in_out_with_feeds(
     let new_n_moves = result.moves.len();
     let new_spans = if spans_valid {
         let remap = MoveRemap { old_to_new };
-        let mut remapped = remap_spans(spans, &remap, new_n_moves);
+        let mut remapped = remap.remap_spans(&spans, new_n_moves);
         for r in entry_ranges {
             remapped.push(Span::new(r.start, r.end, SpanKind::Entry));
         }
@@ -779,6 +771,7 @@ pub fn apply_lead_in_out_with_feeds(
         spans: new_spans,
         spans_valid,
         planner_engagement,
+        rest_grid,
     }
 }
 
@@ -809,6 +802,7 @@ pub fn apply_dogbones(
         spans,
         spans_valid,
         planner_engagement,
+        rest_grid,
     } = annotated;
     let max_angle_rad = max_angle_deg.to_radians();
     let mut result = Toolpath::new();
@@ -821,6 +815,7 @@ pub fn apply_dogbones(
             spans,
             spans_valid,
             planner_engagement,
+            rest_grid,
         };
     }
 
@@ -846,7 +841,7 @@ pub fn apply_dogbones(
             let c = moves[i + 1].target;
 
             // Must be at same Z (cutting depth)
-            if (a.z - b.z).abs() <= 0.01 && (b.z - c.z).abs() <= 0.01 {
+            if (a.z - b.z).abs() <= Z_LEVEL_EPS_MM && (b.z - c.z).abs() <= Z_LEVEL_EPS_MM {
                 let v1x = b.x - a.x;
                 let v1y = b.y - a.y;
                 let v2x = c.x - b.x;
@@ -910,7 +905,7 @@ pub fn apply_dogbones(
     let new_n_moves = result.moves.len();
     let new_spans = if spans_valid {
         let remap = MoveRemap { old_to_new };
-        let mut remapped = remap_spans(spans, &remap, new_n_moves);
+        let mut remapped = remap.remap_spans(&spans, new_n_moves);
         for r in dogbone_ranges {
             remapped
                 .push(Span::new(r.start, r.end, SpanKind::DressupArtifact).with_label("dogbone"));
@@ -925,6 +920,7 @@ pub fn apply_dogbones(
         spans: new_spans,
         spans_valid,
         planner_engagement,
+        rest_grid,
     }
 }
 
@@ -963,11 +959,22 @@ pub fn apply_link_moves(
     annotated: AnnotatedToolpath,
     params: &LinkMoveParams,
 ) -> AnnotatedToolpath {
+    // Barriers we must not collapse across. A barrier at index `b` sits before
+    // moves[b]; collapsing the window (i, i+1, i+2) into one bridge erases the
+    // gap between i and i+3 — so any barrier at i+1 or i+2 must block the link.
+    // (A barrier at i is *before* the link and is preserved by the remap.)
+    let barriers: std::collections::BTreeSet<usize> = if annotated.spans_valid {
+        annotated.rapid_order_barriers().into_iter().collect()
+    } else {
+        std::collections::BTreeSet::new()
+    };
+
     let AnnotatedToolpath {
         toolpath,
         spans,
         spans_valid,
         planner_engagement,
+        rest_grid,
     } = annotated;
     let moves = &toolpath.moves;
     if moves.len() < 4 {
@@ -976,24 +983,9 @@ pub fn apply_link_moves(
             spans,
             spans_valid,
             planner_engagement,
+            rest_grid,
         };
     }
-
-    // Barriers we must not collapse across. A barrier at index `b` sits before
-    // moves[b]; collapsing the window (i, i+1, i+2) into one bridge erases the
-    // gap between i and i+3 — so any barrier at i+1 or i+2 must block the link.
-    // (A barrier at i is *before* the link and is preserved by the remap.)
-    let barriers: std::collections::BTreeSet<usize> = if spans_valid {
-        spans
-            .iter()
-            .filter_map(|s| match s.kind {
-                SpanKind::RapidOrderBarrier | SpanKind::DepthPass => Some(s.start_move),
-                _ => None,
-            })
-            .collect()
-    } else {
-        std::collections::BTreeSet::new()
-    };
 
     let mut result = Toolpath::new();
     let mut old_to_new: Vec<Option<std::ops::Range<usize>>> = Vec::with_capacity(moves.len());
@@ -1072,7 +1064,7 @@ pub fn apply_link_moves(
     let new_n_moves = result.moves.len();
     let new_spans = if spans_valid {
         let remap = MoveRemap { old_to_new };
-        let mut remapped = remap_spans(spans, &remap, new_n_moves);
+        let mut remapped = remap.remap_spans(&spans, new_n_moves);
         for pos in bridge_positions {
             remapped.push(Span::new(pos, pos + 1, SpanKind::LinkBridge));
         }
@@ -1086,6 +1078,7 @@ pub fn apply_link_moves(
         spans: new_spans,
         spans_valid,
         planner_engagement,
+        rest_grid,
     }
 }
 
@@ -1144,6 +1137,7 @@ pub fn filter_air_cuts(
         spans,
         spans_valid,
         planner_engagement,
+        rest_grid,
     } = annotated;
     let moves = &toolpath.moves;
     if moves.is_empty() {
@@ -1152,6 +1146,7 @@ pub fn filter_air_cuts(
             spans,
             spans_valid,
             planner_engagement,
+            rest_grid,
         };
     }
 
@@ -1244,7 +1239,7 @@ pub fn filter_air_cuts(
     let new_n_moves = result.moves.len();
     let new_spans = if spans_valid {
         let remap = MoveRemap { old_to_new };
-        let mut remapped = remap_spans(spans, &remap, new_n_moves);
+        let mut remapped = remap.remap_spans(&spans, new_n_moves);
         for r in bridge_ranges {
             remapped.push(Span::new(r.start, r.end, SpanKind::LinkBridge));
         }
@@ -1258,6 +1253,7 @@ pub fn filter_air_cuts(
         spans: new_spans,
         spans_valid,
         planner_engagement,
+        rest_grid,
     }
 }
 

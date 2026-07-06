@@ -4,8 +4,9 @@
 //! (plus optional offset). Supports single-pass facing at Z=0 or multi-pass
 //! depth stepping for removing material from the stock top.
 
-use crate::depth::{DepthDistribution, DepthStepping, depth_stepped_toolpath};
+use crate::depth::{DepthDistribution, DepthStepping, depth_stepped_toolpath_with_cancel};
 use crate::geo::BoundingBox3;
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::polygon::Polygon2;
 use crate::toolpath::Toolpath;
 use crate::zigzag::{ZigzagParams, lines_to_toolpath, zigzag_lines, zigzag_toolpath};
@@ -103,6 +104,24 @@ fn oneway_toolpath(polygon: &Polygon2, zp: &ZigzagParams) -> Toolpath {
 /// `stock_offset`), then fills it with zigzag passes. If `depth > 0`,
 /// multiple passes are generated using depth stepping.
 pub fn face_toolpath(bounds: &BoundingBox3, params: &FaceParams) -> Toolpath {
+    let never_cancel = || false;
+    // infallible: cancel closure always returns false, so Cancelled is unreachable
+    #[allow(clippy::expect_used)]
+    face_toolpath_with_cancel(bounds, params, &never_cancel)
+        .expect("non-cancellable face toolpath should never be cancelled")
+}
+
+/// Cancellable variant of [`face_toolpath`]. Checks `cancel` as its very
+/// first statement (so a pre-set flag short-circuits the single-pass case
+/// too), then in the multi-pass case polls again once per Z level via the
+/// shared `depth::toolpath_at_levels_with_cancel` choke point
+/// (planning/finishing_stack_review_2026-07.md S.5).
+pub fn face_toolpath_with_cancel(
+    bounds: &BoundingBox3,
+    params: &FaceParams,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
+    check_cancel(cancel)?;
     // Build the facing rectangle from XY bounds + stock_offset
     let rect = Polygon2::rectangle(
         bounds.min.x - params.stock_offset,
@@ -130,7 +149,7 @@ pub fn face_toolpath(bounds: &BoundingBox3, params: &FaceParams) -> Toolpath {
             safe_z: params.safe_z,
             angle: 0.0,
         };
-        raster_fn(&rect, &zp)
+        Ok(raster_fn(&rect, &zp))
     } else {
         // Multi-pass depth stepping anchored at `stock_top_z` (F-028).
         let stepping = DepthStepping {
@@ -142,18 +161,23 @@ pub fn face_toolpath(bounds: &BoundingBox3, params: &FaceParams) -> Toolpath {
             finishing_passes: 0,
         };
 
-        depth_stepped_toolpath(&stepping, params.safe_z, |z| {
-            let zp = ZigzagParams {
-                tool_radius: params.tool_radius,
-                stepover: params.stepover,
-                cut_depth: z,
-                feed_rate: params.feed_rate,
-                plunge_rate: params.plunge_rate,
-                safe_z: params.safe_z,
-                angle: 0.0,
-            };
-            raster_fn(&rect, &zp)
-        })
+        depth_stepped_toolpath_with_cancel(
+            &stepping,
+            params.safe_z,
+            |z| {
+                let zp = ZigzagParams {
+                    tool_radius: params.tool_radius,
+                    stepover: params.stepover,
+                    cut_depth: z,
+                    feed_rate: params.feed_rate,
+                    plunge_rate: params.plunge_rate,
+                    safe_z: params.safe_z,
+                    angle: 0.0,
+                };
+                Ok(raster_fn(&rect, &zp))
+            },
+            cancel,
+        )
     }
 }
 

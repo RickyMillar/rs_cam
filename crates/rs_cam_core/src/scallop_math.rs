@@ -1,8 +1,9 @@
 //! Scallop height formulas for 3D finishing strategies.
 //!
 //! Provides the math for computing scallop height from stepover (and vice versa)
-//! on flat, curved, and inclined surfaces. Used by scallop finishing, steep & shallow,
-//! and any operation that needs to convert between scallop height and stepover.
+//! on flat, curved, and inclined surfaces. Currently consumed only by
+//! `scallop.rs` (scallop finishing); other operations that need to convert
+//! between scallop height and stepover can adopt it too.
 //!
 //! Reference: `research/02_algorithms.md` section 8, `research/raw_algorithms.md` lines 789-875.
 
@@ -10,7 +11,7 @@
 ///
 /// `h = R - sqrt(R^2 - (stepover/2)^2)`
 ///
-/// Returns 0 if stepover >= 2*R (fully engaged, no scallop defined).
+/// Returns `tool_radius` if stepover >= 2*R (fully engaged — max scallop is the radius).
 pub fn scallop_height_flat(tool_radius: f64, stepover: f64) -> f64 {
     let half_so = stepover * 0.5;
     let r_sq = tool_radius * tool_radius;
@@ -59,7 +60,8 @@ pub fn effective_radius(tool_radius: f64, curvature_radius: f64) -> f64 {
     } else {
         // Concave: R_eff = R * |Rc| / (|Rc| - R)
         if abs_rc <= tool_radius {
-            // Tool fits inside concavity — effectively flat
+            // Tool does NOT fit inside the concavity (radius of curvature is
+            // too tight for the tool) — fall back to the unadjusted radius.
             return tool_radius;
         }
         tool_radius * abs_rc / (abs_rc - tool_radius)
