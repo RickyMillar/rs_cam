@@ -12,6 +12,7 @@
 //! Reference: research/02_algorithms.md §11
 
 use crate::geo::{P2, P3, point_to_segment_distance};
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::polygon::Polygon2;
 use crate::toolpath::Toolpath;
 
@@ -32,6 +33,12 @@ pub struct VCarveParams {
     pub safe_z: f64,
     /// Sampling interval along each scan line in mm.
     pub tolerance: f64,
+    /// Stock-top Z in the emission frame (F-028 / S.2). V-carve cuts at
+    /// `top_z - depth`. Pre-S.2 this was implicitly `0.0` (v-carve
+    /// hardcoded `z = -depth`), which only produced cuts inside the stock
+    /// when the world stock top happened to sit at world Z=0. Callers
+    /// should pass `heights.top_z` from the resolved height stack.
+    pub top_z: f64,
 }
 
 // ── Distance computation ──────────────────────────────────────────────
@@ -79,9 +86,27 @@ fn point_to_polygon_distance(point: &P2, polygon: &Polygon2) -> f64 {
 /// This produces a V-groove that exactly meets the design outline when
 /// the V-bit half-angle matches the specified value.
 pub fn vcarve_toolpath(polygon: &Polygon2, params: &VCarveParams) -> Toolpath {
+    let never_cancel = || false;
+    // infallible: cancel closure always returns false, so Cancelled is unreachable
+    #[allow(clippy::expect_used)]
+    vcarve_toolpath_with_cancel(polygon, params, &never_cancel)
+        .expect("non-cancellable vcarve toolpath should never be cancelled")
+}
+
+/// Cancellable variant of [`vcarve_toolpath`]. Checks `cancel` as its very
+/// first statement, then polls again once per scan line of the
+/// distance-field sampling loop
+/// (planning/finishing_stack_review_2026-07.md S.5: "vcarve/inlay
+/// (scanline distance field)").
+pub fn vcarve_toolpath_with_cancel(
+    polygon: &Polygon2,
+    params: &VCarveParams,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
+    check_cancel(cancel)?;
     let tan_half = params.half_angle.tan();
     if tan_half < 1e-10 {
-        return Toolpath::new(); // degenerate angle
+        return Ok(Toolpath::new()); // degenerate angle
     }
 
     // Generate scan lines with a tiny inset so clipping works
@@ -93,6 +118,7 @@ pub fn vcarve_toolpath(polygon: &Polygon2, params: &VCarveParams) -> Toolpath {
     let mut tp = Toolpath::new();
 
     for line in &scan_lines {
+        check_cancel(cancel)?;
         let dx = line[1].x - line[0].x;
         let dy = line[1].y - line[0].y;
         let len = (dx * dx + dy * dy).sqrt();
@@ -115,7 +141,7 @@ pub fn vcarve_toolpath(polygon: &Polygon2, params: &VCarveParams) -> Toolpath {
             } else {
                 dist / tan_half
             };
-            points.push(P3::new(x, y, -depth));
+            points.push(P3::new(x, y, params.top_z - depth));
         }
 
         if points.is_empty() {
@@ -131,7 +157,7 @@ pub fn vcarve_toolpath(polygon: &Polygon2, params: &VCarveParams) -> Toolpath {
         );
     }
 
-    tp
+    Ok(tp)
 }
 
 #[cfg(test)]
@@ -154,6 +180,7 @@ mod tests {
             plunge_rate: 500.0,
             safe_z: 10.0,
             tolerance: 0.1,
+            top_z: 0.0,
         }
     }
 
@@ -345,6 +372,61 @@ mod tests {
         assert!(
             has_nonzero_depth,
             "max_depth=0.0 should produce non-zero depths (unlimited)"
+        );
+    }
+
+    #[test]
+    fn test_vcarve_cuts_relative_to_stock_top_s2() {
+        // S.2 / F-028: v-carve must cut relative to `top_z`, not world Z=0.
+        // Center of a 10mm square is 5mm from the wall -> depth = 5mm for a
+        // 90-degree bit. With top_z = 5.0, cutting moves should land at
+        // top_z - depth, not at -depth.
+        let sq = square_polygon(10.0);
+        let params = VCarveParams {
+            top_z: 5.0,
+            ..default_params()
+        };
+
+        let tp = vcarve_toolpath(&sq, &params);
+        assert!(!tp.moves.is_empty(), "Expected moves");
+
+        let mut saw_deep_cut = false;
+        for m in &tp.moves {
+            match m.move_type {
+                crate::toolpath::MoveType::Rapid => {
+                    // Rapids (approach/retract) should stay at safe_z, unaffected by top_z.
+                    assert!(
+                        (m.target.z - params.safe_z).abs() < 1e-9,
+                        "Rapid should be at safe_z={}, got {}",
+                        params.safe_z,
+                        m.target.z
+                    );
+                }
+                crate::toolpath::MoveType::Linear { .. } => {
+                    // Cutting moves must never dip below top_z - max_depth,
+                    // and must never exceed top_z (can't cut above stock top).
+                    assert!(
+                        m.target.z <= params.top_z + 1e-9,
+                        "Cutting move z={} should not exceed top_z={}",
+                        m.target.z,
+                        params.top_z
+                    );
+                    assert!(
+                        m.target.z >= params.top_z - params.max_depth - 1e-9,
+                        "Cutting move z={} should not exceed top_z - max_depth={}",
+                        m.target.z,
+                        params.top_z - params.max_depth
+                    );
+                    if (m.target.z - (params.top_z - 5.0)).abs() < 0.5 {
+                        saw_deep_cut = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        assert!(
+            saw_deep_cut,
+            "Expected a cut near top_z - 5.0 (center of 10mm square with 90-deg bit)"
         );
     }
 

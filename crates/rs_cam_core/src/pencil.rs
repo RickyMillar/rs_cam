@@ -1,18 +1,22 @@
 //! Pencil finishing — traces concave edges (creases) on mesh surfaces.
 //!
-//! Detects edges where two faces meet at a concave angle below a threshold
-//! (the "bitangency angle"), chains them into polylines, and generates
-//! toolpaths that follow these creases. This cleans material left in
-//! concavities that ball/bull nose cutters cannot reach with standard passes.
+//! Owns orchestration (reference-tool resolution, detector dispatch) and the
+//! shared pipeline every detector arm feeds into: fair → lift-to-surface →
+//! rest-depth gate → offset passes → nearest-neighbor order → emit. The
+//! three valley-detection front-ends themselves ([`PencilDetector`]) each
+//! live in their own module, mirrored on the [`crate::crest_lines`] /
+//! [`crate::rest_field`] pattern:
+//! - **Dihedral** (the historical default) — [`crate::pencil_dihedral`]:
+//!   mesh-crease detection via per-edge dihedral angle + graph chaining.
+//! - **Curvature** — [`crate::crest_lines`]: curvature crest-line extraction,
+//!   the right choice for dense noisy organic relief.
+//! - **RestDepth** — [`crate::rest_field`]: the tool-radius-aware dual-tool
+//!   rest field.
 //!
-//! Algorithm:
-//! 1. Build edge adjacency map from mesh face indices
-//! 2. Compute dihedral angle at each shared edge from face normals
-//! 3. Filter concave edges below bitangency angle threshold
-//! 4. Chain connected concave edges into polylines (graph traversal)
-//! 5. Sample points along polylines, drop-cutter for Z → CL path
-//! 6. Optional offset passes parallel to centerline
-//! 7. Link nearby segments, order by nearest-neighbor TSP
+//! Each arm ([`dihedral_arm`], [`curvature_arm`], [`rest_depth_arm`]) turns
+//! its detector's raw output into `PencilPath`s via the shared
+//! [`paths_from_sampled`]; [`pencil_toolpath_structured_annotated_with_cancel`]
+//! dispatches to the right arm, then orders and emits.
 
 use std::collections::HashMap;
 
@@ -20,8 +24,13 @@ use tracing::{info, warn};
 
 use crate::debug_trace::ToolpathDebugContext;
 use crate::dropcutter::point_drop_cutter;
-use crate::geo::{P3, V3};
+use crate::geo::{P3, V3, polyline_length};
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::pencil_dihedral::{
+    EdgeKey, SharedEdge, build_edge_adjacency, chain_concave_edges, compute_shared_edges,
+    sample_chain_bisected,
+};
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
@@ -153,6 +162,41 @@ pub struct PencilParams {
     pub reference_cutter: Option<crate::tool::ToolDefinition>,
 }
 
+/// Sensible test/prototyping defaults, sourced from the field-level
+/// `*_default()` fns documented above where one exists (`min_valley_depth`,
+/// `bisector_strength`, `reference_tool_diameter`, `detector`,
+/// `valley_saliency`, `curvature_smoothing`, `rest_cell_mm`,
+/// `route_width_factor`) and from the doc comments' stated defaults or the
+/// most common test literal otherwise. Production callers (`execute.rs`)
+/// build every field explicitly from `PencilConfig`, so this exists purely
+/// to collapse test literal blocks via `..Default::default()` — it's never
+/// on the production path.
+impl Default for PencilParams {
+    fn default() -> Self {
+        Self {
+            bitangency_angle: 160.0,
+            min_cut_length: 2.0,
+            hookup_distance: 5.0,
+            num_offset_passes: 0,
+            offset_stepover: 0.5,
+            sampling: 0.5,
+            feed_rate: 1000.0,
+            plunge_rate: 500.0,
+            safe_z: 15.0,
+            stock_to_leave: 0.0,
+            min_valley_depth: reach_gap_threshold(),
+            bisector_strength: bisector_strength_default(),
+            reference_tool_diameter: reference_tool_diameter_default(),
+            detector: PencilDetector::default(),
+            valley_saliency: valley_saliency_default(),
+            curvature_smoothing: curvature_smoothing_default(),
+            rest_cell_mm: rest_cell_default(),
+            route_width_factor: route_width_factor_default(),
+            reference_cutter: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum PencilRuntimeEvent {
     OffsetPass {
@@ -199,339 +243,6 @@ struct PencilPath {
     offset_total: usize,
     offset_mm: f64,
     is_centerline: bool,
-}
-
-/// A single mesh edge identified by sorted vertex indices.
-/// `Ord` so order-sensitive consumers can sort collections that were
-/// built via `HashMap` iteration — see `compute_shared_edges` /
-/// `chain_concave_edges` (T14 determinism fix).
-#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, PartialOrd, Ord)]
-struct EdgeKey(u32, u32);
-
-impl EdgeKey {
-    fn new(a: u32, b: u32) -> Self {
-        if a <= b { Self(a, b) } else { Self(b, a) }
-    }
-}
-
-/// Information about a shared mesh edge.
-struct SharedEdge {
-    /// Sorted vertex indices
-    key: EdgeKey,
-    /// Indices of the two faces sharing this edge (used for bisector positioning)
-    face_a: usize,
-    face_b: usize,
-    /// Dihedral angle in radians (0 = coplanar, π = fully folded)
-    dihedral_angle: f64,
-    /// True if the edge is concave (crease), false if convex (ridge)
-    is_concave: bool,
-}
-
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-/// Build the edge-to-face adjacency map.
-/// Returns a map from sorted vertex pair to list of face indices.
-fn build_edge_adjacency(mesh: &TriangleMesh) -> HashMap<EdgeKey, Vec<usize>> {
-    let mut edge_map: HashMap<EdgeKey, Vec<usize>> = HashMap::new();
-
-    for (face_idx, tri_indices) in mesh.triangles.iter().enumerate() {
-        for i in 0..3 {
-            let a = tri_indices[i];
-            let b = tri_indices[(i + 1) % 3];
-            let key = EdgeKey::new(a, b);
-            edge_map.entry(key).or_default().push(face_idx);
-        }
-    }
-
-    edge_map
-}
-
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-/// Compute shared edge info for all edges with exactly 2 adjacent faces.
-fn compute_shared_edges(
-    mesh: &TriangleMesh,
-    edge_map: &HashMap<EdgeKey, Vec<usize>>,
-) -> Vec<SharedEdge> {
-    let mut shared = Vec::new();
-
-    for (&key, faces) in edge_map {
-        if faces.len() != 2 {
-            continue; // boundary or non-manifold edge
-        }
-
-        let fa = faces[0];
-        let fb = faces[1];
-        let n1 = mesh.faces[fa].normal;
-        let n2 = mesh.faces[fb].normal;
-
-        // Dihedral angle: the angle between the two face normals
-        // cos(angle) = n1 · n2, clamped for numerical safety
-        let cos_angle = n1.dot(&n2).clamp(-1.0, 1.0);
-        let dihedral = cos_angle.acos(); // 0 = coplanar, π = fully folded
-
-        // Determine concavity geometrically: the edge is concave (a valley) if
-        // face B's far vertex (the one not on the shared edge) lies ABOVE face
-        // A's outward plane — the two facets fold up toward each other across the
-        // seam. Below the plane → convex (a ridge). This is orientation-correct
-        // for consistently-wound (outward-normal) meshes.
-        //
-        // NB: the previous `cross(n1, n2) · edge_vec > 0` sign test was NOT
-        // orientation-stable — `n1`/`n2` come from arbitrary face-insertion
-        // order and `edge_vec` from arbitrary vertex-index order, with no
-        // geometric link between them. On a dense mesh it disagreed with this
-        // test on ~46% of sharp edges (near-random), so pencil traced a mix of
-        // ridges, valleys and noise instead of just the concave creases.
-        let tri_b = mesh.triangles[fb];
-        let apex_b = tri_b.iter().copied().find(|&v| v != key.0 && v != key.1);
-        let is_concave = match apex_b {
-            Some(ai) => {
-                let apex = mesh.vertices[ai as usize];
-                let edge_pt = mesh.vertices[key.0 as usize];
-                (apex - edge_pt).dot(&n1) > 0.0
-            }
-            None => false, // degenerate triangle (repeated vertex)
-        };
-
-        shared.push(SharedEdge {
-            key,
-            face_a: fa,
-            face_b: fb,
-            dihedral_angle: dihedral,
-            is_concave,
-        });
-    }
-
-    // T14 — `edge_map` is a `HashMap`, so the loop above visits edges in
-    // RandomState order (different every run). Everything downstream is
-    // order-sensitive: the chain walker's adjacency lists are built by
-    // pushing in this Vec's order, and at degenerate bitangency angles
-    // (~175°) junction-heavy graphs chain differently per visit order —
-    // observed as 7404-vs-7350-move toolpaths from the same build. Sort
-    // by edge key so the pipeline is a pure function of the mesh.
-    shared.sort_unstable_by_key(|e| e.key);
-
-    shared
-}
-
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-/// Chain connected concave edges into polylines.
-/// Returns a list of vertex-index chains, where each chain is an ordered
-/// sequence of vertex indices forming a polyline along concave edges.
-fn chain_concave_edges(
-    concave_edges: &[SharedEdge],
-    mesh: &TriangleMesh,
-    min_length: f64,
-) -> Vec<Vec<u32>> {
-    if concave_edges.is_empty() {
-        return Vec::new();
-    }
-
-    // Build adjacency graph: vertex -> list of connected vertices via concave edges
-    let mut adj: HashMap<u32, Vec<u32>> = HashMap::new();
-    for edge in concave_edges {
-        adj.entry(edge.key.0).or_default().push(edge.key.1);
-        adj.entry(edge.key.1).or_default().push(edge.key.0);
-    }
-
-    // Walk the graph to extract chains. At each junction (degree > 2),
-    // we start/end chains. Simple paths (degree <= 2) are walked end-to-end.
-    let mut visited_edges: HashMap<EdgeKey, bool> = HashMap::new();
-    for edge in concave_edges {
-        visited_edges.insert(edge.key, false);
-    }
-
-    let mut chains: Vec<Vec<u32>> = Vec::new();
-
-    // Find chain starting points: vertices with degree != 2 (endpoints/junctions)
-    // or any unvisited vertex if all have degree 2 (closed loops)
-    let mut start_vertices: Vec<u32> = adj
-        .keys()
-        .filter(|&&v| {
-            let deg = adj.get(&v).map_or(0, |n| n.len());
-            deg != 2
-        })
-        .copied()
-        .collect();
-    // T14 — `adj.keys()` iterates in HashMap RandomState order; walk
-    // priority decides how junction-heavy graphs split into chains.
-    // Sort so the start order is a pure function of the mesh.
-    start_vertices.sort_unstable();
-
-    // If no endpoints found (all closed loops), pick the smallest vertex
-    // (deterministic — `.next()` on a HashMap varies per run, T14)
-    if start_vertices.is_empty()
-        && let Some(&v) = adj.keys().min()
-    {
-        start_vertices.push(v);
-    }
-
-    for &start in &start_vertices {
-        // Try walking from this vertex in each unvisited direction
-        if let Some(neighbors) = adj.get(&start) {
-            for &next in neighbors {
-                let edge_key = EdgeKey::new(start, next);
-                if let Some(visited) = visited_edges.get(&edge_key)
-                    && *visited
-                {
-                    continue;
-                }
-
-                // Walk the chain
-                let mut chain = vec![start, next];
-                if let Some(v) = visited_edges.get_mut(&edge_key) {
-                    *v = true;
-                }
-
-                loop {
-                    let current = *chain.last().unwrap_or(&start);
-                    let prev = chain[chain.len() - 2];
-
-                    // Find next unvisited neighbor (not the one we came from)
-                    let next_opt = adj.get(&current).and_then(|neighbors| {
-                        neighbors
-                            .iter()
-                            .find(|&&n| {
-                                if n == prev {
-                                    return false;
-                                }
-                                let ek = EdgeKey::new(current, n);
-                                visited_edges.get(&ek).is_some_and(|&v| !v)
-                            })
-                            .copied()
-                    });
-
-                    match next_opt {
-                        Some(next_v) => {
-                            let ek = EdgeKey::new(current, next_v);
-                            if let Some(v) = visited_edges.get_mut(&ek) {
-                                *v = true;
-                            }
-                            chain.push(next_v);
-                        }
-                        None => break,
-                    }
-                }
-
-                chains.push(chain);
-            }
-        }
-    }
-
-    // Also find any remaining closed loops (all edges visited by endpoints check above
-    // may miss pure loops)
-    let mut unvisited_starts: Vec<EdgeKey> = visited_edges
-        .iter()
-        .filter(|&(_, v)| !v)
-        .map(|(&k, _)| k)
-        .collect();
-    // T14 — same HashMap-order leak as above: which edge seeds a loop
-    // walk decides where closed loops are split open.
-    unvisited_starts.sort_unstable();
-
-    for edge_key in unvisited_starts {
-        if visited_edges.get(&edge_key) == Some(&true) {
-            continue; // May have been visited during a previous loop walk
-        }
-        // Start a loop walk from this edge
-        let mut chain = vec![edge_key.0, edge_key.1];
-        if let Some(v) = visited_edges.get_mut(&edge_key) {
-            *v = true;
-        }
-
-        loop {
-            let current = chain[chain.len() - 1];
-            let prev = chain[chain.len() - 2];
-            let next_opt = adj.get(&current).and_then(|neighbors| {
-                neighbors
-                    .iter()
-                    .find(|&&n| {
-                        if n == prev {
-                            return false;
-                        }
-                        let ek = EdgeKey::new(current, n);
-                        visited_edges.get(&ek).is_some_and(|&v| !v)
-                    })
-                    .copied()
-            });
-            match next_opt {
-                Some(next_v) => {
-                    let ek = EdgeKey::new(current, next_v);
-                    if let Some(v) = visited_edges.get_mut(&ek) {
-                        *v = true;
-                    }
-                    chain.push(next_v);
-                }
-                None => break,
-            }
-        }
-        chains.push(chain);
-    }
-
-    // Filter by minimum length
-    chains
-        .into_iter()
-        .filter(|chain| {
-            if chain.len() < 2 {
-                return false;
-            }
-            let mut total_len = 0.0;
-            for i in 0..chain.len() - 1 {
-                let a = mesh.vertices[chain[i] as usize];
-                let b = mesh.vertices[chain[i + 1] as usize];
-                total_len += (b - a).norm();
-            }
-            total_len >= min_length
-        })
-        .collect()
-}
-
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-#[allow(dead_code)]
-// superseded by sample_chain_bisected; retained as the
-// un-offset reference and exercised by test_sample_chain_spacing
-/// Sample points along a vertex chain at the given spacing.
-/// Returns 3D points interpolated along the polyline.
-fn sample_chain(mesh: &TriangleMesh, chain: &[u32], spacing: f64) -> Vec<P3> {
-    if chain.len() < 2 {
-        return Vec::new();
-    }
-
-    let mut points = Vec::new();
-    let mut accumulated = 0.0;
-
-    points.push(mesh.vertices[chain[0] as usize]);
-
-    for i in 0..chain.len() - 1 {
-        let a = mesh.vertices[chain[i] as usize];
-        let b = mesh.vertices[chain[i + 1] as usize];
-        let seg_len = (b - a).norm();
-
-        if seg_len < 1e-10 {
-            continue;
-        }
-
-        let dir = (b - a) / seg_len;
-        let mut dist_along = spacing - accumulated;
-
-        while dist_along <= seg_len {
-            let pt = a + dir * dist_along;
-            points.push(pt);
-            dist_along += spacing;
-        }
-
-        accumulated = seg_len - (dist_along - spacing);
-    }
-
-    // Always include the last point
-    if let Some(&last_idx) = chain.last() {
-        let last = mesh.vertices[last_idx as usize];
-        if let Some(prev) = points.last()
-            && (last - prev).norm() > spacing * 0.1
-        {
-            points.push(last);
-        }
-    }
-
-    points
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -613,97 +324,14 @@ pub(crate) fn bisector_strength_default() -> f64 {
     1.0
 }
 
-/// Horizontal (XY) bisector offset that nestles a radius-`r` ball into the concave
-/// corner between two faces with outward unit normals `n1`,`n2`. For a *symmetric*
-/// valley the seam line already is the bisector and `(n1+n2)` points straight up,
-/// so this is ~zero; for an *asymmetric* corner (steep wall + flat floor) it shifts
-/// the trace out over the shallower face. Derivation: the ball-centre in two-point
-/// tangency is `C = S + r·(n1+n2)/(1 + n1·n2)`; we keep its X,Y and let drop-cutter
-/// re-solve Z gouge-safely. Magnitude is capped at `r` (a sharper asymmetric corner
-/// a ball can't enter anyway) and scaled by `strength` for tuning. Near-opposite
-/// normals (a near-flat fold, denominator → 0) yield no shift.
-fn bisector_offset_xy(n1: &V3, n2: &V3, r: f64, strength: f64) -> (f64, f64) {
-    let denom = 1.0 + n1.dot(n2);
-    if denom <= 1e-3 || strength <= 0.0 || r <= 0.0 {
-        return (0.0, 0.0);
-    }
-    let sum = n1 + n2;
-    let mut ox = r * sum.x / denom * strength;
-    let mut oy = r * sum.y / denom * strength;
-    let mag = (ox * ox + oy * oy).sqrt();
-    if mag > r {
-        let s = r / mag;
-        ox *= s;
-        oy *= s;
-    }
-    (ox, oy)
-}
-
-/// Sample points along a vertex chain at the given spacing, applying the per-edge
-/// bisector offset (see [`bisector_offset_xy`]) to each point's X,Y so the trace
-/// nestles into asymmetric corners. Mirrors [`sample_chain`] but shifts each
-/// segment's points by that segment's offset; Z is left as the interpolated seam
-/// height (the later `lift_to_surface` drop re-solves it). Offset jumps at vertices
-/// are smoothed by the subsequent fairing pass. With `strength == 0` (or no edge
-/// normals) this reduces to plain `sample_chain`.
-#[allow(clippy::indexing_slicing)] // chain entries are valid vertex indices
-fn sample_chain_bisected(
-    mesh: &TriangleMesh,
-    chain: &[u32],
-    spacing: f64,
-    edge_norms: &HashMap<EdgeKey, (V3, V3)>,
-    radius: f64,
-    strength: f64,
-) -> Vec<P3> {
-    if chain.len() < 2 {
-        return Vec::new();
-    }
-    let off_for = |i: usize, j: usize| -> (f64, f64) {
-        edge_norms
-            .get(&EdgeKey::new(chain[i], chain[j]))
-            .map(|(n1, n2)| bisector_offset_xy(n1, n2, radius, strength))
-            .unwrap_or((0.0, 0.0))
-    };
-
-    let mut points = Vec::new();
-    let (ox0, oy0) = off_for(0, 1);
-    let p0 = mesh.vertices[chain[0] as usize];
-    points.push(P3::new(p0.x + ox0, p0.y + oy0, p0.z));
-
-    let mut accumulated = 0.0;
-    for i in 0..chain.len() - 1 {
-        let a = mesh.vertices[chain[i] as usize];
-        let b = mesh.vertices[chain[i + 1] as usize];
-        let seg_len = (b - a).norm();
-        if seg_len < 1e-10 {
-            continue;
-        }
-        let (ox, oy) = off_for(i, i + 1);
-        let dir = (b - a) / seg_len;
-        let mut dist_along = spacing - accumulated;
-        while dist_along <= seg_len {
-            let pt = a + dir * dist_along;
-            points.push(P3::new(pt.x + ox, pt.y + oy, pt.z));
-            dist_along += spacing;
-        }
-        accumulated = seg_len - (dist_along - spacing);
-    }
-
-    if let Some(&last_idx) = chain.last() {
-        let last = mesh.vertices[last_idx as usize];
-        let (oxl, oyl) = off_for(chain.len() - 2, chain.len() - 1);
-        let lp = P3::new(last.x + oxl, last.y + oyl, last.z);
-        if let Some(prev) = points.last()
-            && (lp - prev).norm() > spacing * 0.1
-        {
-            points.push(lp);
-        }
-    }
-    points
-}
-
 /// Lift 2D polyline points to the mesh surface using drop-cutter. The per-point
 /// drop is the hot work, so it runs in parallel when the `parallel` feature is on.
+///
+/// Points where the cutter makes no contact (off the mesh — this happens when
+/// bisector-shifted offset points get pushed past the mesh edge) come back
+/// with `z = f64::NAN` instead of the original, un-lifted Z. This makes
+/// non-contact explicit so the emit loop can split the polyline at the gap
+/// instead of stitching a cutting move across missing material.
 fn lift_to_surface(
     points: &[P3],
     mesh: &TriangleMesh,
@@ -716,8 +344,9 @@ fn lift_to_surface(
         if cl.contacted {
             P3::new(p.x, p.y, cl.z + stock_to_leave)
         } else {
-            // Outside mesh — keep original Z (will be filtered or skipped)
-            *p
+            // Outside mesh — mark non-contact explicitly so the emit loop
+            // splits the pass here instead of bridging the gap.
+            P3::new(p.x, p.y, f64::NAN)
         }
     };
     #[cfg(feature = "parallel")]
@@ -757,57 +386,6 @@ fn reach_gap_at_point(
         return None;
     }
     Some(cl.z - surf_z)
-}
-
-/// Does a chain sit in genuine rest material the pencil tool can clean? Samples up
-/// to 8 vertices and keeps the chain if the MEDIAN *rest depth* exceeds the
-/// threshold, where
-///   `rest_depth = reference_gap − pencil_gap`
-/// is how much DEEPER the pencil tool reaches than the bigger `reference` (finish)
-/// tool could. This is the literature's reference-tool rest region: it keeps the
-/// valleys the big tool missed but the pencil tool enters, and rejects both
-/// big-tool-reachable walls (`reference_gap ≈ 0`) and sub-pencil-scale texture
-/// (both tools float, so `reference_gap ≈ pencil_gap`). With `reference == None`
-/// it falls back to the self-referenced gap (pencil tool vs bare surface). Gating
-/// whole chains (not every edge) is the hot-path win — far fewer drops.
-#[allow(clippy::indexing_slicing)] // chain entries are valid vertex indices
-fn chain_passes_depth(
-    chain: &[u32],
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    reference: Option<&dyn MillingCutter>,
-    threshold: f64,
-) -> bool {
-    let n = chain.len();
-    if n == 0 {
-        return false;
-    }
-    let step = (n / 8).max(1);
-    let mut depths: Vec<f64> = Vec::new();
-    let mut i = 0;
-    while i < n {
-        let v = mesh.vertices[chain[i] as usize];
-        if let Some(pencil_gap) = reach_gap_at_point(v.x, v.y, v.z, mesh, index, cutter) {
-            let rest = match reference {
-                Some(rc) => match reach_gap_at_point(v.x, v.y, v.z, mesh, index, rc) {
-                    // How much further the pencil tool drops past the big tool.
-                    Some(ref_gap) => (ref_gap - pencil_gap).max(0.0),
-                    // Big tool can't even contact here → treat the whole pencil gap
-                    // as rest the big tool left.
-                    None => pencil_gap,
-                },
-                None => pencil_gap,
-            };
-            depths.push(rest);
-        }
-        i += step;
-    }
-    if depths.is_empty() {
-        return false;
-    }
-    depths.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    depths[depths.len() / 2] > threshold
 }
 
 /// Surface tolerance (mm): uncut depth at a concave seam above which we treat it
@@ -862,12 +440,14 @@ pub(crate) fn detector_string_default() -> String {
     PencilDetector::Dihedral.as_str().to_owned()
 }
 
-/// Keep only chains that sit in genuine rest material (see [`chain_passes_depth`]).
-/// The hot path on dense meshes is the `drop_cutter` work, so gating whole chains
-/// (a handful of sample drops each) instead of every candidate edge slashes the
-/// drop count. Parallelised across cores when the `parallel` feature is on
+/// Keep only chains that sit in genuine rest material (see
+/// [`polyline_passes_depth`] — the mesh-vertex chain is converted to its P3
+/// vertex positions and gated with the same median-of-≤8-samples metric the
+/// P3-native detectors use). The hot path on dense meshes is the
+/// `drop_cutter` work, so gating whole chains (a handful of sample drops
+/// each) instead of every candidate edge slashes the drop count.
+/// Parallelised across cores when the `parallel` feature is on
 /// (`MillingCutter: Send + Sync`).
-#[cfg(feature = "parallel")]
 fn gate_chains_by_depth(
     chains: Vec<Vec<u32>>,
     mesh: &TriangleMesh,
@@ -876,26 +456,22 @@ fn gate_chains_by_depth(
     reference: Option<&dyn MillingCutter>,
     threshold: f64,
 ) -> Vec<Vec<u32>> {
-    use rayon::prelude::*;
-    chains
-        .into_par_iter()
-        .filter(|c| chain_passes_depth(c, mesh, index, cutter, reference, threshold))
-        .collect()
-}
-
-#[cfg(not(feature = "parallel"))]
-fn gate_chains_by_depth(
-    chains: Vec<Vec<u32>>,
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    reference: Option<&dyn MillingCutter>,
-    threshold: f64,
-) -> Vec<Vec<u32>> {
-    chains
-        .into_iter()
-        .filter(|c| chain_passes_depth(c, mesh, index, cutter, reference, threshold))
-        .collect()
+    let keep = |c: &Vec<u32>| -> bool {
+        // SAFETY: chain vertex indices come from `chain_concave_edges`, which
+        // only ever walks vertex indices produced by this same mesh's edges.
+        #[allow(clippy::indexing_slicing)]
+        let pts: Vec<P3> = c.iter().map(|&i| mesh.vertices[i as usize]).collect();
+        polyline_passes_depth(&pts, mesh, index, cutter, reference, threshold)
+    };
+    #[cfg(feature = "parallel")]
+    {
+        use rayon::prelude::*;
+        chains.into_par_iter().filter(keep).collect()
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        chains.into_iter().filter(keep).collect()
+    }
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -1035,7 +611,8 @@ pub fn pencil_toolpath(
     cutter: &dyn MillingCutter,
     params: &PencilParams,
 ) -> Toolpath {
-    let (tp, _) = pencil_toolpath_structured_annotated(mesh, index, cutter, params, None, None);
+    let (tp, _) =
+        pencil_toolpath_structured_annotated(mesh, index, cutter, params, None, None, &mut None);
     tp
 }
 
@@ -1044,18 +621,6 @@ fn runtime_annotations_to_labels(annotations: &[PencilRuntimeAnnotation]) -> Vec
         .iter()
         .map(|annotation| (annotation.move_index, annotation.event.label()))
         .collect()
-}
-
-/// Total XY/Z length of a polyline (mm).
-fn polyline_length(points: &[P3]) -> f64 {
-    points
-        .windows(2)
-        .map(|w| {
-            #[allow(clippy::indexing_slicing)] // windows(2) yields len-2 slices
-            let (a, b) = (w[0], w[1]);
-            ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt()
-        })
-        .sum()
 }
 
 /// Resample a polyline to ~`spacing` mm between points (linear interpolation),
@@ -1099,9 +664,9 @@ fn resample_polyline(points: &[P3], spacing: f64) -> Vec<P3> {
 }
 
 /// Build the centreline + offset `PencilPath`s for one already-sampled valley
-/// polyline. Shared by both detectors: it fairs the XY line, lifts it to the
-/// surface with the real cutter, and emits the centreline plus symmetric offset
-/// passes. `chain_index` is 1-based.
+/// polyline. Shared by all three detector arms: it fairs the XY line, lifts
+/// it to the surface with the real cutter, and emits the centreline plus
+/// symmetric offset passes. `chain_index` is 1-based.
 #[allow(clippy::too_many_arguments)] // cohesive per-chain emit; splitting hurts clarity
 fn paths_from_sampled(
     sampled: &[P3],
@@ -1161,11 +726,16 @@ fn paths_from_sampled(
     }
 }
 
-/// Rest-depth gate over a P3 polyline (curvature crest lines have no mesh-vertex
-/// chain). Identical metric to [`chain_passes_depth`]: keeps the line if the
-/// median *rest depth* (`reference_gap − pencil_gap`, i.e. how much deeper the
-/// pencil tool reaches than the bigger reference tool) exceeds `threshold`. The
-/// surface height cancels in reference mode, so it tolerates the smoothed DEM Z.
+/// The shared rest-depth gate (P1.5): does a P3 polyline sit in genuine rest
+/// material the pencil tool can clean? Samples up to 8 points and keeps the
+/// line if the MEDIAN *rest depth* (`reference_gap − pencil_gap`, i.e. how
+/// much deeper the pencil tool reaches than the bigger `reference` tool
+/// could) exceeds `threshold`. The surface height cancels in reference mode,
+/// so it tolerates the smoothed DEM Z curvature/rest-depth lines carry. Used
+/// directly by the `Curvature`/`RestDepth` detectors, and by
+/// [`gate_chains_by_depth`] for the `Dihedral` detector's mesh-vertex chains
+/// (converted to points first — same metric, same threshold, one
+/// implementation instead of two near-identical copies).
 fn polyline_passes_depth(
     pts: &[P3],
     mesh: &TriangleMesh,
@@ -1205,6 +775,129 @@ fn polyline_passes_depth(
     median > threshold
 }
 
+/// Split a `lift_to_surface`-lifted polyline into contiguous on-surface runs.
+/// A point with `z.is_nan()` marks a spot where the cutter made no contact
+/// (off the mesh); it ends the current run and is dropped rather than kept —
+/// a single isolated non-contact point must not stitch its two on-surface
+/// neighbors together with a cutting move. Runs of length < 2 are still
+/// returned; callers skip those (mirrors the pre-split `len() < 2` guard).
+fn contact_runs(points: &[P3]) -> Vec<&[P3]> {
+    crate::point_runs::split_run_ranges(points, |_, p: &P3| !p.z.is_nan(), 1)
+        .into_iter()
+        .filter_map(|(s, e)| points.get(s..=e))
+        .collect()
+}
+
+/// Emit the ordered `PencilPath`s as toolpath moves. Consecutive passes whose
+/// endpoints are within `hookup_distance` are joined by a gouge-safe
+/// surface-following feed instead of a retract-rapid-replunge — on dense
+/// organic relief the chains fragment heavily, so per-fragment retracts
+/// dominated the rapid distance. The retract is deferred: it fires only when
+/// the next pass (or run — see [`contact_runs`]) is too far, or its link loses
+/// surface contact, and once at the very end.
+///
+/// Each `PencilPath` is itself split at non-contact (NaN-Z) points via
+/// [`contact_runs`] before emission, so an off-mesh gap in the middle of a
+/// pass produces two independent runs — each with its own rapid/plunge or
+/// surface link — rather than a single cutting move bridging the gap.
+fn emit_paths(
+    all_paths: &[PencilPath],
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &PencilParams,
+) -> (Toolpath, Vec<PencilRuntimeAnnotation>) {
+    use crate::toolpath::MoveIntent;
+    let mut tp = Toolpath::new();
+    let mut annotations = Vec::new();
+    let mut prev_end: Option<P3> = None;
+
+    for path in all_paths {
+        if path.points.len() < 2 {
+            continue;
+        }
+
+        for run in contact_runs(&path.points) {
+            if run.len() < 2 {
+                continue;
+            }
+
+            let move_index = tp.moves.len();
+            let first = *run.first().unwrap_or(&P3::origin());
+
+            // Try to link from the previous run's end without retracting.
+            let link = prev_end.and_then(|end| {
+                let gap = ((first.x - end.x).powi(2) + (first.y - end.y).powi(2)).sqrt();
+                if gap > 1e-6 && gap <= params.hookup_distance {
+                    build_surface_link(
+                        end,
+                        first,
+                        mesh,
+                        index,
+                        cutter,
+                        params.stock_to_leave,
+                        params.sampling,
+                    )
+                } else {
+                    None
+                }
+            });
+
+            match link {
+                Some(link_pts) => {
+                    // Surface-following link (no retract / no re-plunge), then the body.
+                    for lp in &link_pts {
+                        tp.feed_to_with_intent(*lp, params.feed_rate, MoveIntent::Linking);
+                    }
+                    tp.feed_to_with_intent(first, params.feed_rate, MoveIntent::Linking);
+                }
+                None => {
+                    // Too far (or unsafe) to link: retract the previous run, then a
+                    // fresh rapid-over + plunge entry.
+                    if let Some(end) = prev_end {
+                        tp.rapid_to_with_intent(
+                            P3::new(end.x, end.y, params.safe_z),
+                            MoveIntent::Retract,
+                        );
+                    }
+                    tp.rapid_to_with_intent(
+                        P3::new(first.x, first.y, params.safe_z),
+                        MoveIntent::Linking,
+                    );
+                    tp.feed_to_with_intent(first, params.plunge_rate, MoveIntent::EntryPlunge);
+                }
+            }
+
+            // Feed the body (skip the first point — we're already positioned there).
+            for p in run.iter().skip(1) {
+                tp.feed_to_with_intent(*p, params.feed_rate, MoveIntent::FinishingCut);
+            }
+            prev_end = run.last().copied();
+
+            annotations.push(PencilRuntimeAnnotation {
+                move_index,
+                event: PencilRuntimeEvent::OffsetPass {
+                    chain_index: path.chain_index,
+                    chain_total: path.chain_total,
+                    offset_index: path.offset_index,
+                    offset_total: path.offset_total,
+                    offset_mm: path.offset_mm,
+                    is_centerline: path.is_centerline,
+                },
+            });
+        }
+    }
+
+    // Final retract once everything is emitted.
+    if let Some(end) = prev_end {
+        tp.rapid_to_with_intent(P3::new(end.x, end.y, params.safe_z), MoveIntent::Retract);
+    }
+
+    (tp, annotations)
+}
+
+// infallible: cancel closure always returns false, so Cancelled is unreachable
+#[allow(clippy::expect_used, clippy::too_many_arguments)]
 pub fn pencil_toolpath_structured_annotated(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -1216,428 +909,476 @@ pub fn pencil_toolpath_structured_annotated(
     // toolpath pattern). `None` ⇒ fall back to the tool/nominal reference (R1).
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
     debug: Option<&ToolpathDebugContext>,
+    // Out: the RestDepth detector's rest-field grid, for the GUI heatmap
+    // overlay. Set only when `detector == RestDepth`; left untouched otherwise.
+    rest_grid_out: &mut Option<crate::rest_field::RestGrid>,
 ) -> (Toolpath, Vec<PencilRuntimeAnnotation>) {
-    let mut tp = Toolpath::new();
-    let mut annotations = Vec::new();
+    let never_cancel = || false;
+    pencil_toolpath_structured_annotated_with_cancel(
+        mesh,
+        index,
+        cutter,
+        params,
+        initial_stock,
+        debug,
+        rest_grid_out,
+        &never_cancel,
+    )
+    .expect("non-cancellable pencil toolpath should never be cancelled")
+}
 
-    let gap_threshold = params.min_valley_depth;
+/// Diameter (mm) of the vanishingly small "surface probe" ball substituted
+/// when there's no real or nominal reference tool to compare against (the
+/// self-referenced-gap case, [`ResolvedReference::SelfReferenced`] /
+/// [`crate::rest_field::RestReference`]'s `is_surface_probe` arm). Small
+/// enough to hug the raw surface without perturbing the rest-depth
+/// comparison. Shared with `rest_field`'s test hillshade harness, which
+/// probes the same way to render a DEM.
+pub(crate) const SURFACE_PROBE_BALL_DIAMETER_MM: f64 = 0.1;
+/// Overall tool length (mm) paired with [`SURFACE_PROBE_BALL_DIAMETER_MM`].
+/// Irrelevant to the rest-depth math (only the ball tip matters) — picked to
+/// be a plausible tool length rather than for any geometric reason.
+pub(crate) const SURFACE_PROBE_BALL_LENGTH_MM: f64 = 10.0;
+/// Overall tool length (mm) for a synthesized nominal reference ball
+/// ([`ResolvedReference::Nominal`]) when no real reference-tool geometry is
+/// set. Like the probe length above, irrelevant to the ball-tip rest height
+/// this synthesizes — just needs to be a plausible tool length.
+pub(crate) const NOMINAL_REFERENCE_BALL_LENGTH_MM: f64 = 25.0;
 
-    // Unified rest-depth reference resolution, shared by ALL THREE detectors.
-    // Priority (R1): a real library tool (`reference_cutter`, true geometry) →
-    // a nominal ball at `reference_tool_diameter` when bigger than the pencil →
-    // a tiny bare-surface probe (degenerate self-reference; RestDepth arm only).
-    // Length is irrelevant to the ball-tip rest height. The gate detectors
-    // (Dihedral/Curvature) take `Option<&dyn MillingCutter>` where `None` means
-    // self-reference; the RestDepth field always needs a concrete reference plus
-    // the `is_surface_probe` sign-flip flag it builds below.
-    let real_ref: Option<&dyn MillingCutter> = params
-        .reference_cutter
-        .as_ref()
-        .map(|t| t as &dyn MillingCutter);
-    let bigger_nominal = params.reference_tool_diameter > cutter.diameter() + 1e-6;
-    let nominal_ball =
-        bigger_nominal.then(|| crate::tool::BallEndmill::new(params.reference_tool_diameter, 25.0));
-    let reference_ref: Option<&dyn MillingCutter> =
-        real_ref.or_else(|| nominal_ball.as_ref().map(|b| b as &dyn MillingCutter));
+/// Result of resolving the rest-depth reference tool (R1), shared by all
+/// three detectors and by the `pencil_chain_count` test helper — this is the
+/// ONE place the "real tool overrides a nominal ball" priority is encoded,
+/// replacing three separate copies (the Dihedral/Curvature gate call, the
+/// RestDepth field call, and the test helper). Priority: a real library tool
+/// (`params.reference_cutter`, true geometry) → a nominal ball at
+/// `reference_tool_diameter` when bigger than the pencil tool → no reference
+/// at all (self-referenced gap). Owns the synthesized nominal ball so its
+/// borrow outlives the call.
+enum ResolvedReference<'a> {
+    /// A real library tool's true cutter geometry (`params.reference_cutter`).
+    Real(&'a dyn MillingCutter),
+    /// A nominal ball at `reference_tool_diameter`, synthesized because no
+    /// real reference tool was set and the nominal diameter exceeds the
+    /// pencil tool's own. Length is irrelevant to the ball-tip rest height.
+    Nominal(crate::tool::BallEndmill),
+    /// No reference tool: the Dihedral/Curvature gate treats this as a
+    /// self-referenced gap; the RestDepth field substitutes a tiny
+    /// bare-surface probe with the sign flipped (see [`RestReference`]).
+    ///
+    /// [`RestReference`]: crate::rest_field::RestReference
+    SelfReferenced,
+}
 
-    let mut all_paths: Vec<PencilPath> = Vec::new();
-
-    match params.detector {
-        PencilDetector::Curvature => {
-            // Curvature crest-line detection (see crate::crest_lines): trace the
-            // zero-set of the minimal-curvature extremality, filtered by the
-            // single `valley_saliency` (|κ₂|) dial. Keep lines long enough, then
-            // optionally apply the reference-tool rest-depth gate (only when
-            // `min_valley_depth > 0`, so saliency alone can drive selection),
-            // resample to cut spacing, and build paths. No bisector — the crest
-            // line already sits on the valley floor.
-            let cp = crate::crest_lines::CrestParams {
-                valley_saliency: params.valley_saliency,
-                smoothing_iters: params.curvature_smoothing,
-                min_line_length: params.min_cut_length,
-            };
-            let lines = crate::crest_lines::detect_valley_lines(mesh, &cp);
-            let apply_rest_gate = gap_threshold > 0.0;
-            let kept: Vec<Vec<P3>> = lines
-                .into_iter()
-                .filter(|l| polyline_length(l) >= params.min_cut_length)
-                .filter(|l| {
-                    !apply_rest_gate
-                        || polyline_passes_depth(
-                            l,
-                            mesh,
-                            index,
-                            cutter,
-                            reference_ref,
-                            gap_threshold,
-                        )
-                })
-                .collect();
-            if kept.is_empty() {
-                info!("Curvature detector: no valley lines passed length/rest-depth gate");
-                return (tp, annotations);
-            }
-            let chain_total = kept.len();
-            info!(
-                valley_lines = chain_total,
-                gap_threshold,
-                valley_saliency = params.valley_saliency,
-                "Curvature detector: valley crest lines built"
-            );
-            for (ci, line) in kept.iter().enumerate() {
-                let sampled = resample_polyline(line, params.sampling);
-                paths_from_sampled(
-                    &sampled,
-                    ci + 1,
-                    chain_total,
-                    mesh,
-                    index,
-                    cutter,
-                    params,
-                    &mut all_paths,
-                );
-            }
-        }
-        PencilDetector::RestDepth => {
-            // Rest-depth-field detection (see crate::rest_field): build the
-            // dual-tool rest field, threshold at `min_valley_depth`, thin each
-            // region to a skeleton, and route by width. The per-polyline
-            // `polyline_passes_depth` gate is REDUNDANT here (the field threshold
-            // IS that same quantity, pointwise over the whole grid) — skip it.
-            //
-            // Rest-field reference. R2: prefer the ACTUAL machined stock the
-            // prior toolpaths left (`initial_stock`, when this op cuts
-            // FromRemainingStock and a prior sim exists) — it captures the real
-            // prior toolpath pattern (scallop cusps, skipped boundaries, walls
-            // the finish never visited), not just a tool's shape. Frame guard
-            // (the F-024 lesson): the stock z_grid and the mesh the pencil drops
-            // against must share a frame; require their XY bboxes to overlap or a
-            // silent frame mismatch would read garbage rest everywhere. On no
-            // stock / non-overlap, fall back to the R1 cutter resolution: real
-            // reference tool or the bigger nominal ball (`is_surface_probe =
-            // false`), else a tiny bare-surface probe with the sign flipped.
-            // NOTE the sign-flip trap: a *real* reference equal to the pencil
-            // tool still yields rest ≈ 0 via `ref_z − pencil_z`, NOT probe mode.
-            let stock_ref = initial_stock.filter(|stock| {
-                let (sb, mb) = (&stock.stock_bbox, &mesh.bbox);
-                let overlap = sb.min.x <= mb.max.x
-                    && sb.max.x >= mb.min.x
-                    && sb.min.y <= mb.max.y
-                    && sb.max.y >= mb.min.y;
-                if !overlap {
-                    warn!(
-                        stock = format!(
-                            "[{:.1},{:.1}]..[{:.1},{:.1}]",
-                            sb.min.x, sb.min.y, sb.max.x, sb.max.y
-                        ),
-                        mesh = format!(
-                            "[{:.1},{:.1}]..[{:.1},{:.1}]",
-                            mb.min.x, mb.min.y, mb.max.x, mb.max.y
-                        ),
-                        "Rest-depth detector: stock/mesh XY frames do not overlap; \
-                         falling back to tool reference"
-                    );
-                }
-                overlap
-            });
-            let probe_ball = crate::tool::BallEndmill::new(0.1, 10.0);
-            // reference-mode counter: 0 = nominal ball / probe, 1 = real tool,
-            // 2 = machined stock.
-            let (reference, probe_mode, rest_reference_mode): (
-                crate::rest_field::RestReference<'_>,
-                bool,
-                u8,
-            ) = if let Some(stock) = stock_ref {
-                (crate::rest_field::RestReference::Stock(stock), false, 2)
-            } else {
-                match (real_ref, nominal_ball.as_ref()) {
-                    (Some(r), _) => (
-                        crate::rest_field::RestReference::Cutter {
-                            tool: r,
-                            is_surface_probe: false,
-                        },
-                        false,
-                        1,
-                    ),
-                    (None, Some(b)) => (
-                        crate::rest_field::RestReference::Cutter {
-                            tool: b as &dyn MillingCutter,
-                            is_surface_probe: false,
-                        },
-                        false,
-                        0,
-                    ),
-                    (None, None) => (
-                        crate::rest_field::RestReference::Cutter {
-                            tool: &probe_ball as &dyn MillingCutter,
-                            is_surface_probe: true,
-                        },
-                        true,
-                        0,
-                    ),
-                }
-            };
-            let rf_params = crate::rest_field::RestFieldParams {
-                cell_mm: params.rest_cell_mm,
-                min_valley_depth: params.min_valley_depth,
-                route_width_factor: params.route_width_factor,
-                pencil_radius: cutter.radius(),
-                min_cut_length: params.min_cut_length,
-            };
-            let rf =
-                crate::rest_field::detect_rest_valleys(mesh, index, cutter, reference, &rf_params);
-            let report = &rf.report;
-            info!(
-                rest_volume_mm3 = format!("{:.1}", report.total_rest_volume_mm3),
-                pencil_regions = report.pencil_region_count,
-                clearing_regions = report.clearing_region_count,
-                centerlines = rf.centerlines.len(),
-                coverage = format!("{:.2}", report.coverage()),
-                probe_mode,
-                rest_reference_mode,
-                "Rest-depth detector: rest field built (mode 0=nominal 1=tool 2=stock)"
-            );
-            if let Some(dbg) = debug {
-                let scope = dbg.start_span("rest_field", "rest-depth report");
-                scope.set_counter("rest_volume_mm3", report.total_rest_volume_mm3);
-                scope.set_counter("rest_pencil_regions", report.pencil_region_count as f64);
-                scope.set_counter("rest_clearing_regions", report.clearing_region_count as f64);
-                scope.set_counter("rest_skeleton_mm", report.skeleton_length_mm);
-                scope.set_counter("rest_traced_mm", report.traced_length_mm);
-                scope.set_counter("rest_coverage", report.coverage());
-                scope.set_counter("rest_reference_mode", rest_reference_mode as f64);
-                scope.finish();
-            }
-            for reg in &rf.clearing_regions {
-                info!(
-                    bbox = format!(
-                        "[{:.1},{:.1}]..[{:.1},{:.1}]",
-                        reg.bbox[0], reg.bbox[1], reg.bbox[2], reg.bbox[3]
-                    ),
-                    cells = reg.cell_count,
-                    peak_rest_mm = format!("{:.2}", reg.peak_rest_mm),
-                    "Rest-depth detector: wide region routed to clearing (Phase D: adaptive3d)"
-                );
-            }
-            let kept: Vec<Vec<P3>> = rf
-                .centerlines
-                .into_iter()
-                .filter(|l| polyline_length(l) >= params.min_cut_length)
-                .collect();
-            if kept.is_empty() {
-                info!("Rest-depth detector: no centerlines passed length gate");
-                return (tp, annotations);
-            }
-            let chain_total = kept.len();
-            for (ci, line) in kept.iter().enumerate() {
-                let sampled = resample_polyline(line, params.sampling);
-                paths_from_sampled(
-                    &sampled,
-                    ci + 1,
-                    chain_total,
-                    mesh,
-                    index,
-                    cutter,
-                    params,
-                    &mut all_paths,
-                );
-            }
-        }
-        PencilDetector::Dihedral => {
-            // Step 1: edge adjacency. Step 2: shared edges + dihedral angles.
-            let edge_map = build_edge_adjacency(mesh);
-            let shared_edges = compute_shared_edges(mesh, &edge_map);
-
-            // Step 3: concave-edge candidate set (angle filter only; the real
-            // selection is the per-chain rest-depth gate). The angle filter alone
-            // floods dense organic meshes — every triangulation crease passes.
-            let threshold_rad = params.bitangency_angle.to_radians();
-            let total_shared = shared_edges.len();
-            let concave_owned: Vec<SharedEdge> = shared_edges
-                .into_iter()
-                .filter(|e| {
-                    e.is_concave && e.dihedral_angle > (std::f64::consts::PI - threshold_rad)
-                })
-                .collect();
-            if concave_owned.is_empty() {
-                info!(
-                    "No concave edges under {:.0}° threshold",
-                    params.bitangency_angle
-                );
-                return (tp, annotations);
-            }
-
-            // Step 4: chain concave edges, then keep only chains holding genuine
-            // REST material (rest_depth = reference_gap − pencil_gap > threshold).
-            let chains_all = chain_concave_edges(&concave_owned, mesh, params.min_cut_length);
-            let chains = gate_chains_by_depth(
-                chains_all,
-                mesh,
-                index,
-                cutter,
-                reference_ref,
-                gap_threshold,
-            );
-
-            // Per-edge wall normals for bisector positioning; built from the
-            // filtered concave edges so the offset uses the exact two walls.
-            #[allow(clippy::indexing_slicing)] // face_a/face_b are valid mesh face indices
-            let edge_norms: HashMap<EdgeKey, (V3, V3)> = concave_owned
-                .iter()
-                .map(|e| {
-                    (
-                        e.key,
-                        (mesh.faces[e.face_a].normal, mesh.faces[e.face_b].normal),
-                    )
-                })
-                .collect();
-            // Tool contact radius: the ball/corner radius that nestles into the
-            // corner (falls back to nominal radius for a flat end mill).
-            let contact_radius = {
-                let cr = cutter.corner_radius_mm();
-                if cr > 1e-6 { cr } else { cutter.radius() }
-            };
-
-            if chains.is_empty() {
-                info!(
-                    "No tool-unreachable valley chains (gap > {:.3}mm) over {:.1}mm",
-                    gap_threshold, params.min_cut_length
-                );
-                return (tp, annotations);
-            }
-            info!(
-                total_shared,
-                chains = chains.len(),
-                gap_threshold,
-                "Pencil detection complete (chain-level reach-gap gate)"
-            );
-
-            // Step 5: sample each chain (bisector-positioned) → paths.
-            let chain_total = chains.len();
-            for (chain_index, chain) in chains.iter().enumerate() {
-                let sampled = sample_chain_bisected(
-                    mesh,
-                    chain,
-                    params.sampling,
-                    &edge_norms,
-                    contact_radius,
-                    params.bisector_strength,
-                );
-                paths_from_sampled(
-                    &sampled,
-                    chain_index + 1,
-                    chain_total,
-                    mesh,
-                    index,
-                    cutter,
-                    params,
-                    &mut all_paths,
-                );
-            }
+impl ResolvedReference<'_> {
+    /// The `Option<&dyn MillingCutter>` shape the Dihedral/Curvature gates
+    /// want: `None` means self-referenced gap.
+    fn as_dyn(&self) -> Option<&dyn MillingCutter> {
+        match self {
+            ResolvedReference::Real(r) => Some(*r),
+            ResolvedReference::Nominal(b) => Some(b),
+            ResolvedReference::SelfReferenced => None,
         }
     }
+}
+
+/// Resolve the rest-depth reference tool (see [`ResolvedReference`]).
+fn resolve_reference_cutter(params: &PencilParams, pencil_diameter: f64) -> ResolvedReference<'_> {
+    if let Some(rc) = params.reference_cutter.as_ref() {
+        return ResolvedReference::Real(rc);
+    }
+    if params.reference_tool_diameter > pencil_diameter + 1e-6 {
+        return ResolvedReference::Nominal(crate::tool::BallEndmill::new(
+            params.reference_tool_diameter,
+            NOMINAL_REFERENCE_BALL_LENGTH_MM,
+        ));
+    }
+    ResolvedReference::SelfReferenced
+}
+
+/// `Curvature` detector arm (see [`crate::crest_lines`]): trace the zero-set
+/// of the minimal-curvature extremality, filtered by the single
+/// `valley_saliency` (|κ₂|) dial. Keep lines long enough, then optionally
+/// apply the reference-tool rest-depth gate (only when `min_valley_depth >
+/// 0`, so saliency alone can drive selection), resample to cut spacing, and
+/// build paths. No bisector — the crest line already sits on the valley
+/// floor. Polls `cancel` once per line, matching the other two arms.
+fn curvature_arm(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &PencilParams,
+    cancel: &dyn CancelCheck,
+) -> Result<Vec<PencilPath>, Cancelled> {
+    let mut all_paths: Vec<PencilPath> = Vec::new();
+    let gap_threshold = params.min_valley_depth;
+    let resolved = resolve_reference_cutter(params, cutter.diameter());
+    let reference_ref = resolved.as_dyn();
+
+    let cp = crate::crest_lines::CrestParams {
+        valley_saliency: params.valley_saliency,
+        smoothing_iters: params.curvature_smoothing,
+        min_line_length: params.min_cut_length,
+    };
+    let lines = crate::crest_lines::detect_valley_lines(mesh, &cp);
+    let apply_rest_gate = gap_threshold > 0.0;
+    let kept: Vec<Vec<P3>> = lines
+        .into_iter()
+        .filter(|l| polyline_length(l) >= params.min_cut_length)
+        .filter(|l| {
+            !apply_rest_gate
+                || polyline_passes_depth(l, mesh, index, cutter, reference_ref, gap_threshold)
+        })
+        .collect();
+    if kept.is_empty() {
+        info!("Curvature detector: no valley lines passed length/rest-depth gate");
+        return Ok(all_paths);
+    }
+    let chain_total = kept.len();
+    info!(
+        valley_lines = chain_total,
+        gap_threshold,
+        valley_saliency = params.valley_saliency,
+        "Curvature detector: valley crest lines built"
+    );
+    for (ci, line) in kept.iter().enumerate() {
+        check_cancel(cancel)?;
+        let sampled = resample_polyline(line, params.sampling);
+        paths_from_sampled(
+            &sampled,
+            ci + 1,
+            chain_total,
+            mesh,
+            index,
+            cutter,
+            params,
+            &mut all_paths,
+        );
+    }
+    Ok(all_paths)
+}
+
+/// `RestDepth` detector arm (see [`crate::rest_field`]): build the dual-tool
+/// rest field, threshold at `min_valley_depth`, thin each region to a
+/// skeleton, and route by width. The per-polyline [`polyline_passes_depth`]
+/// gate is REDUNDANT here (the field threshold IS that same quantity,
+/// pointwise over the whole grid) — skip it.
+///
+/// Rest-field reference. R2: prefer the ACTUAL machined stock the prior
+/// toolpaths left (`initial_stock`, when this op cuts FromRemainingStock and
+/// a prior sim exists) — it captures the real prior toolpath pattern
+/// (scallop cusps, skipped boundaries, walls the finish never visited), not
+/// just a tool's shape. Frame guard (the F-024 lesson): the stock z_grid and
+/// the mesh the pencil drops against must share a frame; require their XY
+/// bboxes to overlap or a silent frame mismatch would read garbage rest
+/// everywhere. On no stock / non-overlap, fall back to the R1 cutter
+/// resolution ([`resolve_reference_cutter`]): real reference tool or the
+/// bigger nominal ball (`is_surface_probe = false`), else a tiny
+/// bare-surface probe with the sign flipped. NOTE the sign-flip trap: a
+/// *real* reference equal to the pencil tool still yields rest ≈ 0 via
+/// `ref_z − pencil_z`, NOT probe mode.
+#[allow(clippy::too_many_arguments)]
+fn rest_depth_arm(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &PencilParams,
+    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    debug: Option<&ToolpathDebugContext>,
+    rest_grid_out: &mut Option<crate::rest_field::RestGrid>,
+    cancel: &dyn CancelCheck,
+) -> Result<Vec<PencilPath>, Cancelled> {
+    let mut all_paths: Vec<PencilPath> = Vec::new();
+    let stock_ref = initial_stock.filter(|stock| {
+        let (sb, mb) = (&stock.stock_bbox, &mesh.bbox);
+        let overlap = sb.min.x <= mb.max.x
+            && sb.max.x >= mb.min.x
+            && sb.min.y <= mb.max.y
+            && sb.max.y >= mb.min.y;
+        if !overlap {
+            warn!(
+                stock = format!(
+                    "[{:.1},{:.1}]..[{:.1},{:.1}]",
+                    sb.min.x, sb.min.y, sb.max.x, sb.max.y
+                ),
+                mesh = format!(
+                    "[{:.1},{:.1}]..[{:.1},{:.1}]",
+                    mb.min.x, mb.min.y, mb.max.x, mb.max.y
+                ),
+                "Rest-depth detector: stock/mesh XY frames do not overlap; \
+                 falling back to tool reference"
+            );
+        }
+        overlap
+    });
+    let probe_ball =
+        crate::tool::BallEndmill::new(SURFACE_PROBE_BALL_DIAMETER_MM, SURFACE_PROBE_BALL_LENGTH_MM);
+    let resolved = resolve_reference_cutter(params, cutter.diameter());
+    // reference-mode counter: 0 = nominal ball / probe, 1 = real tool,
+    // 2 = machined stock.
+    let (reference, probe_mode, rest_reference_mode): (
+        crate::rest_field::RestReference<'_>,
+        bool,
+        u8,
+    ) = if let Some(stock) = stock_ref {
+        (crate::rest_field::RestReference::Stock(stock), false, 2)
+    } else {
+        match &resolved {
+            ResolvedReference::Real(r) => (
+                crate::rest_field::RestReference::Cutter {
+                    tool: *r,
+                    is_surface_probe: false,
+                },
+                false,
+                1,
+            ),
+            ResolvedReference::Nominal(b) => (
+                crate::rest_field::RestReference::Cutter {
+                    tool: b as &dyn MillingCutter,
+                    is_surface_probe: false,
+                },
+                false,
+                0,
+            ),
+            ResolvedReference::SelfReferenced => (
+                crate::rest_field::RestReference::Cutter {
+                    tool: &probe_ball as &dyn MillingCutter,
+                    is_surface_probe: true,
+                },
+                true,
+                0,
+            ),
+        }
+    };
+    let rf_params = crate::rest_field::RestFieldParams {
+        cell_mm: params.rest_cell_mm,
+        min_valley_depth: params.min_valley_depth,
+        route_width_factor: params.route_width_factor,
+        pencil_radius: cutter.radius(),
+        min_cut_length: params.min_cut_length,
+    };
+    let rf = crate::rest_field::detect_rest_valleys(mesh, index, cutter, reference, &rf_params);
+    let report = &rf.report;
+    info!(
+        rest_volume_mm3 = format!("{:.1}", report.total_rest_volume_mm3),
+        pencil_regions = report.pencil_region_count,
+        clearing_regions = report.clearing_region_count,
+        centerlines = rf.centerlines.len(),
+        coverage = format!("{:.2}", report.coverage()),
+        probe_mode,
+        rest_reference_mode,
+        "Rest-depth detector: rest field built (mode 0=nominal 1=tool 2=stock)"
+    );
+    if let Some(dbg) = debug {
+        let scope = dbg.start_span("rest_field", "rest-depth report");
+        scope.set_counter("rest_volume_mm3", report.total_rest_volume_mm3);
+        scope.set_counter("rest_pencil_regions", report.pencil_region_count as f64);
+        scope.set_counter("rest_clearing_regions", report.clearing_region_count as f64);
+        scope.set_counter("rest_skeleton_mm", report.skeleton_length_mm);
+        scope.set_counter("rest_traced_mm", report.traced_length_mm);
+        scope.set_counter("rest_coverage", report.coverage());
+        scope.set_counter("rest_reference_mode", rest_reference_mode as f64);
+        scope.finish();
+    }
+    for reg in &rf.clearing_regions {
+        info!(
+            bbox = format!(
+                "[{:.1},{:.1}]..[{:.1},{:.1}]",
+                reg.bbox[0], reg.bbox[1], reg.bbox[2], reg.bbox[3]
+            ),
+            cells = reg.cell_count,
+            peak_rest_mm = format!("{:.2}", reg.peak_rest_mm),
+            "Rest-depth detector: wide region routed to clearing (Phase D: adaptive3d)"
+        );
+    }
+    // Hand the rest-field grid to the caller for the GUI heatmap overlay
+    // (set even when no centreline survives the length gate below).
+    *rest_grid_out = Some(rf.rest_grid);
+    let kept: Vec<Vec<P3>> = rf
+        .centerlines
+        .into_iter()
+        .filter(|l| polyline_length(l) >= params.min_cut_length)
+        .collect();
+    if kept.is_empty() {
+        info!("Rest-depth detector: no centerlines passed length gate");
+        return Ok(all_paths);
+    }
+    let chain_total = kept.len();
+    for (ci, line) in kept.iter().enumerate() {
+        check_cancel(cancel)?;
+        let sampled = resample_polyline(line, params.sampling);
+        paths_from_sampled(
+            &sampled,
+            ci + 1,
+            chain_total,
+            mesh,
+            index,
+            cutter,
+            params,
+            &mut all_paths,
+        );
+    }
+    Ok(all_paths)
+}
+
+/// `Dihedral` detector arm (see [`crate::pencil_dihedral`]): the historical
+/// mesh-crease detector. Angle-filter candidate edges, chain them, keep only
+/// chains holding genuine REST material (`rest_depth = reference_gap −
+/// pencil_gap > threshold`), then sample each surviving chain
+/// bisector-positioned into cut-spaced paths.
+fn dihedral_arm(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &PencilParams,
+    cancel: &dyn CancelCheck,
+) -> Result<Vec<PencilPath>, Cancelled> {
+    let mut all_paths: Vec<PencilPath> = Vec::new();
+    let gap_threshold = params.min_valley_depth;
+    let resolved = resolve_reference_cutter(params, cutter.diameter());
+    let reference_ref = resolved.as_dyn();
+
+    // Step 1: edge adjacency. Step 2: shared edges + dihedral angles.
+    let edge_map = build_edge_adjacency(mesh);
+    let shared_edges = compute_shared_edges(mesh, &edge_map);
+
+    // Step 3: concave-edge candidate set (angle filter only; the real
+    // selection is the per-chain rest-depth gate). The angle filter alone
+    // floods dense organic meshes — every triangulation crease passes.
+    let threshold_rad = params.bitangency_angle.to_radians();
+    let total_shared = shared_edges.len();
+    let concave_owned: Vec<SharedEdge> = shared_edges
+        .into_iter()
+        .filter(|e| e.is_concave && e.dihedral_angle > (std::f64::consts::PI - threshold_rad))
+        .collect();
+    if concave_owned.is_empty() {
+        info!(
+            "No concave edges under {:.0}° threshold",
+            params.bitangency_angle
+        );
+        return Ok(all_paths);
+    }
+    check_cancel(cancel)?;
+
+    // Step 4: chain concave edges, then keep only chains holding genuine
+    // REST material (rest_depth = reference_gap − pencil_gap > threshold).
+    let chains_all = chain_concave_edges(&concave_owned, mesh, params.min_cut_length);
+    let chains = gate_chains_by_depth(
+        chains_all,
+        mesh,
+        index,
+        cutter,
+        reference_ref,
+        gap_threshold,
+    );
+
+    // Per-edge wall normals for bisector positioning; built from the
+    // filtered concave edges so the offset uses the exact two walls.
+    #[allow(clippy::indexing_slicing)] // face_a/face_b are valid mesh face indices
+    let edge_norms: HashMap<EdgeKey, (V3, V3)> = concave_owned
+        .iter()
+        .map(|e| {
+            (
+                e.key,
+                (mesh.faces[e.face_a].normal, mesh.faces[e.face_b].normal),
+            )
+        })
+        .collect();
+    // Tool contact radius: the ball/corner radius that nestles into the
+    // corner (falls back to nominal radius for a flat end mill).
+    let contact_radius = {
+        let cr = cutter.corner_radius_mm();
+        if cr > 1e-6 { cr } else { cutter.radius() }
+    };
+
+    if chains.is_empty() {
+        info!(
+            "No tool-unreachable valley chains (gap > {:.3}mm) over {:.1}mm",
+            gap_threshold, params.min_cut_length
+        );
+        return Ok(all_paths);
+    }
+    info!(
+        total_shared,
+        chains = chains.len(),
+        gap_threshold,
+        "Pencil detection complete (chain-level reach-gap gate)"
+    );
+
+    // Step 5: sample each chain (bisector-positioned) → paths.
+    let chain_total = chains.len();
+    for (chain_index, chain) in chains.iter().enumerate() {
+        check_cancel(cancel)?;
+        let sampled = sample_chain_bisected(
+            mesh,
+            chain,
+            params.sampling,
+            &edge_norms,
+            contact_radius,
+            params.bisector_strength,
+        );
+        paths_from_sampled(
+            &sampled,
+            chain_index + 1,
+            chain_total,
+            mesh,
+            index,
+            cutter,
+            params,
+            &mut all_paths,
+        );
+    }
+    Ok(all_paths)
+}
+
+/// Cancellable variant of [`pencil_toolpath_structured_annotated`]. Polls
+/// `cancel` between the major phases (detector dispatch → path ordering →
+/// emission) and once per line/chain inside each detector arm's own sampling
+/// loop (see [`dihedral_arm`], [`curvature_arm`], [`rest_depth_arm`]). Does
+/// NOT poll inside the detector internals themselves
+/// (`crest_lines::detect_valley_lines`, `rest_field::detect_rest_valleys`,
+/// `chain_concave_edges`/`gate_chains_by_depth`) — those stay as a follow-up
+/// if they ever show up as the actual long pole.
+#[allow(clippy::too_many_arguments)]
+pub fn pencil_toolpath_structured_annotated_with_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &PencilParams,
+    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    debug: Option<&ToolpathDebugContext>,
+    rest_grid_out: &mut Option<crate::rest_field::RestGrid>,
+    cancel: &dyn CancelCheck,
+) -> Result<(Toolpath, Vec<PencilRuntimeAnnotation>), Cancelled> {
+    check_cancel(cancel)?;
+    let tp = Toolpath::new();
+    let annotations = Vec::new();
+
+    let mut all_paths: Vec<PencilPath> = match params.detector {
+        PencilDetector::Curvature => curvature_arm(mesh, index, cutter, params, cancel)?,
+        PencilDetector::RestDepth => rest_depth_arm(
+            mesh,
+            index,
+            cutter,
+            params,
+            initial_stock,
+            debug,
+            rest_grid_out,
+            cancel,
+        )?,
+        PencilDetector::Dihedral => dihedral_arm(mesh, index, cutter, params, cancel)?,
+    };
 
     if all_paths.is_empty() {
-        return (tp, annotations);
+        return Ok((tp, annotations));
     }
+    check_cancel(cancel)?;
 
     // Step 6: Order paths by nearest-neighbor
     order_paths_nearest(&mut all_paths);
+    check_cancel(cancel)?;
 
-    // Step 7: Emit toolpath. Consecutive passes whose endpoints are within
-    // `hookup_distance` are joined by a gouge-safe surface-following feed instead
-    // of a retract-rapid-replunge — on dense organic relief the chains fragment
-    // heavily, so per-fragment retracts dominated the rapid distance. The retract
-    // is deferred: it fires only when the next pass is too far (or its link loses
-    // surface contact) to join, and once at the very end.
-    use crate::toolpath::MoveIntent;
-    let mut prev_end: Option<P3> = None;
-    for path in &all_paths {
-        if path.points.len() < 2 {
-            continue;
-        }
-
-        // Filter out points where drop-cutter had no contact
-        let valid_points: Vec<P3> = path
-            .points
-            .iter()
-            .filter(|p| p.z > f64::NEG_INFINITY + 1.0)
-            .copied()
-            .collect();
-
-        if valid_points.len() < 2 {
-            continue;
-        }
-
-        let move_index = tp.moves.len();
-        let first = *valid_points.first().unwrap_or(&P3::origin());
-
-        // Try to link from the previous pass's end without retracting.
-        let link = prev_end.and_then(|end| {
-            let gap = ((first.x - end.x).powi(2) + (first.y - end.y).powi(2)).sqrt();
-            if gap > 1e-6 && gap <= params.hookup_distance {
-                build_surface_link(
-                    end,
-                    first,
-                    mesh,
-                    index,
-                    cutter,
-                    params.stock_to_leave,
-                    params.sampling,
-                )
-            } else {
-                None
-            }
-        });
-
-        match link {
-            Some(link_pts) => {
-                // Surface-following link (no retract / no re-plunge), then the body.
-                for lp in &link_pts {
-                    tp.feed_to_with_intent(*lp, params.feed_rate, MoveIntent::Linking);
-                }
-                tp.feed_to_with_intent(first, params.feed_rate, MoveIntent::Linking);
-            }
-            None => {
-                // Too far (or unsafe) to link: retract the previous run, then a
-                // fresh rapid-over + plunge entry.
-                if let Some(end) = prev_end {
-                    tp.rapid_to_with_intent(
-                        P3::new(end.x, end.y, params.safe_z),
-                        MoveIntent::Retract,
-                    );
-                }
-                tp.rapid_to_with_intent(
-                    P3::new(first.x, first.y, params.safe_z),
-                    MoveIntent::Linking,
-                );
-                tp.feed_to_with_intent(first, params.plunge_rate, MoveIntent::EntryPlunge);
-            }
-        }
-
-        // Feed the body (skip the first point — we're already positioned there).
-        for p in valid_points.iter().skip(1) {
-            tp.feed_to_with_intent(*p, params.feed_rate, MoveIntent::FinishingCut);
-        }
-        prev_end = valid_points.last().copied();
-
-        annotations.push(PencilRuntimeAnnotation {
-            move_index,
-            event: PencilRuntimeEvent::OffsetPass {
-                chain_index: path.chain_index,
-                chain_total: path.chain_total,
-                offset_index: path.offset_index,
-                offset_total: path.offset_total,
-                offset_mm: path.offset_mm,
-                is_centerline: path.is_centerline,
-            },
-        });
-    }
-
-    // Final retract once everything is emitted.
-    if let Some(end) = prev_end {
-        tp.rapid_to_with_intent(P3::new(end.x, end.y, params.safe_z), MoveIntent::Retract);
-    }
+    // Step 7: Emit toolpath.
+    let (tp, annotations) = emit_paths(&all_paths, mesh, index, cutter, params);
 
     if let Some(debug_ctx) = debug {
         for annotation in &annotations {
@@ -1652,7 +1393,7 @@ pub fn pencil_toolpath_structured_annotated(
         "Pencil toolpath complete"
     );
 
-    (tp, annotations)
+    Ok((tp, annotations))
 }
 
 pub fn pencil_toolpath_annotated(
@@ -1663,7 +1404,7 @@ pub fn pencil_toolpath_annotated(
     debug: Option<&ToolpathDebugContext>,
 ) -> (Toolpath, Vec<(usize, String)>) {
     let (tp, annotations) =
-        pencil_toolpath_structured_annotated(mesh, index, cutter, params, None, debug);
+        pencil_toolpath_structured_annotated(mesh, index, cutter, params, None, debug, &mut None);
     (tp, runtime_annotations_to_labels(&annotations))
 }
 
@@ -1674,35 +1415,9 @@ mod tests {
     use crate::mesh::{SpatialIndex, make_test_hemisphere};
     use crate::tool::BallEndmill;
 
-    /// Create a V-groove mesh: two planes meeting at a concave edge along X axis.
-    fn make_v_groove(length: f64, depth: f64, width: f64) -> TriangleMesh {
-        // V-groove: two inclined planes meeting at y=0
-        // Left plane: from (0, -width, 0) down to (0, 0, -depth) and back up
-        // Right plane: from (0, 0, -depth) up to (0, width, 0)
-        let vertices = vec![
-            P3::new(0.0, -width, 0.0),    // 0: left-back top
-            P3::new(length, -width, 0.0), // 1: left-front top
-            P3::new(0.0, 0.0, -depth),    // 2: back center (groove bottom)
-            P3::new(length, 0.0, -depth), // 3: front center (groove bottom)
-            P3::new(0.0, width, 0.0),     // 4: right-back top
-            P3::new(length, width, 0.0),  // 5: right-front top
-        ];
-
-        // CCW winding so the wall facets face UP/outward (+Z normals) — a valid
-        // machinable surface. (The original winding produced downward normals,
-        // which drop_cutter rightly skips and the geometric concavity test reads
-        // inverted.)
-        let triangles = vec![
-            [0, 1, 2], // left plane tri 1
-            [1, 3, 2], // left plane tri 2
-            [2, 3, 4], // right plane tri 1
-            [3, 5, 4], // right plane tri 2
-        ];
-
-        TriangleMesh::from_raw(vertices, triangles)
-    }
-
-    /// Create a flat-only mesh (convex-only, no concave edges).
+    /// Create a flat-only mesh (convex-only, no concave edges). Also kept
+    /// (duplicated) as a tiny same-module helper in `pencil_dihedral::tests`
+    /// for its own concavity-detection unit tests.
     fn make_convex_box(size: f64) -> TriangleMesh {
         // Simple flat square — no concave edges possible with 2 triangles
         let vertices = vec![
@@ -1715,124 +1430,20 @@ mod tests {
         TriangleMesh::from_raw(vertices, triangles)
     }
 
+    /// Coverage ported from `pencil_dihedral`'s retired `sample_chain` (the
+    /// un-offset predecessor of `resample_polyline`): a straight 20mm
+    /// segment sampled at 2mm spacing should yield ~11 points including both
+    /// endpoints, all still exactly on the source line.
     #[test]
-    fn test_edge_adjacency_basic() {
-        let mesh = make_v_groove(20.0, 5.0, 10.0);
-        let edge_map = build_edge_adjacency(&mesh);
+    fn test_resample_polyline_spacing() {
+        let line = vec![P3::new(0.0, 0.0, -5.0), P3::new(20.0, 0.0, -5.0)];
+        let points = resample_polyline(&line, 2.0);
 
-        // 4 triangles × 3 edges = 12 half-edges
-        // Some edges are shared (interior), some are boundary
-        assert!(!edge_map.is_empty());
-
-        // The center edge (vertices 2-3) should be shared by 2 faces
-        let center_key = EdgeKey::new(2, 3);
-        assert_eq!(
-            edge_map.get(&center_key).map(|v| v.len()),
-            Some(2),
-            "Center groove edge should be shared by 2 faces"
-        );
-    }
-
-    #[test]
-    fn test_v_groove_detects_concave_edge() {
-        let mesh = make_v_groove(20.0, 5.0, 10.0);
-        let edge_map = build_edge_adjacency(&mesh);
-        let shared = compute_shared_edges(&mesh, &edge_map);
-
-        // Should find at least one concave edge (the groove bottom)
-        let concave_count = shared.iter().filter(|e| e.is_concave).count();
-        assert!(
-            concave_count >= 1,
-            "V-groove should have at least 1 concave edge, found {}",
-            concave_count
-        );
-
-        // The center edge (2-3) should be concave
-        let center_edge = shared
-            .iter()
-            .find(|e| (e.key.0 == 2 && e.key.1 == 3) || (e.key.0 == 3 && e.key.1 == 2));
-        assert!(center_edge.is_some(), "Should find center groove edge");
-        if let Some(edge) = center_edge {
-            assert!(edge.is_concave, "Center groove edge should be concave");
-            // V-groove with depth=5, width=10 → half-angle = atan(5/10) ≈ 26.6°
-            // Dihedral should be around 180° - 2*26.6° = 126.8° → about 0.72π radians
-            assert!(
-                edge.dihedral_angle > 0.5,
-                "Dihedral angle should be significant, got {:.2} rad ({:.1}°)",
-                edge.dihedral_angle,
-                edge.dihedral_angle.to_degrees()
-            );
-        }
-    }
-
-    #[test]
-    fn test_convex_mesh_no_concave_edges() {
-        let mesh = make_convex_box(50.0);
-        let edge_map = build_edge_adjacency(&mesh);
-        let shared = compute_shared_edges(&mesh, &edge_map);
-
-        // Flat mesh should have no concave edges
-        let _concave_count = shared.iter().filter(|e| e.is_concave).count();
-        // For coplanar faces, dihedral angle ≈ 0, concavity is ambiguous (sign ≈ 0)
-        // Either concave_count == 0, or any "concave" edges have angle ≈ 0
-        for edge in &shared {
-            if edge.is_concave {
-                assert!(
-                    edge.dihedral_angle < 0.1,
-                    "Flat mesh concave edge should have near-zero dihedral, got {:.2}",
-                    edge.dihedral_angle
-                );
-            }
-        }
-        // With threshold of 160°, none should pass
-        let threshold_rad = 160.0_f64.to_radians();
-        let filtered = shared
-            .iter()
-            .filter(|e| e.is_concave && e.dihedral_angle > (std::f64::consts::PI - threshold_rad))
-            .count();
-        assert_eq!(
-            filtered, 0,
-            "Flat mesh should produce no pencil edges at 160° threshold"
-        );
-    }
-
-    #[test]
-    fn test_chain_concave_edges_v_groove() {
-        let mesh = make_v_groove(20.0, 5.0, 10.0);
-        let edge_map = build_edge_adjacency(&mesh);
-        let shared = compute_shared_edges(&mesh, &edge_map);
-
-        let concave: Vec<SharedEdge> = shared
-            .into_iter()
-            .filter(|e| e.is_concave && e.dihedral_angle > 0.1)
-            .collect();
-
-        let chains = chain_concave_edges(&concave, &mesh, 1.0);
-        assert!(
-            !chains.is_empty(),
-            "V-groove should produce at least one chain"
-        );
-
-        // Chain should follow the groove bottom (vertices 2 and 3)
-        for chain in &chains {
-            assert!(chain.len() >= 2, "Chain should have at least 2 vertices");
-        }
-    }
-
-    #[test]
-    fn test_sample_chain_spacing() {
-        let mesh = make_v_groove(20.0, 5.0, 10.0);
-        let chain = vec![2u32, 3]; // Groove bottom edge (20mm long)
-        let points = sample_chain(&mesh, &chain, 2.0);
-
-        // 20mm line sampled at 2mm → ~11 points (including endpoints)
         assert!(
             points.len() >= 8,
             "Should get at least 8 sample points on 20mm line at 2mm spacing, got {}",
             points.len()
         );
-
-        // All points should be along the groove bottom (y=0, z=-5)
         for p in &points {
             assert!(
                 (p.y - 0.0).abs() < 0.1,
@@ -1845,6 +1456,10 @@ mod tests {
                 p.z
             );
         }
+        let first = points.first().unwrap();
+        let last = points.last().unwrap();
+        assert!((first.x - 0.0).abs() < 1e-9, "should preserve first vertex");
+        assert!((last.x - 20.0).abs() < 1e-9, "should preserve last vertex");
     }
 
     #[test]
@@ -1857,22 +1472,9 @@ mod tests {
             bitangency_angle: 170.0,
             min_cut_length: 5.0,
             hookup_distance: 20.0,
-            num_offset_passes: 0,
             offset_stepover: 1.5,
             sampling: 1.0,
-            feed_rate: 1000.0,
-            plunge_rate: 500.0,
-            safe_z: 15.0,
-            stock_to_leave: 0.0,
-            min_valley_depth: reach_gap_threshold(),
-            bisector_strength: bisector_strength_default(),
-            reference_tool_diameter: reference_tool_diameter_default(),
-            detector: PencilDetector::Dihedral,
-            valley_saliency: valley_saliency_default(),
-            curvature_smoothing: curvature_smoothing_default(),
-            rest_cell_mm: rest_cell_default(),
-            route_width_factor: route_width_factor_default(),
-            reference_cutter: None,
+            ..Default::default()
         };
 
         let tp = pencil_toolpath(&mesh, &index, &tool, &params);
@@ -1889,25 +1491,10 @@ mod tests {
         let tool = BallEndmill::new(6.0, 25.0);
 
         let params = PencilParams {
-            bitangency_angle: 160.0,
             min_cut_length: 1.0,
             hookup_distance: 20.0,
-            num_offset_passes: 0,
             offset_stepover: 1.5,
-            sampling: 0.5,
-            feed_rate: 1000.0,
-            plunge_rate: 500.0,
-            safe_z: 15.0,
-            stock_to_leave: 0.0,
-            min_valley_depth: reach_gap_threshold(),
-            bisector_strength: bisector_strength_default(),
-            reference_tool_diameter: reference_tool_diameter_default(),
-            detector: PencilDetector::Dihedral,
-            valley_saliency: valley_saliency_default(),
-            curvature_smoothing: curvature_smoothing_default(),
-            rest_cell_mm: rest_cell_default(),
-            route_width_factor: route_width_factor_default(),
-            reference_cutter: None,
+            ..Default::default()
         };
 
         let tp = pencil_toolpath(&mesh, &index, &tool, &params);
@@ -1927,22 +1514,9 @@ mod tests {
             bitangency_angle: 170.0,
             min_cut_length: 5.0,
             hookup_distance: 20.0,
-            num_offset_passes: 0,
             offset_stepover: 1.5,
             sampling: 1.0,
-            feed_rate: 1000.0,
-            plunge_rate: 500.0,
-            safe_z: 15.0,
-            stock_to_leave: 0.0,
-            min_valley_depth: reach_gap_threshold(),
-            bisector_strength: bisector_strength_default(),
-            reference_tool_diameter: reference_tool_diameter_default(),
-            detector: PencilDetector::Dihedral,
-            valley_saliency: valley_saliency_default(),
-            curvature_smoothing: curvature_smoothing_default(),
-            rest_cell_mm: rest_cell_default(),
-            route_width_factor: route_width_factor_default(),
-            reference_cutter: None,
+            ..Default::default()
         };
 
         let params_offset = PencilParams {
@@ -2016,13 +1590,8 @@ mod tests {
             .filter(|e| e.is_concave && e.dihedral_angle > (std::f64::consts::PI - threshold_rad))
             .collect();
         let chains_all = chain_concave_edges(&concave, mesh, params.min_cut_length);
-        let reference = if params.reference_tool_diameter > tool.diameter() + 1e-6 {
-            Some(BallEndmill::new(params.reference_tool_diameter, 25.0))
-        } else {
-            None
-        };
-        let reference_ref: Option<&dyn MillingCutter> =
-            reference.as_ref().map(|c| c as &dyn MillingCutter);
+        let resolved = resolve_reference_cutter(params, tool.diameter());
+        let reference_ref = resolved.as_dyn();
         gate_chains_by_depth(
             chains_all,
             mesh,
@@ -2036,25 +1605,11 @@ mod tests {
 
     fn default_pencil_params_1mm() -> PencilParams {
         PencilParams {
-            bitangency_angle: 160.0,
-            min_cut_length: 2.0,
             hookup_distance: 3.0,
-            num_offset_passes: 0,
             offset_stepover: 0.25,
-            sampling: 0.5,
             feed_rate: 2000.0,
             plunge_rate: 132.0,
-            safe_z: 15.0,
-            stock_to_leave: 0.0,
-            min_valley_depth: reach_gap_threshold(),
-            bisector_strength: bisector_strength_default(),
-            reference_tool_diameter: reference_tool_diameter_default(),
-            detector: PencilDetector::Dihedral,
-            valley_saliency: valley_saliency_default(),
-            curvature_smoothing: curvature_smoothing_default(),
-            rest_cell_mm: rest_cell_default(),
-            route_width_factor: route_width_factor_default(),
-            reference_cutter: None,
+            ..Default::default()
         }
     }
 
@@ -2102,25 +1657,12 @@ mod tests {
         let index = SpatialIndex::build(&mesh, 5.0);
         let tool = BallEndmill::new(1.0, 25.0);
         let params = PencilParams {
-            bitangency_angle: 160.0,
-            min_cut_length: 2.0,
             hookup_distance: 3.0,
-            num_offset_passes: 0,
             offset_stepover: 0.25,
-            sampling: 0.5,
             feed_rate: 2000.0,
             plunge_rate: 132.0,
             safe_z: mesh.bbox.max.z + 5.0,
-            stock_to_leave: 0.0,
-            min_valley_depth: reach_gap_threshold(),
-            bisector_strength: bisector_strength_default(),
-            reference_tool_diameter: reference_tool_diameter_default(),
-            detector: PencilDetector::Dihedral,
-            valley_saliency: valley_saliency_default(),
-            curvature_smoothing: curvature_smoothing_default(),
-            rest_cell_mm: rest_cell_default(),
-            route_width_factor: route_width_factor_default(),
-            reference_cutter: None,
+            ..Default::default()
         };
 
         let edge_map = build_edge_adjacency(&mesh);
@@ -2329,46 +1871,6 @@ mod tests {
         TriangleMesh::from_raw(verts, tris)
     }
 
-    /// Regression for the concavity-sign bug: a tent (ridge peaking along y=0,
-    /// falling to both sides) is sharply folded but CONVEX — none of its seam
-    /// edges may be reported concave. The old `cross·edge_vec` test got this
-    /// wrong ~46% of the time on dense meshes, so pencil traced ridges too.
-    #[test]
-    fn test_ridge_seam_is_convex_not_concave() {
-        let (nx, ny) = (20usize, 32usize);
-        let (len_x, half_y, slope) = (20.0, 4.0, 2.0);
-        let sx = len_x / nx as f64;
-        let sy = 2.0 * half_y / ny as f64;
-        let mut verts = Vec::new();
-        for j in 0..=ny {
-            for i in 0..=nx {
-                let x = i as f64 * sx;
-                let y = -half_y + j as f64 * sy;
-                let z = slope * half_y - slope * y.abs(); // peak at y=0 → ridge
-                verts.push(P3::new(x, y, z));
-            }
-        }
-        let idx = |i: usize, j: usize| (j * (nx + 1) + i) as u32;
-        let mut tris = Vec::new();
-        for j in 0..ny {
-            for i in 0..nx {
-                tris.push([idx(i, j), idx(i + 1, j), idx(i + 1, j + 1)]);
-                tris.push([idx(i, j), idx(i + 1, j + 1), idx(i, j + 1)]);
-            }
-        }
-        let mesh = TriangleMesh::from_raw(verts, tris);
-        let edge_map = build_edge_adjacency(&mesh);
-        let shared = compute_shared_edges(&mesh, &edge_map);
-        let sharp_concave = shared
-            .iter()
-            .filter(|e| e.dihedral_angle.to_degrees() > 20.0 && e.is_concave)
-            .count();
-        assert_eq!(
-            sharp_concave, 0,
-            "ridge seam must be convex; got {sharp_concave} sharp concave edges"
-        );
-    }
-
     /// Fairing straightens a facet-scale zig-zag, pins the endpoints, and keeps
     /// the point count (so chains don't shrink at their tips).
     #[test]
@@ -2462,19 +1964,7 @@ mod tests {
             num_offset_passes: 2,
             offset_stepover: 1.5,
             sampling: 1.0,
-            feed_rate: 1000.0,
-            plunge_rate: 500.0,
-            safe_z: 15.0,
-            stock_to_leave: 0.0,
-            min_valley_depth: reach_gap_threshold(),
-            bisector_strength: bisector_strength_default(),
-            reference_tool_diameter: reference_tool_diameter_default(),
-            detector: PencilDetector::Dihedral,
-            valley_saliency: valley_saliency_default(),
-            curvature_smoothing: curvature_smoothing_default(),
-            rest_cell_mm: rest_cell_default(),
-            route_width_factor: route_width_factor_default(),
-            reference_cutter: None,
+            ..Default::default()
         };
 
         let unlinked = pencil_toolpath(&mesh, &index, &tool, &mk(0.0));
@@ -2489,40 +1979,6 @@ mod tests {
         );
     }
 
-    /// Bisector offset: zero for a symmetric valley, shifts +r over the floor for
-    /// a 90° L-corner, and scales with strength.
-    #[test]
-    fn test_bisector_offset_symmetric_zero_asymmetric_shifts() {
-        let r = 2.0;
-
-        // Symmetric V-valley: normals mirror about Z → (n1+n2) is vertical → no shift.
-        let a = 0.6_f64;
-        let b = (1.0 - a * a).sqrt();
-        let (sx, sy) = bisector_offset_xy(&V3::new(-a, 0.0, b), &V3::new(a, 0.0, b), r, 1.0);
-        assert!(
-            sx.abs() < 1e-9 && sy.abs() < 1e-9,
-            "symmetric valley must not shift: ({sx},{sy})"
-        );
-
-        // Asymmetric 90° L-corner: vertical wall (+x) + flat floor (+z) → shift +r in x.
-        let n_wall = V3::new(1.0, 0.0, 0.0);
-        let n_floor = V3::new(0.0, 0.0, 1.0);
-        let (lx, ly) = bisector_offset_xy(&n_wall, &n_floor, r, 1.0);
-        assert!(
-            (lx - r).abs() < 1e-9 && ly.abs() < 1e-9,
-            "L-corner must shift +r out over the floor: ({lx},{ly})"
-        );
-
-        // Strength scales it; 0 disables.
-        let (hx, _) = bisector_offset_xy(&n_wall, &n_floor, r, 0.5);
-        assert!(
-            (hx - r * 0.5).abs() < 1e-9,
-            "strength should scale the offset"
-        );
-        let (zx, zy) = bisector_offset_xy(&n_wall, &n_floor, r, 0.0);
-        assert!(zx == 0.0 && zy == 0.0, "strength 0 disables the shift");
-    }
-
     #[test]
     fn test_hemisphere_pencil_produces_ring() {
         // Hemisphere on a flat base has a concave ring where it meets the base
@@ -2534,22 +1990,10 @@ mod tests {
             bitangency_angle: 170.0,
             min_cut_length: 3.0,
             hookup_distance: 20.0,
-            num_offset_passes: 0,
             offset_stepover: 1.5,
             sampling: 1.0,
-            feed_rate: 1000.0,
-            plunge_rate: 500.0,
             safe_z: 25.0,
-            stock_to_leave: 0.0,
-            min_valley_depth: reach_gap_threshold(),
-            bisector_strength: bisector_strength_default(),
-            reference_tool_diameter: reference_tool_diameter_default(),
-            detector: PencilDetector::Dihedral,
-            valley_saliency: valley_saliency_default(),
-            curvature_smoothing: curvature_smoothing_default(),
-            rest_cell_mm: rest_cell_default(),
-            route_width_factor: route_width_factor_default(),
-            reference_cutter: None,
+            ..Default::default()
         };
 
         let edge_map = build_edge_adjacency(&mesh);
@@ -2566,5 +2010,137 @@ mod tests {
             !shared.is_empty(),
             "hemisphere tessellation should produce shared edges"
         );
+    }
+
+    /// Two disjoint flat squares along X with a gap between them (both at
+    /// z=0) — used to force a genuinely isolated off-mesh point in the middle
+    /// of a lifted polyline, with the gap wide enough that the tool's contact
+    /// query radius (== cutter radius) never touches either square's material
+    /// from the gap's centre.
+    fn make_two_flat_squares(square_size: f64, gap: f64, half_width: f64) -> TriangleMesh {
+        let vertices = vec![
+            P3::new(0.0, -half_width, 0.0),
+            P3::new(square_size, -half_width, 0.0),
+            P3::new(square_size, half_width, 0.0),
+            P3::new(0.0, half_width, 0.0),
+            P3::new(square_size + gap, -half_width, 0.0),
+            P3::new(2.0 * square_size + gap, -half_width, 0.0),
+            P3::new(2.0 * square_size + gap, half_width, 0.0),
+            P3::new(square_size + gap, half_width, 0.0),
+        ];
+        let triangles = vec![[0, 1, 2], [0, 2, 3], [4, 5, 6], [4, 6, 7]];
+        TriangleMesh::from_raw(vertices, triangles)
+    }
+
+    /// Regression: `lift_to_surface` marks an off-mesh point
+    /// (bisector-shifted past the mesh edge) as non-contact via NaN-Z, and the
+    /// emit loop (`emit_paths`) must split the pass there instead of a single
+    /// cutting move bridging the gap with the stale un-lifted Z. Drives the
+    /// real production path: `paths_from_sampled` (which calls
+    /// `lift_to_surface`) feeding `emit_paths` (the extracted Step-7 logic).
+    #[test]
+    fn test_lift_to_surface_gap_splits_pass_not_stitches() {
+        use crate::toolpath::MoveIntent;
+
+        // Square A: x in [0,10]. Square B: x in [16,26]. Gap (10,16) has no
+        // mesh at all, so a sample point near its centre (margin >= 3mm to
+        // either edge, versus the 1mm-radius tool's query reach) is
+        // unambiguously off-mesh.
+        let mesh = make_two_flat_squares(10.0, 6.0, 5.0);
+        let index = SpatialIndex::build(&mesh, 5.0);
+        let tool = BallEndmill::new(2.0, 25.0);
+
+        // Raw (pre-lift) polyline: a dummy sentinel Z far from the real
+        // surface (0.0) so an accidentally-un-lifted point is obvious. x=13.0
+        // sits in the gap's centre.
+        let xs = [0.0, 2.0, 4.0, 6.0, 8.0, 13.0, 18.0, 20.0, 22.0, 24.0, 26.0];
+        let raw: Vec<P3> = xs.iter().map(|&x| P3::new(x, 0.0, 999.0)).collect();
+
+        let run_with = |stock_to_leave: f64| {
+            let params = PencilParams {
+                bitangency_angle: 170.0,
+                min_cut_length: 1.0,
+                hookup_distance: 0.0, // force retract/replunge — isolate the split from linking
+                offset_stepover: 1.5,
+                sampling: 1.0,
+                stock_to_leave,
+                ..Default::default()
+            };
+
+            let mut all_paths = Vec::new();
+            paths_from_sampled(&raw, 1, 1, &mesh, &index, &tool, &params, &mut all_paths);
+            assert_eq!(all_paths.len(), 1, "centerline only, no offset passes");
+
+            emit_paths(&all_paths, &mesh, &index, &tool, &params)
+        };
+
+        let (tp0, _annotations0) = run_with(0.0);
+        assert!(
+            !tp0.moves.is_empty(),
+            "must still emit the two on-mesh runs"
+        );
+
+        // (a) no emitted move carries a non-finite Z — the NaN marker must
+        // never leak past the split into an actual toolpath move.
+        for m in &tp0.moves {
+            assert!(
+                m.target.z.is_finite(),
+                "emitted move must never carry a non-finite Z, got {:?}",
+                m.target
+            );
+        }
+
+        // (b) the mid-path off-mesh gap must force two independent plunge
+        // entries (one per on-mesh run) instead of one cutting move bridging
+        // the gap with the previous pass's stale interpolated Z.
+        let plunge_count = tp0
+            .moves
+            .iter()
+            .filter(|m| m.intent == MoveIntent::EntryPlunge)
+            .count();
+        assert_eq!(
+            plunge_count, 2,
+            "the mid-path off-mesh gap must split into two plunge entries, got {plunge_count}"
+        );
+
+        // No single cutting move should span anywhere near the ~6mm gap —
+        // that would mean the two runs got stitched together instead of split.
+        let mut prev: Option<P3> = None;
+        for m in &tp0.moves {
+            if m.intent == MoveIntent::FinishingCut
+                && let Some(p) = prev
+            {
+                let dxy = ((m.target.x - p.x).powi(2) + (m.target.y - p.y).powi(2)).sqrt();
+                assert!(
+                    dxy < 4.0,
+                    "a cutting move must not bridge the off-mesh gap: jumped {dxy:.2}mm"
+                );
+            }
+            prev = Some(m.target);
+        }
+
+        // (c) stock_to_leave must be applied to every contacted (on-mesh) cut
+        // Z — compare with/without.
+        let (tp_leave, _annotations_leave) = run_with(0.5);
+        let cut_zs = |tp: &Toolpath| -> Vec<f64> {
+            tp.moves
+                .iter()
+                .filter(|m| matches!(m.intent, MoveIntent::FinishingCut | MoveIntent::EntryPlunge))
+                .map(|m| m.target.z)
+                .collect()
+        };
+        let zs0 = cut_zs(&tp0);
+        let zs_leave = cut_zs(&tp_leave);
+        assert_eq!(
+            zs0.len(),
+            zs_leave.len(),
+            "stock_to_leave must not change which points are emitted as cuts"
+        );
+        for (z0, zl) in zs0.iter().zip(zs_leave.iter()) {
+            assert!(
+                (zl - z0 - 0.5).abs() < 1e-6,
+                "stock_to_leave must shift every contacted cut Z by exactly 0.5mm: {z0} vs {zl}"
+            );
+        }
     }
 }

@@ -285,7 +285,7 @@ impl MaterialGrid {
     ///
     /// AIR cells have distance 0; material/cleared cells get their true
     /// **Euclidean** distance to the nearest AIR cell, via the shared
-    /// Felzenszwalb EDT in `contour_extract`. O(cells).
+    /// Felzenszwalb EDT in `grid_field`. O(cells).
     ///
     /// Pre-Stage-0 this was a 4-connected BFS — a Manhattan metric that
     /// over-read up to ~41% wherever the nearest boundary is diagonal
@@ -296,7 +296,7 @@ impl MaterialGrid {
     /// (algorithm review 2026-06-12, F4).
     pub fn compute_boundary_distances(&self) -> Vec<f64> {
         let air: Vec<bool> = self.cells.iter().map(|&c| c == CELL_AIR).collect();
-        let mut dist = crate::contour_extract::distance_transform_2d(&air, self.rows, self.cols);
+        let mut dist = crate::grid_field::distance_transform_2d(&air, self.rows, self.cols);
         for d in &mut dist {
             *d *= self.cell_size;
         }

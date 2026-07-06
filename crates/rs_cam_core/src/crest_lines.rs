@@ -49,8 +49,9 @@ use std::collections::HashMap;
 use nalgebra::{Matrix3, Matrix4, Vector3 as NaVector3, Vector4};
 use tracing::info;
 
-use crate::geo::{P3, V3};
+use crate::geo::{P3, V3, polyline_length};
 use crate::mesh::TriangleMesh;
+use crate::pencil_dihedral::EdgeKey;
 
 /// Tunables for curvature-based valley detection.
 #[derive(Debug, Clone)]
@@ -79,18 +80,11 @@ impl Default for CrestParams {
     }
 }
 
-/// An undirected mesh edge identified by sorted vertex indices — the identity of
-/// a crest-line crossing point (a crossing always lies on a mesh edge, and the
-/// two triangles sharing that edge compute the identical crossing, so the edge
-/// key chains them).
-#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, PartialOrd, Ord)]
-struct EdgeKey(u32, u32);
-
-impl EdgeKey {
-    fn new(a: u32, b: u32) -> Self {
-        if a <= b { Self(a, b) } else { Self(b, a) }
-    }
-}
+// `EdgeKey` (undirected mesh edge identified by sorted vertex indices — the
+// identity of a crest-line crossing point, since a crossing always lies on a
+// mesh edge and the two triangles sharing that edge compute the identical
+// crossing) is shared with `pencil_dihedral`, which owns the canonical
+// definition; see the `use` import above.
 
 /// Per-vertex curvature field after diagonalisation, holding exactly what the
 /// valley march reads: the minimal principal direction t₂ (for sign-consistent
@@ -757,18 +751,6 @@ fn chain_segments(
     lines
 }
 
-/// Total XY/Z length of a polyline (mm).
-fn polyline_length(points: &[P3]) -> f64 {
-    points
-        .windows(2)
-        .map(|w| {
-            #[allow(clippy::indexing_slicing)] // windows(2) yields len-2 slices
-            let (a, b) = (w[0], w[1]);
-            ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt()
-        })
-        .sum()
-}
-
 /// Detect concave valley centrelines on `mesh` via curvature crest-line
 /// extraction. Returned polylines are world XY at edge crossings with Z at the
 /// interpolated surface; the caller re-lifts Z gouge-safely with the real cutter.
@@ -937,7 +919,6 @@ mod tests {
     #[ignore = "needs RS_CAM_CREST_FIXTURE; writes hillshade PNG to RS_CAM_CREST_OUT"]
     fn render_crest_hillshade() {
         use crate::mesh::SpatialIndex;
-        use crate::tool::BallEndmill;
         let envf = |k: &str, d: f64| {
             std::env::var(k)
                 .ok()
@@ -954,24 +935,17 @@ mod tests {
         let mesh = TriangleMesh::from_stl(std::path::Path::new(&path)).unwrap();
         let index = SpatialIndex::build_auto(&mesh);
 
-        // Hillshade DEM: drop a tiny ball on a grid to read the surface height.
-        let bbox = &mesh.bbox;
-        let nx = (((bbox.max.x - bbox.min.x) / cell).ceil() as usize).max(1) + 1;
-        let ny = (((bbox.max.y - bbox.min.y) / cell).ceil() as usize).max(1) + 1;
-        let probe = BallEndmill::new(0.1, 10.0);
-        let mut z = vec![f64::NAN; nx * ny];
-        let mut valid = vec![false; nx * ny];
-        for r in 0..ny {
-            for c in 0..nx {
-                let x = bbox.min.x + c as f64 * cell;
-                let y = bbox.min.y + r as f64 * cell;
-                let cl = crate::dropcutter::point_drop_cutter(x, y, &mesh, &index, &probe);
-                if cl.contacted {
-                    z[r * nx + c] = cl.z;
-                    valid[r * nx + c] = true;
-                }
-            }
-        }
+        // Hillshade DEM: drop a tiny ball on a grid to read the surface
+        // height — shared with rest_field's render_restfield_hillshade via
+        // hillshade_test_util.
+        let dem = crate::rest_field::hillshade_test_util::HillshadeDem::build(
+            &mesh,
+            &index,
+            cell,
+            crate::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
+            crate::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
+        );
+        let (nx, ny) = (dem.nx, dem.ny);
 
         let params = CrestParams {
             valley_saliency: sal,
@@ -983,45 +957,14 @@ mod tests {
         let gen_ms = t.elapsed().as_millis();
         let total_pts: usize = lines.iter().map(|l| l.len()).sum();
 
-        // NW-lit hillshade.
-        let ll = -1.0 / 3.0_f64.sqrt();
-        let light = [ll, ll, 1.0 / 3.0_f64.sqrt()];
-        let mut img = image::RgbImage::from_pixel(nx as u32, ny as u32, image::Rgb([10, 10, 20]));
-        for r in 0..ny {
-            for c in 0..nx {
-                if !valid[r * nx + c] {
-                    continue;
-                }
-                let (a, b) = (c.saturating_sub(1), (c + 1).min(nx - 1));
-                let zx = (z[r * nx + b] - z[r * nx + a]) / (2.0 * cell);
-                let (a2, b2) = (r.saturating_sub(1), (r + 1).min(ny - 1));
-                let zy = (z[b2 * nx + c] - z[a2 * nx + c]) / (2.0 * cell);
-                let nrm = (zx * zx + zy * zy + 1.0).sqrt();
-                let dot = ((-zx * light[0] - zy * light[1] + light[2]) / nrm).clamp(0.0, 1.0);
-                let g = (40.0 + dot * 200.0) as u8;
-                let py = (ny - 1 - r) as u32;
-                img.put_pixel(c as u32, py, image::Rgb([g, g, g]));
-            }
-        }
-        // Overlay valley crest lines in bright green.
-        for line in &lines {
-            for p in line {
-                let c = ((p.x - bbox.min.x) / cell).round();
-                let r = ((p.y - bbox.min.y) / cell).round();
-                if c < 0.0 || r < 0.0 || c >= nx as f64 || r >= ny as f64 {
-                    continue;
-                }
-                let py = (ny - 1 - r as usize) as i32;
-                let px = c as i32;
-                for (ox, oy) in [(0i32, 0i32), (1, 0), (-1, 0), (0, 1), (0, -1)] {
-                    let xx = px + ox;
-                    let yy = py + oy;
-                    if xx >= 0 && yy >= 0 && (xx as usize) < nx && (yy as usize) < ny {
-                        img.put_pixel(xx as u32, yy as u32, image::Rgb([60, 255, 90]));
-                    }
-                }
-            }
-        }
+        // NW-lit hillshade, overlaid with the valley crest lines in bright green.
+        let mut img = dem.render();
+        crate::rest_field::hillshade_test_util::plot_polylines(
+            &dem,
+            &mut img,
+            &lines,
+            image::Rgb([60, 255, 90]),
+        );
         img.save(&out).unwrap();
         std::fs::write(
             out.replace(".png", ".txt"),

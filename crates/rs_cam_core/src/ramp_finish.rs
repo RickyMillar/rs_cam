@@ -17,8 +17,8 @@
 
 use crate::debug_trace::ToolpathDebugContext;
 use crate::geo::P3;
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::slope::{SlopeMap, SurfaceHeightmap};
 use crate::tool::MillingCutter;
 use crate::toolpath::{Toolpath, simplify_path_3d};
 use crate::waterline::waterline_contours;
@@ -288,39 +288,6 @@ fn ramp_between_contours(
     path
 }
 
-/// Filter a path by slope confinement.
-///
-/// Returns segments of the path that fall within the slope angle range.
-/// Each segment is a contiguous run of points within the range.
-fn slope_confined_segments(
-    path: &[P3],
-    slope_map: &SlopeMap,
-    slope_from_rad: f64,
-    slope_to_rad: f64,
-) -> Vec<Vec<P3>> {
-    let mut segments = Vec::new();
-    let mut current: Vec<P3> = Vec::new();
-
-    for pt in path {
-        let in_range = slope_map
-            .angle_at_world(pt.x, pt.y)
-            .is_some_and(|a| a >= slope_from_rad && a <= slope_to_rad);
-
-        if in_range {
-            current.push(*pt);
-        } else if current.len() >= 2 {
-            segments.push(std::mem::take(&mut current));
-        } else {
-            current.clear();
-        }
-    }
-    if current.len() >= 2 {
-        segments.push(current);
-    }
-
-    segments
-}
-
 /// Generate a ramp finishing toolpath.
 ///
 /// Produces continuous helical descent along steep walls instead of discrete
@@ -336,6 +303,21 @@ pub fn ramp_finish_toolpath(
     tp
 }
 
+/// Cancellable variant of [`ramp_finish_toolpath`].
+#[allow(clippy::expect_used)]
+pub fn ramp_finish_toolpath_with_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &RampFinishParams,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
+    let (tp, _) = ramp_finish_toolpath_structured_annotated_with_cancel(
+        mesh, index, cutter, params, None, cancel,
+    )?;
+    Ok(tp)
+}
+
 fn runtime_annotations_to_labels(
     annotations: &[RampFinishRuntimeAnnotation],
 ) -> Vec<(usize, String)> {
@@ -345,7 +327,8 @@ fn runtime_annotations_to_labels(
         .collect()
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+// infallible: cancel closure always returns false, so Cancelled is unreachable
+#[allow(clippy::indexing_slicing, clippy::expect_used)]
 pub fn ramp_finish_toolpath_structured_annotated(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -353,40 +336,60 @@ pub fn ramp_finish_toolpath_structured_annotated(
     params: &RampFinishParams,
     debug: Option<&ToolpathDebugContext>,
 ) -> (Toolpath, Vec<RampFinishRuntimeAnnotation>) {
-    let tool_radius = cutter.radius();
+    let never_cancel = || false;
+    ramp_finish_toolpath_structured_annotated_with_cancel(
+        mesh,
+        index,
+        cutter,
+        params,
+        debug,
+        &never_cancel,
+    )
+    .expect("non-cancellable ramp finish toolpath should never be cancelled")
+}
+
+/// Cancellable variant of [`ramp_finish_toolpath_structured_annotated`].
+/// Polls `cancel` once per Z level while building waterline contours, once
+/// per terrace (adjacent Z-level pair) while ramping between them, and once
+/// per ramp segment during toolpath emission.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub fn ramp_finish_toolpath_structured_annotated_with_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &RampFinishParams,
+    debug: Option<&ToolpathDebugContext>,
+    cancel: &dyn CancelCheck,
+) -> Result<(Toolpath, Vec<RampFinishRuntimeAnnotation>), Cancelled> {
+    check_cancel(cancel)?;
     let bbox = &mesh.bbox;
 
-    // Build surface heightmap and slope map
-    let cell_size = (tool_radius / 4.0).max(params.tolerance);
-    let origin_x = bbox.min.x - tool_radius;
-    let origin_y = bbox.min.y - tool_radius;
-    let extent_x = bbox.max.x + tool_radius;
-    let extent_y = bbox.max.y + tool_radius;
-    let cols = ((extent_x - origin_x) / cell_size).ceil() as usize + 1;
-    let rows = ((extent_y - origin_y) / cell_size).ceil() as usize + 1;
-
-    let surface_hm = SurfaceHeightmap::from_mesh(
-        mesh, index, cutter, origin_x, origin_y, rows, cols, cell_size, bbox.min.z,
-    );
-    let slope_map = surface_hm.slope_map();
+    // Build surface heightmap and slope map (shared setup, see finish_setup.rs)
+    let surface = crate::finish_setup::build_finish_surface_with_cancel(
+        mesh,
+        index,
+        cutter,
+        params.tolerance,
+        cancel,
+    )?;
+    let surface_hm = surface.heightmap;
+    let slope_map = surface.slope_map;
+    let cell_size = surface_hm.cell_size;
 
     // Compute Z range
     let z_top = bbox.max.z + params.stock_to_leave;
     let z_bottom = surface_hm.min_z() + params.stock_to_leave;
     let z_step = params.max_stepdown;
 
-    // Generate Z levels
-    let mut z_levels = Vec::new();
-    let mut z = z_top;
-    while z > z_bottom + z_step * 0.5 {
-        z_levels.push(z);
-        z -= z_step;
-    }
-    z_levels.push(z_bottom);
+    // Generate Z levels. `snap_to_bottom = true` guarantees the ladder ends
+    // exactly at `z_bottom` (needed so the final terrace's lower contour is
+    // the true bottom, not an arbitrary short-of-bottom level); epsilon is
+    // half a step, matching the original inline arithmetic exactly.
+    let z_levels = crate::finish_setup::z_ladder(z_top, z_bottom, z_step, z_step * 0.5, true);
 
     if z_levels.len() < 2 {
         info!("Ramp finish: insufficient Z range for ramping");
-        return (Toolpath::new(), Vec::new());
+        return Ok((Toolpath::new(), Vec::new()));
     }
 
     info!(
@@ -397,21 +400,23 @@ pub fn ramp_finish_toolpath_structured_annotated(
     );
 
     // Generate waterline contours at each Z level
-    let level_contours: Vec<Vec<ParamContour>> = z_levels
-        .iter()
-        .map(|&z| {
-            let raw = waterline_contours(mesh, index, cutter, z, params.sampling);
+    let mut level_contours: Vec<Vec<ParamContour>> = Vec::with_capacity(z_levels.len());
+    for &z in &z_levels {
+        check_cancel(cancel)?;
+        let raw = waterline_contours(mesh, index, cutter, z, params.sampling);
+        level_contours.push(
             raw.iter()
                 .filter(|c| c.len() >= 3)
                 .map(|c| ParamContour::from_contour(c))
-                .collect()
-        })
-        .collect();
+                .collect(),
+        );
+    }
 
     // Slope confinement bounds
     let slope_from_rad = params.slope_from.to_radians();
     let slope_to_rad = params.slope_to.to_radians();
-    let use_slope_filter = params.slope_from > 0.01 || params.slope_to < 89.99;
+    let use_slope_filter =
+        crate::finish_setup::slope_filter_active(params.slope_from, params.slope_to);
 
     // Step length for ramp point generation (controls output resolution)
     let step_len = cell_size * 2.0;
@@ -429,6 +434,7 @@ pub fn ramp_finish_toolpath_structured_annotated(
     };
 
     for (terrace_pos, &(upper_idx, lower_idx)) in level_pairs.iter().enumerate() {
+        check_cancel(cancel)?;
         let upper_contours = &level_contours[upper_idx];
         let lower_contours = &level_contours[lower_idx];
 
@@ -457,12 +463,18 @@ pub fn ramp_finish_toolpath_structured_annotated(
 
             // Apply slope confinement if configured
             if use_slope_filter {
-                let segments =
-                    slope_confined_segments(&ramp_path, &slope_map, slope_from_rad, slope_to_rad);
+                let segments = crate::point_runs::split_runs(
+                    &ramp_path,
+                    |_, pt: &P3| {
+                        slope_map
+                            .angle_at_world(pt.x, pt.y)
+                            .is_some_and(|a| a >= slope_from_rad && a <= slope_to_rad)
+                    },
+                    crate::point_runs::RunTopology::Open,
+                    2,
+                );
                 for seg in segments {
-                    if seg.len() >= 2 {
-                        terrace_segments.push(seg);
-                    }
+                    terrace_segments.push(seg);
                 }
             } else {
                 terrace_segments.push(ramp_path);
@@ -498,6 +510,7 @@ pub fn ramp_finish_toolpath_structured_annotated(
     let should_reverse = matches!(params.direction, CutDirection::Conventional);
 
     for (i, segment) in all_ramp_segments.iter().enumerate() {
+        check_cancel(cancel)?;
         let simplified = simplify_path_3d(&segment.path, params.tolerance);
         if simplified.len() < 2 {
             continue;
@@ -551,7 +564,7 @@ pub fn ramp_finish_toolpath_structured_annotated(
         }
     }
 
-    (tp, annotations)
+    Ok((tp, annotations))
 }
 
 pub fn ramp_finish_toolpath_annotated(
@@ -576,6 +589,7 @@ pub fn ramp_finish_toolpath_annotated(
 mod tests {
     use super::*;
     use crate::mesh::SpatialIndex;
+    use crate::slope::SlopeMap;
     use crate::tool::BallEndmill;
 
     fn make_hemisphere() -> (TriangleMesh, SpatialIndex) {
@@ -800,22 +814,25 @@ mod tests {
             .map(|i| P3::new(i as f64, 5.0, 10.0 - i as f64))
             .collect();
 
+        let confined_segments = |from_rad: f64, to_rad: f64| -> Vec<Vec<P3>> {
+            crate::point_runs::split_runs(
+                &path,
+                |_, pt: &P3| {
+                    slope_map
+                        .angle_at_world(pt.x, pt.y)
+                        .is_some_and(|a| a >= from_rad && a <= to_rad)
+                },
+                crate::point_runs::RunTopology::Open,
+                2,
+            )
+        };
+
         // slope_from=30, slope_to=90: surface is 45°, should pass
-        let segs = slope_confined_segments(
-            &path,
-            &slope_map,
-            30.0_f64.to_radians(),
-            90.0_f64.to_radians(),
-        );
+        let segs = confined_segments(30.0_f64.to_radians(), 90.0_f64.to_radians());
         assert!(!segs.is_empty(), "45° surface should pass 30-90° filter");
 
         // slope_from=50, slope_to=90: surface is 45°, should fail
-        let segs = slope_confined_segments(
-            &path,
-            &slope_map,
-            50.0_f64.to_radians(),
-            90.0_f64.to_radians(),
-        );
+        let segs = confined_segments(50.0_f64.to_radians(), 90.0_f64.to_radians());
         assert!(segs.is_empty(), "45° surface should fail 50-90° filter");
     }
 

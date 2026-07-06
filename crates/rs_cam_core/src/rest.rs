@@ -1,4 +1,4 @@
-//! Rest machining toolpath generation.
+//! Rest machining toolpath generation — the 2D polygon rest op.
 //!
 //! Generates toolpaths for a smaller tool to clean up material that a
 //! larger tool could not reach. Uses geometric comparison: computes the
@@ -13,6 +13,12 @@
 //!    tool's reachable region. Cut only where it isn't.
 //!
 //! Reference: research/raw_algorithms.md §4.5
+//!
+//! Not to be confused with [`crate::rest_field`], the 3D tool-radius-aware
+//! rest-*depth* field used by pencil finishing to find where a fine detail
+//! tool still has material left after a coarser rough/finish pass. That
+//! module works on mesh dexel/heightmap depth comparisons; this one works
+//! on 2D polygon offsets. Zero code overlap between the two.
 
 use crate::geo::{P2, P3};
 use crate::polygon::{Polygon2, offset_polygon};
@@ -91,6 +97,11 @@ pub fn rest_machining_toolpath(polygon: &Polygon2, params: &RestParams) -> Toolp
         );
     }
 
+    // Sampling resolution along each scan line, in mm. Deliberately clamped
+    // to 0.25-0.5mm regardless of the actual tool radius passed in — a tiny
+    // rest tool doesn't get a finer sample step, and a huge one doesn't get
+    // a coarser one. This bounds the per-line sample count for very small or
+    // very large tools; it is not a tool-radius-proportional resolution.
     let sample_step = params.tool_radius.clamp(0.25, 0.5);
 
     for line in &lines {

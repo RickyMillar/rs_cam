@@ -7,6 +7,7 @@
 
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::{BoundingBox3, P3, V3};
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
@@ -63,13 +64,32 @@ struct FlatRegion {
 /// 3. For each region, raster across the XY bounding box, including only points
 ///    where the underlying triangle is flat.
 /// 4. Insert rapids to skip non-flat stretches; retract between regions.
-#[allow(clippy::indexing_slicing)] // mesh vertex/face indexing is bounded by mesh structure
+// infallible: cancel closure always returns false, so Cancelled is unreachable
+#[allow(clippy::indexing_slicing, clippy::expect_used)]
 pub fn horizontal_finish_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &HorizontalFinishParams,
 ) -> Toolpath {
+    let never_cancel = || false;
+    horizontal_finish_toolpath_with_cancel(mesh, index, cutter, params, &never_cancel)
+        .expect("non-cancellable horizontal finish toolpath should never be cancelled")
+}
+
+/// Cancellable variant of [`horizontal_finish_toolpath`]. Polls `cancel`
+/// once per flat Z-region and again once per raster row within each region
+/// (the per-row per-point drop-cutter sampling is the expensive step on a
+/// fine-stepover mesh).
+#[allow(clippy::indexing_slicing)] // mesh vertex/face indexing is bounded by mesh structure
+pub fn horizontal_finish_toolpath_with_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &HorizontalFinishParams,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
+    check_cancel(cancel)?;
     let mut tp = Toolpath::new();
 
     let threshold_cos = params.angle_threshold.to_radians().cos();
@@ -104,7 +124,7 @@ pub fn horizontal_finish_toolpath(
     }
 
     if flat_tris.is_empty() {
-        return tp;
+        return Ok(tp);
     }
 
     // ── Step 2-3: group flat triangles by similar Z ──────────────────
@@ -157,14 +177,6 @@ pub fn horizontal_finish_toolpath(
     }
 
     // ── Step 4-5: raster each region ─────────────────────────────────
-    // Build a set of flat face indices for quick membership tests.
-    let mut flat_face_set = vec![false; mesh.faces.len()];
-    for region in &regions {
-        for t in &region.tris {
-            flat_face_set[t.face_index] = true;
-        }
-    }
-
     // Sort regions from highest Z to lowest (machine top shelves first to avoid
     // collisions, conventional for multi-level finishing).
     regions.sort_by(|a, b| {
@@ -176,6 +188,19 @@ pub fn horizontal_finish_toolpath(
     let cutter_radius = cutter.radius();
 
     for region in &regions {
+        check_cancel(cancel)?;
+        // Build a per-region flat-face set so that a cell is only machined by
+        // THIS region's raster if its triangle actually belongs to this
+        // region's Z band. Using a single mesh-wide set here would let two
+        // regions with overlapping XY bboxes but different Z each machine
+        // the other's flats (duplicate cutting, wrong Z pass ordering).
+        let mut region_face_set = vec![false; mesh.faces.len()];
+        for t in &region.tris {
+            if let Some(slot) = region_face_set.get_mut(t.face_index) {
+                *slot = true;
+            }
+        }
+
         let bbox = region.bbox.expand_by(cutter_radius);
 
         // Number of raster lines (Y direction) and sample points (X direction)
@@ -184,13 +209,11 @@ pub fn horizontal_finish_toolpath(
         let n_cols = ((bbox.max.x - bbox.min.x) / step_x).ceil() as usize + 1;
 
         for line_idx in 0..n_lines {
+            check_cancel(cancel)?;
             let y = bbox.min.y + line_idx as f64 * params.stepover;
 
             // Zigzag: alternate scan direction per line.
             let forward = line_idx % 2 == 0;
-
-            // Collect feed-segments (contiguous runs of flat points).
-            let mut segment: Vec<P3> = Vec::new();
 
             let col_range: Box<dyn Iterator<Item = usize>> = if forward {
                 Box::new(0..n_cols)
@@ -198,54 +221,51 @@ pub fn horizontal_finish_toolpath(
                 Box::new((0..n_cols).rev())
             };
 
-            for col_idx in col_range {
-                let x = bbox.min.x + col_idx as f64 * step_x;
+            // Sample every column on this line. `None` marks a column that's
+            // either off the mesh or over a non-flat triangle — a gap that
+            // must break the run rather than being chorded through.
+            let row_points: Vec<Option<P3>> = col_range
+                .map(|col_idx| {
+                    let x = bbox.min.x + col_idx as f64 * step_x;
 
-                // Drop cutter to find Z on the mesh surface.
-                let cl = point_drop_cutter(x, y, mesh, index, cutter);
-                if !cl.contacted {
-                    // Off the mesh — flush any accumulated segment.
-                    if !segment.is_empty() {
-                        tp.emit_path_segment_with_intent(
-                            &segment,
-                            params.safe_z,
-                            params.feed_rate,
-                            params.plunge_rate,
-                            crate::toolpath::MoveIntent::FinishingCut,
-                        );
-                        segment.clear();
+                    // Drop cutter to find Z on the mesh surface.
+                    let cl = point_drop_cutter(x, y, mesh, index, cutter);
+                    if !cl.contacted {
+                        return None;
                     }
-                    continue;
-                }
 
-                // Check if the triangle(s) under this point are flat.
-                // Query the spatial index for triangles near this point and check
-                // if any flat triangle contains this XY coordinate.
-                let is_flat =
-                    is_point_over_flat_triangle(x, y, mesh, index, cutter_radius, &flat_face_set);
+                    // Check if the triangle(s) under this point are flat.
+                    // Query the spatial index for triangles near this point and
+                    // check if any flat triangle contains this XY coordinate.
+                    let is_flat = is_point_over_flat_triangle(
+                        x,
+                        y,
+                        mesh,
+                        index,
+                        cutter_radius,
+                        &region_face_set,
+                    );
+                    if !is_flat {
+                        return None;
+                    }
 
-                if is_flat {
                     let z = cl.z + params.stock_to_leave;
-                    segment.push(P3::new(x, y, z));
-                } else {
-                    // Not flat — flush segment, skip this point.
-                    if !segment.is_empty() {
-                        tp.emit_path_segment_with_intent(
-                            &segment,
-                            params.safe_z,
-                            params.feed_rate,
-                            params.plunge_rate,
-                            crate::toolpath::MoveIntent::FinishingCut,
-                        );
-                        segment.clear();
-                    }
-                }
-            }
+                    Some(P3::new(x, y, z))
+                })
+                .collect();
 
-            // Flush any remaining segment at end of line.
-            if !segment.is_empty() {
+            // Collect feed-segments: contiguous runs of flat points.
+            let segments = crate::point_runs::split_runs(
+                &row_points,
+                |_, p: &Option<P3>| p.is_some(),
+                crate::point_runs::RunTopology::Open,
+                1,
+            );
+
+            for segment in segments {
+                let pts: Vec<P3> = segment.into_iter().flatten().collect();
                 tp.emit_path_segment_with_intent(
-                    &segment,
+                    &pts,
                     params.safe_z,
                     params.feed_rate,
                     params.plunge_rate,
@@ -258,7 +278,7 @@ pub fn horizontal_finish_toolpath(
     // Final retract to safe Z.
     tp.final_retract(params.safe_z);
 
-    tp
+    Ok(tp)
 }
 
 #[allow(clippy::indexing_slicing)] // tri_idx bounded by flat_face_set.len() check
@@ -397,5 +417,123 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_horizontal_finish_no_cross_region_contamination() {
+        // Two flat plateaus at different Z whose XY bounding boxes overlap,
+        // forming an "L" stepped terrain:
+        //   Upper (Z=5): an L-shape = left column [0,10]x[0,30] (quad U1)
+        //                 unioned with top row [0,30]x[20,30] (quad U2).
+        //   Lower (Z=0): the remaining rectangle [10,30]x[0,20] (quad L1).
+        // Upper's bbox [0,30]x[0,30] fully contains Lower's bbox
+        // [10,30]x[0,20] even though the two plateaus never physically
+        // overlap in XY. A membership test against a single mesh-wide flat
+        // set (rather than per-region membership) lets each region's raster
+        // wander into the other's territory and re-cut it.
+        let vertices = vec![
+            // Upper L-shape: left column (quad U1)
+            P3::new(0.0, 0.0, 5.0),
+            P3::new(10.0, 0.0, 5.0),
+            P3::new(10.0, 30.0, 5.0),
+            P3::new(0.0, 30.0, 5.0),
+            // Upper L-shape: top row (quad U2)
+            P3::new(0.0, 20.0, 5.0),
+            P3::new(30.0, 20.0, 5.0),
+            P3::new(30.0, 30.0, 5.0),
+            P3::new(0.0, 30.0, 5.0),
+            // Lower shelf (quad L1)
+            P3::new(10.0, 0.0, 0.0),
+            P3::new(30.0, 0.0, 0.0),
+            P3::new(30.0, 20.0, 0.0),
+            P3::new(10.0, 20.0, 0.0),
+        ];
+        let triangles = vec![
+            [0, 1, 2],
+            [0, 2, 3],
+            [4, 5, 6],
+            [4, 6, 7],
+            [8, 9, 10],
+            [8, 10, 11],
+        ];
+        let mesh = TriangleMesh::from_raw(vertices, triangles);
+        let index = SpatialIndex::build_auto(&mesh);
+        // radius = 1.5, chosen (with stepover = 2.0 below) so the raster grid
+        // lands on half-integer XY coordinates and never samples exactly on
+        // the shared L1/U1/U2 boundary lines (x=10, y=20) — that would be a
+        // separate, expected containment-epsilon ambiguity unrelated to the
+        // cross-region bug under test.
+        let cutter = BallEndmill::new(3.0, 25.0);
+
+        let params = HorizontalFinishParams {
+            angle_threshold: 5.0,
+            stepover: 2.0,
+            feed_rate: 1000.0,
+            plunge_rate: 300.0,
+            safe_z: 10.0,
+            stock_to_leave: 0.0,
+        };
+
+        let tp = horizontal_finish_toolpath(&mesh, &index, &cutter, &params);
+        assert!(
+            !tp.moves.is_empty(),
+            "Stepped mesh should produce a non-empty toolpath"
+        );
+
+        // (a) No XY location should be cut more than once. The drop-cutter Z
+        // at a given (x, y) is determined purely by mesh geometry, so a
+        // cross-region-contamination bug does not change *which* Z gets
+        // recorded there — it duplicates the visit (once from the owning
+        // region's raster, once from the intruding region's raster), which
+        // is exactly what "each XY location is cut at exactly one Z" rules
+        // out: any location visited twice violates that regardless of
+        // whether the recorded Z values happen to match.
+        let mut visits: std::collections::HashMap<(i64, i64), Vec<f64>> =
+            std::collections::HashMap::new();
+        for m in &tp.moves {
+            if let crate::toolpath::MoveType::Linear { .. } = m.move_type {
+                let key = (
+                    (m.target.x * 100.0).round() as i64,
+                    (m.target.y * 100.0).round() as i64,
+                );
+                visits.entry(key).or_default().push(m.target.z);
+            }
+        }
+        for (xy, zs) in &visits {
+            assert!(
+                zs.len() == 1,
+                "XY {xy:?} was cut {} times (expected exactly once): Z values {zs:?}",
+                zs.len()
+            );
+        }
+
+        // (b) Each plateau is still fully covered at its own Z: check an
+        // interior point of the lower shelf and of both arms of the upper L.
+        // (20.5, 8.5) sits in the XY zone the pre-fix bug would have let the
+        // upper (Z=5) raster wander into and re-cut at Z=0.
+        let cut_near = |target: (f64, f64), z_expect: f64| {
+            tp.moves.iter().any(|m| {
+                if let crate::toolpath::MoveType::Linear { .. } = m.move_type {
+                    (m.target.x - target.0).abs() <= 1e-6
+                        && (m.target.y - target.1).abs() <= 1e-6
+                        && (m.target.z - z_expect).abs() <= 1e-6
+                } else {
+                    false
+                }
+            })
+        };
+
+        assert!(
+            cut_near((20.5, 8.5), 0.0),
+            "Lower shelf interior should be cut at Z=0"
+        );
+        assert!(
+            cut_near((2.5, 4.5), 5.0),
+            "Upper L left-column interior should be cut at Z=5"
+        );
+        assert!(
+            cut_near((18.5, 24.5), 5.0),
+            "Upper L top-row interior should be cut at Z=5"
+        );
     }
 }

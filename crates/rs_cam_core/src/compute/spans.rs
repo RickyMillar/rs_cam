@@ -273,7 +273,7 @@ fn cutting_runs(toolpath: &Toolpath) -> Vec<CutRun> {
     let mut z_min = f64::INFINITY;
 
     for (move_index, mv) in toolpath.moves.iter().enumerate() {
-        let is_cut = is_cutting_move(&mv.move_type);
+        let is_cut = mv.move_type.is_cutting();
         if is_cut {
             if active_start.is_none() {
                 active_start = Some(move_index.saturating_sub(1));
@@ -285,7 +285,7 @@ fn cutting_runs(toolpath: &Toolpath) -> Vec<CutRun> {
         let next_is_cut = toolpath
             .moves
             .get(move_index + 1)
-            .is_some_and(|next| is_cutting_move(&next.move_type));
+            .is_some_and(|next| next.move_type.is_cutting());
         if active_start.is_some() && is_cut && !next_is_cut {
             let start = active_start.take().unwrap_or(0);
             let end = (move_index + 1).min(toolpath.moves.len());
@@ -307,7 +307,7 @@ fn run_nominal_z(toolpath: &Toolpath, run: &CutRun) -> Option<f64> {
         .enumerate()
         .skip(run.start_move)
         .take(run.end_move.saturating_sub(run.start_move))
-        .filter(|(_, mv)| is_cutting_move(&mv.move_type))
+        .filter(|(_, mv)| mv.move_type.is_cutting())
         .map(|(_, mv)| mv.target.z)
         .min_by(f64::total_cmp)
 }
@@ -317,13 +317,6 @@ fn nearest_level(z: f64, levels: &[f64]) -> Option<f64> {
         .iter()
         .copied()
         .min_by(|left, right| (z - *left).abs().total_cmp(&(z - *right).abs()))
-}
-
-fn is_cutting_move(move_type: &MoveType) -> bool {
-    matches!(
-        move_type,
-        MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
-    )
 }
 
 fn approx_eq(left: f64, right: f64) -> bool {

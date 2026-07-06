@@ -5,8 +5,9 @@
 //! automatically so the tool edge follows the pocket wall.
 
 use crate::geo::{P2, P3};
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::polygon::{Polygon2, offset_polygon};
-use crate::toolpath::Toolpath;
+use crate::toolpath::{MoveIntent, Toolpath};
 
 /// Parameters for pocket clearing.
 pub struct PocketParams {
@@ -40,14 +41,51 @@ pub struct PocketParams {
     stepover = params.stepover,
 ))]
 pub fn pocket_toolpath(polygon: &Polygon2, params: &PocketParams) -> Toolpath {
-    let contours = pocket_contours(polygon, params.tool_radius, params.stepover);
-    contours_to_toolpath(&contours, params)
+    let never_cancel = || false;
+    // infallible: cancel closure always returns false, so Cancelled is unreachable
+    #[allow(clippy::expect_used)]
+    pocket_toolpath_with_cancel(polygon, params, &never_cancel)
+        .expect("non-cancellable pocket toolpath should never be cancelled")
+}
+
+/// Cancellable variant of [`pocket_toolpath`]. Polls `cancel` once per
+/// concentric offset ring via [`pocket_contours_with_cancel`] — pocket's
+/// `loop {}` (planning/finishing_stack_review_2026-07.md S.5: "worst
+/// loops... pocket (unbounded offset loop)") is otherwise unbounded for a
+/// large polygon with a tiny stepover.
+pub fn pocket_toolpath_with_cancel(
+    polygon: &Polygon2,
+    params: &PocketParams,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
+    let contours =
+        pocket_contours_with_cancel(polygon, params.tool_radius, params.stepover, cancel)?;
+    Ok(contours_to_toolpath(&contours, params))
 }
 
 /// Generate the 2D contour rings for pocket clearing (no Z, no toolpath yet).
 ///
 /// Useful for visualization or when you need the geometry separately.
 pub fn pocket_contours(polygon: &Polygon2, tool_radius: f64, stepover: f64) -> Vec<Vec<P2>> {
+    let never_cancel = || false;
+    // infallible: cancel closure always returns false, so Cancelled is unreachable
+    #[allow(clippy::expect_used)]
+    pocket_contours_with_cancel(polygon, tool_radius, stepover, &never_cancel)
+        .expect("non-cancellable pocket contours should never be cancelled")
+}
+
+/// Cancellable variant of [`pocket_contours`]. Checks `cancel` as its very
+/// first statement, then once per stepover ring (the outer `loop {}`
+/// below) — the loop terminates only when an offset ring collapses to
+/// nothing, so a large simple polygon with a very small stepover can
+/// otherwise run for a long time with no way to interrupt it.
+pub fn pocket_contours_with_cancel(
+    polygon: &Polygon2,
+    tool_radius: f64,
+    stepover: f64,
+    cancel: &dyn CancelCheck,
+) -> Result<Vec<Vec<P2>>, Cancelled> {
+    check_cancel(cancel)?;
     // First offset: tool radius compensation (tool edge touches wall)
     let compensated = offset_polygon(polygon, tool_radius);
 
@@ -72,6 +110,7 @@ pub fn pocket_contours(polygon: &Polygon2, tool_radius: f64, stepover: f64) -> V
         // Generate inner contours by repeated stepover offset
         let mut current = vec![comp.clone()];
         loop {
+            check_cancel(cancel)?;
             let mut next = Vec::new();
             for poly in &current {
                 for inner in offset_polygon(poly, stepover) {
@@ -98,10 +137,16 @@ pub fn pocket_contours(polygon: &Polygon2, tool_radius: f64, stepover: f64) -> V
         }
     }
 
-    all_contours
+    Ok(all_contours)
 }
 
 /// Convert 2D contour rings into a 3D toolpath at the given parameters.
+///
+/// S.7 (planning/finishing_stack_review_2026-07.md): each contour is emitted
+/// via the shared `emit_closed_contour_with_intent` rapid→plunge→feed→close→
+/// retract envelope instead of open-coding it — byte-identical to the
+/// previous hand-rolled sequence for every contour `pocket_contours`
+/// produces (all are pre-filtered to >= 3 points before being pushed).
 fn contours_to_toolpath(contours: &[Vec<P2>], params: &PocketParams) -> Toolpath {
     let mut tp = Toolpath::new();
 
@@ -111,47 +156,22 @@ fn contours_to_toolpath(contours: &[Vec<P2>], params: &PocketParams) -> Toolpath
         }
 
         // Optionally reverse for climb milling (CW direction)
-        let pts: Vec<&P2> = if params.climb {
+        let ordered: Vec<&P2> = if params.climb {
             contour.iter().rev().collect()
         } else {
             contour.iter().collect()
         };
+        let points: Vec<P3> = ordered
+            .iter()
+            .map(|p| P3::new(p.x, p.y, params.cut_depth))
+            .collect();
 
-        // SAFETY: contour is non-empty (checked above), so pts is non-empty
-        #[allow(clippy::indexing_slicing)]
-        let start = pts[0];
-
-        use crate::toolpath::MoveIntent;
-        // Rapid to start point at safe Z
-        tp.rapid_to_with_intent(
-            P3::new(start.x, start.y, params.safe_z),
-            MoveIntent::Linking,
-        );
-        // Plunge to cutting depth
-        tp.feed_to_with_intent(
-            P3::new(start.x, start.y, params.cut_depth),
-            params.plunge_rate,
-            MoveIntent::EntryPlunge,
-        );
-        // Feed around the contour
-        #[allow(clippy::indexing_slicing)]
-        for pt in &pts[1..] {
-            tp.feed_to_with_intent(
-                P3::new(pt.x, pt.y, params.cut_depth),
-                params.feed_rate,
-                MoveIntent::ClearingCut,
-            );
-        }
-        // Close the loop (back to start)
-        tp.feed_to_with_intent(
-            P3::new(start.x, start.y, params.cut_depth),
+        tp.emit_closed_contour_with_intent(
+            &points,
+            params.safe_z,
             params.feed_rate,
+            params.plunge_rate,
             MoveIntent::ClearingCut,
-        );
-        // Retract to safe Z
-        tp.rapid_to_with_intent(
-            P3::new(start.x, start.y, params.safe_z),
-            MoveIntent::Retract,
         );
     }
 

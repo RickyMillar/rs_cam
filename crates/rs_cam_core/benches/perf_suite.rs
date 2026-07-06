@@ -688,10 +688,11 @@ fn bench_raster_toolpath(c: &mut Criterion) {
             points,
             rows: grid_size,
             cols: grid_size,
-            x_start: 0.0,
-            y_start: 0.0,
+            u_start: 0.0,
+            v_start: 0.0,
             x_step: 0.5,
             y_step: 0.5,
+            direction_deg: 0.0,
         };
 
         group.bench_function(BenchmarkId::new("zigzag", grid_size), |b| {

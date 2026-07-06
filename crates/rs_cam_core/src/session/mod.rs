@@ -1264,6 +1264,14 @@ impl ProjectSession {
             .find(|s| s.toolpath_indices.contains(&tp_index))
     }
 
+    /// Find the setup that owns a toolpath with the given semantic ID.
+    /// Companion to [`Self::find_setup_for_toolpath_index`] for call sites
+    /// that only have the [`ToolpathId`], not its vec index.
+    pub(crate) fn find_setup_for_toolpath_id(&self, tp_id: ToolpathId) -> Option<&SetupData> {
+        let tp_index = self.toolpath_configs.iter().position(|tc| tc.id == tp_id)?;
+        self.find_setup_for_toolpath_index(tp_index)
+    }
+
     // ── Geometry transforms for setup-local frame ────────────────
 
     /// Build a [`SetupTransformInfo`] for this session's stock and the given

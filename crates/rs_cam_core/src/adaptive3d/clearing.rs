@@ -2,10 +2,11 @@
 //! per-level contour-parallel and curvature-adaptive clearing,
 //! stamping, and waterline cleanup.
 
-use crate::contour_extract::{edt_curvature_field, marching_squares_bool_grid, smooth_grid};
+use crate::contour_extract::marching_squares_bool_grid;
 use crate::debug_trace::ToolpathDebugContext;
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
 use crate::geo::{P2, P3};
+use crate::grid_field::{edt_curvature_field, smooth_grid};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::radial_profile::RadialProfileLUT;
@@ -628,7 +629,7 @@ pub(super) fn clear_z_level_contour_parallel(
     //    Material cells near the boundary have small distance.
     //    Interior material cells have large distance.
     let air_grid: Vec<bool> = material_grid.iter().map(|&b| !b).collect();
-    let edt = crate::contour_extract::distance_transform_2d(&air_grid, rows, cols);
+    let edt = crate::grid_field::distance_transform_2d(&air_grid, rows, cols);
 
     // 3. Find max distance (determines number of offset levels)
     let max_dist = edt.iter().copied().fold(0.0f64, f64::max);
@@ -983,7 +984,7 @@ pub(super) fn clear_z_level_adaptive(
 
     // ── 2. EDT on inverted grid (distance to nearest air) ──────────────
     let air_grid: Vec<bool> = material_grid.iter().map(|&b| !b).collect();
-    let edt = crate::contour_extract::distance_transform_2d(&air_grid, rows, cols);
+    let edt = crate::grid_field::distance_transform_2d(&air_grid, rows, cols);
     let max_dist = edt.iter().copied().fold(0.0f64, f64::max);
 
     // ── 3. Curvature field from EDT level sets ─────────────────────────

@@ -256,14 +256,23 @@ pub fn chipload_envelopes_for_session(
         };
         // Keep envelope rows where both bounds exist and are sane,
         // DOC-derated exactly like the gate's trip bounds so the
-        // operator-facing colors agree with the export verdict.
+        // operator-facing colors agree with the export verdict. Both
+        // bounds are required here — the `Range<f64>` this function
+        // returns can't express a one-sided band — via the shared
+        // `geometry::derate_chipload_bounds` helper (S.8, single home
+        // for this wrapper across Suggest and both `tool_load` gate
+        // sites; see `planning/finishing_stack_review_2026-07.md`).
         let lookup_diameter = tool_def.lookup_diameter_at(axial_doc).max(1e-9);
-        let doc_scale = crate::feeds::geometry::doc_derating_scale(axial_doc / lookup_diameter);
-        if let (Some(lo), Some(hi)) = (matched.chip_load_min_mm, matched.chip_load_max_mm)
-            && lo > 0.0
-            && hi >= lo
+        let doc_ratio = axial_doc / lookup_diameter;
+        if let Some((lo, hi)) = crate::feeds::geometry::derate_chipload_bounds(
+            matched.chip_load_min_mm,
+            matched.chip_load_max_mm,
+            doc_ratio,
+            crate::feeds::geometry::ChiploadBoundPolicy::RequireBoth,
+        )
+        .and_then(crate::feeds::geometry::DeratedChiploadBand::into_pair)
         {
-            out.insert(tc.id, (lo * doc_scale)..(hi * doc_scale));
+            out.insert(tc.id, lo..hi);
         }
     }
     out

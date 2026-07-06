@@ -102,6 +102,12 @@ fn classify_3d_terrain(model_bbox: Option<&BoundingBox3>) -> GeometryClass {
     // shallow-vs-steep. Strategy passes that care about the
     // distinction (Helix promotion: prefers ShallowTerrain) will use
     // bbox-feasibility helpers in addition to this signal.
+    //
+    // `ShallowTerrain` / `SteepTerrain` are reserved variants: this fn
+    // only receives a bbox (no slope-histogram input exists yet), so
+    // there is nothing trivial to threshold on. Wiring them requires the
+    // `ModelGeometrySummary` slope/face-type signal described above, not
+    // a local change here. See tracker S.14 (planning/finishing_stack_review_2026-07.md).
     GeometryClass::MixedTerrain
 }
 

@@ -6,10 +6,12 @@
 
 use std::borrow::Cow;
 use std::ops::Range;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
 use crate::geo::P3;
+use crate::rest_field::RestGrid;
 use crate::toolpath::Toolpath;
 
 // ── SpanId ──────────────────────────────────────────────────────────────
@@ -185,7 +187,17 @@ pub struct AnnotatedToolpath {
     /// samples are positional, so they survive simplify / arcfit / dressup
     /// / TSP-reorder reshaping without per-move re-indexing). See
     /// `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md` §"Stage 4".
+    ///
+    /// Frame contract: emission-frame coordinates; must be re-framed
+    /// anywhere `toolpath.moves` are re-framed — see [`Self::translated`].
     pub planner_engagement: Vec<(P3, f64)>,
+    /// Rest-depth heatmap grid for the GUI overlay — populated ONLY by the
+    /// pencil RestDepth detector; `None` for every other operation. `Arc` so
+    /// cloning the annotated toolpath (sim / result caching) stays cheap.
+    ///
+    /// Frame contract: emission-frame coordinates; must be re-framed
+    /// anywhere `toolpath.moves` are re-framed — see [`Self::translated`].
+    pub rest_grid: Option<Arc<RestGrid>>,
 }
 
 impl AnnotatedToolpath {
@@ -197,6 +209,7 @@ impl AnnotatedToolpath {
             spans: Vec::new(),
             spans_valid: true,
             planner_engagement: Vec::new(),
+            rest_grid: None,
         }
     }
 
@@ -206,6 +219,69 @@ impl AnnotatedToolpath {
             spans,
             spans_valid: true,
             planner_engagement: Vec::new(),
+            rest_grid: None,
+        }
+    }
+
+    /// Re-frame every coordinate-bearing field by `shift` — the single place
+    /// that knows how to move an `AnnotatedToolpath` between the emission
+    /// frame and a display frame (or any other frame shift).
+    ///
+    /// Destructures `self` field-by-field on purpose: adding a new
+    /// coordinate-bearing field to `AnnotatedToolpath` makes this match
+    /// fail to compile until the author decides how that field transforms,
+    /// rather than silently leaving it stale (the bug this method fixes —
+    /// `planner_engagement` and `rest_grid` used to be left in the old
+    /// frame by callers that only shifted `toolpath.moves`).
+    ///
+    /// - `toolpath.moves` targets are shifted; arc center offsets (`i`/`j`
+    ///   on `MoveType::ArcCW`/`ArcCCW`) are relative-to-start and are left
+    ///   untouched.
+    /// - `planner_engagement` cut points are shifted; the stored angle
+    ///   fraction is untouched.
+    /// - `rest_grid` (if present) has `origin_x`/`origin_y` shifted and
+    ///   every `surface_z` cell shifted by `shift.z`; `NaN` cells stay
+    ///   `NaN` since `NaN + x == NaN`. `rest` values are untouched — rest
+    ///   depth is a scalar, not a coordinate.
+    /// - `spans` / `spans_valid` are move-index-based, not coordinate-based,
+    ///   and are copied unchanged.
+    pub fn translated(&self, shift: P3) -> Self {
+        let Self {
+            toolpath,
+            spans,
+            spans_valid,
+            planner_engagement,
+            rest_grid,
+        } = self;
+
+        let mut toolpath = toolpath.clone();
+        for m in &mut toolpath.moves {
+            m.target.x += shift.x;
+            m.target.y += shift.y;
+            m.target.z += shift.z;
+        }
+
+        let planner_engagement = planner_engagement
+            .iter()
+            .map(|(p, alpha)| (P3::new(p.x + shift.x, p.y + shift.y, p.z + shift.z), *alpha))
+            .collect();
+
+        let rest_grid = rest_grid.clone().map(|mut grid| {
+            let g = Arc::make_mut(&mut grid);
+            g.origin_x += shift.x;
+            g.origin_y += shift.y;
+            for z in &mut g.surface_z {
+                *z += shift.z as f32;
+            }
+            grid
+        });
+
+        Self {
+            toolpath,
+            spans: spans.clone(),
+            spans_valid: *spans_valid,
+            planner_engagement,
+            rest_grid,
         }
     }
 
@@ -488,6 +564,56 @@ impl MoveRemap {
             .map(|r| r.start)
             .unwrap_or(total_new_moves)
     }
+
+    /// Remap one span through this move-index mapping.
+    ///
+    /// - Boundary (zero-width) spans remap through [`Self::remap_boundary`]
+    ///   and always come back zero-width.
+    /// - Non-boundary spans remap through [`Self::remap_range`], producing
+    ///   the bounding new range — the min start and max end among all
+    ///   surviving old moves in `[span.start_move, span.end_move)`.
+    ///
+    /// Returns `None` if every old move in the span's range was dropped by
+    /// the transform (the span fully collapsed). `kind` is preserved
+    /// unchanged; `label` and `payload` are cloned onto the output span.
+    pub fn remap_span(&self, span: &Span, new_n_moves: usize) -> Option<Span> {
+        let mut new_span = if span.is_boundary() {
+            let new_pos = self.remap_boundary(span.start_move, new_n_moves);
+            Span::new(new_pos, new_pos, span.kind)
+        } else {
+            let r = self.remap_range(span.start_move, span.end_move)?;
+            Span::new(r.start, r.end, span.kind)
+        }
+        .with_label(span.label.clone());
+        if let Some(p) = span.payload.clone() {
+            new_span = new_span.with_payload(p);
+        }
+        Some(new_span)
+    }
+
+    /// Remap a whole span list through this mapping, in order, dropping any
+    /// span that fully collapsed (see [`Self::remap_span`]).
+    ///
+    /// This is the canonical "walk spans through a `MoveRemap`, drop
+    /// collapsed spans" contract shared by every span-preserving toolpath
+    /// transform that only *narrows or merges* moves in place — dressups
+    /// ([`crate::dressup`]), arc-fitting ([`crate::arcfit`]), and path
+    /// simplification ([`crate::condition`]). Callers append their own
+    /// transform-introduced spans (e.g. `Entry`, `DressupArtifact`,
+    /// `LinkBridge`) to the returned vec afterward.
+    ///
+    /// TSP's reordering pass ([`crate::tsp`]) additionally has to detect
+    /// *foreign-move intrusion* — a permutation can interleave moves from
+    /// other spans into a span's new bounding range, which a plain bounding
+    /// remap can't see. `tsp::remap_spans` delegates its per-span core to
+    /// [`Self::remap_span`] and layers that check on top as a distinct
+    /// post-filter rather than reimplementing this method.
+    pub fn remap_spans(&self, spans: &[Span], new_n_moves: usize) -> Vec<Span> {
+        spans
+            .iter()
+            .filter_map(|s| self.remap_span(s, new_n_moves))
+            .collect()
+    }
 }
 
 // ── tests ───────────────────────────────────────────────────────────────
@@ -626,6 +752,62 @@ mod tests {
         let at = AnnotatedToolpath::with_spans(toolpath_with_n_moves(5), spans.clone());
         assert_eq!(at.spans, spans);
         assert!(at.spans_valid);
+    }
+
+    // ── translated ──────────────────────────────────────────────────────
+
+    /// `translated` must re-frame every coordinate-bearing field in lockstep:
+    /// move targets, `planner_engagement` cut points, and `rest_grid`
+    /// origin/surface_z — while leaving move-index-based fields (`spans`)
+    /// and scalar fields (`rest_grid.rest`) untouched, and preserving NaN
+    /// (untrusted) cells.
+    #[test]
+    fn translated_shifts_moves_engagement_and_rest_grid_in_lockstep() {
+        let mut tp = Toolpath::new();
+        tp.feed_to(P3::new(1.0, 2.0, 3.0), 1000.0);
+
+        let rest_grid = RestGrid {
+            nx: 2,
+            ny: 2,
+            origin_x: 10.0,
+            origin_y: 20.0,
+            cell_mm: 1.0,
+            rest: vec![0.1, 0.2, 0.3, 0.4],
+            surface_z: vec![5.0, f32::NAN, 7.0, 8.0],
+            threshold: 0.05,
+        };
+
+        let mut at = AnnotatedToolpath::new(tp);
+        at.planner_engagement = vec![(P3::new(1.0, 2.0, 3.0), 0.25)];
+        at.rest_grid = Some(Arc::new(rest_grid));
+
+        let shift = P3::new(100.0, 200.0, 10.0);
+        let shifted = at.translated(shift);
+
+        assert_eq!(
+            shifted.toolpath.moves[0].target,
+            P3::new(101.0, 202.0, 13.0)
+        );
+
+        assert_eq!(shifted.planner_engagement.len(), 1);
+        assert_eq!(shifted.planner_engagement[0].0, P3::new(101.0, 202.0, 13.0));
+        assert_eq!(shifted.planner_engagement[0].1, 0.25);
+
+        let grid = shifted
+            .rest_grid
+            .expect("rest_grid should survive translation");
+        assert_eq!(grid.origin_x, 110.0);
+        assert_eq!(grid.origin_y, 220.0);
+        assert_eq!(grid.surface_z[0], 15.0);
+        assert!(grid.surface_z[1].is_nan(), "NaN cell must stay NaN");
+        assert_eq!(grid.surface_z[2], 17.0);
+        assert_eq!(grid.surface_z[3], 18.0);
+        // rest depth is a scalar, not a coordinate — unchanged.
+        assert_eq!(grid.rest, vec![0.1, 0.2, 0.3, 0.4]);
+
+        // Original untouched.
+        assert_eq!(at.toolpath.moves[0].target, P3::new(1.0, 2.0, 3.0));
+        assert_eq!(at.rest_grid.as_ref().map(|g| g.origin_x), Some(10.0));
     }
 
     // ── spans_at / spans_of_kind / boundaries_at ───────────────────────
@@ -1022,5 +1204,105 @@ mod tests {
         let m = MoveRemap::identity(3);
         // Boundary past the end of the old list lands at total_new_moves.
         assert_eq!(m.remap_boundary(5, 3), 3);
+    }
+
+    // ── MoveRemap::remap_span / remap_spans ────────────────────────────
+
+    #[test]
+    fn remap_span_fully_inside_kept_range_shifts_bounds() {
+        // Old moves 2..3 dropped; everything else 1:1. Span 1..4 should
+        // shrink to the surviving bounds.
+        let m = MoveRemap {
+            old_to_new: vec![
+                Some(0..1),
+                Some(1..2),
+                None,
+                Some(2..3),
+                Some(3..4),
+                Some(4..5),
+            ],
+        };
+        let span = Span::new(1, 4, SpanKind::Region).with_label("r");
+        let out = m.remap_span(&span, 5).expect("span partially survives");
+        assert_eq!(out.start_move, 1);
+        assert_eq!(out.end_move, 3);
+        assert_eq!(out.kind, SpanKind::Region);
+        assert_eq!(out.label, "r");
+    }
+
+    #[test]
+    fn remap_span_partially_collapsed_bounds_to_survivors() {
+        // Span 0..5 where moves 1..4 are dropped: only moves 0 and 4 survive,
+        // so the remapped span covers just their new positions.
+        let m = MoveRemap {
+            old_to_new: vec![Some(0..1), None, None, None, Some(1..2)],
+        };
+        let span = Span::new(0, 5, SpanKind::DepthPass);
+        let out = m.remap_span(&span, 2).expect("span partially survives");
+        assert_eq!(out.start_move, 0);
+        assert_eq!(out.end_move, 2);
+    }
+
+    #[test]
+    fn remap_span_fully_collapsed_is_dropped() {
+        let m = MoveRemap {
+            old_to_new: vec![None, None, None],
+        };
+        let span = Span::new(0, 3, SpanKind::Region);
+        assert_eq!(m.remap_span(&span, 0), None);
+    }
+
+    #[test]
+    fn remap_span_boundary_stays_zero_width() {
+        let m = MoveRemap {
+            old_to_new: vec![Some(0..1), None, Some(1..2)],
+        };
+        let span = Span::boundary(1, SpanKind::RapidOrderBarrier);
+        let out = m
+            .remap_span(&span, 2)
+            .expect("boundary spans never collapse");
+        assert!(out.is_boundary());
+        assert_eq!(out.start_move, 1);
+    }
+
+    #[test]
+    fn remap_span_preserves_payload() {
+        let m = MoveRemap::identity(3);
+        let span = Span::new(0, 3, SpanKind::DepthPass).with_payload(SpanPayload::DepthPass {
+            z_level: -2.0,
+            pass_index: 1,
+        });
+        let out = m.remap_span(&span, 3).expect("identity keeps span");
+        assert_eq!(out.payload, span.payload);
+    }
+
+    #[test]
+    fn remap_spans_drops_fully_collapsed_and_preserves_order() {
+        // Three spans: first fully inside kept moves, second fully
+        // collapsed (should be dropped), third fully inside kept moves —
+        // ordering of the survivors must match input order.
+        let m = MoveRemap {
+            old_to_new: vec![
+                Some(0..1),
+                Some(1..2),
+                None, // moves 2..4 dropped entirely
+                None,
+                Some(2..3),
+                Some(3..4),
+            ],
+        };
+        let spans = vec![
+            Span::new(0, 2, SpanKind::DepthPass).with_label("first"),
+            Span::new(2, 4, SpanKind::Region).with_label("collapsed"),
+            Span::new(4, 6, SpanKind::DepthPass).with_label("third"),
+        ];
+        let out = m.remap_spans(&spans, 4);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].label, "first");
+        assert_eq!(out[0].start_move, 0);
+        assert_eq!(out[0].end_move, 2);
+        assert_eq!(out[1].label, "third");
+        assert_eq!(out[1].start_move, 2);
+        assert_eq!(out[1].end_move, 4);
     }
 }

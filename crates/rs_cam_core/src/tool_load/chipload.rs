@@ -143,6 +143,11 @@ pub(super) fn embedded_lut() -> &'static crate::feeds::VendorLut {
 // feeds calculator can apply it to the LUT chipload bounds at the same
 // scale this gate uses. The single canonical home prevents the two
 // paths from drifting (see `feeds::geometry::doc_derating_scale`).
+// Only exercised directly by this module's own tests today (production
+// callers reach it via `feeds::geometry::doc_derating_scale` directly),
+// so the re-export is `#[cfg(test)]`-gated to avoid an unused-import
+// warning in the non-test build.
+#[cfg(test)]
 pub(super) use crate::feeds::geometry::doc_derating_scale;
 
 use super::verdict::{
@@ -410,30 +415,36 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     };
 
     // 5. Bounds: upper bound is required. A missing lower bound means
-    // burn/rubbing cannot be modeled for this row, not that we invent one.
-    let (min, max) = match (result.chip_load_min_mm, result.chip_load_max_mm) {
-        (Some(lo), Some(hi)) if lo > 0.0 && hi >= lo => (Some(lo), hi),
-        (None, Some(hi)) if hi > 0.0 => (None, hi),
-        _ => {
-            tracing::debug!(
-                reason = "NoVendorData",
-                observation_id = %result.observation_id,
-                "chipload gate refuses: matched row has unusable chipload bounds (max missing or invalid)"
-            );
-            return ChiploadVerdict::Unmodeled {
-                reason: UnmodeledReason::NoVendorData,
-            };
-        }
-    };
-    // DOC-derating (cross-vendor-confirmed rule). Vendor LUT chipload
-    // bounds are authored at 1×D axial DOC; deeper passes must reduce
-    // chipload to keep chip-evacuation viable. Apply the piecewise
-    // scale once per toolpath using the peak axial DOC, so the
-    // reported bounds match what the trip actually used.
+    // burn/rubbing cannot be modeled for this row, not that we invent
+    // one — `AllowHalfBand` lets a present-max/absent-min row through.
+    //
+    // DOC-derating (cross-vendor-confirmed rule) folds in here too:
+    // vendor LUT chipload bounds are authored at 1×D axial DOC; deeper
+    // passes must reduce chipload to keep chip-evacuation viable.
+    // Apply the piecewise scale once per toolpath using the peak axial
+    // DOC, so the reported bounds match what the trip actually used.
+    // Validation + scale now live in the shared
+    // `geometry::derate_chipload_bounds` (S.8 — see
+    // `planning/finishing_stack_review_2026-07.md`), the single home
+    // for this wrapper across Suggest and both `tool_load` gate sites.
     let lookup_diameter_at_peak = tool.lookup_diameter_at(lookup_axial_doc_mm).max(1e-9);
     let doc_ratio = lookup_axial_doc_mm / lookup_diameter_at_peak;
-    let doc_scale = doc_derating_scale(doc_ratio);
-    let (min, max) = (min.map(|m| m * doc_scale), max * doc_scale);
+    let Some(band) = crate::feeds::geometry::derate_chipload_bounds(
+        result.chip_load_min_mm,
+        result.chip_load_max_mm,
+        doc_ratio,
+        crate::feeds::geometry::ChiploadBoundPolicy::AllowHalfBand,
+    ) else {
+        tracing::debug!(
+            reason = "NoVendorData",
+            observation_id = %result.observation_id,
+            "chipload gate refuses: matched row has unusable chipload bounds (max missing or invalid)"
+        );
+        return ChiploadVerdict::Unmodeled {
+            reason: UnmodeledReason::NoVendorData,
+        };
+    };
+    let (min, max) = (band.min_mm_per_tooth, band.max_mm_per_tooth);
     // F3.3 — provenance classification, worst-first. A single-point
     // "range" (raw min == max — scaling preserves equality) is a
     // nominal preset, not a calibrated envelope; extrapolation past

@@ -86,8 +86,11 @@ fn estimate_engagement(
 /// Walks the toolpath, simulates material removal, computes engagement
 /// at each cutting move, and adjusts feed rates using RCTF.
 ///
-/// This transform rewrites feed rates only — it does NOT change move count
-/// or order. Spans pass through unchanged and `spans_valid` is preserved.
+/// This transform rewrites feed rates only — it does NOT change move count,
+/// order, target position, `MoveType` variant (incl. arc i/j offsets), or
+/// `MoveIntent`. Every move is preserved as-is except for its feed rate
+/// (see [`crate::toolpath::MoveType::with_feed_rate`]). Spans pass through
+/// unchanged and `spans_valid` is preserved.
 pub fn optimize_feed_rates(
     annotated: AnnotatedToolpath,
     cutter: &dyn MillingCutter,
@@ -99,6 +102,7 @@ pub fn optimize_feed_rates(
         spans,
         spans_valid,
         planner_engagement,
+        rest_grid,
     } = annotated;
     let result = optimize_feed_rates_inner(&toolpath, cutter, stock, params);
     debug_assert_eq!(
@@ -111,6 +115,7 @@ pub fn optimize_feed_rates(
         spans,
         spans_valid,
         planner_engagement,
+        rest_grid,
     }
 }
 
@@ -161,25 +166,15 @@ fn optimize_feed_rates_inner(
     // Second pass: smooth feed rate transitions
     smooth_feed_rates(&mut feed_rates, &toolpath.moves, params.ramp_rate);
 
-    // Third pass: build output toolpath with adjusted feed rates
-    let mut output = Toolpath::new();
-    // SAFETY: feed_rates has same length as toolpath.moves; enumerate index is valid
-    #[allow(clippy::indexing_slicing)]
-    for (i, mv) in toolpath.moves.iter().enumerate() {
-        match mv.move_type {
-            MoveType::Rapid => {
-                output.rapid_to(mv.target);
-            }
-            MoveType::Linear { .. } => {
-                output.feed_to(mv.target, feed_rates[i]);
-            }
-            MoveType::ArcCW { i: ci, j: cj, .. } => {
-                output.arc_cw_to(mv.target, ci, cj, feed_rates[i]);
-            }
-            MoveType::ArcCCW { i: ci, j: cj, .. } => {
-                output.arc_ccw_to(mv.target, ci, cj, feed_rates[i]);
-            }
-        }
+    // Third pass: rewrite feed rates IN PLACE on a clone of the original
+    // moves. This preserves every move's `target`, `MoveType` variant
+    // (incl. arc i/j offsets), AND `intent` exactly — only the feed rate
+    // changes. Rebuilding via the intent-less `rapid_to`/`feed_to`/
+    // `arc_*_to` builders (the old approach) silently reset every move's
+    // intent to `MoveIntent::Unknown`, which is the S.1 bug this fixes.
+    let mut output = toolpath.clone();
+    for (mv, &feed) in output.moves.iter_mut().zip(feed_rates.iter()) {
+        mv.move_type = mv.move_type.with_feed_rate(feed);
     }
 
     output
@@ -393,6 +388,77 @@ mod tests {
         let result = optimize_feed_rates(annotated, &tool, &mut stock, &params);
         assert_eq!(result.spans, spans);
         assert!(!result.spans_valid);
+    }
+
+    /// S.1 regression: `optimize_feed_rates` must not clobber `MoveIntent`
+    /// or any non-feed field. Before the fix, the rebuild pass re-emitted
+    /// every move via the intent-less `rapid_to`/`feed_to`/`arc_cw_to`
+    /// builders, silently resetting every move's intent to
+    /// `MoveIntent::Unknown` — losing Retract/EntryPlunge/Linking/
+    /// FinishingCut tags on the LAST dressup pass in the pipeline.
+    #[test]
+    fn optimize_feed_rates_preserves_move_intents_and_geometry() {
+        use crate::toolpath::MoveIntent;
+
+        let tool = FlatEndmill::new(10.0, 25.0);
+        let params = default_params();
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 50.0, 50.0, 0.0, 10.0, 1.0);
+
+        let mut tp = Toolpath::new();
+        tp.rapid_to_with_intent(P3::new(10.0, 10.0, 15.0), MoveIntent::Linking);
+        tp.feed_to_with_intent(P3::new(10.0, 10.0, 5.0), 300.0, MoveIntent::EntryPlunge);
+        tp.feed_to_with_intent(P3::new(20.0, 10.0, 5.0), 1000.0, MoveIntent::FinishingCut);
+        tp.arc_cw_to_with_intent(
+            P3::new(25.0, 15.0, 5.0),
+            5.0,
+            0.0,
+            1000.0,
+            MoveIntent::FinishingCut,
+        );
+        tp.rapid_to_with_intent(P3::new(25.0, 15.0, 15.0), MoveIntent::Retract);
+
+        // Snapshot everything except feed rate before running the pass.
+        type MoveSnapshot = (
+            P3,
+            MoveIntent,
+            std::mem::Discriminant<MoveType>,
+            Option<(f64, f64)>,
+        );
+        let before: Vec<MoveSnapshot> = tp
+            .moves
+            .iter()
+            .map(|mv| {
+                let arc_ij = match mv.move_type {
+                    MoveType::ArcCW { i, j, .. } | MoveType::ArcCCW { i, j, .. } => Some((i, j)),
+                    _ => None,
+                };
+                (
+                    mv.target,
+                    mv.intent,
+                    std::mem::discriminant(&mv.move_type),
+                    arc_ij,
+                )
+            })
+            .collect();
+
+        let result =
+            optimize_feed_rates(AnnotatedToolpath::new(tp), &tool, &mut stock, &params).toolpath;
+
+        assert_eq!(result.moves.len(), before.len());
+        for (mv, (target, intent, discr, arc_ij)) in result.moves.iter().zip(before.iter()) {
+            assert_eq!(mv.target, *target, "target must be unchanged");
+            assert_eq!(mv.intent, *intent, "intent must survive feed optimization");
+            assert_eq!(
+                std::mem::discriminant(&mv.move_type),
+                *discr,
+                "MoveType variant must be unchanged"
+            );
+            let actual_arc_ij = match mv.move_type {
+                MoveType::ArcCW { i, j, .. } | MoveType::ArcCCW { i, j, .. } => Some((i, j)),
+                _ => None,
+            };
+            assert_eq!(actual_arc_ij, *arc_ij, "arc i/j offsets must be unchanged");
+        }
     }
 
     #[test]

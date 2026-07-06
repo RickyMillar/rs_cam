@@ -3978,8 +3978,6 @@ fn tooltip_for(label: &str) -> Option<&'static str> {
         "Min Cut Radius" | "Min Cutting Radius" => {
             "Blend sharp corners with arcs of at least this radius."
         }
-        "Wall Stock" => "Material left on walls (radial) for finish pass. 0.2-0.5mm typical.",
-        "Floor Stock" => "Material left on floors (axial) for finish pass. 0.2-0.5mm typical.",
         "Stock Top Z" => "Z height of the stock material top surface.",
         "Scallop Height" => "Target cusp height between passes. 0.05-0.2mm for finishing.",
         "Threshold Angle" => "Angle dividing steep (waterline) from shallow (raster) regions.",

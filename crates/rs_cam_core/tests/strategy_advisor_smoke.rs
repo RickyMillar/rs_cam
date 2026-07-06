@@ -102,7 +102,9 @@ fn build_terrain_adaptive3d_session() -> ProjectSession {
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
     };
-    session.add_toolpath(0, tc).expect("add adaptive3d toolpath");
+    session
+        .add_toolpath(0, tc)
+        .expect("add adaptive3d toolpath");
 
     session
 }
