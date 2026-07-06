@@ -11,6 +11,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::geo::P3;
+use crate::polygon::Polygon2;
 use crate::rest_field::RestGrid;
 use crate::toolpath::Toolpath;
 
@@ -198,6 +199,17 @@ pub struct AnnotatedToolpath {
     /// Frame contract: emission-frame coordinates; must be re-framed
     /// anywhere `toolpath.moves` are re-framed — see [`Self::translated`].
     pub rest_grid: Option<Arc<RestGrid>>,
+    /// Machining-region polygons derived from the rest-depth field
+    /// ([`crate::rest_field::RestFieldResult::region_polygons`]) —
+    /// populated ONLY by the pencil RestDepth detector; `None` for every
+    /// other operation. World-frame XY polygons; `Arc` so cloning the
+    /// annotated toolpath (sim / result caching) stays cheap. This is the
+    /// derived-boundary source for selective finishing (P2.2
+    /// `BoundarySource::DerivedRestRegions`).
+    ///
+    /// Frame contract: emission-frame coordinates; must be re-framed
+    /// anywhere `toolpath.moves` are re-framed — see [`Self::translated`].
+    pub rest_regions: Option<Arc<Vec<Polygon2>>>,
 }
 
 impl AnnotatedToolpath {
@@ -210,6 +222,7 @@ impl AnnotatedToolpath {
             spans_valid: true,
             planner_engagement: Vec::new(),
             rest_grid: None,
+            rest_regions: None,
         }
     }
 
@@ -220,6 +233,7 @@ impl AnnotatedToolpath {
             spans_valid: true,
             planner_engagement: Vec::new(),
             rest_grid: None,
+            rest_regions: None,
         }
     }
 
@@ -243,6 +257,9 @@ impl AnnotatedToolpath {
     ///   every `surface_z` cell shifted by `shift.z`; `NaN` cells stay
     ///   `NaN` since `NaN + x == NaN`. `rest` values are untouched — rest
     ///   depth is a scalar, not a coordinate.
+    /// - `rest_regions` (if present): every exterior/hole point of every
+    ///   polygon is shifted by `shift.x`/`shift.y` (XY-only — polygons carry
+    ///   no Z).
     /// - `spans` / `spans_valid` are move-index-based, not coordinate-based,
     ///   and are copied unchanged.
     pub fn translated(&self, shift: P3) -> Self {
@@ -252,6 +269,7 @@ impl AnnotatedToolpath {
             spans_valid,
             planner_engagement,
             rest_grid,
+            rest_regions,
         } = self;
 
         let mut toolpath = toolpath.clone();
@@ -276,12 +294,30 @@ impl AnnotatedToolpath {
             grid
         });
 
+        let rest_regions = rest_regions.clone().map(|mut regions| {
+            let polys = Arc::make_mut(&mut regions);
+            for poly in polys.iter_mut() {
+                for p in &mut poly.exterior {
+                    p.x += shift.x;
+                    p.y += shift.y;
+                }
+                for hole in &mut poly.holes {
+                    for p in hole.iter_mut() {
+                        p.x += shift.x;
+                        p.y += shift.y;
+                    }
+                }
+            }
+            regions
+        });
+
         Self {
             toolpath,
             spans: spans.clone(),
             spans_valid: *spans_valid,
             planner_engagement,
             rest_grid,
+            rest_regions,
         }
     }
 
@@ -757,10 +793,10 @@ mod tests {
     // ── translated ──────────────────────────────────────────────────────
 
     /// `translated` must re-frame every coordinate-bearing field in lockstep:
-    /// move targets, `planner_engagement` cut points, and `rest_grid`
-    /// origin/surface_z — while leaving move-index-based fields (`spans`)
-    /// and scalar fields (`rest_grid.rest`) untouched, and preserving NaN
-    /// (untrusted) cells.
+    /// move targets, `planner_engagement` cut points, `rest_grid`
+    /// origin/surface_z, and `rest_regions` polygon points — while leaving
+    /// move-index-based fields (`spans`) and scalar fields (`rest_grid.rest`)
+    /// untouched, and preserving NaN (untrusted) cells.
     #[test]
     fn translated_shifts_moves_engagement_and_rest_grid_in_lockstep() {
         let mut tp = Toolpath::new();
@@ -777,9 +813,24 @@ mod tests {
             threshold: 0.05,
         };
 
+        let region = Polygon2::with_holes(
+            vec![
+                crate::geo::P2::new(0.0, 0.0),
+                crate::geo::P2::new(5.0, 0.0),
+                crate::geo::P2::new(5.0, 5.0),
+                crate::geo::P2::new(0.0, 5.0),
+            ],
+            vec![vec![
+                crate::geo::P2::new(1.0, 1.0),
+                crate::geo::P2::new(2.0, 1.0),
+                crate::geo::P2::new(2.0, 2.0),
+            ]],
+        );
+
         let mut at = AnnotatedToolpath::new(tp);
         at.planner_engagement = vec![(P3::new(1.0, 2.0, 3.0), 0.25)];
         at.rest_grid = Some(Arc::new(rest_grid));
+        at.rest_regions = Some(Arc::new(vec![region]));
 
         let shift = P3::new(100.0, 200.0, 10.0);
         let shifted = at.translated(shift);
@@ -805,9 +856,21 @@ mod tests {
         // rest depth is a scalar, not a coordinate — unchanged.
         assert_eq!(grid.rest, vec![0.1, 0.2, 0.3, 0.4]);
 
+        let regions = shifted
+            .rest_regions
+            .expect("rest_regions should survive translation");
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].exterior[0], crate::geo::P2::new(100.0, 200.0));
+        assert_eq!(regions[0].exterior[2], crate::geo::P2::new(105.0, 205.0));
+        assert_eq!(regions[0].holes[0][0], crate::geo::P2::new(101.0, 201.0));
+
         // Original untouched.
         assert_eq!(at.toolpath.moves[0].target, P3::new(1.0, 2.0, 3.0));
         assert_eq!(at.rest_grid.as_ref().map(|g| g.origin_x), Some(10.0));
+        assert_eq!(
+            at.rest_regions.as_ref().map(|r| r[0].exterior[0]),
+            Some(crate::geo::P2::new(0.0, 0.0))
+        );
     }
 
     // ── spans_at / spans_of_kind / boundaries_at ───────────────────────

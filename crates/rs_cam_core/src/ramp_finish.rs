@@ -16,9 +16,10 @@
 //! 5. Apply slope confinement to restrict to steep regions
 
 use crate::debug_trace::ToolpathDebugContext;
-use crate::geo::P3;
+use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::toolpath::{Toolpath, simplify_path_3d};
 use crate::waterline::waterline_contours;
@@ -299,7 +300,8 @@ pub fn ramp_finish_toolpath(
     cutter: &dyn MillingCutter,
     params: &RampFinishParams,
 ) -> Toolpath {
-    let (tp, _) = ramp_finish_toolpath_structured_annotated(mesh, index, cutter, params, None);
+    let (tp, _) =
+        ramp_finish_toolpath_structured_annotated(mesh, index, cutter, params, None, None);
     tp
 }
 
@@ -313,7 +315,7 @@ pub fn ramp_finish_toolpath_with_cancel(
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     let (tp, _) = ramp_finish_toolpath_structured_annotated_with_cancel(
-        mesh, index, cutter, params, None, cancel,
+        mesh, index, cutter, params, None, None, cancel,
     )?;
     Ok(tp)
 }
@@ -335,6 +337,7 @@ pub fn ramp_finish_toolpath_structured_annotated(
     cutter: &dyn MillingCutter,
     params: &RampFinishParams,
     debug: Option<&ToolpathDebugContext>,
+    boundary_regions: Option<&[Polygon2]>,
 ) -> (Toolpath, Vec<RampFinishRuntimeAnnotation>) {
     let never_cancel = || false;
     ramp_finish_toolpath_structured_annotated_with_cancel(
@@ -343,6 +346,7 @@ pub fn ramp_finish_toolpath_structured_annotated(
         cutter,
         params,
         debug,
+        boundary_regions,
         &never_cancel,
     )
     .expect("non-cancellable ramp finish toolpath should never be cancelled")
@@ -352,13 +356,20 @@ pub fn ramp_finish_toolpath_structured_annotated(
 /// Polls `cancel` once per Z level while building waterline contours, once
 /// per terrace (adjacent Z-level pair) while ramping between them, and once
 /// per ramp segment during toolpath emission.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+///
+/// `boundary_regions` (P2.3): folded into the ramp-path keep predicate
+/// alongside the slope filter — a point survives only when it's in the
+/// slope band (when active) AND inside a machining-boundary region (when
+/// given). The split always runs when either filter is active; `None`
+/// reproduces today's slope-only (or unfiltered) output byte-for-byte.
+#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
 pub fn ramp_finish_toolpath_structured_annotated_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &RampFinishParams,
     debug: Option<&ToolpathDebugContext>,
+    boundary_regions: Option<&[Polygon2]>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<RampFinishRuntimeAnnotation>), Cancelled> {
     check_cancel(cancel)?;
@@ -461,14 +472,23 @@ pub fn ramp_finish_toolpath_structured_annotated_with_cancel(
                 continue;
             }
 
-            // Apply slope confinement if configured
-            if use_slope_filter {
+            // Apply slope confinement and/or the machining-boundary regions
+            // if either is configured; a plain unfiltered push otherwise
+            // (byte-identical to pre-P2.3 behavior when neither is active).
+            if use_slope_filter || boundary_regions.is_some() {
                 let segments = crate::point_runs::split_runs(
                     &ramp_path,
                     |_, pt: &P3| {
-                        slope_map
-                            .angle_at_world(pt.x, pt.y)
-                            .is_some_and(|a| a >= slope_from_rad && a <= slope_to_rad)
+                        let slope_ok = !use_slope_filter
+                            || slope_map
+                                .angle_at_world(pt.x, pt.y)
+                                .is_some_and(|a| a >= slope_from_rad && a <= slope_to_rad);
+                        let region_ok = boundary_regions.is_none_or(|regions| {
+                            regions
+                                .iter()
+                                .any(|reg| reg.contains_point(&P2::new(pt.x, pt.y)))
+                        });
+                        slope_ok && region_ok
                     },
                     crate::point_runs::RunTopology::Open,
                     2,
@@ -575,7 +595,7 @@ pub fn ramp_finish_toolpath_annotated(
     debug: Option<&ToolpathDebugContext>,
 ) -> (Toolpath, Vec<(usize, String)>) {
     let (tp, annotations) =
-        ramp_finish_toolpath_structured_annotated(mesh, index, cutter, params, debug);
+        ramp_finish_toolpath_structured_annotated(mesh, index, cutter, params, debug, None);
     (tp, runtime_annotations_to_labels(&annotations))
 }
 
@@ -939,5 +959,87 @@ mod tests {
         ];
         let simplified = simplify_path_3d(&path, 0.01);
         assert_eq!(simplified.len(), 3, "Corner should be preserved");
+    }
+
+    // ── P2.3: boundary_regions pre-clip ──────────────────────────────
+
+    #[test]
+    fn ramp_boundary_regions_none_matches_call_without_param() {
+        let (mesh, si) = make_hemisphere();
+        let cutter = ball_cutter();
+        let params = RampFinishParams {
+            max_stepdown: 2.0,
+            sampling: 3.0,
+            tolerance: 0.5,
+            ..default_params()
+        };
+        let never_cancel = || false;
+
+        let tp_default = ramp_finish_toolpath(&mesh, &si, &cutter, &params);
+        let (tp_none, _) = ramp_finish_toolpath_structured_annotated_with_cancel(
+            &mesh,
+            &si,
+            &cutter,
+            &params,
+            None,
+            None,
+            &never_cancel,
+        )
+        .unwrap();
+
+        assert_eq!(tp_default.moves.len(), tp_none.moves.len());
+        for (a, b) in tp_default.moves.iter().zip(tp_none.moves.iter()) {
+            assert!((a.target.x - b.target.x).abs() < 1e-9);
+            assert!((a.target.y - b.target.y).abs() < 1e-9);
+            assert!((a.target.z - b.target.z).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn ramp_boundary_regions_confines_cuts_to_region() {
+        let (mesh, si) = make_hemisphere();
+        let cutter = ball_cutter();
+        let params = RampFinishParams {
+            max_stepdown: 2.0,
+            sampling: 3.0,
+            tolerance: 0.5,
+            ..default_params()
+        };
+        let never_cancel = || false;
+
+        let bbox = &mesh.bbox;
+        let left_half = Polygon2::new(vec![
+            P2::new(bbox.min.x, bbox.min.y),
+            P2::new(0.0, bbox.min.y),
+            P2::new(0.0, bbox.max.y),
+            P2::new(bbox.min.x, bbox.max.y),
+        ]);
+
+        let (tp, _) = ramp_finish_toolpath_structured_annotated_with_cancel(
+            &mesh,
+            &si,
+            &cutter,
+            &params,
+            None,
+            Some(std::slice::from_ref(&left_half)),
+            &never_cancel,
+        )
+        .unwrap();
+
+        let tol = 1e-6;
+        let mut saw_cut = false;
+        for m in &tp.moves {
+            let is_cut = matches!(m.move_type, crate::toolpath::MoveType::Linear { .. })
+                && m.intent == crate::toolpath::MoveIntent::FinishingCut;
+            if is_cut {
+                saw_cut = true;
+                assert!(
+                    m.target.x <= tol,
+                    "cutting move X={:.3} escaped the left-half boundary region",
+                    m.target.x
+                );
+            }
+        }
+        assert!(saw_cut, "expected at least one cutting move");
     }
 }

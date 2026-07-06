@@ -6,9 +6,10 @@
 //! 3D finishing pass.
 
 use crate::dropcutter::point_drop_cutter;
-use crate::geo::{BoundingBox3, P3, V3};
+use crate::geo::{BoundingBox3, P2, P3, V3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
@@ -73,7 +74,7 @@ pub fn horizontal_finish_toolpath(
     params: &HorizontalFinishParams,
 ) -> Toolpath {
     let never_cancel = || false;
-    horizontal_finish_toolpath_with_cancel(mesh, index, cutter, params, &never_cancel)
+    horizontal_finish_toolpath_with_cancel(mesh, index, cutter, params, None, &never_cancel)
         .expect("non-cancellable horizontal finish toolpath should never be cancelled")
 }
 
@@ -81,12 +82,20 @@ pub fn horizontal_finish_toolpath(
 /// once per flat Z-region and again once per raster row within each region
 /// (the per-row per-point drop-cutter sampling is the expensive step on a
 /// fine-stepover mesh).
-#[allow(clippy::indexing_slicing)] // mesh vertex/face indexing is bounded by mesh structure
+///
+/// `boundary_regions` (P2.3): when `Some`, a raster sample point outside
+/// every region is skipped BEFORE the drop-cutter query AND the flat-face
+/// lookup — cheap XY containment gates the two expensive per-point checks.
+/// The point is recorded as `None`, same as an off-mesh or non-flat point,
+/// so the existing run-split contiguous-segment logic treats it as a gap.
+/// `None` reproduces today's full-region sampling byte-for-byte.
+#[allow(clippy::indexing_slicing, clippy::too_many_arguments)] // mesh vertex/face indexing is bounded by mesh structure
 pub fn horizontal_finish_toolpath_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &HorizontalFinishParams,
+    boundary_regions: Option<&[Polygon2]>,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     check_cancel(cancel)?;
@@ -227,6 +236,16 @@ pub fn horizontal_finish_toolpath_with_cancel(
             let row_points: Vec<Option<P3>> = col_range
                 .map(|col_idx| {
                     let x = bbox.min.x + col_idx as f64 * step_x;
+
+                    // P2.3: outside every machining-boundary region — skip
+                    // both the drop-cutter query and the flat-face lookup
+                    // below entirely and treat this column as a gap.
+                    let in_region = boundary_regions.is_none_or(|regions| {
+                        regions.iter().any(|reg| reg.contains_point(&P2::new(x, y)))
+                    });
+                    if !in_region {
+                        return None;
+                    }
 
                     // Drop cutter to find Z on the mesh surface.
                     let cl = point_drop_cutter(x, y, mesh, index, cutter);
@@ -535,5 +554,89 @@ mod tests {
             cut_near((18.5, 24.5), 5.0),
             "Upper L top-row interior should be cut at Z=5"
         );
+    }
+
+    // ── P2.3: boundary_regions pre-clip ──────────────────────────────
+
+    #[test]
+    fn horizontal_boundary_regions_none_matches_call_without_param() {
+        let mesh = make_test_flat(100.0);
+        let index = SpatialIndex::build_auto(&mesh);
+        let cutter = BallEndmill::new(10.0, 25.0);
+        let params = HorizontalFinishParams {
+            angle_threshold: 5.0,
+            stepover: 5.0,
+            feed_rate: 1000.0,
+            plunge_rate: 300.0,
+            safe_z: 10.0,
+            stock_to_leave: 0.0,
+        };
+        let never_cancel = || false;
+
+        let tp_default = horizontal_finish_toolpath(&mesh, &index, &cutter, &params);
+        let tp_none = horizontal_finish_toolpath_with_cancel(
+            &mesh,
+            &index,
+            &cutter,
+            &params,
+            None,
+            &never_cancel,
+        )
+        .unwrap();
+
+        assert_eq!(tp_default.moves.len(), tp_none.moves.len());
+        for (a, b) in tp_default.moves.iter().zip(tp_none.moves.iter()) {
+            assert!((a.target.x - b.target.x).abs() < 1e-9);
+            assert!((a.target.y - b.target.y).abs() < 1e-9);
+            assert!((a.target.z - b.target.z).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn horizontal_boundary_regions_confines_cuts_to_region() {
+        let mesh = make_test_flat(100.0);
+        let index = SpatialIndex::build_auto(&mesh);
+        let cutter = BallEndmill::new(10.0, 25.0);
+        let params = HorizontalFinishParams {
+            angle_threshold: 5.0,
+            stepover: 5.0,
+            feed_rate: 1000.0,
+            plunge_rate: 300.0,
+            safe_z: 10.0,
+            stock_to_leave: 0.0,
+        };
+        let never_cancel = || false;
+
+        // Left half of the 100mm flat mesh (bbox [-50,50]).
+        let left_half = crate::polygon::Polygon2::new(vec![
+            crate::geo::P2::new(-50.0, -50.0),
+            crate::geo::P2::new(0.0, -50.0),
+            crate::geo::P2::new(0.0, 50.0),
+            crate::geo::P2::new(-50.0, 50.0),
+        ]);
+
+        let tp = horizontal_finish_toolpath_with_cancel(
+            &mesh,
+            &index,
+            &cutter,
+            &params,
+            Some(std::slice::from_ref(&left_half)),
+            &never_cancel,
+        )
+        .unwrap();
+
+        let tol = 1e-6;
+        let mut saw_cut = false;
+        for m in &tp.moves {
+            if let crate::toolpath::MoveType::Linear { .. } = m.move_type {
+                saw_cut = true;
+                assert!(
+                    m.target.x <= tol,
+                    "feed move X={:.3} escaped the left-half boundary region",
+                    m.target.x
+                );
+            }
+        }
+        assert!(saw_cut, "expected at least one feed move");
     }
 }

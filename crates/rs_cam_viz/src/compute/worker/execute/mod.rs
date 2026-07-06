@@ -4,7 +4,7 @@ use super::helpers::{
 };
 use super::{
     Arc, AtomicBool, ComputeError, ComputeRequest, SimBoundary, SimulationRequest,
-    SimulationResult, Toolpath, ToolpathPhaseTracker, ToolpathResult,
+    SimulationResult, ToolpathPhaseTracker, ToolpathResult,
 };
 #[cfg(test)]
 use super::{
@@ -32,12 +32,6 @@ pub(super) struct ComputeExecutionOutcome {
     pub debug_trace_path: Option<std::path::PathBuf>,
 }
 
-#[derive(Debug)]
-struct GeneratedToolpath {
-    toolpath: Toolpath,
-    spans: Vec<rs_cam_core::toolpath_spans::Span>,
-}
-
 /// Bridge function: delegates toolpath generation to core's `execute_operation`.
 ///
 /// Builds the spatial index on-demand (only for 3D mesh operations), adds a
@@ -48,7 +42,7 @@ fn generate_via_core(
     debug_ctx: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
     semantic_root: Option<&rs_cam_core::semantic_trace::ToolpathSemanticContext>,
     core_debug_span_id: Option<u64>,
-) -> Result<GeneratedToolpath, ComputeError> {
+) -> Result<rs_cam_core::toolpath_spans::AnnotatedToolpath, ComputeError> {
     let tool_def = build_cutter(&req.tool);
     let mesh_ref = req.mesh.as_deref();
     let index = mesh_ref.map(rs_cam_core::mesh::SpatialIndex::build_auto);
@@ -101,6 +95,26 @@ fn generate_via_core(
                         .partial_cmp(&b.area())
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
+            } else if matches!(
+                req.boundary.source,
+                BoundarySource::DerivedRestRegions { .. }
+            ) {
+                // P2.2/P2.3: the full region set is resolved by the
+                // controller (this worker has no cross-toolpath
+                // visibility, only what `ComputeRequest` carries).
+                // adaptive3d's internal-stock pre-clip wants a single
+                // containment polygon, so union the regions and use the
+                // result only when it collapses to exactly one polygon —
+                // mirrors `session/compute.rs::resolve_generation_inputs`.
+                // `None` just skips this pre-clip optimization (costs
+                // adaptive3d some discarded pre-clearing, not
+                // correctness); the real enforcement clip further down
+                // uses the full region set via `apply_boundary_clip_multi`
+                // regardless of whether this union collapsed.
+                req.derived_rest_regions.as_deref().and_then(|regions| {
+                    let mut unioned = rs_cam_core::polygon::Polygon2::union_all(regions);
+                    (unioned.len() == 1).then(|| unioned.remove(0))
+                })
             } else {
                 stock_rect()
             };
@@ -152,10 +166,11 @@ fn generate_via_core(
         scope.bind_to_toolpath(&result.toolpath, 0, result.toolpath.moves.len());
     }
 
-    Ok(GeneratedToolpath {
-        spans: result.spans,
-        toolpath: result.toolpath,
-    })
+    // Return the FULL annotated toolpath: narrowing to (toolpath, spans) here
+    // used to drop rest_grid / rest_regions / planner_engagement on the GUI
+    // worker path, so the heatmap overlay and DerivedRestRegions boundaries
+    // never saw the rest data core attached.
+    Ok(result)
 }
 
 /// Convert viz `SimulationRequest` into a core `SimulationRequest` so the
@@ -459,8 +474,7 @@ fn run_compute_with_phase_tracker(
             generated
         };
 
-        let mut current =
-            rs_cam_core::toolpath_spans::AnnotatedToolpath::with_spans(tp.toolpath, tp.spans);
+        let mut current = tp;
 
         {
             let _phase_scope = phase_tracker.map(|tracker| tracker.start_phase("Apply dressups"));
@@ -497,85 +511,147 @@ fn run_compute_with_phase_tracker(
                     bbox.min.x, bbox.min.y, bbox.max.x, bbox.max.y,
                 )
             };
-            let mut stock_poly = if let (Some(face_ids), Some(enriched)) =
-                (&req.face_selection, &req.enriched_mesh)
-            {
-                enriched
-                    .faces_boundary_as_polygon(face_ids)
-                    .unwrap_or_else(stock_rect)
-            } else if matches!(req.boundary.source, BoundarySource::ModelSilhouette)
-                && let Some(mesh) = req.mesh.as_deref()
-            {
-                model_silhouette(mesh, None)
-                    .into_iter()
-                    .max_by(|a, b| {
-                        a.area()
-                            .partial_cmp(&b.area())
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                    .unwrap_or_else(stock_rect)
-            } else {
-                stock_rect()
-            };
-            if !req.keep_out_footprints.is_empty() {
-                stock_poly = subtract_keepouts(&stock_poly, &req.keep_out_footprints);
-            }
-            // Apply user-configured boundary offset (positive = expand outward,
-            // negative = shrink). Mirrors session/compute.rs apply_boundary_clip.
-            // cavalier_contours convention: positive distance is INWARD shrink,
-            // so flip the sign to match the user-facing convention.
-            if req.boundary.offset.abs() > 1e-9 {
-                let offset_polys =
-                    rs_cam_core::polygon::offset_polygon(&stock_poly, -req.boundary.offset);
-                if let Some(largest) = offset_polys.into_iter().max_by(|a, b| {
-                    a.area()
-                        .partial_cmp(&b.area())
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                }) {
-                    stock_poly = largest;
-                }
-            }
-            let containment = match req.boundary.containment {
-                crate::state::toolpath::BoundaryContainment::Center => ToolContainment::Center,
-                crate::state::toolpath::BoundaryContainment::Inside => ToolContainment::Inside,
-                crate::state::toolpath::BoundaryContainment::Outside => ToolContainment::Outside,
-            };
-            let boundaries =
-                effective_boundary(&stock_poly, containment, req.tool.envelope_diameter() / 2.0);
-            if let Some(boundary) = boundaries.first() {
-                let (clipped, mapping) = clip_toolpath_to_boundary_with_provenance(
-                    &current.toolpath,
-                    boundary,
+            if matches!(
+                req.boundary.source,
+                BoundarySource::DerivedRestRegions { .. }
+            ) {
+                // P2.2/P2.3: this is the real enforcement clip for the GUI
+                // worker path — mirrors `ProjectSession::generate_toolpath`'s
+                // post-dressup clip byte-for-byte by calling the same core
+                // function (rather than re-deriving a single-polygon
+                // approximation, which silently degraded multi-region rest
+                // analysis down to "clip against nothing" whenever the
+                // regions didn't union to exactly one polygon). The
+                // controller fail-hard-validates this boundary before
+                // submitting (see `submit_toolpath_compute`), so
+                // `req.derived_rest_regions` is `Some` with a non-empty
+                // `Vec` in production; the stock-rectangle fallback below
+                // only matters for hand-built test requests that bypass
+                // the controller.
+                let regions: Vec<rs_cam_core::polygon::Polygon2> = req
+                    .derived_rest_regions
+                    .clone()
+                    .filter(|regions| !regions.is_empty())
+                    .unwrap_or_else(|| vec![stock_rect()]);
+                let semantic_ctx = semantic_root.clone().unwrap_or_else(|| {
+                    rs_cam_core::semantic_trace::ToolpathSemanticRecorder::new(
+                        req.toolpath_name.clone(),
+                        req.operation.label(),
+                    )
+                    .root_context()
+                });
+                current = rs_cam_core::session::ProjectSession::apply_boundary_clip_multi(
+                    current,
+                    &req.boundary,
+                    &regions,
+                    &req.keep_out_footprints,
+                    req.tool.envelope_diameter(),
                     effective_safe_z(req),
+                    &semantic_ctx,
                 );
-                current.toolpath = clipped;
-                // Precise span remap (S83): the clipper never drops input
-                // moves so each input span's [start, end) range maps to
-                // [mapping[start], mapping[end]) in the output.
-                current.spans = current.spans.iter().map(|s| s.remap(&mapping)).collect();
-                if let Some(root) = semantic_root.as_ref() {
-                    let scope =
-                        root.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
-                    if let Some(span_id) = boundary_span_id {
-                        scope.set_debug_span_id(span_id);
-                    }
-                    scope.set_param(
-                        "containment",
-                        match req.boundary.containment {
-                            crate::state::toolpath::BoundaryContainment::Center => "center",
-                            crate::state::toolpath::BoundaryContainment::Inside => "inside",
-                            crate::state::toolpath::BoundaryContainment::Outside => "outside",
-                        },
-                    );
-                    scope.set_param("keep_out_count", req.keep_out_footprints.len());
-                    if !current.toolpath.moves.is_empty() {
-                        scope.bind_to_toolpath(&current.toolpath, 0, current.toolpath.moves.len());
-                    }
-                }
                 if let Some(scope) = boundary_scope.as_ref()
                     && !current.toolpath.moves.is_empty()
                 {
                     scope.set_move_range(0, current.toolpath.moves.len() - 1);
+                }
+            } else {
+                // Resolve the source polygon. Order:
+                // 1. FaceSelection (when configured + enriched mesh available)
+                // 2. ModelSilhouette (when configured + mesh available) — was missing,
+                //    causing model-silhouette boundaries to silently fall through to
+                //    the stock-bbox rectangle (= no effective clipping). Mirrors
+                //    session/compute.rs::apply_boundary_clip.
+                // 3. Stock-bbox rectangle as fallback for stock-source or when the
+                //    requested source's geometry isn't available.
+                let mut stock_poly = if let (Some(face_ids), Some(enriched)) =
+                    (&req.face_selection, &req.enriched_mesh)
+                {
+                    enriched
+                        .faces_boundary_as_polygon(face_ids)
+                        .unwrap_or_else(stock_rect)
+                } else if matches!(req.boundary.source, BoundarySource::ModelSilhouette)
+                    && let Some(mesh) = req.mesh.as_deref()
+                {
+                    model_silhouette(mesh, None)
+                        .into_iter()
+                        .max_by(|a, b| {
+                            a.area()
+                                .partial_cmp(&b.area())
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        })
+                        .unwrap_or_else(stock_rect)
+                } else {
+                    stock_rect()
+                };
+                if !req.keep_out_footprints.is_empty() {
+                    stock_poly = subtract_keepouts(&stock_poly, &req.keep_out_footprints);
+                }
+                // Apply user-configured boundary offset (positive = expand outward,
+                // negative = shrink). Mirrors session/compute.rs apply_boundary_clip.
+                // cavalier_contours convention: positive distance is INWARD shrink,
+                // so flip the sign to match the user-facing convention.
+                if req.boundary.offset.abs() > 1e-9 {
+                    let offset_polys =
+                        rs_cam_core::polygon::offset_polygon(&stock_poly, -req.boundary.offset);
+                    if let Some(largest) = offset_polys.into_iter().max_by(|a, b| {
+                        a.area()
+                            .partial_cmp(&b.area())
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    }) {
+                        stock_poly = largest;
+                    }
+                }
+                let containment = match req.boundary.containment {
+                    crate::state::toolpath::BoundaryContainment::Center => ToolContainment::Center,
+                    crate::state::toolpath::BoundaryContainment::Inside => ToolContainment::Inside,
+                    crate::state::toolpath::BoundaryContainment::Outside => {
+                        ToolContainment::Outside
+                    }
+                };
+                let boundaries = effective_boundary(
+                    &stock_poly,
+                    containment,
+                    req.tool.envelope_diameter() / 2.0,
+                );
+                if let Some(boundary) = boundaries.first() {
+                    let (clipped, mapping) = clip_toolpath_to_boundary_with_provenance(
+                        &current.toolpath,
+                        boundary,
+                        effective_safe_z(req),
+                    );
+                    current.toolpath = clipped;
+                    // Precise span remap (S83): the clipper never drops input
+                    // moves so each input span's [start, end) range maps to
+                    // [mapping[start], mapping[end]) in the output.
+                    current.spans = current.spans.iter().map(|s| s.remap(&mapping)).collect();
+                    if let Some(root) = semantic_root.as_ref() {
+                        let scope =
+                            root.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
+                        if let Some(span_id) = boundary_span_id {
+                            scope.set_debug_span_id(span_id);
+                        }
+                        scope.set_param(
+                            "containment",
+                            match req.boundary.containment {
+                                crate::state::toolpath::BoundaryContainment::Center => "center",
+                                crate::state::toolpath::BoundaryContainment::Inside => "inside",
+                                crate::state::toolpath::BoundaryContainment::Outside => "outside",
+                            },
+                        );
+                        scope.set_param("keep_out_count", req.keep_out_footprints.len());
+                        if !current.toolpath.moves.is_empty() {
+                            scope.bind_to_toolpath(
+                                &current.toolpath,
+                                0,
+                                current.toolpath.moves.len(),
+                            );
+                        }
+                    }
+                    if let Some(scope) = boundary_scope.as_ref()
+                        && !current.toolpath.moves.is_empty()
+                    {
+                        scope.set_move_range(0, current.toolpath.moves.len() - 1);
+                    }
                 }
             }
         }
@@ -675,6 +751,7 @@ fn run_compute_with_phase_tracker(
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+    use crate::compute::worker::Toolpath;
 
     fn test_request_with_polygon(
         operation: OperationConfig,
@@ -710,6 +787,7 @@ mod tests {
             debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
             prior_stock: None,
             material: rs_cam_core::material::Material::default(),
+            derived_rest_regions: None,
         }
     }
 

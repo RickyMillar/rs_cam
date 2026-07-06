@@ -160,6 +160,15 @@ struct ResolvedGenInputs {
     reference_tool_cfg: Option<ToolConfig>,
     operation: crate::compute::OperationConfig,
     pre_boundary: Option<crate::polygon::Polygon2>,
+    /// P2.3: the per-region processed polygon set for a `DerivedRestRegions`
+    /// boundary — the same set [`ProjectSession::apply_boundary_clip_multi`]
+    /// re-derives for its post-generation clip (keep-outs subtracted, user
+    /// offset applied, but NOT yet tool-radius inset). Resolved once here
+    /// alongside `pre_boundary`'s union attempt and shared with the
+    /// mesh-finish family's pre-clip via `ExecutionContext::boundary_regions`
+    /// — never re-derived just for this field. `None` for every other
+    /// boundary source (or when the boundary is disabled).
+    pre_boundary_regions: Option<Vec<crate::polygon::Polygon2>>,
 }
 
 /// Clearing strategies the advisor compares for a 3D roughing op — the two
@@ -1160,13 +1169,66 @@ impl ProjectSession {
         // generation rather than after avoids the "cut moves outside
         // boundary become rapids" failure mode that left dexel cells
         // unstamped in deep passes.
+        // `DerivedRestRegions` resolves to a *set* of disjoint polygons, but
+        // adaptive3d's internal-stock pre-clip wants a single containment
+        // polygon. v1 limitation: union the per-region polygons (keep-outs +
+        // offset already applied) and use the result only if it collapses to
+        // exactly one polygon; otherwise skip the pre-clip entirely and rely
+        // on `apply_boundary_clip_multi`'s post-generation clip to enforce
+        // the real boundary (this only costs adaptive3d some discarded
+        // pre-clearing, not correctness).
+        let mut pre_boundary_regions: Option<Vec<crate::polygon::Polygon2>> = None;
         let pre_boundary: Option<crate::polygon::Polygon2> = if boundary_config.enabled {
-            Self::resolve_containment_polygon(
-                &boundary_config,
-                &emission_stock_bbox,
-                mesh.as_deref(),
-                &keep_out_footprints,
-            )
+            if let crate::compute::config::BoundarySource::DerivedRestRegions {
+                source_toolpath_id,
+            } = &boundary_config.source
+            {
+                match self.resolve_derived_rest_region_polys(index, *source_toolpath_id) {
+                    Ok(regions) => {
+                        let processed = Self::resolve_derived_region_polygons(
+                            &regions,
+                            &keep_out_footprints,
+                            boundary_config.offset,
+                        );
+                        let unioned = crate::polygon::Polygon2::union_all(&processed);
+                        // P2.3: share this exact `processed` set with the
+                        // mesh-finish family's pre-clip — it's the same set
+                        // `apply_boundary_clip_multi` re-derives for the
+                        // post-generation clip, resolved here once rather
+                        // than a third time just for this field.
+                        pre_boundary_regions = Some(processed);
+                        if unioned.len() == 1 {
+                            unioned.into_iter().next()
+                        } else {
+                            tracing::debug!(
+                                region_count =
+                                    pre_boundary_regions.as_ref().map_or(0, |rs| rs.len()),
+                                union_count = unioned.len(),
+                                "DerivedRestRegions pre-boundary union did not collapse to a \
+                                 single polygon; skipping adaptive3d pre-clip (the \
+                                 post-generation boundary clip still enforces the real \
+                                 boundary)"
+                            );
+                            None
+                        }
+                    }
+                    Err(e) => {
+                        tracing::debug!(
+                            error = %e,
+                            "DerivedRestRegions source unavailable while resolving \
+                             pre-boundary; skipping adaptive3d pre-clip"
+                        );
+                        None
+                    }
+                }
+            } else {
+                Self::resolve_containment_polygon(
+                    &boundary_config,
+                    &emission_stock_bbox,
+                    mesh.as_deref(),
+                    &keep_out_footprints,
+                )
+            }
         } else {
             None
         };
@@ -1186,6 +1248,7 @@ impl ProjectSession {
             reference_tool_cfg,
             operation,
             pre_boundary,
+            pre_boundary_regions,
         })
     }
 
@@ -1225,6 +1288,25 @@ impl ProjectSession {
             }
         }
 
+        // DerivedRestRegions boundary precondition (P2.2), same shape and
+        // same reasoning as the FromRemainingStock check above: checked
+        // BEFORE any geometry work so we fail fast with a message naming
+        // exactly what's missing, rather than silently clipping against
+        // stale/absent regions (or against nothing at all).
+        {
+            let tc = self
+                .toolpath_configs
+                .get(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            if tc.boundary.enabled
+                && let crate::compute::config::BoundarySource::DerivedRestRegions {
+                    source_toolpath_id,
+                } = &tc.boundary.source
+            {
+                self.resolve_derived_rest_region_polys(index, *source_toolpath_id)?;
+            }
+        }
+
         let ResolvedGenInputs {
             tool,
             mesh,
@@ -1240,6 +1322,7 @@ impl ProjectSession {
             reference_tool_cfg,
             operation,
             pre_boundary,
+            pre_boundary_regions,
         } = self.resolve_generation_inputs(index)?;
 
         // Re-borrow the config for the per-generation recorder labels and the
@@ -1283,7 +1366,12 @@ impl ProjectSession {
 
         let op_scope = semantic_root.start_item(ToolpathSemanticKind::Operation, &op_label);
         let child_ctx = op_scope.context();
-        let tp_result = crate::compute::execute::execute_operation_annotated(
+        // P2.3: `_with_regions` threads `pre_boundary_regions` (resolved once,
+        // above, alongside `pre_boundary`) into the mesh-finish family's
+        // pre-clip via `ExecutionContext::boundary_regions`. Every other
+        // caller of the plain `execute_operation_annotated` still gets `None`
+        // through its unchanged signature.
+        let tp_result = crate::compute::execute::execute_operation_annotated_with_regions(
             &operation,
             mesh.as_deref(),
             spatial_index.as_ref(),
@@ -1300,6 +1388,7 @@ impl ProjectSession {
             gen_initial_stock,
             Some(&child_ctx),
             pre_boundary.as_ref(),
+            pre_boundary_regions.as_deref(),
         );
 
         match tp_result {
@@ -1347,17 +1436,39 @@ impl ProjectSession {
                 // remapped through the clip via the input→output provenance
                 // map (S83) so spans_valid stays true.
                 if boundary_config.enabled {
-                    let clipped = Self::apply_boundary_clip(
-                        annotated,
-                        &boundary_config,
-                        &emission_stock_bbox,
-                        mesh.as_deref(),
-                        &keep_out_footprints,
-                        tool_def.diameter(),
-                        heights.retract_z,
-                        &semantic_root,
-                    );
-                    annotated = clipped;
+                    annotated =
+                        if let crate::compute::config::BoundarySource::DerivedRestRegions {
+                            source_toolpath_id,
+                        } = &boundary_config.source
+                        {
+                            // Precondition already validated at function entry —
+                            // this can only fail here if the source toolpath's
+                            // result was invalidated mid-generation, which can't
+                            // happen under `&mut self`. Propagate defensively
+                            // rather than `#[allow(clippy::unwrap_used)]`.
+                            let regions =
+                                self.resolve_derived_rest_region_polys(index, *source_toolpath_id)?;
+                            Self::apply_boundary_clip_multi(
+                                annotated,
+                                &boundary_config,
+                                &regions,
+                                &keep_out_footprints,
+                                tool_def.diameter(),
+                                heights.retract_z,
+                                &semantic_root,
+                            )
+                        } else {
+                            Self::apply_boundary_clip(
+                                annotated,
+                                &boundary_config,
+                                &emission_stock_bbox,
+                                mesh.as_deref(),
+                                &keep_out_footprints,
+                                tool_def.diameter(),
+                                heights.retract_z,
+                                &semantic_root,
+                            )
+                        };
                 }
 
                 let stats = ToolpathStats {
@@ -1410,6 +1521,104 @@ impl ProjectSession {
         }
     }
 
+    /// Resolve the polygon set for `BoundarySource::DerivedRestRegions`,
+    /// or a `SessionError::OperationFailed` naming exactly what's missing.
+    ///
+    /// Shared by the fail-hard precondition in [`Self::generate_toolpath`]
+    /// (checked before any geometry work) and the boundary resolution in
+    /// [`Self::resolve_generation_inputs`] / the post-dressup clip — all
+    /// three call sites must agree on what "the derived regions" are, so
+    /// this is the only place that reads `self.results` for it.
+    ///
+    /// `this_index` is the index of the toolpath *being generated* (whose
+    /// boundary references `source_toolpath_id`); it is only used to reject
+    /// a toolpath referencing its own regions as its boundary.
+    pub(crate) fn resolve_derived_rest_region_polys(
+        &self,
+        this_index: usize,
+        source_toolpath_id: crate::ids::ToolpathId,
+    ) -> Result<Arc<Vec<crate::polygon::Polygon2>>, SessionError> {
+        let Some(source_index) = self
+            .toolpath_configs
+            .iter()
+            .position(|tc| tc.id == source_toolpath_id)
+        else {
+            return Err(SessionError::OperationFailed(format!(
+                "Boundary references toolpath id {source_toolpath_id} for its rest regions, \
+                 but no toolpath with that id exists anymore. Pick a different source toolpath \
+                 for the boundary, or disable the boundary.",
+            )));
+        };
+
+        if source_index == this_index {
+            return Err(SessionError::OperationFailed(
+                "Boundary references this toolpath's own rest regions — a toolpath cannot use \
+                 itself as the source for a derived-rest-regions boundary. Pick a different \
+                 source toolpath."
+                    .to_owned(),
+            ));
+        }
+
+        let Some(source_tc) = self.toolpath_configs.get(source_index) else {
+            // Unreachable in practice: `source_index` came from `position()`
+            // on this same Vec a few lines above.
+            return Err(SessionError::ToolpathNotFound(source_index));
+        };
+        let source_name = &source_tc.name;
+
+        let Some(result) = self.results.get(&source_index) else {
+            return Err(SessionError::OperationFailed(format!(
+                "'{source_name}' has no generated result yet — generate '{source_name}' first; \
+                 its rest analysis produces the regions this boundary needs.",
+            )));
+        };
+
+        match result.annotated().rest_regions.as_ref() {
+            Some(regions) if !regions.is_empty() => Ok(Arc::clone(regions)),
+            _ => Err(SessionError::OperationFailed(format!(
+                "'{source_name}' produced no rest regions — it must be a pencil operation with \
+                 the rest-depth detector enabled, and its rest analysis must have found \
+                 material above the threshold. Check the pencil rest-depth settings on \
+                 '{source_name}' and regenerate it.",
+            ))),
+        }
+    }
+
+    /// Per-region variant of [`Self::resolve_containment_polygon`] for
+    /// `BoundarySource::DerivedRestRegions`: rest regions from a marching
+    /// squares detector are disjoint islands, so each region is keep-out
+    /// subtracted and offset *independently* rather than merged into one
+    /// polygon first — merging would let `effective_boundary`'s tool-radius
+    /// inset bridge gaps between islands the detector reported as
+    /// unconnected. A region that fully collapses under the user offset is
+    /// simply dropped from the set (not treated as "boundary collapsed" —
+    /// that only happens when the whole resulting set is empty, handled by
+    /// the caller).
+    pub(crate) fn resolve_derived_region_polygons(
+        regions: &[crate::polygon::Polygon2],
+        keep_out_footprints: &[crate::polygon::Polygon2],
+        offset: f64,
+    ) -> Vec<crate::polygon::Polygon2> {
+        use crate::boundary::subtract_keepouts;
+        use crate::polygon::{largest_by_area, offset_polygon};
+
+        regions
+            .iter()
+            .filter_map(|region| {
+                let mut poly = region.clone();
+                if !keep_out_footprints.is_empty() {
+                    poly = subtract_keepouts(&poly, keep_out_footprints);
+                }
+                if offset.abs() > 1e-9 {
+                    let offset_polys = offset_polygon(&poly, -offset);
+                    // A region that vanishes under the offset is dropped.
+                    poly = largest_by_area(&offset_polys)?.clone();
+                }
+                Some(poly)
+            })
+            .collect()
+    }
+
     /// Resolve the boundary "containment polygon" — the polygon the cutter's
     /// footprint must stay inside (Containment=Inside) or outside (Outside).
     /// For ModelSilhouette source this returns the silhouette itself
@@ -1419,6 +1628,14 @@ impl ProjectSession {
     /// pre-clip we want the silhouette itself, since the cutter footprint
     /// (when its center is at silhouette - tool_radius) reaches the
     /// silhouette boundary and validly stamps cells in that band.
+    ///
+    /// Not used for `BoundarySource::DerivedRestRegions` — that source can
+    /// resolve to multiple disjoint polygons, which this single-polygon
+    /// signature can't represent. See
+    /// [`Self::resolve_derived_rest_region_polys`] +
+    /// [`Self::resolve_derived_region_polygons`] for that source's path,
+    /// wired in by the two call sites below (`resolve_generation_inputs`'s
+    /// `pre_boundary` and `generate_toolpath`'s post-dressup clip).
     pub(crate) fn resolve_containment_polygon(
         boundary_config: &crate::compute::config::BoundaryConfig,
         stock_bbox: &BoundingBox3,
@@ -1493,6 +1710,7 @@ impl ProjectSession {
             spans_valid,
             planner_engagement,
             rest_grid,
+            rest_regions,
         } = annotated;
 
         // Resolve the source polygon for the boundary (ModelSilhouette /
@@ -1569,6 +1787,122 @@ impl ProjectSession {
             spans_valid,
             planner_engagement,
             rest_grid,
+            rest_regions,
+        }
+    }
+
+    /// Multi-region variant of [`Self::apply_boundary_clip`] for
+    /// `BoundarySource::DerivedRestRegions`, whose source resolves to a *set*
+    /// of disjoint polygons rather than one containment polygon.
+    ///
+    /// `regions` are the raw rest regions from
+    /// [`Self::resolve_derived_rest_region_polys`]; keep-out subtraction and
+    /// the user offset are applied per-region here (via
+    /// [`Self::resolve_derived_region_polygons`]), then each region runs
+    /// through `effective_boundary` independently for the containment /
+    /// tool-radius handling — a region that collapses under the inset is
+    /// dropped from the set. If EVERY region collapses the boundary is
+    /// treated as collapsed, same as the single-polygon path's empty
+    /// `effective_boundary` case: the original toolpath is returned
+    /// unchanged (identity span mapping) with a `tracing::warn!`.
+    ///
+    /// Span remapping contract is identical to [`Self::apply_boundary_clip`]
+    /// — the set clipper never drops input moves, so `spans_valid` stays
+    /// `true`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_boundary_clip_multi(
+        annotated: crate::toolpath_spans::AnnotatedToolpath,
+        boundary_config: &crate::compute::config::BoundaryConfig,
+        regions: &[crate::polygon::Polygon2],
+        keep_out_footprints: &[crate::polygon::Polygon2],
+        tool_diameter: f64,
+        safe_z: f64,
+        semantic_ctx: &crate::semantic_trace::ToolpathSemanticContext,
+    ) -> crate::toolpath_spans::AnnotatedToolpath {
+        use crate::boundary::{
+            ToolContainment, clip_toolpath_to_boundary_set_with_provenance, effective_boundary,
+        };
+
+        let crate::toolpath_spans::AnnotatedToolpath {
+            toolpath,
+            spans,
+            spans_valid,
+            planner_engagement,
+            rest_grid,
+            rest_regions,
+        } = annotated;
+
+        // Per-region keep-out subtraction + user offset (regions that
+        // collapse under the offset are dropped), mirroring what
+        // `resolve_containment_polygon` does to its single polygon.
+        let processed = Self::resolve_derived_region_polygons(
+            regions,
+            keep_out_footprints,
+            boundary_config.offset,
+        );
+
+        // Map BoundaryContainment -> ToolContainment.
+        let containment = match boundary_config.containment {
+            crate::compute::config::BoundaryContainment::Center => ToolContainment::Center,
+            crate::compute::config::BoundaryContainment::Inside => ToolContainment::Inside,
+            crate::compute::config::BoundaryContainment::Outside => ToolContainment::Outside,
+        };
+
+        // Containment / tool-radius handling per region. `effective_boundary`
+        // may split one region into several (or collapse it to none) — flatten
+        // everything into one set; membership downstream is "inside ANY".
+        let tool_radius = tool_diameter / 2.0;
+        let boundaries: Vec<crate::polygon::Polygon2> = processed
+            .iter()
+            .flat_map(|region| effective_boundary(region, containment, tool_radius))
+            .collect();
+
+        let (clipped, mapping) = if boundaries.is_empty() {
+            // Every region collapsed (offset/inset ate them all) — same
+            // "boundary collapsed" semantics as the single-polygon path:
+            // return the original toolpath unchanged with an identity
+            // mapping so spans pass through untouched.
+            tracing::warn!(
+                region_count = regions.len(),
+                "DerivedRestRegions boundary collapsed (all regions vanished under \
+                 offset/containment inset) — leaving toolpath unclipped"
+            );
+            let n = toolpath.moves.len();
+            (toolpath, (0..=n).collect())
+        } else {
+            let (clipped, mapping) =
+                clip_toolpath_to_boundary_set_with_provenance(&toolpath, &boundaries, safe_z);
+
+            // Record semantic trace for boundary clip
+            let clip_scope =
+                semantic_ctx.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
+            clip_scope.set_param(
+                "containment",
+                match boundary_config.containment {
+                    crate::compute::config::BoundaryContainment::Center => "center",
+                    crate::compute::config::BoundaryContainment::Inside => "inside",
+                    crate::compute::config::BoundaryContainment::Outside => "outside",
+                },
+            );
+            clip_scope.set_param("keep_out_count", keep_out_footprints.len());
+            clip_scope.set_param("region_count", boundaries.len());
+            if !clipped.moves.is_empty() {
+                clip_scope.bind_to_toolpath(&clipped, 0, clipped.moves.len());
+            }
+
+            (clipped, mapping)
+        };
+
+        let remapped: Vec<crate::toolpath_spans::Span> =
+            spans.iter().map(|s| s.remap(&mapping)).collect();
+
+        crate::toolpath_spans::AnnotatedToolpath {
+            toolpath: clipped,
+            spans: remapped,
+            spans_valid,
+            planner_engagement,
+            rest_grid,
+            rest_regions,
         }
     }
 
@@ -2255,6 +2589,8 @@ impl ProjectSession {
                 // Rest-field overlay grid is toolpath-wide metadata, unaffected
                 // by feed modulation — carry it through unchanged.
                 rest_grid: annotated_arc.rest_grid.clone(),
+                // Same for the derived machining-region polygons.
+                rest_regions: annotated_arc.rest_regions.clone(),
             };
             let new_arc = Arc::new(new_annotated);
             // Rebuild the op_data variant with the swapped Arc.
@@ -4594,6 +4930,273 @@ mod tests {
                     | crate::strategy_advisor::LoadRegime::Unconstrained
             ),
             "regime must be a modelled binding value derived from the optimized path"
+        );
+    }
+
+    // ── DerivedRestRegions boundary (P2.2) ───────────────────────
+
+    fn derived_boundary(source_id: usize) -> BoundaryConfig {
+        BoundaryConfig {
+            enabled: true,
+            source: crate::compute::config::BoundarySource::DerivedRestRegions {
+                source_toolpath_id: ToolpathId(source_id),
+            },
+            ..BoundaryConfig::default()
+        }
+    }
+
+    /// A minimal cached generation result whose annotated toolpath carries
+    /// (or lacks) `rest_regions`, for staleness-precondition tests.
+    fn fake_result_with_regions(
+        regions: Option<Vec<crate::polygon::Polygon2>>,
+    ) -> ToolpathComputeResult {
+        let mut at =
+            crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new());
+        at.rest_regions = regions.map(Arc::new);
+        ToolpathComputeResult {
+            op_data: crate::drill_op::OpData::Toolpath(Arc::new(at)),
+            stats: ToolpathStats {
+                move_count: 0,
+                cutting_distance: 0.0,
+                rapid_distance: 0.0,
+            },
+            debug_trace: None,
+            semantic_trace: None,
+        }
+    }
+
+    fn expect_operation_failed(result: Result<&ToolpathComputeResult, SessionError>) -> String {
+        match result {
+            Err(SessionError::OperationFailed(msg)) => msg,
+            Err(other) => panic!("expected OperationFailed, got {other:?}"),
+            Ok(_) => panic!("expected OperationFailed, got Ok"),
+        }
+    }
+
+    #[test]
+    fn derived_rest_regions_boundary_missing_source_errors() {
+        let mut s = make_session();
+        let mut tc = make_tc(s.tools()[0].id.0);
+        tc.boundary = derived_boundary(999);
+        s.add_toolpath(0, tc).unwrap();
+
+        let cancel = AtomicBool::new(false);
+        let msg = expect_operation_failed(s.generate_toolpath(0, &cancel));
+        assert!(
+            msg.contains("999"),
+            "error should name the missing source id: {msg}"
+        );
+        assert!(
+            msg.contains("no longer") || msg.contains("no toolpath with that id"),
+            "error should say the referenced toolpath doesn't exist: {msg}"
+        );
+    }
+
+    #[test]
+    fn derived_rest_regions_boundary_self_reference_errors() {
+        let mut s = make_session();
+        let mut tc = make_tc(s.tools()[0].id.0);
+        // First add_toolpath assigns id 0, so referencing id 0 is a
+        // self-reference.
+        tc.boundary = derived_boundary(0);
+        s.add_toolpath(0, tc).unwrap();
+
+        let cancel = AtomicBool::new(false);
+        let msg = expect_operation_failed(s.generate_toolpath(0, &cancel));
+        assert!(
+            msg.contains("itself") || msg.contains("own rest regions"),
+            "error should reject the self-reference: {msg}"
+        );
+    }
+
+    #[test]
+    fn derived_rest_regions_boundary_ungenerated_source_errors() {
+        let mut s = make_session();
+        let mut source_tc = make_tc(s.tools()[0].id.0);
+        source_tc.name = "Pencil Rest".to_owned();
+        s.add_toolpath(0, source_tc).unwrap(); // gets id 0
+
+        let mut tc = make_tc(s.tools()[0].id.0);
+        tc.boundary = derived_boundary(0);
+        s.add_toolpath(0, tc).unwrap(); // gets id 1, index 1
+
+        let cancel = AtomicBool::new(false);
+        let msg = expect_operation_failed(s.generate_toolpath(1, &cancel));
+        assert!(
+            msg.contains("Pencil Rest"),
+            "error should name the source toolpath: {msg}"
+        );
+        assert!(
+            msg.contains("generate"),
+            "error should tell the user to generate the source first: {msg}"
+        );
+    }
+
+    #[test]
+    fn derived_rest_regions_boundary_source_without_regions_errors() {
+        let mut s = make_session();
+        let mut source_tc = make_tc(s.tools()[0].id.0);
+        source_tc.name = "Pencil Rest".to_owned();
+        s.add_toolpath(0, source_tc).unwrap(); // id 0, index 0
+
+        let mut tc = make_tc(s.tools()[0].id.0);
+        tc.boundary = derived_boundary(0);
+        s.add_toolpath(0, tc).unwrap(); // id 1, index 1
+
+        // Source has a cached result, but its rest_regions is None (e.g. a
+        // pencil op without the rest-depth detector, or any other op kind).
+        s.results.insert(0, fake_result_with_regions(None));
+
+        let cancel = AtomicBool::new(false);
+        let msg = expect_operation_failed(s.generate_toolpath(1, &cancel));
+        assert!(
+            msg.contains("Pencil Rest"),
+            "error should name the source toolpath: {msg}"
+        );
+        assert!(
+            msg.contains("no rest regions"),
+            "error should explain the source produced no regions: {msg}"
+        );
+
+        // Empty (rather than absent) regions fail the same way.
+        s.results
+            .insert(0, fake_result_with_regions(Some(Vec::new())));
+        let msg = expect_operation_failed(s.generate_toolpath(1, &cancel));
+        assert!(msg.contains("no rest regions"), "empty regions: {msg}");
+    }
+
+    #[test]
+    fn derived_rest_regions_resolve_happy_path_returns_regions() {
+        let mut s = make_session();
+        let mut source_tc = make_tc(s.tools()[0].id.0);
+        source_tc.name = "Pencil Rest".to_owned();
+        s.add_toolpath(0, source_tc).unwrap(); // id 0, index 0
+
+        let mut tc = make_tc(s.tools()[0].id.0);
+        tc.boundary = derived_boundary(0);
+        s.add_toolpath(0, tc).unwrap(); // id 1, index 1
+
+        let regions = vec![
+            crate::polygon::Polygon2::rectangle(0.0, 0.0, 10.0, 10.0),
+            crate::polygon::Polygon2::rectangle(30.0, 30.0, 40.0, 40.0),
+        ];
+        s.results.insert(0, fake_result_with_regions(Some(regions)));
+
+        let resolved = s
+            .resolve_derived_rest_region_polys(1, ToolpathId(0))
+            .expect("regions present on the source result");
+        assert_eq!(resolved.len(), 2, "both disjoint regions come through");
+    }
+
+    #[test]
+    fn apply_boundary_clip_multi_clips_to_disjoint_regions() {
+        use crate::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
+
+        // Two disjoint regions; a 3-move path visiting region A, the gap,
+        // then region B. The gap move must become a rapid at safe_z, the two
+        // region moves must survive, and spans must stay valid.
+        let regions = vec![
+            crate::polygon::Polygon2::rectangle(0.0, 0.0, 10.0, 10.0),
+            crate::polygon::Polygon2::rectangle(30.0, 30.0, 40.0, 40.0),
+        ];
+
+        let mut tp = crate::toolpath::Toolpath::new();
+        tp.feed_to(P3::new(5.0, 5.0, -1.0), 1000.0); // region A
+        tp.feed_to(P3::new(20.0, 20.0, -1.0), 1000.0); // gap
+        tp.feed_to(P3::new(35.0, 35.0, -1.0), 1000.0); // region B
+        let n_moves = tp.moves.len();
+        let annotated =
+            AnnotatedToolpath::with_spans(tp, vec![Span::new(0, n_moves, SpanKind::Operation)]);
+
+        let boundary = derived_boundary(0);
+        let safe_z = 20.0;
+        let recorder = ToolpathSemanticRecorder::new("test-tp", "Pocket");
+        let semantic_ctx = recorder.root_context();
+
+        let clipped = ProjectSession::apply_boundary_clip_multi(
+            annotated,
+            &boundary,
+            &regions,
+            &[],
+            2.0,
+            safe_z,
+            &semantic_ctx,
+        );
+
+        assert!(clipped.spans_valid, "spans stay valid through the set clip");
+        assert_eq!(clipped.spans.len(), 1);
+        assert_eq!(
+            clipped.spans[0].end_move,
+            clipped.toolpath.moves.len(),
+            "operation span covers the whole clipped path"
+        );
+
+        // Gap move became a rapid at safe_z.
+        let gap = clipped
+            .toolpath
+            .moves
+            .iter()
+            .find(|m| (m.target.x - 20.0).abs() < 1e-10)
+            .expect("gap move present");
+        assert_eq!(gap.move_type, crate::toolpath::MoveType::Rapid);
+        assert!((gap.target.z - safe_z).abs() < 1e-10);
+
+        // Both region moves survive as cuts.
+        for (x, y) in [(5.0, 5.0), (35.0, 35.0)] {
+            assert!(
+                clipped.toolpath.moves.iter().any(|m| {
+                    m.move_type != crate::toolpath::MoveType::Rapid
+                        && (m.target.x - x).abs() < 1e-10
+                        && (m.target.y - y).abs() < 1e-10
+                }),
+                "cut at ({x}, {y}) should survive the set clip"
+            );
+        }
+    }
+
+    #[test]
+    fn apply_boundary_clip_multi_all_regions_collapsed_returns_original() {
+        use crate::toolpath_spans::AnnotatedToolpath;
+
+        // A tiny region with a large negative user offset collapses; with
+        // every region gone the toolpath must pass through unchanged (the
+        // single-polygon path's "boundary collapsed" semantics).
+        let regions = vec![crate::polygon::Polygon2::rectangle(0.0, 0.0, 2.0, 2.0)];
+
+        let mut tp = crate::toolpath::Toolpath::new();
+        tp.feed_to(P3::new(50.0, 50.0, -1.0), 1000.0);
+        tp.feed_to(P3::new(60.0, 50.0, -1.0), 1000.0);
+        let move_count = tp.moves.len();
+        let annotated = AnnotatedToolpath::new(tp);
+
+        let mut boundary = derived_boundary(0);
+        boundary.offset = -10.0; // shrink by 10mm — eats the 2mm square
+
+        let recorder = ToolpathSemanticRecorder::new("test-tp", "Pocket");
+        let semantic_ctx = recorder.root_context();
+
+        let clipped = ProjectSession::apply_boundary_clip_multi(
+            annotated,
+            &boundary,
+            &regions,
+            &[],
+            2.0,
+            20.0,
+            &semantic_ctx,
+        );
+
+        assert_eq!(
+            clipped.toolpath.moves.len(),
+            move_count,
+            "collapsed boundary set must leave the toolpath unchanged"
+        );
+        assert!(
+            clipped
+                .toolpath
+                .moves
+                .iter()
+                .all(|m| m.move_type != crate::toolpath::MoveType::Rapid),
+            "no retracts inserted when the boundary collapses"
         );
     }
 }

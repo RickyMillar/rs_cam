@@ -251,9 +251,23 @@ pub enum BoundarySource {
     Geometry { polygon_indices: Vec<usize> },
     /// Selected STEP/CAD faces projected to XY.
     FaceSelection,
+    /// Rest regions derived from another toolpath's rest-depth analysis
+    /// (`AnnotatedToolpath::rest_regions`, populated by the pencil
+    /// RestDepth detector). `source_toolpath_id` is the *stable id*
+    /// (`ToolpathConfig.id`, not an index) of the toolpath whose cached
+    /// generation result supplies the polygons — the regions are
+    /// re-resolved from that result at generation time, never copied in
+    /// here, so they always reflect the source's latest generation.
+    DerivedRestRegions {
+        source_toolpath_id: crate::ids::ToolpathId,
+    },
 }
 
 impl BoundarySource {
+    /// Sources with no extra configuration beyond picking them — safe for a
+    /// simple combo box. `Geometry` needs a polygon-index picker,
+    /// `FaceSelection` a face picker, and `DerivedRestRegions` a
+    /// source-toolpath picker, so none of those three are listed here.
     pub const ALL_SIMPLE: &[BoundarySource] =
         &[BoundarySource::Stock, BoundarySource::ModelSilhouette];
 
@@ -263,6 +277,7 @@ impl BoundarySource {
             BoundarySource::ModelSilhouette => "Model Silhouette",
             BoundarySource::Geometry { .. } => "Imported Geometry",
             BoundarySource::FaceSelection => "Face Selection",
+            BoundarySource::DerivedRestRegions { .. } => "Rest Regions",
         }
     }
 }

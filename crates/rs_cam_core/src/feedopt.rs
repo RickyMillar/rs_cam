@@ -103,6 +103,7 @@ pub fn optimize_feed_rates(
         spans_valid,
         planner_engagement,
         rest_grid,
+        rest_regions,
     } = annotated;
     let result = optimize_feed_rates_inner(&toolpath, cutter, stock, params);
     debug_assert_eq!(
@@ -116,6 +117,7 @@ pub fn optimize_feed_rates(
         spans_valid,
         planner_engagement,
         rest_grid,
+        rest_regions,
     }
 }
 

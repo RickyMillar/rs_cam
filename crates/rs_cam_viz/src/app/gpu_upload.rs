@@ -987,6 +987,44 @@ impl RsCamApp {
         } else {
             resources.height_planes_data = None;
         }
+
+        // Upload rest-depth heatmap overlay (pencil detector #4) whenever the
+        // selected toolpath carries a populated `rest_grid`. Mirrors the
+        // height-plane upload gate directly above — rebuilt on the same
+        // pending-upload cycle, not every frame (`upload_gpu_data` only runs
+        // when `take_pending_upload()` fires, so this isn't a per-frame cost).
+        {
+            let rest_grid = if let Selection::Toolpath(tp_id) = self.controller.state().selection {
+                let state = self.controller.state();
+                state
+                    .gui
+                    .toolpath_rt
+                    .get(&tp_id)
+                    .and_then(|rt| rt.result.as_ref())
+                    .and_then(|result| {
+                        // Rest grids arrive in the emission frame alongside
+                        // the toolpath they came from; re-frame in lockstep
+                        // with the same display shift applied to toolpath
+                        // lines above (identity-setup world→local shift).
+                        if has_display_shift {
+                            translate_annotated(&result.annotated, display_shift).rest_grid
+                        } else {
+                            result.annotated.rest_grid.clone()
+                        }
+                    })
+            } else {
+                None
+            };
+            resources.rest_heatmap_data = rest_grid.and_then(|grid| {
+                rs_cam_core::rest_heatmap_mesh::rest_grid_to_heatmap_mesh(&grid).and_then(|hm| {
+                    SimMeshGpuData::from_heightmap_mesh(
+                        &render_state.device,
+                        &resources.gpu_limits,
+                        &hm,
+                    )
+                })
+            });
+        }
     }
 }
 
@@ -1078,6 +1116,7 @@ mod tests {
             spans_valid: true,
             planner_engagement: Vec::new(),
             rest_grid: None,
+            rest_regions: None,
         };
 
         let shifted = translate_annotated(&annotated, P3::new(0.0, 0.0, 19.0));

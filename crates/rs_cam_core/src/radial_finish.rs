@@ -6,9 +6,10 @@
 //! for efficient zigzag linking with rapid retracts between spokes.
 
 use crate::dropcutter::point_drop_cutter;
-use crate::geo::P3;
+use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
@@ -58,18 +59,31 @@ pub fn radial_finish_toolpath(
     params: &RadialFinishParams,
 ) -> Toolpath {
     let never_cancel = || false;
-    radial_finish_toolpath_with_cancel(mesh, index, cutter, params, &never_cancel)
+    radial_finish_toolpath_with_cancel(mesh, index, cutter, params, None, &never_cancel)
         .expect("non-cancellable radial finish toolpath should never be cancelled")
 }
 
 /// Cancellable variant of [`radial_finish_toolpath`]. Polls `cancel` once
 /// per spoke (each spoke samples `point_spacing`-spaced drop-cutter queries
 /// out to the mesh's max radius, which is the expensive part).
+///
+/// `boundary_regions` (P2.3): when `Some`, a sample point outside every
+/// region is skipped BEFORE the drop-cutter query (the region check is a
+/// cheap XY containment test; the query is the expensive step this pass
+/// pre-clips generation to avoid wasting) — the point is treated exactly
+/// like a non-contacted point (falls to the min-Z sentinel and gets
+/// excluded by the existing contiguous-run split below). Regions are
+/// already dilated by fine-tool radius + margin at derivation, and exact
+/// containment is still enforced by the post-generation boundary clip —
+/// this is a conservative superset filter for performance, not the source
+/// of truth for correctness. `None` reproduces today's full-mesh sampling
+/// byte-for-byte.
 pub fn radial_finish_toolpath_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &RadialFinishParams,
+    boundary_regions: Option<&[Polygon2]>,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     check_cancel(cancel)?;
@@ -98,11 +112,20 @@ pub fn radial_finish_toolpath_with_cancel(
             let r = i as f64 * params.point_spacing;
             let x = cx + r * cos_a;
             let y = cy + r * sin_a;
-            let cl = point_drop_cutter(x, y, mesh, index, cutter);
-            let z = if cl.contacted {
-                cl.z + params.stock_to_leave
+            let in_region = boundary_regions
+                .is_none_or(|regions| regions.iter().any(|reg| reg.contains_point(&P2::new(x, y))));
+            let z = if in_region {
+                let cl = point_drop_cutter(x, y, mesh, index, cutter);
+                if cl.contacted {
+                    cl.z + params.stock_to_leave
+                } else {
+                    // Point is outside the mesh footprint; use fallback Z clamped to min_z.
+                    min_z_fallback
+                }
             } else {
-                // Point is outside the mesh footprint; use fallback Z clamped to min_z.
+                // Outside every machining-boundary region — skip the
+                // drop-cutter query entirely and treat it as a gap, same as
+                // a non-contacted point.
                 min_z_fallback
             };
             spoke_points.push(P3::new(x, y, z));
@@ -453,6 +476,68 @@ mod tests {
             "interior gap should split the spoke into >= 2 segments, got {} Linking rapids",
             linking_count
         );
+    }
+
+    // ── P2.3: boundary_regions pre-clip ──────────────────────────────
+
+    #[test]
+    fn radial_boundary_regions_none_matches_call_without_param() {
+        let (mesh, si) = flat_mesh();
+        let cutter = ball_cutter();
+        let params = default_params();
+        let never_cancel = || false;
+
+        let tp_default = radial_finish_toolpath(&mesh, &si, &cutter, &params);
+        let tp_none =
+            radial_finish_toolpath_with_cancel(&mesh, &si, &cutter, &params, None, &never_cancel)
+                .unwrap();
+
+        assert_eq!(tp_default.moves.len(), tp_none.moves.len());
+        for (a, b) in tp_default.moves.iter().zip(tp_none.moves.iter()) {
+            assert!((a.target.x - b.target.x).abs() < 1e-9);
+            assert!((a.target.y - b.target.y).abs() < 1e-9);
+            assert!((a.target.z - b.target.z).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn radial_boundary_regions_confines_cuts_to_region() {
+        let (mesh, si) = flat_mesh();
+        let cutter = ball_cutter();
+        let params = default_params();
+        let never_cancel = || false;
+
+        // Left half of the 100mm flat mesh (bbox [-50,50]).
+        let left_half = crate::polygon::Polygon2::new(vec![
+            crate::geo::P2::new(-50.0, -50.0),
+            crate::geo::P2::new(0.0, -50.0),
+            crate::geo::P2::new(0.0, 50.0),
+            crate::geo::P2::new(-50.0, 50.0),
+        ]);
+
+        let tp = radial_finish_toolpath_with_cancel(
+            &mesh,
+            &si,
+            &cutter,
+            &params,
+            Some(std::slice::from_ref(&left_half)),
+            &never_cancel,
+        )
+        .unwrap();
+
+        let tol = 1e-6;
+        let mut saw_cut = false;
+        for m in &tp.moves {
+            if let crate::toolpath::MoveType::Linear { .. } = m.move_type {
+                saw_cut = true;
+                assert!(
+                    m.target.x <= tol,
+                    "feed move X={:.3} escaped the left-half boundary region",
+                    m.target.x
+                );
+            }
+        }
+        assert!(saw_cut, "expected at least one feed move");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────

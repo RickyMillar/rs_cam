@@ -14,9 +14,10 @@
 
 use crate::debug_trace::ToolpathDebugContext;
 use crate::dropcutter::point_drop_cutter;
-use crate::geo::P3;
+use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
@@ -93,7 +94,8 @@ pub fn spiral_finish_toolpath(
     cutter: &dyn MillingCutter,
     params: &SpiralFinishParams,
 ) -> Toolpath {
-    let (tp, _) = spiral_finish_toolpath_structured_annotated(mesh, index, cutter, params, None);
+    let (tp, _) =
+        spiral_finish_toolpath_structured_annotated(mesh, index, cutter, params, None, None);
     tp
 }
 
@@ -107,7 +109,7 @@ pub fn spiral_finish_toolpath_with_cancel(
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     let (tp, _) = spiral_finish_toolpath_structured_annotated_with_cancel(
-        mesh, index, cutter, params, None, cancel,
+        mesh, index, cutter, params, None, None, cancel,
     )?;
     Ok(tp)
 }
@@ -129,6 +131,7 @@ pub fn spiral_finish_toolpath_structured_annotated(
     cutter: &dyn MillingCutter,
     params: &SpiralFinishParams,
     debug: Option<&ToolpathDebugContext>,
+    boundary_regions: Option<&[Polygon2]>,
 ) -> (Toolpath, Vec<SpiralFinishRuntimeAnnotation>) {
     let never_cancel = || false;
     spiral_finish_toolpath_structured_annotated_with_cancel(
@@ -137,6 +140,7 @@ pub fn spiral_finish_toolpath_structured_annotated(
         cutter,
         params,
         debug,
+        boundary_regions,
         &never_cancel,
     )
     .expect("non-cancellable spiral finish toolpath should never be cancelled")
@@ -146,12 +150,24 @@ pub fn spiral_finish_toolpath_structured_annotated(
 /// Polls `cancel` every [`CANCEL_POLL_STRIDE`] points in both the drop-cutter
 /// sampling loop and the toolpath-emission loop (a full-radius fine-stepover
 /// spiral can carry tens of thousands of points).
+///
+/// `boundary_regions` (P2.3): when `Some`, a spiral sample point outside
+/// every region is skipped BEFORE the drop-cutter query — cheap XY
+/// containment gates the expensive query. The point is recorded as a `None`
+/// marker, same as a point that misses the mesh, so the existing run-split
+/// below treats it as a gap. Regions are already dilated by fine-tool
+/// radius + margin at derivation and the post-generation boundary clip
+/// still enforces exact containment — this is a conservative superset
+/// filter for performance. `None` reproduces today's full-mesh sampling
+/// byte-for-byte.
+#[allow(clippy::too_many_arguments)]
 pub fn spiral_finish_toolpath_structured_annotated_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &SpiralFinishParams,
     debug: Option<&ToolpathDebugContext>,
+    boundary_regions: Option<&[Polygon2]>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<SpiralFinishRuntimeAnnotation>), Cancelled> {
     check_cancel(cancel)?;
@@ -181,6 +197,15 @@ pub fn spiral_finish_toolpath_structured_annotated_with_cancel(
     for (i, sample) in spiral_xy.iter().enumerate() {
         if i % CANCEL_POLL_STRIDE == 0 {
             check_cancel(cancel)?;
+        }
+        let in_region = boundary_regions.is_none_or(|regions| {
+            regions
+                .iter()
+                .any(|reg| reg.contains_point(&P2::new(sample.x, sample.y)))
+        });
+        if !in_region {
+            samples.push(None);
+            continue;
         }
         let cl = point_drop_cutter(sample.x, sample.y, mesh, index, cutter);
         if cl.contacted {
@@ -291,7 +316,7 @@ pub fn spiral_finish_toolpath_annotated(
     debug: Option<&ToolpathDebugContext>,
 ) -> (Toolpath, Vec<(usize, String)>) {
     let (tp, annotations) =
-        spiral_finish_toolpath_structured_annotated(mesh, index, cutter, params, debug);
+        spiral_finish_toolpath_structured_annotated(mesh, index, cutter, params, debug, None);
     (tp, runtime_annotations_to_labels(&annotations))
 }
 
@@ -689,5 +714,91 @@ mod tests {
             }
         }
         assert!(saw_any_cut, "expected at least one cutting move");
+    }
+
+    // ── P2.3: boundary_regions pre-clip ──────────────────────────────
+
+    #[test]
+    fn spiral_boundary_regions_none_matches_call_without_param() {
+        let (mesh, si) = make_flat_mesh();
+        let cutter = ball_cutter();
+        let params = SpiralFinishParams {
+            stepover: 3.0,
+            direction: SpiralDirection::InsideOut,
+            feed_rate: 1000.0,
+            plunge_rate: 500.0,
+            safe_z: 30.0,
+            stock_to_leave: 0.0,
+        };
+        let never_cancel = || false;
+
+        let tp_default = spiral_finish_toolpath(&mesh, &si, &cutter, &params);
+        let (tp_none, _) = spiral_finish_toolpath_structured_annotated_with_cancel(
+            &mesh,
+            &si,
+            &cutter,
+            &params,
+            None,
+            None,
+            &never_cancel,
+        )
+        .unwrap();
+
+        assert_eq!(tp_default.moves.len(), tp_none.moves.len());
+        for (a, b) in tp_default.moves.iter().zip(tp_none.moves.iter()) {
+            assert!((a.target.x - b.target.x).abs() < 1e-9);
+            assert!((a.target.y - b.target.y).abs() < 1e-9);
+            assert!((a.target.z - b.target.z).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn spiral_boundary_regions_confines_cuts_to_region() {
+        let (mesh, si) = make_flat_mesh();
+        let cutter = ball_cutter();
+        let params = SpiralFinishParams {
+            stepover: 2.0,
+            direction: SpiralDirection::InsideOut,
+            feed_rate: 1000.0,
+            plunge_rate: 500.0,
+            safe_z: 30.0,
+            stock_to_leave: 0.0,
+        };
+        let never_cancel = || false;
+
+        // Left half of the 50mm flat mesh (bbox [-25,25]).
+        let left_half = Polygon2::new(vec![
+            P2::new(-25.0, -25.0),
+            P2::new(0.0, -25.0),
+            P2::new(0.0, 25.0),
+            P2::new(-25.0, 25.0),
+        ]);
+
+        let (tp, _) = spiral_finish_toolpath_structured_annotated_with_cancel(
+            &mesh,
+            &si,
+            &cutter,
+            &params,
+            None,
+            Some(std::slice::from_ref(&left_half)),
+            &never_cancel,
+        )
+        .unwrap();
+
+        let tol = 1e-6;
+        let mut saw_cut = false;
+        for m in &tp.moves {
+            let is_cut = matches!(m.move_type, crate::toolpath::MoveType::Linear { .. })
+                && m.intent == crate::toolpath::MoveIntent::FinishingCut;
+            if is_cut {
+                saw_cut = true;
+                assert!(
+                    m.target.x <= tol,
+                    "cutting move X={:.3} escaped the left-half boundary region",
+                    m.target.x
+                );
+            }
+        }
+        assert!(saw_cut, "expected at least one cutting move");
     }
 }

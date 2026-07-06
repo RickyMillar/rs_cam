@@ -1630,9 +1630,16 @@ mod tests {
         toolpath.dressups.entry_style = DressupEntryStyle::Ramp;
         toolpath.dressups.feed_optimization = true;
         toolpath.heights.bottom_z = HeightMode::Manual(-4.2);
+        // P2.2: `DerivedRestRegions` is the newest boundary source and the
+        // one most likely to regress silently (a struct variant round-trips
+        // differently from the unit variants above it) — exercise it here
+        // rather than `Stock` so a serde/TOML mapping mistake fails this
+        // test instead of shipping quietly.
         toolpath.boundary = BoundaryConfig {
             enabled: true,
-            source: BoundarySource::Stock,
+            source: BoundarySource::DerivedRestRegions {
+                source_toolpath_id: ToolpathId(99),
+            },
             containment: BoundaryContainment::Inside,
             offset: 0.0,
         };
@@ -1669,6 +1676,18 @@ mod tests {
         assert!(toolpath.result.is_none());
         assert!(toolpath.stale_since.is_some());
         assert!(matches!(toolpath.operation, OperationConfig::Pocket(_)));
+        assert_eq!(
+            toolpath.boundary,
+            BoundaryConfig {
+                enabled: true,
+                source: BoundarySource::DerivedRestRegions {
+                    source_toolpath_id: ToolpathId(99),
+                },
+                containment: BoundaryContainment::Inside,
+                offset: 0.0,
+            }
+        );
+        assert!(!toolpath.boundary_inherit);
 
         fs::remove_dir_all(temp_dir).unwrap();
     }

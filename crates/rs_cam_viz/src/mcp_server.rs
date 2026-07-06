@@ -786,7 +786,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_boundary_config",
-        description = "Set the machining boundary for a toolpath. Sources: 'stock', 'model_silhouette'. Containment: 'center', 'inside', 'outside'. Invalidates cached result."
+        description = "Set the machining boundary for a toolpath. Sources: 'stock', 'model_silhouette', 'derived_rest_regions' (requires source_toolpath_id — the id of another toolpath whose pencil rest-depth result supplies the regions). Containment: 'center', 'inside', 'outside'. Invalidates cached result."
     )]
     async fn set_boundary_config(
         &self,
@@ -796,6 +796,7 @@ impl EmbeddedCamServer {
             source,
             containment,
             offset,
+            source_toolpath_id,
         }): Parameters<SetBoundaryConfigParam>,
     ) -> String {
         Self::format_result(
@@ -805,6 +806,7 @@ impl EmbeddedCamServer {
                 source,
                 containment,
                 offset,
+                source_toolpath_id,
             })
             .await,
         )

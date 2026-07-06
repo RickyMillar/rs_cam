@@ -53,6 +53,7 @@ pub fn fit_arcs(
         spans_valid,
         planner_engagement,
         rest_grid,
+        rest_regions,
     } = annotated;
     let moves = &toolpath.moves;
 
@@ -63,6 +64,7 @@ pub fn fit_arcs(
             spans_valid,
             planner_engagement,
             rest_grid,
+            rest_regions,
         };
     }
 
@@ -225,6 +227,7 @@ pub fn fit_arcs(
         spans_valid,
         planner_engagement,
         rest_grid,
+        rest_regions,
     }
 }
 

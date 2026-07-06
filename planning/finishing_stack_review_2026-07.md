@@ -167,7 +167,12 @@ rough-finish → fine-tool detail only where it adds detail** on freeform relief
 > → fine tool (scallop/pencil) runs ONLY inside those regions.
 > All building blocks exist; this phase wires them.
 
-- [ ] **P2.1 Region polygons from the rest field**
+- [x] **P2.1 Region polygons from the rest field** — DONE 2026-07-06 (pending verify):
+  `region_polygons_from_mask` in rest_field.rs (EDT dilate → `marching_squares_bool_grid` →
+  degenerate-loop drop → `detect_containment` → `ensure_winding`); `RestFieldResult.region_polygons`
+  dilated by `pencil.radius() + params.region_margin_mm` (new param, default 0.5);
+  `AnnotatedToolpath.rest_regions: Option<Arc<Vec<Polygon2>>>` shifted by `translated()`,
+  plumbed pencil→execute, pass-through in all dressup-family transforms + session/compute.
   - `ClearingRegion` today = bbox + cell count + peak depth (`rest_field.rs:107-115`),
     consumed by NOTHING (only `info!` logging `pencil.rs:1415-1425`). The doc comment at
     `rest_field.rs:105` already names the plan ("Phase D → adaptive3d FromRemainingStock
@@ -179,14 +184,34 @@ rough-finish → fine-tool detail only where it adds detail** on freeform relief
     O(cells×radius) loop) → `Vec<Polygon2>` stored beside `rest_grid` on the generated toolpath.
   - Caveats to handle: marching-squares output has no winding-order normalization or
     outer-vs-hole nesting classification; `Polygon2` boundary clip uses exterior only.
-- [ ] **P2.2 New derived boundary source**
+- [x] **P2.2 New derived boundary source** — DONE 2026-07-06:
+  `BoundarySource::DerivedRestRegions { source_toolpath_id }` (compute/config.rs); fail-hard
+  staleness first-thing in `generate_toolpath` (missing id / self-ref / ungenerated source /
+  no regions — each names the fix); multi-region set-clip
+  `boundary::clip_toolpath_to_boundary_set_with_provenance` is now the SOLE clip walk
+  (single-polygon fn delegates to it); `apply_boundary_clip_multi` routes the variant,
+  per-region keepouts+offset via `resolve_derived_region_polygons`; adaptive3d pre-clip
+  uses `union_all` when it yields one polygon, else post-clip-only. GUI: boundary picker
+  "Rest Regions" + ready-first source combo, boundary edits now mark toolpath stale
+  (pre-existing gap closed), MCP set (`derived_rest_regions` + `source_toolpath_id`) +
+  boundary in `get_toolpath_params`, project-IO round-trip test.
   - `BoundarySource` (`compute/config.rs:243`) has only Stock / ModelSilhouette /
     Geometry{imported} / FaceSelection — no computed variant.
   - Add e.g. `DerivedRestRegions { source_toolpath_id }` (or a session store for derived
     polygon sets); resolve in `apply_boundary_clip` (`session/compute.rs:1443`).
     Precondition/staleness handling mirrors the FromRemainingStock fail-hard pattern
     (`session/compute.rs:1158-1186`).
-- [ ] **P2.3 Thread `ctx.boundary` into the finish family (pre-clip, not just post-clip)**
+- [x] **P2.3 Thread boundary regions into the finish family (pre-clip)** — DONE 2026-07-06:
+  `ExecutionContext.boundary_regions: Option<&[Polygon2]>` (sibling of adaptive3d's
+  `boundary`), resolved ONCE in `resolve_generation_inputs` and shared with the post-clip;
+  all 7 finish ops take `Option<&[Polygon2]>` on their `_with_cancel` entry (None =
+  byte-identical): radial/spiral/horizontal skip the drop-cutter query pre-sample,
+  steep_shallow folds into its masks, ramp into its slope-filter split, waterline clips
+  closed contours via `split_runs(Closed)` (partial loops emit as open segments, no chords);
+  scallop scans per-region + BONUS: `ring_to_3d` now gates on `covered ∧ finite` (off-footprint
+  dive fixed) and the continuous-mode ring connector is a guarded helical link (≤3R, kept
+  anchor) — fixed a P0.4-class chord regression caught by the sentry AND a latent
+  multi-region cutting bridge. Per-op confinement + no-op pin tests added.
   - `ExecutionContext.boundary` (`execute.rs:210,1643-1651`) is consumed ONLY by the
     adaptive3d family. None of the six directional ops accept region restriction;
     scallop hardcodes the bbox rectangle (`scallop.rs:331-376`) though
@@ -198,9 +223,13 @@ rough-finish → fine-tool detail only where it adds detail** on freeform relief
     on the same run-splitter; waterline-family needs contour clipping to the polygon.
   - Bonus fix rolled in: scallop off-footprint corners currently dive to `bbox.min.z`
     (`scallop.rs:140-159` clamps non-contact instead of using `SurfaceHeightmap.covered`).
-- [ ] **P2.4 GUI/MCP surface + advisor**
-  - Overlay: rest heatmap (Layer 3 WIP) draws the SAME regions the boundary will use —
-    keep one source of truth.
+- [~] **P2.4 GUI/MCP surface + advisor** — overlay DONE 2026-07-06: rest heatmap renders in
+  the wgpu viewport (`rest_heatmap_mesh.rs` NaN-skip mesh, threshold-anchored p95 ramp via
+  the SAME `rest_ramp_color` the legend draws, depth-read-only height-plane pipeline,
+  Show▼ toggle + gradient legend; threshold semantics shared with `region_polygons_from_mask`
+  = one source of truth). Advisor + steep/shallow alternative signal REMAIN (below).
+  - Advisor (later): suggest "scallop clipped to regions A..N with tool T" from the rest
+    report — candidates ranked by `peak_rest_mm` significance.
   - Advisor (later): suggest "scallop clipped to regions A..N with tool T" from the rest
     report — candidates ranked by `peak_rest_mm` significance.
   - Alternative detail signal for parts without a rest reference:
@@ -271,16 +300,30 @@ rather than inherit. No dead code in the six shared files.*
   LeadIn/LeadOut intents emitted only by dressup layer — correct layering, no gap.
 
 **Polygon2 gaps (feed into P2.1 design):**
-- [ ] **R1.5 No self-intersection/pinch repair** — offset robustness is a
+- [x] **R1.5 No self-intersection/pinch repair** — offset robustness is a
   `catch_unwind` swallowing cavalier panics (`polygon.rs:169-183`); MS saddle output is
   exactly the pinched-ring shape that triggers it. Guard/repair before offset [M].
-- [ ] **R1.6 No boolean ops** (union/intersect/difference) — needed to merge/subtract derived
+  **Landed 2026-07-06**: `Polygon2::has_self_intersection` (segment-pair crossing test,
+  bbox-prefiltered) + `Polygon2::repaired` (geo boolean self-union resolves pinched/bowtied
+  rings into simple polygons via the even-odd fill rule); `offset_polygon` now repairs
+  self-intersecting input before it ever reaches cavalier_contours, with the `catch_unwind`
+  kept as a near-unreachable backstop.
+- [x] **R1.6 No boolean ops** (union/intersect/difference) — needed to merge/subtract derived
   region polygons; wrap `geo::BooleanOps` [M].
+  **Landed 2026-07-06**: `Polygon2::union`/`intersection`/`difference` (pairwise,
+  `geo::BooleanOps`) + `Polygon2::union_all` (`geo::unary_union` single-pass merge);
+  MultiPolygon output mapped back through `from_geo_polygon` + `ensure_winding`.
 - R1.7 Smaller: `detect_containment` nests one level only (`polygon.rs:363`); offset hole
   re-assignment heuristic can misassign on region splits (`:257-273`); `contains_point` has
   no boundary epsilon (`:418-436` — MS output sits exactly on grid-aligned edges); THREE
   ray-cast PIP copies (`polygon.rs:418`, `boundary.rs:436` test-only, `Polygon2::contains_point`)
   → collapse to one [S].
+  **PIP-collapse landed 2026-07-06**: `boundary.rs`'s test-only `point_in_ring`/
+  `point_in_polygon` duplicates deleted in favor of `Polygon2::contains_point`; canonical
+  `polygon::point_in_polygon` made `pub(crate)`; new `Polygon2::contains_point_eps(p, eps)`
+  adds the boundary epsilon for MS-aligned points without touching the hot-path
+  `contains_point`. Boundary-epsilon and PIP-collapse done; containment-nesting and
+  hole-reassignment sub-items remain open.
 - R1.8 Offset sign convention: positive = INWARD (`polygon.rs:150-153`, `boundary.rs:37-40`) —
   consistent internally but opposite to typical clipper convention; document loudly.
 
@@ -393,6 +436,15 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   same fixture with a comment. Fix the execute.rs fixture winding and see if the red clears.
 - Other 3 pre-existing reds (unchanged at HEAD, known): 2× adaptive3d peck/rapid tests
   (accel-friendly work), 1× planner_sim_dexel_parity_agent_search (wanaka Back Rough anomaly).
+- [x] **wanaka_suggest_baseline re-baselined 2026-07-06.** Stale since the 2026-06-20
+  unified-load-model recalibration (Ks=49.95/F_edge=5.30 anchored to GenericHardwood) made
+  the closed-form deflection back-off long/thin-tool-only — Back Rough / 3D Rough 6's 6 mm
+  carbide stub is chipload/power-bound, so the vendor_ap axial-DOC envelope now clamps DPP
+  (9.0 mm → ~5.4 mm) before the deflection solve ever runs, and the old
+  `DppCappedByDeflection` (~3.69 mm) chain never fires. Rewrote the Back Rough / 3D Rough 6
+  assertion blocks in `wanaka_suggest_integration.rs` to check
+  `AxialDocClampedByEnvelope { binding: "vendor_ap" }` + a 5.4 mm determinism pin, and added
+  an explicit "`DppCappedByDeflection` must NOT fire" guard. All 3 tests in the file green.
 
 ## §S — Round-2 sweep: dressup pipeline, 2D ops, session/compute, feeds (2026-07-06)
 
@@ -585,3 +637,74 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   P3 opportunistic, R2.1/R2.2, F.2, S.11, S.13, S.15 (user decision: deprecate
   feed_optimization?). NOT YET RUN: slow integration sentries + param sweeps —
   run /verify BEFORE committing this tree.
+- 2026-07-06 (R1.5/R1.6/R1.7-PIP): `Polygon2` hardening for the P2 selective-finishing
+  prereqs. Added `has_self_intersection`/`repaired` (geo boolean self-union resolves
+  pinched/bowtied rings) and wired the repair into `offset_polygon` ahead of the existing
+  `catch_unwind` backstop; added `union`/`intersection`/`difference`/`union_all` via
+  `geo::BooleanOps`/`unary_union`; added `contains_point_eps` for MS-grid-aligned boundary
+  points; collapsed `boundary.rs`'s test-only PIP duplicate onto `Polygon2::contains_point`
+  and made the canonical `polygon::point_in_polygon` `pub(crate)`. New unit tests in
+  `polygon.rs` cover bowtie repair, all three boolean ops (including hole-producing
+  difference), disjoint/overlapping union, `union_all`, `contains_point_eps` boundary
+  cases, and a unit-level rerun of the captured R1 cavalier-panic asset. NOT run: cargo
+  (build/test/clippy) — a separate verifier pass covers this tree; see the PR/handoff notes
+  for anything that needs a second look before commit.
+- 2026-07-06 (wanaka_suggest_baseline re-baseline): fixed the stale-red sentry noted in
+  MEMORY as needing re-baseline post-unified-load-model. Cause: the 2026-06-20 recalibration
+  made deflection back-off long/thin-tool-only, so Back Rough / 3D Rough 6's stub endmill is
+  chipload/power-bound and the vendor_ap envelope clamp (9.0→~5.4 mm) now wins before
+  deflection ever fires. Assertions updated in `wanaka_suggest_integration.rs`; doc header
+  and R4 pin-convention note rewritten to match. `cargo test -p rs_cam_core --test
+  wanaka_suggest_integration` — 3 passed, 0 failed.
+- 2026-07-06 (P2 selective finishing, end-to-end): P2.1 region polygons (EDT dilate +
+  marching squares + containment grouping, `RestFieldResult.region_polygons`,
+  `AnnotatedToolpath.rest_regions` shifted by `translated()`); R1.5/R1.6/R1.7-PIP Polygon2
+  hardening (boolean ops via geo::BooleanOps, self-intersection detect+repair before
+  cavalier offset, `contains_point_eps`, PIP test-helper dedup); P2.2 core+GUI+MCP
+  (`DerivedRestRegions`, set-clip as the sole walk, fail-hard staleness, picker,
+  boundary-edit staleness gap closed); P2.3 pre-clip in all 7 finish ops + scallop
+  covered-mask/off-footprint fix + guarded helical connector (fixed a P0.4-class chord
+  the sentry caught in review, plus a latent multi-region cutting bridge); rest heatmap
+  overlay rendered (task #3, one source of truth with region polygons via shared
+  threshold + `rest_ramp_color`). Gates: workspace `cargo check --all-targets` clean,
+  clippy -D warnings clean, core lib 2059/2062 (3 pre-existing known reds only),
+  viz 203/203, cli+mcp green. NOT yet run: slow integration sentries + param sweeps
+  (/verify) — required before commit. Live wanaka200 validation pending.
+- 2026-07-06 (P2 LIVE validation on wanaka, first pass): pencil rest_depth + reference
+  picker work live (5906 moves); THREE GUI-path bugs found and sent to fix (core path
+  unaffected — it fail-hards and set-clips correctly):
+  (1) GUI/MCP generate with an ungenerated DerivedRestRegions source silently falls back
+  to the stock rect (soft warning only, not even surfaced over MCP) — must fail-hard with
+  core's wording; (2) controller keeps the derived boundary only when union_all yields
+  EXACTLY ONE polygon — multi-region terrain (the common case) silently degrades to stock,
+  and source regeneration does NOT mark dependents stale (cached full-part result returned);
+  (3) rest heatmap overlay invisible in viewport (height-plane 0.15 hidden-mode opacity).
+  Baseline numbers captured: full-part fine scallop Ø2 = 4451 moves / 7788 mm cut;
+  coarse Ø6 = 4535 moves / 7757 mm; "selective" pre-fix = 4443 moves / 7919 mm (= fallback).
+- 2026-07-06 (P2 live-validation fixes, GUI path): all three findings FIXED (viz 206/206):
+  worker enforcement clip now calls core `apply_boundary_clip_multi` directly (duplicate
+  single-polygon approximation killed); controller fail-hards with core's exact wording via
+  `ComputeStatus::Error` (no stock fallback); `mark_derived_rest_dependents_stale` sweep on
+  result-drain + toolpath-removal; heatmap got a dedicated uniform buffer
+  (`REST_HEATMAP_OPACITY = 0.6` — root cause was the shared sim-mesh uniform stuck at the
+  0.15 hidden-mode value); BONUS fix: `pending_upload` now fires on selection change within
+  a setup (height planes were stale too). NEW FOLLOW-UP (latent, pre-existing):
+  `notify_mcp_toolpath_complete` only fires from `drain_compute_results`, so ANY
+  submit-precondition fail-hard (incl. FromRemainingStock) leaves the MCP oneshot
+  unresolved — MCP callers of a failing generate get no response. Fix in next batch.
+- 2026-07-07 (P2 LIVE validation COMPLETE on wanaka): full chain works end-to-end via MCP.
+  Numbers (Ø2 tapered ball fine scallop, defaults): SELECTIVE (DerivedRestRegions from
+  pencil rest_depth vs Ø6 ball reference) = 4605 moves / 1593 mm cutting / 7938 mm rapid;
+  BASELINE all-over = 4451 moves / 7788 mm cutting / 648 mm rapid → ~80% cutting-distance
+  reduction; composite screenshot confirms cuts confined to disjoint region islands.
+  Heatmap overlay renders with legend (0.05→1.87 mm ramp). Fail-hard verified live with
+  core wording; dependent staleness verified (source regen → selective stale, baseline
+  untouched). TWO more GUI bugs found+fixed during validation: (a) `generate_via_core`
+  narrowed core's AnnotatedToolpath to (toolpath, spans), dropping rest_grid/rest_regions/
+  planner_engagement on the ENTIRE GUI worker path (root cause of "produced no rest
+  regions" + invisible heatmap; carry the full annotated struct now); (b) MCP oneshot
+  never resolved on submit-time fail-hard (all 10 early-return sites now route through
+  `fail_toolpath_submit` which sets Error status AND resolves the MCP waiter; also fixed
+  latent "no tool assigned leaves status stuck" bug). viz 208/208.
+  Minor follow-up noted: pencil marks ITSELF stale after generating (cosmetic);
+  rapid-linking between region islands is TSP-naive (7.9 m rapids — optimization target).

@@ -23,13 +23,18 @@ use crate::state::selection::Selection;
 use crate::state::toolpath::{
     BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig, DressupEntryStyle,
     HeightContext, HeightsConfig, OperationConfig, ProfileSide, RetractStrategy, SpiralDirection,
-    StockSource, ToolpathEntry, TraceCompensation, UiProcessRole,
+    StockSource, ToolpathEntry, ToolpathId, TraceCompensation, UiProcessRole,
 };
 use crate::ui::AppEvent;
 use crate::ui::automation;
 use crate::ui::components::{
     PrecedenceField, ProvKind, Suggestion, UiExt, ValueRow, mrr_row, power_bar,
 };
+
+/// Candidate source toolpath for a `BoundarySource::DerivedRestRegions`
+/// picker: (id, display name, whether its cached result already has
+/// non-empty rest regions ready to use).
+type BoundaryRestCandidate = (ToolpathId, String, bool);
 
 /// Paint a brief blue glow behind a UI region when an MCP parameter was recently changed.
 /// Call this right after allocating the widget/row so the highlight paints behind it.
@@ -410,6 +415,33 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .iter()
                 .map(|t| (t.id, t.clone()))
                 .collect();
+            // Candidate source toolpaths for a `DerivedRestRegions` boundary
+            // (P2.2): every other toolpath in the session, plus whether its
+            // last cached result already has non-empty rest regions ready to
+            // use. Toolpaths without a ready result are still selectable —
+            // generation fails hard with a clear message if the source turns
+            // out to have no usable rest regions.
+            let boundary_source_candidates: Vec<BoundaryRestCandidate> = state
+                .session
+                .toolpath_configs()
+                .iter()
+                .filter(|tc| tc.id != id)
+                .map(|tc| {
+                    let ready = state
+                        .gui
+                        .toolpath_rt
+                        .get(&tc.id)
+                        .and_then(|rt| rt.result.as_ref())
+                        .is_some_and(|r| {
+                            r.annotated
+                                .rest_regions
+                                .as_ref()
+                                .is_some_and(|regions| !regions.is_empty())
+                        });
+                    (tc.id, tc.name.clone(), ready)
+                })
+                .collect();
+
             let validation = ToolpathValidationContext::from_session(&state.session);
             let material = state.session.stock_config().material.clone();
             let machine = state.session.machine().clone();
@@ -458,6 +490,14 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .session
                 .find_toolpath_config_by_id(id)
                 .map(|(_, tc)| format!("{:?}", tc.heights));
+            // P2.2: boundary source/containment/offset changes (including
+            // picking a `DerivedRestRegions` source toolpath) also affect the
+            // generated toolpath, so they need the same stale_since marking
+            // as op/heights edits below.
+            let boundary_before = state
+                .session
+                .find_toolpath_config_by_id(id)
+                .map(|(_, tc)| format!("{:?}", tc.boundary));
 
             // Pre-compute stale-default defects for this TP so the panel
             // can render the validator banner without needing a session
@@ -526,6 +566,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     &tools,
                     &models,
                     &tool_configs,
+                    &boundary_source_candidates,
                     &validation,
                     &material,
                     &machine,
@@ -557,7 +598,10 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 let heights_changed = heights_before
                     .as_ref()
                     .is_some_and(|b| *b != format!("{:?}", tc.heights));
-                if op_changed || heights_changed {
+                let boundary_changed = boundary_before
+                    .as_ref()
+                    .is_some_and(|b| *b != format!("{:?}", tc.boundary));
+                if op_changed || heights_changed || boundary_changed {
                     if let Some(rt) = state.gui.toolpath_rt.get_mut(&id) {
                         rt.stale_since = Some(std::time::Instant::now());
                     }
@@ -3086,6 +3130,7 @@ fn draw_toolpath_panel(
     tools: &[(crate::state::job::ToolId, String, f64)],
     models: &[(crate::state::job::ModelId, String)],
     tool_configs: &[(crate::state::job::ToolId, crate::state::job::ToolConfig)],
+    boundary_source_candidates: &[BoundaryRestCandidate],
     validation: &ToolpathValidationContext,
     material: &rs_cam_core::material::Material,
     machine: &rs_cam_core::machine::MachineProfile,
@@ -3653,8 +3698,88 @@ fn draw_toolpath_panel(
                                 {
                                     entry.boundary.source = BoundarySource::FaceSelection;
                                 }
+                                let has_rest_candidates = !boundary_source_candidates.is_empty();
+                                if ui
+                                    .add_enabled(
+                                        has_rest_candidates,
+                                        egui::Button::selectable(
+                                            matches!(
+                                                entry.boundary.source,
+                                                BoundarySource::DerivedRestRegions { .. }
+                                            ),
+                                            "Rest Regions",
+                                        ),
+                                    )
+                                    .on_hover_text(if has_rest_candidates {
+                                        "Boundary = rest regions computed by another \
+                                         toolpath's pencil rest-depth detector. Pick \
+                                         the source toolpath below."
+                                    } else {
+                                        "No other toolpaths in this project yet — add \
+                                         one and generate it with a pencil rest-depth \
+                                         detector to use as the source."
+                                    })
+                                    .clicked()
+                                {
+                                    let default_source = boundary_source_candidates
+                                        .first()
+                                        .map(|(candidate_id, _, _)| *candidate_id)
+                                        .unwrap_or(entry.id);
+                                    entry.boundary.source = BoundarySource::DerivedRestRegions {
+                                        source_toolpath_id: default_source,
+                                    };
+                                }
                             });
                     });
+
+                    // Rest-regions source-toolpath picker (P2.2) — only shown
+                    // when `Source` above is set to `DerivedRestRegions`.
+                    // Candidates are every other toolpath in the session;
+                    // ones with a cached result whose rest regions are
+                    // already non-empty are labelled "(regions ready)" and
+                    // sorted first, but a not-yet-generated toolpath is
+                    // still selectable — generation fails hard with a clear
+                    // message if the source turns out unusable.
+                    if let BoundarySource::DerivedRestRegions { source_toolpath_id } =
+                        &mut entry.boundary.source
+                    {
+                        ui.horizontal(|ui| {
+                            ui.label("Rest source:");
+                            let current_label = boundary_source_candidates
+                                .iter()
+                                .find(|(candidate_id, _, _)| candidate_id == source_toolpath_id)
+                                .map(|(_, name, ready)| {
+                                    if *ready {
+                                        format!("{name} (regions ready)")
+                                    } else {
+                                        name.clone()
+                                    }
+                                })
+                                .unwrap_or_else(|| "(toolpath not found)".to_owned());
+                            let mut sorted = boundary_source_candidates.to_vec();
+                            sorted.sort_by_key(|(_, _, ready)| !*ready);
+                            egui::ComboBox::from_id_salt("boundary_rest_source")
+                                .selected_text(current_label)
+                                .show_ui(ui, |ui| {
+                                    for (candidate_id, name, ready) in &sorted {
+                                        let label = if *ready {
+                                            format!("{name} (regions ready)")
+                                        } else {
+                                            name.clone()
+                                        };
+                                        let selected = *source_toolpath_id == *candidate_id;
+                                        if ui.selectable_label(selected, label).clicked() {
+                                            *source_toolpath_id = *candidate_id;
+                                        }
+                                    }
+                                })
+                                .response
+                                .on_hover_text(
+                                    "The toolpath whose pencil rest-depth detector \
+                                     supplies the rest regions.",
+                                );
+                        });
+                    }
 
                     // Containment mode
                     ui.horizontal(|ui| {

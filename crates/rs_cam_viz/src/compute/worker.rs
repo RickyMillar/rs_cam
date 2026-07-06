@@ -67,6 +67,25 @@ pub struct ComputeRequest {
     /// `chip_welding` / `peck_adequacy` / `plunge_feed` gates evaluate
     /// against the actual stock, not `Material::default()`.
     pub material: rs_cam_core::material::Material,
+    /// P2.2/P2.3 (rest-region boundary): the full, un-unioned set of rest
+    /// region polygons for `BoundarySource::DerivedRestRegions`, resolved
+    /// from the source toolpath's cached result. Resolved by the
+    /// controller (which has cross-toolpath access via `gui.toolpath_rt`)
+    /// — this worker's `ComputeRequest` is scoped to a single toolpath and
+    /// has no way to look up another toolpath's result itself.
+    ///
+    /// The controller fails the toolpath hard (see
+    /// `submit_toolpath_compute`) rather than submitting a request when
+    /// the source is missing, self-referential, ungenerated, or has no
+    /// rest regions — so a worker that receives `Some` here can assume
+    /// the `Vec` is non-empty. `None` only when the boundary source isn't
+    /// `DerivedRestRegions`.
+    ///
+    /// The real enforcement clip (further down in `run_compute_with_phase_tracker`)
+    /// uses every region in this set via `ProjectSession::apply_boundary_clip_multi`
+    /// — the adaptive3d pre-clip optimization in `generate_via_core` unions
+    /// them down to one polygon only when that union collapses cleanly.
+    pub derived_rest_regions: Option<Vec<Polygon2>>,
 }
 
 pub struct ComputeResult {

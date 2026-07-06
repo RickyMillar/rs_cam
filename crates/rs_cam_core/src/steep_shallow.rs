@@ -15,9 +15,10 @@
 //! - Scallop height support for variable stepover in shallow regions
 
 use crate::dropcutter::batch_drop_cutter;
-use crate::geo::P3;
+use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::polygon::Polygon2;
 use crate::slope::{SlopeMap, classify_steep_shallow};
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
@@ -164,6 +165,7 @@ fn generate_steep_passes(
         feed_rate,
         plunge_rate,
         safe_z,
+        None,
         &never_cancel,
     )
     .expect("non-cancellable steep-pass generation should never be cancelled")
@@ -171,6 +173,11 @@ fn generate_steep_passes(
 
 /// Cancellable variant of [`generate_steep_passes`]. Polls `cancel` once per
 /// Z level (the outer waterline-contour loop).
+///
+/// `boundary_regions` (P2.3): folded into the existing steep-grid keep
+/// predicate below — a contour point survives only when it's both in the
+/// expanded steep grid AND inside a machining-boundary region (when one is
+/// given). `None` reproduces today's steep-grid-only filtering byte-for-byte.
 #[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
 fn generate_steep_passes_with_cancel(
     mesh: &TriangleMesh,
@@ -186,6 +193,7 @@ fn generate_steep_passes_with_cancel(
     feed_rate: f64,
     plunge_rate: f64,
     safe_z: f64,
+    boundary_regions: Option<&[Polygon2]>,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     let mut tp = Toolpath::new();
@@ -229,14 +237,21 @@ fn generate_steep_passes_with_cancel(
             }
 
             // Further filter: mark which points fall within the expanded
-            // steep grid, preserving contour ordering so we can tell which
-            // survivors are contiguous.
+            // steep grid AND (when given) a machining-boundary region,
+            // preserving contour ordering so we can tell which survivors
+            // are contiguous.
             let keep: Vec<bool> = contour
                 .iter()
                 .map(|p| {
-                    slope_map
+                    let in_steep_grid = slope_map
                         .world_to_cell(p.x, p.y)
-                        .is_some_and(|(row, col)| steep_expanded[row * slope_map.cols + col])
+                        .is_some_and(|(row, col)| steep_expanded[row * slope_map.cols + col]);
+                    let in_region = boundary_regions.is_none_or(|regions| {
+                        regions
+                            .iter()
+                            .any(|reg| reg.contains_point(&P2::new(p.x, p.y)))
+                    });
+                    in_steep_grid && in_region
                 })
                 .collect();
 
@@ -334,6 +349,7 @@ fn generate_shallow_passes(
         feed_rate,
         plunge_rate,
         safe_z,
+        None,
         &never_cancel,
     )
     .expect("non-cancellable shallow-pass generation should never be cancelled")
@@ -341,6 +357,13 @@ fn generate_shallow_passes(
 
 /// Cancellable variant of [`generate_shallow_passes`]. Polls `cancel` once
 /// per raster row.
+///
+/// `boundary_regions` (P2.3): folded into the existing `is_shallow`
+/// per-point keep check below (the drop-cutter batch already ran before
+/// this loop, so there's no query left to pre-skip — the region check is
+/// still cheap since it only gates which precomputed grid points get
+/// emitted). `None` reproduces today's shallow-grid-only filtering
+/// byte-for-byte.
 #[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
 fn generate_shallow_passes_with_cancel(
     mesh: &TriangleMesh,
@@ -353,6 +376,7 @@ fn generate_shallow_passes_with_cancel(
     feed_rate: f64,
     plunge_rate: f64,
     safe_z: f64,
+    boundary_regions: Option<&[Polygon2]>,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     let mut tp = Toolpath::new();
@@ -385,11 +409,13 @@ fn generate_shallow_passes_with_cancel(
             let x = cl.x;
             let y = cl.y;
 
-            // Check if this point is in the shallow region
+            // Check if this point is in the shallow region and (when given)
+            // inside a machining-boundary region.
             let is_shallow = slope_map.world_to_cell(x, y).is_some_and(|(_r, _c)| {
                 let idx = _r * slope_map.cols + _c;
                 idx < shallow_eroded.len() && shallow_eroded[idx]
-            });
+            }) && boundary_regions
+                .is_none_or(|regions| regions.iter().any(|reg| reg.contains_point(&P2::new(x, y))));
 
             if is_shallow {
                 let z = cl.z + stock_to_leave;
@@ -451,19 +477,24 @@ pub fn steep_shallow_toolpath(
     params: &SteepShallowParams,
 ) -> Toolpath {
     let never_cancel = || false;
-    steep_shallow_toolpath_with_cancel(mesh, index, cutter, params, &never_cancel)
+    steep_shallow_toolpath_with_cancel(mesh, index, cutter, params, None, &never_cancel)
         .expect("non-cancellable steep/shallow toolpath should never be cancelled")
 }
 
 /// Cancellable variant of [`steep_shallow_toolpath`]. Propagates `cancel`
 /// into heightmap construction and both pass generators (per-Z-level for
 /// steep, per-raster-row for shallow).
+///
+/// `boundary_regions` (P2.3): forwarded to both pass generators, which fold
+/// it into their existing per-point keep checks (steep grid / shallow grid
+/// respectively). `None` reproduces today's output byte-for-byte.
 #[tracing::instrument(skip(mesh, index, cutter, params, cancel), fields(threshold = params.threshold_angle))]
 pub fn steep_shallow_toolpath_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &SteepShallowParams,
+    boundary_regions: Option<&[Polygon2]>,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     check_cancel(cancel)?;
@@ -534,6 +565,7 @@ pub fn steep_shallow_toolpath_with_cancel(
         params.feed_rate,
         params.plunge_rate,
         params.safe_z,
+        boundary_regions,
         cancel,
     )?;
 
@@ -549,6 +581,7 @@ pub fn steep_shallow_toolpath_with_cancel(
         params.feed_rate,
         params.plunge_rate,
         params.safe_z,
+        boundary_regions,
         cancel,
     )?;
 
@@ -1124,5 +1157,82 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ── P2.3: boundary_regions pre-clip ──────────────────────────────
+
+    #[test]
+    fn steep_shallow_boundary_regions_none_matches_call_without_param() {
+        let (mesh, si) = make_hemisphere();
+        let cutter = ball_cutter();
+        let params = SteepShallowParams {
+            stepover: 2.0,
+            z_step: 2.0,
+            sampling: 3.0,
+            tolerance: 0.5,
+            ..SteepShallowParams::default()
+        };
+        let never_cancel = || false;
+
+        let tp_default = steep_shallow_toolpath(&mesh, &si, &cutter, &params);
+        let tp_none =
+            steep_shallow_toolpath_with_cancel(&mesh, &si, &cutter, &params, None, &never_cancel)
+                .unwrap();
+
+        assert_eq!(tp_default.moves.len(), tp_none.moves.len());
+        for (a, b) in tp_default.moves.iter().zip(tp_none.moves.iter()) {
+            assert!((a.target.x - b.target.x).abs() < 1e-9);
+            assert!((a.target.y - b.target.y).abs() < 1e-9);
+            assert!((a.target.z - b.target.z).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn steep_shallow_boundary_regions_confines_cuts_to_region() {
+        let (mesh, si) = make_hemisphere();
+        let cutter = ball_cutter();
+        let params = SteepShallowParams {
+            stepover: 2.0,
+            z_step: 2.0,
+            sampling: 3.0,
+            tolerance: 0.5,
+            ..SteepShallowParams::default()
+        };
+        let never_cancel = || false;
+
+        // Left half of the hemisphere's XY footprint (bbox roughly [-20,20]).
+        let bbox = &mesh.bbox;
+        let left_half = crate::polygon::Polygon2::new(vec![
+            crate::geo::P2::new(bbox.min.x, bbox.min.y),
+            crate::geo::P2::new(0.0, bbox.min.y),
+            crate::geo::P2::new(0.0, bbox.max.y),
+            crate::geo::P2::new(bbox.min.x, bbox.max.y),
+        ]);
+
+        let tp = steep_shallow_toolpath_with_cancel(
+            &mesh,
+            &si,
+            &cutter,
+            &params,
+            Some(std::slice::from_ref(&left_half)),
+            &never_cancel,
+        )
+        .unwrap();
+
+        let tol = 1e-6;
+        let mut saw_cut = false;
+        for m in &tp.moves {
+            let is_cut = matches!(m.move_type, crate::toolpath::MoveType::Linear { .. })
+                && m.intent == crate::toolpath::MoveIntent::FinishingCut;
+            if is_cut {
+                saw_cut = true;
+                assert!(
+                    m.target.x <= tol,
+                    "cutting move X={:.3} escaped the left-half boundary region",
+                    m.target.x
+                );
+            }
+        }
+        assert!(saw_cut, "expected at least one cutting move");
     }
 }

@@ -38,6 +38,7 @@ fn sample_request(operation: OperationConfig, stock_source: StockSource) -> Comp
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
     }
 }
 
@@ -119,6 +120,7 @@ fn quick_pocket_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
     }
 }
 
@@ -157,6 +159,7 @@ fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
     }
 }
 
@@ -195,6 +198,7 @@ fn waterline_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
     }
 }
 
@@ -234,6 +238,7 @@ fn adaptive3d_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
     }
 }
 
@@ -293,6 +298,7 @@ fn drill_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
     }
 }
 
@@ -324,6 +330,7 @@ fn steep_shallow_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
     }
 }
 
@@ -368,6 +375,7 @@ fn pencil_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
     }
 }
 
@@ -405,6 +413,7 @@ fn scallop_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
     }
 }
 
@@ -443,6 +452,7 @@ fn ramp_finish_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
     }
 }
 
@@ -479,6 +489,7 @@ fn spiral_finish_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
     }
 }
 
@@ -516,6 +527,7 @@ fn radial_finish_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
     }
 }
 
@@ -552,6 +564,7 @@ fn horizontal_finish_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
     }
 }
 
@@ -592,6 +605,7 @@ fn project_curve_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
     }
 }
 
@@ -1013,6 +1027,57 @@ fn semantic_trace_records_entry_params_and_boundary_clip() {
     if let Some(path) = result.debug_trace_path.as_ref() {
         std::fs::remove_file(path).ok();
     }
+}
+
+/// P2.2/P2.3 regression (rest-cascade live repro, bug (b)): a
+/// `DerivedRestRegions` boundary whose source toolpath's rest analysis
+/// produced multiple disjoint islands must clip against the FULL region
+/// set via `apply_boundary_clip_multi`/`clip_toolpath_to_boundary_set_with_provenance`,
+/// not silently degrade to the stock rectangle because the regions don't
+/// union down to a single polygon (genuine terrain rest analysis commonly
+/// yields many disjoint islands — the old worker enforcement clip only
+/// consulted a pre-unioned single-polygon field and fell back to
+/// `stock_rect()` whenever the union wasn't exactly one polygon).
+#[test]
+fn derived_rest_regions_boundary_clips_to_all_disjoint_regions() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut request = quick_pocket_request(200);
+    request.boundary.enabled = true;
+    request.boundary.source = crate::state::toolpath::BoundarySource::DerivedRestRegions {
+        source_toolpath_id: ToolpathId(999),
+    };
+    // Two small islands near opposite corners of the -20..20 pocket, with a
+    // large untouched gap between them (e.g. around the origin) that a
+    // single-polygon-union fallback to the full stock/pocket rectangle
+    // would have cut through.
+    request.derived_rest_regions = Some(vec![
+        Polygon2::rectangle(-18.0, -18.0, -8.0, -8.0),
+        Polygon2::rectangle(8.0, 8.0, 18.0, 18.0),
+    ]);
+
+    let result = super::execute::run_compute(&request, &cancel)
+        .result
+        .expect("derived-rest-regions boundary compute should succeed");
+
+    let in_region_a = |x: f64, y: f64| (-18.5..=-7.5).contains(&x) && (-18.5..=-7.5).contains(&y);
+    let in_region_b = |x: f64, y: f64| (7.5..=18.5).contains(&x) && (7.5..=18.5).contains(&y);
+    let mut saw_cut_in_gap = false;
+    let mut saw_cut_at_all = false;
+    for mv in &result.annotated.toolpath.moves {
+        if matches!(mv.move_type, rs_cam_core::toolpath::MoveType::Linear { .. }) {
+            saw_cut_at_all = true;
+            let (x, y) = (mv.target.x, mv.target.y);
+            if !in_region_a(x, y) && !in_region_b(x, y) {
+                saw_cut_in_gap = true;
+            }
+        }
+    }
+    assert!(saw_cut_at_all, "expected at least some cutting moves");
+    assert!(
+        !saw_cut_in_gap,
+        "cutting moves must stay within the two derived rest regions, not the gap between \
+         them (a single-polygon-union fallback would cut the whole pocket rectangle)"
+    );
 }
 
 #[test]

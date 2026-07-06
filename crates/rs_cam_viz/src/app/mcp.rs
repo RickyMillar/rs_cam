@@ -458,6 +458,7 @@ impl super::RsCamApp {
                 source,
                 containment,
                 offset,
+                source_toolpath_id,
             } => {
                 let resp = self.mcp_set_boundary_config(
                     index,
@@ -465,6 +466,7 @@ impl super::RsCamApp {
                     source.as_deref(),
                     containment.as_deref(),
                     offset,
+                    source_toolpath_id,
                 );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
@@ -918,6 +920,11 @@ impl super::RsCamApp {
                     "tool_id": tc.tool_id,
                     "model_id": tc.model_id,
                     "operation": op_value,
+                    // P2.2: reports the machining boundary, including
+                    // `derived_rest_regions`'s `source_toolpath_id` — there
+                    // is no dedicated get_boundary_config tool, so this is
+                    // the only MCP surface for reading it back.
+                    "boundary": tc.boundary,
                     "runtime": self.mcp_runtime_status_for_toolpath_id(tc.id),
                 }))
             }
@@ -3234,14 +3241,48 @@ impl super::RsCamApp {
         source: Option<&str>,
         containment: Option<&str>,
         offset: Option<f64>,
+        source_toolpath_id: Option<usize>,
     ) -> String {
         let before = self.mcp_diagnostic_snapshot();
         let boundary_source = match source {
             Some("stock") | None => BoundarySource::Stock,
             Some("model_silhouette") => BoundarySource::ModelSilhouette,
+            Some("derived_rest_regions") => {
+                let Some(raw_id) = source_toolpath_id else {
+                    return self.mcp_mutation_error(
+                        "Error: 'derived_rest_regions' requires source_toolpath_id — the id \
+                         of the toolpath whose pencil rest-depth result supplies the \
+                         boundary (see get_toolpath_params's 'id' field)."
+                            .to_owned(),
+                        Some("source_toolpath_id".to_owned()),
+                    );
+                };
+                let source_id = rs_cam_core::ToolpathId(raw_id);
+                if self
+                    .controller
+                    .state()
+                    .session
+                    .find_toolpath_config_by_id(source_id)
+                    .is_none()
+                {
+                    return self.mcp_mutation_error(
+                        format!(
+                            "Error: source_toolpath_id {raw_id} does not match any \
+                             toolpath in this project."
+                        ),
+                        Some("source_toolpath_id".to_owned()),
+                    );
+                }
+                BoundarySource::DerivedRestRegions {
+                    source_toolpath_id: source_id,
+                }
+            }
             Some(other) => {
                 return self.mcp_mutation_error(
-                    format!("Error: Unknown boundary source '{other}'. Use 'stock' or 'model_silhouette'."),
+                    format!(
+                        "Error: Unknown boundary source '{other}'. Use 'stock', \
+                         'model_silhouette', or 'derived_rest_regions'."
+                    ),
                     Some("source".to_owned()),
                 );
             }

@@ -294,6 +294,7 @@ fn render_snapshot(
                 &mut controller.state.viewport,
                 &lanes,
                 events,
+                None,
             );
         });
 
@@ -961,6 +962,133 @@ fn drain_compute_results_skips_session_write_on_error() {
     assert!(
         controller.state.session.get_result(0).is_none(),
         "session.results must not be written on compute error"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// P2.2/P2.3 — DerivedRestRegions boundary dependent staleness (Fix 2).
+// A toolpath whose enabled boundary is `DerivedRestRegions` referencing
+// another toolpath's cached `rest_regions` must be marked stale whenever
+// that source regenerates or is removed — otherwise its cached clip keeps
+// reflecting regions that no longer match the source's latest state.
+// ---------------------------------------------------------------------------
+
+fn add_derived_rest_dependent(
+    controller: &mut AppController<ScriptedBackend>,
+    source_id: ToolpathId,
+) -> ToolpathId {
+    let dependent_config = ToolpathConfig {
+        id: ToolpathId(0), // placeholder — add_toolpath assigns the real id
+        name: "Rest scallop".to_owned(),
+        enabled: true,
+        operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+        dressups: Default::default(),
+        heights: Default::default(),
+        tool_id: 1,
+        model_id: 0,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: crate::state::toolpath::BoundaryConfig {
+            enabled: true,
+            source: crate::state::toolpath::BoundarySource::DerivedRestRegions {
+                source_toolpath_id: source_id,
+            },
+            containment: crate::state::toolpath::BoundaryContainment::Center,
+            offset: 0.0,
+        },
+        boundary_inherit: true,
+        stock_source: Default::default(),
+        coolant: Default::default(),
+        face_selection: None,
+        debug_options: Default::default(),
+        feeds_provenance: Default::default(),
+    };
+    controller
+        .state
+        .session
+        .add_toolpath(0, dependent_config)
+        .expect("dependent toolpath should be added to setup 0");
+    let dependent_id = controller.state.session.toolpath_configs()[1].id;
+    controller
+        .state
+        .gui
+        .toolpath_rt
+        .insert(dependent_id, ToolpathRuntime::new(true));
+    dependent_id
+}
+
+#[test]
+fn drain_compute_results_marks_derived_rest_dependents_stale() {
+    let mut controller = sample_controller();
+    let source_id = ToolpathId(0);
+    let dependent_id = add_derived_rest_dependent(&mut controller, source_id);
+
+    assert!(
+        controller
+            .state
+            .gui
+            .toolpath_rt
+            .get(&dependent_id)
+            .expect("dependent runtime should exist")
+            .stale_since
+            .is_none(),
+        "dependent should start non-stale"
+    );
+
+    let mut annotated = rs_cam_core::toolpath_spans::AnnotatedToolpath::new(Toolpath::new());
+    annotated.rest_regions = Some(Arc::new(vec![rs_cam_core::polygon::Polygon2::rectangle(
+        -5.0, -5.0, 5.0, 5.0,
+    )]));
+    controller.compute.drained.push(ComputeMessage::Toolpath(
+        crate::compute::worker::ComputeResult {
+            toolpath_id: source_id,
+            result: Ok(ToolpathResult {
+                annotated: Arc::new(annotated),
+                stats: Default::default(),
+                debug_trace: None,
+                semantic_trace: None,
+                debug_trace_path: None,
+                drill_op: None,
+            }),
+            debug_trace: None,
+            semantic_trace: None,
+            debug_trace_path: None,
+        },
+    ));
+
+    controller.drain_compute_results();
+
+    assert!(
+        controller
+            .state
+            .gui
+            .toolpath_rt
+            .get(&dependent_id)
+            .expect("dependent runtime should exist")
+            .stale_since
+            .is_some(),
+        "dependent toolpath should be marked stale after its rest-regions source regenerates"
+    );
+}
+
+#[test]
+fn handle_remove_toolpath_marks_derived_rest_dependents_stale() {
+    let mut controller = sample_controller();
+    let source_id = ToolpathId(0);
+    let dependent_id = add_derived_rest_dependent(&mut controller, source_id);
+
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveToolpath(source_id));
+
+    assert!(
+        controller
+            .state
+            .gui
+            .toolpath_rt
+            .get(&dependent_id)
+            .expect("dependent runtime should exist")
+            .stale_since
+            .is_some(),
+        "dependent should be marked stale after its rest-regions source toolpath is removed"
     );
 }
 
@@ -1826,5 +1954,150 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
          ({:.6}, {:.6}).",
         captured_stock_bbox.min.x,
         captured_stock_bbox.min.y
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Submit-time fail-hard must resolve a pending MCP `generate_toolpath`
+// waiter, not strand it. Confirmed live: an MCP `generate_toolpath` call
+// hung ~9 hours because `submit_toolpath_compute` returned early on a
+// precondition rejection (e.g. the `DerivedRestRegions` self-reference
+// check, or the `FromRemainingStock` no-prior-sim check) without ever
+// invoking `notify_mcp_toolpath_complete` — that notify only fired from
+// `drain_compute_results`, which never runs for a request that never
+// reached the compute worker.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "mcp")]
+#[test]
+fn submit_toolpath_compute_self_referential_boundary_resolves_mcp_waiter() {
+    let mut controller = sample_controller();
+    let source_id = ToolpathId(0);
+    let dependent_id = add_derived_rest_dependent(&mut controller, source_id);
+
+    // Rewrite the dependent's boundary to reference itself — the
+    // self-referential fail-hard precondition in `submit_toolpath_compute`.
+    let tc = controller
+        .state
+        .session
+        .toolpath_configs_mut()
+        .iter_mut()
+        .find(|tc| tc.id == dependent_id)
+        .expect("dependent toolpath config must exist");
+    tc.boundary.source = crate::state::toolpath::BoundarySource::DerivedRestRegions {
+        source_toolpath_id: dependent_id,
+    };
+
+    // Register a pending MCP `generate_toolpath` waiter for this toolpath,
+    // mirroring what `app/mcp.rs::mcp_generate_toolpath` does before pushing
+    // the `GenerateToolpath` event.
+    controller.pending_mcp = Some(crate::mcp_bridge::PendingMcpCompute::new());
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    controller
+        .pending_mcp
+        .as_mut()
+        .expect("pending_mcp was just set")
+        .toolpath
+        .insert(dependent_id, tx);
+
+    // Drive the production submit path directly (mirrors how
+    // `AppEvent::GenerateToolpath` is dispatched in `controller/events/mod.rs`).
+    controller.submit_toolpath_compute(dependent_id);
+
+    // The MCP oneshot must already be resolved — no drain step should be
+    // required, because this request never reached the compute worker.
+    let response = rx.try_recv().expect(
+        "submit-time fail-hard must resolve the pending MCP oneshot immediately, \
+         not leave the caller waiting on a compute result that will never arrive",
+    );
+    let payload = response
+        .result
+        .expect("mcp response should carry an Ok(json) payload describing the error");
+    assert!(
+        payload.contains("own rest regions"),
+        "mcp error payload should describe the self-referential boundary rejection, got: {payload}"
+    );
+
+    let rt = controller
+        .state
+        .gui
+        .toolpath_rt
+        .get(&dependent_id)
+        .expect("dependent runtime should exist after fail-hard");
+    assert!(
+        matches!(
+            &rt.status,
+            crate::state::toolpath::ComputeStatus::Error(e) if e.contains("own rest regions")
+        ),
+        "toolpath runtime status should be Error mentioning the self-reference, got {:?}",
+        rt.status
+    );
+
+    // The pending_mcp map must no longer hold this toolpath's sender —
+    // `notify_mcp_toolpath_complete` removes it on resolution.
+    assert!(
+        !controller
+            .pending_mcp
+            .as_ref()
+            .expect("pending_mcp still set")
+            .toolpath
+            .contains_key(&dependent_id),
+        "resolved MCP waiter should be removed from the pending map"
+    );
+}
+
+/// Same fail-hard family, different precondition: `FromRemainingStock`
+/// (rest machining) with no prior simulated stock available. This is the
+/// exact precondition named in the live incident report.
+#[cfg(feature = "mcp")]
+#[test]
+fn submit_toolpath_compute_missing_prior_stock_resolves_mcp_waiter() {
+    let mut controller = sample_controller();
+    let tp_id = ToolpathId(0);
+
+    // No prior simulation has run, so `self.state.simulation` has no
+    // boundaries/checkpoints — `FromRemainingStock` must fail hard.
+    if let Some(tc) = controller
+        .state
+        .session
+        .toolpath_configs_mut()
+        .iter_mut()
+        .find(|tc| tc.id == tp_id)
+    {
+        tc.stock_source = crate::state::toolpath::StockSource::FromRemainingStock;
+    }
+
+    controller.pending_mcp = Some(crate::mcp_bridge::PendingMcpCompute::new());
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    controller
+        .pending_mcp
+        .as_mut()
+        .expect("pending_mcp was just set")
+        .toolpath
+        .insert(tp_id, tx);
+
+    controller.submit_toolpath_compute(tp_id);
+
+    let response = rx
+        .try_recv()
+        .expect("submit-time fail-hard must resolve the pending MCP oneshot immediately");
+    let payload = response
+        .result
+        .expect("mcp response should carry an Ok(json) payload describing the error");
+    assert!(
+        payload.contains("no prior") || payload.contains("remaining stock"),
+        "mcp error payload should describe the missing-prior-stock rejection, got: {payload}"
+    );
+
+    let rt = controller
+        .state
+        .gui
+        .toolpath_rt
+        .get(&tp_id)
+        .expect("runtime should exist after fail-hard");
+    assert!(
+        matches!(&rt.status, crate::state::toolpath::ComputeStatus::Error(_)),
+        "toolpath runtime status should be Error, got {:?}",
+        rt.status
     );
 }

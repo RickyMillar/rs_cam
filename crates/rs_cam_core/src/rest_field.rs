@@ -31,11 +31,14 @@
 
 use tracing::info;
 
+use crate::contour_extract::marching_squares_bool_grid;
 use crate::dexel_stock::TriDexelStock;
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P3, polyline_length};
+use crate::grid_field::distance_transform_2d;
 use crate::grid2::Grid2;
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::polygon::{Polygon2, detect_containment, shoelace_area};
 use crate::tool::MillingCutter;
 
 /// What the pencil rest is measured "deeper than". `Copy` so the sample closure
@@ -105,6 +108,26 @@ pub struct RestFieldParams {
     /// Minimum kept-cut length (mm) — used only for the coverage report; the
     /// caller applies the real `min_cut_length` filter downstream.
     pub min_cut_length: f64,
+    /// Extra clearance (mm) added around detected rest regions, beyond the
+    /// fine (pencil) tool radius, when dilating the mask into
+    /// [`RestFieldResult::region_polygons`]. Dilation radius is
+    /// `pencil_radius + region_margin_mm` — enough that a boundary-clipped
+    /// fine-tool op can actually reach the true region edge rather than
+    /// stopping exactly at the pencil-radius-eroded mask boundary.
+    pub region_margin_mm: f64,
+}
+
+impl Default for RestFieldParams {
+    fn default() -> Self {
+        Self {
+            cell_mm: 0.5,
+            min_valley_depth: 0.05,
+            route_width_factor: 2.0,
+            pencil_radius: 0.5,
+            min_cut_length: 2.0,
+            region_margin_mm: 0.5,
+        }
+    }
 }
 
 /// A wide rest region routed to clearing rather than pencil centrelines. v1
@@ -188,6 +211,14 @@ pub struct RestFieldResult {
     pub report: RestFieldReport,
     /// The continuous rest-depth grid, for visualisation (heatmap overlay).
     pub rest_grid: RestGrid,
+    /// Machining-region polygons derived from the (thresholded + component-
+    /// cleaned) rest mask, dilated by `pencil_radius + region_margin_mm` so a
+    /// boundary-clipped fine-tool op can actually reach the region edge. This
+    /// is the derived-boundary source for selective finishing (P2.2's
+    /// `BoundarySource::DerivedRestRegions`) — grouped into outer/hole rings
+    /// via [`crate::polygon::detect_containment`] and winding-normalised.
+    /// Empty when the mask has no surviving components.
+    pub region_polygons: Vec<Polygon2>,
 }
 
 /// True set-cells with 8-neighbourhood bounds handling (out of bounds = unset).
@@ -408,6 +439,18 @@ pub fn detect_rest_valleys(
         }
     }
 
+    // --- 2b. Machining-region polygons: dilate the cleaned mask by the fine
+    // tool's radius + margin so a boundary-clipped op can reach the region
+    // edge, then extract closed loops via marching squares. See P2.2
+    // `BoundarySource::DerivedRestRegions`.
+    let region_polygons = region_polygons_from_mask(
+        &mask,
+        origin_x,
+        origin_y,
+        cell,
+        pencil.radius() + params.region_margin_mm,
+    );
+
     // Total rest volume over the (cleaned) mask.
     let cell_area = cell * cell;
     let mut total_rest_volume = 0.0f64;
@@ -522,7 +565,64 @@ pub fn detect_rest_valleys(
         clearing_regions,
         report,
         rest_grid,
+        region_polygons,
     }
+}
+
+/// Dilate a boolean mask by `dilate_mm` (via a whole-grid Euclidean distance
+/// transform, not a per-cell radius search) and extract the dilated region(s)
+/// as closed [`Polygon2`]s with holes grouped one level deep.
+///
+/// `origin_x`/`origin_y` are the world coordinates of cell `(0, 0)`'s centre;
+/// `cell_mm` is the cell size. `dilate_mm <= 0.0` skips dilation (uses `mask`
+/// as-is). Degenerate marching-squares loops (fewer than 3 points, or
+/// enclosed area under one cell) are dropped before grouping. Returns an
+/// empty vec for an empty or all-`false` mask.
+pub fn region_polygons_from_mask(
+    mask: &Grid2<bool>,
+    origin_x: f64,
+    origin_y: f64,
+    cell_mm: f64,
+    dilate_mm: f64,
+) -> Vec<Polygon2> {
+    let nx = mask.nx();
+    let ny = mask.ny();
+    if nx == 0 || ny == 0 || mask.as_slice().iter().all(|&v| !v) {
+        return Vec::new();
+    }
+    let cell = cell_mm.max(1e-9);
+
+    let dilated: std::borrow::Cow<'_, [bool]> = if dilate_mm > 0.0 {
+        // Whole-grid EDT (O(cells)), not a per-cell radius loop: distance in
+        // cell units from every cell to the nearest `true` cell.
+        let dist = distance_transform_2d(mask.as_slice(), ny, nx);
+        let radius_cells = dilate_mm / cell;
+        std::borrow::Cow::Owned(dist.iter().map(|&d| d <= radius_cells).collect())
+    } else {
+        std::borrow::Cow::Borrowed(mask.as_slice())
+    };
+
+    // `marching_squares_bool_grid` takes `(rows, cols)`; this grid's
+    // row-major layout is `r*nx + c` with `r` along Y and `c` along X (same
+    // convention `detect_rest_valleys` uses via `row_major_rc`), so
+    // rows = ny, cols = nx here matches the `distance_transform_2d` call
+    // above and the world-coordinate mapping `x = origin_x + c*cell`,
+    // `y = origin_y + r*cell` that `marching_squares_bool_grid` itself uses
+    // internally — no row/col transposition needed at this boundary.
+    let loops = marching_squares_bool_grid(&dilated, ny, nx, origin_x, origin_y, cell);
+
+    let min_area = cell * cell;
+    let candidate_polys: Vec<Polygon2> = loops
+        .into_iter()
+        .filter(|pts| pts.len() >= 3 && shoelace_area(pts).abs() >= min_area)
+        .map(Polygon2::new)
+        .collect();
+
+    let mut grouped = detect_containment(candidate_polys);
+    for poly in &mut grouped {
+        poly.ensure_winding();
+    }
+    grouped
 }
 
 // ---------------------------------------------------------------------------
@@ -1018,7 +1118,131 @@ mod tests {
             route_width_factor: 2.0,
             pencil_radius: pencil_r,
             min_cut_length: 2.0,
+            region_margin_mm: 0.5,
         }
+    }
+
+    // ── region_polygons_from_mask ──────────────────────────────────────
+
+    /// Build a `size`×`size` all-false mask with a `w`×`h` true block whose
+    /// top-left corner sits at `(r0, c0)`.
+    fn mask_with_block(size: usize, r0: usize, c0: usize, w: usize, h: usize) -> Grid2<bool> {
+        let mut mask = Grid2::new_fill(size, size, false);
+        for r in r0..r0 + h {
+            for c in c0..c0 + w {
+                mask.set(r, c, true);
+            }
+        }
+        mask
+    }
+
+    fn assert_closed_ccw_polys(polys: &[Polygon2]) {
+        for p in polys {
+            assert!(p.closed, "region polygons must be closed");
+            assert!(
+                p.has_correct_winding(),
+                "exterior must be CCW / holes CW: area={}",
+                p.signed_area()
+            );
+            assert!(p.area() > 0.0, "region polygon must have positive area");
+        }
+    }
+
+    /// Bounding box of a polygon's exterior (min_x, min_y, max_x, max_y).
+    fn poly_bbox(p: &Polygon2) -> (f64, f64, f64, f64) {
+        let xs = p.exterior.iter().map(|q| q.x);
+        let ys = p.exterior.iter().map(|q| q.y);
+        (
+            xs.clone().fold(f64::INFINITY, f64::min),
+            ys.clone().fold(f64::INFINITY, f64::min),
+            xs.fold(f64::NEG_INFINITY, f64::max),
+            ys.fold(f64::NEG_INFINITY, f64::max),
+        )
+    }
+
+    #[test]
+    fn region_polygons_empty_mask_yields_empty_vec() {
+        let mask = Grid2::new_fill(20, 20, false);
+        let polys = region_polygons_from_mask(&mask, 0.0, 0.0, 1.0, 0.0);
+        assert!(polys.is_empty(), "an all-false mask has no regions");
+    }
+
+    #[test]
+    fn region_polygons_no_dilation_matches_block_extent() {
+        let cell = 1.0;
+        let mask = mask_with_block(20, 8, 8, 3, 3); // rows 8..11, cols 8..11
+        let polys = region_polygons_from_mask(&mask, 0.0, 0.0, cell, 0.0);
+        assert_eq!(polys.len(), 1, "one isolated block -> one polygon");
+        assert_closed_ccw_polys(&polys);
+        let (minx, miny, maxx, maxy) = poly_bbox(&polys[0]);
+        // Marching-squares boundary sits at cell edges around the 3x3 block:
+        // world x/y in [8, 11] (±1 cell for corner-vs-centre geometry).
+        assert!((minx - 8.0).abs() <= 1.0, "minx = {minx}");
+        assert!((miny - 8.0).abs() <= 1.0, "miny = {miny}");
+        assert!((maxx - 11.0).abs() <= 1.0, "maxx = {maxx}");
+        assert!((maxy - 11.0).abs() <= 1.0, "maxy = {maxy}");
+    }
+
+    #[test]
+    fn region_polygons_dilation_grows_the_bbox() {
+        let cell = 1.0;
+        let mask = mask_with_block(30, 10, 10, 3, 3);
+        let base = region_polygons_from_mask(&mask, 0.0, 0.0, cell, 0.0);
+        let dilated = region_polygons_from_mask(&mask, 0.0, 0.0, cell, 2.0);
+        assert_eq!(base.len(), 1);
+        assert_eq!(
+            dilated.len(),
+            1,
+            "dilation must not fragment a single block"
+        );
+        assert_closed_ccw_polys(&dilated);
+        let (bminx, bminy, bmaxx, bmaxy) = poly_bbox(&base[0]);
+        let (dminx, dminy, dmaxx, dmaxy) = poly_bbox(&dilated[0]);
+        // ~2 cells of extra margin on every side (±1 cell tolerance for MS
+        // corner-vs-centre geometry).
+        assert!(
+            (bminx - dminx - 2.0).abs() <= 1.0,
+            "left growth: base={bminx} dilated={dminx}"
+        );
+        assert!(
+            (bminy - dminy - 2.0).abs() <= 1.0,
+            "bottom growth: base={bminy} dilated={dminy}"
+        );
+        assert!(
+            (dmaxx - bmaxx - 2.0).abs() <= 1.0,
+            "right growth: base={bmaxx} dilated={dmaxx}"
+        );
+        assert!(
+            (dmaxy - bmaxy - 2.0).abs() <= 1.0,
+            "top growth: base={bmaxy} dilated={dmaxy}"
+        );
+    }
+
+    #[test]
+    fn region_polygons_dilation_merges_nearby_blocks() {
+        let cell = 1.0;
+        let mut mask = Grid2::new_fill(30, 30, false);
+        // Two 3x3 blocks separated by a 3-cell gap (cols 10..13 and 16..19).
+        for r in 10..13 {
+            for c in 10..13 {
+                mask.set(r, c, true);
+            }
+        }
+        for r in 10..13 {
+            for c in 16..19 {
+                mask.set(r, c, true);
+            }
+        }
+        let apart = region_polygons_from_mask(&mask, 0.0, 0.0, cell, 0.0);
+        assert_eq!(apart.len(), 2, "no dilation: two separate regions");
+
+        let merged = region_polygons_from_mask(&mask, 0.0, 0.0, cell, 2.0);
+        assert_eq!(
+            merged.len(),
+            1,
+            "dilation of 2 cells should bridge a 3-cell gap into one region"
+        );
+        assert_closed_ccw_polys(&merged);
     }
 
     #[test]
@@ -1050,6 +1274,13 @@ mod tests {
         // The trough runs along X near y=0.
         let all: Vec<&P3> = res.centerlines.iter().flatten().collect();
         let mean_abs_y = all.iter().map(|p| p.y.abs()).sum::<f64>() / all.len().max(1) as f64;
+        assert!(
+            !res.region_polygons.is_empty(),
+            "surviving rest-mask components must yield region_polygons alongside \
+             clearing_regions/centerlines; report = {:?}",
+            res.report
+        );
+        assert_closed_ccw_polys(&res.region_polygons);
         assert!(
             mean_abs_y < 1.5,
             "centerline should hug the y≈0 trough, mean |y| = {mean_abs_y:.2}"
@@ -1103,6 +1334,10 @@ mod tests {
         );
         assert!(res.centerlines.is_empty(), "flat plate has no valleys");
         assert_eq!(res.report.total_rest_volume_mm3, 0.0);
+        assert!(
+            res.region_polygons.is_empty(),
+            "no clearing_regions/components -> no region_polygons either"
+        );
     }
 
     #[test]
@@ -1290,6 +1525,7 @@ mod tests {
             route_width_factor: routew,
             pencil_radius: pencil.radius(),
             min_cut_length: 2.0,
+            region_margin_mm: 0.5,
         };
         let reference = RestReference::Cutter {
             tool: &reference,
