@@ -526,6 +526,16 @@ impl<B: ComputeBackend> AppController<B> {
             None
         };
 
+        // P1 quantitative linker: mirror core's `session::compute::generate_toolpath`,
+        // which builds `LinkKinematics` from `self.machine` (see the comment there
+        // for why each accessor is used).
+        let machine = self.state.session.machine();
+        let link_kinematics = Some(rs_cam_core::machine_kinematics::LinkKinematics {
+            kinematics: machine.effective_kinematics(),
+            max_feed_mm_min: machine.cutting_feed_ceiling_mm_min().max(1.0),
+            rapid_feed_mm_min: machine.max_feed_mm_min.max(1.0),
+        });
+
         self.compute.submit_toolpath(ComputeRequest {
             toolpath_id: tp_id,
             toolpath_name,
@@ -550,6 +560,7 @@ impl<B: ComputeBackend> AppController<B> {
             material,
             derived_rest_regions,
             rest_analysis,
+            link_kinematics,
         });
     }
 

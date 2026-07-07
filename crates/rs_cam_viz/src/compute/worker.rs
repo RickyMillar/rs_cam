@@ -90,6 +90,11 @@ pub struct ComputeRequest {
     /// the controller from the toolpath's `ToolpathEntry::rest_analysis`
     /// and threaded to `execute_operation_annotated_with_regions`.
     pub rest_analysis: crate::state::toolpath::RestAnalysisConfig,
+    /// P1 quantitative linker — the machine envelope generators use to
+    /// cost link candidates (pencil hookup). Snapshot taken when the
+    /// request is built; `None` disables cost-based link decisions
+    /// (legacy always-link behavior).
+    pub link_kinematics: Option<rs_cam_core::machine_kinematics::LinkKinematics>,
 }
 
 pub struct ComputeResult {

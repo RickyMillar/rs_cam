@@ -181,12 +181,6 @@ fn generate_via_core(
     // `boundary_regions` is a byte-identical no-op, matching what the
     // plain `execute_operation_annotated` wrapper did before P2.5).
     //
-    // P1 W4a: `link_kinematics` is `None` here — `ComputeRequest` carries
-    // no machine profile (only `SimulationRequest` does, via its
-    // `kinematics`/`max_feed_mm_min` fields, resolved separately for the
-    // sim lane). The pencil family's surface-link-vs-retract decision
-    // falls back to the legacy distance-only hookup on this path until a
-    // machine profile is threaded into `ComputeRequest` as a follow-up.
     let result = execute_operation_annotated_with_regions(
         &req.operation,
         mesh_ref,
@@ -206,7 +200,7 @@ fn generate_via_core(
         pre_boundary.as_ref(),
         pre_boundary_regions.as_deref(),
         Some(&req.rest_analysis),
-        None,
+        req.link_kinematics.clone(),
     )
     .map_err(ComputeError::from)?;
 
@@ -873,6 +867,7 @@ mod tests {
             material: rs_cam_core::material::Material::default(),
             derived_rest_regions: None,
             rest_analysis: Default::default(),
+            link_kinematics: None,
         }
     }
 
