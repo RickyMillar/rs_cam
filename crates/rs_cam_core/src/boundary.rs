@@ -8,7 +8,7 @@ use crate::geo::{P2, P3};
 use crate::marching_squares::{cell_case, cell_segments};
 use crate::mesh::TriangleMesh;
 use crate::polygon::{Polygon2, detect_containment, offset_polygon};
-use crate::toolpath::{MoveType, Toolpath};
+use crate::toolpath::{MoveIntent, MoveType, Toolpath};
 
 /// How the tool relates to the machining boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,6 +75,19 @@ pub fn clip_toolpath_to_boundary(tp: &Toolpath, boundary: &Polygon2, safe_z: f64
 /// followed by a plunge. The first move is treated as if the previous position
 /// was outside the boundary (the tool starts from a safe location).
 ///
+/// Every move this function emits is tagged with a [`MoveIntent`]: the
+/// retract-up rapid is `Retract`, the over-to-target rapid (both on exit and
+/// on re-entry) is `Linking`, and the re-entry descent is `EntryPlunge`.
+/// Kept in-boundary moves clone the input's original intent unchanged.
+///
+/// Re-entry always feeds the *entire* height from `safe_z` down to the
+/// target at the original move's cutting feed. A rapid-down-to-clearance
+/// split is NOT done here — the actual input stock (not the boundary clip's
+/// view of the move) is the only safe source for a descent ceiling, and that
+/// stock is only in scope after generation. See
+/// [`crate::dressup::optimize_entry_descents`], a post-pass that runs after
+/// this clip with the real stock in scope.
+///
 /// Returns `(clipped, mapping)` where `mapping` has length `tp.moves.len() + 1`:
 /// `mapping[i]` is the index of the first output move produced from input move
 /// `i`, and `mapping[tp.moves.len()]` is `clipped.moves.len()` (sentinel).
@@ -102,6 +115,9 @@ pub fn clip_toolpath_to_boundary_with_provenance(
 /// produces): merging them into one polygon-with-holes first would be wrong
 /// (there's no shared exterior), but "inside island A OR inside island B" is
 /// exactly what "the tool may cut here" means for that source.
+///
+/// See [`clip_toolpath_to_boundary_with_provenance`] for the move-intent
+/// tagging — it applies identically here.
 ///
 /// [`clip_toolpath_to_boundary_with_provenance`] delegates here with a
 /// one-element slice, so the two can never disagree on move-order or
@@ -138,13 +154,20 @@ pub fn clip_toolpath_to_boundary_set_with_provenance(
             }
             (false, true) => {
                 // Crossing from outside to inside: rapid above target, then plunge.
-                result.rapid_to(P3::new(m.target.x, m.target.y, safe_z));
+                result.rapid_to_with_intent(
+                    P3::new(m.target.x, m.target.y, safe_z),
+                    MoveIntent::Linking,
+                );
 
                 // Preserve feed rate from the original move for the plunge.
                 let feed = feed_rate_of(&m.move_type);
                 match feed {
-                    Some(fr) => result.feed_to(m.target, fr),
-                    None => result.rapid_to(m.target),
+                    Some(fr) => {
+                        result.feed_to_with_intent(m.target, fr, MoveIntent::EntryPlunge);
+                    }
+                    None => {
+                        result.rapid_to_with_intent(m.target, MoveIntent::Linking);
+                    }
                 }
             }
             (true, true) => {
@@ -154,14 +177,21 @@ pub fn clip_toolpath_to_boundary_set_with_provenance(
             (true, false) => {
                 // Crossing from inside to outside: retract, then rapid.
                 if let Some(prev) = prev_pos {
-                    result.rapid_to(P3::new(prev.x, prev.y, safe_z));
+                    result
+                        .rapid_to_with_intent(P3::new(prev.x, prev.y, safe_z), MoveIntent::Retract);
                 }
-                result.rapid_to(P3::new(m.target.x, m.target.y, safe_z));
+                result.rapid_to_with_intent(
+                    P3::new(m.target.x, m.target.y, safe_z),
+                    MoveIntent::Linking,
+                );
             }
             (false, false) => {
                 // Both outside (or first move with outside target):
                 // convert to rapid at safe_z.
-                result.rapid_to(P3::new(m.target.x, m.target.y, safe_z));
+                result.rapid_to_with_intent(
+                    P3::new(m.target.x, m.target.y, safe_z),
+                    MoveIntent::Linking,
+                );
             }
         }
 
@@ -654,6 +684,45 @@ mod tests {
         assert!(
             has_plunge,
             "Re-entry should produce a plunge to cutting depth"
+        );
+    }
+
+    #[test]
+    fn clip_tags_exit_retract_and_linking() {
+        // Crossing from inside to outside emits two rapids: the first
+        // (retract straight up from the previous position) is `Retract`,
+        // the second (over to the new target at safe_z) is `Linking`.
+        let boundary = Polygon2::rectangle(0.0, 0.0, 50.0, 50.0);
+        let safe_z = 20.0;
+
+        let mut tp = Toolpath::new();
+        tp.feed_to(P3::new(25.0, 25.0, -5.0), 1000.0); // inside (first move)
+        tp.feed_to(P3::new(75.0, 25.0, -5.0), 1000.0); // outside (crossing out)
+
+        let clipped = clip_toolpath_to_boundary_with_provenance(&tp, &boundary, safe_z).0;
+
+        let retract = clipped.moves.iter().any(|m| {
+            m.move_type == MoveType::Rapid
+                && m.intent == MoveIntent::Retract
+                && (m.target.x - 25.0).abs() < 1e-10
+                && (m.target.y - 25.0).abs() < 1e-10
+                && (m.target.z - safe_z).abs() < 1e-10
+        });
+        assert!(
+            retract,
+            "exit should retract straight up from the previous position, tagged Retract"
+        );
+
+        let linking = clipped.moves.iter().any(|m| {
+            m.move_type == MoveType::Rapid
+                && m.intent == MoveIntent::Linking
+                && (m.target.x - 75.0).abs() < 1e-10
+                && (m.target.y - 25.0).abs() < 1e-10
+                && (m.target.z - safe_z).abs() < 1e-10
+        });
+        assert!(
+            linking,
+            "exit should rapid over to the new target at safe_z, tagged Linking"
         );
     }
 

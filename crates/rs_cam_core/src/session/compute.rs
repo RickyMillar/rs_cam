@@ -1380,6 +1380,16 @@ impl ProjectSession {
 
         let op_scope = semantic_root.start_item(ToolpathSemanticKind::Operation, &op_label);
         let child_ctx = op_scope.context();
+        // P1 W4a: the pencil family's emit-time surface-link-vs-retract
+        // decision costs candidates against the real machine envelope —
+        // same accessor pattern `apply_adaptive_feed_modulation` uses
+        // (`effective_kinematics` never `None`; `cutting_feed_ceiling_mm_min`
+        // for the cutting-feed cap, `max_feed_mm_min` for the travel rate).
+        let link_kinematics = Some(crate::machine_kinematics::LinkKinematics {
+            kinematics: self.machine.effective_kinematics(),
+            max_feed_mm_min: self.machine.cutting_feed_ceiling_mm_min().max(1.0),
+            rapid_feed_mm_min: self.machine.max_feed_mm_min.max(1.0),
+        });
         // P2.3: `_with_regions` threads `pre_boundary_regions` (resolved once,
         // above, alongside `pre_boundary`) into the mesh-finish family's
         // pre-clip via `ExecutionContext::boundary_regions`. Every other
@@ -1404,6 +1414,7 @@ impl ProjectSession {
             pre_boundary.as_ref(),
             pre_boundary_regions.as_deref(),
             Some(&tc.rest_analysis),
+            link_kinematics,
         );
 
         match tp_result {
@@ -1484,6 +1495,36 @@ impl ProjectSession {
                                 &semantic_root,
                             )
                         };
+                }
+
+                // ── Entry-descent optimization ────────────────────────
+                // P1 W2 (reworked): split long safe_z-to-cut-depth plunges
+                // by rapiding down to just above the INPUT STOCK's material
+                // ceiling first — using the actual stock (the same snapshot
+                // generation was seeded with for FromRemainingStock ops, or
+                // the fresh-stock top otherwise), never a mesh height. This
+                // runs on every generation (not just finish passes) since
+                // the stock-derived ceiling is safe by construction — unlike
+                // the mesh-derived height it replaces, which understates
+                // remaining stock on rest-machining ops (the 151-collision
+                // Rivers lesson — see `optimize_entry_descents`'s doc).
+                //
+                // Inserts moves after span construction, so the spans are
+                // remapped through the same provenance-map contract the
+                // boundary clip uses (`Span::remap`), rather than
+                // invalidating them.
+                {
+                    let (split_count, mapping) =
+                        crate::dressup::optimize_entry_descents_with_provenance(
+                            &mut annotated.toolpath,
+                            gen_initial_stock,
+                            heights.top_z,
+                            tool_def.radius(),
+                        );
+                    if split_count > 0 {
+                        annotated.spans =
+                            annotated.spans.iter().map(|s| s.remap(&mapping)).collect();
+                    }
                 }
 
                 let stats = ToolpathStats {

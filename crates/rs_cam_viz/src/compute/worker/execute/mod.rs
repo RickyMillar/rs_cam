@@ -180,6 +180,13 @@ fn generate_via_core(
     // through the `_with_regions` variant now (unconditional `None` for
     // `boundary_regions` is a byte-identical no-op, matching what the
     // plain `execute_operation_annotated` wrapper did before P2.5).
+    //
+    // P1 W4a: `link_kinematics` is `None` here — `ComputeRequest` carries
+    // no machine profile (only `SimulationRequest` does, via its
+    // `kinematics`/`max_feed_mm_min` fields, resolved separately for the
+    // sim lane). The pencil family's surface-link-vs-retract decision
+    // falls back to the legacy distance-only hookup on this path until a
+    // machine profile is threaded into `ComputeRequest` as a follow-up.
     let result = execute_operation_annotated_with_regions(
         &req.operation,
         mesh_ref,
@@ -199,6 +206,7 @@ fn generate_via_core(
         pre_boundary.as_ref(),
         pre_boundary_regions.as_deref(),
         Some(&req.rest_analysis),
+        None,
     )
     .map_err(ComputeError::from)?;
 
@@ -701,6 +709,34 @@ fn run_compute_with_phase_tracker(
                         scope.set_move_range(0, current.toolpath.moves.len() - 1);
                     }
                 }
+            }
+        }
+
+        // ── Entry-descent optimization ────────────────────────────────
+        // P1 W2 (reworked): split long safe_z-to-cut-depth plunges by
+        // rapiding down to just above the INPUT STOCK's material ceiling
+        // first — using the actual stock (`req.prior_stock`, the same
+        // snapshot generation was seeded with for FromRemainingStock ops)
+        // or the fresh-stock top otherwise, never a mesh height. Mirrors
+        // session/compute.rs::generate_toolpath's post-clip wiring. Runs
+        // on every generation (not just finish passes): the stock-derived
+        // ceiling is safe by construction, unlike the mesh-derived height
+        // it replaces (see `optimize_entry_descents`'s doc for the
+        // 151-collision Rivers lesson that motivated the rework).
+        //
+        // Inserts moves after span construction, so spans are remapped
+        // through the same provenance-map contract the boundary clip uses
+        // above, rather than invalidated.
+        {
+            let (split_count, mapping) =
+                rs_cam_core::dressup::optimize_entry_descents_with_provenance(
+                    &mut current.toolpath,
+                    req.prior_stock.as_ref(),
+                    req.heights.top_z,
+                    req.tool.envelope_diameter() / 2.0,
+                );
+            if split_count > 0 {
+                current.spans = current.spans.iter().map(|s| s.remap(&mapping)).collect();
             }
         }
 

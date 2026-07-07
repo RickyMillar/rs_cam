@@ -6,6 +6,24 @@
 use crate::dropcutter::DropCutterGrid;
 use crate::geo::P3;
 
+/// Clearance (mm) above the INPUT STOCK's material ceiling used by the
+/// entry-descent post-pass ([`crate::dressup::optimize_entry_descents`]) to
+/// split a long safe_z-to-cut-depth plunge into a rapid down to
+/// `ceiling + PLUNGE_CLEARANCE_MM` followed by a shorter feed-plunge for the
+/// remainder. Clears typical stock_to_leave plus scallop crest.
+///
+/// Historically (P1 W2) this clearance was measured from a per-XY
+/// drop-cutter-sampled MESH height at emission time, inside each generator.
+/// That mesh height understates remaining stock on `FromRemainingStock`
+/// (rest-machining) ops — the mesh has no notion of "never actually cut
+/// here yet" — so a rapid descending to mesh-height + clearance could (and
+/// did: 151 rapid collisions on a Rivers rest pass) descend through real
+/// material that a prior rough left behind. The ceiling is now always
+/// measured against the actual input stock (dexel `max_top_z_in_disc`, or
+/// the fresh-stock top when no dexel is available), evaluated once, after
+/// generation, as a toolpath post-pass — never inside a generator.
+pub const PLUNGE_CLEARANCE_MM: f64 = 2.0;
+
 /// Type of motion for a toolpath move.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MoveType {
@@ -224,6 +242,13 @@ impl Toolpath {
     /// (typically `ClearingCut` or `FinishingCut`). The lead-in plunge is
     /// tagged `EntryPlunge` and the lead-out lift is tagged `Retract`,
     /// regardless of `body_intent`.
+    ///
+    /// Entry-descent optimization (rapid down to just above the input
+    /// stock's ceiling before plunging the remainder) is NOT done here —
+    /// generators have no view of the actual input stock, only of mesh
+    /// surfaces, which understate remaining material on rest-machining
+    /// ops. See [`crate::dressup::optimize_entry_descents`], a post-pass
+    /// that runs after generation with the real stock in scope.
     pub fn emit_path_segment_with_intent(
         &mut self,
         path: &[P3],
@@ -261,6 +286,11 @@ impl Toolpath {
     /// climb/conventional loop-direction orientation should eventually live
     /// here too, instead of each caller pre-ordering (or not ordering, per
     /// ramp_finish's naive segment-reversal) its own points.
+    ///
+    /// Entry-descent optimization is NOT done here — see
+    /// [`Toolpath::emit_path_segment_with_intent`]'s doc for why that lives
+    /// in a post-pass ([`crate::dressup::optimize_entry_descents`]) instead
+    /// of inside the emitter.
     pub fn emit_closed_contour_with_intent(
         &mut self,
         points: &[P3],

@@ -180,6 +180,55 @@ impl TriDexelStock {
         sum
     }
 
+    /// Highest material top over all Z-grid cells intersecting the disc of
+    /// `radius` around `(cx, cy)` (world frame). Mirrors the collision
+    /// checker's view: a tool descending at this XY can touch material in
+    /// any column within its radius. `None` when no intersecting column
+    /// holds material.
+    ///
+    /// Same cell-walk and distance convention as [`Self::local_material_sum`]
+    /// (max instead of sum) — see that method's comment for the shared
+    /// tri-dexel-vs-heightmap correspondence.
+    pub fn max_top_z_in_disc(&self, cx: f64, cy: f64, radius: f64) -> Option<f64> {
+        let grid = &self.z_grid;
+        let cs = grid.cell_size;
+        let r_cells = (radius / cs).ceil() as isize;
+
+        // Convert world (cx, cy) to grid cell
+        let center_col = ((cx - grid.origin_u) / cs).round() as isize;
+        let center_row = ((cy - grid.origin_v) / cs).round() as isize;
+
+        let col_min = (center_col - r_cells).max(0) as usize;
+        let col_max = ((center_col + r_cells) as usize).min(grid.cols.saturating_sub(1));
+        let row_min = (center_row - r_cells).max(0) as usize;
+        let row_max = ((center_row + r_cells) as usize).min(grid.rows.saturating_sub(1));
+
+        let r_sq = radius * radius;
+        let mut max_top: Option<f64> = None;
+
+        for row in row_min..=row_max {
+            let cell_y = grid.origin_v + row as f64 * cs;
+            let dy = cell_y - cy;
+            let dy_sq = dy * dy;
+            if dy_sq > r_sq {
+                continue;
+            }
+            for col in col_min..=col_max {
+                let cell_x = grid.origin_u + col as f64 * cs;
+                let dx = cell_x - cx;
+                let dist_sq = dx * dx + dy_sq;
+                if dist_sq > r_sq {
+                    continue;
+                }
+                if let Some(top) = grid.top_z_at(row, col) {
+                    let top = top as f64;
+                    max_top = Some(max_top.map_or(top, |m: f64| m.max(top)));
+                }
+            }
+        }
+        max_top
+    }
+
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Clear all material above `z` at the given cell on the Z-grid.
     ///
@@ -847,6 +896,51 @@ mod tests {
         assert!(
             sum_after < sum_before,
             "Sum should decrease after stamp: before={sum_before}, after={sum_after}"
+        );
+    }
+
+    #[test]
+    fn test_max_top_z_in_disc_stepped_stock() {
+        // 10x10 stock, z 0..10, cell_size=1. Step: the right half
+        // (col >= cols/2) is lowered to top=3; the left half stays at
+        // top=10 (fresh, unstamped).
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 10.0, 10.0, 0.0, 10.0, 1.0);
+        let rows = stock.z_grid.rows;
+        let cols = stock.z_grid.cols;
+        for row in 0..rows {
+            for col in (cols / 2)..cols {
+                stock.clear_above_at(row, col, 3.0);
+            }
+        }
+
+        // Querying at the midpoint between the last tall column and the
+        // first lowered column, with a disc wide enough to reach both,
+        // must report the TALL side's top, not the local (lowered)
+        // column's top — mirroring the collision checker's view that a
+        // tool can touch material anywhere within its footprint, not just
+        // at its center.
+        let cs = stock.z_grid.cell_size;
+        let last_tall_col = cols / 2 - 1;
+        let midpoint_x = stock.z_grid.origin_u + (last_tall_col as f64 + 0.5) * cs;
+        let at_boundary = stock.max_top_z_in_disc(midpoint_x, 5.0, 0.6);
+        assert!(
+            (at_boundary.unwrap_or(0.0) - 10.0).abs() < 1e-6,
+            "expected the disc straddling the step to see the tall side's top (10.0), got {at_boundary:?}"
+        );
+
+        // Deep inside the lowered side (disc doesn't reach the step),
+        // the query should report the lowered top.
+        let deep_low = stock.max_top_z_in_disc(9.0, 5.0, 0.4);
+        assert!(
+            (deep_low.unwrap_or(0.0) - 3.0).abs() < 1e-6,
+            "expected the lowered side's top (3.0), got {deep_low:?}"
+        );
+
+        // Deep inside the tall side, the query should report the tall top.
+        let deep_tall = stock.max_top_z_in_disc(1.0, 5.0, 0.4);
+        assert!(
+            (deep_tall.unwrap_or(0.0) - 10.0).abs() < 1e-6,
+            "expected the tall side's top (10.0), got {deep_tall:?}"
         );
     }
 

@@ -147,6 +147,120 @@ pub fn apply_entry(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Entry-descent optimization (P1 W2, reworked)
+// ---------------------------------------------------------------------------
+
+/// P1 W2 (reworked): split long plunge-from-safe_z entries by rapiding
+/// down to just above the INPUT STOCK's material ceiling first.
+///
+/// Scans for the pattern `[Rapid to (x,y, safe-ish z)]` -> `[Linear feed
+/// tagged EntryPlunge, same XY (within eps), descending]`. For each, the
+/// material ceiling is `stock.max_top_z_in_disc(x, y, tool_radius)` when a
+/// stock dexel is available (falling back to `fresh_stock_top_z` when the
+/// disc has no intersecting column), else `fresh_stock_top_z` directly. When
+/// `ceiling + PLUNGE_CLEARANCE_MM` sits at least 0.5mm below the rapid's z
+/// AND above the plunge target z, the plunge is split: a new
+/// `Rapid(Linking)` down to `ceiling + PLUNGE_CLEARANCE_MM`, then the
+/// original `EntryPlunge` feed for the remainder. Never touches plunges
+/// whose XY differs from the preceding rapid (not a vertical entry) or
+/// whose intent is not `EntryPlunge`.
+///
+/// SAFETY: material cannot exist above the input stock's ceiling, so the
+/// inserted rapid is collision-free by construction — unlike any
+/// mesh-derived height, which understates remaining stock on
+/// `FromRemainingStock` ops (the 151-collision Rivers lesson,
+/// `planning/unified_finishing_pass_plan.md` P1 notes).
+///
+/// This is a thin wrapper over
+/// [`optimize_entry_descents_with_provenance`] that discards the
+/// provenance mapping — use that function directly when the caller needs
+/// to remap spans (e.g. after span construction, mirroring
+/// [`crate::boundary::clip_toolpath_to_boundary_with_provenance`]'s
+/// contract).
+///
+/// Returns the number of entries split (for logging/tests).
+pub fn optimize_entry_descents(
+    tp: &mut Toolpath,
+    stock: Option<&TriDexelStock>,
+    fresh_stock_top_z: f64,
+    tool_radius: f64,
+) -> usize {
+    optimize_entry_descents_with_provenance(tp, stock, fresh_stock_top_z, tool_radius).0
+}
+
+/// Same as [`optimize_entry_descents`] but also returns the per-input-move
+/// provenance mapping — same shape as
+/// [`crate::boundary::clip_toolpath_to_boundary_with_provenance`]'s second
+/// return value (`mapping[i]` is the first output move index produced from
+/// input move `i`; `mapping[tp.moves.len()]` is the output move count) — so
+/// callers downstream of span construction can precisely remap
+/// `AnnotatedToolpath::spans` via [`Span::remap`] instead of invalidating
+/// them.
+pub fn optimize_entry_descents_with_provenance(
+    tp: &mut Toolpath,
+    stock: Option<&TriDexelStock>,
+    fresh_stock_top_z: f64,
+    tool_radius: f64,
+) -> (usize, Vec<usize>) {
+    use crate::toolpath::MoveIntent;
+
+    const MIN_SPLIT_MM: f64 = 0.5;
+    const XY_EPS_MM: f64 = 1e-6;
+
+    let moves = std::mem::take(&mut tp.moves);
+    let mut new_moves = Vec::with_capacity(moves.len());
+    let mut mapping = Vec::with_capacity(moves.len() + 1);
+    let mut splits = 0usize;
+
+    let mut iter = moves.into_iter().peekable();
+    while let Some(rapid) = iter.next() {
+        mapping.push(new_moves.len());
+
+        let rapid_xy = (rapid.target.x, rapid.target.y);
+        let rapid_z = rapid.target.z;
+        let is_rapid = rapid.move_type == MoveType::Rapid;
+
+        let split_z = is_rapid
+            .then(|| iter.peek())
+            .flatten()
+            .filter(|plunge| {
+                plunge.intent == MoveIntent::EntryPlunge
+                    && matches!(plunge.move_type, MoveType::Linear { .. })
+                    && (plunge.target.x - rapid_xy.0).abs() < XY_EPS_MM
+                    && (plunge.target.y - rapid_xy.1).abs() < XY_EPS_MM
+                    && plunge.target.z < rapid_z - 1e-6
+            })
+            .and_then(|plunge| {
+                let ceiling = stock
+                    .and_then(|s| s.max_top_z_in_disc(rapid_xy.0, rapid_xy.1, tool_radius))
+                    .unwrap_or(fresh_stock_top_z);
+                let z = ceiling + crate::toolpath::PLUNGE_CLEARANCE_MM;
+                (z <= rapid_z - MIN_SPLIT_MM && z > plunge.target.z).then_some(z)
+            });
+
+        new_moves.push(rapid);
+
+        if let Some(z) = split_z {
+            new_moves.push(Move {
+                target: P3::new(rapid_xy.0, rapid_xy.1, z),
+                move_type: MoveType::Rapid,
+                intent: MoveIntent::Linking,
+            });
+            mapping.push(new_moves.len());
+            // `split_z` is only `Some` when `iter.peek()` above was `Some`,
+            // so the plunge move is guaranteed to exist here.
+            if let Some(plunge) = iter.next() {
+                new_moves.push(plunge);
+            }
+            splits += 1;
+        }
+    }
+    mapping.push(new_moves.len());
+    tp.moves = new_moves;
+    (splits, mapping)
+}
+
 fn is_plunge(prev: &Move, current: &Move) -> bool {
     if let MoveType::Linear { .. } = current.move_type {
         let dz = current.target.z - prev.target.z;
@@ -1459,6 +1573,122 @@ mod tests {
                 dist
             );
         }
+    }
+
+    // --- Entry-descent optimization tests ---
+
+    /// Builds a minimal `[Rapid(safe_z)] -> [Linear(EntryPlunge)]` entry at
+    /// `(x, y)`, matching the pattern every generator's shared emitter
+    /// (`Toolpath::emit_path_segment_with_intent` /
+    /// `emit_closed_contour_with_intent`) produces.
+    fn entry_toolpath(x: f64, y: f64, safe_z: f64, plunge_target_z: f64) -> Toolpath {
+        let mut tp = Toolpath::new();
+        tp.rapid_to_with_intent(P3::new(x, y, safe_z), crate::toolpath::MoveIntent::Linking);
+        tp.feed_to_with_intent(
+            P3::new(x, y, plunge_target_z),
+            500.0,
+            crate::toolpath::MoveIntent::EntryPlunge,
+        );
+        tp
+    }
+
+    #[test]
+    fn optimize_entry_descents_splits_on_fresh_stock_top() {
+        let mut tp = entry_toolpath(5.0, 5.0, 10.0, -1.0);
+        let split_count = optimize_entry_descents(&mut tp, None, 0.0, 3.0);
+
+        assert_eq!(split_count, 1, "expected exactly one split");
+        assert_eq!(tp.moves.len(), 3, "moves: {:?}", tp.moves);
+        assert_eq!(tp.moves[0].move_type, MoveType::Rapid);
+        assert!((tp.moves[0].target.z - 10.0).abs() < 1e-10);
+
+        let inserted = &tp.moves[1];
+        assert_eq!(inserted.move_type, MoveType::Rapid);
+        assert_eq!(inserted.intent, crate::toolpath::MoveIntent::Linking);
+        assert!(
+            (inserted.target.z - (0.0 + crate::toolpath::PLUNGE_CLEARANCE_MM)).abs() < 1e-10,
+            "expected inserted rapid at fresh_stock_top_z + PLUNGE_CLEARANCE_MM, got {}",
+            inserted.target.z
+        );
+        assert!((inserted.target.x - 5.0).abs() < 1e-10);
+        assert!((inserted.target.y - 5.0).abs() < 1e-10);
+
+        assert!(matches!(tp.moves[2].move_type, MoveType::Linear { .. }));
+        assert_eq!(tp.moves[2].intent, crate::toolpath::MoveIntent::EntryPlunge);
+        assert!((tp.moves[2].target.z - (-1.0)).abs() < 1e-10);
+    }
+
+    #[test]
+    fn optimize_entry_descents_uses_dexel_ceiling_above_mesh() {
+        // Flat stock whose Z-grid top is 5.0 everywhere — well above the
+        // fresh_stock_top_z passed in, so a correct implementation must
+        // read the ceiling from the dexel, not the fresh-stock fallback.
+        let stock = TriDexelStock::from_stock(0.0, 0.0, 10.0, 10.0, 0.0, 5.0, 1.0);
+
+        let mut tp = entry_toolpath(5.0, 5.0, 10.0, -1.0);
+        let split_count = optimize_entry_descents(&mut tp, Some(&stock), 0.0, 3.0);
+
+        assert_eq!(split_count, 1, "expected exactly one split");
+        let inserted = &tp.moves[1];
+        assert_eq!(inserted.move_type, MoveType::Rapid);
+        assert!(
+            (inserted.target.z - (5.0 + crate::toolpath::PLUNGE_CLEARANCE_MM)).abs() < 1e-10,
+            "expected inserted rapid at dexel ceiling (5.0) + PLUNGE_CLEARANCE_MM, got {}",
+            inserted.target.z
+        );
+    }
+
+    #[test]
+    fn optimize_entry_descents_no_split_when_no_headroom() {
+        // Ceiling + clearance sits above (or too close to) the rapid's z:
+        // stock top at 9.0 + 2.0 clearance = 11.0 > safe_z=10.0 — no room.
+        let stock = TriDexelStock::from_stock(0.0, 0.0, 10.0, 10.0, 0.0, 9.0, 1.0);
+        let mut tp = entry_toolpath(5.0, 5.0, 10.0, -1.0);
+        let split_count = optimize_entry_descents(&mut tp, Some(&stock), 0.0, 3.0);
+
+        assert_eq!(split_count, 0, "no split expected when there's no headroom");
+        assert_eq!(tp.moves.len(), 2, "moves unchanged: {:?}", tp.moves);
+    }
+
+    #[test]
+    fn optimize_entry_descents_no_split_on_xy_mismatch() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to_with_intent(
+            P3::new(5.0, 5.0, 10.0),
+            crate::toolpath::MoveIntent::Linking,
+        );
+        // Different XY from the rapid — not a vertical entry.
+        tp.feed_to_with_intent(
+            P3::new(6.0, 5.0, -1.0),
+            500.0,
+            crate::toolpath::MoveIntent::EntryPlunge,
+        );
+        let split_count = optimize_entry_descents(&mut tp, None, 0.0, 3.0);
+
+        assert_eq!(split_count, 0, "no split expected on XY mismatch");
+        assert_eq!(tp.moves.len(), 2, "moves unchanged: {:?}", tp.moves);
+    }
+
+    #[test]
+    fn optimize_entry_descents_no_split_on_non_entry_plunge_intent() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to_with_intent(
+            P3::new(5.0, 5.0, 10.0),
+            crate::toolpath::MoveIntent::Linking,
+        );
+        // Same XY and descending, but not tagged EntryPlunge.
+        tp.feed_to_with_intent(
+            P3::new(5.0, 5.0, -1.0),
+            500.0,
+            crate::toolpath::MoveIntent::FinishingCut,
+        );
+        let split_count = optimize_entry_descents(&mut tp, None, 0.0, 3.0);
+
+        assert_eq!(
+            split_count, 0,
+            "no split expected when the plunge isn't tagged EntryPlunge"
+        );
+        assert_eq!(tp.moves.len(), 2, "moves unchanged: {:?}", tp.moves);
     }
 
     // --- Tab/bridge tests ---

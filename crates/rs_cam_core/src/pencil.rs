@@ -166,6 +166,18 @@ pub struct PencilParams {
     /// of the same diameter. `None` = legacy nominal-diameter behaviour.
     /// `ToolDefinition` implements `MillingCutter`, so it drops directly.
     pub reference_cutter: Option<crate::tool::ToolDefinition>,
+    /// P1 quantitative linker (unified-finishing-pass W4a): the machine
+    /// envelope [`emit_paths`] costs a surface-link candidate against a
+    /// retract-link candidate with, using the F-034 cycle-time
+    /// integrator ([`crate::machine_kinematics::surface_link_time`] /
+    /// [`crate::machine_kinematics::retract_link_time`]). `hookup_distance`
+    /// remains the candidate CAP — a gap must still be within it to be
+    /// considered for a surface link at all — but which link actually
+    /// gets emitted is decided by integrated time, not distance, once
+    /// this is `Some`. `None` keeps the legacy behaviour: emit a surface
+    /// link whenever `build_surface_link` succeeds within
+    /// `hookup_distance`.
+    pub link_kinematics: Option<crate::machine_kinematics::LinkKinematics>,
 }
 
 /// Sensible test/prototyping defaults, sourced from the field-level
@@ -199,6 +211,7 @@ impl Default for PencilParams {
             rest_cell_mm: rest_cell_default(),
             route_width_factor: route_width_factor_default(),
             reference_cutter: None,
+            link_kinematics: None,
         }
     }
 }
@@ -809,6 +822,22 @@ fn contact_runs(points: &[P3]) -> Vec<&[P3]> {
 /// the next pass (or run — see [`contact_runs`]) is too far, or its link loses
 /// surface contact, and once at the very end.
 ///
+/// P1 quantitative linker (unified-finishing-pass W4a): `hookup_distance` is
+/// now only the CANDIDATE cap — a gap has to be within it (and gouge-safe via
+/// [`build_surface_link`]) to be considered at all — but which link actually
+/// gets emitted is decided by integrated time
+/// ([`crate::machine_kinematics::surface_link_time`] vs.
+/// [`crate::machine_kinematics::retract_link_time`]), never by raw
+/// distance/feed, whenever `params.link_kinematics` is `Some`. The P0
+/// unified-finishing probe (`planning/unified_finishing_pass_plan.md`) found
+/// the naive distance/feed estimate misjudges wall-clock by up to 10× on
+/// segmented paths (3D Finish 6: 10.1× naive) — junction/accel physics, not
+/// commanded feed, dominates once segments get short, so a distance-only
+/// hookup heuristic picks the wrong link on exactly the paths where it
+/// matters most. `params.link_kinematics = None` keeps the legacy behaviour
+/// (surface link whenever `build_surface_link` succeeds within
+/// `hookup_distance`).
+///
 /// Each `PencilPath` is itself split at non-contact (NaN-Z) points via
 /// [`contact_runs`] before emission, so an off-mesh gap in the middle of a
 /// pass produces two independent runs — each with its own rapid/plunge or
@@ -839,20 +868,57 @@ fn emit_paths(
             let first = *run.first().unwrap_or(&P3::origin());
 
             // Try to link from the previous run's end without retracting.
+            // `hookup_distance` is only the candidate CAP (gap must be within
+            // it, and the link must be gouge-safe via `build_surface_link`);
+            // when the caller supplied `link_kinematics`, the candidate is
+            // additionally costed against a retract-link candidate with the
+            // F-034 integrator, and only kept when it's actually cheaper —
+            // see the doc comment above.
             let link = prev_end.and_then(|end| {
                 let gap = ((first.x - end.x).powi(2) + (first.y - end.y).powi(2)).sqrt();
-                if gap > 1e-6 && gap <= params.hookup_distance {
-                    build_surface_link(
-                        end,
-                        first,
-                        mesh,
-                        index,
-                        cutter,
-                        params.stock_to_leave,
-                        params.sampling,
-                    )
-                } else {
-                    None
+                if gap <= 1e-6 || gap > params.hookup_distance {
+                    return None;
+                }
+                let link_pts = build_surface_link(
+                    end,
+                    first,
+                    mesh,
+                    index,
+                    cutter,
+                    params.stock_to_leave,
+                    params.sampling,
+                )?;
+                match &params.link_kinematics {
+                    Some(lk) => {
+                        let mut costed_path = link_pts.clone();
+                        costed_path.push(first);
+                        let surface_t = crate::machine_kinematics::surface_link_time(
+                            end,
+                            &costed_path,
+                            params.feed_rate,
+                            &lk.kinematics,
+                            lk.max_feed_mm_min,
+                            lk.rapid_feed_mm_min,
+                        );
+                        // The retract candidate's descent isn't split by a
+                        // rapid-down-to-clearance: the cost model can't
+                        // verify the input stock's ceiling from here (that
+                        // check lives in the post-generation
+                        // `optimize_entry_descents` pass), so it must not
+                        // assume a descent it can't guarantee is safe.
+                        let retract_t = crate::machine_kinematics::retract_link_time(
+                            end,
+                            first,
+                            params.safe_z,
+                            None,
+                            params.plunge_rate,
+                            &lk.kinematics,
+                            lk.max_feed_mm_min,
+                            lk.rapid_feed_mm_min,
+                        );
+                        (surface_t <= retract_t).then_some(link_pts)
+                    }
+                    None => Some(link_pts),
                 }
             });
 
@@ -1565,8 +1631,10 @@ mod tests {
         let params_offset = PencilParams {
             num_offset_passes: 2,
             // Set explicitly so `..params_center` never moves the non-Copy
-            // `reference_cutter`, keeping `params_center` usable below.
+            // `reference_cutter` / `link_kinematics`, keeping `params_center`
+            // usable below.
             reference_cutter: None,
+            link_kinematics: None,
             ..params_center
         };
 
@@ -2019,6 +2087,118 @@ mod tests {
             "hookup linking should reduce rapids: linked={:.1} unlinked={:.1}",
             linked.total_rapid_distance(),
             unlinked.total_rapid_distance()
+        );
+    }
+
+    /// P1 W4a — shared geometry for the cost-decision tests below: two
+    /// independent 2-point runs 8mm apart on one continuous flat mesh (so
+    /// `build_surface_link` always succeeds geometrically — the surface vs.
+    /// retract choice is purely a cost decision, never a surface-contact
+    /// fallback). Both runs sit comfortably off the box's diagonal seam
+    /// (y=25 vs. the seam at y=x for every x in the runs' range).
+    fn cost_decision_fixture(feed_rate: f64) -> Toolpath {
+        let mesh = make_convex_box(40.0);
+        let index = SpatialIndex::build(&mesh, 10.0);
+        let tool = BallEndmill::new(2.0, 25.0);
+
+        let path_a = PencilPath {
+            points: vec![P3::new(10.0, 25.0, 0.0), P3::new(12.0, 25.0, 0.0)],
+            chain_index: 1,
+            chain_total: 2,
+            offset_index: 1,
+            offset_total: 1,
+            offset_mm: 0.0,
+            is_centerline: true,
+        };
+        let path_b = PencilPath {
+            points: vec![P3::new(20.0, 25.0, 0.0), P3::new(22.0, 25.0, 0.0)],
+            chain_index: 2,
+            chain_total: 2,
+            offset_index: 1,
+            offset_total: 1,
+            offset_mm: 0.0,
+            is_centerline: true,
+        };
+
+        // A modest, unremarkable machine — the point of both tests is the
+        // FEED rate ratio, not exotic accel/kinematics behaviour.
+        let kin = crate::machine_kinematics::MachineKinematics {
+            acceleration_mm_s2: 300.0,
+            ..crate::machine_kinematics::MachineKinematics::default()
+        };
+        let params = PencilParams {
+            hookup_distance: 20.0,
+            feed_rate,
+            plunge_rate: 500.0,
+            safe_z: 15.0,
+            sampling: 1.0,
+            link_kinematics: Some(crate::machine_kinematics::LinkKinematics {
+                kinematics: kin,
+                max_feed_mm_min: 6000.0,
+                rapid_feed_mm_min: 5000.0,
+            }),
+            ..Default::default()
+        };
+
+        emit_paths(&[path_a, path_b], &mesh, &index, &tool, &params).0
+    }
+
+    /// A slow commanded feed makes the direct 8mm surface link expensive
+    /// (it cruises the whole gap at that feed) while the retract loop's
+    /// climb/travel/descend runs at fast rapids regardless — the F-034
+    /// costed decision must prefer retract even though the gap is well
+    /// within `hookup_distance`.
+    #[test]
+    fn cost_decision_prefers_retract_when_surface_link_is_slow() {
+        use crate::toolpath::{MoveIntent, MoveType};
+
+        let tp = cost_decision_fixture(100.0);
+        let cut_indices: Vec<usize> = tp
+            .moves
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| m.intent == MoveIntent::FinishingCut)
+            .map(|(i, _)| i)
+            .collect();
+        let [cut_a, cut_b] = cut_indices.as_slice() else {
+            panic!("expected exactly 2 FinishingCut moves (one per run), got {cut_indices:?}");
+        };
+        let between = tp.moves.get(*cut_a + 1..*cut_b).unwrap();
+        assert!(
+            between.iter().any(|m| m.move_type == MoveType::Rapid),
+            "a slow surface feed should lose to the fast-rapid retract loop \
+             — expected a rapid link between the two bodies, moves: {between:?}"
+        );
+    }
+
+    /// A fast commanded feed makes the direct 8mm surface link cheap while
+    /// the retract loop still pays its fixed climb/travel/descend distance
+    /// regardless of rapid speed — the costed decision must prefer the
+    /// surface link, so no rapid appears between the two bodies.
+    #[test]
+    fn cost_decision_prefers_surface_link_when_cheap() {
+        use crate::toolpath::{MoveIntent, MoveType};
+
+        let tp = cost_decision_fixture(3000.0);
+        let cut_indices: Vec<usize> = tp
+            .moves
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| m.intent == MoveIntent::FinishingCut)
+            .map(|(i, _)| i)
+            .collect();
+        let [cut_a, cut_b] = cut_indices.as_slice() else {
+            panic!("expected exactly 2 FinishingCut moves (one per run), got {cut_indices:?}");
+        };
+        let between = tp.moves.get(*cut_a + 1..*cut_b).unwrap();
+        assert!(
+            !between.iter().any(|m| m.move_type == MoveType::Rapid),
+            "a fast surface feed should beat the retract loop's fixed extra \
+             distance — expected no rapid between the two bodies, moves: {between:?}"
+        );
+        assert!(
+            between.iter().any(|m| m.intent == MoveIntent::Linking),
+            "the winning surface link should emit Linking-intent feed moves"
         );
     }
 
