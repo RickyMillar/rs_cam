@@ -449,6 +449,19 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   a pure Z-offset engine (every use site is `z + stock_to_leave`; no wall-normal mechanism
   exists). P0.9 fix made the adapter honestly axial-only. Decide: grey-out/label the radial
   dial in rs_cam_viz, or build a real XY wall-offset mechanism in the planner (L).
+- [ ] **F.4 (2026-07-07) FromRemainingStock regen catch-22 after fresh load.**
+  `controller/events/compute.rs:~371` finds the prior-stock checkpoint by locating the
+  toolpath ITSELF in the last sim's `boundaries()`; an errored/ungenerated op is never
+  simulated → never in boundaries → can never regenerate. Every FromRemainingStock op is
+  permanently Error after a fresh project load (wanaka Rivers/Lakes/3D Rough 6/3D Finish 6).
+  Fix: key the checkpoint on the op's position in the PLANNED sim order, not membership in
+  the last simulated set. Blocks R2 machined-stock pencil sim validation. [M]
+- [ ] **F.5b (2026-07-07) screenshot_toolpath `include_rapids:false` still draws
+  rapid-over moves** — they carry `MoveIntent::Linking`, and the filter tests intent, not
+  move type; long straight safe-Z lines clutter cutting-only exports. Filter on move TYPE
+  (or intent ∈ {Linking, Retract} when the move is a rapid). [S]
+- [ ] **F.6 (2026-07-07) `export_gcode` ignores `accept_unmodeled=true`** — still refuses
+  on SimulationRequired criteria with the exact same message. [S]
 - [ ] **F.2 Pencil detector internals are not cancel-aware.** P0.8 added phase-boundary +
   per-path polls in pencil.rs, but `crest_lines::detect_valley_lines`,
   `rest_field::detect_rest_valleys`, and the Dihedral chain builders have long internal
@@ -764,3 +777,27 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   - [ ] per-region scallop cost warning when region set is pathological
   - [ ] region-quality advisor: threshold/detector choice per part (ties into P2.4 +
     the pencil valley-detection investigation)
+- 2026-07-07 (pencil valley-targeting investigation + fix, Fable personally, UNCOMMITTED):
+  full diagnosis + fix in `planning/pencil_investigation_2026-07.md`. Root causes (4):
+  (1) centerlines were the medial axis of the `rest > mvd` mask — on textured relief the
+  mask is the ENTIRE rough area, so the skeleton was a space-filling hairball; (2)
+  `trace_skeleton` treated every 8-connected staircase corner (raw degree 3) as a junction
+  → spine shredded to 0.7mm median fragments, min_cut_length then discarded 86% of length
+  (coverage 0.137) — the user's "non-ideal spots" were the surviving ≥2mm shards; (3)
+  offset passes width-blind (always 1+2 at fixed stepover); (4) hysteresis per-COMPONENT
+  peak gate carpets when texture connects to deep trunks (dial dead on real terrain).
+  FIX (rest_field.rs +~700, pencil.rs +53; Sonnet implemented to spec, Fable red-greened):
+  NMS+hysteresis ridge extraction with prominence δ=max(0.1×mvd, 0.005mm), trusted-subset
+  box-smooth + bilateral-trusted NMS pairs (kills trust-edge artifact ridges),
+  transition-count junction tracing + ortho-preferred walk, cleanup_ridge_graph
+  (spur prune + through-merge, pre-length-filter), per-BRANCH median-rest saliency gate,
+  `RestCenterline{points, half_width_mm}` + width-aware offset-pass cap. Plane-wall V
+  limitation documented (constant rest plateau has no ridge → Dihedral detector's turf);
+  rest_field test fixtures converted plane-V → gaussian trench (numerically validated).
+  VALIDATION: harness on wanaka terrain — coverage 0.137→0.80, mvd dial sweeps
+  5196→2255→508 centerlines (0.15/0.5/1.0), lines follow dark creases; live GUI 464 runs
+  ≈20mm avg (was 726×3mm confetti); gates: core lib 2072 pass/3 known reds, clippy clean.
+  Sim collisions/air-cut on wanaka attributable to F.4 (virgin stock), baseline-diffed.
+  NEW FOLLOW-UPS: F.4 FromRemainingStock regen catch-22; F.5b include_rapids intent-vs-type
+  filter; F.6 export_gcode accept_unmodeled ignored. Mask→region_polygons/heatmap paths
+  untouched (P2 semantics preserved).

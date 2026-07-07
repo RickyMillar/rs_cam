@@ -94,7 +94,12 @@ pub struct PencilParams {
     /// Maximum gap between chain endpoints for linking (mm).
     /// Nearby chains are connected with rapid moves. Default: tool_diameter * 3.
     pub hookup_distance: f64,
-    /// Number of offset passes on each side of the centerline. 0 = centerline only.
+    /// Number of offset passes on each side of the centerline. 0 = centerline
+    /// only. For `Dihedral`/`Curvature` this is the exact count used
+    /// everywhere; for `RestDepth` it is instead a CAP — each chain narrows
+    /// it to however many stepovers actually fit the local valley half-width
+    /// (see [`rest_depth_arm`]), so a narrow crease gets fewer (or zero)
+    /// offset passes even when this dial is set higher.
     pub num_offset_passes: usize,
     /// Offset stepover between parallel passes (mm). Default: tool_radius * 0.5.
     pub offset_stepover: f64,
@@ -668,7 +673,12 @@ fn resample_polyline(points: &[P3], spacing: f64) -> Vec<P3> {
 /// Build the centreline + offset `PencilPath`s for one already-sampled valley
 /// polyline. Shared by all three detector arms: it fairs the XY line, lifts
 /// it to the surface with the real cutter, and emits the centreline plus
-/// symmetric offset passes. `chain_index` is 1-based.
+/// symmetric offset passes. `chain_index` is 1-based. `offset_passes` is the
+/// actual number of offset passes to emit on each side — the
+/// Dihedral/Curvature arms pass `params.num_offset_passes` straight through
+/// (unchanged behaviour); the RestDepth arm caps it to the local valley width
+/// (see [`rest_depth_arm`]) so narrow creases don't get offset passes wider
+/// than the valley itself.
 #[allow(clippy::too_many_arguments)] // cohesive per-chain emit; splitting hurts clarity
 fn paths_from_sampled(
     sampled: &[P3],
@@ -678,6 +688,7 @@ fn paths_from_sampled(
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &PencilParams,
+    offset_passes: usize,
     all_paths: &mut Vec<PencilPath>,
 ) {
     if sampled.len() < 2 {
@@ -686,7 +697,7 @@ fn paths_from_sampled(
     // De-jag the facet-scale zig-zag before lifting; offsets derive from the
     // faired centreline so they inherit it.
     let sampled = fair_polyline_xy(sampled, FAIRING_PASSES, FAIRING_STRENGTH);
-    let offset_total = 1 + params.num_offset_passes * 2;
+    let offset_total = 1 + offset_passes * 2;
 
     let centerline = lift_to_surface(&sampled, mesh, index, cutter, params.stock_to_leave);
     all_paths.push(PencilPath {
@@ -699,7 +710,7 @@ fn paths_from_sampled(
         is_centerline: true,
     });
 
-    for pass_num in 1..=params.num_offset_passes {
+    for pass_num in 1..=offset_passes {
         let offset = pass_num as f64 * params.offset_stepover;
 
         let left = offset_polyline(&sampled, offset);
@@ -1058,6 +1069,7 @@ fn curvature_arm(
             index,
             cutter,
             params,
+            params.num_offset_passes,
             &mut all_paths,
         );
     }
@@ -1208,19 +1220,30 @@ fn rest_depth_arm(
     // boundary source) — set alongside the grid, independent of whether any
     // centreline survives the length gate.
     *rest_regions_out = Some(rf.region_polygons);
-    let kept: Vec<Vec<P3>> = rf
+    let kept: Vec<crate::rest_field::RestCenterline> = rf
         .centerlines
         .into_iter()
-        .filter(|l| polyline_length(l) >= params.min_cut_length)
+        .filter(|cl| polyline_length(&cl.points) >= params.min_cut_length)
         .collect();
     if kept.is_empty() {
         info!("Rest-depth detector: no centerlines passed length gate");
         return Ok(all_paths);
     }
     let chain_total = kept.len();
-    for (ci, line) in kept.iter().enumerate() {
+    for (ci, cl) in kept.iter().enumerate() {
         check_cancel(cancel)?;
-        let sampled = resample_polyline(line, params.sampling);
+        let sampled = resample_polyline(&cl.points, params.sampling);
+        // Width-aware pass count (P2.4-adjacent judgement call, see the
+        // `paths_from_sampled` doc): `num_offset_passes` is a user dial that
+        // now acts as a CAP, not a fixed count — a valley narrower than the
+        // cutter-plus-a-few-stepovers only gets the centreline. `n` is how
+        // many stepovers fit between the cutter's own radius and the
+        // measured local half-width; floor at 0 (a valley narrower than the
+        // cutter itself gets centreline-only, same as before).
+        let n = ((cl.half_width_mm - cutter.radius()) / params.offset_stepover)
+            .round()
+            .max(0.0) as usize;
+        let offset_passes = n.min(params.num_offset_passes);
         paths_from_sampled(
             &sampled,
             ci + 1,
@@ -1229,6 +1252,7 @@ fn rest_depth_arm(
             index,
             cutter,
             params,
+            offset_passes,
             &mut all_paths,
         );
     }
@@ -1339,6 +1363,7 @@ fn dihedral_arm(
             index,
             cutter,
             params,
+            params.num_offset_passes,
             &mut all_paths,
         );
     }
@@ -2086,7 +2111,17 @@ mod tests {
             };
 
             let mut all_paths = Vec::new();
-            paths_from_sampled(&raw, 1, 1, &mesh, &index, &tool, &params, &mut all_paths);
+            paths_from_sampled(
+                &raw,
+                1,
+                1,
+                &mesh,
+                &index,
+                &tool,
+                &params,
+                params.num_offset_passes,
+                &mut all_paths,
+            );
             assert_eq!(all_paths.len(), 1, "centerline only, no offset passes");
 
             emit_paths(&all_paths, &mesh, &index, &tool, &params)
