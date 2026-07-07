@@ -19,10 +19,20 @@
 //! smoothing, no denoise gates.
 //!
 //! Pipeline: grid → rest field → threshold mask → 8-connected components →
-//! chamfer distance transform (local half-width) → Zhang-Suen thinning →
-//! skeleton tracing → route each skeleton polyline by width (narrow → pencil
-//! centreline, wide → clearing region). See
-//! `planning/pencil_restdepth_detector_prompt.md`.
+//! chamfer distance transform (local half-width) → **ridge extraction**
+//! (box-smooth → non-max-suppression → hysteresis → thin) → skeleton tracing
+//! → graph cleanup (prune spurs / merge pass-through nodes) → route each
+//! surviving polyline by width (narrow → pencil centreline, wide → clearing
+//! region). See `planning/pencil_restdepth_detector_prompt.md`.
+//!
+//! The mask (`rest > min_valley_depth`) and its ridge are two different
+//! things extracted from the same field: on textured relief the mask covers
+//! the *entire* rough area (both tools ride the texture), so thinning the
+//! mask itself is a space-filling hairball unrelated to any actual valley
+//! crease. The ridge extraction instead finds the local-maximum crease of the
+//! continuous field directly — the mask is still used (untouched) for
+//! [`region_polygons_from_mask`] / the P2 selective-finishing boundary
+//! source, and for measuring each ridge polyline's local half-width.
 //!
 //! Not to be confused with [`crate::rest`], the 2D polygon rest op (offset a
 //! polygon inward by the previous tool's radius, scan-line the leftover
@@ -199,12 +209,34 @@ pub struct RestGrid {
     pub threshold: f64,
 }
 
+/// One pencil-routed ridge polyline plus its measured local half-width.
+///
+/// `half_width_mm` is the median chamfer-distance-transform value of the
+/// THRESHOLD mask (`rest > min_valley_depth`, the same mask
+/// [`region_polygons_from_mask`] dilates), sampled along the ridge's cells,
+/// converted to mm. It is the same "how wide is the rest material here"
+/// metric the pencil/clearing routing decision uses, and lets
+/// [`crate::pencil::rest_depth_arm`] size its offset-pass count to the local
+/// valley width instead of a fixed count everywhere. `0.0` where a ridge cell
+/// sits just outside the mask — the ridge's hysteresis LO floor (`0.5 ×
+/// min_valley_depth`) is below the mask's own threshold, so a ridge can dip
+/// slightly beyond the mask boundary.
+#[derive(Debug, Clone)]
+pub struct RestCenterline {
+    /// World-space polyline: cell-centre XY, Z from the pencil drop.
+    pub points: Vec<P3>,
+    /// Local region half-width (mm) — see struct doc.
+    pub half_width_mm: f64,
+}
+
 /// Output of [`detect_rest_valleys`].
 pub struct RestFieldResult {
     /// Pencil-routed centrelines (world XY at cell centres, Z from the pencil
-    /// drop). Feed straight into the existing pencil pipeline (`min_cut_length`
-    /// filter → `resample_polyline` → `paths_from_sampled`).
-    pub centerlines: Vec<Vec<P3>>,
+    /// drop) with their measured local half-width. Feed `points` straight
+    /// into the existing pencil pipeline (`min_cut_length` filter →
+    /// `resample_polyline` → `paths_from_sampled`); `half_width_mm` sizes the
+    /// width-aware offset pass count (see [`RestCenterline`]).
+    pub centerlines: Vec<RestCenterline>,
     /// Wide regions routed to clearing (not emitted as pencil in v1).
     pub clearing_regions: Vec<ClearingRegion>,
     /// Detection significance / quality metrics.
@@ -460,17 +492,31 @@ pub fn detect_rest_valleys(
         }
     }
 
-    // --- 3. Chamfer distance transform (local half-width, in cells). ---
+    // --- 3. Chamfer distance transform over the (cleaned) mask — local
+    // half-width in cells. Used both for the pencil/clearing routing
+    // decision and [`RestCenterline::half_width_mm`]. ---
     let dt = chamfer_distance(&mask);
 
-    // --- 4. Zhang-Suen thinning → 1-cell skeleton. ---
-    let skel = zhang_suen_thin(&mask);
+    // --- 4. Ridge extraction: box-smooth the continuous rest field once,
+    // non-max-suppress it down to a thin candidate ridge, keep only
+    // hysteresis components whose peak clears min_valley_depth, then
+    // Zhang-Suen-thin the (already near-thin) survivors to guarantee exactly
+    // 1 cell wide. This replaces thinning the mask itself, which on textured
+    // relief is a space-filling hairball (see the module doc). ---
+    let rest_sm = box_smooth_rest(&rest, &contact, &boundary_dt, erode_cells);
+    let ridge_candidates = nms_candidates(&rest_sm, &contact, &boundary_dt, erode_cells, threshold);
+    let ridge_kept = hysteresis_ridge(&ridge_candidates, &rest_sm, threshold);
+    let ridge_skel = zhang_suen_thin(&ridge_kept);
 
-    // --- 5. Skeleton tracing → polylines (cell indices). ---
-    let poly_cells = trace_skeleton(&skel);
+    // --- 5. Skeleton tracing → polylines (cell indices), then graph cleanup
+    // (prune short spurs, merge through pass-through nodes) BEFORE any
+    // length filtering. ---
+    let raw_polys = trace_skeleton(&ridge_skel);
+    let min_cut_length_cells = params.min_cut_length.max(0.0) / cell;
+    let poly_cells = cleanup_ridge_graph(raw_polys, nx, min_cut_length_cells);
 
     // --- 6. Route each polyline by width. ---
-    let mut centerlines: Vec<Vec<P3>> = Vec::new();
+    let mut centerlines: Vec<RestCenterline> = Vec::new();
     let mut pencil_comps: std::collections::BTreeSet<usize> = Default::default();
     let mut clearing_comps: std::collections::BTreeSet<usize> = Default::default();
     let mut skeleton_length = 0.0f64;
@@ -481,7 +527,26 @@ pub fn detect_rest_valleys(
         if poly.len() < 2 {
             continue;
         }
-        // Median DT along the polyline → region half-width in mm.
+        // Per-BRANCH saliency gate: keep a polyline only when its MEDIAN
+        // smoothed rest clears `min_valley_depth` (same median-of-samples
+        // metric family as `pencil::polyline_passes_depth`). The hysteresis
+        // stage gates per-COMPONENT peak, which stops discriminating the
+        // moment fine texture creases are 8-connected to a deep trunk — on
+        // wanaka the whole dendritic network forms one component peaking at
+        // 3.6 mm, so at mvd 0.15 EVERYTHING in it survived (17 m of
+        // "centerlines", a carpet). Gating each traced branch on its own
+        // median restores the dial: texture spurs (~0.2 mm) drop out as mvd
+        // rises while the deep trunks survive. Runs BEFORE the
+        // skeleton-length accumulation so saliency-dropped branches don't
+        // count as "lost" coverage.
+        let mut branch_rest: Vec<f64> = poly.iter().map(|&i| rest_sm.at_index_or(i, 0.0)).collect();
+        branch_rest.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        if median_sorted(&branch_rest) < threshold {
+            continue;
+        }
+        // Median DT (over the threshold mask) along the polyline → region
+        // half-width in mm; 0.0 for cells where the ridge sits outside the
+        // mask (see [`RestCenterline`]).
         let mut dts: Vec<f64> = poly.iter().map(|&i| dt.at_index_or(i, 0.0)).collect();
         dts.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let half_width_cells = median_sorted(&dts);
@@ -503,7 +568,15 @@ pub fn detect_rest_valleys(
         let len = polyline_length(&pts);
         skeleton_length += len;
 
-        let comp = comp_id.at_index_or(at(poly, 0), usize::MAX);
+        // Component lookup at the first ridge cell that lies INSIDE the
+        // threshold mask — ridge cells can sit slightly outside it (the
+        // hysteresis LO floor is below the mask threshold); if none do,
+        // skip comp bookkeeping (same `comp != usize::MAX` guards as before).
+        let comp = poly
+            .iter()
+            .find(|&&i| mask.at_index_or(i, false))
+            .map(|&i| comp_id.at_index_or(i, usize::MAX))
+            .unwrap_or(usize::MAX);
         if half_width_mm <= width_limit {
             if comp != usize::MAX {
                 pencil_comps.insert(comp);
@@ -511,7 +584,10 @@ pub fn detect_rest_valleys(
             if len >= params.min_cut_length {
                 traced_length += len;
             }
-            centerlines.push(pts);
+            centerlines.push(RestCenterline {
+                points: pts,
+                half_width_mm,
+            });
         } else if comp != usize::MAX {
             clearing_comps.insert(comp);
         }
@@ -629,15 +705,14 @@ pub fn region_polygons_from_mask(
 // Everything grid-shaped (rest, pencil_z, contact, mask, comp_id, the two
 // distance-transform passes, the skeleton) is a `Grid2<T>` — see `grid2.rs`.
 // The one thing left that ISN'T grid-shaped is the component table
-// (`comp_cells`/`comp_peak`/`comp_bbox`, indexed by component id, plus
-// `poly[0]`): a single small generic accessor covers those.
+// (`comp_cells`/`comp_peak`/`comp_bbox`, indexed by component id): a single
+// small generic accessor covers those.
 // ---------------------------------------------------------------------------
 
 /// Index a slice at a position already proven in-bounds by the caller's
 /// invariant: a component id from `comp_id` (always `< comp_cells.len()` and
 /// its parallel `comp_peak`/`comp_bbox` vectors, by construction — a `cid` is
-/// only ever `comp_cells.len()` at the moment all three get pushed together),
-/// or `poly[0]` after a `poly.len() >= 2` guard.
+/// only ever `comp_cells.len()` at the moment all three get pushed together).
 #[inline]
 fn at<T: Copy>(v: &[T], i: usize) -> T {
     // SAFETY: see doc comment above.
@@ -784,17 +859,385 @@ fn zhang_suen_thin(mask: &Grid2<bool>) -> Grid2<bool> {
     m
 }
 
-/// 8-connected degree of a skeleton cell.
-fn skel_degree(skel: &Grid2<bool>, r: isize, c: isize) -> u32 {
-    NB8.iter()
-        .filter(|&&(dr, dc)| mask_at(skel, r + dr, c + dc))
-        .count() as u32
+// ---------------------------------------------------------------------------
+// Ridge extraction (fix A): the mask (`rest > min_valley_depth`) covers the
+// whole rough area on textured relief, so thinning it directly (the old
+// approach) produces a space-filling hairball unrelated to actual valley
+// creases. Instead we box-smooth the continuous field once, non-max-suppress
+// it down to a thin candidate ridge, keep only components whose peak clears
+// the real threshold (hysteresis), then hand the (already near-thin) result
+// to the existing `zhang_suen_thin` to guarantee exactly 1 cell wide.
+// ---------------------------------------------------------------------------
+
+/// Single 3×3 box-smooth of the rest field — the first ridge-extraction
+/// stage. Untrusted cells (no contact, or inside the boundary-erosion band —
+/// the same `ct && dt >= erode_cells` predicate used for the `rest_grid`
+/// NaN mapping above) are EXCLUDED from neighbours' averages (mean over the
+/// trusted subset of each 3×3 window, not a zero-padded mean over 9) and are
+/// themselves forced to `0.0`: they can never become ridge candidates.
+///
+/// The trusted-subset mean matters: zero-padding instead would drag values
+/// down in a 1–2-cell "rolloff" band along every trust edge, and the crest
+/// of the band between that artificial decline and any REAL interior decline
+/// (a tent apex, a slope top) reads as a locally prominent maximum — i.e. a
+/// spurious ridge line tracing the trust boundary. Caught by
+/// `tent_ridge_yields_none`, which flagged exactly that band before the
+/// normalisation was fixed.
+fn box_smooth_rest(
+    rest: &Grid2<f64>,
+    contact: &Grid2<bool>,
+    boundary_dt: &Grid2<f64>,
+    erode_cells: f64,
+) -> Grid2<f64> {
+    let nx = rest.nx();
+    let ny = rest.ny();
+    let is_trusted = |i: usize| -> bool {
+        contact.at_index_or(i, false) && boundary_dt.at_index_or(i, 0.0) >= erode_cells
+    };
+    let mut sm = Grid2::new_fill(nx, ny, 0.0f64);
+    for r in 0..ny as isize {
+        for c in 0..nx as isize {
+            let Some(i) = rest.index_of_signed(r, c) else {
+                continue;
+            };
+            if !is_trusted(i) {
+                continue; // stays 0.0 — untrusted cells can never be candidates
+            }
+            let mut sum = 0.0;
+            let mut count = 0u32;
+            for dr in -1..=1isize {
+                for dc in -1..=1isize {
+                    if let Some(j) = rest.index_of_signed(r + dr, c + dc)
+                        && is_trusted(j)
+                    {
+                        sum += rest.at_index_or(j, 0.0);
+                        count += 1;
+                    }
+                }
+            }
+            // count >= 1 always (the centre cell itself is trusted).
+            sm.set_index(i, sum / f64::from(count.max(1)));
+        }
+    }
+    sm
 }
 
-/// Trace a 1-cell skeleton into polylines (cell indices, row-major determinism).
-/// Nodes = cells with degree ≠ 2; walk node→node through degree-2 cells, marking
-/// each directed edge visited both ways, then sweep remaining edges to pick up
-/// pure loops.
+/// NB8 direction pairs for the 4-way ridge non-max-suppression test: N/S,
+/// E/W, NE/SW, NW/SE (indices into [`NB8`]).
+const NMS_DIR_PAIRS: [(usize, usize); 4] = [(0, 4), (2, 6), (1, 5), (7, 3)];
+
+/// Fraction of `min_valley_depth` a ridge cell must stand PROUD of both
+/// opposite neighbours to count as a local maximum (see
+/// [`NMS_PROMINENCE_FLOOR_MM`] for the absolute floor). A ball resting on a
+/// constant-slope plane floats a position-independent height, so plane-wall
+/// V-grooves (and any uniform slope) read a CONSTANT rest plateau — with a
+/// bare strict `>` test, femtometre-scale facet/float noise tie-breaks all
+/// over the plateau into scattered spurious "ridges". A genuine bridged
+/// crease drops off by a large fraction of its depth within a cell or two,
+/// so requiring real prominence costs nothing there.
+const NMS_PROMINENCE_FRACTION: f64 = 0.1;
+/// Absolute prominence floor (mm) so a user dialing `min_valley_depth`
+/// toward zero still gets noise rejection (smoothed facet noise on a 0.5 mm
+/// grid sits well below this; real crease drop-offs sit well above).
+const NMS_PROMINENCE_FLOOR_MM: f64 = 0.005;
+
+/// Non-max-suppression over the smoothed rest field: a trusted cell survives
+/// when its value clears `0.5 × min_valley_depth` (the candidate floor — the
+/// real `min_valley_depth` floor is applied per-component afterwards by
+/// [`hysteresis_ridge`]) AND it stands at least the prominence margin above
+/// BOTH neighbours along at least one of the four direction pairs in
+/// [`NMS_DIR_PAIRS`] — the standard Canny-style ridge-thinning test, applied
+/// here to a rest-depth field instead of a gradient magnitude, hardened with
+/// a prominence requirement (see [`NMS_PROMINENCE_FRACTION`]) so constant
+/// rest plateaus (uniform slopes, plane-wall V-grooves) yield NO candidates
+/// instead of noise-tie-broken scatter. A direction pair only qualifies when
+/// BOTH its neighbours are trusted — an untrusted neighbour (out of bounds,
+/// non-contact, or inside the erosion band) reads 0.0 and would otherwise
+/// hand every trust-edge cell a free "lower" side, tracing spurious ridge
+/// lines along the part boundary; requiring bilateral trusted evidence kills
+/// those while a genuine crease crossing the trust edge still qualifies via
+/// the pair parallel to itself.
+///
+/// Consequence worth knowing: a V-groove made of two PLANES has a constant
+/// rest field (no ridge at all — the crease is a plateau edge, not a local
+/// maximum), so the RestDepth detector intentionally traces nothing along
+/// it; clean CAD plane-wall creases are the [`crate::pencil_dihedral`]
+/// detector's home turf. Bridged channels/creases on relief — where the
+/// reference ball spans the feature and floats — are exactly where this
+/// detector shines.
+fn nms_candidates(
+    rest_sm: &Grid2<f64>,
+    contact: &Grid2<bool>,
+    boundary_dt: &Grid2<f64>,
+    erode_cells: f64,
+    min_valley_depth: f64,
+) -> Grid2<bool> {
+    let nx = rest_sm.nx();
+    let ny = rest_sm.ny();
+    let floor = 0.5 * min_valley_depth;
+    let prominence = (NMS_PROMINENCE_FRACTION * min_valley_depth).max(NMS_PROMINENCE_FLOOR_MM);
+    let is_trusted = |i: usize| -> bool {
+        contact.at_index_or(i, false) && boundary_dt.at_index_or(i, 0.0) >= erode_cells
+    };
+    // A neighbour's value, only if trusted (None disqualifies the pair).
+    let trusted_at = |r: isize, c: isize| -> Option<f64> {
+        let i = rest_sm.index_of_signed(r, c)?;
+        is_trusted(i).then(|| rest_sm.at_index_or(i, 0.0))
+    };
+    let mut out = Grid2::new_fill(nx, ny, false);
+    for r in 0..ny as isize {
+        for c in 0..nx as isize {
+            let Some(i) = rest_sm.index_of_signed(r, c) else {
+                continue;
+            };
+            if !is_trusted(i) {
+                continue;
+            }
+            let v = rest_sm.at_index_or(i, 0.0);
+            if v < floor {
+                continue;
+            }
+            let is_ridge = NMS_DIR_PAIRS.iter().any(|&(ka, kb)| {
+                let (dra, dca) = NB8.get(ka).copied().unwrap_or((0, 0));
+                let (drb, dcb) = NB8.get(kb).copied().unwrap_or((0, 0));
+                match (trusted_at(r + dra, c + dca), trusted_at(r + drb, c + dcb)) {
+                    (Some(oa), Some(ob)) => v > oa + prominence && v > ob + prominence,
+                    _ => false, // untrusted side ⇒ this pair can't vouch for a ridge
+                }
+            });
+            if is_ridge {
+                out.set_index(i, true);
+            }
+        }
+    }
+    out
+}
+
+/// Hysteresis over the NMS candidate set: 8-connected components (same
+/// deterministic row-major-seed flood-fill idiom as the mask's component
+/// pass in [`detect_rest_valleys`]); keep a component only when its peak
+/// `rest_sm` clears `min_valley_depth`, drop the rest. This is what makes
+/// `min_valley_depth` mean "valley saliency" for the ridge — a texture ridge
+/// whose smoothed peak never reaches the real threshold never survives, even
+/// though individual candidate cells cleared the lower `0.5×` NMS floor.
+fn hysteresis_ridge(
+    candidates: &Grid2<bool>,
+    rest_sm: &Grid2<f64>,
+    min_valley_depth: f64,
+) -> Grid2<bool> {
+    let nx = candidates.nx();
+    let ny = candidates.ny();
+    let n = candidates.len();
+    let mut visited = Grid2::new_fill(nx, ny, false);
+    let mut kept = Grid2::new_fill(nx, ny, false);
+    let mut stack: Vec<usize> = Vec::new();
+    for seed in 0..n {
+        if !candidates.at_index_or(seed, false) || visited.at_index_or(seed, false) {
+            continue;
+        }
+        let mut comp: Vec<usize> = Vec::new();
+        let mut peak = 0.0f64;
+        stack.clear();
+        stack.push(seed);
+        visited.set_index(seed, true);
+        while let Some(cur) = stack.pop() {
+            comp.push(cur);
+            let v = rest_sm.at_index_or(cur, 0.0);
+            if v > peak {
+                peak = v;
+            }
+            let (rr, cc) = crate::grid2::row_major_rc(cur, nx);
+            let (r, c) = (rr as isize, cc as isize);
+            for (dr, dc) in NB8 {
+                let (nr, nc) = (r + dr, c + dc);
+                let Some(nidx) = candidates.index_of_signed(nr, nc) else {
+                    continue;
+                };
+                if !candidates.at_index_or(nidx, false) || visited.at_index_or(nidx, false) {
+                    continue;
+                }
+                visited.set_index(nidx, true);
+                stack.push(nidx);
+            }
+        }
+        if peak >= min_valley_depth {
+            for i in comp {
+                kept.set_index(i, true);
+            }
+        }
+    }
+    kept
+}
+
+// ---------------------------------------------------------------------------
+// Graph cleanup (fix B's companion): the fixed `trace_skeleton` (below) no
+// longer shreds every staircase corner into its own fragment, but genuinely
+// short spurs off a junction are still real artefacts worth pruning, and a
+// junction that (after pruning) has exactly two surviving arms is really just
+// a mid-line point, not a topological node — so its two arms get spliced back
+// into one polyline. Both operate purely on cell-index polylines, before any
+// world-space conversion or length-in-mm filtering.
+// ---------------------------------------------------------------------------
+
+/// Cell-space (not mm) length of a cell-index polyline: sum of Euclidean
+/// distances between consecutive `(row, col)` pairs.
+fn cell_polyline_length(cells: &[usize], nx: usize) -> f64 {
+    if cells.len() < 2 {
+        return 0.0;
+    }
+    cells
+        .windows(2)
+        .map(|w| {
+            let (Some(&a), Some(&b)) = (w.first(), w.get(1)) else {
+                return 0.0;
+            };
+            let (r0, c0) = crate::grid2::row_major_rc(a, nx);
+            let (r1, c1) = crate::grid2::row_major_rc(b, nx);
+            let (dr, dc) = (r1 as f64 - r0 as f64, c1 as f64 - c0 as f64);
+            (dr * dr + dc * dc).sqrt()
+        })
+        .sum()
+}
+
+/// Start/end cell index of a polyline (`None` for an empty polyline — never
+/// happens for a `trace_skeleton` output, which is always `len() >= 2`, but
+/// keeps this helper total).
+fn edge_endpoints(pts: &[usize]) -> Option<(usize, usize)> {
+    match (pts.first(), pts.last()) {
+        (Some(&s), Some(&e)) => Some((s, e)),
+        _ => None,
+    }
+}
+
+/// Splice two polylines that share `node` as an endpoint into one, oriented
+/// so `a` runs up to `node` and `b` continues from it (reversing either as
+/// needed), with the shared `node` cell not duplicated.
+fn merge_at_node(a: &[usize], b: &[usize], node: usize) -> Vec<usize> {
+    let mut av = a.to_vec();
+    if av.last().copied() != Some(node) {
+        av.reverse();
+    }
+    let mut bv = b.to_vec();
+    if bv.first().copied() != Some(node) {
+        bv.reverse();
+    }
+    av.extend(bv.into_iter().skip(1));
+    av
+}
+
+/// Graph cleanup for traced ridge polylines, run BEFORE any length
+/// filtering: prune short spurs and merge straight-through chains at
+/// degree-2 nodes. Polylines are edges of a graph keyed by their endpoint
+/// cell indices (a node is any cell index that terminates one or more
+/// polylines); a `BTreeMap` keeps node iteration order deterministic.
+///
+/// Repeats two passes until neither changes anything:
+/// 1. **Prune**: drop any leaf edge (an endpoint touched by no other edge)
+///    shorter than `min_cut_length_cells`, UNLESS it is fully isolated (BOTH
+///    endpoints are leaves) — isolated edges are left alone; the downstream
+///    `min_cut_length` length gate decides their fate.
+/// 2. **Merge**: where a node is touched by exactly two DISTINCT surviving
+///    edges, splice them into one polyline through the node (see
+///    [`merge_at_node`]) and retire the node.
+fn cleanup_ridge_graph(
+    polylines: Vec<Vec<usize>>,
+    nx: usize,
+    min_cut_length_cells: f64,
+) -> Vec<Vec<usize>> {
+    let mut edges: Vec<Option<Vec<usize>>> = polylines.into_iter().map(Some).collect();
+
+    loop {
+        // Node → incident edge ids, in ascending edge-id push order.
+        let mut incident: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
+        for (eid, e) in edges.iter().enumerate() {
+            let Some(pts) = e.as_ref() else { continue };
+            let Some((s, t)) = edge_endpoints(pts) else {
+                continue;
+            };
+            incident.entry(s).or_default().push(eid);
+            incident.entry(t).or_default().push(eid);
+        }
+
+        // --- (i) prune short leaf edges, keeping isolated ones. ---
+        let mut pruned_any = false;
+        for eid in 0..edges.len() {
+            let Some(pts) = edges.get(eid).and_then(|e| e.as_ref()) else {
+                continue;
+            };
+            let Some((s, t)) = edge_endpoints(pts) else {
+                continue;
+            };
+            let deg_s = incident.get(&s).map_or(0, Vec::len);
+            let deg_t = incident.get(&t).map_or(0, Vec::len);
+            let is_isolated = deg_s == 1 && deg_t == 1;
+            let is_leaf = deg_s == 1 || deg_t == 1;
+            if is_leaf && !is_isolated && cell_polyline_length(pts, nx) < min_cut_length_cells {
+                if let Some(slot) = edges.get_mut(eid) {
+                    *slot = None;
+                }
+                pruned_any = true;
+            }
+        }
+        if pruned_any {
+            continue; // recompute node degrees before attempting any merge
+        }
+
+        // --- (ii) merge through nodes with exactly two distinct edges. ---
+        let mut merged_any = false;
+        for (&node, eids_at_node) in &incident {
+            if eids_at_node.len() != 2 {
+                continue;
+            }
+            let mut distinct = eids_at_node.clone();
+            distinct.dedup();
+            if distinct.len() != 2 {
+                continue; // both incidences are the same (self-loop) edge
+            }
+            let (Some(&a_id), Some(&b_id)) = (distinct.first(), distinct.get(1)) else {
+                continue;
+            };
+            let Some(a_pts) = edges.get(a_id).and_then(|e| e.clone()) else {
+                continue; // already consumed by an earlier merge this pass
+            };
+            let Some(b_pts) = edges.get(b_id).and_then(|e| e.clone()) else {
+                continue;
+            };
+            let touches =
+                |pts: &[usize]| edge_endpoints(pts).is_some_and(|(s, t)| s == node || t == node);
+            if !touches(&a_pts) || !touches(&b_pts) {
+                continue; // stale snapshot (endpoints changed by an earlier merge)
+            }
+            let merged = merge_at_node(&a_pts, &b_pts, node);
+            if let Some(slot) = edges.get_mut(a_id) {
+                *slot = Some(merged);
+            }
+            if let Some(slot) = edges.get_mut(b_id) {
+                *slot = None;
+            }
+            merged_any = true;
+        }
+        if merged_any {
+            continue;
+        }
+        break;
+    }
+
+    edges.into_iter().flatten().collect()
+}
+
+/// Trace a 1-cell skeleton into polylines (cell indices, row-major
+/// determinism). Nodes are cells whose ring 0→1 transition count
+/// (`ring_ab`'s `a`) is `!= 2` — NOT raw 8-degree. On an 8-connected skeleton
+/// a staircase corner (two orthogonal skeleton arms meeting through a
+/// diagonal "shortcut" cell) reads degree 3 even though topologically it's
+/// still a plain pass-through (one strand enters, one strand leaves — the
+/// transition count there is 2), so with the transition-count test it
+/// correctly stays a non-node instead of shredding the path. Walk node→node
+/// through non-node cells, marking each directed edge visited both ways,
+/// then sweep remaining edges to pick up pure loops. When choosing the next
+/// cell along a walk, an ORTHOGONAL neighbour is preferred over a diagonal
+/// one — this is what stops the walk taking the diagonal "shortcut" hop
+/// across a staircase corner instead of continuing along the real ridge.
 fn trace_skeleton(skel: &Grid2<bool>) -> Vec<Vec<usize>> {
     let n = skel.len();
     let nx = skel.nx();
@@ -811,13 +1254,36 @@ fn trace_skeleton(skel: &Grid2<bool>) -> Vec<Vec<usize>> {
             })
             .collect()
     };
-    let degree = |idx: usize| -> u32 {
+    // Set neighbours ranked orthogonal-first (NB8 indices 0,2,4,6 = N,E,S,W),
+    // then diagonal (1,3,5,7 = NE,SE,SW,NW) — the staircase-corner fix.
+    let neighbors_ranked = |idx: usize| -> Vec<usize> {
         let (rr, cc) = crate::grid2::row_major_rc(idx, nx);
-        skel_degree(skel, rr as isize, cc as isize)
+        let (r, c) = (rr as isize, cc as isize);
+        let mut ortho = Vec::new();
+        let mut diag = Vec::new();
+        for (k, &(dr, dc)) in NB8.iter().enumerate() {
+            let Some(nidx) = skel.index_of_signed(r + dr, c + dc) else {
+                continue;
+            };
+            if !skel.at_index_or(nidx, false) {
+                continue;
+            }
+            if k % 2 == 0 {
+                ortho.push(nidx);
+            } else {
+                diag.push(nidx);
+            }
+        }
+        ortho.into_iter().chain(diag).collect()
+    };
+    let is_node = |idx: usize| -> bool {
+        let (rr, cc) = crate::grid2::row_major_rc(idx, nx);
+        let (_, a) = ring_ab(skel, rr as isize, cc as isize);
+        a != 2
     };
 
-    // Walk from `start` toward `first`, consuming degree-2 cells until a node or
-    // dead end. Returns the polyline of cell indices.
+    // Walk from `start` toward `first`, consuming non-node cells until a node
+    // or dead end. Returns the polyline of cell indices.
     let walk = |start: usize,
                 first: usize,
                 visited: &mut std::collections::HashSet<(usize, usize)>|
@@ -829,11 +1295,11 @@ fn trace_skeleton(skel: &Grid2<bool>) -> Vec<Vec<usize>> {
         let mut prev = start;
         let mut cur = first;
         loop {
-            if degree(cur) != 2 {
+            if is_node(cur) {
                 break; // reached a node
             }
             let mut next = None;
-            for nbr in neighbors(cur) {
+            for nbr in neighbors_ranked(cur) {
                 if nbr == prev {
                     continue;
                 }
@@ -862,8 +1328,8 @@ fn trace_skeleton(skel: &Grid2<bool>) -> Vec<Vec<usize>> {
         if !skel.at_index_or(idx, false) {
             continue;
         }
-        if degree(idx) == 2 {
-            continue; // not a node
+        if !is_node(idx) {
+            continue;
         }
         for nbr in neighbors(idx) {
             if visited.contains(&(idx, nbr)) {
@@ -875,7 +1341,7 @@ fn trace_skeleton(skel: &Grid2<bool>) -> Vec<Vec<usize>> {
             }
         }
     }
-    // Sweep remaining edges → pure loops (all cells degree 2).
+    // Sweep remaining edges → pure loops (all cells non-node).
     for idx in 0..n {
         if !skel.at_index_or(idx, false) {
             continue;
@@ -1075,6 +1541,54 @@ mod tests {
         TriangleMesh::from_raw(verts, tris)
     }
 
+    /// A narrow gaussian TRENCH running along X in a flat plate:
+    /// `z = −depth · exp(−(y/σ)²)` with `σ = sigma_steep` on the `y < 0`
+    /// side and `sigma_gentle` on `y > 0` (equal → symmetric). This is the
+    /// geometry the RestDepth ridge is FOR: the wide reference ball bridges
+    /// the channel lip-to-lip and floats, so `rest` genuinely PEAKS at the
+    /// crease — unlike a plane-wall V, whose rest field is a constant
+    /// plateau with no ridge at all (a ball on a constant-slope plane floats
+    /// a position-independent height; see the plane-wall note on
+    /// [`nms_candidates`]). Numerically validated cross-profiles (Ø6 ref /
+    /// Ø1 pencil, depth 1.5): σ=1.2/1.2 → peak 0.79 mm at y=0.00 with 0.19 mm
+    /// prominence at ±0.5 mm; σ=0.8/2.5 → peak 0.97 mm at y=0.00 with
+    /// 0.22 mm prominence — the peak stays ON the crease even when the wall
+    /// widths are lopsided, which is exactly what the old
+    /// medial-axis-of-the-mask extraction got wrong.
+    fn make_trench(
+        len_x: f64,
+        half_y: f64,
+        depth: f64,
+        sigma_steep: f64,
+        sigma_gentle: f64,
+        nx: usize,
+        ny: usize,
+    ) -> TriangleMesh {
+        let mut verts = Vec::new();
+        for iy in 0..=ny {
+            let y = -half_y + 2.0 * half_y * iy as f64 / ny as f64;
+            let sigma = if y < 0.0 { sigma_steep } else { sigma_gentle };
+            let z = -depth * (-(y / sigma).powi(2)).exp();
+            for ix in 0..=nx {
+                let x = len_x * ix as f64 / nx as f64;
+                verts.push(P3::new(x, y, z));
+            }
+        }
+        let mut tris = Vec::new();
+        let stride = nx + 1;
+        for iy in 0..ny {
+            for ix in 0..nx {
+                let a = (iy * stride + ix) as u32;
+                let b = a + 1;
+                let cc = a + stride as u32;
+                let d = cc + 1;
+                tris.push([a, b, d]);
+                tris.push([a, d, cc]);
+            }
+        }
+        TriangleMesh::from_raw(verts, tris)
+    }
+
     /// A tent RIDGE (inverted V): trough replaced by a crest at y=0.
     fn make_tent_ridge(len_x: f64, half_y: f64, slope: f64, nx: usize, ny: usize) -> TriangleMesh {
         let mut verts = Vec::new();
@@ -1247,10 +1761,14 @@ mod tests {
 
     #[test]
     fn v_valley_yields_one_centerline() {
-        // Sharp narrow V: a 6mm reference ball bridges it, a 1mm pencil enters.
-        // A wide route_width_factor forces the (fairly wide) trough band to route
-        // to pencil rather than clearing so we can assert on the centerline.
-        let mesh = make_v_valley(30.0, 4.0, 1.2, 30, 24);
+        // Narrow trench: the 6mm reference ball bridges it lip-to-lip and
+        // floats (rest peaks at the crease), the 1mm pencil drops in. NB a
+        // plane-wall V is deliberately NOT used here: its rest field is a
+        // constant plateau with no ridge (see `nms_candidates`) — plane-wall
+        // CAD creases belong to the Dihedral detector. A wide
+        // route_width_factor forces pencil routing so we can assert on the
+        // centerline.
+        let mesh = make_trench(30.0, 6.0, 1.5, 1.2, 1.2, 30, 48);
         let index = SpatialIndex::build_auto(&mesh);
         let pencil = BallEndmill::new(1.0, 25.0);
         let reference = BallEndmill::new(6.0, 25.0);
@@ -1272,7 +1790,11 @@ mod tests {
             res.report
         );
         // The trough runs along X near y=0.
-        let all: Vec<&P3> = res.centerlines.iter().flatten().collect();
+        let all: Vec<&P3> = res
+            .centerlines
+            .iter()
+            .flat_map(|cl| cl.points.iter())
+            .collect();
         let mean_abs_y = all.iter().map(|p| p.y.abs()).sum::<f64>() / all.len().max(1) as f64;
         assert!(
             !res.region_polygons.is_empty(),
@@ -1288,12 +1810,58 @@ mod tests {
     }
 
     #[test]
+    fn asymmetric_valley_centerline_hugs_crease() {
+        // A lopsided trench: tight wall on y<0 (σ=0.8), wide gentle wall on
+        // y>0 (σ=2.5). The mask (`rest > threshold`) extends much further
+        // into the gentle side, so the OLD medial-axis-of-the-mask
+        // centerline sat well off-crease toward it; the ridge (a local
+        // maximum of the CONTINUOUS field) must hug y≈0 regardless —
+        // numerically the cross-profile peak sits at y=0.00 (0.97 mm, 0.22 mm
+        // prominence at ±0.5 mm) despite the 3× width asymmetry.
+        let mesh = make_trench(30.0, 10.0, 1.5, 0.8, 2.5, 30, 80);
+        let index = SpatialIndex::build_auto(&mesh);
+        let pencil = BallEndmill::new(1.0, 25.0);
+        let reference = BallEndmill::new(6.0, 25.0);
+        let mut p = default_params(0.5);
+        p.route_width_factor = 10.0; // force pencil routing so we can inspect the centerline
+        let res = detect_rest_valleys(
+            &mesh,
+            &index,
+            &pencil,
+            RestReference::Cutter {
+                tool: &reference,
+                is_surface_probe: false,
+            },
+            &p,
+        );
+        assert!(
+            !res.centerlines.is_empty(),
+            "asymmetric valley should still yield a pencil centerline; report = {:?}",
+            res.report
+        );
+        let all: Vec<&P3> = res
+            .centerlines
+            .iter()
+            .flat_map(|cl| cl.points.iter())
+            .collect();
+        let mean_abs_y = all.iter().map(|p| p.y.abs()).sum::<f64>() / all.len().max(1) as f64;
+        assert!(
+            mean_abs_y < 1.5,
+            "ridge should hug the true y≈0 crease regardless of wall \
+             asymmetry, mean |y| = {mean_abs_y:.2}"
+        );
+    }
+
+    #[test]
     fn tent_ridge_yields_none() {
         // A realistic (gently rounded) convex ridge leaves no rest — both tools
         // roll over it equally. NB a *razor-sharp* synthetic crest does produce a
-        // shallow ride-over band, but on real rounded relief (and above any
-        // sensible min_valley_depth) it filters out — verified on terrain.stl,
-        // where green centerlines sit only in the dark drainage valleys.
+        // shallow ride-over band, but it reads as a CONSTANT rest plateau on the
+        // tent's plane walls (~0.11 mm here) — no genuine local maximum — so the
+        // NMS prominence requirement rejects it outright (with a bare strict `>`
+        // test, femtometre float noise used to tie-break scattered "ridges" all
+        // over the plateau). Verified on terrain.stl, where green centerlines
+        // sit only in the dark drainage valleys.
         let mesh = make_tent_ridge(30.0, 8.0, 0.3, 30, 24);
         let index = SpatialIndex::build_auto(&mesh);
         let pencil = BallEndmill::new(1.0, 25.0);
@@ -1366,7 +1934,11 @@ mod tests {
 
     #[test]
     fn min_valley_depth_monotonically_thins() {
-        let mesh = make_v_valley(30.0, 4.0, 1.2, 30, 24);
+        // Trench fixture (peak rest ≈ 0.8 mm at the crease): mvd 0.05 traces
+        // the crease ridge, mvd 1.0 sits above the peak and must trace
+        // nothing — strictly monotone, and non-trivially so (a plane-wall V
+        // would yield zero at BOTH thresholds under the NMS prominence rule).
+        let mesh = make_trench(30.0, 6.0, 1.5, 1.2, 1.2, 30, 48);
         let index = SpatialIndex::build_auto(&mesh);
         let pencil = BallEndmill::new(1.0, 25.0);
         let reference = BallEndmill::new(6.0, 25.0);
@@ -1383,7 +1955,10 @@ mod tests {
                 },
                 &p,
             );
-            r.centerlines.iter().map(|l| l.len()).sum::<usize>()
+            r.centerlines
+                .iter()
+                .map(|cl| cl.points.len())
+                .sum::<usize>()
         };
         let low = count(0.05);
         let high = count(1.0);
@@ -1398,9 +1973,10 @@ mod tests {
         // Bigger reference ⇒ more rest ⇒ more/longer trace. The signature ability
         // no previous detector had.
         // Peak rest depth at the trough (deep interior, survives boundary erosion)
-        // is the erosion-robust significance signal; a bigger reference bridges
-        // more and reads a deeper peak.
-        let mesh = make_v_valley(40.0, 10.0, 0.5, 40, 32);
+        // is the erosion-robust significance signal; over a narrow trench a
+        // bigger ball bridges the lips higher up and reads a deeper peak,
+        // while a small one partially enters and reads a shallow one.
+        let mesh = make_trench(40.0, 6.0, 1.5, 1.2, 1.2, 40, 48);
         let index = SpatialIndex::build_auto(&mesh);
         let pencil = BallEndmill::new(1.0, 25.0);
         let peak = |ref_d: f64| {
@@ -1479,6 +2055,90 @@ mod tests {
         let polys = trace_skeleton(&skel);
         assert_eq!(polys.len(), 1, "one straight skeleton → one polyline");
         assert_eq!(polys[0].len(), 10, "should trace all 10 cells");
+    }
+
+    #[test]
+    fn staircase_skeleton_traces_as_one_polyline() {
+        // A mixed-direction staircase (E-run, S-run, E-run) with two genuine
+        // degree-3 (and one degree-4) 8-connected corners: `ring_ab` gives a
+        // transition count of exactly 2 at every interior cell (a plain
+        // pass-through) despite the raw degree — precisely the
+        // staircase-corner case fix B targets. Under the OLD raw-degree
+        // `!= 2` node test every one of these corners misfires as a node,
+        // shredding the path into a handful of 1-3-cell fragments (the
+        // reported ~86% traced-length loss); the fixed transition-count
+        // test + orthogonal-preferred walk recovers the whole staircase as
+        // a single polyline.
+        let (nx, ny) = (8usize, 7usize);
+        let cells: [(usize, usize); 7] = [(2, 1), (2, 2), (2, 3), (3, 3), (4, 3), (4, 4), (4, 5)];
+        let mut skel = Grid2::new_fill(nx, ny, false);
+        for &(r, c) in &cells {
+            skel.set(r, c, true);
+        }
+        let polys = trace_skeleton(&skel);
+        // Judgement call: a genuine 8-connected degree-3 corner (two
+        // ring-adjacent set-neighbours forming a single topological arc per
+        // `ring_ab`) is ALSO, unavoidably, a direct grid adjacency between
+        // those two neighbour cells themselves — consecutive NB8 ring
+        // positions are always mutually 8-adjacent by construction — a
+        // short "chord" edge distinct from the main walk's own edges.
+        // `trace_skeleton`'s sweep phase (unchanged by this fix, and out of
+        // its scope) picks up any such leftover chord as its own tiny
+        // polyline. This is an intrinsic, harmless raster-geometry
+        // byproduct (isolated in the endpoint graph and far too short to
+        // survive `min_cut_length` downstream), NOT the shredding bug being
+        // fixed here — so the assertion below checks the fix's actual
+        // guarantee (the whole staircase recovers as ONE polyline) rather
+        // than a strict `polys.len() == 1`.
+        let full = polys.iter().find(|p| p.len() == cells.len());
+        assert!(
+            full.is_some(),
+            "the whole {}-cell staircase should trace as one polyline; got \
+             {} polylines of lengths {:?}",
+            cells.len(),
+            polys.len(),
+            polys.iter().map(Vec::len).collect::<Vec<_>>()
+        );
+        assert!(
+            polys.len() <= 2,
+            "expected at most one leftover chord fragment alongside the \
+             main polyline (no further fragmentation), got {} polylines",
+            polys.len()
+        );
+    }
+
+    #[test]
+    fn graph_cleanup_merges_through_short_spur() {
+        // Three polylines sharing node N = (5,5): a long left piece ending
+        // at N, a long right piece starting at N, and a 1-cell spur hanging
+        // off N. The spur is a leaf edge (its far end (6,5) is touched by
+        // no other edge) and shorter than `min_cut_length_cells`, so it
+        // should be pruned; once it's gone, N is left with exactly two
+        // distinct surviving edges and the left/right pieces should splice
+        // into one polyline through it.
+        let nx = 20;
+        let idx = |r: usize, c: usize| crate::grid2::row_major_index(r, c, nx);
+        let left: Vec<usize> = (0..=5).map(|c| idx(5, c)).collect(); // ends at N
+        let right: Vec<usize> = (5..=10).map(|c| idx(5, c)).collect(); // starts at N
+        let spur: Vec<usize> = vec![idx(5, 5), idx(6, 5)]; // 1-cell spur off N
+        let polylines = vec![left.clone(), right.clone(), spur];
+
+        let cleaned = cleanup_ridge_graph(polylines, nx, 2.0);
+        assert_eq!(
+            cleaned.len(),
+            1,
+            "the short spur should be pruned and the two long pieces merged \
+             into one polyline, got {cleaned:?}"
+        );
+        let merged = &cleaned[0];
+        assert_eq!(
+            merged.len(),
+            left.len() + right.len() - 1,
+            "merged polyline should be the concatenation of both pieces \
+             through N (the shared node cell not duplicated)"
+        );
+        assert_eq!(merged.first().copied(), Some(idx(5, 0)));
+        assert_eq!(merged.last().copied(), Some(idx(5, 10)));
     }
 
     /// Hillshade overlay harness (the key view). Renders slope-shaded terrain,
@@ -1564,10 +2224,12 @@ mod tests {
             }
         }
         // Pencil centerlines in bright green.
+        let centerline_pts: Vec<Vec<P3>> =
+            res.centerlines.iter().map(|cl| cl.points.clone()).collect();
         hillshade_test_util::plot_polylines(
             &dem,
             &mut img,
-            &res.centerlines,
+            &centerline_pts,
             image::Rgb([60, 255, 90]),
         );
         img.save(&out).unwrap();
