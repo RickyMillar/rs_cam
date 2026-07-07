@@ -826,6 +826,113 @@ fn cancelled_toolpath_preserves_debug_trace_metadata() {
 }
 
 // ---------------------------------------------------------------------------
+// MCP `cancel_generation`: cancel must target only the toolpath lane
+// (leaving Analysis/Optimize untouched, unlike the GUI's "cancel
+// everything" `AppEvent::CancelCompute`), and a cancelled generation must
+// resolve any pending MCP `generate_toolpath` waiter instead of leaving it
+// hanging — mirroring the fail-hard-at-submit fix immediately above, but
+// for the cancel-in-flight path instead of the reject-before-submit path.
+// ---------------------------------------------------------------------------
+
+/// `AppEvent::CancelToolpathGeneration` (issued by MCP's `cancel_generation`
+/// tool) must cancel only `ComputeLane::Toolpath`. Reusing the GUI's
+/// existing `AppEvent::CancelCompute` (which cancels Toolpath + Analysis +
+/// Optimize) would abort an unrelated in-flight simulation or optimize run
+/// just because an agent wanted to abort a runaway generate.
+#[test]
+fn cancel_toolpath_generation_event_only_cancels_toolpath_lane() {
+    let mut controller = sample_controller();
+    controller.compute.toolpath_lane.state = LaneState::Running;
+    controller.compute.analysis_lane.state = LaneState::Running;
+    controller.compute.optimize_lane.state = LaneState::Running;
+
+    controller.handle_internal_event(crate::ui::AppEvent::CancelToolpathGeneration);
+
+    assert_eq!(
+        controller.compute.toolpath_lane.state,
+        LaneState::Cancelling,
+        "toolpath lane must be cancelled"
+    );
+    assert_eq!(
+        controller.compute.analysis_lane.state,
+        LaneState::Running,
+        "analysis lane must be left alone by the targeted cancel"
+    );
+    assert_eq!(
+        controller.compute.optimize_lane.state,
+        LaneState::Running,
+        "optimize lane must be left alone by the targeted cancel"
+    );
+}
+
+/// A `Cancelled` outcome draining through `drain_compute_results` must
+/// resolve a pending MCP `generate_toolpath` waiter, the same way a
+/// submit-time fail-hard already does (see the pair of tests above this
+/// section). Without this, cancelling a runaway generate over MCP would
+/// stop the compute but still leave the original `generate_toolpath` call
+/// hanging forever — trading a hang-on-completion for a hang-on-cancel.
+#[cfg(feature = "mcp")]
+#[test]
+fn cancelled_drain_resolves_pending_mcp_generate_toolpath_waiter() {
+    let mut controller = sample_controller();
+    let tp_id = ToolpathId(0);
+
+    controller.pending_mcp = Some(crate::mcp_bridge::PendingMcpCompute::new());
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    controller
+        .pending_mcp
+        .as_mut()
+        .expect("pending_mcp was just set")
+        .toolpath
+        .insert(tp_id, tx);
+
+    controller.compute.drained.push(ComputeMessage::Toolpath(
+        crate::compute::worker::ComputeResult {
+            toolpath_id: tp_id,
+            result: Err(crate::compute::ComputeError::Cancelled),
+            debug_trace: None,
+            semantic_trace: None,
+            debug_trace_path: None,
+        },
+    ));
+
+    controller.drain_compute_results();
+
+    let response = rx
+        .try_recv()
+        .expect("a cancelled drain must resolve the pending MCP oneshot, not strand it");
+    let payload = response
+        .result
+        .expect("mcp response should carry an Ok(json) payload describing the cancellation");
+    assert!(
+        payload.to_lowercase().contains("cancel"),
+        "mcp payload for a cancelled generate should say so plainly, got: {payload}"
+    );
+
+    let rt = controller
+        .state
+        .gui
+        .toolpath_rt
+        .get(&tp_id)
+        .expect("toolpath runtime should exist after cancel");
+    assert!(
+        matches!(rt.status, crate::state::toolpath::ComputeStatus::Pending),
+        "cancelled toolpath status should revert to Pending (not Done), got {:?}",
+        rt.status
+    );
+
+    assert!(
+        !controller
+            .pending_mcp
+            .as_ref()
+            .expect("pending_mcp still set")
+            .toolpath
+            .contains_key(&tp_id),
+        "resolved MCP waiter should be removed from the pending map"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Roadmap F.1 — session.results cache must repopulate when the threaded
 // compute backend returns a fresh result. Before the fix, the callback
 // only wrote to gui.toolpath_rt and session.results stayed empty after

@@ -4,6 +4,8 @@
 //! via a channel, calls `request_repaint()` to wake the GUI, and awaits the
 //! oneshot response.
 
+use std::time::Duration;
+
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{Meta, ProgressNotificationParam, ServerInfo};
@@ -14,16 +16,16 @@ use crate::mcp_bridge::{McpRequest, McpRequestKind, ProgressUpdate};
 // Re-use parameter structs from the standalone MCP crate.
 use rs_cam_mcp::server::{
     AddAlignmentPinParam, AddToolFromLibraryParam, AddToolParam, AddToolpathParam,
-    CollisionCheckParam, CutTraceParam, ExportParam, GenDebugTraceParam,
-    ImportMachineSettingsParam, IndexParam, InspectSpansParam, ListToolCatalogParam,
-    LoadMachineFromLibraryParam, LoadProjectParam, ModelIdParam, OperationSchemaParam,
-    OptimizeToolpathInput, RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam,
-    SaveProjectParam, ScreenshotGuiParam, ScreenshotSimParam, ScreenshotToolpathParam,
-    SetBoundaryConfigParam, SetDressupConfigParam, SetDressupFieldParam,
+    CollisionCheckParam, CutTraceParam, ExportParam, GenDebugTraceParam, GenerateAllParam,
+    GenerateToolpathParam, ImportMachineSettingsParam, IndexParam, InspectSpansParam,
+    ListToolCatalogParam, LoadMachineFromLibraryParam, LoadProjectParam, ModelIdParam,
+    OperationSchemaParam, OptimizeToolpathInput, RemoveAlignmentPinParam, RemoveToolParam,
+    RemoveToolpathParam, SaveProjectParam, ScreenshotGuiParam, ScreenshotSimParam,
+    ScreenshotToolpathParam, SetBoundaryConfigParam, SetDressupConfigParam, SetDressupFieldParam,
     SetRestAnalysisConfigParam, SetSpindleStrategyParam, SetStockConfigParam, SetStockSourceParam,
     SetToolParamInput, SetToolpathEnabledParam, SetToolpathHeightsParam, SetToolpathParamInput,
     SetUiViewParam, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam, SimScrubToolpathParam,
-    SimulationParam,
+    SimulationParam, json_str,
 };
 
 /// Embedded MCP server that forwards requests to the GUI thread.
@@ -68,12 +70,25 @@ impl EmbeddedCamServer {
     }
 
     /// Send a request to the GUI and forward progress notifications to the MCP
-    /// client while awaiting the final response.
+    /// client while awaiting the final response, optionally bounded by a
+    /// wall-clock `timeout`.
+    ///
+    /// On timeout this method does not cancel anything — the GUI-side
+    /// compute keeps running untouched, and this call simply stops
+    /// *waiting* for it, returning a `still_running_response()` instead.
+    /// `response_rx` (and `progress_rx`) are then dropped: every GUI-side
+    /// resolution already goes through `let _ = sender.send(...)` (see
+    /// `notify_mcp_toolpath_complete` / `mcp_generate_all` in
+    /// `app/mcp.rs`), so the real completion arriving later is a silent
+    /// no-op send into a channel nobody is listening on anymore — it is
+    /// never delivered to a subsequent, unrelated call because each call
+    /// to this method owns a fresh oneshot/mpsc pair.
     async fn send_with_progress(
         &self,
         kind: McpRequestKind,
         meta: Meta,
         peer: Peer<RoleServer>,
+        timeout: Option<Duration>,
     ) -> Result<String, String> {
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<ProgressUpdate>(32);
@@ -89,13 +104,28 @@ impl EmbeddedCamServer {
             .map_err(|e| format!("Failed to send MCP request: {e}"))?;
         self.egui_ctx.request_repaint();
 
-        // If we have a progress token, forward progress notifications to the client.
+        // No `timeout` becomes a deadline that never resolves, so the
+        // branch below is simply never the `select!` winner — avoids both
+        // an `Option` inside the loop and any risk of `Instant` overflow
+        // from stand-in "very large" sleep durations.
+        let deadline = async move {
+            match timeout {
+                Some(d) => tokio::time::sleep(d).await,
+                None => std::future::pending::<()>().await,
+            }
+        };
+        let mut deadline = std::pin::pin!(deadline);
+
+        // Forward progress notifications to the client only when the
+        // caller supplied a progress token; the `if` guard keeps the
+        // branch disabled (never polled) otherwise, matching the previous
+        // no-token fast path.
         let progress_token = meta.get_progress_token();
-        if let Some(token) = progress_token {
-            let mut resp_rx = std::pin::pin!(response_rx);
-            loop {
-                tokio::select! {
-                    Some(update) = progress_rx.recv() => {
+        let mut resp_rx = std::pin::pin!(response_rx);
+        loop {
+            tokio::select! {
+                Some(update) = progress_rx.recv(), if progress_token.is_some() => {
+                    if let Some(token) = &progress_token {
                         let _ = peer.notify_progress(ProgressNotificationParam {
                             progress_token: token.clone(),
                             progress: update.progress,
@@ -103,21 +133,39 @@ impl EmbeddedCamServer {
                             message: Some(update.message),
                         }).await;
                     }
-                    result = &mut resp_rx => {
-                        return match result {
-                            Ok(resp) => resp.result,
-                            Err(e) => Err(format!("MCP response channel closed: {e}")),
-                        };
-                    }
+                }
+                result = &mut resp_rx => {
+                    return match result {
+                        Ok(resp) => resp.result,
+                        Err(e) => Err(format!("MCP response channel closed: {e}")),
+                    };
+                }
+                () = &mut deadline => {
+                    return Ok(Self::still_running_response(timeout));
                 }
             }
-        } else {
-            // No progress token -- just await the response.
-            match response_rx.await {
-                Ok(resp) => resp.result,
-                Err(e) => Err(format!("MCP response channel closed: {e}")),
-            }
         }
+    }
+
+    /// Build the `status: "running"` response returned by `send_with_progress`
+    /// when a caller-supplied `timeout_s` elapses before the GUI compute
+    /// finishes. `ok: true` because nothing failed — the generate simply
+    /// outlived the caller's wait budget and continues in the background.
+    fn still_running_response(timeout: Option<Duration>) -> String {
+        let waited = timeout.map(|d| d.as_secs()).unwrap_or(0);
+        json_str(serde_json::json!({
+            "ok": true,
+            "status": "running",
+            "summary": format!(
+                "Still running after the {waited}s wait budget. Generation was NOT \
+                 cancelled and continues in the background. Check progress with \
+                 list_toolpaths, or abort it with cancel_generation. Avoid re-issuing \
+                 the same generate_toolpath (same index) or generate_all call while \
+                 this one is still in flight — resubmitting a toolpath that's already \
+                 being generated cancels and restarts its in-flight job instead of \
+                 checking on it."
+            ),
+        }))
     }
 
     /// Format a result into the final tool return string.
@@ -928,29 +976,55 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "generate_toolpath",
-        description = "Generate a single toolpath by index. Returns move count and distances."
+        description = "Generate a single toolpath by index. Returns move count and distances. By default waits indefinitely for generation to finish; pass `timeout_s` to bound the wait — on timeout the call returns a `status: \"running\"` response instead of blocking (the generate is NOT cancelled, it keeps running in the background). Poll `list_toolpaths` for completion, or abort a runaway generate with `cancel_generation`."
     )]
     async fn generate_toolpath(
         &self,
-        Parameters(IndexParam { index }): Parameters<IndexParam>,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(GenerateToolpathParam { index, timeout_s }): Parameters<
+            GenerateToolpathParam,
+        >,
         meta: Meta,
         peer: Peer<RoleServer>,
     ) -> String {
         Self::format_result(
-            self.send_with_progress(McpRequestKind::GenerateToolpath { index }, meta, peer)
-                .await,
+            self.send_with_progress(
+                McpRequestKind::GenerateToolpath { index },
+                meta,
+                peer,
+                timeout_s.map(Duration::from_secs),
+            )
+            .await,
         )
     }
 
     #[tool(
         name = "generate_all",
-        description = "Generate all enabled toolpaths. Returns count of newly generated toolpaths."
+        description = "Generate all enabled toolpaths. Returns count of newly generated toolpaths. By default waits indefinitely; pass `timeout_s` to bound the wait — on timeout the call returns a `status: \"running\"` response instead of blocking (nothing is cancelled, generation continues in the background). Poll `list_toolpaths` for completion, or abort with `cancel_generation`."
     )]
-    async fn generate_all(&self, meta: Meta, peer: Peer<RoleServer>) -> String {
+    async fn generate_all(
+        &self,
+        Parameters(GenerateAllParam { timeout_s }): Parameters<GenerateAllParam>,
+        meta: Meta,
+        peer: Peer<RoleServer>,
+    ) -> String {
         Self::format_result(
-            self.send_with_progress(McpRequestKind::GenerateAll, meta, peer)
-                .await,
+            self.send_with_progress(
+                McpRequestKind::GenerateAll,
+                meta,
+                peer,
+                timeout_s.map(Duration::from_secs),
+            )
+            .await,
         )
+    }
+
+    #[tool(
+        name = "cancel_generation",
+        description = "Cancel whatever toolpath generation is currently in flight (the toolpath compute lane) — the fix for a runaway generate_toolpath/generate_all call that would otherwise hang indefinitely. Instant response reporting whether a job was actually cancelled or this was a no-op (lane was idle). The cancelled toolpath's status reverts to pending (not Done); any pending generate_toolpath/generate_all call for it resolves on its own shortly after with a cancelled outcome."
+    )]
+    async fn cancel_generation(&self) -> String {
+        Self::format_result(self.send_request(McpRequestKind::CancelGeneration).await)
     }
 
     #[tool(
@@ -964,8 +1038,13 @@ impl EmbeddedCamServer {
         peer: Peer<RoleServer>,
     ) -> String {
         Self::format_result(
-            self.send_with_progress(McpRequestKind::RunSimulation { resolution }, meta, peer)
-                .await,
+            self.send_with_progress(
+                McpRequestKind::RunSimulation { resolution },
+                meta,
+                peer,
+                None,
+            )
+            .await,
         )
     }
 
@@ -980,7 +1059,7 @@ impl EmbeddedCamServer {
         peer: Peer<RoleServer>,
     ) -> String {
         Self::format_result(
-            self.send_with_progress(McpRequestKind::CollisionCheck { index }, meta, peer)
+            self.send_with_progress(McpRequestKind::CollisionCheck { index }, meta, peer, None)
                 .await,
         )
     }

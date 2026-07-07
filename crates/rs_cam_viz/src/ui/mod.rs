@@ -361,6 +361,11 @@ pub enum AppEvent {
 
     // Compute
     CancelCompute,
+    /// Cancel only the toolpath-generation lane (`ComputeLane::Toolpath`),
+    /// leaving Analysis/Optimize untouched. Used by MCP's
+    /// `cancel_generation` tool so aborting a runaway generate doesn't
+    /// also interrupt an unrelated in-flight simulation or optimize run.
+    CancelToolpathGeneration,
 
     // Face selection
     ToggleFaceSelection {
