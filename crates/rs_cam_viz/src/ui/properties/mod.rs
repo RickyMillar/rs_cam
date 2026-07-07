@@ -33,8 +33,18 @@ use crate::ui::components::{
 
 /// Candidate source toolpath for a `BoundarySource::DerivedRestRegions`
 /// picker: (id, display name, whether its cached result already has
-/// non-empty rest regions ready to use).
-type BoundaryRestCandidate = (ToolpathId, String, bool);
+/// non-empty rest regions ready to use, and — when ready — the regions
+/// themselves). The regions are captured here rather than re-fetched later
+/// so the Machining Boundary panel can run
+/// [`rs_cam_core::rest_field::classify_rest_regions`] against the SOURCE's
+/// regions (sliver-storm / giant-region warning, 2026-07-06 incident)
+/// without new session/runtime plumbing.
+type BoundaryRestCandidate = (
+    ToolpathId,
+    String,
+    bool,
+    Option<std::sync::Arc<Vec<rs_cam_core::polygon::Polygon2>>>,
+);
 
 /// Paint a brief blue glow behind a UI region when an MCP parameter was recently changed.
 /// Call this right after allocating the widget/row so the highlight paints behind it.
@@ -427,18 +437,16 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .iter()
                 .filter(|tc| tc.id != id)
                 .map(|tc| {
-                    let ready = state
+                    let cached_regions = state
                         .gui
                         .toolpath_rt
                         .get(&tc.id)
                         .and_then(|rt| rt.result.as_ref())
-                        .is_some_and(|r| {
-                            r.annotated
-                                .rest_regions
-                                .as_ref()
-                                .is_some_and(|regions| !regions.is_empty())
-                        });
-                    (tc.id, tc.name.clone(), ready)
+                        .and_then(|r| r.annotated.rest_regions.clone());
+                    let ready = cached_regions
+                        .as_ref()
+                        .is_some_and(|regions| !regions.is_empty());
+                    (tc.id, tc.name.clone(), ready, cached_regions)
                 })
                 .collect();
 
@@ -481,6 +489,23 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                         && m.enriched_mesh.is_none()
                 })
                 .unwrap_or(false);
+
+            // Part footprint area (mm^2) for the rest-region pathology
+            // caption (`classify_rest_regions`, sliver-storm / giant-region
+            // warning): the model's mesh XY bbox extent when there is one
+            // (3D ops), else the stock XY footprint — a reasonable
+            // approximation the panel already has on hand without a new
+            // per-model area computation.
+            let model_footprint_area = model_for_panel
+                .and_then(|m| m.mesh.as_ref())
+                .map(|mesh| {
+                    let bbox = mesh.bbox;
+                    (bbox.max.x - bbox.min.x) * (bbox.max.y - bbox.min.y)
+                })
+                .unwrap_or_else(|| {
+                    let stock = state.session.stock_config();
+                    stock.x * stock.y
+                });
 
             // Snapshot the toolpath model's drill targets + layers (DXF point /
             // circle-centre picking) for the drill-op panels.
@@ -593,6 +618,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     state.session.post_config().spindle_speed,
                     model_has_enriched,
                     model_is_step_missing_brep,
+                    model_footprint_area,
                     height_ctx.as_ref(),
                     &stale_default_defects,
                     load_verdict_for_tp.as_ref(),
@@ -3174,6 +3200,30 @@ fn write_entry_runtime_to_gui(entry: &ToolpathEntry, gui: &mut crate::state::run
     }
 }
 
+/// Operator-facing caption text for a [`rs_cam_core::rest_field::RestRegionPathology`]
+/// — shared by the Rest Analysis section (this toolpath's own regions) and
+/// the Machining Boundary section (a `DerivedRestRegions` source's regions).
+/// See `crates/rs_cam_core/src/rest_field.rs` for the underlying
+/// classification (2026-07-06 sliver-storm incident).
+fn rest_region_pathology_caption(
+    pathology: rs_cam_core::rest_field::RestRegionPathology,
+) -> String {
+    match pathology {
+        rs_cam_core::rest_field::RestRegionPathology::TooManyIslands { count } => format!(
+            "⚠ {count} rest regions — threshold likely below the prior pass's cusp height; \
+             raise min_valley_depth."
+        ),
+        rs_cam_core::rest_field::RestRegionPathology::SingleGiantRegion { part_area_fraction } => {
+            format!(
+                "⚠ Rest region covers {:.0}% of the part — regions barely restrict the fine \
+                 pass; raise min_valley_depth, or use the machined-stock reference (Use \
+                 remaining stock) for an honest rest picture.",
+                part_area_fraction * 100.0
+            )
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_toolpath_panel(
     ui: &mut egui::Ui,
@@ -3194,6 +3244,10 @@ fn draw_toolpath_panel(
     project_default_rpm: u32,
     model_has_enriched: bool,
     model_is_step_missing_brep: bool,
+    // Part footprint area (mm^2) for the rest-region pathology caption —
+    // see the `draw_toolpath_panel` call site above for how it's derived
+    // (model bbox XY extent, else stock XY footprint).
+    model_footprint_area: f64,
     height_ctx: Option<&HeightContext>,
     stale_default_defects: &[rs_cam_core::compute::validate::StaleDefault],
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
@@ -3804,7 +3858,7 @@ fn draw_toolpath_panel(
                                 {
                                     let default_source = boundary_source_candidates
                                         .first()
-                                        .map(|(candidate_id, _, _)| *candidate_id)
+                                        .map(|(candidate_id, _, _, _)| *candidate_id)
                                         .unwrap_or(entry.id);
                                     entry.boundary.source = BoundarySource::DerivedRestRegions {
                                         source_toolpath_id: default_source,
@@ -3828,8 +3882,8 @@ fn draw_toolpath_panel(
                             ui.label("Rest source:");
                             let current_label = boundary_source_candidates
                                 .iter()
-                                .find(|(candidate_id, _, _)| candidate_id == source_toolpath_id)
-                                .map(|(_, name, ready)| {
+                                .find(|(candidate_id, _, _, _)| candidate_id == source_toolpath_id)
+                                .map(|(_, name, ready, _)| {
                                     if *ready {
                                         format!("{name} (regions ready)")
                                     } else {
@@ -3838,11 +3892,11 @@ fn draw_toolpath_panel(
                                 })
                                 .unwrap_or_else(|| "(toolpath not found)".to_owned());
                             let mut sorted = boundary_source_candidates.to_vec();
-                            sorted.sort_by_key(|(_, _, ready)| !*ready);
+                            sorted.sort_by_key(|(_, _, ready, _)| !*ready);
                             egui::ComboBox::from_id_salt("boundary_rest_source")
                                 .selected_text(current_label)
                                 .show_ui(ui, |ui| {
-                                    for (candidate_id, name, ready) in &sorted {
+                                    for (candidate_id, name, ready, _) in &sorted {
                                         let label = if *ready {
                                             format!("{name} (regions ready)")
                                         } else {
@@ -3860,6 +3914,31 @@ fn draw_toolpath_panel(
                                      supplies the rest regions.",
                                 );
                         });
+
+                        // Sliver-storm / giant-region caption (2026-07-06
+                        // incident): the SOURCE toolpath is who suffers the
+                        // per-island generation explosion or the "barely
+                        // restricts anything" giant-region case, so classify
+                        // ITS cached regions (captured in
+                        // `boundary_source_candidates` alongside `ready`),
+                        // not this consumer's own (this toolpath has none —
+                        // it's the one consuming the boundary).
+                        let selected_regions = boundary_source_candidates
+                            .iter()
+                            .find(|(candidate_id, _, _, _)| candidate_id == source_toolpath_id)
+                            .and_then(|(_, _, _, regions)| regions.as_ref());
+                        if let Some(regions) = selected_regions
+                            && let Some(pathology) = rs_cam_core::rest_field::classify_rest_regions(
+                                regions,
+                                model_footprint_area,
+                            )
+                        {
+                            ui.label(
+                                egui::RichText::new(rest_region_pathology_caption(pathology))
+                                    .small()
+                                    .color(egui::Color32::from_rgb(220, 160, 60)),
+                            );
+                        }
                     }
 
                     // Containment mode
@@ -4054,6 +4133,24 @@ fn draw_toolpath_panel(
                         );
                     });
                 }
+            }
+
+            // Sliver-storm / giant-region caption (2026-07-06 incident):
+            // classify THIS toolpath's own generated rest regions, whether
+            // they came from the checkbox-driven detector above or (for a
+            // rest_depth pencil) the detector it always runs. Deliberately
+            // outside the `is_rest_depth_pencil` branch so both cases show
+            // it.
+            if let Some(result) = &entry.result
+                && let Some(regions) = result.annotated.rest_regions.as_ref()
+                && let Some(pathology) =
+                    rs_cam_core::rest_field::classify_rest_regions(regions, model_footprint_area)
+            {
+                ui.label(
+                    egui::RichText::new(rest_region_pathology_caption(pathology))
+                        .small()
+                        .color(egui::Color32::from_rgb(220, 160, 60)),
+                );
             }
         }
 
