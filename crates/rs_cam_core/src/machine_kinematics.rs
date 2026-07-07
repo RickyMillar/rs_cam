@@ -337,15 +337,68 @@ impl MachineKinematics {
 /// length on the accel + decel ramps, the integrator solves for the
 /// triangular profile's peak velocity.
 ///
-/// Returns 0.0 for an empty toolpath (no moves to traverse).
+/// Returns 0.0 for an empty toolpath (no moves to traverse). Delegates
+/// to [`compute_cycle_time_breakdown`] and returns its `total_s`.
 pub fn compute_cycle_time(
     toolpath: &Toolpath,
     kinematics: &MachineKinematics,
     max_feed_mm_min: f64,
     rapid_feed_mm_min: f64,
 ) -> f64 {
+    compute_cycle_time_breakdown(toolpath, kinematics, max_feed_mm_min, rapid_feed_mm_min).total_s
+}
+
+/// P0 unified-finishing probe — kinematics-integrator cycle time
+/// decomposed by `MoveIntent` class. Buckets are disjoint and sum to
+/// `total_s` (same accumulation order as [`compute_cycle_time`], so
+/// `total_s` is bit-identical to its return value).
+///
+/// Classing: a `MoveType::Rapid` move lands in `rapid_s` regardless of
+/// its intent tag; feed moves are bucketed by intent. `unknown_s`
+/// collects feed moves from legacy generators that never tagged
+/// intents — report it honestly rather than folding it into cutting.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct CycleTimeBreakdown {
+    /// Sum of every move's integrated time (== `compute_cycle_time`).
+    pub total_s: f64,
+    /// `MoveType::Rapid` moves (any intent).
+    pub rapid_s: f64,
+    /// ClearingCut | FinishingCut | Drilling feed moves.
+    pub cutting_s: f64,
+    /// EntryPlunge | EntryHelix | EntryRamp | LeadIn feed moves.
+    pub entry_s: f64,
+    /// Linking | LeadOut feed moves (position-to-position at feed).
+    pub linking_s: f64,
+    /// Retract feed moves.
+    pub retract_s: f64,
+    /// Untagged (`MoveIntent::Unknown`) feed moves.
+    pub unknown_s: f64,
+}
+
+impl std::ops::AddAssign for CycleTimeBreakdown {
+    fn add_assign(&mut self, rhs: Self) {
+        self.total_s += rhs.total_s;
+        self.rapid_s += rhs.rapid_s;
+        self.cutting_s += rhs.cutting_s;
+        self.entry_s += rhs.entry_s;
+        self.linking_s += rhs.linking_s;
+        self.retract_s += rhs.retract_s;
+        self.unknown_s += rhs.unknown_s;
+    }
+}
+
+/// Same integrator as [`compute_cycle_time`], additionally bucketing
+/// each move's integrated time by `MoveIntent` class. See
+/// [`compute_cycle_time`] for the physical model; this function's
+/// `total_s` is bit-identical to that function's return value.
+pub fn compute_cycle_time_breakdown(
+    toolpath: &Toolpath,
+    kinematics: &MachineKinematics,
+    max_feed_mm_min: f64,
+    rapid_feed_mm_min: f64,
+) -> CycleTimeBreakdown {
     if toolpath.moves.len() < 2 {
-        return 0.0;
+        return CycleTimeBreakdown::default();
     }
 
     // Convert feed rates from mm/min → mm/s once up front.
@@ -363,6 +416,7 @@ pub fn compute_cycle_time(
         v_cmd_mm_s: f64,
         accel: f64,
         is_rapid: bool,
+        intent: crate::toolpath::MoveIntent,
     }
 
     let mut digests: Vec<MoveDigest> = Vec::with_capacity(toolpath.moves.len());
@@ -392,16 +446,17 @@ pub fn compute_cycle_time(
             v_cmd_mm_s,
             accel,
             is_rapid,
+            intent: toolpath.moves[i].intent,
         });
     }
 
     if digests.is_empty() {
-        return 0.0;
+        return CycleTimeBreakdown::default();
     }
 
     // Junction velocity entering move i — first move starts at rest.
     let mut v_in = 0.0;
-    let mut total_time_s = 0.0;
+    let mut breakdown = CycleTimeBreakdown::default();
     let n = digests.len();
     #[allow(clippy::indexing_slicing)]
     // SAFETY: i bounded by digests.len(); i+1 guarded by `i < n - 1`.
@@ -448,11 +503,26 @@ pub fn compute_cycle_time(
         } else {
             0.0
         };
-        total_time_s += t + jerk_penalty;
+        let dt = t + jerk_penalty;
+        breakdown.total_s += dt;
+        if digests[i].is_rapid {
+            breakdown.rapid_s += dt;
+        } else {
+            use crate::toolpath::MoveIntent as MI;
+            match digests[i].intent {
+                MI::ClearingCut | MI::FinishingCut | MI::Drilling => breakdown.cutting_s += dt,
+                MI::EntryPlunge | MI::EntryHelix | MI::EntryRamp | MI::LeadIn => {
+                    breakdown.entry_s += dt;
+                }
+                MI::Linking | MI::LeadOut => breakdown.linking_s += dt,
+                MI::Retract => breakdown.retract_s += dt,
+                MI::Unknown => breakdown.unknown_s += dt,
+            }
+        }
         v_in = v_out;
     }
 
-    total_time_s
+    breakdown
 }
 
 /// F-035 — Per-move predicted achieved feed (mm/min) keyed by
@@ -913,6 +983,62 @@ mod tests {
         assert!(
             (t - 0.1265).abs() < 0.01,
             "triangular profile time should be ~0.127 s, got {t}"
+        );
+    }
+
+    /// P0 unified-finishing probe — the breakdown's buckets must sum
+    /// to the same total `compute_cycle_time` returns, and each
+    /// exercised intent class must land in its expected bucket.
+    #[test]
+    fn cycle_time_breakdown_buckets_match_total_and_intent() {
+        use crate::toolpath::MoveIntent;
+
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 0.0));
+        tp.feed_to_with_intent(P3::new(50.0, 0.0, 0.0), 3000.0, MoveIntent::FinishingCut);
+        tp.feed_to_with_intent(P3::new(50.0, 50.0, 0.0), 3000.0, MoveIntent::Linking);
+        tp.feed_to_with_intent(P3::new(50.0, 0.0, 0.0), 3000.0, MoveIntent::Retract);
+        // The integrator walks segments from move 1 onward — the seed
+        // rapid at move 0 contributes no segment, so a trailing rapid
+        // is needed to exercise the rapid bucket.
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+
+        let kin = shapeoko();
+        let total = compute_cycle_time(&tp, &kin, 4000.0, 5000.0);
+        let breakdown = compute_cycle_time_breakdown(&tp, &kin, 4000.0, 5000.0);
+
+        assert_eq!(
+            breakdown.total_s, total,
+            "breakdown total must be bit-identical to compute_cycle_time"
+        );
+        let bucket_sum = breakdown.rapid_s
+            + breakdown.cutting_s
+            + breakdown.entry_s
+            + breakdown.linking_s
+            + breakdown.retract_s
+            + breakdown.unknown_s;
+        assert!(
+            (bucket_sum - breakdown.total_s).abs() < 1e-9,
+            "buckets must sum to total: {bucket_sum} vs {}",
+            breakdown.total_s
+        );
+        assert!(breakdown.rapid_s > 0.0, "rapid bucket should be non-zero");
+        assert!(
+            breakdown.cutting_s > 0.0,
+            "cutting bucket should be non-zero"
+        );
+        assert!(
+            breakdown.linking_s > 0.0,
+            "linking bucket should be non-zero"
+        );
+        assert!(
+            breakdown.retract_s > 0.0,
+            "retract bucket should be non-zero"
+        );
+        assert_eq!(breakdown.entry_s, 0.0, "entry bucket should be untouched");
+        assert_eq!(
+            breakdown.unknown_s, 0.0,
+            "unknown bucket should be untouched"
         );
     }
 

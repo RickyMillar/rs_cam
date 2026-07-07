@@ -813,8 +813,11 @@ where
 }
 
 /// F-034: walk every toolpath in the request, recompute its runtime
-/// using [`crate::machine_kinematics::compute_cycle_time`], and rewrite
-/// the per-toolpath + project-wide `total_runtime_s` slots on `trace`.
+/// using [`crate::machine_kinematics::compute_cycle_time_breakdown`],
+/// and rewrite the per-toolpath + project-wide `total_runtime_s` slots
+/// on `trace`. Also attaches the `MoveIntent`-bucketed
+/// `runtime_by_intent` breakdown (P0 unified-finishing probe) at both
+/// levels.
 ///
 /// All other summary fields stay untouched — they're derived from the
 /// dexel-sample stream and aren't sensitive to accel modelling. The
@@ -829,27 +832,29 @@ fn apply_kinematics_cycle_time(
     request: &SimulationRequest,
     ctx: KinematicsContext,
 ) {
-    use crate::machine_kinematics::{compute_cycle_time, predicted_feeds_for_toolpath};
+    use crate::machine_kinematics::{
+        CycleTimeBreakdown, compute_cycle_time_breakdown, predicted_feeds_for_toolpath,
+    };
 
-    let mut per_toolpath_runtime: BTreeMap<ToolpathId, f64> = BTreeMap::new();
+    let mut per_toolpath_runtime: BTreeMap<ToolpathId, CycleTimeBreakdown> = BTreeMap::new();
     // F-035 — when the flag is on, also build a per-(toolpath, move)
     // predicted-feed map so the gates can read achieved feed rather
     // than commanded. The same walk that produces cycle time
-    // (`compute_cycle_time`) drives the predicted-feed integrator
-    // (`predicted_feeds_for_toolpath`) — they share `MoveDigest`
-    // construction logic but are intentionally separate functions to
-    // keep the runtime-only override (F-034) and the gate plumbing
-    // (F-035) independently flag-gated.
+    // (`compute_cycle_time_breakdown`) drives the predicted-feed
+    // integrator (`predicted_feeds_for_toolpath`) — they share
+    // `MoveDigest` construction logic but are intentionally separate
+    // functions to keep the runtime-only override (F-034) and the
+    // gate plumbing (F-035) independently flag-gated.
     let mut predicted_feeds: crate::machine_kinematics::PredictedFeedMap = BTreeMap::new();
     for group in &request.groups {
         for entry in &group.toolpaths {
-            let t = compute_cycle_time(
+            let b = compute_cycle_time_breakdown(
                 &entry.annotated.toolpath,
                 &ctx.kinematics,
                 ctx.max_feed_mm_min,
                 request.rapid_feed_mm_min,
             );
-            per_toolpath_runtime.insert(entry.id, t);
+            per_toolpath_runtime.insert(entry.id, b);
 
             if ctx.use_predicted_feed_in_gates {
                 let per_move = predicted_feeds_for_toolpath(
@@ -866,15 +871,19 @@ fn apply_kinematics_cycle_time(
     }
 
     let mut project_total = 0.0;
+    let mut project_breakdown = CycleTimeBreakdown::default();
     for tp_summary in &mut trace.toolpath_summaries {
-        if let Some(&t) = per_toolpath_runtime.get(&tp_summary.toolpath_id) {
-            tp_summary.total_runtime_s = t;
-            project_total += t;
+        if let Some(&b) = per_toolpath_runtime.get(&tp_summary.toolpath_id) {
+            tp_summary.total_runtime_s = b.total_s;
+            tp_summary.runtime_by_intent = Some(b);
+            project_total += b.total_s;
+            project_breakdown += b;
         } else {
             project_total += tp_summary.total_runtime_s;
         }
     }
     trace.summary.total_runtime_s = project_total;
+    trace.summary.runtime_by_intent = Some(project_breakdown);
 
     if ctx.use_predicted_feed_in_gates && !predicted_feeds.is_empty() {
         trace.predicted_feeds = predicted_feeds;

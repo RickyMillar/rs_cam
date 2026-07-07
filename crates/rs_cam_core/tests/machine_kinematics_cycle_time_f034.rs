@@ -445,8 +445,14 @@ fn flag_on_overrides_total_runtime_s() {
         modulation_aggressiveness: 1.0,
     };
 
-    // Helper to load + add a tiny pocket op + simulate; returns total runtime.
-    let run = |kinematics: Option<MachineKinematics>| -> f64 {
+    // Helper to load + add a tiny pocket op + simulate; returns the
+    // project-wide total runtime and the rewritten cut trace so the
+    // P0 unified-finishing-probe `runtime_by_intent` slot can be
+    // checked too.
+    let run = |kinematics: Option<MachineKinematics>| -> (
+        f64,
+        std::sync::Arc<rs_cam_core::simulation_cut::SimulationCutTrace>,
+    ) {
         let mut session = build_pocket_session();
         let mut machine = session.machine().clone();
         machine.kinematics = kinematics;
@@ -467,12 +473,12 @@ fn flag_on_overrides_total_runtime_s() {
         session.run_simulation(&opts, &cancel).expect("simulate");
 
         let sim = session.simulation_result().expect("sim result");
-        let trace = sim.cut_trace.as_ref().expect("cut trace");
-        trace.summary.total_runtime_s
+        let trace = std::sync::Arc::clone(sim.cut_trace.as_ref().expect("cut trace"));
+        (trace.summary.total_runtime_s, trace)
     };
 
-    let off = run(None);
-    let on = run(Some(MachineKinematics::shapeoko_xxl_stock()));
+    let (off, _off_trace) = run(None);
+    let (on, on_trace) = run(Some(MachineKinematics::shapeoko_xxl_stock()));
 
     assert!(
         on > off,
@@ -481,4 +487,31 @@ fn flag_on_overrides_total_runtime_s() {
          If these are equal, the override did not fire — `kinematics` field on \
          MachineProfile may not be propagating into SimulationRequest."
     );
+
+    // P0 unified-finishing probe: kinematics-ON runs must attach the
+    // MoveIntent-bucketed breakdown at both project and per-toolpath
+    // level, and the per-toolpath breakdown's total must match the
+    // rewritten `total_runtime_s` it sits next to.
+    let project_breakdown = on_trace
+        .summary
+        .runtime_by_intent
+        .expect("kinematics-ON project summary must carry runtime_by_intent");
+    assert!(
+        (project_breakdown.total_s - on).abs() < 1e-6,
+        "project runtime_by_intent.total_s must match summary.total_runtime_s: \
+         {project_breakdown_total} vs {on}",
+        project_breakdown_total = project_breakdown.total_s
+    );
+    for tp_summary in &on_trace.toolpath_summaries {
+        let b = tp_summary
+            .runtime_by_intent
+            .expect("kinematics-ON toolpath summary must carry runtime_by_intent");
+        assert!(
+            (b.total_s - tp_summary.total_runtime_s).abs() < 1e-6,
+            "toolpath {:?} runtime_by_intent.total_s must match total_runtime_s: {} vs {}",
+            tp_summary.toolpath_id,
+            b.total_s,
+            tp_summary.total_runtime_s
+        );
+    }
 }

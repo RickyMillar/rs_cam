@@ -1309,6 +1309,27 @@ impl super::RsCamApp {
             serde_json::Value::Null
         };
 
+        // P0 unified-finishing probe — compact per-toolpath runtime block.
+        // `runtime_by_intent` is the F-034 integrator time bucketed by
+        // MoveIntent class (None when the sim ran without kinematics).
+        let toolpath_summaries_val: Vec<serde_json::Value> = ct
+            .toolpath_summaries
+            .iter()
+            .filter(|s| toolpath_id.is_none_or(|id| s.toolpath_id == id))
+            .map(|s| {
+                serde_json::json!({
+                    "toolpath_id": s.toolpath_id,
+                    "total_runtime_s": s.total_runtime_s,
+                    "cutting_runtime_s": s.cutting_runtime_s,
+                    "rapid_runtime_s": s.rapid_runtime_s,
+                    "air_cut_time_s": s.air_cut_time_s,
+                    "low_engagement_time_s": s.low_engagement_time_s,
+                    "metrics_not_applicable": s.metrics_not_applicable,
+                    "runtime_by_intent": s.runtime_by_intent,
+                })
+            })
+            .collect();
+
         json_str(serde_json::json!({
             "summary": summary_val,
             "semantic_summaries": summaries_val,
@@ -1319,6 +1340,7 @@ impl super::RsCamApp {
             "issues": issues_val,
             "drill_summaries": drill_summaries_val,
             "drill_samples": drill_samples_val,
+            "toolpath_summaries": toolpath_summaries_val,
         }))
     }
 

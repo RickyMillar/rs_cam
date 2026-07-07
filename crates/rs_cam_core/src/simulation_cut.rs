@@ -407,6 +407,13 @@ pub struct SimulationToolpathCutSummary {
     /// that kinematics class for this toolpath."
     #[serde(default)]
     pub per_kinematics: BTreeMap<CutKinematics, KinematicsSummary>,
+    /// F-034 integrator runtime decomposed by `MoveIntent` class
+    /// (P0 unified-finishing probe). `Some` only when the simulation
+    /// ran with a kinematics context — naive traces leave it `None`.
+    /// On the project-wide summary this is the field-wise sum across
+    /// toolpaths the integrator walked.
+    #[serde(default)]
+    pub runtime_by_intent: Option<crate::machine_kinematics::CycleTimeBreakdown>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -499,6 +506,13 @@ pub struct SimulationCutSummary {
     /// dexel-fidelity roadmap.
     #[serde(default)]
     pub per_kinematics: BTreeMap<CutKinematics, KinematicsSummary>,
+    /// F-034 integrator runtime decomposed by `MoveIntent` class
+    /// (P0 unified-finishing probe). `Some` only when the simulation
+    /// ran with a kinematics context — naive traces leave it `None`.
+    /// On the project-wide summary this is the field-wise sum across
+    /// toolpaths the integrator walked.
+    #[serde(default)]
+    pub runtime_by_intent: Option<crate::machine_kinematics::CycleTimeBreakdown>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1081,6 +1095,7 @@ impl SummaryAccumulator {
             average_mrr_mm3_s,
             metrics_not_applicable: false,
             per_kinematics,
+            runtime_by_intent: None,
         }
     }
 
@@ -1111,6 +1126,7 @@ impl SummaryAccumulator {
             total_removed_volume_est_mm3: self.total_removed_volume_est_mm3,
             average_mrr_mm3_s,
             per_kinematics,
+            runtime_by_intent: None,
         }
     }
 }
