@@ -186,9 +186,21 @@ and its innermost offset ring.
       finishing/detail subset −18.2%; Rivers −54%, Lakes −35%, Finish 6 −9.1%;
       roughing controls unchanged; 0 rapid collisions; unknown_s eliminated.**
       Harness: `crates/rs_cam_core/tests/p1_headless_ab_wanaka.rs`
-      (`--ignored --nocapture`). Remaining P1 follow-ups: GUI `ComputeRequest`
-      machine-profile threading (pencil cost decision inactive from GUI), W4b
-      scallop cost links, live-GUI confirmation of the collision count.
+      (`--ignored --nocapture`). ComputeRequest threading landed (4ce5bac).
+- [x] P1 LIVE CONFIRM (2026-07-08 morning, GUI): project 11 194 → **9 543 s
+      (−14.7%)** incl. pencil; Rivers −54.5% (791 s), Lakes −40% (246 s),
+      Finish 6 −6.7% (7 068 s; the 656 s unknown → 0, ~505 s of re-entry
+      feed-through-air removed), collisions 4 = pre-existing baseline count
+      (pencil adds 0), air-cut 14.3% → 5.0%. **Pencil finding**: only −6%
+      (470 s, entry 392 s) — its valley entries descend next to V-walls, so
+      the tool-radius stock ceiling is legitimately near wall-top; pencil
+      plunges are mostly physics-bound, and its remaining lever is chain
+      count/routing (P2), not descents. Remaining P1 tails: W4b scallop cost
+      links; generate_all cancel race has a SECOND leg (auto-regen submits
+      first after load, the MCP batch's own submit is the duplicate that
+      cancels — 402bf10 fixed only sweep-after-MCP; cosmetic since the
+      requeued job completes, fix candidate: generate_all skips
+      already-Computing ids).
 - [ ] P2 design doc (decomposition/strategy/routing interfaces)
 - [ ] P2 implementation + A/B vs phase-based stack
 - [ ] P3 morphed spiral strategy + degeneracy fallback
