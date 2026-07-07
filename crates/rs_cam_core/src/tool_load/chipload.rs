@@ -949,6 +949,7 @@ mod tests {
                 total_removed_volume_est_mm3: 1.0,
                 average_mrr_mm3_s: 1.0,
                 per_kinematics: std::collections::BTreeMap::new(),
+                runtime_by_intent: None,
             },
             samples,
             ..SimulationCutTrace::test_fixture()

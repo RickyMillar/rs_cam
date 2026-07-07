@@ -499,6 +499,7 @@ mod restore_guard_tests {
                 average_mrr_mm3_s: 1.0,
                 metrics_not_applicable: false,
                 per_kinematics: std::collections::BTreeMap::new(),
+                runtime_by_intent: None,
             }],
             ..crate::simulation_cut::SimulationCutTrace::test_fixture()
         }

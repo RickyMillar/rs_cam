@@ -2620,6 +2620,7 @@ impl ProjectSession {
         };
         let trace = Arc::make_mut(trace_arc);
         let mut project_total = 0.0;
+        let mut project_breakdown = crate::machine_kinematics::CycleTimeBreakdown::default();
         for tp_summary in &mut trace.toolpath_summaries {
             let Some((idx, _)) = self
                 .toolpath_configs
@@ -2635,16 +2636,23 @@ impl ProjectSession {
                 continue;
             };
             let toolpath = &result_slot.annotated().toolpath;
-            let t = crate::machine_kinematics::compute_cycle_time(
+            // Recompute the MoveIntent breakdown alongside the total —
+            // leaving F-034's pre-modulation breakdown in place would
+            // desynchronize `runtime_by_intent.total_s` from the
+            // modulated `total_runtime_s` written below.
+            let b = crate::machine_kinematics::compute_cycle_time_breakdown(
                 toolpath,
                 &kinematics,
                 max_feed,
                 rapid_feed,
             );
-            tp_summary.total_runtime_s = t;
-            project_total += t;
+            tp_summary.total_runtime_s = b.total_s;
+            tp_summary.runtime_by_intent = Some(b);
+            project_total += b.total_s;
+            project_breakdown += b;
         }
         trace.summary.total_runtime_s = project_total;
+        trace.summary.runtime_by_intent = Some(project_breakdown);
         // F-039 — stamp the per-move binding map + per-toolpath
         // modulation summaries onto the trace. Both fields are
         // `#[serde(skip)]` so artifact round-tripping is unaffected;
@@ -4665,6 +4673,7 @@ mod tests {
             average_mrr_mm3_s: 0.0,
             metrics_not_applicable: false,
             per_kinematics: std::collections::BTreeMap::new(),
+            runtime_by_intent: None,
         }
     }
 

@@ -823,3 +823,25 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   tool, so true rest = boundary bands/edges only); all 30 chains centerline-only
   (width-aware pass cap working); pencil adds 0 rapid collisions (was 14 on virgin
   stock). Gates: core 2078 pass/3 known reds, viz 212/212, clippy clean.
+- 2026-07-07 (tech-debt pair, COMMITTED d0d6d75 + 482be35, live-validated):
+  sliver-region guard (MAX_REST_REGIONS=64 cap + warn in region_polygons_from_mask;
+  classify_rest_regions pathology → GUI captions in Rest Analysis + Boundary picker) and
+  MCP cancel_generation + timeout_s on generate_toolpath/generate_all (toolpath-lane-only
+  cancel event; late-oneshot-after-timeout safe by fresh-channel construction).
+  Live: timeout_s=2 → still-running; mid-flight cancel named "Back Rough", reverted to
+  Pending, siblings untouched, idle no-op, post-cancel regen clean. Closes the
+  "MCP cancel/timeout" and "sliver/region-count guard" follow-ups; the region-quality
+  advisor (P2.4) is PARTIALLY covered by classify_rest_regions (threshold-below-cusp +
+  giant-region advice); full advisor remains open.
+- 2026-07-07 (unified-finishing P0 probe, UNCOMMITTED as of writing, live-run):
+  `CycleTimeBreakdown` per-MoveIntent time on the F-034 integrator (per-toolpath +
+  project `runtime_by_intent` on the cut trace, `get_cut_trace.toolpath_summaries`
+  block); found+fixed F-036b1 desync (post-modulation re-walk rewrote total_runtime_s
+  but not the breakdown). PROBE VERDICT (full numbers in
+  planning/unified_finishing_pass_plan.md P0 results log): strict finishing overhead
+  25.2%, detail+finishing 39.3% → GATE PASSES, proceed P1+P2. Headlines: pencil 97.3%
+  overhead (335 s plunge vs 14 s cut), Rivers 95.3% (1461 s EntryPlunge), Finish 6
+  10.1× naive (junction/accel physics on 0.31 mm segments — P3 justified on time);
+  Finish 6 emits 656 s of untagged (Unknown-intent) link feeds — tagging gap for P1.
+  Gates: clippy clean, core lib 2084/3 known reds, f034 10/10 + f036b 5/5 sentries,
+  viz 227/227.

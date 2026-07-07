@@ -969,6 +969,7 @@ mod orchestration_skip_tests {
             average_mrr_mm3_s: 2.0,
             metrics_not_applicable: false,
             per_kinematics: std::collections::BTreeMap::new(),
+            runtime_by_intent: None,
         });
 
         let mut session = session_with_op(OperationConfig::Pocket(PocketConfig::default()));
@@ -1009,6 +1010,7 @@ mod orchestration_skip_tests {
             average_mrr_mm3_s: 2.0,
             metrics_not_applicable: false,
             per_kinematics: std::collections::BTreeMap::new(),
+            runtime_by_intent: None,
         });
         // Slot at 6 mm DOC on a 6.35 mm cutter at full π arc — force
         // peaks at Kc × 6 × 6.35. With softwood Kc=6 and the default
@@ -1265,6 +1267,7 @@ mod project_rollup_tests {
             average_mrr_mm3_s: 2.0,
             metrics_not_applicable: false,
             per_kinematics: std::collections::BTreeMap::new(),
+            runtime_by_intent: None,
         }
     }
 

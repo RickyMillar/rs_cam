@@ -115,8 +115,9 @@ and its innermost offset ring.
 
 ## Tracking
 
-- [ ] P0 probe run + numbers logged below
-- [ ] P0 decision recorded (proceed / spiral-only)
+- [x] P0 probe run + numbers logged below (2026-07-07)
+- [x] P0 decision recorded: **PROCEED to P1+P2** (strict finishing overhead 25.2%,
+      detail+finishing 39.3% — gate was 15–20%)
 - [ ] P1 quantitative linker (pencil, scallop, boundary-clip) + A/B
 - [ ] P2 design doc (decomposition/strategy/routing interfaces)
 - [ ] P2 implementation + A/B vs phase-based stack
@@ -125,4 +126,62 @@ and its innermost offset ring.
 
 ## P0 results log
 
-(empty — fill during the probe)
+### 2026-07-07 — probe run (fresh wanaka chain + R2 pencil, live GUI)
+
+**Instrumentation** (uncommitted at time of run): `CycleTimeBreakdown` — the F-034
+integrator now buckets every move's time by `MoveIntent` class (`cutting` =
+Clearing/Finishing/Drilling feeds, `entry` = EntryPlunge/Helix/Ramp/LeadIn,
+`linking` = Linking/LeadOut, `retract`, `rapid` = MoveType::Rapid, `unknown` =
+untagged feeds). Attached as `runtime_by_intent` per-toolpath + project-wide on the
+cut trace, exposed via `get_cut_trace.toolpath_summaries`. Found + fixed en route:
+the F-036b1 post-modulation re-walk rewrote `total_runtime_s` from modulated feeds
+but left F-034's pre-modulation breakdown in place (Back Rough read 675 s total vs
+459 s breakdown); both re-walk paths now rewrite the breakdown together
+(`session/compute.rs` + `compute/simulate.rs`, `AddAssign` on the struct).
+
+**Setup**: fresh load → generate_all → F.4 ladder to 3D Finish 6 → add rest_depth
+pencil (Ø2 tapered ball, machined-stock reference) → sim. Machine: real $$ import
+(accels 500/500/270, jd 0.020). Feed modulation ON (post-modulation numbers —
+modulation inflates project integrator time 6813 s → 11 194 s, +64%). Chain
+deterministic across two rebuilds. 4 rapid collisions in the full chain, pencil
+adds 0 (pre-existing, not chased).
+
+**Per-op integrator decomposition (seconds, % = overhead share of op total):**
+
+| op | total | cutting | entry | linking | rapid | unknown | overhead % |
+|---|---|---|---|---|---|---|---|
+| Back Rough (id 4) | 675 | 570 | 41 | 13 | 51 | 1 | 15.6% |
+| Rivers back (id 5) | 1737 | 81 | 1461 | 0 | 188 | 7 | **95.3%** |
+| Lakes (id 6) | 412 | 86 | 257 | 0 | 61 | 9 | **79.2%** |
+| 3D Rough 6 (id 10) | 296 | 201 | 12 | 17 | 64 | 1 | 31.9% |
+| 3D Finish 6 (id 11) | 7573 | 6024 | 0 | 0 | 894 | 656 | **20.5%** |
+| Pencil R2 (id 15) | 501 | 14 | 335 | 4 | 56 | 93 | **97.3%** |
+
+Project: 11 194 s total; cutting 6 975 (62.3%); overhead 4 219 (37.7%) =
+entry 2 105 + linking 34 + rapid 1 313 + unknown 767. (Drills excluded from
+breakdowns — no engagement-side summaries by design.)
+
+**Finishing-subset shares:**
+- Strict finishing (Finish 6 + pencil): 8 074 s, overhead **25.2%**.
+- Detail + finishing stack (+ Rivers + Lakes): 10 223 s, overhead **39.3%**.
+
+**→ DECISION: gate (≥15–20%) PASSES decisively. Proceed to P1 + P2.**
+
+**Structural findings:**
+1. **Plunge-cycle ops are almost pure overhead.** Pencil: 97.3% overhead — 335 s
+   plunging at plunge feed vs 14 s cutting. Rivers: 95.3% — 1 461 s of EntryPlunge.
+   The cost is *plunge-from-clearance at plunge feed*, not rapids. P1's
+   link-vs-retract costing attacks exactly this (surface-follow between nearby
+   targets); a cheap independent win is rapid-down-to-near-surface before feeding.
+2. **3D Finish 6 overhead is 894 s rapid + 656 s UNTAGGED feed moves** — the
+   finish generator emits its links/cleanup with `MoveIntent::Unknown`, which is
+   both the linking-share suspect (boundary-clip re-entries) and a tagging-honesty
+   gap P1 must fix to be measurable.
+3. **Naive vs integrator: Finish 6 is 10.1× naive** (749 s → 7 573 s). At 0.31 mm
+   avg segment length, junction/accel physics + modulation dominate; commanded feed
+   is nearly irrelevant. Implications: (a) smoother paths (morphed spiral, arc
+   fitting, segment merge) have far more *time* leverage on finishing than mm
+   deltas suggest — P3 is justified on time, not just quality; (b) P1's per-gap
+   cost comparison MUST use the integrator, never distance/feed.
+4. `retract_s` = 0 everywhere: generators emit retracts as `MoveType::Rapid`, so
+   they land in `rapid_s`. Expected, not a bug.
