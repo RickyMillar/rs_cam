@@ -1,0 +1,252 @@
+//! P2.b R1 acceptance: the unified-finish decomposition must condition the
+//! wanaka terrain down to O(10) planned regions, not the O(100) island storm
+//! a naive threshold classification produces
+//! (`planning/unified_finish_planner_design.md`, risk R1).
+//!
+//! Also writes the SVG debug view — the P2.b visual surface — to
+//! `target/finish_planner_debug/wanaka_regions.svg` so the decomposition can
+//! be inspected before anything cuts.
+//!
+//! `#[ignore]` — drop-cutter samples the full wanaka mesh at finish
+//! resolution (~a minute). Run with:
+//! `cargo test -p rs_cam_core --test finish_planner_wanaka_decompose -- --ignored --nocapture`
+
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stderr
+)]
+
+use std::path::PathBuf;
+
+use rs_cam_core::finish_planner::{
+    FinishBand, FinishPlannerParams, decompose_surface, planned_regions_to_svg,
+};
+use rs_cam_core::finish_setup::{
+    build_classification_surface_with_cancel, build_finish_surface_with_cancel,
+};
+use rs_cam_core::mesh::SpatialIndex;
+use rs_cam_core::session::ProjectSession;
+use rs_cam_core::tool::BallEndmill;
+
+fn wanaka_project_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("planning")
+        .join("airrun_2026-06-01")
+        .join("wanaka.toml")
+}
+
+#[test]
+#[ignore = "full-mesh drop-cutter sampling; run with --ignored --nocapture"]
+fn wanaka_decomposes_to_order_ten_regions() {
+    let path = wanaka_project_path();
+    assert!(
+        path.exists(),
+        "wanaka.toml not found at {} — acceptance requires the canonical project",
+        path.display()
+    );
+    let session = ProjectSession::load(&path).expect("load wanaka.toml");
+
+    let mesh = session
+        .models()
+        .iter()
+        .find_map(|m| m.mesh.clone())
+        .expect("wanaka project must contain a mesh model");
+    let index = SpatialIndex::build(&mesh, 10.0);
+
+    // Ø6 ball nose — wanaka's finishing tool class; radius 3.0 drives both
+    // the sampling resolution and the corridor/min-area defaults.
+    let cutter = BallEndmill::new(6.0, 25.0);
+    let tool_radius = 3.0;
+
+    let cancel = || false;
+    // Classification reads the TRUE surface (tiny-probe sampling): the Ø6
+    // offset surface hides nearly all of wanaka's steepness (38.5% of true
+    // area ≥45° reads as 0.1% there — see the diagnostic test below).
+    let surface = build_classification_surface_with_cancel(&mesh, &index, &cutter, 0.05, &cancel)
+        .expect("classification surface sampling");
+
+    let params = FinishPlannerParams::for_tool(tool_radius);
+    let planned = decompose_surface(&surface, &[], tool_radius, &params);
+
+    let band_stats = |band: FinishBand| -> (usize, f64) {
+        let regions = planned.regions.iter().filter(|r| r.band == band);
+        let (mut n, mut area) = (0usize, 0.0f64);
+        for r in regions {
+            n += 1;
+            area += r.polygon.area();
+        }
+        (n, area)
+    };
+    let (n_shallow, a_shallow) = band_stats(FinishBand::Shallow);
+    let (n_mid, a_mid) = band_stats(FinishBand::MidSteep);
+    let (n_very, a_very) = band_stats(FinishBand::VerySteep);
+
+    eprintln!("── wanaka decomposition (P2.b R1 acceptance) ──");
+    eprintln!(
+        "grid: {} x {} cells @ {:.3} mm",
+        surface.rows(),
+        surface.cols(),
+        surface.cell_size()
+    );
+    eprintln!("Shallow   : {n_shallow:3} regions, {a_shallow:10.0} mm^2");
+    eprintln!("MidSteep  : {n_mid:3} regions, {a_mid:10.0} mm^2");
+    eprintln!("VerySteep : {n_very:3} regions, {a_very:10.0} mm^2");
+    eprintln!(
+        "raw islands pre-conditioning: steep {}, very-steep {}",
+        planned.stats.raw_steep_islands, planned.stats.raw_very_steep_islands
+    );
+    eprintln!(
+        "absorbed: {}, final region_count: {}",
+        planned.stats.absorbed_regions, planned.stats.region_count
+    );
+
+    let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("target")
+        .join("finish_planner_debug");
+    std::fs::create_dir_all(&out_dir).expect("create debug output dir");
+
+    let svg = planned_regions_to_svg(&planned, 1200.0, 1200.0);
+    let out_path = out_dir.join("wanaka_regions.svg");
+    std::fs::write(&out_path, &svg).expect("write debug SVG");
+    eprintln!("debug SVG: {}", out_path.display());
+
+    // Companion view with min-area absorption effectively off, so the raw
+    // steep structure the conditioning absorbed stays visible — this is the
+    // "what did conditioning do" picture, not an acceptance input.
+    let raw_params = FinishPlannerParams {
+        min_region_area_mm2: 1.0,
+        ..FinishPlannerParams::for_tool(tool_radius)
+    };
+    let raw = decompose_surface(&surface, &[], tool_radius, &raw_params);
+    let raw_mid = raw
+        .regions
+        .iter()
+        .filter(|r| r.band == FinishBand::MidSteep)
+        .count();
+    let raw_very = raw
+        .regions
+        .iter()
+        .filter(|r| r.band == FinishBand::VerySteep)
+        .count();
+    eprintln!(
+        "min-area off: {} regions total ({raw_mid} MidSteep, {raw_very} VerySteep)",
+        raw.stats.region_count
+    );
+    let raw_svg = planned_regions_to_svg(&raw, 1200.0, 1200.0);
+    let raw_path = out_dir.join("wanaka_regions_no_min_area.svg");
+    std::fs::write(&raw_path, &raw_svg).expect("write raw debug SVG");
+    eprintln!("debug SVG (min-area off): {}", raw_path.display());
+
+    assert!(
+        !planned.regions.is_empty(),
+        "wanaka must decompose to at least one region"
+    );
+    assert!(
+        planned.stats.region_count <= 24,
+        "R1 acceptance: wanaka must decompose to O(10) regions, got {}",
+        planned.stats.region_count
+    );
+}
+
+/// Diagnostic (no assertions beyond sanity): compare the TRUE surface slope
+/// distribution (area-weighted mesh normals, upward faces only) against the
+/// slope map the planner classifies on — which is built from the drop-cutter
+/// heightmap, i.e. the BALL-CENTER OFFSET surface. A ball of radius r rounds
+/// a steep wall into a ramp spread over ~r, so the offset surface
+/// systematically under-reads steepness. This quantifies how much of
+/// wanaka's real steepness the Ø6-ball offset surface hides.
+#[test]
+#[ignore = "full-mesh sampling; run with --ignored --nocapture"]
+fn wanaka_slope_distribution_diagnostic() {
+    let path = wanaka_project_path();
+    let session = ProjectSession::load(&path).expect("load wanaka.toml");
+    let mesh = session
+        .models()
+        .iter()
+        .find_map(|m| m.mesh.clone())
+        .expect("wanaka project must contain a mesh model");
+    let index = SpatialIndex::build(&mesh, 10.0);
+
+    const BANDS: [(f64, f64, &str); 7] = [
+        (0.0, 15.0, "  0-15"),
+        (15.0, 25.0, " 15-25"),
+        (25.0, 35.0, " 25-35"),
+        (35.0, 45.0, " 35-45"),
+        (45.0, 55.0, " 45-55"),
+        (55.0, 65.0, " 55-65"),
+        (65.0, 90.1, " 65-90"),
+    ];
+    let band_of = |deg: f64| BANDS.iter().position(|&(lo, hi, _)| deg >= lo && deg < hi);
+
+    // A: true surface — area-weighted face-normal angles, upward faces only
+    // (excludes the solid STL's base and vertical side skirts).
+    let mut face_area = [0.0f64; 7];
+    let mut total_up_area = 0.0f64;
+    let mut max_face_deg = 0.0f64;
+    for f in &mesh.faces {
+        if f.normal.z <= 0.01 {
+            continue;
+        }
+        let e1 = f.v[1] - f.v[0];
+        let e2 = f.v[2] - f.v[0];
+        let area = e1.cross(&e2).norm() * 0.5;
+        if area <= 1e-12 {
+            continue;
+        }
+        let deg = f.normal.z.clamp(0.0, 1.0).acos().to_degrees();
+        max_face_deg = max_face_deg.max(deg);
+        if let Some(b) = band_of(deg)
+            && let Some(slot) = face_area.get_mut(b)
+        {
+            *slot += area;
+        }
+        total_up_area += area;
+    }
+
+    // B: what the planner sees — ball-center offset surface at Ø6.
+    let cutter = BallEndmill::new(6.0, 25.0);
+    let cancel = || false;
+    let surface = build_finish_surface_with_cancel(&mesh, &index, &cutter, 0.05, &cancel)
+        .expect("finish surface sampling");
+    let mut cell_count = [0usize; 7];
+    let mut covered_cells = 0usize;
+    let mut max_cell_deg = 0.0f64;
+    for (i, &angle) in surface.slope_map.angles.iter().enumerate() {
+        if !surface.heightmap.covered.get(i).copied().unwrap_or(false) {
+            continue;
+        }
+        let deg = angle.to_degrees();
+        max_cell_deg = max_cell_deg.max(deg);
+        if let Some(b) = band_of(deg)
+            && let Some(slot) = cell_count.get_mut(b)
+        {
+            *slot += 1;
+        }
+        covered_cells += 1;
+    }
+
+    eprintln!("── wanaka slope distribution: true surface vs Ø6 offset surface ──");
+    eprintln!(
+        "mesh: {} faces, bbox z {:.2}..{:.2} ({:.2} mm relief)",
+        mesh.faces.len(),
+        mesh.bbox.min.z,
+        mesh.bbox.max.z,
+        mesh.bbox.max.z - mesh.bbox.min.z
+    );
+    eprintln!("band    | true surface (area%) | offset surface (cell%)");
+    for (b, &(_, _, name)) in BANDS.iter().enumerate() {
+        let a_pct = 100.0 * face_area.get(b).copied().unwrap_or(0.0) / total_up_area.max(1e-9);
+        let c_pct = 100.0 * cell_count.get(b).copied().unwrap_or(0) as f64
+            / (covered_cells as f64).max(1.0);
+        eprintln!("{name}  | {a_pct:19.1}% | {c_pct:20.1}%");
+    }
+    eprintln!("max     | {max_face_deg:19.1}° | {max_cell_deg:20.1}°");
+    assert!(total_up_area > 0.0);
+    assert!(covered_cells > 0);
+}

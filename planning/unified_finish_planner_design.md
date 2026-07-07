@@ -92,6 +92,24 @@ adaptive's regions are today. The session's 1-config-1-toolpath invariant holds.
    default derived from the strategy stepover, not a magic constant.
 3. **One heightmap**, sampled once at the finest stepover among assigned
    strategies; SlopeMap, decomposition, and all strategies read it.
+   **AMENDED 2026-07-08 (P2.b measurement)**: classification and generation
+   need DIFFERENT surfaces. The drop-cutter heightmap is the ball-CENTER
+   offset surface, which geometrically hides steepness at feature scales at
+   or below the ball radius — measured on wanaka (6 mm relief, Ø6 ball):
+   38.5% of true surface area is ≥45° but only 0.1% of the offset surface
+   reads that steep (max 52° vs true 89°); classifying on it produced a
+   single all-shallow region. The user called it ("wanaka definitely has
+   steep regions"). Decision: **classify on the TRUE surface**
+   (`finish_setup::build_classification_surface_with_cancel` — tiny
+   bare-surface probe per rest_field's precedent, grid cell-compatible with
+   the generation surface), **generate on the offset surface** (unchanged
+   per-strategy sampling). Band assignment is thereby tool-independent, so
+   one decomposition can serve a multi-tool cascade. Corollary: the
+   steep_shallow op classifies on the offset surface and shares this blind
+   spot — quantified but left as-is (the planner supersedes it). `decompose`
+   also erodes coverage by one cell before classifying (stencil-safe: slope
+   at covered/uncovered boundaries reads the heightmap's min_z clamp and
+   fabricates cliffs).
 4. **Ball-tip tools only** (ball nose + tapered ball) via registry
    `tool_constraints`, like scallop today. Kills the flat/V-bit contact-
    geometry axis entirely.

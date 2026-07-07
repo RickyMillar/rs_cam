@@ -53,6 +53,7 @@ pub mod feedopt;
 pub mod feeds;
 pub mod fiber;
 pub mod fingerprint;
+pub mod finish_planner;
 pub mod finish_setup;
 pub mod gcode;
 pub mod gcode_validator;

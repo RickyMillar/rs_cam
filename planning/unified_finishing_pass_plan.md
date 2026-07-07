@@ -201,8 +201,47 @@ and its innermost offset ring.
       cancels — 402bf10 fixed only sweep-after-MCP; cosmetic since the
       requeued job completes, fix candidate: generate_all skips
       already-Computing ids).
-- [ ] P2 design doc (decomposition/strategy/routing interfaces)
-- [ ] P2 implementation + A/B vs phase-based stack
+- [x] P2 design doc (`planning/unified_finish_planner_design.md`) — reviewed
+      2026-07-08 (3 bands, corridor rule, risk register R1–R6, build order
+      P2.b–P2.e; commit c3e29dc). P2.a prep refactors landed (172761b).
+- [x] P2.b decomposition + conditioning (2026-07-08): `finish_planner` module
+      — `decompose()` producing Shallow/MidSteep/VerySteep bands with R1
+      conditioning (hysteresis seeded-flood, EDT morphological close,
+      min-area absorption with deterministic majority vote) + crease corridor
+      rule (`half_width < K×tool_radius` stays in-band, wider = own region,
+      corridor carved from band masks) + `planned_regions_to_svg` debug view.
+      11 unit tests (stripe-fragmentation A/B, dome 4-region nesting, seed
+      requirement, absorption, both corridor branches, overlap dilation,
+      determinism, degenerate inputs). **R1 acceptance PASSED**:
+      `tests/finish_planner_wanaka_decompose.rs` (`--ignored`) → wanaka
+      decomposes to **1 region** (3 raw steep islands = the diagonal
+      river-channel walls, all < min-area → absorbed; correct — channels are
+      crease/pencil territory), SVGs at `target/finish_planner_debug/`.
+      **CLASSIFICATION-SURFACE FINDING (user-caught)**: first acceptance run
+      classified on the Ø6 drop-cutter (ball-center offset) surface → wanaka
+      read all-shallow (0.1% ≥45°) while the TRUE surface is 38.5% ≥45° (max
+      89° vs 52°) — the ball bridges features at/below its radius. Fixed:
+      `finish_setup::build_classification_surface_with_cancel` (tiny
+      bare-surface probe, rest_field precedent) + decompose erodes coverage
+      1 cell (stencil-safe slopes at the min_z clamp boundary). True-surface
+      wanaka: 54 raw steep + 2 very-steep islands → **3 regions** (1 shallow
+      + 2 mid-steep tracking the diagonal mountain range); border-clamp
+      artifacts gone. steep_shallow op shares the offset-surface blind spot
+      (quantified, left as-is — planner supersedes it). Design doc decision
+      #3 amended. Diagnostic: `wanaka_slope_distribution_diagnostic` in the
+      acceptance test file.
+      **Shared-code fix that fell out**: `polygon::detect_containment` had no
+      even-odd nesting — an island inside a hole (dome cap inside a mid-steep
+      annulus, guaranteed for annular slope bands) was consumed as a hole of
+      the outermost polygon, silently deleting its territory. Now counts
+      containment depth: even → top-level, odd → hole of innermost even-depth
+      container. Affects all mask→polygon users (rest_field, boundary,
+      svg/dxf import, adaptive3d); depth ≤ 1 behaviour unchanged; +2 nesting
+      tests in polygon.rs.
+- [ ] P2.c per-band generation + naive concat, A/B checkpoint #1 (must not
+      regress the P1 stack)
+- [ ] P2.d router (greedy + link costing + 2-opt toggle), A/B checkpoint #2
+- [ ] P2.e decomposition-parameter sweep harness; lock defaults from data
 - [ ] P3 morphed spiral strategy + degeneracy fallback
 - [ ] Ledger + FEATURE_CATALOG + memory updates at each landing
 

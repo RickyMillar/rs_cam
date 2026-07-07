@@ -449,40 +449,56 @@ pub fn detect_containment(mut polygons: Vec<Polygon2>) -> Vec<Polygon2> {
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    // Track which polygons have been consumed as holes
+    // Even-odd nesting: for each closed polygon, count the closed polygons
+    // that strictly contain it. Even depth → a top-level region (an island
+    // inside a hole is solid material again); odd depth → a hole of its
+    // innermost even-depth container. The previous implementation attached
+    // every contained polygon as a hole of the FIRST (largest) container it
+    // found, which silently deleted island-in-hole territory — surfaced by
+    // the finish planner's annular slope bands (a dome cap inside a
+    // mid-steep annulus vanished from the shallow band).
+    // Only closed polygons participate — open paths (rivers, traces, engrave
+    // curves) must stay top-level or project_curve will close their "hole"
+    // rings and carve phantom lines between fragments.
     let n = polygons.len();
     let mut consumed = vec![false; n];
     // Track holes to add to each polygon
     let mut holes_for: Vec<Vec<usize>> = vec![Vec::new(); n];
 
-    // For each polygon (smallest first), check if it's inside a larger one.
-    // Only closed polygons participate — open paths (rivers, traces, engrave
-    // curves) must stay top-level or project_curve will close their "hole"
-    // rings and carve phantom lines between fragments.
-    // Safety: i and j are bounded by n (polygon count). consumed and holes_for
-    // are sized to n. All indices are valid by loop construction.
+    // Safety: i and j are bounded by n (polygon count); depths, consumed and
+    // holes_for are sized to n. All indices are valid by loop construction.
     #[allow(clippy::indexing_slicing)]
     {
-        for i in (0..n).rev() {
-            if consumed[i] {
-                continue;
-            }
+        // Pass 1: containment depth of every closed polygon. A container is
+        // strictly larger, so with the area-descending sort above it always
+        // has a smaller index — scanning j in 0..i suffices.
+        let mut depths = vec![0usize; n];
+        for i in 0..n {
             if !polygons[i].closed {
                 continue;
             }
-            // Check against all larger polygons
             for j in 0..i {
-                if consumed[j] {
-                    continue;
+                if polygons[j].closed && polygon_contains_polygon(&polygons[j], &polygons[i]) {
+                    depths[i] += 1;
                 }
-                if !polygons[j].closed {
-                    continue;
-                }
-                if polygon_contains_polygon(&polygons[j], &polygons[i]) {
-                    holes_for[j].push(i);
-                    consumed[i] = true;
-                    break; // Only nest one level deep (innermost containing polygon)
-                }
+            }
+        }
+
+        // Pass 2: odd-depth polygons become holes of their innermost
+        // even-depth container — the largest index (smallest area) among
+        // containers that are themselves top-level.
+        for i in 0..n {
+            if !polygons[i].closed || depths[i].is_multiple_of(2) {
+                continue;
+            }
+            let innermost = (0..i).rfind(|&j| {
+                polygons[j].closed
+                    && depths[j].is_multiple_of(2)
+                    && polygon_contains_polygon(&polygons[j], &polygons[i])
+            });
+            if let Some(j) = innermost {
+                holes_for[j].push(i);
+                consumed[i] = true;
             }
         }
     }
@@ -1128,6 +1144,40 @@ mod tests {
         // Holes should be CW (negative area)
         let hole_area = shoelace_area(&result[0].holes[0]);
         assert!(hole_area < 0.0, "Hole should be CW, got area {}", hole_area);
+    }
+
+    #[test]
+    fn test_containment_island_in_hole_stays_top_level() {
+        // Even-odd depth 2: an island inside a hole is solid material again
+        // and must stay a top-level polygon, not vanish as a second hole.
+        let outer = Polygon2::rectangle(0.0, 0.0, 100.0, 100.0);
+        let ring_hole = Polygon2::rectangle(20.0, 20.0, 80.0, 80.0);
+        let island = Polygon2::rectangle(40.0, 40.0, 60.0, 60.0);
+
+        let result = detect_containment(vec![island, outer, ring_hole]);
+        assert_eq!(result.len(), 2, "depth-2 island must stay top-level");
+        assert_eq!(result[0].holes.len(), 1, "outer keeps the ring hole");
+        assert!(result[1].holes.is_empty());
+        assert_relative_eq!(result[1].area(), 20.0 * 20.0, epsilon = 1.0);
+    }
+
+    #[test]
+    fn test_containment_depth_three_nests_hole_in_island() {
+        // Even-odd depth 3: a ring inside the island is the ISLAND's hole,
+        // not the outermost polygon's.
+        let outer = Polygon2::rectangle(0.0, 0.0, 100.0, 100.0);
+        let ring_hole = Polygon2::rectangle(20.0, 20.0, 80.0, 80.0);
+        let island = Polygon2::rectangle(40.0, 40.0, 60.0, 60.0);
+        let inner_hole = Polygon2::rectangle(45.0, 45.0, 55.0, 55.0);
+
+        let result = detect_containment(vec![inner_hole, island, outer, ring_hole]);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].holes.len(), 1, "outer keeps the ring hole");
+        assert_eq!(
+            result[1].holes.len(),
+            1,
+            "depth-3 ring must become the island's hole"
+        );
     }
 
     #[test]
