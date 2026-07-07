@@ -1126,6 +1126,14 @@ impl<B: ComputeBackend> AppController<B> {
                         let status_msg = rt
                             .map(|rt| match &rt.status {
                                 ComputeStatus::Error(e) => format!("Error: {e}"),
+                                // The only way a drained result reaches this
+                                // arm with `Pending` is the cancel path a few
+                                // lines above (`Err(ComputeError::Cancelled)`
+                                // resets status to `Pending`) — call it out
+                                // by name instead of the generic fallback so
+                                // an MCP caller waiting on `cancel_generation`
+                                // sees an unambiguous outcome.
+                                ComputeStatus::Pending => "Generation was cancelled".to_owned(),
                                 _ => "Toolpath generation produced no result".to_owned(),
                             })
                             .unwrap_or_else(|| "Toolpath not found".to_owned());
@@ -1158,6 +1166,13 @@ impl<B: ComputeBackend> AppController<B> {
                             Some(crate::state::toolpath::ComputeStatus::Done) => format!(
                                 "{tp_name}: completed with no moves — check depth, stock, or model assignment"
                             ),
+                            // Cancel resets status to `Pending` (see the
+                            // single-toolpath branch above) — name it
+                            // explicitly instead of falling into the
+                            // generic "status=Pending" label below.
+                            Some(crate::state::toolpath::ComputeStatus::Pending) => {
+                                format!("{tp_name}: generation cancelled")
+                            }
                             Some(status) => {
                                 let label = match status {
                                     crate::state::toolpath::ComputeStatus::Pending => "Pending",

@@ -151,6 +151,10 @@ impl<B: ComputeBackend> AppController<B> {
             // --- Compute / check events ---
             AppEvent::RunCollisionCheck => self.request_collision_check(),
             AppEvent::CancelCompute => self.compute.cancel_all(),
+            AppEvent::CancelToolpathGeneration => {
+                self.compute
+                    .cancel_lane(crate::compute::ComputeLane::Toolpath);
+            }
 
             // --- Face selection ---
             AppEvent::ToggleFaceSelection {

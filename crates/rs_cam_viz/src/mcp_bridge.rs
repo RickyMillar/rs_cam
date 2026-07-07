@@ -270,6 +270,14 @@ pub enum McpRequestKind {
         index: usize,
     },
     GenerateAll,
+    /// Cancel whatever toolpath generation is currently in flight (the
+    /// `ComputeLane::Toolpath` worker lane). Instant response — reports
+    /// whether the lane was actually busy or this was a no-op. Any
+    /// `GenerateToolpath` / `GenerateAll` oneshot still pending for the
+    /// cancelled toolpath resolves separately once the worker's cancelled
+    /// outcome drains (see `notify_mcp_toolpath_complete`), not from this
+    /// request's own response.
+    CancelGeneration,
     RunSimulation {
         resolution: Option<f64>,
     },
