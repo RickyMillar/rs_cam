@@ -103,6 +103,7 @@ fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_
         },
         cut_trace: None,
         cut_trace_path: None,
+        prior_stocks: std::collections::HashMap::new(),
     });
 
     controller.handle_internal_event(crate::ui::AppEvent::InspectToolpathInSimulation(
@@ -182,6 +183,7 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
             cut_trace: None,
             cut_trace_path: None,
             resolution_clamped: false,
+            prior_stocks: std::collections::HashMap::new(),
         })));
 
     controller.drain_compute_results();
@@ -508,6 +510,7 @@ fn simulation_results_capture_setup_boundaries() {
                 cut_trace: None,
                 cut_trace_path: None,
                 resolution_clamped: false,
+                prior_stocks: std::collections::HashMap::new(),
             },
         )));
 
@@ -682,6 +685,7 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
             cut_trace: None,
             cut_trace_path: None,
             resolution_clamped: false,
+            prior_stocks: std::collections::HashMap::new(),
         })));
 
     controller.drain_compute_results();
@@ -1074,6 +1078,87 @@ fn drain_compute_results_marks_derived_rest_dependents_stale() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// P2 pencil-panel consolidation — demand-driven rest analysis producer hook.
+// Wiring a toolpath's boundary to `DerivedRestRegions { source_toolpath_id }`
+// via `ProjectSession::set_boundary_config` (the setter both MCP's
+// `set_boundary_config` tool and the GUI's Machining Boundary picker's
+// write-back call into) must auto-enable the SOURCE toolpath's own rest
+// analysis so it actually produces the regions the new consumer expects —
+// see `session::mutation::auto_enable_rest_analysis_for_source`.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn set_boundary_config_auto_enables_source_rest_analysis() {
+    let mut controller = sample_controller();
+    let source_id = ToolpathId(0);
+    assert!(
+        !controller
+            .state
+            .session
+            .find_toolpath_config_by_id(source_id)
+            .expect("source toolpath should exist")
+            .1
+            .rest_analysis
+            .enabled,
+        "fixture source should start with rest analysis disabled"
+    );
+
+    // A plain second toolpath whose boundary we'll wire to the source via
+    // `set_boundary_config` (not by embedding it at construction time, the
+    // way `add_derived_rest_dependent` does above — this test exercises the
+    // setter itself).
+    let consumer_config = ToolpathConfig {
+        id: ToolpathId(0), // placeholder — add_toolpath assigns the real id
+        name: "Consumer".to_owned(),
+        enabled: true,
+        operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+        dressups: Default::default(),
+        heights: Default::default(),
+        tool_id: 1,
+        model_id: 0,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: Default::default(),
+        boundary_inherit: true,
+        stock_source: Default::default(),
+        coolant: Default::default(),
+        face_selection: None,
+        debug_options: Default::default(),
+        feeds_provenance: Default::default(),
+        rest_analysis: Default::default(),
+    };
+    let consumer_index = controller
+        .state
+        .session
+        .add_toolpath(0, consumer_config)
+        .expect("consumer toolpath should be added to setup 0");
+
+    let boundary = crate::state::toolpath::BoundaryConfig {
+        enabled: true,
+        source: crate::state::toolpath::BoundarySource::DerivedRestRegions {
+            source_toolpath_id: source_id,
+        },
+        containment: crate::state::toolpath::BoundaryContainment::Center,
+        offset: 0.0,
+    };
+    controller
+        .state
+        .session
+        .set_boundary_config(consumer_index, boundary)
+        .expect("boundary set should succeed");
+
+    let (_, source_tc) = controller
+        .state
+        .session
+        .find_toolpath_config_by_id(source_id)
+        .expect("source toolpath should still exist");
+    assert!(
+        source_tc.rest_analysis.enabled,
+        "wiring a DerivedRestRegions boundary must auto-enable the source's rest analysis"
+    );
+}
+
 #[test]
 fn handle_remove_toolpath_marks_derived_rest_dependents_stale() {
     let mut controller = sample_controller();
@@ -1302,6 +1387,7 @@ fn reset_simulation_cancels_analysis_lane() {
         },
         cut_trace: None,
         cut_trace_path: None,
+        prior_stocks: std::collections::HashMap::new(),
     });
 
     controller.handle_internal_event(crate::ui::AppEvent::ResetSimulation);
@@ -1660,6 +1746,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
             }],
             local_stock_bbox,
             local_to_global: None,
+            phantom_prior_stock: None,
         }],
         stock_bbox: world_stock_bbox,
         stock_top_z: world_stock_bbox.max.z,

@@ -120,43 +120,79 @@ impl<B: ComputeBackend> AppController<B> {
         let mut all_toolpaths_flat = Vec::new();
 
         for (i, setup) in self.state.session.list_setups().iter().enumerate() {
-            let toolpaths: Vec<_> = setup
-                .toolpath_indices
-                .iter()
-                .filter_map(|&tp_idx| self.state.session.toolpath_configs().get(tp_idx))
-                .filter(|tc| include_toolpath(i, tc))
-                .filter_map(|tc| {
-                    let rt = self.state.gui.toolpath_rt.get(&tc.id)?;
-                    let result = rt.result.as_ref()?;
-                    let tool = self
-                        .state
-                        .session
-                        .tools()
-                        .iter()
-                        .find(|t| t.id.0 == tc.tool_id)?
-                        .clone();
-                    let op_type = tc.operation.op_type();
-                    let metrics_not_applicable = matches!(
-                        op_type,
-                        rs_cam_core::compute::catalog::OperationType::Drill
-                            | rs_cam_core::compute::catalog::OperationType::AlignmentPinDrill
-                    );
-                    Some(SetupSimToolpath {
-                        id: tc.id,
-                        name: tc.name.clone(),
-                        annotated: Arc::clone(&result.annotated),
-                        tool,
-                        semantic_trace: rt.semantic_trace.clone(),
-                        spindle_rpm: tc.operation.spindle_rpm(),
-                        metrics_not_applicable,
-                        drill_op: result.drill_op.clone(),
-                        operation_config_hash:
-                            rs_cam_core::compute::simulate::hash_operation_config(&tc.operation),
-                    })
-                })
-                .collect();
+            let mut toolpaths: Vec<SetupSimToolpath> = Vec::new();
+            // F.4: mirrors `ProjectSession::run_simulation`'s phantom-
+            // prior-stock scan (`rs_cam_core::compute::simulate::
+            // PhantomPriorStockScan`) so the core and GUI builders can't
+            // drift — see that type's doc comment for the validity rule.
+            // Walked over every toolpath config in plan order, not just
+            // the ones `include_toolpath` admits: "has this been
+            // generated yet?" is session/GUI-runtime state, independent
+            // of this particular request's scope.
+            let mut phantom_scan = rs_cam_core::compute::simulate::PhantomPriorStockScan::default();
+            for &tp_idx in &setup.toolpath_indices {
+                let Some(tc) = self.state.session.toolpath_configs().get(tp_idx) else {
+                    continue;
+                };
+                let rt = self.state.gui.toolpath_rt.get(&tc.id);
+                let result = rt.and_then(|rt| rt.result.as_ref());
+                phantom_scan.visit(
+                    toolpaths.len(),
+                    tc.enabled,
+                    result.is_some(),
+                    tc.id,
+                    tc.stock_source,
+                );
 
-            if !toolpaths.is_empty() {
+                if !include_toolpath(i, tc) {
+                    continue;
+                }
+                // Re-derive `rt`/`result` together (rather than reusing the
+                // scan's `rt`/`result` locals above) so neither needs an
+                // `.unwrap()` to recover the other.
+                let Some(rt) = rt else { continue };
+                let Some(result) = rt.result.as_ref() else {
+                    continue;
+                };
+                let Some(tool) = self
+                    .state
+                    .session
+                    .tools()
+                    .iter()
+                    .find(|t| t.id.0 == tc.tool_id)
+                else {
+                    continue;
+                };
+                let op_type = tc.operation.op_type();
+                let metrics_not_applicable = matches!(
+                    op_type,
+                    rs_cam_core::compute::catalog::OperationType::Drill
+                        | rs_cam_core::compute::catalog::OperationType::AlignmentPinDrill
+                );
+                toolpaths.push(SetupSimToolpath {
+                    id: tc.id,
+                    name: tc.name.clone(),
+                    annotated: Arc::clone(&result.annotated),
+                    tool: tool.clone(),
+                    semantic_trace: rt.semantic_trace.clone(),
+                    spindle_rpm: tc.operation.spindle_rpm(),
+                    metrics_not_applicable,
+                    drill_op: result.drill_op.clone(),
+                    operation_config_hash: rs_cam_core::compute::simulate::hash_operation_config(
+                        &tc.operation,
+                    ),
+                });
+            }
+
+            let phantom_prior_stock = phantom_scan.finish();
+            // F.4: a setup whose every toolpath is still ungenerated
+            // builds an empty `toolpaths` vec — but if the FIRST enabled
+            // config in plan order is a pending `FromRemainingStock` op,
+            // the "stock before it" is simply the setup's untouched
+            // initial stock (zero predecessors to distrust), so the
+            // phantom is still valid and the group must still be
+            // emitted (with an empty `toolpaths` vec) to carry it.
+            if !toolpaths.is_empty() || phantom_prior_stock.is_some() {
                 all_toolpaths_flat.extend(toolpaths.clone());
 
                 // F-030: drive per-setup frame decisions through the shared
@@ -172,6 +208,7 @@ impl<B: ComputeBackend> AppController<B> {
                     toolpaths,
                     local_stock_bbox: setup_ctx.local_stock_bbox,
                     local_to_global: setup_ctx.local_to_global,
+                    phantom_prior_stock,
                 });
             }
 

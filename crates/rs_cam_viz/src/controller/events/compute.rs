@@ -362,22 +362,32 @@ impl<B: ComputeBackend> AppController<B> {
 
         // Rest machining: when this toolpath cuts the stock left by previous
         // ops, seed generation with the simulated stock as it stood *before*
-        // this op (= the checkpoint after the previous toolpath in sim order).
-        // adaptive3d initialises its material model from this, so it only cuts
-        // the leftover. Requires a prior simulation to have produced the
-        // checkpoint; if absent we FAIL HARD (do not fall back to fresh stock —
-        // a fine rest tool would clear the whole part instead of the leftover:
-        // unbounded compute and a wrong result).
+        // this op. Requires a prior simulation to have produced a snapshot
+        // for this toolpath's id; if absent we FAIL HARD (do not fall back
+        // to fresh stock — a fine rest tool would clear the whole part
+        // instead of the leftover: unbounded compute and a wrong result).
+        //
+        // F.4: the snapshot is looked up directly by toolpath id via
+        // `SimulationState::prior_stock_for`, which is populated from the
+        // same `prior_stocks` map core's `generate_toolpath` gate checks
+        // (`sim.prior_stocks.get(&tc.id)` in `session/compute.rs`). This
+        // replaces a `boundaries()`-position / `checkpoints()`-lookup that
+        // could only ever find a snapshot for a toolpath that already had
+        // its OWN boundary — i.e. one that had already been generated —
+        // so an ungenerated `FromRemainingStock` toolpath could never
+        // regenerate after a fresh project load, even once its predecessor
+        // had been simulated. `prior_stocks` now also carries a phantom
+        // snapshot for the first pending toolpath in each group (see
+        // `rs_cam_core::compute::simulate::SimGroupEntry::
+        // phantom_prior_stock`), which is exactly the case this gate needs
+        // to unblock.
         let prior_stock: Option<TriDexelStock> = if stock_source == StockSource::FromRemainingStock
         {
-            let sim = &self.state.simulation;
-            let found = sim
-                .boundaries()
-                .iter()
-                .position(|b| b.id == tp_id)
-                .and_then(|pos| pos.checked_sub(1))
-                .and_then(|prev| sim.checkpoints().iter().find(|c| c.boundary_index == prev))
-                .and_then(|c| c.stock.clone());
+            let found = self
+                .state
+                .simulation
+                .prior_stock_for(tp_id)
+                .map(|stock| stock.as_ref().clone());
             let Some(found) = found else {
                 self.fail_toolpath_submit(
                     tp_id,
@@ -758,6 +768,11 @@ impl<B: ComputeBackend> AppController<B> {
                             })
                             .collect();
 
+                        // F.4 — retain the per-toolpath (and phantom)
+                        // prior-stock snapshots so the submit-time
+                        // FromRemainingStock gate can look them up by id.
+                        let prior_stocks = simulation.prior_stocks;
+
                         if !simulation.rapid_collisions.is_empty() {
                             tracing::warn!(
                                 "{} rapid collisions detected",
@@ -793,6 +808,7 @@ impl<B: ComputeBackend> AppController<B> {
                             stock_bbox,
                             cut_trace: simulation.cut_trace,
                             cut_trace_path: simulation.cut_trace_path,
+                            prior_stocks,
                         });
 
                         // F-039 — apply adaptive feed modulation to the

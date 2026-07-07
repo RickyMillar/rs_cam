@@ -82,6 +82,90 @@ pub struct SimGroupEntry {
     /// Transform from setup-local coordinates to global stock frame.
     /// Required when `local_stock_bbox` is `Some` and the setup is non-identity.
     pub local_to_global: Option<SetupTransformInfo>,
+    /// F.4 — phantom `prior_stocks` snapshot for a not-yet-generated
+    /// toolpath, breaking the `FromRemainingStock` regeneration catch-22.
+    ///
+    /// `(k, id)`: record a `prior_stocks` entry for the ungenerated
+    /// toolpath `id`, taken immediately BEFORE simulating this group's
+    /// `toolpaths[k]` (i.e. after `toolpaths[0..k]` have carved).
+    /// `k == toolpaths.len()` means the snapshot is taken after the whole
+    /// group has carved (the pending op is the group's last position).
+    ///
+    /// Validity rule — why only ONE pending op per group may get a
+    /// snapshot: the stock "before op P" is only trustworthy when every
+    /// enabled toolpath before P *in this group* has actually been
+    /// generated (and is therefore present in `toolpaths`, contributing
+    /// its cuts to this snapshot). The builder that populates this field
+    /// walks the setup's toolpath configs in plan order and stops at the
+    /// FIRST enabled config with no generated result — that's the only
+    /// position where "everything before me is real" still holds. Every
+    /// later pending op is left gated: seeding it here would silently
+    /// omit the cuts of the op ahead of it, which for a rest-machining
+    /// op means real overcut risk, not just a stale preview.
+    ///
+    /// Before this field existed, an ungenerated toolpath never appeared
+    /// in a `SimGroupEntry` at all (groups are built only from generated
+    /// results), so it could never receive a `prior_stocks` entry and
+    /// `FromRemainingStock` ops were permanently stuck in `Error` after a
+    /// fresh project load. This field turns that into a ladder: each
+    /// simulation run unlocks exactly one more pending op.
+    pub phantom_prior_stock: Option<(usize, ToolpathId)>,
+}
+
+/// Incremental scan for the single [`SimGroupEntry::phantom_prior_stock`]
+/// candidate within one simulation group.
+///
+/// Both request builders (the core session's `run_simulation` and the GUI
+/// controller's `build_simulation_groups`) walk a setup's toolpath configs
+/// in plan order to assemble one group's `toolpaths` vec, resolving "has
+/// this been generated yet" differently (core reads `self.results`, the
+/// GUI reads `gui.toolpath_rt`). This scan factors out the shared decision
+/// so the two walks can't drift: feed every toolpath config via
+/// [`Self::visit`], in plan order, passing how many entries have already
+/// been pushed into the group's `toolpaths` vec so far (`entries_so_far`).
+/// The scan locks in its answer — a phantom slot, or none — at the FIRST
+/// enabled config with no generated result, matching the validity rule
+/// documented on `phantom_prior_stock`: every later pending op is left
+/// alone, `resolved()` just keeps returning `true` for it.
+#[derive(Default)]
+pub struct PhantomPriorStockScan {
+    resolved: bool,
+    phantom: Option<(usize, ToolpathId)>,
+}
+
+impl PhantomPriorStockScan {
+    /// Consider one toolpath config in plan order. A no-op once the scan
+    /// has already resolved (found the first enabled-but-ungenerated
+    /// config, whether or not it needed a phantom).
+    pub fn visit(
+        &mut self,
+        entries_so_far: usize,
+        enabled: bool,
+        has_generated_result: bool,
+        id: ToolpathId,
+        stock_source: crate::compute::config::StockSource,
+    ) {
+        if self.resolved || !enabled || has_generated_result {
+            return;
+        }
+        self.resolved = true;
+        if stock_source == crate::compute::config::StockSource::FromRemainingStock {
+            self.phantom = Some((entries_so_far, id));
+        }
+    }
+
+    /// True once the scan has locked in its answer (found the first
+    /// enabled-but-ungenerated config). Callers can use this to skip the
+    /// bookkeeping cheaply once nothing more can change the outcome.
+    pub fn resolved(&self) -> bool {
+        self.resolved
+    }
+
+    /// Consume the scan, returning the phantom candidate (if any) to store
+    /// on the group's [`SimGroupEntry::phantom_prior_stock`].
+    pub fn finish(self) -> Option<(usize, ToolpathId)> {
+        self.phantom
+    }
 }
 
 /// Request for a full stock simulation.
@@ -425,11 +509,24 @@ where
             .as_ref()
             .map_or(StockCutDirection::FromTop, |info| info.cut_direction());
 
-        for entry in &group.toolpaths {
+        for (k, entry) in group.toolpaths.iter().enumerate() {
             let entry_toolpath = &entry.annotated.toolpath;
             // Snapshot the stock *before* this toolpath carves so the dressup
             // air-cut filter and rest-machining-aware generators can use it.
-            prior_stocks.insert(entry.id, Arc::new(group_stock.clone()));
+            //
+            // F.4: when this position is also this group's phantom-prior-
+            // stock slot (the first pending FromRemainingStock op, recorded
+            // by the request builder), the pending op's snapshot is taken at
+            // this exact same sequence point — share the one stock clone via
+            // `Arc::clone` rather than cloning the (potentially large) dexel
+            // stock twice.
+            let pre_carve_stock = Arc::new(group_stock.clone());
+            if let Some((phantom_k, phantom_id)) = group.phantom_prior_stock
+                && phantom_k == k
+            {
+                prior_stocks.insert(phantom_id, Arc::clone(&pre_carve_stock));
+            }
+            prior_stocks.insert(entry.id, pre_carve_stock);
 
             // Check rapid collisions against the *current* stock state
             // (after all previous toolpaths, before this one carves).
@@ -604,6 +701,15 @@ where
             });
 
             boundary_index += 1;
+        }
+
+        // F.4: phantom slot at the tail of the group — the first pending
+        // FromRemainingStock op sits after every already-generated toolpath
+        // in this group, so its snapshot is the fully-carved group stock.
+        if let Some((phantom_k, phantom_id)) = group.phantom_prior_stock
+            && phantom_k == group.toolpaths.len()
+        {
+            prior_stocks.insert(phantom_id, Arc::new(group_stock.clone()));
         }
 
         // After all toolpaths in this group, extract mesh and composite.
@@ -934,6 +1040,7 @@ mod tests {
             direction: StockCutDirection::FromTop,
             local_stock_bbox: None,
             local_to_global: None,
+            phantom_prior_stock: None,
         };
 
         SimulationRequest {
@@ -1133,6 +1240,7 @@ mod tests {
             direction: StockCutDirection::FromTop,
             local_stock_bbox: None,
             local_to_global: None,
+            phantom_prior_stock: None,
         };
 
         let req = SimulationRequest {
@@ -1234,6 +1342,7 @@ mod tests {
             direction: StockCutDirection::FromTop,
             local_stock_bbox: Some(stock_bbox),
             local_to_global: None, // identity setup
+            phantom_prior_stock: None,
         };
 
         let bottom_group = SimGroupEntry {
@@ -1263,6 +1372,7 @@ mod tests {
                 stock_z: 20.0,
                 ..Default::default()
             }),
+            phantom_prior_stock: None,
         };
 
         let req = SimulationRequest {
@@ -1323,6 +1433,49 @@ mod tests {
         assert!(
             pixels.len() == 600 * 400 * 4,
             "composite PNG has expected pixel count"
+        );
+    }
+
+    /// F.4 — the `FromRemainingStock` regeneration catch-22: a group with
+    /// one generated entry (A) and a phantom slot for a not-yet-generated
+    /// toolpath (B) at the tail position (`k == toolpaths.len()`) must
+    /// populate `prior_stocks` for BOTH ids — A's own pre-carve snapshot
+    /// (existing behavior, unaffected) and B's phantom snapshot taken
+    /// after A has carved. Before this feature, B — never present in a
+    /// `SimGroupEntry` because it was never generated — could never
+    /// receive a `prior_stocks` entry at all, so a `FromRemainingStock`
+    /// op could never regenerate after a fresh project load.
+    #[test]
+    fn phantom_prior_stock_populates_pending_op_snapshot() {
+        let mut req = simple_request();
+        let generated_id = req.groups[0].toolpaths[0].id;
+        let phantom_id = ToolpathId(2);
+        req.groups[0].phantom_prior_stock = Some((1, phantom_id));
+
+        let cancel = AtomicBool::new(false);
+        let result = run_simulation(&req, &cancel).unwrap();
+
+        let a_stock = result
+            .prior_stocks
+            .get(&generated_id)
+            .expect("A's own pre-carve snapshot must still be present");
+        let b_stock = result
+            .prior_stocks
+            .get(&phantom_id)
+            .expect("B's phantom post-A snapshot must be present");
+
+        // A's move (rapid to (0,0,10), feed to (10,0,-1)) carves under its
+        // path; sample a cell on that path and confirm the phantom (taken
+        // after A carved) differs from A's own pre-carve snapshot.
+        let (r, c) = a_stock
+            .z_grid
+            .world_to_cell(5.0, 0.0)
+            .expect("sample cell should exist in the stock grid");
+        let pre_a_ray = a_stock.z_grid.ray(r, c);
+        let post_a_ray = b_stock.z_grid.ray(r, c);
+        assert_ne!(
+            pre_a_ray, post_a_ray,
+            "phantom snapshot should reflect A's carve; A's own snapshot must not"
         );
     }
 }

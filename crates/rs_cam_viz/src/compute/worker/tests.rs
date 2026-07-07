@@ -654,6 +654,7 @@ fn long_simulation_request() -> SimulationRequest {
             }],
             local_stock_bbox: stock_bbox,
             local_to_global: None,
+            phantom_prior_stock: None,
         }],
         stock_bbox,
         stock_top_z: 10.0,
@@ -697,6 +698,7 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
             }],
             local_stock_bbox: stock_bbox,
             local_to_global: None,
+            phantom_prior_stock: None,
         }],
         stock_bbox,
         stock_top_z: 10.0,
@@ -1813,6 +1815,7 @@ fn multi_setup_top_bottom_simulation() {
                 }],
                 local_stock_bbox: stock_bbox,
                 local_to_global: None,
+                phantom_prior_stock: None,
             },
             SetupSimGroup {
                 toolpaths: vec![SetupSimToolpath {
@@ -1837,6 +1840,7 @@ fn multi_setup_top_bottom_simulation() {
                     stock_z: 20.0,
                     ..Default::default()
                 }),
+                phantom_prior_stock: None,
             },
         ],
         stock_bbox,
@@ -1955,6 +1959,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                 }],
                 local_stock_bbox: stock_bbox,
                 local_to_global: None,
+                phantom_prior_stock: None,
             },
             SetupSimGroup {
                 toolpaths: vec![SetupSimToolpath {
@@ -1977,6 +1982,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                     stock_z: 10.0,
                     ..Default::default()
                 }),
+                phantom_prior_stock: None,
             },
         ],
         stock_bbox,
@@ -2125,6 +2131,7 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
             }],
             local_stock_bbox: stock_bbox,
             local_to_global: None,
+            phantom_prior_stock: None,
         }],
         stock_bbox,
         stock_top_z: 10.0,
@@ -2221,6 +2228,7 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
                 stock_z: 10.0,
                 ..Default::default()
             }),
+            phantom_prior_stock: None,
         }],
         stock_bbox,
         stock_top_z: 10.0,
@@ -2375,6 +2383,7 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
             // zero-rooted local bbox + `local_to_global = None`.
             local_stock_bbox,
             local_to_global: None,
+            phantom_prior_stock: None,
         }],
         stock_bbox: world_stock_bbox,
         stock_top_z: 0.0,

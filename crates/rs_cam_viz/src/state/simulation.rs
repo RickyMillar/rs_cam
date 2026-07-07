@@ -436,6 +436,18 @@ pub struct SimulationResults {
     pub cut_trace: Option<Arc<SimulationCutTrace>>,
     /// Artifact path for the simulation cutting metrics trace.
     pub cut_trace_path: Option<PathBuf>,
+    /// Per-toolpath snapshots of the material stock *before* that toolpath
+    /// carves, keyed by toolpath id (F.4). Mirrors core's
+    /// `rs_cam_core::compute::simulate::SimulationResult::prior_stocks` —
+    /// includes real per-toolpath snapshots AND any phantom snapshot for
+    /// the first pending `FromRemainingStock` toolpath in each group. The
+    /// submit-time rest-machining gate in
+    /// `controller::events::compute::submit_toolpath_compute` reads this
+    /// map directly via [`SimulationState::prior_stock_for`] instead of
+    /// re-deriving a "previous checkpoint" from `boundaries()` position
+    /// arithmetic (which could never see a toolpath that had no boundary
+    /// of its own, i.e. one that had never been generated).
+    pub prior_stocks: HashMap<ToolpathId, Arc<TriDexelStock>>,
 }
 
 /// Transport / playback state — independent of whether results exist.
@@ -741,6 +753,20 @@ impl SimulationState {
         self.results
             .as_ref()
             .map_or(&[], |r| r.checkpoints.as_slice())
+    }
+
+    /// Simulated stock snapshot from *before* `toolpath_id` carved, if the
+    /// last simulation run produced one — either the toolpath's own
+    /// pre-carve snapshot (it was generated and included in the run) or a
+    /// phantom snapshot (F.4: it's the first pending `FromRemainingStock`
+    /// toolpath in its group). `None` when no simulation has run yet, or
+    /// when this toolpath sits behind a still-pending predecessor in its
+    /// group (the ladder rule — see
+    /// `rs_cam_core::compute::simulate::SimGroupEntry::phantom_prior_stock`).
+    pub fn prior_stock_for(&self, toolpath_id: ToolpathId) -> Option<&Arc<TriDexelStock>> {
+        self.results
+            .as_ref()
+            .and_then(|r| r.prior_stocks.get(&toolpath_id))
     }
 
     /// Selected toolpaths (None = all enabled).
@@ -2324,6 +2350,7 @@ mod tests {
             },
             cut_trace: None,
             cut_trace_path: None,
+            prior_stocks: HashMap::new(),
         });
         sim
     }

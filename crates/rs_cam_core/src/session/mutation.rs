@@ -3,7 +3,7 @@
 use tracing::instrument;
 
 use crate::compute::catalog::OperationConfig;
-use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
+use crate::compute::config::{BoundaryConfig, BoundarySource, DressupConfig, HeightsConfig};
 use crate::compute::stock_config::{FixtureId, KeepOutId, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId};
 use crate::compute::transform::FaceUp;
@@ -310,7 +310,11 @@ impl ProjectSession {
         Ok(())
     }
 
-    /// Replace the boundary config for a toolpath, invalidating its cached result.
+    /// Replace the boundary config for a toolpath, invalidating its cached
+    /// result. Also runs the demand-driven rest-analysis producer hook (see
+    /// [`Self::auto_enable_rest_analysis_for_source`]): wiring this toolpath
+    /// to an enabled `DerivedRestRegions` source means that source must
+    /// actually produce rest regions.
     #[instrument(skip(self, boundary))]
     pub fn set_boundary_config(
         &mut self,
@@ -321,10 +325,61 @@ impl ProjectSession {
             .toolpath_configs
             .get_mut(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
+        let auto_enable_source = match (boundary.enabled, &boundary.source) {
+            (true, BoundarySource::DerivedRestRegions { source_toolpath_id }) => {
+                Some(*source_toolpath_id)
+            }
+            _ => None,
+        };
         tc.boundary = boundary;
         self.results.remove(&index);
         self.simulation = None;
+        if let Some(source_id) = auto_enable_source {
+            self.auto_enable_rest_analysis_for_source(source_id);
+        }
         Ok(())
+    }
+
+    /// Demand-driven rest-analysis producer hook (P2 pencil-panel
+    /// consolidation): call when a toolpath's boundary becomes an *enabled*
+    /// `BoundarySource::DerivedRestRegions { source_toolpath_id }` — the
+    /// newly-wired consumer needs `source_toolpath_id`'s toolpath to actually
+    /// produce rest regions. Flips that toolpath's `rest_analysis.enabled` on
+    /// and invalidates its cached result so the next generation attaches
+    /// `rest_grid` / `rest_regions` via
+    /// `compute::execute::attach_generic_rest_analysis`.
+    ///
+    /// A no-op (returns `false`) when the source toolpath doesn't exist,
+    /// already has rest analysis enabled, or is itself a `rest_depth`
+    /// pencil — that detector attaches the same artifacts on its own, and
+    /// `attach_generic_rest_analysis` already skips itself once they're
+    /// present, so forcing the flag there would just be a redundant,
+    /// confusing UI toggle (the GUI hides it entirely for these ops).
+    #[instrument(skip(self))]
+    pub fn auto_enable_rest_analysis_for_source(
+        &mut self,
+        source_id: crate::ids::ToolpathId,
+    ) -> bool {
+        let Some((idx, tc)) = self.find_toolpath_config_by_id_mut(source_id) else {
+            return false;
+        };
+        if tc.rest_analysis.enabled {
+            return false;
+        }
+        if let OperationConfig::Pencil(cfg) = &tc.operation
+            && crate::pencil::PencilDetector::parse(&cfg.detector)
+                == crate::pencil::PencilDetector::RestDepth
+        {
+            return false;
+        }
+        tc.rest_analysis.enabled = true;
+        self.results.remove(&idx);
+        tracing::info!(
+            source_toolpath_id = source_id.0,
+            "Auto-enabled rest analysis: a toolpath now consumes this one's \
+             derived rest regions as a machining boundary"
+        );
+        true
     }
 
     /// Replace the rest-analysis config (P2.5) for a toolpath, invalidating
@@ -916,7 +971,7 @@ mod tests {
     use crate::compute::catalog::OperationConfig;
     use crate::compute::config::ToolpathStats;
     use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
-    use crate::compute::operation_configs::{AlignmentPinDrillConfig, PocketConfig};
+    use crate::compute::operation_configs::{AlignmentPinDrillConfig, PencilConfig, PocketConfig};
     use crate::compute::stock_config::FixtureId;
     use crate::debug_trace::ToolpathDebugOptions;
     use crate::gcode::CoolantMode;
@@ -1098,6 +1153,98 @@ mod tests {
         s.set_boundary_config(0, BoundaryConfig::default()).unwrap();
         assert!(!s.results.contains_key(&0));
         assert!(s.simulation.is_none());
+    }
+
+    #[test]
+    fn set_boundary_derived_rest_regions_auto_enables_source_rest_analysis() {
+        let mut s = make_session();
+        s.add_tool(make_tool());
+        let tool_id = s.tools()[0].id.0;
+        // Source toolpath (a plain pocket): rest analysis starts disabled.
+        let source_idx = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        let source_id = s.toolpath_configs()[source_idx].id;
+        // Consumer toolpath.
+        let consumer_idx = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        s.results.insert(source_idx, fake_result());
+
+        let boundary = BoundaryConfig {
+            enabled: true,
+            source: crate::compute::config::BoundarySource::DerivedRestRegions {
+                source_toolpath_id: source_id,
+            },
+            ..BoundaryConfig::default()
+        };
+        s.set_boundary_config(consumer_idx, boundary).unwrap();
+
+        assert!(s.toolpath_configs()[source_idx].rest_analysis.enabled);
+        // The source's own cached result must be invalidated — it needs to
+        // regenerate to actually attach the rest regions.
+        assert!(!s.results.contains_key(&source_idx));
+    }
+
+    #[test]
+    fn set_boundary_derived_rest_regions_skips_rest_depth_pencil_source() {
+        let mut s = make_session();
+        s.add_tool(make_tool());
+        let tool_id = s.tools()[0].id.0;
+
+        let source_tc = ToolpathConfig {
+            operation: OperationConfig::Pencil(PencilConfig {
+                detector: "rest_depth".to_owned(),
+                ..PencilConfig::default()
+            }),
+            ..make_tc(tool_id, 0)
+        };
+        let source_idx = s.add_toolpath(0, source_tc).unwrap();
+        let source_id = s.toolpath_configs()[source_idx].id;
+        let consumer_idx = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+
+        let boundary = BoundaryConfig {
+            enabled: true,
+            source: crate::compute::config::BoundarySource::DerivedRestRegions {
+                source_toolpath_id: source_id,
+            },
+            ..BoundaryConfig::default()
+        };
+        s.set_boundary_config(consumer_idx, boundary).unwrap();
+
+        // A rest_depth pencil already attaches its own rest artifacts —
+        // forcing the generic flag on would be redundant, so it stays off.
+        assert!(!s.toolpath_configs()[source_idx].rest_analysis.enabled);
+    }
+
+    #[test]
+    fn rest_region_consumers_finds_enabled_consumers_only() {
+        let mut s = make_session();
+        s.add_tool(make_tool());
+        let tool_id = s.tools()[0].id.0;
+
+        let source_idx = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        let source_id = s.toolpath_configs()[source_idx].id;
+        let enabled_consumer_idx = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        let disabled_consumer_idx = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        let enabled_consumer_id = s.toolpath_configs()[enabled_consumer_idx].id;
+
+        let enabled_boundary = BoundaryConfig {
+            enabled: true,
+            source: crate::compute::config::BoundarySource::DerivedRestRegions {
+                source_toolpath_id: source_id,
+            },
+            ..BoundaryConfig::default()
+        };
+        s.set_boundary_config(enabled_consumer_idx, enabled_boundary.clone())
+            .unwrap();
+        let disabled_boundary = BoundaryConfig {
+            enabled: false,
+            ..enabled_boundary
+        };
+        s.set_boundary_config(disabled_consumer_idx, disabled_boundary)
+            .unwrap();
+
+        assert_eq!(
+            s.rest_region_consumers(source_id),
+            vec![enabled_consumer_id]
+        );
     }
 
     // ── Tool CRUD ────────────────────────────────────────────────
