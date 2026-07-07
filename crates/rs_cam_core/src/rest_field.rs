@@ -39,7 +39,7 @@
 //! ring). This module works on mesh dexel/heightmap depth comparisons; that
 //! one works on 2D polygon offsets. Zero code overlap between the two.
 
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::contour_extract::marching_squares_bool_grid;
 use crate::dexel_stock::TriDexelStock;
@@ -645,6 +645,18 @@ pub fn detect_rest_valleys(
     }
 }
 
+/// Backstop against threshold-below-cusp sliver storms: when the rest
+/// threshold is dialed below the prior pass's scallop cusp height, the mask
+/// becomes the cusp pattern itself — hundreds of hair-thin stripe islands,
+/// each becoming its own per-island generation pass. 64 is far above any
+/// intentional region set (a genuine rest-region job is a handful to a few
+/// dozen islands); the 2026-07-06 incident that motivated this cap produced
+/// hundreds. [`region_polygons_from_mask`] keeps the largest `MAX_REST_REGIONS`
+/// by area and warns when the raw count exceeds it — see
+/// [`classify_rest_regions`] for the operator-facing diagnosis surfaced
+/// separately in the GUI.
+pub const MAX_REST_REGIONS: usize = 64;
+
 /// Dilate a boolean mask by `dilate_mm` (via a whole-grid Euclidean distance
 /// transform, not a per-cell radius search) and extract the dilated region(s)
 /// as closed [`Polygon2`]s with holes grouped one level deep.
@@ -654,6 +666,16 @@ pub fn detect_rest_valleys(
 /// as-is). Degenerate marching-squares loops (fewer than 3 points, or
 /// enclosed area under one cell) are dropped before grouping. Returns an
 /// empty vec for an empty or all-`false` mask.
+///
+/// Regions are sorted by exterior area descending (ties broken by the
+/// exterior's first-vertex position, for determinism). When the grouped
+/// count exceeds [`MAX_REST_REGIONS`] — a threshold-below-cusp sliver storm,
+/// the only way this has ever happened — only the largest `MAX_REST_REGIONS`
+/// are kept and a `tracing::warn!` reports the total/kept counts and the
+/// dropped fraction of total region area. No area floor is applied beyond
+/// the cap: a genuine long thin stripe of real rest material is not
+/// distinguishable from a sliver by area alone, so the cap plus warning is
+/// the guard, not a per-region size filter.
 pub fn region_polygons_from_mask(
     mask: &Grid2<bool>,
     origin_x: f64,
@@ -698,7 +720,106 @@ pub fn region_polygons_from_mask(
     for poly in &mut grouped {
         poly.ensure_winding();
     }
+
+    // Largest exterior area first; deterministic tie-break by the exterior's
+    // first vertex so equal-area regions (e.g. the synthetic-mask unit test
+    // below) sort the same way on every run.
+    grouped.sort_by(|a, b| {
+        let area_a = a.signed_area();
+        let area_b = b.signed_area();
+        match area_b.partial_cmp(&area_a) {
+            Some(std::cmp::Ordering::Equal) | None => {
+                let key = |p: &Polygon2| p.exterior.first().map_or((0.0, 0.0), |v| (v.x, v.y));
+                let (ax, ay) = key(a);
+                let (bx, by) = key(b);
+                ax.partial_cmp(&bx)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| ay.partial_cmp(&by).unwrap_or(std::cmp::Ordering::Equal))
+            }
+            Some(ord) => ord,
+        }
+    });
+
+    if grouped.len() > MAX_REST_REGIONS {
+        let total_count = grouped.len();
+        let total_area: f64 = grouped.iter().map(Polygon2::signed_area).sum();
+        let kept_area: f64 = grouped
+            .iter()
+            .take(MAX_REST_REGIONS)
+            .map(Polygon2::signed_area)
+            .sum();
+        let dropped_pct = if total_area > 0.0 {
+            100.0 * (total_area - kept_area) / total_area
+        } else {
+            0.0
+        };
+        warn!(
+            total_count = total_count,
+            kept_count = MAX_REST_REGIONS,
+            dropped_area_pct = format!("{dropped_pct:.1}"),
+            "Rest-region count exceeds MAX_REST_REGIONS; keeping the largest by area and \
+             dropping the rest. This usually means the rest threshold is below the prior \
+             pass's cusp height — raise min_valley_depth."
+        );
+        grouped.truncate(MAX_REST_REGIONS);
+    }
+
     grouped
+}
+
+/// Diagnosis of a rest-region set that's pathological in one of two opposite
+/// ways: a threshold-below-cusp sliver storm (way too many tiny islands), or
+/// a threshold so coarse the "rest" region is most of the part (selective
+/// finishing barely restricts anything). Returned by
+/// [`classify_rest_regions`] for the GUI to surface as operator guidance
+/// alongside the region/heatmap display — a pure classification, not a fix.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RestRegionPathology {
+    /// Region count is already approaching [`MAX_REST_REGIONS`] (more than
+    /// half of it) — advice: the rest threshold likely below the prior
+    /// pass's cusp height; raise `min_valley_depth`.
+    TooManyIslands {
+        /// Raw region count (before any cap truncation).
+        count: usize,
+    },
+    /// A single outer region covers at least half the part footprint —
+    /// advice: the regions barely restrict the fine pass; raise
+    /// `min_valley_depth`, or use the machined-stock reference ("Use
+    /// remaining stock") for an honest rest picture.
+    SingleGiantRegion {
+        /// Region area as a fraction of `part_footprint_area` (≥ 0.5).
+        part_area_fraction: f64,
+    },
+}
+
+/// Classify a rest-region set into one of the two opposite pathologies (see
+/// [`RestRegionPathology`]), or `None` for a healthy set.
+///
+/// `TooManyIslands` fires once `regions.len()` exceeds `MAX_REST_REGIONS / 2`
+/// (33+) — approaching the hard cap is already pathological, well before
+/// `region_polygons_from_mask` actually has to truncate anything.
+/// `SingleGiantRegion` fires when there is exactly one outer region and its
+/// area is at least half of `part_footprint_area`. A non-positive
+/// `part_footprint_area` (no usable footprint estimate) always yields `None`
+/// for that check rather than a false positive.
+pub fn classify_rest_regions(
+    regions: &[Polygon2],
+    part_footprint_area: f64,
+) -> Option<RestRegionPathology> {
+    if regions.len() > MAX_REST_REGIONS / 2 {
+        return Some(RestRegionPathology::TooManyIslands {
+            count: regions.len(),
+        });
+    }
+    if regions.len() == 1 && part_footprint_area > 0.0 {
+        let fraction = regions.first().map(Polygon2::area)? / part_footprint_area;
+        if fraction >= 0.5 {
+            return Some(RestRegionPathology::SingleGiantRegion {
+                part_area_fraction: fraction,
+            });
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -1757,6 +1878,101 @@ mod tests {
             "dilation of 2 cells should bridge a 3-cell gap into one region"
         );
         assert_closed_ccw_polys(&merged);
+    }
+
+    #[test]
+    fn region_polygons_caps_at_max_rest_regions_keeping_largest() {
+        // 70 well-separated 3x3-point blocks (a threshold-below-cusp sliver
+        // storm of small islands — `mask_with_block`-shaped, same block
+        // geometry `region_polygons_no_dilation_matches_block_extent` above
+        // already validates traces to a ~3x3 region) plus one clearly-largest
+        // 15x15-point block, all spaced with a 3-cell gap so marching squares
+        // never merges anything across groups. 71 total regions must be
+        // capped to MAX_REST_REGIONS, and the giant block (unmistakably the
+        // largest) must survive the cut.
+        let cell = 1.0;
+        let block = 3usize;
+        let step = 6usize; // 3-cell gap between block edges: never touches, even diagonally
+        let cols = 10usize;
+        let rows = 7usize; // 10 * 7 = 70 small blocks
+        let small_ny = (rows - 1) * step + block;
+        let nx = (cols - 1) * step + block + 2;
+        let giant = 15usize;
+        let giant_row0 = small_ny + 6;
+        let ny = giant_row0 + giant + 2;
+
+        // +1 offset on every coordinate: marching squares cannot close a
+        // loop that touches the grid boundary (production masks always carry
+        // a non-contact margin ring), so blocks flush against row/col 0
+        // silently trace to nothing — the exact failure this fixture first
+        // shipped with (all ten row-0 blocks dropped, 61 regions, cap never
+        // fired). The `+ 2` slack in nx/ny absorbs the shift.
+        let mut mask = Grid2::new_fill(nx, ny, false);
+        for gr in 0..rows {
+            for gc in 0..cols {
+                for r in 0..block {
+                    for c in 0..block {
+                        mask.set(gr * step + r + 1, gc * step + c + 1, true);
+                    }
+                }
+            }
+        }
+        for r in 0..giant {
+            for c in 0..giant {
+                mask.set(giant_row0 + r, c + 1, true);
+            }
+        }
+
+        let polys = region_polygons_from_mask(&mask, 0.0, 0.0, cell, 0.0);
+        assert_eq!(
+            polys.len(),
+            MAX_REST_REGIONS,
+            "71 separated blobs must be capped to MAX_REST_REGIONS"
+        );
+        assert_closed_ccw_polys(&polys);
+        let max_area = polys.iter().map(Polygon2::area).fold(0.0, f64::max);
+        assert!(
+            max_area > 100.0,
+            "the 15x15 giant block must survive the cap: max kept area = {max_area}"
+        );
+    }
+
+    // ── classify_rest_regions ──────────────────────────────────────────
+
+    #[test]
+    fn classify_rest_regions_none_for_healthy_set() {
+        let regions = vec![Polygon2::rectangle(0.0, 0.0, 10.0, 10.0); 5];
+        assert_eq!(classify_rest_regions(&regions, 100_000.0), None);
+    }
+
+    #[test]
+    fn classify_rest_regions_flags_too_many_islands() {
+        let regions = vec![Polygon2::rectangle(0.0, 0.0, 1.0, 1.0); MAX_REST_REGIONS / 2 + 1];
+        assert_eq!(
+            classify_rest_regions(&regions, 1_000_000.0),
+            Some(RestRegionPathology::TooManyIslands {
+                count: MAX_REST_REGIONS / 2 + 1
+            })
+        );
+    }
+
+    #[test]
+    fn classify_rest_regions_flags_single_giant_region() {
+        // Part footprint 100x100 = 10_000 mm^2; a single 80x80 region covers 64%.
+        let regions = vec![Polygon2::rectangle(0.0, 0.0, 80.0, 80.0)];
+        match classify_rest_regions(&regions, 10_000.0) {
+            Some(RestRegionPathology::SingleGiantRegion { part_area_fraction }) => {
+                assert!((part_area_fraction - 0.64).abs() < 1e-9);
+            }
+            other => panic!("expected SingleGiantRegion, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_rest_regions_giant_but_zero_footprint_is_none() {
+        let regions = vec![Polygon2::rectangle(0.0, 0.0, 80.0, 80.0)];
+        assert_eq!(classify_rest_regions(&regions, 0.0), None);
+        assert_eq!(classify_rest_regions(&regions, -5.0), None);
     }
 
     #[test]
