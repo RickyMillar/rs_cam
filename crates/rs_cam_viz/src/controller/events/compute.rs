@@ -297,6 +297,13 @@ impl<B: ComputeBackend> AppController<B> {
         // Update GUI runtime status
         let rt = self.state.gui.toolpath_rt_or_default(tp_id);
         rt.status = ComputeStatus::Computing;
+        // "Stale" means "needs a submit" — this submit satisfies it. Leaving
+        // the flag set let `process_auto_regen`'s 500ms sweep resubmit the
+        // same id while it was still the lane's active job, which the
+        // worker's resubmit-cancels-and-requeues rule turned into a
+        // deterministic "generation cancelled" for any slow op right after
+        // load_project (Back Rough, 2×, 2026-07-07).
+        rt.stale_since = None;
         rt.result = None;
         rt.debug_trace = None;
         rt.semantic_trace = None;
