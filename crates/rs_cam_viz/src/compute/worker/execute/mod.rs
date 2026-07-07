@@ -280,6 +280,11 @@ fn build_core_simulation_request(
                 direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
                 local_stock_bbox,
                 local_to_global,
+                // F.4 — forward the phantom-prior-stock candidate computed
+                // by the controller (`build_simulation_groups`) verbatim;
+                // the core simulator inserts the phantom snapshot at the
+                // recorded group position.
+                phantom_prior_stock: group.phantom_prior_stock,
             }
         })
         .collect();
@@ -431,6 +436,7 @@ where
         cut_trace,
         cut_trace_path,
         resolution_clamped: core_result.resolution_clamped,
+        prior_stocks: core_result.prior_stocks,
     })
 }
 

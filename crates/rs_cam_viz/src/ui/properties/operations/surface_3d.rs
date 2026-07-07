@@ -5,7 +5,8 @@ use rs_cam_core::feeds::FeedsResult;
 
 use crate::state::toolpath::{
     Adaptive3dConfig, Adaptive3dEntryStyle, ClearingStrategy, DropCutterConfig, PencilConfig,
-    RegionOrdering, ScallopConfig, ScallopDirection, SteepShallowConfig, WaterlineConfig,
+    RegionOrdering, ScallopConfig, ScallopDirection, SteepShallowConfig, StockSource,
+    WaterlineConfig,
 };
 
 use super::super::{dv, dv_pill};
@@ -345,6 +346,21 @@ pub(in crate::ui::properties) fn draw_pencil_params(
     cfg: &mut PencilConfig,
     tools: &[(crate::state::job::ToolId, String, f64)],
     _feeds_result: Option<&FeedsResult>,
+    // P2 pencil-panel consolidation (2026-07): the "Rest reference" group
+    // below owns `stock_source` directly (Fresh ⇔ reference tool, Remaining
+    // Stock ⇔ machined stock) instead of leaving it to the separate generic
+    // "Use remaining stock" checkbox the properties panel used to show for
+    // every op — that checkbox silently overrode this panel's reference-tool
+    // pick at generation time (`rest_depth_arm`'s R2 stock preference). The
+    // panel is special-cased for this one call site rather than widening
+    // every `draw_*_params` signature.
+    stock_source: &mut StockSource,
+    // Set true when the group above changes `stock_source`; the caller
+    // translates this into `entry.stale_since = Some(Instant::now())`
+    // (mirrors how the old checkbox marked itself stale in
+    // `properties/mod.rs`). Changes to `cfg` itself are already covered by
+    // the generic op-before/op-after snapshot in the caller.
+    stale: &mut bool,
 ) {
     // Pencil's offset_stepover is a parallel-pass spacing, not the same
     // shape as a clearing radial WOC; leave it alone. Feed/plunge live on
@@ -487,17 +503,65 @@ pub(in crate::ui::properties) fn draw_pencil_params(
                 0.05,
                 0.0..=5.0,
             );
-            // The reference the rest gate/field measures "deeper than". For
-            // rest_depth it is the core input (the field is defined by it), so
-            // show it always; for the other detectors it only matters while the
-            // gate is on (Min Valley Depth > 0). The pencil tool itself is the
-            // op's selected tool (top of this panel).
-            //
-            // R1: "Nominal Ø" = a synthetic ball at Reference Tool Ø; or pick a
-            // real library tool whose TRUE geometry (flat/vbit/tapered) defines
-            // the rest — a flat leaves a different rest shape than a ball of the
-            // same diameter. Shown for all detectors; the gate benefits equally.
-            if rest_depth || cfg.min_valley_depth > 0.0 {
+            // Rest reference: what "rest" is measured against — feeds every
+            // detector's rest gate (RestDepth's own field IS this reference;
+            // Dihedral/Curvature's reach-gap, `min_valley_depth`, also gates
+            // off it), so this is shown for all three detectors, not just
+            // RestDepth. Two ways to supply it, unified into one choice
+            // instead of two overlapping controls:
+            // - Machined stock (`stock_source = FromRemainingStock`): R2, the
+            //   actual simulated stock a prior toolpath left.
+            // - Reference tool (`stock_source = Fresh`): R1, a real library
+            //   tool's true geometry or a synthetic nominal-Ø ball.
+            ui.label("Rest reference:").on_hover_text(
+                "What 'rest' is measured against — the material a previous \
+                 step left. Machined stock uses the simulated result of \
+                 prior ops (most accurate, needs a simulation first); a \
+                 reference tool approximates it analytically.",
+            );
+            ui.horizontal(|ui| {
+                if ui
+                    .selectable_label(
+                        *stock_source == StockSource::FromRemainingStock,
+                        "Machined stock (requires simulation)",
+                    )
+                    .clicked()
+                    && *stock_source != StockSource::FromRemainingStock
+                {
+                    *stock_source = StockSource::FromRemainingStock;
+                    *stale = true;
+                }
+                if ui
+                    .selectable_label(*stock_source == StockSource::Fresh, "Reference tool")
+                    .clicked()
+                    && *stock_source != StockSource::Fresh
+                {
+                    *stock_source = StockSource::Fresh;
+                    *stale = true;
+                }
+            });
+            ui.end_row();
+            if *stock_source == StockSource::FromRemainingStock {
+                // `rest_depth_arm` (and the generic
+                // `attach_generic_rest_analysis`) require the simulated
+                // stock's XY bbox to overlap this model's — a silent frame
+                // mismatch would read garbage rest everywhere, so instead
+                // they fall back to the reference-tool resolution below.
+                ui.label("");
+                ui.label(
+                    egui::RichText::new(
+                        "Falls back to the reference tool if the simulated \
+                         stock doesn't overlap this model's frame.",
+                    )
+                    .small()
+                    .color(egui::Color32::from_rgb(140, 140, 150)),
+                );
+                ui.end_row();
+            } else {
+                // R1: "Nominal Ø" = a synthetic ball at Reference Tool Ø; or
+                // pick a real library tool whose TRUE geometry (flat/vbit/
+                // tapered) defines the rest — a flat leaves a different rest
+                // shape than a ball of the same diameter.
                 ui.label("Reference:");
                 let ref_label = cfg
                     .reference_tool_id

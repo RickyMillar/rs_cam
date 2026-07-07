@@ -9,7 +9,7 @@ pub mod helpers;
 )]
 mod tests;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -142,6 +142,13 @@ pub struct SetupSimGroup {
     /// Transform info to convert local coordinates back to global stock frame.
     /// `None` when the setup is identity (FaceUp::Top, ZRotation::None).
     pub local_to_global: Option<SetupTransformInfo>,
+    /// F.4 — phantom `prior_stocks` snapshot for a not-yet-generated
+    /// toolpath. Forwarded verbatim onto the core
+    /// `rs_cam_core::compute::simulate::SimGroupEntry::phantom_prior_stock`
+    /// of the same name — see that field's doc comment for the full
+    /// validity rule and `PhantomPriorStockScan` for how the controller
+    /// computes it.
+    pub phantom_prior_stock: Option<(usize, ToolpathId)>,
 }
 
 // Re-export from core — the struct and all methods now live in rs_cam_core.
@@ -223,6 +230,14 @@ pub struct SimulationResult {
     pub cut_trace_path: Option<PathBuf>,
     /// True when the requested resolution was coarsened to fit within grid limits.
     pub resolution_clamped: bool,
+    /// Per-toolpath snapshots of the material stock *before* that toolpath
+    /// carves — forwarded verbatim from the core
+    /// `rs_cam_core::compute::simulate::SimulationResult::prior_stocks`.
+    /// Retained on `SimulationResults` (F.4) so the submit-time
+    /// `FromRemainingStock` gate can look a toolpath's snapshot up by id
+    /// directly, instead of re-deriving it from `boundaries()` /
+    /// `checkpoints()` position arithmetic.
+    pub prior_stocks: HashMap<ToolpathId, Arc<TriDexelStock>>,
 }
 
 pub struct CollisionRequest {

@@ -442,6 +442,23 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 })
                 .collect();
 
+            // Names of toolpaths that consume THIS toolpath's rest-depth
+            // analysis as their machining boundary (P2 pencil-panel
+            // consolidation, §2/§3): drives the Rest Analysis section's
+            // demand-driven auto-enable + "Producing rest regions for: ..."
+            // label instead of a plain checkbox.
+            let rest_region_consumer_names: Vec<String> = state
+                .session
+                .rest_region_consumers(id)
+                .into_iter()
+                .filter_map(|consumer_id| {
+                    state
+                        .session
+                        .find_toolpath_config_by_id(consumer_id)
+                        .map(|(_, tc)| tc.name.clone())
+                })
+                .collect();
+
             let validation = ToolpathValidationContext::from_session(&state.session);
             let material = state.session.stock_config().material.clone();
             let machine = state.session.machine().clone();
@@ -567,6 +584,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     &models,
                     &tool_configs,
                     &boundary_source_candidates,
+                    &rest_region_consumer_names,
                     &validation,
                     &material,
                     &machine,
@@ -591,6 +609,11 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             }
 
             // B3a: set stale_since when parameters or heights change
+            // Demand-driven rest-analysis producer hook (P2 pencil-panel
+            // consolidation): captured here (while `tc` is borrowed) and
+            // applied below, once the session borrow above is released —
+            // see the comment on the follow-up block.
+            let mut auto_enable_rest_source: Option<ToolpathId> = None;
             if let Some((_, tc)) = state.session.find_toolpath_config_by_id(id) {
                 let op_changed = op_before.as_ref().is_some_and(|b| {
                     *b != serde_json::to_string(&tc.operation).unwrap_or_default()
@@ -611,6 +634,32 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     // Trigger GPU re-upload so height plane positions update
                     events.push(AppEvent::StockChanged);
                 }
+                if boundary_changed
+                    && tc.boundary.enabled
+                    && let BoundarySource::DerivedRestRegions { source_toolpath_id } =
+                        &tc.boundary.source
+                {
+                    auto_enable_rest_source = Some(*source_toolpath_id);
+                }
+            }
+            // The GUI's boundary picker (Machining Boundary section, above)
+            // writes `tc.boundary` directly via `write_entry_config_to_session`
+            // rather than going through `session::set_boundary_config` — the
+            // MCP entry point (`app/mcp.rs::mcp_set_boundary_config`) is the
+            // one caller of that setter. Run the same demand-driven producer
+            // hook here so picking "Rest Regions" in the GUI has the same
+            // effect: the source toolpath's rest analysis turns on and its
+            // cached result invalidates, so it actually produces regions on
+            // next generation.
+            if let Some(source_id) = auto_enable_rest_source
+                && state
+                    .session
+                    .auto_enable_rest_analysis_for_source(source_id)
+            {
+                if let Some(rt) = state.gui.toolpath_rt.get_mut(&source_id) {
+                    rt.stale_since = Some(std::time::Instant::now());
+                }
+                state.gui.mark_edited();
             }
         }
     }
@@ -3133,6 +3182,10 @@ fn draw_toolpath_panel(
     models: &[(crate::state::job::ModelId, String)],
     tool_configs: &[(crate::state::job::ToolId, crate::state::job::ToolConfig)],
     boundary_source_candidates: &[BoundaryRestCandidate],
+    // Names of toolpaths currently consuming THIS one's rest-depth analysis
+    // as a `DerivedRestRegions` machining boundary (P2 pencil-panel
+    // consolidation, §2) — empty when nothing depends on it yet.
+    rest_region_consumers: &[String],
     validation: &ToolpathValidationContext,
     material: &rs_cam_core::material::Material,
     machine: &rs_cam_core::machine::MachineProfile,
@@ -3387,9 +3440,15 @@ fn draw_toolpath_panel(
                 }
             }
 
-            // Stock source toggle
-            ui.add_space(8.0);
-            {
+            // Stock source toggle — hidden for pencil ops. Pencil's own
+            // "Rest reference" group on the Geometry tab (see
+            // `draw_pencil_params`) now owns `stock_source` directly; showing
+            // this generic checkbox too used to give the user two controls
+            // that silently disagreed (this one won at generation time via
+            // `rest_depth_arm`'s R2 stock preference, regardless of what the
+            // reference-tool picker showed). Every other op still shows it.
+            if !matches!(entry.operation, OperationConfig::Pencil(_)) {
+                ui.add_space(8.0);
                 let mut use_remaining = entry.stock_source == StockSource::FromRemainingStock;
                 let resp = ui
                     .checkbox(&mut use_remaining, "Use remaining stock")
@@ -3540,7 +3599,27 @@ fn draw_toolpath_panel(
                 OperationConfig::Waterline(cfg) => {
                     draw_waterline_params(ui, cfg, feeds_for_pills);
                 }
-                OperationConfig::Pencil(cfg) => draw_pencil_params(ui, cfg, tools, feeds_for_pills),
+                OperationConfig::Pencil(cfg) => {
+                    // Pencil is special-cased (not part of the uniform
+                    // `draw_*_params(ui, cfg, ...)` shape above): its
+                    // "Rest reference" group needs `stock_source` and a
+                    // stale flag alongside `cfg` — see the P2 consolidation
+                    // comment on `draw_pencil_params`. `entry.stock_source`
+                    // is a field disjoint from `entry.operation` (borrowed
+                    // above as `cfg`), so both are borrowable here.
+                    let mut pencil_ref_changed = false;
+                    draw_pencil_params(
+                        ui,
+                        cfg,
+                        tools,
+                        feeds_for_pills,
+                        &mut entry.stock_source,
+                        &mut pencil_ref_changed,
+                    );
+                    if pencil_ref_changed {
+                        entry.stale_since = Some(std::time::Instant::now());
+                    }
+                }
                 OperationConfig::Scallop(cfg) => draw_scallop_params(ui, cfg, feeds_for_pills),
                 OperationConfig::SteepShallow(cfg) => {
                     draw_steep_shallow_params(ui, cfg, feeds_for_pills);
@@ -3832,99 +3911,149 @@ fn draw_toolpath_panel(
                 }
             }
 
-            // ── Rest Analysis (P2.5) ────────────────────────────────────
+            // ── Rest Analysis (P2.5 → P2 pencil-panel consolidation) ────
             // Sibling of Machining Boundary: any toolpath can turn on the
             // rest-depth detector against ITS OWN tool, attaching the
             // heatmap grid + derived regions this op leaves behind — the
-            // same analysis that used to be pencil-only.
-            ui.add_space(8.0);
-            ui.label(
-                egui::RichText::new("Rest Analysis")
-                    .small()
-                    .strong()
-                    .color(egui::Color32::from_rgb(150, 155, 170)),
+            // same analysis that used to be pencil-only. Now demand-driven
+            // rather than a manual checkbox on every op: a downstream
+            // `Rest Regions` boundary auto-enables it (see the
+            // `auto_enable_rest_source` handling below this panel's draw
+            // call, and `session::auto_enable_rest_analysis_for_source`
+            // for the MCP-path twin), and it's
+            // hidden entirely on a `rest_depth` pencil, whose own detector
+            // already attaches the same artifacts (invisibly, per
+            // `compute::execute::attach_generic_rest_analysis`'s precedence
+            // check) — showing a second, redundant control there was the
+            // third overlapping rest control this consolidation removes.
+            let is_rest_depth_pencil = matches!(
+                &entry.operation,
+                OperationConfig::Pencil(cfg)
+                    if rs_cam_core::pencil::PencilDetector::parse(&cfg.detector)
+                        == rs_cam_core::pencil::PencilDetector::RestDepth
             );
-            ui.checkbox(&mut entry.rest_analysis.enabled, "Enable rest analysis")
-                .on_hover_text(
-                    "Run the rest-depth detector against this toolpath's own tool \
-                     after generation, attaching a heatmap grid and derived \
-                     machining regions — usable as a `Rest Regions` boundary \
-                     source on another toolpath, same as pencil's rest-depth \
-                     detector.",
+            ui.add_space(8.0);
+            if is_rest_depth_pencil {
+                ui.label(
+                    egui::RichText::new(
+                        "Rest heatmap & regions: produced by the Rest depth detector.",
+                    )
+                    .small()
+                    .color(egui::Color32::from_rgb(150, 150, 130)),
                 );
-            if entry.rest_analysis.enabled {
-                ui.horizontal(|ui| {
-                    ui.label("Reference:");
-                    let ref_label = entry
-                        .rest_analysis
-                        .reference_tool_id
-                        .and_then(|rid| tools.iter().find(|(id, _, _)| *id == rid))
-                        .map(|(_, name, _)| name.as_str())
-                        .unwrap_or("Self / machined stock");
-                    egui::ComboBox::from_id_salt("rest_analysis_reference_tool")
-                        .selected_text(ref_label)
-                        .show_ui(ui, |ui| {
-                            if ui
-                                .selectable_label(
-                                    entry.rest_analysis.reference_tool_id.is_none(),
-                                    "Self / machined stock",
-                                )
-                                .clicked()
-                            {
-                                entry.rest_analysis.reference_tool_id = None;
-                            }
-                            for (id, name, _) in tools {
-                                let selected = entry.rest_analysis.reference_tool_id == Some(*id);
-                                if ui.selectable_label(selected, name.as_str()).clicked() {
-                                    entry.rest_analysis.reference_tool_id = Some(*id);
+            } else {
+                ui.label(
+                    egui::RichText::new("Rest Analysis")
+                        .small()
+                        .strong()
+                        .color(egui::Color32::from_rgb(150, 155, 170)),
+                );
+                if rest_region_consumers.is_empty() {
+                    ui.checkbox(
+                        &mut entry.rest_analysis.enabled,
+                        "Compute rest heatmap (material left after this op)",
+                    )
+                    .on_hover_text(
+                        "Run the rest-depth detector against this toolpath's own tool \
+                         after generation, attaching a heatmap grid. Also makes this op \
+                         selectable as a `Rest Regions` boundary source on other \
+                         toolpaths.",
+                    );
+                } else {
+                    // Demand-driven: a consumer's boundary picker (or the
+                    // MCP `set_boundary_config` path) already flipped this
+                    // on — see `auto_enable_rest_analysis_for_source`. Force
+                    // it here too so a stale project file (or a consumer
+                    // whose boundary was set before this session started)
+                    // still reflects reality.
+                    if !entry.rest_analysis.enabled {
+                        entry.rest_analysis.enabled = true;
+                        entry.stale_since = Some(std::time::Instant::now());
+                    }
+                    ui.label(format!(
+                        "Producing rest regions for: {}",
+                        rest_region_consumers.join(", ")
+                    ))
+                    .on_hover_text(
+                        "Enabled automatically — those toolpaths use this op's rest \
+                         regions as their machining boundary.",
+                    );
+                }
+                if entry.rest_analysis.enabled {
+                    ui.horizontal(|ui| {
+                        ui.label("Reference:");
+                        let ref_label = entry
+                            .rest_analysis
+                            .reference_tool_id
+                            .and_then(|rid| tools.iter().find(|(id, _, _)| *id == rid))
+                            .map(|(_, name, _)| name.as_str())
+                            .unwrap_or("Self / machined stock");
+                        egui::ComboBox::from_id_salt("rest_analysis_reference_tool")
+                            .selected_text(ref_label)
+                            .show_ui(ui, |ui| {
+                                if ui
+                                    .selectable_label(
+                                        entry.rest_analysis.reference_tool_id.is_none(),
+                                        "Self / machined stock",
+                                    )
+                                    .clicked()
+                                {
+                                    entry.rest_analysis.reference_tool_id = None;
                                 }
-                            }
-                        })
-                        .response
+                                for (id, name, _) in tools {
+                                    let selected =
+                                        entry.rest_analysis.reference_tool_id == Some(*id);
+                                    if ui.selectable_label(selected, name.as_str()).clicked() {
+                                        entry.rest_analysis.reference_tool_id = Some(*id);
+                                    }
+                                }
+                            })
+                            .response
+                            .on_hover_text(
+                                "The reference the rest gate measures 'deeper than'. \
+                                 Unset = prefer the actual machined stock from a prior \
+                                 simulation, else a self-referenced bare-surface probe.",
+                            );
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Cell Size:");
+                        ui.add(
+                            egui::DragValue::new(&mut entry.rest_analysis.cell_mm)
+                                .speed(0.05)
+                                .range(0.05..=10.0)
+                                .suffix(" mm"),
+                        )
                         .on_hover_text(
-                            "The reference the rest gate measures 'deeper than'. \
-                             Unset = prefer the actual machined stock from a prior \
-                             simulation, else a self-referenced bare-surface probe.",
+                            "XY grid cell size for the rest field. Smaller = finer regions.",
                         );
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Cell Size:");
-                    ui.add(
-                        egui::DragValue::new(&mut entry.rest_analysis.cell_mm)
-                            .speed(0.05)
-                            .range(0.05..=10.0)
-                            .suffix(" mm"),
-                    )
-                    .on_hover_text(
-                        "XY grid cell size for the rest field. Smaller = finer regions.",
-                    );
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Min Valley Depth:");
-                    ui.add(
-                        egui::DragValue::new(&mut entry.rest_analysis.min_valley_depth)
-                            .speed(0.01)
-                            .range(0.0..=5.0)
-                            .suffix(" mm"),
-                    )
-                    .on_hover_text(
-                        "A cell counts as REST material once the reference floats \
-                         more than this above the true surface.",
-                    );
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Region Margin:");
-                    ui.add(
-                        egui::DragValue::new(&mut entry.rest_analysis.region_margin_mm)
-                            .speed(0.05)
-                            .range(0.0..=10.0)
-                            .suffix(" mm"),
-                    )
-                    .on_hover_text(
-                        "Extra clearance added around detected rest regions beyond \
-                         this toolpath's own tool radius.",
-                    );
-                });
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Min Valley Depth:");
+                        ui.add(
+                            egui::DragValue::new(&mut entry.rest_analysis.min_valley_depth)
+                                .speed(0.01)
+                                .range(0.0..=5.0)
+                                .suffix(" mm"),
+                        )
+                        .on_hover_text(
+                            "A cell counts as REST material once the reference floats \
+                             more than this above the true surface.",
+                        );
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Region Margin:");
+                        ui.add(
+                            egui::DragValue::new(&mut entry.rest_analysis.region_margin_mm)
+                                .speed(0.05)
+                                .range(0.0..=10.0)
+                                .suffix(" mm"),
+                        )
+                        .on_hover_text(
+                            "Extra clearance added around detected rest regions beyond \
+                             this toolpath's own tool radius.",
+                        );
+                    });
+                }
             }
         }
 

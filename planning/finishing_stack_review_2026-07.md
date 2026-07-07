@@ -801,3 +801,25 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   NEW FOLLOW-UPS: F.4 FromRemainingStock regen catch-22; F.5b include_rapids intent-vs-type
   filter; F.6 export_gcode accept_unmodeled ignored. Mask→region_polygons/heatmap paths
   untouched (P2 semantics preserved).
+- 2026-07-07 (F.4 fix + rest-controls UX consolidation, UNCOMMITTED, live-validated):
+  F.4 = phantom prior-stock snapshot: `SimGroupEntry.phantom_prior_stock` records a
+  `prior_stocks` entry for the FIRST enabled-but-ungenerated FromRemainingStock op per
+  group (validity rule: everything before it must be generated → sim→regen ladder,
+  one rung per sim); shared `PhantomPriorStockScan` keeps core + GUI builders identical;
+  GUI submit gate consolidated onto the same `prior_stocks` map (deleted the
+  boundaries()-position/checkpoint re-derivation). LIVE: fresh wanaka load → the four
+  stuck ops (Rivers/Lakes/3D Rough 6/3D Finish 6) regenerated rung-by-rung for the
+  first time since the fail-hard fix; disabled ops correctly don't block the ladder.
+  UX = pencil Geometry gets ONE "Rest reference" group (Machined stock ⇔
+  FromRemainingStock / Reference tool ⇔ Fresh + picker), generic "Use remaining stock"
+  checkbox hidden on pencil (it silently overrode the picker); Rest Analysis section
+  hidden on rest_depth pencils ("produced by the detector"), demand-driven elsewhere:
+  `session::auto_enable_rest_analysis_for_source` fires from set_boundary_config (MCP)
+  and the GUI sync path when a DerivedRestRegions consumer appears ("Producing rest
+  regions for: ..."), manual toggle relabeled "Compute rest heatmap".
+  BONUS R2 VALIDATION (first honest one, unblocked by F.4): pencil vs real machined
+  stock after the full chain = rest_reference_mode 2, 669mm cutting vs 9265mm with the
+  Ø6-ball analytic reference (~14× overestimate exposed — the finish used the same Ø2
+  tool, so true rest = boundary bands/edges only); all 30 chains centerline-only
+  (width-aware pass cap working); pencil adds 0 rapid collisions (was 14 on virgin
+  stock). Gates: core 2078 pass/3 known reds, viz 212/212, clippy clean.

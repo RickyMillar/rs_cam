@@ -3337,9 +3337,60 @@ impl super::RsCamApp {
         {
             Ok(()) => {
                 self.controller.state_mut().gui.mark_edited();
-                let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
+                let mut stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
                     toolpath_index: index,
                 });
+                // P2 pencil-panel consolidation: `set_boundary_config` may
+                // have just auto-enabled rest analysis on the SOURCE
+                // toolpath (`ProjectSession::auto_enable_rest_analysis_for_source`,
+                // the demand-driven producer hook — see its doc comment).
+                // Surface that toolpath as stale too so a live GUI session
+                // watching this MCP-driven change sees it needs
+                // regeneration, mirroring the GUI boundary picker's own
+                // handling in `properties/mod.rs`. Slightly conservative:
+                // fires whenever the boundary points at an already-enabled
+                // source too (harmless — just an extra "needs regen" nudge).
+                // Resolved to owned values in its own block so the
+                // immutable `state()` borrow ends before `state_mut()`
+                // below.
+                let source_rest_lookup =
+                    if let BoundarySource::DerivedRestRegions { source_toolpath_id } =
+                        &boundary.source
+                    {
+                        let state = self.controller.state();
+                        state
+                            .session
+                            .find_toolpath_config_by_id(*source_toolpath_id)
+                            .map(|(idx, tc)| {
+                                let is_rest_depth_pencil = matches!(
+                                    &tc.operation,
+                                    rs_cam_core::compute::catalog::OperationConfig::Pencil(cfg)
+                                        if rs_cam_core::pencil::PencilDetector::parse(&cfg.detector)
+                                            == rs_cam_core::pencil::PencilDetector::RestDepth
+                                );
+                                (idx, is_rest_depth_pencil)
+                            })
+                    } else {
+                        None
+                    };
+                if boundary.enabled
+                    && let BoundarySource::DerivedRestRegions { source_toolpath_id } =
+                        &boundary.source
+                    && let Some((source_index, false)) = source_rest_lookup
+                {
+                    if let Some(rt) = self
+                        .controller
+                        .state_mut()
+                        .gui
+                        .toolpath_rt
+                        .get_mut(source_toolpath_id)
+                    {
+                        rt.stale_since = Some(std::time::Instant::now());
+                    }
+                    if !stale.contains(&source_index) {
+                        stale.push(source_index);
+                    }
+                }
                 self.mcp_mutation_result(
                     format!("Boundary set on toolpath {index}. Regenerate to apply."),
                     serde_json::to_value(boundary).unwrap_or(serde_json::Value::Null),

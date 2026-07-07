@@ -36,7 +36,7 @@ use std::sync::Arc;
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{
-    BoundaryConfig, DressupConfig, HeightsConfig, StockSource, ToolpathStats,
+    BoundaryConfig, BoundarySource, DressupConfig, HeightsConfig, StockSource, ToolpathStats,
 };
 use crate::compute::simulate::SimulationResult;
 use crate::compute::stock_config::{FixtureId, KeepOutId, ModelKind, ModelUnits, StockConfig};
@@ -1204,6 +1204,28 @@ impl ProjectSession {
             .iter_mut()
             .enumerate()
             .find(|(_, tc)| tc.id == id)
+    }
+
+    /// Toolpaths that currently consume `source_id`'s rest-depth analysis as
+    /// their machining boundary — every toolpath with an *enabled*
+    /// `BoundarySource::DerivedRestRegions { source_toolpath_id }` pointing at
+    /// `source_id`. Used both to label the producer's UI ("Producing rest
+    /// regions for: ...") and to decide whether the producer must run its
+    /// rest-depth pass at all (demand-driven rest analysis — see
+    /// `mutation::auto_enable_rest_analysis_for_source`).
+    pub fn rest_region_consumers(&self, source_id: ToolpathId) -> Vec<ToolpathId> {
+        self.toolpath_configs
+            .iter()
+            .filter(|tc| {
+                tc.boundary.enabled
+                    && matches!(
+                        tc.boundary.source,
+                        BoundarySource::DerivedRestRegions { source_toolpath_id }
+                            if source_toolpath_id == source_id
+                    )
+            })
+            .map(|tc| tc.id)
+            .collect()
     }
 
     /// Find which setup (by index) owns a toolpath with the given semantic ID.

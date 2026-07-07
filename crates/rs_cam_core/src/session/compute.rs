@@ -938,6 +938,7 @@ impl ProjectSession {
             direction,
             local_stock_bbox,
             local_to_global: setup_ctx.local_to_global,
+            phantom_prior_stock: None,
         }];
         let resolution = auto_resolution_for_groups(&groups, &stock_bbox);
         // Deviation (model_mesh) is not needed for engagement capture; both
@@ -1939,11 +1940,26 @@ impl ProjectSession {
             };
 
             let mut entries = Vec::new();
+            // F.4: track whether this group's first pending (enabled,
+            // ungenerated) `FromRemainingStock` toolpath needs a phantom
+            // `prior_stocks` snapshot. Visited for every toolpath config in
+            // plan order — not just the ones that make it into `entries` —
+            // so the scan sees the true "generated yet?" state regardless
+            // of `skip_ids` / short-toolpath filtering below.
+            let mut phantom_scan = crate::compute::simulate::PhantomPriorStockScan::default();
             for &tp_idx in &setup.toolpath_indices {
-                if let Some(result) = self.results.get(&tp_idx) {
-                    let Some(tc) = self.toolpath_configs.get(tp_idx) else {
-                        continue;
-                    };
+                let Some(tc) = self.toolpath_configs.get(tp_idx) else {
+                    continue;
+                };
+                let result = self.results.get(&tp_idx);
+                phantom_scan.visit(
+                    entries.len(),
+                    tc.enabled,
+                    result.is_some(),
+                    tc.id,
+                    tc.stock_source,
+                );
+                if let Some(result) = result {
                     if opts.skip_ids.contains(&tc.id) {
                         continue;
                     }
@@ -2000,7 +2016,15 @@ impl ProjectSession {
                 }
             }
 
-            if !entries.is_empty() {
+            let phantom_prior_stock = phantom_scan.finish();
+            // F.4: a setup whose every toolpath is still ungenerated builds
+            // an empty `entries` vec — but if the FIRST enabled config in
+            // plan order is a pending `FromRemainingStock` op, the "stock
+            // before it" is simply the setup's untouched initial stock
+            // (there are zero predecessors to distrust), so the phantom is
+            // still valid and the group must still be emitted (with an
+            // empty `toolpaths` vec) to carry it.
+            if !entries.is_empty() || phantom_prior_stock.is_some() {
                 // Per-setup local stock bbox and transform info derived from
                 // the shared SetupTransformInfo helper (Phase E/D dedup).
                 //
@@ -2039,6 +2063,7 @@ impl ProjectSession {
                     direction,
                     local_stock_bbox,
                     local_to_global,
+                    phantom_prior_stock,
                 });
             }
         }
@@ -4163,6 +4188,124 @@ mod tests {
             ),
             Err(other) => panic!("expected OperationFailed, got: {other}"),
             Ok(_) => panic!("rest op without a prior sim must error, not clear fresh stock"),
+        }
+    }
+
+    /// Fixture for the F.4 phantom-prior-stock tests below: one tool plus a
+    /// small square-polygon model at `model_id == 0` (matching `make_tc`'s
+    /// default), so a `Pocket` op generates a real, multi-move toolpath.
+    /// `run_simulation`'s request builder skips any toolpath with fewer
+    /// than 2 moves, so an empty/geometry-less fixture would never
+    /// populate `prior_stocks` at all.
+    fn make_session_with_pocket_model() -> ProjectSession {
+        let mut s = make_session();
+        let polygon = crate::polygon::Polygon2 {
+            exterior: vec![
+                crate::geo::P2::new(0.0, 0.0),
+                crate::geo::P2::new(30.0, 0.0),
+                crate::geo::P2::new(30.0, 30.0),
+                crate::geo::P2::new(0.0, 30.0),
+            ],
+            holes: vec![],
+            closed: true,
+        };
+        let model = crate::session::LoadedModel {
+            id: 0,
+            name: "phantom_prior_stock_fixture".to_owned(),
+            mesh: None,
+            polygons: Some(Arc::new(vec![polygon])),
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: std::path::PathBuf::from("synthetic://phantom_prior_stock_fixture.svg"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        };
+        s.add_model(model);
+        s
+    }
+
+    /// F.4 — the core half of the regression net for the
+    /// `FromRemainingStock` regeneration catch-22. TP1 is preceded by a
+    /// generated TP0 in the same setup: before any simulation, TP1 must
+    /// still fail hard (unchanged precondition); after `run_simulation`
+    /// populates the phantom `prior_stocks` snapshot for TP1 (the first
+    /// pending toolpath in its group), TP1 must regenerate successfully —
+    /// closing the catch-22 where an ungenerated toolpath, never present
+    /// in a `SimGroupEntry`, could never receive a snapshot at all.
+    #[test]
+    fn phantom_prior_stock_unlocks_regeneration_after_sim() {
+        let mut s = make_session_with_pocket_model();
+        let tool_id = s.tools()[0].id.0;
+        s.add_toolpath(0, make_tc(tool_id)).unwrap();
+        let mut rest_tc = make_tc(tool_id);
+        rest_tc.stock_source = crate::session::StockSource::FromRemainingStock;
+        s.add_toolpath(0, rest_tc).unwrap();
+
+        let cancel = AtomicBool::new(false);
+        s.generate_toolpath(0, &cancel)
+            .expect("TP0 (Fresh) should generate against real polygon geometry");
+
+        // Before any simulation: TP1 still fails hard (unchanged
+        // precondition — generating never falls back to fresh stock).
+        match s.generate_toolpath(1, &cancel) {
+            Err(SessionError::OperationFailed(_)) => {}
+            Err(other) => panic!("expected OperationFailed before any sim, got error: {other:?}"),
+            Ok(_) => panic!("expected OperationFailed before any sim, got a generated toolpath"),
+        }
+
+        s.run_simulation(&SimulationOptions::default(), &cancel)
+            .expect("simulation over TP0 should succeed and populate prior_stocks");
+
+        // F.4: TP1 is the first (and only) pending toolpath in its group,
+        // so `run_simulation` recorded a phantom snapshot for it — it must
+        // now regenerate.
+        s.generate_toolpath(1, &cancel)
+            .expect("TP1 should regenerate once the phantom prior-stock snapshot exists");
+    }
+
+    /// F.4 ladder rule: with TWO consecutive pending `FromRemainingStock`
+    /// toolpaths after a generated TP0, one simulation run unlocks only
+    /// the FIRST pending toolpath (TP1). TP2 stays gated — its snapshot
+    /// would be missing TP1's cuts (TP1 hasn't itself been generated and
+    /// re-simulated yet), which for a rest-machining op means real
+    /// overcut risk, not just a stale preview.
+    #[test]
+    fn phantom_prior_stock_ladder_unlocks_only_first_pending_op() {
+        let mut s = make_session_with_pocket_model();
+        let tool_id = s.tools()[0].id.0;
+        s.add_toolpath(0, make_tc(tool_id)).unwrap();
+        let mut rest_tc_1 = make_tc(tool_id);
+        rest_tc_1.stock_source = crate::session::StockSource::FromRemainingStock;
+        s.add_toolpath(0, rest_tc_1).unwrap();
+        let mut rest_tc_2 = make_tc(tool_id);
+        rest_tc_2.stock_source = crate::session::StockSource::FromRemainingStock;
+        s.add_toolpath(0, rest_tc_2).unwrap();
+
+        let cancel = AtomicBool::new(false);
+        s.generate_toolpath(0, &cancel)
+            .expect("TP0 (Fresh) should generate against real polygon geometry");
+
+        s.run_simulation(&SimulationOptions::default(), &cancel)
+            .expect("simulation over TP0 should succeed");
+
+        // TP1 is the first pending op in the group — unlocked.
+        s.generate_toolpath(1, &cancel)
+            .expect("TP1 should regenerate: first pending op in its group");
+
+        // TP2 is still pending behind TP1, which hasn't itself been
+        // generated + re-simulated — the ladder rule keeps it gated.
+        match s.generate_toolpath(2, &cancel) {
+            Err(SessionError::OperationFailed(_)) => {}
+            Err(other) => panic!(
+                "TP2 must stay gated until TP1 is regenerated and re-simulated, got error: \
+                 {other:?}"
+            ),
+            Ok(_) => panic!(
+                "TP2 must stay gated until TP1 is regenerated and re-simulated, but it generated"
+            ),
         }
     }
 
