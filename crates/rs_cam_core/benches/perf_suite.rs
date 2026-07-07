@@ -696,7 +696,11 @@ fn bench_raster_toolpath(c: &mut Criterion) {
         };
 
         group.bench_function(BenchmarkId::new("zigzag", grid_size), |b| {
-            b.iter(|| black_box(raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None)))
+            b.iter(|| {
+                black_box(raster_toolpath_from_grid(
+                    &grid, 1000.0, 500.0, 10.0, None, None,
+                ))
+            })
         });
     }
 

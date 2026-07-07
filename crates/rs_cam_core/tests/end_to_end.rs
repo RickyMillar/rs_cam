@@ -67,7 +67,7 @@ fn test_terrain_stl_to_gcode() {
     }
 
     // Generate toolpath
-    let toolpath = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None);
+    let toolpath = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None, None);
     assert!(toolpath.moves.len() > 100);
     assert!(toolpath.total_cutting_distance() > 0.0);
 
@@ -101,7 +101,7 @@ fn test_programmatic_hemisphere_to_gcode() {
         center_cl.z
     );
 
-    let toolpath = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 25.0, None);
+    let toolpath = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 25.0, None, None);
     let gcode = emit_gcode(&toolpath, post::grbl(), 18000);
     assert!(gcode.len() > 500);
 }

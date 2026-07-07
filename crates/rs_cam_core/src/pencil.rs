@@ -32,6 +32,7 @@ use crate::pencil_dihedral::{
     sample_chain_bisected,
 };
 use crate::polygon::Polygon2;
+use crate::surface_link::build_surface_link;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
@@ -253,8 +254,13 @@ impl PencilRuntimeEvent {
     }
 }
 
+/// `pub(crate)` (rather than private) solely so
+/// [`crate::crease_paths::centerline_cut_paths`] can name `Vec<PencilPath>`
+/// as its return type; fields stay private — that function only forwards the
+/// `Vec` [`paths_from_sampled`] fills in, it never constructs or reads a
+/// `PencilPath` itself.
 #[derive(Clone)]
-struct PencilPath {
+pub(crate) struct PencilPath {
     points: Vec<P3>,
     chain_index: usize,
     chain_total: usize,
@@ -582,44 +588,6 @@ fn order_paths_nearest(paths: &mut [PencilPath]) {
     }
 }
 
-/// Build a gouge-safe, surface-following link between two cut points whose XY gap
-/// is within `hookup_distance`, so consecutive passes join without retracting to
-/// safe Z and re-plunging. Samples the connecting segment and drop-cutters each
-/// interior point — the same gouge-free lift the cut path uses — so the tool rides
-/// the surface across the gap instead of lifting clear. Endpoints are excluded
-/// (the caller is already at `from` and feeds to `to` itself). Returns `None` if
-/// the tool loses surface contact anywhere along the link (over a hole / off the
-/// mesh) — the caller then falls back to a clean retract-and-replunge.
-fn build_surface_link(
-    from: P3,
-    to: P3,
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    stock_to_leave: f64,
-    spacing: f64,
-) -> Option<Vec<P3>> {
-    let dx = to.x - from.x;
-    let dy = to.y - from.y;
-    let dist = (dx * dx + dy * dy).sqrt();
-    if dist < 1e-6 {
-        return Some(Vec::new());
-    }
-    let n = (dist / spacing.max(1e-3)).ceil().max(1.0) as usize;
-    let mut pts = Vec::new();
-    for k in 1..n {
-        let t = k as f64 / n as f64;
-        let x = from.x + dx * t;
-        let y = from.y + dy * t;
-        let cl = point_drop_cutter(x, y, mesh, index, cutter);
-        if !cl.contacted {
-            return None; // lost contact → not safe to link at surface, retract instead
-        }
-        pts.push(P3::new(x, y, cl.z + stock_to_leave));
-    }
-    Some(pts)
-}
-
 /// Generate pencil finishing toolpath.
 ///
 /// Detects concave mesh edges (creases) and generates toolpaths that
@@ -646,8 +614,10 @@ fn runtime_annotations_to_labels(annotations: &[PencilRuntimeAnnotation]) -> Vec
 /// Resample a polyline to ~`spacing` mm between points (linear interpolation),
 /// preserving the first and last vertices. Curvature crest lines arrive at
 /// mesh-edge resolution; this decouples cut-point spacing from mesh density.
+///
+/// `pub(crate)`: also used by [`crate::crease_paths::centerline_cut_paths`].
 #[allow(clippy::indexing_slicing)] // first/last + windows(2) indices are bounded
-fn resample_polyline(points: &[P3], spacing: f64) -> Vec<P3> {
+pub(crate) fn resample_polyline(points: &[P3], spacing: f64) -> Vec<P3> {
     if points.len() < 2 || spacing <= 1e-6 {
         return points.to_vec();
     }
@@ -689,18 +659,25 @@ fn resample_polyline(points: &[P3], spacing: f64) -> Vec<P3> {
 /// symmetric offset passes. `chain_index` is 1-based. `offset_passes` is the
 /// actual number of offset passes to emit on each side — the
 /// Dihedral/Curvature arms pass `params.num_offset_passes` straight through
-/// (unchanged behaviour); the RestDepth arm caps it to the local valley width
-/// (see [`rest_depth_arm`]) so narrow creases don't get offset passes wider
-/// than the valley itself.
+/// (unchanged behaviour); the RestDepth arm (factored into
+/// [`crate::crease_paths::centerline_cut_paths`]) caps it to the local valley
+/// width so narrow creases don't get offset passes wider than the valley
+/// itself.
+///
+/// Takes `stock_to_leave`/`offset_stepover` as plain scalars (rather than a
+/// `&PencilParams`) so non-pencil callers — currently
+/// [`crate::crease_paths::centerline_cut_paths`] — don't need a full
+/// `PencilParams` just to emit cut paths. `pub(crate)` for that same reason.
 #[allow(clippy::too_many_arguments)] // cohesive per-chain emit; splitting hurts clarity
-fn paths_from_sampled(
+pub(crate) fn paths_from_sampled(
     sampled: &[P3],
     chain_index: usize,
     chain_total: usize,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
-    params: &PencilParams,
+    stock_to_leave: f64,
+    offset_stepover: f64,
     offset_passes: usize,
     all_paths: &mut Vec<PencilPath>,
 ) {
@@ -712,7 +689,7 @@ fn paths_from_sampled(
     let sampled = fair_polyline_xy(sampled, FAIRING_PASSES, FAIRING_STRENGTH);
     let offset_total = 1 + offset_passes * 2;
 
-    let centerline = lift_to_surface(&sampled, mesh, index, cutter, params.stock_to_leave);
+    let centerline = lift_to_surface(&sampled, mesh, index, cutter, stock_to_leave);
     all_paths.push(PencilPath {
         points: centerline,
         chain_index,
@@ -724,10 +701,10 @@ fn paths_from_sampled(
     });
 
     for pass_num in 1..=offset_passes {
-        let offset = pass_num as f64 * params.offset_stepover;
+        let offset = pass_num as f64 * offset_stepover;
 
         let left = offset_polyline(&sampled, offset);
-        let left_lifted = lift_to_surface(&left, mesh, index, cutter, params.stock_to_leave);
+        let left_lifted = lift_to_surface(&left, mesh, index, cutter, stock_to_leave);
         all_paths.push(PencilPath {
             points: left_lifted,
             chain_index,
@@ -739,7 +716,7 @@ fn paths_from_sampled(
         });
 
         let right = offset_polyline(&sampled, -offset);
-        let right_lifted = lift_to_surface(&right, mesh, index, cutter, params.stock_to_leave);
+        let right_lifted = lift_to_surface(&right, mesh, index, cutter, stock_to_leave);
         all_paths.push(PencilPath {
             points: right_lifted,
             chain_index,
@@ -1134,7 +1111,8 @@ fn curvature_arm(
             mesh,
             index,
             cutter,
-            params,
+            params.stock_to_leave,
+            params.offset_stepover,
             params.num_offset_passes,
             &mut all_paths,
         );
@@ -1173,7 +1151,6 @@ fn rest_depth_arm(
     rest_regions_out: &mut Option<Vec<Polygon2>>,
     cancel: &dyn CancelCheck,
 ) -> Result<Vec<PencilPath>, Cancelled> {
-    let mut all_paths: Vec<PencilPath> = Vec::new();
     let stock_ref = initial_stock.filter(|stock| {
         let (sb, mb) = (&stock.stock_bbox, &mesh.bbox);
         let overlap = sb.min.x <= mb.max.x
@@ -1286,41 +1263,24 @@ fn rest_depth_arm(
     // boundary source) — set alongside the grid, independent of whether any
     // centreline survives the length gate.
     *rest_regions_out = Some(rf.region_polygons);
-    let kept: Vec<crate::rest_field::RestCenterline> = rf
-        .centerlines
-        .into_iter()
-        .filter(|cl| polyline_length(&cl.points) >= params.min_cut_length)
-        .collect();
-    if kept.is_empty() {
+    // Length-gate + resample + width-capped offset-pass emission, factored
+    // into `crease_paths::centerline_cut_paths` so the P2 finish planner's
+    // future crease pass can reuse it without pencil's detector dispatch.
+    let all_paths = crate::crease_paths::centerline_cut_paths(
+        &rf.centerlines,
+        mesh,
+        index,
+        cutter,
+        cutter.radius(),
+        params.sampling,
+        params.offset_stepover,
+        params.num_offset_passes,
+        params.min_cut_length,
+        params.stock_to_leave,
+        cancel,
+    )?;
+    if all_paths.is_empty() {
         info!("Rest-depth detector: no centerlines passed length gate");
-        return Ok(all_paths);
-    }
-    let chain_total = kept.len();
-    for (ci, cl) in kept.iter().enumerate() {
-        check_cancel(cancel)?;
-        let sampled = resample_polyline(&cl.points, params.sampling);
-        // Width-aware pass count (P2.4-adjacent judgement call, see the
-        // `paths_from_sampled` doc): `num_offset_passes` is a user dial that
-        // now acts as a CAP, not a fixed count — a valley narrower than the
-        // cutter-plus-a-few-stepovers only gets the centreline. `n` is how
-        // many stepovers fit between the cutter's own radius and the
-        // measured local half-width; floor at 0 (a valley narrower than the
-        // cutter itself gets centreline-only, same as before).
-        let n = ((cl.half_width_mm - cutter.radius()) / params.offset_stepover)
-            .round()
-            .max(0.0) as usize;
-        let offset_passes = n.min(params.num_offset_passes);
-        paths_from_sampled(
-            &sampled,
-            ci + 1,
-            chain_total,
-            mesh,
-            index,
-            cutter,
-            params,
-            offset_passes,
-            &mut all_paths,
-        );
     }
     Ok(all_paths)
 }
@@ -1428,7 +1388,8 @@ fn dihedral_arm(
             mesh,
             index,
             cutter,
-            params,
+            params.stock_to_leave,
+            params.offset_stepover,
             params.num_offset_passes,
             &mut all_paths,
         );
@@ -2023,44 +1984,6 @@ mod tests {
         );
     }
 
-    /// A surface link rides the mesh (finite Z everywhere) when both ends sit on
-    /// it, and returns None when the span is off the mesh (caller then retracts).
-    #[test]
-    fn test_build_surface_link_follows_surface_and_detects_offmesh() {
-        let mesh = make_v_valley(20.0, 6.0, 0.5, 20, 24);
-        let index = SpatialIndex::build(&mesh, 5.0);
-        let tool = BallEndmill::new(2.0, 25.0);
-
-        let on = build_surface_link(
-            P3::new(5.0, 0.0, 0.0),
-            P3::new(9.0, 0.0, 0.0),
-            &mesh,
-            &index,
-            &tool,
-            0.0,
-            0.5,
-        );
-        let pts = on.unwrap();
-        assert!(
-            !pts.is_empty(),
-            "a 4mm link at 0.5mm spacing has interior points"
-        );
-        for p in &pts {
-            assert!(p.z.is_finite(), "each link point rides the surface");
-        }
-
-        let off = build_surface_link(
-            P3::new(100.0, 100.0, 0.0),
-            P3::new(105.0, 100.0, 0.0),
-            &mesh,
-            &index,
-            &tool,
-            0.0,
-            0.5,
-        );
-        assert!(off.is_none(), "a link entirely off the mesh must be None");
-    }
-
     /// Wiring `hookup_distance` joins nearby passes with a surface feed instead of
     /// a retract-rapid-replunge, so the total rapid distance drops.
     #[test]
@@ -2298,7 +2221,8 @@ mod tests {
                 &mesh,
                 &index,
                 &tool,
-                &params,
+                params.stock_to_leave,
+                params.offset_stepover,
                 params.num_offset_passes,
                 &mut all_paths,
             );
