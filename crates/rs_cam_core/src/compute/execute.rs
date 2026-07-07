@@ -233,6 +233,15 @@ pub struct ExecutionContext<'a> {
     /// them is deferred. Consolidated onto `RegionSet` (region_set.rs) so
     /// containment tests share one implementation across every family.
     pub boundary_regions: Option<&'a RegionSet<'a>>,
+    /// P1 quantitative linker (unified-finishing-pass W4a): the machine
+    /// envelope the pencil generator (and, in future, other finishing
+    /// families with a hookup/link decision) costs surface-link vs.
+    /// retract-link candidates against with the F-034 integrator. `None`
+    /// keeps the legacy distance-only hookup decision — production
+    /// builders that have a machine profile in scope populate `Some`;
+    /// callers without one (or that never reach a linking decision) pass
+    /// `None`.
+    pub link_kinematics: Option<crate::machine_kinematics::LinkKinematics>,
 }
 
 /// A family adapter: generate the toolpath (with spans + annotations)
@@ -1139,6 +1148,9 @@ pub(crate) fn generate_pencil(
             .reference_tool_cfg
             .as_ref()
             .map(crate::compute::cutter::build_cutter),
+        // P1 W4a: cost the surface-link-vs-retract emit decision against
+        // the real machine envelope when one is in scope.
+        link_kinematics: ctx.link_kinematics.clone(),
     };
     let mut rest_grid_out: Option<crate::rest_field::RestGrid> = None;
     let mut rest_regions_out: Option<Vec<Polygon2>> = None;
@@ -1675,6 +1687,7 @@ pub fn execute_operation_annotated(
         boundary,
         None,
         None,
+        None,
     )
 }
 
@@ -1694,6 +1707,12 @@ pub fn execute_operation_annotated(
 /// against THIS toolpath's own tool as the fine cutter, attaching
 /// `rest_grid` / `rest_regions` to the result. `None` is a byte-identical
 /// no-op, same shape as `boundary_regions`.
+///
+/// Also carries `link_kinematics` (P1 W4a): the machine envelope the
+/// pencil family costs its surface-link-vs-retract emit decision
+/// against. `None` is a byte-identical no-op (legacy distance-only
+/// hookup decision); production builders that have a machine profile
+/// in scope (session's `generate_toolpath`) populate `Some`.
 #[allow(clippy::too_many_arguments)]
 pub fn execute_operation_annotated_with_regions(
     op: &OperationConfig,
@@ -1714,6 +1733,11 @@ pub fn execute_operation_annotated_with_regions(
     boundary: Option<&Polygon2>,
     boundary_regions: Option<&[Polygon2]>,
     rest_analysis: Option<&crate::compute::config::RestAnalysisConfig>,
+    // P1 quantitative linker (W4a): the machine envelope the pencil
+    // family's emit-time surface-link-vs-retract decision costs
+    // candidates against. `None` is a byte-identical no-op — the
+    // legacy distance-only hookup decision.
+    link_kinematics: Option<crate::machine_kinematics::LinkKinematics>,
 ) -> Result<GeneratedToolpath, OperationError> {
     // Phase-5 (T11) family adapters: when the registry carries a
     // GenerateFn for this op's family, dispatch through it. The
@@ -1748,6 +1772,7 @@ pub fn execute_operation_annotated_with_regions(
         semantic_ctx,
         boundary,
         boundary_regions: region_set.as_ref(),
+        link_kinematics,
     };
     let mut generated = if let Some(generate) = op.op_type().registry_entry().generate {
         generate(&ctx, op)
@@ -3767,6 +3792,7 @@ mod tests {
             None,
             None,
             Some(&rest_analysis),
+            None,
         )
         .expect("scallop with rest_analysis enabled should succeed");
 
@@ -3813,6 +3839,7 @@ mod tests {
             None,
             None,
             Some(&rest_analysis),
+            None,
         )
         .expect("scallop should succeed");
 
@@ -3834,6 +3861,7 @@ mod tests {
             None,
             None,
             &cancel,
+            None,
             None,
             None,
             None,
@@ -3896,6 +3924,7 @@ mod tests {
             None,
             None,
             Some(&rest_analysis),
+            None,
         )
         .expect("pencil rest_depth should succeed");
 

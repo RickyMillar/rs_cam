@@ -320,6 +320,17 @@ impl MachineKinematics {
     }
 }
 
+/// P1 quantitative linker — the machine envelope a generator needs to
+/// cost link candidates with the F-034 integrator at emit time.
+/// Owned (`MachineKinematics` is a small copyable config) so the
+/// `ExecutionContext` doesn't grow another lifetime.
+#[derive(Debug, Clone)]
+pub struct LinkKinematics {
+    pub kinematics: MachineKinematics,
+    pub max_feed_mm_min: f64,
+    pub rapid_feed_mm_min: f64,
+}
+
 /// Compute the wall-clock cycle time (seconds) the configured machine
 /// would take to execute `toolpath`, given commanded feeds in the IR,
 /// the machine's `max_feed_mm_min` cap, and the rapid-move feed used
@@ -346,6 +357,61 @@ pub fn compute_cycle_time(
     rapid_feed_mm_min: f64,
 ) -> f64 {
     compute_cycle_time_breakdown(toolpath, kinematics, max_feed_mm_min, rapid_feed_mm_min).total_s
+}
+
+/// P1 quantitative linker — integrated time of a retract-rapid-replunge
+/// link from `from` to the next chain's first point `to`.
+///
+/// Candidate move sequence: rapid up to `safe_z` above `from`, rapid over
+/// to above `to`, then either (a) when `descend_rapid_to` is `Some(z)`
+/// with `to.z < z < safe_z`: rapid down to `z` and plunge the rest at
+/// `plunge_rate`, or (b) plunge from `safe_z` at `plunge_rate`.
+/// Integrated rest-to-rest, which is conservative for both this and
+/// [`surface_link_time`] equally — the comparison stays fair.
+#[allow(clippy::too_many_arguments)] // link geometry + machine envelope are irreducible inputs
+pub fn retract_link_time(
+    from: P3,
+    to: P3,
+    safe_z: f64,
+    descend_rapid_to: Option<f64>,
+    plunge_rate_mm_min: f64,
+    kinematics: &MachineKinematics,
+    max_feed_mm_min: f64,
+    rapid_feed_mm_min: f64,
+) -> f64 {
+    let mut tp = Toolpath::new();
+    tp.rapid_to(from); // seed — move 0 contributes no segment
+    tp.rapid_to(P3::new(from.x, from.y, safe_z));
+    tp.rapid_to(P3::new(to.x, to.y, safe_z));
+    match descend_rapid_to {
+        Some(z) if to.z < z && z < safe_z => {
+            tp.rapid_to(P3::new(to.x, to.y, z));
+            tp.feed_to(to, plunge_rate_mm_min);
+        }
+        _ => {
+            tp.feed_to(to, plunge_rate_mm_min);
+        }
+    }
+    compute_cycle_time(&tp, kinematics, max_feed_mm_min, rapid_feed_mm_min)
+}
+
+/// P1 quantitative linker — integrated time of a surface-following feed
+/// link. `path` are the sampled link points (drop-cutter gouge-checked by
+/// the caller); `from` is the tool's current position (seed only).
+pub fn surface_link_time(
+    from: P3,
+    path: &[P3],
+    feed_rate_mm_min: f64,
+    kinematics: &MachineKinematics,
+    max_feed_mm_min: f64,
+    rapid_feed_mm_min: f64,
+) -> f64 {
+    let mut tp = Toolpath::new();
+    tp.rapid_to(from); // seed — move 0 contributes no segment
+    for p in path {
+        tp.feed_to(*p, feed_rate_mm_min);
+    }
+    compute_cycle_time(&tp, kinematics, max_feed_mm_min, rapid_feed_mm_min)
 }
 
 /// P0 unified-finishing probe — kinematics-integrator cycle time
@@ -1292,5 +1358,72 @@ $130=845.000\n$131=850.000\n$132=95.000\n";
         assert_eq!(imp.kinematics.acceleration_xyz_mm_s2, None);
         assert_eq!(imp.max_feed_mm_min, None);
         assert_eq!(imp.arc_tolerance_mm, None);
+    }
+
+    #[test]
+    fn retract_link_beats_surface_link_on_long_gaps() {
+        // 60 mm gap. Surface-following at 300 mm/min ≈ 12 s naive.
+        // Retract loop: 4 mm up + 60 mm over at rapid 5000 mm/min
+        // (≈0.77 s naive) + 4 mm plunge at 300 mm/min (≈0.8 s naive) —
+        // well under 2 s even with accel overhead. Retract must win.
+        let from = P3::new(0.0, 0.0, 0.0);
+        let to = P3::new(60.0, 0.0, 0.0);
+        let path = [
+            P3::new(20.0, 0.0, 0.0),
+            P3::new(40.0, 0.0, 0.0),
+            P3::new(60.0, 0.0, 0.0),
+        ];
+        let kin = shapeoko();
+        let retract = retract_link_time(from, to, 4.0, None, 300.0, &kin, 4000.0, 5000.0);
+        let surface = surface_link_time(from, &path, 300.0, &kin, 4000.0, 5000.0);
+        assert!(
+            retract < surface,
+            "long gap: retract {retract} should beat surface {surface}"
+        );
+    }
+
+    #[test]
+    fn surface_link_beats_retract_on_short_gaps() {
+        // 2 mm gap at feed 2000: the surface link barely moves. The
+        // retract loop must climb to a safe_z 10 mm above both
+        // endpoints, so it covers 22 mm regardless of the gap being
+        // tiny — surface must win.
+        let from = P3::new(0.0, 0.0, 0.0);
+        let to = P3::new(2.0, 0.0, 0.0);
+        let path = [to];
+        let kin = shapeoko();
+        let retract = retract_link_time(from, to, 10.0, None, 300.0, &kin, 4000.0, 5000.0);
+        let surface = surface_link_time(from, &path, 2000.0, &kin, 4000.0, 5000.0);
+        assert!(
+            surface < retract,
+            "short gap: surface {surface} should beat retract {retract}"
+        );
+    }
+
+    #[test]
+    fn descend_rapid_shortens_retract_link() {
+        // safe_z is 10 mm above `to.z`; a slow 150 mm/min plunge rate
+        // makes the plunge distance the dominant cost. Descending most
+        // of the way at rapid before switching to feed should shave
+        // 8 mm of slow plunge off for ~8 mm of much-faster rapid —
+        // strictly cheaper.
+        let from = P3::new(0.0, 0.0, 0.0);
+        let to = P3::new(50.0, 0.0, 0.0);
+        let kin = shapeoko();
+        let without_descend = retract_link_time(from, to, 10.0, None, 150.0, &kin, 4000.0, 5000.0);
+        let with_descend = retract_link_time(
+            from,
+            to,
+            10.0,
+            Some(to.z + 2.0),
+            150.0,
+            &kin,
+            4000.0,
+            5000.0,
+        );
+        assert!(
+            with_descend < without_descend,
+            "descend_rapid_to should shorten the link: {with_descend} vs {without_descend}"
+        );
     }
 }

@@ -73,6 +73,69 @@ time(retract + rapid + re-plunge). Pick the cheaper. Sites:
 Acceptance: integrator wall-clock A/B per op on wanaka; no new sim collisions;
 gouge-safety of surface links unchanged (drop-cutter sampled, fall back to retract).
 
+**P1 detailed design (2026-07-07, post-probe code audit):**
+
+- **W1 — costing helper** (`machine_kinematics.rs`): `retract_link_time` /
+  `surface_link_time` — build the candidate move sequence as a tiny synthetic
+  `Toolpath` (seed rapid at `from`, then the candidate moves) and integrate with
+  `compute_cycle_time`. Rest-to-rest bracketing is conservative for both
+  candidates equally.
+- **W2 — plunge-descent optimization**: `emit_path_segment_with_intent`
+  (`toolpath.rs:227`) plunges from `safe_z` at plunge feed — the 1461 s
+  (Rivers) / 335 s (pencil). Add `descend_rapid_to: Option<f64>`: when `Some(z)`
+  with `path[0].z < z < safe_z`, emit rapid-over(Linking) → rapid-down to z
+  (Linking) → plunge(EntryPlunge) only the rest. SAFETY RULE: callers may pass
+  `Some` ONLY when the descend height derives from drop-cutter sampling at that
+  XY (tool-center safe height): raster grid (`first_pt.z + PLUNGE_CLEARANCE_MM`),
+  pencil (valley pts are drop-cutter), scallop rings (verify ring_to_3d), and
+  project_curve (surface = the z it would emit at depth 0, per z_flip branch).
+  Waterline keeps `None` — its z-level points are not per-XY drop-cutter heights
+  and walls can rise above them. `PLUNGE_CLEARANCE_MM = 2.0` (clears typical
+  stock_to_leave + scallop crest).
+- **W3 — boundary-clip re-entry** (`boundary.rs:110`): re-entry currently
+  descends safe_z→target at the ORIGINAL CUTTING FEED, untagged — this is
+  Finish 6's 656 s `unknown_s`. Fix: tag all clipper emissions (over=Linking,
+  exit=Retract, re-entry descent=EntryPlunge), take `plunge_rate` +
+  `descend_clearance: Option<f64>` from callers; finish-family ops
+  (`feeds_pass_role == PassRole::Finish`) opt into rapid-down to
+  `target.z + clearance` then plunge; clearing-family ops keep full-feed
+  descent (mid-stock targets — rapid-down unsafe), tagged. Retract-hop culling
+  for short excursions DEFERRED to P2 (needs stock context the clipper lacks).
+- **W4 — cost-based link decisions** (after W1 lands): pencil — keep
+  `hookup_distance` as the candidate CAP, decide surface-link vs retract by W1
+  cost instead of emitting the link whenever it exists. Scallop — offer a
+  drop-cutter-sampled surface link (share/promote pencil's `build_surface_link`)
+  for non-helical connectors, cost-compared; ONLY when no region filter is
+  active (selective scallop's excluded islands may hold uncleared stock on
+  FromRemainingStock — mesh-sampled links are not gouge-safe there; planner/P2
+  owns that case).
+- **Gates**: clippy, core lib, f034+f036b, `param_sweep` (fingerprints WILL
+  move — descent changes geometry; verify diffs are descent-shaped only),
+  sentry battery, then live wanaka A/B via `runtime_by_intent` (expect entry_s
+  and unknown_s to collapse on Rivers/pencil/Finish 6; 0 new rapid collisions).
+- **P1 LIVE A/B FLAW (2026-07-07 ~21:30, caught by the 0-collision gate):**
+  mesh-derived descend heights are WRONG for FromRemainingStock ops — Rivers
+  regenerated with descents produced **151 rapid collisions** (baseline 0).
+  River channels were never entered by the Ø6 rough, so remaining stock sits
+  many mm above the mesh at exactly the entry XYs; "rapid down to mesh+2mm"
+  descends through real material that the old plunge-at-feed legitimately CUT.
+  Lesson: **a safe descend ceiling must come from the INPUT STOCK, never the
+  mesh** — reworked as a post-generation pass (`optimize_entry_descents`)
+  that queries `TriDexelStock::max_top_z_in_disc(x, y, tool_radius)` (prior
+  dexel for rest ops, stock-top plane for fresh) and splits EntryPlunge feeds
+  after the clip. Per-generator mesh descents + clip clearance descents
+  REVERTED in favor of the single stock-aware pass.
+- **P1 implementation notes (2026-07-07)**: W1+W2+W3+W4a landed together.
+  Scallop's `test_scallop_continuous_no_rapids_between_rings` bound moved 4→6
+  (each retract-entry is now 3 rapids: over, descend, then the plunge is a
+  feed). W4a scope: pencil only — scallop cost-based surface links deferred
+  (only matter on the region-gated selective path, which the gouge-safety rule
+  excludes from mesh-sampled links anyway). KNOWN GAP: the GUI compute worker's
+  `ComputeRequest` carries no machine profile, so GUI/MCP-triggered generates
+  run the pencil with `link_kinematics: None` (legacy always-link behavior);
+  core-session generates get the cost decision. Follow-up: thread the machine
+  profile into `ComputeRequest`. W4b (scallop) revisit after the A/B.
+
 ### P2 — Finishing pass planner (phase merge) `[ ]`
 
 One op (or orchestrated pass) that:
@@ -118,7 +181,14 @@ and its innermost offset ring.
 - [x] P0 probe run + numbers logged below (2026-07-07)
 - [x] P0 decision recorded: **PROCEED to P1+P2** (strict finishing overhead 25.2%,
       detail+finishing 39.3% — gate was 15–20%)
-- [ ] P1 quantitative linker (pencil, scallop, boundary-clip) + A/B
+- [x] P1 quantitative linker + stock-aware entry descents + A/B (2026-07-07
+      headless, GUI-modulation-equivalent): **project −16.6% (10692→8920 s),
+      finishing/detail subset −18.2%; Rivers −54%, Lakes −35%, Finish 6 −9.1%;
+      roughing controls unchanged; 0 rapid collisions; unknown_s eliminated.**
+      Harness: `crates/rs_cam_core/tests/p1_headless_ab_wanaka.rs`
+      (`--ignored --nocapture`). Remaining P1 follow-ups: GUI `ComputeRequest`
+      machine-profile threading (pencil cost decision inactive from GUI), W4b
+      scallop cost links, live-GUI confirmation of the collision count.
 - [ ] P2 design doc (decomposition/strategy/routing interfaces)
 - [ ] P2 implementation + A/B vs phase-based stack
 - [ ] P3 morphed spiral strategy + degeneracy fallback

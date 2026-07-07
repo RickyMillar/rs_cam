@@ -845,3 +845,18 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   Finish 6 emits 656 s of untagged (Unknown-intent) link feeds — tagging gap for P1.
   Gates: clippy clean, core lib 2084/3 known reds, f034 10/10 + f036b 5/5 sentries,
   viz 227/227.
+- 2026-07-07/08 overnight (P1 quantitative linker + stock-aware entry descents):
+  W1 `retract_link_time`/`surface_link_time` (integrator-costed link candidates) +
+  `LinkKinematics` bundle on ExecutionContext; W3 boundary-clip MoveIntent tagging
+  (kills Finish 6's 656 s unknown_s); W4a pencil hookup = cost decision (cap stays
+  the candidate filter); W2 REWORKED after live A/B caught 151 rapid collisions —
+  mesh-derived descend heights are unsafe on FromRemainingStock (river channels
+  hold stock far above the mesh); replaced by `dressup::optimize_entry_descents`
+  post-pass splitting EntryPlunge feeds at `TriDexelStock::max_top_z_in_disc(x,y,
+  tool_r) + PLUNGE_CLEARANCE_MM` (prior dexel for rest ops, stock-top plane for
+  fresh; provenance-remapped spans). HEADLESS A/B (new harness
+  tests/p1_headless_ab_wanaka.rs, GUI-modulation-equivalent): project −16.6%
+  (10692→8920 s), Rivers −54%, Lakes −35%, Finish 6 −9.1%, roughing controls
+  unchanged, 0 rapid collisions, unknown_s = 0 everywhere. Open: ComputeRequest
+  machine threading (GUI pencil cost decision), W4b scallop links, live-GUI
+  collision confirm.
