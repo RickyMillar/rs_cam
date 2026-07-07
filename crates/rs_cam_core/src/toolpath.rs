@@ -4,7 +4,8 @@
 //! This enables dressups, visualization, and analysis without G-code parsing.
 
 use crate::dropcutter::DropCutterGrid;
-use crate::geo::P3;
+use crate::geo::{P2, P3};
+use crate::region_set::RegionSet;
 
 /// Clearance (mm) above the INPUT STOCK's material ceiling used by the
 /// entry-descent post-pass ([`crate::dressup::optimize_entry_descents`]) to
@@ -521,12 +522,20 @@ pub fn simplify_path_3d_keep_mask(points: &[P3], tolerance: f64) -> Vec<bool> {
 /// When `min_z` is `Some(z)`, contiguous segments where every point is
 /// clamped at `z` (zero engagement) are skipped rather than emitted as
 /// flat passes.
+///
+/// `boundary_regions` (P2.3): when `Some`, points outside every region are
+/// treated exactly like `min_z`-clamped points — folded into the same
+/// per-point engagement check, excluded from their row's cutting segments
+/// (retract-traverse-plunge between runs, same as a `min_z` gap). `None`
+/// reproduces today's behavior byte-for-byte, including the unpartitioned
+/// whole-row fast path when `min_z` is also `None`.
 pub fn raster_toolpath_from_grid(
     grid: &DropCutterGrid,
     feed_rate: f64,
     plunge_rate: f64,
     safe_z: f64,
     min_z: Option<f64>,
+    boundary_regions: Option<&RegionSet<'_>>,
 ) -> Toolpath {
     let mut tp = Toolpath::new();
 
@@ -545,15 +554,19 @@ pub fn raster_toolpath_from_grid(
         let reverse = row % 2 != 0;
         let col_at = |i: usize| -> usize { if reverse { grid.cols - 1 - i } else { i } };
 
-        // When min_z filtering is active, partition the row into segments
-        // where at least one point is above the clamp.
-        if let Some(clamp_z) = min_z {
+        // When min_z filtering or a boundary-region set is active, partition
+        // the row into segments where every point clears the min_z clamp
+        // (when given) AND sits inside a boundary region (when given).
+        if min_z.is_some() || boundary_regions.is_some() {
             let mut segments: Vec<(usize, usize)> = Vec::new();
             let mut seg_start: Option<usize> = None;
             for i in 0..grid.cols {
                 let col = col_at(i);
-                let z = grid.get(row, col).z;
-                let engaging = z > clamp_z + CLAMP_EPS;
+                let pt = grid.get(row, col);
+                let z_ok = min_z.is_none_or(|clamp_z| pt.z > clamp_z + CLAMP_EPS);
+                let region_ok =
+                    boundary_regions.is_none_or(|regions| regions.contains(&P2::new(pt.x, pt.y)));
+                let engaging = z_ok && region_ok;
                 if engaging {
                     if seg_start.is_none() {
                         seg_start = Some(i);
@@ -566,10 +579,11 @@ pub fn raster_toolpath_from_grid(
                 segments.push((start, grid.cols - 1));
             }
 
-            // Do NOT merge across gaps: gap points are clamped at min_z, so
-            // cutting through them would plunge the tool to the floor. Each
-            // contiguous engaging run must be its own pass (retract-traverse-
-            // plunge between runs).
+            // Do NOT merge across gaps: gap points are clamped at min_z or
+            // outside every boundary region, so cutting through them would
+            // either plunge the tool to the floor or cross outside the
+            // machining boundary. Each contiguous engaging run must be its
+            // own pass (retract-traverse-plunge between runs).
             for &(seg_s, seg_e) in &segments {
                 let first_col = col_at(seg_s);
                 let first_pt = grid.get(row, first_col);
@@ -590,7 +604,7 @@ pub fn raster_toolpath_from_grid(
                 tp.rapid_to_with_intent(P3::new(last_pt.x, last_pt.y, safe_z), MoveIntent::Retract);
             }
         } else {
-            // No min_z filtering — emit the entire row
+            // No min_z filtering and no boundary regions — emit the entire row
             let first_col = col_at(0);
             let first_pt = grid.get(row, first_col);
             tp.rapid_to_with_intent(P3::new(first_pt.x, first_pt.y, safe_z), MoveIntent::Linking);
@@ -623,6 +637,13 @@ pub fn raster_toolpath_from_grid(
 /// When `min_z` is `Some(z)`, points clamped at that Z (zero engagement)
 /// are also treated as excluded.
 ///
+/// `boundary_regions` (P2.3): when `Some`, points outside every region are
+/// also treated as excluded, AND — like a `min_z` clamp, unlike a bare
+/// slope exclusion — block bridging: a gap can be bridged only when every
+/// point in it stays inside the machining boundary, so the tool never rides
+/// the surface across an excluded island. `None` reproduces today's
+/// behavior byte-for-byte.
+///
 /// Cutting moves along the row body are tagged `body_intent` (rather than
 /// the default `MoveIntent::Unknown` a plain `feed_to` would leave them
 /// with), so downstream engagement/air-cut metrics can distinguish this
@@ -638,6 +659,7 @@ pub fn raster_toolpath_from_grid_with_slope_filter(
     safe_z: f64,
     min_z: Option<f64>,
     body_intent: MoveIntent,
+    boundary_regions: Option<&RegionSet<'_>>,
 ) -> Toolpath {
     let mut tp = Toolpath::new();
 
@@ -660,11 +682,13 @@ pub fn raster_toolpath_from_grid_with_slope_filter(
         let col_at = |i: usize| -> usize { if reverse { grid.cols - 1 - i } else { i } };
 
         // Phase 1: Find contiguous in-range segments for this row.
-        // A point is "in-range" if its slope is within [slope_from, slope_to]
-        // AND it is not clamped at min_z (i.e. it actually engages the surface).
+        // A point is "in-range" if its slope is within [slope_from, slope_to],
+        // it is not clamped at min_z (i.e. it actually engages the surface),
+        // and (when a boundary-region set is given) it sits inside a region.
         // Track clamped cells separately — bridging across slope-only gaps is
         // safe (the tool rides the surface through the gap), but bridging
-        // across clamped gaps dives the tool to the min_z floor.
+        // across clamped OR region-excluded gaps would dive the tool to the
+        // min_z floor or cut outside the machining boundary.
         let mut clamped = vec![false; grid.cols];
         let mut in_range = vec![false; grid.cols];
         for (i, (is_clamped, is_in_range)) in
@@ -675,9 +699,12 @@ pub fn raster_toolpath_from_grid_with_slope_filter(
             let slope_ok = slope_angles
                 .get(idx)
                 .is_none_or(|&angle| angle >= slope_from && angle <= slope_to);
-            let z_ok = min_z.is_none_or(|clamp_z| grid.get(row, col).z > clamp_z + CLAMP_EPS);
-            *is_clamped = !z_ok;
-            *is_in_range = slope_ok && z_ok;
+            let pt = grid.get(row, col);
+            let z_ok = min_z.is_none_or(|clamp_z| pt.z > clamp_z + CLAMP_EPS);
+            let region_ok =
+                boundary_regions.is_none_or(|regions| regions.contains(&P2::new(pt.x, pt.y)));
+            *is_clamped = !z_ok || !region_ok;
+            *is_in_range = slope_ok && z_ok && region_ok;
         }
         let segments = crate::point_runs::split_run_ranges(&in_range, |_, &keep| keep, 1);
 
@@ -1138,6 +1165,7 @@ mod tests {
             10.0,
             None,
             MoveIntent::FinishingCut,
+            None,
         );
         // Should emit: rapid to (0,0,10) → plunge → feed 1-4 → retract at (4,0,10)
         // The retract should be at x=4 (last in-range col), NOT x=5 (first excluded)
@@ -1178,6 +1206,7 @@ mod tests {
             10.0,
             None,
             MoveIntent::FinishingCut,
+            None,
         );
 
         // Count retract-plunge pairs (rapid moves at safe_z that aren't the first)
@@ -1212,6 +1241,7 @@ mod tests {
             10.0,
             None,
             MoveIntent::FinishingCut,
+            None,
         );
         assert!(
             tp.moves.is_empty(),
@@ -1233,8 +1263,9 @@ mod tests {
             10.0,
             None,
             MoveIntent::FinishingCut,
+            None,
         );
-        let tp_unfiltered = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None);
+        let tp_unfiltered = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None, None);
         assert_eq!(
             tp_filtered.moves.len(),
             tp_unfiltered.moves.len(),
@@ -1252,8 +1283,8 @@ mod tests {
         // col 5-19 at z=1 (below clamp of z=3).
         let grid = make_test_grid(5, 20, |_, col| if col < 5 { 5.0 } else { 1.0 });
 
-        let tp_no_filter = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None);
-        let tp_with_filter = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, Some(3.0));
+        let tp_no_filter = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None, None);
+        let tp_with_filter = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, Some(3.0), None);
 
         assert!(
             tp_with_filter.moves.len() < tp_no_filter.moves.len(),
@@ -1275,7 +1306,7 @@ mod tests {
     fn test_min_z_all_clamped_emits_nothing() {
         // All points at z=1, min_z=3 → all clamped → no moves
         let grid = make_test_grid(3, 10, |_, _| 1.0);
-        let tp = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, Some(3.0));
+        let tp = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, Some(3.0), None);
         assert!(
             tp.moves.is_empty(),
             "All-clamped grid should produce no moves, got {}",
@@ -1287,7 +1318,7 @@ mod tests {
     fn test_min_z_none_matches_original() {
         // With min_z=None, should produce same result as before
         let grid = make_test_grid(3, 10, |_, col| col as f64 * 0.5);
-        let tp_none = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None);
+        let tp_none = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None, None);
         assert!(
             !tp_none.moves.is_empty(),
             "min_z=None should still produce moves"
@@ -1298,5 +1329,102 @@ mod tests {
             3 * (2 + 10), // 3 rows × (rapid + plunge + 9 feeds + retract)
             "Unfiltered should have all moves"
         );
+    }
+
+    // ── P2.3: boundary_regions ────────────────────────────────────────
+
+    #[test]
+    fn raster_boundary_regions_none_matches_call_without_param() {
+        // `boundary_regions = None` must reproduce the pre-P2.3 behavior
+        // byte-for-byte, including the unpartitioned whole-row fast path
+        // (min_z is also None here, so this exercises the `else` branch).
+        let grid = make_test_grid(3, 10, |_, col| col as f64 * 0.5);
+        let tp_none = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None, None);
+
+        // A region generously covering the whole grid footprint must behave
+        // identically to no filter at all.
+        let covering = crate::polygon::Polygon2::rectangle(-5.0, -5.0, 20.0, 20.0);
+        let region_set = crate::region_set::RegionSet::new(vec![covering]);
+        let tp_covered =
+            raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None, Some(&region_set));
+
+        assert_eq!(tp_none.moves.len(), tp_covered.moves.len());
+        for (a, b) in tp_none.moves.iter().zip(tp_covered.moves.iter()) {
+            assert_eq!(a.move_type, b.move_type);
+            assert_eq!(a.intent, b.intent);
+            assert!((a.target.x - b.target.x).abs() < 1e-9);
+            assert!((a.target.y - b.target.y).abs() < 1e-9);
+            assert!((a.target.z - b.target.z).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn raster_boundary_regions_confines_cuts_to_region() {
+        // A region covering only the left half of the grid (cols 0-4 of a
+        // 0..9 X range) must exclude the right half's points from every row,
+        // the same way a min_z clamp would.
+        let grid = make_test_grid(3, 10, |_, _| 0.0);
+        let left_half = crate::polygon::Polygon2::rectangle(-1.0, -1.0, 4.5, 3.0);
+        let region_set = crate::region_set::RegionSet::new(vec![left_half]);
+
+        let tp_full = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None, None);
+        let tp_confined =
+            raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None, Some(&region_set));
+
+        assert!(
+            tp_confined.moves.len() < tp_full.moves.len(),
+            "confining to the left half should shrink the move count: {} !< {}",
+            tp_confined.moves.len(),
+            tp_full.moves.len()
+        );
+        for m in &tp_confined.moves {
+            assert!(
+                m.target.x <= 4.5 + 1e-9,
+                "no cutting/rapid move should reach past the region boundary, got x={}",
+                m.target.x
+            );
+        }
+    }
+
+    #[test]
+    fn raster_slope_filter_boundary_regions_none_matches_call_without_param() {
+        let grid = make_test_grid(1, 10, |_, _| 0.0);
+        let slopes = vec![45.0; 10]; // all in-range
+        let tp_none = raster_toolpath_from_grid_with_slope_filter(
+            &grid,
+            &slopes,
+            0.0,
+            90.0,
+            1000.0,
+            500.0,
+            10.0,
+            None,
+            MoveIntent::FinishingCut,
+            None,
+        );
+
+        let covering = crate::polygon::Polygon2::rectangle(-5.0, -5.0, 20.0, 20.0);
+        let region_set = crate::region_set::RegionSet::new(vec![covering]);
+        let tp_covered = raster_toolpath_from_grid_with_slope_filter(
+            &grid,
+            &slopes,
+            0.0,
+            90.0,
+            1000.0,
+            500.0,
+            10.0,
+            None,
+            MoveIntent::FinishingCut,
+            Some(&region_set),
+        );
+
+        assert_eq!(tp_none.moves.len(), tp_covered.moves.len());
+        for (a, b) in tp_none.moves.iter().zip(tp_covered.moves.iter()) {
+            assert_eq!(a.move_type, b.move_type);
+            assert_eq!(a.intent, b.intent);
+            assert!((a.target.x - b.target.x).abs() < 1e-9);
+            assert!((a.target.y - b.target.y).abs() < 1e-9);
+            assert!((a.target.z - b.target.z).abs() < 1e-9);
+        }
     }
 }

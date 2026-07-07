@@ -226,12 +226,13 @@ pub struct ExecutionContext<'a> {
     pub boundary: Option<&'a Polygon2>,
     /// P2.3: sibling of `boundary` — the multi-region set the mesh-finish
     /// family (scallop / radial / spiral / steep-shallow / ramp / horizontal
-    /// / waterline) pre-clips generation to, so sampling never wastes work
-    /// outside the machining boundary and never has to be discarded at
-    /// post-clip. `boundary` remains the adaptive3d single-polygon pre-clear
-    /// path; the two carry independent semantics today and consolidating
-    /// them is deferred. Consolidated onto `RegionSet` (region_set.rs) so
-    /// containment tests share one implementation across every family.
+    /// / waterline / drop_cutter) pre-clips generation to, so sampling never
+    /// wastes work outside the machining boundary and never has to be
+    /// discarded at post-clip. `boundary` remains the adaptive3d
+    /// single-polygon pre-clear path; the two carry independent semantics
+    /// today and consolidating them is deferred. Consolidated onto
+    /// `RegionSet` (region_set.rs) so containment tests share one
+    /// implementation across every family.
     pub boundary_regions: Option<&'a RegionSet<'a>>,
     /// P1 quantitative linker (unified-finishing-pass W4a): the machine
     /// envelope the pencil generator (and, in future, other finishing
@@ -1530,6 +1531,7 @@ pub(crate) fn generate_drop_cutter(
             safe_z,
             min_z_filter,
             crate::toolpath::MoveIntent::FinishingCut,
+            ctx.boundary_regions,
         )
     } else {
         crate::toolpath::raster_toolpath_from_grid(
@@ -1538,6 +1540,7 @@ pub(crate) fn generate_drop_cutter(
             plunge_rate,
             safe_z,
             min_z_filter,
+            ctx.boundary_regions,
         )
     };
     Ok(with_depth_run_annotation(
