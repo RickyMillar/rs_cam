@@ -81,18 +81,79 @@ adaptive's regions are today. The session's 1-config-1-toolpath invariant holds.
   steep_shallow's dilation params carry over as planner params).
 - steep_shallow op stays untouched (deprecation decision is the user's, later).
 
-## Open questions for review
+## Decisions (user review, 2026-07-08)
 
-1. Steep strategy: waterline rings per region vs scallop-continuous confined
-   to the region — scallop's rings follow the boundary shape (better for
-   organic islands); waterline is strictly Z-leveled (better for true walls).
-   Proposal: default scallop-continuous for steep islands whose aspect is
-   blobby, waterline for wall-like (needs a cheap shape metric — or just a
-   user param to start).
-2. Crease corridors: subtract pencil half-width corridors from shallow
-   regions, or let the shallow pass overlap and rely on the crease pass to
-   clean? Proposal: overlap (simpler, no new geometry ops); measure scallop
-   crests at corridor edges in the A/B.
-3. Where does the planner get its heightmap: reuse the drop-cutter grid the
-   raster strategy needs anyway (one sampling, shared), sampled at the
-   FINEST stepover among assigned strategies.
+1. **Three bands, two thresholds** (user: scallop is faster, waterline is
+   better on true steeps; both matter): shallow → raster; mid-steep →
+   scallop-continuous rings; very-steep → waterline. Primary dial =
+   `steep_threshold_deg` (default 45°); `waterline_threshold_deg` (default
+   65°) is an advanced dial. Bands with no cells simply don't exist.
+2. **Overlap is a parameter** (like steep_shallow's `overlap_distance`),
+   default derived from the strategy stepover, not a magic constant.
+3. **One heightmap**, sampled once at the finest stepover among assigned
+   strategies; SlopeMap, decomposition, and all strategies read it.
+4. **Ball-tip tools only** (ball nose + tapered ball) via registry
+   `tool_constraints`, like scallop today. Kills the flat/V-bit contact-
+   geometry axis entirely.
+5. **One-new-dial rule**: the op's genuinely new dials are the two threshold
+   angles + overlap. Everything else (scallop height, stepovers, crease
+   detector knobs, feeds) is inherited from the existing per-strategy params.
+
+## Crease corridors: merge by default, split by measured width
+
+The ridge detector already measures `half_width_mm` per centerline. Rule:
+a crease stays INSIDE its surrounding zone (raster/rings cut across it;
+they physically can't reach the crease bottom — that residual is exactly
+what the pencil pass cleans) when `half_width < K × tool_radius` (K ≈ 2,
+tunable); wider than that it's a canyon, not a crease — it becomes its own
+zone. This answers merge-vs-split with data we already compute, and avoids
+over-splitting shallow zones at every hairline valley.
+
+## Risk register (self-review, 2026-07-08)
+
+- **R1 — boundary fragmentation (the steep_shallow ghost; TOP RISK).** Slope
+  oscillation around a threshold shreds the mask into islands. The design
+  MUST include a region-conditioning stage before polygon extraction:
+  hysteresis between the two thresholds (enter steep above T, leave below
+  T−10°), morphological close, and MIN-AREA ABSORPTION (regions smaller than
+  ~a few tool diameters² merge into their surrounding band rather than
+  existing independently). The sliver cap + pathology advice (d0d6d75) stay
+  as the backstop. Acceptance: region count on wanaka should be O(10), not
+  O(100).
+- **R2 — seam quality at band boundaries.** Ring/raster direction changes at
+  a boundary can leave visible crests. Overlap param + scallop-height spot
+  checks at boundaries in the A/B; if seams persist, boundary-following
+  cleanup ring as a later increment.
+- **R3 — routing ceiling is modest on wanaka; don't oversell.** Post-P1 the
+  finishing stack's addressable linking is ~1000–1500 s of 9543; the router
+  might recover a third to a half of that (~5–8% project). The equally real
+  P2 payoff is ONE op replacing three + region-local quality choices. If the
+  A/B shows less than ~5%, the planner still ships on the UX/quality merits
+  but P3 (morphed spiral) takes priority for time wins.
+- **R4 — ordering/decomposition tuning space.** The router itself (greedy +
+  2-opt over tens of regions with integrator costs) is a solved shape; the
+  real unknowns are decomposition parameters (thresholds, hysteresis,
+  min-area, overlap, corridor K). Plan: expose them on the config from day
+  one and drive a SWEEP HARNESS (param_sweep pattern + the headless-A/B
+  scoring: integrator wall-clock, collision count, deviation/coverage) over
+  wanaka + 2–3 synthetic fixtures (dome, cliff, branching valley). That is
+  the deterministic version of the user's "monte carlo the maxima" idea —
+  sweeps over the dials that matter, scored by the same integrator metric
+  as everything else.
+- **R5 — stitching side-data.** Merging per-region `AnnotatedToolpath`s:
+  spans offset-remap (clip-provenance pattern, solved), but rest_grid /
+  rest_regions / debug traces come from the crease detector only — the
+  unified op must carry the detector's grid so the heatmap overlay works.
+  Budget a PR for this; it's fiddly, not hard.
+- **R6 — cancellation + progress.** Multi-region generation must poll cancel
+  between regions and report phase progress (existing CancelCheck + debug
+  trace patterns; MCP timeout/cancel already landed).
+
+## Build order (P2.b onward)
+
+1. P2.b — decomposition + conditioning (R1) with tests on synthetic fixtures;
+   no toolpath emission yet, just regions + a debug/heatmap view.
+2. P2.c — per-band generation + naive concatenation (no router), A/B
+   checkpoint #1 (must not regress the P1 stack).
+3. P2.d — router (greedy + link costing + 2-opt toggle), A/B checkpoint #2.
+4. P2.e — decomposition-parameter sweep harness; lock defaults from data.
