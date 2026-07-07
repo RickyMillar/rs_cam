@@ -860,3 +860,39 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   unchanged, 0 rapid collisions, unknown_s = 0 everywhere. Open: ComputeRequest
   machine threading (GUI pencil cost decision), W4b scallop links, live-GUI
   collision confirm.
+- 2026-07-08 (P2.b decomposition + conditioning, UNCOMMITTED as of writing):
+  new `finish_planner` core module — `decompose(slope_map, covered, creases,
+  tool_radius, params)` → three conditioned bands (Shallow raster / MidSteep
+  scallop / VerySteep waterline) as clean polygons via the shared
+  `region_polygons_from_mask`, plus the crease corridor rule
+  (`half_width_mm < corridor_k × tool_radius` stays in-band; wider = own
+  region, corridor carved out of band masks). R1 conditioning = hysteresis
+  (multi-source seeded flood, enter/leave thresholds), EDT-based
+  morphological close, min-area absorption (deterministic order + majority
+  vote, ≤4 passes). `FinishPlannerParams::for_tool` carries the new dials
+  (45/65 thresholds, hysteresis 10°, corridor K=2, close r/2, min-area
+  4×(2r)²); `planned_regions_to_svg` is the P2.b debug/visual surface.
+  R1 ACCEPTANCE PASSED: wanaka → 1 region (3 raw steep islands = diagonal
+  river-channel walls, correctly absorbed — crease territory), O(10) ≫
+  satisfied; SVGs in target/finish_planner_debug/. FELL-OUT SHARED FIX:
+  `polygon::detect_containment` lacked even-odd nesting — island-in-hole
+  (dome cap inside a band annulus) was silently consumed as a hole of the
+  outermost polygon; now containment-depth based (even = top-level, odd =
+  hole of innermost even-depth container), depth ≤ 1 callers byte-identical.
+  Gates: clippy workspace clean; core lib 2116/3 known reds (11 new
+  finish_planner + 2 new polygon tests); cli 9/9; viz 227/227; wanaka
+  acceptance 1/1. Next: P2.c per-band generation + naive concat.
+- 2026-07-08 (P2.b follow-up, user-caught): classification surface was WRONG —
+  the drop-cutter heightmap is the ball-CENTER offset surface and hides
+  steepness at feature scales ≤ ball radius (wanaka true surface 38.5% ≥45°,
+  offset surface 0.1%, max 89° vs 52°). Added
+  `finish_setup::build_classification_surface_with_cancel` (tiny bare-surface
+  probe, rest_field precedent; grid cell-compatible with the generation
+  surface) + stencil-safe 1-cell coverage erosion in decompose (min_z-clamp
+  boundary cliffs). True-surface wanaka: 54+2 raw islands → 3 regions (mid-
+  steep tracks the real mountain range). Design decision #3 amended:
+  CLASSIFY on true surface, GENERATE on offset surface — decomposition is
+  tool-independent (multi-tool cascade ready). steep_shallow op shares the
+  offset-surface blind spot (quantified via
+  `wanaka_slope_distribution_diagnostic`; left as-is, planner supersedes).
+  Gates re-green (clippy clean, finish_planner 11/11, finish_setup 10/10).

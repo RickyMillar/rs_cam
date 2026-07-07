@@ -28,7 +28,8 @@ pub const MAX_REST_REGIONS: usize = 64;
 
 /// Dilate a boolean mask by `dilate_mm` (via a whole-grid Euclidean distance
 /// transform, not a per-cell radius search) and extract the dilated region(s)
-/// as closed [`Polygon2`]s with holes grouped one level deep.
+/// as closed [`Polygon2`]s with holes grouped by even-odd containment depth
+/// (an island inside a hole stays a top-level polygon).
 ///
 /// `origin_x`/`origin_y` are the world coordinates of cell `(0, 0)`'s centre;
 /// `cell_mm` is the cell size. `dilate_mm <= 0.0` skips dilation (uses `mask`

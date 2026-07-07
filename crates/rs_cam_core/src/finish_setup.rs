@@ -96,6 +96,57 @@ pub fn build_finish_surface_with_cancel(
     build_finish_surface_with_cell_size_and_cancel(mesh, index, cutter, cell_size, cancel)
 }
 
+/// Diameter of the bare-surface probe used by
+/// [`build_classification_surface_with_cancel`] — small enough that the
+/// probe's own offset is negligible at finish cell sizes, mirroring
+/// `rest_field`'s "tiny bare-surface probe" reference pattern.
+pub const CLASSIFICATION_PROBE_DIAMETER_MM: f64 = 0.05;
+
+/// Build the CLASSIFICATION surface: the true model surface sampled with a
+/// tiny bare-surface probe, NOT `cutter`'s tool-center offset surface.
+///
+/// Slope-band decomposition (`crate::finish_planner`) must read real surface
+/// slopes: a ball tool's offset surface geometrically hides steepness at
+/// feature scales at or below the ball radius — the ball bridges the feature
+/// and its center glides over a smoothed blanket. Measured on the wanaka
+/// relief (6 mm features, Ø6 ball): 38.5% of true surface area is ≥45°, but
+/// only 0.1% of the offset surface reads that steep, with a max of 52° vs a
+/// true 89°. The pre-existing `steep_shallow` op classifies on the offset
+/// surface and shares this blind spot.
+///
+/// Grid origin, extent, and resolution mirror [`build_finish_surface_with_cancel`]
+/// for the same `cutter`, so classification cells align 1:1 with the
+/// generation surface's cells. Cells beyond the mesh footprint are simply
+/// uncovered (the probe contacts nothing there), which also guarantees the
+/// non-contact margin ring the mask→polygon extractor needs.
+pub fn build_classification_surface_with_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    tolerance: f64,
+    cancel: &dyn CancelCheck,
+) -> Result<FinishSurface, Cancelled> {
+    let tool_radius = cutter.radius();
+    let cell_size = (tool_radius / 4.0).max(tolerance);
+    let bbox = &mesh.bbox;
+    let origin_x = bbox.min.x - tool_radius;
+    let origin_y = bbox.min.y - tool_radius;
+    let extent_x = bbox.max.x + tool_radius;
+    let extent_y = bbox.max.y + tool_radius;
+    let cols = ((extent_x - origin_x) / cell_size).ceil() as usize + 1;
+    let rows = ((extent_y - origin_y) / cell_size).ceil() as usize + 1;
+
+    let probe = crate::tool::BallEndmill::new(CLASSIFICATION_PROBE_DIAMETER_MM, 1.0);
+    let heightmap = SurfaceHeightmap::from_mesh_with_cancel(
+        mesh, index, &probe, origin_x, origin_y, rows, cols, cell_size, bbox.min.z, cancel,
+    )?;
+    let slope_map = heightmap.slope_map();
+    Ok(FinishSurface {
+        heightmap,
+        slope_map,
+    })
+}
+
 // ── Slope-window filter ──────────────────────────────────────────────────
 
 /// Lower sentinel (degrees) for the slope-confinement window: at or below
