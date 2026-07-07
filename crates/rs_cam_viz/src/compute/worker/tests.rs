@@ -40,6 +40,7 @@ fn sample_request(operation: OperationConfig, stock_source: StockSource) -> Comp
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
         rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -123,6 +124,7 @@ fn quick_pocket_request(id: usize) -> ComputeRequest {
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
         rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -163,6 +165,7 @@ fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
         rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -203,6 +206,7 @@ fn waterline_request(id: usize) -> ComputeRequest {
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
         rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -244,6 +248,7 @@ fn adaptive3d_request(id: usize) -> ComputeRequest {
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
         rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -305,6 +310,7 @@ fn drill_request(id: usize) -> ComputeRequest {
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
         rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -338,6 +344,7 @@ fn steep_shallow_request(id: usize) -> ComputeRequest {
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
         rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -384,6 +391,7 @@ fn pencil_request(id: usize) -> ComputeRequest {
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
         rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -423,6 +431,7 @@ fn scallop_request(id: usize) -> ComputeRequest {
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
         rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -463,6 +472,7 @@ fn ramp_finish_request(id: usize) -> ComputeRequest {
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
         rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -501,6 +511,7 @@ fn spiral_finish_request(id: usize) -> ComputeRequest {
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
         rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -540,6 +551,7 @@ fn radial_finish_request(id: usize) -> ComputeRequest {
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
         rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -578,6 +590,7 @@ fn horizontal_finish_request(id: usize) -> ComputeRequest {
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
         rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -620,6 +633,7 @@ fn project_curve_request(id: usize) -> ComputeRequest {
         material: rs_cam_core::material::Material::default(),
         derived_rest_regions: None,
         rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
