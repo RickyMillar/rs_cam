@@ -103,21 +103,49 @@ impl Default for ScallopParams {
     }
 }
 
-/// Compute the average variable stepover for a ring of 2D points using
-/// the slope map and scallop math.
-fn average_stepover_for_ring(
+/// Radius of the sphere that actually forms the cusp between adjacent
+/// passes: the ball TIP for tapered tools, the full radius otherwise.
+///
+/// P2.f (user-caught "coarse steep stepover", 2026-07-09): the cusp math
+/// previously used `cutter.radius()`, which for a tapered ball is the
+/// SHANK radius — on the wanaka tool (Ø2 tip on a Ø6 shank) that computed
+/// 0.51 mm ring spacing for h = 0.011 where the 1 mm tip needs 0.30 mm,
+/// i.e. the real cusp was ~3× the dial. The tip sphere is the exactly
+/// correct contact for every slope shallower than `90° − taper_half`
+/// (~83° on a 7° taper) — the cone flank never forms the cusp inside the
+/// scallop band. The feeds side already bounds on tip radius
+/// (`cutter_constraints`'s TaperedBall arm); this brings generation in
+/// line with it. Drop-cutter Z lifts always used the full tool profile —
+/// only this scalar spacing dial was wrong.
+fn cusp_radius(cutter: &dyn MillingCutter) -> f64 {
+    match cutter.geometry_hint() {
+        crate::feeds::ToolGeometryHint::TaperedBall { tip_radius, .. } => tip_radius,
+        _ => cutter.radius(),
+    }
+}
+
+/// Compute the ring's stepover from the slope map and scallop math —
+/// the MINIMUM over the sampled points, so the scallop-height guarantee
+/// holds at the ring's most demanding (steepest / most convex) stretch.
+///
+/// P2.f (2026-07-09): this was the MEAN, which on a dendritic mixed-slope
+/// region under-tightens exactly where the terrain is steepest — the
+/// residual +0.3–0.5 mm leftover band the fidelity instrument showed
+/// after the chord fix, and the visibly coarse steep stepover the user
+/// flagged. A per-ring constant is inherently a compromise (offsetting is
+/// uniform per ring); min is its conservative end.
+fn ring_stepover(
     ring: &[P2],
     slope_map: &crate::slope::SlopeMap,
-    tool_radius: f64,
+    cusp_r: f64,
     scallop_height: f64,
 ) -> f64 {
     if ring.is_empty() {
-        return crate::scallop_math::stepover_from_scallop_flat(tool_radius, scallop_height);
+        return crate::scallop_math::stepover_from_scallop_flat(cusp_r, scallop_height);
     }
 
     let sample_step = 1.max(ring.len() / 20);
-    let mut sum = 0.0;
-    let mut count = 0;
+    let mut min_so = f64::INFINITY;
 
     for pt in ring.iter().step_by(sample_step) {
         let angle = slope_map.angle_at_world(pt.x, pt.y).unwrap_or(0.0);
@@ -125,17 +153,16 @@ fn average_stepover_for_ring(
         // `curvatures`). scallop_math::variable_stepover expects the opposite
         // (positive = convex), so negate at this boundary.
         let curvature = -slope_map.curvature_at_world(pt.x, pt.y).unwrap_or(0.0);
-        let so = variable_stepover(tool_radius, scallop_height, angle, curvature);
+        let so = variable_stepover(cusp_r, scallop_height, angle, curvature);
         if so > 0.01 {
-            sum += so;
-            count += 1;
+            min_so = min_so.min(so);
         }
     }
 
-    if count == 0 {
-        crate::scallop_math::stepover_from_scallop_flat(tool_radius, scallop_height)
+    if min_so.is_finite() {
+        min_so
     } else {
-        sum / count as f64
+        crate::scallop_math::stepover_from_scallop_flat(cusp_r, scallop_height)
     }
 }
 
@@ -382,7 +409,7 @@ fn generate_scallop_rings(
     cutter: &dyn MillingCutter,
     slope_map: &crate::slope::SlopeMap,
     heightmap: &crate::slope::SurfaceHeightmap,
-    tool_radius: f64,
+    cusp_r: f64,
     scallop_height: f64,
     stock_to_leave: f64,
     min_z: f64,
@@ -397,7 +424,7 @@ fn generate_scallop_rings(
         cutter,
         slope_map,
         heightmap,
-        tool_radius,
+        cusp_r,
         scallop_height,
         stock_to_leave,
         min_z,
@@ -419,7 +446,7 @@ fn generate_scallop_rings_with_cancel(
     cutter: &dyn MillingCutter,
     slope_map: &crate::slope::SlopeMap,
     heightmap: &crate::slope::SurfaceHeightmap,
-    tool_radius: f64,
+    cusp_r: f64,
     scallop_height: f64,
     stock_to_leave: f64,
     min_z: f64,
@@ -451,34 +478,24 @@ fn generate_scallop_rings_with_cancel(
 
     for _ in 0..max_rings {
         check_cancel(cancel)?;
-        // Compute average stepover from the current ring's slope/curvature
-        let avg_stepover = if current_polys.is_empty() {
-            crate::scallop_math::stepover_from_scallop_flat(tool_radius, scallop_height)
+        // Ring stepover from the current rings' slope/curvature — MIN
+        // across polygons (matching `ring_stepover`'s min-across-samples)
+        // so the cusp guarantee holds on every branch of a multi-polygon
+        // cascade, not just the length-weighted average one.
+        let ring_so = current_polys
+            .iter()
+            .map(|poly| ring_stepover(&poly.exterior, slope_map, cusp_r, scallop_height))
+            .fold(f64::INFINITY, f64::min);
+        let ring_so = if ring_so.is_finite() {
+            ring_so
         } else {
-            // Sample from all current polygons
-            let mut total_so = 0.0;
-            let mut total_count = 0;
-            for poly in &current_polys {
-                let so = average_stepover_for_ring(
-                    &poly.exterior,
-                    slope_map,
-                    tool_radius,
-                    scallop_height,
-                );
-                total_so += so * poly.exterior.len() as f64;
-                total_count += poly.exterior.len();
-            }
-            if total_count > 0 {
-                total_so / total_count as f64
-            } else {
-                crate::scallop_math::stepover_from_scallop_flat(tool_radius, scallop_height)
-            }
+            crate::scallop_math::stepover_from_scallop_flat(cusp_r, scallop_height)
         };
 
         // Clamp stepover to reasonable bounds
-        let stepover = avg_stepover
-            .max(tool_radius * 0.05) // At least 5% of tool radius
-            .min(tool_radius * 3.0); // At most 3× tool radius
+        let stepover = ring_so
+            .max(cusp_r * 0.05) // At least 5% of the cusp radius
+            .min(cusp_r * 3.0); // At most 3× the cusp radius
 
         // Offset all current polygons inward, then DECIMATE each result
         // back to at most the heightmap's own sampling density.
@@ -631,7 +648,11 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>), Cancelled> {
     check_cancel(cancel)?;
+    // Physical extent (heightmap padding / grid coverage) keeps the FULL
+    // tool radius; all cusp/stepover math uses the cusp-forming radius
+    // (tip sphere for tapered tools — see `cusp_radius`).
     let tool_radius = cutter.radius();
+    let cusp_r = cusp_radius(cutter);
     let bbox = &mesh.bbox;
 
     // Build surface heightmap and slope map (shared setup, see finish_setup.rs)
@@ -659,9 +680,8 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
     let by0 = bbox.min.y;
     let bx1 = bbox.max.x;
     let by1 = bbox.max.y;
-    let flat_so =
-        crate::scallop_math::stepover_from_scallop_flat(tool_radius, params.scallop_height)
-            .max(tool_radius * 0.1);
+    let flat_so = crate::scallop_math::stepover_from_scallop_flat(cusp_r, params.scallop_height)
+        .max(cusp_r * 0.1);
     let boundary = {
         let mut pts = Vec::new();
         // Bottom edge
@@ -702,8 +722,8 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
 
     // Max rings: bounded by extent / min_stepover
     let min_stepover =
-        crate::scallop_math::stepover_from_scallop_flat(tool_radius, params.scallop_height)
-            .max(tool_radius * 0.05);
+        crate::scallop_math::stepover_from_scallop_flat(cusp_r, params.scallop_height)
+            .max(cusp_r * 0.05);
     let max_extent = (extent_x - origin_x).max(extent_y - origin_y);
     let max_rings = ((max_extent / min_stepover) * 0.5).ceil() as usize + 10;
 
@@ -737,7 +757,7 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
             cutter,
             &slope_map,
             &surface_hm,
-            tool_radius,
+            cusp_r,
             params.scallop_height,
             params.stock_to_leave,
             bbox.min.z,
@@ -795,13 +815,13 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
         // when it is a genuine helical transition — the tool is already
         // down and the hop is no longer than the widest ring spacing the
         // generator can produce (its stepover is clamped to at most
-        // `tool_radius * 3.0` above). Anything longer — a kept set that
+        // `cusp_r * 3.0` above). Anything longer — a kept set that
         // shifted to the far side of the ring under the combined keep
         // predicate, or the gap between two disjoint P2.3 boundary regions
         // — gets a retract/rapid/replunge link instead of chording across
         // excluded material at cutting feed (the P0.4 gouge class the
         // no-chord regression tests pin).
-        let link_threshold = tool_radius * 3.0;
+        let link_threshold = cusp_r * 3.0;
         // The tool's last emitted position. Seeded from the first ring's
         // geometric end (the pre-existing rotation seed) and updated to the
         // REAL last emitted point after every run — anchoring rotation on
@@ -1041,8 +1061,9 @@ mod tests {
         .unwrap();
         let slope_map = surface.slope_map;
 
-        // Sample stepover from the slope map at the center
-        let so = average_stepover_for_ring(
+        // Sample stepover from the slope map at the center (min == mean on
+        // a uniform flat surface, so the min-selection change is inert here)
+        let so = ring_stepover(
             &[P2::new(0.0, 0.0), P2::new(10.0, 0.0), P2::new(10.0, 10.0)],
             &slope_map,
             tool_radius,
@@ -1062,7 +1083,7 @@ mod tests {
         // Regression pin for the SlopeMap/scallop_math sign-convention mismatch:
         // SlopeMap reports NEGATIVE curvature at a physically convex dome peak
         // (see slope.rs::test_curvature_convex), but scallop_math::variable_stepover
-        // expects POSITIVE = convex. average_stepover_for_ring negates the raw
+        // expects POSITIVE = convex. ring_stepover negates the raw
         // SlopeMap value before calling variable_stepover. If that negation is
         // ever removed, this test fails: a convex dome must produce a TIGHTER
         // stepover than a flat surface, not a wider one.
@@ -1096,7 +1117,7 @@ mod tests {
         );
 
         // Same negation applied at the production call site in
-        // average_stepover_for_ring.
+        // ring_stepover.
         let curvature = -raw_curvature;
         let angle = slope_map.angle_at(10, 10);
 
