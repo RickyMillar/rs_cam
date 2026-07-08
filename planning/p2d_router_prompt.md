@@ -1,5 +1,14 @@
 # Handoff prompt — P2.d: unified-finish router (+ coastline stencil warm-up)
 
+> **STATUS 2026-07-08: BOTH TASKS DONE** (same day, post-compaction
+> session). Task 1: `SlopeMap::from_z_grid_max_gradient`, coastline
+> registers, B flipped to −4.1% project. Task 2: per-region generation +
+> greedy link-costed router with surface-link stitching → combined
+> **B −5.5% project (−494.6 s), finish −7.2%, collisions 0** vs pinned A.
+> See the tracker + ledger entries of the same date. Remaining tails
+> (crease integration, live GUI validation, offset_polygon root fix,
+> test-diet, P2.e sweep, P3) still tracked in the parent plan.
+
 Paste everything below into a fresh session.
 
 ---

@@ -192,6 +192,21 @@ impl SurfaceHeightmap {
             self.cell_size,
         )
     }
+
+    /// Classification-stencil slope map (max of one-sided gradients per
+    /// axis) — registers single-cell steps that central differences smear.
+    /// See [`SlopeMap::from_z_grid_max_gradient`] for when (and when NOT)
+    /// to use this.
+    pub fn slope_map_max_gradient(&self) -> SlopeMap {
+        SlopeMap::from_z_grid_max_gradient(
+            &self.z_values,
+            self.rows,
+            self.cols,
+            self.origin_x,
+            self.origin_y,
+            self.cell_size,
+        )
+    }
 }
 
 // ── Slope map ─────────────────────────────────────────────────────────
@@ -219,6 +234,25 @@ pub struct SlopeMap {
     pub cell_size: f64,
 }
 
+/// Compute normal, angle, curvature from derivatives and store at `idx`.
+/// Shared by the [`SlopeMap`] constructors.
+#[inline(always)]
+#[allow(clippy::indexing_slicing)] // SAFETY: idx bounded by caller loop ranges
+#[allow(clippy::needless_pass_by_value)] // tuple of mut refs is the natural pattern
+fn store_slope_cell(
+    out: (&mut [V3], &mut [f64], &mut [f64]),
+    idx: usize,
+    dz_dx: f64,
+    dz_dy: f64,
+    d2z_dx2: f64,
+    d2z_dy2: f64,
+) {
+    let n = V3::new(-dz_dx, -dz_dy, 1.0).normalize();
+    out.0[idx] = n;
+    out.1[idx] = n.z.clamp(0.0, 1.0).acos();
+    out.2[idx] = (d2z_dx2 + d2z_dy2) * 0.5;
+}
+
 impl SlopeMap {
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Build a SlopeMap from a grid of Z values using finite differences.
@@ -242,24 +276,6 @@ impl SlopeMap {
         let inv_cs2 = 1.0 / (cs * 2.0);
         let inv_cs_sq = 1.0 / (cs * cs);
 
-        // Helper: compute normal, angle, curvature from derivatives and store.
-        #[inline(always)]
-        #[allow(clippy::indexing_slicing)] // SAFETY: idx bounded by caller loop ranges
-        #[allow(clippy::needless_pass_by_value)] // tuple of mut refs is the natural pattern
-        fn store_cell(
-            out: (&mut [V3], &mut [f64], &mut [f64]),
-            idx: usize,
-            dz_dx: f64,
-            dz_dy: f64,
-            d2z_dx2: f64,
-            d2z_dy2: f64,
-        ) {
-            let n = V3::new(-dz_dx, -dz_dy, 1.0).normalize();
-            out.0[idx] = n;
-            out.1[idx] = n.z.clamp(0.0, 1.0).acos();
-            out.2[idx] = (d2z_dx2 + d2z_dy2) * 0.5;
-        }
-
         // ── Interior cells: no boundary checks, full central differences ──
         for row in 1..rows.saturating_sub(1) {
             let row_base = row * cols;
@@ -281,7 +297,7 @@ impl SlopeMap {
                         (zd - 2.0 * zc + zu) * inv_cs_sq,
                     )
                 };
-                store_cell(
+                store_slope_cell(
                     (&mut normals, &mut angles, &mut curvatures),
                     row_base + col,
                     dz_dx,
@@ -341,9 +357,110 @@ impl SlopeMap {
                     0.0
                 };
 
-                store_cell(
+                store_slope_cell(
                     (&mut normals, &mut angles, &mut curvatures),
                     row * cols + col,
+                    dz_dx,
+                    dz_dy,
+                    d2z_dx2,
+                    d2z_dy2,
+                );
+            }
+        }
+
+        Self {
+            normals,
+            angles,
+            curvatures,
+            rows,
+            cols,
+            origin_x,
+            origin_y,
+            cell_size,
+        }
+    }
+
+    /// Build a SlopeMap for CLASSIFICATION: per axis, the gradient is the
+    /// one-sided forward/backward difference with the LARGER magnitude,
+    /// not their average (the central difference).
+    ///
+    /// Central differences smear a discontinuity confined to one cell
+    /// across two — a step of height `h` reads `atan(h / (2·cell))`, so a
+    /// ~1 mm lake-shore step at a 0.75 mm classification grid reads ~34°
+    /// and never crosses a 45° steep threshold (the wanaka coastline gap,
+    /// user-observed 2026-07-08; see `planning/unified_finish_planner_design.md`
+    /// "Known classification gap"). With this stencil the same step reads
+    /// `atan(h / cell)` from both adjacent cells. On smooth surfaces the
+    /// two stencils agree to first order.
+    ///
+    /// This is a slope-band CLASSIFICATION stencil only: max-of-one-sided
+    /// is not the calculus gradient and biases steep at noise/creases, so
+    /// GENERATION surfaces (drop-cutter offset heightmaps feeding scallop /
+    /// raster / waterline) must keep [`SlopeMap::from_z_grid`]. On ties the
+    /// forward difference wins, which keeps normals deterministic; slope
+    /// angle is unaffected by the choice. Curvature keeps the same central
+    /// second differences as `from_z_grid` (zero where a neighbour is
+    /// missing).
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    pub fn from_z_grid_max_gradient(
+        z_values: &[f64],
+        rows: usize,
+        cols: usize,
+        origin_x: f64,
+        origin_y: f64,
+        cell_size: f64,
+    ) -> Self {
+        let total = rows * cols;
+        let mut normals = vec![V3::new(0.0, 0.0, 1.0); total];
+        let mut angles = vec![0.0f64; total];
+        let mut curvatures = vec![0.0f64; total];
+
+        let inv_cs = 1.0 / cell_size;
+        let inv_cs_sq = 1.0 / (cell_size * cell_size);
+
+        // Pick the one-sided difference with the larger magnitude; forward
+        // wins ties. Missing sides (grid edges) fall back to the other.
+        let pick = |forward: Option<f64>, backward: Option<f64>| -> f64 {
+            match (forward, backward) {
+                (Some(f), Some(b)) => {
+                    if f.abs() >= b.abs() {
+                        f
+                    } else {
+                        b
+                    }
+                }
+                (Some(f), None) => f,
+                (None, Some(b)) => b,
+                (None, None) => 0.0,
+            }
+        };
+
+        for row in 0..rows {
+            for col in 0..cols {
+                let idx = row * cols + col;
+                let zc = z_values[idx];
+                let fwd_x = (col + 1 < cols).then(|| (z_values[idx + 1] - zc) * inv_cs);
+                let bwd_x = (col > 0).then(|| (zc - z_values[idx - 1]) * inv_cs);
+                let fwd_y = (row + 1 < rows).then(|| (z_values[idx + cols] - zc) * inv_cs);
+                let bwd_y = (row > 0).then(|| (zc - z_values[idx - cols]) * inv_cs);
+
+                let dz_dx = pick(fwd_x, bwd_x);
+                let dz_dy = pick(fwd_y, bwd_y);
+
+                let d2z_dx2 = if col > 0 && col + 1 < cols {
+                    (z_values[idx + 1] - 2.0 * zc + z_values[idx - 1]) * inv_cs_sq
+                } else {
+                    0.0
+                };
+                let d2z_dy2 = if row > 0 && row + 1 < rows {
+                    (z_values[idx + cols] - 2.0 * zc + z_values[idx - cols]) * inv_cs_sq
+                } else {
+                    0.0
+                };
+
+                store_slope_cell(
+                    (&mut normals, &mut angles, &mut curvatures),
+                    idx,
                     dz_dx,
                     dz_dy,
                     d2z_dx2,
@@ -566,6 +683,91 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn max_gradient_registers_single_cell_step() {
+        // A 1 mm step confined to one cell boundary: z = 0 for col < 5,
+        // z = 1 for col >= 5, at 1 mm cells. Central differences read
+        // atan(1/2) ≈ 26.6° on the cells flanking the step; the
+        // max-gradient stencil must read the full atan(1/1) = 45° on both.
+        let rows = 10;
+        let cols = 10;
+        let mut z = vec![0.0f64; rows * cols];
+        for row in 0..rows {
+            for col in 5..cols {
+                z[row * cols + col] = 1.0;
+            }
+        }
+        let central = SlopeMap::from_z_grid(&z, rows, cols, 0.0, 0.0, 1.0);
+        let sharp = SlopeMap::from_z_grid_max_gradient(&z, rows, cols, 0.0, 0.0, 1.0);
+
+        for &col in &[4usize, 5usize] {
+            let c = central.angle_at(5, col).to_degrees();
+            let s = sharp.angle_at(5, col).to_degrees();
+            assert!(
+                (c - 26.57).abs() < 0.5,
+                "central diff at step col {col} should smear to ~26.6°, got {c:.1}°"
+            );
+            assert!(
+                (s - 45.0).abs() < 0.5,
+                "max-gradient at step col {col} should read 45°, got {s:.1}°"
+            );
+        }
+        // Away from the step both stencils agree on flat.
+        assert!(sharp.angle_at(5, 2) < 1e-9);
+        assert!(sharp.angle_at(5, 8) < 1e-9);
+    }
+
+    #[test]
+    fn max_gradient_matches_central_on_uniform_ramp() {
+        // On a smooth (linear) surface forward, backward, and central
+        // differences are identical — the stencils must agree everywhere,
+        // including grid edges.
+        let z = make_ramp_z_grid(10, 10, 1.0);
+        let central = SlopeMap::from_z_grid(&z, 10, 10, 0.0, 0.0, 1.0);
+        let sharp = SlopeMap::from_z_grid_max_gradient(&z, 10, 10, 0.0, 0.0, 1.0);
+        for row in 0..10 {
+            for col in 0..10 {
+                let c = central.angle_at(row, col);
+                let s = sharp.angle_at(row, col);
+                assert!(
+                    (c - s).abs() < 1e-9,
+                    "stencils diverge on a uniform ramp at ({row},{col}): central {c:.6}, max-gradient {s:.6}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn max_gradient_single_cell_trench_reads_steep_from_both_rims() {
+        // A trench one cell wide (a lake shore seen from both sides):
+        // every involved cell must read the full one-sided slope. Central
+        // differences read 0° at the trench BOTTOM (left and right
+        // neighbours are level with each other) — the max-gradient stencil
+        // must not.
+        let rows = 5;
+        let cols = 9;
+        let mut z = vec![0.0f64; rows * cols];
+        for row in 0..rows {
+            z[row * cols + 4] = -2.0;
+        }
+        let central = SlopeMap::from_z_grid(&z, rows, cols, 0.0, 0.0, 1.0);
+        let sharp = SlopeMap::from_z_grid_max_gradient(&z, rows, cols, 0.0, 0.0, 1.0);
+
+        let expect = 2.0f64.atan().to_degrees(); // atan(h/cell) ≈ 63.4°
+        for &col in &[3usize, 4usize, 5usize] {
+            let s = sharp.angle_at(2, col).to_degrees();
+            assert!(
+                (s - expect).abs() < 0.5,
+                "max-gradient at trench col {col} should read {expect:.1}°, got {s:.1}°"
+            );
+        }
+        let bottom_central = central.angle_at(2, 4).to_degrees();
+        assert!(
+            bottom_central < 0.5,
+            "central diff should read ~0° at the trench bottom (documenting the gap), got {bottom_central:.1}°"
+        );
     }
 
     #[test]

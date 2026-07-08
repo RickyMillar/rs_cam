@@ -1296,6 +1296,9 @@ pub(crate) fn generate_unified_finish(
         &params,
         &planner,
         ctx.boundary_regions,
+        // P2.d: cost the region route against the real machine envelope
+        // when one is in scope (same plumbing as pencil's P1 W4a hookup).
+        ctx.link_kinematics.as_ref(),
         ctx.debug_ctx,
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )

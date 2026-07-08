@@ -931,3 +931,32 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   NOTE: full B chain = 51 s wall post-scallop-fix; the first A/B's 2 h+
   was the scallop exponential + probable sysml-job contention. Harness
   keeps pinned-A B-only mode + three pathology probes.
+- 2026-07-08 (COASTLINE STENCIL + P2.d ROUTER, uncommitted as of writing):
+  two landings, verdicts vs the same pinned A (8919.5 s / 6883.4 s).
+  (1) Classification stencil: `SlopeMap::from_z_grid_max_gradient` — per
+  axis the one-sided difference with the larger magnitude, wired ONLY into
+  `build_classification_surface_with_cancel` (generation surfaces keep
+  central differences). Root cause of the user-observed missing coastline
+  (a single-cell ~90° step reads `atan(h/(2·cell))` ≈ 34° under central
+  differences, and 0° at the step BOTTOM); the correction is global on
+  textured relief — wanaka steep fraction now 42.8% of covered cells vs
+  the true-surface mesh statistic 45.8% ≥35° (central diff was
+  under-reading everywhere). Decomposition: 3 → 4 regions (VerySteep
+  442 mm² now survives min-area; coast ring registers as a continuous
+  VerySteep ribbon in the raw masks; SE stretch absorbed into MidSteep —
+  thin-ring absorption stays a P2.e sweep datapoint). A/B: flipped the
+  checkpoint to B −4.1% project (−366.7 s), finish −5.3%, collisions 0 —
+  the fixed classification routes more range to scallop-at-held-cusp
+  instead of 0.3 mm raster. 3 new slope.rs unit tests incl. the
+  trench-bottom case.
+  (2) P2.d router (design step 4+5): per-REGION generation + greedy
+  ordering by `min(retract_link_time, surface_link_time)` (F-034
+  integrator), winning link EMITTED (surface link strips follower
+  preamble + leader trailing retracts; boundary-checked, gouge-checked
+  via the shared `surface_link` module), steep-first seeded,
+  `LinkKinematics` via the same ctx plumbing as pencil's P1 W4a. A/B:
+  another −127.9 s (rapid 1397 → 1291 s within the finish op) →
+  **combined B 6388.8 s finish (−7.2%) / 8424.9 s project (−5.5%,
+  −494.6 s) / collisions 0**. 2-opt not built (greedy at O(4) regions —
+  measure-first). Remaining finish entry_s (803 s) is internal strategy
+  plunges → P3 territory. Lib battery 2126 green / 3 known reds.

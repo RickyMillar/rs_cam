@@ -140,7 +140,12 @@ pub fn build_classification_surface_with_cancel(
     let heightmap = SurfaceHeightmap::from_mesh_with_cancel(
         mesh, index, &probe, origin_x, origin_y, rows, cols, cell_size, bbox.min.z, cancel,
     )?;
-    let slope_map = heightmap.slope_map();
+    // Max-of-one-sided-gradients stencil: central differences smear a
+    // single-cell cliff (e.g. the wanaka lake coastline, ~90° step walls)
+    // to `atan(h / (2·cell))` — invisible to the steep threshold. The
+    // classification surface exists to read TRUE steepness, so it also
+    // gets the sharp stencil. Generation surfaces keep `slope_map()`.
+    let slope_map = heightmap.slope_map_max_gradient();
     Ok(FinishSurface {
         heightmap,
         slope_map,
