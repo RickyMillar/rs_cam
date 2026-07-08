@@ -1685,7 +1685,17 @@ static REG_UNIFIED_FINISH: OpRegistryEntry = OpRegistryEntry {
         required_kinds: &[CutterKind::Ball, CutterKind::TaperedBall],
         supports_v_bit: false,
     },
-    dressup_policy: DressupPolicy::ANY_DRESSUP,
+    // P2.f Task 2 (2026-07-09): mirrors DropCutter — the op emits raster
+    // rows, scallop rings, and waterline contours directly on the mesh
+    // surface, plus its OWN router-costed links, so a role-default Ramp
+    // entry carves ~20 mm diagonal trenches across the terrain at every
+    // plunge (live wanaka: entry_s 6× the headless chain + rapid
+    // descents below terrain knobs from `emit_ramp`'s target-relative
+    // rapid floor). Lead-in/out and dressup-level link moves are wrong
+    // for the same reason.
+    dressup_policy: DressupPolicy::strip_all(
+        "Incompatible with Unified Finish: ramp/lead/link dressups would carve diagonal trenches across the mesh surface; the op emits its own surface-safe entries and links.",
+    ),
     generate: Some(crate::compute::execute::generate_unified_finish),
 };
 
