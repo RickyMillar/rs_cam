@@ -13,8 +13,8 @@ use operations::{
     draw_profile_params, draw_project_curve_params, draw_radial_diagram, draw_radial_finish_params,
     draw_ramp_finish_diagram, draw_ramp_finish_params, draw_rest_params, draw_scallop_params,
     draw_spiral_diagram, draw_spiral_finish_params, draw_steep_shallow_diagram,
-    draw_steep_shallow_params, draw_stepover_diagram, draw_trace_params, draw_vcarve_params,
-    draw_waterline_params, draw_zigzag_params,
+    draw_steep_shallow_params, draw_stepover_diagram, draw_trace_params,
+    draw_unified_finish_params, draw_vcarve_params, draw_waterline_params, draw_zigzag_params,
 };
 pub use operations::{ToolpathValidationContext, validate_toolpath, validate_toolpath_config};
 
@@ -3675,6 +3675,9 @@ fn draw_toolpath_panel(
                     }
                 }
                 OperationConfig::Scallop(cfg) => draw_scallop_params(ui, cfg, feeds_for_pills),
+                OperationConfig::UnifiedFinish(cfg) => {
+                    draw_unified_finish_params(ui, cfg, feeds_for_pills);
+                }
                 OperationConfig::SteepShallow(cfg) => {
                     draw_steep_shallow_params(ui, cfg, feeds_for_pills);
                 }
@@ -4429,6 +4432,11 @@ fn tooltip_for(label: &str) -> Option<&'static str> {
         "Stock Top Z" => "Z height of the stock material top surface.",
         "Scallop Height" => "Target cusp height between passes. 0.05-0.2mm for finishing.",
         "Threshold Angle" => "Angle dividing steep (waterline) from shallow (raster) regions.",
+        "Steep Threshold" => "Slope entering the mid-steep scallop band (deg). Below this: raster.",
+        "Waterline Threshold" => {
+            "Slope entering the very-steep waterline band (deg). Above this: waterline."
+        }
+        "Raster Stepover" => "Distance between raster passes in the shallow band.",
         "Max Stepdown" => "Maximum Z step between ramp passes.",
         "Z Step" => "Vertical distance between waterline Z levels.",
         "Sampling" => "XY grid resolution for push-cutter sampling.",

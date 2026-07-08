@@ -7,8 +7,8 @@ use super::operation_configs::{
     Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig, DrillConfig,
     DropCutterConfig, FaceConfig, HorizontalFinishConfig, InlayConfig, PencilConfig, PocketConfig,
     ProfileConfig, ProjectCurveConfig, RadialFinishConfig, RampFinishConfig, RestConfig,
-    ScallopConfig, SpiralFinishConfig, SteepShallowConfig, TraceConfig, VCarveConfig,
-    WaterlineConfig, ZigzagConfig,
+    ScallopConfig, SpiralFinishConfig, SteepShallowConfig, TraceConfig, UnifiedFinishConfig,
+    VCarveConfig, WaterlineConfig, ZigzagConfig,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,6 +138,7 @@ macro_rules! for_each_op {
             (Waterline,          WaterlineConfig,           Menu3d),
             (Pencil,             PencilConfig,              Menu3d),
             (Scallop,            ScallopConfig,             Menu3d),
+            (UnifiedFinish,      UnifiedFinishConfig,       Menu3d),
             (SteepShallow,       SteepShallowConfig,        Menu3d),
             (RampFinish,         RampFinishConfig,          Menu3d),
             (SpiralFinish,       SpiralFinishConfig,        Menu3d),
@@ -247,6 +248,7 @@ impl OperationType {
         OperationType::Waterline,
         OperationType::Pencil,
         OperationType::Scallop,
+        OperationType::UnifiedFinish,
         OperationType::SteepShallow,
         OperationType::RampFinish,
         OperationType::SpiralFinish,
@@ -284,6 +286,7 @@ impl OperationType {
             OperationType::Waterline => &REG_WATERLINE,
             OperationType::Pencil => &REG_PENCIL,
             OperationType::Scallop => &REG_SCALLOP,
+            OperationType::UnifiedFinish => &REG_UNIFIED_FINISH,
             OperationType::SteepShallow => &REG_STEEP_SHALLOW,
             OperationType::RampFinish => &REG_RAMP_FINISH,
             OperationType::SpiralFinish => &REG_SPIRAL_FINISH,
@@ -320,6 +323,7 @@ impl OperationType {
             Self::Waterline => "waterline",
             Self::Pencil => "pencil",
             Self::Scallop => "scallop",
+            Self::UnifiedFinish => "unified_finish",
             Self::SteepShallow => "steep_shallow",
             Self::RampFinish => "ramp_finish",
             Self::SpiralFinish => "spiral_finish",
@@ -347,8 +351,8 @@ impl OperationType {
         use OperationType::{
             Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,
             HorizontalFinish, Inlay, Pencil, Pocket, Profile, ProjectCurve, RadialFinish,
-            RampFinish, Rest, Scallop, SpiralFinish, SteepShallow, Trace, VCarve, Waterline,
-            Zigzag,
+            RampFinish, Rest, Scallop, SpiralFinish, SteepShallow, Trace, UnifiedFinish, VCarve,
+            Waterline, Zigzag,
         };
 
         match self {
@@ -371,7 +375,12 @@ impl OperationType {
                 OperationTransformCapabilities::new(false, true, false)
             }
             // Genuinely continuous traces: helical/spiral/projected paths.
-            Scallop | SteepShallow | RampFinish | SpiralFinish | ProjectCurve => {
+            // UnifiedFinish mirrors Scallop here (registration checklist
+            // decision) — its stitched per-band toolpath is a candidate
+            // for looser capabilities once P2.d routing lands, but until
+            // then it inherits Scallop's conservative continuous-path
+            // treatment.
+            Scallop | UnifiedFinish | SteepShallow | RampFinish | SpiralFinish | ProjectCurve => {
                 OperationTransformCapabilities::new(false, false, true)
             }
         }
@@ -388,8 +397,8 @@ impl OperationType {
         use OperationType::{
             Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,
             HorizontalFinish, Inlay, Pencil, Pocket, Profile, ProjectCurve, RadialFinish,
-            RampFinish, Rest, Scallop, SpiralFinish, SteepShallow, Trace, VCarve, Waterline,
-            Zigzag,
+            RampFinish, Rest, Scallop, SpiralFinish, SteepShallow, Trace, UnifiedFinish, VCarve,
+            Waterline, Zigzag,
         };
         match self {
             // Drill kinematics: dexel polygon-to-material init can't see Z-only
@@ -401,8 +410,8 @@ impl OperationType {
             ProjectCurve => Some(97.0),
             // 3D finish ops: close-contact passes expected; >30% indicates poor
             // boundary or excess retraction.
-            DropCutter | Scallop | Waterline | Pencil | HorizontalFinish | SteepShallow
-            | RampFinish | SpiralFinish | RadialFinish => Some(30.0),
+            DropCutter | Scallop | UnifiedFinish | Waterline | Pencil | HorizontalFinish
+            | SteepShallow | RampFinish | SpiralFinish | RadialFinish => Some(30.0),
             // 2.5D clearing and 3D rough: boundary overshoot + Z-level transitions
             // make 40% the high-water mark.
             Pocket | Face | Adaptive | Rest | Zigzag | Adaptive3d => Some(40.0),
@@ -474,6 +483,7 @@ pub enum OperationConfig {
     Waterline(WaterlineConfig),
     Pencil(PencilConfig),
     Scallop(ScallopConfig),
+    UnifiedFinish(UnifiedFinishConfig),
     SteepShallow(SteepShallowConfig),
     RampFinish(RampFinishConfig),
     SpiralFinish(SpiralFinishConfig),
@@ -557,6 +567,9 @@ impl OperationConfig {
             OperationConfig::Waterline(_) => optimizable!(FEED_RPM_DOC, OperationType::Waterline),
             OperationConfig::Pencil(_) => optimizable!(FEED_RPM_STEPOVER, OperationType::Pencil),
             OperationConfig::Scallop(_) => optimizable!(FEED_RPM_SCALLOP, OperationType::Scallop),
+            OperationConfig::UnifiedFinish(_) => {
+                optimizable!(FEED_RPM_SCALLOP, OperationType::UnifiedFinish)
+            }
             OperationConfig::SteepShallow(_) => {
                 optimizable!(FEED_RPM_STEPOVER, OperationType::SteepShallow)
             }
@@ -1225,6 +1238,21 @@ const SCALLOP_PARAMS: &[ParamDef] = &[
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
+const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[
+    ParamDef::required("steep_threshold_deg", "f64"),
+    ParamDef::required("waterline_threshold_deg", "f64"),
+    ParamDef::required("overlap_mm", "f64"),
+    ParamDef::required("scallop_height", "f64"),
+    ParamDef::required("tolerance", "f64"),
+    ParamDef::required("raster_stepover", "f64"),
+    ParamDef::required("z_step", "f64"),
+    ParamDef::required("sampling", "f64"),
+    ParamDef::required("stock_to_leave", "f64"),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
 const STEEP_SHALLOW_PARAMS: &[ParamDef] = &[
     ParamDef::required("threshold_angle", "f64"),
     ParamDef::required("overlap_distance", "f64"),
@@ -1634,6 +1662,33 @@ static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
     generate: Some(crate::compute::execute::generate_scallop),
 };
 
+/// P2.c orchestrator (`planning/unified_finish_planner_design.md`): bands
+/// the surface by true-surface slope and runs waterline/scallop/raster per
+/// band. No standard depth-stepping applies — `cutting_levels()`'s wildcard
+/// arm correctly falls through for this op (each band's Z range is derived
+/// internally per-band, not from a single top/bottom depth-per-pass ladder).
+static REG_UNIFIED_FINISH: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::UnifiedFinish,
+    spec: OperationSpec {
+        label: "Unified Finish",
+        description: "Bands the surface by true-surface slope and runs waterline/scallop/raster per band",
+        family: OperationFamily::ThreeD,
+        geometry: GeometryRequirement::Mesh,
+        default_auto_regen: false,
+        ui_family: UiOperationFamily::Scallop,
+        ui_process_role: UiProcessRole::Finish,
+        feeds_family: FeedsOperationFamily::Scallop,
+        feeds_pass_role: PassRole::Finish,
+    },
+    param_defs: UNIFIED_FINISH_PARAMS,
+    tool_constraints: ToolConstraintsDef {
+        required_kinds: &[CutterKind::Ball, CutterKind::TaperedBall],
+        supports_v_bit: false,
+    },
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
+    generate: Some(crate::compute::execute::generate_unified_finish),
+};
+
 static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
     op_type: OperationType::SteepShallow,
     spec: OperationSpec {
@@ -1816,6 +1871,10 @@ impl OperationConfig {
     pub fn feeds_hints(&self) -> FeedsHints {
         match self {
             OperationConfig::Scallop(cfg) => FeedsHints {
+                target_scallop_mm: Some(cfg.scallop_height),
+                ..FeedsHints::NONE
+            },
+            OperationConfig::UnifiedFinish(cfg) => FeedsHints {
                 target_scallop_mm: Some(cfg.scallop_height),
                 ..FeedsHints::NONE
             },
@@ -2017,7 +2076,7 @@ mod tests {
 
     #[test]
     fn operation_catalog_is_exhaustive_and_consistent() {
-        assert_eq!(OperationType::ALL.len(), 23);
+        assert_eq!(OperationType::ALL.len(), 24);
         for &op_type in OperationType::ALL {
             let config = OperationConfig::new_default(op_type);
             assert_eq!(config.op_type(), op_type);
@@ -2060,7 +2119,8 @@ mod tests {
     /// Phase 1 wildcard kill (architectural refactor T3, re-baselined
     /// typed in T7): tool constraints are an explicit per-entry
     /// registry field, now a `&[CutterKind]` list. This pins (a) the
-    /// four restricted ops exactly, (b) that the 19 previously-
+    /// five restricted ops exactly (VCarve/Inlay/Chamfer on V-bit;
+    /// Scallop/UnifiedFinish on ball-tip), (b) that the 19 previously-
     /// wildcard-defaulted ops still resolve to the named `ANY_TOOL`
     /// policy, and (c) that `to_schema()` materializes the EXACT
     /// pre-Phase-3 snake_case strings — proving the typed conversion
@@ -2079,7 +2139,7 @@ mod tests {
                     assert_eq!(schema.required_tool_type, ["v_bit"], "{op_type:?}");
                     assert!(tc.supports_v_bit, "{op_type:?}");
                 }
-                OperationType::Scallop => {
+                OperationType::Scallop | OperationType::UnifiedFinish => {
                     assert_eq!(
                         tc.required_kinds,
                         [CutterKind::Ball, CutterKind::TaperedBall]
@@ -2128,6 +2188,17 @@ mod tests {
                     .allows(kind),
                 tool_type.has_ball_tip(),
                 "{tool_type:?} vs Scallop"
+            );
+            // UnifiedFinish: same ball-tip refusal as Scallop (registration
+            // checklist decision — mirrors Scallop's runtime refusal in
+            // `generate_unified_finish`).
+            assert_eq!(
+                OperationType::UnifiedFinish
+                    .registry_entry()
+                    .tool_constraints
+                    .allows(kind),
+                tool_type.has_ball_tip(),
+                "{tool_type:?} vs UnifiedFinish"
             );
             // V-bit-required ops accept exactly the V-bit.
             for op in [
@@ -2304,6 +2375,7 @@ mod tests {
             ("waterline", OperationType::Waterline),
             ("pencil", OperationType::Pencil),
             ("scallop", OperationType::Scallop),
+            ("unified_finish", OperationType::UnifiedFinish),
             ("steep_shallow", OperationType::SteepShallow),
             ("ramp_finish", OperationType::RampFinish),
             ("spiral_finish", OperationType::SpiralFinish),
@@ -2392,6 +2464,7 @@ mod tests {
         for op in [
             OperationType::DropCutter,
             OperationType::Scallop,
+            OperationType::UnifiedFinish,
             OperationType::Waterline,
             OperationType::Pencil,
             OperationType::HorizontalFinish,

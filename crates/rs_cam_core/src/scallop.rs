@@ -176,6 +176,60 @@ fn heightmap_covered_at_world(hm: &crate::slope::SurfaceHeightmap, x: f64, y: f6
 /// gaps — feeding straight through them used to dive the cutter to `min_z`
 /// at every off-footprint corner instead of retracting around the gap
 /// (P2.3 bonus fix; tracker `planning/finishing_stack_review_2026-07.md`).
+/// Decimate a closed ring polygon (exterior + holes): drop vertices closer
+/// than `min_spacing` to the previously KEPT vertex. Never adds points, so
+/// rings already at or above `min_spacing` density pass through untouched —
+/// classic convex scallop rings see zero change. Returns `None` when the
+/// exterior can't keep 3 points (a degenerate sliver — culled). Holes that
+/// collapse below 3 points are dropped individually.
+///
+/// Exists to keep the iterated `offset_polygon` cascade in
+/// [`generate_scallop_rings`] linear — see the call-site comment for the
+/// measured exponential this prevents.
+fn decimate_ring_polygon(poly: &Polygon2, min_spacing: f64) -> Option<Polygon2> {
+    let min_spacing = min_spacing.max(1e-3);
+    let exterior = decimate_closed_ring(&poly.exterior, min_spacing)?;
+    let holes: Vec<Vec<P2>> = poly
+        .holes
+        .iter()
+        .filter_map(|h| decimate_closed_ring(h, min_spacing))
+        .collect();
+    let mut out = Polygon2::new(exterior);
+    out.holes = holes;
+    Some(out)
+}
+
+/// Keep the first vertex, then every vertex at least `min_spacing` from the
+/// last kept one; drop a closing vertex that lands within half a spacing of
+/// the head. `None` when fewer than 3 points survive.
+fn decimate_closed_ring(ring: &[P2], min_spacing: f64) -> Option<Vec<P2>> {
+    if ring.len() < 3 {
+        return None;
+    }
+    let min_sq = min_spacing * min_spacing;
+    let mut out: Vec<P2> = Vec::new();
+    let mut last_kept = *ring.first()?;
+    out.push(last_kept);
+    for p in ring.iter().skip(1) {
+        let dx = p.x - last_kept.x;
+        let dy = p.y - last_kept.y;
+        if dx * dx + dy * dy >= min_sq {
+            out.push(*p);
+            last_kept = *p;
+        }
+    }
+    if out.len() >= 2
+        && let (Some(first), Some(last)) = (out.first().copied(), out.last().copied())
+    {
+        let dx = first.x - last.x;
+        let dy = first.y - last.y;
+        if dx * dx + dy * dy < min_sq * 0.25 {
+            out.pop();
+        }
+    }
+    (out.len() >= 3).then_some(out)
+}
+
 fn ring_to_3d(
     ring: &[P2],
     mesh: &TriangleMesh,
@@ -310,11 +364,28 @@ fn generate_scallop_rings_with_cancel(
             .max(tool_radius * 0.05) // At least 5% of tool radius
             .min(tool_radius * 3.0); // At most 3× tool radius
 
-        // Offset all current polygons inward
+        // Offset all current polygons inward, then DECIMATE each result
+        // back to at most the heightmap's own sampling density.
+        // `offset_polygon` ADDS vertices on every call (concave corners
+        // sprout arc-approximation points; none are ever removed), so an
+        // iterated cascade compounds ~15–25% vertices per ring on concave
+        // boundaries — measured exponential on wanaka's dendritic
+        // mid-steep band (1178 → 261 000 vertices by ring 25, 10 s per
+        // offset and doubling; 2026-07-08, P2.c probe). Dropping only
+        // sub-cell points keeps the cascade linear while never touching a
+        // ring that is already at design density — classic convex
+        // boundaries (the full-footprint rectangle path, ~stepover-spaced)
+        // pass through byte-identical, which is why this stayed invisible
+        // until region-scoped scallop met a dendritic band. Slivers whose
+        // perimeter can't keep 3 points die here too.
+        let ring_min_spacing = heightmap.cell_size * 0.75;
         let mut next_polys = Vec::new();
         for poly in &current_polys {
-            let offsets = offset_polygon(poly, stepover);
-            next_polys.extend(offsets);
+            for offset in offset_polygon(poly, stepover) {
+                if let Some(decimated) = decimate_ring_polygon(&offset, ring_min_spacing) {
+                    next_polys.push(decimated);
+                }
+            }
         }
 
         if next_polys.is_empty() {

@@ -6,7 +6,7 @@ use rs_cam_core::feeds::FeedsResult;
 use crate::state::toolpath::{
     Adaptive3dConfig, Adaptive3dEntryStyle, ClearingStrategy, DropCutterConfig, PencilConfig,
     RegionOrdering, ScallopConfig, ScallopDirection, SteepShallowConfig, StockSource,
-    WaterlineConfig,
+    UnifiedFinishConfig, WaterlineConfig,
 };
 
 use super::super::{dv, dv_pill};
@@ -667,6 +667,80 @@ pub(in crate::ui::properties) fn draw_scallop_params(
                 0.0..=90.0,
             );
             dv(ui, "Slope To:", &mut cfg.slope_to, " deg", 1.0, 0.0..=90.0);
+            dv(
+                ui,
+                "Stock to Leave:",
+                &mut cfg.stock_to_leave,
+                " mm",
+                0.05,
+                0.0..=10.0,
+            );
+        });
+}
+
+/// P2.c orchestrator params (`planning/unified_finish_planner_design.md`).
+/// Mirrors `draw_scallop_params`' shape closely: no stepover pill (raster
+/// stepover here is a plain editable field, not chipload-derived), no
+/// feed/plunge/spindle widgets (those live on the Feeds tab, same as every
+/// other 3D finish op's params panel — see the comment on
+/// `draw_scallop_params`). No stepover-pattern diagram either (same
+/// silent-gap acceptance as `StepoverPattern::from_operation`'s `_ => None`
+/// fallback covers Scallop).
+pub(in crate::ui::properties) fn draw_unified_finish_params(
+    ui: &mut egui::Ui,
+    cfg: &mut UnifiedFinishConfig,
+    _feeds_result: Option<&FeedsResult>,
+) {
+    egui::Grid::new("uf_p")
+        .num_columns(2)
+        .spacing([8.0, 4.0])
+        .show(ui, |ui| {
+            dv(
+                ui,
+                "Steep Threshold:",
+                &mut cfg.steep_threshold_deg,
+                " deg",
+                1.0,
+                5.0..=85.0,
+            );
+            dv(
+                ui,
+                "Waterline Threshold:",
+                &mut cfg.waterline_threshold_deg,
+                " deg",
+                1.0,
+                // `.min(89.0)` keeps the range well-formed even when
+                // Steep Threshold sits near its own 85° ceiling (85 + 5 =
+                // 90 would otherwise invert against the 89° upper bound).
+                (cfg.steep_threshold_deg + 5.0).min(89.0)..=89.0,
+            );
+            dv(ui, "Overlap:", &mut cfg.overlap_mm, " mm", 0.1, 0.0..=10.0);
+            dv(
+                ui,
+                "Scallop Height:",
+                &mut cfg.scallop_height,
+                " mm",
+                0.01,
+                0.01..=2.0,
+            );
+            dv(
+                ui,
+                "Tolerance:",
+                &mut cfg.tolerance,
+                " mm",
+                0.01,
+                0.01..=1.0,
+            );
+            dv(
+                ui,
+                "Raster Stepover:",
+                &mut cfg.raster_stepover,
+                " mm",
+                0.1,
+                0.05..=50.0,
+            );
+            dv(ui, "Z Step:", &mut cfg.z_step, " mm", 0.1, 0.05..=20.0);
+            dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
             dv(
                 ui,
                 "Stock to Leave:",

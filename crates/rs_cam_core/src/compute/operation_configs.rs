@@ -843,6 +843,55 @@ impl Default for ScallopConfig {
     }
 }
 
+/// P2.c orchestrator config (`planning/unified_finish_planner_design.md`):
+/// bands the surface by true-surface slope and runs waterline/scallop/raster
+/// per band. Field defaults mirror the standalone `ScallopConfig` /
+/// `WaterlineConfig` / `DropCutterConfig` so switching between the
+/// standalone three-op stack and this orchestrator at the same tool
+/// doesn't silently change feeds/quality (see
+/// `unified_finish::UnifiedFinishParams::default`'s doc comment).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnifiedFinishConfig {
+    /// Slope entering the mid-steep scallop band (deg from horizontal).
+    /// Primary new dial — the raster→scallop boundary.
+    pub steep_threshold_deg: f64,
+    /// Slope entering the very-steep waterline band (deg). Advanced
+    /// dial — the scallop→waterline boundary.
+    pub waterline_threshold_deg: f64,
+    /// Band overlap at polygon extraction (mm) — `steep_shallow`'s
+    /// `overlap_distance` analogue.
+    pub overlap_mm: f64,
+    pub scallop_height: f64,
+    pub tolerance: f64,
+    pub raster_stepover: f64,
+    pub z_step: f64,
+    pub sampling: f64,
+    pub stock_to_leave: f64,
+    pub feed_rate: f64,
+    pub plunge_rate: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
+}
+
+impl Default for UnifiedFinishConfig {
+    fn default() -> Self {
+        Self {
+            steep_threshold_deg: 45.0,
+            waterline_threshold_deg: 65.0,
+            overlap_mm: 2.0,
+            scallop_height: 0.1,
+            tolerance: 0.05,
+            raster_stepover: 1.0,
+            z_step: 1.0,
+            sampling: 0.5,
+            stock_to_leave: 0.0,
+            feed_rate: 1000.0,
+            plunge_rate: 500.0,
+            spindle_rpm: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SteepShallowConfig {
     pub threshold_angle: f64,
@@ -1591,6 +1640,36 @@ impl OperationParams for PencilConfig {
 }
 
 impl OperationParams for ScallopConfig {
+    fn feed_rate(&self) -> f64 {
+        self.feed_rate
+    }
+    fn set_feed_rate(&mut self, value: f64) {
+        self.feed_rate = value;
+    }
+    fn plunge_rate(&self) -> f64 {
+        self.plunge_rate
+    }
+    fn set_plunge_rate(&mut self, value: f64) {
+        self.plunge_rate = value;
+    }
+    fn scallop_height(&self) -> Option<f64> {
+        Some(self.scallop_height)
+    }
+    fn set_scallop_height(&mut self, value: f64) {
+        self.scallop_height = value;
+    }
+    fn depth_semantics(&self) -> DepthSemantics {
+        DepthSemantics::None
+    }
+    fn spindle_rpm(&self) -> Option<u32> {
+        self.spindle_rpm
+    }
+    fn set_spindle_rpm(&mut self, rpm: Option<u32>) {
+        self.spindle_rpm = rpm;
+    }
+}
+
+impl OperationParams for UnifiedFinishConfig {
     fn feed_rate(&self) -> f64 {
         self.feed_rate
     }

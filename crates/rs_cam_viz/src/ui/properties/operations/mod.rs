@@ -19,7 +19,7 @@ pub(super) use finishing::{
 pub(super) use project::draw_project_curve_params;
 pub(super) use surface_3d::{
     draw_adaptive3d_params, draw_dropcutter_params, draw_pencil_params, draw_scallop_params,
-    draw_steep_shallow_params, draw_waterline_params,
+    draw_steep_shallow_params, draw_unified_finish_params, draw_waterline_params,
 };
 
 use crate::state::job::ToolType;

@@ -175,3 +175,19 @@ over-splitting shallow zones at every hairline valley.
    checkpoint #1 (must not regress the P1 stack).
 3. P2.d — router (greedy + link costing + 2-opt toggle), A/B checkpoint #2.
 4. P2.e — decomposition-parameter sweep harness; lock defaults from data.
+
+## Known classification gap — single-cell cliffs (user-observed, 2026-07-08)
+
+The wanaka lake COASTLINE (~90° step walls) does not register in any band:
+`SlopeMap::from_z_grid` uses central differences, which smear a
+discontinuity confined to one cell across two — a step of height h reads
+`atan(h / (2·cell))`, so a ~1 mm shore step at the 0.75 mm classification
+grid reads ~34° (not even mid-steep). Channel walls register because they
+are taller/wider than one cell; a coastline is the pathological
+exactly-cell-scale case. Fix (P2.b follow-up): classification-only slope =
+max of the one-sided forward/backward gradients per axis (a single-cell
+step then reads `atan(h / cell)`); generation surfaces unchanged. Re-run
+the wanaka acceptance + SVGs after — the coast ring should appear as a
+VerySteep (or at least MidSteep) band, and its thin-ring area interacts
+with min-area absorption (P2.e sweep datapoint, alongside the absorbed NW
+very-steep pocket).
