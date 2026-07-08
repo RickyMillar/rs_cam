@@ -119,10 +119,22 @@ impl FinishPlannerParams {
     /// formulas: `close_radius_mm = tool_radius / 2`,
     /// `min_region_area_mm2 = (2 * tool_radius)^2 * 4` (roughly four
     /// tool-diameters² — "a few tool diameters²" from the R1 risk register).
+    ///
+    /// Thresholds locked by the P2.e sweep (2026-07-08, wanaka chain +
+    /// conditioning tables in `planning/unified_finishing_pass_plan.md`):
+    /// `steep 45` is the quality-neutral anchor (lower is faster — −14%
+    /// finish at 35 — but scallop's held cusp is coarser than raster's
+    /// effective cusp in the 35–45° band, so speed-hunting via this dial
+    /// costs quality there); `waterline 75` because Z-contouring is the
+    /// most expensive strategy per area — 65→75 measured −11.7% finish
+    /// with collisions unchanged and cusp still bounded by scallop height
+    /// on the 65–75° slopes, while 65→55 EXPLODED +27%. Every ±1-step
+    /// neighbour of every dial stays conditioned (no cliffs); hysteresis
+    /// is load-bearing (0 → the raw masks storm to O(100) islands).
     pub fn for_tool(tool_radius: f64) -> Self {
         Self {
             steep_threshold_deg: 45.0,
-            waterline_threshold_deg: 65.0,
+            waterline_threshold_deg: 75.0,
             hysteresis_deg: 10.0,
             overlap_mm: 0.0,
             corridor_k: 2.0,

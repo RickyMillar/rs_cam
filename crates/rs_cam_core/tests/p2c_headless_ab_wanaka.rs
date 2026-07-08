@@ -162,7 +162,11 @@ fn run_chain(label: &str, s: &mut ProjectSession) -> ChainOutcome {
 fn ab_unified_config() -> UnifiedFinishConfig {
     UnifiedFinishConfig {
         steep_threshold_deg: 45.0,
-        waterline_threshold_deg: 65.0,
+        // P2.e-locked default (checkpoints #1/#2 measured 65; the Tier-2
+        // sweep measured 65→75 at −11.7% finish, collisions unchanged —
+        // see `p2e_threshold_chain_sweep`). Tracking the shipping default
+        // keeps B-only reruns measuring what the op does out of the box.
+        waterline_threshold_deg: 75.0,
         overlap_mm: 2.0,
         scallop_height: 0.011,
         tolerance: 0.05,

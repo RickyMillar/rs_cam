@@ -292,7 +292,35 @@ and its innermost offset ring.
       territory, not routing. 4 new unit tests (preamble/retract detection,
       router determinism, seeding+nearest-chaining on synthetic regions,
       hemisphere route report).
-- [ ] P2.e decomposition-parameter sweep harness; lock defaults from data
+- [x] P2.e decomposition-parameter sweep harness; lock defaults from data.
+      DONE 2026-07-08 (harness committed 4ac80f1, results + lock same day).
+      **Tier-1 (conditioning dials, decompose-level, 16 rows)**: defaults
+      sit in a stable basin — every neighboring value of every dial stays
+      conditioned (3–8 regions), no cliffs; O(100) storm only reappears at
+      hysteresis=0 (115 raw islands — hysteresis is doing exactly its R1
+      job). Coastline-survival levers quantified: hysteresis ↑ (15 → 3
+      VerySteep regions, 1431 mm²), min_area ↓ (36 → ribbon survives in 3
+      pieces), close ↑; ribbon leaves the VerySteep band at waterline ≥75
+      or min_area 576.
+      **Tier-2 (thresholds through the full wanaka chain, 8 rows, all 0
+      collisions)**: steep dial monotonic (35 → −14.0% finish; 55 →
+      +1.7%) but lower-than-45 trades cusp vs A in the 35–45° band
+      (scallop's held 0.011 vs A's effective ~0.006–0.0075) → 45 stays
+      the quality-neutral anchor. Waterline dial is the big lever:
+      Z-contouring is the most expensive strategy per area — 55 EXPLODED
+      to +27.0% finish; 75 → −16.2%; 85 → −15.6% (flat past 75).
+      **LOCKED DEFAULTS: steep 45 / waterline 65→75** (both
+      `FinishPlannerParams::for_tool` and `UnifiedFinishConfig::default`,
+      harness `ab_unified_config` tracks it). Confirmed by a fresh
+      branch-B run at the locked defaults: **finish 5766.5 s (−16.2%),
+      project 7802.6 s (−12.5%, −1116.9 s vs pinned A), collisions 0**;
+      finish-op entry_s also fell 803→489 s (waterline contour plunges
+      gone). Quality stays ≥ A everywhere ≥45° by the cusp math (scallop
+      0.011 vs A's ≥0.0075 at 45° worsening to 0.032 at 70°); on wanaka
+      the coast now rides in MidSteep. Caveat honestly: chain-scored on
+      ONE terrain (wanaka) — parts with large true-vertical walls exercise
+      the 75–90° waterline band this lock shrinks; revisit if a
+      wall-heavy fixture joins the harness.
 - [ ] P3 morphed spiral strategy + degeneracy fallback
 - [ ] Ledger + FEATURE_CATALOG + memory updates at each landing
 
