@@ -1181,9 +1181,10 @@ fn axial_binding_str(
 /// - `VCarve` — rough limit, radial WOC = ½ engaged width at
 ///   `max_depth` ([`crate::feeds::geometry::vbit_width_at_depth`]).
 /// - `ProjectCurve` — rough limit, radial WOC = 0.2·D.
-/// - Finish-3D (Scallop / DropCutter / Waterline / SteepShallow /
-///   SpiralFinish / RadialFinish / HorizontalFinish) — finish limit +
-///   default scallop target, radial WOC = stepover (default 0.15·D).
+/// - Finish-3D (Scallop / UnifiedFinish / DropCutter / Waterline /
+///   SteepShallow / SpiralFinish / RadialFinish / HorizontalFinish) —
+///   finish limit + default scallop target, radial WOC = stepover
+///   (default 0.15·D).
 /// - Everything else — `None` (2D pocket/contour/drill etc.; the
 ///   envelope adds nothing the other invariant passes don't cover).
 pub(crate) fn axial_envelope_for_operation(
@@ -1267,6 +1268,7 @@ pub(crate) fn axial_envelope_for_operation(
         }
         // Finish-3D family — finish deflection limit + scallop target.
         OperationConfig::Scallop(_)
+        | OperationConfig::UnifiedFinish(_)
         | OperationConfig::DropCutter(_)
         | OperationConfig::Waterline(_)
         | OperationConfig::SteepShallow(_)
@@ -1303,9 +1305,9 @@ pub(crate) fn axial_envelope_for_operation(
 /// - `VCarve` — clamps `cfg.max_depth` via policy C. The V-bit
 ///   engaged width at the candidate depth is the radial WOC.
 /// - `ProjectCurve` — warning-only feasibility check on `cfg.depth`.
-/// - Finish-3D (Scallop / DropCutter / Waterline / SteepShallow /
-///   SpiralFinish / RadialFinish / HorizontalFinish) — emits
-///   `FinishEnvelopeAdvisory`; automatic `stock_to_leave` mutation is
+/// - Finish-3D (Scallop / UnifiedFinish / DropCutter / Waterline /
+///   SteepShallow / SpiralFinish / RadialFinish / HorizontalFinish) —
+///   emits `FinishEnvelopeAdvisory`; automatic `stock_to_leave` mutation is
 ///   deferred until in-process stock at gen time lands (planning
 ///   §5.1.1).
 ///
@@ -1360,6 +1362,7 @@ fn pick_axial_envelope(
         }
         // Finish-3D family — warning-only per planning §5.1.1.
         OperationConfig::Scallop(_)
+        | OperationConfig::UnifiedFinish(_)
         | OperationConfig::DropCutter(_)
         | OperationConfig::Waterline(_)
         | OperationConfig::SteepShallow(_)
@@ -1368,6 +1371,7 @@ fn pick_axial_envelope(
         | OperationConfig::HorizontalFinish(_) => {
             let op_kind = match operation {
                 OperationConfig::Scallop(_) => "scallop",
+                OperationConfig::UnifiedFinish(_) => "unified_finish",
                 OperationConfig::DropCutter(_) => "drop_cutter",
                 OperationConfig::Waterline(_) => "waterline",
                 OperationConfig::SteepShallow(_) => "steep_shallow",
@@ -4689,6 +4693,7 @@ mod tests {
                 // Ops that feed operation-specific hints into the
                 // calculator (axial, radial, scallop):
                 OperationConfig::Scallop(cfg) => (None, None, Some(cfg.scallop_height)),
+                OperationConfig::UnifiedFinish(cfg) => (None, None, Some(cfg.scallop_height)),
                 OperationConfig::DropCutter(cfg) => (None, None, cfg.scallop_height),
                 OperationConfig::Waterline(cfg) => (Some(cfg.z_step), None, None),
                 OperationConfig::SteepShallow(cfg) => (Some(cfg.z_step), None, None),

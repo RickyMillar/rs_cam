@@ -32,6 +32,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 | 3D | Waterline | `waterline.rs` | Yes | Yes | Shipped |
 | 3D | Pencil Finish | `pencil.rs` | Yes | Yes | Shipped |
 | 3D | Scallop Finish | `scallop.rs` | Yes | Yes | Shipped |
+| 3D | Unified Finish | `unified_finish.rs` + `finish_planner.rs` | Yes | Yes | Experimental (P2.c — bands by true-surface slope, waterline/scallop/raster per band; naive band order, router lands in P2.d) |
 | 3D | Steep/Shallow | `steep_shallow.rs` | Yes | Yes | Shipped |
 | 3D | Ramp Finish | `ramp_finish.rs` | Yes | Yes | Shipped |
 | 3D | Spiral Finish | `spiral_finish.rs` | Yes | No | Shipped |

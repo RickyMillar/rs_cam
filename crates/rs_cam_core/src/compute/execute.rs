@@ -1244,6 +1244,74 @@ pub(crate) fn generate_scallop(
     Ok(generated_with_spans(tp, spans))
 }
 
+/// UnifiedFinish family adapter (P2.c orchestrator —
+/// `planning/unified_finish_planner_design.md`). Mirrors `generate_scallop`
+/// closely: ball-tip refusal, mesh/index guards, inherited-dial params
+/// build, the P2.b `FinishPlannerParams::for_tool` base with the op's three
+/// new dials (`steep_threshold_deg` / `waterline_threshold_deg` /
+/// `overlap_mm`) overridden on top (one-new-dial rule — everything else
+/// inherits the tool-derived conditioning defaults), then the same
+/// cancellable-core-call / annotate / spans tail Scallop uses (the core
+/// call returns the same `ScallopRuntimeAnnotation` type since the
+/// mid-steep band is itself a scallop pass).
+pub(crate) fn generate_unified_finish(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let cfg = config_guard!(op, UnifiedFinish, "generate_unified_finish");
+    // Membership pinned by
+    // `tool_constraints_allows_matches_runtime_refusal_semantics`.
+    if !OperationType::UnifiedFinish
+        .registry_entry()
+        .tool_constraints
+        .allows(ctx.tool_cfg.tool_type.cutter_kind())
+    {
+        return Err(OperationError::InvalidTool(
+            "Unified Finish requires a ball-tip tool (Ball Nose or Tapered Ball Nose)".into(),
+        ));
+    }
+    let m = require_mesh(ctx.mesh)?;
+    let idx = require_index(ctx.index, "UnifiedFinish")?;
+    let params = crate::unified_finish::UnifiedFinishParams {
+        scallop_height: cfg.scallop_height,
+        tolerance: cfg.tolerance,
+        raster_stepover: cfg.raster_stepover,
+        z_step: cfg.z_step,
+        sampling: cfg.sampling,
+        stock_to_leave: cfg.stock_to_leave,
+        feed_rate: op.feed_rate(),
+        plunge_rate: op.plunge_rate(),
+        safe_z: ctx.heights.retract_z,
+    };
+    let mut planner = crate::finish_planner::FinishPlannerParams::for_tool(ctx.tool_def.radius());
+    planner.steep_threshold_deg = cfg.steep_threshold_deg;
+    planner.waterline_threshold_deg = cfg.waterline_threshold_deg;
+    planner.overlap_mm = cfg.overlap_mm;
+    let (tp, annotations, _report) = crate::unified_finish::unified_finish_toolpath_with_cancel(
+        m,
+        idx,
+        ctx.tool_def,
+        ctx.heights.top_z,
+        ctx.heights.bottom_z,
+        &params,
+        &planner,
+        ctx.boundary_regions,
+        ctx.debug_ctx,
+        &(|| ctx.cancel.load(Ordering::SeqCst)),
+    )
+    .map_err(|_e| OperationError::Cancelled)?;
+    if let Some(sem) = ctx.semantic_ctx {
+        crate::compute::annotate::annotate_scallop(&annotations, &tp, sem);
+    }
+    let spans = crate::compute::spans::spans_from_labeled_events(
+        tp.moves.len(),
+        annotations
+            .iter()
+            .map(|ann| (ann.move_index, ann.event.label())),
+    );
+    Ok(generated_with_spans(tp, spans))
+}
+
 /// SteepShallow family adapter. Cancellable: the cooperative cancel
 /// closure is rebuilt from `ctx.cancel` (pinned by
 /// `cancellable_families_honour_a_preset_cancel_flag`).
@@ -1828,6 +1896,7 @@ pub fn execute_operation_annotated_with_regions(
             // exhaustiveness net and delegate to the same adapters.
             OperationConfig::Pencil(_) => generate_pencil(&ctx, op),
             OperationConfig::Scallop(_) => generate_scallop(&ctx, op),
+            OperationConfig::UnifiedFinish(_) => generate_unified_finish(&ctx, op),
             OperationConfig::SteepShallow(_) => generate_steep_shallow(&ctx, op),
             OperationConfig::RampFinish(_) => generate_ramp_finish(&ctx, op),
             // Migrated to the registry GenerateFn (T11); arms kept for the

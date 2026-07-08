@@ -896,3 +896,38 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   offset-surface blind spot (quantified via
   `wanaka_slope_distribution_diagnostic`; left as-is, planner supersedes).
   Gates re-green (clippy clean, finish_planner 11/11, finish_setup 10/10).
+- 2026-07-08 (scallop ring-cascade exponential — found by the P2.c A/B,
+  UNCOMMITTED): region-scoped scallop on wanaka's dendritic mid-steep band
+  hung for hours at fine scallop heights. Root cause: `offset_polygon`
+  ADDS arc-approximation vertices at concave corners on every call and
+  never removes any, so the iterated inward-offset ring cascade compounds
+  ~15–25% vertices/ring — measured 1178 → 261 000 vertices by ring 25
+  (10 s/offset and doubling). Convex boundaries (classic full-footprint
+  scallop) gain only ~4 points/ring, which is why 43 unit tests + selective
+  scallop at normal heights never saw it; REACHABLE FROM THE GUI (heights
+  down to 0.01 on any dendritic region). Fix: `decimate_ring_polygon` in
+  the ring loop — drop-only decimation at 0.75×heightmap cell spacing
+  (never adds points; already-at-density rings pass byte-identical; sliver
+  fragments <3 points culled). Cost curve h=0.1/0.05/0.02/0.011:
+  pre-fix 2.6 s / 4.3 s / >30 min (killed) / unmeasured → post-fix
+  2.1/2.4/2.9/3.6 s. Scallop lib tests 43/43. FOLLOW-UP (root of the root):
+  fix the inflation inside `offset_polygon` itself with a sweep-validated
+  pass — benefits pocket/adaptive/rest cascades too; tracked, not a P2.c
+  rider (blast radius = every offset consumer's geometry).
+- 2026-07-08 (P2.c CHECKPOINT #1 VERDICT, UNCOMMITTED as of writing):
+  branch B (UnifiedFinish at parity dials: raster 0.3 = A, scallop_height
+  0.011 = A's effective mid-steep cusp, z_step 0.3) vs pinned branch A
+  (8919.5 s project / 6883.4 s finish — reproduced the P1 headless
+  baseline to 0.5 s): finish 7011.4 s (+1.9%), project 9047.5 s (+1.4%),
+  collisions 0 (gate ≤4 PASSED). Intent split: cutting 5839.5 → 5137.9 s
+  (−12%, the banding win — scallop rings beat 0.3 mm raster on the
+  mid-steep band at BETTER held cusp) vs entry+rapid 1044 → 1874 s
+  (+830 s — the naive band split makes the shallow raster plunge back in
+  at every band crossing). VERDICT: checkpoint passes (no collision
+  regression, tiny time cost buys strictly better steep quality, cutting
+  win proven); the +830 s overhead is quantified and is exactly P2.d's
+  router/surface-link target — far richer than R3's 5–8% estimate.
+  Unchanged ops reproduced A bit-for-bit (Back Rough 674.8 = 674.8).
+  NOTE: full B chain = 51 s wall post-scallop-fix; the first A/B's 2 h+
+  was the scallop exponential + probable sysml-job contention. Harness
+  keeps pinned-A B-only mode + three pathology probes.

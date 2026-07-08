@@ -110,6 +110,7 @@ pub mod toolpath;
 pub mod toolpath_spans;
 pub mod trace;
 pub mod tsp;
+pub mod unified_finish;
 pub mod vcarve;
 pub mod viz;
 pub mod waterline;

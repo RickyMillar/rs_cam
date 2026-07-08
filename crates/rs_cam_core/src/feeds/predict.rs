@@ -750,10 +750,17 @@ fn arc_fit_ratio_for_op(op_type: OperationType) -> ArcFitDispatch {
             value: 0.30,
             source: DefSrc,
         },
-        OperationType::Scallop | OperationType::SpiralFinish => ArcFitDispatch::Ratio {
-            value: 0.15,
-            source: DefSrc,
-        },
+        // UnifiedFinish: no calibration cell yet (new op) — mirrors
+        // Scallop's ratio per the registration decision (its mid-steep
+        // band literally IS a scallop pass; the waterline/raster bands
+        // don't have their own calibration either). Revisit once Wanaka
+        // post-sim data exists for this op.
+        OperationType::Scallop | OperationType::UnifiedFinish | OperationType::SpiralFinish => {
+            ArcFitDispatch::Ratio {
+                value: 0.15,
+                source: DefSrc,
+            }
+        }
         OperationType::Waterline => ArcFitDispatch::Ratio {
             value: 0.40,
             source: DefSrc,

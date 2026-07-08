@@ -196,6 +196,34 @@ impl ProjectSession {
         Ok(())
     }
 
+    /// Replace a toolpath's operation config wholesale — including switching
+    /// the operation KIND — while keeping its tool, heights, boundary,
+    /// dressups, and position in the machining order. This is the supported
+    /// way to A/B one operation against another in an existing chain
+    /// (chain order matters: rest-referencing ops downstream see the stock
+    /// this toolpath leaves). Re-normalizes the dressups for the new op kind
+    /// and drops the cached result + simulation.
+    #[instrument(skip(self, operation))]
+    pub fn set_toolpath_operation(
+        &mut self,
+        index: usize,
+        operation: OperationConfig,
+    ) -> Result<(), SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get_mut(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        tc.operation = operation;
+        // Same invariant set_dressup_config enforces: the surviving dressups
+        // must be legal for the NEW operation kind.
+        let mut dressups = tc.dressups.clone();
+        dressups.normalize_for_op(tc.operation.op_type());
+        tc.dressups = dressups;
+        self.results.remove(&index);
+        self.simulation = None;
+        Ok(())
+    }
+
     /// Update a single dressup field by merging a JSON patch onto the existing
     /// [`DressupConfig`]. Only the specified field is changed. Invalidates
     /// the cached result.

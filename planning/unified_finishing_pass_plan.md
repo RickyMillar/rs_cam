@@ -238,8 +238,30 @@ and its innermost offset ring.
       container. Affects all mask→polygon users (rest_field, boundary,
       svg/dxf import, adaptive3d); depth ≤ 1 behaviour unchanged; +2 nesting
       tests in polygon.rs.
-- [ ] P2.c per-band generation + naive concat, A/B checkpoint #1 (must not
-      regress the P1 stack)
+- [~] P2.c per-band generation + naive concat, A/B checkpoint #1 (must not
+      regress the P1 stack). PROGRESS 2026-07-08: `unified_finish.rs`
+      orchestrator (6/6 unit tests) + full op registration (X-macro,
+      registry ball-tip, execute adapter + spans, feeds classification, GUI
+      panel; catalog sentries bumped to 24) + `set_toolpath_operation`
+      session API (in-place op swap preserving chain order for honest
+      A/Bs). A/B harness `tests/p2c_headless_ab_wanaka.rs`: branch A
+      measured 8919.5 s project / 6883.4 s finish (reproduces the P1
+      headless 8920 s baseline to 0.5 s; now PINNED — B-only reruns skip
+      A's ~35 min). First A/B attempt EXPOSED the scallop ring-cascade
+      exponential (see ledger entry): fixed via drop-only ring decimation;
+      cost curve linear post-fix. B dials: raster 0.3 (=A), scallop_height
+      0.011 (A's effective mid-steep cusp), z_step 0.3. **CHECKPOINT #1
+      PASSED (2026-07-08)**: B finish 7011.4 s (+1.9%) / project 9047.5 s
+      (+1.4%) / collisions 0 ≤ 4 gate; cutting −12% (5839.5 → 5137.9 s,
+      the banding win at better held cusp) vs entry+rapid +830 s (naive
+      band-crossing plunges) — the +830 s is P2.d's quantified router
+      target. Post-scallop-fix a full B chain is 51 s wall — A/Bs are now
+      cheap (P2.e can afford real sweeps). Probe tests kept in the harness
+      file (phase/cost-curve/offset-cascade) for future pathology hunts.
+      Remaining P2.c tails: coastline classification stencil
+      (max-one-sided-gradients — user-caught, logged in design doc),
+      crease/pencil integration into the op, live GUI validation,
+      offset_polygon root fix (tracked separately).
 - [ ] P2.d router (greedy + link costing + 2-opt toggle), A/B checkpoint #2
 - [ ] P2.e decomposition-parameter sweep harness; lock defaults from data
 - [ ] P3 morphed spiral strategy + degeneracy fallback

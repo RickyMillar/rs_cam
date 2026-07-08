@@ -7,6 +7,6 @@ pub use rs_cam_core::compute::operation_configs::{
     PocketConfig, PocketPattern, ProfileConfig, ProfileSide, ProjectCurveConfig,
     ProjectCurveDirection, ProjectCurveSide, RadialFinishConfig, RampFinishConfig, RegionOrdering,
     RestConfig, ScallopConfig, ScallopDirection, SpiralDirection, SpiralFinishConfig,
-    SteepShallowConfig, TraceCompensation, TraceConfig, VCarveConfig, WaterlineConfig,
-    ZigzagConfig,
+    SteepShallowConfig, TraceCompensation, TraceConfig, UnifiedFinishConfig, VCarveConfig,
+    WaterlineConfig, ZigzagConfig,
 };
