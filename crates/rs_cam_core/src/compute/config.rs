@@ -776,7 +776,13 @@ mod tests {
         for &op in OperationType::ALL {
             let policy = op.registry_entry().dressup_policy;
             match op {
-                OperationType::ProjectCurve | OperationType::DropCutter => {
+                // UnifiedFinish joined the strip-all set 2026-07-09 (P2.f
+                // Task 2): role-default Ramp entries carved diagonal
+                // trenches across the wanaka terrain on a fresh MCP-added
+                // op — same failure mode as DropCutter's documented one.
+                OperationType::ProjectCurve
+                | OperationType::DropCutter
+                | OperationType::UnifiedFinish => {
                     assert!(policy.strip_all_reason.is_some(), "{op:?}: strip-all");
                     assert_eq!(policy.entry, EntryStylePolicy::AnyEntry);
                 }
@@ -816,8 +822,12 @@ mod tests {
             ..DressupConfig::default()
         };
 
-        // Strip-all: ProjectCurve/DropCutter clear all three.
-        for op in [OperationType::ProjectCurve, OperationType::DropCutter] {
+        // Strip-all: ProjectCurve/DropCutter/UnifiedFinish clear all three.
+        for op in [
+            OperationType::ProjectCurve,
+            OperationType::DropCutter,
+            OperationType::UnifiedFinish,
+        ] {
             let mut cfg = dirty();
             assert!(cfg.normalize_for_op(op));
             assert_eq!(cfg.entry_style, DressupEntryStyle::None, "{op:?}");
