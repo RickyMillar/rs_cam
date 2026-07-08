@@ -540,7 +540,8 @@ where
             }
 
             set_phase(&format!("Simulate {}", entry.name));
-            let lut = RadialProfileLUT::from_cutter(&entry.tool, 256);
+            let lut =
+                RadialProfileLUT::from_cutter(&entry.tool, crate::radial_profile::LUT_SAMPLES);
             let radius = entry.tool.radius();
             let start_move = total_moves;
 
@@ -671,7 +672,8 @@ where
                 global_stock.apply_drill_op(&global_drill_op);
                 global_drill_ops.push(global_drill_op);
             } else {
-                let playback_lut = RadialProfileLUT::from_cutter(&entry.tool, 256);
+                let playback_lut =
+                    RadialProfileLUT::from_cutter(&entry.tool, crate::radial_profile::LUT_SAMPLES);
                 let _ = global_stock.simulate_toolpath_with_lut_cancel(
                     &global_tp,
                     &playback_lut,

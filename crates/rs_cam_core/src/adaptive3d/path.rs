@@ -569,7 +569,7 @@ pub(super) fn adaptive_3d_segments(
     let bbox_y_min = origin_y + envelope_radius;
     let bbox_y_max = extent_y - envelope_radius;
 
-    let lut = RadialProfileLUT::from_cutter(cutter, 256);
+    let lut = RadialProfileLUT::from_cutter(cutter, crate::radial_profile::LUT_SAMPLES);
     let mut ctx = ClearZLevelContext {
         mesh,
         index,

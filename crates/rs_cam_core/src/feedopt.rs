@@ -130,7 +130,7 @@ fn optimize_feed_rates_inner(
 ) -> Toolpath {
     let tool_radius = cutter.radius();
     let n_samples = 24; // circumference samples for engagement
-    let lut = RadialProfileLUT::from_cutter(cutter, 256);
+    let lut = RadialProfileLUT::from_cutter(cutter, crate::radial_profile::LUT_SAMPLES);
 
     // First pass: compute optimal feed rate for each move
     let mut feed_rates: Vec<f64> = Vec::with_capacity(toolpath.moves.len());

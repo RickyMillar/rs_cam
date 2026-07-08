@@ -312,7 +312,7 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
     // (moves between this level's start and its waterline marker), then
     // check coverage. This isolates the 2D-slice agent's stamping so a
     // working waterline cleanup can't mask agent-search gaps.
-    let lut = RadialProfileLUT::from_cutter(&cutter, 256);
+    let lut = RadialProfileLUT::from_cutter(&cutter, rs_cam_core::radial_profile::LUT_SAMPLES);
     let mut stock = base_stock.clone();
     // Margin = 2 grid cells. Cells right on the bbox edge can have
     // partial-cell stamping artifacts; staying 2 cells in keeps us

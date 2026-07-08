@@ -182,8 +182,8 @@ fn bench_stamp_tool(c: &mut Criterion) {
 
     let ball = BallEndmill::new(6.35, 25.0);
     let flat = FlatEndmill::new(6.35, 25.0);
-    let ball_lut = RadialProfileLUT::from_cutter(&ball, 256);
-    let flat_lut = RadialProfileLUT::from_cutter(&flat, 256);
+    let ball_lut = RadialProfileLUT::from_cutter(&ball, rs_cam_core::radial_profile::LUT_SAMPLES);
+    let flat_lut = RadialProfileLUT::from_cutter(&flat, rs_cam_core::radial_profile::LUT_SAMPLES);
 
     for cell_size in [0.5, 1.0] {
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, 0.0, 10.0, cell_size);
@@ -303,7 +303,7 @@ fn bench_stamp_linear_segment(c: &mut Criterion) {
     group.sample_size(20);
 
     let ball = BallEndmill::new(6.0, 25.0);
-    let lut = RadialProfileLUT::from_cutter(&ball, 256);
+    let lut = RadialProfileLUT::from_cutter(&ball, rs_cam_core::radial_profile::LUT_SAMPLES);
     let mut stock = TriDexelStock::from_stock(0.0, 0.0, 60.0, 10.0, 0.0, 10.0, 0.25);
     let start = P3::new(5.0, 5.0, -2.0);
     let end = P3::new(55.0, 5.0, -2.0);
@@ -479,7 +479,7 @@ fn bench_dexel_mesh_extraction(c: &mut Criterion) {
 
     // Small grid: 100x100 at cs=1.0
     let ball = BallEndmill::new(6.0, 25.0);
-    let lut = RadialProfileLUT::from_cutter(&ball, 256);
+    let lut = RadialProfileLUT::from_cutter(&ball, rs_cam_core::radial_profile::LUT_SAMPLES);
     let mut small = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, 0.0, 10.0, 1.0);
     // Stamp some geometry so the mesh isn't trivially uniform.
     for i in 0..5 {
@@ -542,7 +542,7 @@ fn bench_dexel_checkpoint_clone(c: &mut Criterion) {
     group.sample_size(20);
 
     let ball = BallEndmill::new(6.0, 25.0);
-    let lut = RadialProfileLUT::from_cutter(&ball, 256);
+    let lut = RadialProfileLUT::from_cutter(&ball, rs_cam_core::radial_profile::LUT_SAMPLES);
     let mut stock = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, 0.0, 10.0, 0.25);
     for i in 0..20 {
         stock.stamp_tool_at(
