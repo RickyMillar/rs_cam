@@ -960,3 +960,21 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   −494.6 s) / collisions 0**. 2-opt not built (greedy at O(4) regions —
   measure-first). Remaining finish entry_s (803 s) is internal strategy
   plunges → P3 territory. Lib battery 2126 green / 3 known reds.
+- 2026-07-08 (P2.e SWEEP + DEFAULT LOCK, uncommitted as of writing): both
+  sweep tiers run. Tier-1 (16 conditioning rows, decompose-only, 0.8 s):
+  defaults in a stable basin, no cliffs; hysteresis=0 re-creates the R1
+  island storm (115 raw islands) — hysteresis is load-bearing; coastline
+  survival levers = hysteresis ↑ / min_area ↓ / close ↑. Tier-2 (8
+  threshold rows through the full chain, ~9 min, all 0 collisions): steep
+  monotonic (35 → −14% finish, quality-trading vs A in the 35–45° band →
+  45 kept as the quality-neutral anchor); waterline is the big lever —
+  55 → +27.0% finish (Z-contouring is the most expensive strategy per
+  area), 75 → −16.2%, 85 flat. **LOCKED: waterline default 65→75**
+  (`FinishPlannerParams::for_tool` + `UnifiedFinishConfig::default` +
+  harness config). Fresh branch-B at locked defaults reproduces the sweep
+  row bit-for-bit: finish 5766.5 s (−16.2%), project 7802.6 s (−12.5%,
+  −1116.9 s vs pinned A), collisions 0; finish entry_s 803→489 s. Honest
+  caveat: chain-scored on wanaka only — a wall-heavy fixture would
+  exercise the shrunk 75–90° waterline band; revisit then. Cumulative
+  unified-finish arc vs A: P2.c +1.4% → coastline fix −4.1% → router
+  −5.5% → P2.e lock **−12.5% project**.

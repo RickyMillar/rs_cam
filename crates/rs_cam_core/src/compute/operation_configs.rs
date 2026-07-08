@@ -874,10 +874,14 @@ pub struct UnifiedFinishConfig {
 }
 
 impl Default for UnifiedFinishConfig {
+    /// Thresholds locked by the P2.e sweep (2026-07-08) — mirrors
+    /// `FinishPlannerParams::for_tool` (see its doc comment for the
+    /// measured tradeoffs; waterline 75 because Z-contouring is the most
+    /// expensive strategy per area, and 65→55 measured +27% finish time).
     fn default() -> Self {
         Self {
             steep_threshold_deg: 45.0,
-            waterline_threshold_deg: 65.0,
+            waterline_threshold_deg: 75.0,
             overlap_mm: 2.0,
             scallop_height: 0.1,
             tolerance: 0.05,
