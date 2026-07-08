@@ -381,10 +381,22 @@ and its innermost offset ring.
       the fixed binary): re-add the op live, confirm entry_s ≈ headless
       + collisions ≈ baseline 4, the retract_strategy no-op question,
       and the eyeball on the chord-refined stock.
-- [ ] P2.f Task 3 (emission quality): raster serpentine within regions;
-      crease/pencil integration; region-count/min_area floor for tapered
-      tools; waterline sampling clamp (the unfixed half of the fidelity
-      defect); offset_polygon root fix; C's rim-guard suspicion.
+- [x] P2.f Task 3a: raster serpentine within regions. DONE 2026-07-09
+      overnight — segmented raster defers each segment's retract and
+      stays down when the next segment starts within one cell diagonal
+      (gap-guarded by construction; unit-pinned both ways). Cumulative
+      B (chord fix + serpentine): **finish 5486.3 s (−20.3%), project
+      −15.7% vs pinned A, collisions 0** — entry 489→150 s, rapid
+      1105→941 s, quality histograms unchanged. Branch A verified
+      byte-identical (its model-silhouette POST-clip re-fragments rows
+      regardless — census: 313 plunges = one per row), so the pinned
+      constants remain valid; clip-aware linking for A-style clipped
+      rasters is a ledgered tail.
+- [ ] P2.f Task 3 remainder (emission quality): crease/pencil
+      integration; region-count/min_area floor for tapered tools;
+      waterline sampling clamp (the unfixed half of the fidelity
+      defect); clip-aware serpentine for post-clipped rasters;
+      offset_polygon root fix; C's rim-guard suspicion.
 - [ ] P3 morphed spiral strategy + degeneracy fallback
 - [ ] Ledger + FEATURE_CATALOG + memory updates at each landing
 
