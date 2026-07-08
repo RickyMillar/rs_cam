@@ -43,7 +43,7 @@ impl TriDexelStock {
         direction: StockCutDirection,
         cancel: &dyn CancelCheck,
     ) -> Result<(), Cancelled> {
-        let lut = RadialProfileLUT::from_cutter(cutter, 256);
+        let lut = RadialProfileLUT::from_cutter(cutter, crate::radial_profile::LUT_SAMPLES);
         self.simulate_toolpath_with_lut_cancel(toolpath, &lut, cutter.radius(), direction, cancel)
     }
 
@@ -111,7 +111,7 @@ impl TriDexelStock {
         capture_arc_engagement: bool,
         cancel: &dyn CancelCheck,
     ) -> Result<Vec<SimulationCutSample>, Cancelled> {
-        let lut = RadialProfileLUT::from_cutter(cutter, 256);
+        let lut = RadialProfileLUT::from_cutter(cutter, crate::radial_profile::LUT_SAMPLES);
         self.simulate_toolpath_with_lut_metrics_cancel(
             toolpath,
             &lut,
@@ -347,7 +347,7 @@ impl TriDexelStock {
         start_move: usize,
         end_move: usize,
     ) {
-        let lut = RadialProfileLUT::from_cutter(cutter, 256);
+        let lut = RadialProfileLUT::from_cutter(cutter, crate::radial_profile::LUT_SAMPLES);
         self.simulate_toolpath_range_with_lut(
             toolpath,
             &lut,
@@ -423,7 +423,22 @@ impl TriDexelStock {
             return Ok(());
         }
 
-        let subsegments = ((segment_length / params.sample_step_mm).ceil() as usize).max(1);
+        // Subdivision must be Z-AWARE, not just length-based: the per-cell
+        // stamp surface is `z(t_closest_approach) + h(d)`, which ignores Z
+        // variation along the subsegment, so a subsegment descending (or
+        // crossing a slope) under-removes by up to its own Z-drop. Capping
+        // per-subsegment Z-drop at 0.02 mm bounds that error below the
+        // finish-cusp scale (P2.g stamper probe, 2026-07-09: 0.25 mm
+        // subsegments left 5–35 µm above the true envelope on ~25 % of
+        // steep-finish columns, and biased move streams with longer
+        // descending segments — the false fine-tier matrix verdict). Flat
+        // segments (dz ≈ 0) keep the pure length-based count, so roughing
+        // cost is unchanged where it dominates.
+        const MAX_SUBSEGMENT_Z_DROP_MM: f64 = 0.02;
+        let z_drop = (end.z - start.z).abs();
+        let by_length = (segment_length / params.sample_step_mm).ceil() as usize;
+        let by_z = (z_drop / MAX_SUBSEGMENT_Z_DROP_MM).ceil() as usize;
+        let subsegments = by_length.max(by_z).max(1);
         for subsegment in 0..subsegments {
             check_cancel(cancel)?;
             let t0 = subsegment as f64 / subsegments as f64;

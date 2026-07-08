@@ -71,7 +71,7 @@ fn point_stamp_total_volume_matches_disk_area() {
     let cut_z: f64 = 8.0;
     let depth = stock_top - cut_z;
 
-    let lut = RadialProfileLUT::from_cutter(&cutter, 256);
+    let lut = RadialProfileLUT::from_cutter(&cutter, rs_cam_core::radial_profile::LUT_SAMPLES);
     let mut after = stock.clone();
     after.stamp_tool_at(&lut, radius, 0.0, 0.0, cut_z, StockCutDirection::FromTop);
 
@@ -101,7 +101,7 @@ fn segment_stamp_total_volume_matches_stadium_area() {
     let cut_z: f64 = 8.0;
     let depth = stock_top - cut_z;
     let length: f64 = 8.0;
-    let lut = RadialProfileLUT::from_cutter(&cutter, 256);
+    let lut = RadialProfileLUT::from_cutter(&cutter, rs_cam_core::radial_profile::LUT_SAMPLES);
 
     let mut after = stock.clone();
     after.stamp_linear_segment(
@@ -136,7 +136,7 @@ fn point_stamp_coverage_reaches_one_at_disk_interior_and_partial_at_boundary() {
     let radius = cutter.radius();
     let cs = 0.25;
     let mut stock = fresh_stock(cs);
-    let lut = RadialProfileLUT::from_cutter(&cutter, 256);
+    let lut = RadialProfileLUT::from_cutter(&cutter, rs_cam_core::radial_profile::LUT_SAMPLES);
     stock.stamp_tool_at(&lut, radius, 0.0, 0.0, 8.0, StockCutDirection::FromTop);
 
     // Interior cell (well inside disk): coverage = 1.0.
@@ -188,7 +188,7 @@ fn point_stamp_blend_lowers_ray_top_proportionally_at_boundary() {
     let top_initial: f32 = 10.0;
     let cut_z = 8.0_f64;
     let depth = (top_initial as f64) - cut_z;
-    let lut = RadialProfileLUT::from_cutter(&cutter, 256);
+    let lut = RadialProfileLUT::from_cutter(&cutter, rs_cam_core::radial_profile::LUT_SAMPLES);
     stock.stamp_tool_at(&lut, radius, 0.0, 0.0, cut_z, StockCutDirection::FromTop);
 
     let grid = &stock.z_grid;
@@ -213,7 +213,7 @@ fn coverage_increases_monotonically_with_stamps() {
     let radius = cutter.radius();
     let cs = 0.25;
     let mut stock = fresh_stock(cs);
-    let lut = RadialProfileLUT::from_cutter(&cutter, 256);
+    let lut = RadialProfileLUT::from_cutter(&cutter, rs_cam_core::radial_profile::LUT_SAMPLES);
 
     // First stamp at origin.
     stock.stamp_tool_at(&lut, radius, 0.0, 0.0, 8.0, StockCutDirection::FromTop);
@@ -242,7 +242,7 @@ fn extended_scan_radius_catches_annular_cells_old_code_missed() {
     let radius = cutter.radius();
     let cs = 0.5;
     let mut stock = fresh_stock(cs);
-    let lut = RadialProfileLUT::from_cutter(&cutter, 256);
+    let lut = RadialProfileLUT::from_cutter(&cutter, rs_cam_core::radial_profile::LUT_SAMPLES);
     stock.stamp_tool_at(&lut, radius, 0.0, 0.0, 8.0, StockCutDirection::FromTop);
 
     // A cell whose center sits just outside the disk (annular ring) — pre-

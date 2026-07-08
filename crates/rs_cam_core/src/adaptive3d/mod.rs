@@ -1457,7 +1457,7 @@ mod tests {
             .collect();
 
         // Stamp along the path itself
-        let lut = RadialProfileLUT::from_cutter(&cutter, 256);
+        let lut = RadialProfileLUT::from_cutter(&cutter, crate::radial_profile::LUT_SAMPLES);
         for p in &path {
             material_stock.stamp_tool_at(
                 &lut,
@@ -1717,7 +1717,7 @@ mod tests {
         let cell_size = 0.3;
         let mut sim_stock =
             TriDexelStock::from_stock(-25.5, -25.5, 25.5, 25.5, -1.0, stock_top_z, cell_size);
-        let lut = RadialProfileLUT::from_cutter(&cutter, 256);
+        let lut = RadialProfileLUT::from_cutter(&cutter, crate::radial_profile::LUT_SAMPLES);
         sim_stock
             .simulate_toolpath_with_lut_cancel(
                 &tp,
@@ -1778,7 +1778,7 @@ mod tests {
             stock_top_z,
             cell_size,
         );
-        let lut = RadialProfileLUT::from_cutter(&cutter, 256);
+        let lut = RadialProfileLUT::from_cutter(&cutter, crate::radial_profile::LUT_SAMPLES);
         sim_stock
             .simulate_toolpath_with_lut_cancel(
                 &tp,
@@ -1900,7 +1900,7 @@ mod tests {
             stock_top_z,
             cell_size,
         );
-        let lut = RadialProfileLUT::from_cutter(&cutter, 256);
+        let lut = RadialProfileLUT::from_cutter(&cutter, crate::radial_profile::LUT_SAMPLES);
         sim_stock
             .simulate_toolpath_with_lut_cancel(
                 &tp,
