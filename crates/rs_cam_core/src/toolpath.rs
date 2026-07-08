@@ -546,6 +546,21 @@ pub fn raster_toolpath_from_grid(
     /// Epsilon for detecting min_z-clamped points.
     const CLAMP_EPS: f64 = 0.001;
 
+    // P2.f Task 3 (serpentine): in the segmented branch, a segment's
+    // retract is DEFERRED until the next segment is known — when that
+    // segment starts within one grid-cell diagonal of where the tool
+    // already sits, the tool stays down and feeds there directly (the
+    // same surface chord an unclipped zigzag would cut at a row
+    // turnaround) instead of retract → rapid → replunge. Pre-fix, a
+    // region-clipped raster paid that full cycle at EVERY row (wanaka
+    // unified op: 489 s of entry plunges vs the all-over raster's 57 s).
+    // The one-diagonal threshold is also the gap guard: segments split by
+    // an excluded/clamped point are ≥ two steps apart, so links can never
+    // bridge a min_z hole or leave the boundary regions by more than the
+    // sub-cell slack the regions' conditioning margin already absorbs.
+    let link_max = (grid.x_step.hypot(grid.y_step)) * 1.05;
+    let mut down_at: Option<P3> = None;
+
     for row in 0..grid.rows {
         if grid.cols == 0 {
             continue;
@@ -583,15 +598,41 @@ pub fn raster_toolpath_from_grid(
             // outside every boundary region, so cutting through them would
             // either plunge the tool to the floor or cross outside the
             // machining boundary. Each contiguous engaging run must be its
-            // own pass (retract-traverse-plunge between runs).
+            // own pass; runs farther apart than one cell diagonal get a
+            // retract-traverse-plunge cycle, adjacent-row runs serpentine
+            // (see `link_max` above).
             for &(seg_s, seg_e) in &segments {
                 let first_col = col_at(seg_s);
                 let first_pt = grid.get(row, first_col);
-                tp.rapid_to_with_intent(
-                    P3::new(first_pt.x, first_pt.y, safe_z),
-                    MoveIntent::Linking,
-                );
-                tp.feed_to_with_intent(first_pt.position(), plunge_rate, MoveIntent::EntryPlunge);
+
+                let linked = down_at.is_some_and(|prev| {
+                    (first_pt.x - prev.x).hypot(first_pt.y - prev.y) <= link_max
+                });
+                if linked {
+                    // Stay down: one surface chord, same class as an
+                    // unclipped zigzag's row turnaround.
+                    tp.feed_to_with_intent(
+                        first_pt.position(),
+                        feed_rate,
+                        MoveIntent::FinishingCut,
+                    );
+                } else {
+                    if let Some(prev) = down_at.take() {
+                        tp.rapid_to_with_intent(
+                            P3::new(prev.x, prev.y, safe_z),
+                            MoveIntent::Retract,
+                        );
+                    }
+                    tp.rapid_to_with_intent(
+                        P3::new(first_pt.x, first_pt.y, safe_z),
+                        MoveIntent::Linking,
+                    );
+                    tp.feed_to_with_intent(
+                        first_pt.position(),
+                        plunge_rate,
+                        MoveIntent::EntryPlunge,
+                    );
+                }
 
                 for i in (seg_s + 1)..=seg_e {
                     let col = col_at(i);
@@ -601,7 +642,7 @@ pub fn raster_toolpath_from_grid(
 
                 let last_col = col_at(seg_e);
                 let last_pt = grid.get(row, last_col);
-                tp.rapid_to_with_intent(P3::new(last_pt.x, last_pt.y, safe_z), MoveIntent::Retract);
+                down_at = Some(last_pt.position());
             }
         } else {
             // No min_z filtering and no boundary regions — emit the entire row
@@ -620,6 +661,11 @@ pub fn raster_toolpath_from_grid(
             let last_pt = grid.get(row, last_col);
             tp.rapid_to_with_intent(P3::new(last_pt.x, last_pt.y, safe_z), MoveIntent::Retract);
         }
+    }
+
+    // Flush the segmented branch's deferred final retract.
+    if let Some(prev) = down_at {
+        tp.rapid_to_with_intent(P3::new(prev.x, prev.y, safe_z), MoveIntent::Retract);
     }
 
     tp
@@ -1335,26 +1381,85 @@ mod tests {
 
     #[test]
     fn raster_boundary_regions_none_matches_call_without_param() {
-        // `boundary_regions = None` must reproduce the pre-P2.3 behavior
-        // byte-for-byte, including the unpartitioned whole-row fast path
-        // (min_z is also None here, so this exercises the `else` branch).
+        // A region generously covering the whole grid footprint must visit
+        // exactly the same surface points in the same zigzag order as the
+        // unfiltered fast path. Since the P2.f serpentine, the TRANSITIONS
+        // differ by design: the covered (segmented) branch stays down
+        // between adjacent rows instead of retract→rapid→replunge, so it
+        // carries exactly one entry cycle and one final retract for a
+        // fully-connected grid.
         let grid = make_test_grid(3, 10, |_, col| col as f64 * 0.5);
         let tp_none = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None, None);
 
-        // A region generously covering the whole grid footprint must behave
-        // identically to no filter at all.
         let covering = crate::polygon::Polygon2::rectangle(-5.0, -5.0, 20.0, 20.0);
         let region_set = crate::region_set::RegionSet::new(vec![covering]);
         let tp_covered =
             raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None, Some(&region_set));
 
-        assert_eq!(tp_none.moves.len(), tp_covered.moves.len());
-        for (a, b) in tp_none.moves.iter().zip(tp_covered.moves.iter()) {
-            assert_eq!(a.move_type, b.move_type);
-            assert_eq!(a.intent, b.intent);
-            assert!((a.target.x - b.target.x).abs() < 1e-9);
-            assert!((a.target.y - b.target.y).abs() < 1e-9);
-            assert!((a.target.z - b.target.z).abs() < 1e-9);
+        // Same down-position sequence (every move that touches the surface,
+        // whatever its intent: plunge targets, cuts, serpentine links).
+        let down_positions = |tp: &Toolpath| -> Vec<(f64, f64, f64)> {
+            tp.moves
+                .iter()
+                .filter(|m| matches!(m.move_type, MoveType::Linear { .. }))
+                .map(|m| (m.target.x, m.target.y, m.target.z))
+                .collect()
+        };
+        assert_eq!(down_positions(&tp_none), down_positions(&tp_covered));
+
+        // Serpentine contract: one entry cycle, one final retract.
+        let entry_count = tp_covered
+            .moves
+            .iter()
+            .filter(|m| m.intent == MoveIntent::EntryPlunge)
+            .count();
+        let rapid_count = tp_covered
+            .moves
+            .iter()
+            .filter(|m| m.move_type == MoveType::Rapid)
+            .count();
+        assert_eq!(entry_count, 1, "fully-connected grid must plunge once");
+        assert_eq!(
+            rapid_count, 2,
+            "fully-connected grid must rapid twice (initial link + final retract)"
+        );
+    }
+
+    #[test]
+    fn raster_serpentine_never_bridges_gaps() {
+        // A min_z-clamped column splits every row into two segments TWO
+        // steps apart — beyond the one-cell-diagonal link threshold, so the
+        // serpentine must NOT stay down across the hole: each row's second
+        // segment gets its own retract→rapid→replunge cycle.
+        let grid = make_test_grid(2, 9, |_, col| if col == 4 { -5.0 } else { 0.0 });
+        let tp = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, Some(-5.0), None);
+
+        // Segment order: r0(c0-3) → GAP → r0(c5-8) → zigzag turnaround →
+        // r1(c8-5) → GAP → r1(c3-0). The turnaround (c8,r0 → c8,r1, one
+        // y_step) serpentines; both gap crossings (2 steps) must replunge.
+        // Entry cycles: initial + 2 gap restarts = 3; serpentine links: 1.
+        let entry_count = tp
+            .moves
+            .iter()
+            .filter(|m| m.intent == MoveIntent::EntryPlunge)
+            .count();
+        assert_eq!(
+            entry_count, 3,
+            "gap crossings must replunge; only the row turnaround serpentines"
+        );
+        // No feed move may span the clamped column at cutting depth: every
+        // linear move that crosses x=4 while below safe_z must be absent.
+        for w in tp.moves.windows(2) {
+            let (a, b) = (&w[0], &w[1]);
+            if matches!(b.move_type, MoveType::Linear { .. }) && b.target.z < 5.0 {
+                let (x0, x1) = (a.target.x.min(b.target.x), a.target.x.max(b.target.x));
+                assert!(
+                    !(x0 < 4.0 - 1e-9 && x1 > 4.0 + 1e-9),
+                    "feed move bridges the clamped hole: {:?} -> {:?}",
+                    (a.target.x, a.target.y, a.target.z),
+                    (b.target.x, b.target.y, b.target.z)
+                );
+            }
         }
     }
 

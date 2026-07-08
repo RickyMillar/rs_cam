@@ -1172,3 +1172,32 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   re-add the unified op (strip-all now applies), confirm entry_s ≈
   headless and collisions back to baseline 4, retract_strategy no-op
   question, and the user's eyeball on the chord-refined stock.
+- 2026-07-09 overnight (P2.f Task 3a — raster serpentine, headless
+  validated): `raster_toolpath_from_grid`'s segmented branch (min_z /
+  boundary-region clipped) paid a full retract → rapid → replunge cycle
+  at EVERY row; the unified op's region-clipped shallow raster was the
+  main payer (489 s of entry plunges vs branch A's 57 s). The segment
+  retract is now DEFERRED: when the next segment starts within one
+  grid-cell diagonal (×1.05) of where the tool sits, it stays down and
+  feeds there (the same surface chord an unclipped zigzag cuts at a
+  turnaround). The one-diagonal threshold doubles as the gap guard — a
+  single excluded/clamped point already puts segments two steps apart,
+  so links can never bridge a min_z hole or leave the regions by more
+  than sub-cell slack (unit-pinned: `raster_serpentine_never_bridges_
+  gaps`; the covering-region parity test now asserts one entry cycle +
+  two rapids for a fully-connected grid). RESULT (chord fix +
+  serpentine, quality histograms unchanged from the chord-fix run):
+  **B finish 5486.3 s (−20.3%), project −15.7%, collisions 0; finish
+  entry 489→150 s, rapid 1105→941 s.**
+  BRANCH-A INVARIANCE (verified, not assumed): A's chain totals are
+  byte-identical post-serpentine, so the pinned constants stay valid.
+  Census probe (`p2f_a_move_census`): A's FINAL finish toolpath still
+  carries exactly one entry plunge per raster row (313) — A's
+  model-silhouette boundary is applied as a POST-clip that cuts the
+  path at every silhouette crossing and re-emits per-row entry cycles,
+  so generation-level links at the bbox-edge turnarounds (outside the
+  silhouette) cannot survive it. The unified op's links live INSIDE its
+  regions ⊂ silhouette and pass through the same clip untouched.
+  Serpentining A itself would need clip-aware linking — ledgered as a
+  Task 3 tail, deliberately NOT done while pinned-A comparability
+  anchors the campaign.

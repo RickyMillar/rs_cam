@@ -26,6 +26,15 @@
 > retract_strategy no-op question, and the eyeball on the
 > chord-refined stock.
 >
+> Task 3a (raster serpentine within regions) also DONE overnight:
+> cumulative headless B = **finish −20.3% / project −15.7% vs pinned
+> A, collisions 0** (entry 489→150 s), quality histograms unchanged.
+> Branch A verified byte-identical (its silhouette POST-clip
+> re-fragments rows; census 313 plunges = one per row) so the pins
+> stand. Task 3 remainder: crease integration, min_area floor,
+> waterline sampling clamp, clip-aware serpentine, offset_polygon
+> root fix, rim-guard suspicion.
+>
 > The original prompt below is kept for context; its Task 1 is done and
 > its Task 2 premise is corrected above.
 

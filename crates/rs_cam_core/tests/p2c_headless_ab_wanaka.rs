@@ -1298,6 +1298,63 @@ fn p2e_separate_ops_branch_c() {
     );
 }
 
+/// P2.f Task 3 probe: why did branch A's totals stay byte-identical after
+/// the raster serpentine? Census the finish op's move structure — if the
+/// serpentine fired, rapids collapse to ~2; if A's emission never linked
+/// (or a dressup/clip re-introduced the cycles), rapids stay ~2/row.
+#[test]
+#[ignore = "one generation ladder; run with --ignored --nocapture"]
+fn p2f_a_move_census() {
+    let cancel = AtomicBool::new(false);
+    let path = wanaka_project_path();
+    let mut a = ProjectSession::load(&path).expect("load wanaka.toml");
+    let n = a.toolpath_count();
+    let enabled: Vec<usize> = (0..n)
+        .filter(|&i| a.get_toolpath_config(i).is_some_and(|tc| tc.enabled))
+        .collect();
+    let mut pending: Vec<usize> = Vec::new();
+    for &i in &enabled {
+        if a.generate_toolpath(i, &cancel).is_err() {
+            pending.push(i);
+        }
+    }
+    while !pending.is_empty() {
+        a.run_simulation(&SimulationOptions::default(), &cancel)
+            .expect("ladder sim");
+        let before = pending.len();
+        pending.retain(|&i| a.generate_toolpath(i, &cancel).is_err());
+        assert!(pending.len() < before, "ladder stalled: {pending:?}");
+    }
+    let finish_idx = (0..n)
+        .find(|&i| {
+            a.get_toolpath_config(i)
+                .is_some_and(|tc| tc.name == FINISH_OP_NAME)
+        })
+        .expect("finish op");
+    let tp = a
+        .get_result(finish_idx)
+        .expect("finish toolpath generated")
+        .annotated();
+    use rs_cam_core::toolpath::{MoveIntent, MoveType};
+    let mut rapids = 0usize;
+    let mut entries = 0usize;
+    let mut cuts = 0usize;
+    let mut links = 0usize;
+    for m in &tp.toolpath.moves {
+        match (m.move_type, m.intent) {
+            (MoveType::Rapid, _) => rapids += 1,
+            (_, MoveIntent::EntryPlunge) => entries += 1,
+            (_, MoveIntent::FinishingCut) => cuts += 1,
+            (_, MoveIntent::Linking) => links += 1,
+            _ => {}
+        }
+    }
+    eprintln!(
+        "A finish census: moves={} rapids={rapids} entry_plunges={entries} cuts={cuts} link_feeds={links}",
+        tp.toolpath.moves.len()
+    );
+}
+
 /// P2.f Task 1 instrument, branch A: the unmodified chain scored with the
 /// per-band deviation histogram + deviation-map PNG. This is the fidelity
 /// REFERENCE — A's exact per-point 0.3 mm raster is the quality bar the
