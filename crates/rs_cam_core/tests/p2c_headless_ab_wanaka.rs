@@ -1008,6 +1008,515 @@ fn p2c_scallop_height_cost_curve() {
     }
 }
 
+/// P2.g ring-geometry dump: writes the cutting moves of B75's per-region
+/// mid-steep scallop and D's all-over scallop (same h=0.011, same tapered
+/// cutter the matrix branches ran with) to text files so pass-spacing maps
+/// can be computed offline. Context: the collar probe (2026-07-09) REFUTED
+/// the overlap-collar theory — B-bad/D-good mid-steep cells sit at median
+/// 20 mm from shallow seams (base rate 17 mm) and form a ~1.97 mm lattice
+/// (= 2 classification cells), so the suspect is region-boundary jag
+/// propagating inward through the ring cascade, not the seam collar.
+#[test]
+#[ignore = "ring geometry dump; run with --ignored --nocapture"]
+fn p2g_ring_dump() {
+    use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose};
+    use rs_cam_core::finish_setup::{
+        SLOPE_FILTER_MAX_DEG, SLOPE_FILTER_MIN_DEG, build_classification_surface_with_cancel,
+    };
+    use rs_cam_core::mesh::SpatialIndex;
+    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::scallop::{
+        ScallopDirection, ScallopParams, scallop_toolpath_structured_annotated_with_cancel,
+    };
+    use rs_cam_core::tool::{BallEndmill, TaperedBallEndmill};
+    use rs_cam_core::toolpath::{MoveType, Toolpath};
+    use std::io::Write as _;
+    use std::time::Instant;
+
+    let session = ProjectSession::load(&wanaka_project_path()).expect("load wanaka.toml");
+    let mesh = session
+        .models()
+        .iter()
+        .find_map(|m| m.mesh.clone())
+        .expect("mesh");
+    let index = SpatialIndex::build(&mesh, 10.0);
+    // Classification keeps the Ø6-ball convention (matches build_band_map);
+    // CUTTING uses the real wanaka tool 2 (1 mm tip, 7° taper, Ø6 shank).
+    let classifier = BallEndmill::new(6.0, 25.0);
+    let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+    let cancel = || false;
+
+    let surface =
+        build_classification_surface_with_cancel(&mesh, &index, &classifier, 0.05, &cancel)
+            .expect("classification");
+    let mut planner = FinishPlannerParams::for_tool(3.0);
+    planner.overlap_mm = 2.0;
+    let planned = decompose(
+        &surface.slope_map,
+        &surface.heightmap.covered,
+        &[],
+        3.0,
+        &planner,
+    );
+    let mid: Vec<_> = planned
+        .regions
+        .iter()
+        .filter(|r| r.band == FinishBand::MidSteep)
+        .map(|r| r.polygon.clone())
+        .collect();
+    assert!(!mid.is_empty());
+    let rs = RegionSet::new(mid);
+
+    let sp = ScallopParams {
+        scallop_height: 0.011,
+        tolerance: 0.05,
+        direction: ScallopDirection::default(),
+        continuous: true,
+        slope_from: SLOPE_FILTER_MIN_DEG,
+        slope_to: SLOPE_FILTER_MAX_DEG,
+        feed_rate: 3000.0,
+        plunge_rate: 150.0,
+        safe_z: 15.0,
+        stock_to_leave: 0.0,
+    };
+
+    let dump = |tag: &str, tp: &Toolpath| {
+        let path = p2f_output_dir().join(format!("p2g_{tag}_moves.txt"));
+        let mut f = std::io::BufWriter::new(std::fs::File::create(&path).expect("create dump"));
+        for m in &tp.moves {
+            let kind = match m.move_type {
+                MoveType::Rapid => 'R',
+                MoveType::Linear { .. } => 'L',
+                MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => 'A',
+            };
+            let p = m.target;
+            writeln!(f, "{kind} {:?} {:.4} {:.4} {:.4}", m.intent, p.x, p.y, p.z)
+                .expect("write move");
+        }
+        eprintln!("wrote {} ({} moves)", path.display(), tp.moves.len());
+    };
+
+    let t = Instant::now();
+    let (tp_b, _) = scallop_toolpath_structured_annotated_with_cancel(
+        &mesh,
+        &index,
+        &cutter,
+        &sp,
+        None,
+        Some(&rs),
+        &cancel,
+    )
+    .expect("B75 mid scallop");
+    eprintln!("B75 mid-steep scallop: {:.1}s", t.elapsed().as_secs_f64());
+    dump("b75_mid", &tp_b);
+
+    let t = Instant::now();
+    let (tp_d, _) = scallop_toolpath_structured_annotated_with_cancel(
+        &mesh, &index, &cutter, &sp, None, None, &cancel,
+    )
+    .expect("D all-over scallop");
+    eprintln!("D all-over scallop: {:.1}s", t.elapsed().as_secs_f64());
+    dump("d_allover", &tp_d);
+}
+
+/// P2.g session-level op-8 dump: generates branch B75 (UnifiedFinish) and
+/// branch D (all-over Scallop) through the REAL session pipeline
+/// (generation ladder only — no timing/measurement sims) and dumps the
+/// finish op's conditioned moves, arc parameters included. Context: direct
+/// bare-mesh scallop calls produce EQUIVALENT B/D floors (phase noise,
+/// ±40%/40% split), yet the chain sims show D's mid-steep distribution
+/// shifted ~5-8 µm DEEPER — a Z bias, not a cusp win. The suspect is
+/// session conditioning that differs between the branches (D inherits
+/// Finish 6's arc_fitting=true; UnifiedFinish strips all dressups). This
+/// probe shows what conditioning each branch's op actually carries.
+#[test]
+#[ignore = "two generation ladders; run with --ignored --nocapture"]
+fn p2g_session_op8_dump() {
+    use rs_cam_core::toolpath::MoveType;
+    use std::io::Write as _;
+
+    let cancel = AtomicBool::new(false);
+    let run = |label: &str, op: Option<OperationConfig>| {
+        let mut s = ProjectSession::load(&wanaka_project_path()).expect("load wanaka.toml");
+        let n = s.toolpath_count();
+        let finish_idx = (0..n)
+            .find(|&i| {
+                s.get_toolpath_config(i)
+                    .is_some_and(|tc| tc.name == FINISH_OP_NAME)
+            })
+            .expect("wanaka must contain '3D Finish 6'");
+        if let Some(op) = op {
+            s.set_toolpath_operation(finish_idx, op).expect("swap op");
+        }
+        let enabled: Vec<usize> = (0..n)
+            .filter(|&i| s.get_toolpath_config(i).is_some_and(|tc| tc.enabled))
+            .collect();
+        let mut pending: Vec<usize> = Vec::new();
+        for &i in &enabled {
+            if s.generate_toolpath(i, &cancel).is_err() {
+                pending.push(i);
+            }
+        }
+        while !pending.is_empty() {
+            s.run_simulation(&SimulationOptions::default(), &cancel)
+                .expect("ladder sim");
+            let before = pending.len();
+            pending.retain(|&i| s.generate_toolpath(i, &cancel).is_err());
+            assert!(pending.len() < before, "ladder stalled: {pending:?}");
+        }
+        let tc = s.get_toolpath_config(finish_idx).expect("op config");
+        eprintln!("[{label}] op8 dressups: {:?}", tc.dressups);
+        let tp = s
+            .get_result(finish_idx)
+            .expect("finish toolpath generated")
+            .annotated();
+        let (mut lines, mut arcs, mut rapids) = (0usize, 0usize, 0usize);
+        let path = p2f_output_dir().join(format!("p2g_sess_{label}_moves.txt"));
+        let mut f = std::io::BufWriter::new(std::fs::File::create(&path).expect("create dump"));
+        for m in &tp.toolpath.moves {
+            let p = m.target;
+            match m.move_type {
+                MoveType::Rapid => {
+                    rapids += 1;
+                    writeln!(f, "R {:?} {:.4} {:.4} {:.4}", m.intent, p.x, p.y, p.z)
+                }
+                MoveType::Linear { .. } => {
+                    lines += 1;
+                    writeln!(f, "L {:?} {:.4} {:.4} {:.4}", m.intent, p.x, p.y, p.z)
+                }
+                MoveType::ArcCW { i, j, .. } => {
+                    arcs += 1;
+                    writeln!(
+                        f,
+                        "ACW {:?} {:.4} {:.4} {:.4} {:.4} {:.4}",
+                        m.intent, p.x, p.y, p.z, i, j
+                    )
+                }
+                MoveType::ArcCCW { i, j, .. } => {
+                    arcs += 1;
+                    writeln!(
+                        f,
+                        "ACCW {:?} {:.4} {:.4} {:.4} {:.4} {:.4}",
+                        m.intent, p.x, p.y, p.z, i, j
+                    )
+                }
+            }
+            .expect("write move");
+        }
+        eprintln!(
+            "[{label}] op8 moves={} lines={lines} arcs={arcs} rapids={rapids} -> {}",
+            tp.toolpath.moves.len(),
+            path.display()
+        );
+    };
+
+    run(
+        "b75",
+        Some(OperationConfig::UnifiedFinish(ab_unified_config())),
+    );
+    run(
+        "d",
+        Some(OperationConfig::Scallop(ScallopConfig {
+            scallop_height: 0.011,
+            tolerance: 0.05,
+            direction: ScallopDirection::OutsideIn,
+            continuous: true,
+            slope_from: 0.0,
+            slope_to: 90.0,
+            feed_rate: 3000.0,
+            plunge_rate: 150.0,
+            stock_to_leave: 0.0,
+            spindle_rpm: Some(21000),
+        })),
+    );
+}
+
+/// P2.g measurement-aliasing confirmation: scores B75 and D at a DIFFERENT
+/// measurement resolution (0.21 mm vs the instrument's 0.25 mm). Offline
+/// analysis (2026-07-09) established the branches' machined floors are
+/// geometrically EQUIVALENT on mid-steep (bad-vs-control floor diff 1.3 µm,
+/// four independent probes), so the matrix's "D wins the fine tier" must be
+/// sampling aliasing: B75's rings restart per-region from grid-aligned
+/// marching-squares polygons (cusp ridges grid-locked -> the 1.41 mm bad-
+/// cell lattice), D's silhouette-offset rings are phase-diverse. If that's
+/// right, the B75-vs-D histogram gap MOVES when the sim grid changes; if
+/// the gap is stable across resolutions, the artifact theory is refuted.
+#[test]
+#[ignore = "two generation ladders + two 0.21mm sims; run with --ignored --nocapture"]
+fn p2g_measurement_aliasing_probe() {
+    let cancel = AtomicBool::new(false);
+    let run = |label: &str, op: OperationConfig| {
+        let mut s = ProjectSession::load(&wanaka_project_path()).expect("load wanaka.toml");
+        let n = s.toolpath_count();
+        let finish_idx = (0..n)
+            .find(|&i| {
+                s.get_toolpath_config(i)
+                    .is_some_and(|tc| tc.name == FINISH_OP_NAME)
+            })
+            .expect("wanaka must contain '3D Finish 6'");
+        s.set_toolpath_operation(finish_idx, op).expect("swap op");
+        let enabled: Vec<usize> = (0..n)
+            .filter(|&i| s.get_toolpath_config(i).is_some_and(|tc| tc.enabled))
+            .collect();
+        let mut pending: Vec<usize> = Vec::new();
+        for &i in &enabled {
+            if s.generate_toolpath(i, &cancel).is_err() {
+                pending.push(i);
+            }
+        }
+        while !pending.is_empty() {
+            s.run_simulation(&SimulationOptions::default(), &cancel)
+                .expect("ladder sim");
+            let before = pending.len();
+            pending.retain(|&i| s.generate_toolpath(i, &cancel).is_err());
+            assert!(pending.len() < before, "ladder stalled: {pending:?}");
+        }
+        let opts = SimulationOptions {
+            resolution: 0.21,
+            ..Default::default()
+        };
+        s.run_simulation(&opts, &cancel).expect("0.21mm sim");
+        let bm = build_band_map(&s);
+        fidelity_report(&format!("p2g21_{label}"), &s, &bm);
+    };
+
+    run("B", OperationConfig::UnifiedFinish(ab_unified_config()));
+    run(
+        "D",
+        OperationConfig::Scallop(ScallopConfig {
+            scallop_height: 0.011,
+            tolerance: 0.05,
+            direction: ScallopDirection::OutsideIn,
+            continuous: true,
+            slope_from: 0.0,
+            slope_to: 90.0,
+            feed_rate: 3000.0,
+            plunge_rate: 150.0,
+            stock_to_leave: 0.0,
+            spindle_rpm: Some(21000),
+        }),
+    );
+}
+
+/// P2.g stamper probe — THE decisive experiment after every proxy test
+/// failed to separate the branches (geometry equal, gap survives LUT fix +
+/// resolution change): re-stamp both branches' EXACT conditioned op-8
+/// moves (from the `p2g_session_op8_dump` artifacts) onto a fresh flat
+/// dexel stock over the bad window, then diff each column's stamped top
+/// against the exact-profile envelope (min over densely resampled
+/// segments of z + height_at_radius(d)). Whatever the stamper does
+/// differently between the two move streams shows up here directly,
+/// isolated from roughing, measurement meshing, and deviation attribution.
+#[test]
+#[ignore = "needs target/p2f_fidelity/p2g_sess_*_moves.txt from p2g_session_op8_dump"]
+fn p2g_stamp_probe() {
+    use rs_cam_core::ToolpathId;
+    use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
+    use rs_cam_core::geo::{BoundingBox3, P3};
+    use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
+    use rs_cam_core::toolpath::{MoveIntent, Toolpath};
+
+    // Bad window (sess/emission frame) + margin for tool radius.
+    const WX0: f64 = 78.35;
+    const WY0: f64 = 98.05;
+    const WX1: f64 = 90.35;
+    const WY1: f64 = 110.05;
+    const MARGIN: f64 = 4.0;
+
+    let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+    let parse_intent = |s: &str| match s {
+        "FinishingCut" => MoveIntent::FinishingCut,
+        "EntryPlunge" => MoveIntent::EntryPlunge,
+        "Linking" => MoveIntent::Linking,
+        "Retract" => MoveIntent::Retract,
+        _ => MoveIntent::Unknown,
+    };
+
+    let load = |tag: &str| -> Toolpath {
+        let path = p2f_output_dir().join(format!("p2g_sess_{tag}_moves.txt"));
+        let text = std::fs::read_to_string(&path).expect("run p2g_session_op8_dump first");
+        let mut tp = Toolpath::new();
+        for line in text.lines() {
+            let p: Vec<&str> = line.split_whitespace().collect();
+            let (kind, intent) = (p[0], parse_intent(p[1]));
+            let target = P3::new(
+                p[2].parse().expect("x"),
+                p[3].parse().expect("y"),
+                p[4].parse().expect("z"),
+            );
+            match kind {
+                "R" => tp.rapid_to_with_intent(target, intent),
+                "L" => tp.feed_to_with_intent(target, 3000.0, intent),
+                "ACW" => tp.arc_cw_to_with_intent(
+                    target,
+                    p[5].parse().expect("i"),
+                    p[6].parse().expect("j"),
+                    3000.0,
+                    intent,
+                ),
+                "ACCW" => tp.arc_ccw_to_with_intent(
+                    target,
+                    p[5].parse().expect("i"),
+                    p[6].parse().expect("j"),
+                    3000.0,
+                    intent,
+                ),
+                other => panic!("unknown move kind {other}"),
+            }
+        }
+        tp
+    };
+
+    // Exact envelope from the toolpath's cutting polyline (arcs already
+    // near-linear at this scale are still sampled as chords here — the
+    // stamper sees the same chords via its own arc interpolation, and the
+    // dump's arc count in this window is zero).
+    let envelope = |tp: &Toolpath, qx: f64, qy: f64| -> f64 {
+        let mut best = f64::INFINITY;
+        let r_max = cutter.radius();
+        let mut prev: Option<P3> = None;
+        for m in &tp.moves {
+            let t = m.target;
+            if let (Some(a), false) = (
+                prev,
+                matches!(m.move_type, rs_cam_core::toolpath::MoveType::Rapid),
+            ) {
+                // reject far segments
+                if !(a.x.max(t.x) < qx - r_max
+                    || a.x.min(t.x) > qx + r_max
+                    || a.y.max(t.y) < qy - r_max
+                    || a.y.min(t.y) > qy + r_max)
+                {
+                    let seg = ((t.x - a.x).powi(2) + (t.y - a.y).powi(2)).sqrt();
+                    let n = ((seg / 0.02).ceil() as usize).max(1);
+                    for k in 0..=n {
+                        let f = k as f64 / n as f64;
+                        let px = a.x + f * (t.x - a.x);
+                        let py = a.y + f * (t.y - a.y);
+                        let pz = a.z + f * (t.z - a.z);
+                        let d = ((px - qx).powi(2) + (py - qy).powi(2)).sqrt();
+                        if d <= r_max
+                            && let Some(h) = cutter.height_at_radius(d)
+                        {
+                            best = best.min(pz + h);
+                        }
+                    }
+                }
+            }
+            prev = Some(t);
+        }
+        best
+    };
+
+    for (tag, sample_step) in [("b75", 0.25), ("d", 0.25), ("b75", 0.05), ("d", 0.05)] {
+        let tp = load(tag);
+        let bbox = BoundingBox3 {
+            min: P3::new(WX0 - MARGIN, WY0 - MARGIN, 10.0),
+            max: P3::new(WX1 + MARGIN, WY1 + MARGIN, 26.0),
+        };
+        let mut stock = TriDexelStock::from_bounds(&bbox, 0.25);
+        let never_cancel = || false;
+        let _ = stock
+            .simulate_toolpath_with_metrics_with_cancel(
+                &tp,
+                &cutter,
+                StockCutDirection::FromTop,
+                ToolpathId(0),
+                21_000,
+                2,
+                5000.0,
+                sample_step,
+                None,
+                &[],
+                &[],
+                false,
+                &never_cancel,
+            )
+            .expect("stamp");
+
+        // Per-column diff inside the window (skip the margin).
+        let mut errs: Vec<f64> = Vec::new();
+        let mut y = WY0 + 0.25;
+        while y < WY1 - 0.25 {
+            let mut x = WX0 + 0.25;
+            while x < WX1 - 0.25 {
+                let env = envelope(&tp, x, y);
+                if env < 23.5
+                    && let Some(top) = stock.max_top_z_in_disc(x, y, 0.05)
+                {
+                    errs.push(top - env);
+                }
+                x += 0.25;
+            }
+            y += 0.25;
+        }
+        errs.sort_by(|a, b| a.partial_cmp(b).expect("no NaN"));
+        let q = |p: f64| errs[((errs.len() - 1) as f64 * p) as usize] * 1000.0;
+        let over5 = errs.iter().filter(|&&e| e > 0.005).count();
+        eprintln!(
+            "[{tag} step {sample_step}] n={} stamped-minus-envelope um: p10={:.1} p50={:.1} p90={:.1} p99={:.1} | >5um: {:.1}%",
+            errs.len(),
+            q(0.10),
+            q(0.50),
+            q(0.90),
+            q(0.99),
+            100.0 * over5 as f64 / errs.len() as f64
+        );
+    }
+}
+
+/// P2.g LUT-error probe: quantifies `RadialProfileLUT` interpolation error
+/// for the wanaka tapered tool (Ø1 tip on Ø6 shank). The LUT samples
+/// uniformly in dist² over the SHANK radius (256 bins over r²=9), so the
+/// tip sphere occupies ~7 bins and linear interpolation of the convex ball
+/// cap OVERSHOOTS (tool reads higher -> dexel stamp cuts shallower) by an
+/// amount that peaks near the tip-sphere edge — exactly the ball-side
+/// contact distance for mid-steep slopes (d = R·sin(slope)). Suspected
+/// mechanism of the B75-vs-D fine-tier gap (terrain-parallel rings always
+/// cut at that contact distance; D's straight silhouette rings don't).
+#[test]
+#[ignore = "pure math; run with --ignored --nocapture"]
+fn p2g_lut_error_probe() {
+    use rs_cam_core::radial_profile::RadialProfileLUT;
+    use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
+
+    let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+    let lut_old = RadialProfileLUT::from_cutter(&cutter, 256);
+    let lut = RadialProfileLUT::from_cutter(&cutter, rs_cam_core::radial_profile::LUT_SAMPLES);
+    let tip_r: f64 = 0.5;
+    eprintln!("slope_deg contact_d_mm  exact_h      err256_um  err_now_um");
+    for slope_deg in [30.0f64, 45.0, 50.0, 55.0, 60.0, 65.0, 70.0, 75.0, 80.0] {
+        let d = tip_r * slope_deg.to_radians().sin();
+        let exact = cutter.height_at_radius(d).expect("in profile");
+        let h_old = lut_old.height_at_dist_sq(d * d).expect("in profile");
+        let h_now = lut.height_at_dist_sq(d * d).expect("in profile");
+        eprintln!(
+            "{slope_deg:>9} {d:>12.4} {exact:>12.6} {:>10.2} {:>11.3}",
+            (h_old - exact) * 1000.0,
+            (h_now - exact) * 1000.0
+        );
+    }
+    // full-profile scan for max error inside the tip sphere
+    let mut max_err = 0.0f64;
+    let mut max_d = 0.0f64;
+    let mut d = 0.0;
+    while d < tip_r {
+        if let (Some(e), Some(l)) = (cutter.height_at_radius(d), lut.height_at_dist_sq(d * d)) {
+            let err = l - e;
+            if err > max_err {
+                max_err = err;
+                max_d = d;
+            }
+        }
+        d += 0.001;
+    }
+    eprintln!(
+        "max overshoot inside tip sphere: {:.1}um at d={max_d:.3}mm (slope {:.1} deg)",
+        max_err * 1000.0,
+        (max_d / tip_r).asin().to_degrees()
+    );
+}
+
 /// Offset-cascade probe: runs `offset_polygon` inward repeatedly on the
 /// actual wanaka mid-steep polygon at the h=0.02-equivalent stepover,
 /// printing fragment/vertex counts per iteration — isolates whether the

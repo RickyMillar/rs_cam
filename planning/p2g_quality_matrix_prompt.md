@@ -119,3 +119,72 @@ debuggably while in there (old Task 3 tail).
 - THE LESSON (now 4×): the user's eyeball beats averages — coastline,
   "identical" stocks, smoosh, coarse steep stepover. Per-band
   histograms before quality claims, always.
+
+---
+
+## STATUS UPDATE 2026-07-09 evening — Task 1 investigation (read this FIRST)
+
+Task 1's premise is DEAD and partially resolved. The collar theory was
+REFUTED by measurement (B-bad/D-good cells are interior — median 14 mm
+from shallow seams, only 3.9 % inside the 2 mm collar — on a 1.41 mm
+lattice = 2 classification cells). What the investigation established:
+
+1. **The toolpaths are geometrically EQUIVALENT.** Bare-mesh calls,
+   session-conditioned dumps (emission frame = mesh rot90:
+   sess_x = 126.25 − mesh_y, sess_y = mesh_x + 21.25, z + 20), and
+   ball-floor queries exactly at the bad cells with the correct 0.5 mm
+   tip radius: B75 ≈ D within ~1 µm (re-verified on post-fix dumps).
+   Real mid-steep ranking: B75 ≈ D at the 0.011 dial ≫ A at 0.034,
+   with B75 6 % faster than D.
+2. **Two REAL sim bugs found and fixed** (probe-proven, in tree):
+   - `RadialProfileLUT` tip undersampling: dist²-uniform bins over the
+     SHANK radius gave the Ø1 tip ~7 of 256 bins → tool read up to
+     17.6 µm high at 70–75° ball-side contact. Fix: `LUT_SAMPLES=4096`
+     (41 call sites) + sentry `tapered_tip_lut_error_bounded`.
+   - Stamper z-blind subsegments: cells stamp at z(t_closest)+h(d),
+     ignoring z-drop along ≤0.25 mm subsegments (production step is
+     clamped `.max(0.25)`, compute/simulate.rs:450) → 5–35 µm
+     under-removal on ~25 % of steep-finish columns. Fix:
+     `MAX_SUBSEGMENT_Z_DROP_MM=0.02` z-aware subdivision
+     (dexel_stock/simulation.rs). Proven by `p2g_stamp_probe`:
+     B75 24.7 %→3.1 % of columns >5 µm above envelope, D 22.4 %→0 %.
+3. **The fidelity-instrument gap PERSISTS anyway** (B75 mid-steep
+   on-size 30 713 vs D 44 366 post-both-fixes; on-size + first
+   leftover bin sums nearly equal → it's still a ~5–10 µm shift at
+   the 0.01 edge). With op-8 geometry equal and isolated stamping now
+   envelope-exact, the divergence enters between "op-8 stamps on
+   fresh stock" and "full-chain measurement deviations". Suspects,
+   in order: (a) roughing interaction (final = min(rough, finish);
+   rough toolpaths are ladder-regenerated per branch), (b) the
+   NON-IDENTITY per-setup frame — wanaka is a rot90 setup, and F-024
+   explicitly left "zero-rooted effective bbox" frame consistency
+   for non-identity setups unresolved, (c) the deviation/meshing
+   step (dev vertices are a deterministic branch-independent grid —
+   totals exactly equal at 119 334).
+4. **Next probe (designed, not built)**: branch-context stock
+   extraction — swap op, ladder, measurement sim, then read the
+   sim's final stock top per column in the bad window and diff
+   against the fresh-stock op-8 stamp + rough floor. Whichever step
+   introduces the +5–10 µm for B75 is the mechanism. `p2g_stamp_probe`
+   is the template; `p2g_session_op8_dump` provides move dumps.
+5. **B75's residual real defects** (small): ~8 % of the mid band is
+   ring-uncovered (cascade skips dendritic slivers; raster collar
+   covers 78.6 % of that at raster quality); `set_toolpath_operation`
+   does NOT apply the registry dressup policy on op swap (branch ops
+   ran with inherited arc_fitting=true; same gap class as the F75
+   ramp bug); B75 region-scallop generation 670 s vs D all-over
+   405 s (Task 2 lead).
+
+Probes added to the harness (all `#[ignore]`): `p2g_ring_dump`,
+`p2g_session_op8_dump`, `p2g_measurement_aliasing_probe`,
+`p2g_lut_error_probe`, `p2g_stamp_probe`. Artifacts in
+`target/p2f_fidelity/`: `pre_lutfix_*`, `lutfix_only_*`, current
+`p2f_B/p2f_D` = post-both-fixes; session dumps `p2g_sess_*` (current)
+and `prev_p2g_sess_*` (pre-fix; differ by ~40 moves via the air-cut
+filter's changed snapshot).
+
+THE LESSON (now 6×): measure before theorizing — the LUT fix was
+committed to a 2-hour acceptance rerun on a magnitude match at the
+wrong slope percentile. The stamp probe (60 s, isolated, exact) found
+the real stamping defect immediately. Build the cheap decisive
+experiment FIRST.
