@@ -230,28 +230,139 @@ fn decimate_closed_ring(ring: &[P2], min_spacing: f64) -> Option<Vec<P2>> {
     (out.len() >= 3).then_some(out)
 }
 
-fn ring_to_3d(
-    ring: &[P2],
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    heightmap: &crate::slope::SurfaceHeightmap,
+/// Everything a ring lift + chord refinement needs, bundled so the
+/// per-ring call sites don't each thread eight loose arguments.
+struct RingLiftCtx<'a> {
+    mesh: &'a TriangleMesh,
+    index: &'a SpatialIndex,
+    cutter: &'a dyn MillingCutter,
+    heightmap: &'a crate::slope::SurfaceHeightmap,
     stock_to_leave: f64,
     min_z: f64,
-) -> Vec<(P3, bool)> {
-    ring.iter()
+    /// Max allowed gap between a straight feed chord and the true
+    /// drop-cutter surface under it (the op's path tolerance).
+    chord_tolerance: f64,
+    /// Spacing at which chords are probed against the surface:
+    /// `max(cell_size / 2, CHORD_REFINE_MIN_SEG_MM)`.
+    probe_step: f64,
+}
+
+/// Floor (mm) on chord-refinement probe/segment spacing. Refinement must
+/// not fragment paths into segments the junction/accel integrator pays
+/// dearly for (P0 probe: sub-0.3 mm segment junctions dominate finishing
+/// runtime) — 0.15 mm is half the wanaka raster reference pitch, i.e.
+/// refined scallop is never more finely segmented than 2× the quality
+/// reference it is chasing.
+const CHORD_REFINE_MIN_SEG_MM: f64 = 0.15;
+
+/// Depth cap on recursive chord splitting. Combined with the probe-step
+/// floor this bounds worst-case insertion on cliff edges, where the chord
+/// error never converges and every level would otherwise split.
+const CHORD_REFINE_MAX_DEPTH: usize = 5;
+
+fn ring_to_3d(ring: &[P2], ctx: &RingLiftCtx<'_>) -> Vec<(P3, bool)> {
+    let lifted: Vec<(P3, bool)> = ring
+        .iter()
         .map(|p| {
-            let cl = point_drop_cutter(p.x, p.y, mesh, index, cutter);
+            let cl = point_drop_cutter(p.x, p.y, ctx.mesh, ctx.index, ctx.cutter);
             let finite = cl.z.is_finite();
-            let kept = finite && heightmap_covered_at_world(heightmap, p.x, p.y);
+            let kept = finite && heightmap_covered_at_world(ctx.heightmap, p.x, p.y);
             let z = if finite {
-                cl.z + stock_to_leave
+                cl.z + ctx.stock_to_leave
             } else {
-                min_z + stock_to_leave
+                ctx.min_z + ctx.stock_to_leave
             };
             (P3::new(p.x, p.y, z), kept)
         })
-        .collect()
+        .collect();
+    refine_ring_chords(lifted, ctx)
+}
+
+/// P2.f band-fidelity fix (2026-07-08): ring vertices are EXACT drop-cutter
+/// points, but the straight feed chords BETWEEN them were never checked
+/// against the surface. Ring vertex spacing tracks the generation grid
+/// (`decimate_ring_polygon` floors it at `cell_size * 0.75` — 0.56 mm on
+/// wanaka's Ø6/0.75 mm-cell setup), so any terrain feature narrower than a
+/// chord got beheaded: two on-surface endpoints, a straight cut through
+/// the knob between them ("smooshed mountains", user-caught in the live
+/// sim). Placement stays on the coarse offset-cascade grid; this pass
+/// restores fidelity where the surface actually demands it by probing each
+/// kept→kept chord at `probe_step` and recursively splitting at the
+/// worst-error probe until the chord tracks the surface within
+/// `chord_tolerance`. Smooth/flat stretches insert nothing.
+fn refine_ring_chords(ring: Vec<(P3, bool)>, ctx: &RingLiftCtx<'_>) -> Vec<(P3, bool)> {
+    let n = ring.len();
+    if n < 2 {
+        return ring;
+    }
+    let mut out: Vec<(P3, bool)> = Vec::with_capacity(n * 2);
+    for i in 0..n {
+        // SAFETY: i and (i + 1) % n are both in 0..n.
+        #[allow(clippy::indexing_slicing)]
+        let (a, b) = (ring[i], ring[(i + 1) % n]);
+        out.push(a);
+        // Only chords between two KEPT points are ever fed along; the
+        // run-splitters already retract around excluded stretches. The
+        // wrap chord (last → first) is included: discrete mode closes
+        // fully-kept loops with a straight feed back to the start.
+        if a.1 && b.1 {
+            refine_chord(a.0, b.0, ctx, CHORD_REFINE_MAX_DEPTH, &mut out);
+        }
+    }
+    out
+}
+
+/// Probe the open interval between `a` and `b`; if the worst deviation
+/// between chord and drop-cutter surface exceeds tolerance, insert the
+/// exact surface point there and recurse into both halves. Pushes only
+/// INTERIOR points (in order); the caller owns the endpoints. A coverage
+/// gap under the chord (hole / mesh edge) pushes one excluded point so the
+/// emission run-splitter retracts around it instead of feeding across.
+fn refine_chord(a: P3, b: P3, ctx: &RingLiftCtx<'_>, depth: usize, out: &mut Vec<(P3, bool)>) {
+    if depth == 0 {
+        return;
+    }
+    let dx = b.x - a.x;
+    let dy = b.y - a.y;
+    let len = (dx * dx + dy * dy).sqrt();
+    if !len.is_finite() {
+        return;
+    }
+    let segments = (len / ctx.probe_step).ceil();
+    if segments < 2.0 {
+        return; // nothing to probe between endpoints at this scale
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let segments = segments as usize;
+
+    // (t, surface_z, |err|) of the worst interior probe.
+    let mut worst: Option<(f64, f64, f64)> = None;
+    for i in 1..segments {
+        let t = i as f64 / segments as f64;
+        let x = a.x + dx * t;
+        let y = a.y + dy * t;
+        let cl = point_drop_cutter(x, y, ctx.mesh, ctx.index, ctx.cutter);
+        if !cl.z.is_finite() || !heightmap_covered_at_world(ctx.heightmap, x, y) {
+            out.push((P3::new(x, y, ctx.min_z + ctx.stock_to_leave), false));
+            return;
+        }
+        let surface_z = cl.z + ctx.stock_to_leave;
+        let chord_z = a.z + (b.z - a.z) * t;
+        let err = (surface_z - chord_z).abs();
+        if worst.is_none_or(|(_, _, we)| err > we) {
+            worst = Some((t, surface_z, err));
+        }
+    }
+    let Some((t, surface_z, err)) = worst else {
+        return;
+    };
+    if err <= ctx.chord_tolerance {
+        return;
+    }
+    let w = P3::new(a.x + dx * t, a.y + dy * t, surface_z);
+    refine_chord(a, w, ctx, depth - 1, out);
+    out.push((w, true));
+    refine_chord(w, b, ctx, depth - 1, out);
 }
 
 /// Generate concentric offset rings from the outer boundary inward.
@@ -276,6 +387,7 @@ fn generate_scallop_rings(
     stock_to_leave: f64,
     min_z: f64,
     max_rings: usize,
+    chord_tolerance: f64,
 ) -> Vec<Vec<(P3, bool)>> {
     let never_cancel = || false;
     generate_scallop_rings_with_cancel(
@@ -290,6 +402,7 @@ fn generate_scallop_rings(
         stock_to_leave,
         min_z,
         max_rings,
+        chord_tolerance,
         &never_cancel,
     )
     .expect("non-cancellable scallop ring generation should never be cancelled")
@@ -311,20 +424,23 @@ fn generate_scallop_rings_with_cancel(
     stock_to_leave: f64,
     min_z: f64,
     max_rings: usize,
+    chord_tolerance: f64,
     cancel: &dyn CancelCheck,
 ) -> Result<Vec<Vec<(P3, bool)>>, Cancelled> {
-    let mut rings_3d: Vec<Vec<(P3, bool)>> = Vec::new();
-
-    // First ring: the boundary itself, lifted to 3D
-    let first_ring = ring_to_3d(
-        &boundary.exterior,
+    let lift_ctx = RingLiftCtx {
         mesh,
         index,
         cutter,
         heightmap,
         stock_to_leave,
         min_z,
-    );
+        chord_tolerance,
+        probe_step: (heightmap.cell_size * 0.5).max(CHORD_REFINE_MIN_SEG_MM),
+    };
+    let mut rings_3d: Vec<Vec<(P3, bool)>> = Vec::new();
+
+    // First ring: the boundary itself, lifted to 3D
+    let first_ring = ring_to_3d(&boundary.exterior, &lift_ctx);
     if first_ring.len() < 3 {
         return Ok(rings_3d);
     }
@@ -397,15 +513,7 @@ fn generate_scallop_rings_with_cancel(
             if poly.exterior.len() < 3 {
                 continue;
             }
-            let ring_3d = ring_to_3d(
-                &poly.exterior,
-                mesh,
-                index,
-                cutter,
-                heightmap,
-                stock_to_leave,
-                min_z,
-            );
+            let ring_3d = ring_to_3d(&poly.exterior, &lift_ctx);
             if ring_3d.len() >= 3 {
                 rings_3d.push(ring_3d);
             }
@@ -634,6 +742,7 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
             params.stock_to_leave,
             bbox.min.z,
             max_rings,
+            params.tolerance,
             cancel,
         )?;
         rings.extend(region_rings);
@@ -1044,6 +1153,7 @@ mod tests {
             0.0,
             bbox.min.z,
             100,
+            0.5,
         );
 
         assert!(
@@ -1293,6 +1403,129 @@ mod tests {
         assert!((rotated[1].0.x - 3.0).abs() < 0.01);
         assert!((rotated[2].0.x - 0.0).abs() < 0.01);
         assert!((rotated[3].0.x - 1.0).abs() < 0.01);
+    }
+
+    // ── P2.f: chord refinement ────────────────────────────────────────
+
+    /// A flat strip with a sharp triangular ridge running along Y at x=0
+    /// (apex z=2, base half-width 0.4 mm) — a terrain feature narrower
+    /// than typical ring point spacing, i.e. the minimal "smooshed
+    /// mountain" reproducer: exact endpoints either side, a knob between.
+    fn make_ridge_mesh() -> (TriangleMesh, SpatialIndex) {
+        let xs = [-10.0, -0.4, 0.0, 0.4, 10.0];
+        let zs = [0.0, 0.0, 2.0, 0.0, 0.0];
+        let mut vertices = Vec::new();
+        for y in [-10.0, 10.0] {
+            for (x, z) in xs.iter().zip(zs.iter()) {
+                vertices.push(P3::new(*x, y, *z));
+            }
+        }
+        let mut triangles = Vec::new();
+        for i in 0..4u32 {
+            triangles.push([i, i + 1, 5 + i]);
+            triangles.push([i + 1, 5 + i + 1, 5 + i]);
+        }
+        let mesh = TriangleMesh::from_raw(vertices, triangles);
+        let si = SpatialIndex::build(&mesh, 5.0);
+        (mesh, si)
+    }
+
+    fn lift_ctx_for<'a>(
+        mesh: &'a TriangleMesh,
+        si: &'a SpatialIndex,
+        cutter: &'a BallEndmill,
+        heightmap: &'a crate::slope::SurfaceHeightmap,
+        probe_step: f64,
+    ) -> RingLiftCtx<'a> {
+        RingLiftCtx {
+            mesh,
+            index: si,
+            cutter,
+            heightmap,
+            stock_to_leave: 0.0,
+            min_z: mesh.bbox.min.z,
+            chord_tolerance: 0.05,
+            probe_step,
+        }
+    }
+
+    #[test]
+    fn chord_refinement_lifts_path_over_sharp_ridge() {
+        let (mesh, si) = make_ridge_mesh();
+        let cutter = BallEndmill::new(1.0, 10.0);
+        let never = || false;
+        let surface = crate::finish_setup::build_finish_surface_with_cell_size_and_cancel(
+            &mesh, &si, &cutter, 0.5, &never,
+        )
+        .unwrap();
+        let ctx = lift_ctx_for(&mesh, &si, &cutter, &surface.heightmap, 0.25);
+
+        // Two exact surface points on the flats either side of the ridge —
+        // pre-fix, the emitted chord between them cut straight through the
+        // ridge at z ≈ 0, beheading it.
+        let ring = vec![P2::new(-2.0, 0.0), P2::new(2.0, 0.0)];
+        let refined = ring_to_3d(&ring, &ctx);
+
+        assert!(
+            refined.len() > 2,
+            "refinement must insert points over the ridge"
+        );
+        let apex = refined
+            .iter()
+            .filter(|(p, kept)| *kept && p.x.abs() < 0.5)
+            .map(|(p, _)| p.z)
+            .fold(f64::MIN, f64::max);
+        assert!(
+            apex > 1.5,
+            "refined path must climb over the ridge apex (z≈2), got max z {apex:.3}"
+        );
+        // Post-refinement, no kept→kept chord may deviate from the surface
+        // by more than tolerance + probe aliasing slack.
+        for w in refined.windows(2) {
+            let (a, ka) = w[0];
+            let (b, kb) = w[1];
+            if !(ka && kb) {
+                continue;
+            }
+            let mx = (a.x + b.x) * 0.5;
+            let my = (a.y + b.y) * 0.5;
+            let cl = point_drop_cutter(mx, my, &mesh, &si, &cutter);
+            if !cl.z.is_finite() {
+                continue;
+            }
+            let chord_z = (a.z + b.z) * 0.5;
+            assert!(
+                (cl.z - chord_z).abs() < 0.3,
+                "residual chord error {:.3} at ({mx:.2},{my:.2})",
+                (cl.z - chord_z).abs()
+            );
+        }
+    }
+
+    #[test]
+    fn chord_refinement_no_op_on_flat() {
+        let (mesh, si) = make_flat_mesh();
+        let cutter = ball_cutter();
+        let never = || false;
+        let surface = crate::finish_setup::build_finish_surface_with_cell_size_and_cancel(
+            &mesh, &si, &cutter, 1.0, &never,
+        )
+        .unwrap();
+        let ctx = lift_ctx_for(&mesh, &si, &cutter, &surface.heightmap, 0.5);
+
+        let ring = vec![
+            P2::new(-20.0, -20.0),
+            P2::new(20.0, -20.0),
+            P2::new(20.0, 20.0),
+            P2::new(-20.0, 20.0),
+        ];
+        let refined = ring_to_3d(&ring, &ctx);
+        assert_eq!(
+            refined.len(),
+            4,
+            "flat chords already within tolerance must not gain points (segment-count/runtime guard)"
+        );
+        assert!(refined.iter().all(|&(p, kept)| kept && p.z.abs() < 0.01));
     }
 
     // ── P2.3: boundary_regions pre-clip ──────────────────────────────
