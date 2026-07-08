@@ -337,7 +337,7 @@ fn p2c_unified_generation_probe() {
     let t0 = Instant::now();
     let cancel = || false;
     let (tp, anns, report) = unified_finish_toolpath_with_cancel(
-        &mesh, &index, &cutter, 10.0, -10.0, &params, &planner, None, None, &cancel,
+        &mesh, &index, &cutter, 10.0, -10.0, &params, &planner, None, None, None, &cancel,
     )
     .expect("unified generation");
     eprintln!(
@@ -671,4 +671,87 @@ fn p2c_offset_cascade_probe() {
         );
         current = next;
     }
+}
+
+/// P2.e Tier-2 sweep (design risk R4): the EXPOSED threshold dials through
+/// the FULL wanaka chain — F.4 ladder, GUI-options modulated sim, F-034
+/// integrator — scored exactly like the checkpoints (project/finish time +
+/// collision count vs the pinned A). OFAT around the shipping defaults
+/// (45/65); the conditioning dials (hysteresis/close/min-area) sweep at the
+/// decomposition level instead (`finish_planner_wanaka_decompose.rs::
+/// p2e_conditioning_dial_sweep`) — they aren't exposed on the op config
+/// (one-new-dial rule) and their effect is structural, not chain-dependent.
+///
+/// ~8 configs × ~1 min per B chain. REPORTING test: a bad dial's collision
+/// count is a finding for the table, not a failure — only a chain that
+/// fails to complete (or a default row breaking the safety gate) asserts.
+#[test]
+#[ignore = "8 full wanaka chains (~10 min); run with --ignored --nocapture"]
+fn p2e_threshold_chain_sweep() {
+    let path = wanaka_project_path();
+    let rows: [(f64, f64); 8] = [
+        (45.0, 65.0), // shipping default — the anchor row
+        (35.0, 65.0),
+        (40.0, 65.0),
+        (50.0, 65.0),
+        (55.0, 65.0),
+        (45.0, 55.0),
+        (45.0, 75.0),
+        (45.0, 85.0),
+    ];
+
+    let mut results: Vec<(f64, f64, ChainOutcome)> = Vec::new();
+    for (steep, waterline) in rows {
+        let mut s = ProjectSession::load(&path).expect("load wanaka.toml");
+        let finish_idx = (0..s.toolpath_count())
+            .find(|&i| {
+                s.get_toolpath_config(i)
+                    .is_some_and(|tc| tc.name == FINISH_OP_NAME)
+            })
+            .expect("wanaka must contain '3D Finish 6'");
+        let cfg = UnifiedFinishConfig {
+            steep_threshold_deg: steep,
+            waterline_threshold_deg: waterline,
+            ..ab_unified_config()
+        };
+        s.set_toolpath_operation(finish_idx, OperationConfig::UnifiedFinish(cfg))
+            .expect("swap Finish 6 operation to UnifiedFinish");
+        let label = format!("P2.e steep={steep} waterline={waterline}");
+        let out = run_chain(&label, &mut s);
+        results.push((steep, waterline, out));
+    }
+
+    eprintln!(
+        "== P2.e Tier-2 verdict table (vs pinned A {PINNED_A_PROJECT_S:.1}s / {PINNED_A_FINISH_S:.1}s) =="
+    );
+    eprintln!(
+        "{:>5} | {:>9} | {:>9} ({:>6}) | {:>9} ({:>6}) | {:>4}",
+        "steep", "waterline", "finish_s", "d%", "project_s", "d%", "coll"
+    );
+    for (steep, waterline, out) in &results {
+        eprintln!(
+            "{steep:>5} | {waterline:>9} | {:>9.1} ({:>+5.1}%) | {:>9.1} ({:>+5.1}%) | {:>4}{}",
+            out.finish_total_s,
+            100.0 * (out.finish_total_s - PINNED_A_FINISH_S) / PINNED_A_FINISH_S,
+            out.project_total_s,
+            100.0 * (out.project_total_s - PINNED_A_PROJECT_S) / PINNED_A_PROJECT_S,
+            out.collisions,
+            if out.collisions > BASELINE_RAPID_COLLISIONS {
+                "  << OVER BASELINE"
+            } else {
+                ""
+            }
+        );
+    }
+
+    // Hard gate on the anchor row only: the shipping default must hold the
+    // safety baseline whatever the exploratory rows do.
+    let (_, _, default_out) = results.first().expect("anchor row ran");
+    assert!(
+        default_out.collisions <= BASELINE_RAPID_COLLISIONS,
+        "P2.e SAFETY GATE FAILED on the default dials: {} rapid collisions vs baseline {}",
+        default_out.collisions,
+        BASELINE_RAPID_COLLISIONS
+    );
+    assert!(default_out.finish_total_s > 0.0);
 }

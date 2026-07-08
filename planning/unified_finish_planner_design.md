@@ -176,18 +176,37 @@ over-splitting shallow zones at every hairline valley.
 3. P2.d — router (greedy + link costing + 2-opt toggle), A/B checkpoint #2.
 4. P2.e — decomposition-parameter sweep harness; lock defaults from data.
 
-## Known classification gap — single-cell cliffs (user-observed, 2026-07-08)
+## Known classification gap — single-cell cliffs (user-observed, 2026-07-08) — FIXED 2026-07-08
 
-The wanaka lake COASTLINE (~90° step walls) does not register in any band:
+The wanaka lake COASTLINE (~90° step walls) did not register in any band:
 `SlopeMap::from_z_grid` uses central differences, which smear a
 discontinuity confined to one cell across two — a step of height h reads
 `atan(h / (2·cell))`, so a ~1 mm shore step at the 0.75 mm classification
 grid reads ~34° (not even mid-steep). Channel walls register because they
 are taller/wider than one cell; a coastline is the pathological
-exactly-cell-scale case. Fix (P2.b follow-up): classification-only slope =
-max of the one-sided forward/backward gradients per axis (a single-cell
-step then reads `atan(h / cell)`); generation surfaces unchanged. Re-run
-the wanaka acceptance + SVGs after — the coast ring should appear as a
-VerySteep (or at least MidSteep) band, and its thin-ring area interacts
-with min-area absorption (P2.e sweep datapoint, alongside the absorbed NW
-very-steep pocket).
+exactly-cell-scale case.
+
+**Fix (landed 2026-07-08)**: `SlopeMap::from_z_grid_max_gradient` — per
+axis the gradient is the one-sided forward/backward difference with the
+larger magnitude (a single-cell step then reads `atan(h / cell)` from both
+flanking cells AND the step bottom, which central differences read as 0°).
+Wired into `build_classification_surface_with_cancel` only; generation
+surfaces keep `from_z_grid` (max-of-one-sided is an upper envelope, not
+the calculus gradient — it deliberately biases steep for banding).
+
+**Measured effect (wanaka acceptance re-run)**: the coast ring now
+registers as a continuous VerySteep ribbon along the shoreline in the raw
+masks, and the correction is global, not just coastal — central
+differences were averaging away wanaka's cell-scale texture everywhere.
+Conditioned map went from 3 regions / dendritic mid-steep to 4 regions
+(2 Shallow, 1 MidSteep 3756 mm², 1 VerySteep 442 mm² which now survives
+min-area); steep fraction of covered cells 42.8%, finally consistent with
+the true-surface mesh-area statistic (45.8% ≥ 35°). Parts of the SE
+shoreline ribbon get absorbed into MidSteep by min-area — thin-ring
+absorption remains a P2.e sweep datapoint.
+
+**A/B impact**: re-running `p2c_unified_finish_branch_b` with the fixed
+classification flipped checkpoint #1 from B +1.4% to **B −4.1% project
+(−366.7 s), finish −5.3%, collisions 0** — more of the range goes to
+scallop-at-held-cusp instead of raster. B's finish op still spends
+803 s entry + 1397 s rapid; that ~2200 s remains the P2.d router target.

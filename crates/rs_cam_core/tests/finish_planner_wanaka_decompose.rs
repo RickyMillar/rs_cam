@@ -250,3 +250,133 @@ fn wanaka_slope_distribution_diagnostic() {
     assert!(total_up_area > 0.0);
     assert!(covered_cells > 0);
 }
+
+/// P2.e Tier-1 sweep (design risk R4): OFAT over the CONDITIONING dials at
+/// the decomposition level — the classification surface is sampled once and
+/// `decompose_surface` re-runs per row (milliseconds each), so this sweeps
+/// wide where the full-chain harness can't afford to. Structural scores
+/// only: per-band region counts + areas, raw-island counts, absorption.
+/// The chain-scored threshold sweep lives in `p2c_headless_ab_wanaka.rs`
+/// (`p2e_threshold_chain_sweep`), sharing the same defaults so the two
+/// tables cross-reference.
+///
+/// VerySteep area doubles as the COASTLINE-SURVIVAL proxy: the shoreline
+/// ribbon is the thin VerySteep structure min-area tends to eat (the
+/// design doc's "thin-ring absorption" datapoint).
+#[test]
+#[ignore = "wanaka conditioning dial sweep; run with --ignored --nocapture"]
+fn p2e_conditioning_dial_sweep() {
+    let path = wanaka_project_path();
+    let session = ProjectSession::load(&path).expect("load wanaka.toml");
+    let mesh = session
+        .models()
+        .iter()
+        .find_map(|m| m.mesh.clone())
+        .expect("wanaka project must contain a mesh model");
+    let index = SpatialIndex::build(&mesh, 10.0);
+    let cutter = BallEndmill::new(6.0, 25.0);
+    let tool_radius = 3.0;
+    let cancel = || false;
+    let surface = build_classification_surface_with_cancel(&mesh, &index, &cutter, 0.05, &cancel)
+        .expect("classification surface sampling");
+
+    let base = FinishPlannerParams::for_tool(tool_radius);
+    let mut rows: Vec<(String, FinishPlannerParams)> = vec![("default".into(), base.clone())];
+    for v in [35.0, 40.0, 50.0, 55.0] {
+        rows.push((
+            format!("steep={v}"),
+            FinishPlannerParams {
+                steep_threshold_deg: v,
+                ..base.clone()
+            },
+        ));
+    }
+    for v in [55.0, 75.0, 85.0] {
+        rows.push((
+            format!("waterline={v}"),
+            FinishPlannerParams {
+                waterline_threshold_deg: v,
+                ..base.clone()
+            },
+        ));
+    }
+    for v in [0.0, 5.0, 15.0] {
+        rows.push((
+            format!("hysteresis={v}"),
+            FinishPlannerParams {
+                hysteresis_deg: v,
+                ..base.clone()
+            },
+        ));
+    }
+    for v in [0.0, 0.75, 3.0] {
+        rows.push((
+            format!("close={v}"),
+            FinishPlannerParams {
+                close_radius_mm: v,
+                ..base.clone()
+            },
+        ));
+    }
+    // Default min-area = 4·(2r)² = 144 mm² at r=3. ×0.25 keeps thin coast
+    // ribbons independent; ×4 absorbs aggressively.
+    for v in [36.0, 576.0] {
+        rows.push((
+            format!("min_area={v}"),
+            FinishPlannerParams {
+                min_region_area_mm2: v,
+                ..base.clone()
+            },
+        ));
+    }
+
+    eprintln!("── P2.e Tier-1: conditioning dial sweep (wanaka, decompose-only) ──");
+    eprintln!(
+        "{:<16} | {:>7} | {:>13} | {:>13} | {:>13} | {:>8} | {:>9}",
+        "row", "regions", "shallow n/mm2", "mid n/mm2", "very n/mm2", "absorbed", "raw s/vs"
+    );
+    for (label, params) in &rows {
+        let planned = decompose_surface(&surface, &[], tool_radius, params);
+        let stat = |band: FinishBand| -> (usize, f64) {
+            planned
+                .regions
+                .iter()
+                .filter(|r| r.band == band)
+                .fold((0usize, 0.0f64), |(n, a), r| (n + 1, a + r.polygon.area()))
+        };
+        let (sn, sa) = stat(FinishBand::Shallow);
+        let (mn, ma) = stat(FinishBand::MidSteep);
+        let (vn, va) = stat(FinishBand::VerySteep);
+        eprintln!(
+            "{label:<16} | {:>7} | {sn:>3}/{sa:>9.0} | {mn:>3}/{ma:>9.0} | {vn:>3}/{va:>9.0} | {:>8} | {:>4}/{:>4}{}",
+            planned.stats.region_count,
+            planned.stats.absorbed_regions,
+            planned.stats.raw_steep_islands,
+            planned.stats.raw_very_steep_islands,
+            if planned.stats.region_count > 24 {
+                "  << OVER R1 BOUND"
+            } else {
+                ""
+            }
+        );
+        // Stability invariants — every dial row must stay conditioned, not
+        // just the default (the R1 "island storm" regression net). Rows
+        // over the O(10) acceptance bound are flagged in the table (a
+        // finding, not a failure); an O(100) storm fails the sweep.
+        assert!(
+            planned.stats.region_count <= 100,
+            "[{label}] conditioning collapsed into an island storm: {} regions",
+            planned.stats.region_count
+        );
+        assert!(
+            !planned.regions.is_empty(),
+            "[{label}] decomposition produced nothing"
+        );
+    }
+
+    // Determinism at the default row (the sweep's anchor).
+    let a = decompose_surface(&surface, &[], tool_radius, &base);
+    let b = decompose_surface(&surface, &[], tool_radius, &base);
+    assert_eq!(a.stats.region_count, b.stats.region_count);
+    assert_eq!(a.regions.len(), b.regions.len());
+}

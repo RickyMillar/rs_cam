@@ -258,11 +258,40 @@ and its innermost offset ring.
       target. Post-scallop-fix a full B chain is 51 s wall — A/Bs are now
       cheap (P2.e can afford real sweeps). Probe tests kept in the harness
       file (phase/cost-curve/offset-cascade) for future pathology hunts.
-      Remaining P2.c tails: coastline classification stencil
-      (max-one-sided-gradients — user-caught, logged in design doc),
-      crease/pencil integration into the op, live GUI validation,
-      offset_polygon root fix (tracked separately).
-- [ ] P2.d router (greedy + link costing + 2-opt toggle), A/B checkpoint #2
+      Remaining P2.c tails: crease/pencil integration into the op, live
+      GUI validation, offset_polygon root fix (tracked separately).
+      **Coastline stencil FIXED 2026-07-08**:
+      `SlopeMap::from_z_grid_max_gradient` (classification only; see design
+      doc "Known classification gap" for measured effect) — coast ring now
+      registers, decomposition matches true-surface area stats (42.8% vs
+      45.8% ≥35°), and the B rerun flipped the checkpoint verdict to
+      **B −4.1% project (−366.7 s) / finish −5.3% / collisions 0** before
+      any routing. B finish entry+rapid still 2200 s → P2.d headroom.
+- [x] P2.d router (greedy + link costing), A/B checkpoint #2. DONE
+      2026-07-08: `unified_finish.rs` now generates PER REGION
+      (single-polygon RegionSet; raster grid computed once and shared,
+      scallop/waterline rebuild internal surfaces per call — P2.e datapoint
+      if region counts grow) and routes greedily, seeded at the steepest
+      band present. Junction cost = `min(retract_link_time,
+      surface_link_time)` (F-034 integrator, never distance/feed); the
+      WINNING candidate is emitted: surface link as Linking feeds with the
+      follower's rapid+plunge preamble and the leader's trailing retracts
+      stripped, else the native retract junction. `LinkKinematics` plumbed
+      from `ctx.link_kinematics` (same P1 W4a path as pencil); without it
+      the order falls back to steep-first band-major with native links.
+      Route + per-junction decisions reported on `UnifiedFinishReport`
+      (`route`, `links`). **CHECKPOINT #2 (2026-07-08, after the coastline
+      stencil fix reset the baseline): B finish 6388.8 s (−7.2%) / project
+      8424.9 s (−5.5%, −494.6 s vs pinned A) / collisions 0.** Router's own
+      contribution −127.9 s (rapid 1397→1291 s, cutting −25 s from
+      per-region waterline z-ranges); coastline classification fix
+      contributed the other −366.7 s. 2-opt deliberately NOT built: greedy
+      at O(4) regions leaves nowhere near 5% on the table (measure-first
+      rule). Remaining finish-op entry_s (803 s) is INTERNAL strategy
+      plunges (raster rows / rings / contours) — P3 morphed-spiral + arc-fit
+      territory, not routing. 4 new unit tests (preamble/retract detection,
+      router determinism, seeding+nearest-chaining on synthetic regions,
+      hemisphere route report).
 - [ ] P2.e decomposition-parameter sweep harness; lock defaults from data
 - [ ] P3 morphed spiral strategy + degeneracy fallback
 - [ ] Ledger + FEATURE_CATALOG + memory updates at each landing
