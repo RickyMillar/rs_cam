@@ -978,3 +978,110 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   exercise the shrunk 75–90° waterline band; revisit then. Cumulative
   unified-finish arc vs A: P2.c +1.4% → coastline fix −4.1% → router
   −5.5% → P2.e lock **−12.5% project**.
+- 2026-07-08 (MATERIAL + ONE-AT-A-TIME MEASUREMENT, uncommitted): user
+  asked (a) is unified better than chaining the strategies one at a time,
+  (b) was material removal measured. Harness extended: removed-volume
+  column (dexel `total_removed_volume_est_mm3`, was measured but never
+  reported) + final stock-vs-model deviation stats (`sim.deviations`:
+  positive=leftover, negative=overcut) on every chain; new branches
+  `p2e_branch_a_remeasure` (pin drift 0.0 s — pin confirmed) and
+  `p2e_separate_ops_branch_c` = the SAME strategies as standalone
+  slope-windowed ops (Scallop ≥45° + A's raster <45°, all else identical).
+  RESULTS: A finish 6883.4 s / removed 9988 mm³ / leftover mean 0.270 mm;
+  B (unified, locked) 5766.5 s (−16.2%) / removed 9720 mm³ (−2.7%, same
+  material) / leftover mean 0.314 mm (comparable; stats dominated by
+  structurally-uncut skirts in all branches); C **9913.2 s finish (+44.0%
+  vs A) / leftover mean 0.911 mm (3.4× worse)** — the offset-surface
+  slope windows are the killer exactly as predicted: C1 scallop found
+  almost nothing to cut (33 s cutting, 347 mm³) because the offset
+  surface reads wanaka as 99.9% <45°, AND the <45° window excluded the
+  same steep cells from C2's raster, so steep terrain got NEITHER
+  strategy; C2's window fragmentation also ballooned rapids to 3549 s.
+  All branches 0 collisions. FOLLOW-UP FLAGGED: C's finish removed
+  34 208 mm³ (3.4× A) while ALSO leaving 3.4× more material + more
+  overcut verts (23 880 vs 16 312) — signature suggests the standalone
+  slope-windowed raster path may be missing the rim-contact trench guard
+  (or similar); worth a targeted look at
+  `raster_toolpath_from_grid_with_slope_filter` emission vs
+  `generate_drop_cutter`'s guard. Not chased (C loses decisively either
+  way), logged as a potential pre-existing standalone-op defect.
+- 2026-07-08 (LIVE GUI VALIDATION of UnifiedFinish — the P2.c tail — run
+  on live wanaka via MCP, op added live at parity dials + Finish 6's
+  heights/dressups): coverage CONFIRMED (final stock visually identical
+  to A's; classification/banding/generation all work through the GUI
+  worker; 85 487 moves, 37.4 km cutting). But live does NOT reproduce
+  the headless verdict — finish op reads ~9 516 s live vs 5 766 s
+  headless, and the gap is fully quantified: **entry_s 3 126 s live vs
+  489 s headless** — `optimize_entry_descents` runs in the GUI worker
+  (execute/mod.rs mirrors session wiring) but is NOT splitting this op's
+  plunges on live wanaka, while Rivers (Setup 1, face Bottom) descends
+  identically live (453 s) and headless (462 s). Pattern = works in the
+  zero-rooted Setup-1 frame, fails in Setup 2 (identity setup,
+  world-frame stock per F-024) → suspected frame mismatch between
+  `req.prior_stock` (world) and the worker's setup-local toolpath in the
+  descent pass — F-024's sibling, this time in the worker path. Also:
+  60 rapid collisions (baseline 4), all in the unified op, spread across
+  the whole move range — likely same frame family; and
+  `retract_strategy` is a NO-OP on unified output (byte-identical
+  toolpaths full vs minimum) — should apply or be hidden for the op.
+  (One self-inflicted detour for the record: pinning absolute heights in
+  the wrong frame via MCP put the retract plane inside the stock →
+  12 267 collisions; `set_toolpath_heights` frame semantics are easy to
+  misuse — UX footnote.) NEXT SESSION: worker-path descent/collision
+  frame audit for identity setups; acceptance = live unified entry_s
+  drops to ~500 s and collisions return to baseline, closing live-vs-
+  headless parity. This is the same lesson as the P2 selective-finishing
+  validation: the GUI worker path catches what headless can't.
+- 2026-07-08 (LIVE VALIDATION addendum — USER-CAUGHT UNCUT BAND): at
+  sim END, a broad diagonal band of the hilly area shows coarse stepped
+  bars where detailed hills should be — the unified op left that swath
+  UNCUT (the bars read as 3D Rough 6's z-level terraces still standing,
+  i.e. mountains buried in rough stock, "smooshed"). North of the band
+  the finish detail is crisp. Evidence this cluster is LIVE/WORKER-PATH
+  ONLY: the headless B deviation stats show NO missing band (leftover
+  verts 34 381 vs A's 34 614, mean 0.314 vs 0.270 mm — a whole uncut
+  band would add tens of thousands of leftover verts), while live also
+  shows entry_s 6× headless and 60 collisions vs 0. Additional USER
+  observations logged the same session: (1) region-clipped raster rows
+  emit retract+plunge PER ROW (A's unclipped raster serpentines at the
+  surface) — real emission-quality gap, part of the 4× rapid distance;
+  (2) no pencil/crease moves — BY DESIGN at this checkpoint (creases
+  deliberately empty; integration is the tracked tail); (3) live
+  decomposition at the tapered ball's r=1 runs ~60 regions (min_area
+  16 mm² — "Selected: Region 59" in the inspector), much weaker
+  conditioning than the Ø6 acceptance picture; region-count-vs-tool-
+  radius deserves a planner clamp datapoint. NEXT-SESSION P2.f BLOCK
+  (live parity + emission quality, BEFORE P3): (a) worker-path frame
+  audit (descents + collisions + THE UNCUT BAND — likely one family);
+  (b) headless-vs-live stock render harness (add a stock PNG dump to
+  the B-only harness so this class is visible headlessly); (c) raster
+  row serpentine within regions; (d) crease integration; (e)
+  retract_strategy no-op cleanup; (f) min_area floor independent of
+  tool radius (60 regions at r=1 is conditioning failure territory).
+- 2026-07-08 (ROOT CAUSE of the smooshed band — user-driven diagnosis):
+  NOT uncut stock (scrubbed to op start: rough blobs, no bars — the
+  unified op CUTS the bars) and NOT live-only (core generation). The
+  mid-steep scallop band generates on an INTERNAL HEIGHTMAP at
+  `cell = radius/4` where `TaperedBallEndmill::radius()` returns the
+  SHANK radius (3 mm) → 0.75 mm cells; ring points INTERPOLATE that
+  grid, so terrain texture finer than the cell (wanaka: 0.3–1 mm) is
+  blurred out of the generation surface and the rings behead every
+  knob the grid can't see — the visible bars. Waterline has the same
+  disease via `sampling = 0.5 mm` marching squares. Branch A never
+  suffers it: its raster emits EXACT per-point drop-cutter samples at
+  0.3 mm. This is a PRE-EXISTING standalone scallop/waterline fidelity
+  limitation (same r/4 heightmap in the standalone ops) that the
+  unified op exposed by assigning those strategies to textured terrain
+  A covered with exact-sampled raster. It is why headless B's leftover
+  mean read +16% vs A — the checkpoint/sweep verdicts (time, collisions,
+  blunt deviation mean) never checked per-band surface fidelity; the
+  P2.e "cutting −12% at better held cusp" claim holds for the cusp math
+  and FAILS on sub-cell texture. FIX CANDIDATES (P2.f top item, now
+  above the frame audit): (1) re-sample emitted ring/contour points
+  with exact drop-cutter Z (placement on the coarse map, Z exact —
+  raster-equivalent fidelity, ~1 query/output point); (2) cell from
+  TIP radius for tapered tools (`max(tip_radius/4, tolerance)`);
+  (3) clamp waterline sampling to the classification cell or fall back
+  to scallop on textured VerySteep. ACCEPTANCE: per-band leftover
+  histogram vs A on the textured flank (add to the harness — the blunt
+  mean hid this), plus the user's eyeball on the live stock.
