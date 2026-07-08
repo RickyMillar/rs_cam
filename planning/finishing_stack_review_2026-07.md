@@ -1201,3 +1201,41 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   Serpentining A itself would need clip-aware linking — ledgered as a
   Task 3 tail, deliberately NOT done while pinned-A comparability
   anchors the campaign.
+- 2026-07-09 daytime (P2.f Task 3b — tip-radius cusp math + ring
+  min-stepover + the quality matrix; user-driven): the user flagged the
+  live steep stepover as "way more coarse" than the shallows — fourth
+  eyeball catch of the campaign. Root causes: (1) scallop's cusp math
+  used `cutter.radius()` = SHANK radius (3 mm) — on the Ø2-tip tapered
+  tool that spaced rings 0.51 mm for h=0.011 where the tip needs
+  0.30 mm: real cusp ≈ 0.033, 3× the dial, on BOTH branch A's raster
+  slopes and B's scallop band (why the histograms read "parity" — both
+  equally wrong). Fixed via `cusp_radius()` (geometry_hint TaperedBall
+  arm; the tip sphere is the exact contact for slopes < 90°−taper ≈ 83°
+  on this tool, so this IS full-profile-correct inside the scallop
+  band; drop-cutter Z always used the full profile). (2) ring stepover
+  was the ring-MEAN of sampled values — under-tightens the steepest
+  stretch of every mixed-slope ring; now the MIN (`ring_stepover`).
+  QUALITY MATRIX at the now-honest dial (h=0.011 true; fidelity
+  instrument; `target/p2f_fidelity/matrix.log`): A 6883 s; B75 8855 s
+  (+28.6%); B65 (contour band 65–75) 11973 s (+73.9%, ZERO measured
+  quality delta vs B75 — waterline's per-level plunges cost 1606 s
+  entry; contour is dead on this terrain); D all-over scallop 9390 s
+  (+36.4%) with decisively the best band quality (mid-steep on-size
+  43345 vs B75 29944; near-cusp leftover bin 8186 vs 22538). B75's
+  dilution = the 2 mm overlap collar handing raster-quality cuts
+  (~0.034 on-slope cusp) to a large fraction of the dendritic band.
+  USER'S STRUCTURAL SKEPTICISM CONFIRMED: at the fine tier the regioned
+  op loses to plain scallop on quality and beats it by only 6% on time;
+  the unified −20% win belongs to the SPEED tier (steep ≈ A quality).
+  CASCADE FEASIBILITY (user idea: big tool → rest → small tool +
+  pencil): `p2f_ball_rest_share_probe` — mid-steep rest share 87–96%
+  for every ball Ø2–6 (the textured flank is un-cascadable; the 1 mm
+  tip owns it outright; pencil-on-creases stands, contour doesn't);
+  shallow rest share 8.6% (Ø2) – 33.5% (Ø6), so ball-on-shallows +
+  tip-on-islands is real (√R stepover ×1.73 for Ø6, plus the tip
+  currently runs 3.2× its deflection-safe feed recommendation while a
+  ball can carry feed legitimately) — parked as a shallow-band feature.
+  Bonus finding: D (plain scallop) inherits all of today's fixes and is
+  currently the best fine-quality tool in the shop. NEXT: P2.g
+  (`planning/p2g_quality_matrix_prompt.md`) — collar fix, band
+  economics, posture.
