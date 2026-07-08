@@ -392,11 +392,30 @@ and its innermost offset ring.
       regardless — census: 313 plunges = one per row), so the pinned
       constants remain valid; clip-aware linking for A-style clipped
       rasters is a ledgered tail.
-- [ ] P2.f Task 3 remainder (emission quality): crease/pencil
-      integration; region-count/min_area floor for tapered tools;
-      waterline sampling clamp (the unfixed half of the fidelity
-      defect); clip-aware serpentine for post-clipped rasters;
-      offset_polygon root fix; C's rim-guard suspicion.
+- [x] P2.f Task 3b (2026-07-09 daytime, user-driven): tip-radius cusp
+      math (`cusp_radius()` — spacing used the SHANK radius, real cusp
+      was 3× the dial on tapered tools) + ring MIN-stepover (was mean —
+      under-tightened the steepest stretch of every ring). QUALITY
+      MATRIX at the honest dial (h=0.011 true, all instrumented,
+      `target/p2f_fidelity/matrix.log`): A 6883 s baseline / B75 8855 s
+      (+28.6%) / B65 +73.9% (contour bought ZERO measured quality —
+      dead on this terrain) / D all-over scallop 9390 s (+36.4%) with
+      the BEST band quality (mid-steep on-size 43345 vs B75's 29944 —
+      B75 diluted by the 2 mm overlap collar getting raster-quality
+      cuts). User's skepticism CONFIRMED: at the fine tier the regioned
+      op currently loses to plain scallop on quality; its −20% win is
+      the SPEED tier. CASCADE probe (user idea, big tool → rest →
+      small): mid-steep rest share 87–96% for every ball Ø2–6 — the
+      flank is un-cascadable, the 1 mm tip owns it; shallows cascade
+      fine (Ø3 covers 89%). Parked as a shallow-band feature. Live
+      re-validation same morning: entry_s/rapid_s match headless to
+      0.1 s; 5 live-only rapid collisions carried as a tail.
+- [ ] P2.g (NEXT — see `planning/p2g_quality_matrix_prompt.md`):
+      Task 1 collar fix (finer strategy owns the seam; target B75 ≈ D
+      band quality at ≪ D time); Task 2 band economics (why is B75 only
+      6% faster than D — per-band time attribution); Task 3 posture +
+      tails (5 live collisions; crease/pencil integration; min_area
+      floor; offset_polygon; rim-guard; clip-aware serpentine). Then P3.
 - [ ] P3 morphed spiral strategy + degeneracy fallback
 - [ ] Ledger + FEATURE_CATALOG + memory updates at each landing
 

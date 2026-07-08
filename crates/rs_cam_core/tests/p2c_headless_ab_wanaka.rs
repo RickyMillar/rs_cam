@@ -1298,6 +1298,179 @@ fn p2e_separate_ops_branch_c() {
     );
 }
 
+/// P2.f matrix: B at waterline 65 — the 65–75° band goes to Z-contour
+/// waterline instead of scallop. The P2.e lock to 75 was scored on time
+/// and collisions only (pre-instrument); this row supplies the per-band
+/// quality data that decision never had, so the steep-wall
+/// contour-vs-scallop question is decided on numbers.
+#[test]
+#[ignore = "one full-project dexel simulation ladder; run with --ignored --nocapture"]
+fn p2f_fidelity_branch_b65() {
+    let path = wanaka_project_path();
+    let mut b = ProjectSession::load(&path).expect("load wanaka.toml (B65)");
+    let finish_idx = (0..b.toolpath_count())
+        .find(|&i| {
+            b.get_toolpath_config(i)
+                .is_some_and(|tc| tc.name == FINISH_OP_NAME)
+        })
+        .expect("wanaka must contain '3D Finish 6'");
+    let cfg = UnifiedFinishConfig {
+        waterline_threshold_deg: 65.0,
+        ..ab_unified_config()
+    };
+    b.set_toolpath_operation(finish_idx, OperationConfig::UnifiedFinish(cfg))
+        .expect("swap Finish 6 operation to UnifiedFinish (65)");
+    let out = run_chain("B65: unified, waterline band 65-75", &mut b);
+    eprintln!(
+        "vs pinned A: finish {:+.1}% project {:+.1}% collisions={}",
+        100.0 * (out.finish_total_s - PINNED_A_FINISH_S) / PINNED_A_FINISH_S,
+        100.0 * (out.project_total_s - PINNED_A_PROJECT_S) / PINNED_A_PROJECT_S,
+        out.collisions
+    );
+    run_measurement_sim(&mut b);
+    let bm = build_band_map(&b);
+    fidelity_report("p2f_B65", &b, &bm);
+    assert!(out.finish_total_s > 0.0);
+}
+
+/// P2.f matrix, branch D: ONE standalone all-over scallop replacing
+/// Finish 6 — no planner, no regions, no raster, no waterline — at the
+/// same cusp dial as B's scallop band. The user's structural question:
+/// does the regioned/unified approach actually beat "just run a normal
+/// full scallop" at equal quality, or does the decomposition overhead
+/// eat the win? Scored with the fidelity instrument like every branch.
+#[test]
+#[ignore = "one full-project dexel simulation ladder; run with --ignored --nocapture"]
+fn p2f_allover_scallop_branch_d() {
+    let path = wanaka_project_path();
+    let mut d = ProjectSession::load(&path).expect("load wanaka.toml (D)");
+    let finish_idx = (0..d.toolpath_count())
+        .find(|&i| {
+            d.get_toolpath_config(i)
+                .is_some_and(|tc| tc.name == FINISH_OP_NAME)
+        })
+        .expect("wanaka must contain '3D Finish 6'");
+    d.set_toolpath_operation(
+        finish_idx,
+        OperationConfig::Scallop(ScallopConfig {
+            scallop_height: 0.011,
+            tolerance: 0.05,
+            direction: ScallopDirection::OutsideIn,
+            continuous: true,
+            slope_from: 0.0,
+            slope_to: 90.0,
+            feed_rate: 3000.0,
+            plunge_rate: 150.0,
+            stock_to_leave: 0.0,
+            spindle_rpm: Some(21000),
+        }),
+    )
+    .expect("swap Finish 6 operation to all-over Scallop");
+    let out = run_chain("D: all-over scallop", &mut d);
+    eprintln!(
+        "vs pinned A: finish {:+.1}% project {:+.1}% collisions={}",
+        100.0 * (out.finish_total_s - PINNED_A_FINISH_S) / PINNED_A_FINISH_S,
+        100.0 * (out.project_total_s - PINNED_A_PROJECT_S) / PINNED_A_PROJECT_S,
+        out.collisions
+    );
+    run_measurement_sim(&mut d);
+    let bm = build_band_map(&d);
+    fidelity_report("p2f_D", &d, &bm);
+    assert!(out.finish_total_s > 0.0);
+}
+
+/// P2.f cascade feasibility probe (user question 2026-07-09: "even a
+/// 3/4 mm ball will leave a lot in this terrain"): per band, what
+/// fraction of the wanaka surface can a ball of radius R NOT finish
+/// (bridged concavities where the ball floor floats above the true
+/// surface)? This is the rest-island share a big-tool → small-tool
+/// cascade would hand to the small tool — the number that decides
+/// whether branch E is worth building. Pure heightmap math: ball floor
+/// = drop-cutter tip Z per cell; true surface = the classification
+/// probe; leftover = floor − truth. Speed context for reading it: at
+/// equal cusp the stepover scales with √R, so Ø6 covers open ground
+/// only 1.73× faster than the 1 mm tip, Ø3 only 1.22× — the cascade
+/// needs a LOW rest share to win.
+#[test]
+#[ignore = "three wanaka heightmaps; run with --ignored --nocapture"]
+fn p2f_ball_rest_share_probe() {
+    use rs_cam_core::finish_setup::{
+        build_classification_surface_with_cancel, build_finish_surface_with_cell_size_and_cancel,
+    };
+    use rs_cam_core::mesh::SpatialIndex;
+    use rs_cam_core::tool::BallEndmill;
+
+    let s = ProjectSession::load(&wanaka_project_path()).expect("load wanaka.toml");
+    let mesh = s
+        .models()
+        .iter()
+        .find_map(|m| m.mesh.clone())
+        .expect("terrain mesh");
+    let index = SpatialIndex::build(&mesh, 10.0);
+    let never = || false;
+    let cell = 0.25;
+
+    // True surface + band ownership at the same grid resolution.
+    let probe_cutter = BallEndmill::new(6.0, 25.0); // grid frame only
+    let truth =
+        build_classification_surface_with_cancel(&mesh, &index, &probe_cutter, cell, &never)
+            .expect("classification surface");
+    let bm = build_band_map(&s);
+
+    eprintln!("== P2.f ball rest-share probe (leftover > threshold vs true surface) ==");
+    eprintln!(
+        "{:>8} | {:>22} | {:>22} | {:>22}",
+        "ball Ø", "shallow rest %", "mid-steep rest %", "overall rest %"
+    );
+    for diameter in [6.0, 4.0, 3.0, 2.0] {
+        let ball = BallEndmill::new(diameter, 25.0);
+        let floor =
+            build_finish_surface_with_cell_size_and_cancel(&mesh, &index, &ball, cell, &never)
+                .expect("ball floor surface");
+        // Same grid dims by construction? Origins differ by tool radius —
+        // compare via WORLD coordinates per truth-grid cell.
+        let mut counts = [[0usize; 2]; 4]; // [band][covered, rest@0.05]
+        let thm = &truth.heightmap;
+        let fhm = &floor.heightmap;
+        for r in 0..thm.rows {
+            for c in 0..thm.cols {
+                if !thm.covered_at(r, c) {
+                    continue;
+                }
+                let x = thm.origin_x + c as f64 * thm.cell_size;
+                let y = thm.origin_y + r as f64 * thm.cell_size;
+                let fc = ((x - fhm.origin_x) / fhm.cell_size).round();
+                let fr = ((y - fhm.origin_y) / fhm.cell_size).round();
+                if fc < 0.0 || fr < 0.0 || fc >= fhm.cols as f64 || fr >= fhm.rows as f64 {
+                    continue;
+                }
+                #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+                let (fr, fc) = (fr as usize, fc as usize);
+                if !fhm.covered_at(fr, fc) {
+                    continue;
+                }
+                let leftover = fhm.surface_z_at(fr, fc) - thm.surface_z_at(r, c);
+                let band = bm.code_at(x, y) as usize;
+                counts[band][0] += 1;
+                if leftover > 0.05 {
+                    counts[band][1] += 1;
+                }
+            }
+        }
+        let pct = |band: usize| -> f64 {
+            100.0 * counts[band][1] as f64 / (counts[band][0] as f64).max(1.0)
+        };
+        let all_cov: usize = counts.iter().map(|c| c[0]).sum();
+        let all_rest: usize = counts.iter().map(|c| c[1]).sum();
+        eprintln!(
+            "{diameter:>7}mm | {:>21.1}% | {:>21.1}% | {:>21.1}%",
+            pct(1),
+            pct(2),
+            100.0 * all_rest as f64 / (all_cov as f64).max(1.0)
+        );
+    }
+}
+
 /// P2.f Task 3 probe: why did branch A's totals stay byte-identical after
 /// the raster serpentine? Census the finish op's move structure — if the
 /// serpentine fired, rapids collapse to ~2; if A's emission never linked
