@@ -321,6 +321,21 @@ and its innermost offset ring.
       ONE terrain (wanaka) — parts with large true-vertical walls exercise
       the 75–90° waterline band this lock shrinks; revisit if a
       wall-heavy fixture joins the harness.
+      **MATERIAL + ONE-AT-A-TIME MEASUREMENT (2026-07-08, post-lock)**:
+      harness now reports removed volume + stock-vs-model deviation per
+      chain. A remeasured (pin drift 0.0 s): removed 9988 mm³, leftover
+      mean 0.270 mm. B: removed 9720 mm³ (−2.7% — same material),
+      leftover mean 0.314 mm (comparable; all branches' leftover stats
+      are dominated by structurally-uncut skirts). Branch C (the SAME
+      strategies as standalone slope-windowed ops — the honest "one at a
+      time" chain): **+44.0% finish time AND 3.4× worse leftover mean**
+      — offset-surface slope windows leave steep terrain to NEITHER op
+      (C1 scallop cut for 33 s total / 347 mm³) and window fragmentation
+      balloons the raster's rapids 987→3549 s. The unified op's gain is
+      structural (true-surface classification + conditioned regions +
+      router), not achievable by chaining today's standalone ops. C's
+      3.4× removed-volume + overcut signature logged in the ledger as a
+      possible standalone slope-window rim-guard defect (not chased).
 - [ ] P3 morphed spiral strategy + degeneracy fallback
 - [ ] Ledger + FEATURE_CATALOG + memory updates at each landing
 

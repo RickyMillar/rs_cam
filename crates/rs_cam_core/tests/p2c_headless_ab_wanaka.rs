@@ -32,7 +32,9 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::operation_configs::UnifiedFinishConfig;
+use rs_cam_core::compute::operation_configs::{
+    DropCutterConfig, ScallopConfig, ScallopDirection, UnifiedFinishConfig,
+};
 use rs_cam_core::session::{ProjectSession, SimulationOptions};
 
 /// Pre-existing full-chain collision count (P0/P1 baseline, 2026-07-07).
@@ -50,12 +52,19 @@ fn wanaka_project_path() -> PathBuf {
 
 struct ChainOutcome {
     project_total_s: f64,
+    /// Sum over every op named [`FINISH_OP_NAME`] — branch C splits the
+    /// finish pass into two same-named ops, so this is a += accumulation.
     finish_total_s: f64,
     collisions: usize,
+    /// Dexel-estimated removed volume, finish op(s) only (mm³).
+    finish_removed_mm3: f64,
+    /// Dexel-estimated removed volume, whole project (mm³).
+    project_removed_mm3: f64,
 }
 
 /// Generate + F.4 ladder + final GUI-options simulation, print the per-op
-/// intent table, return the totals. Mirrors `p1_headless_ab_wanaka.rs`.
+/// intent table (+ removed volume) and the final stock-vs-model deviation
+/// stats, return the totals. Mirrors `p1_headless_ab_wanaka.rs`.
 fn run_chain(label: &str, s: &mut ProjectSession) -> ChainOutcome {
     let cancel = AtomicBool::new(false);
     let n = s.toolpath_count();
@@ -106,6 +115,7 @@ fn run_chain(label: &str, s: &mut ProjectSession) -> ChainOutcome {
         sim.rapid_collisions.len()
     );
     let mut finish_total_s = 0.0f64;
+    let mut finish_removed_mm3 = 0.0f64;
     for tp in &trace.toolpath_summaries {
         let name = (0..n)
             .filter_map(|i| s.get_toolpath_config(i))
@@ -113,43 +123,80 @@ fn run_chain(label: &str, s: &mut ProjectSession) -> ChainOutcome {
             .map(|tc| tc.name.clone())
             .unwrap_or_else(|| format!("{:?}", tp.toolpath_id));
         if name == FINISH_OP_NAME {
-            finish_total_s = tp.total_runtime_s;
+            finish_total_s += tp.total_runtime_s;
+            finish_removed_mm3 += tp.total_removed_volume_est_mm3;
         }
         match tp.runtime_by_intent {
             Some(b) => eprintln!(
-                "op={name:<22} total={:8.1}s cutting={:8.1} entry={:8.1} linking={:6.1} rapid={:7.1} retract={:5.1} unknown={:7.1}",
+                "op={name:<22} total={:8.1}s cutting={:8.1} entry={:8.1} linking={:6.1} rapid={:7.1} retract={:5.1} unknown={:7.1} removed={:9.0}mm3",
                 tp.total_runtime_s,
                 b.cutting_s,
                 b.entry_s,
                 b.linking_s,
                 b.rapid_s,
                 b.retract_s,
-                b.unknown_s
+                b.unknown_s,
+                tp.total_removed_volume_est_mm3
             ),
             None => eprintln!(
-                "op={name:<22} total={:8.1}s (no runtime_by_intent — kinematics off?)",
-                tp.total_runtime_s
+                "op={name:<22} total={:8.1}s removed={:9.0}mm3 (no runtime_by_intent — kinematics off?)",
+                tp.total_runtime_s, tp.total_removed_volume_est_mm3
             ),
         }
     }
     let project_total_s = trace.summary.total_runtime_s;
+    let project_removed_mm3 = trace.summary.total_removed_volume_est_mm3;
     if let Some(p) = trace.summary.runtime_by_intent {
         eprintln!(
-            "PROJECT total={:8.1}s cutting={:8.1} entry={:8.1} linking={:6.1} rapid={:7.1} retract={:5.1} unknown={:7.1}",
+            "PROJECT total={:8.1}s cutting={:8.1} entry={:8.1} linking={:6.1} rapid={:7.1} retract={:5.1} unknown={:7.1} removed={:9.0}mm3",
             project_total_s,
             p.cutting_s,
             p.entry_s,
             p.linking_s,
             p.rapid_s,
             p.retract_s,
-            p.unknown_s
+            p.unknown_s,
+            project_removed_mm3
         );
+    }
+
+    // Final stock vs model: per-vertex `sim_z − model_z` from the sim's
+    // deviation pass (positive = leftover material, negative = overcut;
+    // 0.0 = vertex not relevant, e.g. stock bottom). This is the actual
+    // machined-surface quality measure the cusp math only predicts.
+    match sim.deviations.as_ref() {
+        Some(devs) => {
+            const EPS: f32 = 1e-4;
+            let mut leftover_n = 0usize;
+            let mut leftover_sum = 0.0f64;
+            let mut leftover_max = 0.0f32;
+            let mut gouge_n = 0usize;
+            let mut gouge_min = 0.0f32;
+            for &d in devs {
+                if d > EPS {
+                    leftover_n += 1;
+                    leftover_sum += f64::from(d);
+                    leftover_max = leftover_max.max(d);
+                } else if d < -EPS {
+                    gouge_n += 1;
+                    gouge_min = gouge_min.min(d);
+                }
+            }
+            let leftover_mean = leftover_sum / (leftover_n as f64).max(1.0);
+            eprintln!(
+                "DEVIATION verts={} leftover: n={leftover_n} mean={leftover_mean:.4}mm max={leftover_max:.4}mm | overcut: n={gouge_n} worst={gouge_min:.4}mm",
+                devs.len()
+            );
+        }
+        None => eprintln!("DEVIATION unavailable (sim ran without a reference model mesh)"),
     }
 
     ChainOutcome {
         project_total_s,
         finish_total_s,
         collisions: sim.rapid_collisions.len(),
+        finish_removed_mm3,
+        project_removed_mm3,
     }
 }
 
@@ -758,4 +805,137 @@ fn p2e_threshold_chain_sweep() {
         BASELINE_RAPID_COLLISIONS
     );
     assert!(default_out.finish_total_s > 0.0);
+}
+
+/// Branch A re-measure with the removal + deviation columns (they landed
+/// after A was pinned, so the pinned constants carry no material data).
+/// Prints drift vs the pinned times as a sanity check on the pin itself.
+#[test]
+#[ignore = "one full-project dexel simulation ladder on the all-over raster (long); run with --ignored --nocapture"]
+fn p2e_branch_a_remeasure() {
+    let path = wanaka_project_path();
+    let mut a = ProjectSession::load(&path).expect("load wanaka.toml (A)");
+    let out = run_chain("A: unmodified chain, remeasured", &mut a);
+    eprintln!(
+        "pin drift: project {:+.1}s vs {PINNED_A_PROJECT_S:.1}, finish {:+.1}s vs {PINNED_A_FINISH_S:.1}",
+        out.project_total_s - PINNED_A_PROJECT_S,
+        out.finish_total_s - PINNED_A_FINISH_S
+    );
+    assert!(out.finish_total_s > 0.0);
+}
+
+/// Branch C — "doing the toolpaths one at a time": the SAME strategies as
+/// the unified op, but hand-chained as today's STANDALONE ops with per-op
+/// slope windows instead of the planner's conditioned regions + router.
+/// C1 = Scallop confined to slopes ≥45° (continuous rings, B's parity
+/// height); C2 = the original drop-cutter raster confined to <45°. Both
+/// keep A's tool/heights/boundary/feeds.
+///
+/// The structural handicap this measures: standalone slope windows
+/// classify on each op's own OFFSET (ball-center) surface — the blind
+/// spot the unified op's true-surface classification fixed. On wanaka the
+/// offset surface reads 0.1% of cells ≥45°, so C1 is expected to find
+/// almost nothing and C2 to raster nearly all-over — i.e. "one at a time"
+/// collapses toward branch A no matter which strategies you chain. That
+/// expectation is exactly what this test measures rather than assumes.
+#[test]
+#[ignore = "one full-project dexel simulation ladder (long, raster-sized); run with --ignored --nocapture"]
+fn p2e_separate_ops_branch_c() {
+    let path = wanaka_project_path();
+    let mut c = ProjectSession::load(&path).expect("load wanaka.toml (C)");
+    let finish_idx = (0..c.toolpath_count())
+        .find(|&i| {
+            c.get_toolpath_config(i)
+                .is_some_and(|tc| tc.name == FINISH_OP_NAME)
+        })
+        .expect("wanaka must contain '3D Finish 6'");
+
+    // C2 inherits A's toolpath config field-by-field (`ToolpathConfig`
+    // deliberately isn't Clone — fresh IDs come from `add_toolpath`) and
+    // A's raster op VERBATIM (same stepover/feeds/min_z), narrowed to the
+    // shallow window. Snapshot everything before C1's swap destroys it.
+    let template = c
+        .get_toolpath_config(finish_idx)
+        .expect("finish toolpath config");
+    let OperationConfig::DropCutter(a_raster) = template.operation.clone() else {
+        panic!("expected '3D Finish 6' to be a DropCutter raster (branch A shape)");
+    };
+    // C1 reads these after `a_raster` is consumed by C2's struct update.
+    let (a_feed, a_plunge, a_rpm) = (
+        a_raster.feed_rate,
+        a_raster.plunge_rate,
+        a_raster.spindle_rpm,
+    );
+    let mut c2 = rs_cam_core::session::ToolpathConfig {
+        id: template.id, // reassigned by add_toolpath
+        name: template.name.clone(),
+        enabled: template.enabled,
+        operation: OperationConfig::DropCutter(DropCutterConfig {
+            slope_from: 0.0,
+            slope_to: 45.0,
+            ..a_raster
+        }),
+        dressups: template.dressups.clone(),
+        heights: template.heights.clone(),
+        tool_id: template.tool_id,
+        model_id: template.model_id,
+        pre_gcode: template.pre_gcode.clone(),
+        post_gcode: template.post_gcode.clone(),
+        boundary: template.boundary.clone(),
+        boundary_inherit: template.boundary_inherit,
+        rest_analysis: template.rest_analysis.clone(),
+        stock_source: template.stock_source,
+        coolant: template.coolant,
+        face_selection: template.face_selection.clone(),
+        debug_options: template.debug_options,
+        feeds_provenance: template.feeds_provenance.clone(),
+    };
+    c2.name = FINISH_OP_NAME.to_owned();
+
+    // C1: standalone Scallop on the steep window (B's mid-steep parity
+    // dials: height 0.011 = A's effective cusp at ~55°, continuous rings).
+    c.set_toolpath_operation(
+        finish_idx,
+        OperationConfig::Scallop(ScallopConfig {
+            scallop_height: 0.011,
+            tolerance: 0.05,
+            direction: ScallopDirection::OutsideIn,
+            continuous: true,
+            slope_from: 45.0,
+            slope_to: 90.0,
+            feed_rate: a_feed,
+            plunge_rate: a_plunge,
+            stock_to_leave: 0.0,
+            spindle_rpm: a_rpm,
+        }),
+    )
+    .expect("swap Finish 6 to slope-windowed Scallop");
+
+    // C2 appended to the chain end (order after the roughs is what
+    // matters; nothing downstream references the finish stock in this
+    // headless chain). Same name so run_chain sums both into finish
+    // totals.
+    c.add_toolpath(0, c2).expect("append shallow raster op");
+
+    let out = run_chain("C: separate slope-windowed ops", &mut c);
+
+    eprintln!("== P2.e branch C verdict (one-at-a-time vs pinned A / locked-default B) ==");
+    eprintln!(
+        "finish : A={PINNED_A_FINISH_S:8.1}s  C={:8.1}s ({:+.1}%)  [B locked: 5766.5s (-16.2%)]",
+        out.finish_total_s,
+        100.0 * (out.finish_total_s - PINNED_A_FINISH_S) / PINNED_A_FINISH_S
+    );
+    eprintln!(
+        "project: A={PINNED_A_PROJECT_S:8.1}s  C={:8.1}s ({:+.1}%)  [B locked: 7802.6s (-12.5%)]",
+        out.project_total_s,
+        100.0 * (out.project_total_s - PINNED_A_PROJECT_S) / PINNED_A_PROJECT_S
+    );
+    eprintln!(
+        "removed: finish {:.0} mm3, project {:.0} mm3 | collisions: {} (baseline {BASELINE_RAPID_COLLISIONS})",
+        out.finish_removed_mm3, out.project_removed_mm3, out.collisions
+    );
+    assert!(
+        out.finish_total_s > 0.0,
+        "branch C produced no finish runtime"
+    );
 }
