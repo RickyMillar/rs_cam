@@ -1085,3 +1085,90 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   to scallop on textured VerySteep. ACCEPTANCE: per-band leftover
   histogram vs A on the textured flank (add to the harness — the blunt
   mean hid this), plus the user's eyeball on the live stock.
+- 2026-07-08/09 overnight (P2.f Task 1 EXECUTED — instrument + chord
+  fix, headless-validated): reading the code corrected the root-cause
+  DETAIL — scallop ring Z was never interpolated (`ring_to_3d` exact
+  drop-cutters every vertex); the beheading was the straight feed
+  CHORDS between exact points. Ring vertex spacing tracks the
+  generation grid (`decimate_ring_polygon` floors it at cell×0.75 =
+  0.56 mm; boundary sampling ≈ flat stepover 0.51 mm), so any knob
+  narrower than a chord was decapitated by the segment crossing it —
+  and valleys under chords read as leftover. Waterline shares the
+  disease via 0.5 mm fiber spacing (a knob between fibers is invisible
+  — no XY detour is generated; chord refinement can't fix that one,
+  only finer sampling can). NOTE: at the LOCKED 45/75 dials wanaka's
+  very-steep band is EMPTY (band map: 0 cells) — mid-steep scallop
+  owns all textured terrain, so the scallop chord fix is the whole
+  wanaka fix; waterline sampling stays a ledgered follow-up.
+  - INSTRUMENT (built first, per the lesson): `p2f_fidelity_branch_a/b`
+    in `tests/p2c_headless_ab_wanaka.rs` — per-band deviation histogram
+    (13 signed bins; bands rasterized from the planner's own conditioned
+    regions), 0.25 mm measurement re-sim (the 0.5 mm timing sim aliases
+    the texture; timing still reported from standard options), top-down
+    deviation PNG + raw f32 grid dump for cross-run diff maps, 6-view
+    composite. Artifacts in `target/p2f_fidelity/`.
+  - PRE-FIX BASELINE (hi-res): B's mid-steep overcut bins +25–45% vs A
+    (−0.2..−0.1 bin: 2030 vs 1403), shallow overcut ≈2× A (scallop's
+    2 mm overlap spills into raster territory), leftover ≥0.3 mm
+    +48–74%. Diff map (B−A) lights up exactly the diagonal mountain
+    band the user photographed. mean|B−A| = 0.054 mm.
+  - FIX (`scallop.rs`): adaptive chord refinement in the ring lift —
+    each kept→kept chord (including the closing wrap) is probed against
+    exact drop-cutter Z every `max(cell/2, 0.15 mm)`; while the worst
+    probe error exceeds the op's path tolerance the chord splits at the
+    worst-error point (depth-capped 5, floor 0.15 mm = half the raster
+    reference pitch so refinement can never re-create the sub-0.1 mm
+    segment-junction blowup from the P0 probe). Coverage gaps under a
+    chord insert an excluded point so the run-splitter retracts around
+    holes instead of feeding across (bonus fix). Flat/smooth chords
+    within tolerance gain ZERO points (unit-pinned). Unit tests:
+    `chord_refinement_lifts_path_over_sharp_ridge` (tent-ridge mesh —
+    the minimal smooshed-mountain reproducer), `chord_refinement_no_op_
+    on_flat`.
+  - POST-FIX B (hi-res): mid-steep overcut bins at A PARITY
+    (1212/896/1403 vs A 1200/889/1403; pre-fix 1502/1267/2030);
+    shallow overcut back to parity; leftover >+0.5 5515→3902 (A 3737).
+    mean|B−A| 0.054→0.012 mm (4.6×); cells B gouges >0.1 mm deeper
+    than A: 1955→216. Removed volume 9871 vs A 9988 (pre-fix 9720).
+    HONEST TIME RE-MEASURE: finish −16.2%→−13.1%, project
+    −12.5%→−10.1% (−899.7 s), collisions 0 — the 3-point give-back is
+    the tool genuinely following the knobs it used to slice off.
+- 2026-07-09 overnight (P2.f Task 2 forensics — live G-code REFUTES the
+  descent-pass theory): exported the live project's per-setup G-code
+  (GUI still open, read-only) and the unified op's entries show the
+  split signature everywhere — `G0` rapid descents to exactly
+  plunge-target +1 mm before every F-tagged feed. `optimize_entry_
+  descents` WORKS in the GUI worker; the handoff's frame-mismatch
+  hypothesis is wrong for descents (F-028: identity setups skip the
+  transform precisely so emission and sim agree). What actually
+  dominates live entry_s: ~20 mm DIAGONAL EntryPlunge feed legs at F75
+  (V-shaped out-and-back pairs descending ~1 mm per leg) — the same
+  "entry moves cutting through stock" the user flagged as PRE-EXISTING.
+  Finish 6's dressups: entry_style=none (NOT a ramp dressup),
+  arc_fitting=true, optimize_rapid_order=true, retract_strategy=
+  minimum, link_moves=false; the F75 is feed modulation halving the
+  150 plunge feed.
+  **ROOT CAUSE FOUND + FIXED same night**: the diagonal legs are
+  `emit_ramp` — the geometry matches exactly (rapid to plunge-target
+  +2.0 mm = `ENTRY_CLEARANCE`, then out-and-back legs at 2.86° ≤ the
+  3.0° ramp_angle). The live op 8 was added fresh via MCP
+  `add_toolpath`, which builds dressups from `DressupConfig::for_op` →
+  `for_role(UiProcessRole::Finish)` → **`entry_style: Ramp` (Roadmap
+  B.5 role default)** — and `REG_UNIFIED_FINISH` carried
+  `ANY_DRESSUP`, so nothing stripped it. The original Finish 6 never
+  showed it because its SAVED config has entry_style=none; the
+  headless harness inherits Finish 6's dressups via
+  `set_toolpath_operation`, which is why headless entry_s stayed 489 s
+  while the live op paid 3126 s of 3° trenches (and `emit_ramp`'s
+  target-relative rapid floor rapids BELOW terrain knobs — the prime
+  suspect for the +60 rapid collisions). This is DropCutter's
+  documented "diagonal trench" failure mode; DropCutter/ProjectCurve
+  already strip_all — UnifiedFinish had simply slipped through with
+  ANY_DRESSUP at registration. FIX: `REG_UNIFIED_FINISH.dressup_policy
+  = strip_all(...)` (catalog.rs), pin tests updated
+  (`dressup_policy_table_is_pinned`, `normalize_for_op_applies_
+  registry_policy`). The UI greys the controls from the same registry
+  field. REMAINING live checks (morning, GUI restart on fixed binary):
+  re-add the unified op (strip-all now applies), confirm entry_s ≈
+  headless and collisions back to baseline 4, retract_strategy no-op
+  question, and the user's eyeball on the chord-refined stock.

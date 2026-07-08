@@ -1,5 +1,34 @@
 # Handoff prompt — P2.f: band fidelity + live parity (before P3)
 
+> ## STATUS UPDATE 2026-07-09 overnight (read this first)
+>
+> Task 1 is DONE headlessly (instrument + scallop chord-refinement fix +
+> honest re-measure + sweep anchors re-run) — see the 2026-07-08/09
+> entries in `planning/finishing_stack_review_2026-07.md` and the P2.f
+> rows in `planning/unified_finishing_pass_plan.md`. Headline: root
+> cause was chord infidelity (ring Z was always exact); post-fix B hits
+> A-parity on the overcut histograms (mean|B−A| 0.054→0.012 mm), honest
+> time finish −13.1% / project −10.1%, collisions 0. Artifacts + diff
+> maps: `target/p2f_fidelity/`. REMAINING for Task 1: the user's eyeball
+> on the live stock (GUI must be restarted on the fixed binary first).
+>
+> Task 2 was SOLVED by live G-code forensics (GUI was still open
+> overnight; per-setup export in the session scratchpad): descent
+> splits WORK live — the frame-mismatch theory is dead. The live
+> entry_s 6× + "entry moves cutting through stock" was role-default
+> RAMP ENTRIES on the MCP-added op (`for_role(Finish)` → Ramp;
+> `REG_UNIFIED_FINISH` had ANY_DRESSUP so nothing stripped it —
+> DropCutter's documented diagonal-trench failure mode; `emit_ramp`'s
+> target-relative rapid floor is also the prime 60-collision suspect).
+> FIXED: UnifiedFinish now strip_all in the registry + pin tests.
+> REMAINING live (user + GUI on the fixed binary): re-add the unified
+> op, confirm entry_s ≈ headless + collisions ≈ 4, the
+> retract_strategy no-op question, and the eyeball on the
+> chord-refined stock.
+>
+> The original prompt below is kept for context; its Task 1 is done and
+> its Task 2 premise is corrected above.
+
 Paste everything below into a fresh session.
 
 ---

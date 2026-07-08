@@ -25,7 +25,8 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::print_stderr
+    clippy::print_stderr,
+    clippy::indexing_slicing
 )]
 
 use std::path::PathBuf;
@@ -198,6 +199,363 @@ fn run_chain(label: &str, s: &mut ProjectSession) -> ChainOutcome {
         finish_removed_mm3,
         project_removed_mm3,
     }
+}
+
+// ── P2.f fidelity instrument ────────────────────────────────────────────
+//
+// The band-fidelity defect (user-caught, 2026-07-08) hid inside the blunt
+// project-wide leftover MEAN twice. This instrument makes it impossible to
+// miss again: every stock-mesh vertex's deviation is attributed to the
+// planner band that owns its XY (the same decomposition the unified op
+// cuts from), histogrammed with BOTH signs (beheaded detail = OVERCUT,
+// which the old leftover-only stats never surfaced), and rendered as a
+// top-down deviation map PNG so the "smooshed mountains" pattern is
+// visible without the GUI.
+
+/// Per-cell band ownership rasterized from the planner's conditioned
+/// regions onto the classification grid. Code 0 = no region (off-model or
+/// unclassified), 1 = Shallow, 2 = MidSteep, 3 = VerySteep. Band-overlap
+/// cells attribute to the STEEPER band (rasterized in ascending steepness,
+/// later overwrites).
+struct BandMap {
+    origin_x: f64,
+    origin_y: f64,
+    cell: f64,
+    rows: usize,
+    cols: usize,
+    codes: Vec<u8>,
+}
+
+const BAND_NAMES: [&str; 4] = ["off-region", "shallow", "mid-steep", "very-steep"];
+
+impl BandMap {
+    fn code_at(&self, x: f64, y: f64) -> u8 {
+        let col = ((x - self.origin_x) / self.cell).round();
+        let row = ((y - self.origin_y) / self.cell).round();
+        if col < 0.0 || row < 0.0 || col >= self.cols as f64 || row >= self.rows as f64 {
+            return 0;
+        }
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+        let idx = row as usize * self.cols + col as usize;
+        self.codes[idx]
+    }
+}
+
+fn p2f_output_dir() -> PathBuf {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("target")
+        .join("p2f_fidelity");
+    std::fs::create_dir_all(&dir).expect("create target/p2f_fidelity");
+    dir
+}
+
+/// Build the band map with the SAME classification + decomposition the
+/// unified op runs (Ø6 ball, `for_tool(3.0)`, overlap 2.0, locked 45/75
+/// thresholds), so deviations are attributed to the regions the op
+/// actually routed. Branch A is scored against the same map — the
+/// comparison question is "what did each strategy's territory look like
+/// under A vs under B", so the territory must be identical.
+fn build_band_map(s: &ProjectSession) -> BandMap {
+    use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose};
+    use rs_cam_core::finish_setup::build_classification_surface_with_cancel;
+    use rs_cam_core::geo::P2;
+    use rs_cam_core::mesh::SpatialIndex;
+    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::tool::BallEndmill;
+
+    let mesh = s
+        .models()
+        .iter()
+        .find_map(|m| m.mesh.clone())
+        .expect("wanaka terrain mesh");
+    let index = SpatialIndex::build(&mesh, 10.0);
+    let cutter = BallEndmill::new(6.0, 25.0);
+    let never = || false;
+    let surface = build_classification_surface_with_cancel(&mesh, &index, &cutter, 0.05, &never)
+        .expect("classification surface");
+    let mut planner = FinishPlannerParams::for_tool(3.0);
+    planner.overlap_mm = 2.0;
+    let planned = decompose(
+        &surface.slope_map,
+        &surface.heightmap.covered,
+        &[],
+        3.0,
+        &planner,
+    );
+
+    let hm = &surface.heightmap;
+    let (rows, cols, cell) = (hm.rows, hm.cols, hm.cell_size);
+    let mut codes = vec![0u8; rows * cols];
+    for (band, code) in [
+        (FinishBand::Shallow, 1u8),
+        (FinishBand::MidSteep, 2u8),
+        (FinishBand::VerySteep, 3u8),
+    ] {
+        let polys: Vec<_> = planned
+            .regions
+            .iter()
+            .filter(|r| r.band == band)
+            .map(|r| r.polygon.clone())
+            .collect();
+        if polys.is_empty() {
+            continue;
+        }
+        let rs = RegionSet::new(polys);
+        for r in 0..rows {
+            for c in 0..cols {
+                let x = hm.origin_x + c as f64 * cell;
+                let y = hm.origin_y + r as f64 * cell;
+                if rs.contains(&P2::new(x, y)) {
+                    codes[r * cols + c] = code;
+                }
+            }
+        }
+    }
+
+    let counts = codes.iter().fold([0usize; 4], |mut acc, &c| {
+        acc[c as usize] += 1;
+        acc
+    });
+    eprintln!(
+        "BAND MAP {rows}x{cols} @ {cell:.3}mm: off-region={} shallow={} mid-steep={} very-steep={}",
+        counts[0], counts[1], counts[2], counts[3]
+    );
+
+    BandMap {
+        origin_x: hm.origin_x,
+        origin_y: hm.origin_y,
+        cell,
+        rows,
+        cols,
+        codes,
+    }
+}
+
+/// Save the band map itself as a PNG (top-down; gray = off-region, green =
+/// shallow, orange = mid-steep, red = very-steep) so deviation maps can be
+/// read against the territory that produced them.
+fn save_band_map_png(bm: &BandMap, path: &std::path::Path) {
+    let mut px = vec![0u8; bm.rows * bm.cols * 4];
+    for r in 0..bm.rows {
+        for c in 0..bm.cols {
+            let code = bm.codes[r * bm.cols + c];
+            let (rr, gg, bb) = match code {
+                1 => (40u8, 140u8, 60u8),
+                2 => (220u8, 140u8, 30u8),
+                3 => (200u8, 40u8, 40u8),
+                _ => (60u8, 60u8, 60u8),
+            };
+            // Image row 0 is the TOP of the picture; grid row 0 is min-Y.
+            let ir = bm.rows - 1 - r;
+            let i = (ir * bm.cols + c) * 4;
+            px[i] = rr;
+            px[i + 1] = gg;
+            px[i + 2] = bb;
+            px[i + 3] = 255;
+        }
+    }
+    image::save_buffer(
+        path,
+        &px,
+        bm.cols as u32,
+        bm.rows as u32,
+        image::ColorType::Rgba8,
+    )
+    .expect("save band map png");
+    eprintln!("band map png: {}", path.display());
+}
+
+/// Histogram bin edges (mm). Deviations below the first edge land in bin
+/// 0; at or above the last edge in the final bin. Negative = OVERCUT
+/// (beheaded detail), positive = leftover material.
+const DEV_EDGES: [f32; 12] = [
+    -0.5, -0.3, -0.2, -0.1, -0.05, -0.01, 0.01, 0.05, 0.1, 0.2, 0.3, 0.5,
+];
+const DEV_BIN_COUNT: usize = DEV_EDGES.len() + 1;
+const DEV_BIN_LABELS: [&str; DEV_BIN_COUNT] = [
+    "<-.5", "-.5", "-.3", "-.2", "-.1", "-.05", "on-size", "+.05", "+.1", "+.2", "+.3", "+.5",
+    ">+.5",
+];
+
+#[derive(Default, Clone, Copy)]
+struct BandAcc {
+    bins: [usize; DEV_BIN_COUNT],
+    leftover_n: usize,
+    leftover_sum: f64,
+    leftover_max: f32,
+    overcut_n: usize,
+    overcut_sum: f64,
+    overcut_min: f32,
+}
+
+/// Re-simulate the chain at measurement resolution (0.25 mm — the default
+/// 0.5 mm dexel grid aliases away exactly the 0.3–1 mm terrain texture the
+/// band-fidelity defect beheads). Runs AFTER `run_chain` so the reported
+/// times/collisions still come from the standard options the pinned-A
+/// constants were measured with; this sim exists only for `deviations`.
+fn run_measurement_sim(s: &mut ProjectSession) {
+    let cancel = AtomicBool::new(false);
+    let opts = SimulationOptions {
+        resolution: 0.25,
+        ..Default::default()
+    };
+    s.run_simulation(&opts, &cancel)
+        .expect("hi-res measurement simulation");
+}
+
+/// Per-band deviation histogram + top-down deviation PNG for the CURRENT
+/// simulation result on `s`. Call after `run_chain` (and, for measurement
+/// sensitivity, after [`run_measurement_sim`]). Prints a table, writes
+/// `{tag}_deviation.png` (red = overcut/gouge, blue = leftover, gray =
+/// on-size, black = no data) and a raw little-endian f32 grid dump
+/// (`{tag}_deviation_{rows}x{cols}.f32`, signed max-|dev| per image cell,
+/// NaN = no data) so cross-run diff maps can be computed offline.
+fn fidelity_report(tag: &str, s: &ProjectSession, bm: &BandMap) {
+    let sim = s.simulation_result().expect("sim result");
+    let devs = sim
+        .deviations
+        .as_ref()
+        .expect("deviations (sim ran without a reference model mesh?)");
+    let verts = &sim.mesh.vertices;
+    assert_eq!(verts.len(), devs.len() * 3, "vertex/deviation mismatch");
+
+    let bin_of = |d: f32| -> usize {
+        DEV_EDGES
+            .iter()
+            .position(|&e| d < e)
+            .unwrap_or(DEV_BIN_COUNT - 1)
+    };
+
+    let mut accs = [BandAcc::default(); 4];
+    // Signed max-|dev| per IMAGE cell for the picture + raw dump. The image
+    // grid is 2× finer than the band map so the measurement sim's 0.25 mm
+    // vertices don't alias back away.
+    let icell = bm.cell * 0.5;
+    let icols = bm.cols * 2;
+    let irows = bm.rows * 2;
+    let mut img: Vec<f32> = vec![0.0; irows * icols];
+    let mut img_hit: Vec<bool> = vec![false; irows * icols];
+
+    const EPS: f32 = 1e-4;
+    for (i, &d) in devs.iter().enumerate() {
+        if d == 0.0 {
+            continue; // sentinel: vertex not relevant (stock bottom etc.)
+        }
+        let x = f64::from(verts[i * 3]);
+        let y = f64::from(verts[i * 3 + 1]);
+        let code = bm.code_at(x, y) as usize;
+        let a = &mut accs[code];
+        a.bins[bin_of(d)] += 1;
+        if d > EPS {
+            a.leftover_n += 1;
+            a.leftover_sum += f64::from(d);
+            a.leftover_max = a.leftover_max.max(d);
+        } else if d < -EPS {
+            a.overcut_n += 1;
+            a.overcut_sum += f64::from(d);
+            a.overcut_min = a.overcut_min.min(d);
+        }
+
+        let col = ((x - bm.origin_x) / icell).round();
+        let row = ((y - bm.origin_y) / icell).round();
+        if col >= 0.0 && row >= 0.0 && col < icols as f64 && row < irows as f64 {
+            #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+            let idx = row as usize * icols + col as usize;
+            if !img_hit[idx] || d.abs() > img[idx].abs() {
+                img[idx] = d;
+                img_hit[idx] = true;
+            }
+        }
+    }
+
+    eprintln!("== P2.f FIDELITY [{tag}] (negative = overcut/beheaded, positive = leftover) ==");
+    eprintln!(
+        "{:<11} | {:>9} {:>9} {:>8} | {:>9} {:>9} {:>8} | histogram",
+        "band", "over_n", "over_mean", "worst", "left_n", "left_mean", "max"
+    );
+    for (code, acc) in accs.iter().enumerate() {
+        let over_mean = acc.overcut_sum / (acc.overcut_n as f64).max(1.0);
+        let left_mean = acc.leftover_sum / (acc.leftover_n as f64).max(1.0);
+        let hist: Vec<String> = DEV_BIN_LABELS
+            .iter()
+            .zip(acc.bins.iter())
+            .map(|(l, n)| format!("{l}:{n}"))
+            .collect();
+        eprintln!(
+            "{:<11} | {:>9} {:>9.4} {:>8.4} | {:>9} {:>9.4} {:>8.4} | {}",
+            BAND_NAMES[code],
+            acc.overcut_n,
+            over_mean,
+            acc.overcut_min,
+            acc.leftover_n,
+            left_mean,
+            acc.leftover_max,
+            hist.join(" ")
+        );
+    }
+
+    // Deviation picture: saturate the color ramp at ±0.3 mm (the texture
+    // scale) so mid-range damage is visible, not just the extremes.
+    let mut px = vec![0u8; irows * icols * 4];
+    for r in 0..irows {
+        for c in 0..icols {
+            let idx = r * icols + c;
+            let (rr, gg, bb) = if !img_hit[idx] {
+                (0u8, 0u8, 0u8)
+            } else {
+                let d = img[idx];
+                if d < -EPS {
+                    let t = (f64::from(-d) / 0.3).min(1.0);
+                    // gray -> red
+                    let g = (110.0 * (1.0 - t)) as u8;
+                    ((110.0 + 145.0 * t) as u8, g, g)
+                } else if d > EPS {
+                    let t = (f64::from(d) / 0.3).min(1.0);
+                    // gray -> blue
+                    let g = (110.0 * (1.0 - t)) as u8;
+                    (g, g, (110.0 + 145.0 * t) as u8)
+                } else {
+                    (110u8, 110u8, 110u8)
+                }
+            };
+            let ir = irows - 1 - r;
+            let i = (ir * icols + c) * 4;
+            px[i] = rr;
+            px[i + 1] = gg;
+            px[i + 2] = bb;
+            px[i + 3] = 255;
+        }
+    }
+    let dev_path = p2f_output_dir().join(format!("{tag}_deviation.png"));
+    image::save_buffer(
+        &dev_path,
+        &px,
+        icols as u32,
+        irows as u32,
+        image::ColorType::Rgba8,
+    )
+    .expect("save deviation png");
+
+    // Raw grid dump for offline cross-run diffs (NaN = no data).
+    let raw: Vec<u8> = img
+        .iter()
+        .zip(img_hit.iter())
+        .flat_map(|(&d, &hit)| (if hit { d } else { f32::NAN }).to_le_bytes())
+        .collect();
+    let raw_path = p2f_output_dir().join(format!("{tag}_deviation_{irows}x{icols}.f32"));
+    std::fs::write(&raw_path, raw).expect("write raw deviation grid");
+
+    let composite_path = p2f_output_dir().join(format!("{tag}_stock_composite.png"));
+    rs_cam_core::fingerprint::save_mesh_composite_png(&sim.mesh, &composite_path, 1800, 1200)
+        .expect("save stock composite png");
+
+    eprintln!(
+        "deviation png: {} (red=overcut, blue=leftover, sat ±0.3mm) | composite: {}",
+        dev_path.display(),
+        composite_path.display()
+    );
 }
 
 /// The B-branch dials. Quality parity with A on the band each strategy
@@ -938,4 +1296,65 @@ fn p2e_separate_ops_branch_c() {
         out.finish_total_s > 0.0,
         "branch C produced no finish runtime"
     );
+}
+
+/// P2.f Task 1 instrument, branch A: the unmodified chain scored with the
+/// per-band deviation histogram + deviation-map PNG. This is the fidelity
+/// REFERENCE — A's exact per-point 0.3 mm raster is the quality bar the
+/// unified op must match per band, not just on the blunt mean.
+#[test]
+#[ignore = "one full-project dexel simulation ladder (long); run with --ignored --nocapture"]
+fn p2f_fidelity_branch_a() {
+    let path = wanaka_project_path();
+    let mut a = ProjectSession::load(&path).expect("load wanaka.toml (A)");
+    let out = run_chain("A: fidelity reference", &mut a);
+    eprintln!(
+        "pin drift: project {:+.1}s vs {PINNED_A_PROJECT_S:.1}, finish {:+.1}s vs {PINNED_A_FINISH_S:.1}",
+        out.project_total_s - PINNED_A_PROJECT_S,
+        out.finish_total_s - PINNED_A_FINISH_S
+    );
+    run_measurement_sim(&mut a);
+    let bm = build_band_map(&a);
+    save_band_map_png(&bm, &p2f_output_dir().join("band_map.png"));
+    fidelity_report("p2f_A", &a, &bm);
+    assert!(out.finish_total_s > 0.0);
+}
+
+/// P2.f Task 1 instrument, branch B: the unified op (locked defaults)
+/// scored per band against the same band map as A. The smooshed-mountain
+/// defect must show here as mid-steep OVERCUT mass that branch A doesn't
+/// have; after the fidelity fix this test is the acceptance rerun.
+#[test]
+#[ignore = "one full-project dexel simulation ladder; run with --ignored --nocapture"]
+fn p2f_fidelity_branch_b() {
+    let path = wanaka_project_path();
+    let mut b = ProjectSession::load(&path).expect("load wanaka.toml (B)");
+    let finish_idx = (0..b.toolpath_count())
+        .find(|&i| {
+            b.get_toolpath_config(i)
+                .is_some_and(|tc| tc.name == FINISH_OP_NAME)
+        })
+        .expect("wanaka must contain '3D Finish 6'");
+    b.set_toolpath_operation(
+        finish_idx,
+        OperationConfig::UnifiedFinish(ab_unified_config()),
+    )
+    .expect("swap Finish 6 operation to UnifiedFinish");
+    let out = run_chain("B: unified finish (fidelity)", &mut b);
+    eprintln!(
+        "vs pinned A: finish {:+.1}% project {:+.1}% collisions={}",
+        100.0 * (out.finish_total_s - PINNED_A_FINISH_S) / PINNED_A_FINISH_S,
+        100.0 * (out.project_total_s - PINNED_A_PROJECT_S) / PINNED_A_PROJECT_S,
+        out.collisions
+    );
+    run_measurement_sim(&mut b);
+    let bm = build_band_map(&b);
+    fidelity_report("p2f_B", &b, &bm);
+    assert!(
+        out.collisions <= BASELINE_RAPID_COLLISIONS,
+        "P2.f SAFETY GATE FAILED: {} rapid collisions vs baseline {}",
+        out.collisions,
+        BASELINE_RAPID_COLLISIONS
+    );
+    assert!(out.finish_total_s > 0.0);
 }
