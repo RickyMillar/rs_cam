@@ -336,6 +336,55 @@ and its innermost offset ring.
       router), not achievable by chaining today's standalone ops. C's
       3.4× removed-volume + overcut signature logged in the ledger as a
       possible standalone slope-window rim-guard defect (not chased).
+- [x] P2.f Task 1: band-fidelity instrument + scallop chord-refinement fix.
+      DONE 2026-07-09 overnight (headless; live eyeball pending).
+      **Corrected root cause**: ring Z was always exact (`ring_to_3d`
+      drop-cutters every vertex) — the beheading was the straight feed
+      CHORDS between exact points (ring spacing ≈ cell×0.75 = 0.56 mm on
+      the Ø6-class setup; knobs narrower than a chord got sliced, valleys
+      chorded over read as leftover). Waterline's version (0.5 mm fibers
+      miss knobs entirely) is ledgered, unfixed — at the locked 45/75
+      dials wanaka's VerySteep band is EMPTY, so scallop was the whole
+      wanaka fix. **Instrument first** (`p2f_fidelity_branch_a/b`):
+      per-band signed deviation histograms rasterized from the planner's
+      own regions, 0.25 mm measurement re-sim, deviation-map PNG + raw
+      f32 dumps for B−A diff maps; artifacts in `target/p2f_fidelity/`.
+      Pre-fix hi-res baseline: mid-steep overcut bins +25–45% vs A,
+      shallow ≈2×, leftover ≥0.3 +48–74%; diff map lights the exact
+      diagonal band the user photographed. **Fix**: adaptive chord
+      refinement in the scallop ring lift — probe kept→kept chords
+      against exact drop-cutter Z every max(cell/2, 0.15 mm), split at
+      the worst-error probe while error > path tolerance (depth 5,
+      0.15 mm floor = half the raster pitch, so it can't re-create the
+      P0 segment-junction blowup); coverage gaps split the run (bonus:
+      no more feeding across holes); flat chords gain zero points
+      (unit-pinned). **Post-fix**: mid-steep + shallow overcut at A
+      PARITY bin-for-bin; mean|B−A| 0.054→0.012 mm; gouge-vs-A cells
+      1955→216. **Honest re-measure: finish −13.1%, project −10.1%
+      (was −16.2%/−12.5% pre-fix), collisions 0** — the ~3-point
+      give-back is real cutting of knobs formerly sliced off. Sweep
+      anchor rows re-run post-fix (see review doc for the table).
+- [x] P2.f Task 2 (live parity) — SOLVED overnight 2026-07-09, pending
+      live re-validation. G-code forensics: descent splits WORK live
+      (G0 to target+1 mm everywhere; the frame-mismatch hypothesis is
+      dead). The live entry_s 6× + "entry moves cutting through stock"
+      = **role-default RAMP ENTRIES**: MCP `add_toolpath` →
+      `DressupConfig::for_op` → `for_role(Finish)` → entry_style Ramp,
+      and `REG_UNIFIED_FINISH` carried ANY_DRESSUP so nothing stripped
+      it — `emit_ramp` then carved 2×~20 mm 3° legs per plunge across
+      the terrain (geometry match: rapid to target+ENTRY_CLEARANCE 2.0,
+      legs at 2.86°; its target-relative rapid floor also rapids below
+      terrain knobs = prime 60-collision suspect). Headless never saw
+      it (op-swap inherits Finish 6's entry_style=none). FIX:
+      UnifiedFinish joins DropCutter/ProjectCurve's strip_all in the
+      registry (+ pin tests updated). REMAINING (needs the user/GUI on
+      the fixed binary): re-add the op live, confirm entry_s ≈ headless
+      + collisions ≈ baseline 4, the retract_strategy no-op question,
+      and the eyeball on the chord-refined stock.
+- [ ] P2.f Task 3 (emission quality): raster serpentine within regions;
+      crease/pencil integration; region-count/min_area floor for tapered
+      tools; waterline sampling clamp (the unfixed half of the fidelity
+      defect); offset_polygon root fix; C's rim-guard suspicion.
 - [ ] P3 morphed spiral strategy + degeneracy fallback
 - [ ] Ledger + FEATURE_CATALOG + memory updates at each landing
 
