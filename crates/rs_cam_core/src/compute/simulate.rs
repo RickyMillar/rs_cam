@@ -250,6 +250,11 @@ pub struct ColumnDeviation {
     pub y: f64,
     /// `column_top_z − model_z` at (x, y) in world frame (mm).
     pub dev: f32,
+    /// Ordinal of the setup group whose stock this column samples.
+    /// Multi-setup projects sample the same world XY once per group —
+    /// consumers comparing branches or binning quality must either
+    /// filter to the relevant group or accept per-group duplicates.
+    pub group: usize,
 }
 
 /// Full result from a stock simulation run.
@@ -527,7 +532,7 @@ where
     // composite mesh shows holes from all setups.
     let mut global_drill_ops: Vec<crate::drill_op::DrillOp> = Vec::new();
 
-    for group in &request.groups {
+    for (group_ordinal, group) in request.groups.iter().enumerate() {
         // Per-setup stock: use local bbox if available, else fall back to global.
         let local_bbox = group
             .local_stock_bbox
@@ -760,7 +765,14 @@ where
             column_deviations.as_mut(),
         ) {
             set_phase("Compute column deviations");
-            collect_column_deviations(&group_stock, &group.local_to_global, index, model, out);
+            collect_column_deviations(
+                &group_stock,
+                &group.local_to_global,
+                index,
+                model,
+                group_ordinal,
+                out,
+            );
         }
 
         // After all toolpaths in this group, extract mesh and composite.
@@ -952,6 +964,7 @@ fn collect_column_deviations(
     local_to_global: &Option<SetupTransformInfo>,
     index: &SpatialIndex,
     model: &TriangleMesh,
+    group: usize,
     out: &mut Vec<ColumnDeviation>,
 ) {
     let grid = &stock.z_grid;
@@ -981,6 +994,7 @@ fn collect_column_deviations(
             x: g.x,
             y: g.y,
             dev: dev as f32,
+            group,
         })
     };
 
