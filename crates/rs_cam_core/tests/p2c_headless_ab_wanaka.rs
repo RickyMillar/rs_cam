@@ -2074,6 +2074,131 @@ fn p2g_dense_env_probe() {
     }
 }
 
+/// P2.g coverage-overlay dump: one B75 chain + measurement sim, then dump
+/// the pointwise column deviations (world frame — the SAME frame as the
+/// band map and the bare-mesh ring dump `p2g_b75_mid_moves.txt`) with
+/// their band codes. Offline overlay answers whether the +.05-bin excess
+/// columns sit in the ring-uncovered / collar zones (the 16.3 % ≈ 8 %
+/// under-coverage + 8 % collar attribution) — and becomes the acceptance
+/// baseline for the collar/coverage fix.
+#[test]
+#[ignore = "one generation ladder + 0.25mm sim; run with --ignored --nocapture"]
+fn p2g_column_overlay_dump() {
+    for (label, op) in [
+        // None = run the project's enabled finish op as-is (the live v2
+        // unified op — B75 family).
+        ("b75", None),
+        (
+            "d",
+            Some(OperationConfig::Scallop(ScallopConfig {
+                scallop_height: 0.011,
+                tolerance: 0.05,
+                direction: ScallopDirection::OutsideIn,
+                continuous: true,
+                slope_from: 0.0,
+                slope_to: 90.0,
+                feed_rate: 3000.0,
+                plunge_rate: 150.0,
+                stock_to_leave: 0.0,
+                spindle_rpm: Some(21000),
+            })),
+        ),
+    ] {
+        column_overlay_dump_branch(label, op);
+    }
+}
+
+fn column_overlay_dump_branch(label: &str, op: Option<OperationConfig>) {
+    use std::io::Write as _;
+
+    let cancel = AtomicBool::new(false);
+    let mut s = ProjectSession::load(&wanaka_project_path()).expect("load wanaka.toml");
+    let n = s.toolpath_count();
+    // Target the ENABLED finish op — the project file evolves under live
+    // sessions (2026-07-09: "3D Finish 6" was disabled in favour of
+    // "Unified Finish 6 (live v2)"), and swapping a disabled slot by its
+    // historical name silently measures the wrong branch.
+    let finish_indices: Vec<usize> = (0..n)
+        .filter(|&i| {
+            s.get_toolpath_config(i)
+                .is_some_and(|tc| tc.enabled && tc.name.contains("Finish"))
+        })
+        .collect();
+    assert_eq!(
+        finish_indices.len(),
+        1,
+        "expected exactly one enabled finish op, found {finish_indices:?}"
+    );
+    let finish_idx = finish_indices[0];
+    eprintln!(
+        "[{label}] targeting enabled finish op '{}'",
+        s.get_toolpath_config(finish_idx).expect("cfg").name
+    );
+    if let Some(op) = op {
+        s.set_toolpath_operation(finish_idx, op).expect("swap op");
+    }
+    let enabled: Vec<usize> = (0..n)
+        .filter(|&i| s.get_toolpath_config(i).is_some_and(|tc| tc.enabled))
+        .collect();
+    let mut pending: Vec<usize> = Vec::new();
+    for &i in &enabled {
+        if s.generate_toolpath(i, &cancel).is_err() {
+            pending.push(i);
+        }
+    }
+    while !pending.is_empty() {
+        s.run_simulation(&SimulationOptions::default(), &cancel)
+            .expect("ladder sim");
+        let before = pending.len();
+        pending.retain(|&i| s.generate_toolpath(i, &cancel).is_err());
+        assert!(pending.len() < before, "ladder stalled: {pending:?}");
+    }
+    run_measurement_sim(&mut s);
+
+    let tc = s.get_toolpath_config(finish_idx).expect("op8 config");
+    let result_state = match s.get_result(finish_idx) {
+        Some(r) => format!("Some(moves={})", r.annotated().toolpath.moves.len()),
+        None => "None".to_owned(),
+    };
+    eprintln!(
+        "[{label}] op8 kind={:?} result={result_state}",
+        tc.operation.op_type()
+    );
+    {
+        let sim = s.simulation_result().expect("sim result");
+        let names: Vec<&str> = sim.boundaries.iter().map(|b| b.name.as_str()).collect();
+        eprintln!("[{label}] sim boundaries: {names:?}");
+    }
+
+    let bm = build_band_map(&s);
+    let sim = s.simulation_result().expect("sim result");
+    let cols = sim
+        .column_deviations
+        .as_ref()
+        .expect("column deviations present");
+    let path = p2f_output_dir().join(format!("p2g_columns_{label}.txt"));
+    let mut f = std::io::BufWriter::new(std::fs::File::create(&path).expect("create dump"));
+    let mut kept = 0usize;
+    for cd in cols {
+        let code = bm.code_at(cd.x, cd.y);
+        if code == 0 {
+            continue;
+        }
+        writeln!(
+            f,
+            "{:.4} {:.4} {:.6} {} {}",
+            cd.x, cd.y, cd.dev, code, cd.group
+        )
+        .expect("write column");
+        kept += 1;
+    }
+    eprintln!(
+        "[{label}] columns total={} on-region={kept} -> {}",
+        cols.len(),
+        path.display()
+    );
+}
+
 /// P2.g LUT-error probe: quantifies `RadialProfileLUT` interpolation error
 /// for the wanaka tapered tool (Ø1 tip on Ø6 shank). The LUT samples
 /// uniformly in dist² over the SHANK radius (256 bins over r²=9), so the
