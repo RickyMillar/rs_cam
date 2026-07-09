@@ -160,7 +160,7 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
     controller
         .compute
         .drained
-        .push(ComputeMessage::Simulation(Ok(SimulationResult {
+        .push(ComputeMessage::Simulation(Ok(Box::new(SimulationResult {
             mesh: rs_cam_core::simulation::StockMesh {
                 vertices: Vec::new(),
                 indices: Vec::new(),
@@ -168,6 +168,7 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
             },
             total_moves: 8,
             deviations: None,
+            column_deviations: None,
             boundaries: vec![crate::compute::worker::SimBoundary {
                 id: ToolpathId(0),
                 name: "Adaptive 3D".to_owned(),
@@ -184,7 +185,7 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
             cut_trace_path: None,
             resolution_clamped: false,
             prior_stocks: std::collections::HashMap::new(),
-        })));
+        }))));
 
     controller.drain_compute_results();
 
@@ -476,7 +477,7 @@ fn simulation_results_capture_setup_boundaries() {
     controller
         .compute
         .drained
-        .push(ComputeMessage::Simulation(Ok(
+        .push(ComputeMessage::Simulation(Ok(Box::new(
             crate::compute::SimulationResult {
                 mesh: rs_cam_core::simulation::StockMesh {
                     vertices: Vec::new(),
@@ -485,6 +486,7 @@ fn simulation_results_capture_setup_boundaries() {
                 },
                 total_moves: 20,
                 deviations: None,
+                column_deviations: None,
                 boundaries: vec![
                     crate::compute::worker::SimBoundary {
                         id: ToolpathId(0),
@@ -512,7 +514,7 @@ fn simulation_results_capture_setup_boundaries() {
                 resolution_clamped: false,
                 prior_stocks: std::collections::HashMap::new(),
             },
-        )));
+        ))));
 
     controller.drain_compute_results();
 
@@ -673,10 +675,11 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
     controller
         .compute
         .drained
-        .push(ComputeMessage::Simulation(Ok(SimulationResult {
+        .push(ComputeMessage::Simulation(Ok(Box::new(SimulationResult {
             mesh,
             total_moves,
             deviations: None,
+            column_deviations: None,
             boundaries,
             checkpoints: Vec::new(),
             playback_data: Vec::new(),
@@ -686,7 +689,7 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
             cut_trace_path: None,
             resolution_clamped: false,
             prior_stocks: std::collections::HashMap::new(),
-        })));
+        }))));
 
     controller.drain_compute_results();
 }

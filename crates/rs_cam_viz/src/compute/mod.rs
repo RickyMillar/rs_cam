@@ -96,7 +96,7 @@ impl From<OperationError> for ComputeError {
 
 pub enum ComputeMessage {
     Toolpath(ComputeResult),
-    Simulation(Result<SimulationResult, ComputeError>),
+    Simulation(Result<Box<SimulationResult>, ComputeError>),
     Collision(Result<CollisionResult, ComputeError>),
     /// Optimize lane completion. Always carries a session for the main
     /// thread to swap back; cancellation produces a `Cancelled` outcome

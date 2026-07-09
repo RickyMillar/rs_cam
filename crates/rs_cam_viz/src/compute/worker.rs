@@ -222,6 +222,12 @@ pub struct SimulationResult {
     pub mesh: StockMesh,
     pub total_moves: usize,
     pub deviations: Option<Vec<f32>>,
+    /// Pointwise per-dexel-column deviations, forwarded verbatim from
+    /// `rs_cam_core::compute::simulate::SimulationResult::column_deviations`.
+    /// The honest instrument for quality metrics — the per-vertex
+    /// `deviations` above are corner-averaged mesh samples suitable for
+    /// display, not histograms (P2.g Task 1).
+    pub column_deviations: Option<Vec<rs_cam_core::compute::simulate::ColumnDeviation>>,
     pub boundaries: Vec<SimBoundary>,
     pub checkpoints: Vec<SimCheckpointMesh>,
     /// Pre-transformed toolpath data for incremental playback.
@@ -812,7 +818,7 @@ fn spawn_analysis_lane(
                         } else {
                             result
                         };
-                        ComputeMessage::Simulation(result)
+                        ComputeMessage::Simulation(result.map(Box::new))
                     }
                     AnalysisRequest::Collision(request) => {
                         let set_phase = |phase: &str| {
