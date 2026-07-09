@@ -430,6 +430,7 @@ where
         mesh: core_result.mesh,
         total_moves: core_result.total_moves,
         deviations: core_result.deviations,
+        column_deviations: core_result.column_deviations,
         boundaries,
         checkpoints,
         playback_data,
