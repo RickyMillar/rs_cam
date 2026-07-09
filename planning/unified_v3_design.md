@@ -15,6 +15,15 @@ Foundations status (both tails CLOSED 2026-07-09 late):
   of columns). The earlier "envelopes equal" counter-evidence was a
   cross-run comparison of different regenerations. v3 A/Bs may trust
   group-filtered FIDELITY-COLUMNS.
+- **The gap's mechanism (same night, offline)**: 97 % of B75's excess is
+  raster-owned FLATS mislabeled mid-steep by the verdict's dilated band
+  map — B75 delivers its raster dial there (0.3 mm → 22.5 µm cusp,
+  deliberate A-parity) while D's over-dense rings (0.171 mm, min-stepover
+  driven by the whole model's steepest points) leave 7.3 µm. Where rings
+  run, B75 == D; on textured steeps BOTH sit at ~5× dial (the true
+  frontier). Three design inputs fall out, folded into §2.2/§2.4/§4
+  below: per-territory cusp-consistent dials, Region-span attribution as
+  a MUST, and texture-on-steeps as the shared quality ceiling.
 - **TP15 collisions**: staleness, not emission — fixed by
   `invalidate_result_chain` (session mutation invalidates downstream
   `FromRemainingStock` results + `DerivedRestRegions` consumers to
@@ -212,6 +221,16 @@ This preserves the shipped op's behavior when the new dials are wide open
 (wall_smoothness_max = ∞ reduces to slope-only), so the A/B can isolate the
 rule's effect.
 
+**Per-territory cusp consistency** (from the +.05-tail RCA): every
+strategy an island routes to derives its stepover from the SAME cusp
+dial and the island's OWN geometry — raster stepover = `√(8·R_tip·h)`
+when the island is finish-quality territory (0.3 mm "A-parity" leaves a
+22.5 µm cusp on the Ø1 tip vs the 0.011 dial), and scallop's
+min-stepover computed over the ISLAND's samples, not the whole model
+(D's global min over-delivers ~2.6× on flats and pays generation + cut
+time for it). Uniform-cusp is the default; per-band override dials stay
+for the speed tier.
+
 ### 2.3 Fused router
 
 Every emitted path — pencil corridor path, contour ring-stack, scallop
@@ -251,6 +270,10 @@ GUI see who cut what. Region ids index into the op report's region table
 ### 2.4 Side-data and spans
 
 - Emit `SpanKind::Region` spans per routed node (id → report table).
+  This is a MUST, not nice-to-have: the +.05-tail RCA showed verdicts
+  re-deriving territory from a dilated band map mislabel raster-owned
+  flats as scallop territory and manufacture phantom quality gaps —
+  attribution must come from the op's own record of who cut what.
 - Carry `rest_grid` + `rest_regions` from the in-op detector to the
   annotated result (same slots the pencil arm uses) so the GUI heatmap and
   `DerivedRestRegions` consumers keep working.
@@ -300,7 +323,11 @@ Metrics, in gate order:
 Measurement rules (hard-won): same-lattice paired columns; assert the
 targeted op is the ENABLED finish op (project file evolves under live
 sessions); never cross-run comparisons of regenerated toolpaths
-(ladder-dependent air-cut filtering changes ~40 moves).
+(ladder-dependent air-cut filtering changes ~40 moves); attribute
+quality by the op's OWN Region spans, never a re-derived (dilated) band
+map; compare branches at equal EFFECTIVE cusp — a branch whose
+min-stepover over-delivers (D on flats) is spending time, not proving
+quality.
 
 ## 5. Risk register
 

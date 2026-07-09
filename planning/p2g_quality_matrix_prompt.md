@@ -369,6 +369,53 @@ DIFFERENT session run — cross-run comparison of different regenerations
 biting one more time. Both old observations were right about different
 objects: window surfaces are phase-equal; band-wide quality differs.
 
+### +.05-TAIL MECHANISM SOLVED (same night, offline from the 3way band dumps)
+
+The B75-vs-D band gap is now fully attributed. Analysis of
+`p2g_3way_{b75,d}_band.txt` (in-run, paired, same lattice) + transect
+pitch measurement from the session move dumps:
+
+1. **97 % of the excess sits on the NEAR-FLAT majority of the "band"**
+   (81 % of band columns read <20° local slope on the machined top!):
+   there B75 is 57.2 % on-size / p50 +7.3 µm vs D 80.3 % / +3.9 µm. On
+   true steeps (≥20°) B75 ≈ D exactly (11.0 % vs 13.2 % on-size).
+2. **Those flats are raster territory, not scallop territory.** Vertical
+   transects show B75 cutting them at pitch 0.300 mm EXACTLY (p10=p90,
+   X-running rows = `raster_stepover`); flat cusp for the Ø1 tip =
+   0.3²/(8·0.5) = **22.5 µm** — the +10..50 bin. The 1.5 mm stripes are
+   the 0.300-vs-0.25 mm sampling beat (0.3·0.25/0.05 = 1.5 mm ✓,
+   X-running ✓). Expected >10 µm share of a 22.5 µm parabolic cusp
+   field ≈ 33 % vs measured 28.2 % ✓.
+3. **The band map mislabels that territory.** The bare-mesh mid-region
+   ring dump covers only 12.8 % of the flat-interior cells — the flats
+   are OUTSIDE the conditioned mid region; they read "mid-steep" in
+   every verdict table only because `decompose` dilates band polygons by
+   `overlap_mm = 2.0` and the band-map rasterization lets steeper bands
+   overwrite. B75 is NOT violating its scallop dial there — it delivers
+   its raster dial (0.3 mm = deliberate A-parity) on raster-owned flats.
+4. **D over-delivers on the same flats**: measured ring pitch 0.171 mm
+   (isotropic) → 7.3 µm cusp, ~2.6× finer than its own 0.011 dial needs
+   — its single per-op min-stepover is set by the steepest/most-curved
+   points of the WHOLE model, so flats inherit steep-driven density
+   (also why D generates slower, 405 s, and cuts slower on flats).
+5. **Where rings actually run, B75 == D bin-for-bin. On textured steeps
+   BOTH sit at p50 ≈ 55–60 µm = 5× dial** — the actual fine-quality
+   frontier is texture-on-steeps, shared by every strategy, not a
+   B75-vs-D differentiator.
+
+Consequences:
+- The "collar/coverage fix" agenda is RETIRED in its old form. The real
+  levers: (a) verdict attribution must use the op's OWN territory
+  (Region spans — v3 design §2.4), not a re-derived dilated band map;
+  (b) if the fine tier wants D's flat finish, the honest dial is
+  raster stepover DERIVED FROM the cusp target for the active tip
+  (√(8·R_tip·h) = 0.21 mm here, ~+40 % raster cutting time) — a policy
+  choice, not a bug fix; (c) quality work beyond that lives on the
+  textured steeps, for both strategies.
+- The 2026-07-09 "16.3 % = 8 % coverage + 8 % collar" numerology stays
+  dead; the honest number is: 23.5 % of dilated-band columns are
+  raster-owned flats where 22.5 µm cusp exceeds the 10 µm on-size edge.
+
 Corollary (Tail 2, same evening): the 20 GUI rapid collisions did NOT
 reproduce headlessly (0 on the current file, fresh generation). The
 mechanism was STALENESS, not emission: live v2 was generated while
