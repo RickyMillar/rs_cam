@@ -1239,3 +1239,50 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   currently the best fine-quality tool in the shop. NEXT: P2.g
   (`planning/p2g_quality_matrix_prompt.md`) — collar fix, band
   economics, posture.
+
+## 2026-07-10 — P2.g Task 1 closed: the fine-tier gap was the measurement mesh
+
+- `p2g_chain_stage_probe` (new harness probe) attributed the persisting
+  B75-vs-D fidelity gap by stage, per dexel column in the bad window,
+  on the REAL chain: rough floors byte-identical; each branch's chain
+  stamping tracks its own exact envelope to sub-µm (z-fix holds in
+  context; rough interaction and the rot90 per-setup frame exonerated);
+  the branch envelopes differ pointwise by ±55 µm but ONLY as
+  ring/chord lattice phase texture — local mean 0.0–0.2 µm at every
+  smoothing scale 0.75–3.25 mm.
+- The instrument's +5.4 µm median B75 shift is uncorrelated (r ≈ 0 at
+  every scale) with the true stock difference and carries stripe
+  structure the stocks don't have → measurement artifact. Mechanism:
+  deviations are measured on mesh vertices; the z-grid mesh sets vertex
+  heights to corner-bilinear means of 2×2 dexel tops
+  (`dexel_mesh_mc::z_grid_marching_cubes`), plus X/Y side-grid meshes
+  on steep flanks. Vertex sampling filters machined texture by phase
+  coherence vs the grid: B75's grid-locked ridges survive the average,
+  D's phase-diverse silhouette rings cancel — D's "on-size 92 %" was
+  fake smoothness, not better machining. Resolution-independent, hence
+  the 0.21 mm rerun changed nothing.
+- Ground truth: dense 0.05 mm envelope sampling over the window
+  (`p2g_dense_env_probe`, 70 k points, model-free quantile compare)
+  puts B75−D at ±11 µm per quantile, mean −1.4 µm — the surfaces are
+  equal WHERE RINGS RUN. But the honest pointwise COLUMNS table shows
+  a real band-wide gap: B75's +.05-bin excess over D is 13 506 columns
+  = 844 mm² = 16.3 % of the mid-steep band — matching the known ~8 %
+  ring under-coverage plus ~8 % collar share, cut at raster-on-slope
+  cusp (~0.034). FINAL: B75 holds D's quality on the ~84 % its rings
+  cover, hands ~16 % to raster/collar quality, at 6 % less time.
+  Yesterday's verdict splits: "D wins everywhere" was instrument
+  artifact, but D does win the uncovered 16 % — the original collar
+  fix is resurrected as the remaining lever, now precisely sized.
+- Instrument fix landed: `SimulationResult::column_deviations` —
+  pointwise per-dexel-column top vs model (world frame, per-setup
+  transform, same relevance semantics as the vertex pass) + a
+  FIDELITY-COLUMNS table in the harness `fidelity_report` + sentry
+  `column_deviations_pointwise_against_flat_model`. Vertex deviations
+  remain for GUI display; quality verdicts read COLUMNS from now on.
+- Dead lead closed: `set_toolpath_operation` dressup-policy gap is
+  invalid — `normalize_for_op` has run on op swap since 06468a8;
+  `arc_fitting: true` surviving strip-all is by design and
+  branch-symmetric (arcs were exonerated twice anyway).
+- Open (Task 2/3): 670 s-vs-405 s region-scallop generation, per-band
+  time attribution, posture + live-collision tail, ~8 % ring
+  under-coverage, FEATURE_CATALOG rewrite from the COLUMNS table.

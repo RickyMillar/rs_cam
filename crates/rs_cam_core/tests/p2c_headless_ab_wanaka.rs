@@ -556,6 +556,53 @@ fn fidelity_report(tag: &str, s: &ProjectSession, bm: &BandMap) {
         dev_path.display(),
         composite_path.display()
     );
+
+    // Pointwise per-dexel-column table — the honest instrument. The vertex
+    // table above measures on corner-averaged mesh heights, which filter
+    // machined texture by its phase coherence vs the dexel grid (P2.g
+    // Task 1: grid-locked ridges survive the 2×2 average, phase-diverse
+    // ones cancel — a fake branch-dependent histogram shift). Columns
+    // sample each dexel top directly.
+    if let Some(cols) = sim.column_deviations.as_ref() {
+        let mut caccs = [BandAcc::default(); 4];
+        for cd in cols {
+            let code = bm.code_at(cd.x, cd.y) as usize;
+            let a = &mut caccs[code];
+            a.bins[bin_of(cd.dev)] += 1;
+            if cd.dev > EPS {
+                a.leftover_n += 1;
+                a.leftover_sum += f64::from(cd.dev);
+                a.leftover_max = a.leftover_max.max(cd.dev);
+            } else if cd.dev < -EPS {
+                a.overcut_n += 1;
+                a.overcut_sum += f64::from(cd.dev);
+                a.overcut_min = a.overcut_min.min(cd.dev);
+            }
+        }
+        eprintln!("== P2.f FIDELITY-COLUMNS [{tag}] (pointwise dexel tops; negative = overcut) ==");
+        for (code, acc) in caccs.iter().enumerate() {
+            let over_mean = acc.overcut_sum / (acc.overcut_n as f64).max(1.0);
+            let left_mean = acc.leftover_sum / (acc.leftover_n as f64).max(1.0);
+            let hist: Vec<String> = DEV_BIN_LABELS
+                .iter()
+                .zip(acc.bins.iter())
+                .map(|(l, n)| format!("{l}:{n}"))
+                .collect();
+            eprintln!(
+                "{:<11} | {:>9} {:>9.4} {:>8.4} | {:>9} {:>9.4} {:>8.4} | {}",
+                BAND_NAMES[code],
+                acc.overcut_n,
+                over_mean,
+                acc.overcut_min,
+                acc.leftover_n,
+                left_mean,
+                acc.leftover_max,
+                hist.join(" ")
+            );
+        }
+    } else {
+        eprintln!("[{tag}] column deviations unavailable");
+    }
 }
 
 /// The B-branch dials. Quality parity with A on the band each strategy
@@ -1461,6 +1508,568 @@ fn p2g_stamp_probe() {
             q(0.90),
             q(0.99),
             100.0 * over5 as f64 / errs.len() as f64
+        );
+    }
+}
+
+/// P2.g chain-stage attribution probe — follow-up to `p2g_stamp_probe`
+/// after the z-fix acceptance rerun showed the instrument gap SURVIVES
+/// envelope-exact stamping (B75 mid-steep on-size 30 713 vs D 44 366;
+/// on-size + first-leftover-bin sums nearly equal → a ~5–10 µm shift at
+/// the +0.01 edge). Isolated op-8 stamping is clean and the branch
+/// toolpaths are geometrically equal, so the divergence must enter in
+/// the FULL-CHAIN path between "op-8 stamps on fresh stock" and the
+/// per-vertex deviations. This probe runs the real chain per branch and
+/// reads every intermediate the simulator retains, per dexel-grid cell
+/// in the bad window (sess frame [78.35,90.35]×[98.05,110.05]):
+///
+///   rough = `prior_stocks[op8]` z-grid top       (floor op-8 inherits)
+///   post  = `prior_stocks[successor]` z-grid top (floor op-8 leaves)
+///   env   = exact-profile envelope of op-8's generated moves
+///   mesh  = max measurement-mesh vertex z bucketed to the same cell
+///   dev   = signed max-|deviation| of those vertices
+///
+/// Within-branch, `post − min(rough, env)` isolates chain stamping
+/// (rough-aware); `mesh − post` isolates the meshing/deviation stage
+/// (cells any LATER op's envelope could touch are excluded). Cross-
+/// branch per-cell deltas at each stage show WHERE the B75−D shift
+/// first appears: rough (ladder divergence), env (generation), post
+/// (chain stamping), mesh/dev (measurement).
+#[test]
+#[ignore = "two full generation ladders + 0.25mm measurement sims; run with --ignored --nocapture"]
+fn p2g_chain_stage_probe() {
+    use std::collections::HashMap;
+    use std::io::Write as _;
+
+    use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
+    use rs_cam_core::toolpath::{MoveType, Toolpath};
+
+    // Bad window (sess/emission frame), same as `p2g_stamp_probe`.
+    const WX0: f64 = 78.35;
+    const WY0: f64 = 98.05;
+    const WX1: f64 = 90.35;
+    const WY1: f64 = 110.05;
+    // sess → model frame (2026-07-09 transform scan, rot90 setup):
+    // model_x = sess_y − 21.25, model_y = 126.25 − sess_x,
+    // model_z = sess_z − 20.
+    const SESS_X_FROM_MODEL_Y: f64 = 126.25;
+    const SESS_Y_OFFSET: f64 = 21.25;
+    const SESS_Z_OFFSET: f64 = 20.0;
+    /// Ownership margin between rough floor and finish envelope (mm).
+    const OWNER_EPS: f64 = 0.02;
+
+    #[derive(Clone, Copy)]
+    struct Cell {
+        x: f64,
+        y: f64,
+        rough: f64,
+        post: f64,
+        env: f64,
+        /// min over all LATER ops' envelopes (could they lower this cell?)
+        env_after: f64,
+        /// max mesh vertex z in this cell, sess frame
+        mesh_top: f64,
+        /// signed max-|deviation| of this cell's vertices
+        dev: f32,
+        nverts: usize,
+    }
+
+    let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+
+    // Exact-profile envelope of a toolpath's cutting moves at (qx, qy) —
+    // same construction as `p2g_stamp_probe`.
+    let envelope = |tp: &Toolpath, qx: f64, qy: f64| -> f64 {
+        let mut best = f64::INFINITY;
+        let r_max = cutter.radius();
+        let mut prev: Option<rs_cam_core::geo::P3> = None;
+        for m in &tp.moves {
+            let t = m.target;
+            if let (Some(a), false) = (prev, matches!(m.move_type, MoveType::Rapid))
+                && !(a.x.max(t.x) < qx - r_max
+                    || a.x.min(t.x) > qx + r_max
+                    || a.y.max(t.y) < qy - r_max
+                    || a.y.min(t.y) > qy + r_max)
+            {
+                let seg = ((t.x - a.x).powi(2) + (t.y - a.y).powi(2)).sqrt();
+                let n = ((seg / 0.02).ceil() as usize).max(1);
+                for k in 0..=n {
+                    let f = k as f64 / n as f64;
+                    let px = a.x + f * (t.x - a.x);
+                    let py = a.y + f * (t.y - a.y);
+                    let pz = a.z + f * (t.z - a.z);
+                    let d = ((px - qx).powi(2) + (py - qy).powi(2)).sqrt();
+                    if d <= r_max
+                        && let Some(h) = cutter.height_at_radius(d)
+                    {
+                        best = best.min(pz + h);
+                    }
+                }
+            }
+            prev = Some(t);
+        }
+        best
+    };
+
+    let pct = |v: &[f64], p: f64| -> f64 {
+        if v.is_empty() {
+            return f64::NAN;
+        }
+        v[((v.len() - 1) as f64 * p) as usize] * 1000.0
+    };
+    let sorted = |mut v: Vec<f64>| -> Vec<f64> {
+        v.sort_by(|a, b| a.partial_cmp(b).expect("no NaN"));
+        v
+    };
+
+    let cancel = AtomicBool::new(false);
+    let run = |label: &str, op: OperationConfig| -> HashMap<(usize, usize), Cell> {
+        let mut s = ProjectSession::load(&wanaka_project_path()).expect("load wanaka.toml");
+        let n = s.toolpath_count();
+        let finish_idx = (0..n)
+            .find(|&i| {
+                s.get_toolpath_config(i)
+                    .is_some_and(|tc| tc.name == FINISH_OP_NAME)
+            })
+            .expect("wanaka must contain '3D Finish 6'");
+        s.set_toolpath_operation(finish_idx, op).expect("swap op");
+        let enabled: Vec<usize> = (0..n)
+            .filter(|&i| s.get_toolpath_config(i).is_some_and(|tc| tc.enabled))
+            .collect();
+        let mut pending: Vec<usize> = Vec::new();
+        for &i in &enabled {
+            if s.generate_toolpath(i, &cancel).is_err() {
+                pending.push(i);
+            }
+        }
+        while !pending.is_empty() {
+            s.run_simulation(&SimulationOptions::default(), &cancel)
+                .expect("ladder sim");
+            let before = pending.len();
+            pending.retain(|&i| s.generate_toolpath(i, &cancel).is_err());
+            assert!(pending.len() < before, "ladder stalled: {pending:?}");
+        }
+        run_measurement_sim(&mut s);
+
+        let op8_id = s.get_toolpath_config(finish_idx).expect("op8 config").id;
+        let sim = s.simulation_result().expect("sim result");
+        let pos = sim
+            .boundaries
+            .iter()
+            .position(|b| b.id == op8_id)
+            .expect("op8 boundary");
+        let rough_arc = sim.prior_stocks.get(&op8_id).expect("op8 prior stock");
+        let rough = &rough_arc.z_grid;
+
+        let ann = s.get_result(finish_idx).expect("op8 generated").annotated();
+        let tp = &ann.toolpath;
+
+        // Op-8 is the LAST op in the wanaka chain, so no successor
+        // prior-stock snapshot captures the post-op8 state. Reproduce it
+        // by re-stamping op-8's generated toolpath onto a clone of its
+        // prior stock through the SAME metrics stamping path (and span /
+        // transit inputs) the measurement sim used — deterministic, so
+        // this is byte-faithful to the sim's final group stock.
+        let intent_transits = ann.transit_moves_bitmap_from_intents();
+        let (span_paths_by_move, transit_moves) = if ann.spans_valid {
+            let mut transit = ann.transit_moves_bitmap();
+            for (slot, from_intent) in transit.iter_mut().zip(intent_transits) {
+                *slot = *slot || from_intent;
+            }
+            (ann.span_paths_by_move(), transit)
+        } else {
+            (
+                vec![Vec::new(); tp.moves.len()],
+                ann.transit_moves_bitmap_from_intents(),
+            )
+        };
+        let mut post_stock = (**rough_arc).clone();
+        let lut = rs_cam_core::radial_profile::RadialProfileLUT::from_cutter(
+            &cutter,
+            rs_cam_core::radial_profile::LUT_SAMPLES,
+        );
+        let never_cancel = || false;
+        post_stock
+            .simulate_toolpath_with_lut_metrics_cancel(
+                tp,
+                &lut,
+                &cutter,
+                cutter.radius(),
+                rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+                rs_cam_core::ToolpathId(0),
+                21_000,
+                2,
+                5000.0,
+                0.25,
+                None,
+                &span_paths_by_move,
+                &transit_moves,
+                false,
+                &never_cancel,
+            )
+            .expect("re-stamp op8 onto prior stock");
+        let post = &post_stock.z_grid;
+        eprintln!(
+            "[{label}] op8 boundary #{pos} (last={}); grid {}x{} cell={:.6} origin=({:.4},{:.4})",
+            pos + 1 == sim.boundaries.len(),
+            rough.rows,
+            rough.cols,
+            rough.cell_size,
+            rough.origin_u,
+            rough.origin_v
+        );
+
+        let mut cells: HashMap<(usize, usize), Cell> = HashMap::new();
+        for row in 0..rough.rows {
+            for col in 0..rough.cols {
+                let (x, y) = rough.cell_to_world(row, col);
+                if !(WX0..=WX1).contains(&x) || !(WY0..=WY1).contains(&y) {
+                    continue;
+                }
+                let (Some(rt), Some(pt)) = (rough.top_z_at(row, col), post.top_z_at(row, col))
+                else {
+                    continue;
+                };
+                cells.insert(
+                    (row, col),
+                    Cell {
+                        x,
+                        y,
+                        rough: f64::from(rt),
+                        post: f64::from(pt),
+                        env: envelope(tp, x, y),
+                        env_after: f64::INFINITY,
+                        mesh_top: f64::NEG_INFINITY,
+                        dev: f32::NAN,
+                        nverts: 0,
+                    },
+                );
+            }
+        }
+
+        // Envelopes of every LATER op: cells a later op could lower are
+        // excluded from the mesh-stage stats (post is not final there).
+        for later in &sim.boundaries[pos + 1..] {
+            let later_idx = (0..n)
+                .find(|&i| s.get_toolpath_config(i).is_some_and(|tc| tc.id == later.id))
+                .expect("later boundary has a config");
+            if let Some(res) = s.get_result(later_idx) {
+                let ltp = &res.annotated().toolpath;
+                for c in cells.values_mut() {
+                    c.env_after = c.env_after.min(envelope(ltp, c.x, c.y));
+                }
+            }
+        }
+
+        // Mesh + deviation stage: bucket measurement-mesh vertices into
+        // the same grid cells (model → sess frame).
+        let devs = sim.deviations.as_ref().expect("deviations");
+        let verts = &sim.mesh.vertices;
+        let mut window_bins = [0usize; DEV_BIN_COUNT];
+        let mut window_verts = 0usize;
+        // Per-vertex ground-truth dump: `vz − dev` is the model's exact
+        // surface z at the vertex xy (dev is defined as vz − model_z), and
+        // `env_sess` is the exact machined-surface z at the same xy. Their
+        // difference (modulo the constant sess→model z offset, identical
+        // for both branches) is the TRUE leftover at vertex sampling —
+        // immune to the corner-averaged vertex z the deviations use.
+        let vpath = p2f_output_dir().join(format!("p2g_chain_{label}_verts.txt"));
+        let mut vf =
+            std::io::BufWriter::new(std::fs::File::create(&vpath).expect("create vert dump"));
+        for (i, &d) in devs.iter().enumerate() {
+            let vx = f64::from(verts[i * 3]);
+            let vy = f64::from(verts[i * 3 + 1]);
+            let vz = f64::from(verts[i * 3 + 2]);
+            let sx = SESS_X_FROM_MODEL_Y - vy;
+            let sy = vx + SESS_Y_OFFSET;
+            if !(WX0..=WX1).contains(&sx) || !(WY0..=WY1).contains(&sy) {
+                continue;
+            }
+            if d != 0.0 {
+                window_verts += 1;
+                let bin = DEV_EDGES
+                    .iter()
+                    .position(|&e| d < e)
+                    .unwrap_or(DEV_BIN_COUNT - 1);
+                window_bins[bin] += 1;
+                let env_v = envelope(tp, sx, sy);
+                writeln!(vf, "{vx:.4} {vy:.4} {vz:.6} {d:.6} {env_v:.6}",).expect("write vert");
+            }
+            if let Some(key) = rough.world_to_cell(sx, sy)
+                && let Some(cell) = cells.get_mut(&key)
+            {
+                cell.mesh_top = cell.mesh_top.max(vz + SESS_Z_OFFSET);
+                cell.nverts += 1;
+                if d != 0.0 && (cell.dev.is_nan() || d.abs() > cell.dev.abs()) {
+                    cell.dev = d;
+                }
+            }
+        }
+        drop(vf);
+        eprintln!("[{label}] vert dump -> {}", vpath.display());
+
+        // Within-branch stage errors.
+        let mut e_env = Vec::new();
+        let mut e_rough = Vec::new();
+        let mut e_cont = Vec::new();
+        let mut e_mesh = Vec::new();
+        let mut mesh_excluded = 0usize;
+        for c in cells.values() {
+            if c.env.is_finite() {
+                let e = c.post - c.rough.min(c.env);
+                if c.env < c.rough - OWNER_EPS {
+                    e_env.push(e);
+                } else if c.env > c.rough + OWNER_EPS {
+                    e_rough.push(e);
+                } else {
+                    e_cont.push(e);
+                }
+            }
+            if c.mesh_top > f64::NEG_INFINITY {
+                if c.env_after < c.post + 0.005 {
+                    mesh_excluded += 1;
+                } else {
+                    e_mesh.push(c.mesh_top - c.post);
+                }
+            }
+        }
+        let (e_env, e_rough, e_cont, e_mesh) = (
+            sorted(e_env),
+            sorted(e_rough),
+            sorted(e_cont),
+            sorted(e_mesh),
+        );
+        eprintln!(
+            "[{label}] cells={} | post-min(rough,env) um p10/p50/p90: env-owned n={} {:.1}/{:.1}/{:.1} | rough-owned n={} {:.1}/{:.1}/{:.1} | contested n={} {:.1}/{:.1}/{:.1}",
+            cells.len(),
+            e_env.len(),
+            pct(&e_env, 0.10),
+            pct(&e_env, 0.50),
+            pct(&e_env, 0.90),
+            e_rough.len(),
+            pct(&e_rough, 0.10),
+            pct(&e_rough, 0.50),
+            pct(&e_rough, 0.90),
+            e_cont.len(),
+            pct(&e_cont, 0.10),
+            pct(&e_cont, 0.50),
+            pct(&e_cont, 0.90),
+        );
+        eprintln!(
+            "[{label}] mesh-post um (later-op-safe cells only, n={} excl={}): p10={:.1} p50={:.1} p90={:.1}",
+            e_mesh.len(),
+            mesh_excluded,
+            pct(&e_mesh, 0.10),
+            pct(&e_mesh, 0.50),
+            pct(&e_mesh, 0.90),
+        );
+        let hist: Vec<String> = DEV_BIN_LABELS
+            .iter()
+            .zip(window_bins.iter())
+            .map(|(l, n)| format!("{l}:{n}"))
+            .collect();
+        eprintln!("[{label}] window devs n={window_verts}: {}", hist.join(" "));
+
+        // Per-cell dump for offline analysis.
+        let path = p2f_output_dir().join(format!("p2g_chain_{label}_cells.txt"));
+        let mut f = std::io::BufWriter::new(std::fs::File::create(&path).expect("create dump"));
+        let mut keys: Vec<&(usize, usize)> = cells.keys().collect();
+        keys.sort();
+        for k in keys {
+            let c = &cells[k];
+            writeln!(
+                f,
+                "{} {} {:.4} {:.4} {:.6} {:.6} {:.6} {:.6} {:.6} {:.6} {}",
+                k.0,
+                k.1,
+                c.x,
+                c.y,
+                c.rough,
+                c.post,
+                c.env,
+                c.env_after,
+                c.mesh_top,
+                c.dev,
+                c.nverts
+            )
+            .expect("write cell");
+        }
+        eprintln!("[{label}] cell dump -> {}", path.display());
+        cells
+    };
+
+    let map_b = run("b75", OperationConfig::UnifiedFinish(ab_unified_config()));
+    let map_d = run(
+        "d",
+        OperationConfig::Scallop(ScallopConfig {
+            scallop_height: 0.011,
+            tolerance: 0.05,
+            direction: ScallopDirection::OutsideIn,
+            continuous: true,
+            slope_from: 0.0,
+            slope_to: 90.0,
+            feed_rate: 3000.0,
+            plunge_rate: 150.0,
+            stock_to_leave: 0.0,
+            spindle_rpm: Some(21000),
+        }),
+    );
+
+    // Cross-branch stage deltas on common cells: the stage where B75−D
+    // first departs from ~0 is the mechanism.
+    let mut d_rough = Vec::new();
+    let mut d_env = Vec::new();
+    let mut d_post = Vec::new();
+    let mut d_mesh = Vec::new();
+    let mut d_dev = Vec::new();
+    for (k, cb) in &map_b {
+        let Some(cd) = map_d.get(k) else { continue };
+        d_rough.push(cb.rough - cd.rough);
+        d_post.push(cb.post - cd.post);
+        if cb.env.is_finite() && cd.env.is_finite() {
+            d_env.push(cb.env - cd.env);
+        }
+        if cb.mesh_top > f64::NEG_INFINITY
+            && cd.mesh_top > f64::NEG_INFINITY
+            && cb.env_after >= cb.post + 0.005
+            && cd.env_after >= cd.post + 0.005
+        {
+            d_mesh.push(cb.mesh_top - cd.mesh_top);
+        }
+        if !cb.dev.is_nan() && !cd.dev.is_nan() {
+            d_dev.push(f64::from(cb.dev) - f64::from(cd.dev));
+        }
+    }
+    eprintln!("== P2.g CHAIN STAGE DELTAS (B75 − D, um, per common cell) ==");
+    for (name, v) in [
+        ("rough", d_rough),
+        ("env", d_env),
+        ("post", d_post),
+        ("mesh", d_mesh),
+        ("dev", d_dev),
+    ] {
+        let v = sorted(v);
+        let over2 = v.iter().filter(|&&e| e.abs() > 0.002).count();
+        let over5 = v.iter().filter(|&&e| e.abs() > 0.005).count();
+        eprintln!(
+            "{name:<6} n={:<5} p10={:>7.1} p50={:>7.1} p90={:>7.1} | |d|>2um {:.1}% |d|>5um {:.1}%",
+            v.len(),
+            pct(&v, 0.10),
+            pct(&v, 0.50),
+            pct(&v, 0.90),
+            100.0 * over2 as f64 / (v.len() as f64).max(1.0),
+            100.0 * over5 as f64 / (v.len() as f64).max(1.0),
+        );
+    }
+}
+
+/// P2.g dense-envelope probe — evaluates both branches' exact machined
+/// envelopes on a DENSE 0.05 mm grid over the bad window (from the
+/// current `p2g_sess_*_moves.txt` dumps — no session, no chains) and
+/// dumps f32 grids for offline ground-truth analysis.
+///
+/// RESULT (2026-07-10): the dense quantile comparison (70 k points,
+/// model-free) put B75−D at ±11 µm per quantile, mean −1.4 µm — the
+/// true surfaces are EQUAL in this (ring-covered) window, killing the
+/// vertex instrument's in-window gap as artifact. The band-wide COLUMNS
+/// gap that remains (+.05-bin excess 13 506 columns = 16.3 % of the
+/// mid-steep band) is REAL and matches the known ring under-coverage
+/// (~8 %) + collar share (~8 %) cut at raster cusp — the collar /
+/// coverage fix, not an instrument problem.
+#[test]
+#[ignore = "needs target/p2f_fidelity/p2g_sess_*_moves.txt; ~2 min; run with --ignored --nocapture"]
+fn p2g_dense_env_probe() {
+    use rs_cam_core::geo::P3;
+    use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
+
+    const WX0: f64 = 78.35;
+    const WY0: f64 = 98.05;
+    const WX1: f64 = 90.35;
+    const WY1: f64 = 110.05;
+    const MARGIN: f64 = 0.6;
+    const STEP: f64 = 0.05;
+
+    let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+    let r_max = cutter.radius();
+
+    for tag in ["b75", "d"] {
+        let path = p2f_output_dir().join(format!("p2g_sess_{tag}_moves.txt"));
+        let text = std::fs::read_to_string(&path).expect("run p2g_session_op8_dump first");
+        // Cutting segments only (skip rapids), as (start, end) pairs.
+        let mut segs: Vec<(P3, P3)> = Vec::new();
+        let mut prev: Option<P3> = None;
+        for line in text.lines() {
+            let p: Vec<&str> = line.split_whitespace().collect();
+            let target = P3::new(
+                p[2].parse().expect("x"),
+                p[3].parse().expect("y"),
+                p[4].parse().expect("z"),
+            );
+            if p[0] != "R"
+                && let Some(a) = prev
+            {
+                segs.push((a, target));
+            }
+            prev = Some(target);
+        }
+        // Bucket segments by x-span for fast queries.
+        let gx0 = WX0 - MARGIN - r_max;
+        let ncols = (((WX1 + MARGIN + r_max) - gx0) / 1.0).ceil() as usize + 1;
+        let mut buckets: Vec<Vec<usize>> = vec![Vec::new(); ncols];
+        for (i, (a, b)) in segs.iter().enumerate() {
+            let lo = (a.x.min(b.x) - r_max - gx0).max(0.0) as usize;
+            let hi = (((a.x.max(b.x) + r_max - gx0) as usize) + 1).min(ncols - 1);
+            for bucket in buckets.iter_mut().take(hi + 1).skip(lo) {
+                bucket.push(i);
+            }
+        }
+
+        let nx = (((WX1 + MARGIN) - (WX0 - MARGIN)) / STEP).round() as usize + 1;
+        let ny = (((WY1 + MARGIN) - (WY0 - MARGIN)) / STEP).round() as usize + 1;
+        let mut grid: Vec<f32> = vec![f32::NAN; nx * ny];
+        for iy in 0..ny {
+            let qy = WY0 - MARGIN + iy as f64 * STEP;
+            for ix in 0..nx {
+                let qx = WX0 - MARGIN + ix as f64 * STEP;
+                let mut best = f64::INFINITY;
+                #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+                let bi = ((qx - gx0).max(0.0) as usize).min(ncols - 1);
+                for &si in &buckets[bi] {
+                    let (a, t) = segs[si];
+                    if a.x.max(t.x) < qx - r_max
+                        || a.x.min(t.x) > qx + r_max
+                        || a.y.max(t.y) < qy - r_max
+                        || a.y.min(t.y) > qy + r_max
+                    {
+                        continue;
+                    }
+                    let seg = ((t.x - a.x).powi(2) + (t.y - a.y).powi(2)).sqrt();
+                    let n = ((seg / 0.02).ceil() as usize).max(1);
+                    for k in 0..=n {
+                        let f = k as f64 / n as f64;
+                        let px = a.x + f * (t.x - a.x);
+                        let py = a.y + f * (t.y - a.y);
+                        let pz = a.z + f * (t.z - a.z);
+                        let d = ((px - qx).powi(2) + (py - qy).powi(2)).sqrt();
+                        if d <= r_max
+                            && let Some(h) = cutter.height_at_radius(d)
+                        {
+                            best = best.min(pz + h);
+                        }
+                    }
+                }
+                if best.is_finite() {
+                    grid[iy * nx + ix] = best as f32;
+                }
+            }
+        }
+        let out = p2f_output_dir().join(format!("p2g_dense_env_{tag}_{ny}x{nx}.f32"));
+        let bytes: Vec<u8> = grid.iter().flat_map(|v| v.to_le_bytes()).collect();
+        std::fs::write(&out, bytes).expect("write dense env grid");
+        eprintln!(
+            "[{tag}] dense env {ny}x{nx} step {STEP} origin=({:.4},{:.4}) -> {}",
+            WX0 - MARGIN,
+            WY0 - MARGIN,
+            out.display()
         );
     }
 }
