@@ -333,3 +333,51 @@ LESSON (8×): a "ground truth" validated only against artifacts computed
 from the same inputs is circular. The sim's stock and the stored
 toolpath are not guaranteed to be the same object — measure the
 as-stamped geometry.
+
+---
+
+## VERDICT 2026-07-09 late — three-way probe CLOSED the contradiction
+
+`p2g_three_way_probe` (in the harness; targets the ENABLED finish op)
+ran both branches with all four measurements in ONE run each.
+`ColumnDeviation` now carries `top_z` + grid `row`/`col` — the first run
+proved frame round-tripping scrambles the cd→cell mapping (a shift-scan
+found no clean offset); index by the recorded grid coords, never by
+inverse-transforming world XY.
+
+Within EACH branch, everything agrees:
+
+- **(a)=(d)** pre-sim vs post-sim toolpath: same `Arc`, 0/127 235 (b75)
+  and 0/117 204 (d) differing moves — NO post-sim mutation; the air-cut
+  filter is innocent within a run.
+- **(c)=(b)** sim's own column tops vs isolated re-stamp: 0.0 µm at
+  p10/p50/p90, 0 % beyond 2 µm, over all 159 792 columns — the sim's
+  chain stamping IS an exact re-stamp of the as-read toolpath.
+- **(b)≈(a)** re-stamp vs exact envelope: p50 0.0 / p90 ≤1.0 µm.
+
+Cross-branch, `sim_top(B)−sim_top(D)` ≡ `post(B)−post(D)` (identical to
+the digit): mid-steep p10/p50/p90 = −18.0/+1.9/+20.1 µm with fat tails
+(|d|>10 µm on 40.6 % of columns); in-run on-size shares reproduce
+48.5 % (B75) vs 67.7 % (D). Window envelopes remain the ±55 µm
+phase-texture with median −0.3 µm.
+
+**Resolution: the COLUMNS instrument is trustworthy and the B75-vs-D gap
+is REAL machined geometry.** The "exact envelopes are equal (mean
+−1.3 µm)" evidence was computed from `p2g_sess_*` move dumps of a
+DIFFERENT session run — cross-run comparison of different regenerations
+(the known ~40-move ladder-dependent air-cut variance), i.e. LESSON 8
+biting one more time. Both old observations were right about different
+objects: window surfaces are phase-equal; band-wide quality differs.
+
+Corollary (Tail 2, same evening): the 20 GUI rapid collisions did NOT
+reproduce headlessly (0 on the current file, fresh generation). The
+mechanism was STALENESS, not emission: live v2 was generated while
+"3D Finish 6" was enabled upstream; `optimize_entry_descents` baked
+descents against that deeper prior stock (19.996 = old ceiling 17.996 +
+2 mm); the 13:27 disable kept the cached result and the next sim ran it
+against taller stock. FIX: `invalidate_result_chain` /
+`invalidate_output_dependents` in session mutation — chain edits
+(enable-toggle, param/dressup/heights/boundary/stock-source edits,
+reorder/move/remove) now invalidate downstream `FromRemainingStock`
+results and `DerivedRestRegions` consumers to fixpoint; sentries in
+`session/mutation.rs` tests.

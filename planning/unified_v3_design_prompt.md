@@ -89,6 +89,19 @@ and the GUI can all see who cut what.
 
 ## OPEN TAILS — do these FIRST (both sit under v3's foundations)
 
+> **STATUS 2026-07-09 late: BOTH TAILS CLOSED.** (1) Three-way probe
+> (`p2g_three_way_probe`): instrument TRUSTWORTHY, gap REAL — pre==read
+> toolpath (same Arc, 0 move diffs), sim tops == re-stamp EXACTLY (0.0 µm,
+> 159 792 columns), and the cross-branch stock delta equals the re-stamp
+> delta to the digit; the "envelopes equal" contradiction was a CROSS-RUN
+> comparison of different regenerations. (2) The 20 collisions did NOT
+> reproduce headlessly (0, fresh generation) — mechanism was STALENESS:
+> live v2's cached result (descents baked against pre-13:27 stock with
+> "3D Finish 6" enabled) survived the disable. FIX:
+> `invalidate_result_chain` in session mutation + sentries. Full verdicts:
+> `planning/p2g_quality_matrix_prompt.md` (VERDICT block) and the design
+> doc `planning/unified_v3_design.md`.
+
 1. **The instrument contradiction** (P2.g Task 1, reopened): the sim's
    stamped stocks show unified 48.5 % on-size vs D 67.7 % band-wide
    (real, paired, reproduces on the live v2 op), but the exact
