@@ -40,7 +40,6 @@ use rs_cam_core::session::{ProjectSession, SimulationOptions};
 
 /// Pre-existing full-chain collision count (P0/P1 baseline, 2026-07-07).
 const BASELINE_RAPID_COLLISIONS: usize = 4;
-const FINISH_OP_NAME: &str = "3D Finish 6";
 
 fn wanaka_project_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -51,10 +50,37 @@ fn wanaka_project_path() -> PathBuf {
         .join("wanaka.toml")
 }
 
+/// Resolve the single ENABLED toolpath whose name contains "Finish" —
+/// wanaka.toml is user-live and evolves under live sessions (2026-07-09:
+/// "3D Finish 6" was disabled in favour of "Unified Finish 6 (live v2)"),
+/// so probes must target the enabled slot by role, not by a name pinned to
+/// history. Panics if zero or more than one enabled finish op is found.
+fn enabled_finish_index(s: &ProjectSession) -> usize {
+    let n = s.toolpath_count();
+    let finish_indices: Vec<usize> = (0..n)
+        .filter(|&i| {
+            s.get_toolpath_config(i)
+                .is_some_and(|tc| tc.enabled && tc.name.contains("Finish"))
+        })
+        .collect();
+    assert_eq!(
+        finish_indices.len(),
+        1,
+        "expected exactly one enabled finish op, found {finish_indices:?}"
+    );
+    let idx = finish_indices[0];
+    eprintln!(
+        "targeting enabled finish op '{}'",
+        s.get_toolpath_config(idx).expect("cfg").name
+    );
+    idx
+}
+
 struct ChainOutcome {
     project_total_s: f64,
-    /// Sum over every op named [`FINISH_OP_NAME`] — branch C splits the
-    /// finish pass into two same-named ops, so this is a += accumulation.
+    /// Sum over every op sharing the resolved enabled finish op's NAME —
+    /// branch C splits the finish pass into two same-named ops, so this is
+    /// a += accumulation (see `run_chain`).
     finish_total_s: f64,
     collisions: usize,
     /// Dexel-estimated removed volume, finish op(s) only (mm³).
@@ -69,6 +95,14 @@ struct ChainOutcome {
 fn run_chain(label: &str, s: &mut ProjectSession) -> ChainOutcome {
     let cancel = AtomicBool::new(false);
     let n = s.toolpath_count();
+    // Resolve the finish op's actual name up front (before any generation
+    // runs) so the accumulation below tracks whichever op is really
+    // enabled, not a name pinned to a historical session state.
+    let finish_name = s
+        .get_toolpath_config(enabled_finish_index(s))
+        .expect("finish op config")
+        .name
+        .clone();
     let enabled: Vec<usize> = (0..n)
         .filter(|&i| s.get_toolpath_config(i).is_some_and(|tc| tc.enabled))
         .collect();
@@ -123,7 +157,7 @@ fn run_chain(label: &str, s: &mut ProjectSession) -> ChainOutcome {
             .find(|tc| tc.id == tp.toolpath_id)
             .map(|tc| tc.name.clone())
             .unwrap_or_else(|| format!("{:?}", tp.toolpath_id));
-        if name == FINISH_OP_NAME {
+        if name == finish_name {
             finish_total_s += tp.total_runtime_s;
             finish_removed_mm3 += tp.total_removed_volume_est_mm3;
         }
@@ -657,12 +691,7 @@ const PINNED_A_FINISH_S: f64 = 6883.4;
 fn p2c_unified_finish_branch_b() {
     let path = wanaka_project_path();
     let mut b = ProjectSession::load(&path).expect("load wanaka.toml (B)");
-    let finish_idx = (0..b.toolpath_count())
-        .find(|&i| {
-            b.get_toolpath_config(i)
-                .is_some_and(|tc| tc.name == FINISH_OP_NAME)
-        })
-        .expect("wanaka must contain '3D Finish 6'");
+    let finish_idx = enabled_finish_index(&b);
     b.set_toolpath_operation(
         finish_idx,
         OperationConfig::UnifiedFinish(ab_unified_config()),
@@ -715,12 +744,7 @@ fn p2c_unified_finish_ab() {
 
     // ── Branch B: Finish 6 swapped in place to UnifiedFinish ────────────
     let mut b = ProjectSession::load(&path).expect("load wanaka.toml (B)");
-    let finish_idx = (0..b.toolpath_count())
-        .find(|&i| {
-            b.get_toolpath_config(i)
-                .is_some_and(|tc| tc.name == FINISH_OP_NAME)
-        })
-        .expect("wanaka must contain '3D Finish 6'");
+    let finish_idx = enabled_finish_index(&b);
 
     b.set_toolpath_operation(
         finish_idx,
@@ -1197,12 +1221,7 @@ fn p2g_session_op8_dump() {
     let run = |label: &str, op: Option<OperationConfig>| {
         let mut s = ProjectSession::load(&wanaka_project_path()).expect("load wanaka.toml");
         let n = s.toolpath_count();
-        let finish_idx = (0..n)
-            .find(|&i| {
-                s.get_toolpath_config(i)
-                    .is_some_and(|tc| tc.name == FINISH_OP_NAME)
-            })
-            .expect("wanaka must contain '3D Finish 6'");
+        let finish_idx = enabled_finish_index(&s);
         if let Some(op) = op {
             s.set_toolpath_operation(finish_idx, op).expect("swap op");
         }
@@ -1306,12 +1325,7 @@ fn p2g_measurement_aliasing_probe() {
     let run = |label: &str, op: OperationConfig| {
         let mut s = ProjectSession::load(&wanaka_project_path()).expect("load wanaka.toml");
         let n = s.toolpath_count();
-        let finish_idx = (0..n)
-            .find(|&i| {
-                s.get_toolpath_config(i)
-                    .is_some_and(|tc| tc.name == FINISH_OP_NAME)
-            })
-            .expect("wanaka must contain '3D Finish 6'");
+        let finish_idx = enabled_finish_index(&s);
         s.set_toolpath_operation(finish_idx, op).expect("swap op");
         let enabled: Vec<usize> = (0..n)
             .filter(|&i| s.get_toolpath_config(i).is_some_and(|tc| tc.enabled))
@@ -1636,12 +1650,7 @@ fn p2g_chain_stage_probe() {
     let run = |label: &str, op: OperationConfig| -> HashMap<(usize, usize), Cell> {
         let mut s = ProjectSession::load(&wanaka_project_path()).expect("load wanaka.toml");
         let n = s.toolpath_count();
-        let finish_idx = (0..n)
-            .find(|&i| {
-                s.get_toolpath_config(i)
-                    .is_some_and(|tc| tc.name == FINISH_OP_NAME)
-            })
-            .expect("wanaka must contain '3D Finish 6'");
+        let finish_idx = enabled_finish_index(&s);
         s.set_toolpath_operation(finish_idx, op).expect("swap op");
         let enabled: Vec<usize> = (0..n)
             .filter(|&i| s.get_toolpath_config(i).is_some_and(|tc| tc.enabled))
@@ -2125,26 +2134,8 @@ fn column_overlay_dump_branch(label: &str, op: Option<OperationConfig>) {
     let cancel = AtomicBool::new(false);
     let mut s = ProjectSession::load(&wanaka_project_path()).expect("load wanaka.toml");
     let n = s.toolpath_count();
-    // Target the ENABLED finish op — the project file evolves under live
-    // sessions (2026-07-09: "3D Finish 6" was disabled in favour of
-    // "Unified Finish 6 (live v2)"), and swapping a disabled slot by its
-    // historical name silently measures the wrong branch.
-    let finish_indices: Vec<usize> = (0..n)
-        .filter(|&i| {
-            s.get_toolpath_config(i)
-                .is_some_and(|tc| tc.enabled && tc.name.contains("Finish"))
-        })
-        .collect();
-    assert_eq!(
-        finish_indices.len(),
-        1,
-        "expected exactly one enabled finish op, found {finish_indices:?}"
-    );
-    let finish_idx = finish_indices[0];
-    eprintln!(
-        "[{label}] targeting enabled finish op '{}'",
-        s.get_toolpath_config(finish_idx).expect("cfg").name
-    );
+    eprintln!("[{label}] resolving finish op");
+    let finish_idx = enabled_finish_index(&s);
     if let Some(op) = op {
         s.set_toolpath_operation(finish_idx, op).expect("swap op");
     }
@@ -2349,22 +2340,8 @@ fn p2g_three_way_probe() {
     let run = |label: &str, op: Option<OperationConfig>| -> BranchOut {
         let mut s = ProjectSession::load(&wanaka_project_path()).expect("load wanaka.toml");
         let n = s.toolpath_count();
-        let finish_indices: Vec<usize> = (0..n)
-            .filter(|&i| {
-                s.get_toolpath_config(i)
-                    .is_some_and(|tc| tc.enabled && tc.name.contains("Finish"))
-            })
-            .collect();
-        assert_eq!(
-            finish_indices.len(),
-            1,
-            "expected exactly one enabled finish op, found {finish_indices:?}"
-        );
-        let finish_idx = finish_indices[0];
-        eprintln!(
-            "[{label}] targeting enabled finish op '{}'",
-            s.get_toolpath_config(finish_idx).expect("cfg").name
-        );
+        eprintln!("[{label}] resolving finish op");
+        let finish_idx = enabled_finish_index(&s);
         if let Some(op) = op {
             s.set_toolpath_operation(finish_idx, op).expect("swap op");
         }
@@ -2949,12 +2926,7 @@ fn p2e_threshold_chain_sweep() {
     let mut results: Vec<(f64, f64, ChainOutcome)> = Vec::new();
     for (steep, waterline) in rows {
         let mut s = ProjectSession::load(&path).expect("load wanaka.toml");
-        let finish_idx = (0..s.toolpath_count())
-            .find(|&i| {
-                s.get_toolpath_config(i)
-                    .is_some_and(|tc| tc.name == FINISH_OP_NAME)
-            })
-            .expect("wanaka must contain '3D Finish 6'");
+        let finish_idx = enabled_finish_index(&s);
         let cfg = UnifiedFinishConfig {
             steep_threshold_deg: steep,
             waterline_threshold_deg: waterline,
@@ -3038,12 +3010,7 @@ fn p2e_branch_a_remeasure() {
 fn p2e_separate_ops_branch_c() {
     let path = wanaka_project_path();
     let mut c = ProjectSession::load(&path).expect("load wanaka.toml (C)");
-    let finish_idx = (0..c.toolpath_count())
-        .find(|&i| {
-            c.get_toolpath_config(i)
-                .is_some_and(|tc| tc.name == FINISH_OP_NAME)
-        })
-        .expect("wanaka must contain '3D Finish 6'");
+    let finish_idx = enabled_finish_index(&c);
 
     // C2 inherits A's toolpath config field-by-field (`ToolpathConfig`
     // deliberately isn't Clone — fresh IDs come from `add_toolpath`) and
@@ -3053,7 +3020,10 @@ fn p2e_separate_ops_branch_c() {
         .get_toolpath_config(finish_idx)
         .expect("finish toolpath config");
     let OperationConfig::DropCutter(a_raster) = template.operation.clone() else {
-        panic!("expected '3D Finish 6' to be a DropCutter raster (branch A shape)");
+        panic!(
+            "expected the enabled finish op '{}' to be a DropCutter raster (branch A shape)",
+            template.name
+        );
     };
     // C1 reads these after `a_raster` is consumed by C2's struct update.
     let (a_feed, a_plunge, a_rpm) = (
@@ -3061,7 +3031,7 @@ fn p2e_separate_ops_branch_c() {
         a_raster.plunge_rate,
         a_raster.spindle_rpm,
     );
-    let mut c2 = rs_cam_core::session::ToolpathConfig {
+    let c2 = rs_cam_core::session::ToolpathConfig {
         id: template.id, // reassigned by add_toolpath
         name: template.name.clone(),
         enabled: template.enabled,
@@ -3085,7 +3055,6 @@ fn p2e_separate_ops_branch_c() {
         debug_options: template.debug_options,
         feeds_provenance: template.feeds_provenance.clone(),
     };
-    c2.name = FINISH_OP_NAME.to_owned();
 
     // C1: standalone Scallop on the steep window (B's mid-steep parity
     // dials: height 0.011 = A's effective cusp at ~55°, continuous rings).
@@ -3145,12 +3114,7 @@ fn p2e_separate_ops_branch_c() {
 fn p2f_fidelity_branch_b65() {
     let path = wanaka_project_path();
     let mut b = ProjectSession::load(&path).expect("load wanaka.toml (B65)");
-    let finish_idx = (0..b.toolpath_count())
-        .find(|&i| {
-            b.get_toolpath_config(i)
-                .is_some_and(|tc| tc.name == FINISH_OP_NAME)
-        })
-        .expect("wanaka must contain '3D Finish 6'");
+    let finish_idx = enabled_finish_index(&b);
     let cfg = UnifiedFinishConfig {
         waterline_threshold_deg: 65.0,
         ..ab_unified_config()
@@ -3181,12 +3145,7 @@ fn p2f_fidelity_branch_b65() {
 fn p2f_allover_scallop_branch_d() {
     let path = wanaka_project_path();
     let mut d = ProjectSession::load(&path).expect("load wanaka.toml (D)");
-    let finish_idx = (0..d.toolpath_count())
-        .find(|&i| {
-            d.get_toolpath_config(i)
-                .is_some_and(|tc| tc.name == FINISH_OP_NAME)
-        })
-        .expect("wanaka must contain '3D Finish 6'");
+    let finish_idx = enabled_finish_index(&d);
     d.set_toolpath_operation(
         finish_idx,
         OperationConfig::Scallop(ScallopConfig {
@@ -3335,12 +3294,7 @@ fn p2f_a_move_census() {
         pending.retain(|&i| a.generate_toolpath(i, &cancel).is_err());
         assert!(pending.len() < before, "ladder stalled: {pending:?}");
     }
-    let finish_idx = (0..n)
-        .find(|&i| {
-            a.get_toolpath_config(i)
-                .is_some_and(|tc| tc.name == FINISH_OP_NAME)
-        })
-        .expect("finish op");
+    let finish_idx = enabled_finish_index(&a);
     let tp = a
         .get_result(finish_idx)
         .expect("finish toolpath generated")
@@ -3396,12 +3350,7 @@ fn p2f_fidelity_branch_a() {
 fn p2f_fidelity_branch_b() {
     let path = wanaka_project_path();
     let mut b = ProjectSession::load(&path).expect("load wanaka.toml (B)");
-    let finish_idx = (0..b.toolpath_count())
-        .find(|&i| {
-            b.get_toolpath_config(i)
-                .is_some_and(|tc| tc.name == FINISH_OP_NAME)
-        })
-        .expect("wanaka must contain '3D Finish 6'");
+    let finish_idx = enabled_finish_index(&b);
     b.set_toolpath_operation(
         finish_idx,
         OperationConfig::UnifiedFinish(ab_unified_config()),

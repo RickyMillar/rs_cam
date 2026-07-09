@@ -39,18 +39,32 @@
 //! Acceptance target (design doc, R1): region count on a real mesh should be
 //! O(10), not O(100) — see `finish_planner_wanaka_decompose.rs`.
 //!
-//! ## Crease corridors
+//! ## Crease corridors (v3 claims semantics)
 //!
 //! Rest-valley centerlines ([`RestCenterline`], from
-//! [`crate::rest_field::detect_rest_valleys`]) are routed through the
-//! corridor rule from the design doc's "Crease corridors" section: a
-//! narrow crease (`half_width_mm < corridor_k * tool_radius`) stays inside
-//! its surrounding band — the raster/ring pass cuts across it and the
-//! pencil pass cleans the residual later. A wide crease (a canyon, not a
-//! hairline valley) is promoted to its own [`PlannedRegion`]-shaped output
-//! (a [`PlannedCrease::own_region`]) and carved out of the band masks before
-//! polygon extraction, so band polygons don't claim territory the crease
-//! now owns.
+//! [`crate::rest_field::detect_rest_valleys`]) implement the design doc's
+//! "pencil claims creases first" rule (`planning/unified_v3_design.md`
+//! §2.1): **every** crease claims a corridor and it is subtracted from the
+//! band label grid before polygon extraction, not just canyon-width ones.
+//! The claimed half-width is `max(half_width_mm, pencil_claim_floor)` —
+//! the detector's measured width floored by
+//! [`FinishPlannerParams::pencil_claim_floor`], so a claim is never
+//! thinner than what the tip-tool pencil pass will actually cut. The
+//! claimed polygon is recorded on every routed crease as
+//! [`PlannedCrease::corridor`] (`None` only when the centerline is too
+//! degenerate to rasterize — fewer than two in-grid points, or a mask that
+//! extracts to nothing).
+//!
+//! `corridor` answers "what did this crease claim"; a separate, narrower
+//! question — "does this crease become its own clearing zone instead of
+//! staying folded into the pencil pass" — is still gated by the original
+//! canyon rule: a crease at/above `half_width_mm >= corridor_k *
+//! tool_radius` is promoted to its own [`PlannedRegion`]-shaped output via
+//! [`PlannedCrease::own_region`]. Since `pencil_claim_floor` is normally far
+//! below the canyon threshold, a canyon's `own_region` and `corridor`
+//! polygons coincide; a hairline crease gets `corridor: Some(..)`,
+//! `own_region: None` — it still claims territory out of the band grid, it
+//! just doesn't become a standalone region.
 //!
 //! ## What this module does *not* do
 //!
@@ -105,6 +119,14 @@ pub struct FinishPlannerParams {
     /// Corridor rule: a crease becomes its own region when
     /// `half_width_mm >= corridor_k * tool_radius`. Default 2.0.
     pub corridor_k: f64,
+    /// Claim floor (mm): every crease's claimed corridor half-width is
+    /// `max(half_width_mm, pencil_claim_floor)`, so the claim can never be
+    /// thinner than the tip-tool pencil pass that will actually clean the
+    /// corridor. `for_tool` defaults this to `tool_radius * 0.25` (a
+    /// placeholder sized off the finishing tool, since this module has no
+    /// tool-catalog plumbing) — callers that know the real pencil tip
+    /// radius should pass it directly.
+    pub pencil_claim_floor: f64,
     /// Morphological close radius (mm) applied to band masks. Default
     /// `tool_radius / 2` via [`FinishPlannerParams::for_tool`].
     pub close_radius_mm: f64,
@@ -138,6 +160,7 @@ impl FinishPlannerParams {
             hysteresis_deg: 10.0,
             overlap_mm: 0.0,
             corridor_k: 2.0,
+            pencil_claim_floor: tool_radius * 0.25,
             close_radius_mm: tool_radius * 0.5,
             min_region_area_mm2: (2.0 * tool_radius).powi(2) * 4.0,
         }
@@ -159,15 +182,24 @@ pub struct PlannedRegion {
     pub polygon: Polygon2,
 }
 
-/// A crease routed through the corridor rule.
+/// A crease routed through the claims pipeline (design doc §2.1: "pencil
+/// claims creases first").
 #[derive(Debug, Clone)]
 pub struct PlannedCrease {
     /// The detector centerline (world points + measured half-width).
     pub centerline: RestCenterline,
-    /// `None` — narrow crease, stays inside its surrounding band (pencil-style
-    /// pass cleans it later). `Some` — wide canyon promoted to its own region;
-    /// its corridor cells were removed from the band masks.
+    /// `Some` — this crease is a canyon (`half_width_mm >= corridor_k *
+    /// tool_radius`) promoted to its own clearing region, routed like a
+    /// band rather than folded into the pencil pass. `None` for every
+    /// narrower crease — it still claims a corridor (see [`Self::corridor`]),
+    /// it just isn't its own zone.
     pub own_region: Option<Polygon2>,
+    /// What this crease claimed: the corridor polygon carved out of the
+    /// band label grid, buffered by `max(half_width_mm,
+    /// pencil_claim_floor)`. `None` only when the centerline was too
+    /// degenerate to rasterize (fewer than two in-grid points, or the mask
+    /// extracted to no polygon) — in that case nothing was claimed either.
+    pub corridor: Option<Polygon2>,
 }
 
 /// Conditioning telemetry: proves R1 conditioning actually did work.
@@ -181,6 +213,13 @@ pub struct DecomposeStats {
     pub absorbed_regions: usize,
     /// Final planned region count: band regions + crease own-regions.
     pub region_count: usize,
+    /// Creases that successfully claimed a corridor (`corridor.is_some()`).
+    pub claimed_creases: usize,
+    /// Label-grid cells that were `Some(band)` and got set to `None` by a
+    /// crease claim (a cell claimed by two overlapping creases counts once,
+    /// against whichever crease claimed it first — later claims over
+    /// already-`None` cells aren't recounted).
+    pub claimed_cells: usize,
 }
 
 /// Output of [`decompose`].
@@ -340,10 +379,20 @@ pub fn decompose(
     let absorbed_regions =
         absorb_small_regions(&mut labels, rows, cols, cell, params.min_region_area_mm2);
 
-    // ── Step 5: crease corridor rule ────────────────────────────────────
+    // ── Step 5: crease claims ────────────────────────────────────────────
+    let mut claimed_creases = 0usize;
+    let mut claimed_cells = 0usize;
     let planned_creases: Vec<PlannedCrease> = creases
         .iter()
-        .map(|c| apply_crease_corridor(c, &mut labels, slope_map, tool_radius, params.corridor_k))
+        .map(|c| {
+            let (crease, cells) =
+                apply_crease_corridor(c, &mut labels, slope_map, tool_radius, params);
+            if crease.corridor.is_some() {
+                claimed_creases += 1;
+            }
+            claimed_cells += cells;
+            crease
+        })
         .collect();
 
     // ── Step 6: polygon extraction per band ─────────────────────────────
@@ -374,6 +423,8 @@ pub fn decompose(
             raw_very_steep_islands,
             absorbed_regions,
             region_count,
+            claimed_creases,
+            claimed_cells,
         },
     }
 }
@@ -648,27 +699,37 @@ fn absorb_small_regions(
     absorbed_total
 }
 
-// ── Step 5: crease corridors ─────────────────────────────────────────────
+// ── Step 5: crease claims ────────────────────────────────────────────────
 
-/// Apply the corridor rule to one centerline: narrow creases pass through
-/// untouched (`own_region: None`, no mask edits); wide creases get their
-/// own polygon and are carved out of `labels` so band polygons exclude the
-/// canyon.
+/// Apply the claims rule to one centerline (design doc §2.1): every crease
+/// claims a corridor of half-width `max(half_width_mm,
+/// pencil_claim_floor)`, buffered from its rasterized points, and carved
+/// out of `labels` so band polygons exclude the claimed territory —
+/// overlap dilation at extraction may reach back over it, which is the
+/// intended overlap semantics (design doc, "Crease corridors"). Canyons
+/// (`half_width_mm >= corridor_k * tool_radius`) additionally get promoted
+/// to their own clearing region (`own_region`), using the same corridor
+/// polygon.
+///
+/// Returns the routed crease plus the count of previously-labelled cells
+/// this claim cleared (for [`DecomposeStats::claimed_cells`]).
 fn apply_crease_corridor(
     centerline: &RestCenterline,
     labels: &mut [Option<FinishBand>],
     slope_map: &SlopeMap,
     tool_radius: f64,
-    corridor_k: f64,
-) -> PlannedCrease {
-    let narrow = || PlannedCrease {
-        centerline: centerline.clone(),
-        own_region: None,
+    params: &FinishPlannerParams,
+) -> (PlannedCrease, usize) {
+    let degenerate = || {
+        (
+            PlannedCrease {
+                centerline: centerline.clone(),
+                own_region: None,
+                corridor: None,
+            },
+            0,
+        )
     };
-
-    if centerline.half_width_mm < corridor_k * tool_radius {
-        return narrow();
-    }
 
     let rows = slope_map.rows;
     let cols = slope_map.cols;
@@ -687,40 +748,53 @@ fn apply_crease_corridor(
         warn!(
             half_width_mm = centerline.half_width_mm,
             in_grid_count,
-            "finish_planner: crease centerline has fewer than 2 in-grid points; treating as narrow"
+            "finish_planner: crease centerline has fewer than 2 in-grid points; claiming nothing"
         );
-        return narrow();
+        return degenerate();
     }
+
+    let claim_half_width = centerline.half_width_mm.max(params.pencil_claim_floor);
 
     let polys = region_polygons_from_mask(
         &scratch,
         slope_map.origin_x,
         slope_map.origin_y,
         cell,
-        centerline.half_width_mm,
+        claim_half_width,
     );
-    let Some(own_region) = polys.into_iter().next() else {
+    let Some(corridor) = polys.into_iter().next() else {
         warn!(
             half_width_mm = centerline.half_width_mm,
-            "finish_planner: wide crease produced no polygon; treating as narrow"
+            claim_half_width,
+            "finish_planner: crease produced no corridor polygon; claiming nothing"
         );
-        return narrow();
+        return degenerate();
     };
 
-    // Clear the corridor from the label grid so band polygons exclude the
-    // canyon — overlap dilation at extraction may reach back over it, which
-    // is the intended overlap semantics (design doc, "Crease corridors").
+    // Clear the claimed corridor from the label grid so band polygons
+    // exclude it.
     let dist = distance_transform_2d(scratch.as_slice(), rows, cols);
+    let mut claimed_cells = 0usize;
     for (label, &d) in labels.iter_mut().zip(dist.iter()) {
-        if d * cell <= centerline.half_width_mm {
+        if d * cell <= claim_half_width {
+            if label.is_some() {
+                claimed_cells += 1;
+            }
             *label = None;
         }
     }
 
-    PlannedCrease {
-        centerline: centerline.clone(),
-        own_region: Some(own_region),
-    }
+    let is_canyon = centerline.half_width_mm >= params.corridor_k * tool_radius;
+    let own_region = is_canyon.then(|| corridor.clone());
+
+    (
+        PlannedCrease {
+            centerline: centerline.clone(),
+            own_region,
+            corridor: Some(corridor),
+        },
+        claimed_cells,
+    )
 }
 
 // ── Step 6: polygon extraction ──────────────────────────────────────────
@@ -1259,10 +1333,20 @@ mod tests {
         assert!(planned.stats.absorbed_regions >= 1);
     }
 
-    // ── crease corridors ─────────────────────────────────────────────────
+    // ── crease claims ────────────────────────────────────────────────────
+
+    /// A straight centerline along `y = 30.0`, `x` in `[10, 50)` — shared by
+    /// the claim tests below.
+    fn straight_crease(half_width_mm: f64) -> RestCenterline {
+        let points: Vec<P3> = (10..50).map(|x| P3::new(x as f64, 30.0, 0.0)).collect();
+        RestCenterline {
+            points,
+            half_width_mm,
+        }
+    }
 
     #[test]
-    fn narrow_crease_stays_inside_band() {
+    fn narrow_crease_claims_corridor() {
         let rows = 60;
         let cols = 60;
         let cell = 1.0;
@@ -1270,11 +1354,10 @@ mod tests {
         let slope_map = SlopeMap::from_z_grid(&z, rows, cols, 0.0, 0.0, cell);
         let covered = margin_covered(rows, cols);
 
-        let points: Vec<P3> = (10..50).map(|x| P3::new(x as f64, 30.0, 0.0)).collect();
-        let creases = vec![RestCenterline {
-            points,
-            half_width_mm: 1.0,
-        }];
+        // half_width_mm (1.0) is below the corridor_k*tool_radius canyon
+        // threshold (6.0 at tool_radius 3.0), so this stays a non-canyon
+        // crease, but it must still claim a corridor.
+        let creases = vec![straight_crease(1.0)];
 
         let planned = decompose(
             &slope_map,
@@ -1284,26 +1367,36 @@ mod tests {
             &FinishPlannerParams::for_tool(3.0),
         );
 
-        assert!(planned.creases[0].own_region.is_none());
-        let shallow = planned
-            .regions
-            .iter()
-            .filter(|r| r.band == FinishBand::Shallow)
-            .count();
-        assert_eq!(shallow, 1);
+        assert!(
+            planned.creases[0].own_region.is_none(),
+            "a non-canyon crease must not become its own clearing region"
+        );
+        assert!(
+            planned.creases[0].corridor.is_some(),
+            "every crease must claim a corridor, even a narrow one"
+        );
 
         let mid_pt = P2::new(30.0, 30.0);
         assert!(
-            planned
+            planned.creases[0]
+                .corridor
+                .as_ref()
+                .is_some_and(|c| c.contains_point(&mid_pt)),
+            "the claimed corridor should cover the centerline's midpoint"
+        );
+        assert!(
+            !planned
                 .regions
                 .iter()
                 .any(|r| r.band == FinishBand::Shallow && r.polygon.contains_point(&mid_pt)),
-            "the narrow crease's midpoint should stay inside the Shallow band"
+            "the claimed corridor must be carved out of the Shallow band, not left inside it"
         );
+        assert_eq!(planned.stats.claimed_creases, 1);
+        assert!(planned.stats.claimed_cells > 0);
     }
 
     #[test]
-    fn wide_crease_becomes_own_region() {
+    fn wide_crease_becomes_own_region_and_claims_corridor() {
         let rows = 60;
         let cols = 60;
         let cell = 1.0;
@@ -1311,11 +1404,7 @@ mod tests {
         let slope_map = SlopeMap::from_z_grid(&z, rows, cols, 0.0, 0.0, cell);
         let covered = margin_covered(rows, cols);
 
-        let points: Vec<P3> = (10..50).map(|x| P3::new(x as f64, 30.0, 0.0)).collect();
-        let creases = vec![RestCenterline {
-            points,
-            half_width_mm: 9.0,
-        }];
+        let creases = vec![straight_crease(9.0)];
         let mid_pt = P2::new(30.0, 30.0);
 
         let planned = decompose(
@@ -1327,6 +1416,7 @@ mod tests {
         );
 
         assert!(planned.creases[0].own_region.is_some());
+        assert!(planned.creases[0].corridor.is_some());
         let own = planned.creases[0]
             .own_region
             .as_ref()
@@ -1343,6 +1433,66 @@ mod tests {
             "the crease corridor should be carved out of the Shallow band"
         );
         assert_eq!(planned.stats.region_count, planned.regions.len() + 1);
+        assert_eq!(planned.stats.claimed_creases, 1);
+        assert!(planned.stats.claimed_cells > 0);
+    }
+
+    #[test]
+    fn claimed_cells_shrink_band_area() {
+        let rows = 60;
+        let cols = 60;
+        let cell = 1.0;
+        let z = vec![0.0; rows * cols];
+        let slope_map = SlopeMap::from_z_grid(&z, rows, cols, 0.0, 0.0, cell);
+        let covered = margin_covered(rows, cols);
+        let params = FinishPlannerParams::for_tool(3.0);
+
+        let baseline = decompose(&slope_map, &covered, &[], 3.0, &params);
+        let creases = vec![straight_crease(1.0)];
+        let claimed = decompose(&slope_map, &covered, &creases, 3.0, &params);
+
+        assert_eq!(baseline.stats.claimed_cells, 0);
+        assert!(claimed.stats.claimed_cells > 0);
+        assert_eq!(claimed.stats.claimed_creases, 1);
+
+        let band_area = |planned: &PlannedRegions, band: FinishBand| -> f64 {
+            planned
+                .regions
+                .iter()
+                .filter(|r| r.band == band)
+                .map(|r| r.polygon.area())
+                .sum()
+        };
+
+        let baseline_area = band_area(&baseline, FinishBand::Shallow);
+        let claimed_area = band_area(&claimed, FinishBand::Shallow);
+        assert!(
+            claimed_area < baseline_area,
+            "claimed run's Shallow band area ({claimed_area}) should be smaller than baseline ({baseline_area})"
+        );
+    }
+
+    #[test]
+    fn empty_creases_unchanged_behavior() {
+        let rows = 80;
+        let cols = 80;
+        let cell = 1.0;
+        let radius = 30.0;
+        let z = dome_z_grid(rows, cols, cell, radius);
+        let slope_map = SlopeMap::from_z_grid(&z, rows, cols, 0.0, 0.0, cell);
+        let covered = margin_covered(rows, cols);
+        let params = FinishPlannerParams::for_tool(3.0);
+
+        let planned = decompose(&slope_map, &covered, &[], 3.0, &params);
+
+        assert!(planned.creases.is_empty());
+        assert_eq!(planned.stats.claimed_creases, 0);
+        assert_eq!(planned.stats.claimed_cells, 0);
+        // Same shape as the dedicated dome-decompose test: 2 shallow + 1 mid
+        // + 1 very-steep, region_count 4 — the claims pipeline must not
+        // perturb the no-crease path at all.
+        assert_eq!(planned.stats.region_count, 4);
+        assert_eq!(planned.regions.len(), 4);
     }
 
     // ── overlap / determinism / degenerate inputs ───────────────────────
