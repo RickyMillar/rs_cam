@@ -19,15 +19,25 @@
 //! concatenation (P2.c behavior) with native links only — never a
 //! distance-costed guess.
 //!
-//! Creases stay with the standalone pencil op at this checkpoint —
-//! [`crate::finish_planner::decompose`] is called with an empty crease
-//! slice here on purpose. Crease routing folds in later.
+//! Creases fold into the claims pipeline (v3 S1,
+//! `planning/unified_v3_design.md` §2.1): when [`ClaimsConfig`] is `Some`,
+//! [`detect_rest_valleys`] runs against THIS op's own tip cutter before
+//! [`decompose`], its centerlines feed `decompose`'s `creases` param (every
+//! claimed corridor is carved out of the band label grid there), and every
+//! crease that actually claimed a corridor gets its cut paths emitted as
+//! ONE additional node appended after the routed bands (native link, not
+//! threaded through `route_greedy` — S3 is where the fused router picks it
+//! up). `claims: None` reproduces the pre-v3 op byte-for-byte: `decompose`
+//! still gets an empty crease slice, exactly as before.
 //!
 //! No dressups, no boundary clipping here: the stitched toolpath this
 //! module returns flows through the NORMAL session post-passes (boundary
 //! clip, `optimize_entry_descents`, feed modulation, F-034 accounting)
 //! exactly like every other op's raw generator output.
 
+use std::ops::Range;
+
+use crate::crease_paths::centerline_cut_paths;
 use crate::debug_trace::ToolpathDebugContext;
 use crate::dropcutter::{DropCutterGrid, batch_drop_cutter_with_cancel};
 use crate::finish_planner::{FinishBand, FinishPlannerParams, decompose};
@@ -39,7 +49,11 @@ use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::machine_kinematics::{LinkKinematics, retract_link_time, surface_link_time};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::pencil::{PencilParams, emit_paths};
 use crate::region_set::RegionSet;
+use crate::rest_field::{
+    RestCenterline, RestFieldParams, RestGrid, RestReference, detect_rest_valleys,
+};
 use crate::scallop::{
     ScallopDirection, ScallopParams, ScallopRuntimeAnnotation,
     scallop_toolpath_structured_annotated_with_cancel,
@@ -127,6 +141,94 @@ pub struct RoutedLink {
     pub alt_cost_s: Option<f64>,
 }
 
+// ── Claims pipeline (v3 S1) ─────────────────────────────────────────────
+
+/// In-op pencil-claims pipeline inputs (v3 S1, `planning/unified_v3_design.md`
+/// §2.1). `claims: None` on [`unified_finish_toolpath_with_cancel`]
+/// reproduces the pre-v3 op exactly: no detector run, no crease claims, no
+/// crease node — the Wave 3 A/B harness pins this as the baseline.
+pub struct ClaimsConfig<'a> {
+    /// Rest-depth reference, already resolved by the caller (mirrors
+    /// `compute::execute`'s shared chain: the actual machined stock, when
+    /// present and XY-frame-overlapping, else a configured real reference
+    /// tool, else a self-referenced bare-surface probe). Territory
+    /// restricts to rest ISLANDS (step 4 below) only when this is
+    /// `RestReference::Stock`; under a `Cutter` reference (real tool or
+    /// probe) territory stays full — an analytic rest field would wrongly
+    /// gut the shallow band on terrain the prior op never actually cut.
+    pub reference: RestReference<'a>,
+    /// Detector params. `pencil_radius` is overwritten with the op's own
+    /// `cutter.radius()` before use — the finishing tool IS the pencil in
+    /// this op (UnifiedFinish is single-tool, ball-tip-only), unlike the
+    /// standalone pencil op's separate reference/pencil tool pair.
+    pub rest_field_params: RestFieldParams,
+    /// Rest-depth territory gate (mm, step 4 below): a classification cell
+    /// stays `covered` under `RestReference::Stock` only when the rest grid
+    /// measures at least this much remaining material there (`NaN` —
+    /// untrusted / no sample — never counts as covered). Independent of
+    /// `rest_field_params.min_valley_depth`, which gates the crease
+    /// detector itself, not banding territory.
+    pub min_rest_depth_mm: f64,
+}
+
+/// Which territory the claims pipeline banded (design doc §2.1 step 4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ClaimTerritoryMode {
+    /// No stock reference in play: banding covers the whole classified
+    /// surface, same as the pre-v3 op. Creases still claim corridors.
+    #[default]
+    Full,
+    /// Stock reference in play: banding is additionally restricted to
+    /// cells where the rest grid shows remaining material — Op A's
+    /// already-finished terrain drops out of Op B's bands.
+    RestIslands,
+}
+
+/// Which kind of routed node a [`RegionTableEntry`] describes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegionKind {
+    /// A generated band region — see [`FinishBand`].
+    Band(FinishBand),
+    /// The single trailing pencil-claims node: every claimed crease's cut
+    /// paths, concatenated and appended after the routed bands (native
+    /// link — S1 does not thread this through `route_greedy`, see the
+    /// module doc).
+    Crease,
+}
+
+/// One routed node's identity and final move range in the stitched
+/// toolpath — the Region-span attribution table (design doc §2.4: "Region
+/// spans are a MUST"). `region_id` on the emitted `SpanPayload::Region` is
+/// the index into [`UnifiedFinishReport::region_table`].
+#[derive(Debug, Clone)]
+pub struct RegionTableEntry {
+    pub kind: RegionKind,
+    pub move_range: Range<usize>,
+    /// Polygon area (mm²): the band's own polygon area, or the summed
+    /// claimed-corridor area for the crease node. Always `Some` today —
+    /// both are cheap to compute from data already in hand.
+    pub area_mm2: Option<f64>,
+}
+
+/// Claims-pipeline telemetry (design doc §2.1, R2 "pencil over-claiming").
+/// `None` on [`UnifiedFinishReport::claims`] when the claims pipeline never
+/// ran (`claims: None` at the call site).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ClaimsReport {
+    pub territory_mode: ClaimTerritoryMode,
+    /// Classification cells excluded from banding by the rest-island mask
+    /// (step 4). Always 0 under `ClaimTerritoryMode::Full`.
+    pub rest_excluded_cells: usize,
+    /// Claimed cut paths emitted (centerline + width-capped offset passes,
+    /// summed across every crease with `corridor.is_some()`).
+    pub crease_path_count: usize,
+    /// Total cutting length (mm) of the crease node's `FinishingCut` moves.
+    pub crease_path_length_mm: f64,
+    /// `RestFieldReport::coverage()` — traced skeleton fraction that
+    /// survived the length gate. Independent of banding territory.
+    pub detector_coverage: f64,
+}
+
 /// Orchestration report: decomposition stats + what each band generated +
 /// the P2.d route.
 #[derive(Debug, Clone, Default)]
@@ -135,6 +237,13 @@ pub struct UnifiedFinishReport {
     pub very_steep: BandGenStats,
     pub mid_steep: BandGenStats,
     pub shallow: BandGenStats,
+    /// Claims-pipeline telemetry (v3 S1) — `None` when `claims` was not
+    /// supplied to the call.
+    pub claims: Option<ClaimsReport>,
+    /// One entry per routed node (band regions in stitch order, then the
+    /// trailing crease node if any) — the Region-span source table (design
+    /// doc §2.4).
+    pub region_table: Vec<RegionTableEntry>,
     /// Region cut order (indices into the decomposition's
     /// `planned.regions`). Steep-first band-major when no
     /// [`LinkKinematics`] was supplied; greedy link-costed otherwise.
@@ -162,6 +271,8 @@ pub fn unified_finish_toolpath_with_cancel(
     planner: &FinishPlannerParams,
     machining_boundary: Option<&RegionSet<'_>>,
     link_kinematics: Option<&LinkKinematics>,
+    // v3 S1 claims pipeline (module doc). `None` is a byte-identical no-op.
+    claims: Option<&ClaimsConfig<'_>>,
     debug: Option<&ToolpathDebugContext>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>, UnifiedFinishReport), Cancelled> {
@@ -183,7 +294,7 @@ pub fn unified_finish_toolpath_with_cancel(
     let cell = surface.cell_size();
     let origin_x = surface.slope_map.origin_x;
     let origin_y = surface.slope_map.origin_y;
-    let covered: Vec<bool> = surface
+    let mut covered: Vec<bool> = surface
         .heightmap
         .covered
         .iter()
@@ -204,12 +315,128 @@ pub fn unified_finish_toolpath_with_cancel(
         .collect();
     check_cancel(cancel)?;
 
+    // ── Step 2.5: in-op rest analysis + territory (v3 S1, design doc §2.1
+    // steps 2+4) ──────────────────────────────────────────────────────────
+    // `claims: None` leaves `creases` empty and `covered` untouched —
+    // byte-identical to the pre-v3 op (module doc).
+    let mut creases: Vec<RestCenterline> = Vec::new();
+    let mut claims_report: Option<ClaimsReport> = None;
+    if let Some(cfg) = claims {
+        check_cancel(cancel)?;
+        let rf_params = RestFieldParams {
+            cell_mm: cfg.rest_field_params.cell_mm,
+            min_valley_depth: cfg.rest_field_params.min_valley_depth,
+            route_width_factor: cfg.rest_field_params.route_width_factor,
+            // The tip cutter IS the pencil in this op — see `ClaimsConfig`
+            // doc — regardless of what the caller set here.
+            pencil_radius: cutter.radius(),
+            min_cut_length: cfg.rest_field_params.min_cut_length,
+            region_margin_mm: cfg.rest_field_params.region_margin_mm,
+        };
+        let rf = detect_rest_valleys(mesh, index, cutter, cfg.reference, &rf_params);
+        check_cancel(cancel)?;
+
+        // Territory = rest islands ONLY under a genuine stock reference
+        // (design doc §2.1 step 4) — an analytic (Cutter) reference would
+        // wrongly gut the shallow band on terrain the prior op never
+        // actually visited, so territory stays full there.
+        let territory_mode = if matches!(cfg.reference, RestReference::Stock(_)) {
+            ClaimTerritoryMode::RestIslands
+        } else {
+            ClaimTerritoryMode::Full
+        };
+        let mut rest_excluded_cells = 0usize;
+        if territory_mode == ClaimTerritoryMode::RestIslands {
+            for (i, cov) in covered.iter_mut().enumerate() {
+                if !*cov {
+                    continue;
+                }
+                let row = i / cols;
+                let col = i % cols;
+                let x = origin_x + col as f64 * cell;
+                let y = origin_y + row as f64 * cell;
+                let keep = rest_grid_sample(&rf.rest_grid, x, y)
+                    .is_some_and(|r| r >= cfg.min_rest_depth_mm);
+                if !keep {
+                    *cov = false;
+                    rest_excluded_cells += 1;
+                }
+            }
+        }
+
+        claims_report = Some(ClaimsReport {
+            territory_mode,
+            rest_excluded_cells,
+            crease_path_count: 0,
+            crease_path_length_mm: 0.0,
+            detector_coverage: rf.report.coverage(),
+        });
+        creases = rf.centerlines;
+    }
+    let covered = covered;
+
     // ── Step 3: decompose ────────────────────────────────────────────────
-    // Creases empty: P2.c A/B isolates band machinery (module doc). Crease
-    // routing is a later increment; narrow/wide creases stay wherever the
-    // standalone pencil op finds them today.
-    let planned = decompose(&surface.slope_map, &covered, &[], cutter.radius(), planner);
+    // `creases` is empty when `claims` was `None` — identical to the
+    // pre-v3 `&[]` call.
+    let planned = decompose(
+        &surface.slope_map,
+        &covered,
+        &creases,
+        cutter.radius(),
+        planner,
+    );
     check_cancel(cancel)?;
+
+    // ── Step 3.5: crease-claims emission (v3 S1, design doc §2.1 step 5) ──
+    // Every claimed crease (`corridor.is_some()`) gets its cut paths
+    // emitted now; the resulting node is appended AFTER the routed bands
+    // in Step 6, natively linked — not threaded through `route_greedy`
+    // (module doc, deferred to S3's fused router).
+    let mut crease_tp = Toolpath::new();
+    if let Some(cfg) = claims {
+        let claimed: Vec<RestCenterline> = planned
+            .creases
+            .iter()
+            .filter(|c| c.corridor.is_some())
+            .map(|c| c.centerline.clone())
+            .collect();
+        if !claimed.is_empty() {
+            check_cancel(cancel)?;
+            let crease_paths = centerline_cut_paths(
+                &claimed,
+                mesh,
+                index,
+                cutter,
+                cutter.radius(),
+                params.sampling,
+                // Offset stepover mirrors `PencilParams`'s own default
+                // (`tool_radius * 0.5`) — no dedicated dial in S1.
+                cutter.radius() * 0.5,
+                // Offset-pass cap (design doc §2.1 item 5).
+                4,
+                cfg.rest_field_params.min_cut_length,
+                params.stock_to_leave,
+                cancel,
+            )?;
+            if !crease_paths.is_empty() {
+                let pencil_params = PencilParams {
+                    feed_rate: params.feed_rate,
+                    plunge_rate: params.plunge_rate,
+                    safe_z: params.safe_z,
+                    stock_to_leave: params.stock_to_leave,
+                    sampling: params.sampling,
+                    link_kinematics: link_kinematics.cloned(),
+                    ..PencilParams::default()
+                };
+                let (tp, _anns) = emit_paths(&crease_paths, mesh, index, cutter, &pencil_params);
+                crease_tp = tp;
+            }
+            if let Some(report) = claims_report.as_mut() {
+                report.crease_path_count = crease_paths.len();
+                report.crease_path_length_mm = cutting_length_mm(&crease_tp);
+            }
+        }
+    }
 
     // ── Step 4: per-region generation ───────────────────────────────────
     // P2.d: one strategy call PER REGION (single-polygon RegionSet) so the
@@ -405,9 +632,12 @@ pub fn unified_finish_toolpath_with_cancel(
         });
     }
 
-    if region_paths.is_empty() {
-        return Ok((Toolpath::new(), Vec::new(), report));
-    }
+    // No early return on `region_paths.is_empty()`: both branches below
+    // already degrade to an empty `order`/`junctions` in that case
+    // (`route_greedy`'s own empty-seed guard; the steep-first branch's
+    // `order` is built from `region_paths.len()`), and a claims-only run
+    // (bands empty, crease node non-empty — an unusual but legal territory
+    // outcome) still needs Step 6 to run so the crease node gets emitted.
 
     // ── Step 5: route ─────────────────────────────────────────────────────
     let (order, junctions) = match link_kinematics {
@@ -463,6 +693,7 @@ pub fn unified_finish_toolpath_with_cancel(
     // ── Step 6: stitch in route order, emitting the winning links ───────
     let mut stitched = Toolpath::new();
     let mut annotations: Vec<ScallopRuntimeAnnotation> = Vec::new();
+    let mut region_table: Vec<RegionTableEntry> = Vec::new();
     for (pos, &pi) in order.iter().enumerate() {
         let incoming_surface = pos
             .checked_sub(1)
@@ -499,6 +730,15 @@ pub fn unified_finish_toolpath_with_cancel(
         stitched
             .moves
             .extend(rp.tp.moves.iter().skip(head).take(kept).cloned());
+        let end = stitched.moves.len();
+        region_table.push(RegionTableEntry {
+            kind: RegionKind::Band(rp.band),
+            move_range: offset..end,
+            area_mm2: planned
+                .regions
+                .get(rp.region_index)
+                .map(|r| r.polygon.area()),
+        });
 
         // Annotation `move_index` is local to this region's own toolpath;
         // shift into the stitched frame. An annotation pointing into a
@@ -519,6 +759,29 @@ pub fn unified_finish_toolpath_with_cancel(
             }
         }));
     }
+
+    // ── Crease node: appended AFTER every routed band, natively linked —
+    // S1 does not thread it through `route_greedy` (module doc; S3's fused
+    // router is where corridor endpoints become routable junctions).
+    if !crease_tp.moves.is_empty() {
+        let offset = stitched.moves.len();
+        stitched.moves.extend(crease_tp.moves);
+        let end = stitched.moves.len();
+        let area_mm2: f64 = planned
+            .creases
+            .iter()
+            .filter_map(|c| c.corridor.as_ref())
+            .map(|p| p.area())
+            .sum();
+        region_table.push(RegionTableEntry {
+            kind: RegionKind::Crease,
+            move_range: offset..end,
+            area_mm2: Some(area_mm2),
+        });
+    }
+
+    report.claims = claims_report;
+    report.region_table = region_table;
 
     Ok((stitched, annotations, report))
 }
@@ -811,6 +1074,58 @@ fn band_z_range(
     (min_z.is_finite() && max_z.is_finite()).then_some((min_z, max_z))
 }
 
+// ── Claims pipeline internals (v3 S1) ───────────────────────────────────
+
+/// Nearest-cell sample of a [`RestGrid`] at world `(x, y)`. The rest grid's
+/// own origin/cell size (from [`detect_rest_valleys`]) is independent of
+/// the classification surface's grid, so this is deliberately a
+/// round-to-nearest lookup rather than an index computed from the caller's
+/// grid geometry — mirrors [`RestReference::Stock`]'s own nearest-cell-only
+/// contract (never interpolate a dexel top across a steep wall). `None`
+/// outside the grid or on an untrusted (`NaN`) cell.
+fn rest_grid_sample(grid: &RestGrid, x: f64, y: f64) -> Option<f64> {
+    if grid.nx == 0 || grid.ny == 0 || grid.cell_mm <= 0.0 {
+        return None;
+    }
+    let col = ((x - grid.origin_x) / grid.cell_mm).round();
+    let row = ((y - grid.origin_y) / grid.cell_mm).round();
+    if col < 0.0 || row < 0.0 {
+        return None;
+    }
+    let (col, row) = (col as usize, row as usize);
+    if col >= grid.nx || row >= grid.ny {
+        return None;
+    }
+    grid.rest
+        .get(row * grid.nx + col)
+        .copied()
+        .filter(|v| !v.is_nan())
+        .map(f64::from)
+}
+
+/// Total length (mm) of `tp`'s `FinishingCut` moves — each move's
+/// contribution is the distance from the PRECEDING move's target (rapid,
+/// plunge, or another cut) to its own, so a cut immediately following a
+/// plunge/link still counts the segment actually cut. Used for the crease
+/// node's `crease_path_length_mm` telemetry instead of reaching into
+/// `pencil::PencilPath`'s private fields.
+fn cutting_length_mm(tp: &Toolpath) -> f64 {
+    let mut total = 0.0;
+    let mut prev: Option<P3> = None;
+    for mv in &tp.moves {
+        if mv.intent == MoveIntent::FinishingCut
+            && let Some(p) = prev
+        {
+            total += ((mv.target.x - p.x).powi(2)
+                + (mv.target.y - p.y).powi(2)
+                + (mv.target.z - p.z).powi(2))
+            .sqrt();
+        }
+        prev = Some(mv.target);
+    }
+    total
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -850,6 +1165,7 @@ mod tests {
             -5.0,
             &params,
             &planner,
+            None,
             None,
             None,
             None,
@@ -916,6 +1232,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             &never_cancel,
         )
         .unwrap();
@@ -950,6 +1267,7 @@ mod tests {
             0.0,
             &params,
             &planner,
+            None,
             None,
             None,
             None,
@@ -994,6 +1312,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             &never_cancel,
         )
         .unwrap();
@@ -1005,6 +1324,7 @@ mod tests {
             0.0,
             &params,
             &planner,
+            None,
             None,
             None,
             None,
@@ -1064,6 +1384,7 @@ mod tests {
             -5.0,
             &params,
             &planner,
+            None,
             None,
             None,
             None,
@@ -1135,6 +1456,7 @@ mod tests {
             None,
             Some(&lk),
             None,
+            None,
             &never_cancel,
         )
         .unwrap();
@@ -1188,6 +1510,7 @@ mod tests {
                 &planner,
                 None,
                 Some(&lk),
+                None,
                 None,
                 &never_cancel,
             )
@@ -1302,6 +1625,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             &never_cancel,
         )
         .unwrap();
@@ -1319,6 +1643,7 @@ mod tests {
             &params,
             &planner,
             Some(&boundary),
+            None,
             None,
             None,
             &never_cancel,
@@ -1357,5 +1682,252 @@ mod tests {
             saw_cut,
             "expected at least one cutting move inside the boundary"
         );
+    }
+
+    // ── claims pipeline (v3 S1) ──────────────────────────────────────────
+
+    /// A Gaussian-profile trench running along X, centered at `y = 0`.
+    /// Mirrors `rest_field::tests::make_trench` (duplicated here — small and
+    /// test-only, each module's fixture stays independently readable): a
+    /// hard-edged plane-wall V has a CONSTANT rest depth along its length
+    /// (a plateau, no local maximum) and the RestDepth detector's
+    /// NMS-based ridge extraction never latches onto one (see
+    /// `rest_field::tests::v_valley_yields_one_centerline`'s doc comment) —
+    /// only a curved profile like this one is genuinely detectable.
+    fn make_trench_mesh(
+        len_x: f64,
+        half_y: f64,
+        depth: f64,
+        sigma: f64,
+        nx: usize,
+        ny: usize,
+    ) -> TriangleMesh {
+        let mut verts = Vec::new();
+        for iy in 0..=ny {
+            let y = -half_y + 2.0 * half_y * iy as f64 / ny as f64;
+            let z = -depth * (-(y / sigma).powi(2)).exp();
+            for ix in 0..=nx {
+                let x = len_x * ix as f64 / nx as f64;
+                verts.push(P3::new(x, y, z));
+            }
+        }
+        let mut tris = Vec::new();
+        let stride = nx + 1;
+        for iy in 0..ny {
+            for ix in 0..nx {
+                let a = (iy * stride + ix) as u32;
+                let b = a + 1;
+                let c = a + stride as u32;
+                let d = c + 1;
+                tris.push([a, b, d]);
+                tris.push([a, d, c]);
+            }
+        }
+        TriangleMesh::from_raw(verts, tris)
+    }
+
+    /// Shared claims-on fixture: the trench mesh, a small pencil/finishing
+    /// tool, and a bigger analytic reference tool that cannot reach the
+    /// trench floor — same tool sizes as `rest_field`'s own
+    /// `v_valley_yields_one_centerline` proof.
+    fn trench_claims_fixture() -> (
+        TriangleMesh,
+        SpatialIndex,
+        BallEndmill,
+        UnifiedFinishParams,
+        FinishPlannerParams,
+        BallEndmill,
+    ) {
+        let mesh = make_trench_mesh(30.0, 6.0, 1.5, 1.2, 30, 48);
+        let index = SpatialIndex::build_auto(&mesh);
+        let cutter = ball(1.0); // radius 0.5 — small enough to reach the trench floor
+        let reference_tool = ball(6.0); // radius 3.0 — bridges it and floats
+        let params = UnifiedFinishParams {
+            tolerance: 0.5,
+            ..UnifiedFinishParams::default()
+        };
+        let planner = FinishPlannerParams::for_tool(cutter.radius());
+        (mesh, index, cutter, params, planner, reference_tool)
+    }
+
+    #[test]
+    fn claims_off_matches_legacy_band_only_output() {
+        let (mesh, index, cutter, params, planner, _reference_tool) = trench_claims_fixture();
+        let never_cancel = || false;
+
+        let (tp, _anns, report) = unified_finish_toolpath_with_cancel(
+            &mesh,
+            &index,
+            &cutter,
+            5.0,
+            -5.0,
+            &params,
+            &planner,
+            None,
+            None,
+            None,
+            None,
+            &never_cancel,
+        )
+        .unwrap();
+
+        assert!(
+            report.claims.is_none(),
+            "claims pipeline must not run when claims=None"
+        );
+        assert!(
+            report
+                .region_table
+                .iter()
+                .all(|e| matches!(e.kind, RegionKind::Band(_))),
+            "no crease node should appear when claims=None, even on a \
+             crease-bearing mesh: {:?}",
+            report.region_table
+        );
+        let banded_total: usize = report
+            .region_table
+            .iter()
+            .map(|e| e.move_range.end - e.move_range.start)
+            .sum();
+        assert_eq!(
+            tp.moves.len(),
+            banded_total,
+            "toolpath must be exactly the band regions with claims off"
+        );
+    }
+
+    #[test]
+    fn claims_on_emits_crease_node_after_bands() {
+        let (mesh, index, cutter, params, planner, reference_tool) = trench_claims_fixture();
+        let claims_cfg = ClaimsConfig {
+            reference: RestReference::Cutter {
+                tool: &reference_tool as &dyn MillingCutter,
+                is_surface_probe: false,
+            },
+            rest_field_params: RestFieldParams {
+                cell_mm: 0.5,
+                min_valley_depth: 0.05,
+                // Force pencil routing over clearing (mirrors
+                // `rest_field::tests::v_valley_yields_one_centerline`) so
+                // the detected ridge survives as a centerline to claim.
+                route_width_factor: 10.0,
+                ..RestFieldParams::default()
+            },
+            min_rest_depth_mm: 0.02,
+        };
+        let never_cancel = || false;
+
+        let (tp, _anns, report) = unified_finish_toolpath_with_cancel(
+            &mesh,
+            &index,
+            &cutter,
+            5.0,
+            -5.0,
+            &params,
+            &planner,
+            None,
+            None,
+            Some(&claims_cfg),
+            None,
+            &never_cancel,
+        )
+        .unwrap();
+
+        let claims = report.claims.expect("claims pipeline must have run");
+        assert!(
+            claims.crease_path_count > 0,
+            "expected claimed crease cut paths, got {claims:?}"
+        );
+        assert!(claims.crease_path_length_mm > 0.0);
+        assert!(report.decompose.claimed_creases > 0);
+        // Analytic (Cutter) reference: territory stays full (design doc
+        // §2.1 step 4), so no cells are excluded by the rest-island mask.
+        assert_eq!(claims.territory_mode, ClaimTerritoryMode::Full);
+        assert_eq!(claims.rest_excluded_cells, 0);
+
+        let crease_entry = report
+            .region_table
+            .last()
+            .expect("region table must be non-empty");
+        assert_eq!(crease_entry.kind, RegionKind::Crease);
+        assert_eq!(
+            crease_entry.move_range.end,
+            tp.moves.len(),
+            "crease node must be the tail of the stitched toolpath"
+        );
+        for entry in &report.region_table[..report.region_table.len() - 1] {
+            assert!(
+                matches!(entry.kind, RegionKind::Band(_)),
+                "every non-trailing entry must be a band, got {entry:?}"
+            );
+            assert!(
+                entry.move_range.end <= crease_entry.move_range.start,
+                "crease node must come after every routed band"
+            );
+        }
+    }
+
+    #[test]
+    fn region_table_ranges_are_within_bounds_and_non_overlapping() {
+        let (mesh, index, cutter, params, planner, reference_tool) = trench_claims_fixture();
+        let claims_cfg = ClaimsConfig {
+            reference: RestReference::Cutter {
+                tool: &reference_tool as &dyn MillingCutter,
+                is_surface_probe: false,
+            },
+            rest_field_params: RestFieldParams {
+                cell_mm: 0.5,
+                min_valley_depth: 0.05,
+                // Force pencil routing over clearing (mirrors
+                // `rest_field::tests::v_valley_yields_one_centerline`) so
+                // the detected ridge survives as a centerline to claim.
+                route_width_factor: 10.0,
+                ..RestFieldParams::default()
+            },
+            min_rest_depth_mm: 0.02,
+        };
+        let never_cancel = || false;
+
+        let (tp, _anns, report) = unified_finish_toolpath_with_cancel(
+            &mesh,
+            &index,
+            &cutter,
+            5.0,
+            -5.0,
+            &params,
+            &planner,
+            None,
+            None,
+            Some(&claims_cfg),
+            None,
+            &never_cancel,
+        )
+        .unwrap();
+
+        assert!(
+            !report.region_table.is_empty(),
+            "expected at least the crease node in the region table"
+        );
+        let mut prev_end = 0usize;
+        for entry in &report.region_table {
+            assert!(
+                entry.move_range.start <= entry.move_range.end,
+                "malformed range {:?}",
+                entry.move_range
+            );
+            assert!(
+                entry.move_range.start >= prev_end,
+                "region ranges must not overlap: {:?} starts before the \
+                 previous entry ended at {prev_end}",
+                entry.move_range
+            );
+            assert!(
+                entry.move_range.end <= tp.moves.len(),
+                "region range {:?} escaped the {}-move toolpath",
+                entry.move_range,
+                tp.moves.len()
+            );
+            prev_end = entry.move_range.end;
+        }
     }
 }

@@ -819,7 +819,12 @@ fn contact_runs(points: &[P3]) -> Vec<&[P3]> {
 /// [`contact_runs`] before emission, so an off-mesh gap in the middle of a
 /// pass produces two independent runs — each with its own rapid/plunge or
 /// surface link — rather than a single cutting move bridging the gap.
-fn emit_paths(
+///
+/// `pub(crate)`: also used by [`crate::unified_finish`]'s pencil-claims
+/// pipeline (v3 S1) to emit a claimed-crease node from
+/// `crease_paths::centerline_cut_paths`'s output, reusing this exact
+/// link-costing/retract logic instead of a parallel emit loop.
+pub(crate) fn emit_paths(
     all_paths: &[PencilPath],
     mesh: &TriangleMesh,
     index: &SpatialIndex,

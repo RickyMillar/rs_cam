@@ -674,6 +674,14 @@ fn ab_unified_config() -> UnifiedFinishConfig {
         feed_rate: 3000.0,
         plunge_rate: 150.0,
         spindle_rpm: Some(21000),
+        // v3 S1 claims pipeline (`unified_finish::ClaimsConfig`, default
+        // `true` in `UnifiedFinishConfig::default()`) is explicitly OFF
+        // here: this is the pinned branch-A baseline
+        // (`PINNED_A_PROJECT_S`/`PINNED_A_FINISH_S`) — it must keep
+        // measuring the pre-v3 op, not silently pick up the new detector
+        // pass. Wave 3's claims A/B adds its own dedicated config.
+        pencil_claims: false,
+        min_rest_depth_mm: 0.02,
     }
 }
 
@@ -828,7 +836,7 @@ fn p2c_unified_generation_probe() {
     let t0 = Instant::now();
     let cancel = || false;
     let (tp, anns, report) = unified_finish_toolpath_with_cancel(
-        &mesh, &index, &cutter, 10.0, -10.0, &params, &planner, None, None, None, &cancel,
+        &mesh, &index, &cutter, 10.0, -10.0, &params, &planner, None, None, None, None, &cancel,
     )
     .expect("unified generation");
     eprintln!(

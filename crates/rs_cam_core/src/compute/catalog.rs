@@ -1250,6 +1250,10 @@ const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[
     ParamDef::required("stock_to_leave", "f64"),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    // v3 S1 claims pipeline: serde-defaulted for project-file back-compat
+    // (older files omit them), always serialized.
+    ParamDef::required("pencil_claims", "bool"),
+    ParamDef::required("min_rest_depth_mm", "f64"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
