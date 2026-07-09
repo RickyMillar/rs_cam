@@ -511,9 +511,16 @@ impl ProjectSession {
             }
         }
 
-        // Invalidate cached result for this toolpath
-        self.results.remove(&index);
-        self.simulation = None;
+        // Invalidate cached result for this toolpath — and, when it
+        // participates in the setup's material-removal chain, everything
+        // downstream that was generated against the stock it leaves
+        // (2026-07-09 staleness collision class; see
+        // `invalidate_result_chain`).
+        let enabled = self
+            .toolpath_configs
+            .get(index)
+            .is_some_and(|tc| tc.enabled);
+        self.invalidate_result_chain(index, enabled);
 
         Ok(())
     }
