@@ -1956,6 +1956,7 @@ mod tests {
             },
             total_moves: 0,
             deviations: None,
+            column_deviations: None,
             boundaries: Vec::new(),
             checkpoints: Vec::new(),
             rapid_collisions: Vec::new(),

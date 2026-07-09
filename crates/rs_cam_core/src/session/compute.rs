@@ -4530,6 +4530,7 @@ mod tests {
             },
             total_moves: 5,
             deviations: None,
+            column_deviations: None,
             boundaries: vec![SimBoundary {
                 id: pocket_tp_id,
                 name: "test".to_owned(),
@@ -4598,6 +4599,7 @@ mod tests {
             },
             total_moves: 10,
             deviations: None,
+            column_deviations: None,
             boundaries: vec![SimBoundary {
                 id: tp_id,
                 name: "test".to_owned(),
