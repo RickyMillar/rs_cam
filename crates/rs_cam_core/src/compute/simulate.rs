@@ -227,11 +227,40 @@ pub struct SimCheckpointMesh {
     pub stock: TriDexelStock,
 }
 
+/// Per-dexel-column deviation: a column's material top vs the model
+/// surface at the column's world XY. Positive = leftover material,
+/// negative = overcut.
+///
+/// This is the POINTWISE counterpart to [`SimulationResult::deviations`].
+/// The vertex path measures on the extracted mesh, whose vertex heights
+/// are corner-bilinear averages of 2×2 dexel columns
+/// (`dexel_mesh_mc::z_grid_marching_cubes`). That average is fine for
+/// display, but it filters machined micro-texture by how spatially
+/// coherent the texture is relative to the dexel grid: grid-locked ridge
+/// patterns survive the average while phase-diverse ones cancel, so two
+/// surfaces with identical real texture can histogram very differently
+/// (P2.g Task 1, 2026-07-09 — the B75-vs-D fine-tier "gap" was exactly
+/// this). Quality metrics and fidelity histograms should use these
+/// unaveraged column samples instead.
+#[derive(Debug, Clone, Copy)]
+pub struct ColumnDeviation {
+    /// World-frame x of the dexel column center.
+    pub x: f64,
+    /// World-frame y of the dexel column center.
+    pub y: f64,
+    /// `column_top_z − model_z` at (x, y) in world frame (mm).
+    pub dev: f32,
+}
+
 /// Full result from a stock simulation run.
 pub struct SimulationResult {
     pub mesh: StockMesh,
     pub total_moves: usize,
     pub deviations: Option<Vec<f32>>,
+    /// Pointwise per-dexel-column deviations (see [`ColumnDeviation`]).
+    /// `Some` whenever a reference model mesh was supplied. Aggregated
+    /// across setup groups, coordinates in world frame.
+    pub column_deviations: Option<Vec<ColumnDeviation>>,
     pub boundaries: Vec<SimBoundary>,
     pub checkpoints: Vec<SimCheckpointMesh>,
     /// Rapid-through-stock collisions detected during simulation.
@@ -476,6 +505,15 @@ where
     };
     let mut global_stock = TriDexelStock::from_bounds(&global_bbox, request.resolution);
 
+    // Model spatial index for per-column deviations (shared across groups;
+    // `compute_deviations` builds its own for the vertex pass).
+    let model_index = request
+        .model_mesh
+        .as_ref()
+        .map(|model| SpatialIndex::build_auto(model));
+    let mut column_deviations: Option<Vec<ColumnDeviation>> =
+        request.model_mesh.as_ref().map(|_| Vec::new());
+
     // Rapid collision accumulators — populated per-toolpath BEFORE each
     // simulation step so we compare against the stock state left by all
     // *previous* operations.
@@ -714,6 +752,17 @@ where
             prior_stocks.insert(phantom_id, Arc::new(group_stock.clone()));
         }
 
+        // Pointwise column deviations for this group's final stock (world
+        // frame), before the local stock is dropped.
+        if let (Some(model), Some(index), Some(out)) = (
+            request.model_mesh.as_ref(),
+            model_index.as_ref(),
+            column_deviations.as_mut(),
+        ) {
+            set_phase("Compute column deviations");
+            collect_column_deviations(&group_stock, &group.local_to_global, index, model, out);
+        }
+
         // After all toolpaths in this group, extract mesh and composite.
         let mut group_mesh = dexel_stock_to_mesh(&group_stock);
         if !group_drill_ops.is_empty() {
@@ -804,6 +853,7 @@ where
         mesh,
         total_moves,
         deviations,
+        column_deviations,
         boundaries,
         checkpoints,
         rapid_collisions,
@@ -889,6 +939,74 @@ fn apply_kinematics_cycle_time(
 
     if ctx.use_predicted_feed_in_gates && !predicted_feeds.is_empty() {
         trace.predicted_feeds = predicted_feeds;
+    }
+}
+
+/// Collect pointwise per-column deviations for one setup group's final
+/// stock. Mirrors `compute_deviations`' semantics (relevance threshold,
+/// nearest of model top/bottom surface) but samples each dexel column's
+/// material top directly instead of the corner-averaged mesh vertices —
+/// see [`ColumnDeviation`] for why the distinction matters.
+fn collect_column_deviations(
+    stock: &TriDexelStock,
+    local_to_global: &Option<SetupTransformInfo>,
+    index: &SpatialIndex,
+    model: &TriangleMesh,
+    out: &mut Vec<ColumnDeviation>,
+) {
+    let grid = &stock.z_grid;
+    let model_thickness = model.bbox.max.z - model.bbox.min.z;
+    let relevance_threshold = (model_thickness * 0.5).max(2.0); // mm
+
+    let column_deviation = |row: usize, col: usize| -> Option<ColumnDeviation> {
+        let top = grid.top_z_at(row, col)?;
+        let (u, v) = grid.cell_to_world(row, col);
+        let p = P3::new(u, v, f64::from(top));
+        let g = match local_to_global {
+            Some(info) => info.local_to_global(p),
+            None => p,
+        };
+        let (model_min_z, model_max_z) = query_model_z_range(index, model, g.x, g.y)?;
+        let dist_to_top = (g.z - model_max_z).abs();
+        let dist_to_bottom = (g.z - model_min_z).abs();
+        if dist_to_top.min(dist_to_bottom) > relevance_threshold {
+            return None;
+        }
+        let dev = if dist_to_top <= dist_to_bottom {
+            g.z - model_max_z
+        } else {
+            g.z - model_min_z
+        };
+        Some(ColumnDeviation {
+            x: g.x,
+            y: g.y,
+            dev: dev as f32,
+        })
+    };
+
+    #[cfg(feature = "parallel")]
+    if grid.rows * grid.cols > 20_000 {
+        use rayon::prelude::*;
+        let rows: Vec<Vec<ColumnDeviation>> = (0..grid.rows)
+            .into_par_iter()
+            .map(|row| {
+                (0..grid.cols)
+                    .filter_map(|col| column_deviation(row, col))
+                    .collect()
+            })
+            .collect();
+        for mut r in rows {
+            out.append(&mut r);
+        }
+        return;
+    }
+
+    for row in 0..grid.rows {
+        for col in 0..grid.cols {
+            if let Some(cd) = column_deviation(row, col) {
+                out.push(cd);
+            }
+        }
     }
 }
 
@@ -1078,6 +1196,65 @@ mod tests {
         assert!(!result.mesh.vertices.is_empty());
         assert_eq!(result.boundaries.len(), 1);
         assert_eq!(result.checkpoints.len(), 1);
+        assert!(
+            result.column_deviations.is_none(),
+            "no model mesh -> no column deviations"
+        );
+    }
+
+    /// P2.g sentry: `column_deviations` samples each dexel column's top
+    /// POINTWISE against the model — no mesh-vertex corner averaging.
+    /// A flat model plane at the trench floor must read dev ≈ 0 on the
+    /// machined columns, and columns far from the model surface (uncut
+    /// stock top, beyond the relevance threshold) must be absent.
+    #[test]
+    fn column_deviations_pointwise_against_flat_model() {
+        let mut req = simple_request();
+        // Flat plane at z = -1.0 (exactly the trench floor cut by
+        // `simple_request`'s toolpath) spanning the stock XY.
+        let verts = vec![
+            P3::new(-5.0, -5.0, -1.0),
+            P3::new(15.0, -5.0, -1.0),
+            P3::new(15.0, 5.0, -1.0),
+            P3::new(-5.0, 5.0, -1.0),
+        ];
+        let tris = vec![[0u32, 1, 2], [0, 2, 3]];
+        req.model_mesh = Some(Arc::new(TriangleMesh::from_raw(verts, tris)));
+
+        let cancel = AtomicBool::new(false);
+        let result = run_simulation(&req, &cancel).unwrap();
+        let cols = result
+            .column_deviations
+            .as_ref()
+            .expect("model supplied -> column deviations present");
+        assert!(!cols.is_empty(), "trench floor columns must be sampled");
+        for cd in cols {
+            // Relevance threshold is max(thickness/2, 2.0) = 2.0 mm for a
+            // flat plane; the uncut stock top at z=5 is 6 mm away and must
+            // not appear. Machined floor columns read the dexel top at
+            // -1.0 against the plane at -1.0.
+            assert!(
+                cd.dev.abs() <= 2.0 + 1e-3,
+                "column ({}, {}) dev {} beyond relevance",
+                cd.x,
+                cd.y,
+                cd.dev
+            );
+        }
+        let floor_devs: Vec<f32> = cols
+            .iter()
+            .map(|c| c.dev)
+            .filter(|d| d.abs() < 0.5)
+            .collect();
+        assert!(
+            !floor_devs.is_empty(),
+            "some columns must read the machined floor"
+        );
+        let worst = floor_devs.iter().fold(0.0f32, |a, &d| a.max(d.abs()));
+        assert!(
+            worst < 0.05,
+            "flat-endmill floor vs flat model must be pointwise-exact within 50um, worst {worst}"
+        );
     }
 
     #[test]
