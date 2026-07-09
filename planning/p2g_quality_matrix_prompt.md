@@ -269,3 +269,67 @@ THE LESSON (7×): when two measured populations disagree, correlate the
 instrument against ground truth PER LOCATION before believing either.
 Histograms hid that the "winner" was invisible to the instrument, not
 better.
+
+---
+
+## STATUS 2026-07-09 late night — the verdict is OPEN again; three-way probe designed
+
+The evening squeeze (coverage overlay + paired columns) REVISED the
+Task-1 closure. Read this before trusting the section above.
+
+**Facts (all from paired same-lattice, group-filtered column dumps on
+the CURRENT project — see below re: the file change):**
+
+1. **Coverage attribution DEAD**: 99.2 % of mid-steep columns lie within
+   0.3 mm of a ring pass, and the +10..50 µm columns are exactly as
+   ring-covered (99.3 %) as the on-size ones. The "16.3 % = 8 %
+   under-coverage + 8 % collar" story does not survive; the excess sits
+   UNDER the rings, in ~1.5–2 mm stripes across the whole band
+   (`p2g_plus_share_map.png`).
+2. **The gap is real in the sim's stocks and reproduces on the live v2
+   op**: group-1 (top setup) paired columns — unified on-size 48.5 % /
+   +.05 30.0 % vs D 67.7 % / 10.1 % band-wide; in the old analysis
+   window 63.9 %/36.1 % vs 95.9 %/0.8 %.
+3. **But it contradicts the exact envelopes**: the dense 0.05 mm
+   envelope delta over the same window is symmetric ±55 µm with mean
+   −1.3 µm at EVERY 0.25 mm lattice phase (aliasing refuted), while the
+   sim's paired stock delta there is mean +6 µm, p10 −3.2 / p90 +17.
+   Per-branch re-stamps matched their own envelopes to ≤1 µm p90
+   (chain-stage probe). Three individually-validated measurements
+   disagree pairwise. The real tool matches the probes' cutter model
+   exactly (tool id 2: Ø1 ball / 7° / Ø6 shank / 25 cl) — not the cause.
+4. **Prime suspect**: the air-cut filter (or any post-sim conditioning)
+   MUTATES the stored toolpath after simulation — so the toolpath the
+   sim STAMPED is not the toolpath later read for envelopes/re-stamps.
+   Known signature: regenerated dumps differ by ~40 moves. Whether ~40
+   edited moves can move 20-30 % of a band's columns by 10-50 µm is the
+   open question (they're plunge/entry-adjacent segments — possibly
+   high-leverage on ring starts).
+5. **Instrument fixes landed meanwhile** (92ceb85): ColumnDeviation
+   carries the setup-group ordinal — the entire `<-.5` "gouge" tail
+   (11.2 k) in every FIDELITY-COLUMNS table was the BOTTOM setup's
+   columns cross-attributed against the top surface. Filter by group.
+   FIDELITY-COLUMNS in fidelity_report still needs the group filter.
+
+**THE NEXT PROBE (three-way, decisive)**: extend `p2g_chain_stage_probe`
+to record, per window cell, in ONE run: (a) exact envelope of the
+toolpath AS READ post-sim, (b) my re-stamp of that toolpath, (c) the
+SIM'S OWN final stock top (sim.column_deviations, group-filtered), and
+(d) the envelope of the toolpath captured BEFORE the first simulation
+(pre-air-cut-filter). Whichever pair diverges identifies the mutation.
+If (d) ≠ (a), the air-cut filter is the mechanism and the honest
+verdict must be computed from the AS-STAMPED toolpath.
+
+**Project-file trap (cost an hour)**: wanaka.toml changed on disk at
+13:27 — "3D Finish 6" is now DISABLED; the enabled finish is
+"Unified Finish 6 (live v2)" (same 127 235 moves as the harness B75 —
+dial-identical). Probes that swap by the historical name silently
+measure the live op twice. The overlay probe now targets the enabled
+finish op with an assert; the OTHER FINISH_OP_NAME-pinned tests
+(acceptance/fidelity/chain probes) still need the same fix before any
+rerun. Do NOT commit or revert the user's wanaka.toml.
+
+LESSON (8×): a "ground truth" validated only against artifacts computed
+from the same inputs is circular. The sim's stock and the stored
+toolpath are not guaranteed to be the same object — measure the
+as-stamped geometry.
