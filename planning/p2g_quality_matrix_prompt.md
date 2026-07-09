@@ -188,3 +188,84 @@ committed to a 2-hour acceptance rerun on a magnitude match at the
 wrong slope percentile. The stamp probe (60 s, isolated, exact) found
 the real stamping defect immediately. Build the cheap decisive
 experiment FIRST.
+
+---
+
+## TASK 1 SOLVED 2026-07-10 — the gap was the MEASUREMENT MESH
+
+`p2g_chain_stage_probe` (new, in the harness) ran the real chain per
+branch and read every intermediate per dexel column in the bad window:
+rough floor (`prior_stocks[op8]`), post-op8 floor (faithful re-stamp on
+the prior snapshot — op8 is the LAST op, no successor snapshot exists),
+exact envelope of the generated moves, mesh top, deviation. Cross-branch
+per-cell deltas by stage:
+
+| stage | B75−D p10/p50/p90 µm | verdict |
+|---|---|---|
+| rough | 0 / 0 / 0 | ladder identical |
+| env   | −55.6 / −0.3 / +54.3 | ±55 µm TEXTURE PHASE, median 0 |
+| post  | −55.8 / +0.3 / +54.8 | stamps track env sub-µm in chain |
+| dev   | −1.5 / **+5.4** / +13.8 | the instrument's shift — STRIPED |
+
+Facts established:
+
+1. **The real machined surfaces are statistically identical.** The
+   ±55 µm pointwise envelope difference is ring/chord lattice phase
+   (expected between two different ring families); its local mean is
+   0.0–0.2 µm at every smoothing scale 0.75–3.25 mm, and the
+   vertex-anchored true-leftover quantile comparison (env at vertex −
+   exact model_z from `vz − dev`) puts B75−D within ±18 µm at every
+   percentile, mean +0.2 µm. Earlier "equivalent within 1 µm" python
+   floor checks were median/limited-sample statements — directionally
+   right, blind to the phase texture.
+2. **The instrument's +5.4 µm B75 shift does not exist in the stocks.**
+   Correlation between measured dev delta and true stock delta is ZERO
+   at every scale (raw and box 3–13); the dev delta has horizontal
+   stripe structure absent from the stock. Mechanism: deviations are
+   measured on MESH VERTICES. The z-grid mesh places vertex heights at
+   corner-bilinear averages of 2×2 dexel tops
+   (`dexel_mesh_mc::z_grid_marching_cubes`), and steep flanks are
+   additionally meshed by the X/Y side grids. Mesh-vertex sampling
+   filters machined texture by its phase coherence vs the grid:
+   B75's grid-locked ridges survive the averaging (its 10–50 µm bin
+   counts are honest-ish), D's phase-diverse silhouette rings CANCEL
+   (its "on-size 92 %" is fake smoothness). "D wins the fine tier" was
+   an instrument artifact — resolution-independent, which is why the
+   0.21 mm rerun kept it.
+3. **Fix (in tree)**: `SimulationResult::column_deviations` — pointwise
+   per-dexel-column top vs model (world frame, per-setup transform,
+   same relevance/nearest-surface semantics as the vertex pass), a
+   FIDELITY-COLUMNS table in the harness `fidelity_report`, and sentry
+   `column_deviations_pointwise_against_flat_model`. Vertex deviations
+   stay for GUI display. Quality verdicts must read COLUMNS from now on.
+4. **Dead leads closed**: `set_toolpath_operation` dressup-policy gap is
+   INVALID — `normalize_for_op` runs on swap (since 06468a8), the dumps
+   show entry/lead/link stripped; `arc_fitting: true` surviving is by
+   design and branch-symmetric. Roughing interaction and rot90 frame
+   are exonerated by the stage table (rough delta exactly 0; env is
+   frame-independent ground truth).
+5. **Honest band-wide verdict (COLUMNS instrument, colfix acceptance)**:
+   mid-steep columns — B75 on-size 32 959 / +.05-bin 20 557 vs D
+   on-size 45 952 / +.05-bin 7 051. This gap is REAL (columns are exact
+   pointwise leftovers) and is NOT the in-window story: dense 0.05 mm
+   ground truth over the bad window (70 k points, `p2g_dense_env_probe`)
+   puts B75−D at ±11 µm per quantile, mean −1.4 µm — equal where rings
+   run. The +.05 excess = 13 506 columns = 844 mm² = 16.3 % of the band,
+   matching the known ~8 % ring under-coverage + ~8 % collar share, both
+   cut at raster-on-slope cusp (~0.034 → the 10–50 µm bin). So: B75
+   holds D's quality on the ~84 % of the band its rings cover and hands
+   ~16 % to raster/collar quality, at 6 % less time. The ORIGINAL Task 1
+   (collar/coverage fix) is resurrected as the real remaining lever,
+   now precisely sized: close the 16 % and B75 ≈ D quality band-wide at
+   lower cost. The vertex instrument's version of the gap conflated this
+   real 16 % with the averaging artifact (its in-window "bad cells",
+   1.41 mm lattice, and D's 92 % on-size were artifact).
+
+Artifacts: `p2g_chain_{b75,d}_cells.txt` (per-cell stage dump),
+`p2g_chain_{b75,d}_verts.txt` (per-vertex model_z + env ground truth),
+`p2g_chain_delta_*.png` (stage delta maps), chain_stage_probe2.log.
+
+THE LESSON (7×): when two measured populations disagree, correlate the
+instrument against ground truth PER LOCATION before believing either.
+Histograms hid that the "winner" was invisible to the instrument, not
+better.
