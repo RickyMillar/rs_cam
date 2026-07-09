@@ -255,6 +255,20 @@ pub struct ColumnDeviation {
     /// consumers comparing branches or binning quality must either
     /// filter to the relevant group or accept per-group duplicates.
     pub group: usize,
+    /// Column material top in the setup group's LOCAL stock frame (mm) —
+    /// the raw dexel top before `local_to_global`. This is the sim's own
+    /// final surface sample; probes compare it directly against re-stamps
+    /// or envelopes evaluated on the same (local-frame) grid without a
+    /// model query or frame round-trip (P2.g three-way probe).
+    pub top_z: f32,
+    /// Row of this column in the setup group's dexel z-grid. Together
+    /// with [`Self::col`] this identifies the exact grid cell with no
+    /// frame round-trip — `prior_stocks` snapshots share the same grid
+    /// geometry, so probes can index them directly.
+    pub row: usize,
+    /// Column (grid u-axis index) of this column in the setup group's
+    /// dexel z-grid. See [`Self::row`].
+    pub col: usize,
 }
 
 /// Full result from a stock simulation run.
@@ -995,6 +1009,9 @@ fn collect_column_deviations(
             y: g.y,
             dev: dev as f32,
             group,
+            top_z: top,
+            row,
+            col,
         })
     };
 
