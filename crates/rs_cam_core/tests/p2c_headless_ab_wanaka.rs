@@ -3382,3 +3382,221 @@ fn p2f_fidelity_branch_b() {
     );
     assert!(out.finish_total_s > 0.0);
 }
+
+// ── S1 claims-pipeline A/B (Wave 3 acceptance harness, `planning/unified_v3_design.md` §4) ──
+//
+// S1 wired in-op `detect_rest_valleys` (stock reference), crease-corridor
+// claims, rest-mask ∩ bands, and pencil emission via `centerline_cut_paths`
+// behind `UnifiedFinishConfig::pencil_claims` (Wave 2, commit b7b1ea2) —
+// byte-identical no-op when `false`. This harness is the checkpoint the
+// design doc calls for at the end of S1: "quality (COLUMNS) must not
+// regress vs live v2; pencil corridors visible in report." Both branches
+// run the pinned B75 dials (`ab_unified_config`) so the ONLY variable is
+// `pencil_claims`.
+
+/// Region spans on `spans` that are NOT strictly nested inside another
+/// Region span. `unified_finish`'s node-level spans (one per
+/// `UnifiedFinishReport::region_table` entry — band regions plus the
+/// trailing crease node) are inserted right after the `Operation` span,
+/// coarser than the finer scallop-event Region spans nested inside a
+/// MidSteep band's own move range (`compute/execute.rs` doc: "consumers
+/// must disambiguate by span nesting depth, not assume one shared table").
+/// Move-range containment is the only structural signal available across
+/// the session boundary, so that's what this uses.
+fn outer_region_spans(
+    spans: &[rs_cam_core::toolpath_spans::Span],
+) -> Vec<&rs_cam_core::toolpath_spans::Span> {
+    use rs_cam_core::toolpath_spans::SpanKind;
+    let regions: Vec<&rs_cam_core::toolpath_spans::Span> = spans
+        .iter()
+        .filter(|s| s.kind == SpanKind::Region)
+        .collect();
+    regions
+        .iter()
+        .copied()
+        .filter(|s| {
+            !regions.iter().any(|other| {
+                !std::ptr::eq(*other, *s)
+                    && other.start_move <= s.start_move
+                    && other.end_move >= s.end_move
+                    && (other.start_move, other.end_move) != (s.start_move, s.end_move)
+            })
+        })
+        .collect()
+}
+
+/// Group-filtered mid-steep on-size / `+.05` shares from
+/// `sim.column_deviations` — same `DEV_EDGES`/`DEV_BIN_LABELS` binning
+/// `fidelity_report` uses (index 6 = "on-size", index 7 = "+.05"),
+/// restricted to `group` (the finish op's own setup group — multi-setup
+/// wanaka samples the same world XY once per group, see `ColumnDeviation`
+/// doc) and to mid-steep band cells (`bm` code 2, from `build_band_map`).
+/// Returns `(sample_count, on_size_pct, plus05_pct)`.
+fn mid_steep_shares(s: &ProjectSession, bm: &BandMap, group: usize) -> (usize, f64, f64) {
+    let sim = s.simulation_result().expect("sim result");
+    let cols = sim
+        .column_deviations
+        .as_ref()
+        .expect("column deviations (sim ran without a reference model mesh?)");
+    let bin_of = |d: f32| -> usize {
+        DEV_EDGES
+            .iter()
+            .position(|&e| d < e)
+            .unwrap_or(DEV_BIN_COUNT - 1)
+    };
+    const ON_SIZE_BIN: usize = 6;
+    const PLUS_05_BIN: usize = 7;
+    let mut total = 0usize;
+    let mut on_size = 0usize;
+    let mut plus05 = 0usize;
+    for cd in cols.iter().filter(|cd| cd.group == group) {
+        if bm.code_at(cd.x, cd.y) != 2 {
+            continue;
+        }
+        total += 1;
+        match bin_of(cd.dev) {
+            ON_SIZE_BIN => on_size += 1,
+            PLUS_05_BIN => plus05 += 1,
+            _ => {}
+        }
+    }
+    let pct = |n: usize| 100.0 * n as f64 / (total.max(1) as f64);
+    (total, pct(on_size), pct(plus05))
+}
+
+/// S1 acceptance A/B: `pencil_claims: false` (OFF, byte-identical to the
+/// shipped B75 op) vs `pencil_claims: true` (ON, same dials, claims
+/// pipeline live) on the real wanaka chain. Gates (design doc §4, in
+/// order): collisions must not regress, group-filtered mid-steep on-size
+/// share must not regress beyond a 2 pp tolerance, and total project time
+/// must not blow the budget by more than 10% — a claims pass that finds
+/// real rest territory should cost something, just not runaway.
+///
+/// The claims pipeline's own telemetry (`UnifiedFinishReport::claims`,
+/// `region_table`) does not survive the session boundary today —
+/// `ToolpathComputeResult`/`AnnotatedToolpath` carry spans + `rest_grid` +
+/// `rest_regions` but no report slot, and `rest_regions` is populated ONLY
+/// by the standalone pencil `RestDepth` detector (per its doc comment),
+/// not by `UnifiedFinish` — so territory mode (`RestIslands` vs `Full`) is
+/// NOT observable here (known wave-2 gap: report not carried through
+/// `AnnotatedToolpath`). What IS observable structurally is the Region
+/// spans design doc §2.4 calls a MUST: this test asserts the ON branch's
+/// finish op carries at least one outer (node-level) Region span.
+#[test]
+#[ignore = "two full generation ladders + 0.25mm measurement sims; run with --ignored --nocapture"]
+fn s1_claims_ab() {
+    let path = wanaka_project_path();
+    assert!(
+        path.exists(),
+        "wanaka.toml not found at {} — harness requires the canonical project",
+        path.display()
+    );
+
+    // ── Branch OFF: pinned B75 dials, claims pipeline explicitly off ────
+    let mut off = ProjectSession::load(&path).expect("load wanaka.toml (OFF)");
+    let finish_idx_off = enabled_finish_index(&off);
+    let off_op_id = off
+        .get_toolpath_config(finish_idx_off)
+        .expect("finish op config")
+        .id;
+    off.set_toolpath_operation(
+        finish_idx_off,
+        OperationConfig::UnifiedFinish(ab_unified_config()),
+    )
+    .expect("swap finish op to UnifiedFinish (claims off)");
+    let out_off = run_chain("s1_off", &mut off);
+    run_measurement_sim(&mut off);
+    let bm_off = build_band_map(&off);
+    fidelity_report("s1_off", &off, &bm_off);
+    let group_off = off
+        .setup_of_toolpath_id(off_op_id)
+        .expect("finish op belongs to a setup");
+    let (n_off, on_size_off, plus05_off) = mid_steep_shares(&off, &bm_off, group_off);
+
+    // ── Branch ON: identical dials, pencil_claims flipped on ────────────
+    let mut on_cfg = ab_unified_config();
+    on_cfg.pencil_claims = true;
+    let mut on = ProjectSession::load(&path).expect("load wanaka.toml (ON)");
+    let finish_idx_on = enabled_finish_index(&on);
+    let on_op_id = on
+        .get_toolpath_config(finish_idx_on)
+        .expect("finish op config")
+        .id;
+    on.set_toolpath_operation(finish_idx_on, OperationConfig::UnifiedFinish(on_cfg))
+        .expect("swap finish op to UnifiedFinish (claims on)");
+    let out_on = run_chain("s1_on", &mut on);
+    run_measurement_sim(&mut on);
+    let bm_on = build_band_map(&on);
+    fidelity_report("s1_on", &on, &bm_on);
+    let group_on = on
+        .setup_of_toolpath_id(on_op_id)
+        .expect("finish op belongs to a setup");
+    let (n_on, on_size_on, plus05_on) = mid_steep_shares(&on, &bm_on, group_on);
+
+    // ── Structural claims-pipeline check (ON branch only — OFF is the
+    // pre-v3 op and must NOT emit node spans by construction) ───────────
+    let on_result = on
+        .get_result(finish_idx_on)
+        .expect("ON finish op generated");
+    let on_annotated = on_result.annotated();
+    let region_span_count = on_annotated
+        .spans
+        .iter()
+        .filter(|s| s.kind == rs_cam_core::toolpath_spans::SpanKind::Region)
+        .count();
+    let outer = outer_region_spans(&on_annotated.spans);
+    let crease_node_present = outer.iter().any(|s| s.label.as_ref() == "Pencil claims");
+    eprintln!(
+        "s1_on region spans: total={region_span_count} outer(node)={} crease_node_present={crease_node_present}",
+        outer.len()
+    );
+    assert!(
+        !outer.is_empty(),
+        "S1 claims-on op emitted zero outer Region spans — region-table span emission regressed \
+         (design doc §2.4: Region spans are a MUST)"
+    );
+
+    // ── Verdict ───────────────────────────────────────────────────────
+    let d_project = out_on.project_total_s - out_off.project_total_s;
+    let d_finish = out_on.finish_total_s - out_off.finish_total_s;
+    eprintln!("== S1 claims A/B verdict (OFF vs ON) ==");
+    eprintln!(
+        "project_total_s : OFF={:8.1}s  ON={:8.1}s  Δ={d_project:+8.1}s ({:+.1}%)",
+        out_off.project_total_s,
+        out_on.project_total_s,
+        100.0 * d_project / out_off.project_total_s.max(1e-9)
+    );
+    eprintln!(
+        "finish_total_s  : OFF={:8.1}s  ON={:8.1}s  Δ={d_finish:+8.1}s ({:+.1}%)",
+        out_off.finish_total_s,
+        out_on.finish_total_s,
+        100.0 * d_finish / out_off.finish_total_s.max(1e-9)
+    );
+    eprintln!(
+        "collisions      : OFF={}  ON={}",
+        out_off.collisions, out_on.collisions
+    );
+    eprintln!(
+        "mid-steep on-size share (group-filtered): OFF={on_size_off:5.1}% (n={n_off})  ON={on_size_on:5.1}% (n={n_on})"
+    );
+    eprintln!("mid-steep +.05  share (group-filtered): OFF={plus05_off:5.1}%  ON={plus05_on:5.1}%");
+
+    // ── Gates (design doc §4 order) ──────────────────────────────────
+    assert!(
+        out_on.collisions <= out_off.collisions,
+        "S1 SAFETY GATE FAILED: claims-on collisions {} > claims-off {}",
+        out_on.collisions,
+        out_off.collisions
+    );
+    assert!(
+        on_size_on >= on_size_off - 2.0,
+        "S1 QUALITY GATE FAILED: mid-steep on-size share regressed beyond tolerance: \
+         OFF={on_size_off:.1}%  ON={on_size_on:.1}%  (2.0pp tolerance)"
+    );
+    assert!(
+        out_on.project_total_s <= out_off.project_total_s * 1.10,
+        "S1 TIME GATE FAILED: claims-on project time {:.1}s exceeds 110% of claims-off {:.1}s",
+        out_on.project_total_s,
+        out_off.project_total_s
+    );
+}
