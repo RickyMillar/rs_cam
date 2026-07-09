@@ -871,6 +871,24 @@ pub struct UnifiedFinishConfig {
     pub plunge_rate: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// v3 S1 claims pipeline (`planning/unified_v3_design.md` §2.1): run
+    /// the rest-depth detector inside this op's own generation (against
+    /// its own tip cutter) and let claimed creases cut a pencil pass
+    /// alongside the banded regions. `false` reproduces the pre-v3 op
+    /// exactly — no detector run, no crease claims, no crease node.
+    /// Default `true`: v3 bakes claims into the op's contract (design doc
+    /// §0, "pencil claims creases first").
+    #[serde(default = "default_unified_finish_pencil_claims")]
+    pub pencil_claims: bool,
+    /// Territory gate (mm) for the rest-island restriction (design doc
+    /// §2.1 step 4): under a machined-stock reference, a classification
+    /// cell only stays `covered` for banding when the rest grid measures
+    /// at least this much remaining material there (`NaN` — untrusted /
+    /// no rest sample — never counts as covered). Ignored under an
+    /// analytic reference (territory stays full — see
+    /// `unified_finish::ClaimsConfig` doc). Default 0.02mm.
+    #[serde(default = "default_unified_finish_min_rest_depth_mm")]
+    pub min_rest_depth_mm: f64,
 }
 
 impl Default for UnifiedFinishConfig {
@@ -892,8 +910,18 @@ impl Default for UnifiedFinishConfig {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             spindle_rpm: None,
+            pencil_claims: default_unified_finish_pencil_claims(),
+            min_rest_depth_mm: default_unified_finish_min_rest_depth_mm(),
         }
     }
+}
+
+fn default_unified_finish_pencil_claims() -> bool {
+    true
+}
+
+fn default_unified_finish_min_rest_depth_mm() -> f64 {
+    0.02
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

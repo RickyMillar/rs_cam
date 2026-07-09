@@ -243,6 +243,13 @@ pub struct ExecutionContext<'a> {
     /// callers without one (or that never reach a linking decision) pass
     /// `None`.
     pub link_kinematics: Option<crate::machine_kinematics::LinkKinematics>,
+    /// P2.5's generic rest-analysis config, threaded through so an adapter
+    /// can run its OWN in-op rest-depth pass instead of (or in addition
+    /// to) the generic post-generation attach below — currently only
+    /// `generate_unified_finish`'s v3 S1 claims pipeline. `None` is a
+    /// byte-identical no-op for every other family, same shape as
+    /// `link_kinematics`.
+    pub rest_analysis: Option<&'a crate::compute::config::RestAnalysisConfig>,
 }
 
 /// A family adapter: generate the toolpath (with spans + annotations)
@@ -1287,7 +1294,53 @@ pub(crate) fn generate_unified_finish(
     planner.steep_threshold_deg = cfg.steep_threshold_deg;
     planner.waterline_threshold_deg = cfg.waterline_threshold_deg;
     planner.overlap_mm = cfg.overlap_mm;
-    let (tp, annotations, _report) = crate::unified_finish::unified_finish_toolpath_with_cancel(
+    // v3 S1 claims pipeline (design doc §2.1): the tip cutter IS the
+    // pencil — UnifiedFinish is single-tool, ball-tip-only — so the claim
+    // floor must reflect the REAL tip radius rather than
+    // `FinishPlannerParams::for_tool`'s placeholder guess (see that
+    // field's doc comment).
+    planner.pencil_claim_floor = ctx.tool_def.radius() * 0.25;
+
+    // `probe_ball`/`reference_tool` must outlive the call below — they're
+    // what `claims_cfg.reference` (a `RestReference<'_>`) borrows from.
+    let probe_ball = crate::tool::BallEndmill::new(
+        crate::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
+        crate::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
+    );
+    let reference_tool = ctx.reference_tool_cfg.as_ref().map(build_cutter);
+    let claims_cfg = cfg.pencil_claims.then(|| {
+        let reference = resolve_rest_reference(
+            m,
+            reference_tool.as_ref().map(|t| t as &dyn MillingCutter),
+            ctx.initial_stock,
+            &probe_ball,
+        );
+        // Detector tuning mirrors `attach_generic_rest_analysis`: use the
+        // configured `rest_analysis` cell/depth/margin when present, else
+        // the detector's own defaults. `route_width_factor`/
+        // `min_cut_length` have no `RestAnalysisConfig` equivalent yet, so
+        // they always fall back to `RestFieldParams::default()`.
+        // `pencil_radius` is set by `unified_finish_toolpath_with_cancel`
+        // itself (the op's own cutter), so leaving the default here is a
+        // no-op either way.
+        let rest_field_params =
+            ctx.rest_analysis
+                .map_or_else(crate::rest_field::RestFieldParams::default, |ra| {
+                    crate::rest_field::RestFieldParams {
+                        cell_mm: ra.cell_mm,
+                        min_valley_depth: ra.min_valley_depth,
+                        region_margin_mm: ra.region_margin_mm,
+                        ..crate::rest_field::RestFieldParams::default()
+                    }
+                });
+        crate::unified_finish::ClaimsConfig {
+            reference,
+            rest_field_params,
+            min_rest_depth_mm: cfg.min_rest_depth_mm,
+        }
+    });
+
+    let (tp, annotations, report) = crate::unified_finish::unified_finish_toolpath_with_cancel(
         m,
         idx,
         ctx.tool_def,
@@ -1299,6 +1352,7 @@ pub(crate) fn generate_unified_finish(
         // P2.d: cost the region route against the real machine envelope
         // when one is in scope (same plumbing as pencil's P1 W4a hookup).
         ctx.link_kinematics.as_ref(),
+        claims_cfg.as_ref(),
         ctx.debug_ctx,
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
@@ -1306,12 +1360,44 @@ pub(crate) fn generate_unified_finish(
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_scallop(&annotations, &tp, sem);
     }
-    let spans = crate::compute::spans::spans_from_labeled_events(
+    let mut spans = crate::compute::spans::spans_from_labeled_events(
         tp.moves.len(),
         annotations
             .iter()
             .map(|ann| (ann.move_index, ann.event.label())),
     );
+    // Node-level Region spans (design doc §2.4: "a MUST") — one per routed
+    // band/crease node, `region_id` = index into `report.region_table`.
+    // Inserted right after the `Operation` span (always spans[0]) and
+    // before the finer scallop-event Region spans already built above, so
+    // `span_path_at` lists outer ancestors first (nesting convention,
+    // `toolpath_spans.rs` doc): a node span is coarser than the
+    // scallop-ring events nested inside its own MidSteep range. These are
+    // a SEPARATE `region_id` space from the scallop-event spans above —
+    // consumers must disambiguate by span nesting depth, not assume one
+    // shared table.
+    let node_spans: Vec<crate::toolpath_spans::Span> = report
+        .region_table
+        .iter()
+        .enumerate()
+        .map(|(region_id, entry)| {
+            let label = match entry.kind {
+                crate::unified_finish::RegionKind::Band(band) => format!("{band:?} band"),
+                crate::unified_finish::RegionKind::Crease => "Pencil claims".to_owned(),
+            };
+            crate::toolpath_spans::Span::new(
+                entry.move_range.start,
+                entry.move_range.end,
+                crate::toolpath_spans::SpanKind::Region,
+            )
+            .with_label(label)
+            .with_payload(crate::toolpath_spans::SpanPayload::Region {
+                region_id: region_id as u32,
+            })
+        })
+        .collect();
+    let insert_at = 1.min(spans.len());
+    spans.splice(insert_at..insert_at, node_spans);
     Ok(generated_with_spans(tp, spans))
 }
 
@@ -1847,6 +1933,7 @@ pub fn execute_operation_annotated_with_regions(
         boundary,
         boundary_regions: region_set.as_ref(),
         link_kinematics,
+        rest_analysis,
     };
     let mut generated = if let Some(generate) = op.op_type().registry_entry().generate {
         generate(&ctx, op)
@@ -1960,28 +2047,17 @@ fn attach_generic_rest_analysis(
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
     cfg: &crate::compute::config::RestAnalysisConfig,
 ) {
-    let stock_ref = initial_stock.filter(|stock| {
-        let (sb, mb) = (&stock.stock_bbox, &mesh.bbox);
-        sb.min.x <= mb.max.x && sb.max.x >= mb.min.x && sb.min.y <= mb.max.y && sb.max.y >= mb.min.y
-    });
     let reference_tool = reference_tool_cfg.map(build_cutter);
     let probe_ball = crate::tool::BallEndmill::new(
         crate::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
         crate::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
     );
-    let reference = if let Some(stock) = stock_ref {
-        crate::rest_field::RestReference::Stock(stock)
-    } else if let Some(tool) = reference_tool.as_ref() {
-        crate::rest_field::RestReference::Cutter {
-            tool: tool as &dyn MillingCutter,
-            is_surface_probe: false,
-        }
-    } else {
-        crate::rest_field::RestReference::Cutter {
-            tool: &probe_ball as &dyn MillingCutter,
-            is_surface_probe: true,
-        }
-    };
+    let reference = resolve_rest_reference(
+        mesh,
+        reference_tool.as_ref().map(|t| t as &dyn MillingCutter),
+        initial_stock,
+        &probe_ball,
+    );
     let rf_params = crate::rest_field::RestFieldParams {
         cell_mm: cfg.cell_mm,
         min_valley_depth: cfg.min_valley_depth,
@@ -1992,6 +2068,37 @@ fn attach_generic_rest_analysis(
     let rf = crate::rest_field::detect_rest_valleys(mesh, index, tool_def, reference, &rf_params);
     generated.rest_grid = Some(std::sync::Arc::new(rf.rest_grid));
     generated.rest_regions = Some(std::sync::Arc::new(rf.region_polygons));
+}
+
+/// Resolve the rest-depth reference (P2.5 chain): the actual machined
+/// stock (when present and its XY bbox overlaps `mesh`) → a configured
+/// real reference tool → a self-referenced bare-surface probe. Shared by
+/// the generic post-generation pass above (`attach_generic_rest_analysis`)
+/// and `generate_unified_finish`'s in-op claims pipeline (v3 S1) — same
+/// chain, same priority order, one implementation.
+fn resolve_rest_reference<'a>(
+    mesh: &TriangleMesh,
+    reference_tool: Option<&'a dyn MillingCutter>,
+    initial_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
+    probe_ball: &'a crate::tool::BallEndmill,
+) -> crate::rest_field::RestReference<'a> {
+    let stock_ref = initial_stock.filter(|stock| {
+        let (sb, mb) = (&stock.stock_bbox, &mesh.bbox);
+        sb.min.x <= mb.max.x && sb.max.x >= mb.min.x && sb.min.y <= mb.max.y && sb.max.y >= mb.min.y
+    });
+    if let Some(stock) = stock_ref {
+        crate::rest_field::RestReference::Stock(stock)
+    } else if let Some(tool) = reference_tool {
+        crate::rest_field::RestReference::Cutter {
+            tool,
+            is_surface_probe: false,
+        }
+    } else {
+        crate::rest_field::RestReference::Cutter {
+            tool: probe_ball,
+            is_surface_probe: true,
+        }
+    }
 }
 
 // ── Dressup tracing helper (Phase 4 / #44) ────────────────────────────
