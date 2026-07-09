@@ -564,41 +564,52 @@ fn fidelity_report(tag: &str, s: &ProjectSession, bm: &BandMap) {
     // ones cancel — a fake branch-dependent histogram shift). Columns
     // sample each dexel top directly.
     if let Some(cols) = sim.column_deviations.as_ref() {
-        let mut caccs = [BandAcc::default(); 4];
-        for cd in cols {
-            let code = bm.code_at(cd.x, cd.y) as usize;
-            let a = &mut caccs[code];
-            a.bins[bin_of(cd.dev)] += 1;
-            if cd.dev > EPS {
-                a.leftover_n += 1;
-                a.leftover_sum += f64::from(cd.dev);
-                a.leftover_max = a.leftover_max.max(cd.dev);
-            } else if cd.dev < -EPS {
-                a.overcut_n += 1;
-                a.overcut_sum += f64::from(cd.dev);
-                a.overcut_min = a.overcut_min.min(cd.dev);
+        // Group-filtered (2026-07-09): multi-setup projects sample the same
+        // world XY once per setup group, and the BOTTOM setup's columns
+        // cross-attributed against the TOP surface produced the entire
+        // `<-.5` "gouge" tail (11.2 k) in every earlier table. One table
+        // per group keeps the attribution honest; read the group whose
+        // setup machines the surface the band map describes.
+        let max_group = cols.iter().map(|cd| cd.group).max().unwrap_or(0);
+        for group in 0..=max_group {
+            let mut caccs = [BandAcc::default(); 4];
+            for cd in cols.iter().filter(|cd| cd.group == group) {
+                let code = bm.code_at(cd.x, cd.y) as usize;
+                let a = &mut caccs[code];
+                a.bins[bin_of(cd.dev)] += 1;
+                if cd.dev > EPS {
+                    a.leftover_n += 1;
+                    a.leftover_sum += f64::from(cd.dev);
+                    a.leftover_max = a.leftover_max.max(cd.dev);
+                } else if cd.dev < -EPS {
+                    a.overcut_n += 1;
+                    a.overcut_sum += f64::from(cd.dev);
+                    a.overcut_min = a.overcut_min.min(cd.dev);
+                }
             }
-        }
-        eprintln!("== P2.f FIDELITY-COLUMNS [{tag}] (pointwise dexel tops; negative = overcut) ==");
-        for (code, acc) in caccs.iter().enumerate() {
-            let over_mean = acc.overcut_sum / (acc.overcut_n as f64).max(1.0);
-            let left_mean = acc.leftover_sum / (acc.leftover_n as f64).max(1.0);
-            let hist: Vec<String> = DEV_BIN_LABELS
-                .iter()
-                .zip(acc.bins.iter())
-                .map(|(l, n)| format!("{l}:{n}"))
-                .collect();
             eprintln!(
-                "{:<11} | {:>9} {:>9.4} {:>8.4} | {:>9} {:>9.4} {:>8.4} | {}",
-                BAND_NAMES[code],
-                acc.overcut_n,
-                over_mean,
-                acc.overcut_min,
-                acc.leftover_n,
-                left_mean,
-                acc.leftover_max,
-                hist.join(" ")
+                "== P2.f FIDELITY-COLUMNS [{tag}] group {group} (pointwise dexel tops; negative = overcut) =="
             );
+            for (code, acc) in caccs.iter().enumerate() {
+                let over_mean = acc.overcut_sum / (acc.overcut_n as f64).max(1.0);
+                let left_mean = acc.leftover_sum / (acc.leftover_n as f64).max(1.0);
+                let hist: Vec<String> = DEV_BIN_LABELS
+                    .iter()
+                    .zip(acc.bins.iter())
+                    .map(|(l, n)| format!("{l}:{n}"))
+                    .collect();
+                eprintln!(
+                    "{:<11} | {:>9} {:>9.4} {:>8.4} | {:>9} {:>9.4} {:>8.4} | {}",
+                    BAND_NAMES[code],
+                    acc.overcut_n,
+                    over_mean,
+                    acc.overcut_min,
+                    acc.leftover_n,
+                    left_mean,
+                    acc.leftover_max,
+                    hist.join(" ")
+                );
+            }
         }
     } else {
         eprintln!("[{tag}] column deviations unavailable");
@@ -2197,6 +2208,589 @@ fn column_overlay_dump_branch(label: &str, op: Option<OperationConfig>) {
         cols.len(),
         path.display()
     );
+}
+
+/// P2.g THREE-WAY instrument probe (2026-07-09 late-night design) — the
+/// decisive run for the reopened Task-1 contradiction: the sim's stamped
+/// stocks show a real unified-vs-D on-size gap (48.5 % vs 67.7 % band-wide,
+/// reproduces on the live v2 op), but exact envelopes of (what we believed
+/// were) the same toolpaths agree to mean −1.3 µm. Three individually-
+/// validated measurements disagree pairwise — so ONE RUN per branch records
+/// every stage on the same lattice:
+///
+///   (d) `env_pre`  — exact envelope of the finish toolpath captured
+///                    immediately after generation, BEFORE any simulation
+///                    ever stamps it (pre-mutation, air-cut-filter suspect);
+///   (a) `env_read` — exact envelope of the toolpath AS READ back after the
+///                    measurement sim;
+///   (b) `post`     — re-stamp of the as-read toolpath onto the sim's own
+///                    pre-finish prior stock (chain-probe construction,
+///                    call-identical stamping args);
+///   (c) `sim_top`  — the SIM'S OWN final column tops
+///                    (`column_deviations[].top_z`, group-filtered).
+///
+/// Verdict key:
+///   pre ≠ read (ptr or moves)  → the stored toolpath IS mutated between
+///                                generation and read-back — as-stamped ≠
+///                                as-read confirmed;
+///   (c) ≠ (b)                  → the sim's in-chain stamping differs from
+///                                an isolated identical re-stamp of the
+///                                same moves onto the same prior stock;
+///   all pairs equal in-run but the branch gap persists band-wide in both
+///   (c)−(c) and (b)−(b)        → the gap is REAL machined geometry and the
+///                                earlier "envelopes equal" verdict was a
+///                                cross-run comparison of different
+///                                toolpaths (ladder-dependent generation).
+///
+/// Targets the ENABLED finish op — wanaka.toml is user-live and
+/// "3D Finish 6" is disabled (see `column_overlay_dump_branch`).
+#[test]
+#[ignore = "two full generation ladders + 0.25mm measurement sims; run with --ignored --nocapture"]
+fn p2g_three_way_probe() {
+    use std::collections::HashMap;
+    use std::io::Write as _;
+    use std::sync::Arc;
+
+    use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
+    use rs_cam_core::toolpath::{MoveType, Toolpath};
+    use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+
+    // Bad window (sess/emission frame), same as `p2g_chain_stage_probe`.
+    const WX0: f64 = 78.35;
+    const WY0: f64 = 98.05;
+    const WX1: f64 = 90.35;
+    const WY1: f64 = 110.05;
+
+    let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+
+    // Exact-profile envelope of a toolpath's cutting moves at (qx, qy) —
+    // same construction as `p2g_stamp_probe` / `p2g_chain_stage_probe`.
+    let envelope = |tp: &Toolpath, qx: f64, qy: f64| -> f64 {
+        let mut best = f64::INFINITY;
+        let r_max = cutter.radius();
+        let mut prev: Option<rs_cam_core::geo::P3> = None;
+        for m in &tp.moves {
+            let t = m.target;
+            if let (Some(a), false) = (prev, matches!(m.move_type, MoveType::Rapid))
+                && !(a.x.max(t.x) < qx - r_max
+                    || a.x.min(t.x) > qx + r_max
+                    || a.y.max(t.y) < qy - r_max
+                    || a.y.min(t.y) > qy + r_max)
+            {
+                let seg = ((t.x - a.x).powi(2) + (t.y - a.y).powi(2)).sqrt();
+                let n = ((seg / 0.02).ceil() as usize).max(1);
+                for k in 0..=n {
+                    let f = k as f64 / n as f64;
+                    let px = a.x + f * (t.x - a.x);
+                    let py = a.y + f * (t.y - a.y);
+                    let pz = a.z + f * (t.z - a.z);
+                    let d = ((px - qx).powi(2) + (py - qy).powi(2)).sqrt();
+                    if d <= r_max
+                        && let Some(h) = cutter.height_at_radius(d)
+                    {
+                        best = best.min(pz + h);
+                    }
+                }
+            }
+            prev = Some(t);
+        }
+        best
+    };
+
+    let pct = |v: &[f64], p: f64| -> f64 {
+        if v.is_empty() {
+            return f64::NAN;
+        }
+        v[((v.len() - 1) as f64 * p) as usize] * 1000.0
+    };
+    let sorted = |mut v: Vec<f64>| -> Vec<f64> {
+        v.sort_by(|a, b| a.partial_cmp(b).expect("no NaN"));
+        v
+    };
+    let report = |name: &str, v: Vec<f64>| {
+        let v = sorted(v);
+        let share = |t: f64| {
+            100.0 * v.iter().filter(|&&e| e.abs() > t).count() as f64 / (v.len() as f64).max(1.0)
+        };
+        eprintln!(
+            "  {name:<24} n={:<6} um p10={:>7.1} p50={:>7.1} p90={:>7.1} | |d|>2um {:>5.1}% >5um {:>5.1}% >10um {:>5.1}%",
+            v.len(),
+            pct(&v, 0.10),
+            pct(&v, 0.50),
+            pct(&v, 0.90),
+            share(0.002),
+            share(0.005),
+            share(0.010),
+        );
+    };
+
+    /// Per window cell: the four stages.
+    #[derive(Clone, Copy)]
+    struct WCell {
+        env_pre: f64,
+        env_read: f64,
+        post: f64,
+        sim_top: f64,
+    }
+    /// Band-wide (no envelope): sim top vs re-stamp top + band code.
+    #[derive(Clone, Copy)]
+    struct BCell {
+        sim_top: f64,
+        post: f64,
+        dev: f32,
+        band: u8,
+    }
+    struct BranchOut {
+        window: HashMap<(usize, usize), WCell>,
+        band: HashMap<(usize, usize), BCell>,
+    }
+
+    let cancel = AtomicBool::new(false);
+    let run = |label: &str, op: Option<OperationConfig>| -> BranchOut {
+        let mut s = ProjectSession::load(&wanaka_project_path()).expect("load wanaka.toml");
+        let n = s.toolpath_count();
+        let finish_indices: Vec<usize> = (0..n)
+            .filter(|&i| {
+                s.get_toolpath_config(i)
+                    .is_some_and(|tc| tc.enabled && tc.name.contains("Finish"))
+            })
+            .collect();
+        assert_eq!(
+            finish_indices.len(),
+            1,
+            "expected exactly one enabled finish op, found {finish_indices:?}"
+        );
+        let finish_idx = finish_indices[0];
+        eprintln!(
+            "[{label}] targeting enabled finish op '{}'",
+            s.get_toolpath_config(finish_idx).expect("cfg").name
+        );
+        if let Some(op) = op {
+            s.set_toolpath_operation(finish_idx, op).expect("swap op");
+        }
+        let op_id = s.get_toolpath_config(finish_idx).expect("cfg").id;
+
+        // Ladder-generate; snapshot the finish result Arc the moment its
+        // generation succeeds — before any subsequent sim can see it.
+        let enabled: Vec<usize> = (0..n)
+            .filter(|&i| s.get_toolpath_config(i).is_some_and(|tc| tc.enabled))
+            .collect();
+        let mut pending: Vec<usize> = Vec::new();
+        for &i in &enabled {
+            if s.generate_toolpath(i, &cancel).is_err() {
+                pending.push(i);
+            }
+        }
+        let snapshot = |s: &ProjectSession| -> Option<Arc<AnnotatedToolpath>> {
+            s.get_result(finish_idx).map(|r| Arc::clone(r.annotated()))
+        };
+        let mut pre_arc: Option<Arc<AnnotatedToolpath>> = if pending.contains(&finish_idx) {
+            None
+        } else {
+            snapshot(&s)
+        };
+        let mut sims_after_snapshot = 0usize;
+        while !pending.is_empty() {
+            s.run_simulation(&SimulationOptions::default(), &cancel)
+                .expect("ladder sim");
+            if pre_arc.is_some() {
+                sims_after_snapshot += 1;
+            }
+            let before = pending.len();
+            pending.retain(|&i| s.generate_toolpath(i, &cancel).is_err());
+            assert!(pending.len() < before, "ladder stalled: {pending:?}");
+            if pre_arc.is_none() && !pending.contains(&finish_idx) {
+                pre_arc = snapshot(&s);
+            }
+        }
+        let pre_arc = pre_arc.expect("finish op generated during ladder");
+        run_measurement_sim(&mut s);
+        let read_arc = snapshot(&s).expect("finish result after measurement sim");
+
+        // Stage 0 verdict input: was the stored toolpath replaced/mutated
+        // between generation and post-sim read-back?
+        let same_object = Arc::ptr_eq(&pre_arc, &read_arc);
+        let (pre_tp, read_tp) = (&pre_arc.toolpath, &read_arc.toolpath);
+        let common = pre_tp.moves.len().min(read_tp.moves.len());
+        let mut n_diff = 0usize;
+        let mut max_dxyz = 0.0f64;
+        let mut first_diffs: Vec<usize> = Vec::new();
+        for i in 0..common {
+            let (a, b) = (&pre_tp.moves[i], &read_tp.moves[i]);
+            let d = (a.target.x - b.target.x)
+                .abs()
+                .max((a.target.y - b.target.y).abs())
+                .max((a.target.z - b.target.z).abs());
+            max_dxyz = max_dxyz.max(d);
+            if d > 1e-9 || a.move_type != b.move_type || a.intent != b.intent {
+                n_diff += 1;
+                if first_diffs.len() < 10 {
+                    first_diffs.push(i);
+                }
+            }
+        }
+        eprintln!(
+            "[{label}] PRE-vs-READ toolpath: same_arc={same_object} moves {}->{} (ladder sims after snapshot: {sims_after_snapshot}, +1 measurement) | differing moves (common prefix)={n_diff} max|dxyz|={:.3}um first={:?}",
+            pre_tp.moves.len(),
+            read_tp.moves.len(),
+            max_dxyz * 1e3,
+            first_diffs
+        );
+
+        // (b): re-stamp as-read (and, if it differs, pre) onto the sim's
+        // own pre-finish prior stock — call-identical to the sim's stamping
+        // (same LUT, cutter, direction, sample step 0.25, spans + transits).
+        let sim = s.simulation_result().expect("sim result");
+        let rough_arc = Arc::clone(sim.prior_stocks.get(&op_id).expect("finish prior stock"));
+        let pos = sim
+            .boundaries
+            .iter()
+            .position(|b| b.id == op_id)
+            .expect("finish boundary");
+        assert_eq!(
+            pos + 1,
+            sim.boundaries.len(),
+            "probe assumes the finish op is last in the chain"
+        );
+        let group_ord = s
+            .setup_of_toolpath_id(op_id)
+            .expect("finish op belongs to a setup");
+        let lut = rs_cam_core::radial_profile::RadialProfileLUT::from_cutter(
+            &cutter,
+            rs_cam_core::radial_profile::LUT_SAMPLES,
+        );
+        let never_cancel = || false;
+        let restamp = |ann: &AnnotatedToolpath| -> rs_cam_core::dexel_stock::TriDexelStock {
+            let intent_transits = ann.transit_moves_bitmap_from_intents();
+            let (span_paths_by_move, transit_moves) = if ann.spans_valid {
+                let mut transit = ann.transit_moves_bitmap();
+                for (slot, from_intent) in transit.iter_mut().zip(intent_transits) {
+                    *slot = *slot || from_intent;
+                }
+                (ann.span_paths_by_move(), transit)
+            } else {
+                (
+                    vec![Vec::new(); ann.toolpath.moves.len()],
+                    ann.transit_moves_bitmap_from_intents(),
+                )
+            };
+            let mut stock = (*rough_arc).clone();
+            stock
+                .simulate_toolpath_with_lut_metrics_cancel(
+                    &ann.toolpath,
+                    &lut,
+                    &cutter,
+                    cutter.radius(),
+                    rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+                    rs_cam_core::ToolpathId(0),
+                    21_000,
+                    2,
+                    5000.0,
+                    0.25,
+                    None,
+                    &span_paths_by_move,
+                    &transit_moves,
+                    false,
+                    &never_cancel,
+                )
+                .expect("re-stamp finish onto prior stock");
+            stock
+        };
+        let post_read_stock = restamp(&read_arc);
+        let post_read = &post_read_stock.z_grid;
+        let post_pre_stock = if same_object && n_diff == 0 {
+            None
+        } else {
+            Some(restamp(&pre_arc))
+        };
+
+        // (c): the sim's own column tops, group-filtered, indexed by the
+        // grid (row, col) the sim recorded — no frame round-trip. (The
+        // first probe run mapped cd world XY back through the sess
+        // transform; that scrambled cells, so ColumnDeviation now carries
+        // its grid coordinates.)
+        let bm = build_band_map(&s);
+        let cols = sim
+            .column_deviations
+            .as_ref()
+            .expect("column deviations present");
+        let grid = &rough_arc.z_grid;
+        let mut band: HashMap<(usize, usize), BCell> = HashMap::new();
+        let mut unmapped = 0usize;
+        for cd in cols {
+            if cd.group != group_ord {
+                continue;
+            }
+            if cd.row >= grid.rows || cd.col >= grid.cols {
+                unmapped += 1;
+                continue;
+            }
+            let key = (cd.row, cd.col);
+            let Some(pt) = post_read.top_z_at(key.0, key.1) else {
+                continue;
+            };
+            band.insert(
+                key,
+                BCell {
+                    sim_top: f64::from(cd.top_z),
+                    post: f64::from(pt),
+                    dev: cd.dev,
+                    band: bm.code_at(cd.x, cd.y),
+                },
+            );
+        }
+        let total_group = cols.iter().filter(|cd| cd.group == group_ord).count();
+        eprintln!(
+            "[{label}] group {group_ord} columns={total_group} mapped={} out-of-grid={unmapped}",
+            band.len()
+        );
+
+        // On-size shares from the sim's own devs (reproduce the gap in-run).
+        for (bname, code) in [("mid-steep", 2u8), ("all-bands", 255u8)] {
+            let devs: Vec<f32> = band
+                .values()
+                .filter(|c| code == 255 || c.band == code)
+                .map(|c| c.dev)
+                .collect();
+            let on = devs.iter().filter(|d| d.abs() < 0.01).count();
+            let plus05 = devs.iter().filter(|&&d| (0.01..0.05).contains(&d)).count();
+            eprintln!(
+                "[{label}] {bname}: n={} on-size {:.1}% +.05-bin {:.1}%",
+                devs.len(),
+                100.0 * on as f64 / (devs.len() as f64).max(1.0),
+                100.0 * plus05 as f64 / (devs.len() as f64).max(1.0)
+            );
+        }
+
+        // Within-branch stage deltas, band-wide: (c) − (b).
+        eprintln!("[{label}] WITHIN-BRANCH stage deltas (band-wide, per column):");
+        report(
+            "sim_top - post(all)",
+            band.values().map(|c| c.sim_top - c.post).collect(),
+        );
+        report(
+            "sim_top - post(midsteep)",
+            band.values()
+                .filter(|c| c.band == 2)
+                .map(|c| c.sim_top - c.post)
+                .collect(),
+        );
+
+        // Window cells: envelopes (a)/(d) + (b) + (c).
+        let mut window: HashMap<(usize, usize), WCell> = HashMap::new();
+        for (key, bc) in &band {
+            let (x, y) = grid.cell_to_world(key.0, key.1);
+            if !(WX0..=WX1).contains(&x) || !(WY0..=WY1).contains(&y) {
+                continue;
+            }
+            let env_read = envelope(read_tp, x, y);
+            let env_pre = if same_object && n_diff == 0 {
+                env_read
+            } else {
+                envelope(pre_tp, x, y)
+            };
+            window.insert(
+                *key,
+                WCell {
+                    env_pre,
+                    env_read,
+                    post: bc.post,
+                    sim_top: bc.sim_top,
+                },
+            );
+        }
+        eprintln!(
+            "[{label}] WINDOW stage deltas (per cell, n={}):",
+            window.len()
+        );
+        report(
+            "env_read - env_pre",
+            window.values().map(|c| c.env_read - c.env_pre).collect(),
+        );
+        report(
+            "post - env_read",
+            window
+                .values()
+                .filter(|c| c.env_read.is_finite())
+                .map(|c| c.post - c.env_read)
+                .collect(),
+        );
+        report(
+            "sim_top - post",
+            window.values().map(|c| c.sim_top - c.post).collect(),
+        );
+        report(
+            "sim_top - env_read",
+            window
+                .values()
+                .filter(|c| c.env_read.is_finite())
+                .map(|c| c.sim_top - c.env_read)
+                .collect(),
+        );
+        if let Some(pp) = &post_pre_stock {
+            report(
+                "post_pre - post_read",
+                window
+                    .keys()
+                    .filter_map(|k| {
+                        let a = pp.z_grid.top_z_at(k.0, k.1)?;
+                        let b = post_read.top_z_at(k.0, k.1)?;
+                        Some(f64::from(a) - f64::from(b))
+                    })
+                    .collect(),
+            );
+        }
+
+        // Per-cell dump for offline analysis.
+        let path = p2f_output_dir().join(format!("p2g_3way_{label}_cells.txt"));
+        let mut f = std::io::BufWriter::new(std::fs::File::create(&path).expect("create dump"));
+        let mut keys: Vec<&(usize, usize)> = window.keys().collect();
+        keys.sort();
+        for k in keys {
+            let c = &window[k];
+            let (x, y) = grid.cell_to_world(k.0, k.1);
+            writeln!(
+                f,
+                "{} {} {x:.4} {y:.4} {:.6} {:.6} {:.6} {:.6}",
+                k.0, k.1, c.env_pre, c.env_read, c.post, c.sim_top
+            )
+            .expect("write cell");
+        }
+        eprintln!("[{label}] window dump -> {}", path.display());
+
+        // Band-wide per-column dump (offline diff maps / attribution).
+        let bpath = p2f_output_dir().join(format!("p2g_3way_{label}_band.txt"));
+        let mut bf = std::io::BufWriter::new(std::fs::File::create(&bpath).expect("create dump"));
+        let mut bkeys: Vec<&(usize, usize)> = band.keys().collect();
+        bkeys.sort();
+        for k in bkeys {
+            let c = &band[k];
+            writeln!(
+                bf,
+                "{} {} {} {:.6} {:.6} {:.6}",
+                k.0, k.1, c.band, c.dev, c.sim_top, c.post
+            )
+            .expect("write band column");
+        }
+        eprintln!("[{label}] band dump -> {}", bpath.display());
+
+        BranchOut { window, band }
+    };
+
+    let b = run("b75", None);
+    let d = run(
+        "d",
+        Some(OperationConfig::Scallop(ScallopConfig {
+            scallop_height: 0.011,
+            tolerance: 0.05,
+            direction: ScallopDirection::OutsideIn,
+            continuous: true,
+            slope_from: 0.0,
+            slope_to: 90.0,
+            feed_rate: 3000.0,
+            plunge_rate: 150.0,
+            stock_to_leave: 0.0,
+            spindle_rpm: Some(21000),
+        })),
+    );
+
+    // Cross-branch paired deltas: if the gap is REAL geometry it shows in
+    // BOTH sim_top−sim_top and post−post; if it is sim-side only, post−post
+    // stays ~0 while sim_top−sim_top carries the shift.
+    eprintln!("== P2.g THREE-WAY CROSS-BRANCH (B75 − D, per common column) ==");
+    for (bname, code) in [("mid-steep", 2u8), ("all-bands", 255u8)] {
+        let mut d_sim = Vec::new();
+        let mut d_post = Vec::new();
+        for (k, cb) in &b.band {
+            let Some(cd) = d.band.get(k) else { continue };
+            if code != 255 && cb.band != code {
+                continue;
+            }
+            d_sim.push(cb.sim_top - cd.sim_top);
+            d_post.push(cb.post - cd.post);
+        }
+        eprintln!("[{bname}]");
+        report("sim_top(B) - sim_top(D)", d_sim);
+        report("post(B)    - post(D)", d_post);
+    }
+    let mut d_env = Vec::new();
+    for (k, cb) in &b.window {
+        let Some(cd) = d.window.get(k) else { continue };
+        if cb.env_read.is_finite() && cd.env_read.is_finite() {
+            d_env.push(cb.env_read - cd.env_read);
+        }
+    }
+    eprintln!("[window]");
+    report("env_read(B) - env_read(D)", d_env);
+}
+
+/// Tail-2 repro (unified v3 prompt, 2026-07-09): the night GUI sim showed
+/// 20 rapid collisions, ALL in the live v2 unified finish op — local moves
+/// 8580/9193/9252/9310/9992/10356 (early cluster) and 79 909–120 576 (late
+/// cluster, worst z=19.996 at 119 234 — a rapid essentially AT the raw
+/// stock top). Diagnostic hypothesis: inter-region rapids not lifting to
+/// safe-Z — the exact linking machinery v3's fused router leans on. The
+/// earlier headless colfix run had 0 on the OLD project file; this repro
+/// runs the CURRENT file unmodified through the same chain + GUI-options
+/// sim as `run_chain` and dumps every collision with per-op attribution,
+/// local move index, neighborhood move context, and the prior-stock top at
+/// the crossing — enough to identify the emitting code path headlessly.
+#[test]
+#[ignore = "one full generation ladder + GUI-options sim; run with --ignored --nocapture"]
+fn p2g_live_v2_collision_repro() {
+    let mut s = ProjectSession::load(&wanaka_project_path()).expect("load wanaka.toml");
+    let out = run_chain("live-v2 collision repro", &mut s);
+    eprintln!("total rapid collisions: {}", out.collisions);
+
+    let sim = s.simulation_result().expect("sim result");
+    let n = s.toolpath_count();
+    assert_eq!(
+        sim.rapid_collisions.len(),
+        sim.rapid_collision_move_indices.len(),
+        "collision/index vectors must be parallel"
+    );
+    for (rc, &gidx) in sim
+        .rapid_collisions
+        .iter()
+        .zip(&sim.rapid_collision_move_indices)
+    {
+        let Some(b) = sim
+            .boundaries
+            .iter()
+            .find(|b| (b.start_move..b.end_move).contains(&gidx))
+        else {
+            eprintln!("collision at global {gidx} outside all boundaries?!");
+            continue;
+        };
+        let local = gidx - b.start_move;
+        // Prior-stock top at the crossing (the stock state the check ran
+        // against — snapshot before this op carved).
+        let stock_top = sim.prior_stocks.get(&b.id).and_then(|st| {
+            let g = &st.z_grid;
+            let mid_x = 0.5 * (rc.start.x + rc.end.x);
+            let mid_y = 0.5 * (rc.start.y + rc.end.y);
+            g.world_to_cell(mid_x, mid_y)
+                .and_then(|(r, c)| g.top_z_at(r, c))
+        });
+        eprintln!(
+            "op='{}' local={local} rapid ({:.3},{:.3},{:.3}) -> ({:.3},{:.3},{:.3}) | prior stock top at mid: {stock_top:?}",
+            b.name, rc.start.x, rc.start.y, rc.start.z, rc.end.x, rc.end.y, rc.end.z
+        );
+        // Neighborhood move context from the op's stored toolpath.
+        let cfg_idx = (0..n).find(|&i| s.get_toolpath_config(i).is_some_and(|tc| tc.id == b.id));
+        if let Some(res) = cfg_idx.and_then(|i| s.get_result(i)) {
+            let moves = &res.annotated().toolpath.moves;
+            let lo = local.saturating_sub(3);
+            let hi = (local + 4).min(moves.len());
+            for (i, m) in moves.iter().enumerate().take(hi).skip(lo) {
+                let marker = if i == local { ">>" } else { "  " };
+                eprintln!(
+                    "  {marker} #{i} {:?} {:?} -> ({:.3},{:.3},{:.3})",
+                    m.move_type, m.intent, m.target.x, m.target.y, m.target.z
+                );
+            }
+        }
+    }
 }
 
 /// P2.g LUT-error probe: quantifies `RadialProfileLUT` interpolation error
