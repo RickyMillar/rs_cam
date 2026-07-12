@@ -428,3 +428,25 @@ against taller stock. FIX: `invalidate_result_chain` /
 reorder/move/remove) now invalidate downstream `FromRemainingStock`
 results and `DerivedRestRegions` consumers to fixpoint; sentries in
 `session/mutation.rs` tests.
+
+**TAIL 2 RCA REVISED 2026-07-13 (live S1 validation)**: the staleness
+class is real and its fix stays, but it was NOT the mechanism of the
+observed 20. A FRESH live chain (new GUI binary, claims-on live v2)
+reproduced exactly 20 rapid collisions while the headless repro on the
+identical config stayed at 0 — the divergence is SIM RESOLUTION, not
+the worker path. The GUI's auto resolution for the Ø1 tip is 0.1 mm;
+the headless default is 0.5 mm. Resolution sweep in
+`p2g_live_v2_collision_repro`: **0 @ 0.5 mm, 15 @ 0.25 mm, 20 @
+0.1 mm.** The flagged moves are same-XY vertical ENTRY DESCENTS from
+safe-Z 31.02 ending within ~0–0.3 mm of the raw stock top at
+uncut-column XYs (e.g. →20.003, →20.156, →20.255):
+`optimize_entry_descents` measures its disc ceiling on the
+GENERATION-time prior-stock grid (0.5 mm ladder sims), and thin ridge
+tops that grid smooths away survive on the fine verification grid —
+a real (small, ≤~0.3 mm) rapid-feed graze class, invisible at coarse
+check resolution. FIX DIRECTION (open): pad the descent target by at
+least the snapshot grid's cell size (or measure the ceiling with
+one-cell slack); v3's fused router inherits the same rule
+(link-safety must be resolution-honest). The 07-09 night incident was
+most likely this same class (user GUI sims run at auto 0.1 mm),
+possibly compounded by staleness.

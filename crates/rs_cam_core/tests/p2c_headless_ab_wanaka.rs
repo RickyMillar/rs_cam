@@ -2727,6 +2727,48 @@ fn p2g_live_v2_collision_repro() {
     let out = run_chain("live-v2 collision repro", &mut s);
     eprintln!("total rapid collisions: {}", out.collisions);
 
+    // Resolution sweep (2026-07-13 live finding): the GUI's auto
+    // resolution for the Ø1 tip is 0.1 mm and its sim flags 20 rapid
+    // collisions on the SAME toolpaths this 0.5 mm default sim passes —
+    // the collision check samples rapids against the dexel tops, and
+    // fine grids keep thin ridge crests the coarse grid smooths away.
+    // Print counts per resolution so the divergence is pinned headlessly.
+    let cancel = AtomicBool::new(false);
+    for res in [0.25, 0.1] {
+        let opts = SimulationOptions {
+            resolution: res,
+            ..Default::default()
+        };
+        s.run_simulation(&opts, &cancel).expect("resolution sim");
+        let sim = s.simulation_result().expect("sim result");
+        eprintln!(
+            "rapid collisions at {res}mm: {}",
+            sim.rapid_collisions.len()
+        );
+        for (rc, &gidx) in sim
+            .rapid_collisions
+            .iter()
+            .zip(&sim.rapid_collision_move_indices)
+            .take(6)
+        {
+            let b = sim
+                .boundaries
+                .iter()
+                .find(|b| (b.start_move..b.end_move).contains(&gidx));
+            eprintln!(
+                "  op='{}' local={} ({:.3},{:.3},{:.3})->({:.3},{:.3},{:.3})",
+                b.map_or("?", |b| b.name.as_str()),
+                b.map_or(gidx, |b| gidx - b.start_move),
+                rc.start.x,
+                rc.start.y,
+                rc.start.z,
+                rc.end.x,
+                rc.end.y,
+                rc.end.z
+            );
+        }
+    }
+
     let sim = s.simulation_result().expect("sim result");
     let n = s.toolpath_count();
     assert_eq!(
