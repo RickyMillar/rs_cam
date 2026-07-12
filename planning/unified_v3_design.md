@@ -153,13 +153,26 @@ Order of operations inside `unified_finish_toolpath_with_cancel` (extended):
 
 1. **Classification surface** as today (true-surface probe, max-gradient
    slope map).
-2. **Rest analysis first-class**: call `detect_rest_valleys` with
-   `RestReference::Stock(prior_stock)` when `initial_stock` is present
-   (Op B is `FromRemainingStock`; frame-guard as in `rest_depth_arm`),
-   else the analytic fallback chain. This yields BOTH the crease
-   centerlines AND the rest mask/regions in one pass.
+2. **Rest analysis first-class** — AMENDED by the S1 A/B failure
+   (2026-07-09/13): **claims are GEOMETRIC, territory is MATERIAL.**
+   Crease detection ALWAYS runs against the analytic self-probe
+   (design-surface valleys — what pencil corridors are for); on a
+   rough→finish chain a stock-referenced detector reads roughing
+   TERRACES as a dendritic phantom crease network (measured: 10 k new
+   uncut mid-steep columns when those phantoms claimed corridors). The
+   machined stock feeds ONLY the territory mask, computed directly as
+   `stock_top − pencil_drop` from the analytic run's own drop field —
+   one detector pass serves both. Untrusted (NaN) samples KEEP coverage
+   (the detector's boundary-erosion rim must never amputate band area).
+   The R2 "prefer machined-stock reference" lesson still holds for the
+   pencil's own CUT targets — that refinement is S3 scope, distinct
+   from claiming.
 3. **Pencil claims**: feed centerlines into `decompose`'s existing
-   `creases` param. Extend `apply_crease_corridor`:
+   `creases` param — but ONLY centerlines that survive the emission
+   gates (S1 lesson: claim-carve-abandon — a corridor carved from a band
+   whose paths the emitter then length-gates away is leftover nobody
+   owns; pre-apply the same gate before decompose). Extend
+   `apply_crease_corridor`:
    - Claim corridors for **every** pencil-routed crease (today only
      canyon-width ones carve). Narrow-crease corridor = centerline
      buffered by `max(half_width_mm, pencil_footprint)` where
@@ -370,6 +383,17 @@ quality.
    pencil emission via `centerline_cut_paths`, band-major concat as today.
    A/B checkpoint: quality (COLUMNS) must not regress vs live v2; pencil
    corridors visible in report.
+   **[DONE 2026-07-13, commits 78bc140/b7b1ea2/f36ac7f/4b41dc9→0fbaede.**
+   First A/B FAILED its quality gate → the geometric-claims amendment
+   above; rerun PASSES: collisions 0/0, mid-steep on-size −1.7 pp (the
+   honest `min_rest_depth 0.02` skip price, +.05 share flat), project
+   −0.7 %. Landed beyond plan: Region spans + report region_table,
+   rest_grid/rest_regions carry-through, per-group FIDELITY-COLUMNS,
+   enabled-finish-op harness retarget, `s1_claims_ab` +
+   `s1_claims_mask_probe`. OPEN for S2: crease claiming on wanaka finds
+   no claimable valleys at default detector dials (R2's tuned dials are
+   the starting point — sweep alongside the wall fixture); GUI panel
+   doesn't expose `pencil_claims`/`min_rest_depth_mm` yet.]**
 3. **S2 — per-island classification**: `IslandStats` + routing rule +
    wall-part fixture; sweep `wall_smoothness_max` / `wall_min_z_extent`.
 4. **S3 — fused router**: cross-strategy `RegionPath` graph + Region spans
