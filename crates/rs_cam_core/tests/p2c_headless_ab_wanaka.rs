@@ -3403,6 +3403,139 @@ fn p2f_fidelity_branch_b() {
 /// must disambiguate by span nesting depth, not assume one shared table").
 /// Move-range containment is the only structural signal available across
 /// the session boundary, so that's what this uses.
+/// S1 claims-mask diagnostic: the `s1_claims_ab` quality gate failed with
+/// ~30 % of the mid-steep band excluded by the rest-island territory mask
+/// on ROUGHED prior stock, where the physical rest is ≥ stock-to-leave
+/// everywhere the OFF branch demonstrably cut — the mask values must be
+/// wrong (NaN trust erosion / lookup mismatch), not the physics. This
+/// probe runs the ON chain once, reads the claims detector's own
+/// `rest_grid` off the generated result (§2.4 carry-through), and dumps
+/// per cell: x, y, rest, surface_z (detector's pencil drop), and the
+/// prior-stock top at the same XY — enough to separate NaN-share from
+/// value-mismatch (`rest` should equal `prior_top − surface_z` exactly,
+/// same formula) from frame misregistration (spatial pattern).
+#[test]
+#[ignore = "one full generation ladder + sim; run with --ignored --nocapture"]
+fn s1_claims_mask_probe() {
+    use std::io::Write as _;
+
+    let mut s = ProjectSession::load(&wanaka_project_path()).expect("load wanaka.toml");
+    let idx = enabled_finish_index(&s);
+    let mut cfg = ab_unified_config();
+    cfg.pencil_claims = true;
+    s.set_toolpath_operation(idx, OperationConfig::UnifiedFinish(cfg))
+        .expect("swap to claims-on unified");
+    run_chain("s1 mask probe", &mut s);
+
+    let op_id = s.get_toolpath_config(idx).expect("cfg").id;
+    let ann = s.get_result(idx).expect("finish generated").annotated();
+    let grid = ann
+        .rest_grid
+        .as_ref()
+        .expect("claims ran -> rest_grid carried on the result");
+    let sim = s.simulation_result().expect("sim result");
+    let prior = sim.prior_stocks.get(&op_id).expect("finish prior stock");
+    let pz = &prior.z_grid;
+
+    // Under the geometric-claims semantics the grid's `rest` is the
+    // ANALYTIC float-rest (op cutter above the bare surface — crease
+    // evidence), while the TERRITORY quantity is computed independently as
+    // `prior stock top − surface_z` (drop field vs machined stock); NaN
+    // surface_z KEEPS coverage. Tally both so the dump stays the mask's
+    // ground truth.
+    let mut n_nan = 0usize; // untrusted drop samples (keep coverage)
+    let mut n_crease_rest = 0usize; // analytic float-rest >= 0.02 (crease evidence)
+    let mut n_excluded = 0usize; // finite territory rest < 0.02 (masked out)
+    let mut n_kept = 0usize; // finite territory rest >= 0.02
+    let path = p2f_output_dir().join("s1_mask_cells.txt");
+    let mut f = std::io::BufWriter::new(std::fs::File::create(&path).expect("create dump"));
+    for row in 0..grid.ny {
+        for col in 0..grid.nx {
+            let x = grid.origin_x + col as f64 * grid.cell_mm;
+            let y = grid.origin_y + row as f64 * grid.cell_mm;
+            let rest = grid.rest[row * grid.nx + col];
+            let sz = grid.surface_z[row * grid.nx + col];
+            let ptop = pz
+                .world_to_cell(x, y)
+                .and_then(|(r, c)| pz.top_z_at(r, c))
+                .map(f64::from);
+            if !rest.is_nan() && f64::from(rest) >= 0.02 {
+                n_crease_rest += 1;
+            }
+            match (sz.is_nan(), ptop) {
+                (true, _) | (false, None) => n_nan += 1,
+                (false, Some(pt)) => {
+                    if pt - f64::from(sz) < 0.02 {
+                        n_excluded += 1;
+                    } else {
+                        n_kept += 1;
+                    }
+                }
+            }
+            writeln!(
+                f,
+                "{row} {col} {x:.3} {y:.3} {rest:.4} {sz:.4} {}",
+                ptop.map_or(f64::NAN, |v| v)
+            )
+            .expect("write cell");
+        }
+    }
+    eprintln!(
+        "rest grid {}x{} cell={:.3} origin=({:.2},{:.2}) | prior grid {}x{} cell={:.4} origin=({:.2},{:.2})",
+        grid.nx,
+        grid.ny,
+        grid.cell_mm,
+        grid.origin_x,
+        grid.origin_y,
+        pz.rows,
+        pz.cols,
+        pz.cell_size,
+        pz.origin_u,
+        pz.origin_v
+    );
+    let total = (grid.nx * grid.ny) as f64;
+    eprintln!(
+        "cells: untrusted(keep)={n_nan} ({:.1}%)  territory-excluded={n_excluded} ({:.1}%)  territory-kept={n_kept} ({:.1}%)  crease-rest>=0.02={n_crease_rest} ({:.1}%)",
+        100.0 * n_nan as f64 / total,
+        100.0 * n_excluded as f64 / total,
+        100.0 * n_kept as f64 / total,
+        100.0 * n_crease_rest as f64 / total,
+    );
+    eprintln!("dump -> {}", path.display());
+
+    // Per-column deviations at measurement resolution, same format as the
+    // three-way probe's band dump — diffed offline against the claims-off
+    // baseline (`p2g_3way_b75_band.txt`, dial-identical) to locate WHERE
+    // the ON branch lost coverage (rim-shaped = territory mask;
+    // dendritic-stripe-shaped = corridor carving).
+    run_measurement_sim(&mut s);
+    let bm = build_band_map(&s);
+    let group = s
+        .setup_of_toolpath_id(op_id)
+        .expect("finish op belongs to a setup");
+    let sim = s.simulation_result().expect("measurement sim");
+    let cols = sim
+        .column_deviations
+        .as_ref()
+        .expect("column deviations present");
+    let bpath = p2f_output_dir().join("s1_mask_on_band.txt");
+    let mut bf = std::io::BufWriter::new(std::fs::File::create(&bpath).expect("create dump"));
+    for cd in cols.iter().filter(|cd| cd.group == group) {
+        writeln!(
+            bf,
+            "{} {} {} {:.6} {:.6} {:.6}",
+            cd.row,
+            cd.col,
+            bm.code_at(cd.x, cd.y),
+            cd.dev,
+            cd.top_z,
+            cd.top_z
+        )
+        .expect("write column");
+    }
+    eprintln!("band dump -> {}", bpath.display());
+}
+
 fn outer_region_spans(
     spans: &[rs_cam_core::toolpath_spans::Span],
 ) -> Vec<&rs_cam_core::toolpath_spans::Span> {

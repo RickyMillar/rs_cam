@@ -1301,20 +1301,18 @@ pub(crate) fn generate_unified_finish(
     // field's doc comment).
     planner.pencil_claim_floor = ctx.tool_def.radius() * 0.25;
 
-    // `probe_ball`/`reference_tool` must outlive the call below — they're
-    // what `claims_cfg.reference` (a `RestReference<'_>`) borrows from.
-    let probe_ball = crate::tool::BallEndmill::new(
-        crate::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
-        crate::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
-    );
-    let reference_tool = ctx.reference_tool_cfg.as_ref().map(build_cutter);
     let claims_cfg = cfg.pencil_claims.then(|| {
-        let reference = resolve_rest_reference(
-            m,
-            reference_tool.as_ref().map(|t| t as &dyn MillingCutter),
-            ctx.initial_stock,
-            &probe_ball,
-        );
+        // The stock feeds the TERRITORY mask only (crease detection is
+        // always analytic — `ClaimsConfig::territory_stock` doc); the same
+        // XY frame guard `resolve_rest_reference` applies, minus its
+        // reference fallback chain.
+        let territory_stock = ctx.initial_stock.filter(|stock| {
+            let (sb, mb) = (&stock.stock_bbox, &m.bbox);
+            sb.min.x <= mb.max.x
+                && sb.max.x >= mb.min.x
+                && sb.min.y <= mb.max.y
+                && sb.max.y >= mb.min.y
+        });
         // Detector tuning mirrors `attach_generic_rest_analysis`: use the
         // configured `rest_analysis` cell/depth/margin when present, else
         // the detector's own defaults. `route_width_factor`/
@@ -1334,7 +1332,7 @@ pub(crate) fn generate_unified_finish(
                     }
                 });
         crate::unified_finish::ClaimsConfig {
-            reference,
+            territory_stock,
             rest_field_params,
             min_rest_depth_mm: cfg.min_rest_depth_mm,
         }
@@ -1398,7 +1396,15 @@ pub(crate) fn generate_unified_finish(
         .collect();
     let insert_at = 1.min(spans.len());
     spans.splice(insert_at..insert_at, node_spans);
-    Ok(generated_with_spans(tp, spans))
+    let mut generated = generated_with_spans(tp, spans);
+    // §2.4 carry-through: the claims detector's rest field + region
+    // polygons ride the generated result exactly like the pencil
+    // RestDepth arm's (GUI heatmap, DerivedRestRegions, probes). `None`
+    // when claims didn't run — the generic post-pass fallback still
+    // applies then.
+    generated.rest_grid = report.rest_grid;
+    generated.rest_regions = report.rest_regions;
+    Ok(generated)
 }
 
 /// SteepShallow family adapter. Cancellable: the cooperative cancel
