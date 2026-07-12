@@ -24,12 +24,19 @@ Foundations status (both tails CLOSED 2026-07-09 late):
   frontier). Three design inputs fall out, folded into §2.2/§2.4/§4
   below: per-territory cusp-consistent dials, Region-span attribution as
   a MUST, and texture-on-steeps as the shared quality ceiling.
-- **TP15 collisions**: staleness, not emission — fixed by
-  `invalidate_result_chain` (session mutation invalidates downstream
-  `FromRemainingStock` results + `DerivedRestRegions` consumers to
-  fixpoint on chain edits), with unit sentries. Fresh generation emits 0
-  collisions on the current file. The router design below still adopts the
-  emission-time stock-clearance rule as defense in depth.
+- **TP15 collisions** — REVISED 2026-07-13: two real classes. (1)
+  Staleness (chain edits keeping downstream rest results) — fixed by
+  `invalidate_result_chain` + sentries. (2) The one actually observed
+  live: **descent-ceiling resolution asymmetry** — `optimize_entry_descents`
+  measures its ceiling on the 0.5 mm generation-time snapshot; the GUI
+  verifies at auto 0.1 mm where thin ridge tops survive; entry descents
+  end ≤~0.3 mm from fine-grid tops at uncut columns. Repro sweep:
+  0 @ 0.5 / 15 @ 0.25 / 20 @ 0.1 mm (`p2g_live_v2_collision_repro`).
+  OPEN FIX: pad descent targets by ≥ the snapshot cell size. The router
+  design below adopts the generalized rule: **link/descent safety checks
+  must be resolution-honest** — verified against at least the finest
+  resolution the project will simulate at, or padded by the measuring
+  grid's cell.
 
 ## 0. The vision, restated as architecture
 
