@@ -50,6 +50,7 @@ use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::machine_kinematics::{LinkKinematics, retract_link_time, surface_link_time};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::pencil::{PencilParams, emit_paths};
+use crate::polygon::Polygon2;
 use crate::region_set::RegionSet;
 use crate::rest_field::{
     RestCenterline, RestFieldParams, RestGrid, RestReference, detect_rest_valleys,
@@ -148,26 +149,31 @@ pub struct RoutedLink {
 /// reproduces the pre-v3 op exactly: no detector run, no crease claims, no
 /// crease node — the Wave 3 A/B harness pins this as the baseline.
 pub struct ClaimsConfig<'a> {
-    /// Rest-depth reference, already resolved by the caller (mirrors
-    /// `compute::execute`'s shared chain: the actual machined stock, when
-    /// present and XY-frame-overlapping, else a configured real reference
-    /// tool, else a self-referenced bare-surface probe). Territory
-    /// restricts to rest ISLANDS (step 4 below) only when this is
-    /// `RestReference::Stock`; under a `Cutter` reference (real tool or
-    /// probe) territory stays full — an analytic rest field would wrongly
-    /// gut the shallow band on terrain the prior op never actually cut.
-    pub reference: RestReference<'a>,
+    /// Machined prior stock for the TERRITORY mask ONLY (rest islands,
+    /// step 4 below) — already XY-frame-guarded by the caller; `None` →
+    /// territory stays full.
+    ///
+    /// Deliberately NOT a crease-detection reference: the S1 A/B on the
+    /// wanaka rough→finish chain proved that a stock-referenced rest field
+    /// reads the ROUGHING TERRACE pattern as a dendritic phantom "crease"
+    /// network — universal claims then carve corridors the emitter never
+    /// cuts (10k+ new uncut mid-steep columns). Claims are GEOMETRIC
+    /// (design-surface valleys via the analytic self-probe, below);
+    /// territory is MATERIAL (this stock).
+    pub territory_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
     /// Detector params. `pencil_radius` is overwritten with the op's own
     /// `cutter.radius()` before use — the finishing tool IS the pencil in
     /// this op (UnifiedFinish is single-tool, ball-tip-only), unlike the
     /// standalone pencil op's separate reference/pencil tool pair.
     pub rest_field_params: RestFieldParams,
-    /// Rest-depth territory gate (mm, step 4 below): a classification cell
-    /// stays `covered` under `RestReference::Stock` only when the rest grid
-    /// measures at least this much remaining material there (`NaN` —
-    /// untrusted / no sample — never counts as covered). Independent of
-    /// `rest_field_params.min_valley_depth`, which gates the crease
-    /// detector itself, not banding territory.
+    /// Rest-depth territory gate (mm, step 4 below): with a
+    /// `territory_stock`, a classification cell stays `covered` unless the
+    /// MEASURED rest there (stock top − pencil drop) is finite and below
+    /// this. Untrusted samples (`NaN` drop / outside the stock grid) KEEP
+    /// their coverage — only measured-thin territory drops out, so the
+    /// detector's boundary-erosion rim can never amputate band area.
+    /// Independent of `rest_field_params.min_valley_depth`, which gates
+    /// the crease detector itself, not banding territory.
     pub min_rest_depth_mm: f64,
 }
 
@@ -251,6 +257,13 @@ pub struct UnifiedFinishReport {
     /// The junction decisions, `route.len().saturating_sub(1)` entries —
     /// empty when routing ran without kinematics (no costing happened).
     pub links: Vec<RoutedLink>,
+    /// The claims detector's continuous rest field (design doc §2.4:
+    /// carried through so the GUI heatmap and probes can see the op's OWN
+    /// territory evidence). `None` when claims didn't run.
+    pub rest_grid: Option<std::sync::Arc<crate::rest_field::RestGrid>>,
+    /// The claims detector's rest-region polygons (the
+    /// `DerivedRestRegions` source shape). `None` when claims didn't run.
+    pub rest_regions: Option<std::sync::Arc<Vec<Polygon2>>>,
 }
 
 // ── Orchestrator ─────────────────────────────────────────────────────────
@@ -321,6 +334,8 @@ pub fn unified_finish_toolpath_with_cancel(
     // byte-identical to the pre-v3 op (module doc).
     let mut creases: Vec<RestCenterline> = Vec::new();
     let mut claims_report: Option<ClaimsReport> = None;
+    let mut claims_rest_grid: Option<std::sync::Arc<crate::rest_field::RestGrid>> = None;
+    let mut claims_rest_regions: Option<std::sync::Arc<Vec<Polygon2>>> = None;
     if let Some(cfg) = claims {
         check_cancel(cancel)?;
         let rf_params = RestFieldParams {
@@ -333,20 +348,38 @@ pub fn unified_finish_toolpath_with_cancel(
             min_cut_length: cfg.rest_field_params.min_cut_length,
             region_margin_mm: cfg.rest_field_params.region_margin_mm,
         };
-        let rf = detect_rest_valleys(mesh, index, cutter, cfg.reference, &rf_params);
+        // Crease detection ALWAYS runs against the analytic self-probe —
+        // geometric valleys of the design surface, the thing pencil
+        // corridors are FOR. See `ClaimsConfig::territory_stock` for why
+        // the machined stock must not be the crease reference.
+        let probe = crate::tool::BallEndmill::new(
+            crate::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
+            crate::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
+        );
+        let rf = detect_rest_valleys(
+            mesh,
+            index,
+            cutter,
+            RestReference::Cutter {
+                tool: &probe,
+                is_surface_probe: true,
+            },
+            &rf_params,
+        );
         check_cancel(cancel)?;
 
-        // Territory = rest islands ONLY under a genuine stock reference
-        // (design doc §2.1 step 4) — an analytic (Cutter) reference would
-        // wrongly gut the shallow band on terrain the prior op never
-        // actually visited, so territory stays full there.
-        let territory_mode = if matches!(cfg.reference, RestReference::Stock(_)) {
+        // Territory = rest islands (design doc §2.1 step 4), measured
+        // directly as stock top − pencil drop per classification cell.
+        // The analytic run's `surface_z` field IS the pencil drop, so no
+        // second detector pass is needed. Untrusted samples keep their
+        // coverage (`ClaimsConfig::min_rest_depth_mm` doc).
+        let territory_mode = if cfg.territory_stock.is_some() {
             ClaimTerritoryMode::RestIslands
         } else {
             ClaimTerritoryMode::Full
         };
         let mut rest_excluded_cells = 0usize;
-        if territory_mode == ClaimTerritoryMode::RestIslands {
+        if let Some(stock) = cfg.territory_stock {
             for (i, cov) in covered.iter_mut().enumerate() {
                 if !*cov {
                     continue;
@@ -355,14 +388,39 @@ pub fn unified_finish_toolpath_with_cancel(
                 let col = i % cols;
                 let x = origin_x + col as f64 * cell;
                 let y = origin_y + row as f64 * cell;
-                let keep = rest_grid_sample(&rf.rest_grid, x, y)
-                    .is_some_and(|r| r >= cfg.min_rest_depth_mm);
-                if !keep {
+                let Some(drop_z) = rest_grid_surface_z(&rf.rest_grid, x, y) else {
+                    continue;
+                };
+                let Some(top_z) = stock
+                    .z_grid
+                    .world_to_cell(x, y)
+                    .and_then(|(r, c)| stock.z_grid.top_z_at(r, c))
+                else {
+                    continue;
+                };
+                if f64::from(top_z) - drop_z < cfg.min_rest_depth_mm {
                     *cov = false;
                     rest_excluded_cells += 1;
                 }
             }
         }
+
+        // Claim ONLY what the pencil will actually cut: pre-apply the same
+        // length gate `centerline_cut_paths` applies at emission, so
+        // `decompose` never carves a corridor whose paths the emitter then
+        // drops. Claim-carve-abandon was the S1 A/B quality failure: every
+        // carved-but-uncut corridor is leftover nobody owns.
+        let detected = rf.centerlines.len();
+        creases = rf
+            .centerlines
+            .into_iter()
+            .filter(|c| crate::geo::polyline_length(&c.points) >= rf_params.min_cut_length)
+            .collect();
+        tracing::debug!(
+            detected,
+            claimed = creases.len(),
+            "unified_finish claims: centerlines surviving the emission length gate"
+        );
 
         claims_report = Some(ClaimsReport {
             territory_mode,
@@ -371,7 +429,11 @@ pub fn unified_finish_toolpath_with_cancel(
             crease_path_length_mm: 0.0,
             detector_coverage: rf.report.coverage(),
         });
-        creases = rf.centerlines;
+        // §2.4 carry-through: the detector's field + region polygons ride
+        // the report so the adapter can attach them to the generated
+        // toolpath (GUI heatmap, DerivedRestRegions, probes).
+        claims_rest_grid = Some(std::sync::Arc::new(rf.rest_grid));
+        claims_rest_regions = Some(std::sync::Arc::new(rf.region_polygons));
     }
     let covered = covered;
 
@@ -448,6 +510,8 @@ pub fn unified_finish_toolpath_with_cancel(
     // conditioned region counts ever grow.
     let mut report = UnifiedFinishReport {
         decompose: planned.stats,
+        rest_grid: claims_rest_grid,
+        rest_regions: claims_rest_regions,
         ..UnifiedFinishReport::default()
     };
     let mut region_paths: Vec<RegionPath> = Vec::new();
@@ -1083,7 +1147,7 @@ fn band_z_range(
 /// grid geometry — mirrors [`RestReference::Stock`]'s own nearest-cell-only
 /// contract (never interpolate a dexel top across a steep wall). `None`
 /// outside the grid or on an untrusted (`NaN`) cell.
-fn rest_grid_sample(grid: &RestGrid, x: f64, y: f64) -> Option<f64> {
+fn rest_grid_index(grid: &RestGrid, x: f64, y: f64) -> Option<usize> {
     if grid.nx == 0 || grid.ny == 0 || grid.cell_mm <= 0.0 {
         return None;
     }
@@ -1096,8 +1160,15 @@ fn rest_grid_sample(grid: &RestGrid, x: f64, y: f64) -> Option<f64> {
     if col >= grid.nx || row >= grid.ny {
         return None;
     }
-    grid.rest
-        .get(row * grid.nx + col)
+    Some(row * grid.nx + col)
+}
+
+/// Nearest-cell pencil-drop height from the claims detector's grid —
+/// `None` outside the grid or on untrusted (`NaN`) cells. Feeds the
+/// territory mask's direct `stock top − drop` rest measurement.
+fn rest_grid_surface_z(grid: &RestGrid, x: f64, y: f64) -> Option<f64> {
+    rest_grid_index(grid, x, y)
+        .and_then(|i| grid.surface_z.get(i))
         .copied()
         .filter(|v| !v.is_nan())
         .map(f64::from)
@@ -1736,23 +1807,26 @@ mod tests {
         BallEndmill,
         UnifiedFinishParams,
         FinishPlannerParams,
-        BallEndmill,
     ) {
         let mesh = make_trench_mesh(30.0, 6.0, 1.5, 1.2, 30, 48);
         let index = SpatialIndex::build_auto(&mesh);
-        let cutter = ball(1.0); // radius 0.5 — small enough to reach the trench floor
-        let reference_tool = ball(6.0); // radius 3.0 — bridges it and floats
+        // Crease detection is the analytic SELF-probe (rest = where the
+        // op's own cutter floats above the bare surface), so the fixture
+        // cutter must BRIDGE the 1.5 mm trench: radius 1.0 > half-width
+        // 0.75 floats ~0.86 mm above the floor — a detectable rest ridge
+        // along the trench axis.
+        let cutter = ball(2.0);
         let params = UnifiedFinishParams {
             tolerance: 0.5,
             ..UnifiedFinishParams::default()
         };
         let planner = FinishPlannerParams::for_tool(cutter.radius());
-        (mesh, index, cutter, params, planner, reference_tool)
+        (mesh, index, cutter, params, planner)
     }
 
     #[test]
     fn claims_off_matches_legacy_band_only_output() {
-        let (mesh, index, cutter, params, planner, _reference_tool) = trench_claims_fixture();
+        let (mesh, index, cutter, params, planner) = trench_claims_fixture();
         let never_cancel = || false;
 
         let (tp, _anns, report) = unified_finish_toolpath_with_cancel(
@@ -1798,12 +1872,9 @@ mod tests {
 
     #[test]
     fn claims_on_emits_crease_node_after_bands() {
-        let (mesh, index, cutter, params, planner, reference_tool) = trench_claims_fixture();
+        let (mesh, index, cutter, params, planner) = trench_claims_fixture();
         let claims_cfg = ClaimsConfig {
-            reference: RestReference::Cutter {
-                tool: &reference_tool as &dyn MillingCutter,
-                is_surface_probe: false,
-            },
+            territory_stock: None,
             rest_field_params: RestFieldParams {
                 cell_mm: 0.5,
                 min_valley_depth: 0.05,
@@ -1869,12 +1940,9 @@ mod tests {
 
     #[test]
     fn region_table_ranges_are_within_bounds_and_non_overlapping() {
-        let (mesh, index, cutter, params, planner, reference_tool) = trench_claims_fixture();
+        let (mesh, index, cutter, params, planner) = trench_claims_fixture();
         let claims_cfg = ClaimsConfig {
-            reference: RestReference::Cutter {
-                tool: &reference_tool as &dyn MillingCutter,
-                is_surface_probe: false,
-            },
+            territory_stock: None,
             rest_field_params: RestFieldParams {
                 cell_mm: 0.5,
                 min_valley_depth: 0.05,
