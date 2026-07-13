@@ -776,7 +776,16 @@ pub fn unified_finish_toolpath_with_cancel(
                 .iter()
                 .map(|&r| r.is_nan() || f64::from(r) >= cfg.min_rest_depth_mm)
                 .collect();
-            let dilate_mm = cutter.radius() + cfg.rest_field_params.region_margin_mm;
+            // Dilation = one rest-grid cell (the sampling quantum,
+            // bridges speckle) + the user's region-margin reach dial.
+            // NOT `cutter.radius()`: for tapered tools that is the SHAFT
+            // radius (`MillingCutter::radius` = diameter()/2 = widest
+            // cutting point — 3 mm on the Ø1-tip ball), and a 3.5 mm
+            // dilation welds a dendritic keep-mask into full coverage
+            // (measured, run 5: Op B all-over again at 58.5 k s).
+            // Reach-back over the mask edge is separately provided by
+            // decompose's own `overlap_mm` dilation at extraction.
+            let dilate_mm = grid.cell_mm + cfg.rest_field_params.region_margin_mm;
             let radius_cells = dilate_mm / grid.cell_mm.max(1e-9);
             let dist = crate::grid_field::distance_transform_2d(&keep, grid.ny, grid.nx);
             let keep_dilated: Vec<bool> = dist.iter().map(|&d| d <= radius_cells).collect();
