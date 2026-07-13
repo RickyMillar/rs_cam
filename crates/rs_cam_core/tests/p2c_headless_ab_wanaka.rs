@@ -690,6 +690,10 @@ fn ab_unified_config() -> UnifiedFinishConfig {
         // Build-list item 3: default arm (pinned branch-A baseline; also
         // moot with pencil_claims off above).
         claims_reference: CreaseReference::SelfProbe,
+        // S4 (`unified_finish::ClaimsConfig::territory_clip` doc): off —
+        // moot with pencil_claims off above, and this is the pinned
+        // branch-A baseline.
+        territory_clip: false,
     }
 }
 
