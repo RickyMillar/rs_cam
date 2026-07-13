@@ -54,31 +54,23 @@
 //! S1/S2. Emission stays additive either way — no corridor carving.
 //!
 //! S4 (`planning/unified_v3_design.md` §0.a / §2.1 step 4, process-proof
-//! campaign) adds region-level territory CLIPPING on top of S2's whole-island
+//! campaign) adds rest-territory CONFINEMENT on top of S2's whole-island
 //! drop filter: measured on the wanaka ×2 cascade A/B, Op B (this op as a
 //! rest-clearer after a ball all-over pass) ran +47% over the all-over-tip
 //! baseline because S2 can only DROP an island whole — when decompose's
 //! conditioned islands are whole-band-sized, every giant island contains
-//! above-dial rest somewhere and gets kept WHOLE, generated at full tip dials over
-//! territory that's already finished. `ClaimsConfig::territory_clip`
-//! intersects each surviving region's polygon against the claims detector's
-//! own `region_polygons` (the dilated rest islands, same source
-//! `UnifiedFinishReport::rest_regions` carries) — a *polygon*-level clip via
-//! [`crate::polygon::Polygon2::intersection`], the SAME sanctioned mechanism
-//! P2 selective finishing uses to clip scallop to rest-region islands
-//! (~80% path reduction there, live-validated), never the label-grid cell
-//! masking the Step 2.5 fragmentation lesson forbids. An empty intersection
-//! drops the region whole (folds into the SAME `regions_dropped` /
-//! `dropped_area_mm2` counters S2 uses); a non-empty one replaces the region
-//! with one `PlannedRegion` per surviving piece, same band, filtered against
-//! a tool-footprint-scale sliver floor. Meaningful ONLY under
-//! `CreaseReference::MachinedStock` — the detector's rest islands are then
-//! real machined territory. Under `CreaseReference::SelfProbe` the "rest
-//! islands" are geometric valleys of the design surface, not material, so
-//! clipping a band to them would confine full-surface strategies to
-//! wherever the tool merely CANNOT reach — nonsense — and the orchestrator
-//! `tracing::warn!`s and skips clipping entirely in that arm rather than
-//! silently doing it.
+//! above-dial rest somewhere and gets kept WHOLE, generated at full tip
+//! dials over territory that's already finished. `ClaimsConfig::
+//! territory_clip` ANDs the per-cell rest verdict grid (untrusted keeps,
+//! measured-skippable drops — the same S2 verdict) into `covered` BEFORE
+//! `decompose`, so the conditioning pipeline itself normalizes the rest
+//! islands and every emitted band region IS a conditioned rest island —
+//! design doc §2.1 step 4's prescribed implementation, with the R1
+//! mitigations. See the `territory_clip` field doc for why this is not
+//! the S1 sparse-pinprick fragmentation pathology, and for the two
+//! measured dead ends it replaced (S2-only keep-or-drop; post-decompose
+//! polygon clipping, which dies on `MAX_REST_REGIONS`-class caps over
+//! dendritic rest masks).
 //!
 //! No dressups, no boundary clipping here: the stitched toolpath this
 //! module returns flows through the NORMAL session post-passes (boundary
@@ -90,7 +82,7 @@ use std::ops::Range;
 use crate::crease_paths::centerline_cut_paths;
 use crate::debug_trace::ToolpathDebugContext;
 use crate::dropcutter::{DropCutterGrid, batch_drop_cutter_with_cancel};
-use crate::finish_planner::{FinishBand, FinishPlannerParams, PlannedRegion, decompose};
+use crate::finish_planner::{FinishBand, FinishPlannerParams, decompose};
 use crate::finish_setup::{
     FinishSurface, SLOPE_FILTER_MAX_DEG, SLOPE_FILTER_MIN_DEG,
     build_classification_surface_with_cancel,
@@ -287,29 +279,44 @@ pub struct ClaimsConfig<'a> {
     /// cells) is exactly why this filter only ever drops WHOLE regions,
     /// after `decompose` has already done its conditioning.
     pub min_region_rest_share: f64,
-    /// S4 region-level territory CLIP (module doc, design doc §0.a / §2.1
-    /// step 4): after the S2 share filter, intersect each surviving band
-    /// region's polygon with the claims detector's own `region_polygons`
-    /// (the dilated rest islands) via [`crate::polygon::Polygon2::
-    /// intersection`] — the same polygon-clip mechanism P2 selective
-    /// finishing already uses, never label-grid cell masking. An empty
-    /// intersection drops the region whole; a non-empty one replaces it
-    /// with one region per surviving piece (same band), confining
-    /// generation to actual rest territory instead of the whole
-    /// conditioned island S2 could only keep-or-drop wholesale.
+    /// S4 rest-territory confinement (design doc §2.1 step 4's prescribed
+    /// implementation, `§0.a` item 3): AND the per-cell rest verdict grid
+    /// (the SAME `min_rest_depth_mm` measurement S2 consumes — untrusted
+    /// samples keep coverage) into `covered` BEFORE `decompose`, so the
+    /// conditioning pipeline (hysteresis flood, morph close, min-area
+    /// absorption, overlap-dilated extraction) does its normal job on the
+    /// intersected mask and the emitted band regions ARE conditioned rest
+    /// islands.
     ///
-    /// Requires the claims detector to have run (`claims` supplied at
-    /// all) and is only meaningful under `crease_reference ==
-    /// CreaseReference::MachinedStock` — under `SelfProbe` the "rest
-    /// islands" are geometric valleys of the design surface, not
-    /// material, and clipping a full-surface strategy to them would
-    /// confine it to wherever the tool merely CANNOT reach. Setting this
-    /// `true` alongside `CreaseReference::SelfProbe` is not an error, but
-    /// the orchestrator `tracing::warn!`s and skips clipping entirely
-    /// rather than doing something meaningless silently.
+    /// Why this is not the S1 cell-masking pathology: that measurement
+    /// (4 → 35 regions, ring-cascading fragment edges) came from punching
+    /// SPARSE pinprick holes (~0.2% of cells, at dendritic necks) into an
+    /// otherwise-full mask AFTER territory had effectively been decided —
+    /// artificial cuts through continuous band territory whose fragment
+    /// boundaries sat mid-band, in uncut material. Territory INTERSECTION
+    /// in rest-clearer mode is the opposite regime (design doc §5 R1,
+    /// which pre-sanctions it with these exact mitigations): most of the
+    /// mask drops because a finish-quality prior pass already cut it, the
+    /// kept islands are the real work, their boundaries sit in
+    /// ALREADY-FINISHED stock, and decompose's own `overlap_mm` dilation
+    /// at extraction reaches back over the boundary so band passes blend
+    /// outward into finished territory instead of leaving edge rings.
     ///
-    /// Default-behavior `false`: no clipping, byte-identical to the pre-S4
-    /// op (S1/S2 behavior only).
+    /// Two dead ends this replaced (both measured on the wanaka ×2
+    /// cascade, 2026-07-13): S2's whole-island drop alone cannot shrink
+    /// whole-band-sized conditioned islands (+47% over the all-over
+    /// baseline), and post-decompose POLYGON clipping (detector
+    /// region-polygons, then a rest-field keep-mask) dies on
+    /// `MAX_REST_REGIONS`-class caps — dendritic rest masks fragment into
+    /// hundreds of islands, extraction keeps the largest 64, and the
+    /// silently-dropped area surfaces as a 2-3× '>+.5' leftover tail.
+    /// The mask-AND has no polygonization step to cap.
+    ///
+    /// Works under either `crease_reference` arm — the rest verdict grid
+    /// is built from the detector's pencil DROP field (reference-
+    /// independent) against `territory_stock` directly. Requires a
+    /// `territory_stock`; inert without one. Default `false`: no
+    /// confinement, byte-identical to the pre-S4 op.
     pub territory_clip: bool,
 }
 
@@ -401,27 +408,20 @@ pub struct ClaimsReport {
     /// an S2 share-filter drop; the two mechanisms are not separately
     /// counted.
     pub dropped_area_mm2: f64,
-    /// S4 region-level territory CLIP telemetry (`ClaimsConfig::
-    /// territory_clip` doc, design doc §0.a / §2.1 step 4): count of
-    /// surviving regions whose polygon was actually changed by the clip
-    /// (split into pieces, or shrunk against the rest-region polygons) —
-    /// a region that landed entirely inside a single rest polygon
-    /// (unchanged) does not count. Always 0 when `territory_clip` is
-    /// `false`, when `crease_reference` is `SelfProbe` (clip skipped, see
-    /// module doc), or when the detector produced no `region_polygons`.
-    pub clipped_regions: usize,
-    /// Total polygon area (mm²) removed by the S4 clip — summed
-    /// `original_area − Σ kept_piece_area` over every region the clip
-    /// touched (both whole-drops and splits/shrinks). Always 0.0 under the
-    /// same conditions as `clipped_regions`.
-    pub clip_area_mm2: f64,
-    /// Region count that will actually reach Step 4's per-region
-    /// generation loop — i.e. `planned.regions.len()` after BOTH the S2
-    /// share filter and the S4 clip have run (whichever of them actually
-    /// engaged). Equals `UnifiedFinishReport::decompose.region_count`
-    /// minus `regions_dropped` when no clip split any region into more
-    /// than one piece; can exceed that when the clip splits islands.
-    pub post_clip_region_count: usize,
+    /// S4 rest-territory confinement telemetry (`ClaimsConfig::
+    /// territory_clip` doc): covered classification cells removed from
+    /// `covered` by the pre-decompose mask-AND (measured-skippable cells;
+    /// untrusted cells always stay). Always 0 when `territory_clip` is
+    /// `false` or no `territory_stock` was supplied.
+    pub territory_masked_cells: usize,
+    /// `territory_masked_cells × cell²` (mm²) — the coverage area the
+    /// mask-AND handed back to the prior pass. Always 0.0 under the same
+    /// conditions.
+    pub territory_masked_area_mm2: f64,
+    /// Region count that actually reaches Step 4's per-region generation
+    /// loop — `planned.regions.len()` after decompose (over the possibly
+    /// mask-ANDed coverage) and the S2 share filter.
+    pub post_territory_region_count: usize,
 }
 
 /// Orchestration report: decomposition stats + what each band generated +
@@ -496,7 +496,10 @@ pub fn unified_finish_toolpath_with_cancel(
     let cell = surface.cell_size();
     let origin_x = surface.slope_map.origin_x;
     let origin_y = surface.slope_map.origin_y;
-    let covered: Vec<bool> = surface
+    // Mutable: the S4 rest-territory confinement (below, after Step 2.5)
+    // may AND the per-cell rest verdict into this before decompose —
+    // `ClaimsConfig::territory_clip` doc.
+    let mut covered: Vec<bool> = surface
         .heightmap
         .covered
         .iter()
@@ -709,19 +712,47 @@ pub fn unified_finish_toolpath_with_cancel(
             crease_path_count: 0,
             crease_path_length_mm: 0.0,
             detector_coverage: rf.report.coverage(),
-            // Filled in by Step 3.4 once the S2 share filter + S4 clip have
-            // run.
+            // Filled in by the S4 mask-AND (below) and Step 3.4's S2
+            // share filter once they have run.
             regions_dropped: 0,
             dropped_area_mm2: 0.0,
-            clipped_regions: 0,
-            clip_area_mm2: 0.0,
-            post_clip_region_count: 0,
+            territory_masked_cells: 0,
+            territory_masked_area_mm2: 0.0,
+            post_territory_region_count: 0,
         });
         // §2.4 carry-through: the detector's field + region polygons ride
         // the report so the adapter can attach them to the generated
         // toolpath (GUI heatmap, DerivedRestRegions, probes).
         claims_rest_grid = Some(std::sync::Arc::new(rf.rest_grid));
         claims_rest_regions = Some(std::sync::Arc::new(rf.region_polygons));
+    }
+
+    // ── Step 2.6: S4 rest-territory confinement (mask-AND) ──────────────
+    // `ClaimsConfig::territory_clip` doc: AND the per-cell rest verdict
+    // (untrusted keeps, measured-skippable drops) into `covered` BEFORE
+    // decompose, so conditioning normalizes the rest islands themselves.
+    // This is design doc §2.1 step 4's prescribed one-liner; the sparse-
+    // pinprick fragmentation lesson (S1) and the capped-polygon-clip dead
+    // end (first S4 attempt) are both documented on the config field.
+    let mut territory_masked_cells = 0usize;
+    if let (Some(cfg), Some(ok)) = (claims, rest_ok.as_ref())
+        && cfg.territory_clip
+    {
+        for (cov, keep) in covered.iter_mut().zip(ok.iter()) {
+            if *cov && !*keep {
+                *cov = false;
+                territory_masked_cells += 1;
+            }
+        }
+        tracing::debug!(
+            territory_masked_cells,
+            masked_area_mm2 = territory_masked_cells as f64 * cell * cell,
+            "unified_finish S4: rest-territory mask-AND applied before decompose"
+        );
+    }
+    if let Some(report) = claims_report.as_mut() {
+        report.territory_masked_cells = territory_masked_cells;
+        report.territory_masked_area_mm2 = territory_masked_cells as f64 * cell * cell;
     }
 
     // ── Step 3: decompose ────────────────────────────────────────────────
@@ -792,154 +823,22 @@ pub fn unified_finish_toolpath_with_cancel(
         });
     }
 
-    // S4: region-level territory CLIP (`ClaimsConfig::territory_clip`
-    // module doc). Runs AFTER S2 so it only ever clips regions S2 already
-    // decided to keep. `claims_rest_regions` is borrowed here — it isn't
-    // moved into `report` (Step 4, below) until after this block, so no
-    // clone is needed to use it in both places.
-    let mut clipped_regions = 0usize;
-    let mut clip_area_mm2 = 0.0f64;
-    if let Some(cfg) = claims
-        && cfg.territory_clip
-    {
-        match cfg.crease_reference {
-            CreaseReference::SelfProbe => {
-                // Module doc: self-probe "rest islands" are geometric
-                // valleys of the design surface, not material — clipping a
-                // full-surface band to them would confine it to wherever
-                // the tool merely CANNOT reach. Skip clipping rather than
-                // do something meaningless silently.
-                tracing::warn!(
-                    "unified_finish: ClaimsConfig::territory_clip is set but \
-                     crease_reference is SelfProbe; self-probe rest regions \
-                     are GEOMETRIC valleys, not material — clipping to them \
-                     would be nonsense. Skipping S4 territory clip."
-                );
-            }
-            CreaseReference::MachinedStock => {
-                // Clip-territory polygons are built from the detector's
-                // continuous rest FIELD with the same "untrusted keeps
-                // coverage" semantics the S2 cell filter uses (`ClaimsConfig::
-                // min_rest_depth_mm` doc) — NOT from the detector's own
-                // `region_polygons`. Those are gated on TRUSTED
-                // above-threshold cells only, and the first clipped cascade
-                // A/B (wanaka ×2, 2026-07-13) showed what that does: steep
-                // faces read untrusted (NaN) in the stock-referenced field,
-                // fell outside every rest polygon, and the clip amputated
-                // the entire mid-steep + very-steep bands — Op B emitted 3
-                // shallow pieces, and the skipped territory surfaced as a
-                // 2-3× '>+.5' leftover tail in every band (the S1 tail
-                // lesson, again). keep = NaN ∪ (rest ≥ min_rest_depth_mm),
-                // dilated exactly like the detector dilates its own region
-                // polygons (pencil radius + region margin).
-                let keep_polys: Vec<Polygon2> = match claims_rest_grid.as_deref() {
-                    Some(grid) => {
-                        let mask_vec: Vec<bool> = grid
-                            .rest
-                            .iter()
-                            .map(|&r| r.is_nan() || f64::from(r) >= cfg.min_rest_depth_mm)
-                            .collect();
-                        match crate::grid2::Grid2::from_vec(grid.nx, grid.ny, mask_vec) {
-                            Ok(mask) => crate::region_mask::region_polygons_from_mask(
-                                &mask,
-                                grid.origin_x,
-                                grid.origin_y,
-                                grid.cell_mm,
-                                cutter.radius() + cfg.rest_field_params.region_margin_mm,
-                            ),
-                            Err(e) => {
-                                tracing::warn!(
-                                    error = ?e,
-                                    "unified_finish S4: rest-grid mask shape \
-                                     mismatch; skipping territory clip"
-                                );
-                                Vec::new()
-                            }
-                        }
-                    }
-                    None => Vec::new(),
-                };
-                let rest_polys: &[Polygon2] = keep_polys.as_slice();
-                if rest_polys.is_empty() {
-                    tracing::debug!(
-                        "unified_finish S4: territory_clip requested but the \
-                         detector produced no keep-territory polygons; \
-                         nothing to clip"
-                    );
-                } else {
-                    // Sliver floor for clip PIECES: one tool-diameter square
-                    // (`(2r)²`), deliberately smaller than decompose's own
-                    // `min_region_area_mm2` (`(2r)²·4`) — a clipped rest
-                    // pocket half the band floor is still real material the
-                    // ball left standing, and dropping it surfaces directly
-                    // as the '>+.5' tail the A/B gates.
-                    let sliver_floor = (2.0 * cutter.radius()).powi(2);
-                    let mut kept: Vec<PlannedRegion> = Vec::with_capacity(planned.regions.len());
-                    for region in planned.regions.drain(..) {
-                        let original_area = region.polygon.area();
-                        let pieces: Vec<Polygon2> = rest_polys
-                            .iter()
-                            .flat_map(|rp| region.polygon.intersection(rp))
-                            .filter(|piece| piece.area() >= sliver_floor)
-                            .collect();
-                        if pieces.is_empty() {
-                            // Same telemetry as an S2 drop (`ClaimsReport::
-                            // dropped_area_mm2` doc) — the two mechanisms
-                            // share one counter pair.
-                            regions_dropped += 1;
-                            dropped_area_mm2 += original_area;
-                            tracing::debug!(
-                                band = ?region.band,
-                                area_mm2 = original_area,
-                                "unified_finish S4: dropping region — no \
-                                 surviving rest-territory pieces"
-                            );
-                            continue;
-                        }
-                        let kept_area: f64 = pieces.iter().map(Polygon2::area).sum();
-                        let removed_area = (original_area - kept_area).max(0.0);
-                        let changed = pieces.len() != 1 || removed_area > 1e-9;
-                        if changed {
-                            clipped_regions += 1;
-                            clip_area_mm2 += removed_area;
-                        }
-                        tracing::debug!(
-                            band = ?region.band,
-                            pieces = pieces.len(),
-                            kept_area_mm2 = kept_area,
-                            removed_area_mm2 = removed_area,
-                            "unified_finish S4: territory-clipped region"
-                        );
-                        let band = region.band;
-                        for piece in pieces {
-                            kept.push(PlannedRegion {
-                                band,
-                                polygon: piece,
-                            });
-                        }
-                    }
-                    planned.regions = kept;
-                    // R1 guard: no hard fail — the A/B gates catch
-                    // pathology (module doc) — just make over-fragmentation
-                    // visible.
-                    if planned.regions.len() > 256 {
-                        tracing::warn!(
-                            post_clip_region_count = planned.regions.len(),
-                            "unified_finish S4: post-clip region count \
-                             exceeds 256; check for over-fragmentation"
-                        );
-                    }
-                }
-            }
-        }
+    // (S4's territory confinement happens BEFORE decompose — Step 2.6's
+    // mask-AND — so by the time regions exist here they are already
+    // conditioned rest islands. R1 guard: make over-fragmentation visible;
+    // no hard fail — the A/B gates catch pathology.)
+    if planned.regions.len() > 256 {
+        tracing::warn!(
+            post_territory_region_count = planned.regions.len(),
+            "unified_finish: post-territory region count exceeds 256; \
+             check for over-fragmentation"
+        );
     }
 
     if let Some(report) = claims_report.as_mut() {
         report.regions_dropped = regions_dropped;
         report.dropped_area_mm2 = dropped_area_mm2;
-        report.clipped_regions = clipped_regions;
-        report.clip_area_mm2 = clip_area_mm2;
-        report.post_clip_region_count = planned.regions.len();
+        report.post_territory_region_count = planned.regions.len();
     }
 
     // ── Step 3.5: crease-claims emission (v3 S1, design doc §2.1 step 5) ──
@@ -2920,7 +2819,7 @@ mod tests {
         );
     }
 
-    // ── S4 region-level territory clip ──────────────────────────────────
+    // ── S4 rest-territory confinement (mask-AND) ────────────────────────
 
     /// (a) `territory_clip: false` must be a total no-op on top of S2 — it
     /// reuses `s2_dial_drops_regions_once_territory_reads_uniformly_skippable`'s
@@ -2929,9 +2828,9 @@ mod tests {
     /// and a `min_region_rest_share` high enough that S2 alone drops
     /// regions) so the S2 numbers that test already proved are the
     /// baseline this one must reproduce: `regions_dropped` still comes
-    /// from S2, `clipped_regions`/`clip_area_mm2` stay at their S1/S2
-    /// zero, and `post_clip_region_count` is exactly the decompose count
-    /// minus the S2 drops (S4 never touched `planned.regions`).
+    /// from S2, `territory_masked_cells`/`territory_masked_area_mm2` stay
+    /// at their S1/S2 zero, and `post_territory_region_count` is exactly
+    /// the decompose count minus the S2 drops (the mask-AND never ran).
     #[test]
     fn territory_clip_off_is_a_total_no_op_on_top_of_s2() {
         let (mesh, index, cutter, params, planner) = trench_claims_fixture();
@@ -2973,25 +2872,26 @@ mod tests {
              test proved, independent of territory_clip: {claims:?}"
         );
         assert_eq!(
-            claims.clipped_regions, 0,
-            "territory_clip: false must never touch a region's polygon"
+            claims.territory_masked_cells, 0,
+            "territory_clip: false must never mask coverage"
         );
-        assert_eq!(claims.clip_area_mm2, 0.0);
+        assert_eq!(claims.territory_masked_area_mm2, 0.0);
         assert_eq!(
-            claims.post_clip_region_count,
+            claims.post_territory_region_count,
             report.decompose.region_count - claims.regions_dropped,
-            "with S4 off, post_clip_region_count is exactly the decompose \
-             count minus whatever S2 dropped"
+            "with S4 off, post_territory_region_count is exactly the \
+             decompose count minus whatever S2 dropped"
         );
     }
 
-    /// (b) `territory_clip: true` under `CreaseReference::SelfProbe` must
-    /// warn and skip clipping entirely (module doc: self-probe "rest
-    /// islands" are geometric valleys of the design surface, not
-    /// material) — completes normally, no panic, `clipped_regions` and
-    /// `regions_dropped` both stay 0.
+    /// (b) `territory_clip: true` WITHOUT a `territory_stock` is inert —
+    /// the per-cell rest verdict grid never exists, so there is nothing
+    /// to AND (`ClaimsConfig::territory_clip` doc: requires a
+    /// territory_stock). Completes normally under either crease
+    /// reference; `territory_masked_cells` and `regions_dropped` both
+    /// stay 0.
     #[test]
-    fn territory_clip_with_self_probe_reference_warns_and_skips() {
+    fn territory_clip_without_stock_is_inert() {
         let (mesh, index, cutter, params, planner) = trench_claims_fixture();
         let never_cancel = || false;
 
@@ -3022,33 +2922,31 @@ mod tests {
             None,
             &never_cancel,
         )
-        .expect("territory_clip under SelfProbe must complete, not error");
+        .expect("territory_clip without a territory_stock must complete, not error");
         let claims = report.claims.expect("claims pipeline must have run");
         assert_eq!(
-            claims.clipped_regions, 0,
-            "SelfProbe must skip S4 clipping entirely, not clip against \
-             geometric-valley polygons"
+            claims.territory_masked_cells, 0,
+            "no territory_stock -> no rest verdict grid -> nothing to AND"
         );
-        assert_eq!(claims.clip_area_mm2, 0.0);
+        assert_eq!(claims.territory_masked_area_mm2, 0.0);
         assert_eq!(
             claims.regions_dropped, 0,
-            "nothing should be dropped either — S2 is off and S4 skipped"
+            "nothing should be dropped either — S2 is off and S4 inert"
         );
     }
 
     /// (c) `territory_clip: true` under `CreaseReference::MachinedStock`
     /// with a real (not saturating) rest-depth threshold: the same uncut
-    /// solid-brick stock as the S2/build-list-3 tests, but this time with
-    /// `rest_field_params.min_valley_depth` left at a real value (0.05)
-    /// rather than a saturating `min_rest_depth_mm` — so the detector's
-    /// `region_polygons` mask only covers where the flat brick top truly
-    /// sits more than 0.05mm above the pencil drop (the trench, not the
-    /// flat surface flanking it either side), a genuinely smaller-than-
-    /// the-band rest island rather than "the whole stock". `min_region_
-    /// rest_share: 0.0` keeps S2 out of the picture so the shrink is
-    /// attributable to S4 alone. Compares against the SAME config with
-    /// `territory_clip: false` to prove the clip actually shrank the
-    /// emitted toolpath, not just changed its telemetry.
+    /// solid-brick stock as the S2/build-list-3 tests with
+    /// `min_rest_depth_mm` at a real value (0.05) — the per-cell verdict
+    /// keeps only cells where the brick top truly sits ≥0.05mm above the
+    /// pencil drop (the trench, not the flat surface flanking it), so the
+    /// mask-AND confines coverage to a genuinely smaller-than-the-band
+    /// rest island rather than "the whole stock". `min_region_rest_share:
+    /// 0.0` keeps S2 out of the picture so the shrink is attributable to
+    /// S4 alone. Compares against the SAME config with `territory_clip:
+    /// false` to prove the confinement actually shrank the emitted
+    /// toolpath, not just changed telemetry.
     #[test]
     fn territory_clip_confines_bands_to_rest_islands_and_shrinks_the_toolpath() {
         let (mesh, index, cutter, params, planner) = trench_claims_fixture();
@@ -3088,8 +2986,8 @@ mod tests {
             .claims
             .expect("claims pipeline must have run");
         assert_eq!(
-            claims_unclipped.clipped_regions, 0,
-            "the unclipped baseline run must not itself clip anything"
+            claims_unclipped.territory_masked_cells, 0,
+            "the unconfined baseline run must not itself mask anything"
         );
         let rest_regions = report_unclipped
             .rest_regions
@@ -3129,14 +3027,14 @@ mod tests {
             .expect("claims pipeline must have run");
 
         assert!(
-            claims_clipped.clipped_regions + claims_clipped.regions_dropped >= 1,
-            "expected S4 to either clip or wholly drop at least one region \
-             against the detector's rest islands, got {claims_clipped:?}"
+            claims_clipped.territory_masked_cells >= 1,
+            "expected the S4 mask-AND to remove at least one \
+             measured-skippable covered cell, got {claims_clipped:?}"
         );
         assert!(
             tp_clipped.moves.len() < tp_unclipped.moves.len(),
             "confining bands to rest islands must shrink the emitted \
-             toolpath: clipped={} unclipped={}",
+             toolpath: confined={} unconfined={}",
             tp_clipped.moves.len(),
             tp_unclipped.moves.len()
         );
