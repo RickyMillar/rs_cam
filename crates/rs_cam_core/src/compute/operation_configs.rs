@@ -10,6 +10,7 @@ pub use crate::ramp_finish::CutDirection;
 pub use crate::scallop::ScallopDirection;
 pub use crate::spiral_finish::SpiralDirection;
 pub use crate::trace::TraceCompensation;
+pub use crate::unified_finish::CreaseReference;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -906,6 +907,18 @@ pub struct UnifiedFinishConfig {
     /// `0.0` = off, byte-identical to the pre-S2 op.
     #[serde(default = "default_unified_finish_min_region_rest_share")]
     pub min_region_rest_share: f64,
+    /// Process-proof build-list item 3
+    /// (`unified_finish::CreaseReference` doc): which reference the crease
+    /// detector runs against. `SelfProbe` (default) is the S1/S2 behavior,
+    /// byte-identical. `MachinedStock` swaps in the machined prior stock
+    /// instead — sanctioned ONLY when that stock is FINISH-QUALITY (a
+    /// cascade's Op B following Op A's own ball all-over pass); on a
+    /// rough→finish chain it reads roughing terraces as a phantom
+    /// dendritic crease network (the S1 lesson). Falls back to
+    /// `SelfProbe` with a warning when no machined stock is in scope
+    /// (`pencil_claims = true` with no `FromRemainingStock` chain).
+    #[serde(default = "default_unified_finish_claims_reference")]
+    pub claims_reference: CreaseReference,
 }
 
 impl Default for UnifiedFinishConfig {
@@ -930,6 +943,7 @@ impl Default for UnifiedFinishConfig {
             pencil_claims: default_unified_finish_pencil_claims(),
             min_rest_depth_mm: default_unified_finish_min_rest_depth_mm(),
             min_region_rest_share: default_unified_finish_min_region_rest_share(),
+            claims_reference: default_unified_finish_claims_reference(),
         }
     }
 }
@@ -944,6 +958,10 @@ fn default_unified_finish_min_rest_depth_mm() -> f64 {
 
 fn default_unified_finish_min_region_rest_share() -> f64 {
     0.0
+}
+
+fn default_unified_finish_claims_reference() -> CreaseReference {
+    CreaseReference::SelfProbe
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1953,6 +1971,41 @@ mod tests {
         assert_eq!(json, "\"agent_search\"");
         let from_wire: ClearingStrategy = serde_json::from_str("\"agent_search\"").unwrap();
         assert_eq!(from_wire, ClearingStrategy::AgentSearch);
+    }
+
+    /// `UnifiedFinishConfig::claims_reference` must round-trip both
+    /// variants with the snake_case wire format, and legacy project files
+    /// that predate this field (and its S1/S2 claims-pipeline siblings)
+    /// must deserialize to `CreaseReference::SelfProbe` — the byte-
+    /// identical default (process-proof build-list item 3).
+    #[test]
+    fn unified_finish_claims_reference_serde_round_trip_and_backcompat() {
+        for variant in [CreaseReference::SelfProbe, CreaseReference::MachinedStock] {
+            let json = serde_json::to_string(&variant).unwrap();
+            let round_trip: CreaseReference = serde_json::from_str(&json).unwrap();
+            assert_eq!(round_trip, variant);
+        }
+        let json = serde_json::to_string(&CreaseReference::MachinedStock).unwrap();
+        assert_eq!(json, "\"machined_stock\"");
+
+        // Legacy payload predating `claims_reference` and its S1/S2
+        // siblings entirely — must still deserialize, not error.
+        let legacy = r#"{
+            "steep_threshold_deg": 45.0,
+            "waterline_threshold_deg": 75.0,
+            "overlap_mm": 2.0,
+            "scallop_height": 0.1,
+            "tolerance": 0.05,
+            "raster_stepover": 1.0,
+            "z_step": 1.0,
+            "sampling": 0.5,
+            "stock_to_leave": 0.0,
+            "feed_rate": 1000.0,
+            "plunge_rate": 500.0
+        }"#;
+        let cfg: UnifiedFinishConfig = serde_json::from_str(legacy).unwrap();
+        assert_eq!(cfg.claims_reference, CreaseReference::SelfProbe);
+        assert!(!cfg.pencil_claims);
     }
 
     /// Drill selection fields must round-trip, and legacy TOML/JSON that

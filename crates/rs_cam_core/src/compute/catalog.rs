@@ -1255,6 +1255,10 @@ const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[
     ParamDef::required("pencil_claims", "bool"),
     ParamDef::required("min_rest_depth_mm", "f64"),
     ParamDef::required("min_region_rest_share", "f64"),
+    // Build-list item 3: which reference the crease detector runs
+    // against (`unified_finish::CreaseReference` doc) — same
+    // serde-defaulted back-compat treatment as the S1/S2 dials above.
+    ParamDef::required("claims_reference", "enum:self_probe|machined_stock"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 

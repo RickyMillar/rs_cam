@@ -34,7 +34,7 @@ use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::{
-    DropCutterConfig, ScallopConfig, ScallopDirection, UnifiedFinishConfig,
+    CreaseReference, DropCutterConfig, ScallopConfig, ScallopDirection, UnifiedFinishConfig,
 };
 use rs_cam_core::session::{ProjectSession, SimulationOptions};
 
@@ -687,6 +687,9 @@ fn ab_unified_config() -> UnifiedFinishConfig {
         // `pencil_claims` is off above — this is the pinned branch-A
         // baseline and must not silently pick up new S2 behavior.
         min_region_rest_share: 0.0,
+        // Build-list item 3: default arm (pinned branch-A baseline; also
+        // moot with pencil_claims off above).
+        claims_reference: CreaseReference::SelfProbe,
     }
 }
 
