@@ -2126,11 +2126,16 @@ impl ProjectSession {
         };
 
         // Deviation comparison happens in the simulation's stock-relative
-        // global frame (0..stock_size). Translate the world-space model mesh
-        // by -stock_origin so the two sides of the comparison live in the
-        // same frame. For any setup, local_to_global ∘ world_to_local
-        // collapses to this translation because face/rotation transforms
-        // cancel — so this single shift is correct for all setups.
+        // global frame (0..stock_size); `SimulationRequest::model_mesh`'s
+        // contract is that frame, so translate the world-space model by
+        // -stock_origin here. NON-identity groups' `local_to_global`
+        // outputs land in that frame directly (face/rotation transforms
+        // cancel and origin is never re-added). IDENTITY groups' grids
+        // are WORLD-framed (F-024) — the deviation passes frame-map their
+        // query points by -stock_bbox.min themselves (see
+        // `collect_column_deviations`; the first scaled-wanaka cascade
+        // A/B mis-read a uniform ~−4 mm "overcut" when this half of the
+        // contract was missing, 2026-07-13).
         let model_mesh = self.models.iter().find_map(|m| m.mesh.clone()).map(|m| {
             Arc::new(translate_mesh(
                 &m,
