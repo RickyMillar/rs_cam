@@ -38,6 +38,47 @@ Foundations status (both tails CLOSED 2026-07-09 late):
   resolution the project will simulate at, or padded by the measuring
   grid's cell.
 
+## 0.a THE END GOAL, REFRAMED (user, 2026-07-13) — prove the PROCESS
+
+This is a theoretical/process-proving project, not a wanaka-production
+project. Ball size is a free parameter (Ø0.5 if we like); the model may
+be SCALED (×2 is fine) to put tool-vs-texture ratios wherever the
+process needs them. The thing to prove:
+
+> **A ball finishing pass that covers most of the terrain, followed by
+> ONE unified rest-clearing pass (mixed strategies over the rest
+> islands: shallow patches, steep faces, creases), beats an all-over
+> small-tool finish on time at equal COLUMNS quality — with Region
+> spans proving each strategy cut its own territory.**
+
+The PROCESS-PROOF experiment (supersedes the S-ordering below where they
+conflict; everything not needed for this is deferred):
+
+1. **Fixture: wanaka ×2** (scale the mesh in the harness — same terrain,
+   friendlier tool/texture ratio; measured basis: at scale 1 every ball
+   Ø2–6 leaves 87–96 % of the mid-steep band as rest AREA, so no ball
+   "manages most of the terrain" there — at ×2 a Ø2–3 ball behaves like
+   a Ø1–1.5 at scale 1 and real rest ISLANDS appear). Wall fixture stays
+   queued for the contour question but is NOT needed for the proof.
+2. **Op A**: ball all-over scallop (size = sweep parameter, start Ø3).
+3. **Op B**: unified op in REST-CLEARER mode against Op A's machined
+   stock: region-LEVEL territory (drop whole conditioned islands whose
+   measured rest share is below the dial — never cell holes), creases
+   from the STOCK-REFERENCED rest detector (honest against a
+   ball-finished reference — the R2-validated configuration; the
+   "claims are geometric" rule was for rough chains), emitted additively.
+4. **Score**: cascade (A+B) total vs all-over-tip baseline (D) at equal
+   effective cusp: total time, group-filtered COLUMNS (on-size + tails),
+   collisions 0, and the Region-span table showing the mix actually
+   fired (raster/scallop/pencil each owning territory).
+5. **Then**: ball-size sweep (Ø2/3/4) for the "optimal ball" curve.
+
+Needed to run it (the ruthless list): region-level territory filter
+(decompose-then-filter on the existing telemetry), stock-referenced
+crease claims re-enabled for finish-quality references, the scaled-mesh
+fixture, and the cascade A/B harness. Contour/wall fixture, GUI dials,
+router (S3), carving — all deferred; not blockers for the proof.
+
 ## 0. The vision, restated as architecture
 
 Two ops, one cascade:
