@@ -312,11 +312,16 @@ pub struct ClaimsConfig<'a> {
     /// silently-dropped area surfaces as a 2-3× '>+.5' leftover tail.
     /// The mask-AND has no polygonization step to cap.
     ///
-    /// Works under either `crease_reference` arm — the rest verdict grid
-    /// is built from the detector's pencil DROP field (reference-
-    /// independent) against `territory_stock` directly. Requires a
-    /// `territory_stock`; inert without one. Default `false`: no
-    /// confinement, byte-identical to the pre-S4 op.
+    /// The keep-mask is the detector's own stock-referenced rest FIELD
+    /// (NaN keeps, `rest ≥ min_rest_depth_mm` keeps, dilated by pencil
+    /// radius + region margin) — NOT the S2 verdict grid, whose 5-point
+    /// footprint max/min measurement is keep-biased by design and
+    /// saturates to "keep everything" on sloped or textured terrain
+    /// (measured: Op B ran all-over again, 54 k s). Consequently this
+    /// requires `crease_reference == MachinedStock` AND a
+    /// `territory_stock` in scope; otherwise the orchestrator warns and
+    /// skips confinement. Default `false`: byte-identical to the pre-S4
+    /// op.
     pub territory_clip: bool,
 }
 
@@ -728,27 +733,86 @@ pub fn unified_finish_toolpath_with_cancel(
     }
 
     // ── Step 2.6: S4 rest-territory confinement (mask-AND) ──────────────
-    // `ClaimsConfig::territory_clip` doc: AND the per-cell rest verdict
-    // (untrusted keeps, measured-skippable drops) into `covered` BEFORE
-    // decompose, so conditioning normalizes the rest islands themselves.
-    // This is design doc §2.1 step 4's prescribed one-liner; the sparse-
-    // pinprick fragmentation lesson (S1) and the capped-polygon-clip dead
-    // end (first S4 attempt) are both documented on the config field.
+    // `ClaimsConfig::territory_clip` doc: AND a rest keep-mask into
+    // `covered` BEFORE decompose, so conditioning normalizes the rest
+    // islands themselves (design doc §2.1 step 4's prescribed one-liner;
+    // the sparse-pinprick fragmentation lesson and the capped-polygon-clip
+    // dead end are documented on the config field).
+    //
+    // MASK SOURCE (wanaka ×2 run 4, 2026-07-13): NOT the S2 verdict grid.
+    // That measurement is a 5-point footprint max-top vs min-drop across
+    // TWO grids — deliberately keep-biased for drop-safety, which is
+    // correct for S2's whole-island shares but SATURATES on sloped or
+    // textured terrain when used as a mask (the neighborhood z-span alone
+    // exceeds any mm-class dial: at 45° a 0.5 mm sample offset reads
+    // 0.5 mm of phantom "rest"), so the AND kept ~everything and Op B ran
+    // all-over again (54 k s). The honest per-cell quantity is the
+    // detector's own stock-referenced `rest` FIELD — a single consistent
+    // differencing at the detector's own sample points, the same field
+    // the tail probe validated against standing material — thresholded at
+    // `min_rest_depth_mm` with NaN keeping (untrusted keeps coverage),
+    // DILATED by pencil radius + region margin on the rest grid (EDT,
+    // same dilation the detector's own region polygons get) and then
+    // nearest-resampled onto the classification grid. Only meaningful
+    // under `CreaseReference::MachinedStock` — the self-probe field is
+    // geometric float, not material.
     let mut territory_masked_cells = 0usize;
-    if let (Some(cfg), Some(ok)) = (claims, rest_ok.as_ref())
+    if let Some(cfg) = claims
         && cfg.territory_clip
     {
-        for (cov, keep) in covered.iter_mut().zip(ok.iter()) {
-            if *cov && !*keep {
-                *cov = false;
-                territory_masked_cells += 1;
+        let stock_backed = matches!(cfg.crease_reference, CreaseReference::MachinedStock)
+            && cfg.territory_stock.is_some();
+        if !stock_backed {
+            tracing::warn!(
+                "unified_finish S4: territory_clip needs crease_reference = \
+                 MachinedStock with a territory_stock in scope (the mask \
+                 source is the stock-referenced rest field); skipping \
+                 confinement"
+            );
+        } else if let Some(grid) = claims_rest_grid.as_deref() {
+            // keep = NaN ∪ (rest ≥ dial), dilated on the REST grid.
+            let keep: Vec<bool> = grid
+                .rest
+                .iter()
+                .map(|&r| r.is_nan() || f64::from(r) >= cfg.min_rest_depth_mm)
+                .collect();
+            let dilate_mm = cutter.radius() + cfg.rest_field_params.region_margin_mm;
+            let radius_cells = dilate_mm / grid.cell_mm.max(1e-9);
+            let dist = crate::grid_field::distance_transform_2d(&keep, grid.ny, grid.nx);
+            let keep_dilated: Vec<bool> = dist.iter().map(|&d| d <= radius_cells).collect();
+            // Nearest-resample onto the classification grid and AND.
+            for (i, cov) in covered.iter_mut().enumerate() {
+                if !*cov {
+                    continue;
+                }
+                let row = i / cols;
+                let col = i % cols;
+                let x = origin_x + col as f64 * cell;
+                let y = origin_y + row as f64 * cell;
+                let gc = ((x - grid.origin_x) / grid.cell_mm).round();
+                let gr = ((y - grid.origin_y) / grid.cell_mm).round();
+                let keep_here =
+                    if gc < 0.0 || gr < 0.0 || gc >= grid.nx as f64 || gr >= grid.ny as f64 {
+                        // Outside the detector's grid: no evidence — keep
+                        // (untrusted keeps coverage).
+                        true
+                    } else {
+                        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+                        let gi = gr as usize * grid.nx + gc as usize;
+                        keep_dilated.get(gi).copied().unwrap_or(true)
+                    };
+                if !keep_here {
+                    *cov = false;
+                    territory_masked_cells += 1;
+                }
             }
+            tracing::debug!(
+                territory_masked_cells,
+                masked_area_mm2 = territory_masked_cells as f64 * cell * cell,
+                dilate_mm,
+                "unified_finish S4: rest-territory mask-AND applied before decompose"
+            );
         }
-        tracing::debug!(
-            territory_masked_cells,
-            masked_area_mm2 = territory_masked_cells as f64 * cell * cell,
-            "unified_finish S4: rest-territory mask-AND applied before decompose"
-        );
     }
     if let Some(report) = claims_report.as_mut() {
         report.territory_masked_cells = territory_masked_cells;
