@@ -192,20 +192,21 @@ pub struct AnnotatedToolpath {
     /// Frame contract: emission-frame coordinates; must be re-framed
     /// anywhere `toolpath.moves` are re-framed — see [`Self::translated`].
     pub planner_engagement: Vec<(P3, f64)>,
-    /// Rest-depth heatmap grid for the GUI overlay — populated ONLY by the
-    /// pencil RestDepth detector; `None` for every other operation. `Arc` so
-    /// cloning the annotated toolpath (sim / result caching) stays cheap.
+    /// Rest-depth heatmap grid for the GUI overlay — populated by the
+    /// pencil RestDepth detector, the generic post-generation rest
+    /// analysis, and UnifiedFinish's claims detector (v3 S1 §2.4
+    /// carry-through); `None` otherwise. `Arc` so cloning the annotated
+    /// toolpath (sim / result caching) stays cheap.
     ///
     /// Frame contract: emission-frame coordinates; must be re-framed
     /// anywhere `toolpath.moves` are re-framed — see [`Self::translated`].
     pub rest_grid: Option<Arc<RestGrid>>,
     /// Machining-region polygons derived from the rest-depth field
-    /// ([`crate::rest_field::RestFieldResult::region_polygons`]) —
-    /// populated ONLY by the pencil RestDepth detector; `None` for every
-    /// other operation. World-frame XY polygons; `Arc` so cloning the
-    /// annotated toolpath (sim / result caching) stays cheap. This is the
-    /// derived-boundary source for selective finishing (P2.2
-    /// `BoundarySource::DerivedRestRegions`).
+    /// ([`crate::rest_field::RestFieldResult::region_polygons`]) — same
+    /// producers as [`Self::rest_grid`]; `None` otherwise. World-frame XY
+    /// polygons; `Arc` so cloning the annotated toolpath (sim / result
+    /// caching) stays cheap. This is the derived-boundary source for
+    /// selective finishing (P2.2 `BoundarySource::DerivedRestRegions`).
     ///
     /// Frame contract: emission-frame coordinates; must be re-framed
     /// anywhere `toolpath.moves` are re-framed — see [`Self::translated`].

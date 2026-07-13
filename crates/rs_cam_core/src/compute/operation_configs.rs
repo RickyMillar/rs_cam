@@ -874,19 +874,26 @@ pub struct UnifiedFinishConfig {
     /// v3 S1 claims pipeline (`planning/unified_v3_design.md` §2.1): run
     /// the rest-depth detector inside this op's own generation (against
     /// its own tip cutter) and let claimed creases cut a pencil pass
-    /// alongside the banded regions. `false` reproduces the pre-v3 op
-    /// exactly — no detector run, no crease claims, no crease node.
-    /// Default `true`: v3 bakes claims into the op's contract (design doc
-    /// §0, "pencil claims creases first").
+    /// ADDITIVELY alongside the banded regions (S1 — corridors are not
+    /// carved). `false` reproduces the pre-v3 op exactly — no detector
+    /// run, no crease claims, no crease node.
+    ///
+    /// Default `false` (EXPERIMENTAL): the 2026-07-13 A/B measured the
+    /// self-probe crease signal as self-defeating for a single-tool op —
+    /// the float field marks exactly the valleys the tool cannot reach,
+    /// so the crease node cost +22.5% finish time for zero measured
+    /// quality gain (on-size share unchanged to the column). Flips back
+    /// on when S2 lands a claim signal with marginal value (dihedral /
+    /// curvature geometry, or cascade rest vs Op A's ball).
     #[serde(default = "default_unified_finish_pencil_claims")]
     pub pencil_claims: bool,
-    /// Territory gate (mm) for the rest-island restriction (design doc
-    /// §2.1 step 4): under a machined-stock reference, a classification
-    /// cell only stays `covered` for banding when the rest grid measures
-    /// at least this much remaining material there (`NaN` — untrusted /
-    /// no rest sample — never counts as covered). Ignored under an
-    /// analytic reference (territory stays full — see
-    /// `unified_finish::ClaimsConfig` doc). Default 0.02mm.
+    /// Territory gate (mm) for the rest-island MEASUREMENT (design doc
+    /// §2.1 step 4): under a machined-stock reference, cells where the
+    /// measured rest (stock top − pencil drop) is below this are counted
+    /// as skippable in `ClaimsReport::rest_excluded_cells`. TELEMETRY
+    /// ONLY in S1 — coverage is never mutated (cell-level masking
+    /// fragments the conditioned decomposition; region-level territory is
+    /// S2 scope). Default 0.02mm.
     #[serde(default = "default_unified_finish_min_rest_depth_mm")]
     pub min_rest_depth_mm: f64,
 }
@@ -917,7 +924,7 @@ impl Default for UnifiedFinishConfig {
 }
 
 fn default_unified_finish_pencil_claims() -> bool {
-    true
+    false
 }
 
 fn default_unified_finish_min_rest_depth_mm() -> f64 {

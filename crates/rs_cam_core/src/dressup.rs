@@ -232,10 +232,23 @@ pub fn optimize_entry_descents_with_provenance(
                     && plunge.target.z < rapid_z - 1e-6
             })
             .and_then(|plunge| {
-                let ceiling = stock
+                // Resolution honesty (TP15 RCA, 2026-07-13): the snapshot's
+                // disc-max under-reads thin ridge tops by XY aliasing — a
+                // project later verified at finer resolution (GUI auto
+                // 0.1 mm vs the 0.5 mm generation ladder) sees those
+                // crests and flags the descent as a rapid graze (measured
+                // 0/15/20 collisions at 0.5/0.25/0.1 mm on wanaka). Pad
+                // the target by TWO of the measuring grid's cells — one
+                // cell cleared only ~25% of the grazes (steep-wall crest
+                // error exceeds one cell of height per cell of XY); the
+                // fresh-stock fallback is exact and needs no pad.
+                let (ceiling, pad) = match stock
                     .and_then(|s| s.max_top_z_in_disc(rapid_xy.0, rapid_xy.1, tool_radius))
-                    .unwrap_or(fresh_stock_top_z);
-                let z = ceiling + crate::toolpath::PLUNGE_CLEARANCE_MM;
+                {
+                    Some(c) => (c, stock.map_or(0.0, |s| 2.0 * s.z_grid.cell_size)),
+                    None => (fresh_stock_top_z, 0.0),
+                };
+                let z = ceiling + crate::toolpath::PLUNGE_CLEARANCE_MM + pad;
                 (z <= rapid_z - MIN_SPLIT_MM && z > plunge.target.z).then_some(z)
             });
 
@@ -1623,6 +1636,10 @@ mod tests {
         // Flat stock whose Z-grid top is 5.0 everywhere — well above the
         // fresh_stock_top_z passed in, so a correct implementation must
         // read the ceiling from the dexel, not the fresh-stock fallback.
+        // The dexel-measured ceiling is additionally padded by the grid's
+        // own cell size (1.0 here): resolution honesty — a finer
+        // verification grid can hold ridge crests this grid smoothed away
+        // (TP15 RCA 2026-07-13, 0/15/20 collisions at 0.5/0.25/0.1 mm).
         let stock = TriDexelStock::from_stock(0.0, 0.0, 10.0, 10.0, 0.0, 5.0, 1.0);
 
         let mut tp = entry_toolpath(5.0, 5.0, 10.0, -1.0);
@@ -1631,9 +1648,11 @@ mod tests {
         assert_eq!(split_count, 1, "expected exactly one split");
         let inserted = &tp.moves[1];
         assert_eq!(inserted.move_type, MoveType::Rapid);
+        let cell_pad = 2.0 * stock.z_grid.cell_size;
         assert!(
-            (inserted.target.z - (5.0 + crate::toolpath::PLUNGE_CLEARANCE_MM)).abs() < 1e-10,
-            "expected inserted rapid at dexel ceiling (5.0) + PLUNGE_CLEARANCE_MM, got {}",
+            (inserted.target.z - (5.0 + crate::toolpath::PLUNGE_CLEARANCE_MM + cell_pad)).abs()
+                < 1e-10,
+            "expected inserted rapid at dexel ceiling (5.0) + PLUNGE_CLEARANCE_MM + cell pad ({cell_pad}), got {}",
             inserted.target.z
         );
     }

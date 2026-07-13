@@ -52,9 +52,7 @@ use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::pencil::{PencilParams, emit_paths};
 use crate::polygon::Polygon2;
 use crate::region_set::RegionSet;
-use crate::rest_field::{
-    RestCenterline, RestFieldParams, RestGrid, RestReference, detect_rest_valleys,
-};
+use crate::rest_field::{RestFieldParams, RestGrid, RestReference, detect_rest_valleys};
 use crate::scallop::{
     ScallopDirection, ScallopParams, ScallopRuntimeAnnotation,
     scallop_toolpath_structured_annotated_with_cancel,
@@ -184,9 +182,11 @@ pub enum ClaimTerritoryMode {
     /// surface, same as the pre-v3 op. Creases still claim corridors.
     #[default]
     Full,
-    /// Stock reference in play: banding is additionally restricted to
-    /// cells where the rest grid shows remaining material — Op A's
-    /// already-finished terrain drops out of Op B's bands.
+    /// Stock reference in play: skippable territory is MEASURED
+    /// (`ClaimsReport::rest_excluded_cells`) but — S1 — not applied;
+    /// banding still covers the whole classified surface. Region-level
+    /// application (drop whole conditioned islands, never punch cell
+    /// holes) is S2 scope.
     RestIslands,
 }
 
@@ -222,8 +222,12 @@ pub struct RegionTableEntry {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ClaimsReport {
     pub territory_mode: ClaimTerritoryMode,
-    /// Classification cells excluded from banding by the rest-island mask
-    /// (step 4). Always 0 under `ClaimTerritoryMode::Full`.
+    /// Classification cells the rest-island measurement found skippable
+    /// (stock top − pencil drop below the dial). TELEMETRY ONLY in S1 —
+    /// coverage is NOT mutated: cell-level masking fragments the
+    /// conditioned decomposition at dendritic necks (live 2026-07-13,
+    /// 4 → 35 regions from 0.2 % of cells). Sizes the S2 region-level
+    /// territory filter. Always 0 under `ClaimTerritoryMode::Full`.
     pub rest_excluded_cells: usize,
     /// Claimed cut paths emitted (centerline + width-capped offset passes,
     /// summed across every crease with `corridor.is_some()`).
@@ -307,7 +311,7 @@ pub fn unified_finish_toolpath_with_cancel(
     let cell = surface.cell_size();
     let origin_x = surface.slope_map.origin_x;
     let origin_y = surface.slope_map.origin_y;
-    let mut covered: Vec<bool> = surface
+    let covered: Vec<bool> = surface
         .heightmap
         .covered
         .iter()
@@ -332,7 +336,8 @@ pub fn unified_finish_toolpath_with_cancel(
     // steps 2+4) ──────────────────────────────────────────────────────────
     // `claims: None` leaves `creases` empty and `covered` untouched —
     // byte-identical to the pre-v3 op (module doc).
-    let mut creases: Vec<RestCenterline> = Vec::new();
+    let mut claimed_creases = 0usize;
+    let mut claims_paths: Vec<crate::pencil::PencilPath> = Vec::new();
     let mut claims_report: Option<ClaimsReport> = None;
     let mut claims_rest_grid: Option<std::sync::Arc<crate::rest_field::RestGrid>> = None;
     let mut claims_rest_regions: Option<std::sync::Arc<Vec<Polygon2>>> = None;
@@ -378,9 +383,31 @@ pub fn unified_finish_toolpath_with_cancel(
         } else {
             ClaimTerritoryMode::Full
         };
+        // Territory measurement is TELEMETRY-ONLY in S1. Two live
+        // validations (2026-07-13) killed cell-level masking outright:
+        // the naive nearest-cell mask skipped ~340 mm² via cross-grid
+        // misregistration, and even the conservative footprint-max /
+        // neighbour-agreeing variant — down to ~0.2 % of cells,
+        // PHYSICALLY-TRUE "tool can't improve this" readings — punched
+        // holes at the steep NECKS of the dendritic band mask and
+        // fragmented the conditioned decomposition 4 → 35 regions, each
+        // fragment ring-cascading from its own boundary (+2.4 k columns
+        // of >0.5 mm leftover at fragment edges). Any sub-region hole is
+        // poison to `decompose`'s conditioning. Region-LEVEL territory
+        // (drop whole conditioned islands that measure ≥X% skippable —
+        // decompose-then-filter) is S2 scope; the counter below is its
+        // sizing telemetry.
         let mut rest_excluded_cells = 0usize;
         if let Some(stock) = cfg.territory_stock {
-            for (i, cov) in covered.iter_mut().enumerate() {
+            let half = cell * 0.5;
+            let offsets = [
+                (0.0, 0.0),
+                (-half, -half),
+                (-half, half),
+                (half, -half),
+                (half, half),
+            ];
+            for (i, cov) in covered.iter().enumerate() {
                 if !*cov {
                     continue;
                 }
@@ -388,38 +415,69 @@ pub fn unified_finish_toolpath_with_cancel(
                 let col = i % cols;
                 let x = origin_x + col as f64 * cell;
                 let y = origin_y + row as f64 * cell;
-                let Some(drop_z) = rest_grid_surface_z(&rf.rest_grid, x, y) else {
-                    continue;
-                };
-                let Some(top_z) = stock
-                    .z_grid
-                    .world_to_cell(x, y)
-                    .and_then(|(r, c)| stock.z_grid.top_z_at(r, c))
-                else {
-                    continue;
-                };
-                if f64::from(top_z) - drop_z < cfg.min_rest_depth_mm {
-                    *cov = false;
+                let mut drop_min = f64::INFINITY;
+                let mut top_max = f64::NEG_INFINITY;
+                for (dx, dy) in offsets {
+                    if let Some(d) = rest_grid_surface_z(&rf.rest_grid, x + dx, y + dy) {
+                        drop_min = drop_min.min(d);
+                    }
+                    if let Some(t) = stock
+                        .z_grid
+                        .world_to_cell(x + dx, y + dy)
+                        .and_then(|(r, c)| stock.z_grid.top_z_at(r, c))
+                    {
+                        top_max = top_max.max(f64::from(t));
+                    }
+                }
+                if drop_min.is_finite()
+                    && top_max.is_finite()
+                    && top_max - drop_min < cfg.min_rest_depth_mm
+                {
                     rest_excluded_cells += 1;
                 }
             }
         }
 
-        // Claim ONLY what the pencil will actually cut: pre-apply the same
-        // length gate `centerline_cut_paths` applies at emission, so
-        // `decompose` never carves a corridor whose paths the emitter then
-        // drops. Claim-carve-abandon was the S1 A/B quality failure: every
-        // carved-but-uncut corridor is leftover nobody owns.
+        // Claim ONLY what the pencil actually cut: EMIT FIRST, per
+        // centerline, and let a centerline claim territory only when its
+        // cut paths materialized. The first fix pre-applied the LENGTH
+        // gate as a proxy and the second live validation (2026-07-13)
+        // caught it: the analytic float field on wanaka yields a dendritic
+        // ridge network whose centerlines pass the length gate, carve the
+        // bands into 35 fragments — and then a deeper gate inside the
+        // emission chain drops every path. Claim == emitted output is the
+        // only carve-and-abandon-proof contract.
         let detected = rf.centerlines.len();
-        creases = rf
-            .centerlines
-            .into_iter()
-            .filter(|c| crate::geo::polyline_length(&c.points) >= rf_params.min_cut_length)
-            .collect();
+        let mut emitted_paths: Vec<crate::pencil::PencilPath> = Vec::new();
+        for centerline in rf.centerlines {
+            check_cancel(cancel)?;
+            let paths = centerline_cut_paths(
+                std::slice::from_ref(&centerline),
+                mesh,
+                index,
+                cutter,
+                cutter.radius(),
+                params.sampling,
+                // Offset stepover mirrors `PencilParams`'s own default
+                // (`tool_radius * 0.5`) — no dedicated dial in S1.
+                cutter.radius() * 0.5,
+                // Offset-pass cap (design doc §2.1 item 5).
+                4,
+                cfg.rest_field_params.min_cut_length,
+                params.stock_to_leave,
+                cancel,
+            )?;
+            if !paths.is_empty() {
+                emitted_paths.extend(paths);
+                claimed_creases += 1;
+            }
+        }
+        claims_paths = emitted_paths;
         tracing::debug!(
             detected,
-            claimed = creases.len(),
-            "unified_finish claims: centerlines surviving the emission length gate"
+            claimed = claimed_creases,
+            paths = claims_paths.len(),
+            "unified_finish claims: centerlines whose cut paths materialized"
         );
 
         claims_report = Some(ClaimsReport {
@@ -435,69 +493,47 @@ pub fn unified_finish_toolpath_with_cancel(
         claims_rest_grid = Some(std::sync::Arc::new(rf.rest_grid));
         claims_rest_regions = Some(std::sync::Arc::new(rf.region_polygons));
     }
-    let covered = covered;
 
     // ── Step 3: decompose ────────────────────────────────────────────────
-    // `creases` is empty when `claims` was `None` — identical to the
-    // pre-v3 `&[]` call.
-    let planned = decompose(
-        &surface.slope_map,
-        &covered,
-        &creases,
-        cutter.radius(),
-        planner,
-    );
+    // S1: crease claims are ADDITIVE — the pencil node cuts along the
+    // detected valleys, but corridors are NOT carved out of the bands
+    // (`&[]` below, always). The third live validation (2026-07-13)
+    // closed the loop on carving: the pencil's emitted fan is only
+    // ~tip-wide on this tool (offset passes don't fit under a Ø6 shank),
+    // while corridors claim the full valley half-width — every carved
+    // corridor leaves an uncut RING around its centerline, and the
+    // fragments shred the conditioned decomposition. Width-honest carving
+    // (claim exactly the emitted fan) + region-level conditioning is S2
+    // scope; until then bands overlap the crease cut, which costs a
+    // little double-cutting along centerlines and can never abandon
+    // territory.
+    let planned = decompose(&surface.slope_map, &covered, &[], cutter.radius(), planner);
     check_cancel(cancel)?;
 
     // ── Step 3.5: crease-claims emission (v3 S1, design doc §2.1 step 5) ──
-    // Every claimed crease (`corridor.is_some()`) gets its cut paths
-    // emitted now; the resulting node is appended AFTER the routed bands
+    // The cut paths were already produced in Step 2.5 (claim == emitted
+    // output, the carve-and-abandon-proof contract); this step only turns
+    // them into the trailing crease node, appended AFTER the routed bands
     // in Step 6, natively linked — not threaded through `route_greedy`
     // (module doc, deferred to S3's fused router).
     let mut crease_tp = Toolpath::new();
-    if let Some(cfg) = claims {
-        let claimed: Vec<RestCenterline> = planned
-            .creases
-            .iter()
-            .filter(|c| c.corridor.is_some())
-            .map(|c| c.centerline.clone())
-            .collect();
-        if !claimed.is_empty() {
-            check_cancel(cancel)?;
-            let crease_paths = centerline_cut_paths(
-                &claimed,
-                mesh,
-                index,
-                cutter,
-                cutter.radius(),
-                params.sampling,
-                // Offset stepover mirrors `PencilParams`'s own default
-                // (`tool_radius * 0.5`) — no dedicated dial in S1.
-                cutter.radius() * 0.5,
-                // Offset-pass cap (design doc §2.1 item 5).
-                4,
-                cfg.rest_field_params.min_cut_length,
-                params.stock_to_leave,
-                cancel,
-            )?;
-            if !crease_paths.is_empty() {
-                let pencil_params = PencilParams {
-                    feed_rate: params.feed_rate,
-                    plunge_rate: params.plunge_rate,
-                    safe_z: params.safe_z,
-                    stock_to_leave: params.stock_to_leave,
-                    sampling: params.sampling,
-                    link_kinematics: link_kinematics.cloned(),
-                    ..PencilParams::default()
-                };
-                let (tp, _anns) = emit_paths(&crease_paths, mesh, index, cutter, &pencil_params);
-                crease_tp = tp;
-            }
-            if let Some(report) = claims_report.as_mut() {
-                report.crease_path_count = crease_paths.len();
-                report.crease_path_length_mm = cutting_length_mm(&crease_tp);
-            }
-        }
+    if !claims_paths.is_empty() {
+        check_cancel(cancel)?;
+        let pencil_params = PencilParams {
+            feed_rate: params.feed_rate,
+            plunge_rate: params.plunge_rate,
+            safe_z: params.safe_z,
+            stock_to_leave: params.stock_to_leave,
+            sampling: params.sampling,
+            link_kinematics: link_kinematics.cloned(),
+            ..PencilParams::default()
+        };
+        let (tp, _anns) = emit_paths(&claims_paths, mesh, index, cutter, &pencil_params);
+        crease_tp = tp;
+    }
+    if let Some(report) = claims_report.as_mut() {
+        report.crease_path_count = claims_paths.len();
+        report.crease_path_length_mm = cutting_length_mm(&crease_tp);
     }
 
     // ── Step 4: per-region generation ───────────────────────────────────
@@ -1910,9 +1946,12 @@ mod tests {
             "expected claimed crease cut paths, got {claims:?}"
         );
         assert!(claims.crease_path_length_mm > 0.0);
-        assert!(report.decompose.claimed_creases > 0);
-        // Analytic (Cutter) reference: territory stays full (design doc
-        // §2.1 step 4), so no cells are excluded by the rest-island mask.
+        // S1 additive claims: the pencil node cuts, but corridors are NOT
+        // carved out of the bands (width-honest carving is S2 scope), so
+        // decompose sees no creases.
+        assert_eq!(report.decompose.claimed_creases, 0);
+        // No territory stock: territory stays full (design doc §2.1
+        // step 4), so no cells are measured skippable.
         assert_eq!(claims.territory_mode, ClaimTerritoryMode::Full);
         assert_eq!(claims.rest_excluded_cells, 0);
 

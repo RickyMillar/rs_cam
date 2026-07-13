@@ -3607,7 +3607,12 @@ fn outer_region_spans(
 /// wanaka samples the same world XY once per group, see `ColumnDeviation`
 /// doc) and to mid-steep band cells (`bm` code 2, from `build_band_map`).
 /// Returns `(sample_count, on_size_pct, plus05_pct)`.
-fn mid_steep_shares(s: &ProjectSession, bm: &BandMap, group: usize) -> (usize, f64, f64) {
+fn band_shares(
+    s: &ProjectSession,
+    bm: &BandMap,
+    group: usize,
+    band_code: u8,
+) -> (usize, f64, f64, usize) {
     let sim = s.simulation_result().expect("sim result");
     let cols = sim
         .column_deviations
@@ -3621,42 +3626,58 @@ fn mid_steep_shares(s: &ProjectSession, bm: &BandMap, group: usize) -> (usize, f
     };
     const ON_SIZE_BIN: usize = 6;
     const PLUS_05_BIN: usize = 7;
+    const TAIL_BIN: usize = DEV_BIN_COUNT - 1; // ">+.5" — big standing leftover
     let mut total = 0usize;
     let mut on_size = 0usize;
     let mut plus05 = 0usize;
+    let mut tail = 0usize;
     for cd in cols.iter().filter(|cd| cd.group == group) {
-        if bm.code_at(cd.x, cd.y) != 2 {
+        if bm.code_at(cd.x, cd.y) != band_code {
             continue;
         }
         total += 1;
         match bin_of(cd.dev) {
             ON_SIZE_BIN => on_size += 1,
             PLUS_05_BIN => plus05 += 1,
+            TAIL_BIN => tail += 1,
             _ => {}
         }
     }
     let pct = |n: usize| 100.0 * n as f64 / (total.max(1) as f64);
-    (total, pct(on_size), pct(plus05))
+    (total, pct(on_size), pct(plus05), tail)
+}
+
+fn mid_steep_shares(s: &ProjectSession, bm: &BandMap, group: usize) -> (usize, f64, f64) {
+    let (total, on, plus05, _) = band_shares(s, bm, group, 2);
+    (total, on, plus05)
 }
 
 /// S1 acceptance A/B: `pencil_claims: false` (OFF, byte-identical to the
 /// shipped B75 op) vs `pencil_claims: true` (ON, same dials, claims
 /// pipeline live) on the real wanaka chain. Gates (design doc §4, in
 /// order): collisions must not regress, group-filtered mid-steep on-size
-/// share must not regress beyond a 2 pp tolerance, and total project time
-/// must not blow the budget by more than 10% — a claims pass that finds
-/// real rest territory should cost something, just not runaway.
+/// share must not regress beyond a 2 pp tolerance, the '>+.5' leftover
+/// tail must not grow (per band), and total project time must not blow
+/// the budget by more than 10%.
+///
+/// KNOWN RED on wanaka as of 2026-07-13 (why `pencil_claims` defaults
+/// off): with additive claims the bands are byte-identical (on-size /
+/// tail equal to the column — quality gates pass), but the crease node
+/// costs +22.5% finish time for zero measured quality gain because the
+/// SELF-PROBE float field marks exactly the valleys the tool cannot
+/// reach. The time gate is doing its job. S2 replaces the claim signal
+/// (dihedral/curvature geometry, or cascade rest vs Op A's ball); this
+/// test is the acceptance harness for that work.
 ///
 /// The claims pipeline's own telemetry (`UnifiedFinishReport::claims`,
-/// `region_table`) does not survive the session boundary today —
-/// `ToolpathComputeResult`/`AnnotatedToolpath` carry spans + `rest_grid` +
-/// `rest_regions` but no report slot, and `rest_regions` is populated ONLY
-/// by the standalone pencil `RestDepth` detector (per its doc comment),
-/// not by `UnifiedFinish` — so territory mode (`RestIslands` vs `Full`) is
-/// NOT observable here (known wave-2 gap: report not carried through
-/// `AnnotatedToolpath`). What IS observable structurally is the Region
-/// spans design doc §2.4 calls a MUST: this test asserts the ON branch's
-/// finish op carries at least one outer (node-level) Region span.
+/// `region_table`) does not survive the session boundary today — the
+/// report has no slot on `ToolpathComputeResult`, so territory mode
+/// (`RestIslands` vs `Full`) is NOT directly observable here. The
+/// detector's `rest_grid`/`rest_regions` ARE carried on the annotated
+/// result since the §2.4 carry-through (see `s1_claims_mask_probe`, which
+/// reads them). What this test asserts structurally is the Region spans
+/// design doc §2.4 calls a MUST: the ON branch's finish op must carry at
+/// least one outer (node-level) Region span.
 #[test]
 #[ignore = "two full generation ladders + 0.25mm measurement sims; run with --ignored --nocapture"]
 fn s1_claims_ab() {
@@ -3756,6 +3777,19 @@ fn s1_claims_ab() {
     );
     eprintln!("mid-steep +.05  share (group-filtered): OFF={plus05_off:5.1}%  ON={plus05_on:5.1}%");
 
+    // Fat-tail counts (">+.5" bin — big standing leftover). The first live
+    // validation (2026-07-13) caught the territory mask leaving ~340 mm² of
+    // rough standing while the on-size share moved only 1.7 pp: skipped
+    // territory shows up as a TAIL, not an on-size shift, so the tail is
+    // its own gate — per band, since shallow grew even more than mid-steep.
+    let (_, _, _, tail_mid_off) = band_shares(&off, &bm_off, group_off, 2);
+    let (_, _, _, tail_mid_on) = band_shares(&on, &bm_on, group_on, 2);
+    let (_, _, _, tail_sh_off) = band_shares(&off, &bm_off, group_off, 1);
+    let (_, _, _, tail_sh_on) = band_shares(&on, &bm_on, group_on, 1);
+    eprintln!(
+        "'>+.5' tail columns: mid-steep OFF={tail_mid_off} ON={tail_mid_on} | shallow OFF={tail_sh_off} ON={tail_sh_on}"
+    );
+
     // ── Gates (design doc §4 order) ──────────────────────────────────
     assert!(
         out_on.collisions <= out_off.collisions,
@@ -3768,6 +3802,18 @@ fn s1_claims_ab() {
         "S1 QUALITY GATE FAILED: mid-steep on-size share regressed beyond tolerance: \
          OFF={on_size_off:.1}%  ON={on_size_on:.1}%  (2.0pp tolerance)"
     );
+    // 5% + 100 columns of slack: measurement-sim texture jitters the tail
+    // by tens of columns run-to-run; the defect class this guards against
+    // showed up as +2,461 / +2,949.
+    let tail_gate = |off_n: usize, on_n: usize, band: &str| {
+        assert!(
+            on_n <= off_n + off_n / 20 + 100,
+            "S1 TAIL GATE FAILED: claims-on left {on_n} '{band}' columns >0.5mm standing \
+             vs claims-off {off_n} — territory mask is skipping cuttable material"
+        );
+    };
+    tail_gate(tail_mid_off, tail_mid_on, "mid-steep");
+    tail_gate(tail_sh_off, tail_sh_on, "shallow");
     assert!(
         out_on.project_total_s <= out_off.project_total_s * 1.10,
         "S1 TIME GATE FAILED: claims-on project time {:.1}s exceeds 110% of claims-off {:.1}s",
