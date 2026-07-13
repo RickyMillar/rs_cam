@@ -41,6 +41,18 @@
 //! masking shredded the same decomposition 4 → 35 regions on 0.2% of
 //! cells). `min_region_rest_share: 0.0` (default) is the S1 no-op.
 //!
+//! Process-proof build-list item 3 (`planning/v3_process_proof_prompt.md`,
+//! design doc §0.a / §2.1 step 2 amendment) adds [`CreaseReference`]: the
+//! S1 "claims are GEOMETRIC, territory is MATERIAL" rule was proven on a
+//! ROUGH→finish chain, where a stock-referenced rest field reads roughing
+//! TERRACES as a phantom dendritic crease network. That lesson does NOT
+//! generalize to every stock reference — on a CASCADE where this op's
+//! `territory_stock` is itself a FINISH-QUALITY prior pass (Op A's own
+//! ball all-over scallop), the machined stock is the R2-validated honest
+//! crease reference instead. `ClaimsConfig::crease_reference` selects the
+//! arm; the default (`CreaseReference::SelfProbe`) is byte-identical to
+//! S1/S2. Emission stays additive either way — no corridor carving.
+//!
 //! No dressups, no boundary clipping here: the stitched toolpath this
 //! module returns flows through the NORMAL session post-passes (boundary
 //! clip, `optimize_entry_descents`, feed modulation, F-034 accounting)
@@ -153,23 +165,73 @@ pub struct RoutedLink {
 
 // ── Claims pipeline (v3 S1) ─────────────────────────────────────────────
 
+/// Which reference the claims crease detector runs against (process-proof
+/// build-list item 3, `planning/unified_v3_design.md` §0.a / §2.1 step 2
+/// amendment, 2026-07-13).
+///
+/// The S1 lesson — **claims are GEOMETRIC, territory is MATERIAL** — was
+/// proven on a ROUGH→finish chain: there, a stock-referenced rest field
+/// reads the roughing TERRACE pattern as a dendritic phantom crease
+/// network (measured: 10k+ new uncut mid-steep columns once those
+/// phantoms claimed corridors). That lesson holds wherever the prior
+/// stock is UNFINISHED. It does NOT generalize to a cascade where this
+/// op's prior stock is itself a FINISH-QUALITY pass (Op A's own ball
+/// all-over scallop) — there the machined stock is the R2-validated
+/// honest reference (it beat the analytic reference ~14× on real cusps
+/// and unreached valleys, not roughing artefacts). Emission stays
+/// additive under either variant — this enum only changes what feeds the
+/// detector, never whether corridors get carved.
+///
+/// Derives `Serialize`/`Deserialize` directly — mirrors
+/// [`crate::scallop::ScallopDirection`]'s pattern (a core enum re-exported
+/// as-is into `compute::operation_configs`, rather than a parallel
+/// config-side enum) — so `UnifiedFinishConfig::claims_reference` can use
+/// this type verbatim.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CreaseReference {
+    /// Analytic self-probe: geometric valleys of the design surface — the
+    /// thing pencil corridors are FOR. The only honest signal on
+    /// rough-reference chains (terraces read as phantom creases there),
+    /// and self-defeating for single-tool ops BY CONSTRUCTION (measured:
+    /// +22.5% finish time, zero quality gain — the float field marks
+    /// exactly what the tool CANNOT reach).
+    #[default]
+    SelfProbe,
+    /// The machined prior stock (`RestReference::Stock`, the R2-validated
+    /// arm): sanctioned ONLY when that stock is FINISH-QUALITY (a
+    /// cascade's Op B following Op A's own ball pass) — rest depth there
+    /// is real uncut cusps and unreached valleys, not roughing terraces.
+    /// Falls back to `SelfProbe` (with a `tracing::warn!`) when no
+    /// `ClaimsConfig::territory_stock` is in scope — there is no stock to
+    /// reference.
+    MachinedStock,
+}
+
 /// In-op pencil-claims pipeline inputs (v3 S1, `planning/unified_v3_design.md`
 /// §2.1). `claims: None` on [`unified_finish_toolpath_with_cancel`]
 /// reproduces the pre-v3 op exactly: no detector run, no crease claims, no
 /// crease node — the Wave 3 A/B harness pins this as the baseline.
 pub struct ClaimsConfig<'a> {
-    /// Machined prior stock for the TERRITORY mask ONLY (rest islands,
-    /// step 4 below) — already XY-frame-guarded by the caller; `None` →
-    /// territory stays full.
+    /// Machined prior stock for the TERRITORY mask (rest islands, step 4
+    /// below) — already XY-frame-guarded by the caller; `None` → territory
+    /// stays full.
     ///
-    /// Deliberately NOT a crease-detection reference: the S1 A/B on the
-    /// wanaka rough→finish chain proved that a stock-referenced rest field
-    /// reads the ROUGHING TERRACE pattern as a dendritic phantom "crease"
-    /// network — universal claims then carve corridors the emitter never
-    /// cuts (10k+ new uncut mid-steep columns). Claims are GEOMETRIC
-    /// (design-surface valleys via the analytic self-probe, below);
-    /// territory is MATERIAL (this stock).
+    /// Also feeds crease DETECTION when `crease_reference ==
+    /// CreaseReference::MachinedStock` — see that enum's doc for when that
+    /// is sanctioned (finish-quality references only) versus the S1 A/B on
+    /// the wanaka rough→finish chain, which proved a stock-referenced rest
+    /// field reads the ROUGHING TERRACE pattern as a dendritic phantom
+    /// "crease" network on an UNFINISHED prior stock — universal claims
+    /// there then carve corridors the emitter never cuts (10k+ new uncut
+    /// mid-steep columns). With `crease_reference` left at its default
+    /// (`CreaseReference::SelfProbe`), this field is territory-only:
+    /// claims are GEOMETRIC (design-surface valleys via the analytic
+    /// self-probe); territory is MATERIAL (this stock).
     pub territory_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
+    /// Crease-detector reference (see [`CreaseReference`]). Defaults to
+    /// `CreaseReference::SelfProbe` — the S1/S2 behavior, byte-identical.
+    pub crease_reference: CreaseReference,
     /// Detector params. `pencil_radius` is overwritten with the op's own
     /// `cutter.radius()` before use — the finishing tool IS the pencil in
     /// this op (UnifiedFinish is single-tool, ball-tip-only), unlike the
@@ -404,31 +466,50 @@ pub fn unified_finish_toolpath_with_cancel(
             min_cut_length: cfg.rest_field_params.min_cut_length,
             region_margin_mm: cfg.rest_field_params.region_margin_mm,
         };
-        // Crease detection ALWAYS runs against the analytic self-probe —
-        // geometric valleys of the design surface, the thing pencil
-        // corridors are FOR. See `ClaimsConfig::territory_stock` for why
-        // the machined stock must not be the crease reference.
+        // Crease detection defaults to the analytic self-probe — geometric
+        // valleys of the design surface, the thing pencil corridors are
+        // FOR — but honors `ClaimsConfig::crease_reference` (build-list
+        // item 3): opting into `MachinedStock` swaps in the machined prior
+        // stock as the reference instead, sanctioned ONLY when that stock
+        // is FINISH-QUALITY (a cascade's Op B following Op A's own ball
+        // pass, the R2-validated arm) — never on a rough→finish chain,
+        // where the S1 A/B proved the same swap reads roughing terraces as
+        // a phantom dendritic crease network. See `CreaseReference` doc.
         let probe = crate::tool::BallEndmill::new(
             crate::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
             crate::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
         );
-        let rf = detect_rest_valleys(
-            mesh,
-            index,
-            cutter,
-            RestReference::Cutter {
-                tool: &probe,
-                is_surface_probe: true,
+        let self_probe_reference = || RestReference::Cutter {
+            tool: &probe,
+            is_surface_probe: true,
+        };
+        let crease_reference = match cfg.crease_reference {
+            CreaseReference::SelfProbe => self_probe_reference(),
+            CreaseReference::MachinedStock => match cfg.territory_stock {
+                Some(stock) => RestReference::Stock(stock),
+                None => {
+                    tracing::warn!(
+                        "unified_finish: ClaimsConfig::crease_reference is \
+                         MachinedStock but no territory_stock is in scope; \
+                         falling back to the analytic self-probe"
+                    );
+                    self_probe_reference()
+                }
             },
-            &rf_params,
-        );
+        };
+        let rf = detect_rest_valleys(mesh, index, cutter, crease_reference, &rf_params);
         check_cancel(cancel)?;
 
         // Territory = rest islands (design doc §2.1 step 4), measured
         // directly as stock top − pencil drop per classification cell.
-        // The analytic run's `surface_z` field IS the pencil drop, so no
-        // second detector pass is needed. Untrusted samples keep their
-        // coverage (`ClaimsConfig::min_rest_depth_mm` doc).
+        // `rf.rest_grid.surface_z` IS the pencil drop regardless of which
+        // `crease_reference` arm fed `rf` — confirmed in
+        // `rest_field::detect_rest_valleys`'s sample closure: `surface_z`
+        // is populated from the pencil-only drop (`pc.z`) before the
+        // `reference` match ever runs, so `RestReference::Stock` and
+        // `RestReference::Cutter` populate it identically. No second
+        // detector pass is needed under either arm. Untrusted samples keep
+        // their coverage (`ClaimsConfig::min_rest_depth_mm` doc).
         let territory_mode = if cfg.territory_stock.is_some() {
             ClaimTerritoryMode::RestIslands
         } else {
@@ -2128,6 +2209,8 @@ mod tests {
         let (mesh, index, cutter, params, planner) = trench_claims_fixture();
         let claims_cfg = ClaimsConfig {
             territory_stock: None,
+            // Build-list item 3's default arm — not under test here.
+            crease_reference: CreaseReference::SelfProbe,
             rest_field_params: RestFieldParams {
                 cell_mm: 0.5,
                 min_valley_depth: 0.05,
@@ -2206,6 +2289,9 @@ mod tests {
         let (mesh, index, cutter, params, planner) = trench_claims_fixture();
         let claims_cfg = ClaimsConfig {
             territory_stock: None,
+            // Not under test here (region-table range invariants); the
+            // default arm is the safe choice.
+            crease_reference: CreaseReference::SelfProbe,
             rest_field_params: RestFieldParams {
                 cell_mm: 0.5,
                 min_valley_depth: 0.05,
@@ -2351,6 +2437,9 @@ mod tests {
 
         let off_cfg = ClaimsConfig {
             territory_stock: Some(&stock),
+            // S2 region-level filter test, not build-list item 3 — pin the
+            // default arm.
+            crease_reference: CreaseReference::SelfProbe,
             rest_field_params: RestFieldParams {
                 cell_mm: 0.5,
                 min_valley_depth: 0.05,
@@ -2414,6 +2503,179 @@ mod tests {
             "dropping regions must not increase move count: on={} off={}",
             tp_on.moves.len(),
             tp_off.moves.len()
+        );
+    }
+
+    // ── Build-list item 3: stock-referenced crease claims ───────────────
+
+    /// [`CreaseReference::MachinedStock`] sentry (process-proof build-list
+    /// item 3): the orchestrator must actually swap the crease detector's
+    /// reference to the supplied stock (not silently keep using the
+    /// self-probe), and must fall back to the self-probe cleanly — no
+    /// panic, a `ClaimsReport` still comes back — when the caller opts
+    /// into `MachinedStock` without a `territory_stock` in scope.
+    ///
+    /// Reuses `trench_claims_fixture` and the S2 test's uncut solid-brick
+    /// stock (`TriDexelStock::from_bounds`, top = the mesh's own bbox
+    /// ceiling — see that test's doc for why this fixture sidesteps
+    /// needing byte-exact agreement with the detector's own probe-drop
+    /// math). The brick's flat top sits at the SAME height the tip
+    /// cutter itself contacts outside the trench, so this assigns a
+    /// *smaller* rest magnitude at the trench than the self-probe (whose
+    /// reference reaches the true floor) — assertions therefore stay off
+    /// magnitude comparisons between arms (fixture-dependent, not a
+    /// general property of `MachinedStock`) and instead check the
+    /// structural contract: the swap actually ran, and the fallback
+    /// actually fell back.
+    #[test]
+    fn crease_reference_machined_stock_runs_and_falls_back_without_stock() {
+        let (mesh, index, cutter, params, planner) = trench_claims_fixture();
+        let never_cancel = || false;
+        let rf_params = || RestFieldParams {
+            cell_mm: 0.5,
+            min_valley_depth: 0.05,
+            // Force pencil routing over clearing, same as the other claims
+            // tests, so the detected ridge survives as a centerline.
+            route_width_factor: 10.0,
+            ..RestFieldParams::default()
+        };
+
+        // Self-probe baseline (S1/S2 default arm) — establishes what "the
+        // detector ran at all" looks like on this fixture.
+        let self_probe_cfg = ClaimsConfig {
+            territory_stock: None,
+            crease_reference: CreaseReference::SelfProbe,
+            rest_field_params: rf_params(),
+            min_rest_depth_mm: 0.02,
+            min_region_rest_share: 0.0,
+        };
+        let (_tp, _anns, report_self) = unified_finish_toolpath_with_cancel(
+            &mesh,
+            &index,
+            &cutter,
+            5.0,
+            -5.0,
+            &params,
+            &planner,
+            None,
+            None,
+            Some(&self_probe_cfg),
+            None,
+            &never_cancel,
+        )
+        .expect("self-probe crease detection must complete");
+        let claims_self = report_self.claims.expect("claims pipeline must have run");
+
+        // MachinedStock arm, stock present: must complete, must still read
+        // `RestIslands` territory (driven by `territory_stock`, independent
+        // of which reference fed the detector), and must actually have
+        // claimed the trench crease under the STOCK reference (proves the
+        // swap ran — a silently-ignored reference would still claim
+        // nothing-changed output, which this mesh's single crease can't
+        // distinguish from "swap didn't happen" on its own, so the real
+        // proof is the fallback-vs-stock split below).
+        let stock = crate::dexel_stock::TriDexelStock::from_bounds(&mesh.bbox, 1.0);
+        let stock_cfg = ClaimsConfig {
+            territory_stock: Some(&stock),
+            crease_reference: CreaseReference::MachinedStock,
+            rest_field_params: rf_params(),
+            min_rest_depth_mm: 0.02,
+            min_region_rest_share: 0.0,
+        };
+        let (_tp2, _anns2, report_stock) = unified_finish_toolpath_with_cancel(
+            &mesh,
+            &index,
+            &cutter,
+            5.0,
+            -5.0,
+            &params,
+            &planner,
+            None,
+            None,
+            Some(&stock_cfg),
+            None,
+            &never_cancel,
+        )
+        .expect("machined-stock crease detection must complete");
+        let claims_stock = report_stock.claims.expect("claims pipeline must have run");
+        assert_eq!(
+            claims_stock.territory_mode,
+            ClaimTerritoryMode::RestIslands,
+            "a territory_stock in scope must read RestIslands territory mode \
+             regardless of which arm fed the crease detector"
+        );
+        // Direct evidence the swap actually fed `detect_rest_valleys`: at
+        // the trench center, the solid brick's flat top sits well above
+        // where the tip cutter can descend into the (too-narrow-to-bridge)
+        // Gaussian dip, so `stock_top - pencil_drop` must read a
+        // comfortably-over-threshold rest value there — independent of
+        // whatever the ridge-tracing pipeline does with it downstream.
+        let rest_grid_stock = report_stock
+            .rest_grid
+            .as_ref()
+            .expect("rest grid must be carried through");
+        let trench_center_rest = rest_grid_index(rest_grid_stock, 15.0, 0.0)
+            .and_then(|i| rest_grid_stock.rest.get(i))
+            .copied()
+            .expect("trench center must be a trusted grid cell");
+        assert!(
+            trench_center_rest.is_finite() && f64::from(trench_center_rest) > 0.05,
+            "expected the stock-referenced field to read material at the \
+             trench center, got {trench_center_rest}"
+        );
+        assert!(
+            claims_stock.crease_path_count > 0,
+            "expected the trench crease to still claim cut paths under the \
+             stock-referenced detector, got {claims_stock:?}"
+        );
+        assert!(claims_stock.crease_path_length_mm > 0.0);
+
+        // No-stock fallback: `MachinedStock` with `territory_stock: None`
+        // has no stock to reference, so it must fall back to the
+        // self-probe rather than error or panic — and the fallback must
+        // reproduce the self-probe run byte-for-byte (same code path),
+        // proving the fallback actually engaged rather than, say, silently
+        // detecting nothing.
+        let fallback_cfg = ClaimsConfig {
+            territory_stock: None,
+            crease_reference: CreaseReference::MachinedStock,
+            rest_field_params: rf_params(),
+            min_rest_depth_mm: 0.02,
+            min_region_rest_share: 0.0,
+        };
+        let (_tp3, _anns3, report_fallback) = unified_finish_toolpath_with_cancel(
+            &mesh,
+            &index,
+            &cutter,
+            5.0,
+            -5.0,
+            &params,
+            &planner,
+            None,
+            None,
+            Some(&fallback_cfg),
+            None,
+            &never_cancel,
+        )
+        .expect("MachinedStock with no territory_stock must fall back cleanly, not error");
+        let claims_fallback = report_fallback
+            .claims
+            .expect("claims pipeline must have run even on fallback");
+        assert_eq!(
+            claims_fallback.territory_mode,
+            ClaimTerritoryMode::Full,
+            "no territory_stock means territory stays Full even under MachinedStock"
+        );
+        assert_eq!(
+            claims_fallback.crease_path_count, claims_self.crease_path_count,
+            "the no-stock fallback must reproduce the self-probe run exactly"
+        );
+        assert!(
+            (claims_fallback.crease_path_length_mm - claims_self.crease_path_length_mm).abs()
+                < 1e-9,
+            "fallback length {} must match self-probe length {}",
+            claims_fallback.crease_path_length_mm,
+            claims_self.crease_path_length_mm
         );
     }
 }

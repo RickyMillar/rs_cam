@@ -1302,9 +1302,10 @@ pub(crate) fn generate_unified_finish(
     planner.pencil_claim_floor = ctx.tool_def.radius() * 0.25;
 
     let claims_cfg = cfg.pencil_claims.then(|| {
-        // The stock feeds the TERRITORY mask only (crease detection is
-        // always analytic — `ClaimsConfig::territory_stock` doc); the same
-        // XY frame guard `resolve_rest_reference` applies, minus its
+        // The stock always feeds the TERRITORY mask; it ALSO feeds crease
+        // detection when `cfg.claims_reference == CreaseReference::
+        // MachinedStock` (build-list item 3 — `CreaseReference` doc). The
+        // same XY frame guard `resolve_rest_reference` applies, minus its
         // reference fallback chain.
         let territory_stock = ctx.initial_stock.filter(|stock| {
             let (sb, mb) = (&stock.stock_bbox, &m.bbox);
@@ -1333,6 +1334,12 @@ pub(crate) fn generate_unified_finish(
                 });
         crate::unified_finish::ClaimsConfig {
             territory_stock,
+            // Build-list item 3: `UnifiedFinishConfig::claims_reference`
+            // IS `unified_finish::CreaseReference` (re-exported verbatim in
+            // `operation_configs`, mirroring `ScallopDirection`), so no
+            // conversion is needed — the config value passes straight
+            // through.
+            crease_reference: cfg.claims_reference,
             rest_field_params,
             min_rest_depth_mm: cfg.min_rest_depth_mm,
             min_region_rest_share: cfg.min_region_rest_share,
