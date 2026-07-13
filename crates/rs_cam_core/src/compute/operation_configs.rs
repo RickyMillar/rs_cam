@@ -919,6 +919,23 @@ pub struct UnifiedFinishConfig {
     /// (`pencil_claims = true` with no `FromRemainingStock` chain).
     #[serde(default = "default_unified_finish_claims_reference")]
     pub claims_reference: CreaseReference,
+    /// S4 region-level territory CLIP (`unified_finish::ClaimsConfig::
+    /// territory_clip` doc, process-proof build-list, `planning/
+    /// unified_v3_design.md` §0.a / §2.1 step 4): after the S2 share
+    /// filter, intersect each surviving band region's polygon against the
+    /// claims detector's own rest-region polygons and confine generation
+    /// to the surviving pieces, dropping whole regions with no overlap.
+    /// Landed because S2's whole-island keep-or-drop couldn't shrink a
+    /// giant conditioned island that merely CONTAINS >10% rest somewhere —
+    /// the wanaka ×2 cascade A/B measured Op B at +47% over the all-over-
+    /// tip baseline for exactly that reason (unified_finish module doc).
+    /// Meaningful only alongside `pencil_claims = true` and
+    /// `claims_reference = MachinedStock`; under `SelfProbe` the
+    /// orchestrator warns and skips clipping (the "rest islands" there are
+    /// geometric, not material). Default `false` = off, byte-identical to
+    /// the pre-S4 op (S1/S2 behavior only).
+    #[serde(default = "default_unified_finish_territory_clip")]
+    pub territory_clip: bool,
 }
 
 impl Default for UnifiedFinishConfig {
@@ -944,6 +961,7 @@ impl Default for UnifiedFinishConfig {
             min_rest_depth_mm: default_unified_finish_min_rest_depth_mm(),
             min_region_rest_share: default_unified_finish_min_region_rest_share(),
             claims_reference: default_unified_finish_claims_reference(),
+            territory_clip: default_unified_finish_territory_clip(),
         }
     }
 }
@@ -962,6 +980,10 @@ fn default_unified_finish_min_region_rest_share() -> f64 {
 
 fn default_unified_finish_claims_reference() -> CreaseReference {
     CreaseReference::SelfProbe
+}
+
+fn default_unified_finish_territory_clip() -> bool {
+    false
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2006,6 +2028,9 @@ mod tests {
         let cfg: UnifiedFinishConfig = serde_json::from_str(legacy).unwrap();
         assert_eq!(cfg.claims_reference, CreaseReference::SelfProbe);
         assert!(!cfg.pencil_claims);
+        // S4 (`territory_clip`) postdates this legacy payload too — must
+        // default off, same backcompat contract as its S1/S2 siblings.
+        assert!(!cfg.territory_clip);
     }
 
     /// Drill selection fields must round-trip, and legacy TOML/JSON that

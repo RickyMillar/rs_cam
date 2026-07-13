@@ -1322,7 +1322,7 @@ pub(crate) fn generate_unified_finish(
         // `pencil_radius` is set by `unified_finish_toolpath_with_cancel`
         // itself (the op's own cutter), so leaving the default here is a
         // no-op either way.
-        let rest_field_params =
+        let mut rest_field_params =
             ctx.rest_analysis
                 .map_or_else(crate::rest_field::RestFieldParams::default, |ra| {
                     crate::rest_field::RestFieldParams {
@@ -1332,6 +1332,24 @@ pub(crate) fn generate_unified_finish(
                         ..crate::rest_field::RestFieldParams::default()
                     }
                 });
+        // S4 threshold coupling (`unified_finish::ClaimsConfig::
+        // territory_clip` doc): the clip intersects region polygons
+        // against the DETECTOR's own `region_polygons`, which are gated on
+        // `rest_field_params.min_valley_depth` — a DIFFERENT threshold
+        // from `cfg.min_rest_depth_mm` (the S2/S4 per-cell territory
+        // gate) unless we floor it here. Left to disagree, the clip would
+        // confine generation to islands measuring a different "rest" than
+        // the one `min_region_rest_share`/S4-drop decided was worth
+        // keeping. Only floors when no deliberate `rest_analysis` dial is
+        // in scope: the session populates `ctx.rest_analysis`
+        // UNCONDITIONALLY from the toolpath config (`session/compute.rs`),
+        // so mere presence is not intent — an untouched default block
+        // (`enabled: false`, dials == `RestFieldParams::default()`) must
+        // not shadow the coupling. `enabled` is the explicit-override
+        // signal, same as `attach_generic_rest_analysis` keys on.
+        if cfg.territory_clip && !ctx.rest_analysis.is_some_and(|ra| ra.enabled) {
+            rest_field_params.min_valley_depth = cfg.min_rest_depth_mm;
+        }
         crate::unified_finish::ClaimsConfig {
             territory_stock,
             // Build-list item 3: `UnifiedFinishConfig::claims_reference`
@@ -1343,6 +1361,7 @@ pub(crate) fn generate_unified_finish(
             rest_field_params,
             min_rest_depth_mm: cfg.min_rest_depth_mm,
             min_region_rest_share: cfg.min_region_rest_share,
+            territory_clip: cfg.territory_clip,
         }
     });
 

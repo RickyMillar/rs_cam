@@ -1259,6 +1259,9 @@ const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[
     // against (`unified_finish::CreaseReference` doc) — same
     // serde-defaulted back-compat treatment as the S1/S2 dials above.
     ParamDef::required("claims_reference", "enum:self_probe|machined_stock"),
+    // S4 region-level territory clip (`unified_finish::ClaimsConfig::
+    // territory_clip` doc) — same serde-defaulted back-compat treatment.
+    ParamDef::required("territory_clip", "bool"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
