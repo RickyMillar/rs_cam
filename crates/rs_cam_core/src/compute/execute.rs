@@ -1335,6 +1335,7 @@ pub(crate) fn generate_unified_finish(
             territory_stock,
             rest_field_params,
             min_rest_depth_mm: cfg.min_rest_depth_mm,
+            min_region_rest_share: cfg.min_region_rest_share,
         }
     });
 

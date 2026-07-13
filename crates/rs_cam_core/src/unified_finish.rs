@@ -30,6 +30,17 @@
 //! up). `claims: None` reproduces the pre-v3 op byte-for-byte: `decompose`
 //! still gets an empty crease slice, exactly as before.
 //!
+//! S2 (`planning/unified_v3_design.md` §2.1 step 4 / §0.a) adds a
+//! REGION-level territory filter on top of S1's per-cell rest
+//! MEASUREMENT: with a `ClaimsConfig::territory_stock` in scope, every
+//! covered classification cell gets a per-cell rest verdict (stock top −
+//! pencil drop vs `min_rest_depth_mm`), and after `decompose` produces its
+//! conditioned band islands, any WHOLE island whose measured rest share
+//! falls below `ClaimsConfig::min_region_rest_share` is dropped before
+//! Step 4 generates it — never a cell hole (the fragmentation lesson: cell
+//! masking shredded the same decomposition 4 → 35 regions on 0.2% of
+//! cells). `min_region_rest_share: 0.0` (default) is the S1 no-op.
+//!
 //! No dressups, no boundary clipping here: the stitched toolpath this
 //! module returns flows through the NORMAL session post-passes (boundary
 //! clip, `optimize_entry_descents`, feed modulation, F-034 accounting)
@@ -173,6 +184,20 @@ pub struct ClaimsConfig<'a> {
     /// Independent of `rest_field_params.min_valley_depth`, which gates
     /// the crease detector itself, not banding territory.
     pub min_rest_depth_mm: f64,
+    /// S2 region-level territory filter (design doc §2.1 step 4 / §0.a):
+    /// after `decompose`, a conditioned band island is DROPPED WHOLE when
+    /// the fraction of its own covered classification cells that still
+    /// carry measured rest (the per-cell verdict from `min_rest_depth_mm`
+    /// above — untrusted samples count AS rest, never as skippable) falls
+    /// below this dial. `0.0` (default) turns the filter off — S1
+    /// behavior, byte-identical: no region is ever dropped. Requires a
+    /// `territory_stock`; without one the per-cell verdict grid never
+    /// exists and this dial is inert. Cell holes are NEVER punched — the
+    /// Step 2.5 fragmentation lesson (naive cell-level masking shredded
+    /// this same conditioned decomposition 4 → 35 regions from 0.2% of
+    /// cells) is exactly why this filter only ever drops WHOLE regions,
+    /// after `decompose` has already done its conditioning.
+    pub min_region_rest_share: f64,
 }
 
 /// Which territory the claims pipeline banded (design doc §2.1 step 4).
@@ -183,10 +208,14 @@ pub enum ClaimTerritoryMode {
     #[default]
     Full,
     /// Stock reference in play: skippable territory is MEASURED
-    /// (`ClaimsReport::rest_excluded_cells`) but — S1 — not applied;
-    /// banding still covers the whole classified surface. Region-level
-    /// application (drop whole conditioned islands, never punch cell
-    /// holes) is S2 scope.
+    /// (`ClaimsReport::rest_excluded_cells`) at the cell level, but that
+    /// per-cell measurement is never applied as cell holes (fragments the
+    /// conditioned decomposition — see `ClaimsConfig::min_region_rest_share`
+    /// doc). S2 lands region-LEVEL application instead: whole conditioned
+    /// islands whose measured rest share is below
+    /// `ClaimsConfig::min_region_rest_share` are dropped after `decompose`;
+    /// `0.0` (default) keeps this identical to the S1 telemetry-only
+    /// behavior.
     RestIslands,
 }
 
@@ -223,11 +252,13 @@ pub struct RegionTableEntry {
 pub struct ClaimsReport {
     pub territory_mode: ClaimTerritoryMode,
     /// Classification cells the rest-island measurement found skippable
-    /// (stock top − pencil drop below the dial). TELEMETRY ONLY in S1 —
-    /// coverage is NOT mutated: cell-level masking fragments the
-    /// conditioned decomposition at dendritic necks (live 2026-07-13,
-    /// 4 → 35 regions from 0.2 % of cells). Sizes the S2 region-level
-    /// territory filter. Always 0 under `ClaimTerritoryMode::Full`.
+    /// (stock top − pencil drop below the dial). TELEMETRY ONLY — coverage
+    /// itself is NEVER mutated by this scalar: cell-level masking fragments
+    /// the conditioned decomposition at dendritic necks (live 2026-07-13,
+    /// 4 → 35 regions from 0.2 % of cells). S2's region-level filter below
+    /// consumes the underlying PER-CELL verdict grid directly (not this
+    /// count) when deciding whether to drop a whole region. Always 0 under
+    /// `ClaimTerritoryMode::Full`.
     pub rest_excluded_cells: usize,
     /// Claimed cut paths emitted (centerline + width-capped offset passes,
     /// summed across every crease with `corridor.is_some()`).
@@ -237,6 +268,19 @@ pub struct ClaimsReport {
     /// `RestFieldReport::coverage()` — traced skeleton fraction that
     /// survived the length gate. Independent of banding territory.
     pub detector_coverage: f64,
+    /// S2 region-level territory filter results (design doc §2.1 step 4 /
+    /// §0.a): count of conditioned band islands dropped WHOLE because
+    /// their measured rest share fell below
+    /// `ClaimsConfig::min_region_rest_share`. Always 0 when the dial is
+    /// `0.0` or no `territory_stock` was supplied — the filter never ran.
+    /// `UnifiedFinishReport::decompose`'s `region_count` is deliberately
+    /// left as the decompose-time truth (what conditioning produced,
+    /// before any S2 drop) rather than corrected down — these two S2
+    /// counters are where the drop shows up instead.
+    pub regions_dropped: usize,
+    /// Summed polygon area (mm²) of the dropped regions. Always 0.0 under
+    /// the same conditions as `regions_dropped`.
+    pub dropped_area_mm2: f64,
 }
 
 /// Orchestration report: decomposition stats + what each band generated +
@@ -341,6 +385,13 @@ pub fn unified_finish_toolpath_with_cancel(
     let mut claims_report: Option<ClaimsReport> = None;
     let mut claims_rest_grid: Option<std::sync::Arc<crate::rest_field::RestGrid>> = None;
     let mut claims_rest_regions: Option<std::sync::Arc<Vec<Polygon2>>> = None;
+    // Per-cell S2 verdict grid (row-major, aligned with the classification
+    // grid): `Some(true)` at index `i` means covered cell `i` still carries
+    // rest OR is untrusted (i.e. NOT measured-skippable). Built alongside
+    // `rest_excluded_cells` below; `None` when there's no territory stock
+    // (or claims didn't run at all) — the S2 filter (Step 3.4) is then
+    // structurally inert regardless of `ClaimsConfig::min_region_rest_share`.
+    let mut rest_ok: Option<Vec<bool>> = None;
     if let Some(cfg) = claims {
         check_cancel(cancel)?;
         let rf_params = RestFieldParams {
@@ -399,6 +450,11 @@ pub fn unified_finish_toolpath_with_cancel(
         // sizing telemetry.
         let mut rest_excluded_cells = 0usize;
         if let Some(stock) = cfg.territory_stock {
+            // `ok[i]` starts `false` for every cell (covers both the
+            // "not covered" don't-care value the module doc promises, and
+            // the "measured skippable" verdict below); it flips `true`
+            // only when a covered cell is proven to still carry rest.
+            let mut ok = vec![false; covered.len()];
             let half = cell * 0.5;
             let offsets = [
                 (0.0, 0.0),
@@ -429,13 +485,20 @@ pub fn unified_finish_toolpath_with_cancel(
                         top_max = top_max.max(f64::from(t));
                     }
                 }
-                if drop_min.is_finite()
+                let measured_skippable = drop_min.is_finite()
                     && top_max.is_finite()
-                    && top_max - drop_min < cfg.min_rest_depth_mm
-                {
+                    && top_max - drop_min < cfg.min_rest_depth_mm;
+                if measured_skippable {
                     rest_excluded_cells += 1;
+                } else if let Some(cell_ok) = ok.get_mut(i) {
+                    // Rest survives, OR the sample is untrusted (NaN drop /
+                    // outside the stock grid) — `min_rest_depth_mm`'s doc:
+                    // untrusted samples keep coverage, so they read as
+                    // "not measured-skippable" here too.
+                    *cell_ok = true;
                 }
             }
+            rest_ok = Some(ok);
         }
 
         // Claim ONLY what the pencil actually cut: EMIT FIRST, per
@@ -486,6 +549,9 @@ pub fn unified_finish_toolpath_with_cancel(
             crease_path_count: 0,
             crease_path_length_mm: 0.0,
             detector_coverage: rf.report.coverage(),
+            // Filled in by Step 3.4 once the S2 region filter has run.
+            regions_dropped: 0,
+            dropped_area_mm2: 0.0,
         });
         // §2.4 carry-through: the detector's field + region polygons ride
         // the report so the adapter can attach them to the generated
@@ -507,8 +573,64 @@ pub fn unified_finish_toolpath_with_cancel(
     // scope; until then bands overlap the crease cut, which costs a
     // little double-cutting along centerlines and can never abandon
     // territory.
-    let planned = decompose(&surface.slope_map, &covered, &[], cutter.radius(), planner);
+    let mut planned = decompose(&surface.slope_map, &covered, &[], cutter.radius(), planner);
     check_cancel(cancel)?;
+
+    // ── Step 3.4: S2 region-level territory filter (design doc §2.1 step 4
+    // / §0.a) ────────────────────────────────────────────────────────────
+    // Drop whole conditioned band islands whose measured rest share falls
+    // below `ClaimsConfig::min_region_rest_share` — NEVER cell holes (the
+    // Step 2.5 fragmentation lesson: naive cell-level masking shredded this
+    // same decomposition 4 → 35 regions from 0.2% of cells is exactly why
+    // this filter only ever drops WHOLE regions). Filtering happens here,
+    // before Step 4's per-region generation loop, so a dropped island
+    // generates nothing, never enters `region_table`, and the router
+    // (Step 5) never sees it. `DecomposeStats::region_count` is
+    // deliberately left as the decompose-time truth (what conditioning
+    // produced, before any S2 drop) — see `ClaimsReport::regions_dropped`
+    // doc for why the drop counters live there instead.
+    let mut regions_dropped = 0usize;
+    let mut dropped_area_mm2 = 0.0f64;
+    if let (Some(cfg), Some(ok)) = (claims, rest_ok.as_ref())
+        && cfg.min_region_rest_share > 0.0
+    {
+        let rows = surface.rows();
+        planned.regions.retain(|region| {
+            let Some(share) = region_rest_share(
+                &region.polygon,
+                &covered,
+                ok,
+                rows,
+                cols,
+                origin_x,
+                origin_y,
+                cell,
+            ) else {
+                // No covered cells inside this region at all — no evidence
+                // either way. Never drop on an empty denominator (safety:
+                // §2.1 step 4's "keep on no evidence" rule).
+                return true;
+            };
+            if share < cfg.min_region_rest_share {
+                let area = region.polygon.area();
+                regions_dropped += 1;
+                dropped_area_mm2 += area;
+                tracing::debug!(
+                    band = ?region.band,
+                    share,
+                    area_mm2 = area,
+                    "unified_finish S2: dropping region below min_region_rest_share"
+                );
+                false
+            } else {
+                true
+            }
+        });
+    }
+    if let Some(report) = claims_report.as_mut() {
+        report.regions_dropped = regions_dropped;
+        report.dropped_area_mm2 = dropped_area_mm2;
+    }
 
     // ── Step 3.5: crease-claims emission (v3 S1, design doc §2.1 step 5) ──
     // The cut paths were already produced in Step 2.5 (claim == emitted
@@ -1174,7 +1296,7 @@ fn band_z_range(
     (min_z.is_finite() && max_z.is_finite()).then_some((min_z, max_z))
 }
 
-// ── Claims pipeline internals (v3 S1) ───────────────────────────────────
+// ── Claims pipeline internals (v3 S1/S2) ────────────────────────────────
 
 /// Nearest-cell sample of a [`RestGrid`] at world `(x, y)`. The rest grid's
 /// own origin/cell size (from [`detect_rest_valleys`]) is independent of
@@ -1208,6 +1330,101 @@ fn rest_grid_surface_z(grid: &RestGrid, x: f64, y: f64) -> Option<f64> {
         .copied()
         .filter(|v| !v.is_nan())
         .map(f64::from)
+}
+
+/// Bounding box (min_x, min_y, max_x, max_y) of `polygon`'s exterior.
+/// `Polygon2` has no bbox helper of its own (checked `polygon.rs`), so this
+/// scans the exterior vertices directly — a cheap one-off pre-clip for
+/// [`region_rest_share`]'s cell scan, not a general-purpose utility.
+/// `None` for a degenerate (empty) exterior.
+fn polygon_bbox(polygon: &Polygon2) -> Option<(f64, f64, f64, f64)> {
+    let mut min_x = f64::INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    for p in &polygon.exterior {
+        min_x = min_x.min(p.x);
+        min_y = min_y.min(p.y);
+        max_x = max_x.max(p.x);
+        max_y = max_y.max(p.y);
+    }
+    (min_x.is_finite() && min_y.is_finite() && max_x.is_finite() && max_y.is_finite())
+        .then_some((min_x, min_y, max_x, max_y))
+}
+
+/// Fraction of `polygon`'s own COVERED classification cells that still
+/// carry measured rest (S2 region-level territory filter, design doc
+/// §2.1 step 4 / §0.a): `n_rest / n_cov` over cells whose CENTER lands
+/// inside `polygon` (the same `P2::new(x, y)` center convention Step 2's
+/// boundary loop and [`band_z_range`] both use). Only cells inside
+/// `polygon`'s own bounding box are scanned — cheap since `Polygon2` has no
+/// dedicated spatial index, and correctness still comes from the exact
+/// `contains_point` test below, not the clip itself. Containment uses
+/// `Polygon2::contains_point` directly (holes-aware) rather than routing a
+/// single polygon through a `RegionSet` — `RegionSet::contains` is just a
+/// `.any()` wrapper over exactly this call for a one-element slice, so the
+/// direct call is strictly cheaper and equally correct.
+///
+/// `None` when the region contains no covered cells at all (`n_cov == 0`,
+/// including a polygon whose bounding box doesn't overlap the grid) — the
+/// caller's contract (§2.1 step 4's safety rule) is to KEEP the region on
+/// `None` rather than divide by zero or guess.
+#[allow(clippy::too_many_arguments)] // grid geometry is 5 irreducible scalars, not groupable without a new type
+fn region_rest_share(
+    polygon: &Polygon2,
+    covered: &[bool],
+    rest_ok: &[bool],
+    rows: usize,
+    cols: usize,
+    origin_x: f64,
+    origin_y: f64,
+    cell: f64,
+) -> Option<f64> {
+    if rows == 0 || cols == 0 || cell <= 0.0 {
+        return None;
+    }
+    let (min_x, min_y, max_x, max_y) = polygon_bbox(polygon)?;
+    let grid_max_x = origin_x + (cols - 1) as f64 * cell;
+    let grid_max_y = origin_y + (rows - 1) as f64 * cell;
+    if max_x < origin_x || min_x > grid_max_x || max_y < origin_y || min_y > grid_max_y {
+        return None;
+    }
+    let col_lo = ((min_x - origin_x) / cell)
+        .floor()
+        .clamp(0.0, (cols - 1) as f64) as usize;
+    let col_hi = ((max_x - origin_x) / cell)
+        .ceil()
+        .clamp(0.0, (cols - 1) as f64) as usize;
+    let row_lo = ((min_y - origin_y) / cell)
+        .floor()
+        .clamp(0.0, (rows - 1) as f64) as usize;
+    let row_hi = ((max_y - origin_y) / cell)
+        .ceil()
+        .clamp(0.0, (rows - 1) as f64) as usize;
+
+    let mut n_cov = 0usize;
+    let mut n_rest = 0usize;
+    for row in row_lo..=row_hi {
+        for col in col_lo..=col_hi {
+            let i = row * cols + col;
+            if !covered.get(i).copied().unwrap_or(false) {
+                continue;
+            }
+            let x = origin_x + col as f64 * cell;
+            let y = origin_y + row as f64 * cell;
+            if !polygon.contains_point(&P2::new(x, y)) {
+                continue;
+            }
+            n_cov += 1;
+            if rest_ok.get(i).copied().unwrap_or(true) {
+                n_rest += 1;
+            }
+        }
+    }
+    if n_cov == 0 {
+        return None;
+    }
+    Some(n_rest as f64 / n_cov as f64)
 }
 
 /// Total length (mm) of `tp`'s `FinishingCut` moves — each move's
@@ -1921,6 +2138,9 @@ mod tests {
                 ..RestFieldParams::default()
             },
             min_rest_depth_mm: 0.02,
+            // S2 dial off: byte-identical S1 behavior, no region is ever
+            // dropped (asserted below).
+            min_region_rest_share: 0.0,
         };
         let never_cancel = || false;
 
@@ -1954,6 +2174,10 @@ mod tests {
         // step 4), so no cells are measured skippable.
         assert_eq!(claims.territory_mode, ClaimTerritoryMode::Full);
         assert_eq!(claims.rest_excluded_cells, 0);
+        // S2 dial off (and no territory stock either): the region-level
+        // filter never engages.
+        assert_eq!(claims.regions_dropped, 0);
+        assert_eq!(claims.dropped_area_mm2, 0.0);
 
         let crease_entry = report
             .region_table
@@ -1992,6 +2216,9 @@ mod tests {
                 ..RestFieldParams::default()
             },
             min_rest_depth_mm: 0.02,
+            // Not under test here (region-table range invariants); off is
+            // the safe/default choice.
+            min_region_rest_share: 0.0,
         };
         let never_cancel = || false;
 
@@ -2036,5 +2263,157 @@ mod tests {
             );
             prev_end = entry.move_range.end;
         }
+    }
+
+    // ── S2 region-level territory filter ────────────────────────────────
+
+    /// Direct unit test of the share math [`region_rest_share`] factors
+    /// out of the orchestrator (preferred over only exercising it through
+    /// a full generation run — see the module's S2 doc). A 4×4 grid,
+    /// cell 1.0mm, origin (0,0): every cell covered; the first two rows
+    /// (row-major indices 0..8) carry rest, the last two (8..16) don't.
+    #[test]
+    fn region_rest_share_computes_fraction_and_keeps_on_no_evidence() {
+        let rows = 4;
+        let cols = 4;
+        let covered = vec![true; rows * cols];
+        let mut rest_ok = vec![false; rows * cols];
+        for i in 0..8 {
+            if let Some(v) = rest_ok.get_mut(i) {
+                *v = true;
+            }
+        }
+
+        // Polygon margin kept off every grid line (cell centers sit at
+        // integer coordinates here) so no cell center lands exactly on a
+        // boundary edge, where point-in-polygon is ambiguous.
+        let whole = Polygon2::rectangle(-1.0, -1.0, 5.0, 5.0);
+        let share = region_rest_share(&whole, &covered, &rest_ok, rows, cols, 0.0, 0.0, 1.0)
+            .expect("polygon covers the whole grid");
+        assert!(
+            (share - 0.5).abs() < 1e-9,
+            "expected 50% rest share over the whole grid, got {share}"
+        );
+
+        // Confined to the rest-carrying rows (y = 0, 1): full share.
+        let top_half = Polygon2::rectangle(-1.0, -1.0, 5.0, 1.5);
+        let share_top = region_rest_share(&top_half, &covered, &rest_ok, rows, cols, 0.0, 0.0, 1.0)
+            .expect("polygon covers the rest-carrying rows");
+        assert!(
+            (share_top - 1.0).abs() < 1e-9,
+            "expected 100% rest share confined to the rest rows, got {share_top}"
+        );
+
+        // Confined to the skippable rows (y = 2, 3): zero share.
+        let bottom_half = Polygon2::rectangle(-1.0, 1.5, 5.0, 5.0);
+        let share_bottom =
+            region_rest_share(&bottom_half, &covered, &rest_ok, rows, cols, 0.0, 0.0, 1.0)
+                .expect("polygon covers the skippable rows");
+        assert!(
+            share_bottom.abs() < 1e-9,
+            "expected 0% rest share confined to the skippable rows, got {share_bottom}"
+        );
+
+        // Entirely off-grid: no covered cells found at all — the caller's
+        // contract is "no evidence, never drop", not a spurious 0/0 share.
+        let off_grid = Polygon2::rectangle(100.0, 100.0, 104.0, 104.0);
+        assert!(
+            region_rest_share(&off_grid, &covered, &rest_ok, rows, cols, 0.0, 0.0, 1.0).is_none(),
+            "off-grid polygon must report no evidence"
+        );
+    }
+
+    /// Orchestrator-level S2 test: with the dial at `0.0`, engaging a
+    /// territory stock changes nothing (`regions_dropped` stays 0); with
+    /// the SAME territory stock and the dial raised, regions actually get
+    /// dropped and the emitted toolpath shrinks accordingly.
+    ///
+    /// No prior test anywhere in this crate exercises `RestReference::Stock`
+    /// (checked before writing this), so there's no "stamp a stock to match
+    /// the mesh exactly" fixture to reuse, and building one by hand would
+    /// require replicating the claims detector's own probe-drop math to
+    /// avoid a flaky near-miss on `top_max - drop_min`. Sidestepping that:
+    /// this test uses a fresh, UNCUT solid-brick stock
+    /// (`TriDexelStock::from_bounds`, top = the mesh's own bbox ceiling)
+    /// together with a deliberately saturating `min_rest_depth_mm` — since
+    /// `top_max` and `drop_min` are both always finite over this mesh,
+    /// ANY finite gap between them reads as "measured skippable" under a
+    /// threshold this large, regardless of the stock's exact height. That
+    /// gives the same observable effect as a fully-finished stock (rest_ok
+    /// false at every covered cell) without needing byte-exact geometric
+    /// agreement between the stock's dexel grid and the detector's probe
+    /// grid.
+    #[test]
+    fn s2_dial_drops_regions_once_territory_reads_uniformly_skippable() {
+        let (mesh, index, cutter, params, planner) = trench_claims_fixture();
+        let stock = crate::dexel_stock::TriDexelStock::from_bounds(&mesh.bbox, 1.0);
+        let never_cancel = || false;
+
+        let off_cfg = ClaimsConfig {
+            territory_stock: Some(&stock),
+            rest_field_params: RestFieldParams {
+                cell_mm: 0.5,
+                min_valley_depth: 0.05,
+                route_width_factor: 10.0,
+                ..RestFieldParams::default()
+            },
+            min_rest_depth_mm: 1.0e6,
+            min_region_rest_share: 0.0,
+        };
+        let (tp_off, _anns_off, report_off) = unified_finish_toolpath_with_cancel(
+            &mesh,
+            &index,
+            &cutter,
+            5.0,
+            -5.0,
+            &params,
+            &planner,
+            None,
+            None,
+            Some(&off_cfg),
+            None,
+            &never_cancel,
+        )
+        .unwrap();
+        let claims_off = report_off.claims.expect("claims pipeline must have run");
+        assert_eq!(
+            claims_off.regions_dropped, 0,
+            "0.0 dial must never drop a region, even with territory measured"
+        );
+        assert_eq!(claims_off.dropped_area_mm2, 0.0);
+
+        let on_cfg = ClaimsConfig {
+            min_region_rest_share: 0.9,
+            ..off_cfg
+        };
+        let (tp_on, _anns_on, report_on) = unified_finish_toolpath_with_cancel(
+            &mesh,
+            &index,
+            &cutter,
+            5.0,
+            -5.0,
+            &params,
+            &planner,
+            None,
+            None,
+            Some(&on_cfg),
+            None,
+            &never_cancel,
+        )
+        .unwrap();
+        let claims_on = report_on.claims.expect("claims pipeline must have run");
+
+        assert!(
+            claims_on.regions_dropped > 0,
+            "expected at least one region dropped under a saturating rest-depth \
+             threshold, got {claims_on:?}"
+        );
+        assert!(claims_on.dropped_area_mm2 > 0.0);
+        assert!(
+            tp_on.moves.len() <= tp_off.moves.len(),
+            "dropping regions must not increase move count: on={} off={}",
+            tp_on.moves.len(),
+            tp_off.moves.len()
+        );
     }
 }

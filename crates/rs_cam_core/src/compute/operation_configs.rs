@@ -896,6 +896,16 @@ pub struct UnifiedFinishConfig {
     /// S2 scope). Default 0.02mm.
     #[serde(default = "default_unified_finish_min_rest_depth_mm")]
     pub min_rest_depth_mm: f64,
+    /// S2 region-level territory filter dial
+    /// (`unified_finish::ClaimsConfig::min_region_rest_share` doc): after
+    /// `decompose`, whole conditioned band islands whose measured rest
+    /// share is below this are dropped entirely — never a cell hole.
+    /// Meaningful only alongside `pencil_claims = true` on a
+    /// `FromRemainingStock` chain (territory measurement needs a
+    /// machined-stock reference; without one this dial is inert). Default
+    /// `0.0` = off, byte-identical to the pre-S2 op.
+    #[serde(default = "default_unified_finish_min_region_rest_share")]
+    pub min_region_rest_share: f64,
 }
 
 impl Default for UnifiedFinishConfig {
@@ -919,6 +929,7 @@ impl Default for UnifiedFinishConfig {
             spindle_rpm: None,
             pencil_claims: default_unified_finish_pencil_claims(),
             min_rest_depth_mm: default_unified_finish_min_rest_depth_mm(),
+            min_region_rest_share: default_unified_finish_min_region_rest_share(),
         }
     }
 }
@@ -929,6 +940,10 @@ fn default_unified_finish_pencil_claims() -> bool {
 
 fn default_unified_finish_min_rest_depth_mm() -> f64 {
     0.02
+}
+
+fn default_unified_finish_min_region_rest_share() -> f64 {
+    0.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
