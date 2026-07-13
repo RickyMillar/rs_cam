@@ -179,6 +179,17 @@ pub struct SimulationRequest {
     pub spindle_rpm: u32,
     pub rapid_feed_mm_min: f64,
     /// Optional model mesh for deviation computation (sim_z vs model_z).
+    ///
+    /// FRAME CONTRACT (v3 fixture RCA, 2026-07-13): this mesh must be in
+    /// the sim's STOCK-RELATIVE global frame — the world-space model
+    /// translated by `-stock_bbox.min` (what `ProjectSession::run_simulation`
+    /// supplies). Non-identity setup groups' `local_to_global` outputs
+    /// already live in that frame (`SetupTransformInfo::stock_origin_*`
+    /// doc: origin is never re-added). Identity groups' dexel grids are
+    /// WORLD-framed (F-024), so the deviation passes frame-map their
+    /// query points by `-stock_bbox.min` before touching this mesh — a
+    /// world-frame model here silently mis-registers every comparison by
+    /// exactly the stock origin.
     pub model_mesh: Option<Arc<TriangleMesh>>,
     /// F-034: when `Some`, the simulator post-processes the cut trace
     /// and replaces each toolpath's naive `distance / feed`
@@ -785,6 +796,7 @@ where
                 index,
                 model,
                 group_ordinal,
+                request.stock_bbox.min,
                 out,
             );
         }
@@ -867,10 +879,19 @@ where
     // Compute per-vertex deviation (sim_z - model_z) if a reference model is available.
     let deviations = if request.model_mesh.is_some() {
         set_phase("Compute deviations");
+        // Frame-map for the vertex path (same hole as the columns path,
+        // see `collect_column_deviations`): the composite mesh is
+        // world-framed when every group is an identity setup (F-024),
+        // stock-relative when every group is non-identity. Mixed
+        // projects would need per-vertex group tags the composite
+        // doesn't carry — that case keeps today's (non-identity)
+        // behavior and is documented as unresolved.
+        let all_identity = request.groups.iter().all(|g| g.local_to_global.is_none());
+        let world_shift = all_identity.then_some(request.stock_bbox.min);
         request
             .model_mesh
             .as_ref()
-            .map(|model| compute_deviations(&mesh.vertices, model))
+            .map(|model| compute_deviations(&mesh.vertices, model, world_shift))
     } else {
         None
     };
@@ -973,12 +994,27 @@ fn apply_kinematics_cycle_time(
 /// nearest of model top/bottom surface) but samples each dexel column's
 /// material top directly instead of the corner-averaged mesh vertices —
 /// see [`ColumnDeviation`] for why the distinction matters.
+///
+/// Frames (v3 fixture RCA, 2026-07-13): `model` arrives in the sim's
+/// stock-relative global frame (`SimulationRequest::model_mesh` doc).
+/// Non-identity groups' `local_to_global` outputs already live there, so
+/// their query point IS the reported point, exactly as before. Identity
+/// groups (F-024: world-framed grid, no transform) must frame-map the
+/// query by `-stock_min` or every deviation mis-registers by the stock
+/// origin — the first scaled-wanaka cascade A/B read a uniform ~−4 mm
+/// "overcut" through precisely this hole (its fixture was the first
+/// identity setup with a non-zero origin to reach the instrument). The
+/// REPORTED x/y stay in the group's own reporting frame (world for
+/// identity groups, stock-relative global for non-identity — origin
+/// never re-added, see `SetupTransformInfo::stock_origin_x`).
+#[allow(clippy::too_many_arguments)] // deviation-pass plumbing, mirrors the call site's request fields
 fn collect_column_deviations(
     stock: &TriDexelStock,
     local_to_global: &Option<SetupTransformInfo>,
     index: &SpatialIndex,
     model: &TriangleMesh,
     group: usize,
+    stock_min: P3,
     out: &mut Vec<ColumnDeviation>,
 ) {
     let grid = &stock.z_grid;
@@ -989,20 +1025,29 @@ fn collect_column_deviations(
         let top = grid.top_z_at(row, col)?;
         let (u, v) = grid.cell_to_world(row, col);
         let p = P3::new(u, v, f64::from(top));
-        let g = match local_to_global {
-            Some(info) => info.local_to_global(p),
-            None => p,
+        // Reported point `g` and model-query point `q` — same for
+        // non-identity groups, frame-shifted apart for identity groups
+        // (doc above).
+        let (g, q) = match local_to_global {
+            Some(info) => {
+                let g = info.local_to_global(p);
+                (g, g)
+            }
+            None => (
+                p,
+                P3::new(p.x - stock_min.x, p.y - stock_min.y, p.z - stock_min.z),
+            ),
         };
-        let (model_min_z, model_max_z) = query_model_z_range(index, model, g.x, g.y)?;
-        let dist_to_top = (g.z - model_max_z).abs();
-        let dist_to_bottom = (g.z - model_min_z).abs();
+        let (model_min_z, model_max_z) = query_model_z_range(index, model, q.x, q.y)?;
+        let dist_to_top = (q.z - model_max_z).abs();
+        let dist_to_bottom = (q.z - model_min_z).abs();
         if dist_to_top.min(dist_to_bottom) > relevance_threshold {
             return None;
         }
         let dev = if dist_to_top <= dist_to_bottom {
-            g.z - model_max_z
+            q.z - model_max_z
         } else {
-            g.z - model_min_z
+            q.z - model_min_z
         };
         Some(ColumnDeviation {
             x: g.x,
@@ -1045,12 +1090,23 @@ fn collect_column_deviations(
 ///
 /// Returns one `f32` per vertex. Positive = material remaining, negative = overcut.
 /// Vertices far from any model surface or outside the model footprint get 0.0.
+///
+/// `world_shift`: `Some(stock_bbox.min)` when the vertices are WORLD-framed
+/// (all-identity-setup projects, F-024 grids) and must be frame-mapped into
+/// the stock-relative model frame before the query; `None` keeps the
+/// pre-existing behavior for stock-relative (non-identity) meshes. See
+/// `collect_column_deviations`' frame doc.
 // SAFETY: indexing with `i * 3 + {0,1,2}` where `i < num_verts` and
 // `num_verts = stock_vertices.len() / 3`, so all accesses are in bounds.
 #[allow(clippy::indexing_slicing)]
-fn compute_deviations(stock_vertices: &[f32], model_mesh: &TriangleMesh) -> Vec<f32> {
+fn compute_deviations(
+    stock_vertices: &[f32],
+    model_mesh: &TriangleMesh,
+    world_shift: Option<P3>,
+) -> Vec<f32> {
     let num_verts = stock_vertices.len() / 3;
     let index = SpatialIndex::build_auto(model_mesh);
+    let (sx, sy, sz) = world_shift.map_or((0.0, 0.0, 0.0), |s| (s.x, s.y, s.z));
 
     // Model thickness sets a relevance threshold. Vertices further than this
     // from any model surface have no meaningful deviation (e.g. the flat
@@ -1059,9 +1115,9 @@ fn compute_deviations(stock_vertices: &[f32], model_mesh: &TriangleMesh) -> Vec<
     let relevance_threshold = (model_thickness * 0.5).max(2.0); // mm
 
     let compute_vertex_deviation = |i: usize| -> f32 {
-        let x = stock_vertices[i * 3] as f64;
-        let y = stock_vertices[i * 3 + 1] as f64;
-        let sim_z = stock_vertices[i * 3 + 2] as f64;
+        let x = stock_vertices[i * 3] as f64 - sx;
+        let y = stock_vertices[i * 3 + 1] as f64 - sy;
+        let sim_z = stock_vertices[i * 3 + 2] as f64 - sz;
         let Some((model_min_z, model_max_z)) = query_model_z_range(&index, model_mesh, x, y) else {
             return 0.0; // outside model footprint
         };
@@ -1238,16 +1294,28 @@ mod tests {
     /// A flat model plane at the trench floor must read dev ≈ 0 on the
     /// machined columns, and columns far from the model surface (uncut
     /// stock top, beyond the relevance threshold) must be absent.
+    ///
+    /// The model is supplied in the STOCK-RELATIVE frame per
+    /// `SimulationRequest::model_mesh`'s contract — `simple_request`'s
+    /// stock origin is (−5,−5,−5), so the world-frame trench floor at
+    /// z = −1 sits at z = 4 here and the plane spans 0..20 × 0..10.
+    /// This doubles as the identity-frame regression sentry for the
+    /// scaled-wanaka RCA (2026-07-13): before the frame-map fix, an
+    /// identity group with a non-zero stock origin compared world column
+    /// tops against this shifted mesh and every deviation mis-registered
+    /// by the origin (here −5 mm — beyond relevance, so `cols` would
+    /// come back EMPTY and the non-empty assert below fails).
     #[test]
     fn column_deviations_pointwise_against_flat_model() {
         let mut req = simple_request();
-        // Flat plane at z = -1.0 (exactly the trench floor cut by
-        // `simple_request`'s toolpath) spanning the stock XY.
+        // Flat plane at world z = -1.0 (exactly the trench floor cut by
+        // `simple_request`'s toolpath) spanning the stock XY, translated
+        // by -stock_origin = (+5,+5,+5) into the request frame.
         let verts = vec![
-            P3::new(-5.0, -5.0, -1.0),
-            P3::new(15.0, -5.0, -1.0),
-            P3::new(15.0, 5.0, -1.0),
-            P3::new(-5.0, 5.0, -1.0),
+            P3::new(0.0, 0.0, 4.0),
+            P3::new(20.0, 0.0, 4.0),
+            P3::new(20.0, 10.0, 4.0),
+            P3::new(0.0, 10.0, 4.0),
         ];
         let tris = vec![[0u32, 1, 2], [0, 2, 3]];
         req.model_mesh = Some(Arc::new(TriangleMesh::from_raw(verts, tris)));
