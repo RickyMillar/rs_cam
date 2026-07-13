@@ -817,24 +817,63 @@ pub fn unified_finish_toolpath_with_cancel(
                 );
             }
             CreaseReference::MachinedStock => {
-                let rest_polys: &[Polygon2] = match claims_rest_regions.as_deref() {
-                    Some(v) => v.as_slice(),
-                    None => &[],
+                // Clip-territory polygons are built from the detector's
+                // continuous rest FIELD with the same "untrusted keeps
+                // coverage" semantics the S2 cell filter uses (`ClaimsConfig::
+                // min_rest_depth_mm` doc) — NOT from the detector's own
+                // `region_polygons`. Those are gated on TRUSTED
+                // above-threshold cells only, and the first clipped cascade
+                // A/B (wanaka ×2, 2026-07-13) showed what that does: steep
+                // faces read untrusted (NaN) in the stock-referenced field,
+                // fell outside every rest polygon, and the clip amputated
+                // the entire mid-steep + very-steep bands — Op B emitted 3
+                // shallow pieces, and the skipped territory surfaced as a
+                // 2-3× '>+.5' leftover tail in every band (the S1 tail
+                // lesson, again). keep = NaN ∪ (rest ≥ min_rest_depth_mm),
+                // dilated exactly like the detector dilates its own region
+                // polygons (pencil radius + region margin).
+                let keep_polys: Vec<Polygon2> = match claims_rest_grid.as_deref() {
+                    Some(grid) => {
+                        let mask_vec: Vec<bool> = grid
+                            .rest
+                            .iter()
+                            .map(|&r| r.is_nan() || f64::from(r) >= cfg.min_rest_depth_mm)
+                            .collect();
+                        match crate::grid2::Grid2::from_vec(grid.nx, grid.ny, mask_vec) {
+                            Ok(mask) => crate::region_mask::region_polygons_from_mask(
+                                &mask,
+                                grid.origin_x,
+                                grid.origin_y,
+                                grid.cell_mm,
+                                cutter.radius() + cfg.rest_field_params.region_margin_mm,
+                            ),
+                            Err(e) => {
+                                tracing::warn!(
+                                    error = ?e,
+                                    "unified_finish S4: rest-grid mask shape \
+                                     mismatch; skipping territory clip"
+                                );
+                                Vec::new()
+                            }
+                        }
+                    }
+                    None => Vec::new(),
                 };
+                let rest_polys: &[Polygon2] = keep_polys.as_slice();
                 if rest_polys.is_empty() {
                     tracing::debug!(
                         "unified_finish S4: territory_clip requested but the \
-                         detector produced no rest-region polygons; nothing \
-                         to clip"
+                         detector produced no keep-territory polygons; \
+                         nothing to clip"
                     );
                 } else {
-                    // Tool-footprint-scale sliver floor: reuse decompose's
-                    // own min-region-area constant (`FinishPlannerParams::
-                    // for_tool` doc: `(2 * tool_radius)^2 * 4`, "a few tool
-                    // diameters²") rather than inventing a second area
-                    // threshold — a clip fragment smaller than that is not
-                    // worth a region of its own either.
-                    let sliver_floor = planner.min_region_area_mm2;
+                    // Sliver floor for clip PIECES: one tool-diameter square
+                    // (`(2r)²`), deliberately smaller than decompose's own
+                    // `min_region_area_mm2` (`(2r)²·4`) — a clipped rest
+                    // pocket half the band floor is still real material the
+                    // ball left standing, and dropping it surfaces directly
+                    // as the '>+.5' tail the A/B gates.
+                    let sliver_floor = (2.0 * cutter.radius()).powi(2);
                     let mut kept: Vec<PlannedRegion> = Vec::with_capacity(planned.regions.len());
                     for region in planned.regions.drain(..) {
                         let original_area = region.polygon.area();
