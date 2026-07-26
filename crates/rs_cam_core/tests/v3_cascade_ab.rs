@@ -899,25 +899,21 @@ fn v3_fixture_smoke() {
 /// - `min_rest_depth_mm` 0.022 (≈ 2× Op A's 0.011mm cusp, design doc §2.1
 ///   step 4's sizing note): territory below Op A's own cusp is Op A's
 ///   noise floor, not real rest material for Op B to chase.
-/// - `min_region_rest_share` 0.10: S2's region-level territory filter —
-///   drop whole conditioned islands whose measured rest is ≤10% of the
-///   island area. First dial guess (design doc §0.a build list); the tail
-///   gate in `v3_cascade_ab_ball3` is the safety net if this is too
-///   aggressive.
 /// - `claims_reference` `MachinedStock`: sanctioned here specifically
 ///   because Op B follows Op A's OWN ball all-over pass — a genuinely
 ///   finish-quality reference, not a rough-chain terrace field (the S1
 ///   lesson that ruled this reference out for wanaka.toml's rough→finish
 ///   chain).
-/// - `territory_clip` TRUE (S4): intersect surviving band regions against
-///   the detector's rest-region polygons so Op B generates only over real
-///   rest material. S2's whole-island keep-or-drop couldn't shrink a giant
-///   conditioned island that merely CONTAINS >10% rest somewhere — the
-///   first wanaka ×2 cascade A/B measured Op B at +47% over the all-over
-///   baseline for exactly that reason (see the `UnifiedFinishConfig::
-///   territory_clip` field doc). Sanctioned here because
-///   `claims_reference` is `MachinedStock` (the clip is skipped with a
-///   warning under `SelfProbe`).
+/// - `territory_clip` TRUE (S4): AND a per-cell rest keep-mask into
+///   coverage BEFORE `decompose` runs, so Op B generates only over real
+///   rest material. An earlier region-level whole-island keep-or-drop
+///   filter (informally "S2", since removed — see the `unified_finish`
+///   module doc) couldn't shrink a giant conditioned island that merely
+///   CONTAINS above-dial rest somewhere — the first wanaka ×2 cascade A/B
+///   measured Op B at +47% over the all-over baseline for exactly that
+///   reason (see the `UnifiedFinishConfig::territory_clip` field doc).
+///   Sanctioned here because `claims_reference` is `MachinedStock` (the
+///   clip is skipped with a warning under `SelfProbe`).
 fn op_b_claims_config() -> UnifiedFinishConfig {
     UnifiedFinishConfig {
         steep_threshold_deg: 45.0,
@@ -934,7 +930,6 @@ fn op_b_claims_config() -> UnifiedFinishConfig {
         spindle_rpm: Some(21000),
         pencil_claims: true,
         min_rest_depth_mm: 0.022,
-        min_region_rest_share: 0.10,
         claims_reference: CreaseReference::MachinedStock,
         territory_clip: true,
     }

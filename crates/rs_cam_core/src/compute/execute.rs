@@ -1333,14 +1333,14 @@ pub(crate) fn generate_unified_finish(
                     }
                 });
         // S4 threshold coupling (`unified_finish::ClaimsConfig::
-        // territory_clip` doc): the clip intersects region polygons
-        // against the DETECTOR's own `region_polygons`, which are gated on
-        // `rest_field_params.min_valley_depth` — a DIFFERENT threshold
-        // from `cfg.min_rest_depth_mm` (the S2/S4 per-cell territory
-        // gate) unless we floor it here. Left to disagree, the clip would
+        // territory_clip` doc): the detector's own rest field (whose
+        // valleys are gated on `rest_field_params.min_valley_depth`) feeds
+        // the S4 mask-AND, which thresholds it at a DIFFERENT value —
+        // `cfg.min_rest_depth_mm` (the S4 per-cell territory gate) —
+        // unless we floor it here. Left to disagree, the mask-AND would
         // confine generation to islands measuring a different "rest" than
-        // the one `min_region_rest_share`/S4-drop decided was worth
-        // keeping. Only floors when no deliberate `rest_analysis` dial is
+        // the one S4's mask-AND decided was worth keeping. Only floors
+        // when no deliberate `rest_analysis` dial is
         // in scope: the session populates `ctx.rest_analysis`
         // UNCONDITIONALLY from the toolpath config (`session/compute.rs`),
         // so mere presence is not intent — an untouched default block
@@ -1360,7 +1360,6 @@ pub(crate) fn generate_unified_finish(
             crease_reference: cfg.claims_reference,
             rest_field_params,
             min_rest_depth_mm: cfg.min_rest_depth_mm,
-            min_region_rest_share: cfg.min_region_rest_share,
             territory_clip: cfg.territory_clip,
         }
     });
