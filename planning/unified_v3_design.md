@@ -554,3 +554,61 @@ delivered besides the mechanism: a trustworthy deviation instrument on
 identity setups (a core fix that outlives this experiment), a reproducible
 scaled fixture, and three diagnostics that each converted a mystery into a
 measurement.
+
+### Ball-size sweep (§0.a item 5) — the decisive measurement
+
+Cascade-only, wanaka ×2, Op B dials fixed (`v3_ball_sweep`):
+
+| ball Ø | Op A s | Op B s | finish stack s | Op B cutting / rapid | Op B removed mm³ | mid-steep on-size | mid-steep tail |
+|---|---|---|---|---|---|---|---|
+| 2.0 | 24 403 | 39 401 | 63 804 | 15 190 / 21 243 (58% air) | 9 743 | 53.7% | 786 |
+| 3.0 | 11 071 | 40 747 | 51 817 | 17 676 / 18 297 (51% air) | 10 507 | 51.0% | 1 234 |
+| 4.0 | 8 176 | 40 833 | 49 009 | 20 252 / 15 797 (44% air) | 10 806 | 50.6% | 1 377 |
+| — | D (all-over tip) | | **39 871** | 35 917 / 3 129 (8% air) | 50 944 | 52.3% | 4 288 |
+
+**Op B's total time is INVARIANT to ball size** (39.4 / 40.7 / 40.8 k s — a
+3.6% spread) while Op A's varies 3× (24.4 → 8.2 k s). Op B's removed volume
+is likewise flat (9.7 / 10.5 / 10.8 k mm³) even as the preceding ball
+doubles in diameter. What moves is only the INTERNAL mix: smaller ball →
+finer, more numerous rest islands → more air, less cutting; bigger ball →
+fewer, larger islands → less air, more cutting. The total is pinned.
+
+Two conclusions, both structural:
+
+1. **On this terrain, ball size is not a lever.** The rest Op B cuts lives
+   in valleys narrower than any practical ball, so the rest field is
+   TIP-determined, not ball-determined (consistent with the pre-campaign
+   measurement that every ball Ø2–6 leaves 87–96% of the mid-steep band as
+   rest area). Op A's own time is the only thing ball size buys — hence the
+   best cascade is the biggest ball, Ø4 at 49 009 s finish stack.
+2. **Op B runs at a fixed traversal budget, not a fixed workload.** Halving
+   its material does not halve its time; it converts cutting into air. That
+   is the many-island retract tax stated as a law, and it is exactly what a
+   fused cross-strategy router (S3) exists to remove.
+
+### Verdict: NOT PROVEN on this fixture — with a named blocker
+
+Best cascade (Ø4) 49 009 s vs all-over-tip 39 871 s: **+22.9%**. Quality is
+a genuine mixed result — the cascade leaves far less standing material
+(mid-steep tail 1 377 vs 4 288 columns >0.5 mm; the Ø2 branch reaches 786)
+and matches on mid-steep on-size (50.6–53.7% vs 52.3%), while trailing 3–4
+pp on shallow and very-steep on-size. Collisions were 0/0 on every branch of
+every run.
+
+So the process as specified — ball all-over + ONE unified rest-clear — does
+NOT beat all-over-tip on time here, and the sweep proves the gap cannot be
+dialled away with ball size. The blocker is Op B's traversal, quantified:
+44–58% air against 8% for the all-over pass. Note also that Op B's dressup
+block is inert (a `link_moves`/`retract_strategy` change produced a
+byte-identical 40 746.8 s), so this air is intrinsic to the op's own
+emission and routing — not something a dressup can fix. S3's fused router
+owns it, and the sweep now gives that work a precise target: bring Op B's
+air share to the all-over pass's ~8% and the Ø4 cascade lands near 33 k s,
+comfortably under D.
+
+**What the campaign proved instead:** the mechanism (rest-territory
+confinement) works and is honest — tails beat the baseline, meaning the
+confinement skips finished material without abandoning uncut material; the
+instrument is now trustworthy on identity setups (a core fix); and the
+remaining gap is a single, measured, owned structural cost rather than a
+mystery.
