@@ -2085,3 +2085,141 @@ fn v3_load_and_air_probe() {
     air_anatomy("cascade Ø4 Op A", &c, op_a_idx);
     air_anatomy("cascade Ø4 Op B", &c, op_b_idx);
 }
+
+/// Upper-bound estimate of how much of an op's intra-region air is
+/// RECOVERABLE by reordering, computed offline without touching core.
+///
+/// Why this exists: `air_anatomy` proved Op B's air is 100% intra-region,
+/// and `crate::tsp::optimize_rapid_order` — the repo's existing 2-opt
+/// reorderer — never runs on it, because `execute.rs`'s capability gate
+/// gives up when the toolpath carries no `RapidOrderBarrier` spans, and
+/// those come only from depth sections / adaptive3d events. Surface
+/// finishers (scallop, waterline, raster, unified) emit none, so the
+/// optimizer is structurally unreachable for the entire op family.
+///
+/// Before proposing that change, size the prize: split the toolpath into
+/// rapid-separated cut FRAGMENTS, then compare the emitted traversal
+/// order against a greedy nearest-neighbour tour over the same fragments
+/// (either endpoint, since a fragment may be cut in reverse). NN is a
+/// weak heuristic — a real 2-opt does better — so this is a conservative
+/// LOWER bound on the win and an upper bound on remaining air.
+fn recoverable_air(label: &str, s: &ProjectSession, op_index: usize) {
+    use rs_cam_core::geo::P3;
+    use rs_cam_core::toolpath::MoveType;
+
+    let ann = s
+        .get_result(op_index)
+        .unwrap_or_else(|| panic!("[{label}] op {op_index} not generated"))
+        .annotated();
+    let moves = &ann.toolpath.moves;
+
+    // A fragment = a maximal run of non-rapid moves. Record its entry and
+    // exit points; the rapid hops between consecutive fragments are the
+    // cost we can reorder away.
+    let mut frags: Vec<(P3, P3)> = Vec::new();
+    let mut cur_start: Option<P3> = None;
+    let mut cur_end: P3 = P3::new(0.0, 0.0, 0.0);
+    let mut prev: Option<P3> = None;
+    for mv in moves {
+        if matches!(mv.move_type, MoveType::Rapid) {
+            if let Some(st) = cur_start.take() {
+                frags.push((st, cur_end));
+            }
+        } else {
+            if cur_start.is_none() {
+                cur_start = Some(prev.unwrap_or(mv.target));
+            }
+            cur_end = mv.target;
+        }
+        prev = Some(mv.target);
+    }
+    if let Some(st) = cur_start {
+        frags.push((st, cur_end));
+    }
+
+    let d = |a: P3, b: P3| -> f64 {
+        ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt()
+    };
+
+    // Emitted order: hop from each fragment's exit to the next's entry.
+    let emitted: f64 = frags.windows(2).map(|w| d(w[0].1, w[1].0)).sum();
+
+    // Greedy nearest-neighbour over unvisited fragments, either end.
+    let n = frags.len();
+    let mut visited = vec![false; n];
+    let mut nn_total = 0.0f64;
+    let mut cur = 0usize;
+    visited[0] = true;
+    let mut cur_exit = frags[0].1;
+    for _ in 1..n {
+        let mut best = usize::MAX;
+        let mut best_d = f64::INFINITY;
+        let mut best_rev = false;
+        for (j, f) in frags.iter().enumerate() {
+            if visited[j] {
+                continue;
+            }
+            let d_fwd = d(cur_exit, f.0);
+            if d_fwd < best_d {
+                best_d = d_fwd;
+                best = j;
+                best_rev = false;
+            }
+            let d_rev = d(cur_exit, f.1);
+            if d_rev < best_d {
+                best_d = d_rev;
+                best = j;
+                best_rev = true;
+            }
+        }
+        if best == usize::MAX {
+            break;
+        }
+        visited[best] = true;
+        nn_total += best_d;
+        cur_exit = if best_rev {
+            frags[best].0
+        } else {
+            frags[best].1
+        };
+        cur = best;
+    }
+    let _ = cur;
+
+    let saved = emitted - nn_total;
+    eprintln!("== RECOVERABLE AIR [{label}] (op index {op_index}) ==");
+    eprintln!(
+        "cut fragments={n} | emitted-order hops {emitted:.0}mm | nearest-neighbour {nn_total:.0}mm | recoverable {saved:.0}mm ({:.1}%)",
+        100.0 * saved / emitted.max(1e-9)
+    );
+}
+
+/// Sizes the reordering prize on the branch that needs it (cascade Ø4).
+/// Measurement only — feeds the decision on whether to make the existing
+/// rapid-order optimizer reachable for surface-finishing ops.
+#[test]
+#[ignore = "one cascade chain (~3 min); run with --ignored --nocapture"]
+fn v3_recoverable_air_probe() {
+    let project_path = write_fixture_project(4.0);
+    let mut c = ProjectSession::load(&project_path)
+        .unwrap_or_else(|e: SessionError| panic!("failed to load {}: {e}", project_path.display()));
+    apply_branch(&mut c, Branch::Cascade);
+    let op_b_idx = toolpath_index_by_name(&c, "Op B Unified Rest");
+    c.set_toolpath_operation(
+        op_b_idx,
+        OperationConfig::UnifiedFinish(op_b_claims_config()),
+    )
+    .expect("swap Op B config");
+    run_chain("recoverable air cascade b4", &mut c);
+    let op_a_idx = toolpath_index_by_name(&c, "Op A Ball Finish");
+    recoverable_air("cascade Ø4 Op A", &c, op_a_idx);
+    recoverable_air("cascade Ø4 Op B", &c, op_b_idx);
+
+    // Baseline for scale: the all-over tip pass on a contiguous surface.
+    let mut d = ProjectSession::load(&project_path)
+        .unwrap_or_else(|e: SessionError| panic!("failed to load {}: {e}", project_path.display()));
+    apply_branch(&mut d, Branch::AllOverTip);
+    run_chain("recoverable air D", &mut d);
+    let d_idx = toolpath_index_by_name(&d, "D All-Over Tip");
+    recoverable_air("D all-over tip", &d, d_idx);
+}
