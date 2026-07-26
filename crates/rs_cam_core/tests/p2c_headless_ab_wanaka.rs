@@ -682,11 +682,6 @@ fn ab_unified_config() -> UnifiedFinishConfig {
         // pass. Wave 3's claims A/B adds its own dedicated config.
         pencil_claims: false,
         min_rest_depth_mm: 0.02,
-        // S2 region-level territory filter (`unified_finish::ClaimsConfig::
-        // min_region_rest_share` doc): off, for the same reason
-        // `pencil_claims` is off above — this is the pinned branch-A
-        // baseline and must not silently pick up new S2 behavior.
-        min_region_rest_share: 0.0,
         // Build-list item 3: default arm (pinned branch-A baseline; also
         // moot with pencil_claims off above).
         claims_reference: CreaseReference::SelfProbe,

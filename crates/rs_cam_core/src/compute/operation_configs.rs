@@ -883,33 +883,27 @@ pub struct UnifiedFinishConfig {
     /// self-probe crease signal as self-defeating for a single-tool op —
     /// the float field marks exactly the valleys the tool cannot reach,
     /// so the crease node cost +22.5% finish time for zero measured
-    /// quality gain (on-size share unchanged to the column). Flips back
-    /// on when S2 lands a claim signal with marginal value (dihedral /
-    /// curvature geometry, or cascade rest vs Op A's ball).
+    /// quality gain (on-size share unchanged to the column). A follow-on
+    /// region-level territory filter (informally "S2") was tried and
+    /// measured ineffective on real terrain (see `min_rest_depth_mm` and
+    /// `unified_finish` module doc); `territory_clip` below is the
+    /// mechanism that actually delivers rest-territory confinement.
     #[serde(default = "default_unified_finish_pencil_claims")]
     pub pencil_claims: bool,
     /// Territory gate (mm) for the rest-island MEASUREMENT (design doc
     /// §2.1 step 4): under a machined-stock reference, cells where the
-    /// measured rest (stock top − pencil drop) is below this are counted
-    /// as skippable in `ClaimsReport::rest_excluded_cells`. TELEMETRY
-    /// ONLY in S1 — coverage is never mutated (cell-level masking
-    /// fragments the conditioned decomposition; region-level territory is
-    /// S2 scope). Default 0.02mm.
+    /// measured rest (stock top − pencil drop) is below this are the
+    /// skippable territory `territory_clip` (S4) masks into coverage
+    /// BEFORE `decompose` runs. An earlier region-level drop filter
+    /// (informally "S2") consumed a separate per-cell verdict grid built
+    /// from this same threshold and was removed 2026-07-27: it measured
+    /// dead on both sides of `territory_clip` (see `unified_finish`
+    /// module doc for the full account). Default 0.02mm.
     #[serde(default = "default_unified_finish_min_rest_depth_mm")]
     pub min_rest_depth_mm: f64,
-    /// S2 region-level territory filter dial
-    /// (`unified_finish::ClaimsConfig::min_region_rest_share` doc): after
-    /// `decompose`, whole conditioned band islands whose measured rest
-    /// share is below this are dropped entirely — never a cell hole.
-    /// Meaningful only alongside `pencil_claims = true` on a
-    /// `FromRemainingStock` chain (territory measurement needs a
-    /// machined-stock reference; without one this dial is inert). Default
-    /// `0.0` = off, byte-identical to the pre-S2 op.
-    #[serde(default = "default_unified_finish_min_region_rest_share")]
-    pub min_region_rest_share: f64,
     /// Process-proof build-list item 3
     /// (`unified_finish::CreaseReference` doc): which reference the crease
-    /// detector runs against. `SelfProbe` (default) is the S1/S2 behavior,
+    /// detector runs against. `SelfProbe` (default) is the S1 behavior,
     /// byte-identical. `MachinedStock` swaps in the machined prior stock
     /// instead — sanctioned ONLY when that stock is FINISH-QUALITY (a
     /// cascade's Op B following Op A's own ball all-over pass); on a
@@ -919,21 +913,23 @@ pub struct UnifiedFinishConfig {
     /// (`pencil_claims = true` with no `FromRemainingStock` chain).
     #[serde(default = "default_unified_finish_claims_reference")]
     pub claims_reference: CreaseReference,
-    /// S4 region-level territory CLIP (`unified_finish::ClaimsConfig::
+    /// S4 rest-territory CONFINEMENT (`unified_finish::ClaimsConfig::
     /// territory_clip` doc, process-proof build-list, `planning/
-    /// unified_v3_design.md` §0.a / §2.1 step 4): after the S2 share
-    /// filter, intersect each surviving band region's polygon against the
-    /// claims detector's own rest-region polygons and confine generation
-    /// to the surviving pieces, dropping whole regions with no overlap.
-    /// Landed because S2's whole-island keep-or-drop couldn't shrink a
-    /// giant conditioned island that merely CONTAINS >10% rest somewhere —
-    /// the wanaka ×2 cascade A/B measured Op B at +47% over the all-over-
-    /// tip baseline for exactly that reason (unified_finish module doc).
-    /// Meaningful only alongside `pencil_claims = true` and
+    /// unified_v3_design.md` §0.a / §2.1 step 4): AND a per-cell rest
+    /// keep-mask (built from the claims detector's own stock-referenced
+    /// rest field, thresholded at `min_rest_depth_mm`) into coverage
+    /// BEFORE `decompose` runs, so the conditioning pipeline itself
+    /// normalizes the rest islands and every emitted band region IS a
+    /// conditioned rest island. Landed because an earlier region-level
+    /// whole-island keep-or-drop filter couldn't shrink a giant
+    /// conditioned island that merely CONTAINS above-dial rest
+    /// somewhere — the wanaka ×2 cascade A/B measured Op B at +47% over
+    /// the all-over-tip baseline for exactly that reason (unified_finish
+    /// module doc). Meaningful only alongside `pencil_claims = true` and
     /// `claims_reference = MachinedStock`; under `SelfProbe` the
     /// orchestrator warns and skips clipping (the "rest islands" there are
     /// geometric, not material). Default `false` = off, byte-identical to
-    /// the pre-S4 op (S1/S2 behavior only).
+    /// the pre-S4 op.
     #[serde(default = "default_unified_finish_territory_clip")]
     pub territory_clip: bool,
 }
@@ -959,7 +955,6 @@ impl Default for UnifiedFinishConfig {
             spindle_rpm: None,
             pencil_claims: default_unified_finish_pencil_claims(),
             min_rest_depth_mm: default_unified_finish_min_rest_depth_mm(),
-            min_region_rest_share: default_unified_finish_min_region_rest_share(),
             claims_reference: default_unified_finish_claims_reference(),
             territory_clip: default_unified_finish_territory_clip(),
         }
@@ -972,10 +967,6 @@ fn default_unified_finish_pencil_claims() -> bool {
 
 fn default_unified_finish_min_rest_depth_mm() -> f64 {
     0.02
-}
-
-fn default_unified_finish_min_region_rest_share() -> f64 {
-    0.0
 }
 
 fn default_unified_finish_claims_reference() -> CreaseReference {
