@@ -1897,3 +1897,191 @@ fn v3_band_coverage_probe() {
         .unwrap_or_else(|e: SessionError| panic!("failed to load {}: {e}", project_path.display()));
     build_band_map(&s);
 }
+
+// ── follow-up: tool load + air anatomy (2026-08-03) ─────────────────────
+//
+// Two questions the ball sweep left open, both raised as hypotheses worth
+// testing rather than assumed:
+//
+// 1. TOOL LOAD. The campaign scored time and COLUMNS quality only. The
+//    cascade's whole premise is that a Ø3-4 ball does the bulk of the
+//    surface work and a Ø1 tapered tip only visits what the ball couldn't
+//    reach — which is exactly the shape of a tool-load win, since the
+//    all-over baseline runs that same fragile tip over the ENTIRE part.
+//    A time loss bought with a load win is a different (and possibly
+//    better) trade than a time loss for nothing.
+//
+// 2. WHERE THE AIR IS. Op B spends 44-58% of its time in rapids and the
+//    campaign named S3's cross-region fused router as the owner. That
+//    attribution is an assumption: a cross-region router only helps if
+//    the air is BETWEEN regions. If it is INSIDE one region — the scallop
+//    emitter retracting between disconnected ring fragments on a
+//    dendritic polygon — then S3 as designed cannot fix it, and the real
+//    work is intra-region linking. The run-7 region-span mix (one span
+//    with 206k moves, two with a few hundred) makes this the live
+//    question. Rapids are attributed to the innermost outer-Region span
+//    containing their move index; rapids in no span are inter-region.
+
+/// Per-branch tool-load rollup: every enabled toolpath's milling criteria
+/// (chipload / power / deflection) with state and peak, plus a project
+/// roll-up. Read AFTER `run_chain` (the verdicts consume the sim trace).
+fn tool_load_table(label: &str, s: &ProjectSession) {
+    use rs_cam_core::tool_load::verdict::LoadState;
+
+    let report = s.tool_load_report();
+    let n = s.toolpath_count();
+    eprintln!("== TOOL LOAD [{label}] ==");
+    eprintln!(
+        "{:<22} | {:<18} {:<10} {:>10} unit",
+        "op", "criterion", "state", "peak"
+    );
+    let mut within = 0usize;
+    let mut exceeds = 0usize;
+    let mut unmodeled = 0usize;
+    for v in &report.per_toolpath {
+        let name = (0..n)
+            .filter_map(|i| s.get_toolpath_config(i))
+            .find(|tc| tc.id == v.toolpath_id)
+            .map(|tc| tc.name.clone())
+            .unwrap_or_else(|| format!("{:?}", v.toolpath_id));
+        for c in v.criteria() {
+            match c.state {
+                LoadState::Within => within += 1,
+                LoadState::Exceeds => exceeds += 1,
+                LoadState::Unmodeled => unmodeled += 1,
+            }
+            let peak = c
+                .display_peak
+                .map_or_else(|| "—".to_owned(), |p| format!("{p:.4}"));
+            eprintln!(
+                "{name:<22} | {:<18} {:<10} {peak:>10} {}",
+                format!("{:?}", c.kind),
+                format!("{:?}", c.state),
+                c.unit
+            );
+        }
+    }
+    eprintln!("[{label}] criteria rollup: within={within} exceeds={exceeds} unmodeled={unmodeled}");
+}
+
+/// Rapid-move anatomy for one op: how much of its air is INSIDE a routed
+/// region (the strategy emitter's own retract/replunge between path
+/// fragments) vs BETWEEN regions (the cross-region router's territory).
+/// This is the measurement that decides whether S3's fused router can
+/// actually recover Op B's air, or whether the cost lives one level down
+/// in the per-region emitters.
+fn air_anatomy(label: &str, s: &ProjectSession, op_index: usize) {
+    use rs_cam_core::toolpath::MoveType;
+
+    let ann = s
+        .get_result(op_index)
+        .unwrap_or_else(|| panic!("[{label}] op {op_index} not generated"))
+        .annotated();
+    let moves = &ann.toolpath.moves;
+    let outer = outer_region_spans(&ann.spans);
+
+    // Innermost outer-Region span containing a move index, if any.
+    let span_of = |mi: usize| -> Option<usize> {
+        outer
+            .iter()
+            .position(|sp| mi >= sp.start_move && mi < sp.end_move)
+    };
+
+    let dist = |a: &rs_cam_core::geo::P3, b: &rs_cam_core::geo::P3| -> f64 {
+        ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt()
+    };
+
+    let mut intra_n = 0usize;
+    let mut intra_mm = 0.0f64;
+    let mut inter_n = 0usize;
+    let mut inter_mm = 0.0f64;
+    let mut cut_mm = 0.0f64;
+    // Per-span rapid tally so a single dominant region is visible.
+    let mut per_span: Vec<(usize, f64)> = vec![(0, 0.0); outer.len()];
+    let mut prev: Option<rs_cam_core::geo::P3> = None;
+    for (mi, mv) in moves.iter().enumerate() {
+        if let Some(p) = prev {
+            let d = dist(&p, &mv.target);
+            if matches!(mv.move_type, MoveType::Rapid) {
+                match span_of(mi) {
+                    Some(si) => {
+                        intra_n += 1;
+                        intra_mm += d;
+                        if let Some(slot) = per_span.get_mut(si) {
+                            slot.0 += 1;
+                            slot.1 += d;
+                        }
+                    }
+                    None => {
+                        inter_n += 1;
+                        inter_mm += d;
+                    }
+                }
+            } else {
+                cut_mm += d;
+            }
+        }
+        prev = Some(mv.target);
+    }
+
+    eprintln!("== AIR ANATOMY [{label}] (op index {op_index}) ==");
+    eprintln!(
+        "moves={} outer_region_spans={} | cutting/feed {cut_mm:.0}mm",
+        moves.len(),
+        outer.len()
+    );
+    let tot_mm = intra_mm + inter_mm;
+    let pct = |v: f64| 100.0 * v / tot_mm.max(1e-9);
+    eprintln!(
+        "rapids INSIDE regions : n={intra_n:>7} {intra_mm:>12.0}mm ({:.1}% of rapid length)  <- emitter/intra-region linking",
+        pct(intra_mm)
+    );
+    eprintln!(
+        "rapids BETWEEN regions: n={inter_n:>7} {inter_mm:>12.0}mm ({:.1}% of rapid length)  <- cross-region router (S3)",
+        pct(inter_mm)
+    );
+    for (i, sp) in outer.iter().enumerate() {
+        let (n, mm) = per_span.get(i).copied().unwrap_or((0, 0.0));
+        eprintln!(
+            "  span[{i}] {:<16} moves {:>7} | rapids n={n:>7} {mm:>12.0}mm",
+            sp.label.as_ref(),
+            sp.end_move.saturating_sub(sp.start_move)
+        );
+    }
+}
+
+/// Follow-up measurement: run BOTH branches once more and score the two
+/// open hypotheses — tool load (is the cascade's load story better than
+/// all-over-tip's?) and air anatomy (is Op B's air intra- or
+/// inter-region, i.e. can S3's router actually recover it?). No gates:
+/// this is a measurement, and its output feeds the next design decision.
+#[test]
+#[ignore = "two full chains + measurement sims (~20 min); run with --ignored --nocapture"]
+fn v3_load_and_air_probe() {
+    let project_path = write_fixture_project(4.0);
+
+    // ── D: all-over tip ────────────────────────────────────────────────
+    let mut d = ProjectSession::load(&project_path)
+        .unwrap_or_else(|e: SessionError| panic!("failed to load {}: {e}", project_path.display()));
+    apply_branch(&mut d, Branch::AllOverTip);
+    run_chain("load probe D", &mut d);
+    tool_load_table("D all-over tip", &d);
+    let d_idx = toolpath_index_by_name(&d, "D All-Over Tip");
+    air_anatomy("D all-over tip", &d, d_idx);
+
+    // ── Cascade at Ø4 (the sweep's best finish stack) ──────────────────
+    let mut c = ProjectSession::load(&project_path)
+        .unwrap_or_else(|e: SessionError| panic!("failed to load {}: {e}", project_path.display()));
+    apply_branch(&mut c, Branch::Cascade);
+    let op_b_idx = toolpath_index_by_name(&c, "Op B Unified Rest");
+    c.set_toolpath_operation(
+        op_b_idx,
+        OperationConfig::UnifiedFinish(op_b_claims_config()),
+    )
+    .expect("swap Op B config");
+    run_chain("load probe cascade b4", &mut c);
+    tool_load_table("cascade Ø4", &c);
+    let op_a_idx = toolpath_index_by_name(&c, "Op A Ball Finish");
+    air_anatomy("cascade Ø4 Op A", &c, op_a_idx);
+    air_anatomy("cascade Ø4 Op B", &c, op_b_idx);
+}
