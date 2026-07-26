@@ -448,3 +448,109 @@ quality.
    + emission-time link-safety check. KPI: entry_s/retract count vs S1.
 5. **S4 — cascade A/B**: Ø2 + v3 vs D vs B75 vs stack on both parts; lock
    defaults; catalog + docs update (FEATURE_CATALOG, MCP guidance).
+
+## 7. Process-proof campaign log (2026-07-13 → 07-27)
+
+The §0.a build list, run end to end on the wanaka ×2 fixture. Every slice
+committed with gates green (workspace clippy zero-warning, `cargo fmt`,
+core lib tests past the 3 known adaptive3d reds).
+
+### What shipped
+
+| commit | slice |
+|---|---|
+| `69d66f6` | ×2 fixture + harness skeleton (runtime-generated STL + project TOML under `target/v3_scaled/`, never committed) |
+| `789df66` | S2 region-level territory filter (`min_region_rest_share`, decompose-then-drop, whole islands only) |
+| `27be687` | S3 stock-referenced crease claims (`CreaseReference::MachinedStock`, self-probe stays default) |
+| `50b7295` | **deviation-instrument frame fix** (core bug, see below) |
+| `19a3e1b`→`784b975` | S4 rest-territory confinement, four measured iterations |
+| `1d92ce7` | cascade A/B scoring harness + three campaign diagnostics |
+
+### The frame bug (`50b7295`) — a real core defect the campaign surfaced
+
+`SimulationRequest::model_mesh` arrives in the sim's stock-relative frame
+(world model translated by `−stock_origin`). Non-identity setup groups'
+`local_to_global` outputs match that frame; IDENTITY groups' dexel grids
+are WORLD-framed (F-024) and were compared **unmapped** — mis-registering
+every column and vertex deviation by exactly the stock origin. On the ×2
+fixture (origin −5,−5,−5) that read as a uniform ~−4 mm "overcut" in every
+band, next to 0 collisions and sane removed volumes.
+
+Every identity-setup project with a non-zero stock origin was affected.
+Wanaka scale-1 never tripped it because its measured setups are
+non-identity, and the pre-existing unit sentry supplied its flat model in
+WORLD coordinates — masking the very case it should have caught. The
+sentry now supplies the model in the request frame and fails on the old
+code. Proven independently by ray-casting the source STL at the probed
+XYs: `pred = 2·z₁((x−5)/2, (y−5)/2) + 5` matched the implied model
+reference to 1e-3 mm at every probe.
+
+**Rule**: an instrument that has only ever been exercised on one frame
+class has not been validated. Fixture diversity IS instrument validation.
+
+### S4: four dead ends before the mechanism worked
+
+The goal — confine Op B to rest islands — is one line in §2.1 step 4.
+Getting there cost four measured iterations, each killed by evidence:
+
+1. **S2 whole-island drop alone** (+47% vs baseline). `decompose`'s
+   conditioned islands on this terrain are whole-band-sized; every giant
+   island contains above-dial rest *somewhere*, so keep-or-drop keeps
+   everything and Op B runs all-over at tip dials.
+2. **Polygon clip vs the detector's `region_polygons`** (quality gate
+   failed, tails 2-3×). Those polygons are gated on TRUSTED above-dial
+   cells; steep faces read NaN in the stock-referenced field, fell outside
+   every polygon, and the clip amputated the mid-steep and very-steep
+   bands whole — Op B emitted 3 shallow pieces. Skipped territory shows up
+   as the `>+.5` TAIL, never as an on-size shift (the S1 lesson, again).
+3. **Polygon clip vs a NaN-keeping keep-mask** (same failure, different
+   cause). Dendritic rest masks fragment into hundreds of islands;
+   `region_polygons_from_mask` keeps the largest `MAX_REST_REGIONS` (64)
+   and warns. The silently-dropped area is the tail. **Any mechanism with
+   a polygonization step inherits that cap** — the tail probe proved the
+   detector saw the material (tail columns sat on above-dial rest, mean
+   1.2-1.7 mm), so the loss was plumbing, not detection.
+4. **Mask-AND sourced from the S2 verdict grid** (Op B all-over again,
+   54 k s). That verdict is a 5-point footprint max-top vs min-drop across
+   two grids — deliberately keep-biased for drop-safety, which is correct
+   for S2's island shares but SATURATES as a mask: on sloped terrain the
+   neighbourhood z-span alone (0.5 mm at 45°) dwarfs an mm-class dial.
+5. **Mask-AND dilated by `cutter.radius()`** (all-over again, 58.5 k s).
+   `MillingCutter::radius()` is `diameter()/2` = the WIDEST cutting point;
+   on a Ø1-tip tapered ball that is the 3 mm shaft. A 3.5 mm dilation
+   welds a dendritic keep-mask into full coverage.
+
+**What works** (`784b975`): keep-mask from the detector's own
+stock-referenced rest FIELD (`NaN ∪ rest ≥ min_rest_depth_mm`), dilated at
+the SAMPLING scale (one rest-grid cell + `region_margin_mm`),
+nearest-resampled and ANDed into `covered` **before** `decompose` — so
+conditioning normalizes the rest islands itself and there is no
+polygonization to cap. Design doc §2.1 step 4 prescribed exactly this; the
+detour was ours.
+
+Transferable rules, all paid for:
+- **A quantity tuned for one decision is not a general-purpose signal.**
+  Keep-biased measurements make bad masks.
+- **`radius()` is the widest point, not the tip.** Anything scaling a
+  tolerance off tool size on a tapered tool must say which radius.
+- **Caps are silent by construction.** A `MAX_*` constant upstream of your
+  data path will not fail your test; it will quietly change your answer.
+
+### Where the proof stands
+
+Collisions: **0/0 on every run, every branch** — the safety gate never
+wavered. Tails: cascade **beats** D (1.2-1.5 k vs 3.0-4.4 k `>+.5` columns
+per band) — the confinement is honest, not skipping material. Mid-steep
+on-size: **parity** (51.0% vs 52.3%). Open: shallow and very-steep on-size
+trail by 3-4 pp, and Op B's time is dominated by air — 18.3 k s of rapids
+against 17.7 k s of cutting (~51%), the many-island retract tax the fused
+router (S3) exists to solve. The ball-size sweep (Ø2/3/4) is the next
+measurement; a smaller ball shrinks rest area, which attacks fragment
+count and air time directly.
+
+**The process is not disproven — it is instrumented and honest, and the
+remaining gap has a named owner (S3's router).** What the campaign
+delivered besides the mechanism: a trustworthy deviation instrument on
+identity setups (a core fix that outlives this experiment), a reproducible
+scaled fixture, and three diagnostics that each converted a mystery into a
+measurement.
