@@ -612,3 +612,78 @@ confinement skips finished material without abandoning uncut material; the
 instrument is now trustworthy on identity setups (a core fix); and the
 remaining gap is a single, measured, owned structural cost rather than a
 mystery.
+
+## 8. Follow-up measurements (2026-08-03) — the blocker was misattributed
+
+Two hypotheses raised after the campaign, both measured
+(`v3_load_and_air_probe`, `v3_recoverable_air_probe`, cascade at Ø4).
+
+### Tool load: real but not binding on this fixture
+
+| op | chipload | power | deflection |
+|---|---|---|---|
+| Rough (shared) | **Exceeds** 0.0129 mm/tooth | Within 0.0244 kW | Within 0.0211 mm |
+| D all-over tip | Within 0.0008 | Within 0.0006 kW | Within **0.0099 mm** |
+| Op A ball Ø4 | Within 0.0024 | Within 0.0117 kW | Within **0.0041 mm** |
+| Op B tip | Within 0.0007 | Within 0.0003 kW | Within **0.0081 mm** |
+
+The only exceedance is the Rough op, identical in both branches. The
+cascade does what it claims for the fragile tool — peak tip deflection
+−18% (0.0099 → 0.0081 mm) and 4× the material moved onto a tool running
+2.4× stiffer — but every finishing gate is far inside limits here, so the
+load advantage is HEADROOM, not a fix. It becomes decisive only where the
+tip is the binding constraint (deeper rest, harder stock, longer stickout).
+
+### Air: 100% intra-region — §7's S3 attribution is WRONG
+
+| op | rapids | rapid length | inside regions | between regions |
+|---|---|---|---|---|
+| D all-over tip | 30 980 | 55 093 mm | **100%** | 0% |
+| Op A ball Ø4 | 16 757 | 38 745 mm | **100%** | 0% |
+| Op B (Ø4) | 80 367 | **540 801 mm** | **100%** | 0% |
+
+Op B travels 540 m of air against 164 m of cutting, and NONE of it is
+between routed regions — its two outer Region spans contain every rapid.
+**S3's cross-region fused router, which §7 named as the owner of this
+gap, would recover exactly nothing.** The cost is the strategy emitter
+retracting between disconnected ring fragments on dendritic rest
+territory: mean hop 6.7 mm vs 1.8 mm for the contiguous all-over pass.
+
+### Root cause: the existing reorderer is unreachable for surface ops
+
+`crate::tsp::optimize_rapid_order` (2-opt, safe-Z interstitials, F-038b
+diagonal guard) exists and is wired into the dressup pipeline — but
+`execute.rs` gates it on `!rapid_order_barriers.is_empty()`, and
+`RapidOrderBarrier` spans are emitted ONLY from depth sections and
+adaptive3d events. Scallop, waterline, raster and unified_finish emit
+none, so the optimizer never fires for the entire surface-finishing
+family. `optimize_rapid_order = true` in a project file is silently a
+no-op on these ops. (Separately confirmed: `DressupPolicy::strip_all` on
+UnifiedFinish strips entry/lead/link only — it is NOT what disables the
+reorderer; the barrier gate is.)
+
+### The prize, sized offline (no core changes)
+
+Greedy nearest-neighbour over rapid-separated cut fragments, either
+endpoint — a WEAK heuristic, so a conservative lower bound:
+
+| op | fragments | emitted hops | NN order | recoverable |
+|---|---|---|---|---|
+| Op A ball Ø4 | 869 | 2 438 mm | 854 mm | **65.0%** |
+| Op B (Ø4) | **12 774** | 110 046 mm | 11 464 mm | **89.6%** |
+| D all-over tip | 1 045 | 3 170 mm | 914 mm | **71.2%** |
+
+Op B's emitted order is near-pessimal: it cuts ring-by-ring, and on
+fragmented territory consecutive pieces of the same ring are far apart.
+Every branch leaves 65-90% on the table, so this is not a cascade-specific
+defect — **the whole surface-finishing family ships unordered rapids.**
+
+Op B's rapid TIME at Ø4 is 15 797 s. Even at half the geometric recovery
+that is ~7 900 s off the cascade (finish stack 49 009 → ~41 100 s, near
+parity with D at 39 871); approaching the measured 89.6% with keep-down
+linking puts it near ~34 000 s — **~14% FASTER than the all-over
+baseline**, while keeping the better tails and the −18% tip deflection.
+
+**Revised verdict: the process is not disproven, and the gap is a missing
+reorder pass rather than a missing router.** §7's "S3 owns it" stands
+corrected.
