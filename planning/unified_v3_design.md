@@ -687,3 +687,50 @@ baseline**, while keeping the better tails and the −18% tip deflection.
 **Revised verdict: the process is not disproven, and the gap is a missing
 reorder pass rather than a missing router.** §7's "S3 owns it" stands
 corrected.
+
+### The actual root: a capability classification the code flags as provisional
+
+The barrier gate is downstream. `OperationType::transform_capabilities`
+(`compute/catalog.rs`) classifies UnifiedFinish alongside Scallop as a
+**genuinely continuous trace** — `continuous_path_required: true`, the
+same bucket as spiral/helical/projected paths — which makes ALL three
+reorder capabilities false:
+
+- `allows_barriered_rapid_reorder()` = `!continuous_path_required` → false
+- `allows_unbarriered_rapid_reorder()` → false (already wired at
+  `execute.rs:2446`, and `tsp::optimize_rapid_order` itself explicitly
+  handles the no-barrier case: "with no barriers there is one group
+  covering the whole toolpath")
+- `allows_link_moves()` → false
+
+So neither TSP path can ever fire, regardless of barriers. The machinery
+is complete and reachable — only the classification stands in the way.
+And that classification carries its own TODO:
+
+> "UnifiedFinish mirrors Scallop here (registration checklist decision) —
+> its stitched per-band toolpath is a candidate for looser capabilities
+> once P2.d routing lands, but until then it inherits Scallop's
+> conservative continuous-path treatment."
+
+**P2.d routing landed** (it is the `route_greedy`/`choose_link` router in
+the shipped op). The precondition the comment names has been met; the
+capability was simply never revisited. And on the merits the
+classification is wrong for this op: its toolpath is a STITCHED set of
+per-region strategy outputs separated by retracts and router links — the
+opposite of a continuous trace. Finishing fragments carry no material-state
+dependency on each other, which is exactly the DropCutter rationale
+("XY-independent ops: TSP can reorder by proximity safely").
+
+Proposed change, safe by construction:
+
+1. UnifiedFinish emits zero-width `RapidOrderBarrier` spans at each region
+   node boundary — and, inside a VerySteep waterline band, at each Z level.
+   Barriers are ordering constraints the TSP must respect, so reordering
+   is confined to fragments within one Z level of one region: never across
+   bands, never against depth order.
+2. Reclassify UnifiedFinish off `continuous_path_required` so the
+   barriered path can fire.
+
+Scallop (71% recoverable) and the rest of the family are the same
+misclassification, but they are SHIPPED ops whose output users have cut —
+extending this is a separate, evidence-backed decision, not a drive-by.
