@@ -38,6 +38,8 @@
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
+use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::operation_configs::{CreaseReference, UnifiedFinishConfig};
 use rs_cam_core::session::{ProjectSession, SessionError, SimulationOptions};
 
 /// Linear scale factor applied to the wanaka terrain STL and its stock
@@ -625,10 +627,8 @@ enabled = false
 
 // ── branch selection (structured now, exercised by the A/B slice) ──────
 
-/// Which finishing path a chain run takes. Unused until the cascade A/B
-/// scoring slice (`planning/unified_v3_design.md` §0.a) — kept here so
-/// the fixture and the branch switch land together.
-#[allow(dead_code)]
+/// Which finishing path a chain run takes (`planning/unified_v3_design.md`
+/// §0.a). Exercised by `score_branch` below.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Branch {
     /// Op A (ball all-over scallop) + Op B (unified_finish rest-clear).
@@ -660,9 +660,7 @@ fn set_enabled_by_name(s: &mut ProjectSession, enable: &[&str], disable: &[&str]
     }
 }
 
-/// Apply a `Branch` to the fixture's 4-op chain by toolpath name. Unused
-/// until the cascade A/B scoring slice — see `Branch`.
-#[allow(dead_code)]
+/// Apply a `Branch` to the fixture's 4-op chain by toolpath name.
 fn apply_branch(s: &mut ProjectSession, branch: Branch) {
     let (enable, disable): (&[&str], &[&str]) = match branch {
         Branch::Cascade => (
@@ -679,11 +677,10 @@ fn apply_branch(s: &mut ProjectSession, branch: Branch) {
 
 // ── chain runner ────────────────────────────────────────────────────────
 
-/// Totals from one full `run_chain` pass. `per_op_s` is reusable for
-/// per-branch comparisons in the A/B slice (rather than pinning a single
-/// "finish op" name the way `p2c_headless_ab_wanaka.rs` does — the
+/// Totals from one full `run_chain` pass. `per_op_s` is what `score_branch`
+/// sums over to get a branch's "finish stack" seconds (rather than pinning
+/// a single "finish op" name the way `p2c_headless_ab_wanaka.rs` does — the
 /// cascade branch has two finish ops, not one).
-#[allow(dead_code)]
 struct ChainOutcome {
     project_total_s: f64,
     per_op_s: Vec<(String, f64)>,
@@ -867,4 +864,1036 @@ fn v3_fixture_smoke() {
         "FIXTURE OK: v3 scaled-wanaka loads, rough generates, 0 collisions, {:.1}s / {:.0}mm3 removed",
         outcome.project_total_s, outcome.project_removed_mm3
     );
+}
+
+// ── Op B cascade dials (design doc §0.a item 4) ─────────────────────────
+
+/// The cascade Op B config: `unified_finish` running in rest-clearer mode
+/// against Op A's own machined (ball all-over) stock. Every dial choice
+/// below is pinned to something measured or specified, not a guess dressed
+/// up as one:
+///
+/// - `steep_threshold_deg`/`waterline_threshold_deg` (45/75): the P2.e-locked
+///   band thresholds every other harness in this crate uses
+///   (`ab_unified_config` in `p2c_headless_ab_wanaka.rs`) — no reason to
+///   deviate for the cascade's rest-clear pass.
+/// - `overlap_mm` 2.0: same band-overlap convention as P2.e/S1.
+/// - `scallop_height` 0.011 / `tolerance` 0.05: Op A's own cusp target
+///   (see `write_fixture_project`'s Op A params) — Op B must not visibly
+///   under- or over-cut relative to the pass it's cleaning up after.
+/// - `raster_stepover` 0.21: cusp-consistent for a Ø1 TIP ball
+///   (`sqrt(8 * r * h)` with r=0.5mm, h=0.011mm ≈ 0.2098mm) — the shallow
+///   raster strategy's horizontal stepover that reproduces the SAME cusp
+///   the scallop height targets, so Op B's raster and scallop bands don't
+///   silently disagree on quality the way an arbitrary stepover would.
+/// - `z_step` 0.3: wall-spacing parity with every other harness's waterline
+///   dial in this crate.
+/// - `sampling` 0.5 / `stock_to_leave` 0.0: standard finish-pass values.
+/// - `feed_rate`/`plunge_rate`/`spindle_rpm`: copied verbatim from the
+///   fixture's Op A and Op B TOML blocks (`write_fixture_project`) so the
+///   cascade A/B doesn't introduce a feeds/speeds confound alongside the
+///   claims-pipeline one.
+/// - `pencil_claims` TRUE: this is the whole point of the cascade — Op B
+///   must run its rest detector and claim creases, unlike every prior A/B
+///   in this crate which pins it OFF as the pre-v3 baseline.
+/// - `min_rest_depth_mm` 0.022 (≈ 2× Op A's 0.011mm cusp, design doc §2.1
+///   step 4's sizing note): territory below Op A's own cusp is Op A's
+///   noise floor, not real rest material for Op B to chase.
+/// - `min_region_rest_share` 0.10: S2's region-level territory filter —
+///   drop whole conditioned islands whose measured rest is ≤10% of the
+///   island area. First dial guess (design doc §0.a build list); the tail
+///   gate in `v3_cascade_ab_ball3` is the safety net if this is too
+///   aggressive.
+/// - `claims_reference` `MachinedStock`: sanctioned here specifically
+///   because Op B follows Op A's OWN ball all-over pass — a genuinely
+///   finish-quality reference, not a rough-chain terrace field (the S1
+///   lesson that ruled this reference out for wanaka.toml's rough→finish
+///   chain).
+/// - `territory_clip` TRUE (S4): intersect surviving band regions against
+///   the detector's rest-region polygons so Op B generates only over real
+///   rest material. S2's whole-island keep-or-drop couldn't shrink a giant
+///   conditioned island that merely CONTAINS >10% rest somewhere — the
+///   first wanaka ×2 cascade A/B measured Op B at +47% over the all-over
+///   baseline for exactly that reason (see the `UnifiedFinishConfig::
+///   territory_clip` field doc). Sanctioned here because
+///   `claims_reference` is `MachinedStock` (the clip is skipped with a
+///   warning under `SelfProbe`).
+fn op_b_claims_config() -> UnifiedFinishConfig {
+    UnifiedFinishConfig {
+        steep_threshold_deg: 45.0,
+        waterline_threshold_deg: 75.0,
+        overlap_mm: 2.0,
+        scallop_height: 0.011,
+        tolerance: 0.05,
+        raster_stepover: 0.21,
+        z_step: 0.3,
+        sampling: 0.5,
+        stock_to_leave: 0.0,
+        feed_rate: 3000.0,
+        plunge_rate: 150.0,
+        spindle_rpm: Some(21000),
+        pencil_claims: true,
+        min_rest_depth_mm: 0.022,
+        min_region_rest_share: 0.10,
+        claims_reference: CreaseReference::MachinedStock,
+        territory_clip: true,
+    }
+}
+
+/// Resolve a toolpath index by config NAME (panics if absent) — used by
+/// `score_branch` to target "Op B Unified Rest" / "D All-Over Tip"
+/// regardless of their fixed indices in `write_fixture_project`.
+fn toolpath_index_by_name(s: &ProjectSession, name: &str) -> usize {
+    (0..s.toolpath_count())
+        .find(|&i| s.get_toolpath_config(i).is_some_and(|tc| tc.name == name))
+        .unwrap_or_else(|| panic!("no toolpath named '{name}' in the fixture"))
+}
+
+// ── fidelity instrument (adapted from `p2c_headless_ab_wanaka.rs`) ─────
+//
+// Duplicated locally rather than shared — `p2c_headless_ab_wanaka.rs`'s
+// pieces are file-local (per the design prompt's explicit instruction not
+// to refactor that harness). Two differences from the p2c original:
+// output lands under `target/v3_scaled/` (this fixture's scratch dir,
+// `v3_dir()`) instead of `target/p2f_fidelity/`, and the classification
+// cutter/planner mirror Op B's OWN Ø1-tip dials (`for_tool(0.5)`) instead
+// of p2c's Ø6-ball convention — the territory being measured here is
+// whatever Op B actually routes, not a bulk-ball's.
+
+/// Per-cell band ownership rasterized from the planner's conditioned
+/// regions onto the classification grid. Code 0 = no region (off-model or
+/// unclassified), 1 = Shallow, 2 = MidSteep, 3 = VerySteep.
+struct BandMap {
+    origin_x: f64,
+    origin_y: f64,
+    cell: f64,
+    rows: usize,
+    cols: usize,
+    codes: Vec<u8>,
+}
+
+const BAND_NAMES: [&str; 4] = ["off-region", "shallow", "mid-steep", "very-steep"];
+
+impl BandMap {
+    fn code_at(&self, x: f64, y: f64) -> u8 {
+        let col = ((x - self.origin_x) / self.cell).round();
+        let row = ((y - self.origin_y) / self.cell).round();
+        if col < 0.0 || row < 0.0 || col >= self.cols as f64 || row >= self.rows as f64 {
+            return 0;
+        }
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+        let idx = row as usize * self.cols + col as usize;
+        self.codes[idx]
+    }
+}
+
+/// Build the band map with the SAME classification + decomposition dials
+/// Op B's cascade config uses (Ø1 tip -> `tool_radius` 0.5, `overlap_mm`
+/// 2.0, locked 45/75 thresholds via `for_tool`), so deviations are
+/// attributed to the regions Op B actually routes. The D branch is scored
+/// against the same map — the comparison question is "what did each
+/// strategy's territory look like", so the territory definition must be
+/// identical across branches.
+fn build_band_map(s: &ProjectSession) -> BandMap {
+    use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose};
+    use rs_cam_core::finish_setup::build_classification_surface_with_cancel;
+    use rs_cam_core::geo::P2;
+    use rs_cam_core::mesh::SpatialIndex;
+    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::tool::BallEndmill;
+
+    let mesh = s
+        .models()
+        .iter()
+        .find_map(|m| m.mesh.clone())
+        .expect("v3 scaled terrain mesh");
+    let index = SpatialIndex::build(&mesh, 10.0);
+    let cutter = BallEndmill::new(1.0, 25.0);
+    let never = || false;
+    let surface = build_classification_surface_with_cancel(&mesh, &index, &cutter, 0.05, &never)
+        .expect("classification surface");
+    let mut planner = FinishPlannerParams::for_tool(0.5);
+    planner.overlap_mm = 2.0;
+    let planned = decompose(
+        &surface.slope_map,
+        &surface.heightmap.covered,
+        &[],
+        0.5,
+        &planner,
+    );
+
+    let hm = &surface.heightmap;
+    let (rows, cols, cell) = (hm.rows, hm.cols, hm.cell_size);
+    let mut codes = vec![0u8; rows * cols];
+    for (band, code) in [
+        (FinishBand::Shallow, 1u8),
+        (FinishBand::MidSteep, 2u8),
+        (FinishBand::VerySteep, 3u8),
+    ] {
+        let polys: Vec<_> = planned
+            .regions
+            .iter()
+            .filter(|r| r.band == band)
+            .map(|r| r.polygon.clone())
+            .collect();
+        if polys.is_empty() {
+            continue;
+        }
+        let rs = RegionSet::new(polys);
+        for r in 0..rows {
+            for c in 0..cols {
+                let x = hm.origin_x + c as f64 * cell;
+                let y = hm.origin_y + r as f64 * cell;
+                if rs.contains(&P2::new(x, y)) {
+                    codes[r * cols + c] = code;
+                }
+            }
+        }
+    }
+
+    let counts = codes.iter().fold([0usize; 4], |mut acc, &c| {
+        acc[c as usize] += 1;
+        acc
+    });
+    eprintln!(
+        "BAND MAP {rows}x{cols} @ {cell:.3}mm: off-region={} shallow={} mid-steep={} very-steep={}",
+        counts[0], counts[1], counts[2], counts[3]
+    );
+
+    // Coverage accounting (the 25%-coverage anomaly, 2026-07-13): how much
+    // of the classification grid is covered at all, vs how much the
+    // conditioned polygons reclaim of it.
+    let covered_n = hm.covered.iter().filter(|&&c| c).count();
+    let mut band_stats = String::new();
+    for band in [
+        FinishBand::Shallow,
+        FinishBand::MidSteep,
+        FinishBand::VerySteep,
+    ] {
+        let (n, area): (usize, f64) = planned
+            .regions
+            .iter()
+            .filter(|r| r.band == band)
+            .fold((0, 0.0), |(n, a), r| (n + 1, a + r.polygon.area()));
+        band_stats.push_str(&format!(" {band:?}: {n} regions {area:.0}mm2;"));
+    }
+    eprintln!(
+        "BAND COVERAGE: covered={covered_n}/{} ({:.1}%) | planned:{band_stats} decompose stats: {:?}",
+        rows * cols,
+        100.0 * covered_n as f64 / (rows * cols) as f64,
+        planned.stats
+    );
+
+    BandMap {
+        origin_x: hm.origin_x,
+        origin_y: hm.origin_y,
+        cell,
+        rows,
+        cols,
+        codes,
+    }
+}
+
+/// Histogram bin edges (mm), identical to `p2c_headless_ab_wanaka.rs`.
+/// Negative = OVERCUT, positive = leftover material.
+const DEV_EDGES: [f32; 12] = [
+    -0.5, -0.3, -0.2, -0.1, -0.05, -0.01, 0.01, 0.05, 0.1, 0.2, 0.3, 0.5,
+];
+const DEV_BIN_COUNT: usize = DEV_EDGES.len() + 1;
+const DEV_BIN_LABELS: [&str; DEV_BIN_COUNT] = [
+    "<-.5", "-.5", "-.3", "-.2", "-.1", "-.05", "on-size", "+.05", "+.1", "+.2", "+.3", "+.5",
+    ">+.5",
+];
+
+#[derive(Default, Clone, Copy)]
+struct BandAcc {
+    bins: [usize; DEV_BIN_COUNT],
+    leftover_n: usize,
+    leftover_sum: f64,
+    leftover_max: f32,
+    overcut_n: usize,
+    overcut_sum: f64,
+    overcut_min: f32,
+}
+
+/// Re-simulate the chain at measurement resolution (0.25 mm — the default
+/// 0.5 mm dexel grid aliases away exactly the terrain texture the
+/// band-fidelity defect beheads; see `p2c_headless_ab_wanaka.rs`). Run
+/// AFTER `run_chain` so the reported times/collisions come from the
+/// standard chain options; this sim exists only to populate `deviations`
+/// and `column_deviations`.
+fn run_measurement_sim(s: &mut ProjectSession) {
+    let cancel = AtomicBool::new(false);
+    let opts = SimulationOptions {
+        resolution: 0.25,
+        ..Default::default()
+    };
+    s.run_simulation(&opts, &cancel)
+        .expect("hi-res measurement simulation");
+}
+
+/// Per-band deviation report for the CURRENT simulation result on `s`. Call
+/// after `run_chain` + `run_measurement_sim`. Trims `p2c_headless_ab_wanaka.rs`'s
+/// original down to the two pieces the design doc (§4) calls load-bearing:
+/// a top-down deviation PNG (vertex-based, saturated at ±0.3mm) for visual
+/// sanity, and the group-filtered FIDELITY-COLUMNS table — pointwise dexel
+/// tops, the ONLY instrument the A/B's quality gates read (P2.g Task 1:
+/// corner-averaged vertex heights filter phase-coherent machined texture
+/// away, producing a fake branch-dependent shift).
+fn fidelity_report(tag: &str, s: &ProjectSession, bm: &BandMap) {
+    let sim = s.simulation_result().expect("sim result");
+    const EPS: f32 = 1e-4;
+
+    // ── deviation PNG (vertex-based, visual only) ──────────────────────
+    if let Some(devs) = sim.deviations.as_ref() {
+        let verts = &sim.mesh.vertices;
+        assert_eq!(verts.len(), devs.len() * 3, "vertex/deviation mismatch");
+
+        let icell = bm.cell * 0.5;
+        let icols = bm.cols * 2;
+        let irows = bm.rows * 2;
+        let mut img: Vec<f32> = vec![0.0; irows * icols];
+        let mut img_hit: Vec<bool> = vec![false; irows * icols];
+        for (i, &d) in devs.iter().enumerate() {
+            if d == 0.0 {
+                continue; // sentinel: vertex not relevant (stock bottom etc.)
+            }
+            let x = f64::from(verts[i * 3]);
+            let y = f64::from(verts[i * 3 + 1]);
+            let col = ((x - bm.origin_x) / icell).round();
+            let row = ((y - bm.origin_y) / icell).round();
+            if col >= 0.0 && row >= 0.0 && col < icols as f64 && row < irows as f64 {
+                #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+                let idx = row as usize * icols + col as usize;
+                if !img_hit[idx] || d.abs() > img[idx].abs() {
+                    img[idx] = d;
+                    img_hit[idx] = true;
+                }
+            }
+        }
+        let mut px = vec![0u8; irows * icols * 4];
+        for r in 0..irows {
+            for c in 0..icols {
+                let idx = r * icols + c;
+                let (rr, gg, bb) = if !img_hit[idx] {
+                    (0u8, 0u8, 0u8)
+                } else {
+                    let d = img[idx];
+                    if d < -EPS {
+                        let t = (f64::from(-d) / 0.3).min(1.0);
+                        let g = (110.0 * (1.0 - t)) as u8;
+                        ((110.0 + 145.0 * t) as u8, g, g)
+                    } else if d > EPS {
+                        let t = (f64::from(d) / 0.3).min(1.0);
+                        let g = (110.0 * (1.0 - t)) as u8;
+                        (g, g, (110.0 + 145.0 * t) as u8)
+                    } else {
+                        (110u8, 110u8, 110u8)
+                    }
+                };
+                let ir = irows - 1 - r;
+                let i = (ir * icols + c) * 4;
+                px[i] = rr;
+                px[i + 1] = gg;
+                px[i + 2] = bb;
+                px[i + 3] = 255;
+            }
+        }
+        let dev_path = v3_dir().join(format!("{tag}_deviation.png"));
+        image::save_buffer(
+            &dev_path,
+            &px,
+            icols as u32,
+            irows as u32,
+            image::ColorType::Rgba8,
+        )
+        .expect("save deviation png");
+        eprintln!(
+            "deviation png: {} (red=overcut, blue=leftover, sat +-0.3mm)",
+            dev_path.display()
+        );
+    } else {
+        eprintln!("[{tag}] vertex deviations unavailable (sim ran without a reference mesh?)");
+    }
+
+    // ── FIDELITY-COLUMNS, group-filtered (the gate-relevant table) ─────
+    let Some(cols) = sim.column_deviations.as_ref() else {
+        eprintln!("[{tag}] column deviations unavailable");
+        return;
+    };
+    let bin_of = |d: f32| -> usize {
+        DEV_EDGES
+            .iter()
+            .position(|&e| d < e)
+            .unwrap_or(DEV_BIN_COUNT - 1)
+    };
+    let max_group = cols.iter().map(|cd| cd.group).max().unwrap_or(0);
+    for group in 0..=max_group {
+        let mut caccs = [BandAcc::default(); 4];
+        for cd in cols.iter().filter(|cd| cd.group == group) {
+            let code = bm.code_at(cd.x, cd.y) as usize;
+            let a = &mut caccs[code];
+            a.bins[bin_of(cd.dev)] += 1;
+            if cd.dev > EPS {
+                a.leftover_n += 1;
+                a.leftover_sum += f64::from(cd.dev);
+                a.leftover_max = a.leftover_max.max(cd.dev);
+            } else if cd.dev < -EPS {
+                a.overcut_n += 1;
+                a.overcut_sum += f64::from(cd.dev);
+                a.overcut_min = a.overcut_min.min(cd.dev);
+            }
+        }
+        eprintln!(
+            "== FIDELITY-COLUMNS [{tag}] group {group} (pointwise dexel tops; negative = overcut) =="
+        );
+        eprintln!(
+            "{:<11} | {:>9} {:>9} {:>8} | {:>9} {:>9} {:>8} | histogram",
+            "band", "over_n", "over_mean", "worst", "left_n", "left_mean", "max"
+        );
+        for (code, acc) in caccs.iter().enumerate() {
+            let over_mean = acc.overcut_sum / (acc.overcut_n as f64).max(1.0);
+            let left_mean = acc.leftover_sum / (acc.leftover_n as f64).max(1.0);
+            let hist: Vec<String> = DEV_BIN_LABELS
+                .iter()
+                .zip(acc.bins.iter())
+                .map(|(l, n)| format!("{l}:{n}"))
+                .collect();
+            eprintln!(
+                "{:<11} | {:>9} {:>9.4} {:>8.4} | {:>9} {:>9.4} {:>8.4} | {}",
+                BAND_NAMES[code],
+                acc.overcut_n,
+                over_mean,
+                acc.overcut_min,
+                acc.leftover_n,
+                left_mean,
+                acc.leftover_max,
+                hist.join(" ")
+            );
+        }
+    }
+}
+
+/// Group-filtered on-size / `+.05` / `>+.5`-tail shares from
+/// `sim.column_deviations`, restricted to `group` and to `band_code`
+/// (from `BandMap::code_at` — 1=shallow, 2=mid-steep, 3=very-steep).
+/// Returns `(sample_count, on_size_pct, plus05_pct, tail_count)`. Mirrors
+/// `p2c_headless_ab_wanaka.rs::band_shares`.
+fn band_shares(
+    s: &ProjectSession,
+    bm: &BandMap,
+    group: usize,
+    band_code: u8,
+) -> (usize, f64, f64, usize) {
+    let sim = s.simulation_result().expect("sim result");
+    let cols = sim
+        .column_deviations
+        .as_ref()
+        .expect("column deviations (sim ran without a reference model mesh?)");
+    let bin_of = |d: f32| -> usize {
+        DEV_EDGES
+            .iter()
+            .position(|&e| d < e)
+            .unwrap_or(DEV_BIN_COUNT - 1)
+    };
+    const ON_SIZE_BIN: usize = 6;
+    const PLUS_05_BIN: usize = 7;
+    const TAIL_BIN: usize = DEV_BIN_COUNT - 1; // ">+.5" — big standing leftover
+    let mut total = 0usize;
+    let mut on_size = 0usize;
+    let mut plus05 = 0usize;
+    let mut tail = 0usize;
+    for cd in cols.iter().filter(|cd| cd.group == group) {
+        if bm.code_at(cd.x, cd.y) != band_code {
+            continue;
+        }
+        total += 1;
+        match bin_of(cd.dev) {
+            ON_SIZE_BIN => on_size += 1,
+            PLUS_05_BIN => plus05 += 1,
+            TAIL_BIN => tail += 1,
+            _ => {}
+        }
+    }
+    let pct = |n: usize| 100.0 * n as f64 / (total.max(1) as f64);
+    (total, pct(on_size), pct(plus05), tail)
+}
+
+/// Region spans on `spans` that are NOT strictly nested inside another
+/// Region span — the node-level table (one per band/crease strategy),
+/// coarser than any finer scallop-event Region spans a strategy nests
+/// inside its own move range. Identical to
+/// `p2c_headless_ab_wanaka.rs::outer_region_spans`.
+fn outer_region_spans(
+    spans: &[rs_cam_core::toolpath_spans::Span],
+) -> Vec<&rs_cam_core::toolpath_spans::Span> {
+    use rs_cam_core::toolpath_spans::SpanKind;
+    let regions: Vec<&rs_cam_core::toolpath_spans::Span> = spans
+        .iter()
+        .filter(|s| s.kind == SpanKind::Region)
+        .collect();
+    regions
+        .iter()
+        .copied()
+        .filter(|s| {
+            !regions.iter().any(|other| {
+                !std::ptr::eq(*other, *s)
+                    && other.start_move <= s.start_move
+                    && other.end_move >= s.end_move
+                    && (other.start_move, other.end_move) != (s.start_move, s.end_move)
+            })
+        })
+        .collect()
+}
+
+/// Sum of `FinishingCut` segment lengths (mm) among moves
+/// `[start_move, end_move)` — each move's target is the END of a segment
+/// starting at the previous move's target, so segment `i`'s length is
+/// `dist(moves[i-1], moves[i])` and its intent is `moves[i].intent`.
+fn segment_cutting_length_mm(
+    moves: &[rs_cam_core::toolpath::Move],
+    start_move: usize,
+    end_move: usize,
+) -> f64 {
+    use rs_cam_core::toolpath::MoveIntent;
+    let end = end_move.min(moves.len());
+    let start = start_move.max(1);
+    let mut len = 0.0;
+    for i in start..end {
+        if moves[i].intent == MoveIntent::FinishingCut {
+            let a = moves[i - 1].target;
+            let b = moves[i].target;
+            len += ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt();
+        }
+    }
+    len
+}
+
+// ── branch scoring ──────────────────────────────────────────────────────
+
+/// One branch's full scoring: chain totals + per-band COLUMNS quality
+/// shares for bands 1..=3 (index 0 unused — `BandMap::code_at`'s
+/// off-region code has no quality meaning).
+#[allow(dead_code)]
+struct BranchScore {
+    outcome: ChainOutcome,
+    n_by_band: [usize; 4],
+    on_size_by_band: [f64; 4],
+    plus05_by_band: [f64; 4],
+    tail_by_band: [usize; 4],
+}
+
+/// Load the fixture fresh, apply `branch`, (for `Cascade`) swap Op B to the
+/// claims config, run the chain, measure COLUMNS quality at 0.25mm, and
+/// (for `Cascade`) print the Region-span mix table + claims-detector
+/// evidence. `project_path` is expected to come from `write_fixture_project`
+/// (a fresh `ProjectSession::load` per call — branches never share a
+/// mutated session, matching every other A/B in this crate).
+fn score_branch(label: &str, project_path: &std::path::Path, branch: Branch) -> BranchScore {
+    let mut s = ProjectSession::load(project_path)
+        .unwrap_or_else(|e| panic!("[{label}] failed to load {}: {e}", project_path.display()));
+    apply_branch(&mut s, branch);
+
+    if branch == Branch::Cascade {
+        let idx = toolpath_index_by_name(&s, "Op B Unified Rest");
+        s.set_toolpath_operation(idx, OperationConfig::UnifiedFinish(op_b_claims_config()))
+            .unwrap_or_else(|e| panic!("[{label}] swap Op B to claims config: {e}"));
+    }
+
+    let outcome = run_chain(label, &mut s);
+
+    run_measurement_sim(&mut s);
+    let bm = build_band_map(&s);
+    fidelity_report(label, &s, &bm);
+
+    // Group filter: resolve off whichever op is this branch's quality
+    // reference (Op B for Cascade, D for AllOverTip). Single-setup
+    // fixture, so this always resolves to 0 — but resolved properly
+    // rather than hardcoded, per the TP15 lesson (never assume resolution
+    // or grouping without reading it off the session).
+    let ref_name = match branch {
+        Branch::Cascade => "Op B Unified Rest",
+        Branch::AllOverTip => "D All-Over Tip",
+    };
+    let ref_idx = toolpath_index_by_name(&s, ref_name);
+    let ref_id = s.get_toolpath_config(ref_idx).expect("ref op config").id;
+    let group = s
+        .setup_of_toolpath_id(ref_id)
+        .unwrap_or_else(|| panic!("[{label}] '{ref_name}' has no setup group"));
+
+    let mut n_by_band = [0usize; 4];
+    let mut on_size_by_band = [0.0f64; 4];
+    let mut plus05_by_band = [0.0f64; 4];
+    let mut tail_by_band = [0usize; 4];
+    for code in 1u8..=3 {
+        let (n, on, plus05, tail) = band_shares(&s, &bm, group, code);
+        n_by_band[code as usize] = n;
+        on_size_by_band[code as usize] = on;
+        plus05_by_band[code as usize] = plus05;
+        tail_by_band[code as usize] = tail;
+    }
+    eprintln!(
+        "[{label}] band shares (group {group}): shallow n={} on={:.1}% +.05={:.1}% tail={} | \
+         mid-steep n={} on={:.1}% +.05={:.1}% tail={} | very-steep n={} on={:.1}% +.05={:.1}% tail={}",
+        n_by_band[1],
+        on_size_by_band[1],
+        plus05_by_band[1],
+        tail_by_band[1],
+        n_by_band[2],
+        on_size_by_band[2],
+        plus05_by_band[2],
+        tail_by_band[2],
+        n_by_band[3],
+        on_size_by_band[3],
+        plus05_by_band[3],
+        tail_by_band[3],
+    );
+
+    if branch == Branch::Cascade {
+        let op_b_idx = toolpath_index_by_name(&s, "Op B Unified Rest");
+        let result = s
+            .get_result(op_b_idx)
+            .unwrap_or_else(|| panic!("[{label}] Op B result missing after generation"));
+        let ann = result.annotated();
+        let outer = outer_region_spans(&ann.spans);
+        assert!(
+            !outer.is_empty(),
+            "[{label}] Op B emitted zero outer Region spans — cascade routing regressed \
+             (design doc §2.4: Region spans are a MUST)"
+        );
+        eprintln!("== [{label}] Op B REGION-SPAN MIX ==");
+        eprintln!("{:<28} {:>10} {:>14}", "span label", "moves", "cutting_mm");
+        for span in &outer {
+            let move_len = span.end_move.saturating_sub(span.start_move);
+            let cut_mm =
+                segment_cutting_length_mm(&ann.toolpath.moves, span.start_move, span.end_move);
+            eprintln!("{:<28} {:>10} {:>14.1}", span.label, move_len, cut_mm);
+        }
+        eprintln!(
+            "[{label}] claims-detector evidence: rest_grid={} rest_regions={}",
+            ann.rest_grid.is_some(),
+            ann.rest_regions.is_some()
+        );
+    }
+
+    BranchScore {
+        outcome,
+        n_by_band,
+        on_size_by_band,
+        plus05_by_band,
+        tail_by_band,
+    }
+}
+
+// ── the cascade A/B (process proof, design doc §0.a) ────────────────────
+
+#[test]
+#[ignore = "two full scaled-wanaka chains + 0.25mm measurement sims (long); run with --ignored --nocapture"]
+fn v3_cascade_ab_ball3() {
+    let path = write_fixture_project(3.0);
+
+    let d = score_branch("v3_D_allover_tip", &path, Branch::AllOverTip);
+    let c = score_branch("v3_cascade_b3", &path, Branch::Cascade);
+
+    let cascade_finish_s: f64 = c
+        .outcome
+        .per_op_s
+        .iter()
+        .filter(|(name, _)| {
+            name.as_str() == "Op A Ball Finish" || name.as_str() == "Op B Unified Rest"
+        })
+        .map(|(_, secs)| *secs)
+        .sum();
+    let d_finish_s: f64 = d
+        .outcome
+        .per_op_s
+        .iter()
+        .filter(|(name, _)| name.as_str() == "D All-Over Tip")
+        .map(|(_, secs)| *secs)
+        .sum();
+
+    eprintln!("== v3 CASCADE vs ALL-OVER-TIP VERDICT (ball Ø3, wanaka x2) ==");
+    eprintln!(
+        "project_total_s : D={:8.1}s  cascade={:8.1}s  Δ={:+8.1}s ({:+.1}%)",
+        d.outcome.project_total_s,
+        c.outcome.project_total_s,
+        c.outcome.project_total_s - d.outcome.project_total_s,
+        100.0 * (c.outcome.project_total_s - d.outcome.project_total_s)
+            / d.outcome.project_total_s.max(1e-9)
+    );
+    eprintln!(
+        "finish_stack_s  : D={d_finish_s:8.1}s  cascade={cascade_finish_s:8.1}s  Δ={:+8.1}s ({:+.1}%)",
+        cascade_finish_s - d_finish_s,
+        100.0 * (cascade_finish_s - d_finish_s) / d_finish_s.max(1e-9)
+    );
+    eprintln!(
+        "collisions      : D={}  cascade={}",
+        d.outcome.collisions, c.outcome.collisions
+    );
+    const BAND_LABEL: [&str; 4] = ["off-region", "shallow", "mid-steep", "very-steep"];
+    for (code, band_label) in BAND_LABEL.iter().enumerate().skip(1) {
+        eprintln!(
+            "{:<11}: on-size D={:5.1}% (n={:>7}) cascade={:5.1}% (n={:>7}) | +.05 D={:5.1}% cascade={:5.1}% | '>+.5' tail D={} cascade={}",
+            band_label,
+            d.on_size_by_band[code],
+            d.n_by_band[code],
+            c.on_size_by_band[code],
+            c.n_by_band[code],
+            d.plus05_by_band[code],
+            c.plus05_by_band[code],
+            d.tail_by_band[code],
+            c.tail_by_band[code],
+        );
+    }
+
+    // ── GATES (design doc §4 order — quality must report before time) ──
+
+    // (a) collisions == 0 for BOTH branches. This fixture is single-setup
+    // and freshly generated every run — it does not inherit wanaka.toml's
+    // `BASELINE_RAPID_COLLISIONS = 4` allowance (that baseline is specific
+    // to the live multi-op project's pre-existing state).
+    assert_eq!(
+        d.outcome.collisions, 0,
+        "D branch: expected 0 rapid collisions on the fresh scaled fixture, got {}",
+        d.outcome.collisions
+    );
+    assert_eq!(
+        c.outcome.collisions, 0,
+        "cascade branch: expected 0 rapid collisions on the fresh scaled fixture, got {}",
+        c.outcome.collisions
+    );
+
+    // (b) quality: cascade on-size share must not regress beyond 2.0pp on
+    // mid-steep or shallow (very-steep is not gated here — Op A's ball
+    // all-over pass may not reach very-steep territory at all on this
+    // fixture, and Op B's rest-clear coverage there is not yet a claim
+    // this A/B makes). Skip a band's gate (with an explanation) when
+    // either branch's sample count is too small to be meaningful.
+    const N_GUARD: usize = 1000;
+    const QUALITY_TOL_PP: f64 = 2.0;
+    for code in [1usize, 2usize] {
+        let n = d.n_by_band[code].min(c.n_by_band[code]);
+        if n < N_GUARD {
+            eprintln!(
+                "[{}] n={n} < {N_GUARD} guard — skipping quality gate (d_n={} c_n={})",
+                BAND_LABEL[code], d.n_by_band[code], c.n_by_band[code]
+            );
+            continue;
+        }
+        assert!(
+            c.on_size_by_band[code] >= d.on_size_by_band[code] - QUALITY_TOL_PP,
+            "QUALITY GATE FAILED [{}]: cascade on-size {:.1}% regressed beyond {QUALITY_TOL_PP}pp \
+             vs D's {:.1}%",
+            BAND_LABEL[code],
+            c.on_size_by_band[code],
+            d.on_size_by_band[code]
+        );
+    }
+
+    // (c) tails: cascade's '>+.5' standing-leftover tail must not grow
+    // beyond D's by more than 5% + 100 columns (the `s1_claims_ab` slack
+    // pattern — measurement-sim texture jitters raw tail counts run to
+    // run). Gated on mid-steep and shallow, matching the quality gate
+    // above.
+    for code in [1usize, 2usize] {
+        let off_n = d.tail_by_band[code];
+        let on_n = c.tail_by_band[code];
+        assert!(
+            on_n <= off_n + off_n / 20 + 100,
+            "TAIL GATE FAILED [{}]: cascade left {on_n} '>+.5' columns vs D's {off_n} \
+             — the rest-island territory filter is skipping cuttable material",
+            BAND_LABEL[code]
+        );
+    }
+
+    // (d) TIME — the process proof itself.
+    assert!(
+        cascade_finish_s < d_finish_s,
+        "TIME GATE FAILED: cascade finish-stack {cascade_finish_s:.1}s is not faster than \
+         D's {d_finish_s:.1}s — the cascade does not beat the all-over baseline"
+    );
+    assert!(
+        c.outcome.project_total_s < d.outcome.project_total_s,
+        "TIME GATE FAILED: cascade project total {:.1}s is not faster than D's {:.1}s",
+        c.outcome.project_total_s,
+        d.outcome.project_total_s
+    );
+}
+
+/// Ball-size sweep skeleton (slice 5 prep, design doc §0.a item 5): three
+/// cascade-only chains at Ø2/3/4, no D comparison (that lives in
+/// `v3_cascade_ab_ball3` — this test's job is the "optimal ball" curve
+/// across cascade runs, not another A/B). Only per-run collisions are
+/// gated; the CSV-ish table at the end is read by hand (or piped into a
+/// future analysis script) once slice 5 defines the sweep's acceptance
+/// rule.
+#[test]
+#[ignore = "three scaled-wanaka cascade chains (very long); run explicitly with --ignored --nocapture"]
+fn v3_ball_sweep() {
+    struct Row {
+        ball_mm: f64,
+        op_a_s: f64,
+        op_b_s: f64,
+        finish_stack_s: f64,
+        project_s: f64,
+        mid_steep_on_size_pct: f64,
+        mid_steep_tail: usize,
+    }
+
+    let mut rows: Vec<Row> = Vec::new();
+    for &ball_mm in &[2.0, 3.0, 4.0] {
+        let path = write_fixture_project(ball_mm);
+        let label = format!("v3_cascade_b{ball_mm:.0}");
+        let score = score_branch(&label, &path, Branch::Cascade);
+        assert_eq!(
+            score.outcome.collisions, 0,
+            "[{label}] ball Ø{ball_mm}: expected 0 rapid collisions"
+        );
+        let op_a_s = score
+            .outcome
+            .per_op_s
+            .iter()
+            .find(|(n, _)| n.as_str() == "Op A Ball Finish")
+            .map_or(0.0, |(_, secs)| *secs);
+        let op_b_s = score
+            .outcome
+            .per_op_s
+            .iter()
+            .find(|(n, _)| n.as_str() == "Op B Unified Rest")
+            .map_or(0.0, |(_, secs)| *secs);
+        rows.push(Row {
+            ball_mm,
+            op_a_s,
+            op_b_s,
+            finish_stack_s: op_a_s + op_b_s,
+            project_s: score.outcome.project_total_s,
+            mid_steep_on_size_pct: score.on_size_by_band[2],
+            mid_steep_tail: score.tail_by_band[2],
+        });
+    }
+
+    eprintln!("== v3 BALL SWEEP (cascade only; D comparison lives in v3_cascade_ab_ball3) ==");
+    eprintln!(
+        "ball_mm,op_a_s,op_b_s,finish_stack_s,project_s,mid_steep_on_size_pct,mid_steep_tail_gt05"
+    );
+    for r in &rows {
+        eprintln!(
+            "{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{}",
+            r.ball_mm,
+            r.op_a_s,
+            r.op_b_s,
+            r.finish_stack_s,
+            r.project_s,
+            r.mid_steep_on_size_pct,
+            r.mid_steep_tail
+        );
+    }
+}
+
+// ── diagnostics ─────────────────────────────────────────────────────────
+
+/// Frame diagnostic (kept as the reproduction for the identity-setup
+/// deviation-frame RCA, 2026-07-13): the first cascade A/B measured a
+/// uniform ~−4 mm "overcut" in every band on this fixture — physically
+/// impossible next to 0 collisions and sane removed volumes, so a FRAME
+/// question. Prints the three frames side by side after a rough-only
+/// chain: model bbox (world truth), composite sim stock mesh z range, and
+/// a spread of `column_deviations` rows with the implied model reference
+/// (`top_z − dev`). Root cause was `SimulationRequest::model_mesh`
+/// arriving stock-relative while identity groups' dexel grids are
+/// world-framed (F-024); fixed in `compute/simulate.rs`, sentried by
+/// `column_deviations_pointwise_against_flat_model`.
+#[test]
+#[ignore = "frame diagnostic (one rough generation + sims); run with --ignored --nocapture"]
+fn v3_frame_probe() {
+    let project_path = write_fixture_project(3.0);
+    let mut s = ProjectSession::load(&project_path)
+        .unwrap_or_else(|e: SessionError| panic!("failed to load {}: {e}", project_path.display()));
+    set_enabled_by_name(
+        &mut s,
+        &["Rough"],
+        &["Op A Ball Finish", "Op B Unified Rest", "D All-Over Tip"],
+    );
+    run_chain("frame probe rough-only", &mut s);
+
+    let bboxes = s.collect_model_bboxes();
+    let (_, mb) = &bboxes[0];
+    eprintln!(
+        "MODEL bbox: x {:.3}..{:.3}  y {:.3}..{:.3}  z {:.3}..{:.3}",
+        mb.min.x, mb.max.x, mb.min.y, mb.max.y, mb.min.z, mb.max.z
+    );
+
+    let sim = s.simulation_result().expect("sim result");
+    let verts = &sim.mesh.vertices;
+    let mut zmin = f32::INFINITY;
+    let mut zmax = f32::NEG_INFINITY;
+    for i in 0..verts.len() / 3 {
+        let z = verts[i * 3 + 2];
+        zmin = zmin.min(z);
+        zmax = zmax.max(z);
+    }
+    eprintln!("SIM STOCK MESH z range: {zmin:.3}..{zmax:.3} (expected world −5..9)");
+
+    let cols = sim
+        .column_deviations
+        .as_ref()
+        .expect("column deviations present");
+    eprintln!("column_deviations: n={}", cols.len());
+    for (k, cd) in cols.iter().enumerate().step_by(cols.len() / 8 + 1) {
+        eprintln!(
+            "col[{k}]: x={:8.2} y={:8.2} top_z={:8.3} dev={:8.3} implied_model_ref={:8.3} (row={} col={} group={})",
+            cd.x,
+            cd.y,
+            cd.top_z,
+            cd.dev,
+            f64::from(cd.top_z) - f64::from(cd.dev),
+            cd.row,
+            cd.col,
+            cd.group
+        );
+    }
+    let hi = cols
+        .iter()
+        .max_by(|a, b| a.top_z.total_cmp(&b.top_z))
+        .expect("nonempty");
+    let lo = cols
+        .iter()
+        .min_by(|a, b| a.top_z.total_cmp(&b.top_z))
+        .expect("nonempty");
+    for (tag, cd) in [("max-top", hi), ("min-top", lo)] {
+        eprintln!(
+            "{tag}: x={:8.2} y={:8.2} top_z={:8.3} dev={:8.3} implied_model_ref={:8.3}",
+            cd.x,
+            cd.y,
+            cd.top_z,
+            cd.dev,
+            f64::from(cd.top_z) - f64::from(cd.dev)
+        );
+    }
+}
+
+/// Tail diagnostic: cross-references every '>+.5' leftover column (Op B's
+/// group) against (a) the claims detector's own rest grid at that XY —
+/// bucketed NaN / below-dial / at-or-above-dial — and (b) the band map.
+/// This is what proved the detector SEES the material the first clipped
+/// cascade skipped (tail columns sat on above-dial rest, mean 1.2-1.7 mm),
+/// i.e. the loss was in territory PLUMBING (capped polygonization), not
+/// detection — which motivated the pre-decompose mask-AND.
+#[test]
+#[ignore = "one cascade chain + measurement sim (~9 min); run with --ignored --nocapture"]
+fn v3_tail_probe() {
+    let project_path = write_fixture_project(3.0);
+    let mut s = ProjectSession::load(&project_path)
+        .unwrap_or_else(|e: SessionError| panic!("failed to load {}: {e}", project_path.display()));
+    apply_branch(&mut s, Branch::Cascade);
+    let op_b_idx = toolpath_index_by_name(&s, "Op B Unified Rest");
+    s.set_toolpath_operation(
+        op_b_idx,
+        OperationConfig::UnifiedFinish(op_b_claims_config()),
+    )
+    .expect("swap Op B config");
+    run_chain("tail probe cascade", &mut s);
+    run_measurement_sim(&mut s);
+    let bm = build_band_map(&s);
+
+    let op_id = s.get_toolpath_config(op_b_idx).expect("cfg").id;
+    let group = s
+        .setup_of_toolpath_id(op_id)
+        .expect("op B belongs to a setup");
+    let ann = s.get_result(op_b_idx).expect("op B generated").annotated();
+    let grid = ann
+        .rest_grid
+        .as_ref()
+        .expect("claims ran -> rest_grid carried");
+
+    let total = (grid.nx * grid.ny) as f64;
+    let mut n_nan = 0usize;
+    let mut n_below = 0usize;
+    let mut n_above = 0usize;
+    for &r in &grid.rest {
+        if r.is_nan() {
+            n_nan += 1;
+        } else if f64::from(r) >= 0.022 {
+            n_above += 1;
+        } else {
+            n_below += 1;
+        }
+    }
+    eprintln!(
+        "REST GRID {}x{} cell={:.3} origin=({:.2},{:.2}): nan={n_nan} ({:.1}%) below-dial={n_below} ({:.1}%) above-dial={n_above} ({:.1}%)",
+        grid.nx,
+        grid.ny,
+        grid.cell_mm,
+        grid.origin_x,
+        grid.origin_y,
+        100.0 * n_nan as f64 / total,
+        100.0 * n_below as f64 / total,
+        100.0 * n_above as f64 / total,
+    );
+
+    let rest_at = |x: f64, y: f64| -> Option<f32> {
+        let col = ((x - grid.origin_x) / grid.cell_mm).round();
+        let row = ((y - grid.origin_y) / grid.cell_mm).round();
+        if col < 0.0 || row < 0.0 || col >= grid.nx as f64 || row >= grid.ny as f64 {
+            return None;
+        }
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+        Some(grid.rest[row as usize * grid.nx + col as usize])
+    };
+    let sim = s.simulation_result().expect("sim result");
+    let cols = sim
+        .column_deviations
+        .as_ref()
+        .expect("column deviations present");
+    // counts[band][bucket]: bucket 0=off-grid, 1=NaN, 2=below, 3=above
+    let mut counts = [[0usize; 4]; 4];
+    let mut dev_sum = [[0.0f64; 4]; 4];
+    for cd in cols.iter().filter(|cd| cd.group == group && cd.dev > 0.5) {
+        let band = bm.code_at(cd.x, cd.y) as usize;
+        let bucket = match rest_at(cd.x, cd.y) {
+            None => 0usize,
+            Some(r) if r.is_nan() => 1,
+            Some(r) if f64::from(r) < 0.022 => 2,
+            Some(_) => 3,
+        };
+        counts[band][bucket] += 1;
+        dev_sum[band][bucket] += f64::from(cd.dev);
+    }
+    eprintln!("TAIL COLUMNS (dev>0.5, group {group}) by band x rest-bucket:");
+    eprintln!(
+        "{:<11} | {:>9} {:>9} {:>10} {:>10} | mean dev per bucket",
+        "band", "off-grid", "nan", "below-dial", "above-dial"
+    );
+    const BAND_LABEL2: [&str; 4] = ["off-region", "shallow", "mid-steep", "very-steep"];
+    for (band, label) in BAND_LABEL2.iter().enumerate() {
+        let c = counts[band];
+        let m = |i: usize| dev_sum[band][i] / (c[i].max(1) as f64);
+        eprintln!(
+            "{label:<11} | {:>9} {:>9} {:>10} {:>10} | {:.2} {:.2} {:.2} {:.2}",
+            c[0],
+            c[1],
+            c[2],
+            c[3],
+            m(0),
+            m(1),
+            m(2),
+            m(3)
+        );
+    }
+}
+
+/// Classification-only probe (no generation, ~3 min): the band-map
+/// coverage accounting for the ×2 fixture. Answers "how much of the
+/// classification grid is covered, and how much do the conditioned band
+/// polygons actually reclaim of it" — the measurement that showed
+/// decompose's extraction reclaiming only ~17% of covered area at Ø1-tip
+/// dials (min-area absorption at tool scale), independent of any
+/// territory logic.
+#[test]
+#[ignore = "classification only (~3 min); run with --ignored --nocapture"]
+fn v3_band_coverage_probe() {
+    let project_path = write_fixture_project(3.0);
+    let s = ProjectSession::load(&project_path)
+        .unwrap_or_else(|e: SessionError| panic!("failed to load {}: {e}", project_path.display()));
+    build_band_map(&s);
 }
