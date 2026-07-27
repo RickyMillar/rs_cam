@@ -1211,3 +1211,47 @@ A's deepest move is −3.918 — never equal), and chord infidelity as the
 PRIMARY cause. The leading remaining candidate is the ball's flank on
 concave/steep geometry, which points back at the wanted instrument: a
 swept-cutter-vs-model check, not a centreline-vs-surface one.
+
+### The flank probe: one defect, two sides
+
+`v3_flank_gouge_probe` checks the swept CUTTER rather than its
+centreline. `height_at_radius` gives the profile above the tip, so a model
+vertex between `z_t + h(r)` and the flute top is inside the cutter solid,
+and the excess is the penetration depth.
+
+| op | samples | >0.05 mm | >0.5 mm | worst |
+|---|---|---|---|---|
+| Rough | 169 818 | 78 | 12 | 1.124 |
+| Op A | 1 322 032 | 2 329 | **819** | **2.349** |
+| Op B | 1 143 562 | **58 970** | 1 052 | 1.633 |
+
+The worst penetrations sit on the SAME moves the chord probe flagged
+(Op A #347651/#361785, Op B #122565, Rough #12169) and are LARGER there
+than the chord error (2.349 vs 1.977 on #347651). That is what a chord
+putting the centreline low and the flank doing the cutting looks like.
+**So the two probes are one defect seen from two sides, not two
+populations** — the flank hypothesis in the previous section is not a
+separate mechanism after all.
+
+**Which leaves the campaign's sharpest open contradiction, stated
+plainly:** chord infidelity is real, measured, and co-located with the
+gouges; refining it reduces the chord reading by 36% and the flank
+penetrations with it; and the COLUMNS gate still gets WORSE, on Op A's own
+stage (238 → 293 deep columns) as well as on the cascade. Those cannot all
+be true of a single mechanism, so one of the three measurements is
+answering a different question than it appears to. That is the next
+thread, and it should be pulled before any more fixes are attempted —
+this campaign has now twice built the obvious fix for a confirmed
+mechanism and had the gate reject it.
+
+Two candidate resolutions, neither tested: (a) refinement adds points, so
+the dexel does more partial-coverage blends per column, and per the
+2026-07-27 review those propagate through `prior_stocks` into
+remaining-stock generation — the drift only creates leftover, but it moves
+where Op B decides to cut; (b) the deep COLUMNS population is dominated by
+something neither probe samples — the probes check emitted CUTTING moves,
+and neither looks at entry plunges, descents, or rapids.
+
+Candidate (b) is cheap to test and has not been: filter both probes to
+`MoveIntent::EntryPlunge` and the descent legs, and see whether the deep
+sites are even in the cutting set.
