@@ -434,6 +434,74 @@ pub struct UnifiedFinishReport {
     pub rest_regions: Option<std::sync::Arc<Vec<Polygon2>>>,
 }
 
+/// Build the span vector for a `unified_finish_toolpath_with_cancel`
+/// result. Extracted so the op adapter (`compute::execute::
+/// generate_unified_finish`) and the capability sentries share ONE
+/// definition — the spans carry this op's rapid-order barriers, so a test
+/// that rebuilt them by hand would silently stop testing production the
+/// moment either side drifted.
+///
+/// Layers, outermost first:
+/// 1. `Operation` + the per-event `Region` spans (scallop rings).
+/// 2. Node-level `Region` spans, one per [`RegionTableEntry`], with
+///    `region_id` = index into `report.region_table`. Spliced in right
+///    after `Operation` so `span_path_at` lists coarse ancestors first.
+///    These are a SEPARATE `region_id` space from the scallop-event spans
+///    — consumers disambiguate by nesting depth, not by assuming one table.
+/// 3. `RapidOrderBarrier`s at each node start, plus per-Z barriers inside
+///    waterline (VerySteep) nodes. See
+///    [`crate::compute::spans::region_node_barriers`].
+pub fn unified_finish_spans(
+    toolpath: &Toolpath,
+    annotations: &[ScallopRuntimeAnnotation],
+    report: &UnifiedFinishReport,
+) -> Vec<crate::toolpath_spans::Span> {
+    use crate::compute::spans::{RegionNode, region_node_barriers, spans_from_labeled_events};
+    use crate::toolpath_spans::{Span, SpanKind, SpanPayload};
+
+    let mut spans = spans_from_labeled_events(
+        toolpath.moves.len(),
+        annotations
+            .iter()
+            .map(|ann| (ann.move_index, ann.event.label())),
+    );
+
+    let node_spans: Vec<Span> = report
+        .region_table
+        .iter()
+        .enumerate()
+        .map(|(region_id, entry)| {
+            let label = match entry.kind {
+                RegionKind::Band(band) => format!("{band:?} band"),
+                RegionKind::Crease => "Pencil claims".to_owned(),
+            };
+            Span::new(entry.move_range.start, entry.move_range.end, SpanKind::Region)
+                .with_label(label)
+                .with_payload(SpanPayload::Region {
+                    region_id: region_id as u32,
+                })
+        })
+        .collect();
+    let insert_at = 1.min(spans.len());
+    spans.splice(insert_at..insert_at, node_spans);
+
+    let nodes: Vec<RegionNode> = report
+        .region_table
+        .iter()
+        .map(|entry| RegionNode {
+            move_range: entry.move_range.clone(),
+            // Only the VerySteep band ladders in Z (it routes to
+            // `waterline_toolpath_with_cancel`). MidSteep scallop rings and
+            // Shallow raster rows are single-pass over a height field, so
+            // their runs are materially independent of visiting order.
+            depth_ordered: matches!(entry.kind, RegionKind::Band(FinishBand::VerySteep)),
+        })
+        .collect();
+    spans.extend(region_node_barriers(toolpath, &nodes));
+
+    spans
+}
+
 // ── Orchestrator ─────────────────────────────────────────────────────────
 
 /// Decompose the surface into bands, generate each REGION's toolpath with

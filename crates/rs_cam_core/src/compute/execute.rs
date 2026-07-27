@@ -1384,44 +1384,11 @@ pub(crate) fn generate_unified_finish(
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_scallop(&annotations, &tp, sem);
     }
-    let mut spans = crate::compute::spans::spans_from_labeled_events(
-        tp.moves.len(),
-        annotations
-            .iter()
-            .map(|ann| (ann.move_index, ann.event.label())),
-    );
-    // Node-level Region spans (design doc §2.4: "a MUST") — one per routed
-    // band/crease node, `region_id` = index into `report.region_table`.
-    // Inserted right after the `Operation` span (always spans[0]) and
-    // before the finer scallop-event Region spans already built above, so
-    // `span_path_at` lists outer ancestors first (nesting convention,
-    // `toolpath_spans.rs` doc): a node span is coarser than the
-    // scallop-ring events nested inside its own MidSteep range. These are
-    // a SEPARATE `region_id` space from the scallop-event spans above —
-    // consumers must disambiguate by span nesting depth, not assume one
-    // shared table.
-    let node_spans: Vec<crate::toolpath_spans::Span> = report
-        .region_table
-        .iter()
-        .enumerate()
-        .map(|(region_id, entry)| {
-            let label = match entry.kind {
-                crate::unified_finish::RegionKind::Band(band) => format!("{band:?} band"),
-                crate::unified_finish::RegionKind::Crease => "Pencil claims".to_owned(),
-            };
-            crate::toolpath_spans::Span::new(
-                entry.move_range.start,
-                entry.move_range.end,
-                crate::toolpath_spans::SpanKind::Region,
-            )
-            .with_label(label)
-            .with_payload(crate::toolpath_spans::SpanPayload::Region {
-                region_id: region_id as u32,
-            })
-        })
-        .collect();
-    let insert_at = 1.min(spans.len());
-    spans.splice(insert_at..insert_at, node_spans);
+    // Spans (Region attribution + the rapid-order barriers that make this
+    // op's barriered TSP safe) are built by `unified_finish::
+    // unified_finish_spans` so the capability sentries can assert against
+    // the same definition production ships.
+    let spans = crate::unified_finish::unified_finish_spans(&tp, &annotations, &report);
     let mut generated = generated_with_spans(tp, spans);
     // §2.4 carry-through: the claims detector's rest field + region
     // polygons ride the generated result exactly like the pencil

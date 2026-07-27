@@ -6,6 +6,8 @@
 //! module translates the subset that is structurally meaningful into [`Span`]s
 //! for the dressup pipeline.
 
+use std::ops::Range;
+
 use crate::toolpath::{MoveIntent, MoveType, Toolpath};
 use crate::toolpath_spans::{Span, SpanKind, SpanPayload};
 
@@ -130,6 +132,79 @@ pub fn spans_from_cutting_runs(toolpath: &Toolpath, label_prefix: &str) -> Vec<S
     let mut spans = operation_spans(toolpath.moves.len());
     push_run_region_spans(&mut spans, &runs, label_prefix);
     spans
+}
+
+/// One routed node of an operation that stitches independently-generated
+/// region toolpaths together (today: `UnifiedFinish`).
+#[derive(Debug, Clone)]
+pub struct RegionNode {
+    /// The node's half-open move range in the stitched toolpath.
+    pub move_range: Range<usize>,
+    /// The node's strategy ladders down in Z (waterline-style), so its
+    /// cutting runs must keep their relative depth order.
+    pub depth_ordered: bool,
+}
+
+/// Rapid-order barriers for an operation stitched from independently routed
+/// region nodes.
+///
+/// One zero-width [`SpanKind::RapidOrderBarrier`] at each node's first move.
+/// That pins the *router's* cross-node visiting order — the router costs its
+/// junctions against the machine envelope and emits surface links across
+/// them, so its sequence is a decision, not an accident — while leaving the
+/// TSP free to reorder cutting runs *within* a node, which is where the air
+/// actually is (measured on wanaka: 100% of `UnifiedFinish`'s recoverable
+/// inter-fragment travel is intra-region, so the cross-region order was
+/// never the lever).
+///
+/// Nodes flagged `depth_ordered` additionally get a barrier at every change
+/// of nominal cutting Z inside their own range, so a within-node reorder can
+/// never lift a deeper pass above a shallower one.
+///
+/// Surface links need no special handling: they are `Linking` *feed* moves,
+/// so `tsp::optimize_rapid_order` — which only ever splits at rapids — keeps
+/// each link glued to the cuts on both sides of it inside one atomic
+/// segment. A reordered segment is re-approached with a fresh
+/// retract/rapid/plunge, so the link still runs its original surface-following
+/// geometry from its original start point.
+pub fn region_node_barriers(toolpath: &Toolpath, nodes: &[RegionNode]) -> Vec<Span> {
+    let n_moves = toolpath.moves.len();
+    let runs = cutting_runs(toolpath);
+    let mut out: Vec<Span> = Vec::new();
+
+    for node in nodes {
+        if node.move_range.start >= n_moves {
+            continue;
+        }
+        out.push(Span::boundary(
+            node.move_range.start,
+            SpanKind::RapidOrderBarrier,
+        ));
+        if !node.depth_ordered {
+            continue;
+        }
+        // `cutting_runs` back-dates a run's `start_move` by one (it includes
+        // the approach move), so a run opening exactly at the node start
+        // reads as starting just before it and is filtered out here. That is
+        // correct: the node barrier above already covers it.
+        let mut current_z: Option<f64> = None;
+        for run in runs
+            .iter()
+            .filter(|r| r.start_move >= node.move_range.start)
+            .filter(|r| r.start_move < node.move_range.end)
+        {
+            let z = run_nominal_z(toolpath, run).unwrap_or(run.z_min);
+            if current_z.is_some_and(|c| approx_eq(c, z)) {
+                continue;
+            }
+            current_z = Some(z);
+            out.push(Span::boundary(run.start_move, SpanKind::RapidOrderBarrier));
+        }
+    }
+
+    out.sort_unstable_by_key(|s| s.start_move);
+    out.dedup_by_key(|s| s.start_move);
+    out
 }
 
 /// Build structural spans for drill-like operations.
