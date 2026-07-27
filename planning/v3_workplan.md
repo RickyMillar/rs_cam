@@ -34,7 +34,37 @@ knowledge we already have enough of.
 
 ---
 
-## Item 1 — §11a instrument integrity **[BLOCKING, in progress]**
+## Item 1 — §11a instrument integrity **[DONE 2026-07-28 — CLEARED, with a twist]**
+
+**RESULT: ACCEPT (instrument clears).** Re-stamping Op B's toolpath onto
+its own pre-carve snapshot reproduces the sim's final stock at all four
+ladder columns to ~0.5 µm. `prior_stocks` means what the ladder assumed;
+the sim is faithful to the toolpath. **§11's attribution stands** — Op B
+really removed 5.5 mm from a column Op A had finished to 8 µm.
+
+**The twist: the reach contradiction survived and MOVED.** Both the sim
+and an independent re-stamp produce a 1.770 top where Op B's lowest move
+within 4 mm is 2.899. Since the radial profile height `h(r) ≥ 0` always,
+no tool position at tip 2.899 can leave 1.770. So the discrepancy is in
+the SHARED stamping path (`stamp_linear_segment` / `RadialProfileLUT`) or
+in the site probe's move enumeration — not in the simulation wrapper, and
+not in `prior_stocks`.
+
+**Follow-up logged, not chased:** 68 703 of 640 062 columns differ by
+>0.01 mm between sim and re-stamp, every one in the same direction (sim
+removed more), worst 0.61 mm. The two paths differ in intent handling —
+the metrics variant skips `MoveIntent::Retract` feeds, the plain one
+stamps them — which predicts the OPPOSITE sign, so it is unexplained. It
+cannot affect the gouge sites, which agree exactly.
+
+**Next, and it is item 3's first move:** bisect Op B's move list against
+that one column to name the exact move the stamp attributes it to. Stamp
+in chunks onto one evolving stock, watch the column, then go move-by-move
+inside the chunk that drops it. One pass, so roughly the cost of one
+re-stamp. Either the move is unreachable (the stamp is wrong) or the site
+probe missed it (the probe is wrong). No third option.
+
+<details><summary>Original statement of item 1</summary>
 
 **Question.** The per-op ladder says Op B removed 5.5 mm from a column its
 own toolpath cannot reach (lowest Z within 4 mm = 2.899, final top =
@@ -63,6 +93,7 @@ interpretation in one working session, stop and record the ambiguity —
 do not build a third instrument to arbitrate the first two.
 
 **Cost:** ~1 probe + one chain run.
+</details>
 
 ---
 
@@ -149,5 +180,8 @@ Listed so they are not rediscovered, not scheduled here.
 
 ## Log
 
-- **2026-07-28** — plan written. Item 1 started. Items 2 and 3 blocked on
-  it (2 only for its bail condition).
+- **2026-07-28** — plan written. Item 1 started.
+- **2026-07-28** — item 1 DONE: instrument cleared, §11 numbers stand.
+  Contradiction moved to the shared stamping path. Item 2 unblocked (its
+  bail condition no longer applies — the over-cut instrument is
+  trustworthy). Item 3 proceeds via the move bisect.
