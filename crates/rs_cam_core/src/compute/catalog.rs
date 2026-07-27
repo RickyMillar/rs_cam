@@ -359,7 +359,12 @@ impl OperationType {
             // XY-independent ops: TSP can reorder by proximity safely.
             // Drill/AlignmentPinDrill: each hole is fully completed (peck cycle is intra-hole) before
             // moving to the next, so XY visit order has no material-state effect.
-            DropCutter | Drill | AlignmentPinDrill => {
+            // ProjectCurve: the generator (project_curve.rs) emits each contiguous
+            // mesh-contact chain as its own independent rapid→plunge→cut→retract
+            // unit — a chain flushes on any gap over air or a mesh hole, with no
+            // depth-order or safety-order dependency between chains — so TSP can
+            // freely reorder them by proximity too (audited fix-family Phase 1).
+            DropCutter | Drill | AlignmentPinDrill | ProjectCurve => {
                 OperationTransformCapabilities::new(true, false, false)
             }
             // HorizontalFinish: generator sorts regions high-to-low Z for collision-avoidance
@@ -374,13 +379,14 @@ impl OperationType {
             Pocket | Profile | Adaptive | Rest | Zigzag | Adaptive3d | Waterline | Trace => {
                 OperationTransformCapabilities::new(false, true, false)
             }
-            // Genuinely continuous traces: helical/spiral/projected paths.
+            // Genuinely continuous traces: helical/spiral paths whose passes
+            // are not retract-separated, single-tool-down runs.
             // UnifiedFinish mirrors Scallop here (registration checklist
             // decision) — its stitched per-band toolpath is a candidate
             // for looser capabilities once P2.d routing lands, but until
             // then it inherits Scallop's conservative continuous-path
             // treatment.
-            Scallop | UnifiedFinish | SteepShallow | RampFinish | SpiralFinish | ProjectCurve => {
+            Scallop | UnifiedFinish | SteepShallow | RampFinish | SpiralFinish => {
                 OperationTransformCapabilities::new(false, false, true)
             }
         }
@@ -2451,7 +2457,7 @@ mod tests {
         assert!(
             OperationType::ProjectCurve
                 .transform_capabilities()
-                .continuous_path_required
+                .allows_global_rapid_reorder
         );
     }
 
