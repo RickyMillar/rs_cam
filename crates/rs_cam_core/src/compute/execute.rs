@@ -1424,7 +1424,7 @@ pub(crate) fn generate_steep_shallow(
         stock_to_leave: cfg.stock_to_leave,
         tolerance: cfg.tolerance,
     };
-    let tp = crate::steep_shallow::steep_shallow_toolpath_with_cancel(
+    let (tp, split) = crate::steep_shallow::steep_shallow_toolpath_split_with_cancel(
         m,
         idx,
         ctx.tool_def,
@@ -1433,8 +1433,13 @@ pub(crate) fn generate_steep_shallow(
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
     .map_err(|_e| OperationError::Cancelled)?;
+    // Two concatenated passes, not one continuous trace: barriers keep the
+    // halves in their emitted order and keep the steep half's Z ladder,
+    // which is what lets `UnifiedFinish`-style intra-node reordering apply
+    // here too (capability arm in `compute/catalog.rs`).
+    let spans = crate::steep_shallow::steep_shallow_spans(&tp, &split);
     Ok(with_depth_run_annotation(
-        generated_with_cut_run_spans(tp, "Steep/shallow run"),
+        generated_with_spans(tp, spans),
         ctx.semantic_ctx,
     ))
 }

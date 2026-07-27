@@ -433,10 +433,17 @@ impl OperationType {
             // forbidden: `apply_link_moves` has no view of the 3D surface
             // between two fragment endpoints, which is why the op builds its
             // own via `surface_link::build_surface_link`.
-            UnifiedFinish => OperationTransformCapabilities::new(false, false, false, false),
+            // SteepShallow is the same shape one level simpler: a Z-laddered
+            // waterline pass over steep territory concatenated with a raster
+            // over shallow territory. `generate_steep_shallow` barriers the
+            // two halves and the steep half's Z levels, so the TSP reorders
+            // within a half and never across one.
+            UnifiedFinish | SteepShallow => {
+                OperationTransformCapabilities::new(false, false, false, false)
+            }
             // Genuinely continuous traces: helical/spiral paths whose passes
             // are not retract-separated, single-tool-down runs.
-            Scallop | SteepShallow | RampFinish | SpiralFinish => {
+            Scallop | RampFinish | SpiralFinish => {
                 OperationTransformCapabilities::new(false, false, true, false)
             }
         }

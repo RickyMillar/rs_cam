@@ -14,6 +14,8 @@
 //! - Steep-first ordering for safer tool conditions
 //! - Scallop height support for variable stepover in shallow regions
 
+use std::ops::Range;
+
 use crate::dropcutter::batch_drop_cutter;
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
@@ -478,6 +480,20 @@ pub fn steep_shallow_toolpath(
         .expect("non-cancellable steep/shallow toolpath should never be cancelled")
 }
 
+/// Where each half of the merged toolpath ended up.
+///
+/// The op is two independently generated passes concatenated — a Z-laddered
+/// waterline over the steep territory and a raster over the shallow — not
+/// one continuous trace. The adapter needs the split to place rapid-order
+/// barriers (`compute::spans::region_node_barriers`): the halves must keep
+/// their emitted order relative to each other, the steep half must keep its
+/// Z ladder, and everything inside those constraints is reorderable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SteepShallowSplit {
+    pub steep: Range<usize>,
+    pub shallow: Range<usize>,
+}
+
 /// Cancellable variant of [`steep_shallow_toolpath`]. Propagates `cancel`
 /// into heightmap construction and both pass generators (per-Z-level for
 /// steep, per-raster-row for shallow).
@@ -494,6 +510,78 @@ pub fn steep_shallow_toolpath_with_cancel(
     boundary_regions: Option<&RegionSet<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
+    steep_shallow_toolpath_split_with_cancel(mesh, index, cutter, params, boundary_regions, cancel)
+        .map(|(tp, _)| tp)
+}
+
+/// Spans for a [`steep_shallow_toolpath_split_with_cancel`] result, shared
+/// by the op adapter and the capability sentry so neither can drift from
+/// the other. Per-run `Region` spans as before, plus a labelled `Region`
+/// span for each half (so the halves stay identifiable after the TSP
+/// remaps spans), plus the rapid-order barriers that make the reorder safe:
+/// one at each half's start, and one per Z level inside the steep half.
+pub fn steep_shallow_spans(
+    toolpath: &Toolpath,
+    split: &SteepShallowSplit,
+) -> Vec<crate::toolpath_spans::Span> {
+    use crate::compute::spans::{RegionNode, region_node_barriers, spans_from_cutting_runs};
+    use crate::toolpath_spans::{Span, SpanKind};
+
+    let mut spans = spans_from_cutting_runs(toolpath, "Steep/shallow run");
+    let insert_at = 1.min(spans.len());
+    let mut halves: Vec<Span> = Vec::new();
+    if !split.steep.is_empty() {
+        halves.push(
+            Span::new(split.steep.start, split.steep.end, SpanKind::Region)
+                .with_label(STEEP_HALF_LABEL),
+        );
+    }
+    if !split.shallow.is_empty() {
+        halves.push(
+            Span::new(split.shallow.start, split.shallow.end, SpanKind::Region)
+                .with_label(SHALLOW_HALF_LABEL),
+        );
+    }
+    halves.sort_by_key(|s| s.start_move);
+    spans.splice(insert_at..insert_at, halves);
+
+    spans.extend(region_node_barriers(
+        toolpath,
+        &[
+            RegionNode {
+                move_range: split.steep.clone(),
+                // Waterline: ladders down in Z, so its runs must keep their
+                // relative depth order.
+                depth_ordered: true,
+            },
+            RegionNode {
+                move_range: split.shallow.clone(),
+                // Raster over a height field: runs are materially
+                // independent of visiting order.
+                depth_ordered: false,
+            },
+        ],
+    ));
+    spans
+}
+
+/// Label on the steep half's `Region` span — the handle sentries use to
+/// find the waterline pass again after a reorder remaps spans.
+pub const STEEP_HALF_LABEL: &str = "Steep pass";
+/// Label on the shallow half's `Region` span.
+pub const SHALLOW_HALF_LABEL: &str = "Shallow pass";
+
+/// [`steep_shallow_toolpath_with_cancel`] plus the [`SteepShallowSplit`]
+/// describing where each half landed. Byte-identical toolpath output.
+#[allow(clippy::too_many_arguments)] // mirrors the sibling above, plus the split
+pub fn steep_shallow_toolpath_split_with_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &SteepShallowParams,
+    boundary_regions: Option<&RegionSet<'_>>,
+    cancel: &dyn CancelCheck,
+) -> Result<(Toolpath, SteepShallowSplit), Cancelled> {
     check_cancel(cancel)?;
     let bbox = &mesh.bbox;
 
@@ -591,14 +679,23 @@ pub fn steep_shallow_toolpath_with_cancel(
     );
 
     // Merge: steep_first means steep toolpath comes first
+    let (n_steep, n_shallow) = (steep_tp.moves.len(), shallow_tp.moves.len());
     let mut tp = Toolpath::new();
-    if params.steep_first {
+    let split = if params.steep_first {
         tp.moves.extend(steep_tp.moves);
         tp.moves.extend(shallow_tp.moves);
+        SteepShallowSplit {
+            steep: 0..n_steep,
+            shallow: n_steep..n_steep + n_shallow,
+        }
     } else {
         tp.moves.extend(shallow_tp.moves);
         tp.moves.extend(steep_tp.moves);
-    }
+        SteepShallowSplit {
+            shallow: 0..n_shallow,
+            steep: n_shallow..n_shallow + n_steep,
+        }
+    };
 
     info!(
         moves = tp.moves.len(),
@@ -607,7 +704,7 @@ pub fn steep_shallow_toolpath_with_cancel(
         "Steep and shallow toolpath complete"
     );
 
-    Ok(tp)
+    Ok((tp, split))
 }
 
 #[cfg(test)]
