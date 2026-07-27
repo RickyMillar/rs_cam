@@ -836,3 +836,90 @@ round trips inside Op B's regions.**
    in the interior means cutting the deep pass before the shallow one
    leaves byte-identical stock — the hazard is cutting force, not
    geometry. The sim cannot see it; assert on the move sequence.
+
+## 10. The air-cut filter was the fragment factory (2026-08-03)
+
+§8 blamed Op B's 540 m of air on the strategy emitter retracting between
+ring fragments. §9 refined that to "count-bound, 12 780 junctions". Both
+were wrong about WHERE the junctions come from.
+
+### How it surfaced
+
+Instrumenting the §9 intra-region linker, not reading the code. Its
+telemetry reports what the GENERATOR hands over:
+
+```
+fragments=1634  surface_links=1150  retract_links=461
+too_far=461     off_surface=0       slower_than_retract=0
+```
+
+1 634 fragments — and the shipped toolpath carries **15 373**. The linker
+was joining 71% of what it saw; something downstream was manufacturing
+nine times as many junctions as the generator ever emitted.
+
+Only one pass converts cutting moves into rapids: `dressup::filter_air_cuts`.
+The generators' own logs confirm it independently — Op B's scallop call
+reports `rapid_mm=77248.9`, and the shipped op carries 539 017 mm. **The
+filter adds 462 m, or 86% of Op B's rapid travel.**
+
+### The mechanism
+
+The filter drops in-air cutting moves and bridges the gap with a retract to
+`safe_z`, a traverse, and a descent — about 35 mm of travel on this fixture.
+It applied that bridge to EVERY air run, with no test on how much air the
+bridge saves. Skipping a 2 mm sliver therefore costs ~17× the distance it
+avoids. On a rest-clearer, whose passes cross previously-cut ground
+constantly, nearly every run is a sliver.
+
+`AirBridgePolicy::ShorterThanAirPath` vetoes a bridge longer than the air
+path it replaces; the vetoed run is emitted verbatim, so the tool simply
+cuts the sliver. Distance rather than time on purpose — rapids are never
+slower than cutting feeds, so a bridge up to `rapid/feed` times longer
+could still win on the clock and this rule declines it. Conservative in one
+direction only, and it needs no machine envelope threaded through the
+dressup pipeline.
+
+### Measured (wanaka ×2, ball Ø3, Op B; collisions 0 throughout)
+
+| case | Op B s | project s | vs shipped |
+|---|---|---|---|
+| shipped (bridge always, no links) | 38 868 | 52 070 | — |
+| §9 links only | 36 869 | 50 070 | −5.1% |
+| §10 cost-aware bridges only | 28 037 | 40 679 | **−27.9%** |
+| **both** | **25 474** | **38 116** | **−34.5%** |
+
+Fragments 15 373 → 2 141. Rapid travel 539 017 → 91 880 mm (−83%).
+
+The two levers compound rather than overlap: linking joins fragments the
+filter would otherwise bridge back apart, so each makes the other worth
+more (−5.1% and −27.9% separately, −34.5% together).
+
+### What this says about the campaign
+
+§7 concluded NOT PROVEN at +22.9% and named S3's cross-region router as the
+owner. §8 corrected that to the missing reorder pass. §9 shipped the
+reorder, measured +4.6%, and corrected the prize to count-bound. The actual
+answer was a missing length test in a dressup neither section had looked at.
+
+The pattern worth keeping: every one of those corrections came from
+building an instrument and reading it, and each instrument found something
+its own hypothesis had not predicted. The §9 linker's real value was not
+its 5% — it was that its telemetry made the 1 634-vs-15 373 discrepancy
+visible.
+
+### Not yet claimed
+
+`AirBridgePolicy` defaults to `Always` and `intra_region_hookup_mm` to 0.0.
+This changes emitted G-code for every op running `FromRemainingStock`, and
+two things must land before the defaults move:
+
+1. **The all-over baseline re-measured under the same policy.** The filter
+   is a shared dressup, so D speeds up too. D's rapids are 3 128 s of
+   39 904 (8%), so its floor is ~36 776 s — close enough to the cascade's
+   36 545 s finish stack that comparing new-cascade against old-D would be
+   the isolate-the-variable error this campaign has already paid for twice.
+2. **Quality at these dials.** The policy works by cutting through air the
+   filter used to skip. That is plausibly free, but it changes what gets
+   cut, so it needs the COLUMNS gate — not an argument.
+
+`v3_process_proof_ab` runs both branches at `Dials::V3` and gates on both.
