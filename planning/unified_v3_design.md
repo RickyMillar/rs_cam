@@ -734,3 +734,105 @@ Proposed change, safe by construction:
 Scallop (71% recoverable) and the rest of the family are the same
 misclassification, but they are SHIPPED ops whose output users have cut —
 extending this is a separate, evidence-backed decision, not a drive-by.
+
+## 9. The reorder, shipped and measured (2026-08-03) — the prize was mis-sized
+
+§8 predicted the reorder would take the Ø4 cascade from 49 009 s to
+~41 100 s at half recovery, ~34 000 s at full. It shipped. It does not.
+
+### What shipped
+
+| commit | change |
+|---|---|
+| `74234fe` | ProjectCurve reclassified (fragment-based, not continuous) |
+| `6fd2c1a` | `allows_link_moves` decoupled from the reorder predicates |
+| `bfedf91` | `apply_link_moves` gouge-checks its bridges |
+| `f09ae3c` | **UnifiedFinish region-node barriers + capability flip** |
+| `1269f4b` | DropCutter reorder sentry; two harness defects |
+| `fb6287b` | SteepShallow split barriers + capability flip |
+
+`spans::region_node_barriers` is the shared mechanism: a zero-width
+`RapidOrderBarrier` at each routed node's first move, plus one per Z level
+inside nodes whose strategy ladders in Z. The router's cross-node sequence
+— costed against the machine envelope, and carrying the surface links —
+stays exactly as routed; the TSP reorders runs *within* a node.
+
+### Wanaka ×2, ball Ø3, against §8's own recorded baseline
+
+| | before | after |
+|---|---|---|
+| Op A ball finish | 11 071 s | 11 070 s |
+| **Op B unified rest** | **40 747 s** | **38 868 s** (−4.6%) |
+| Op B cutting / rapid | 17 676 / 18 297 | 17 019 / **17 077** (−6.7%) |
+| finish stack | 51 817 s | **49 939 s** (−3.6%) |
+| D all-over tip | 39 871 s | 39 904 s |
+| mid-steep on-size | 51.0% | **51.0%** |
+| mid-steep `>+.5` tail | 1 234 | **1 234** |
+
+Quality is byte-identical — as the swept-cut-segment equality in the
+sentries predicts, and a useful end-to-end confirmation of it. Op A and D
+are unchanged. The reorder is real, safe, and worth −1 878 s.
+
+### Why it is 4.6% and not 20%: the probe measured the wrong distance
+
+Geometrically the reorder did what §8 said it would. At Ø4 Op B's
+inter-fragment travel went **110 046 mm → 35 656 mm (−67.6%)**, and its
+mean hop **8.6 mm → 2.8 mm** — exactly the density of the ops that were
+already reordering (Op A 2.81 mm, D 3.03 mm). Op B is no longer the
+outlier.
+
+But `recoverable_air` measures the straight-line distance between one
+fragment's EXIT POINT and the next's ENTRY POINT — both on the surface.
+The tool does not travel that line. It retracts to safe Z, traverses, and
+descends: two Z legs of ~30 mm each against an XY hop of ~8.6 mm. **The XY
+component the reorder can address is roughly a tenth of the real cost**,
+which is why recovering 67.6% of it bought 6.7% of the rapid time.
+
+**Op B's air is COUNT-bound, not DISTANCE-bound.** 12 780 fragments × one
+retract/traverse/plunge round trip each. Reordering cannot remove a single
+one of those round trips; it only shortens the flat part in the middle.
+
+### What that leaves
+
+The lever is keep-down linking and fragment count, not ordering:
+
+1. **Surface links WITHIN a region.** `surface_link::build_surface_link`
+   already builds gouge-checked, surface-following links — the router uses
+   it between REGIONS. Applied between adjacent fragments inside a region
+   it removes the Z legs entirely, which is where the 17 077 s lives.
+2. **Fewer fragments.** 12 780 pieces on dendritic rest territory is the
+   emitter retracting at every ring break. Sliver merging or corridor-aware
+   ring generation attacks the count directly.
+
+§8's "~34 000 s at full recovery" should be read as ~38 900 s, which is
+what was measured. The process-proof verdict is unchanged (+23.9% project
+at Ø3), and the named blocker is now specific: **per-fragment retract
+round trips inside Op B's regions.**
+
+### Family audit, closed
+
+| op | classification | why |
+|---|---|---|
+| Waterline | depth barriers, reorders within level | already correct |
+| DropCutter, Drill, AlignmentPinDrill, ProjectCurve | unbarriered global reorder | XY-independent; all four now sentried |
+| Scallop (discrete) | global reorder, links forbidden | `6fd2c1a` |
+| UnifiedFinish, SteepShallow | barriered reorder within nodes | this section |
+| Scallop (continuous), RampFinish, SpiralFinish | blocked | genuinely continuous traces |
+| HorizontalFinish | blocked | deliberate high-to-low Z safety order |
+| Face, Inlay, VCarve | links forbidden | V-bit width varies with depth |
+| **Pencil, RadialFinish, Chamfer** | **never reorder** | permit the barriered path but emit no barriers, and are denied the unbarriered one — the one gap left |
+
+### Two measurement rules this produced
+
+1. **"Dexel removal is monotonic" holds only at full coverage.**
+   `dexel::ray_blend_above` subtracts a FRACTION `f` of a partial-coverage
+   cell's above-surface span (`new_exit = exit - f * above_part`) — neither
+   idempotent nor commutative. A reorder with provably identical geometry
+   still moves boundary columns ~0.87 mm on ~0.7% of cells, and unlike
+   discretisation it does not shrink with cell size. Reorder neutrality is
+   asserted on `swept_cut_segments` (the multiset of `(from, to)` pairs
+   each cutting move sweeps), not on a heightmap tolerance.
+2. **Depth ORDER needs a structural instrument.** Removal being order-free
+   in the interior means cutting the deep pass before the shallow one
+   leaves byte-identical stock — the hazard is cutting force, not
+   geometry. The sim cannot see it; assert on the move sequence.
