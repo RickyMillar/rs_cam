@@ -2070,6 +2070,137 @@ fn v3_gouge_site_probe() {
     }
 }
 
+/// Was each cutting move ever LEGAL? — a chord-vs-drop-cutter gouge check.
+///
+/// §11 ruled out five candidate mechanisms for the cascade's deep
+/// over-cut and left one: a straight feed chord between two valid CL
+/// points can pass INSIDE the material, and `scallop::refine_chord`
+/// checks nothing when `len < 2 × probe_step` — which on Op A's Ø3 ball
+/// is most of its ring chords (0.28 mm spacing against a 0.375 mm probe
+/// floor), including the near-vertical cliff chords that drop 2.6 mm of Z
+/// per 0.18 mm of XY.
+///
+/// So: probe each cutting move's interior against the drop-cutter surface
+/// it should be riding. `gouge = cl.z − chord_z` — positive means the tool
+/// is BELOW where the cutter can legally sit, i.e. into the model. This
+/// needs no dexel sim and no reference stock; it asks only whether the
+/// emitted geometry was ever valid, which is a question the dexel
+/// instrument cannot answer and `bridge_corridor_is_swept` only asks of
+/// link corridors.
+#[test]
+#[ignore = "one cascade chain + a drop-cutter probe per cutting move"]
+fn v3_chord_gouge_probe() {
+    use rs_cam_core::toolpath::MoveType;
+
+    let (dial_label, dials) = dials_from_env("shipped");
+    let probe_step: f64 = std::env::var("V3_CHORD_STEP")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.05);
+    eprintln!("== CHORD GOUGE PROBE dials={dial_label} probe_step={probe_step} ==");
+
+    let path = write_fixture_project(3.0);
+    let mut s = ProjectSession::load(&path).expect("load fixture");
+    let (enable, disable) = branch_ops(Branch::Cascade);
+    set_enabled_by_name(&mut s, enable, disable);
+    let idx = toolpath_index_by_name(&s, "Op B Unified Rest");
+    s.set_toolpath_operation(
+        idx,
+        OperationConfig::UnifiedFinish(op_b_config(
+            dials.intra_region_hookup_mm,
+            dials.pencil_claims,
+            dials.crease_hookup_mm,
+        )),
+    )
+    .expect("swap Op B config");
+    for i in 0..s.toolpath_count() {
+        let Some(tc) = s.get_toolpath_config(i) else {
+            continue;
+        };
+        let mut d = tc.dressups.clone();
+        d.air_bridge_policy = dials.air_bridge_policy;
+        if let Some(af) = dials.arc_fitting {
+            d.arc_fitting = af;
+        }
+        s.set_dressup_config(i, d).expect("set dressups");
+    }
+    run_chain("chord_gouge", &mut s);
+
+    let mesh = s
+        .models()
+        .iter()
+        .find_map(|m| m.mesh.clone())
+        .expect("terrain mesh");
+    let index = rs_cam_core::mesh::SpatialIndex::build(&mesh, 10.0);
+
+    for i in 0..s.toolpath_count() {
+        let Some(tc) = s.get_toolpath_config(i) else {
+            continue;
+        };
+        if !tc.enabled {
+            continue;
+        }
+        let (name, tool_id) = (tc.name.clone(), tc.tool_id);
+        let Some(tool_cfg) = s.tools().iter().find(|t| t.id.0 == tool_id).cloned() else {
+            continue;
+        };
+        let cutter = rs_cam_core::compute::cutter::build_cutter(&tool_cfg);
+        let Some(result) = s.get_result(i) else {
+            continue;
+        };
+        let moves = result.annotated().toolpath.moves.clone();
+
+        // (gouge_mm, x, y, chord_z, cl_z, move_index)
+        let mut worst: Vec<(f64, f64, f64, f64, f64, usize)> = Vec::new();
+        let mut probed = 0usize;
+        let mut over_tol = 0usize;
+        let mut over_half = 0usize;
+        for (k, m) in moves.iter().enumerate() {
+            if matches!(m.move_type, MoveType::Rapid) {
+                continue;
+            }
+            let Some(prev) = k.checked_sub(1).and_then(|j| moves.get(j)) else {
+                continue;
+            };
+            let (a, b) = (prev.target, m.target);
+            let (dx, dy) = (b.x - a.x, b.y - a.y);
+            let xy_len = (dx * dx + dy * dy).sqrt();
+            if xy_len < 1e-9 {
+                continue; // pure plunge/retract: no chord to check
+            }
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let steps = ((xy_len / probe_step).ceil() as usize).clamp(2, 64);
+            for si in 1..steps {
+                let t = si as f64 / steps as f64;
+                let (x, y) = (a.x + dx * t, a.y + dy * t);
+                let cl = rs_cam_core::dropcutter::point_drop_cutter(x, y, &mesh, &index, &cutter);
+                if !cl.contacted || !cl.z.is_finite() {
+                    continue;
+                }
+                probed += 1;
+                let chord_z = a.z + (b.z - a.z) * t;
+                let gouge = cl.z - chord_z;
+                if gouge > 0.05 {
+                    over_tol += 1;
+                }
+                if gouge > 0.5 {
+                    over_half += 1;
+                    worst.push((gouge, x, y, chord_z, cl.z, k));
+                }
+            }
+        }
+        worst.sort_by(|p, q| q.0.total_cmp(&p.0));
+        eprintln!(
+            "== [{name}] CHORD GOUGE: probed={probed} >0.05mm={over_tol} >0.5mm={over_half} =="
+        );
+        for (g, x, y, cz, clz, k) in worst.iter().take(10) {
+            eprintln!(
+                "   gouge={g:6.3} at ({x:8.2},{y:8.2}) chord_z={cz:7.3} cl_z={clz:7.3} move #{k}"
+            );
+        }
+    }
+}
+
 /// Shared verdict printer + quality gate for the branch comparison.
 fn verdict(what: &str, d: &BranchScore, c: &BranchScore) {
 
