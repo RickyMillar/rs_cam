@@ -130,10 +130,21 @@ fn dressup_no_links() -> DressupConfig {
 
 /// `link_moves: true` with a generous link distance so the dressup
 /// actually finds candidate retract/rapid/plunge sequences to collapse.
+///
+/// ISOLATE THE VARIABLE: `optimize_rapid_order` is pinned FALSE to match
+/// [`dressup_no_links`]. `DressupConfig::default()` ships it TRUE (Roadmap
+/// B.6), so without this pin every op that permits a reorder — DropCutter,
+/// Drill, AlignmentPinDrill, ProjectCurve — would get reorder+links in this
+/// branch and neither in the baseline, and any reorder effect would be
+/// booked against link moves. That mis-attribution in the opposite
+/// direction (links blamed on the reorderer) cost this campaign hours; it
+/// was latent here only because every op previously in the suite forbids
+/// the reorder.
 fn dressup_with_links(link_max_distance: f64) -> DressupConfig {
     DressupConfig {
         link_moves: true,
         link_max_distance,
+        optimize_rapid_order: false,
         ..DressupConfig::default()
     }
 }
@@ -405,6 +416,7 @@ fn assert_link_moves_neutral(
     link_distance: f64,
     height_tol: f32,
     cell_diff_frac_max: f64,
+    expect_links_applied: bool,
 ) {
     assert!(
         !raw.moves.is_empty(),
@@ -499,6 +511,31 @@ fn assert_link_moves_neutral(
         "{op:?}: link_moves increased rapid distance ({} > {}) — unexpected",
         rapid_distance(&with_links),
         rapid_distance(&baseline),
+    );
+
+    // DID IT ACTUALLY FIRE? The capability guard above only proves the op is
+    // ALLOWED to link. Whether the fixture presents any linkable
+    // retract/rapid/plunge triple is a separate question, and on several
+    // fixtures the answer is no — a single closed contour has nothing to
+    // collapse, and `apply_link_moves` only bridges endpoints at a matching
+    // Z, which raster rows over a curved surface never share. Those tests
+    // are still worth having (they pin that the capability gate accepts the
+    // call and diverges nothing), but "neutral" from a transform that never
+    // ran is not evidence. Declare the expectation so it is visible in the
+    // call, and so an op that starts or stops linking trips here.
+    let applied = with_links.moves.len() != baseline.moves.len()
+        || (rapid_distance(&with_links) - rapid_distance(&baseline)).abs() > 1e-6;
+    assert_eq!(
+        applied, expect_links_applied,
+        "{op:?}: expected links_applied={expect_links_applied}, observed \
+         {applied} (moves {} -> {}, rapid {:.1} -> {:.1}). Either the fixture \
+         stopped presenting linkable geometry or apply_link_moves changed \
+         what it accepts — both are worth knowing before trusting the \
+         neutrality verdict above.",
+        baseline.moves.len(),
+        with_links.moves.len(),
+        rapid_distance(&baseline),
+        rapid_distance(&with_links),
     );
 }
 
@@ -620,6 +657,8 @@ fn chamfer_link_moves_preserves_material_state() {
         5.0,
         0.05,
         0.02,
+        // One closed contour: nothing to collapse. Pins the gate, not links.
+        /* expect_links_applied */ false,
     );
 }
 
@@ -682,6 +721,7 @@ fn pencil_link_moves_preserves_material_state() {
         10.0,
         0.05,
         0.02,
+        /* expect_links_applied */ true,
     );
 }
 
@@ -714,6 +754,7 @@ fn radial_finish_link_moves_preserves_material_state() {
         2.0,
         0.05,
         0.02,
+        /* expect_links_applied */ true,
     );
 }
 
@@ -1700,6 +1741,111 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
             .iter()
             .map(|s| s.label.as_ref())
             .collect::<Vec<_>>()
+    );
+}
+
+// ── DropCutter: reorder-enabled in production, previously unguarded ─────
+
+/// Raster drop-cutter path over the hemisphere, built the way
+/// `compute/execute.rs::generate_drop_cutter` builds it (batch grid →
+/// `raster_toolpath_from_grid`).
+fn drop_cutter_raster(mesh: &TriangleMesh, index: &SpatialIndex, cutter: &dyn MillingCutter) -> Toolpath {
+    let never_cancel = || false;
+    let floor = mesh.bbox.min.z - 0.1;
+    let grid = rs_cam_core::dropcutter::batch_drop_cutter_with_cancel(
+        mesh,
+        index,
+        cutter,
+        /* step_over */ 2.0,
+        /* direction_deg */ 0.0,
+        floor,
+        &never_cancel,
+    )
+    .expect("uncancelled drop-cutter grid");
+    rs_cam_core::toolpath::raster_toolpath_from_grid(
+        &grid,
+        /* feed_rate */ 1000.0,
+        /* plunge_rate */ 500.0,
+        /* safe_z */ 30.0,
+        Some(floor),
+        None,
+    )
+}
+
+#[test]
+fn drop_cutter_capability_reorder_is_material_neutral() {
+    // DropCutter ships `(true, false, false, true)` — the UNBARRIERED
+    // global reorder plus link moves — and had no material-neutrality
+    // sentry, unlike Drill and AlignmentPinDrill which share that arm.
+    // Closing that gap: a raster over a height field genuinely is
+    // order-independent, but nothing was checking.
+    // Four disconnected islands, not one dome: a raster over a contiguous
+    // surface is a single boustrophedon with no retracts, so TSP sees one
+    // segment and the test would be vacuous.
+    let (mesh, index) = scallop_island_mesh();
+    let cutter = BallEndmill::new(3.0, 25.0);
+    let raw = drop_cutter_raster(&mesh, &index, &cutter);
+    assert!(!raw.moves.is_empty(), "fixture must produce a raster path");
+
+    let caps = OperationType::DropCutter.transform_capabilities();
+    assert!(
+        caps.allows_unbarriered_rapid_reorder(),
+        "DropCutter is expected to permit the unbarriered global reorder — \
+         if that changed, this sentry needs rewriting, not deleting"
+    );
+
+    // Hold link_moves OFF on both branches; vary only the reorder.
+    let baseline = dressup(raw.clone(), &dressup_no_links(), OperationType::DropCutter, 3.0);
+    let optimized = dressup(
+        raw,
+        &DressupConfig {
+            optimize_rapid_order: true,
+            link_moves: false,
+            ..DressupConfig::default()
+        },
+        OperationType::DropCutter,
+        3.0,
+    );
+
+    println!(
+        "DropCutter TSP: rapid {:.1} -> {:.1} | cut {:.1} -> {:.1}",
+        rapid_distance(&baseline),
+        rapid_distance(&optimized),
+        cutting_distance(&baseline),
+        cutting_distance(&optimized),
+    );
+    assert!(
+        rapid_distance(&optimized) < rapid_distance(&baseline),
+        "the reorder must actually fire and reduce rapid travel, or this \
+         sentry is vacuous"
+    );
+    assert_eq!(
+        swept_cut_segments(&baseline),
+        swept_cut_segments(&optimized),
+        "DropCutter's reorder must sweep exactly the same cut segments — \
+         raster rows over a height field are materially independent"
+    );
+}
+
+#[test]
+fn drop_cutter_link_moves_preserves_material_state() {
+    let (mesh, index) = scallop_island_mesh();
+    let cutter = BallEndmill::new(3.0, 25.0);
+    let raw = drop_cutter_raster(&mesh, &index, &cutter);
+    assert_link_moves_neutral(
+        OperationType::DropCutter,
+        raw,
+        &cutter,
+        /* tool_diameter */ 3.0,
+        /* cell_size */ 0.5,
+        /* link_distance */ 6.0,
+        /* height_tol */ 0.05,
+        /* cell_diff_frac_max */ 0.02,
+        // Raster rows over a curved surface end at DIFFERENT Z, and
+        // apply_link_moves only bridges a matching-Z pair, so no candidate
+        // survives. Recorded rather than papered over: DropCutter permits
+        // links but does not, in practice, take them on 3D terrain.
+        /* expect_links_applied */ false,
     );
 }
 
