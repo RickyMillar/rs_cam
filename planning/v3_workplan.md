@@ -121,7 +121,37 @@ filter.
 
 ---
 
-## Item 3 — GATE 2: the gouge mechanism
+## Item 3 — GATE 2 **[gouge branch CLOSED 2026-07-28; gate still red]**
+
+**RESULT: the gouge was `arcfit` emitting REFLEX arcs.** Direction came
+from a cross product of two chords with nothing checking the outcome; on
+a shallow run that sign is rounding noise, and the wrong sign gives the
+reflex arc through the same endpoints — 356.4° where 3.56° was intended,
+354 mm of travel for a 3.55 mm chord. A default-ON dressup, so not
+campaign-specific; a machine would have driven a 114 mm circle through
+the part. Fixed by requiring a fitted arc to be about as long as the
+polyline it replaces (commit a6841e1).
+
+Cascade deep columns **6 060 → 937**, shallow **1 218 → 87**, at no time
+cost. TSP reassembly exonerated by `V3_REORDER=off`.
+
+**But the gate did NOT move: shallow on-size 15.2% → 15.5% vs D's 19.2%
+(needs 17.2%).** The campaign's repeated mistake in miniature — the
+gouges were real and serious and were never what the gate measured.
+1 218 columns is 1.8% of the band; the missing 4 pp is distribution-wide.
+
+**Remaining hypothesis, one only:** on shallow textured ground a Ø3 ball
+cannot reproduce what a Ø1 tip can, and Op B is not clearing the
+difference. Either that is a territory dial (`min_rest_depth_mm`, the
+rest-field keep-mask — Op B declining work it should take) or it is
+inherent to the tool pairing.
+
+**BAIL is now one step away.** Per the criteria below, this is the last
+mechanism. If a territory probe shows Op B correctly has nothing to clear
+there, the answer is "inherent to the pairing" and that IS the verdict —
+write it up and stop.
+
+<details><summary>Original statement of item 3</summary>
 
 **Question.** Why do both cascade finishing passes gouge when D's does
 not (6 060 columns vs 78, worst −5.57 vs −1.26)?
@@ -144,6 +174,7 @@ magnitude (<200) without losing the time gate.
   the wrong quantity);
 - the mechanism turns out to be inherent to a Ø3 ball + tip rest-clear on
   this terrain, in which case that IS the verdict — write it up.
+</details>
 
 ---
 
@@ -181,6 +212,9 @@ Listed so they are not rediscovered, not scheduled here.
 ## Log
 
 - **2026-07-28** — plan written. Item 1 started.
+- **2026-07-28** — item 3 gouge branch CLOSED: arc-fit reflex bug found
+  and fixed (deep columns −85%), gate unmoved. One hypothesis left before
+  the NOT-PROVABLE verdict.
 - **2026-07-28** — item 1 DONE: instrument cleared, §11 numbers stand.
   Contradiction moved to the shared stamping path. Item 2 unblocked (its
   bail condition no longer applies — the over-cut instrument is
