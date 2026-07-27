@@ -2393,6 +2393,7 @@ pub fn apply_dressups(
                         max_link_distance: max_dist,
                         link_feed_rate: link_feed,
                         safe_z_threshold: safe_z * 0.9,
+                        tool_radius,
                     },
                 )
             },

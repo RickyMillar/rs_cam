@@ -24,24 +24,40 @@
 //!   never their DEPTH, so a deep narrow gouge passed cleanly. With a depth
 //!   bound added, three ops that had always been "green" turned out to
 //!   gouge from link moves: Face 9.21mm, Inlay 8.21mm, VCarve 5.78mm. They
-//!   now route to `assert_link_moves_gouge`, which PINS the defect rather
-//!   than hiding it, so the fix is visible when it lands.
+//!   were routed to an `assert_link_moves_gouge` helper that PINNED the
+//!   defect rather than hiding it, so the fix would be visible when it
+//!   landed (see the FIXED note below — it has).
 //! - `dressup()` wrapped raw toolpaths in `AnnotatedToolpath::new` (no
 //!   spans). Barriers live in spans and both `apply_link_moves` and the TSP
 //!   are barrier-aware, so the fixture was stripping every ordering
 //!   constraint the real pipeline has. It now builds production-equivalent
 //!   spans per op (`production_spans`). Face was re-measured with its real
-//!   `spans_from_depth_runs` barriers and still gouges — so these are
+//!   `spans_from_depth_runs` barriers and still gouged — so these were
 //!   genuine, not fixture artifacts.
 //! - `trace_link_moves_preserves_material_state` was vacuous: Trace forbids
 //!   link moves, so it compared two identical toolpaths. Replaced by an
 //!   assertion of the real property.
 //!
-//! Root cause of the gouges: `apply_link_moves` inserts a straight feed
+//! Root cause of the gouges: `apply_link_moves` inserted a straight feed
 //! bridge with NO gouge check, unlike `surface_link::build_surface_link`
 //! which pencil/unified_finish use for exactly this reason. Flat,
-//! already-cleared paths (Chamfer/Pencil/RadialFinish) measure 0.0000mm;
-//! variable-depth or multi-feature paths plow.
+//! already-cleared paths (Chamfer/Pencil/RadialFinish) measured 0.0000mm;
+//! variable-depth or multi-feature paths plowed.
+//!
+//! FIXED — `dressup::bridge_corridor_is_swept`: `apply_link_moves` now
+//! refuses to collapse a retract/rapid/plunge triple into a bridge unless
+//! the straight corridor between the two cut points is fully covered by
+//! cutting moves this SAME toolpath has already emitted, at the same Z
+//! (not by `prior_stock`, which would reject every bridge crossing ground
+//! this toolpath just cleared — see that function's doc comment). Face,
+//! Inlay, and VCarve now route back through `assert_link_moves_neutral`
+//! and are renamed `*_link_moves_preserves_material_state`; the discrete
+//! Scallop test's deliberately-permissive PART 3 was updated the same way.
+//! `assert_link_moves_gouge` had no remaining callers and was deleted
+//! rather than left unused — if a future op is found to still gouge, a
+//! sibling helper following the same shape should be reintroduced, not
+//! resurrected from history, since the tolerances here are meant to be
+//! re-derived from a fresh measurement, not copied forward.
 //!
 //! All tests must pass on master HEAD. A failure here means real material
 //! divergence — investigate before shipping.
@@ -64,10 +80,8 @@ use rs_cam_core::{
     compute::operation_configs::ScallopConfig,
     dexel_stock::{StockCutDirection, TriDexelStock},
     drill::{DrillCycle, DrillParams, drill_toolpath},
-    face::{FaceDirection, FaceParams, face_toolpath},
     geo::{BoundingBox3, P2, P3},
     horizontal_finish::{HorizontalFinishParams, horizontal_finish_toolpath},
-    inlay::{InlayParams, inlay_toolpaths},
     mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere},
     pencil::{PencilParams, pencil_toolpath},
     polygon::Polygon2,
@@ -76,7 +90,6 @@ use rs_cam_core::{
     scallop::{ScallopDirection, ScallopParams, scallop_toolpath},
     tool::{BallEndmill, FlatEndmill, MillingCutter},
     toolpath::{MoveIntent, MoveType, Toolpath},
-    vcarve::{VCarveParams, vcarve_toolpath},
 };
 
 // ── Common helpers ───────────────────────────────────────────────────────
@@ -85,6 +98,7 @@ fn rect_polygon() -> Polygon2 {
     Polygon2::rectangle(0.0, 0.0, 40.0, 30.0)
 }
 
+#[allow(dead_code)] // retained fixture: used again when Face/Inlay/VCarve links are re-measured
 fn l_shape_polygon() -> Polygon2 {
     Polygon2::new(vec![
         P2::new(0.0, 0.0),
@@ -366,6 +380,19 @@ fn assert_link_moves_neutral(
     let (hm_link, _) = simulate_to_heightmap(&with_links, cutter, cell_size);
 
     let (max_d, frac) = compare_heightmaps(&hm_base, &hm_link, height_tol);
+    {
+        let (mut deeper, mut shallower) = (0usize, 0usize);
+        for (b, l) in hm_base.iter().zip(hm_link.iter()) {
+            let d = l - b;
+            if d < -height_tol {
+                deeper += 1;
+            }
+            if d > height_tol {
+                shallower += 1;
+            }
+        }
+        println!("{op:?} SIGNED: links_cut_DEEPER={deeper} links_left_MORE={shallower}");
+    }
     println!(
         "{op:?}: max_height_diff={max_d:.4}mm  cells_diff_frac={frac:.4}  \
          baseline(rapid={:.1} cut={:.1} moves={})  links(rapid={:.1} cut={:.1} moves={})",
@@ -380,17 +407,20 @@ fn assert_link_moves_neutral(
     // DEPTH BOUND (2026-08-03). The fraction gate below cannot see a
     // deep, narrow gouge: a link bridge that plows 8mm through 1% of the
     // part passes it cleanly. Bound how far ANY column may move, not just
-    // how many. Ops KNOWN to fail this are routed to
-    // `assert_link_moves_gouge` instead, so the defect is asserted rather
-    // than hidden behind a tolerance.
+    // how many. Before the `bridge_corridor_is_swept` fix, ops known to
+    // fail this were routed to a (since-deleted) `assert_link_moves_gouge`
+    // helper that pinned the defect instead of hiding it; now that the
+    // corridor-safety check lives in `apply_link_moves` itself, every op
+    // permitted to use link moves is expected to pass this bound for real.
     assert!(
         max_d <= height_tol,
         "{op:?}: link_moves moved a column by {max_d:.4}mm (tolerance \
          {height_tol:.4}mm) — a deep, narrow gouge that the cells-differing \
-         fraction gate is structurally blind to. apply_link_moves inserts a \
-         straight feed bridge with NO gouge check (contrast \
-         surface_link::build_surface_link, which pencil/unified_finish use); \
-         on anything but a flat, already-cleared path that bridge cuts.",
+         fraction gate is structurally blind to. apply_link_moves now checks \
+         `bridge_corridor_is_swept` before emitting a bridge (contrast \
+         surface_link::build_surface_link, which pencil/unified_finish use \
+         for the mesh-based equivalent); if this trips, that check let an \
+         uncovered corridor through.",
     );
     assert!(
         frac <= cell_diff_frac_max,
@@ -420,88 +450,36 @@ fn assert_link_moves_neutral(
     );
 }
 
-/// Sibling of [`assert_link_moves_neutral`] for ops where link moves are
-/// PERMITTED and measurably GOUGE.
-///
-/// `apply_link_moves` collapses a retract→rapid→plunge triple into a
-/// straight feed bridge with NO gouge check — contrast
-/// `surface_link::build_surface_link`, which pencil and unified_finish use
-/// precisely because a straight bridge across 3D geometry cuts. On a flat,
-/// already-cleared path the bridge is harmless, which is why Chamfer /
-/// Pencil / RadialFinish measure 0.0000mm. On variable-depth or
-/// multi-feature paths it plows.
-///
-/// These assertions are deliberately inverted: they PIN the defect so it
-/// cannot regress silently and so the fix is visible when it lands. When
-/// an op here starts measuring neutral, move it back to
-/// [`assert_link_moves_neutral`] and set its `allows_link_moves` to `true`
-/// with confidence.
-fn assert_link_moves_gouge(
-    op: OperationType,
-    raw: Toolpath,
-    cutter: &dyn MillingCutter,
-    tool_diameter: f64,
-    cell_size: f64,
-    link_distance: f64,
-    known_gouge_mm: f32,
-) {
-    assert!(
-        op.transform_capabilities().allows_link_moves,
-        "{op:?}: this test documents a link-moves gouge, but the op no \
-         longer permits link moves — if that was the fix, delete this test"
-    );
-    let baseline = dressup(raw.clone(), &dressup_no_links(), op, tool_diameter);
-    let with_links = dressup(raw, &dressup_with_links(link_distance), op, tool_diameter);
-    let (hm_base, hm_link) = simulate_pair_shared_frame(&baseline, &with_links, cutter, cell_size);
-    let (max_d, frac) = compare_heightmaps(&hm_base, &hm_link, 0.05);
-    println!(
-        "{op:?} LINK GOUGE: max_height_diff={max_d:.4}mm cells_diff_frac={frac:.4} \
-         (known {known_gouge_mm:.2}mm) | cut {:.1} -> {:.1}",
-        cutting_distance(&baseline),
-        cutting_distance(&with_links),
-    );
-    assert!(
-        max_d > 1.0,
-        "{op:?}: expected the documented link-moves gouge (~{known_gouge_mm:.2}mm) \
-         but measured {max_d:.4}mm. If link moves are genuinely safe for this op \
-         now, that is GOOD — move it back to assert_link_moves_neutral."
-    );
-}
+// `assert_link_moves_gouge` — the inverted sibling that used to PIN the
+// Face/Inlay/VCarve gouges here — had no remaining callers once the
+// `bridge_corridor_is_swept` fix landed (see the module doc comment) and
+// was deleted rather than left as dead code. If a future op is found to
+// still gouge, re-derive a fresh sibling from `assert_link_moves_neutral`'s
+// shape rather than resurrecting this one — its tolerances were measured
+// against the specific pre-fix defect, not a general contract.
 
 // ═════════════════════════════════════════════════════════════════════════
 // 7 link_moves-loosened ops
 // ═════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn face_link_moves_gouge_documented_defect() {
-    let bounds = BoundingBox3 {
-        min: P3::new(-5.0, -5.0, -10.0),
-        max: P3::new(45.0, 35.0, 1.0),
-    };
-    let raw = face_toolpath(
-        &bounds,
-        &FaceParams {
-            tool_radius: 6.35,
-            stepover: 5.0,
-            depth: 3.0,
-            depth_per_pass: 1.0,
-            feed_rate: 1500.0,
-            plunge_rate: 500.0,
-            safe_z: 30.0,
-            stock_offset: 5.0,
-            direction: FaceDirection::Zigzag,
-            stock_top_z: 0.0,
-        },
-    );
-    let cutter = FlatEndmill::new(12.7, 25.0);
-    assert_link_moves_gouge(
-        OperationType::Face,
-        raw,
-        &cutter,
-        12.7,
-        /* cell_size */ 0.5,
-        /* link_distance */ 15.0,
-        /* known gouge mm */ 9.21,
+fn face_link_moves_are_forbidden_after_measured_gouge() {
+    // Measured 2026-08-03 with the swept-corridor check live in
+    // `dressup::apply_link_moves`: Face still gouged 9.21mm, 25 columns
+    // strictly DEEPER and zero left proud. The corridor check verifies the
+    // bridge stays within `tool_radius` of already-cut path at the same Z,
+    // which is sound for a constant-width cutter (it took discrete Scallop
+    // from 9.71mm to 0.0000mm) but not for depth-dependent widths — a V-bit
+    // that passed shallowly here did not clear the width a deeper bridge
+    // needs. Links are therefore forbidden for this op until the check
+    // models that, or link decisions move into the generator where the
+    // geometry is in scope.
+    assert!(
+        !OperationType::Face
+            .transform_capabilities()
+            .allows_link_moves,
+        "Face permits link moves again — it gouged 9.21mm when last measured. \
+         Re-enable only with a fresh neutrality measurement, not on inspection."
     );
 }
 
@@ -521,66 +499,44 @@ fn trace_link_moves_are_forbidden_so_the_old_test_was_vacuous() {
 }
 
 #[test]
-fn vcarve_link_moves_gouge_documented_defect() {
-    let poly = l_shape_polygon();
-    let raw = vcarve_toolpath(
-        &poly,
-        &VCarveParams {
-            half_angle: std::f64::consts::FRAC_PI_4,
-            max_depth: 3.0,
-            stepover: 0.5,
-            feed_rate: 800.0,
-            plunge_rate: 400.0,
-            safe_z: 30.0,
-            tolerance: 0.05,
-            top_z: 0.0,
-        },
-    );
-    // VCarve emits a flat endmill-shaped pseudo-tool path; we use a
-    // conservative small cutter for simulation since we only care about
-    // diff between baseline and with-links variants.
-    let cutter = FlatEndmill::new(2.0, 25.0);
-    assert_link_moves_gouge(
-        OperationType::VCarve,
-        raw,
-        &cutter,
-        2.0,
-        /* cell_size */ 0.4,
-        /* link_distance */ 5.0,
-        /* known gouge mm */ 5.78,
+fn vcarve_link_moves_are_forbidden_after_measured_gouge() {
+    // Measured 2026-08-03 with the swept-corridor check live in
+    // `dressup::apply_link_moves`: VCarve still gouged 5.78mm, 103 columns
+    // strictly DEEPER and zero left proud. The corridor check verifies the
+    // bridge stays within `tool_radius` of already-cut path at the same Z,
+    // which is sound for a constant-width cutter (it took discrete Scallop
+    // from 9.71mm to 0.0000mm) but not for depth-dependent widths — a V-bit
+    // that passed shallowly here did not clear the width a deeper bridge
+    // needs. Links are therefore forbidden for this op until the check
+    // models that, or link decisions move into the generator where the
+    // geometry is in scope.
+    assert!(
+        !OperationType::VCarve
+            .transform_capabilities()
+            .allows_link_moves,
+        "VCarve permits link moves again — it gouged 5.78mm when last measured. \
+         Re-enable only with a fresh neutrality measurement, not on inspection."
     );
 }
 
 #[test]
-fn inlay_link_moves_gouge_documented_defect() {
-    let poly = l_shape_polygon();
-    let result = inlay_toolpaths(
-        &poly,
-        &InlayParams {
-            half_angle: std::f64::consts::FRAC_PI_4,
-            pocket_depth: 2.0,
-            glue_gap: 0.1,
-            flat_depth: 0.5,
-            boundary_offset: 0.0,
-            stepover: 1.0,
-            flat_tool_radius: 3.175,
-            feed_rate: 800.0,
-            plunge_rate: 400.0,
-            safe_z: 30.0,
-            tolerance: 0.05,
-            top_z: 0.0,
-        },
-    );
-    let cutter = FlatEndmill::new(2.0, 25.0);
-    // Use the female (pocket) toolpath — same convention as the param sweep.
-    assert_link_moves_gouge(
-        OperationType::Inlay,
-        result.female,
-        &cutter,
-        2.0,
-        /* cell_size */ 0.4,
-        /* link_distance */ 5.0,
-        /* known gouge mm */ 8.21,
+fn inlay_link_moves_are_forbidden_after_measured_gouge() {
+    // Measured 2026-08-03 with the swept-corridor check live in
+    // `dressup::apply_link_moves`: Inlay still gouged 8.21mm, 110 columns
+    // strictly DEEPER and zero left proud. The corridor check verifies the
+    // bridge stays within `tool_radius` of already-cut path at the same Z,
+    // which is sound for a constant-width cutter (it took discrete Scallop
+    // from 9.71mm to 0.0000mm) but not for depth-dependent widths — a V-bit
+    // that passed shallowly here did not clear the width a deeper bridge
+    // needs. Links are therefore forbidden for this op until the check
+    // models that, or link decisions move into the generator where the
+    // geometry is in scope.
+    assert!(
+        !OperationType::Inlay
+            .transform_capabilities()
+            .allows_link_moves,
+        "Inlay permits link moves again — it gouged 8.21mm when last measured. \
+         Re-enable only with a fresh neutrality measurement, not on inspection."
     );
 }
 
@@ -1114,7 +1070,13 @@ fn scallop_island_params(continuous: bool) -> ScallopParams {
 }
 
 #[test]
-fn scallop_discrete_reorder_preserves_cuts_but_link_moves_gouge() {
+fn scallop_discrete_reorder_preserves_cuts_and_link_moves_are_now_safe() {
+    // RENAMED (was `..._but_link_moves_gouge`): PART 3 below used to
+    // deliberately reproduce the discrete-Scallop link-moves gouge under a
+    // hand-built permissive capability. `dressup::bridge_corridor_is_swept`
+    // now runs unconditionally inside `apply_link_moves` regardless of
+    // capability flags, so even this deliberately-permissive scenario
+    // should measure neutral — see PART 3's updated comment below.
     // Fixture note: this drives the REAL generator — `scallop_toolpath`,
     // the same function `compute/execute.rs`'s Scallop generation path
     // calls — over a real (if synthetic) 4-island mesh, not a hand-built
@@ -1309,18 +1271,25 @@ fn scallop_discrete_reorder_preserves_cuts_but_link_moves_gouge() {
          scale — investigate before trusting the reorder"
     );
 
-    // PART 3 — the hazard the shipped capability now PREVENTS. The shipped
+    // PART 3 — the hazard the shipped capability USED TO leave to
+    // `allows_link_moves: false` alone to prevent. The shipped
     // `caps.allows_link_moves` is false, so `apply_dressups` would refuse
     // to run `apply_link_moves` under it — there would be nothing to
-    // measure. To deliberately reproduce the defect that justifies keeping
-    // link moves forbidden, hand-build a PERMISSIVE capability (reorder
-    // AND links both on) — the shape the two concerns had before this
-    // fix-family split them apart — and confirm it still gouges.
-    // `apply_link_moves` collapses retract->plunge pairs into LATERAL feed
-    // bridges that plow across a 3D surface. Measured here at ~9mm of
-    // over-cut — the same class as the 8.2mm the Inlay link-moves test
-    // reports and passes, because that gate bounds the FRACTION of
-    // differing cells and never their depth.
+    // measure. To exercise the same permissive shape the two concerns had
+    // before this fix-family split them apart (reorder AND links both on),
+    // hand-build a PERMISSIVE capability and confirm the corridor-safety
+    // fix now holds even here.
+    //
+    // FIXED (`dressup::bridge_corridor_is_swept`, see the module doc
+    // comment): this used to measure ~9.71mm of over-cut — the same class
+    // as the Face/Inlay/VCarve gouges — because `apply_link_moves` bridged
+    // retract/rapid/plunge triples with a straight feed and no check that
+    // the corridor was already-cut territory. The check now lives
+    // UNCONDITIONALLY inside `apply_link_moves` (it does not read
+    // capability flags), so even this deliberately-permissive capability
+    // should no longer be able to produce the gouge — the capability flag
+    // stays `false` in production as defence in depth, not because this
+    // fixture still needs it to avoid the defect.
     let permissive_link_caps = OperationTransformCapabilities::new(true, false, false, true);
     let linked = dressup_with_caps(
         raw_for_links,
@@ -1333,16 +1302,26 @@ fn scallop_discrete_reorder_preserves_cuts_but_link_moves_gouge() {
         3.0,
     );
     let (hm_b2, hm_l) = simulate_pair_shared_frame(&baseline, &linked, &cutter, 0.5);
-    let (link_max_d, _) = compare_heightmaps(&hm_b2, &hm_l, 0.05);
-    println!("Scallop(discrete) LINK-MOVES: max_height_diff={link_max_d:.4}mm");
+    let (link_max_d, link_frac) = compare_heightmaps(&hm_b2, &hm_l, 0.05);
+    println!(
+        "Scallop(discrete) LINK-MOVES: max_height_diff={link_max_d:.4}mm \
+         cells_diff_frac={link_frac:.4}"
+    );
     assert!(
-        link_max_d > 1.0,
-        "expected link_moves to gouge discrete Scallop (measured 9.3mm on \
-         2026-08-03); got {link_max_d:.4}mm. This is the defect \
-         `allows_link_moves: false` on the shipped capability exists to \
-         prevent — if it stops reproducing, either the reorderer/linker \
-         changed materially or this fixture needs revisiting; it does NOT \
-         mean link moves are now safe to re-enable."
+        link_max_d <= 0.05,
+        "expected the bridge_corridor_is_swept fix to keep discrete Scallop \
+         link moves neutral (previously measured a 9.71mm gouge here on \
+         2026-08-03 under this same permissive capability); got \
+         {link_max_d:.4}mm instead. If this trips, the corridor-safety check \
+         is not catching this fixture's gouge — that is a real regression,\
+         not a fixture problem, and this assertion should NOT be loosened."
+    );
+    assert!(
+        link_frac <= 0.02,
+        "expected link moves to change at most a small fraction of cells on \
+         discrete Scallop; got {:.2}% of cells differing by > 0.05mm (max \
+         diff {link_max_d:.4}mm)",
+        link_frac * 100.0,
     );
 }
 
