@@ -932,6 +932,24 @@ pub struct UnifiedFinishConfig {
     /// the pre-S4 op.
     #[serde(default = "default_unified_finish_territory_clip")]
     pub territory_clip: bool,
+    /// INTRA-region stay-down linking (`planning/unified_v3_design.md`
+    /// §9): the maximum XY gap (mm) a gouge-checked, surface-following
+    /// link may span between two consecutive cut fragments inside ONE
+    /// region. `0.0` disables the pass and reproduces the previous op
+    /// byte-for-byte.
+    ///
+    /// The router has always linked BETWEEN regions this way. Within a
+    /// region every fragment junction still paid a full retract-to-safe-Z
+    /// round trip, and §9 measured that as the dominant cost: on wanaka ×2
+    /// the unified rest-clearer makes 12 780 of them for 17 077 s of
+    /// rapids, of which the XY hop — the only part reordering can shorten
+    /// — is roughly a tenth.
+    ///
+    /// A candidate must be within this gap AND gouge-safe (every sampled
+    /// point keeps surface contact) AND, when machine kinematics are in
+    /// scope, actually faster than the retract it replaces.
+    #[serde(default = "default_unified_finish_intra_region_hookup_mm")]
+    pub intra_region_hookup_mm: f64,
 }
 
 impl Default for UnifiedFinishConfig {
@@ -957,6 +975,7 @@ impl Default for UnifiedFinishConfig {
             min_rest_depth_mm: default_unified_finish_min_rest_depth_mm(),
             claims_reference: default_unified_finish_claims_reference(),
             territory_clip: default_unified_finish_territory_clip(),
+            intra_region_hookup_mm: default_unified_finish_intra_region_hookup_mm(),
         }
     }
 }
@@ -975,6 +994,12 @@ fn default_unified_finish_claims_reference() -> CreaseReference {
 
 fn default_unified_finish_territory_clip() -> bool {
     false
+}
+
+/// Default OFF pending the wanaka A/B that justifies a shipped-behaviour
+/// change (§9). Flip after the measurement, not before it.
+fn default_unified_finish_intra_region_hookup_mm() -> f64 {
+    0.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
