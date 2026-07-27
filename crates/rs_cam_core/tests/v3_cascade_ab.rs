@@ -2355,6 +2355,115 @@ fn v3_flank_gouge_probe() {
     }
 }
 
+/// WHICH OP dropped this column? — the per-op stock ladder.
+///
+/// Every attribution so far has been indirect: enable a subset and see
+/// what the totals do. `prior_stocks` makes it direct — each op's entry is
+/// the stock snapshot taken BEFORE it carved, so the column top read out
+/// of successive snapshots is the ladder, and the op whose entry differs
+/// from its successor's is the op that removed the material.
+///
+/// This exists because both gouge probes only inspect emitted CUTTING
+/// moves, and at the worst deep column (198.75, 52.75) — model top 7.335,
+/// stock left at 1.770 — `v3_gouge_site_probe` found no op with a cutting
+/// move anywhere near that Z. Something removed 5.5 mm there. This says
+/// what.
+#[test]
+#[ignore = "one cascade chain + measurement sim; set V3_SITES=x,y;x,y;..."]
+fn v3_column_ladder_probe() {
+    let sites_raw = std::env::var("V3_SITES")
+        .unwrap_or_else(|_| "198.75,52.75;35.50,149.75;51.25,123.75;99.00,129.75".to_owned());
+    let sites: Vec<(f64, f64)> = sites_raw
+        .split(';')
+        .filter_map(|s| {
+            let (a, b) = s.trim().split_once(',')?;
+            Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
+        })
+        .collect();
+    assert!(!sites.is_empty(), "V3_SITES parsed empty from {sites_raw:?}");
+    let (dial_label, dials) = dials_from_env("shipped");
+    eprintln!("== COLUMN LADDER dials={dial_label} sites={sites:?} ==");
+
+    let path = write_fixture_project(3.0);
+    let mut s = ProjectSession::load(&path).expect("load fixture");
+    let (enable, disable) = branch_ops(Branch::Cascade);
+    set_enabled_by_name(&mut s, enable, disable);
+    let idx = toolpath_index_by_name(&s, "Op B Unified Rest");
+    s.set_toolpath_operation(
+        idx,
+        OperationConfig::UnifiedFinish(op_b_config(
+            dials.intra_region_hookup_mm,
+            dials.pencil_claims,
+            dials.crease_hookup_mm,
+        )),
+    )
+    .expect("swap Op B config");
+    for i in 0..s.toolpath_count() {
+        let Some(tc) = s.get_toolpath_config(i) else {
+            continue;
+        };
+        let mut d = tc.dressups.clone();
+        d.air_bridge_policy = dials.air_bridge_policy;
+        if let Some(af) = dials.arc_fitting {
+            d.arc_fitting = af;
+        }
+        s.set_dressup_config(i, d).expect("set dressups");
+    }
+    run_chain("column_ladder", &mut s);
+    run_measurement_sim(&mut s);
+
+    let mesh = s
+        .models()
+        .iter()
+        .find_map(|m| m.mesh.clone())
+        .expect("terrain mesh");
+    let order: Vec<(String, rs_cam_core::ToolpathId)> = (0..s.toolpath_count())
+        .filter_map(|i| s.get_toolpath_config(i))
+        .filter(|tc| tc.enabled)
+        .map(|tc| (tc.name.clone(), tc.id))
+        .collect();
+    let sim = s.simulation_result().expect("sim result");
+
+    for (x, y) in sites {
+        let origin = rs_cam_core::geo::P3::new(x, y, 1.0e6);
+        let dir = rs_cam_core::geo::V3::new(0.0, 0.0, -1.0);
+        let model_z = rs_cam_core::mesh::ray_pick_triangle(&mesh, &origin, &dir)
+            .map_or(f64::NAN, |(_, t)| 1.0e6 - t);
+        eprintln!("-- site ({x:.2}, {y:.2}) model_z={model_z:.3} --");
+        for (name, id) in &order {
+            let top = sim.prior_stocks.get(id).and_then(|st| {
+                let g = &st.z_grid;
+                g.world_to_cell(x, y).and_then(|(r, c)| g.top_z_at(r, c))
+            });
+            match top {
+                Some(t) => eprintln!(
+                    "   before {name:<20} top={:8.3}  (dev {:+7.3})",
+                    t,
+                    f64::from(t) - model_z
+                ),
+                None => eprintln!("   before {name:<20} top=<none>"),
+            }
+        }
+        let final_top = sim
+            .column_deviations
+            .as_ref()
+            .and_then(|cols| {
+                cols.iter()
+                    .filter(|cd| (cd.x - x).abs() < 0.2 && (cd.y - y).abs() < 0.2)
+                    .min_by(|p, q| {
+                        let dp = (p.x - x).powi(2) + (p.y - y).powi(2);
+                        let dq = (q.x - x).powi(2) + (q.y - y).powi(2);
+                        dp.total_cmp(&dq)
+                    })
+                    .map(|cd| (cd.top_z, cd.dev))
+            });
+        match final_top {
+            Some((t, dev)) => eprintln!("   FINAL (columns)          top={t:8.3}  (dev {dev:+7.3})"),
+            None => eprintln!("   FINAL (columns)          <no column within 0.2mm>"),
+        }
+    }
+}
+
 /// Shared verdict printer + quality gate for the branch comparison.
 fn verdict(what: &str, d: &BranchScore, c: &BranchScore) {
 
