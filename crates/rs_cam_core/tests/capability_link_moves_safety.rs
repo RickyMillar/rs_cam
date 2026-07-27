@@ -1744,6 +1744,151 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
     );
 }
 
+// ── SteepShallow: two concatenated passes, not a continuous trace ────────
+
+#[test]
+fn steep_shallow_split_barriers_allow_intra_half_reorder_and_pin_depth() {
+    use rs_cam_core::steep_shallow::{
+        STEEP_HALF_LABEL, SteepShallowParams, steep_shallow_spans,
+        steep_shallow_toolpath_split_with_cancel,
+    };
+    use rs_cam_core::toolpath_spans::{AnnotatedToolpath, SpanKind};
+
+    // Four disconnected islands: on a single contiguous dome each Z level
+    // holds one contour and the shallow half is one serpentine, so there is
+    // nothing to reorder. Fragmented territory is where the transform earns
+    // its keep — and is what Op B faces on real rest islands.
+    let (mesh, index) = scallop_island_mesh();
+    let cutter = BallEndmill::new(3.0, 25.0);
+    let params = SteepShallowParams {
+        safe_z: 30.0,
+        ..SteepShallowParams::default()
+    };
+    let never_cancel = || false;
+    let (raw, split) = steep_shallow_toolpath_split_with_cancel(
+        &mesh,
+        &index,
+        &cutter,
+        &params,
+        None,
+        &never_cancel,
+    )
+    .expect("uncancelled generation");
+
+    assert!(!raw.moves.is_empty(), "fixture must generate a toolpath");
+    assert!(
+        !split.steep.is_empty() && !split.shallow.is_empty(),
+        "a hemisphere must produce BOTH halves or this test is half vacuous: \
+         steep={:?} shallow={:?}",
+        split.steep,
+        split.shallow
+    );
+    let steep_levels = nominal_z_levels(&raw, split.steep.clone());
+    assert!(
+        steep_levels.len() >= 2,
+        "the steep half must ladder through several Z levels or the depth \
+         assertion below is vacuous: {steep_levels:?}"
+    );
+
+    // The spans production ships, from the function production calls.
+    let annotated = AnnotatedToolpath::with_spans(raw.clone(), steep_shallow_spans(&raw, &split));
+    annotated
+        .check_invariants()
+        .expect("emitted spans must be well-formed");
+    let barriers = annotated.rapid_order_barriers();
+    println!(
+        "SteepShallow: steep={:?} shallow={:?} levels={} barriers={}",
+        split.steep,
+        split.shallow,
+        steep_levels.len(),
+        barriers.len()
+    );
+    // The half boundary must be a barrier, or the TSP could pull a shallow
+    // raster row up into the steep pass.
+    let boundary = split.shallow.start.max(split.steep.start);
+    assert!(
+        barriers.contains(&boundary),
+        "the steep/shallow boundary at move {boundary} must be a barrier: {barriers:?}"
+    );
+    assert!(
+        barriers.len() >= steep_levels.len(),
+        "the steep half's Z levels must each open a barrier: {} levels, {} \
+         barriers",
+        steep_levels.len(),
+        barriers.len()
+    );
+
+    let caps = OperationType::SteepShallow.transform_capabilities();
+    assert!(
+        caps.allows_barriered_rapid_reorder(),
+        "SteepShallow must allow the BARRIERED reorder"
+    );
+    assert!(
+        !caps.allows_unbarriered_rapid_reorder(),
+        "SteepShallow must NOT allow the unbarriered reorder — that path \
+         ignores the split and the Z barriers entirely"
+    );
+
+    let dressed = |cfg: &DressupConfig| -> AnnotatedToolpath {
+        apply_dressups(
+            AnnotatedToolpath::with_spans(raw.clone(), steep_shallow_spans(&raw, &split)),
+            cfg,
+            1000.0,
+            /* tool_diameter */ 3.0,
+            /* safe_z */ 30.0,
+            /* stock_top */ 0.0,
+            None,
+            None,
+            None,
+            caps,
+            None,
+            None,
+        )
+    };
+    let baseline = dressed(&dressup_no_links());
+    let optimized = dressed(&DressupConfig {
+        optimize_rapid_order: true,
+        link_moves: false,
+        ..DressupConfig::default()
+    });
+
+    println!(
+        "SteepShallow TSP: rapid {:.1} -> {:.1} | cut {:.1} -> {:.1}",
+        rapid_distance(&baseline.toolpath),
+        rapid_distance(&optimized.toolpath),
+        cutting_distance(&baseline.toolpath),
+        cutting_distance(&optimized.toolpath),
+    );
+    assert!(
+        rapid_distance(&optimized.toolpath) < rapid_distance(&baseline.toolpath),
+        "the barriered TSP must reduce rapid travel, or this sentry is vacuous"
+    );
+    assert_eq!(
+        swept_cut_segments(&baseline.toolpath),
+        swept_cut_segments(&optimized.toolpath),
+        "the reorder must sweep exactly the same cut segments"
+    );
+
+    // Z ladder inside the steep half. The sim is blind to this: removal is
+    // order-free in the interior, so lifting a deep pass above a shallow one
+    // leaves identical stock and only the cutting FORCE is wrong.
+    let steep_span = optimized
+        .spans
+        .iter()
+        .find(|s| s.kind == SpanKind::Region && s.label == STEEP_HALF_LABEL)
+        .expect("the steep half's Region span must survive the reorder remap");
+    let after = nominal_z_levels(
+        &optimized.toolpath,
+        steep_span.start_move..steep_span.end_move,
+    );
+    assert!(
+        after.windows(2).all(|w| w[0] >= w[1] - 1.0e-6),
+        "the steep waterline half must keep its Z ladder descending after \
+         the reorder — the per-Z barriers exist precisely for this. \
+         before={steep_levels:?} after={after:?}"
+    );
+}
+
 // ── DropCutter: reorder-enabled in production, previously unguarded ─────
 
 /// Raster drop-cutter path over the hemisphere, built the way
