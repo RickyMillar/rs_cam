@@ -1155,3 +1155,59 @@ move penetrates the MODEL beyond tolerance. That answers "was this move
 ever legal" directly, for every op, without a dexel sim — and the codebase
 has nothing like it today (`bridge_corridor_is_swept` is the closest, and
 it is corridor-only and constant-width).
+
+### The chord fix: rejected by measurement (2026-07-27)
+
+`v3_chord_gouge_probe` confirmed the chord candidate directly — every
+cutting move's interior probed against the drop-cutter surface it should
+ride, `gouge = cl.z − chord_z`:
+
+| op | probes | >0.05 mm | >0.5 mm |
+|---|---|---|---|
+| Rough | 474 255 | 250 | 26 |
+| Op A | 2 809 779 | 6 409 | **279** |
+| Op B | 2 173 008 | **253 559** | **3 339** |
+
+The ordering matches the deep-column ladder (37 / +201 / +5 822) measured
+independently by COLUMNS, and Op A's worst chord is move #361785 — the
+exact Ring 213 move `v3_gouge_site_probe` flagged, diving −0.772 → −3.889
+over 0.18 mm of XY with its interior 1.98 mm below the legal surface.
+
+So the fix looked obvious: `refine_chord` sizes its probe count from the
+chord's **XY** length, so a 0.18 mm step that falls 3.1 mm scores
+`segments < 2` and is never probed at all. Switching to the 3D length
+(flat chords unaffected, `dz ≈ 0` reproduces the old test) cut Op A's
+chord gouges by 36% (6 409 → 4 038 over 0.05 mm; 279 → 179 over 0.5 mm;
+worst 1.98 → 1.16 mm).
+
+**And the COLUMNS gate got WORSE.**
+
+| | before | after |
+|---|---|---|
+| Op A stage, deep total | 238 | 293 |
+| cascade shallow deep columns | 1 218 | **1 615** |
+| cascade shallow on-size | 15.2% | **14.3%** |
+| Op A / Op B time | 11 070 / 38 868 s | 11 275 / 41 363 s |
+| Op B chord gouges >0.5 mm | 3 339 | **15 583** |
+
+Reverted. Two things this teaches, both worth more than the fix would
+have been:
+
+1. **Chord fidelity and over-cut are DIFFERENT phenomena.** Refining a
+   cliff chord inserts points ON the CL surface, so the tool now follows
+   the wall down instead of cutting the straight line — and following it
+   sweeps the ball's FLANK through material the chord skipped. A more
+   faithful path is not automatically a less destructive one when the
+   cutter's side is doing the cutting. The chord probe measures a
+   NECESSARY condition for a legal path, not a sufficient one.
+2. **Op B is downstream of Op A's stock**, so changing Op A re-cuts Op B's
+   rest regions entirely — Op B's own chord gouges went up 4.7×. Any fix
+   aimed at Op A must be measured on the CASCADE, never on Op A alone.
+
+The mechanism is still open. What is now excluded, each by measurement:
+the Rough, the §9 relink, the crease node's links, crease path Z, the
+COLUMNS instrument, the `min_z` fallback (mesh bbox min is −4.0653 and Op
+A's deepest move is −3.918 — never equal), and chord infidelity as the
+PRIMARY cause. The leading remaining candidate is the ball's flank on
+concave/steep geometry, which points back at the wanted instrument: a
+swept-cutter-vs-model check, not a centreline-vs-surface one.
