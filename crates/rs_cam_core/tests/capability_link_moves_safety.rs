@@ -18,9 +18,33 @@
 //!    (allows_global_rapid_reorder=true) lets TSP collapse rapid travel on
 //!    a multi-hole fixture.
 //!
-//! All tests must pass on master HEAD. A failure here means the audit's
-//! capability flip introduced real material divergence — investigate before
-//! shipping.
+//! REVISED 2026-08-03 — two structural holes were found and closed:
+//!
+//! - The neutrality gate bounded only the FRACTION of differing cells,
+//!   never their DEPTH, so a deep narrow gouge passed cleanly. With a depth
+//!   bound added, three ops that had always been "green" turned out to
+//!   gouge from link moves: Face 9.21mm, Inlay 8.21mm, VCarve 5.78mm. They
+//!   now route to `assert_link_moves_gouge`, which PINS the defect rather
+//!   than hiding it, so the fix is visible when it lands.
+//! - `dressup()` wrapped raw toolpaths in `AnnotatedToolpath::new` (no
+//!   spans). Barriers live in spans and both `apply_link_moves` and the TSP
+//!   are barrier-aware, so the fixture was stripping every ordering
+//!   constraint the real pipeline has. It now builds production-equivalent
+//!   spans per op (`production_spans`). Face was re-measured with its real
+//!   `spans_from_depth_runs` barriers and still gouges — so these are
+//!   genuine, not fixture artifacts.
+//! - `trace_link_moves_preserves_material_state` was vacuous: Trace forbids
+//!   link moves, so it compared two identical toolpaths. Replaced by an
+//!   assertion of the real property.
+//!
+//! Root cause of the gouges: `apply_link_moves` inserts a straight feed
+//! bridge with NO gouge check, unlike `surface_link::build_surface_link`
+//! which pencil/unified_finish use for exactly this reason. Flat,
+//! already-cleared paths (Chamfer/Pencil/RadialFinish) measure 0.0000mm;
+//! variable-depth or multi-feature paths plow.
+//!
+//! All tests must pass on master HEAD. A failure here means real material
+//! divergence — investigate before shipping.
 
 #![allow(
     clippy::unwrap_used,
@@ -52,7 +76,6 @@ use rs_cam_core::{
     scallop::{ScallopDirection, ScallopParams, scallop_toolpath},
     tool::{BallEndmill, FlatEndmill, MillingCutter},
     toolpath::{MoveIntent, MoveType, Toolpath},
-    trace::{TraceCompensation, TraceParams, trace_toolpath},
     vcarve::{VCarveParams, vcarve_toolpath},
 };
 
@@ -103,9 +126,37 @@ fn dressup_with_links(link_max_distance: f64) -> DressupConfig {
 
 /// Run `apply_dressups` with the op's real capabilities and no rapid-order
 /// barriers (the operations under test don't emit any).
+/// Production-equivalent spans for `op`.
+///
+/// CRITICAL (2026-08-03): `apply_link_moves` and the TSP passes are
+/// BARRIER-AWARE, and barriers live in spans. Wrapping a raw toolpath in
+/// `AnnotatedToolpath::new` (spans: `Vec::new()`) therefore strips every
+/// ordering constraint the real pipeline has, and an op whose production
+/// adapter emits `DepthPass`/`RapidOrderBarrier` spans will appear to
+/// gouge here purely because the test threw its barriers away. Face is
+/// exactly that case: `compute/execute.rs::generate_face` ships
+/// `generated_with_depth_run_spans`, so its cross-depth links are blocked
+/// in production and only unblocked by a span-less fixture.
+fn production_spans(tp: &Toolpath, op: OperationType) -> Vec<rs_cam_core::toolpath_spans::Span> {
+    use rs_cam_core::compute::spans::{spans_from_cutting_runs, spans_from_depth_runs};
+    match op {
+        // Depth-stepped adapters: real Z-transition barriers, derived from
+        // the toolpath's own cutting Z (the empty `levels` hint is what
+        // `generate_face` itself passes).
+        OperationType::Face | OperationType::Pocket | OperationType::Profile => {
+            spans_from_depth_runs(tp, &[])
+        }
+        // Everything else in this suite ships Region spans only — no
+        // barriers — so a span-less fixture is already faithful. Build them
+        // anyway so the comparison is like-for-like.
+        _ => spans_from_cutting_runs(tp, "run"),
+    }
+}
+
 fn dressup(tp: Toolpath, cfg: &DressupConfig, op: OperationType, tool_diameter: f64) -> Toolpath {
+    let spans = production_spans(&tp, op);
     apply_dressups(
-        rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
+        rs_cam_core::toolpath_spans::AnnotatedToolpath::with_spans(tp, spans),
         cfg,
         1000.0,
         tool_diameter,
@@ -294,6 +345,20 @@ fn assert_link_moves_neutral(
         "{op:?}: raw toolpath unexpectedly empty — fixture is wrong"
     );
 
+    // VACUITY GUARD (2026-08-03): `apply_dressups` gates link moves on
+    // `allows_link_moves()`. For an op that forbids them, the `with_links`
+    // branch is byte-identical to the baseline and every assertion below
+    // passes without testing anything — which is exactly what
+    // `trace_link_moves_preserves_material_state` had been doing since it
+    // was written. Refuse to pretend.
+    assert!(
+        op.transform_capabilities().allows_link_moves,
+        "{op:?}: allows_link_moves is FALSE, so this fixture cannot exercise \
+         link moves at all — the comparison below would be two identical \
+         toolpaths. Either this op should permit links, or it does not belong \
+         in this suite."
+    );
+
     let baseline = dressup(raw.clone(), &dressup_no_links(), op, tool_diameter);
     let with_links = dressup(raw, &dressup_with_links(link_distance), op, tool_diameter);
 
@@ -312,6 +377,21 @@ fn assert_link_moves_neutral(
         with_links.moves.len(),
     );
 
+    // DEPTH BOUND (2026-08-03). The fraction gate below cannot see a
+    // deep, narrow gouge: a link bridge that plows 8mm through 1% of the
+    // part passes it cleanly. Bound how far ANY column may move, not just
+    // how many. Ops KNOWN to fail this are routed to
+    // `assert_link_moves_gouge` instead, so the defect is asserted rather
+    // than hidden behind a tolerance.
+    assert!(
+        max_d <= height_tol,
+        "{op:?}: link_moves moved a column by {max_d:.4}mm (tolerance \
+         {height_tol:.4}mm) — a deep, narrow gouge that the cells-differing \
+         fraction gate is structurally blind to. apply_link_moves inserts a \
+         straight feed bridge with NO gouge check (contrast \
+         surface_link::build_surface_link, which pencil/unified_finish use); \
+         on anything but a flat, already-cleared path that bridge cuts.",
+    );
     assert!(
         frac <= cell_diff_frac_max,
         "{op:?}: link_moves changed material removal beyond tolerance — \
@@ -340,12 +420,60 @@ fn assert_link_moves_neutral(
     );
 }
 
+/// Sibling of [`assert_link_moves_neutral`] for ops where link moves are
+/// PERMITTED and measurably GOUGE.
+///
+/// `apply_link_moves` collapses a retract→rapid→plunge triple into a
+/// straight feed bridge with NO gouge check — contrast
+/// `surface_link::build_surface_link`, which pencil and unified_finish use
+/// precisely because a straight bridge across 3D geometry cuts. On a flat,
+/// already-cleared path the bridge is harmless, which is why Chamfer /
+/// Pencil / RadialFinish measure 0.0000mm. On variable-depth or
+/// multi-feature paths it plows.
+///
+/// These assertions are deliberately inverted: they PIN the defect so it
+/// cannot regress silently and so the fix is visible when it lands. When
+/// an op here starts measuring neutral, move it back to
+/// [`assert_link_moves_neutral`] and set its `allows_link_moves` to `true`
+/// with confidence.
+fn assert_link_moves_gouge(
+    op: OperationType,
+    raw: Toolpath,
+    cutter: &dyn MillingCutter,
+    tool_diameter: f64,
+    cell_size: f64,
+    link_distance: f64,
+    known_gouge_mm: f32,
+) {
+    assert!(
+        op.transform_capabilities().allows_link_moves,
+        "{op:?}: this test documents a link-moves gouge, but the op no \
+         longer permits link moves — if that was the fix, delete this test"
+    );
+    let baseline = dressup(raw.clone(), &dressup_no_links(), op, tool_diameter);
+    let with_links = dressup(raw, &dressup_with_links(link_distance), op, tool_diameter);
+    let (hm_base, hm_link) = simulate_pair_shared_frame(&baseline, &with_links, cutter, cell_size);
+    let (max_d, frac) = compare_heightmaps(&hm_base, &hm_link, 0.05);
+    println!(
+        "{op:?} LINK GOUGE: max_height_diff={max_d:.4}mm cells_diff_frac={frac:.4} \
+         (known {known_gouge_mm:.2}mm) | cut {:.1} -> {:.1}",
+        cutting_distance(&baseline),
+        cutting_distance(&with_links),
+    );
+    assert!(
+        max_d > 1.0,
+        "{op:?}: expected the documented link-moves gouge (~{known_gouge_mm:.2}mm) \
+         but measured {max_d:.4}mm. If link moves are genuinely safe for this op \
+         now, that is GOOD — move it back to assert_link_moves_neutral."
+    );
+}
+
 // ═════════════════════════════════════════════════════════════════════════
 // 7 link_moves-loosened ops
 // ═════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn face_link_moves_preserves_material_state() {
+fn face_link_moves_gouge_documented_defect() {
     let bounds = BoundingBox3 {
         min: P3::new(-5.0, -5.0, -10.0),
         max: P3::new(45.0, 35.0, 1.0),
@@ -366,52 +494,34 @@ fn face_link_moves_preserves_material_state() {
         },
     );
     let cutter = FlatEndmill::new(12.7, 25.0);
-    assert_link_moves_neutral(
+    assert_link_moves_gouge(
         OperationType::Face,
         raw,
         &cutter,
         12.7,
         /* cell_size */ 0.5,
         /* link_distance */ 15.0,
-        /* height_tol mm */ 0.05,
-        /* cell_diff_frac_max */ 0.02,
+        /* known gouge mm */ 9.21,
     );
 }
 
 #[test]
-fn trace_link_moves_preserves_material_state() {
-    let poly = rect_polygon();
-    let raw = trace_toolpath(
-        &poly,
-        &TraceParams {
-            tool_radius: 3.175,
-            depth: 2.0,
-            depth_per_pass: 0.5,
-            feed_rate: 800.0,
-            plunge_rate: 400.0,
-            safe_z: 30.0,
-            compensation: TraceCompensation::None,
-            top_z: 0.0,
-        },
-    );
-    let cutter = FlatEndmill::new(6.35, 25.0);
-    // Trace passes are at the same XY ring with retracts between depth
-    // passes; link_moves can collapse the retract/plunge between
-    // consecutive passes at the same XY end-start point.
-    assert_link_moves_neutral(
-        OperationType::Trace,
-        raw,
-        &cutter,
-        6.35,
-        0.5,
-        20.0,
-        0.05,
-        0.02,
+fn trace_link_moves_are_forbidden_so_the_old_test_was_vacuous() {
+    // Trace sits in the `requires_depth_order` bucket, so `allows_link_moves`
+    // is false and `apply_dressups` never runs `apply_link_moves` on it.
+    // The previous body compared two IDENTICAL toolpaths and asserted they
+    // matched — green forever, testing nothing. Assert the real property.
+    assert!(
+        !OperationType::Trace
+            .transform_capabilities()
+            .allows_link_moves,
+        "Trace now permits link moves — it needs a REAL neutrality or gouge \
+         test, not the vacuous clone comparison this replaced"
     );
 }
 
 #[test]
-fn vcarve_link_moves_preserves_material_state() {
+fn vcarve_link_moves_gouge_documented_defect() {
     let poly = l_shape_polygon();
     let raw = vcarve_toolpath(
         &poly,
@@ -430,20 +540,19 @@ fn vcarve_link_moves_preserves_material_state() {
     // conservative small cutter for simulation since we only care about
     // diff between baseline and with-links variants.
     let cutter = FlatEndmill::new(2.0, 25.0);
-    assert_link_moves_neutral(
+    assert_link_moves_gouge(
         OperationType::VCarve,
         raw,
         &cutter,
         2.0,
-        0.4,
-        5.0,
-        0.05,
-        0.02,
+        /* cell_size */ 0.4,
+        /* link_distance */ 5.0,
+        /* known gouge mm */ 5.78,
     );
 }
 
 #[test]
-fn inlay_link_moves_preserves_material_state() {
+fn inlay_link_moves_gouge_documented_defect() {
     let poly = l_shape_polygon();
     let result = inlay_toolpaths(
         &poly,
@@ -464,15 +573,14 @@ fn inlay_link_moves_preserves_material_state() {
     );
     let cutter = FlatEndmill::new(2.0, 25.0);
     // Use the female (pocket) toolpath — same convention as the param sweep.
-    assert_link_moves_neutral(
+    assert_link_moves_gouge(
         OperationType::Inlay,
         result.female,
         &cutter,
         2.0,
-        0.4,
-        5.0,
-        0.05,
-        0.02,
+        /* cell_size */ 0.4,
+        /* link_distance */ 5.0,
+        /* known gouge mm */ 8.21,
     );
 }
 
