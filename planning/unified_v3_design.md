@@ -1306,3 +1306,79 @@ Different → the sim's Op B stamp is the defect. This is the same
 three-way shape that closed P2.g Task 1 (`pre == read`, `sim == re-stamp`,
 cross-branch delta ≡ re-stamp delta), and it is the right instrument here
 for the same reason.
+
+## 12. The gouge was arc-fit emitting REFLEX arcs (2026-07-28)
+
+§11a's contradiction — Op B removing 5.5 mm from a column its toolpath
+could not reach — resolved, and the answer was a live G-code defect.
+
+### How it was cornered
+
+Three probes, each ruling out one layer:
+
+1. `v3_restamp_probe` — re-stamping Op B onto its own pre-carve snapshot
+   reproduced the sim to ~0.5 µm at all four ladder columns. **The
+   simulation is faithful; the defect is in the toolpath.**
+2. `v3_move_attribution_probe` — stamping move-by-move named ONE move:
+   `#159780 ArcCW { i: −18.2399, j: −54.0468 }`, whose XY distance to the
+   gouged column is **97.2 mm**.
+3. Geometry: centre (158.544, 93.391), radius 57.04 for both endpoints,
+   which are 3.55 mm apart. Start angle 71.34°, end 74.90° — increasing,
+   so the path is COUNTER-clockwise over 3.56°. Tagged `ArcCW`, it
+   commands the reflex arc: **356.4°, 354 mm of travel**. The gouged
+   column sits 57.2 mm from that centre, i.e. exactly ON the bogus
+   circle.
+
+Isolated with the dials: `V3_ARCFIT=off` → column untouched;
+`V3_REORDER=off` → the identical bogus arc, same `i/j`. **TSP reassembly
+is exonerated** (review Finding 2 remains a real latent bug, but is not
+this one).
+
+### The defect
+
+`arcfit::try_fit_arc` chose CW vs CCW from the cross product of two
+chords and never checked the outcome. On a shallow run the three sample
+points are nearly collinear, the cross product is rounding noise, and its
+sign flips at random. Through the same endpoints on the same circle, the
+wrong direction is the REFLEX arc — so the error is not small, it is
+~360°. `arc_fitting` is a default-ON dressup, so this was never
+campaign-specific, and a machine would have driven a 114 mm circle
+through the workpiece.
+
+**The missing invariant: a fitted arc must be about as long as the
+polyline it replaces.** Both directions share the endpoints, so length is
+the thing that distinguishes them. Now picks the closer direction and
+declines the fit if even that is implausible.
+
+### Measured effect (wanaka ×2, ball Ø3, SHIPPED dials)
+
+| | before | after |
+|---|---|---|
+| deep columns, total | 6 060 | **937** |
+| shallow | 1 218 | **87** |
+| off-region | 4 179 | 668 |
+| mid-steep / very-steep | 375 / 288 | 150 / 32 |
+| Op B time | 38 868 s | 38 896 s |
+
+**85% of the cascade's gouging was one arc-direction bug**, at no time
+cost.
+
+### And it does NOT pass the quality gate
+
+Shallow on-size 15.2% → **15.5%**, against D's 19.2%. The gate needs
+17.2%.
+
+This is worth stating precisely because it is the campaign's most
+repeated mistake in miniature: **the gouges were real, serious, and not
+what the gate was measuring.** On-size counts columns within ±10 µm;
+1 218 gouged columns out of 66 714 is 1.8% of the band, so removing them
+could never have moved on-size by the missing 4 pp. The deficit is
+distribution-wide, not a tail population — D simply lands more of the
+band inside ±10 µm.
+
+So GATE 2 remains open, with the gouge explanation now closed off. The
+live hypothesis is the one §11a's ladder pointed at before the arc bug
+swamped it: on shallow textured ground a Ø3 ball cannot reproduce what a
+Ø1 tip can, and Op B is not clearing the difference — which is a
+territory question (`min_rest_depth_mm`, the rest-field keep-mask), or it
+is inherent to the tool pairing, in which case that IS the verdict.
