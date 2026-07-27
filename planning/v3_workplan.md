@@ -97,7 +97,45 @@ do not build a third instrument to arbitrate the first two.
 
 ---
 
-## Item 2 — ship decision: `AirBridgePolicy::ShorterThanAirPath`
+## Item 2 — ship decision **[DECIDED 2026-07-28: DO NOT SHIP YET]**
+
+**RESULT: leave it OFF, and fix the air classifier first.**
+
+The +316 the case rested on was measured against a baseline where reflex
+arcs (§12) contributed 1 218 shallow gouges. Re-measured after that fix,
+on the same fixture:
+
+| | shipped | bridges-only |
+|---|---|---|
+| deep columns, total | **937** | **3 503** |
+| shallow | **87** | **700** |
+| very-steep | 32 | 525 |
+| shallow on-size | 15.5% | 14.8% |
+| finish stack | — | 38 577.8 s (−2.0% vs D) |
+
+**+613 shallow on a baseline of 87 — 8×, not 26%.** −2.0% is not worth
+that.
+
+**And there is a mechanism, which is why this is a sequencing problem
+rather than a verdict.** Vetoing a bridge means emitting the air run as a
+CUTTING move, so the policy leans harder on `filter_air_cuts`'
+classification — and review finding 4 shows that classifier samples only
+the endpoints and the arc centre, with `_tool_radius` unused. A run whose
+endpoints are in air but whose middle crosses material is precisely what
+it mis-labels, and the policy then cuts through it instead of retracting
+over it.
+
+**Order inverted:** fix the classification first (sample the swept path
+at dexel scale, honour the cutter radius, linearize arcs — finding 4's
+own recommendation), then re-measure. If the +613 collapses, this ships
+on time merit. If it does not, the policy buys speed with material and
+stays off permanently.
+
+**Lesson, and it is the same one twice now:** a quality cost measured
+against a contaminated baseline is not a quality cost. The arcfit noise
+made +316 look like a rounding error on 1 218.
+
+<details><summary>Original statement of item 2</summary>
 
 **Question.** Turn it on by default?
 
@@ -118,6 +156,7 @@ equal-length bridge is much faster. The current test is mis-signed and the
 −22.8% is a FLOOR. Blocked behind the `apply_dressups` signature (review
 Finding 5), which is what keeps `link_kinematics` from reaching the
 filter.
+</details>
 
 ---
 
@@ -212,6 +251,9 @@ Listed so they are not rediscovered, not scheduled here.
 ## Log
 
 - **2026-07-28** — plan written. Item 1 started.
+- **2026-07-28** — item 2 DECIDED: do not ship. Re-measured post-arcfix,
+  the policy costs 8x the shallow gouging, not 26%. Promotes review
+  finding 4 (endpoint-only air classification) to a prerequisite.
 - **2026-07-28** — item 3 gouge branch CLOSED: arc-fit reflex bug found
   and fixed (deep columns −85%), gate unmoved. One hypothesis left before
   the NOT-PROVABLE verdict.
