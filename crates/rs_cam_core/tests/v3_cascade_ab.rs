@@ -1553,6 +1553,12 @@ struct Dials {
     /// 2026-07-27 ran with; `V3_CREASE_HOOKUP=0` keeps the claims pipeline
     /// and its territory clip while removing only the unbounded links.
     crease_hookup_mm: f64,
+    /// Override every op's `optimize_rapid_order` dressup. `None` leaves
+    /// the fixture's setting (on). `V3_REORDER=off` — the decisive test
+    /// for whether TSP reassembly is corrupting arc centres (review
+    /// finding 2: a segment's first move keeps `i/j` relative to its
+    /// ORIGINAL source, and `rebuild_group` gives it a new one).
+    optimize_rapid_order: Option<bool>,
     /// Override every op's `arc_fitting` dressup. `None` leaves the
     /// fixture's setting (on). Arc fitting replaces a drop-cutter-probed
     /// polyline with an arc in XY while interpolating Z linearly, so the
@@ -1570,6 +1576,7 @@ impl Dials {
         pencil_claims: true,
         crease_hookup_mm: 5.0,
         arc_fitting: None,
+        optimize_rapid_order: None,
     };
     /// §9 intra-region stay-down linking + §10 cost-aware air bridges.
     const V3: Self = Self {
@@ -1578,6 +1585,7 @@ impl Dials {
         pencil_claims: true,
         crease_hookup_mm: 5.0,
         arc_fitting: None,
+        optimize_rapid_order: None,
     };
     /// §10 cost-aware air bridges alone — the lever §10a isolated as
     /// carrying the whole win (−22.8% finish stack) at a twelfth of the
@@ -1588,6 +1596,7 @@ impl Dials {
         pencil_claims: true,
         crease_hookup_mm: 5.0,
         arc_fitting: None,
+        optimize_rapid_order: None,
     };
     /// §9 intra-region stay-down links alone.
     const LINKS: Self = Self {
@@ -1596,6 +1605,7 @@ impl Dials {
         pencil_claims: true,
         crease_hookup_mm: 5.0,
         arc_fitting: None,
+        optimize_rapid_order: None,
     };
 }
 
@@ -1621,6 +1631,15 @@ fn dials_from_env(default: &str) -> (String, Dials) {
         }
         Ok("on") | Err(_) => {}
         Ok(other) => panic!("V3_CLAIMS must be on|off, got {other:?}"),
+    }
+    match std::env::var("V3_REORDER").as_deref() {
+        Ok("off") => {
+            dials.optimize_rapid_order = Some(false);
+            label.push_str("+noreorder");
+        }
+        Ok("on") => dials.optimize_rapid_order = Some(true),
+        Err(_) => {}
+        Ok(other) => panic!("V3_REORDER must be on|off, got {other:?}"),
     }
     match std::env::var("V3_ARCFIT").as_deref() {
         Ok("off") => {
@@ -1700,6 +1719,9 @@ fn score_stage(
         d.air_bridge_policy = dials.air_bridge_policy;
         if let Some(af) = dials.arc_fitting {
             d.arc_fitting = af;
+        }
+        if let Some(ro) = dials.optimize_rapid_order {
+            d.optimize_rapid_order = ro;
         }
         s.set_dressup_config(i, d)
             .unwrap_or_else(|e| panic!("[{label}] set dressups on {i}: {e}"));
@@ -1994,6 +2016,9 @@ fn v3_gouge_site_probe() {
         if let Some(af) = dials.arc_fitting {
             d.arc_fitting = af;
         }
+        if let Some(ro) = dials.optimize_rapid_order {
+            d.optimize_rapid_order = ro;
+        }
         s.set_dressup_config(i, d).expect("set dressups");
     }
     run_chain("gouge_site", &mut s);
@@ -2121,6 +2146,9 @@ fn v3_chord_gouge_probe() {
         d.air_bridge_policy = dials.air_bridge_policy;
         if let Some(af) = dials.arc_fitting {
             d.arc_fitting = af;
+        }
+        if let Some(ro) = dials.optimize_rapid_order {
+            d.optimize_rapid_order = ro;
         }
         s.set_dressup_config(i, d).expect("set dressups");
     }
@@ -2261,6 +2289,9 @@ fn v3_flank_gouge_probe() {
         d.air_bridge_policy = dials.air_bridge_policy;
         if let Some(af) = dials.arc_fitting {
             d.arc_fitting = af;
+        }
+        if let Some(ro) = dials.optimize_rapid_order {
+            d.optimize_rapid_order = ro;
         }
         s.set_dressup_config(i, d).expect("set dressups");
     }
@@ -2407,6 +2438,9 @@ fn v3_column_ladder_probe() {
         if let Some(af) = dials.arc_fitting {
             d.arc_fitting = af;
         }
+        if let Some(ro) = dials.optimize_rapid_order {
+            d.optimize_rapid_order = ro;
+        }
         s.set_dressup_config(i, d).expect("set dressups");
     }
     run_chain("column_ladder", &mut s);
@@ -2509,6 +2543,9 @@ fn v3_restamp_probe() {
         d.air_bridge_policy = dials.air_bridge_policy;
         if let Some(af) = dials.arc_fitting {
             d.arc_fitting = af;
+        }
+        if let Some(ro) = dials.optimize_rapid_order {
+            d.optimize_rapid_order = ro;
         }
         s.set_dressup_config(i, d).expect("set dressups");
     }
@@ -2620,6 +2657,277 @@ fn v3_restamp_probe() {
             cd.row, cd.col, cd.top_z, rs, cd.dev
         );
     }
+}
+
+/// WHICH MOVE dropped this column? — per-move stamp attribution.
+///
+/// Item 1 cleared `prior_stocks` and the simulation wrapper: re-stamping
+/// Op B reproduces the sim exactly. So the reach contradiction lives in
+/// the shared stamping path or in the site probe's move enumeration, and
+/// only naming the responsible move can say which. Since the radial
+/// profile height is never negative, no tool position at tip Z 2.899 can
+/// leave a 1.770 top — so whatever move the stamp credits must either sit
+/// lower than the site probe found, or be further away than its profile
+/// can reach.
+///
+/// Stamps Op B one move at a time onto its own pre-carve snapshot with a
+/// pre-built LUT (production's `simulate_toolpath_with_lut_cancel`, two
+/// moves at a time so arcs still linearize), reading the target column
+/// after each. Exact attribution in one pass.
+#[test]
+#[ignore = "one cascade chain + measurement sim + per-move Op B stamping"]
+fn v3_move_attribution_probe() {
+    let site = std::env::var("V3_SITE").unwrap_or_else(|_| "198.75,52.75".to_owned());
+    let (sx, sy) = site.split_once(',').expect("V3_SITE must be 'x,y'");
+    let (sx, sy): (f64, f64) = (
+        sx.trim().parse().expect("site x"),
+        sy.trim().parse().expect("site y"),
+    );
+    let (dial_label, dials) = dials_from_env("shipped");
+    eprintln!("== MOVE ATTRIBUTION at ({sx}, {sy}) dials={dial_label} ==");
+
+    let path = write_fixture_project(3.0);
+    let mut s = ProjectSession::load(&path).expect("load fixture");
+    let (enable, disable) = branch_ops(Branch::Cascade);
+    set_enabled_by_name(&mut s, enable, disable);
+    let idx = toolpath_index_by_name(&s, "Op B Unified Rest");
+    s.set_toolpath_operation(
+        idx,
+        OperationConfig::UnifiedFinish(op_b_config(
+            dials.intra_region_hookup_mm,
+            dials.pencil_claims,
+            dials.crease_hookup_mm,
+        )),
+    )
+    .expect("swap Op B config");
+    for i in 0..s.toolpath_count() {
+        let Some(tc) = s.get_toolpath_config(i) else {
+            continue;
+        };
+        let mut d = tc.dressups.clone();
+        d.air_bridge_policy = dials.air_bridge_policy;
+        if let Some(af) = dials.arc_fitting {
+            d.arc_fitting = af;
+        }
+        if let Some(ro) = dials.optimize_rapid_order {
+            d.optimize_rapid_order = ro;
+        }
+        s.set_dressup_config(i, d).expect("set dressups");
+    }
+    run_chain("move_attr", &mut s);
+    run_measurement_sim(&mut s);
+
+    let op_b = s.get_toolpath_config(idx).expect("Op B config");
+    let (op_b_id, op_b_tool) = (op_b.id, op_b.tool_id);
+    let tool_cfg = s
+        .tools()
+        .iter()
+        .find(|t| t.id.0 == op_b_tool)
+        .cloned()
+        .expect("Op B tool");
+    let cutter = rs_cam_core::compute::cutter::build_cutter(&tool_cfg);
+    let moves = s
+        .get_result(idx)
+        .expect("Op B result")
+        .annotated()
+        .toolpath
+        .moves
+        .clone();
+
+    let sim = s.simulation_result().expect("sim result");
+    let cd = sim
+        .column_deviations
+        .as_ref()
+        .expect("column deviations")
+        .iter()
+        .filter(|cd| (cd.x - sx).abs() < 0.2 && (cd.y - sy).abs() < 0.2)
+        .min_by(|p, q| {
+            let dp = (p.x - sx).powi(2) + (p.y - sy).powi(2);
+            let dq = (q.x - sx).powi(2) + (q.y - sy).powi(2);
+            dp.total_cmp(&dq)
+        })
+        .copied()
+        .expect("a column at the site");
+    let (row, col) = (cd.row, cd.col);
+    let mut stock = sim
+        .prior_stocks
+        .get(&op_b_id)
+        .expect("Op B prior stock")
+        .checkpoint();
+
+    let lut = rs_cam_core::radial_profile::RadialProfileLUT::from_cutter(
+        &cutter,
+        rs_cam_core::radial_profile::LUT_SAMPLES,
+    );
+    let radius = rs_cam_core::tool::MillingCutter::radius(&cutter);
+    let never = std::sync::atomic::AtomicBool::new(false);
+    let cancel = || never.load(std::sync::atomic::Ordering::SeqCst);
+
+    let start_top = stock.z_grid.top_z_at(row, col);
+    eprintln!(
+        "   column [r{row},c{col}] at ({:.2},{:.2}) starts at {start_top:?}, sim final {:.3}, radius={radius:.2}",
+        cd.x, cd.y, cd.top_z
+    );
+
+    let mut prev = start_top;
+    let mut drops = 0usize;
+    for i in 1..moves.len() {
+        let mut two = rs_cam_core::toolpath::Toolpath::new();
+        two.moves.push(moves[i - 1].clone());
+        two.moves.push(moves[i].clone());
+        stock
+            .simulate_toolpath_with_lut_cancel(
+                &two,
+                &lut,
+                radius,
+                rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+                &cancel,
+            )
+            .expect("stamp move");
+        let now = stock.z_grid.top_z_at(row, col);
+        if now != prev {
+            drops += 1;
+            let (a, b) = (moves[i - 1].target, moves[i].target);
+            let d_xy = {
+                let (dx, dy) = (b.x - a.x, b.y - a.y);
+                let l2 = dx * dx + dy * dy;
+                let t = if l2 < 1e-12 {
+                    0.0
+                } else {
+                    (((sx - a.x) * dx + (sy - a.y) * dy) / l2).clamp(0.0, 1.0)
+                };
+                ((sx - (a.x + dx * t)).powi(2) + (sy - (a.y + dy * t)).powi(2)).sqrt()
+            };
+            if drops <= 40 {
+                eprintln!(
+                    "   #{i:<7} {:?} {:?} ({:8.3},{:8.3},{:8.3})->({:8.3},{:8.3},{:8.3}) \
+                     xy_dist={d_xy:6.3} top {prev:?} -> {now:?}",
+                    moves[i].move_type, moves[i].intent, a.x, a.y, a.z, b.x, b.y, b.z
+                );
+            }
+            prev = now;
+        }
+    }
+    eprintln!("   {drops} moves changed this column; final {prev:?} (sim {:.3})", cd.top_z);
+}
+
+/// Do any emitted arcs sweep the LONG way round? — arc direction sanity.
+///
+/// `v3_move_attribution_probe` found a single `ArcCW` whose endpoints are
+/// 3.55 mm apart on a 57.04 mm-radius circle, sweeping from 71.34° to
+/// 74.90°. Increasing angle is COUNTER-clockwise, so tagged CW it
+/// commands 356° instead of 3.6° — a 114 mm-diameter circle through the
+/// workpiece. The simulator cut along it (5.5 mm off a column 97 mm from
+/// the move) and a machine would too. `arc_fitting` is a default-ON
+/// dressup, so this is not campaign-specific.
+///
+/// Sweep is computed from the arc's own `i/j` and direction flag exactly
+/// as a controller would, and anything beyond `MAX_PLAUSIBLE_SWEEP_DEG`
+/// is reported. A correct fitter never needs a reflex arc: it would split
+/// one, and a near-360° sweep between endpoints millimetres apart is a
+/// direction error by construction.
+#[test]
+#[ignore = "one cascade chain; pure toolpath analysis, no simulation"]
+fn v3_arc_direction_sanity() {
+    use rs_cam_core::toolpath::MoveType;
+    /// Beyond this, an arc between close endpoints is a direction error.
+    const MAX_PLAUSIBLE_SWEEP_DEG: f64 = 200.0;
+
+    let (dial_label, dials) = dials_from_env("shipped");
+    eprintln!("== ARC DIRECTION SANITY dials={dial_label} ==");
+    let path = write_fixture_project(3.0);
+    let mut s = ProjectSession::load(&path).expect("load fixture");
+    let (enable, disable) = branch_ops(Branch::Cascade);
+    set_enabled_by_name(&mut s, enable, disable);
+    let idx = toolpath_index_by_name(&s, "Op B Unified Rest");
+    s.set_toolpath_operation(
+        idx,
+        OperationConfig::UnifiedFinish(op_b_config(
+            dials.intra_region_hookup_mm,
+            dials.pencil_claims,
+            dials.crease_hookup_mm,
+        )),
+    )
+    .expect("swap Op B config");
+    for i in 0..s.toolpath_count() {
+        let Some(tc) = s.get_toolpath_config(i) else {
+            continue;
+        };
+        let mut d = tc.dressups.clone();
+        d.air_bridge_policy = dials.air_bridge_policy;
+        if let Some(af) = dials.arc_fitting {
+            d.arc_fitting = af;
+        }
+        if let Some(ro) = dials.optimize_rapid_order {
+            d.optimize_rapid_order = ro;
+        }
+        s.set_dressup_config(i, d).expect("set dressups");
+    }
+    run_chain("arc_sanity", &mut s);
+
+    let mut grand_total = 0usize;
+    let mut grand_bad = 0usize;
+    for i in 0..s.toolpath_count() {
+        let Some(tc) = s.get_toolpath_config(i) else {
+            continue;
+        };
+        if !tc.enabled {
+            continue;
+        }
+        let name = tc.name.clone();
+        let Some(result) = s.get_result(i) else {
+            continue;
+        };
+        let moves = &result.annotated().toolpath.moves;
+        let (mut arcs, mut bad, mut worst) = (0usize, 0usize, 0.0f64);
+        let mut shown = 0usize;
+        for (k, m) in moves.iter().enumerate() {
+            let (io, jo, cw) = match m.move_type {
+                MoveType::ArcCW { i: io, j: jo, .. } => (io, jo, true),
+                MoveType::ArcCCW { i: io, j: jo, .. } => (io, jo, false),
+                _ => continue,
+            };
+            let Some(prev) = k.checked_sub(1).and_then(|j| moves.get(j)) else {
+                continue;
+            };
+            arcs += 1;
+            let (a, b) = (prev.target, m.target);
+            let (cx, cy) = (a.x + io, a.y + jo);
+            let a0 = (a.y - cy).atan2(a.x - cx);
+            let a1 = (b.y - cy).atan2(b.x - cx);
+            // Controller semantics: CW decreases angle, CCW increases;
+            // wrap into (0, 2pi].
+            let mut sweep = if cw { a0 - a1 } else { a1 - a0 };
+            while sweep <= 0.0 {
+                sweep += std::f64::consts::TAU;
+            }
+            let deg = sweep.to_degrees();
+            let chord = ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+            let r = ((a.x - cx).powi(2) + (a.y - cy).powi(2)).sqrt();
+            if deg > worst {
+                worst = deg;
+            }
+            if deg > MAX_PLAUSIBLE_SWEEP_DEG {
+                bad += 1;
+                shown += 1;
+                if shown <= 6 {
+                    eprintln!(
+                        "   [{name}] #{k} sweep={deg:7.2}° r={r:8.3} chord={chord:6.3} \
+                         arc_len={:9.3} ({:.3},{:.3})->({:.3},{:.3})",
+                        r * sweep,
+                        a.x,
+                        a.y,
+                        b.x,
+                        b.y
+                    );
+                }
+            }
+        }
+        grand_total += arcs;
+        grand_bad += bad;
+        eprintln!("== [{name}] arcs={arcs} sweeping>{MAX_PLAUSIBLE_SWEEP_DEG}°={bad} worst={worst:.2}° ==");
+    }
+    eprintln!("== TOTAL arcs={grand_total} reflex/mis-directed={grand_bad} ==");
 }
 
 /// Shared verdict printer + quality gate for the branch comparison.
