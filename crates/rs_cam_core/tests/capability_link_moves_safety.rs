@@ -1039,27 +1039,37 @@ fn scallop_discrete_reorder_preserves_cuts_but_link_moves_gouge() {
         SCALLOP_ISLAND_CENTERS.len(),
     );
 
-    // PART 1 — the shipped state: discrete Scallop is still BLOCKED from
-    // reordering. Phase 1b reclassified it on the (correct) reasoning that
-    // rings are materially independent, then this very test measured a
-    // gouge, so the arm was reverted. This assertion pins the block so
-    // nobody re-enables it without reading the measurement below.
+    // PART 1 — the shipped state (fix-family Phase 1c): discrete Scallop's
+    // REAL capability now decouples the two concerns. Reordering rings is
+    // safe (they are materially independent — see PART 2's measurement)
+    // and is now allowed; taking link moves is NOT safe (PART 3 below
+    // reproduces the gouge) and stays forbidden. Before this decoupling,
+    // one flag (`!continuous_path_required`) drove both predicates, so
+    // permitting the safe reorder would have necessarily permitted the
+    // unsafe link bridge — that was the earlier revert. Read the SHIPPED
+    // capability, not a hand-built one, so this test tracks what
+    // production code actually does.
     let shipped = OperationConfig::Scallop(ScallopConfig {
         continuous: false,
         ..ScallopConfig::default()
     })
     .transform_capabilities();
     assert!(
-        shipped.continuous_path_required,
-        "discrete Scallop must stay reorder-BLOCKED until tsp::rebuild_group \
-         preserves each segment's approach move — see the gouge measurement \
-         in this test and the doc comment on \
-         OperationConfig::transform_capabilities"
+        shipped.allows_global_rapid_reorder,
+        "discrete Scallop should allow global rapid reorder — rings are \
+         materially independent (see the cutting-distance-preserving \
+         measurement below)"
+    );
+    assert!(
+        !shipped.allows_link_moves,
+        "discrete Scallop must still forbid link moves — apply_link_moves \
+         bridges with a straight feed that gouges a 3D surface (see the \
+         measurement at the end of this test)"
     );
 
-    // PART 2 — reproduce the defect that justifies the block, by asking
-    // for the capability the reclassification WOULD have granted.
-    let caps = OperationTransformCapabilities::new(true, false, false);
+    // PART 2 — the reorder, using the REAL shipped capability (reorder on,
+    // links off). This must be cutting-neutral: only rapids may change.
+    let caps = shipped;
 
     let raw_for_links = raw.clone();
     let baseline = dressup_with_caps(raw.clone(), &dressup_no_links(), caps, 3.0);
@@ -1191,15 +1201,19 @@ fn scallop_discrete_reorder_preserves_cuts_but_link_moves_gouge() {
          scale — investigate before trusting the reorder"
     );
 
-    // The ACTUAL hazard, and why discrete Scallop stays blocked: the same
-    // capability that permits reordering also permits link_moves
-    // (allows_link_moves() and both reorder gates all hang off
-    // !continuous_path_required). apply_link_moves collapses
-    // retract->plunge pairs into LATERAL feed bridges that plow across a
-    // 3D surface. Measured here at ~9mm of over-cut — the same class as
-    // the 8.2mm the Inlay link-moves test reports and passes, because
-    // that gate bounds the FRACTION of differing cells and never their
-    // depth.
+    // PART 3 — the hazard the shipped capability now PREVENTS. The shipped
+    // `caps.allows_link_moves` is false, so `apply_dressups` would refuse
+    // to run `apply_link_moves` under it — there would be nothing to
+    // measure. To deliberately reproduce the defect that justifies keeping
+    // link moves forbidden, hand-build a PERMISSIVE capability (reorder
+    // AND links both on) — the shape the two concerns had before this
+    // fix-family split them apart — and confirm it still gouges.
+    // `apply_link_moves` collapses retract->plunge pairs into LATERAL feed
+    // bridges that plow across a 3D surface. Measured here at ~9mm of
+    // over-cut — the same class as the 8.2mm the Inlay link-moves test
+    // reports and passes, because that gate bounds the FRACTION of
+    // differing cells and never their depth.
+    let permissive_link_caps = OperationTransformCapabilities::new(true, false, false, true);
     let linked = dressup_with_caps(
         raw_for_links,
         &DressupConfig {
@@ -1207,7 +1221,7 @@ fn scallop_discrete_reorder_preserves_cuts_but_link_moves_gouge() {
             link_moves: true,
             ..DressupConfig::default()
         },
-        caps,
+        permissive_link_caps,
         3.0,
     );
     let (hm_b2, hm_l) = simulate_pair_shared_frame(&baseline, &linked, &cutter, 0.5);
@@ -1216,8 +1230,11 @@ fn scallop_discrete_reorder_preserves_cuts_but_link_moves_gouge() {
     assert!(
         link_max_d > 1.0,
         "expected link_moves to gouge discrete Scallop (measured 9.3mm on \
-         2026-08-03); got {link_max_d:.4}mm. If link_moves is genuinely safe \
-         now, this op can be unblocked — see OperationConfig::transform_capabilities"
+         2026-08-03); got {link_max_d:.4}mm. This is the defect \
+         `allows_link_moves: false` on the shipped capability exists to \
+         prevent — if it stops reproducing, either the reorderer/linker \
+         changed materially or this fixture needs revisiting; it does NOT \
+         mean link moves are now safe to re-enable."
     );
 }
 
