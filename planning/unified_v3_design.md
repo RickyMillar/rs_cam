@@ -954,6 +954,33 @@ destructive pair. The §10 bridge policy carries essentially all of the
 win. They should be decided separately, and the linker does not ship until
 the interaction is understood.
 
+### §10b — the veto test compares LENGTH, and it should compare TIME
+
+`filter_air_cuts` phase 1b vetoes a bridge when
+
+```
+(safe_z − from.z) + (safe_z − to.z) + xy_dist(from, to)  >=  air_run_length
+```
+
+Both sides are millimetres. But the two sides are travelled at different
+rates: the air run is a FEED move (3 000 mm/min on this fixture) and the
+bridge's three legs are rapids. A bridge of *equal length* is therefore
+several times FASTER than the air it replaces, so a length-equal test
+vetoes bridges that were worth keeping. The dial as shipped is
+mis-signed — it is more aggressive than "cost-aware" implies.
+
+That it still measures −22.8% says the win comes from the sheer COUNT of
+round trips (§9's finding), not from the marginal cases the threshold
+adjudicates. It also means the measured number is a FLOOR: a time-based
+test using the same F-034 integrated-time model
+`surface_link`/`machine_kinematics` already provide
+(`retract_link_time` vs the run's feed time) should veto strictly fewer
+bridges and give back some of the time this heuristic throws away.
+
+Not done, and deliberately not bundled: the length test is what every
+number in §10/§10a was measured with, and re-basing the criterion mid-A/B
+would invalidate them. Do it as its own change with its own A/B.
+
 ### The gate cannot be passed by fixing these dials
 
 Shallow on-size at SHIPPED dials is 15.2% against D's 19.2% — the 2 pp gate
@@ -963,3 +990,111 @@ cascade's shallow deficit is pre-existing, recorded in §7's
 "shallow/very-steep trail by 3-4 pp", and unchased. Closing it is a
 separate piece of work from the air/travel work, and the process proof
 needs both.
+
+## 11. The shallow deficit, localized (2026-07-27) — Op B gouges
+
+§10a left the campaign with a passing TIME gate and a failing QUALITY gate
+that no §9/§10 dial could reach. This section chases it, and the answer is
+not a texture or a stepover story: **the cascade removes material it should
+never have touched, in bulk.**
+
+### First, the time gate, settled in ONE run
+
+`v3_process_proof_ab` at `V3_DIALS=bridges` (both branches, one run — the
+cross-run comparison §10 refused to bank):
+
+| | D | cascade |
+|---|---|---|
+| finish stack | 39 380.3 s | **38 548.2 s (−2.1%)** |
+| project total | 41 511.1 s | 40 679.0 s (−2.0%) |
+| collisions | 0 | 0 |
+
+D is near dial-invariant (39 904 shipped → 39 380 with the policy, −1.3%,
+all rapid), so the cascade's margin is real and not an artifact of
+comparing against a stale baseline. **§10's bridge policy alone clears the
+time bar.** The §9 linker is not needed for it.
+
+### The instrument that found it: `deep_overcut_locator`
+
+The `<-.5` histogram bin counts deep over-cut but cannot say WHERE, and
+"scattered" (a systematic depth error) and "clustered" (a few bad moves)
+call for opposite investigations. The locator prints the per-band count,
+the worst columns' world XY, and a 24×24 occupancy map. It runs on every
+scored branch, so no future A/B can hide this class again.
+
+### Deep over-cut by stage (SHIPPED dials, `dev < −0.5 mm`)
+
+`v3_shallow_deficit_localize` scores a PARTIAL chain (`V3_STAGE`), so a
+population can be attributed to an op instead of a branch:
+
+| stage | off-region | shallow | mid-steep | very-steep | total | worst |
+|---|---|---|---|---|---|---|
+| D (Rough + Ø1 tip) | 38 | 8 | 21 | 11 | **78** | −1.26 |
+| Rough + Op A only | 71 | 22 | 145 | 0 | **238** | −2.24 |
+| full cascade | 4 179 | 1 218 | 375 | 288 | **6 060** | −5.56 |
+
+**The cascade over-cuts 78× more columns than D, and 5.56 mm deep.** Op A
+contributes 238; Op B adds ~5 800. The shallow gate deficit is a corner of
+a much larger confinement failure — most of it lands OFF-REGION, i.e. on
+ground Op B's own territory clip is supposed to have excluded, where the
+band gates never looked.
+
+Two exonerations worth recording: the Rough is shared by both branches, so
+it cannot produce a cascade-only delta; and D's worst columns
+((148.00, 54.25), (150.25, 54.25)) are the SAME coordinates as Op A's
+−1.96, so a ~1–2 mm over-cut cluster at x≈148–157, y≈50–55 is terrain
+pathology common to every branch, not anyone's bug.
+
+### It is the crease-claims node
+
+Op B's Step 3.5 emits the claimed creases through `pencil::emit_paths` with
+`PencilParams::default()` — including `hookup_distance: 5.0`. That emitter
+links fragments with `build_surface_link`, which checks only that the
+cutter keeps MESH CONTACT. It takes **no territory boundary**: a crease
+link is free to leave the rest island it belongs to and feed across ground
+the op was confined away from. This is the identical gouge class
+`RelinkParams::boundary` was added to prevent (`surface_link.rs`: "on
+dendritic rest islands a straight line between two fragments of the SAME
+region leaves that region constantly", measured 1 218 → 4 068). **The §9
+relink pass got the boundary check. The crease emitter never had one.**
+
+Turning the claims pipeline off entirely (`V3_CLAIMS=off`):
+
+| | claims ON | claims OFF | D |
+|---|---|---|---|
+| deep total | 6 060 | **2 516** | 78 |
+| worst | −5.56 | **−2.24** | −1.26 |
+| shallow on-size | 15.2% | 15.7% | 19.2% |
+| mid-steep on-size | 51.0% | **54.5%** | 52.3% |
+| very-steep on-size | 25.8% | 26.5% | 28.6% |
+| Op B | 38 868 s | 51 771 s | — |
+
+The claims node owns **at least 3 544 deep columns** and the ENTIRE
+population below −2.25 mm: with it gone the worst column is −2.243 at
+(51.25, 123.75), which is Op A's own worst, to the micron and the
+coordinate. Mid-steep on-size with claims off (54.5%) BEATS D (52.3%).
+
+**Caveat, stated because it cost this campaign hours twice before: this
+probe varies TWO things.** `execute.rs` builds the claims config as
+`cfg.pencil_claims.then(..)`, so `pencil_claims = false` disables the
+territory clip as well — which is why Op B gets 33% SLOWER (it no longer
+confines itself to rest islands). The counts are still a valid LOWER bound
+(removing an op cannot create over-cut, and the extra coverage can only
+add cuts), but "claims off" is not the isolated experiment.
+
+### The isolated lever: `ClaimsConfig::crease_hookup_mm`
+
+Added so the crease emitter's link cap can move without touching the
+claims pipeline or the territory clip. Default 5.0 — byte-identical to
+every measurement before 2026-07-27. `0.0` keeps every crease CUT and
+removes only the unbounded LINKS, which splits the two candidate
+mechanisms:
+
+- if the deep population collapses at 0.0, the links are the mechanism and
+  the fix is to thread the region boundary into `pencil::emit_paths` the
+  way `relink_fragments` and `choose_link` already carry it;
+- if it does not, the crease CUT PATHS themselves carry bad Z, which is a
+  claims-pipeline problem and a much deeper one.
+
+Exposed on `UnifiedFinishConfig` (`crease_hookup_mm`, serde-defaulted) and
+driven in the harness by `V3_CREASE_HOOKUP`.
