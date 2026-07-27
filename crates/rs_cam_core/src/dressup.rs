@@ -1072,6 +1072,182 @@ pub struct LinkMoveParams {
     pub link_feed_rate: f64,
     /// Z threshold: moves to Z at or above this are considered rapids/retracts.
     pub safe_z_threshold: f64,
+    /// Cutter radius (mm), used by [`bridge_corridor_is_swept`] to decide
+    /// whether a candidate link bridge crosses only ground this toolpath has
+    /// already cut. See that function's doc comment for why this replaced
+    /// the earlier distance/Z-only guard.
+    pub tool_radius: f64,
+}
+
+/// Depth-match tolerance (mm) for treating two cut Z levels as "the same
+/// pass" — shared by the `prev_z`/`plunge_target.z` check below and by the
+/// corridor-Z gate in [`bridge_corridor_is_swept`], so "same depth level"
+/// means one consistent thing in this function.
+const LINK_Z_MATCH_TOL: f64 = 0.1;
+
+/// Number of most-recently-emitted moves considered as candidate "already
+/// swept" cutting segments in [`bridge_corridor_is_swept`].
+///
+/// PERFORMANCE BOUND, chosen and justified here (see also the call site):
+/// `apply_link_moves` runs this check once per *candidate* bridge, and a
+/// production fixture (VCarve) has ~26,000 moves — an unbounded backward
+/// scan of the full history per candidate would make the pass roughly
+/// O(bridges × moves), which is too slow to run per-dressup. Two bounds are
+/// applied together, and BOTH are sound in the same direction: they can
+/// only make the check *more conservative* (skip a segment that really did
+/// cover the sample → refuse a safe link), never *less conservative*
+/// (a skipped segment can never manufacture a false "covered"). That
+/// asymmetry is what makes bounding safe to do at all — worst case we
+/// fall back to the pre-fix retract/rapid/plunge triple more often than
+/// strictly necessary, never the reverse.
+///
+/// 1. This constant bounds how far back in *emission order* we look.
+///    Links are local (`max_link_distance` is ~10-20mm in practice), and
+///    every generator in this codebase emits moves in spatial order
+///    (raster/ring/offset passes), so material that could plausibly cover
+///    a bridge a few mm away was almost always cut within the last few
+///    thousand moves, not tens of thousands of moves ago.
+/// 2. Within that window, `bridge_corridor_is_swept` additionally rejects
+///    candidate segments via a cheap AABB-vs-corridor-bbox test (padded by
+///    `tool_radius`) before the exact point-to-segment distance calc — an
+///    *exact* filter (no segment that could satisfy the distance test is
+///    excluded), so it only skips wasted arithmetic, never correctness.
+const LINK_CORRIDOR_LOOKBACK_MOVES: usize = 4096;
+
+/// Point-to-segment distance in the XY plane (Z ignored) from `(px, py)` to
+/// the segment `a`→`b`. Used by [`bridge_corridor_is_swept`] so a bridge
+/// sample near the *middle* of a previously-cut segment (not just near one
+/// of its endpoints) is correctly recognised as covered.
+fn point_segment_distance_xy(px: f64, py: f64, a: P3, b: P3) -> f64 {
+    let abx = b.x - a.x;
+    let aby = b.y - a.y;
+    let len2 = abx * abx + aby * aby;
+    if len2 < 1e-12 {
+        // Degenerate (zero-length) segment: distance to the shared point.
+        return ((px - a.x).powi(2) + (py - a.y).powi(2)).sqrt();
+    }
+    let t = (((px - a.x) * abx + (py - a.y) * aby) / len2).clamp(0.0, 1.0);
+    let cx = a.x + t * abx;
+    let cy = a.y + t * aby;
+    ((px - cx).powi(2) + (py - cy).powi(2)).sqrt()
+}
+
+/// Is the straight corridor `from`→`to` fully covered by ground this
+/// toolpath has *already cut*, at the same Z?
+///
+/// ROOT-CAUSE CONTEXT (measured 2026, `tests/capability_link_moves_safety.rs`):
+/// `apply_link_moves` used to collapse a retract→rapid→plunge triple into a
+/// single straight feed bridge with no check at all that the straight-line
+/// corridor between the two cut points was clear of material. On variable-
+/// depth or multi-feature paths that bridge plows: Face 9.21mm, Inlay
+/// 8.21mm, VCarve 5.78mm, and discrete Scallop 9.71mm of measured over-cut.
+/// Flat, already-cleared paths (Chamfer, Pencil, RadialFinish) measured
+/// exactly 0.0000mm — the tell that the bridge is safe *exactly* when the
+/// ground it crosses has already been swept, and unsafe otherwise.
+///
+/// `apply_dressups` (`compute/execute.rs`) has no mesh/spatial-index at this
+/// stage — only `prior_stock` (the stock *before* this toolpath ran) — so
+/// this cannot reuse `surface_link::build_surface_link`'s drop-cutter check
+/// directly, and checking against `prior_stock` would reject every bridge
+/// that crosses ground *this same toolpath* just cleared, throwing away the
+/// entire benefit of linking. Instead this is the dressup-level, move-list
+/// counterpart to `build_surface_link`: rather than sampling a mesh, it
+/// samples the candidate bridge and checks each interior sample against the
+/// cutting moves *this same toolpath has already emitted*, at the same Z —
+/// i.e. "only link across ground you have already swept."
+///
+/// Semantics: samples the segment at roughly `tool_radius * 0.5` spacing
+/// (at least the two endpoints). The two endpoints are trivially covered —
+/// `from` is itself a cut position and `to` is where the very next
+/// (unlinked) cut move lands — so it is the *interior* samples that carry
+/// the real test. An interior sample is covered if it lies within
+/// `tool_radius` (XY, point-to-segment, not point-to-endpoint) of some
+/// previously-emitted cutting segment (a non-`Rapid` move paired with its
+/// predecessor) whose Z is within `z_tol` of the sample's interpolated Z.
+/// Returns `true` only if every interior sample is covered.
+fn bridge_corridor_is_swept(
+    emitted: &[Move],
+    from: P3,
+    to: P3,
+    tool_radius: f64,
+    z_tol: f64,
+) -> bool {
+    if tool_radius <= 1e-9 {
+        // Degenerate/unknown tool radius: nothing can be trusted as
+        // "covered". Conservative refusal, never a false approval.
+        return false;
+    }
+
+    let dx = to.x - from.x;
+    let dy = to.y - from.y;
+    let dist = (dx * dx + dy * dy).sqrt();
+    if dist < 1e-9 {
+        return true; // zero-length bridge — nothing to cross
+    }
+
+    let spacing = (tool_radius * 0.5).max(1e-6);
+    let n_segments = (dist / spacing).ceil().max(1.0) as usize;
+    if n_segments < 2 {
+        // Gap is smaller than half a tool radius — only the (trivially
+        // covered) endpoints exist as samples.
+        return true;
+    }
+
+    let corridor_min_x = from.x.min(to.x) - tool_radius;
+    let corridor_max_x = from.x.max(to.x) + tool_radius;
+    let corridor_min_y = from.y.min(to.y) - tool_radius;
+    let corridor_max_y = from.y.max(to.y) + tool_radius;
+
+    let window_start = emitted.len().saturating_sub(LINK_CORRIDOR_LOOKBACK_MOVES);
+    // SAFETY: `.get(range)` is the non-panicking slice accessor; an
+    // out-of-range start (only possible if emitted.len() < window_start,
+    // which cannot happen since window_start is derived from
+    // emitted.len() itself) degrades to an empty slice rather than a panic.
+    let recent = emitted.get(window_start..).unwrap_or(&[]);
+
+    for k in 1..n_segments {
+        let t = k as f64 / n_segments as f64;
+        let sx = from.x + dx * t;
+        let sy = from.y + dy * t;
+        let sz = from.z + (to.z - from.z) * t;
+
+        let mut covered = false;
+        for pair in recent.windows(2).rev() {
+            let [seg_start, seg_end] = pair else {
+                continue; // windows(2) always yields length-2 slices
+            };
+            if !seg_end.move_type.is_cutting() {
+                continue;
+            }
+            let a = seg_start.target;
+            let b = seg_end.target;
+            if (a.z - sz).abs() > z_tol || (b.z - sz).abs() > z_tol {
+                continue;
+            }
+            // Cheap AABB reject before the exact point-to-segment distance.
+            let seg_min_x = a.x.min(b.x);
+            let seg_max_x = a.x.max(b.x);
+            let seg_min_y = a.y.min(b.y);
+            let seg_max_y = a.y.max(b.y);
+            if seg_max_x < corridor_min_x
+                || seg_min_x > corridor_max_x
+                || seg_max_y < corridor_min_y
+                || seg_min_y > corridor_max_y
+            {
+                continue;
+            }
+            if point_segment_distance_xy(sx, sy, a, b) <= tool_radius {
+                covered = true;
+                break;
+            }
+        }
+
+        if !covered {
+            return false;
+        }
+    }
+
+    true
 }
 
 /// Replace short retract→rapid→plunge sequences with direct feed moves.
@@ -1086,6 +1262,10 @@ pub struct LinkMoveParams {
 /// - **Never links across a `RapidOrderBarrier` or `DepthPass` boundary** — the
 ///   wanaka safety guarantee. If the linked window would erase a barrier, the
 ///   3-move sequence is preserved as-is.
+/// - **Never emits a bridge whose straight-line corridor crosses uncut
+///   ground** — see [`bridge_corridor_is_swept`]. This is the fix for a
+///   measured defect (Face/Inlay/VCarve/discrete-Scallop gouges); see that
+///   function's doc comment and `tests/capability_link_moves_safety.rs`.
 ///
 /// Spans on the input are remapped through the transform, and a `LinkBridge`
 /// span is appended for each inserted bridge. `spans_valid` is preserved.
@@ -1171,7 +1351,7 @@ pub fn apply_link_moves(
                 .map(|mv| mv.target.z);
 
             if let Some(prev_z) = prev_cut_z
-                && (prev_z - plunge_target.z).abs() < 0.1
+                && (prev_z - plunge_target.z).abs() < LINK_Z_MATCH_TOL
                 && let Some(prev) = result.moves.last().map(|mv| mv.target)
             {
                 let dx = moves[i + 1].target.x - prev.x;
@@ -1179,15 +1359,42 @@ pub fn apply_link_moves(
                 let dist = (dx * dx + dy * dy).sqrt();
 
                 if dist < params.max_link_distance {
-                    let bridge_idx = result.moves.len();
-                    result.feed_to(plunge_target, params.link_feed_rate);
-                    bridge_positions.push(bridge_idx);
-                    let r = bridge_idx..bridge_idx + 1;
-                    old_to_new.push(Some(r.clone()));
-                    old_to_new.push(Some(r.clone()));
-                    old_to_new.push(Some(r));
-                    i += 3;
-                    continue;
+                    // GOUGE FIX: don't just check distance/Z — verify the
+                    // straight bridge crosses only ground this toolpath has
+                    // already cut. See `bridge_corridor_is_swept`'s doc
+                    // comment for the four measured gouges this closes
+                    // (Face 9.21mm, Inlay 8.21mm, VCarve 5.78mm, discrete
+                    // Scallop 9.71mm) and why `prior_stock` can't be used
+                    // for this check instead.
+                    if bridge_corridor_is_swept(
+                        &result.moves,
+                        prev,
+                        plunge_target,
+                        params.tool_radius,
+                        LINK_Z_MATCH_TOL,
+                    ) {
+                        let bridge_idx = result.moves.len();
+                        result.feed_to(plunge_target, params.link_feed_rate);
+                        bridge_positions.push(bridge_idx);
+                        let r = bridge_idx..bridge_idx + 1;
+                        old_to_new.push(Some(r.clone()));
+                        old_to_new.push(Some(r.clone()));
+                        old_to_new.push(Some(r));
+                        i += 3;
+                        continue;
+                    }
+                    tracing::debug!(
+                        from_x = prev.x,
+                        from_y = prev.y,
+                        from_z = prev.z,
+                        to_x = plunge_target.x,
+                        to_y = plunge_target.y,
+                        to_z = plunge_target.z,
+                        tool_radius = params.tool_radius,
+                        "apply_link_moves: refusing link bridge — corridor is not \
+                         fully covered by already-cut material at this Z; keeping \
+                         the retract/rapid/plunge triple instead"
+                    );
                 }
             }
         }
@@ -1999,6 +2206,7 @@ mod tests {
             max_link_distance: 18.0, // 3× 6mm tool diameter
             link_feed_rate: 1000.0,
             safe_z_threshold: 10.0,
+            tool_radius: 3.0, // half of the assumed 6mm tool diameter above
         }
     }
 
@@ -2091,7 +2299,14 @@ mod tests {
 
     #[test]
     fn test_link_reduces_rapid_distance() {
-        let tp = two_pass_toolpath(5.0);
+        // 4mm gap: within `bridge_corridor_is_swept`'s reach for
+        // `default_link_params`'s 3mm tool_radius (a 5mm gap used to be
+        // used here, but the far end of that corridor sits outside one
+        // tool radius of the first pass's kerf, so the corridor-safety fix
+        // correctly refuses it — this fixture is about the link mechanism
+        // reducing rapids, not corridor safety, so keep the gap inside the
+        // radius the mechanism is allowed to bridge).
+        let tp = two_pass_toolpath(4.0);
         let params = default_link_params();
         let result = apply_link_moves(AnnotatedToolpath::new(tp.clone()), &params).toolpath;
 

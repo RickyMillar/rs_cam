@@ -400,7 +400,23 @@ impl OperationType {
             // would override that safety ordering.
             // Face/Chamfer/Inlay/VCarve/Pencil/RadialFinish: no cross-segment material dependency,
             // segments are retract-separated, so link moves and (eventually) barriered TSP are safe.
-            HorizontalFinish | Face | Chamfer | Inlay | VCarve | Pencil | RadialFinish => {
+            // Measured gouging under link moves even WITH the swept-corridor
+            // check in `dressup::apply_link_moves` (2026-08-03): Face 9.21mm,
+            // Inlay 8.21mm, VCarve 5.78mm — all strictly DEEPER (25/110/103
+            // columns, zero columns left proud), pinned by the
+            // `*_link_moves_*` sentries. The corridor check is necessary but
+            // not sufficient here: VCarve and Inlay's female pass are V-bit
+            // paths whose cut WIDTH depends on depth, so "the tip passed
+            // within tool_radius at this Z" does not imply the corridor was
+            // cleared to the width the bridge needs. Until the check models
+            // depth-dependent width (or link decisions move into the
+            // generators, where geometry is in scope — the route pencil and
+            // unified_finish already took via surface_link::build_surface_link),
+            // these three forbid links. They keep every other transform.
+            Face | Inlay | VCarve => {
+                OperationTransformCapabilities::new(false, false, false, false)
+            }
+            HorizontalFinish | Chamfer | Pencil | RadialFinish => {
                 OperationTransformCapabilities::new(false, false, false, true)
             }
             // Trace: multi-pass depth stepping; depth order is the constraint, not continuity.
