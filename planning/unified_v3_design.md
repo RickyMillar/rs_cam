@@ -1382,3 +1382,74 @@ swamped it: on shallow textured ground a Ø3 ball cannot reproduce what a
 Ø1 tip can, and Op B is not clearing the difference — which is a
 territory question (`min_rest_depth_mm`, the rest-field keep-mask), or it
 is inherent to the tool pairing, in which case that IS the verdict.
+
+## 13. Looking at the surface (2026-07-28) — two bugs the aggregates hid
+
+The user's challenge: are we over-optimising against numbers that hide the
+real cut? The answer is yes, and it took rendering the machined surface
+once to find two defects that six sections of statistics had missed.
+
+`fidelity_report` had been writing a deviation PNG on every scored run
+since P2.c. Nobody had opened one. `write_surface_renders` now emits, from
+the SAME column data the gate reads, a hillshaded relief of the machined
+surface and a diverging deviation map — on every scored branch.
+
+### What one look showed
+
+1. **D — the BASELINE — left a ~28 mm rectangular block completely
+   uncut**, and still scored BETTER than the cascade on the gate (19.2% vs
+   15.5%). A gate that ranks a branch with an unmachined block above one
+   without is not measuring quality. The `>+0.5 mm` tail did catch it
+   (2 964 vs 1 301); the metric being gated on did not.
+2. **The cascade scribes over-cut lines along the model's own triangle
+   edges** on the flats — Op B's crease detector reading MESH FACETING as
+   creases. The model earns it: 1.8% of triangles carry 40.8% of the
+   surface area, and 1 749 facets are larger than the Ø3 ball itself.
+3. **The gate reads a moiré pattern.** Grid 0.25 mm against D's 0.21 mm
+   and Op A's 0.363 mm stepover — both undersampled, aliasing
+   DIFFERENTLY. The visible beat is ~1.3 mm = |1/0.21 − 4|. The ±10 µm bin
+   comparison is not like-for-like.
+
+### The block was `max_rings`, and it was distorting everything
+
+`scallop::generate_scallop_rings` budgets its ring cap from
+`stepover_from_scallop_flat` — the spacing for FLAT ground, hence the
+WIDEST the cusp target allows. The loop selects a SMALLER stepover on
+every slope, so it consumes more rings than budgeted, and then
+`for _ in 0..max_rings` simply ends. Silently. D got 504 rings and needed
+~660.
+
+Fixed by budgeting from the loop's own `cusp_r * 0.05` clamp floor (the
+smallest stepover it can select) and warning loudly if the guard ever
+binds. Costs nothing when the cascade collapses normally.
+
+| D (all-over Ø1 tip) | before | after |
+|---|---|---|
+| time | 39 904 s | **41 904 s** |
+| material removed | 50 944 mm³ | 52 326 mm³ |
+| shallow on-size | 19.2% | 19.7% |
+| shallow tail | 2 964 | **1 191** |
+| mid / very-steep tail | 4 288 / 4 444 | **1 891 / 1 648** |
+
+**D was skipping work, so every time comparison in §7–§12 flattered it by
+~5%, and every quality comparison flattered it further** — its standing
+material more than halved once it actually finished the part. Op A is a
+scallop too (cap 290), so the cascade's numbers move as well. Every
+headline in this document predates this and needs re-basing.
+
+### Which rejections this puts back in doubt
+
+| rejected | why | verdict now |
+|---|---|---|
+| chord fix (§11) | gate worsened 1 218 → 1 615 | **suspect** — measured pre-arcfix on a contaminated baseline; it cut real chord gouges 36% |
+| §9 intra-region linker | "+2 850 over-cut, half a destructive pair" | **suspect** — also pre-arcfix; links change which polylines get arc-fit |
+| `AirBridgePolicy` (§10) | +613 deep columns on an 87 baseline | **stands** — measured post-arcfix, and deep-column count is a defect metric the renders confirm |
+| `pencil_claims` | confounded, 33% slower | **possibly backwards** — the renders show it scribing facet edges |
+
+### The rule this earns
+
+**Never gate on an aggregate without looking at the surface.** Three real
+defects — reflex arcs, an uncut core, facet-edge scribing — were all
+invisible to a ±10 µm bin count and all obvious in one render. The gate
+should be a PANEL (defects, coverage, texture), and texture cannot be
+claimed at all while the measurement grid undersamples the stepover.
