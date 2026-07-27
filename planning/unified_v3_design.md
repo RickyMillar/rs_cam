@@ -1098,3 +1098,60 @@ mechanisms:
 
 Exposed on `UnifiedFinishConfig` (`crease_hookup_mm`, serde-defaulted) and
 driven in the harness by `V3_CREASE_HOOKUP`.
+
+### The attribution ladder, complete
+
+`V3_STAGE=rough` was the missing control, and it settles the ambiguity the
+site probe could not:
+
+| stage | deep total | worst | where |
+|---|---|---|---|
+| Rough alone | **37** | −1.256 | (148.00, 54.25) |
+| Rough + D | 78 | −1.256 | (148.00, 54.25) — the SAME column |
+| Rough + Op A | 238 | −2.243 | (51.25, 123.75) |
+| full cascade | 6 060 | −5.565 | (198.75, 52.75) |
+
+**D's finishing pass introduces no gouge at all**: it adds 41 columns and
+does not deepen the worst by a micron — D's worst column IS the Rough's
+worst column, at the same coordinate. The Rough has ZERO shallow deep
+columns, so it cannot be behind the gate deficit either.
+
+Op A adds 201 columns and a NEW deeper population at a new site. Op B adds
+5 822 more and takes the worst to −5.57. Both finishing passes in the
+cascade gouge; the all-over pass does not. That is the finding, and it is
+now measured end to end rather than argued.
+
+### Mechanism: still open, with the candidates narrowed
+
+At the mid-steep site the model top is 0.003 mm and the stock was cut to
+−2.240. `v3_gouge_site_probe` shows Op A's ring passes descending a near
+vertical wall 1.7 mm away in Y, in 0.18 mm XY steps dropping up to 2.6 mm
+in Z each. Two candidates survive:
+
+1. **Unprobed short chords.** `refine_chord` returns immediately when
+   `len < 2 × probe_step` (`probe_step = max(cell/2, 0.15)`, so 0.375 mm
+   for Op A's Ø3 ball). Ring vertex spacing floors at `cell × 0.75` =
+   0.28 mm, so on this op MOST chords are never probed against the
+   surface at all — and the ones on a cliff carry the largest Z
+   excursions. The chord between two valid CL points can still pass
+   inside the material.
+2. **The `min_z` fallback.** `ring_to_3d` gives non-contact points
+   `min_z + stock_to_leave` (`min_z = mesh.bbox.min.z`), which the scaled
+   terrain puts near −3.92 — and Op A's deepest observed move is −3.918.
+   The run-splitter is supposed to retract around those points; if a
+   partial run ever feeds toward one, the tool descends the whole way.
+
+Ruled OUT, each by measurement rather than argument: the Rough (37
+columns, no shallow); the §9 relink pass (off at SHIPPED dials); the
+crease node's unbounded links (worst column byte-identical with
+`V3_CREASE_HOOKUP=0`); crease path Z (`pencil::lift_to_surface` is a
+drop-cutter); and the COLUMNS instrument itself (reported x/y are world,
+the model query is frame-shifted to match — `collect_column_deviations`
+doc — and the deep-over-cut sites reproduce exactly across runs).
+
+**The instrument this wants next** is a swept-cutter-vs-model gouge check:
+replay the toolpath and test whether the cutter swept along each cutting
+move penetrates the MODEL beyond tolerance. That answers "was this move
+ever legal" directly, for every op, without a dexel sim — and the codebase
+has nothing like it today (`bridge_corridor_is_swept` is the closest, and
+it is corridor-only and constant-width).
