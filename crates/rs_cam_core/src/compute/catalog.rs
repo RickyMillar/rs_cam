@@ -632,7 +632,72 @@ impl OperationConfig {
         (spec.feeds_family, spec.feeds_pass_role)
     }
 
+    /// CONFIG-aware transform capabilities — **the entry point production
+    /// code should call** (both current call sites already do:
+    /// `session/compute.rs`'s `tc.operation.transform_capabilities()` and
+    /// `rs_cam_viz`'s `worker/helpers.rs`'s `req.operation.transform_capabilities()`
+    /// go through this method, not [`OperationType::transform_capabilities`]).
+    ///
+    /// [`OperationType::transform_capabilities`] is a *static per-op-type*
+    /// table: it has no way to see per-instance config, so it must answer
+    /// for the worst case a given op type can produce. That conservatism is
+    /// correct as a fallback for callers with no `OperationConfig` in hand,
+    /// but it is provably too strict for ops whose safe-transform
+    /// classification depends on a config field.
+    ///
+    /// Scallop is the first such op (fix-family Phase 1b). Its op-type
+    /// table entry stays pinned at the conservative
+    /// `(false, false, true)` — continuous-path-required — because
+    /// `ScallopConfig::continuous` (`operation_configs.rs:820`, default
+    /// `false` at `operation_configs.rs:836`) controls which of two
+    /// structurally different emitters `scallop.rs` runs:
+    ///
+    /// - `continuous: false` (**the default**) takes the discrete-ring
+    ///   branch (`scallop.rs:913-975`): every ring is split into
+    ///   `keep_point`-contiguous runs and each run gets its own
+    ///   rapid→plunge→cut→retract (`scallop.rs:953-975`). Rings are radial
+    ///   offsets of ONE finishing pass down to the same final surface — no
+    ///   ring depends on another ring's material state, there is no depth
+    ///   order, and no generator-imposed safety order (contrast
+    ///   `HorizontalFinish`, which sorts high-to-low for collision
+    ///   avoidance). That is structurally identical to the "XY-independent,
+    ///   TSP can reorder by proximity safely" bucket `DropCutter` /
+    ///   `Drill` / `ProjectCurve` already sit in above.
+    ///
+    ///   **BLOCKED — do not enable without reading this.** That reasoning
+    ///   is sound about ring INDEPENDENCE and still wrong about safety.
+    ///   The sentry
+    ///   `scallop_discrete_capability_currently_blocked_reorder_gouges`
+    ///   measured a real GOUGE when the reorder was enabled: 146 dexel
+    ///   columns cut DEEPER vs 20 shallower, net −128.9 mm of extra
+    ///   material removed, worst column 9.33 mm over-cut — while rapid
+    ///   travel fell 33.5 % (3263 → 2169 mm), so the win is real too and
+    ///   worth recovering properly. Root cause is in the REORDERER, not
+    ///   the classification: `tsp::rebuild_group` relinks segments with
+    ///   retract-to-`safe_z` + horizontal traverse and then replays each
+    ///   segment verbatim — but `split_into_segments` splits on
+    ///   `MoveType::Rapid`, so the generator's own rapid DESCENT toward
+    ///   the surface is a splitter and gets discarded. The segment's first
+    ///   CUTTING move is then left to travel from `safe_z` down, plunging
+    ///   through whatever stands under it. Fix the reorderer (preserve or
+    ///   re-synthesize each segment's approach) before revisiting this
+    ///   arm. See also the open question this raises for `DropCutter` /
+    ///   `Drill` / `ProjectCurve`, which are ALREADY reorder-enabled.
+    /// - `continuous: true` takes the spiral branch (`scallop.rs:812-912`):
+    ///   rings are stitched into one helical stay-down path with
+    ///   ring-to-ring cutting-feed connectors (`scallop.rs:874-903`).
+    ///   Reordering or link-inserting into that sequence would corrupt the
+    ///   single continuous cut, so this falls through to the op-type
+    ///   default, which stays `(false, false, true)`.
+    ///
+    /// This method is the intended extension point for any future
+    /// config-dependent op: add a match arm here rather than trying to
+    /// force more nuance into the static [`OperationType`] table (which by
+    /// design only sees the op kind, not its parameters).
     pub fn transform_capabilities(&self) -> OperationTransformCapabilities {
+        // The config-aware dispatch itself is live and is the extension
+        // point described above; Scallop's arm is deliberately NOT taken
+        // yet — see the gouge measurement in the doc comment.
         self.op_type().transform_capabilities()
     }
 
@@ -2458,6 +2523,37 @@ mod tests {
             OperationType::ProjectCurve
                 .transform_capabilities()
                 .allows_global_rapid_reorder
+        );
+    }
+
+    #[test]
+    fn scallop_config_transform_capabilities_dispatch_is_conservative() {
+        // The config-aware dispatch EXISTS and is the extension point for
+        // per-config classification; Scallop's arm is deliberately not
+        // taken yet. Phase 1b reclassified discrete-ring Scallop as
+        // reorderable, then the sentry
+        // `scallop_discrete_capability_currently_blocked_reorder_gouges`
+        // measured a gouge (146 columns deeper, worst 9.33mm) caused by
+        // `tsp::rebuild_group` discarding each segment's approach move.
+        // Until that is fixed, BOTH Scallop modes stay conservative.
+        for continuous in [false, true] {
+            let cfg = OperationConfig::Scallop(ScallopConfig {
+                continuous,
+                ..ScallopConfig::default()
+            });
+            assert!(
+                cfg.transform_capabilities().continuous_path_required,
+                "Scallop(continuous: {continuous}) must stay reorder-blocked \
+                 until the TSP approach-move defect is fixed"
+            );
+        }
+
+        // The op-type-only fallback must agree — it is the conservative
+        // answer used wherever no config is in hand.
+        assert!(
+            OperationType::Scallop
+                .transform_capabilities()
+                .continuous_path_required
         );
     }
 
