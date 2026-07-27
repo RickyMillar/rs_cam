@@ -950,6 +950,15 @@ pub struct UnifiedFinishConfig {
     /// scope, actually faster than the retract it replaces.
     #[serde(default = "default_unified_finish_intra_region_hookup_mm")]
     pub intra_region_hookup_mm: f64,
+    /// XY gap (mm) the crease-claims node's emitter may bridge with a
+    /// stay-down surface feed instead of retracting. See
+    /// [`crate::unified_finish::ClaimsConfig::crease_hookup_mm`] — that
+    /// emitter links with NO territory boundary, so this is the only lever
+    /// on crease links leaving their rest island. Meaningful only
+    /// alongside `pencil_claims = true`. Default 5.0 (the historical
+    /// `PencilParams::default()` value); `0.0` disables crease linking.
+    #[serde(default = "default_unified_finish_crease_hookup_mm")]
+    pub crease_hookup_mm: f64,
 }
 
 impl Default for UnifiedFinishConfig {
@@ -976,6 +985,7 @@ impl Default for UnifiedFinishConfig {
             claims_reference: default_unified_finish_claims_reference(),
             territory_clip: default_unified_finish_territory_clip(),
             intra_region_hookup_mm: default_unified_finish_intra_region_hookup_mm(),
+            crease_hookup_mm: default_unified_finish_crease_hookup_mm(),
         }
     }
 }
@@ -1000,6 +1010,12 @@ fn default_unified_finish_territory_clip() -> bool {
 /// change (§9). Flip after the measurement, not before it.
 fn default_unified_finish_intra_region_hookup_mm() -> f64 {
     0.0
+}
+
+/// Historical `PencilParams::default().hookup_distance`: what every
+/// crease-node measurement before 2026-07-27 ran with.
+fn default_unified_finish_crease_hookup_mm() -> f64 {
+    5.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

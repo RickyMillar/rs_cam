@@ -1362,6 +1362,7 @@ pub(crate) fn generate_unified_finish(
             rest_field_params,
             min_rest_depth_mm: cfg.min_rest_depth_mm,
             territory_clip: cfg.territory_clip,
+            crease_hookup_mm: cfg.crease_hookup_mm,
         }
     });
 

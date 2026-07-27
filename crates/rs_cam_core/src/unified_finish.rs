@@ -340,6 +340,23 @@ pub struct ClaimsConfig<'a> {
     /// skips confinement. Default `false`: byte-identical to the pre-S4
     /// op.
     pub territory_clip: bool,
+    /// XY gap (mm) the crease node's emitter may bridge with a stay-down
+    /// SURFACE FEED instead of retracting (Step 3.5 →
+    /// [`crate::pencil::emit_paths`] → `PencilParams::hookup_distance`).
+    ///
+    /// A dial rather than a constant because `emit_paths` links with NO
+    /// territory boundary: `build_surface_link` only checks that the
+    /// cutter keeps mesh contact, so a crease link is free to leave the
+    /// rest island it belongs to and feed across ground the op was
+    /// confined away from. That is the same gouge class
+    /// [`crate::surface_link::RelinkParams::boundary`] exists to prevent,
+    /// and until the boundary is threaded through `emit_paths` this is the
+    /// only lever on it. `0.0` disables crease linking entirely (every
+    /// crease run gets its own retract + entry).
+    ///
+    /// Default is `PencilParams::default()`'s 5.0 — what every
+    /// measurement before 2026-07-27 ran with.
+    pub crease_hookup_mm: f64,
 }
 
 /// Which territory the claims pipeline banded (design doc §2.1 step 4).
@@ -881,6 +898,8 @@ pub fn unified_finish_toolpath_with_cancel(
             stock_to_leave: params.stock_to_leave,
             sampling: params.sampling,
             link_kinematics: link_kinematics.cloned(),
+            // Boundary-less: see `ClaimsConfig::crease_hookup_mm`.
+            hookup_distance: claims.map_or(0.0, |c| c.crease_hookup_mm),
             ..PencilParams::default()
         };
         let (tp, _anns) = emit_paths(&claims_paths, mesh, index, cutter, &pencil_params);
@@ -2335,6 +2354,7 @@ mod tests {
             min_rest_depth_mm: 0.02,
             // S4 not under test here — off, the safe/default choice.
             territory_clip: false,
+            crease_hookup_mm: 5.0,
         };
         let never_cancel = || false;
 
@@ -2410,6 +2430,7 @@ mod tests {
             min_rest_depth_mm: 0.02,
             // S4 not under test here — off, the safe/default choice.
             territory_clip: false,
+            crease_hookup_mm: 5.0,
         };
         let never_cancel = || false;
 
@@ -2499,6 +2520,7 @@ mod tests {
             min_rest_depth_mm: 0.02,
             // S4 not under test here — off, the safe/default choice.
             territory_clip: false,
+            crease_hookup_mm: 5.0,
         };
         let (_tp, _anns, report_self) = unified_finish_toolpath_with_cancel(
             &mesh,
@@ -2533,6 +2555,7 @@ mod tests {
             min_rest_depth_mm: 0.02,
             // S4 not under test here — off, the safe/default choice.
             territory_clip: false,
+            crease_hookup_mm: 5.0,
         };
         let (_tp2, _anns2, report_stock) = unified_finish_toolpath_with_cancel(
             &mesh,
@@ -2595,6 +2618,7 @@ mod tests {
             min_rest_depth_mm: 0.02,
             // S4 not under test here — off, the safe/default choice.
             territory_clip: false,
+            crease_hookup_mm: 5.0,
         };
         let (_tp3, _anns3, report_fallback) = unified_finish_toolpath_with_cancel(
             &mesh,
@@ -2658,6 +2682,7 @@ mod tests {
             },
             min_rest_depth_mm: 1.0e6,
             territory_clip: false,
+            crease_hookup_mm: 5.0,
         };
         let (_tp, _anns, report) = unified_finish_toolpath_with_cancel(
             &mesh,
@@ -2707,6 +2732,7 @@ mod tests {
             },
             min_rest_depth_mm: 0.02,
             territory_clip: true,
+            crease_hookup_mm: 5.0,
         };
         let (_tp, _anns, report) = unified_finish_toolpath_with_cancel(
             &mesh,
@@ -2759,6 +2785,7 @@ mod tests {
             rest_field_params: rf_params(),
             min_rest_depth_mm: 0.05,
             territory_clip: false,
+            crease_hookup_mm: 5.0,
         };
         let (tp_unclipped, _anns, report_unclipped) = unified_finish_toolpath_with_cancel(
             &mesh,
@@ -2798,6 +2825,7 @@ mod tests {
             rest_field_params: rf_params(),
             min_rest_depth_mm: 0.05,
             territory_clip: true,
+            crease_hookup_mm: 5.0,
         };
         let (tp_clipped, _anns2, report_clipped) = unified_finish_toolpath_with_cancel(
             &mesh,
