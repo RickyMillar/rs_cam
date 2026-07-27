@@ -923,3 +923,43 @@ two things must land before the defaults move:
    cut, so it needs the COLUMNS gate — not an argument.
 
 `v3_process_proof_ab` runs both branches at `Dials::V3` and gates on both.
+
+### §10a — the two dials INTERACT; they are not additive
+
+Cascade branch only (`v3_cascade_dial_isolation`), wanaka ×2 ball Ø3,
+collisions 0 in every case. Shallow band, over-cut columns (`<-.5`):
+
+| dials | shallow `<-.5` | worst mm | shallow on-size | finish stack |
+|---|---|---|---|---|
+| shipped | 1 218 | −3.03 | 15.2% | 49 939 s |
+| §10 bridges only | 1 534 (+316) | −3.16 | 14.6% | **38 548 s** |
+| §9 links only | 1 597 (+379) | −3.12 | 15.1% | 48 012 s |
+| both | **4 068 (+2 850)** | **−3.95** | 14.0% | 35 985 s |
+
+**+316 and +379 separately, +2 850 together.** Four times the sum of the
+parts, so the damage is an INTERACTION between the two passes, not a
+property of either. Any fix aimed at one dial in isolation will measure
+clean and still fail in combination — which is exactly how the first
+process-proof run got its result.
+
+The time split is just as lopsided in the other direction:
+
+- **bridges alone** −22.8% finish stack (49 939 → 38 548 s), already
+  beating D's 39 380 s by 2.1%, for +316 over-cut columns.
+- **links alone** −3.9% (49 939 → 48 012 s), for +379 over-cut columns —
+  worse quality than bridges for a sixth of the speed.
+
+So the §9 linker is nearly worthless on its own and is half of a
+destructive pair. The §10 bridge policy carries essentially all of the
+win. They should be decided separately, and the linker does not ship until
+the interaction is understood.
+
+### The gate cannot be passed by fixing these dials
+
+Shallow on-size at SHIPPED dials is 15.2% against D's 19.2% — the 2 pp gate
+already fails before any of this work. Removing every regression these two
+dials introduce lands shallow back at 15.2% and the gate still fails. The
+cascade's shallow deficit is pre-existing, recorded in §7's
+"shallow/very-steep trail by 3-4 pp", and unchased. Closing it is a
+separate piece of work from the air/travel work, and the process proof
+needs both.
