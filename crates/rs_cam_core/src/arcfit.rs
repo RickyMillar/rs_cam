@@ -379,7 +379,56 @@ fn try_fit_arc(points: &[&P3], tolerance: f64, tool_radius: f64) -> Option<ArcPa
     let cross = dx1 * dy2 - dy1 * dx2;
 
     // Negative cross product = CW (G2), positive = CCW (G3)
-    let clockwise = cross < 0.0;
+    let mut clockwise = cross < 0.0;
+
+    // …and then CHECK it, because the cross product is only a hint. On a
+    // shallow run the three sample points are nearly collinear, `cross`
+    // is dominated by rounding, and its sign flips at random. Getting it
+    // wrong is not a small error: the arc through the same two endpoints
+    // on the same circle is then the REFLEX one, so a 3.6° sweep becomes
+    // 356° and the machine drives a full circle through the part.
+    //
+    // Measured in the field (wanaka ×2, Op B, 2026-07-28): an `ArcCW`
+    // with endpoints 3.55 mm apart on a 57.04 mm circle, swept angle
+    // 356.4°, arc length 354 mm for a ~3.5 mm polyline. 421 of Op B's
+    // 11 346 arcs were reflex like this, worst 359.12°. The simulator cut
+    // along them — 5.5 mm off a column 97 mm from the move.
+    //
+    // The invariant the fitter was missing: a fitted arc must be about as
+    // LONG as the polyline it replaces. Both directions pass through both
+    // endpoints, so length is what distinguishes them. Pick the direction
+    // whose arc length is closer to the polyline's, then reject outright
+    // if even that one is implausible — a genuine reflex arc cannot be
+    // fit from points whose own path is far shorter than its sweep.
+    {
+        let mut poly_len = 0.0_f64;
+        for w in points.windows(2) {
+            // SAFETY: `windows(2)` always yields exactly two elements.
+            #[allow(clippy::indexing_slicing)]
+            let (p, q) = (w[0], w[1]);
+            poly_len += ((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt();
+        }
+        let a0 = (p_first.y - cy).atan2(p_first.x - cx);
+        let a1 = (p_last.y - cy).atan2(p_last.x - cx);
+        let sweep_for = |cw: bool| -> f64 {
+            let mut s = if cw { a0 - a1 } else { a1 - a0 };
+            while s <= 0.0 {
+                s += std::f64::consts::TAU;
+            }
+            s
+        };
+        let err = |cw: bool| (radius * sweep_for(cw) - poly_len).abs();
+        if err(!clockwise) < err(clockwise) {
+            clockwise = !clockwise;
+        }
+        // A correct fit tracks the polyline closely; the sagitta test above
+        // already bounds how far the arc may stray from it. Half the
+        // polyline length of slack is far beyond any legitimate fit and
+        // still rejects every reflex mis-direction (354 mm vs 3.5 mm).
+        if (radius * sweep_for(clockwise) - poly_len).abs() > 0.5 * poly_len + tolerance {
+            return None;
+        }
+    }
 
     // Helical / planar Z validity. GRBL interpolates Z linearly with the swept
     // angle along a G2/G3 arc, so a Z-varying run is a valid arc only if it is a
@@ -583,6 +632,59 @@ mod tests {
 
         let arc = try_fit_arc(&refs[0..5], 0.05, f64::INFINITY).unwrap();
         assert!(arc.clockwise);
+    }
+
+    /// Regression, wanaka ×2 Op B 2026-07-28: a shallow run whose three
+    /// direction-sample points are nearly collinear got the cross-product
+    /// hint backwards, and the arc through the same endpoints on the same
+    /// circle in the WRONG direction is the reflex one. Field case: an
+    /// `ArcCW` with endpoints 3.55 mm apart on a 57.04 mm circle sweeping
+    /// 356.4° — 354 mm of arc for a 3.5 mm path — which the simulator cut
+    /// along, taking 5.5 mm off a column 97 mm away, and which a machine
+    /// would have driven as a 114 mm circle through the workpiece. 421 of
+    /// Op B's 11 346 arcs were reflex like this.
+    ///
+    /// A fitted arc must be about as long as the polyline it replaces;
+    /// both directions share the endpoints, so length is what tells them
+    /// apart. Either the fitter picks the short way or it declines.
+    #[test]
+    fn fit_arc_never_emits_the_reflex_direction() {
+        // The field arc's own circle: centre (158.544, 93.391), r 57.04.
+        let (cx, cy, r) = (158.5441, 93.3912, 57.0421);
+        let a0: f64 = 71.34_f64.to_radians();
+        let a1: f64 = 74.90_f64.to_radians();
+        // A short CCW run along that circle, sampled densely enough that
+        // the direction hint is numerically marginal — which is exactly
+        // the regime that produced the bug.
+        let pts: Vec<P3> = (0..=8)
+            .map(|i| {
+                let t = f64::from(i) / 8.0;
+                let a = a0 + (a1 - a0) * t;
+                P3::new(cx + r * a.cos(), cy + r * a.sin(), 1.218 + 1.636 * t)
+            })
+            .collect();
+        let refs: Vec<&P3> = pts.iter().collect();
+        let poly_len: f64 = pts
+            .windows(2)
+            .map(|w| ((w[1].x - w[0].x).powi(2) + (w[1].y - w[0].y).powi(2)).sqrt())
+            .sum();
+
+        if let Some(arc) = try_fit_arc(&refs, 0.05, f64::INFINITY) {
+            let s0 = (pts[0].y - arc.cy).atan2(pts[0].x - arc.cx);
+            let s1 = (pts[8].y - arc.cy).atan2(pts[8].x - arc.cx);
+            let mut sweep = if arc.clockwise { s0 - s1 } else { s1 - s0 };
+            while sweep <= 0.0 {
+                sweep += std::f64::consts::TAU;
+            }
+            let arc_len = r * sweep;
+            assert!(
+                arc_len < 2.0 * poly_len,
+                "fitted arc sweeps {:.1}° ({arc_len:.2}mm) for a {poly_len:.2}mm polyline — \
+                 the reflex direction was emitted",
+                sweep.to_degrees()
+            );
+        }
+        // Declining to fit is also correct; emitting the reflex arc is not.
     }
 
     /// Regression: arc-fit must not fit a circumscribing-circle arc to
