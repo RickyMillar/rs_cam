@@ -1469,6 +1469,37 @@ fn is_in_air(stock: &TriDexelStock, x: f64, y: f64, z: f64, tolerance: f64) -> b
 /// retract/rapid/plunge that bridges across a dropped run is tagged with
 /// [`SpanKind::LinkBridge`] (these inserts serve the same role as link
 /// bridges and should not block downstream link/TSP passes).
+/// Should a run of in-air cutting moves be replaced by a retract bridge?
+///
+/// MEASURED CONTEXT (2026-08-03, `planning/unified_v3_design.md` §10): the
+/// filter used to bridge EVERY air run regardless of length. Each bridge is
+/// a retract to `safe_z`, a traverse, and a descent — on wanaka ×2 roughly
+/// 35 mm of travel — so skipping a 2 mm sliver of air costs ~17× the
+/// distance it saves. The unified rest-clearer emitted 1 634 fragments and
+/// this filter shattered them into 15 373, adding ~13 700 such bridges and
+/// almost all of the op's 539 m of rapid travel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AirBridgePolicy {
+    /// Bridge every air run, however short. Pre-2026-08 behaviour.
+    #[default]
+    Always,
+    /// Bridge only when the retract round trip is SHORTER than the air path
+    /// it replaces.
+    ///
+    /// Deliberately compares raw distance rather than time, which makes the
+    /// rule conservative in one direction only: rapids are never slower than
+    /// cutting feeds, so a bridge up to `rapid/feed` times longer than the
+    /// air path could still win on the clock and this rule declines it. It
+    /// catches every pathological case without needing a machine envelope
+    /// threaded into the dressup pipeline; if the refused middle band turns
+    /// out to matter, the principled successor is
+    /// `machine_kinematics::retract_link_time`, which is what
+    /// `pencil::emit_paths` and the unified router already use for the same
+    /// bridge-vs-stay-down question.
+    ShorterThanAirPath,
+}
+
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn filter_air_cuts(
     annotated: AnnotatedToolpath,
@@ -1476,6 +1507,7 @@ pub fn filter_air_cuts(
     _tool_radius: f64,
     safe_z: f64,
     tolerance: f64,
+    policy: AirBridgePolicy,
 ) -> AnnotatedToolpath {
     let AnnotatedToolpath {
         toolpath,
@@ -1530,6 +1562,68 @@ pub fn filter_air_cuts(
         };
 
         air_flags.push(source_air && target_air && center_air);
+    }
+
+    // Phase 1b: under `ShorterThanAirPath`, veto the bridges that cost more
+    // travel than the air they skip. A vetoed run's moves are un-flagged, so
+    // phase 2 emits them verbatim — the tool simply cuts through the sliver
+    // of air rather than climbing to `safe_z` and back for it.
+    if policy == AirBridgePolicy::ShorterThanAirPath {
+        let dist = |a: P3, b: P3| {
+            ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt()
+        };
+        let mut i = 0usize;
+        while i < air_flags.len() {
+            if !air_flags.get(i).copied().unwrap_or(false) {
+                i += 1;
+                continue;
+            }
+            let run_start = i;
+            while air_flags.get(i).copied().unwrap_or(false) {
+                i += 1;
+            }
+            let run_end = i; // exclusive
+
+            // Where the tool is when the run begins, and where it must be
+            // when the run ends — the bridge's two endpoints.
+            let Some(from) = run_start
+                .checked_sub(1)
+                .and_then(|k| moves.get(k))
+                .map(|m| m.target)
+            else {
+                continue; // run starts the toolpath: nothing to bridge from
+            };
+            let Some(to) = run_end
+                .checked_sub(1)
+                .and_then(|k| moves.get(k))
+                .map(|m| m.target)
+            else {
+                continue;
+            };
+
+            let mut air_len = 0.0f64;
+            let mut prev = from;
+            for k in run_start..run_end {
+                if let Some(m) = moves.get(k) {
+                    air_len += dist(prev, m.target);
+                    prev = m.target;
+                }
+            }
+            // The bridge phase 2 would emit: up to safe_z, across, back down.
+            let bridge_len =
+                (safe_z - from.z).max(0.0) + (safe_z - to.z).max(0.0) + {
+                    let (dx, dy) = (to.x - from.x, to.y - from.y);
+                    (dx * dx + dy * dy).sqrt()
+                };
+
+            if bridge_len >= air_len {
+                for k in run_start..run_end {
+                    if let Some(f) = air_flags.get_mut(k) {
+                        *f = false;
+                    }
+                }
+            }
+        }
     }
 
     // Phase 2: emit the filtered toolpath. Track per-old-move where it landed
@@ -2464,7 +2558,7 @@ mod tests {
 
         let stock = half_cleared_stock();
         let result =
-            filter_air_cuts(AnnotatedToolpath::new(tp.clone()), &stock, 3.0, 10.0, 0.1).toolpath;
+            filter_air_cuts(AnnotatedToolpath::new(tp.clone()), &stock, 3.0, 10.0, 0.1, AirBridgePolicy::Always).toolpath;
 
         // The moves at x=60 and x=90 should have been removed (both endpoints in air).
         // Specifically, the move from x=60 to x=90 is fully in air (source and target).
@@ -2510,7 +2604,7 @@ mod tests {
 
         let stock = half_cleared_stock();
         let result =
-            filter_air_cuts(AnnotatedToolpath::new(tp.clone()), &stock, 3.0, 10.0, 0.1).toolpath;
+            filter_air_cuts(AnnotatedToolpath::new(tp.clone()), &stock, 3.0, 10.0, 0.1, AirBridgePolicy::Always).toolpath;
 
         // All cutting moves are in the left half (x < 50) where material exists
         // at top_z=5.0 and tool is at z=2.0 (below stock top). No air cuts.
@@ -2595,7 +2689,7 @@ mod tests {
 
         let stock = half_cleared_stock();
         let result =
-            filter_air_cuts(AnnotatedToolpath::new(tp.clone()), &stock, 3.0, 10.0, 0.1).toolpath;
+            filter_air_cuts(AnnotatedToolpath::new(tp.clone()), &stock, 3.0, 10.0, 0.1, AirBridgePolicy::Always).toolpath;
 
         // The move from x=70 to x=30 has source in air but target in material.
         // Conservative rule: it should be preserved because the target has material.
@@ -2807,6 +2901,89 @@ mod tests {
         assert_eq!(result.spans, vec![Span::new(0, 1, SpanKind::Operation)]);
     }
 
+    #[test]
+    fn air_bridge_policy_vetoes_bridges_longer_than_the_air_they_skip() {
+        use crate::dexel_stock::StockCutDirection;
+        use crate::geo::BoundingBox3;
+        use crate::tool::FlatEndmill;
+
+        // One long cut with a SHORT air gap in the middle, and safe_z far
+        // above: the historical `Always` policy climbs to safe_z and back
+        // — ~20mm of travel — to skip ~2mm of air.
+        let stock = TriDexelStock::from_bounds(
+            &BoundingBox3 {
+                min: P3::new(0.0, 0.0, -10.0),
+                max: P3::new(60.0, 20.0, 0.0),
+            },
+            0.5,
+        );
+        // Carve a narrow trench so a 2mm stretch mid-pass reads as air.
+        let mut carved = stock.clone();
+        let mut cut = Toolpath::new();
+        cut.rapid_to(P3::new(29.0, 10.0, 10.0));
+        cut.feed_to(P3::new(29.0, 10.0, -5.0), 500.0);
+        cut.feed_to(P3::new(31.0, 10.0, -5.0), 500.0);
+        carved.simulate_toolpath(&cut, &FlatEndmill::new(3.0, 25.0), StockCutDirection::FromTop);
+
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(5.0, 10.0, 10.0));
+        tp.feed_to(P3::new(5.0, 10.0, -3.0), 500.0);
+        for x in [10.0_f64, 20.0, 28.0, 30.0, 32.0, 40.0, 50.0] {
+            tp.feed_to(P3::new(x, 10.0, -3.0), 1000.0);
+        }
+        tp.rapid_to(P3::new(50.0, 10.0, 10.0));
+
+        let always = filter_air_cuts(
+            AnnotatedToolpath::new(tp.clone()),
+            &carved,
+            3.0,
+            10.0,
+            0.1,
+            AirBridgePolicy::Always,
+        )
+        .toolpath;
+        let costed = filter_air_cuts(
+            AnnotatedToolpath::new(tp.clone()),
+            &carved,
+            3.0,
+            10.0,
+            0.1,
+            AirBridgePolicy::ShorterThanAirPath,
+        )
+        .toolpath;
+
+        let rapid = |t: &Toolpath| t.total_rapid_distance();
+        assert!(
+            rapid(&costed) < rapid(&always),
+            "vetoing a bridge that is longer than the air it skips must cut \
+             rapid travel: Always={:.1}mm over {} moves vs Costed={:.1}mm \
+             over {} moves",
+            rapid(&always),
+            always.moves.len(),
+            rapid(&costed),
+            costed.moves.len(),
+        );
+        // And the vetoed air moves survive as cutting moves.
+        assert!(
+            costed.moves.len() >= tp.moves.len(),
+            "a vetoed run is emitted verbatim, so no cutting move is lost"
+        );
+    }
+
+    #[test]
+    fn air_bridge_policy_always_is_the_untouched_default() {
+        assert_eq!(
+            AirBridgePolicy::default(),
+            AirBridgePolicy::Always,
+            "the cost-aware policy is a shipped-behaviour change and must be \
+             opt-in until the wanaka A/B justifies flipping it"
+        );
+        assert_eq!(
+            crate::compute::config::DressupConfig::default().air_bridge_policy,
+            AirBridgePolicy::Always
+        );
+    }
+
     // ── Span-aware behavior: filter_air_cuts (#56) ──────────────────────
 
     #[test]
@@ -2827,7 +3004,7 @@ mod tests {
         ];
         let annotated = AnnotatedToolpath::with_spans(tp, spans);
         let stock = half_cleared_stock();
-        let result = filter_air_cuts(annotated, &stock, 3.0, 10.0, 0.1);
+        let result = filter_air_cuts(annotated, &stock, 3.0, 10.0, 0.1, AirBridgePolicy::Always);
         result
             .check_invariants()
             .expect("post-filter spans pass invariants");
@@ -2855,7 +3032,7 @@ mod tests {
         let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
         let annotated = AnnotatedToolpath::with_spans(tp, spans);
         let stock = half_cleared_stock();
-        let result = filter_air_cuts(annotated, &stock, 3.0, 10.0, 0.1);
+        let result = filter_air_cuts(annotated, &stock, 3.0, 10.0, 0.1, AirBridgePolicy::Always);
         let bridges: Vec<&Span> = result
             .spans
             .iter()
@@ -2884,7 +3061,7 @@ mod tests {
         annotated.spans_valid = false;
         annotated.spans = vec![Span::new(0, 1, SpanKind::Operation)];
         let stock = half_cleared_stock();
-        let result = filter_air_cuts(annotated, &stock, 3.0, 10.0, 0.1);
+        let result = filter_air_cuts(annotated, &stock, 3.0, 10.0, 0.1, AirBridgePolicy::Always);
         assert!(!result.spans_valid);
         assert_eq!(result.spans, vec![Span::new(0, 1, SpanKind::Operation)]);
     }

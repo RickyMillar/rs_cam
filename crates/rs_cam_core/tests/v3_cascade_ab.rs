@@ -39,6 +39,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::dressup::AirBridgePolicy;
 use rs_cam_core::compute::operation_configs::{CreaseReference, UnifiedFinishConfig};
 use rs_cam_core::session::{ProjectSession, SessionError, SimulationOptions};
 
@@ -2196,6 +2197,145 @@ fn recoverable_air(label: &str, s: &ProjectSession, op_index: usize) {
     );
 }
 
+/// §10: the air-cut filter, not the emitter, is where Op B's fragments come
+/// from. The relink telemetry measured the generator emitting 1 634
+/// fragments while the shipped toolpath carries 15 373 — and `filter_air_cuts`
+/// is the only pass that turns cutting moves into rapids. It bridges EVERY
+/// air run to `safe_z` with no length test, so a 2 mm sliver of air costs a
+/// ~35 mm retract round trip.
+///
+/// Crossed with the §9 linker, because the two interact: linking joins
+/// fragments the filter would otherwise have to bridge back apart.
+#[test]
+#[ignore = "four cascade chains (~9 min); run with --ignored --nocapture"]
+fn v3_air_bridge_probe() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("rs_cam_core=info")),
+        )
+        .with_writer(std::io::stderr)
+        .without_time()
+        .try_init();
+
+    let project_path = write_fixture_project(3.0);
+    let cases: [(&str, AirBridgePolicy, f64); 4] = [
+        ("shipped (bridge always, no links)", AirBridgePolicy::Always, 0.0),
+        ("links only", AirBridgePolicy::Always, 6.0),
+        ("cost-aware bridges only", AirBridgePolicy::ShorterThanAirPath, 0.0),
+        ("both", AirBridgePolicy::ShorterThanAirPath, 6.0),
+    ];
+    let mut rows: Vec<(&str, f64, f64, usize)> = Vec::new();
+
+    for (label, policy, hookup) in cases {
+        let mut c = ProjectSession::load(&project_path).unwrap_or_else(|e: SessionError| {
+            panic!("failed to load {}: {e}", project_path.display())
+        });
+        apply_branch(&mut c, Branch::Cascade);
+        let op_b_idx = toolpath_index_by_name(&c, "Op B Unified Rest");
+        c.set_toolpath_operation(
+            op_b_idx,
+            OperationConfig::UnifiedFinish(op_b_claims_config_with_hookup(hookup)),
+        )
+        .expect("swap Op B config");
+        // The policy applies to every op in the chain, not just Op B — the
+        // filter is a shared dressup, so a per-op comparison would not be
+        // the shipped-behaviour question.
+        for i in 0..c.toolpath_count() {
+            let Some(tc) = c.get_toolpath_config(i) else {
+                continue;
+            };
+            let mut d = tc.dressups.clone();
+            d.air_bridge_policy = policy;
+            c.set_dressup_config(i, d).expect("set dressups");
+        }
+        let out = run_chain(label, &mut c);
+        let op_b_s = out
+            .per_op_s
+            .iter()
+            .find(|(name, _)| name == "Op B Unified Rest")
+            .map_or(0.0, |(_, s)| *s);
+        link_anatomy(label, &c, op_b_idx);
+        tool_load_table(label, &c);
+        rows.push((label, op_b_s, out.project_total_s, out.collisions));
+    }
+
+    eprintln!("== AIR-BRIDGE PROBE (wanaka x2, ball Ø3) ==");
+    let base = rows.first().map_or(0.0, |r| r.1);
+    eprintln!("case                               |    Op B s |  project s | coll | vs shipped");
+    for (label, op_b_s, project_s, collisions) in &rows {
+        eprintln!(
+            "{label:<34} | {op_b_s:>9.1} | {project_s:>10.1} | {collisions:>4} | {:+.1}%",
+            if base > 0.0 {
+                100.0 * (op_b_s - base) / base
+            } else {
+                0.0
+            }
+        );
+    }
+}
+
+/// What the relinker actually did to the emitted path: how many junctions
+/// stayed on the surface vs still retract, and what the surviving rapids
+/// cost. The generator's own `tracing::info!` tally needs a subscriber the
+/// harness does not install, and this reads the shipped toolpath rather
+/// than trusting the generator's self-report, which is the better
+/// instrument anyway.
+fn link_anatomy(label: &str, s: &ProjectSession, op_index: usize) {
+    use rs_cam_core::geo::P3;
+    use rs_cam_core::toolpath::{MoveIntent, MoveType};
+
+    let ann = s
+        .get_result(op_index)
+        .unwrap_or_else(|| panic!("[{label}] op {op_index} not generated"))
+        .annotated();
+    let moves = &ann.toolpath.moves;
+    let d = |a: P3, b: P3| ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt();
+
+    // A "fragment" here matches tsp/relink: a maximal run of non-rapid moves.
+    let mut fragments = 0usize;
+    let mut in_frag = false;
+    let mut rapid_mm = 0.0f64;
+    let mut rapid_n = 0usize;
+    let mut link_mm = 0.0f64;
+    let mut link_n = 0usize;
+    let mut plunges = 0usize;
+    let mut prev: Option<P3> = None;
+    for mv in moves {
+        let step = prev.map_or(0.0, |p| d(p, mv.target));
+        if matches!(mv.move_type, MoveType::Rapid) {
+            in_frag = false;
+            rapid_n += 1;
+            rapid_mm += step;
+        } else {
+            if !in_frag {
+                fragments += 1;
+                in_frag = true;
+            }
+            if mv.intent == MoveIntent::Linking {
+                link_n += 1;
+                link_mm += step;
+            }
+            if mv.intent == MoveIntent::EntryPlunge {
+                plunges += 1;
+            }
+        }
+        prev = Some(mv.target);
+    }
+    eprintln!(
+        "== LINK ANATOMY [{label}] == moves={} fragments={fragments} \
+         rapids={rapid_n} ({rapid_mm:.0}mm) linking_feeds={link_n} ({link_mm:.0}mm) \
+         entry_plunges={plunges}",
+        moves.len(),
+    );
+    eprintln!(
+        "   junctions still retracting ~= {} of {} ({:.0}%)",
+        plunges.saturating_sub(1),
+        fragments.saturating_sub(1),
+        100.0 * (plunges.saturating_sub(1)) as f64 / fragments.saturating_sub(1).max(1) as f64,
+    );
+}
+
 /// §9 lever: intra-region stay-down linking, measured against its own
 /// off state on the same fixture. Prints Op B's time and rapid share at
 /// each `intra_region_hookup_mm`, plus the pass's link/retract tallies
@@ -2209,6 +2349,18 @@ fn recoverable_air(label: &str, s: &ProjectSession, op_index: usize) {
 #[test]
 #[ignore = "one cascade chain per dial (~10 min each); run with --ignored --nocapture"]
 fn v3_intra_region_link_probe() {
+    // Surface the generator's own relink tallies (why a junction refused to
+    // link is not derivable from the emitted toolpath — a refused link and
+    // a junction that was never a candidate look identical there).
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("rs_cam_core=info")),
+        )
+        .with_writer(std::io::stderr)
+        .without_time()
+        .try_init();
+
     let project_path = write_fixture_project(3.0);
     let dials = [0.0_f64, 1.0, 3.0, 6.0];
     let mut rows: Vec<(f64, f64, f64, usize)> = Vec::new();
@@ -2230,6 +2382,8 @@ fn v3_intra_region_link_probe() {
             .iter()
             .find(|(name, _)| name == "Op B Unified Rest")
             .map_or(0.0, |(_, s)| *s);
+        link_anatomy(&format!("hookup={hookup}"), &c, op_b_idx);
+        tool_load_table(&format!("hookup={hookup}"), &c);
         rows.push((hookup, op_b_s, out.project_total_s, out.collisions));
     }
 
