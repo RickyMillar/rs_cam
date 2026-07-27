@@ -440,6 +440,17 @@ pub struct DressupConfig {
     pub feed_ramp_rate: f64,
     pub optimize_rapid_order: bool,
     pub retract_strategy: RetractStrategy,
+    /// When the air-cut filter may replace a run of in-air cutting with a
+    /// retract bridge (`planning/unified_v3_design.md` §10).
+    ///
+    /// `Always` (default) is the historical behaviour: bridge every air
+    /// run however short. That is a net loss whenever the retract round
+    /// trip is longer than the air it skips, which on a rest-clearer is
+    /// most of them — the unified rest-clearer's 1 634 emitted fragments
+    /// became 15 373 after filtering, and the added bridges account for
+    /// almost all of its 539 m of rapid travel.
+    #[serde(default)]
+    pub air_bridge_policy: crate::dressup::AirBridgePolicy,
 }
 
 impl Default for DressupConfig {
@@ -471,6 +482,7 @@ impl Default for DressupConfig {
             feed_ramp_rate: 200.0,
             optimize_rapid_order: true,
             retract_strategy: RetractStrategy::Full,
+            air_bridge_policy: crate::dressup::AirBridgePolicy::default(),
         }
     }
 }

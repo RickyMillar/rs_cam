@@ -2453,7 +2453,16 @@ pub fn apply_dressups(
                 scope.set_param("tool_radius", tool_radius);
                 scope.set_param("safe_z", safe_z);
             },
-            |at| crate::dressup::filter_air_cuts(at, stock, tool_radius, safe_z, 0.1),
+            |at| {
+                crate::dressup::filter_air_cuts(
+                    at,
+                    stock,
+                    tool_radius,
+                    safe_z,
+                    0.1,
+                    cfg.air_bridge_policy,
+                )
+            },
         );
     }
 
