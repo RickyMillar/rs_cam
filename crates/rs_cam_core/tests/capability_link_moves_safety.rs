@@ -46,9 +46,10 @@ use rs_cam_core::{
     mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere},
     pencil::{PencilParams, pencil_toolpath},
     polygon::Polygon2,
+    project_curve::{ProjectCurveParams, ProjectDirection, ProjectSide, project_curve_toolpath},
     radial_finish::{RadialFinishParams, radial_finish_toolpath},
     tool::{BallEndmill, FlatEndmill, MillingCutter},
-    toolpath::{MoveType, Toolpath},
+    toolpath::{MoveIntent, MoveType, Toolpath},
     trace::{TraceCompensation, TraceParams, trace_toolpath},
     vcarve::{VCarveParams, vcarve_toolpath},
 };
@@ -646,6 +647,175 @@ fn alignment_pin_drill_capability_allows_tsp_reorder_reduces_rapid() {
         "AlignmentPinDrill capability_allows_global_rapid_reorder must let \
          TSP reduce rapid distance on a deliberately-shuffled hole list. \
          baseline={r_base} optimized={r_opt}"
+    );
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// ProjectCurve reclassification (fix-family Phase 1)
+// ═════════════════════════════════════════════════════════════════════════
+
+/// X positions for 6 disconnected mesh patches, in a deliberately bad
+/// (far-apart, interleaved) visit order — mirrors `drill_holes_bad_order`'s
+/// zig-zag-across-X pattern so TSP has the same kind of "obviously
+/// improvable" tour to find.
+const PROJECT_CURVE_PATCH_X: [f64; 6] = [0.0, 100.0, 10.0, 90.0, 20.0, 80.0];
+
+/// Y-band step between successive (visit-order) patches, in mm. Large
+/// enough that the polyline segments connecting one patch to the next never
+/// cross a THIRD patch's footprint: each connector's Y-range only ever
+/// touches the patch it's leaving (right at its start) and the patch it's
+/// arriving at (right at its end) — see `project_curve_bad_order_path`.
+const PROJECT_CURVE_PATCH_Y_STEP: f64 = 50.0;
+
+/// Half-width (X) and span (Y) of each square mesh patch, in mm.
+const PROJECT_CURVE_PATCH_HALF_X: f64 = 1.5;
+const PROJECT_CURVE_PATCH_Y_SPAN: f64 = 3.0;
+
+/// Build a flat mesh made of 6 disconnected square patches (2 triangles
+/// each, z=0) at the X positions in `PROJECT_CURVE_PATCH_X`, one per visit
+/// index, each patch's Y-band offset by `PROJECT_CURVE_PATCH_Y_STEP` so
+/// patches never touch and the connecting polyline segments in
+/// `project_curve_bad_order_path` can't accidentally graze a third patch.
+fn project_curve_patchwork_mesh() -> (TriangleMesh, SpatialIndex) {
+    let mut vertices = Vec::with_capacity(PROJECT_CURVE_PATCH_X.len() * 4);
+    let mut triangles = Vec::with_capacity(PROJECT_CURVE_PATCH_X.len() * 2);
+    for (i, &px) in PROJECT_CURVE_PATCH_X.iter().enumerate() {
+        let py = i as f64 * PROJECT_CURVE_PATCH_Y_STEP;
+        let base = vertices.len() as u32;
+        vertices.push(P3::new(px - PROJECT_CURVE_PATCH_HALF_X, py, 0.0));
+        vertices.push(P3::new(px + PROJECT_CURVE_PATCH_HALF_X, py, 0.0));
+        vertices.push(P3::new(
+            px + PROJECT_CURVE_PATCH_HALF_X,
+            py + PROJECT_CURVE_PATCH_Y_SPAN,
+            0.0,
+        ));
+        vertices.push(P3::new(
+            px - PROJECT_CURVE_PATCH_HALF_X,
+            py + PROJECT_CURVE_PATCH_Y_SPAN,
+            0.0,
+        ));
+        triangles.push([base, base + 1, base + 2]);
+        triangles.push([base, base + 2, base + 3]);
+    }
+    let mesh = TriangleMesh::from_raw(vertices, triangles);
+    let index = SpatialIndex::build_auto(&mesh);
+    (mesh, index)
+}
+
+/// Single OPEN polyline that visits each patch's short in-patch cut segment
+/// (its Y-band's 0.5..2.5 sub-range) in the same far-apart, interleaved
+/// order as `PROJECT_CURVE_PATCH_X` — the long inter-patch jumps are what
+/// give TSP something obviously improvable, exactly like
+/// `drill_holes_bad_order`. Because each patch occupies its own disjoint
+/// Y-band (see `PROJECT_CURVE_PATCH_Y_STEP`), the connecting segments
+/// between patches pass entirely over air (no mesh contact) except right at
+/// their endpoints — which is exactly what drives `project_curve.rs`'s own
+/// chain-splitting (`project_polygon_rings_with_cancel`) to flush a
+/// separate retract-separated chain per patch.
+fn project_curve_bad_order_path() -> Polygon2 {
+    let mut points = Vec::with_capacity(PROJECT_CURVE_PATCH_X.len() * 2);
+    for (i, &px) in PROJECT_CURVE_PATCH_X.iter().enumerate() {
+        let py = i as f64 * PROJECT_CURVE_PATCH_Y_STEP;
+        points.push(P2::new(px, py + 0.5));
+        points.push(P2::new(px, py + 2.5));
+    }
+    Polygon2::open_path(points)
+}
+
+#[test]
+fn project_curve_capability_allows_tsp_reorder_reduces_rapid_and_is_material_neutral() {
+    // Fixture note: this drives the REAL generator — `project_curve_toolpath`,
+    // the same function `compute/execute.rs::generate_project_curve` calls
+    // per input polygon — rather than a hand-built Toolpath. The mesh is a
+    // synthetic patchwork of 6 disconnected flat squares (not a real STL) so
+    // the chain-per-patch structure is deterministic and reviewable, but the
+    // actual chain-splitting logic under test (gap-over-air flush in
+    // `project_polygon_rings_with_cancel`, project_curve.rs ~360-382) and the
+    // per-chain retract emission (`Toolpath::emit_path_segment_with_intent`)
+    // are exercised for real, not simulated.
+    let (mesh, index) = project_curve_patchwork_mesh();
+    let poly = project_curve_bad_order_path();
+    let cutter = FlatEndmill::new(2.0, 25.0);
+    let params = ProjectCurveParams {
+        depth: 1.0,
+        feed_rate: 1000.0,
+        plunge_rate: 400.0,
+        safe_z: 30.0,
+        point_spacing: 1.0,
+        direction: ProjectDirection::FromAbove,
+        tool_radius: 1.0,
+        side: ProjectSide::Center,
+        setup_z_flipped: false,
+    };
+    let raw = project_curve_toolpath(&poly, &mesh, &index, &cutter, &params);
+
+    // Sanity: the fixture must actually produce several retract-separated
+    // chains (one per patch), or there's nothing for TSP to reorder and the
+    // rest of this test is vacuous.
+    let retract_count = raw
+        .moves
+        .iter()
+        .filter(|m| m.intent == MoveIntent::Retract)
+        .count();
+    assert!(
+        retract_count >= PROJECT_CURVE_PATCH_X.len(),
+        "fixture must emit at least {} retract-separated chains (one per \
+         disconnected patch) for the TSP reorder to have anything to do; \
+         got {retract_count} — the bad-order polyline may be crossing \
+         patches unexpectedly",
+        PROJECT_CURVE_PATCH_X.len(),
+    );
+
+    let baseline = dressup(
+        raw.clone(),
+        &dressup_no_links(),
+        OperationType::ProjectCurve,
+        2.0,
+    );
+    let cfg = DressupConfig {
+        optimize_rapid_order: true,
+        ..DressupConfig::default()
+    };
+    let optimized = dressup(raw, &cfg, OperationType::ProjectCurve, 2.0);
+
+    // This exercises the UNBARRIERED fallback TSP call site
+    // (compute/execute.rs ~2445-2464), not the barriered one (~2226-2247):
+    // `project_curve_toolpath` emits no `RapidOrderBarrier`/`DepthPass`
+    // spans, and `dressup()` wraps the raw `Toolpath` in a fresh
+    // `AnnotatedToolpath::new`, whose `rapid_order_barriers()` is therefore
+    // empty — so the barriered branch's `!rapid_order_barriers.is_empty()`
+    // guard is false, and only the unbarriered branch (gated on
+    // `allows_unbarriered_rapid_reorder()`, which this reclassification
+    // flips to `true` for ProjectCurve) can fire.
+    let r_base = rapid_distance(&baseline);
+    let r_opt = rapid_distance(&optimized);
+    println!(
+        "ProjectCurve TSP: rapid baseline={r_base:.1}  optimized={r_opt:.1}  \
+         delta={:.1}",
+        r_base - r_opt
+    );
+    assert!(
+        r_opt < r_base,
+        "ProjectCurve capability_allows_global_rapid_reorder must let TSP \
+         reduce rapid distance on a deliberately far-apart/interleaved chain \
+         order. baseline={r_base} optimized={r_opt}"
+    );
+
+    // Material neutrality: reordering which chain is visited when must not
+    // change what metal comes off — that is the whole safety claim behind
+    // loosening this capability.
+    let (hm_base, _) = simulate_to_heightmap(&baseline, &cutter, 0.5);
+    let (hm_opt, _) = simulate_to_heightmap(&optimized, &cutter, 0.5);
+    let (max_d, frac) = compare_heightmaps(&hm_base, &hm_opt, 0.05);
+    println!("ProjectCurve TSP: max_height_diff={max_d:.4}mm  cells_diff_frac={frac:.4}");
+    assert!(
+        frac <= 0.02,
+        "ProjectCurve: TSP rapid reorder changed material removal beyond \
+         tolerance — {:.2}% of cells differ by > 0.05mm (max diff {:.4}mm); \
+         this indicates the capability flip introduces a real material \
+         divergence and the reclassification is unsafe.",
+        frac * 100.0,
+        max_d,
     );
 }
 
