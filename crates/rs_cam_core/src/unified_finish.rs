@@ -459,6 +459,7 @@ pub struct RelinkTotals {
     pub too_far: usize,
     pub off_surface: usize,
     pub slower_than_retract: usize,
+    pub outside_boundary: usize,
 }
 
 impl RelinkTotals {
@@ -1081,6 +1082,10 @@ pub fn unified_finish_toolpath_with_cancel(
                 // lever applied twice. The dressup-level TSP still runs
                 // afterwards on whatever junctions stayed as retracts.
                 reorder: true,
+                // This region's OWN polygon — an intra-region link that
+                // leaves it cuts territory the decomposition (and, under
+                // `territory_clip`, the rest mask) deliberately excluded.
+                boundary: Some(&region_set),
             };
             let (linked, rep) =
                 crate::surface_link::relink_fragments(&tp, mesh, index, cutter, &rp);
@@ -1090,6 +1095,7 @@ pub fn unified_finish_toolpath_with_cancel(
             report.relink.too_far += rep.too_far;
             report.relink.off_surface += rep.off_surface;
             report.relink.slower_than_retract += rep.slower_than_retract;
+            report.relink.outside_boundary += rep.outside_boundary;
             let anns = anns
                 .into_iter()
                 .map(|a| ScallopRuntimeAnnotation {
@@ -1282,6 +1288,7 @@ pub fn unified_finish_toolpath_with_cancel(
             retract_links = report.relink.retract_links,
             too_far = report.relink.too_far,
             off_surface = report.relink.off_surface,
+            outside_boundary = report.relink.outside_boundary,
             slower_than_retract = report.relink.slower_than_retract,
             link_rate = report.relink.link_rate().unwrap_or(0.0),
             "unified_finish: intra-region stay-down linking"

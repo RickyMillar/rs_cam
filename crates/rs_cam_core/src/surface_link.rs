@@ -74,6 +74,24 @@ pub struct RelinkParams<'a> {
     /// reversed, so its cut direction — and therefore climb/conventional —
     /// is preserved.
     pub reorder: bool,
+    /// Territory the link may cross. Every sampled link point must lie
+    /// inside it or the candidate is refused.
+    ///
+    /// NOT optional in spirit: a surface link is a CUTTING feed, so one
+    /// that leaves the region it belongs to machines ground the op was
+    /// confined away from — the selective-finishing gouge class the
+    /// boundary exists to prevent. `unified_finish::choose_link` has
+    /// enforced exactly this for region-to-region links since P2.d; the
+    /// first version of THIS pass omitted it and the wanaka ×2 COLUMNS
+    /// gate caught it (shallow `<-.5` over-cut columns 1 218 → 4 068,
+    /// worst column −3.0 → −3.9 mm). On dendritic rest islands a straight
+    /// line between two fragments of the SAME region leaves that region
+    /// constantly, so intra-region linking needs the check just as much as
+    /// inter-region linking does.
+    ///
+    /// `None` disables the check — only correct when the caller knows the
+    /// fragments span no excluded territory.
+    pub boundary: Option<&'a crate::region_set::RegionSet<'a>>,
 }
 
 /// What [`relink_fragments`] did.
@@ -90,6 +108,8 @@ pub struct RelinkReport {
     pub off_surface: usize,
     /// Junctions where the link was gouge-safe but slower than retracting.
     pub slower_than_retract: usize,
+    /// Junctions where the link would have left `RelinkParams::boundary`.
+    pub outside_boundary: usize,
     /// `old_move_index -> new_move_index`. A dropped move (a retract or
     /// plunge a surface link replaced) maps to the first surviving move
     /// after it, so annotation indices remap without going backwards.
@@ -238,6 +258,18 @@ pub fn relink_fragments(
                 report.off_surface += 1;
                 return None;
             };
+            // Mirrors `unified_finish::choose_link`: a surface link is a
+            // CUTTING feed, so it must not leave the territory this op is
+            // confined to. Endpoints are cut positions and trivially
+            // inside; the interior samples carry the test.
+            if let Some(boundary) = params.boundary
+                && !pts
+                    .iter()
+                    .all(|p| boundary.contains(&crate::geo::P2::new(p.x, p.y)))
+            {
+                report.outside_boundary += 1;
+                return None;
+            }
             match params.link_kinematics {
                 Some(lk) => {
                     let mut costed = pts.clone();
@@ -423,6 +455,7 @@ mod tests {
             safe_z,
             link_kinematics: None,
             reorder: false,
+            boundary: None,
         };
         let (out, report) = relink_fragments(&tp, &mesh, &index, &tool, &params);
 
@@ -479,6 +512,7 @@ mod tests {
             safe_z,
             link_kinematics: None,
             reorder: false,
+            boundary: None,
         };
         let (out, report) = relink_fragments(&tp, &mesh, &index, &tool, &params);
         assert_eq!(report.surface_links, 0, "5mm > 3mm hookup: {report:?}");
@@ -500,6 +534,64 @@ mod tests {
                 .collect()
         };
         assert_eq!(cuts(&tp), cuts(&out), "cut geometry must be identical");
+    }
+
+    #[test]
+    fn relink_refuses_links_that_leave_the_boundary() {
+        use crate::geo::P2;
+        use crate::polygon::Polygon2;
+        use crate::region_set::RegionSet;
+
+        let mesh = make_v_valley(60.0, 6.0, 0.5, 60, 24);
+        let index = SpatialIndex::build(&mesh, 5.0);
+        let tool = BallEndmill::new(2.0, 25.0);
+        let safe_z = 20.0;
+        let tp = fragmented_valley_path(6, 4.0, 1.5, safe_z);
+
+        let base = RelinkParams {
+            hookup_distance: 3.0,
+            stock_to_leave: 0.0,
+            sampling: 0.5,
+            feed_rate: 500.0,
+            plunge_rate: 100.0,
+            safe_z,
+            link_kinematics: None,
+            reorder: false,
+            boundary: None,
+        };
+        let (_, unbounded) = relink_fragments(&tp, &mesh, &index, &tool, &base);
+        assert_eq!(
+            unbounded.surface_links, 5,
+            "control: without a boundary every junction links"
+        );
+
+        // A boundary that covers the cut runs but NOT the gaps between
+        // them: each 1.5mm junction now crosses excluded territory.
+        let mut rings: Vec<Polygon2> = Vec::new();
+        let mut x = 1.0;
+        for _ in 0..6 {
+            rings.push(Polygon2::new(vec![
+                P2::new(x - 0.2, -1.0),
+                P2::new(x + 4.2, -1.0),
+                P2::new(x + 4.2, 1.0),
+                P2::new(x - 0.2, 1.0),
+            ]));
+            x += 4.0 + 1.5;
+        }
+        let region = RegionSet::new(rings);
+        let bounded_params = RelinkParams {
+            boundary: Some(&region),
+            ..base
+        };
+        let (_, bounded) = relink_fragments(&tp, &mesh, &index, &tool, &bounded_params);
+        assert_eq!(
+            bounded.surface_links, 0,
+            "a link crossing excluded territory is a CUTTING feed over ground \
+             the op was confined away from — the selective-finishing gouge \
+             class: {bounded:?}"
+        );
+        assert_eq!(bounded.outside_boundary, 5, "{bounded:?}");
+        assert_eq!(bounded.retract_links, 5, "{bounded:?}");
     }
 
     #[test]
@@ -528,6 +620,7 @@ mod tests {
             safe_z,
             link_kinematics: None,
             reorder: false,
+            boundary: None,
         };
         let (kept, _) = relink_fragments(&tp, &mesh, &index, &tool, &base);
         let reordered_params = RelinkParams {
