@@ -2823,9 +2823,14 @@ fn v3_move_attribution_probe() {
 ///
 /// Sweep is computed from the arc's own `i/j` and direction flag exactly
 /// as a controller would, and anything beyond `MAX_PLAUSIBLE_SWEEP_DEG`
-/// is reported. A correct fitter never needs a reflex arc: it would split
-/// one, and a near-360° sweep between endpoints millimetres apart is a
-/// direction error by construction.
+/// is reported.
+///
+/// READ THE RATIO, NOT THE COUNT. A reflex sweep is not automatically a
+/// bug: raster turnarounds are deliberate ~270° loops at `stepover/√2`
+/// (0.148 mm at this fixture's 0.21 mm stepover), and 353 of Op B's arcs
+/// are exactly those. What marks a MIS-DIRECTED arc is arc length wildly
+/// exceeding the path it replaced — the field case ran 354 mm of arc for
+/// a 3.55 mm chord, a ratio of 100, against ~3.3 for a turnaround.
 #[test]
 #[ignore = "one cascade chain; pure toolpath analysis, no simulation"]
 fn v3_arc_direction_sanity() {
@@ -2913,8 +2918,9 @@ fn v3_arc_direction_sanity() {
                 if shown <= 6 {
                     eprintln!(
                         "   [{name}] #{k} sweep={deg:7.2}° r={r:8.3} chord={chord:6.3} \
-                         arc_len={:9.3} ({:.3},{:.3})->({:.3},{:.3})",
+                         arc_len={:9.3} len/chord={:7.1} ({:.3},{:.3})->({:.3},{:.3})",
                         r * sweep,
+                        r * sweep / chord.max(1e-9),
                         a.x,
                         a.y,
                         b.x,
