@@ -423,14 +423,20 @@ impl OperationType {
             Pocket | Profile | Adaptive | Rest | Zigzag | Adaptive3d | Waterline | Trace => {
                 OperationTransformCapabilities::new(false, true, false, false)
             }
+            // UnifiedFinish is stitched from independently generated region
+            // nodes, not one continuous trace. `generate_unified_finish`
+            // emits a `RapidOrderBarrier` at every node start (plus per-Z
+            // barriers inside waterline nodes), so the barriered TSP can
+            // reorder runs WITHIN a node while the router's cross-node
+            // sequence — costed against the machine envelope, and carrying
+            // the surface links — stays exactly as routed. Links stay
+            // forbidden: `apply_link_moves` has no view of the 3D surface
+            // between two fragment endpoints, which is why the op builds its
+            // own via `surface_link::build_surface_link`.
+            UnifiedFinish => OperationTransformCapabilities::new(false, false, false, false),
             // Genuinely continuous traces: helical/spiral paths whose passes
             // are not retract-separated, single-tool-down runs.
-            // UnifiedFinish mirrors Scallop here (registration checklist
-            // decision) — its stitched per-band toolpath is a candidate
-            // for looser capabilities once P2.d routing lands, but until
-            // then it inherits Scallop's conservative continuous-path
-            // treatment.
-            Scallop | UnifiedFinish | SteepShallow | RampFinish | SpiralFinish => {
+            Scallop | SteepShallow | RampFinish | SpiralFinish => {
                 OperationTransformCapabilities::new(false, false, true, false)
             }
         }

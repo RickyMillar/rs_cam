@@ -299,6 +299,24 @@ fn simulate_pair_shared_frame(
     cell_size: f64,
 ) -> (Vec<f32>, Vec<f32>) {
     let bbox = union_bbox(&padded_bbox(a), &padded_bbox(b));
+    simulate_pair_in_frame(a, b, cutter, cell_size, &bbox)
+}
+
+/// [`simulate_pair_shared_frame`] with the stock box supplied explicitly.
+///
+/// Needed by swept-volume comparisons: those re-type rapids as cuts, so a
+/// box derived from the toolpath bbox — which reaches up to `safe_z` —
+/// would let each branch's safe-Z traverses carve the phantom material
+/// sitting ABOVE the part, and report two different traverse routes as a
+/// material difference. Cap the box at the real stock top instead.
+fn simulate_pair_in_frame(
+    a: &Toolpath,
+    b: &Toolpath,
+    cutter: &dyn MillingCutter,
+    cell_size: f64,
+    bbox: &BoundingBox3,
+) -> (Vec<f32>, Vec<f32>) {
+    let bbox = *bbox;
     let mut stock_a = TriDexelStock::from_bounds(&bbox, cell_size);
     stock_a.simulate_toolpath(a, cutter, StockCutDirection::FromTop);
     let mut stock_b = TriDexelStock::from_bounds(&bbox, cell_size);
@@ -310,6 +328,40 @@ fn simulate_pair_shared_frame(
         "shared-frame stocks must produce identical grid dimensions"
     );
     (hm_a, hm_b)
+}
+
+/// The multiset of SWEPT CUT SEGMENTS: every cutting move keyed by the
+/// `(from, to)` pair it actually sweeps — `from` being the previous move's
+/// target whatever its type, since that is what the simulator stamps.
+///
+/// This is the exact instrument for a rapid REORDER. `tsp::optimize_rapid_order`
+/// discards the input's rapids and regenerates retract/traverse/approach
+/// around each segment, so only a cutting move's *first* sweep can change;
+/// if this multiset is identical the two branches remove provably identical
+/// material and no simulation is needed to say so.
+///
+/// Use it INSTEAD of leaning on the heightmap for the neutrality verdict.
+/// The dexel sim has an order-dependent floor: `dexel::ray_blend_above`
+/// subtracts only a FRACTION `f` of the above-surface span on sub-coverage
+/// cells (`new_exit = exit - f * above_part`), which is neither idempotent
+/// nor commutative. Full-coverage cells take `ray_subtract_above` and are
+/// order-free, so "dexel removal is monotonic" holds in the interior and
+/// fails at partial-coverage boundary cells — where a pure reorder really
+/// can move a column by a fraction of a cusp.
+fn swept_cut_segments(tp: &Toolpath) -> std::collections::BTreeMap<String, usize> {
+    let mut out: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for w in tp.moves.windows(2) {
+        if !w[1].move_type.is_cutting() {
+            continue;
+        }
+        let (a, b) = (w[0].target, w[1].target);
+        let key = format!(
+            "{:.4},{:.4},{:.4}->{:.4},{:.4},{:.4}",
+            a.x, a.y, a.z, b.x, b.y, b.z
+        );
+        *out.entry(key).or_insert(0) += 1;
+    }
+    out
 }
 
 /// Compare two heightmaps. Returns (max_abs_diff, fraction_cells_diff).
@@ -1386,6 +1438,268 @@ fn scallop_continuous_capability_still_blocks_reorder() {
         baseline.moves.len(),
         "Scallop(continuous: true): optimize_rapid_order must be a complete \
          no-op given the blocking capability — move count must not change"
+    );
+}
+
+// ── UnifiedFinish: region-node barriers ──────────────────────────────────
+//
+// UnifiedFinish is stitched from independently generated region nodes, so
+// it is NOT the continuous trace its old capability claimed. What was
+// missing was barriers: `apply_dressups` gates the barriered TSP on
+// `!rapid_order_barriers.is_empty()`, and the op emitted none, so flipping
+// the capability alone would have handed the whole stitched path to one
+// unconstrained reorder. `unified_finish::unified_finish_spans` now emits a
+// barrier at every node start plus per-Z barriers inside waterline nodes.
+//
+// Two properties are asserted here, and they need DIFFERENT instruments:
+//
+//   * Material neutrality — the dexel sim, with a DEPTH bound (a gouge
+//     through 1% of the columns passes any fraction-only gate).
+//   * Depth ORDER inside waterline nodes — the sim CANNOT see this. Dexel
+//     removal is monotonic, so cutting the deep pass before the shallow one
+//     leaves byte-identical final stock. The hazard is cutting force, not
+//     geometry, so this is asserted structurally on the move sequence.
+
+/// Nominal (deepest) cutting Z of each retract-separated cutting run inside
+/// `range`, with consecutive duplicates collapsed — i.e. the sequence of
+/// depth LEVELS the tool visits.
+fn nominal_z_levels(tp: &Toolpath, range: std::ops::Range<usize>) -> Vec<f64> {
+    let mut levels: Vec<f64> = Vec::new();
+    let mut run_min: Option<f64> = None;
+    for mv in tp.moves.iter().take(range.end).skip(range.start) {
+        if mv.move_type.is_cutting() {
+            run_min = Some(run_min.map_or(mv.target.z, |z: f64| z.min(mv.target.z)));
+        } else if let Some(z) = run_min.take()
+            && !levels.last().is_some_and(|l: &f64| (l - z).abs() <= 1.0e-6)
+        {
+            levels.push(z);
+        }
+    }
+    if let Some(z) = run_min
+        && !levels.last().is_some_and(|l: &f64| (l - z).abs() <= 1.0e-6)
+    {
+        levels.push(z);
+    }
+    levels
+}
+
+#[test]
+fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
+    use rs_cam_core::finish_planner::FinishPlannerParams;
+    use rs_cam_core::toolpath_spans::{AnnotatedToolpath, SpanKind};
+    use rs_cam_core::unified_finish::{
+        RegionKind, UnifiedFinishParams, unified_finish_spans, unified_finish_toolpath_with_cancel,
+    };
+
+    let (mesh, index) = hemisphere_mesh();
+    let cutter = BallEndmill::new(3.0, 25.0);
+    let params = UnifiedFinishParams {
+        tolerance: 0.5,
+        ..UnifiedFinishParams::default()
+    };
+    let planner = FinishPlannerParams::for_tool(cutter.radius());
+    let never_cancel = || false;
+
+    let (raw, anns, report) = unified_finish_toolpath_with_cancel(
+        &mesh,
+        &index,
+        &cutter,
+        /* top_z */ 25.0,
+        /* bottom_z */ -1.0,
+        &params,
+        &planner,
+        None,
+        None,
+        None,
+        None,
+        &never_cancel,
+    )
+    .expect("uncancelled generation");
+
+    assert!(!raw.moves.is_empty(), "fixture must generate a toolpath");
+    let very_steep_nodes = report
+        .region_table
+        .iter()
+        .filter(|e| matches!(e.kind, RegionKind::Band(band) if format!("{band:?}") == "VerySteep"))
+        .count();
+    println!(
+        "UnifiedFinish fixture: {} nodes ({} VerySteep), {} moves",
+        report.region_table.len(),
+        very_steep_nodes,
+        raw.moves.len()
+    );
+    assert!(
+        report.region_table.len() >= 2,
+        "fixture must route at least two region nodes or the cross-node \
+         barrier assertion below is vacuous; got {:?}",
+        report.region_table
+    );
+    assert!(
+        very_steep_nodes >= 1,
+        "hemisphere fixture must produce at least one VerySteep (waterline) \
+         node — the per-Z barrier half of this test is vacuous without one"
+    );
+
+    // The spans production ships, from the same function production calls.
+    let spans = unified_finish_spans(&raw, &anns, &report);
+    let annotated = AnnotatedToolpath::with_spans(raw.clone(), spans);
+    annotated
+        .check_invariants()
+        .expect("emitted spans must be well-formed");
+    let barriers = annotated.rapid_order_barriers();
+    assert!(
+        barriers.len() >= report.region_table.len(),
+        "every routed node must contribute a rapid-order barrier (plus the \
+         per-Z barriers inside waterline nodes): {} barriers for {} nodes",
+        barriers.len(),
+        report.region_table.len()
+    );
+
+    // The shipped capability, not a hand-built one.
+    let caps = OperationType::UnifiedFinish.transform_capabilities();
+    assert!(
+        caps.allows_barriered_rapid_reorder(),
+        "UnifiedFinish must allow the BARRIERED reorder — it is stitched from \
+         independent region nodes, not one continuous trace"
+    );
+    assert!(
+        !caps.allows_unbarriered_rapid_reorder(),
+        "UnifiedFinish must NOT allow the unbarriered reorder — that path \
+         ignores the node barriers entirely"
+    );
+    assert!(
+        !caps.allows_link_moves(),
+        "UnifiedFinish must still forbid apply_link_moves' straight-feed \
+         bridges — it builds its own gouge-checked links via \
+         surface_link::build_surface_link"
+    );
+
+    // ISOLATE THE VARIABLE: hold link_moves OFF on BOTH branches and vary
+    // only optimize_rapid_order. `DressupConfig::default()` ships
+    // link_moves: true, so `..Default::default()` here would compare
+    // reorder+links against neither.
+    let dressed = |cfg: &DressupConfig| -> AnnotatedToolpath {
+        let spans = unified_finish_spans(&raw, &anns, &report);
+        apply_dressups(
+            AnnotatedToolpath::with_spans(raw.clone(), spans),
+            cfg,
+            1000.0,
+            /* tool_diameter */ 3.0,
+            /* safe_z */ 30.0,
+            /* stock_top */ 0.0,
+            None,
+            None,
+            None,
+            caps,
+            None,
+            None,
+        )
+    };
+    let baseline = dressed(&dressup_no_links());
+    let optimized = dressed(&DressupConfig {
+        optimize_rapid_order: true,
+        link_moves: false,
+        ..DressupConfig::default()
+    });
+
+    let r_base = rapid_distance(&baseline.toolpath);
+    let r_opt = rapid_distance(&optimized.toolpath);
+    let c_base = cutting_distance(&baseline.toolpath);
+    let c_opt = cutting_distance(&optimized.toolpath);
+    println!(
+        "UnifiedFinish TSP: rapid {r_base:.1} -> {r_opt:.1} ({:+.1}, {:+.1}%) | \
+         cut {c_base:.1} -> {c_opt:.1}",
+        r_opt - r_base,
+        100.0 * (r_opt - r_base) / r_base,
+    );
+    assert!(
+        r_opt < r_base,
+        "the barriered TSP must reduce rapid travel inside the region nodes — \
+         wanaka measured 89.6% of UnifiedFinish's inter-fragment travel as \
+         intra-region. baseline={r_base} optimized={r_opt}"
+    );
+
+    // MATERIAL NEUTRALITY — asserted EXACTLY, on the swept cut segments.
+    // The TSP discards the input's rapids and regenerates the approach
+    // around each segment, so only a cutting move's first sweep can change;
+    // an identical multiset is proof the two branches remove identical
+    // material, with no simulation in the loop.
+    let (segs_base, segs_opt) = (
+        swept_cut_segments(&baseline.toolpath),
+        swept_cut_segments(&optimized.toolpath),
+    );
+    let only_base = segs_base.iter().filter(|(k, _)| !segs_opt.contains_key(*k));
+    let only_opt = segs_opt.iter().filter(|(k, _)| !segs_base.contains_key(*k));
+    assert_eq!(
+        segs_base,
+        segs_opt,
+        "the reorder must sweep exactly the same cut segments. \
+         only-in-baseline: {:?} | only-in-optimized: {:?}",
+        only_base.take(4).collect::<Vec<_>>(),
+        only_opt.take(4).collect::<Vec<_>>(),
+    );
+
+    // Corroboration only. The dexel sim CANNOT confirm the above to zero:
+    // `dexel::ray_blend_above` subtracts a FRACTION of a partial-coverage
+    // cell, which is order-dependent, so identical geometry in a different
+    // order still moves boundary columns by a fraction of a cusp. Measured
+    // here at 0.87mm worst / 0.7% of cells on 0.5mm cells; the bound below
+    // is that floor, not a neutrality claim — the assert_eq above is the
+    // neutrality claim.
+    let (hm_base, hm_opt) =
+        simulate_pair_shared_frame(&baseline.toolpath, &optimized.toolpath, &cutter, 0.5);
+    let (max_d, frac) = compare_heightmaps(&hm_base, &hm_opt, 0.05);
+    let (mut deeper, mut shallower) = (0usize, 0usize);
+    for (b, o) in hm_base.iter().zip(hm_opt.iter()) {
+        if o - b < -0.05 {
+            deeper += 1;
+        }
+        if o - b > 0.05 {
+            shallower += 1;
+        }
+    }
+    println!(
+        "UnifiedFinish TSP: max_height_diff={max_d:.4}mm cells_diff_frac={frac:.4} \
+         deeper={deeper} shallower={shallower} (sub-coverage blend floor)"
+    );
+    assert!(
+        frac <= 0.02,
+        "the sim's order-dependent blend floor must stay confined to boundary \
+         cells; {frac} of columns differ, which is too many to be sub-coverage \
+         blending — re-check the swept-segment equality above"
+    );
+
+    // Depth order inside waterline nodes. The sim is blind to this (see the
+    // block comment above), so read the remapped node spans and assert the
+    // level sequence still descends.
+    let mut checked = 0usize;
+    for span in optimized.spans.iter().filter(|s| s.kind == SpanKind::Region) {
+        if !span.label.starts_with("VerySteep") {
+            continue;
+        }
+        let levels = nominal_z_levels(&optimized.toolpath, span.start_move..span.end_move);
+        if levels.len() < 2 {
+            continue;
+        }
+        checked += 1;
+        assert!(
+            levels.windows(2).all(|w| w[0] >= w[1] - 1.0e-6),
+            "waterline (VerySteep) node must keep its Z ladder descending \
+             after the reorder — per-Z barriers exist precisely to prevent a \
+             deeper pass being lifted above a shallower one. levels={levels:?}"
+        );
+    }
+    assert!(
+        checked >= 1,
+        "at least one multi-level VerySteep node span must survive the \
+         reorder's span remapping for the depth-order assertion to mean \
+         anything (spans present: {}, labels: {:?})",
+        optimized.spans.len(),
+        optimized
+            .spans
+            .iter()
+            .map(|s| s.label.as_ref())
+            .collect::<Vec<_>>()
     );
 }
 
