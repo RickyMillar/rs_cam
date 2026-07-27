@@ -690,6 +690,7 @@ fn ab_unified_config() -> UnifiedFinishConfig {
         // branch-A baseline.
         territory_clip: false,
         intra_region_hookup_mm: 0.0,
+        crease_hookup_mm: 5.0,
     }
 }
 

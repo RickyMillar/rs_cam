@@ -663,7 +663,15 @@ fn set_enabled_by_name(s: &mut ProjectSession, enable: &[&str], disable: &[&str]
 
 /// Apply a `Branch` to the fixture's 4-op chain by toolpath name.
 fn apply_branch(s: &mut ProjectSession, branch: Branch) {
-    let (enable, disable): (&[&str], &[&str]) = match branch {
+    let (enable, disable) = branch_ops(branch);
+    set_enabled_by_name(s, enable, disable);
+}
+
+/// The enable/disable name lists behind a `Branch`, so a probe can build a
+/// partial chain (e.g. Rough + Op A, no Op B) from the same vocabulary
+/// rather than hand-rolling a second copy of the op names.
+fn branch_ops(branch: Branch) -> (&'static [&'static str], &'static [&'static str]) {
+    match branch {
         Branch::Cascade => (
             &["Rough", "Op A Ball Finish", "Op B Unified Rest"],
             &["D All-Over Tip"],
@@ -672,8 +680,7 @@ fn apply_branch(s: &mut ProjectSession, branch: Branch) {
             &["Rough", "D All-Over Tip"],
             &["Op A Ball Finish", "Op B Unified Rest"],
         ),
-    };
-    set_enabled_by_name(s, enable, disable);
+    }
 }
 
 // ── chain runner ────────────────────────────────────────────────────────
@@ -922,6 +929,20 @@ fn op_b_claims_config() -> UnifiedFinishConfig {
 /// §9 lever: `intra_region_hookup_mm` as an explicit A/B dial. `0.0` is
 /// the shipped default and reproduces the pre-§9 op byte-for-byte.
 fn op_b_claims_config_with_hookup(intra_region_hookup_mm: f64) -> UnifiedFinishConfig {
+    op_b_config(intra_region_hookup_mm, true, 5.0)
+}
+
+/// `pencil_claims` as an explicit A/B dial alongside the §9 hookup. Every
+/// measurement this campaign has taken ran with it ON; it is the one
+/// unbounded linker left in Op B at SHIPPED dials (the crease node emits
+/// through `pencil::emit_paths` at `PencilParams::default()`'s 5 mm
+/// `hookup_distance` with no territory boundary — `unified_finish.rs`
+/// Step 3.5).
+fn op_b_config(
+    intra_region_hookup_mm: f64,
+    pencil_claims: bool,
+    crease_hookup_mm: f64,
+) -> UnifiedFinishConfig {
     UnifiedFinishConfig {
         steep_threshold_deg: 45.0,
         waterline_threshold_deg: 75.0,
@@ -935,11 +956,12 @@ fn op_b_claims_config_with_hookup(intra_region_hookup_mm: f64) -> UnifiedFinishC
         feed_rate: 3000.0,
         plunge_rate: 150.0,
         spindle_rpm: Some(21000),
-        pencil_claims: true,
+        pencil_claims,
         min_rest_depth_mm: 0.022,
         claims_reference: CreaseReference::MachinedStock,
         territory_clip: true,
         intra_region_hookup_mm,
+        crease_hookup_mm,
     }
 }
 
@@ -1322,6 +1344,124 @@ fn band_shares(
     (total, pct(on_size), pct(plus05), tail)
 }
 
+/// Where the deep over-cut lives. The shipped cascade puts 1 218 shallow
+/// columns below −0.5 mm (worst −3.03 mm) against D's 8 (worst −0.58) —
+/// a gouge population, not cusp texture, and the `<-.5` bin alone cannot
+/// say whether it is scattered (a systematic depth error) or clustered (a
+/// handful of bad entries). Prints the per-band count, the worst columns'
+/// world XY, and a coarse occupancy map so the two read apart at a glance.
+fn deep_overcut_locator(tag: &str, s: &ProjectSession, bm: &BandMap, group: usize) {
+    const DEEP: f32 = -0.5;
+    const MAP: usize = 24;
+    let Some(sim) = s.simulation_result() else {
+        return;
+    };
+    let Some(cols) = sim.column_deviations.as_ref() else {
+        return;
+    };
+    let deep: Vec<&rs_cam_core::compute::simulate::ColumnDeviation> = cols
+        .iter()
+        .filter(|cd| cd.group == group && cd.dev < DEEP)
+        .collect();
+    if deep.is_empty() {
+        eprintln!("== [{tag}] DEEP OVER-CUT: none below {DEEP}mm ==");
+        return;
+    }
+    let mut by_band = [0usize; 4];
+    for cd in &deep {
+        by_band[bm.code_at(cd.x, cd.y) as usize] += 1;
+    }
+    eprintln!(
+        "== [{tag}] DEEP OVER-CUT (dev < {DEEP}mm, group {group}): n={} | {} ==",
+        deep.len(),
+        BAND_NAMES
+            .iter()
+            .enumerate()
+            .map(|(i, n)| format!("{n}={}", by_band[i]))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+
+    // Worst columns, and — separately — the worst in each GATED band. The
+    // gate reads bands 1..3, but off-region routinely dominates the raw
+    // ranking, so a top-N by depth alone never shows a gate-relevant site.
+    // `model_z` comes from a vertical ray so the absolute Z a move had to
+    // reach is readable directly, instead of being inferred from `top_z`
+    // (which is the setup group's LOCAL frame while `dev` is world).
+    let mesh = s.models().iter().find_map(|m| m.mesh.clone());
+    let model_z = |x: f64, y: f64| -> f64 {
+        let Some(mesh) = mesh.as_ref() else {
+            return f64::NAN;
+        };
+        let origin = rs_cam_core::geo::P3::new(x, y, 1.0e6);
+        let dir = rs_cam_core::geo::V3::new(0.0, 0.0, -1.0);
+        rs_cam_core::mesh::ray_pick_triangle(mesh, &origin, &dir)
+            .map_or(f64::NAN, |(_, t)| 1.0e6 - t)
+    };
+    let mut worst = deep.clone();
+    worst.sort_by(|a, b| a.dev.total_cmp(&b.dev));
+    let show = |cd: &rs_cam_core::compute::simulate::ColumnDeviation| {
+        let mz = model_z(cd.x, cd.y);
+        eprintln!(
+            "   dev={:+7.3} at ({:8.2},{:8.2}) band={:<11} model_z={:7.3} world_top={:7.3} (local top_z={:.3})",
+            cd.dev,
+            cd.x,
+            cd.y,
+            BAND_NAMES[bm.code_at(cd.x, cd.y) as usize],
+            mz,
+            mz + f64::from(cd.dev),
+            cd.top_z
+        );
+    };
+    for cd in worst.iter().take(8) {
+        show(cd);
+    }
+    for code in 1u8..=3 {
+        eprintln!("   -- worst in {} --", BAND_NAMES[code as usize]);
+        for cd in worst
+            .iter()
+            .filter(|cd| bm.code_at(cd.x, cd.y) == code)
+            .take(4)
+        {
+            show(cd);
+        }
+    }
+
+    // Occupancy over the band-map extent: '.' none, digits log10-ish.
+    let span_x = bm.cell * bm.cols as f64;
+    let span_y = bm.cell * bm.rows as f64;
+    let mut occ = vec![0usize; MAP * MAP];
+    for cd in &deep {
+        let cx = (((cd.x - bm.origin_x) / span_x) * MAP as f64).floor();
+        let cy = (((cd.y - bm.origin_y) / span_y) * MAP as f64).floor();
+        if cx < 0.0 || cy < 0.0 || cx >= MAP as f64 || cy >= MAP as f64 {
+            continue;
+        }
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+        let idx = cy as usize * MAP + cx as usize;
+        occ[idx] += 1;
+    }
+    let occupied = occ.iter().filter(|&&n| n > 0).count();
+    eprintln!(
+        "   occupancy over {MAP}x{MAP} tiles: {occupied}/{} tiles hold the {} deep columns",
+        MAP * MAP,
+        deep.len()
+    );
+    for r in (0..MAP).rev() {
+        let row: String = (0..MAP)
+            .map(|c| match occ[r * MAP + c] {
+                0 => '.',
+                1..=3 => '1',
+                4..=10 => '2',
+                11..=30 => '3',
+                31..=100 => '4',
+                _ => '#',
+            })
+            .collect();
+        eprintln!("   |{row}|");
+    }
+}
+
 /// Region spans on `spans` that are NOT strictly nested inside another
 /// Region span — the node-level table (one per band/crease strategy),
 /// coarser than any finer scallop-event Region spans a strategy nests
@@ -1399,6 +1539,27 @@ struct BranchScore {
 struct Dials {
     air_bridge_policy: AirBridgePolicy,
     intra_region_hookup_mm: f64,
+    /// Op B's crease-claims node (v3 S1). ON in every measurement this
+    /// campaign has taken; `V3_CLAIMS=off` turns it off to test whether
+    /// the crease emitter owns the off-region deep over-cut — it links at
+    /// `PencilParams::default().hookup_distance` (5 mm) with NO territory
+    /// boundary, the one unbounded linker left in Op B at SHIPPED dials.
+    ///
+    /// CAVEAT: `pencil_claims = false` disables the WHOLE claims pipeline,
+    /// territory clip included (`execute.rs`: `cfg.pencil_claims.then(..)`),
+    /// so it varies two things. `crease_hookup_mm` is the isolated lever.
+    pencil_claims: bool,
+    /// Crease-node link cap (mm). 5.0 is what every measurement before
+    /// 2026-07-27 ran with; `V3_CREASE_HOOKUP=0` keeps the claims pipeline
+    /// and its territory clip while removing only the unbounded links.
+    crease_hookup_mm: f64,
+    /// Override every op's `arc_fitting` dressup. `None` leaves the
+    /// fixture's setting (on). Arc fitting replaces a drop-cutter-probed
+    /// polyline with an arc in XY while interpolating Z linearly, so the
+    /// tool travels at a height computed for points the arc never passes
+    /// through — a candidate mechanism for cutting under the model that
+    /// no amount of link/territory work would reach. `V3_ARCFIT=off`.
+    arc_fitting: Option<bool>,
 }
 
 impl Dials {
@@ -1406,12 +1567,78 @@ impl Dials {
     const SHIPPED: Self = Self {
         air_bridge_policy: AirBridgePolicy::Always,
         intra_region_hookup_mm: 0.0,
+        pencil_claims: true,
+        crease_hookup_mm: 5.0,
+        arc_fitting: None,
     };
     /// §9 intra-region stay-down linking + §10 cost-aware air bridges.
     const V3: Self = Self {
         air_bridge_policy: AirBridgePolicy::ShorterThanAirPath,
         intra_region_hookup_mm: 6.0,
+        pencil_claims: true,
+        crease_hookup_mm: 5.0,
+        arc_fitting: None,
     };
+    /// §10 cost-aware air bridges alone — the lever §10a isolated as
+    /// carrying the whole win (−22.8% finish stack) at a twelfth of the
+    /// over-cut the pair produces.
+    const BRIDGES: Self = Self {
+        air_bridge_policy: AirBridgePolicy::ShorterThanAirPath,
+        intra_region_hookup_mm: 0.0,
+        pencil_claims: true,
+        crease_hookup_mm: 5.0,
+        arc_fitting: None,
+    };
+    /// §9 intra-region stay-down links alone.
+    const LINKS: Self = Self {
+        air_bridge_policy: AirBridgePolicy::Always,
+        intra_region_hookup_mm: 6.0,
+        pencil_claims: true,
+        crease_hookup_mm: 5.0,
+        arc_fitting: None,
+    };
+}
+
+/// `V3_DIALS=shipped|bridges|links|both`, so a dial setting can be chosen
+/// per run rather than per rebuild. Shared by the two-branch proof and the
+/// single-branch isolation probe so they can never disagree about what a
+/// name means.
+fn dials_from_env(default: &str) -> (String, Dials) {
+    let which = std::env::var("V3_DIALS").unwrap_or_else(|_| default.to_owned());
+    let mut dials = match which.as_str() {
+        "shipped" => Dials::SHIPPED,
+        "bridges" => Dials::BRIDGES,
+        "links" => Dials::LINKS,
+        "both" => Dials::V3,
+        other => panic!("V3_DIALS must be shipped|bridges|links|both, got {other:?}"),
+    };
+    // Composes with any of the above: `V3_DIALS=shipped V3_CLAIMS=off`.
+    let mut label = which;
+    match std::env::var("V3_CLAIMS").as_deref() {
+        Ok("off") => {
+            dials.pencil_claims = false;
+            label.push_str("+noclaims");
+        }
+        Ok("on") | Err(_) => {}
+        Ok(other) => panic!("V3_CLAIMS must be on|off, got {other:?}"),
+    }
+    match std::env::var("V3_ARCFIT").as_deref() {
+        Ok("off") => {
+            dials.arc_fitting = Some(false);
+            label.push_str("+noarcfit");
+        }
+        Ok("on") => dials.arc_fitting = Some(true),
+        Err(_) => {}
+        Ok(other) => panic!("V3_ARCFIT must be on|off, got {other:?}"),
+    }
+    if let Ok(raw) = std::env::var("V3_CREASE_HOOKUP") {
+        let mm: f64 = raw
+            .parse()
+            .unwrap_or_else(|e| panic!("V3_CREASE_HOOKUP must be a number, got {raw:?}: {e}"));
+        dials.crease_hookup_mm = mm;
+        label.push_str(&format!("+crease{mm}"));
+    }
+    (label, dials)
 }
 
 fn score_branch(label: &str, project_path: &std::path::Path, branch: Branch) -> BranchScore {
@@ -1424,16 +1651,40 @@ fn score_branch_with(
     branch: Branch,
     dials: Dials,
 ) -> BranchScore {
+    let (enable, disable) = branch_ops(branch);
+    let ref_name = match branch {
+        Branch::Cascade => "Op B Unified Rest",
+        Branch::AllOverTip => "D All-Over Tip",
+    };
+    score_stage(label, project_path, enable, disable, ref_name, dials)
+}
+
+/// Score an arbitrary enabled subset of the fixture's op chain. `ref_name`
+/// is the op whose setup group the COLUMNS table is filtered to (the
+/// branch's quality reference). Op B's claims config and Region-span mix
+/// are keyed off whether Op B is in `enable`, so a partial chain that
+/// stops before it is scored exactly like the full one minus that op.
+fn score_stage(
+    label: &str,
+    project_path: &std::path::Path,
+    enable: &[&str],
+    disable: &[&str],
+    ref_name: &str,
+    dials: Dials,
+) -> BranchScore {
     let mut s = ProjectSession::load(project_path)
         .unwrap_or_else(|e| panic!("[{label}] failed to load {}: {e}", project_path.display()));
-    apply_branch(&mut s, branch);
+    set_enabled_by_name(&mut s, enable, disable);
+    let has_op_b = enable.contains(&"Op B Unified Rest");
 
-    if branch == Branch::Cascade {
+    if has_op_b {
         let idx = toolpath_index_by_name(&s, "Op B Unified Rest");
         s.set_toolpath_operation(
             idx,
-            OperationConfig::UnifiedFinish(op_b_claims_config_with_hookup(
+            OperationConfig::UnifiedFinish(op_b_config(
                 dials.intra_region_hookup_mm,
+                dials.pencil_claims,
+                dials.crease_hookup_mm,
             )),
         )
         .unwrap_or_else(|e| panic!("[{label}] swap Op B to claims config: {e}"));
@@ -1447,6 +1698,9 @@ fn score_branch_with(
         };
         let mut d = tc.dressups.clone();
         d.air_bridge_policy = dials.air_bridge_policy;
+        if let Some(af) = dials.arc_fitting {
+            d.arc_fitting = af;
+        }
         s.set_dressup_config(i, d)
             .unwrap_or_else(|e| panic!("[{label}] set dressups on {i}: {e}"));
     }
@@ -1462,10 +1716,6 @@ fn score_branch_with(
     // fixture, so this always resolves to 0 — but resolved properly
     // rather than hardcoded, per the TP15 lesson (never assume resolution
     // or grouping without reading it off the session).
-    let ref_name = match branch {
-        Branch::Cascade => "Op B Unified Rest",
-        Branch::AllOverTip => "D All-Over Tip",
-    };
     let ref_idx = toolpath_index_by_name(&s, ref_name);
     let ref_id = s.get_toolpath_config(ref_idx).expect("ref op config").id;
     let group = s
@@ -1500,7 +1750,9 @@ fn score_branch_with(
         tail_by_band[3],
     );
 
-    if branch == Branch::Cascade {
+    deep_overcut_locator(label, &s, &bm, group);
+
+    if has_op_b {
         let op_b_idx = toolpath_index_by_name(&s, "Op B Unified Rest");
         let result = s
             .get_result(op_b_idx)
@@ -1568,10 +1820,17 @@ fn v3_process_proof_ab() {
         .without_time()
         .try_init();
 
+    let (which, dials) = dials_from_env("both");
+    eprintln!("== PROCESS PROOF at dials: {which} => {dials:?} ==");
     let path = write_fixture_project(3.0);
-    let d = score_branch_with("v3_D_allover_tip_v3dials", &path, Branch::AllOverTip, Dials::V3);
-    let c = score_branch_with("v3_cascade_b3_v3dials", &path, Branch::Cascade, Dials::V3);
-    verdict("ball Ø3, wanaka x2, §9+§10 dials", &d, &c);
+    let d = score_branch_with(
+        &format!("v3_D_allover_tip_{which}"),
+        &path,
+        Branch::AllOverTip,
+        dials,
+    );
+    let c = score_branch_with(&format!("v3_cascade_b3_{which}"), &path, Branch::Cascade, dials);
+    verdict(&format!("ball Ø3, wanaka x2, dials={which}"), &d, &c);
 }
 
 /// Isolate WHICH §9/§10 dial causes the over-cut the process-proof COLUMNS
@@ -1592,20 +1851,7 @@ fn v3_process_proof_ab() {
 #[test]
 #[ignore = "one cascade chain + measurement sim; set V3_DIALS=shipped|bridges|links|both"]
 fn v3_cascade_dial_isolation() {
-    let which = std::env::var("V3_DIALS").unwrap_or_else(|_| "both".to_owned());
-    let dials = match which.as_str() {
-        "shipped" => Dials::SHIPPED,
-        "bridges" => Dials {
-            air_bridge_policy: AirBridgePolicy::ShorterThanAirPath,
-            intra_region_hookup_mm: 0.0,
-        },
-        "links" => Dials {
-            air_bridge_policy: AirBridgePolicy::Always,
-            intra_region_hookup_mm: 6.0,
-        },
-        "both" => Dials::V3,
-        other => panic!("V3_DIALS must be shipped|bridges|links|both, got {other:?}"),
-    };
+    let (which, dials) = dials_from_env("both");
     eprintln!("== DIAL ISOLATION: {which} => {dials:?} ==");
     let path = write_fixture_project(3.0);
     let c = score_branch_with(&format!("v3_cascade_b3_{which}"), &path, Branch::Cascade, dials);
@@ -1624,6 +1870,204 @@ fn v3_cascade_dial_isolation() {
         .map(|(_, s)| *s)
         .sum();
     eprintln!("[{which}] finish_stack={finish_s:.1}s collisions={}", c.outcome.collisions);
+}
+
+/// Localize the cascade's SHALLOW deficit by scoring a PARTIAL chain.
+/// The gate blocker is pre-existing — at SHIPPED dials the cascade reads
+/// shallow on-size 15.2% vs D's 19.2%, so it fails before any §9/§10 dial
+/// is touched. The shipped histograms decompose that 4pp into two
+/// unrelated populations:
+///
+/// * a gouge — 1 218 columns below −0.5mm, worst −3.03mm, against D's 8
+///   at worst −0.58mm; and
+/// * a wider mid-range leftover spread (+0.1..+0.5 up ~3 350 columns)
+///   traded against a much smaller far tail (`>+.5` 1 282 vs D's 2 964).
+///
+/// Only the chain can say which op owns each. `V3_STAGE` picks how far
+/// down the chain to run — `rough`, `opa` (Rough + Op A), `opb` (the full
+/// cascade), `d` (Rough + D) — all at SHIPPED dials. Whichever stage the
+/// deep population first appears at owns the gouge.
+#[test]
+#[ignore = "one partial chain + measurement sim; set V3_STAGE=rough|opa|opb|d"]
+fn v3_shallow_deficit_localize() {
+    let stage = std::env::var("V3_STAGE").unwrap_or_else(|_| "opa".to_owned());
+    let (enable, disable, ref_name): (&[&str], &[&str], &str) = match stage.as_str() {
+        "rough" => (
+            &["Rough"],
+            &["Op A Ball Finish", "Op B Unified Rest", "D All-Over Tip"],
+            "Rough",
+        ),
+        "opa" => (
+            &["Rough", "Op A Ball Finish"],
+            &["Op B Unified Rest", "D All-Over Tip"],
+            "Op A Ball Finish",
+        ),
+        "opb" => (
+            &["Rough", "Op A Ball Finish", "Op B Unified Rest"],
+            &["D All-Over Tip"],
+            "Op B Unified Rest",
+        ),
+        "d" => (
+            &["Rough", "D All-Over Tip"],
+            &["Op A Ball Finish", "Op B Unified Rest"],
+            "D All-Over Tip",
+        ),
+        other => panic!("V3_STAGE must be rough|opa|opb|d, got {other:?}"),
+    };
+    let (dial_label, dials) = dials_from_env("shipped");
+    eprintln!("== SHALLOW DEFICIT LOCALIZE: stage={stage} dials={dial_label} ==");
+    let path = write_fixture_project(3.0);
+    let c = score_stage(
+        &format!("v3_stage_{stage}_{dial_label}"),
+        &path,
+        enable,
+        disable,
+        ref_name,
+        dials,
+    );
+    const BAND_LABEL: [&str; 4] = ["off-region", "shallow", "mid-steep", "very-steep"];
+    for (code, band_label) in BAND_LABEL.iter().enumerate().skip(1) {
+        eprintln!(
+            "[{stage}] {band_label:<11}: on-size={:5.1}% (n={:>7}) '>+.5' tail={}",
+            c.on_size_by_band[code], c.n_by_band[code], c.tail_by_band[code],
+        );
+    }
+    eprintln!(
+        "[{stage}] project_total={:.1}s collisions={}",
+        c.outcome.project_total_s, c.outcome.collisions
+    );
+}
+
+/// Read the actual MOVES at a gouge site instead of A/B-ing around it.
+///
+/// §11 localized the cascade's deep over-cut to Op B and then ran out of
+/// road: removing the crease node's unbounded links left the worst column
+/// byte-identical (−5.565 mm at (198.75, 52.75)), and `pencil::
+/// lift_to_surface` proves crease path Z is a drop-cutter result, so
+/// neither candidate mechanism can put the tool 5.5 mm under the model.
+/// Whatever does is in the emitted move list, so this prints it: every
+/// cutting move passing within `V3_SITE_R` of `V3_SITE`, with its Z, type,
+/// intent and enclosing spans, for each enabled op.
+///
+/// Deliberately skips the 0.25 mm measurement sim — this asks what the
+/// toolpath CONTAINS, not what the stock ends up as.
+#[test]
+#[ignore = "one cascade chain, no measurement sim; set V3_SITE=x,y and V3_SITE_R"]
+fn v3_gouge_site_probe() {
+    use rs_cam_core::toolpath::MoveType;
+
+    let site = std::env::var("V3_SITE").unwrap_or_else(|_| "198.75,52.75".to_owned());
+    let (sx, sy) = site
+        .split_once(',')
+        .unwrap_or_else(|| panic!("V3_SITE must be 'x,y', got {site:?}"));
+    let (sx, sy): (f64, f64) = (
+        sx.trim().parse().expect("V3_SITE x"),
+        sy.trim().parse().expect("V3_SITE y"),
+    );
+    let radius: f64 = std::env::var("V3_SITE_R")
+        .ok()
+        .and_then(|r| r.parse().ok())
+        .unwrap_or(1.5);
+    let (dial_label, dials) = dials_from_env("shipped");
+    eprintln!("== GOUGE SITE PROBE at ({sx}, {sy}) r={radius} dials={dial_label} ==");
+
+    let path = write_fixture_project(3.0);
+    let mut s = ProjectSession::load(&path).expect("load fixture");
+    let (enable, disable) = branch_ops(Branch::Cascade);
+    set_enabled_by_name(&mut s, enable, disable);
+    let idx = toolpath_index_by_name(&s, "Op B Unified Rest");
+    s.set_toolpath_operation(
+        idx,
+        OperationConfig::UnifiedFinish(op_b_config(
+            dials.intra_region_hookup_mm,
+            dials.pencil_claims,
+            dials.crease_hookup_mm,
+        )),
+    )
+    .expect("swap Op B config");
+    for i in 0..s.toolpath_count() {
+        let Some(tc) = s.get_toolpath_config(i) else {
+            continue;
+        };
+        let mut d = tc.dressups.clone();
+        d.air_bridge_policy = dials.air_bridge_policy;
+        if let Some(af) = dials.arc_fitting {
+            d.arc_fitting = af;
+        }
+        s.set_dressup_config(i, d).expect("set dressups");
+    }
+    run_chain("gouge_site", &mut s);
+
+    // Distance from the site to the XY segment (from -> to).
+    let seg_dist = |a: rs_cam_core::geo::P3, b: rs_cam_core::geo::P3| -> f64 {
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        let len2 = dx * dx + dy * dy;
+        let t = if len2 < 1e-12 {
+            0.0
+        } else {
+            (((sx - a.x) * dx + (sy - a.y) * dy) / len2).clamp(0.0, 1.0)
+        };
+        let (px, py) = (a.x + dx * t, a.y + dy * t);
+        ((sx - px).powi(2) + (sy - py).powi(2)).sqrt()
+    };
+
+    for i in 0..s.toolpath_count() {
+        let Some(tc) = s.get_toolpath_config(i) else {
+            continue;
+        };
+        if !tc.enabled {
+            continue;
+        }
+        let name = tc.name.clone();
+        let Some(result) = s.get_result(i) else {
+            continue;
+        };
+        let ann = result.annotated();
+        let moves = &ann.toolpath.moves;
+        let mut near: Vec<(usize, rs_cam_core::geo::P3)> = Vec::new();
+        let mut min_z = f64::INFINITY;
+        eprintln!("== [{name}] moves within {radius}mm of ({sx}, {sy}) ==");
+        for (k, m) in moves.iter().enumerate() {
+            let from = k
+                .checked_sub(1)
+                .and_then(|j| moves.get(j))
+                .map_or(m.target, |p| p.target);
+            if seg_dist(from, m.target) > radius {
+                continue;
+            }
+            min_z = min_z.min(from.z.min(m.target.z));
+            near.push((k, from));
+        }
+        let hits = near.len();
+        // Print the DEEPEST moves, not the first N — the first N are
+        // whatever the emission order happened to put there, and the
+        // question is what reached furthest down.
+        near.sort_by(|a, b| {
+            let za = moves.get(a.0).map_or(f64::INFINITY, |m| m.target.z.min(a.1.z));
+            let zb = moves.get(b.0).map_or(f64::INFINITY, |m| m.target.z.min(b.1.z));
+            za.total_cmp(&zb)
+        });
+        for &(k, from) in near.iter().take(30) {
+            let Some(m) = moves.get(k) else { continue };
+            let kind = match m.move_type {
+                MoveType::Rapid => "RAPID",
+                MoveType::Linear { .. } => "feed",
+                MoveType::ArcCW { .. } => "arcCW",
+                MoveType::ArcCCW { .. } => "arcCCW",
+            };
+            let spans: Vec<&str> = ann
+                .spans
+                .iter()
+                .filter(|sp| sp.start_move <= k && k < sp.end_move.max(sp.start_move + 1))
+                .map(|sp| &*sp.label)
+                .collect();
+            eprintln!(
+                "  #{k:<7} {kind:<6} ({:8.3},{:8.3},{:8.3}) -> ({:8.3},{:8.3},{:8.3}) intent={:?} spans={:?}",
+                from.x, from.y, from.z, m.target.x, m.target.y, m.target.z, m.intent, spans
+            );
+        }
+        eprintln!("[{name}] {hits} moves near the site; lowest Z touched = {min_z:.3}");
+    }
 }
 
 /// Shared verdict printer + quality gate for the branch comparison.
