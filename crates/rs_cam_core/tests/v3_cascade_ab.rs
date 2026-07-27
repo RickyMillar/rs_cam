@@ -2201,6 +2201,160 @@ fn v3_chord_gouge_probe() {
     }
 }
 
+/// Does the swept CUTTER penetrate the model? — the flank check.
+///
+/// `v3_chord_gouge_probe` asks whether a move's CENTRELINE sits below the
+/// drop-cutter surface. That is necessary but not sufficient: a tool
+/// perfectly on its CL surface still removes everything inside its own
+/// solid, and on concave or steep ground the part doing the removing is
+/// the cutter's FLANK, several millimetres from the axis. Fixing chord
+/// fidelity made the COLUMNS gate WORSE precisely because a more faithful
+/// centreline drags the flank through more material (§11), so the flank
+/// is what the remaining over-cut most likely is.
+///
+/// For a cutter whose tip sits at `z_t`, `MillingCutter::height_at_radius`
+/// gives the profile height above the tip at radial distance `r`, so the
+/// cutter's solid at that radius spans `z_t + h(r)` up to
+/// `z_t + cutting_length`. A model vertex is INSIDE that solid when it
+/// sits ABOVE the lower profile and below the flute top, and
+/// `p.z - (z_t + h(r))` is how far in. (Getting this inequality backwards
+/// measures "model is below the tool", which is the UNCUT side and reads
+/// as tens of millimetres of nonsense on every roughing move.)
+///
+/// Approximation, stated because it bounds what a null result means: this
+/// samples model VERTICES, not triangle interiors, so a facet that dips
+/// inside the cutter between its corners is missed. On this fixture
+/// (220 k triangles over 200 mm, so ~0.4 mm facets against a 1.5 mm ball)
+/// vertices are dense relative to the cutter; on a coarse mesh they would
+/// not be.
+#[test]
+#[ignore = "one cascade chain + a swept-cutter probe per cutting move"]
+fn v3_flank_gouge_probe() {
+    use rs_cam_core::toolpath::MoveType;
+
+    let (dial_label, dials) = dials_from_env("shipped");
+    let step: f64 = std::env::var("V3_FLANK_STEP")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.2);
+    eprintln!("== FLANK GOUGE PROBE dials={dial_label} step={step} ==");
+
+    let path = write_fixture_project(3.0);
+    let mut s = ProjectSession::load(&path).expect("load fixture");
+    let (enable, disable) = branch_ops(Branch::Cascade);
+    set_enabled_by_name(&mut s, enable, disable);
+    let idx = toolpath_index_by_name(&s, "Op B Unified Rest");
+    s.set_toolpath_operation(
+        idx,
+        OperationConfig::UnifiedFinish(op_b_config(
+            dials.intra_region_hookup_mm,
+            dials.pencil_claims,
+            dials.crease_hookup_mm,
+        )),
+    )
+    .expect("swap Op B config");
+    for i in 0..s.toolpath_count() {
+        let Some(tc) = s.get_toolpath_config(i) else {
+            continue;
+        };
+        let mut d = tc.dressups.clone();
+        d.air_bridge_policy = dials.air_bridge_policy;
+        if let Some(af) = dials.arc_fitting {
+            d.arc_fitting = af;
+        }
+        s.set_dressup_config(i, d).expect("set dressups");
+    }
+    run_chain("flank_gouge", &mut s);
+
+    let mesh = s
+        .models()
+        .iter()
+        .find_map(|m| m.mesh.clone())
+        .expect("terrain mesh");
+    let index = rs_cam_core::mesh::SpatialIndex::build(&mesh, 10.0);
+
+    for i in 0..s.toolpath_count() {
+        let Some(tc) = s.get_toolpath_config(i) else {
+            continue;
+        };
+        if !tc.enabled {
+            continue;
+        }
+        let (name, tool_id) = (tc.name.clone(), tc.tool_id);
+        let Some(tool_cfg) = s.tools().iter().find(|t| t.id.0 == tool_id).cloned() else {
+            continue;
+        };
+        let cutter = rs_cam_core::compute::cutter::build_cutter(&tool_cfg);
+        let radius = rs_cam_core::tool::MillingCutter::radius(&cutter);
+        let flute_top = rs_cam_core::tool::MillingCutter::length(&cutter);
+        let Some(result) = s.get_result(i) else {
+            continue;
+        };
+        let moves = result.annotated().toolpath.moves.clone();
+
+        let mut worst: Vec<(f64, f64, f64, usize)> = Vec::new();
+        let mut samples = 0usize;
+        let (mut over_tol, mut over_half) = (0usize, 0usize);
+        for (k, m) in moves.iter().enumerate() {
+            if matches!(m.move_type, MoveType::Rapid) {
+                continue;
+            }
+            let Some(prev) = k.checked_sub(1).and_then(|j| moves.get(j)) else {
+                continue;
+            };
+            let (a, b) = (prev.target, m.target);
+            let (dx, dy, dz) = (b.x - a.x, b.y - a.y, b.z - a.z);
+            let len = (dx * dx + dy * dy + dz * dz).sqrt();
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let n = ((len / step).ceil() as usize).clamp(1, 32);
+            for si in 0..=n {
+                let t = si as f64 / n as f64;
+                let (tx, ty, tz) = (a.x + dx * t, a.y + dy * t, a.z + dz * t);
+                samples += 1;
+                let mut deepest = 0.0f64;
+                for &fi in &index.query(tx, ty, radius) {
+                    let Some(tri) = mesh.faces.get(fi) else {
+                        continue;
+                    };
+                    for p in tri.v {
+                        let r = ((p.x - tx).powi(2) + (p.y - ty).powi(2)).sqrt();
+                        let Some(h) = rs_cam_core::tool::MillingCutter::height_at_radius(&cutter, r)
+                        else {
+                            continue; // outside the cutter's profile
+                        };
+                        // Inside the flutes only: above the lower profile,
+                        // below the flute top. The shank/holder is a
+                        // separate collision question, not a gouge.
+                        let lower = tz + h;
+                        if p.z <= lower || p.z >= tz + flute_top {
+                            continue;
+                        }
+                        let pen = p.z - lower;
+                        if pen > deepest {
+                            deepest = pen;
+                        }
+                    }
+                }
+                if deepest > 0.05 {
+                    over_tol += 1;
+                }
+                if deepest > 0.5 {
+                    over_half += 1;
+                    worst.push((deepest, tx, ty, k));
+                }
+            }
+        }
+        worst.sort_by(|p, q| q.0.total_cmp(&p.0));
+        eprintln!(
+            "== [{name}] FLANK GOUGE (r={radius:.2}): samples={samples} \
+             >0.05mm={over_tol} >0.5mm={over_half} =="
+        );
+        for (d, x, y, k) in worst.iter().take(10) {
+            eprintln!("   penetration={d:6.3} tool at ({x:8.2},{y:8.2}) move #{k}");
+        }
+    }
+}
+
 /// Shared verdict printer + quality gate for the branch comparison.
 fn verdict(what: &str, d: &BranchScore, c: &BranchScore) {
 
