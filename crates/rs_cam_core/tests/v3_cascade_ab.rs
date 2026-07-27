@@ -1574,6 +1574,58 @@ fn v3_process_proof_ab() {
     verdict("ball Ø3, wanaka x2, §9+§10 dials", &d, &c);
 }
 
+/// Isolate WHICH §9/§10 dial causes the over-cut the process-proof COLUMNS
+/// gate caught. Scores the CASCADE branch only (one chain + one measurement
+/// sim, so it survives the memory pressure the two-branch proof does not) at
+/// one dial setting chosen by `V3_DIALS`:
+///
+/// * `shipped`  — the pinned reference (measured: shallow `<-.5` = 1 218)
+/// * `bridges`  — §10 cost-aware air bridges alone
+/// * `links`    — §9 intra-region stay-down links alone
+/// * `both`     — measured: shallow `<-.5` = 4 068, worst −3.95mm
+///
+/// The boundary check (`bddf82a`) was hypothesised as the cause and is
+/// REFUTED: it refused only 50 of ~1 584 junctions and moved Op B by +0.2%
+/// and removed volume by −0.3%. Removal splits roughly evenly between the
+/// two dials (links ≈ +1 860 mm³, bridges ≈ +1 732 mm³), so this reads the
+/// COLUMNS consequence of each rather than guessing from volume.
+#[test]
+#[ignore = "one cascade chain + measurement sim; set V3_DIALS=shipped|bridges|links|both"]
+fn v3_cascade_dial_isolation() {
+    let which = std::env::var("V3_DIALS").unwrap_or_else(|_| "both".to_owned());
+    let dials = match which.as_str() {
+        "shipped" => Dials::SHIPPED,
+        "bridges" => Dials {
+            air_bridge_policy: AirBridgePolicy::ShorterThanAirPath,
+            intra_region_hookup_mm: 0.0,
+        },
+        "links" => Dials {
+            air_bridge_policy: AirBridgePolicy::Always,
+            intra_region_hookup_mm: 6.0,
+        },
+        "both" => Dials::V3,
+        other => panic!("V3_DIALS must be shipped|bridges|links|both, got {other:?}"),
+    };
+    eprintln!("== DIAL ISOLATION: {which} => {dials:?} ==");
+    let path = write_fixture_project(3.0);
+    let c = score_branch_with(&format!("v3_cascade_b3_{which}"), &path, Branch::Cascade, dials);
+    const BAND_LABEL: [&str; 4] = ["off-region", "shallow", "mid-steep", "very-steep"];
+    for (code, band_label) in BAND_LABEL.iter().enumerate().skip(1) {
+        eprintln!(
+            "{band_label:<11}: on-size={:5.1}% (n={:>7}) '>+.5' tail={}",
+            c.on_size_by_band[code], c.n_by_band[code], c.tail_by_band[code],
+        );
+    }
+    let finish_s: f64 = c
+        .outcome
+        .per_op_s
+        .iter()
+        .filter(|(n, _)| n == "Op A Ball Finish" || n == "Op B Unified Rest")
+        .map(|(_, s)| *s)
+        .sum();
+    eprintln!("[{which}] finish_stack={finish_s:.1}s collisions={}", c.outcome.collisions);
+}
+
 /// Shared verdict printer + quality gate for the branch comparison.
 fn verdict(what: &str, d: &BranchScore, c: &BranchScore) {
 
