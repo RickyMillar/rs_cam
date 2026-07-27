@@ -34,9 +34,10 @@
 
 use rs_cam_core::{
     chamfer::{ChamferParams, chamfer_toolpath},
-    compute::catalog::OperationType,
+    compute::catalog::{OperationConfig, OperationTransformCapabilities, OperationType},
     compute::config::DressupConfig,
     compute::execute::apply_dressups,
+    compute::operation_configs::ScallopConfig,
     dexel_stock::{StockCutDirection, TriDexelStock},
     drill::{DrillCycle, DrillParams, drill_toolpath},
     face::{FaceDirection, FaceParams, face_toolpath},
@@ -48,6 +49,7 @@ use rs_cam_core::{
     polygon::Polygon2,
     project_curve::{ProjectCurveParams, ProjectDirection, ProjectSide, project_curve_toolpath},
     radial_finish::{RadialFinishParams, radial_finish_toolpath},
+    scallop::{ScallopDirection, ScallopParams, scallop_toolpath},
     tool::{BallEndmill, FlatEndmill, MillingCutter},
     toolpath::{MoveIntent, MoveType, Toolpath},
     trace::{TraceCompensation, TraceParams, trace_toolpath},
@@ -119,15 +121,80 @@ fn dressup(tp: Toolpath, cfg: &DressupConfig, op: OperationType, tool_diameter: 
     .toolpath
 }
 
-/// Build a fresh dexel stock that comfortably contains the toolpath bbox.
-fn stock_for_toolpath(tp: &Toolpath, cell_size: f64) -> TriDexelStock {
+/// Like [`dressup`], but takes explicit `OperationTransformCapabilities`
+/// instead of deriving them from `OperationType`. Needed for the Scallop
+/// tests below: Scallop's real capabilities are CONFIG-aware
+/// (`OperationConfig::Scallop(cfg).transform_capabilities()`, fix-family
+/// Phase 1b), not the static per-op-type table `dressup()`'s
+/// `op.transform_capabilities()` reads — `OperationType::Scallop`'s answer
+/// stays pinned conservative regardless of `cfg.continuous`.
+fn dressup_with_caps(
+    tp: Toolpath,
+    cfg: &DressupConfig,
+    caps: OperationTransformCapabilities,
+    tool_diameter: f64,
+) -> Toolpath {
+    apply_dressups(
+        rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
+        cfg,
+        1000.0,
+        tool_diameter,
+        /* safe_z */ 30.0,
+        /* stock_top */ 0.0,
+        /* prior_stock */ None,
+        /* feed_opt_stock */ None,
+        /* cutter */ None,
+        caps,
+        None,
+        None,
+    )
+    .toolpath
+}
+
+/// Padded bounding box of one toolpath, in the shape the dexel stock wants.
+fn padded_bbox(tp: &Toolpath) -> BoundingBox3 {
     let (bmin, bmax) = tp.bounding_box();
     let margin = 5.0;
-    let bbox = BoundingBox3 {
+    BoundingBox3 {
         min: P3::new(bmin[0] - margin, bmin[1] - margin, bmin[2] - margin),
         max: P3::new(bmax[0] + margin, bmax[1] + margin, bmax[2] + margin),
-    };
-    TriDexelStock::from_bounds(&bbox, cell_size)
+    }
+}
+
+/// Smallest box containing both — the SHARED frame two branches must be
+/// compared in.
+fn union_bbox(a: &BoundingBox3, b: &BoundingBox3) -> BoundingBox3 {
+    BoundingBox3 {
+        min: P3::new(
+            a.min.x.min(b.min.x),
+            a.min.y.min(b.min.y),
+            a.min.z.min(b.min.z),
+        ),
+        max: P3::new(
+            a.max.x.max(b.max.x),
+            a.max.y.max(b.max.y),
+            a.max.z.max(b.max.z),
+        ),
+    }
+}
+
+/// Build a fresh dexel stock that comfortably contains the toolpath bbox.
+///
+/// FRAME WARNING (2026-08-03): deriving the grid from a SINGLE toolpath is
+/// only safe when the two branches being compared provably share a
+/// bounding box. `apply_link_moves` satisfies that (collapsing a
+/// retract/rapid/plunge triple can never move the extremes), which is why
+/// the link-moves tests below use it. A TSP REORDER does not: changing
+/// which fragment runs first/last moves the path extremes, so the two
+/// branches get grids with different origins — and `compare_heightmaps`
+/// walks cells by index, so it would then be comparing different world XY
+/// and reporting the misregistration as a material difference. Reorder
+/// comparisons must use [`simulate_pair_shared_frame`] instead. (Same
+/// bug class as the identity-setup deviation-frame defect fixed in
+/// `compute/simulate.rs` this month: two measurements, two frames, one
+/// index-wise comparison.)
+fn stock_for_toolpath(tp: &Toolpath, cell_size: f64) -> TriDexelStock {
+    TriDexelStock::from_bounds(&padded_bbox(tp), cell_size)
 }
 
 /// Material length per Z-grid cell, row-major.
@@ -153,6 +220,31 @@ fn simulate_to_heightmap(
     stock.simulate_toolpath(tp, cutter, StockCutDirection::FromTop);
     let hm = heightmap(&stock);
     (hm, stock)
+}
+
+/// Simulate two toolpaths into stocks built from the SAME (union) bbox, so
+/// their heightmaps are index-comparable. Use this — not two independent
+/// [`simulate_to_heightmap`] calls — whenever the two branches may differ
+/// in path extents, i.e. for every rapid-REORDER comparison. See the frame
+/// warning on [`stock_for_toolpath`].
+fn simulate_pair_shared_frame(
+    a: &Toolpath,
+    b: &Toolpath,
+    cutter: &dyn MillingCutter,
+    cell_size: f64,
+) -> (Vec<f32>, Vec<f32>) {
+    let bbox = union_bbox(&padded_bbox(a), &padded_bbox(b));
+    let mut stock_a = TriDexelStock::from_bounds(&bbox, cell_size);
+    stock_a.simulate_toolpath(a, cutter, StockCutDirection::FromTop);
+    let mut stock_b = TriDexelStock::from_bounds(&bbox, cell_size);
+    stock_b.simulate_toolpath(b, cutter, StockCutDirection::FromTop);
+    let (hm_a, hm_b) = (heightmap(&stock_a), heightmap(&stock_b));
+    assert_eq!(
+        hm_a.len(),
+        hm_b.len(),
+        "shared-frame stocks must produce identical grid dimensions"
+    );
+    (hm_a, hm_b)
 }
 
 /// Compare two heightmaps. Returns (max_abs_diff, fraction_cells_diff).
@@ -804,8 +896,7 @@ fn project_curve_capability_allows_tsp_reorder_reduces_rapid_and_is_material_neu
     // Material neutrality: reordering which chain is visited when must not
     // change what metal comes off — that is the whole safety claim behind
     // loosening this capability.
-    let (hm_base, _) = simulate_to_heightmap(&baseline, &cutter, 0.5);
-    let (hm_opt, _) = simulate_to_heightmap(&optimized, &cutter, 0.5);
+    let (hm_base, hm_opt) = simulate_pair_shared_frame(&baseline, &optimized, &cutter, 0.5);
     let (max_d, frac) = compare_heightmaps(&hm_base, &hm_opt, 0.05);
     println!("ProjectCurve TSP: max_height_diff={max_d:.4}mm  cells_diff_frac={frac:.4}");
     assert!(
@@ -816,6 +907,246 @@ fn project_curve_capability_allows_tsp_reorder_reduces_rapid_and_is_material_neu
          divergence and the reclassification is unsafe.",
         frac * 100.0,
         max_d,
+    );
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Scallop config-aware reclassification (fix-family Phase 1b)
+// ═════════════════════════════════════════════════════════════════════════
+
+/// XY centers for 4 well-separated hemisphere "islands", arranged in a 2x2
+/// grid within one shared mesh bbox. Scallop's discrete-ring generator
+/// offsets the WHOLE bbox rectangle inward ring by ring (`scallop.rs`'s
+/// `generate_scallop_rings_with_cancel` boundary construction); each
+/// island's footprint sits at its own distance from the bbox edges (its
+/// "ring depth"), so distinct rings sweep across each island independently,
+/// separated everywhere else by wide air gaps the `covered` mask picks up
+/// (`scallop.rs:174-198`). That is the surface-finishing analogue of
+/// `project_curve_patchwork_mesh`'s disconnected patches above — the
+/// fragmentation comes from ring/coverage geometry rather than an explicit
+/// polyline gap.
+const SCALLOP_ISLAND_CENTERS: [(f64, f64); 4] =
+    [(-15.0, -15.0), (15.0, -15.0), (-15.0, 15.0), (15.0, 15.0)];
+
+/// Radius of each hemisphere island (mm). Chosen so each island's footprint
+/// diameter (10 mm) is comfortably larger than the ring stepover the
+/// generator picks for `scallop_island_params`'s scallop height on a 1.5 mm
+/// cusp radius (well under 1 mm) — that spacing margin is what guarantees
+/// several discrete rings land inside each island's offset range instead of
+/// stepping over it entirely.
+const SCALLOP_ISLAND_RADIUS: f64 = 5.0;
+
+/// Real mesh input for the Scallop discrete/continuous tests below: 4
+/// disconnected hemisphere bumps (see `SCALLOP_ISLAND_CENTERS`), each built
+/// via the same `make_test_hemisphere` helper used elsewhere in this file,
+/// translated into position and merged into one `TriangleMesh`.
+fn scallop_island_mesh() -> (TriangleMesh, SpatialIndex) {
+    let mut vertices = Vec::new();
+    let mut triangles = Vec::new();
+    for &(cx, cy) in &SCALLOP_ISLAND_CENTERS {
+        let bump = make_test_hemisphere(SCALLOP_ISLAND_RADIUS, 10);
+        let base = vertices.len() as u32;
+        vertices.extend(
+            bump.vertices
+                .iter()
+                .map(|v| P3::new(v.x + cx, v.y + cy, v.z)),
+        );
+        triangles.extend(
+            bump.triangles
+                .iter()
+                .map(|t| [t[0] + base, t[1] + base, t[2] + base]),
+        );
+    }
+    let mesh = TriangleMesh::from_raw(vertices, triangles);
+    let index = SpatialIndex::build_auto(&mesh);
+    (mesh, index)
+}
+
+fn scallop_island_params(continuous: bool) -> ScallopParams {
+    ScallopParams {
+        scallop_height: 0.05,
+        tolerance: 0.05,
+        direction: ScallopDirection::OutsideIn,
+        continuous,
+        slope_from: 0.0,
+        slope_to: 90.0,
+        feed_rate: 1000.0,
+        plunge_rate: 500.0,
+        safe_z: 30.0,
+        stock_to_leave: 0.0,
+    }
+}
+
+#[test]
+fn scallop_discrete_capability_currently_blocked_reorder_gouges() {
+    // Fixture note: this drives the REAL generator — `scallop_toolpath`,
+    // the same function `compute/execute.rs`'s Scallop generation path
+    // calls — over a real (if synthetic) 4-island mesh, not a hand-built
+    // Toolpath.
+    let (mesh, index) = scallop_island_mesh();
+    let cutter = BallEndmill::new(3.0, 25.0);
+    let params = scallop_island_params(false);
+    let raw = scallop_toolpath(&mesh, &index, &cutter, &params);
+
+    assert!(
+        !raw.moves.is_empty(),
+        "fixture must produce a non-empty discrete-ring scallop toolpath"
+    );
+
+    // Sanity: the fixture must actually fragment into several
+    // retract-separated ring runs (one per island at minimum — see
+    // `SCALLOP_ISLAND_RADIUS`'s doc comment for why several rings per
+    // island is the expected case) or there's nothing for TSP to reorder
+    // and the rest of this test is vacuous.
+    let retract_count = raw
+        .moves
+        .iter()
+        .filter(|m| m.intent == MoveIntent::Retract)
+        .count();
+    assert!(
+        retract_count >= SCALLOP_ISLAND_CENTERS.len(),
+        "fixture must emit at least {} retract-separated ring runs (one per \
+         disconnected island) for the TSP reorder to have anything to do; \
+         got {retract_count} — the island layout/spacing may need revisiting",
+        SCALLOP_ISLAND_CENTERS.len(),
+    );
+
+    // PART 1 — the shipped state: discrete Scallop is still BLOCKED from
+    // reordering. Phase 1b reclassified it on the (correct) reasoning that
+    // rings are materially independent, then this very test measured a
+    // gouge, so the arm was reverted. This assertion pins the block so
+    // nobody re-enables it without reading the measurement below.
+    let shipped = OperationConfig::Scallop(ScallopConfig {
+        continuous: false,
+        ..ScallopConfig::default()
+    })
+    .transform_capabilities();
+    assert!(
+        shipped.continuous_path_required,
+        "discrete Scallop must stay reorder-BLOCKED until tsp::rebuild_group \
+         preserves each segment's approach move — see the gouge measurement \
+         in this test and the doc comment on \
+         OperationConfig::transform_capabilities"
+    );
+
+    // PART 2 — reproduce the defect that justifies the block, by asking
+    // for the capability the reclassification WOULD have granted.
+    let caps = OperationTransformCapabilities::new(true, false, false);
+
+    let baseline = dressup_with_caps(raw.clone(), &dressup_no_links(), caps, 3.0);
+    let cfg = DressupConfig {
+        optimize_rapid_order: true,
+        ..DressupConfig::default()
+    };
+    let optimized = dressup_with_caps(raw, &cfg, caps, 3.0);
+
+    let r_base = rapid_distance(&baseline);
+    let r_opt = rapid_distance(&optimized);
+    println!(
+        "Scallop(discrete) TSP: rapid baseline={r_base:.1}  optimized={r_opt:.1}  \
+         delta={:.1}",
+        r_base - r_opt
+    );
+    assert!(
+        r_opt < r_base,
+        "Scallop(continuous: false) capability_allows_global_rapid_reorder \
+         must let TSP reduce rapid distance across the 4 disconnected-island \
+         ring runs. baseline={r_base} optimized={r_opt}"
+    );
+
+    // The gouge. Reordering is NOT material-neutral here: the reordered
+    // path removes MORE metal. `tsp::split_into_segments` splits on
+    // `MoveType::Rapid`, so the generator's own rapid descent toward the
+    // surface is treated as a splitter and dropped; `rebuild_group` then
+    // relinks with retract-to-safe_z + horizontal traverse and replays the
+    // segment verbatim, leaving its first CUTTING move to travel down from
+    // safe_z through whatever stands under it.
+    let (hm_base, hm_opt) = simulate_pair_shared_frame(&baseline, &optimized, &cutter, 0.5);
+    let (max_d, frac) = compare_heightmaps(&hm_base, &hm_opt, 0.05);
+    let (mut deeper, mut shallower, mut net) = (0usize, 0usize, 0.0f64);
+    for (b, o) in hm_base.iter().zip(hm_opt.iter()) {
+        let d = o - b;
+        if d < -0.05 {
+            deeper += 1;
+        }
+        if d > 0.05 {
+            shallower += 1;
+        }
+        net += f64::from(d);
+    }
+    println!(
+        "Scallop(discrete) TSP: max_height_diff={max_d:.4}mm cells_diff_frac={frac:.4} \
+         | cut {:.1} -> {:.1} | columns deeper={deeper} shallower={shallower} net={net:.1}",
+        cutting_distance(&baseline),
+        cutting_distance(&optimized),
+    );
+
+    assert!(
+        deeper > shallower && max_d > 1.0,
+        "REGRESSION IN THE RIGHT DIRECTION: this test exists to reproduce a \
+         known TSP gouge on discrete Scallop (measured 2026-08-03: 146 columns \
+         deeper vs 20 shallower, net -128.9mm, worst 9.33mm). It now reports \
+         deeper={deeper} shallower={shallower} max={max_d:.4}mm. If the gouge \
+         is genuinely fixed, that is GOOD — delete this assertion, restore the \
+         material-neutrality gate (frac <= 0.02 && max_d < 0.05), and re-enable \
+         the Scallop arm in OperationConfig::transform_capabilities."
+    );
+}
+
+#[test]
+fn scallop_continuous_capability_still_blocks_reorder() {
+    // Same fixture as the discrete test above, but `continuous: true` —
+    // this is the guard that proves the config-awareness DISCRIMINATES on
+    // `cfg.continuous` rather than blanket-loosening every Scallop config.
+    let (mesh, index) = scallop_island_mesh();
+    let cutter = BallEndmill::new(3.0, 25.0);
+    let params = scallop_island_params(true);
+    let raw = scallop_toolpath(&mesh, &index, &cutter, &params);
+
+    assert!(
+        !raw.moves.is_empty(),
+        "fixture must produce a non-empty continuous (spiral) scallop toolpath"
+    );
+
+    let caps = OperationConfig::Scallop(ScallopConfig {
+        continuous: true,
+        ..ScallopConfig::default()
+    })
+    .transform_capabilities();
+    assert!(
+        caps.continuous_path_required,
+        "OperationConfig::Scallop(continuous: true).transform_capabilities() \
+         must still require a continuous path — the helical stay-down chain \
+         (scallop.rs:812-912) must stay protected from reordering/linking. \
+         If this fails, the catalog.rs config-aware match arm is over-broad."
+    );
+
+    let baseline = dressup_with_caps(raw.clone(), &dressup_no_links(), caps, 3.0);
+    let cfg = DressupConfig {
+        optimize_rapid_order: true,
+        ..DressupConfig::default()
+    };
+    let optimized = dressup_with_caps(raw, &cfg, caps, 3.0);
+
+    let r_base = rapid_distance(&baseline);
+    let r_opt = rapid_distance(&optimized);
+    println!(
+        "Scallop(continuous) TSP: rapid baseline={r_base:.1}  optimized={r_opt:.1}  \
+         delta={:.1}",
+        r_base - r_opt
+    );
+    assert_eq!(
+        r_opt, r_base,
+        "Scallop(continuous: true) must block rapid reorder entirely — the \
+         continuous_path_required capability should make apply_dressups skip \
+         both the barriered and unbarriered TSP steps, leaving rapid distance \
+         byte-identical. baseline={r_base} optimized={r_opt}"
+    );
+    assert_eq!(
+        optimized.moves.len(),
+        baseline.moves.len(),
+        "Scallop(continuous: true): optimize_rapid_order must be a complete \
+         no-op given the blocking capability — move count must not change"
     );
 }
 
