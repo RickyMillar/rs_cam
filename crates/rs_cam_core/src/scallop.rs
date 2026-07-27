@@ -476,6 +476,13 @@ fn generate_scallop_rings_with_cancel(
     // Iteratively offset inward
     let mut current_polys = vec![boundary.clone()];
 
+    // The loop's REAL terminator is the cascade collapsing to nothing
+    // (`next_polys.is_empty()`); `max_rings` is only a runaway guard. If it
+    // ever binds, the rings stop part-way and the INTERIOR of the region is
+    // left uncut — silently, because the loop simply ends. That is what
+    // this tracks (see the exhaustion warning below).
+    let mut exhausted = true;
+
     for _ in 0..max_rings {
         check_cancel(cancel)?;
         // Ring stepover from the current rings' slope/curvature — MIN
@@ -522,7 +529,8 @@ fn generate_scallop_rings_with_cancel(
         }
 
         if next_polys.is_empty() {
-            break; // Collapsed to nothing
+            exhausted = false;
+            break; // Collapsed to nothing — the intended exit
         }
 
         // Lift each new polygon ring to 3D
@@ -537,6 +545,21 @@ fn generate_scallop_rings_with_cancel(
         }
 
         current_polys = next_polys;
+    }
+
+    if exhausted {
+        let remaining: f64 = current_polys
+            .iter()
+            .map(|p| crate::polygon::shoelace_area(&p.exterior).abs())
+            .sum();
+        tracing::warn!(
+            max_rings,
+            rings_emitted = rings_3d.len(),
+            uncut_core_mm2 = remaining,
+            "scallop: ring cascade hit max_rings without collapsing — the \
+             INTERIOR of the region is left uncut. `max_rings` is a runaway \
+             guard, not a design limit; if this fires the cap is too low."
+        );
     }
 
     Ok(rings_3d)
@@ -720,16 +743,31 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
         Polygon2::new(pts)
     };
 
-    // Max rings: bounded by extent / min_stepover
-    let min_stepover =
-        crate::scallop_math::stepover_from_scallop_flat(cusp_r, params.scallop_height)
-            .max(cusp_r * 0.05);
+    // Max rings: a RUNAWAY GUARD, not a design limit. The cascade's real
+    // terminator is collapsing to nothing, and if this cap binds first the
+    // region's interior is silently left uncut.
+    //
+    // It must therefore be budgeted from the SMALLEST stepover the ring
+    // loop can select, which is its own `cusp_r * 0.05` clamp floor — not
+    // from `stepover_from_scallop_flat`, which is the stepover for FLAT
+    // ground and hence the WIDEST spacing the cusp target ever allows.
+    // Budgeting from the widest one under-counts on every slope, and on
+    // terrain that is everywhere: measured on wanaka ×2, D's cap of 504
+    // rings ran out ~160 short of the centre and left a ~28 mm block of
+    // standing material in the middle of the part, which no aggregate in
+    // the A/B harness flagged (2026-07-28).
+    //
+    // Raising it costs nothing when the cascade collapses normally — the
+    // loop breaks on `next_polys.is_empty()` long before the cap — and the
+    // per-ring cost is bounded by `decimate_ring_polygon`, which is what
+    // made the offset cascade linear in the first place.
+    let floor_stepover = (cusp_r * 0.05).max(1.0e-3);
     let max_extent = (extent_x - origin_x).max(extent_y - origin_y);
-    let max_rings = ((max_extent / min_stepover) * 0.5).ceil() as usize + 10;
+    let max_rings = ((max_extent / floor_stepover) * 0.5).ceil() as usize + 10;
 
     info!(
         max_rings = max_rings,
-        min_stepover = format!("{:.3}", min_stepover),
+        floor_stepover = format!("{:.4}", floor_stepover),
         "Generating scallop rings"
     );
 
