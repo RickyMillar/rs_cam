@@ -1289,6 +1289,7 @@ pub(crate) fn generate_unified_finish(
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
         safe_z: ctx.heights.retract_z,
+        intra_region_hookup_mm: cfg.intra_region_hookup_mm,
     };
     let mut planner = crate::finish_planner::FinishPlannerParams::for_tool(ctx.tool_def.radius());
     planner.steep_threshold_deg = cfg.steep_threshold_deg;

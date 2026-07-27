@@ -144,6 +144,17 @@ pub struct UnifiedFinishParams {
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub safe_z: f64,
+    /// INTRA-region stay-down linking (design doc §9): max XY gap (mm) a
+    /// surface-following link may span between two consecutive cut
+    /// fragments INSIDE one region. `0.0` disables the pass.
+    ///
+    /// This is the lever §9 identified. The router already links BETWEEN
+    /// regions via `surface_link::build_surface_link`; within a region each
+    /// fragment junction still costs a full retract-to-safe-Z round trip,
+    /// and on wanaka ×2 there are 12 780 of them — 17 077 s of rapids whose
+    /// cost is the two ~30 mm Z legs, not the XY hop. Reordering shortens
+    /// the hop; only linking removes the legs.
+    pub intra_region_hookup_mm: f64,
 }
 
 impl Default for UnifiedFinishParams {
@@ -166,6 +177,7 @@ impl Default for UnifiedFinishParams {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             safe_z: 30.0,
+            intra_region_hookup_mm: 0.0,
         }
     }
 }
@@ -432,6 +444,30 @@ pub struct UnifiedFinishReport {
     /// The claims detector's rest-region polygons (the
     /// `DerivedRestRegions` source shape). `None` when claims didn't run.
     pub rest_regions: Option<std::sync::Arc<Vec<Polygon2>>>,
+    /// Intra-region stay-down linking totals, summed over every region
+    /// (`UnifiedFinishParams::intra_region_hookup_mm`). All zero when the
+    /// pass is disabled.
+    pub relink: RelinkTotals,
+}
+
+/// Summed [`crate::surface_link::RelinkReport`] counters across regions.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RelinkTotals {
+    pub fragments: usize,
+    pub surface_links: usize,
+    pub retract_links: usize,
+    pub too_far: usize,
+    pub off_surface: usize,
+    pub slower_than_retract: usize,
+}
+
+impl RelinkTotals {
+    /// Fraction of junctions kept on the surface. `None` when the pass
+    /// never ran or the op had a single fragment per region.
+    pub fn link_rate(&self) -> Option<f64> {
+        let junctions = self.surface_links + self.retract_links;
+        (junctions > 0).then(|| self.surface_links as f64 / junctions as f64)
+    }
 }
 
 /// Build the span vector for a `unified_finish_toolpath_with_cancel`
@@ -1025,6 +1061,47 @@ pub fn unified_finish_toolpath_with_cancel(
             }
         };
 
+        // §9 lever: keep the tool DOWN between this region's own fragments.
+        // Runs before the router sees the region, so `strippable_preamble` /
+        // `trailing_retracts` below read the relinked path — the router then
+        // links region-to-region on top exactly as before. Fragment
+        // INTERIORS are copied verbatim by `relink_fragments`; only the
+        // (previously airborne) junctions change.
+        let (tp, anns) = if params.intra_region_hookup_mm > 0.0 {
+            let rp = crate::surface_link::RelinkParams {
+                hookup_distance: params.intra_region_hookup_mm,
+                stock_to_leave: params.stock_to_leave,
+                sampling: params.sampling,
+                feed_rate: params.feed_rate,
+                plunge_rate: params.plunge_rate,
+                safe_z: params.safe_z,
+                link_kinematics,
+                // Nearest-first: a link is only possible when the next
+                // fragment is CLOSE, so ordering and linking are the same
+                // lever applied twice. The dressup-level TSP still runs
+                // afterwards on whatever junctions stayed as retracts.
+                reorder: true,
+            };
+            let (linked, rep) =
+                crate::surface_link::relink_fragments(&tp, mesh, index, cutter, &rp);
+            report.relink.fragments += rep.fragments;
+            report.relink.surface_links += rep.surface_links;
+            report.relink.retract_links += rep.retract_links;
+            report.relink.too_far += rep.too_far;
+            report.relink.off_surface += rep.off_surface;
+            report.relink.slower_than_retract += rep.slower_than_retract;
+            let anns = anns
+                .into_iter()
+                .map(|a| ScallopRuntimeAnnotation {
+                    move_index: rep.move_remap.get(a.move_index).copied().unwrap_or(0),
+                    event: a.event,
+                })
+                .collect();
+            (linked, anns)
+        } else {
+            (tp, anns)
+        };
+
         let stats = match region.band {
             FinishBand::VerySteep => &mut report.very_steep,
             FinishBand::MidSteep => &mut report.mid_steep,
@@ -1198,6 +1275,18 @@ pub fn unified_finish_toolpath_with_cancel(
         });
     }
 
+    if params.intra_region_hookup_mm > 0.0 {
+        tracing::info!(
+            fragments = report.relink.fragments,
+            surface_links = report.relink.surface_links,
+            retract_links = report.relink.retract_links,
+            too_far = report.relink.too_far,
+            off_surface = report.relink.off_surface,
+            slower_than_retract = report.relink.slower_than_retract,
+            link_rate = report.relink.link_rate().unwrap_or(0.0),
+            "unified_finish: intra-region stay-down linking"
+        );
+    }
     report.claims = claims_report;
     report.region_table = region_table;
 

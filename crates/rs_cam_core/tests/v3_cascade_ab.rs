@@ -915,6 +915,12 @@ fn v3_fixture_smoke() {
 ///   Sanctioned here because `claims_reference` is `MachinedStock` (the
 ///   clip is skipped with a warning under `SelfProbe`).
 fn op_b_claims_config() -> UnifiedFinishConfig {
+    op_b_claims_config_with_hookup(0.0)
+}
+
+/// §9 lever: `intra_region_hookup_mm` as an explicit A/B dial. `0.0` is
+/// the shipped default and reproduces the pre-§9 op byte-for-byte.
+fn op_b_claims_config_with_hookup(intra_region_hookup_mm: f64) -> UnifiedFinishConfig {
     UnifiedFinishConfig {
         steep_threshold_deg: 45.0,
         waterline_threshold_deg: 75.0,
@@ -932,6 +938,7 @@ fn op_b_claims_config() -> UnifiedFinishConfig {
         min_rest_depth_mm: 0.022,
         claims_reference: CreaseReference::MachinedStock,
         territory_clip: true,
+        intra_region_hookup_mm,
     }
 }
 
@@ -2187,6 +2194,58 @@ fn recoverable_air(label: &str, s: &ProjectSession, op_index: usize) {
         "cut fragments={n} | emitted-order hops {emitted:.0}mm | nearest-neighbour {nn_total:.0}mm | recoverable {saved:.0}mm ({:.1}%)",
         100.0 * saved / emitted.max(1e-9)
     );
+}
+
+/// §9 lever: intra-region stay-down linking, measured against its own
+/// off state on the same fixture. Prints Op B's time and rapid share at
+/// each `intra_region_hookup_mm`, plus the pass's link/retract tallies
+/// (emitted by `unified_finish` via `tracing::info!`).
+///
+/// The theory §9 leaves standing: Op B's air is COUNT-bound — 12 780
+/// fragment junctions, each paying two ~30 mm Z legs — so removing the
+/// legs (this) should beat shortening the hop (the reorder, which bought
+/// 4.6%). If this measures flat, the theory is wrong and the count itself
+/// has to come down instead.
+#[test]
+#[ignore = "one cascade chain per dial (~10 min each); run with --ignored --nocapture"]
+fn v3_intra_region_link_probe() {
+    let project_path = write_fixture_project(3.0);
+    let dials = [0.0_f64, 1.0, 3.0, 6.0];
+    let mut rows: Vec<(f64, f64, f64, usize)> = Vec::new();
+
+    for hookup in dials {
+        let mut c = ProjectSession::load(&project_path).unwrap_or_else(|e: SessionError| {
+            panic!("failed to load {}: {e}", project_path.display())
+        });
+        apply_branch(&mut c, Branch::Cascade);
+        let op_b_idx = toolpath_index_by_name(&c, "Op B Unified Rest");
+        c.set_toolpath_operation(
+            op_b_idx,
+            OperationConfig::UnifiedFinish(op_b_claims_config_with_hookup(hookup)),
+        )
+        .expect("swap Op B config");
+        let out = run_chain(&format!("intra-region link hookup={hookup}"), &mut c);
+        let op_b_s = out
+            .per_op_s
+            .iter()
+            .find(|(name, _)| name == "Op B Unified Rest")
+            .map_or(0.0, |(_, s)| *s);
+        rows.push((hookup, op_b_s, out.project_total_s, out.collisions));
+    }
+
+    eprintln!("== INTRA-REGION LINK PROBE (wanaka x2, ball Ø3) ==");
+    eprintln!("hookup_mm |    Op B s |  project s | collisions | vs hookup=0");
+    let base = rows.first().map_or(0.0, |r| r.1);
+    for (hookup, op_b_s, project_s, collisions) in &rows {
+        eprintln!(
+            "{hookup:>9.1} | {op_b_s:>9.1} | {project_s:>10.1} | {collisions:>10} | {:+.1}%",
+            if base > 0.0 {
+                100.0 * (op_b_s - base) / base
+            } else {
+                0.0
+            }
+        );
+    }
 }
 
 /// Sizes the reordering prize on the branch that needs it (cascade Ø4).

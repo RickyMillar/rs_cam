@@ -689,6 +689,7 @@ fn ab_unified_config() -> UnifiedFinishConfig {
         // moot with pencil_claims off above, and this is the pinned
         // branch-A baseline.
         territory_clip: false,
+        intra_region_hookup_mm: 0.0,
     }
 }
 
@@ -836,6 +837,7 @@ fn p2c_unified_generation_probe() {
         feed_rate: 3000.0,
         plunge_rate: 150.0,
         safe_z: 15.0,
+        intra_region_hookup_mm: 0.0,
     };
     let mut planner = FinishPlannerParams::for_tool(3.0);
     planner.overlap_mm = 2.0;
