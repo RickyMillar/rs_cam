@@ -1392,15 +1392,63 @@ struct BranchScore {
 /// evidence. `project_path` is expected to come from `write_fixture_project`
 /// (a fresh `ProjectSession::load` per call — branches never share a
 /// mutated session, matching every other A/B in this crate).
+/// The two §9/§10 dials, applied identically to BOTH branches so a
+/// comparison never varies more than one thing (the trap this campaign
+/// paid for twice).
+#[derive(Debug, Clone, Copy)]
+struct Dials {
+    air_bridge_policy: AirBridgePolicy,
+    intra_region_hookup_mm: f64,
+}
+
+impl Dials {
+    /// What ships today.
+    const SHIPPED: Self = Self {
+        air_bridge_policy: AirBridgePolicy::Always,
+        intra_region_hookup_mm: 0.0,
+    };
+    /// §9 intra-region stay-down linking + §10 cost-aware air bridges.
+    const V3: Self = Self {
+        air_bridge_policy: AirBridgePolicy::ShorterThanAirPath,
+        intra_region_hookup_mm: 6.0,
+    };
+}
+
 fn score_branch(label: &str, project_path: &std::path::Path, branch: Branch) -> BranchScore {
+    score_branch_with(label, project_path, branch, Dials::SHIPPED)
+}
+
+fn score_branch_with(
+    label: &str,
+    project_path: &std::path::Path,
+    branch: Branch,
+    dials: Dials,
+) -> BranchScore {
     let mut s = ProjectSession::load(project_path)
         .unwrap_or_else(|e| panic!("[{label}] failed to load {}: {e}", project_path.display()));
     apply_branch(&mut s, branch);
 
     if branch == Branch::Cascade {
         let idx = toolpath_index_by_name(&s, "Op B Unified Rest");
-        s.set_toolpath_operation(idx, OperationConfig::UnifiedFinish(op_b_claims_config()))
-            .unwrap_or_else(|e| panic!("[{label}] swap Op B to claims config: {e}"));
+        s.set_toolpath_operation(
+            idx,
+            OperationConfig::UnifiedFinish(op_b_claims_config_with_hookup(
+                dials.intra_region_hookup_mm,
+            )),
+        )
+        .unwrap_or_else(|e| panic!("[{label}] swap Op B to claims config: {e}"));
+    }
+
+    // The air-cut filter is a shared dressup, so the policy applies to every
+    // op in the chain — including the roughing pass both branches share.
+    for i in 0..s.toolpath_count() {
+        let Some(tc) = s.get_toolpath_config(i) else {
+            continue;
+        };
+        let mut d = tc.dressups.clone();
+        d.air_bridge_policy = dials.air_bridge_policy;
+        s.set_dressup_config(i, d)
+            .unwrap_or_else(|e| panic!("[{label}] set dressups on {i}: {e}"));
     }
 
     let outcome = run_chain(label, &mut s);
@@ -1497,6 +1545,37 @@ fn v3_cascade_ab_ball3() {
 
     let d = score_branch("v3_D_allover_tip", &path, Branch::AllOverTip);
     let c = score_branch("v3_cascade_b3", &path, Branch::Cascade);
+    verdict("ball Ø3, wanaka x2, SHIPPED dials", &d, &c);
+}
+
+/// The process proof re-run with the §9/§10 dials on, applied to BOTH
+/// branches so the comparison stays honest — the air-cut filter is a shared
+/// dressup and speeds up the all-over baseline too.
+///
+/// §10 measured Op B alone at -34.5% with these dials (38 868 -> 25 474 s).
+/// This answers the question that actually matters: does the cascade now
+/// beat the all-over-tip pass on time at equal COLUMNS quality — the §0.a
+/// contract the campaign has been chasing since it opened.
+#[test]
+#[ignore = "two full scaled-wanaka chains + 0.25mm measurement sims (long); run with --ignored --nocapture"]
+fn v3_process_proof_ab() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("rs_cam_core::unified_finish=info")),
+        )
+        .with_writer(std::io::stderr)
+        .without_time()
+        .try_init();
+
+    let path = write_fixture_project(3.0);
+    let d = score_branch_with("v3_D_allover_tip_v3dials", &path, Branch::AllOverTip, Dials::V3);
+    let c = score_branch_with("v3_cascade_b3_v3dials", &path, Branch::Cascade, Dials::V3);
+    verdict("ball Ø3, wanaka x2, §9+§10 dials", &d, &c);
+}
+
+/// Shared verdict printer + quality gate for the branch comparison.
+fn verdict(what: &str, d: &BranchScore, c: &BranchScore) {
 
     let cascade_finish_s: f64 = c
         .outcome
@@ -1515,7 +1594,7 @@ fn v3_cascade_ab_ball3() {
         .map(|(_, secs)| *secs)
         .sum();
 
-    eprintln!("== v3 CASCADE vs ALL-OVER-TIP VERDICT (ball Ø3, wanaka x2) ==");
+    eprintln!("== v3 CASCADE vs ALL-OVER-TIP VERDICT ({what}) ==");
     eprintln!(
         "project_total_s : D={:8.1}s  cascade={:8.1}s  Δ={:+8.1}s ({:+.1}%)",
         d.outcome.project_total_s,
@@ -2212,7 +2291,7 @@ fn v3_air_bridge_probe() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("rs_cam_core=info")),
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("rs_cam_core::unified_finish=info")),
         )
         .with_writer(std::io::stderr)
         .without_time()
@@ -2355,7 +2434,7 @@ fn v3_intra_region_link_probe() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("rs_cam_core=info")),
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("rs_cam_core::unified_finish=info")),
         )
         .with_writer(std::io::stderr)
         .without_time()
