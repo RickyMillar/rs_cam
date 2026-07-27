@@ -72,6 +72,32 @@ pub struct OperationTransformCapabilities {
     /// The operation encodes a continuous trace/finish path where reordering
     /// or stay-down linking can change the intended cut.
     pub continuous_path_required: bool,
+    /// Whether `apply_link_moves` may bridge two consecutive fragment
+    /// endpoints with a straight feed move.
+    ///
+    /// This is a GEOMETRIC question — is a straight feed between two
+    /// consecutive fragment endpoints clear of material? — not a structural
+    /// one, which is why it cannot be derived from `requires_depth_order` /
+    /// `continuous_path_required` the way the reorder predicates can. Those
+    /// two fields describe move-ORDER safety (can segments be visited in a
+    /// different sequence); this field describes move-PATH safety (can two
+    /// endpoints be bridged with a straight cutting move). The two can and
+    /// do diverge: discrete-ring Scallop (`ScallopConfig::continuous ==
+    /// false`) can be safely globally reordered — holding link_moves
+    /// constant and varying only `optimize_rapid_order`, measured cutting
+    /// distance was byte-identical (2437.8mm → 2437.8mm, only rapids
+    /// changed) while rapid travel dropped 27% — but it cannot safely take
+    /// link moves: `apply_link_moves` collapses a retract→rapid→plunge
+    /// triple into a straight feed bridge, which on a 3D surface plows
+    /// laterally through material — measured 9.7mm of over-cut. See
+    /// `crates/rs_cam_core/tests/capability_link_moves_safety.rs`.
+    ///
+    /// Forward pointer: the principled long-term fix is for
+    /// `apply_link_moves` to gouge-check candidate bridges the way
+    /// `surface_link::build_surface_link` already does for
+    /// pencil/unified_finish, rather than trusting a static per-op boolean.
+    /// This field is the interim guard, not the end state.
+    pub allows_link_moves: bool,
 }
 
 impl OperationTransformCapabilities {
@@ -79,11 +105,13 @@ impl OperationTransformCapabilities {
         allows_global_rapid_reorder: bool,
         requires_depth_order: bool,
         continuous_path_required: bool,
+        allows_link_moves: bool,
     ) -> Self {
         Self {
             allows_global_rapid_reorder,
             requires_depth_order,
             continuous_path_required,
+            allows_link_moves,
         }
     }
 
@@ -98,7 +126,7 @@ impl OperationTransformCapabilities {
     }
 
     pub fn allows_link_moves(self) -> bool {
-        !self.requires_depth_order && !self.continuous_path_required
+        self.allows_link_moves
     }
 }
 
@@ -365,7 +393,7 @@ impl OperationType {
             // depth-order or safety-order dependency between chains — so TSP can
             // freely reorder them by proximity too (audited fix-family Phase 1).
             DropCutter | Drill | AlignmentPinDrill | ProjectCurve => {
-                OperationTransformCapabilities::new(true, false, false)
+                OperationTransformCapabilities::new(true, false, false, true)
             }
             // HorizontalFinish: generator sorts regions high-to-low Z for collision-avoidance
             // (horizontal_finish.rs:170 "machine top shelves first to avoid collisions"); TSP
@@ -373,11 +401,11 @@ impl OperationType {
             // Face/Chamfer/Inlay/VCarve/Pencil/RadialFinish: no cross-segment material dependency,
             // segments are retract-separated, so link moves and (eventually) barriered TSP are safe.
             HorizontalFinish | Face | Chamfer | Inlay | VCarve | Pencil | RadialFinish => {
-                OperationTransformCapabilities::new(false, false, false)
+                OperationTransformCapabilities::new(false, false, false, true)
             }
             // Trace: multi-pass depth stepping; depth order is the constraint, not continuity.
             Pocket | Profile | Adaptive | Rest | Zigzag | Adaptive3d | Waterline | Trace => {
-                OperationTransformCapabilities::new(false, true, false)
+                OperationTransformCapabilities::new(false, true, false, false)
             }
             // Genuinely continuous traces: helical/spiral paths whose passes
             // are not retract-separated, single-tool-down runs.
@@ -387,7 +415,7 @@ impl OperationType {
             // then it inherits Scallop's conservative continuous-path
             // treatment.
             Scallop | UnifiedFinish | SteepShallow | RampFinish | SpiralFinish => {
-                OperationTransformCapabilities::new(false, false, true)
+                OperationTransformCapabilities::new(false, false, true, false)
             }
         }
     }
@@ -647,7 +675,7 @@ impl OperationConfig {
     ///
     /// Scallop is the first such op (fix-family Phase 1b). Its op-type
     /// table entry stays pinned at the conservative
-    /// `(false, false, true)` — continuous-path-required — because
+    /// `(false, false, true, false)` — continuous-path-required — because
     /// `ScallopConfig::continuous` (`operation_configs.rs:820`, default
     /// `false` at `operation_configs.rs:836`) controls which of two
     /// structurally different emitters `scallop.rs` runs:
@@ -664,41 +692,56 @@ impl OperationConfig {
     ///   TSP can reorder by proximity safely" bucket `DropCutter` /
     ///   `Drill` / `ProjectCurve` already sit in above.
     ///
-    ///   **BLOCKED — do not enable without reading this.** That reasoning
-    ///   is sound about ring INDEPENDENCE and still wrong about safety.
-    ///   The sentry
+    ///   **RE-ENABLED (fix-family Phase 1c).** The earlier revert reasoning
+    ///   was sound about ring INDEPENDENCE but attributed the measured
+    ///   GOUGE to the wrong knob. The sentry
     ///   `scallop_discrete_capability_currently_blocked_reorder_gouges`
-    ///   measured a real GOUGE when the reorder was enabled: 146 dexel
+    ///   measured a real over-cut when reorder was enabled: 146 dexel
     ///   columns cut DEEPER vs 20 shallower, net −128.9 mm of extra
     ///   material removed, worst column 9.33 mm over-cut — while rapid
-    ///   travel fell 33.5 % (3263 → 2169 mm), so the win is real too and
-    ///   worth recovering properly. Root cause is in the REORDERER, not
-    ///   the classification: `tsp::rebuild_group` relinks segments with
-    ///   retract-to-`safe_z` + horizontal traverse and then replays each
-    ///   segment verbatim — but `split_into_segments` splits on
-    ///   `MoveType::Rapid`, so the generator's own rapid DESCENT toward
-    ///   the surface is a splitter and gets discarded. The segment's first
-    ///   CUTTING move is then left to travel from `safe_z` down, plunging
-    ///   through whatever stands under it. Fix the reorderer (preserve or
-    ///   re-synthesize each segment's approach) before revisiting this
-    ///   arm. See also the open question this raises for `DropCutter` /
-    ///   `Drill` / `ProjectCurve`, which are ALREADY reorder-enabled.
+    ///   travel fell 33.5 % (3263 → 2169 mm). That gouge was produced by
+    ///   `apply_link_moves` bridging retract→rapid→plunge triples with a
+    ///   straight feed that plows laterally through material, NOT by the
+    ///   reorder itself: holding link moves off and varying only
+    ///   `optimize_rapid_order`, cutting distance is byte-identical
+    ///   (2437.8mm → 2437.8mm, only rapids change) while rapid travel still
+    ///   drops ~27%. `OperationTransformCapabilities` used to have no way
+    ///   to express "reorder yes, link moves no" — `allows_link_moves()`,
+    ///   `allows_barriered_rapid_reorder()`, and
+    ///   `allows_unbarriered_rapid_reorder()` all hung off the same two
+    ///   booleans. Now that `allows_link_moves` is its own field (fix-family
+    ///   Phase 1c), discrete Scallop can state the true, narrower
+    ///   capability below: global rapid reorder allowed, link moves
+    ///   forbidden. See
+    ///   `crates/rs_cam_core/tests/capability_link_moves_safety.rs` for the
+    ///   measurement backing both halves of that split.
     /// - `continuous: true` takes the spiral branch (`scallop.rs:812-912`):
     ///   rings are stitched into one helical stay-down path with
     ///   ring-to-ring cutting-feed connectors (`scallop.rs:874-903`).
     ///   Reordering or link-inserting into that sequence would corrupt the
     ///   single continuous cut, so this falls through to the op-type
-    ///   default, which stays `(false, false, true)`.
+    ///   default, which stays `(false, false, true, false)`.
     ///
     /// This method is the intended extension point for any future
     /// config-dependent op: add a match arm here rather than trying to
     /// force more nuance into the static [`OperationType`] table (which by
     /// design only sees the op kind, not its parameters).
     pub fn transform_capabilities(&self) -> OperationTransformCapabilities {
-        // The config-aware dispatch itself is live and is the extension
-        // point described above; Scallop's arm is deliberately NOT taken
-        // yet — see the gouge measurement in the doc comment.
-        self.op_type().transform_capabilities()
+        match self {
+            // Discrete-ring Scallop: rings are radial offsets of one
+            // finishing pass to the same final surface, independent of each
+            // other, so global reorder-by-proximity is safe (measured
+            // cutting-distance-preserving above). Link moves stay forbidden
+            // — `apply_link_moves` bridges with a straight feed that can
+            // plow through material on a 3D surface (measured 9.7mm
+            // over-cut); see the doc comment above.
+            OperationConfig::Scallop(cfg) if !cfg.continuous => {
+                OperationTransformCapabilities::new(true, false, false, false)
+            }
+            // Everything else (including continuous Scallop) falls through
+            // to the conservative op-type default.
+            _ => self.op_type().transform_capabilities(),
+        }
     }
 
     pub fn is_3d(&self) -> bool {
@@ -2527,34 +2570,53 @@ mod tests {
     }
 
     #[test]
-    fn scallop_config_transform_capabilities_dispatch_is_conservative() {
+    fn scallop_config_transform_capabilities_dispatch_splits_reorder_from_links() {
         // The config-aware dispatch EXISTS and is the extension point for
-        // per-config classification; Scallop's arm is deliberately not
-        // taken yet. Phase 1b reclassified discrete-ring Scallop as
-        // reorderable, then the sentry
+        // per-config classification. Fix-family Phase 1b reclassified
+        // discrete-ring Scallop as reorderable, then the sentry
         // `scallop_discrete_capability_currently_blocked_reorder_gouges`
-        // measured a gouge (146 columns deeper, worst 9.33mm) caused by
-        // `tsp::rebuild_group` discarding each segment's approach move.
-        // Until that is fixed, BOTH Scallop modes stay conservative.
-        for continuous in [false, true] {
-            let cfg = OperationConfig::Scallop(ScallopConfig {
-                continuous,
-                ..ScallopConfig::default()
-            });
-            assert!(
-                cfg.transform_capabilities().continuous_path_required,
-                "Scallop(continuous: {continuous}) must stay reorder-blocked \
-                 until the TSP approach-move defect is fixed"
-            );
-        }
-
-        // The op-type-only fallback must agree — it is the conservative
-        // answer used wherever no config is in hand.
+        // measured a gouge (146 columns deeper, worst 9.33mm) — but the
+        // gouge came from `apply_link_moves` bridging segments with a
+        // straight feed, not from the reorder itself (holding link moves
+        // off, cutting distance is byte-identical under reorder). Phase 1c
+        // decoupled `allows_link_moves` from the reorder predicates, so
+        // discrete Scallop can now state the true, narrower capability:
+        // reorder allowed, link moves forbidden. Continuous Scallop (one
+        // stitched stay-down helix) still forbids both.
+        let discrete = OperationConfig::Scallop(ScallopConfig {
+            continuous: false,
+            ..ScallopConfig::default()
+        });
+        let discrete_caps = discrete.transform_capabilities();
         assert!(
-            OperationType::Scallop
-                .transform_capabilities()
-                .continuous_path_required
+            discrete_caps.allows_global_rapid_reorder,
+            "discrete-ring Scallop should allow global rapid reorder \
+             (ring order has no material-state dependency)"
         );
+        assert!(
+            !discrete_caps.allows_link_moves,
+            "discrete-ring Scallop must still forbid link moves \
+             (apply_link_moves bridges with a straight feed that can gouge)"
+        );
+
+        let continuous = OperationConfig::Scallop(ScallopConfig {
+            continuous: true,
+            ..ScallopConfig::default()
+        });
+        let continuous_caps = continuous.transform_capabilities();
+        assert!(
+            !continuous_caps.allows_global_rapid_reorder,
+            "continuous (spiral) Scallop must stay reorder-blocked — it's \
+             one stitched stay-down path"
+        );
+        assert!(!continuous_caps.allows_link_moves);
+
+        // The op-type-only fallback (no config in hand) must stay the
+        // conservative answer — it is what continuous Scallop falls
+        // through to, and the worst case for callers with no config.
+        let fallback = OperationType::Scallop.transform_capabilities();
+        assert!(!fallback.allows_global_rapid_reorder);
+        assert!(!fallback.allows_link_moves);
     }
 
     #[test]
