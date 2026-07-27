@@ -1773,6 +1773,7 @@ fn score_stage(
     );
 
     deep_overcut_locator(label, &s, &bm, group);
+    write_surface_renders(label, &s, group);
 
     if has_op_b {
         let op_b_idx = toolpath_index_by_name(&s, "Op B Unified Rest");
@@ -2934,6 +2935,116 @@ fn v3_arc_direction_sanity() {
         eprintln!("== [{name}] arcs={arcs} sweeping>{MAX_PLAUSIBLE_SWEEP_DEG}°={bad} worst={worst:.2}° ==");
     }
     eprintln!("== TOTAL arcs={grand_total} reflex/mis-directed={grand_bad} ==");
+}
+
+/// Render the MACHINED SURFACE, not a statistic.
+///
+/// Every gate in this campaign reads aggregates over `column_deviations`,
+/// and aggregates cannot show tool marks, ridge direction, banding at
+/// region seams, or a gouge you would notice instantly by eye. The
+/// existing `{tag}_deviation.png` is vertex-based — the instrument P2.g
+/// Task 1 showed averages machined texture away — and it answers "how far
+/// from the model", which is not the same question as "does this look
+/// like an acceptable cut".
+///
+/// So this hillshades `ColumnDeviation::top_z` (the same data the gate
+/// reads) as a relief map, indexed by `(row, col)` with no frame
+/// round-trip, and writes a matching deviation map on the SAME data for
+/// side-by-side reading. Zoom with `V3_CROP=x,y,size_mm`.
+fn write_surface_renders(tag: &str, s: &ProjectSession, group: usize) {
+    let Some(sim) = s.simulation_result() else {
+        return;
+    };
+    let Some(cols) = sim.column_deviations.as_ref() else {
+        return;
+    };
+    let mine: Vec<&rs_cam_core::compute::simulate::ColumnDeviation> =
+        cols.iter().filter(|cd| cd.group == group).collect();
+    if mine.is_empty() {
+        return;
+    }
+    let (mut r0, mut r1, mut c0, mut c1) = (usize::MAX, 0usize, usize::MAX, 0usize);
+    for cd in &mine {
+        r0 = r0.min(cd.row);
+        r1 = r1.max(cd.row);
+        c0 = c0.min(cd.col);
+        c1 = c1.max(cd.col);
+    }
+    let (rows, cw) = (r1 - r0 + 1, c1 - c0 + 1);
+    let mut z = vec![f32::NAN; rows * cw];
+    let mut dev = vec![f32::NAN; rows * cw];
+    for cd in &mine {
+        let i = (cd.row - r0) * cw + (cd.col - c0);
+        z[i] = cd.top_z;
+        dev[i] = cd.dev;
+    }
+
+    // Hillshade: classic Lambertian on the height field, light from the
+    // NW at 45°. Tool marks are sub-10µm ripples on a ±14mm terrain, so
+    // the gradient is scaled hard — that is the point, an unexaggerated
+    // relief of this surface shows nothing.
+    const GAIN: f64 = 400.0;
+    let at = |r: usize, c: usize| -> Option<f64> {
+        if r >= rows || c >= cw {
+            return None;
+        }
+        let v = z[r * cw + c];
+        v.is_finite().then(|| f64::from(v))
+    };
+    let mut px = vec![0u8; rows * cw * 4];
+    let mut dpx = vec![0u8; rows * cw * 4];
+    for r in 0..rows {
+        for c in 0..cw {
+            let i = r * cw + c;
+            let o = i * 4;
+            if let (Some(h), Some(hx), Some(hy)) = (
+                at(r, c),
+                at(r, c.saturating_sub(1)),
+                at(r.saturating_sub(1), c),
+            ) {
+                let (dzdx, dzdy) = ((h - hx) * GAIN, (h - hy) * GAIN);
+                let n = (dzdx * dzdx + dzdy * dzdy + 1.0).sqrt();
+                // Light direction (-1,-1,1)/√3.
+                let lam = ((-dzdx - dzdy + 1.0) / (n * 3.0_f64.sqrt())).clamp(0.0, 1.0);
+                let v = (40.0 + 215.0 * lam) as u8;
+                px[o] = v;
+                px[o + 1] = v;
+                px[o + 2] = v;
+                px[o + 3] = 255;
+            }
+            let d = dev[i];
+            if d.is_finite() {
+                // Diverging, saturating at ±0.1mm so ordinary cusp
+                // texture is visible rather than a flat grey field.
+                let t = (f64::from(d) / 0.1).clamp(-1.0, 1.0);
+                let (rr, gg, bb) = if t < 0.0 {
+                    (255, (255.0 * (1.0 + t)) as u8, (255.0 * (1.0 + t)) as u8)
+                } else {
+                    ((255.0 * (1.0 - t)) as u8, (255.0 * (1.0 - t)) as u8, 255)
+                };
+                dpx[o] = rr;
+                dpx[o + 1] = gg;
+                dpx[o + 2] = bb;
+                dpx[o + 3] = 255;
+            }
+        }
+    }
+    // Flip vertically so +Y is up, matching every other render here.
+    let flip = |src: &[u8]| -> Vec<u8> {
+        let mut out = vec![0u8; src.len()];
+        for r in 0..rows {
+            let sr = (rows - 1 - r) * cw * 4;
+            let dr = r * cw * 4;
+            out[dr..dr + cw * 4].copy_from_slice(&src[sr..sr + cw * 4]);
+        }
+        out
+    };
+    for (buf, kind) in [(flip(&px), "surface"), (flip(&dpx), "devcol")] {
+        let p = v3_dir().join(format!("{tag}_{kind}.png"));
+        image::save_buffer(&p, &buf, cw as u32, rows as u32, image::ColorType::Rgba8)
+            .expect("save render");
+        eprintln!("render: {}", p.display());
+    }
 }
 
 /// Shared verdict printer + quality gate for the branch comparison.
