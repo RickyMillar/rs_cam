@@ -2464,6 +2464,164 @@ fn v3_column_ladder_probe() {
     }
 }
 
+/// Is the simulation's Op B stamp faithful to Op B's toolpath?
+///
+/// §11a's blocker: the per-op ladder says Op B removed 5.5 mm from a
+/// column whose neighbourhood contains no Op B move below Z 2.899 (final
+/// top 1.770), and the tapered profile cannot reach it from 1.6 mm away.
+/// Either the stamp over-removes or `prior_stocks` does not mean what the
+/// ladder assumes — and every gouge figure in §11 rests on which.
+///
+/// Op B is the last enabled op, so re-stamping ITS toolpath onto ITS OWN
+/// pre-carve snapshot must reproduce the final stock exactly. Comparison
+/// is by `(row, col)` straight off `ColumnDeviation` — `prior_stocks`
+/// snapshots share the grid, and inverse-transforming XY is the mistake
+/// P2.g already paid for.
+///
+/// Equal → the sim is faithful, the reach argument is wrong, and §11's
+/// numbers stand. Different → the stamp is a simulation defect, which
+/// outranks this campaign.
+#[test]
+#[ignore = "one cascade chain + measurement sim + a full Op B re-stamp"]
+fn v3_restamp_probe() {
+    let (dial_label, dials) = dials_from_env("shipped");
+    eprintln!("== OP B RE-STAMP PROBE dials={dial_label} ==");
+
+    let path = write_fixture_project(3.0);
+    let mut s = ProjectSession::load(&path).expect("load fixture");
+    let (enable, disable) = branch_ops(Branch::Cascade);
+    set_enabled_by_name(&mut s, enable, disable);
+    let idx = toolpath_index_by_name(&s, "Op B Unified Rest");
+    s.set_toolpath_operation(
+        idx,
+        OperationConfig::UnifiedFinish(op_b_config(
+            dials.intra_region_hookup_mm,
+            dials.pencil_claims,
+            dials.crease_hookup_mm,
+        )),
+    )
+    .expect("swap Op B config");
+    for i in 0..s.toolpath_count() {
+        let Some(tc) = s.get_toolpath_config(i) else {
+            continue;
+        };
+        let mut d = tc.dressups.clone();
+        d.air_bridge_policy = dials.air_bridge_policy;
+        if let Some(af) = dials.arc_fitting {
+            d.arc_fitting = af;
+        }
+        s.set_dressup_config(i, d).expect("set dressups");
+    }
+    run_chain("restamp", &mut s);
+    run_measurement_sim(&mut s);
+
+    // Op B must be the LAST enabled op for the re-stamp to be comparable.
+    let enabled: Vec<String> = (0..s.toolpath_count())
+        .filter_map(|i| s.get_toolpath_config(i))
+        .filter(|tc| tc.enabled)
+        .map(|tc| tc.name.clone())
+        .collect();
+    assert_eq!(
+        enabled.last().map(String::as_str),
+        Some("Op B Unified Rest"),
+        "re-stamp assumes Op B carves last; enabled chain is {enabled:?}"
+    );
+
+    let op_b = s.get_toolpath_config(idx).expect("Op B config");
+    let (op_b_id, op_b_tool) = (op_b.id, op_b.tool_id);
+    let tool_cfg = s
+        .tools()
+        .iter()
+        .find(|t| t.id.0 == op_b_tool)
+        .cloned()
+        .expect("Op B tool");
+    let cutter = rs_cam_core::compute::cutter::build_cutter(&tool_cfg);
+    let toolpath = s
+        .get_result(idx)
+        .expect("Op B result")
+        .annotated()
+        .toolpath
+        .clone();
+
+    let sim = s.simulation_result().expect("sim result");
+    let prior = sim
+        .prior_stocks
+        .get(&op_b_id)
+        .expect("Op B prior stock")
+        .checkpoint();
+    let cols = sim
+        .column_deviations
+        .as_ref()
+        .expect("column deviations")
+        .clone();
+
+    let mut restamp = prior;
+    let never = std::sync::atomic::AtomicBool::new(false);
+    restamp
+        .simulate_toolpath_with_cancel(
+            &toolpath,
+            &cutter,
+            rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+            &(|| never.load(std::sync::atomic::Ordering::SeqCst)),
+        )
+        .expect("re-stamp Op B");
+
+    // Global agreement, indexed by (row, col) — no frame round-trip.
+    let mut compared = 0usize;
+    let mut worst = 0.0f64;
+    let mut over_quantum = 0usize;
+    let mut sim_lower = 0usize;
+    let mut restamp_lower = 0usize;
+    for cd in &cols {
+        let Some(t) = restamp.z_grid.top_z_at(cd.row, cd.col) else {
+            continue;
+        };
+        compared += 1;
+        let d = f64::from(t) - f64::from(cd.top_z);
+        if d.abs() > worst.abs() {
+            worst = d;
+        }
+        if d.abs() > 0.01 {
+            over_quantum += 1;
+            if d > 0.0 {
+                sim_lower += 1; // sim removed MORE than the re-stamp
+            } else {
+                restamp_lower += 1;
+            }
+        }
+    }
+    eprintln!(
+        "== RE-STAMP vs SIM FINAL: compared={compared} |Δ|>0.01mm={over_quantum} \
+         (sim removed more: {sim_lower}, re-stamp removed more: {restamp_lower}) worst Δ={worst:+.4} =="
+    );
+
+    // The four §11a ladder columns, by name.
+    for (x, y) in [
+        (198.75, 52.75),
+        (35.50, 149.75),
+        (99.00, 129.75),
+        (51.25, 123.75),
+    ] {
+        let Some(cd) = cols
+            .iter()
+            .filter(|cd| (cd.x - x).abs() < 0.2 && (cd.y - y).abs() < 0.2)
+            .min_by(|p, q| {
+                let dp = (p.x - x).powi(2) + (p.y - y).powi(2);
+                let dq = (q.x - x).powi(2) + (q.y - y).powi(2);
+                dp.total_cmp(&dq)
+            })
+        else {
+            eprintln!("   site ({x:.2},{y:.2}): no column within 0.2mm");
+            continue;
+        };
+        let rs = restamp.z_grid.top_z_at(cd.row, cd.col);
+        eprintln!(
+            "   site ({x:.2},{y:.2}) [r{},c{}] sim_top={:.3} restamp_top={:?} dev={:+.3}",
+            cd.row, cd.col, cd.top_z, rs, cd.dev
+        );
+    }
+}
+
 /// Shared verdict printer + quality gate for the branch comparison.
 fn verdict(what: &str, d: &BranchScore, c: &BranchScore) {
 
