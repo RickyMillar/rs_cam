@@ -1404,6 +1404,12 @@ const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[
     // S4 region-level territory clip (`unified_finish::ClaimsConfig::
     // territory_clip` doc) — same serde-defaulted back-compat treatment.
     ParamDef::required("territory_clip", "bool"),
+    // §9/§11 link caps, both serde-defaulted for back-compat:
+    // `intra_region_hookup_mm` is the per-region stay-down relink cap,
+    // `crease_hookup_mm` the crease node's (see `unified_finish::
+    // ClaimsConfig::crease_hookup_mm`).
+    ParamDef::required("intra_region_hookup_mm", "f64"),
+    ParamDef::required("crease_hookup_mm", "f64"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
