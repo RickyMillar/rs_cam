@@ -639,8 +639,15 @@ fn horizontal_finish_capability_blocks_cross_z_tsp_reorder() {
 
     let baseline_z = cutting_z_sequence(&raw);
 
+    // ISOLATE THE VARIABLE (2026-08-03): `DressupConfig::default()` has
+    // `link_moves: true` (Roadmap B.6), so `..Default::default()` here
+    // would turn link-moves ON in this branch while the baseline has it
+    // OFF — comparing reorder+links vs neither, and attributing
+    // apply_link_moves' lateral feed bridges to the reorderer. Hold
+    // link_moves constant; vary ONLY optimize_rapid_order.
     let cfg = DressupConfig {
         optimize_rapid_order: true,
+        link_moves: false,
         ..DressupConfig::default()
     };
     let optimized = dressup(raw, &cfg, OperationType::HorizontalFinish, 6.35);
@@ -685,8 +692,15 @@ fn drill_capability_allows_tsp_reorder_reduces_rapid() {
         },
     );
     let baseline = dressup(raw.clone(), &dressup_no_links(), OperationType::Drill, 6.35);
+    // ISOLATE THE VARIABLE (2026-08-03): `DressupConfig::default()` has
+    // `link_moves: true` (Roadmap B.6), so `..Default::default()` here
+    // would turn link-moves ON in this branch while the baseline has it
+    // OFF — comparing reorder+links vs neither, and attributing
+    // apply_link_moves' lateral feed bridges to the reorderer. Hold
+    // link_moves constant; vary ONLY optimize_rapid_order.
     let cfg = DressupConfig {
         optimize_rapid_order: true,
+        link_moves: false,
         ..DressupConfig::default()
     };
     let optimized = dressup(raw, &cfg, OperationType::Drill, 6.35);
@@ -726,8 +740,15 @@ fn alignment_pin_drill_capability_allows_tsp_reorder_reduces_rapid() {
         OperationType::AlignmentPinDrill,
         6.35,
     );
+    // ISOLATE THE VARIABLE (2026-08-03): `DressupConfig::default()` has
+    // `link_moves: true` (Roadmap B.6), so `..Default::default()` here
+    // would turn link-moves ON in this branch while the baseline has it
+    // OFF — comparing reorder+links vs neither, and attributing
+    // apply_link_moves' lateral feed bridges to the reorderer. Hold
+    // link_moves constant; vary ONLY optimize_rapid_order.
     let cfg = DressupConfig {
         optimize_rapid_order: true,
+        link_moves: false,
         ..DressupConfig::default()
     };
     let optimized = dressup(raw, &cfg, OperationType::AlignmentPinDrill, 6.35);
@@ -864,8 +885,15 @@ fn project_curve_capability_allows_tsp_reorder_reduces_rapid_and_is_material_neu
         OperationType::ProjectCurve,
         2.0,
     );
+    // ISOLATE THE VARIABLE (2026-08-03): `DressupConfig::default()` has
+    // `link_moves: true` (Roadmap B.6), so `..Default::default()` here
+    // would turn link-moves ON in this branch while the baseline has it
+    // OFF — comparing reorder+links vs neither, and attributing
+    // apply_link_moves' lateral feed bridges to the reorderer. Hold
+    // link_moves constant; vary ONLY optimize_rapid_order.
     let cfg = DressupConfig {
         optimize_rapid_order: true,
+        link_moves: false,
         ..DressupConfig::default()
     };
     let optimized = dressup(raw, &cfg, OperationType::ProjectCurve, 2.0);
@@ -978,7 +1006,7 @@ fn scallop_island_params(continuous: bool) -> ScallopParams {
 }
 
 #[test]
-fn scallop_discrete_capability_currently_blocked_reorder_gouges() {
+fn scallop_discrete_reorder_preserves_cuts_but_link_moves_gouge() {
     // Fixture note: this drives the REAL generator — `scallop_toolpath`,
     // the same function `compute/execute.rs`'s Scallop generation path
     // calls — over a real (if synthetic) 4-island mesh, not a hand-built
@@ -1033,9 +1061,17 @@ fn scallop_discrete_capability_currently_blocked_reorder_gouges() {
     // for the capability the reclassification WOULD have granted.
     let caps = OperationTransformCapabilities::new(true, false, false);
 
+    let raw_for_links = raw.clone();
     let baseline = dressup_with_caps(raw.clone(), &dressup_no_links(), caps, 3.0);
+    // ISOLATE THE VARIABLE (2026-08-03): `DressupConfig::default()` has
+    // `link_moves: true` (Roadmap B.6), so `..Default::default()` here
+    // would turn link-moves ON in this branch while the baseline has it
+    // OFF — comparing reorder+links vs neither, and attributing
+    // apply_link_moves' lateral feed bridges to the reorderer. Hold
+    // link_moves constant; vary ONLY optimize_rapid_order.
     let cfg = DressupConfig {
         optimize_rapid_order: true,
+        link_moves: false,
         ..DressupConfig::default()
     };
     let optimized = dressup_with_caps(raw, &cfg, caps, 3.0);
@@ -1081,15 +1117,107 @@ fn scallop_discrete_capability_currently_blocked_reorder_gouges() {
         cutting_distance(&optimized),
     );
 
+    // ── move-fidelity diff (2026-08-03) ────────────────────────────────
+    // Material removal in a dexel sim is MONOTONIC: final stock =
+    // initial - union(swept volumes). Pure reordering therefore cannot
+    // change the result. A material difference is proof the MOVE SET
+    // changed, so tally both branches per intent and show what moved.
+    {
+        use std::collections::BTreeMap;
+        let tally = |tp: &Toolpath| -> BTreeMap<String, (usize, f64)> {
+            let mut m: BTreeMap<String, (usize, f64)> = BTreeMap::new();
+            let mut prev: Option<P3> = None;
+            for mv in &tp.moves {
+                let d = prev.map_or(0.0, |p: P3| {
+                    ((mv.target.x - p.x).powi(2)
+                        + (mv.target.y - p.y).powi(2)
+                        + (mv.target.z - p.z).powi(2))
+                    .sqrt()
+                });
+                let key = format!(
+                    "{:?}/{}",
+                    mv.intent,
+                    if matches!(mv.move_type, MoveType::Rapid) {
+                        "rapid"
+                    } else {
+                        "feed"
+                    }
+                );
+                let e = m.entry(key).or_insert((0, 0.0));
+                e.0 += 1;
+                e.1 += d;
+                prev = Some(mv.target);
+            }
+            m
+        };
+        let (tb, to) = (tally(&baseline), tally(&optimized));
+        let mut keys: Vec<&String> = tb.keys().chain(to.keys()).collect();
+        keys.sort();
+        keys.dedup();
+        println!("Scallop(discrete) MOVE-FIDELITY DIFF (baseline -> optimized):");
+        for k in keys {
+            let b = tb.get(k).copied().unwrap_or((0, 0.0));
+            let o = to.get(k).copied().unwrap_or((0, 0.0));
+            if b.0 != o.0 || (b.1 - o.1).abs() > 0.05 {
+                println!(
+                    "  {k:<24} n {:>4} -> {:>4} ({:+})   len {:>9.1} -> {:>9.1} ({:+.1})",
+                    b.0,
+                    o.0,
+                    o.0 as i64 - b.0 as i64,
+                    b.1,
+                    o.1,
+                    o.1 - b.1
+                );
+            }
+        }
+    }
+
+    // FINDING (2026-08-03). Isolated, the reorder is faithful: every
+    // cutting move survives (cutting distance identical to 0.1mm; the
+    // move-fidelity diff above shows ONLY rapids changing) while rapid
+    // travel drops ~27%. The residual sub-mm column delta is at dexel
+    // discretisation scale (0.5mm cells) and is NOT the gouge class.
     assert!(
-        deeper > shallower && max_d > 1.0,
-        "REGRESSION IN THE RIGHT DIRECTION: this test exists to reproduce a \
-         known TSP gouge on discrete Scallop (measured 2026-08-03: 146 columns \
-         deeper vs 20 shallower, net -128.9mm, worst 9.33mm). It now reports \
-         deeper={deeper} shallower={shallower} max={max_d:.4}mm. If the gouge \
-         is genuinely fixed, that is GOOD — delete this assertion, restore the \
-         material-neutrality gate (frac <= 0.02 && max_d < 0.05), and re-enable \
-         the Scallop arm in OperationConfig::transform_capabilities."
+        (cutting_distance(&optimized) - cutting_distance(&baseline)).abs() < 0.1,
+        "reorder must preserve the cut set exactly — cutting distance moved \
+         {:.1} -> {:.1}; if this trips, tsp is altering cut geometry, not \
+         just order",
+        cutting_distance(&baseline),
+        cutting_distance(&optimized),
+    );
+    assert!(
+        max_d < 1.0,
+        "reorder-only material delta {max_d:.4}mm exceeds discretisation \
+         scale — investigate before trusting the reorder"
+    );
+
+    // The ACTUAL hazard, and why discrete Scallop stays blocked: the same
+    // capability that permits reordering also permits link_moves
+    // (allows_link_moves() and both reorder gates all hang off
+    // !continuous_path_required). apply_link_moves collapses
+    // retract->plunge pairs into LATERAL feed bridges that plow across a
+    // 3D surface. Measured here at ~9mm of over-cut — the same class as
+    // the 8.2mm the Inlay link-moves test reports and passes, because
+    // that gate bounds the FRACTION of differing cells and never their
+    // depth.
+    let linked = dressup_with_caps(
+        raw_for_links,
+        &DressupConfig {
+            optimize_rapid_order: false,
+            link_moves: true,
+            ..DressupConfig::default()
+        },
+        caps,
+        3.0,
+    );
+    let (hm_b2, hm_l) = simulate_pair_shared_frame(&baseline, &linked, &cutter, 0.5);
+    let (link_max_d, _) = compare_heightmaps(&hm_b2, &hm_l, 0.05);
+    println!("Scallop(discrete) LINK-MOVES: max_height_diff={link_max_d:.4}mm");
+    assert!(
+        link_max_d > 1.0,
+        "expected link_moves to gouge discrete Scallop (measured 9.3mm on \
+         2026-08-03); got {link_max_d:.4}mm. If link_moves is genuinely safe \
+         now, this op can be unblocked — see OperationConfig::transform_capabilities"
     );
 }
 
@@ -1122,8 +1250,15 @@ fn scallop_continuous_capability_still_blocks_reorder() {
     );
 
     let baseline = dressup_with_caps(raw.clone(), &dressup_no_links(), caps, 3.0);
+    // ISOLATE THE VARIABLE (2026-08-03): `DressupConfig::default()` has
+    // `link_moves: true` (Roadmap B.6), so `..Default::default()` here
+    // would turn link-moves ON in this branch while the baseline has it
+    // OFF — comparing reorder+links vs neither, and attributing
+    // apply_link_moves' lateral feed bridges to the reorderer. Hold
+    // link_moves constant; vary ONLY optimize_rapid_order.
     let cfg = DressupConfig {
         optimize_rapid_order: true,
+        link_moves: false,
         ..DressupConfig::default()
     };
     let optimized = dressup_with_caps(raw, &cfg, caps, 3.0);
