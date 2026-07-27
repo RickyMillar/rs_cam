@@ -1255,3 +1255,54 @@ and neither looks at entry plunges, descents, or rapids.
 Candidate (b) is cheap to test and has not been: filter both probes to
 `MoveIntent::EntryPlunge` and the descent legs, and see whether the deep
 sites are even in the cutting set.
+
+### §11a — the ladder names Op B, and then contradicts its toolpath
+
+`v3_column_ladder_probe` reads one column out of successive
+`prior_stocks` snapshots, so it names the op that removed the material
+directly instead of inferring it from totals. wanaka ×2, SHIPPED dials,
+the four worst deep columns:
+
+| site | model_z | before Op A | before Op B | FINAL |
+|---|---|---|---|---|
+| (198.75, 52.75) | 7.335 | +0.255 | **−0.008** | **−5.565** |
+| (35.50, 149.75) | 2.192 | +1.608 | **+0.091** | **−3.027** |
+| (99.00, 129.75) | 5.673 | +0.767 | +0.767 | **−2.326** |
+| (51.25, 123.75) | 0.003 | +1.217 | −2.243 | −2.243 |
+
+**Op B owns three of the four.** At the worst, Op A had already finished
+the column to within 8 µm of the model; the REST clearer then removed
+5.5 mm from it. That is a rest pass cutting where there is demonstrably no
+rest — which is a territory question, not a chord or flank question, and
+it reframes everything above.
+
+**And then the toolpath refuses to corroborate it.** At
+(198.75, 52.75), `v3_gouge_site_probe` at r = 4.0 mm — beyond the Ø1
+tapered ball's full `radius()` of 3.0 — reports Op B's LOWEST Z anywhere
+near the site as **2.899**, against a column that ends at **1.770**. No
+cutting move, and no rapid, goes deep enough to remove that material.
+Checking the geometry rather than assuming it: the tapered profile at
+1.6 mm radial offset sits ~9 mm above the tip, so the flank cannot reach
+either, and a hypothetical full-shaft cylinder stamp still leaves every
+candidate move more than 3 mm away in XY.
+
+So one of these is wrong, and it must be settled BEFORE any further
+mechanism work, because every gouge figure in §11 rests on it:
+
+1. **Op B's stamping** removes more than its cutter geometry should — a
+   simulation defect, in which case the 6 060 "gouged columns" are partly
+   an artifact and the quality gate has been reading one.
+2. **`prior_stocks[Op B]` is not "the stock before Op B carved"** in the
+   sense assumed here, in which case the ladder's attribution is wrong
+   (though the FINAL column values, which the gate reads, still stand).
+3. Something removes material between the snapshot and the final stock
+   that is not any enabled op's toolpath.
+
+The discriminating test is cheap and has not been run: stamp Op B's
+emitted moves onto the "before Op B" snapshot INDEPENDENTLY, with the same
+cutter, and compare against the sim's final stock at these four columns.
+Equal → the sim is faithful and the geometry reasoning above is wrong.
+Different → the sim's Op B stamp is the defect. This is the same
+three-way shape that closed P2.g Task 1 (`pre == read`, `sim == re-stamp`,
+cross-branch delta ≡ re-stamp delta), and it is the right instrument here
+for the same reason.
