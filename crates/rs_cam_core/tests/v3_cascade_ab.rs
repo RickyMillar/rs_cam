@@ -83,14 +83,52 @@ const STL_TRIANGLE_LEN: usize = 50;
 /// 12-byte normal).
 const STL_VERTS_OFFSET: usize = 12;
 
-/// Write a uniformly ×`SCALE`'d copy of `source_stl_path()` to
-/// `target/v3_scaled/terrain_x2.stl`, skipping the rewrite when a
-/// same-length output already exists (binary STL length is fully
+/// Vertical exaggeration applied on top of `SCALE`, from `V3_ZEXAG`.
+///
+/// Wanaka is gentle terrain: at 1.0 the decomposition finds NO very-steep
+/// band at all (measured, §14 — waterline 0%), so the fixture structurally
+/// cannot present the mixed-strategy rest that `unified_finish` exists
+/// for. Scaling Z alone turns the same terrain into steep mountains while
+/// keeping the XY footprint, the triangle count and the facet topology
+/// identical — so the strategy mix is the ONLY thing that moves, which is
+/// exactly the comparison the question needs.
+///
+/// A slope `θ` becomes `atan(k·tanθ)`: at k = 4 a 20° hillside reads 55.5°
+/// and a 45° face reads 76°, crossing both band thresholds
+/// (`steep_threshold_deg` 45, `waterline_threshold_deg` 75).
+///
+/// 1.0 (the default) reproduces every earlier run: same STL path, same
+/// stock, same `safe_z`.
+fn z_exag_from_env() -> f64 {
+    let raw = std::env::var("V3_ZEXAG").unwrap_or_else(|_| "1".to_owned());
+    let k: f64 = raw
+        .parse()
+        .unwrap_or_else(|e| panic!("V3_ZEXAG must be a number, got {raw:?}: {e}"));
+    assert!(k > 0.0, "V3_ZEXAG must be positive, got {k}");
+    k
+}
+
+/// Write a ×`SCALE`'d copy of `source_stl_path()` — with Z additionally
+/// multiplied by `z_exag` — to `target/v3_scaled/`, skipping the rewrite
+/// when a same-length output already exists (binary STL length is fully
 /// determined by triangle count, so a length match is a safe staleness
-/// check here). Normals are untouched — uniform scale doesn't rotate
-/// them.
-fn ensure_scaled_stl() -> PathBuf {
-    let out_path = v3_dir().join("terrain_x2.stl");
+/// check here, and the exaggeration is in the FILENAME so variants never
+/// alias each other).
+///
+/// Stored normals are left stale under a non-uniform scale. That is safe
+/// and deliberate: `Mesh` recomputes every face normal from the vertices
+/// on load, and its consistency check is edge-topological (winding), which
+/// a Z scale preserves.
+///
+/// Returns the path and the scaled mesh's Z range, which
+/// `write_fixture_project` needs to keep the stock and `safe_z` around a
+/// model whose height changed.
+fn ensure_scaled_stl(z_exag: f64) -> (PathBuf, (f64, f64)) {
+    let out_path = if (z_exag - 1.0).abs() < 1e-12 {
+        v3_dir().join("terrain_x2.stl")
+    } else {
+        v3_dir().join(format!("terrain_x2_z{z_exag:.2}.stl"))
+    };
     let src_path = source_stl_path();
 
     let mut bytes = std::fs::read(&src_path)
@@ -117,17 +155,13 @@ fn ensure_scaled_stl() -> PathBuf {
         tri_count
     );
 
-    if let Ok(meta) = std::fs::metadata(&out_path)
-        && meta.len() as usize == expected_len
-    {
-        eprintln!(
-            "v3 fixture: {} already up to date ({tri_count} triangles), skipping rewrite",
-            out_path.display()
-        );
-        return out_path;
-    }
-
+    // Scale in place and measure the Z range in the same pass — the
+    // caller needs it whether or not the file had to be rewritten, so
+    // this runs unconditionally and the staleness check only skips the
+    // WRITE.
     let scale = SCALE as f32;
+    let z_scale = (SCALE * z_exag) as f32;
+    let (mut min_z, mut max_z) = (f64::INFINITY, f64::NEG_INFINITY);
     for t in 0..tri_count {
         let verts_start = STL_HEADER_LEN + t * STL_TRIANGLE_LEN + STL_VERTS_OFFSET;
         for v in 0..9 {
@@ -137,17 +171,35 @@ fn ensure_scaled_stl() -> PathBuf {
                     .try_into()
                     .expect("4-byte slice for vertex float"),
             );
-            bytes[off..off + 4].copy_from_slice(&(f * scale).to_le_bytes());
+            // Vertex floats run x,y,z per vertex, so every third is Z.
+            let scaled = if v % 3 == 2 { f * z_scale } else { f * scale };
+            if v % 3 == 2 {
+                min_z = min_z.min(scaled as f64);
+                max_z = max_z.max(scaled as f64);
+            }
+            bytes[off..off + 4].copy_from_slice(&scaled.to_le_bytes());
         }
+    }
+
+    if let Ok(meta) = std::fs::metadata(&out_path)
+        && meta.len() as usize == expected_len
+    {
+        eprintln!(
+            "v3 fixture: {} already up to date ({tri_count} triangles, \
+             z in [{min_z:.3}, {max_z:.3}]), skipping rewrite",
+            out_path.display()
+        );
+        return (out_path, (min_z, max_z));
     }
 
     std::fs::write(&out_path, &bytes)
         .unwrap_or_else(|e| panic!("failed to write scaled STL {}: {e}", out_path.display()));
     eprintln!(
-        "v3 fixture: wrote {} ({tri_count} triangles, x{SCALE})",
+        "v3 fixture: wrote {} ({tri_count} triangles, x{SCALE} xy / x{z_scale} z, \
+         z in [{min_z:.3}, {max_z:.3}])",
         out_path.display()
     );
-    out_path
+    (out_path, (min_z, max_z))
 }
 
 /// Write (overwriting any prior copy) a minimal 4-op project TOML over
@@ -160,9 +212,42 @@ fn ensure_scaled_stl() -> PathBuf {
 /// copied verbatim from `planning/airrun_2026-06-01/wanaka.toml`
 /// (read-only reference, never written here).
 fn write_fixture_project(ball_diameter_mm: f64) -> PathBuf {
-    let stl_path = ensure_scaled_stl();
+    let z_exag = z_exag_from_env();
+    let (stl_path, (model_min_z, model_max_z)) = ensure_scaled_stl(z_exag);
     let stl_path_str = stl_path.to_string_lossy();
-    let out_path = v3_dir().join(format!("wanaka_x2_ball{ball_diameter_mm:.0}.toml"));
+    let stl_name = stl_path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "terrain_x2.stl".to_owned());
+    let out_path = if (z_exag - 1.0).abs() < 1e-12 {
+        v3_dir().join(format!("wanaka_x2_ball{ball_diameter_mm:.0}.toml"))
+    } else {
+        v3_dir().join(format!(
+            "wanaka_x2_z{z_exag:.2}_ball{ball_diameter_mm:.0}.toml"
+        ))
+    };
+
+    // The ×1 fixture's hardcoded stock/safe_z, and the model Z range they
+    // were chosen around. A taller model has to keep the SAME clearances
+    // or the comparison changes two things at once — so the margins are
+    // what carry over, not the literals. `V3_ZEXAG=1` short-circuits to
+    // the literals, so the default fixture is unchanged (the emitted TOML
+    // now reads `14.000` where it read `14.0` — same value, same parse).
+    const BASE_ORIGIN_Z: f64 = -5.0;
+    const BASE_STOCK_Z: f64 = 14.0;
+    const BASE_SAFE_Z: f64 = 10.0;
+    let (stock_origin_z, stock_z, safe_z) = if (z_exag - 1.0).abs() < 1e-12 {
+        (BASE_ORIGIN_Z, BASE_STOCK_Z, BASE_SAFE_Z)
+    } else {
+        let (base_min_z, base_max_z) = (model_min_z / z_exag, model_max_z / z_exag);
+        let origin_z = model_min_z + (BASE_ORIGIN_Z - base_min_z);
+        let top_z = model_max_z + (BASE_ORIGIN_Z + BASE_STOCK_Z - base_max_z);
+        (origin_z, top_z - origin_z, model_max_z + (BASE_SAFE_Z - base_max_z))
+    };
+    eprintln!(
+        "v3 fixture: z_exag={z_exag} → stock origin_z={stock_origin_z:.3} z={stock_z:.3}, \
+         safe_z={safe_z:.3}"
+    );
 
     let toml = format!(
         r#"format_version = 3
@@ -174,10 +259,10 @@ name = "wanaka_x2_cascade"
 [job.stock]
 x = 210.0
 y = 210.0
-z = 14.0
+z = {stock_z:.3}
 origin_x = -5.0
 origin_y = -5.0
-origin_z = -5.0
+origin_z = {stock_origin_z:.3}
 padding = 0.0
 workholding_rigidity = "Medium"
 auto_from_model = false
@@ -188,7 +273,7 @@ species = "GenericHardwood"
 [job.post]
 format = "grbl"
 spindle_speed = 18000
-safe_z = 10.0
+safe_z = {safe_z:.3}
 high_feedrate_mode = false
 high_feedrate = 5000.0
 spindle_strategy = "match_chart"
@@ -296,7 +381,7 @@ product_id = ""
 [[models]]
 id = 1
 path = "{stl_path_str}"
-name = "terrain_x2.stl"
+name = "{stl_name}"
 kind = "stl"
 
 [models.units]
@@ -807,7 +892,7 @@ fn run_chain(label: &str, s: &mut ProjectSession) -> ChainOutcome {
 #[test]
 #[ignore = "scaled-wanaka fixture smoke (one rough generation + sims); run with --ignored --nocapture"]
 fn v3_fixture_smoke() {
-    ensure_scaled_stl();
+    ensure_scaled_stl(z_exag_from_env());
     let project_path = write_fixture_project(3.0);
     let mut s = ProjectSession::load(&project_path)
         .unwrap_or_else(|e: SessionError| panic!("failed to load {}: {e}", project_path.display()));
