@@ -1873,3 +1873,36 @@ pure geometry function returning `Result<Vec<Vec<(P3, bool)>>, Cancelled>`
 Nothing here is hard; it is simply wider than "the number already exists"
 implied, and it should be done as one deliberate change rather than
 squeezed alongside §14d.
+
+### §14d CORRECTION — the "ranges don't tile" hypothesis is WRONG
+
+The §14d hypothesis was built on a misreading of its own table. Those
+89..4 016-move "gaps" between consecutive dropped nodes are not gaps in
+the tiling: the table lists only the **5 dropped** nodes, and the space
+between them is occupied by the **19 surviving** ones, which it did not
+list. Consecutive rows are not adjacent in the toolpath.
+
+The tiling is fine, and the reorder-off run already said so — node spans
+cover **99.6%** of cutting length there. It was in the measurement the
+whole time.
+
+A second check kills it independently: a surface link is `link.pts`, a
+sampled path of tens of points. **No surface link is 4 016 moves long.**
+The magnitude alone should have stopped this.
+
+**What still stands** (it comes from the dilation figures, not the gaps):
+the remapped bounds are near-exact — a 200 924-move node returns as
+200 959 — so these spans are NOT scattered by the reorder. They are
+computed correctly and then discarded by the foreign-intrusion guard.
+That part is measured, not inferred.
+
+**What is now open again:** which move intrudes, and why. Fix (1) in
+§14d — "make the ranges tile" — has no premise left and should not be
+built. `5fb377f` (the guard now logs `intruder_old_idx`,
+`intruder_intent`, `before_span`) is exactly the right next step and is
+now the ONLY route to the answer.
+
+The lesson is the campaign's own, arriving from a new direction: this one
+was not a bad instrument or a subtle frame bug. It was reading a table of
+filtered rows as if it were a table of consecutive ones. **Before drawing
+a structural conclusion from a list, check that the list is not filtered.**
