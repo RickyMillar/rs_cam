@@ -1695,3 +1695,91 @@ worth anything next to 60 collisions. Attribute before going further.
    descents through the uncut slivers already known from S1).
 4. **Intra-node round trips remain the lever**, unchanged by any of this:
    10 931 of 11 030 at k = 2, 15 311 of 15 363 at k = 1.
+
+### §14c — live GUI/MCP validation on the real project (2026-07-28)
+
+Driven through the embedded MCP server against
+`planning/airrun_2026-06-01/wanaka.toml` (the user's real, modified
+project — loaded read-only, never saved). Full F.4 ladder: generate → sim
+→ generate → sim → generate, 9 toolpaths, 2 setups.
+
+**The span defect is REAL in the product, and worse than headless.**
+`Unified Finish 6 (live v2)`, 127 251 moves, `spans_valid: true`:
+
+| | live wanaka | headless v3 fixture |
+|---|---|---|
+| Region spans total | 174 | 620 |
+| of which ROUTING NODES | **2** | 19 |
+| `Ring N` sub-structure | 172 | 615 |
+| `RapidOrderBarrier` | 3 | — |
+
+The two survivors are both `Shallow band`, covering moves
+`[56 717, 127 251)`. **Zero MidSteep, zero VerySteep, zero Pencil-claims
+nodes survive** — yet `Ring 6`…`Ring 177` occupy moves 45–56 715, so the
+first **44.6%** of the toolpath is full of scallop rings belonging to a
+mid-steep node that no longer exists in the span vector.
+
+The surviving ring spans are visibly scrambled and partly collapsed —
+`Ring 22` at `[45, 733)`, `Ring 17` at `[5820, 5823)` (3 moves), `Ring 6`
+at `[47771, 48425)`, `Ring 21` at 6 moves — the bounding-remap signature
+of a span whose moves the reorder permuted.
+
+**The user-visible consequence, and it is the diagnostic agents are told
+to reach for FIRST.** `narrate_toolpath(8)` reports:
+
+```
+Semantic trace: 183 items; depth levels 0, regions 0, rings 178.
+Z-level source: raw-move fallback (no DepthPass spans present).
+  z=23.198 (1st pass): 1 cut run(s), 0 marching-squares region(s), 3 cutting moves
+  … 67 intermediate Z levels compressed …
+```
+
+**`regions 0`** for the operation whose entire premise is region-level
+routing — and, with no spans to read, it falls back to slicing a surface
+finish by raw Z coordinate and inventing a **73-level Z ladder** that does
+not exist. No strategy mix is reported at all.
+
+This is not a general narration weakness: on the same project the same
+call on `3D Rough 6` reads `Z-level source: DepthPass spans` and returns
+per-level gate/planner/floor-cell counters. The machinery works. It is
+specifically `unified_finish`'s spans that are destroyed downstream of
+generation.
+
+**The ring-truncation warning does NOT reach the user.**
+`get_toolpath_diagnostics(8)` returns five entries, all feeds/tool-load
+(`chipload_clamped_to_floor`, `feed_vs_lut.high`, three stale-evidence
+tool-load rows). There is no `geometry`/`quality` diagnostic for standing
+material, so `scallop`'s `uncut_core_mm2` warning — added precisely
+because the campaign lost weeks to an invisible 28 mm uncut block — has no
+channel into the product at all. It is a `tracing::warn!` and nothing
+more. **"A warning nobody sees is not a warning" applies to the product,
+not just the harness.**
+
+**Arc-fit: no reflex arcs anywhere.** Narration flags suspicious large
+arcs and fired on nothing across `Back Rough` (365 arcs), `3D Rough 6`
+(143), `Rivers (back)`, or the unified finish. The `a6841e1` invariant
+holds on real geometry.
+
+One lead it did surface, unproven: `Rivers (back)` (Project Curve, 20°
+V-bit) reports **peak axial DOC 6.07 mm at move 174, `ArcCCW`**, on an op
+that "follows the curve at a fixed surface offset — no commanded DOC". The
+narration's own note lists arc-fit overshoot first among the causes. Arc
+fitting interpolates Z linearly across a chord it replaced, so an arc
+crossing a falling surface travels at heights the arc never passes
+through — the same FAMILY as §12, on a visible-surface carve. Not
+established; cheap to settle with `get_cut_trace` around sample 4963.
+
+**Param schema passes end-to-end.** `crease_hookup_mm` (5.0) and
+`intra_region_hookup_mm` (0.0) appear in `get_operation_schema` AND carry
+values through the real project file's round-trip.
+
+### What §14c adds to the build list
+
+1. **Fix the span destruction.** It is now a product defect with a live
+   reproduction, not a harness curiosity: the op's own telemetry, the GUI
+   panel and the agent-facing narration all read a vector missing most of
+   its regions while `spans_valid` says `true`.
+2. **Give standing material a diagnostic.** `severity: caution`,
+   `category: geometry`, sourced from the same `uncut_core_mm2` the
+   warning already computes.
+3. **Settle the `Rivers` arc DOC spike** — one `get_cut_trace` call.
