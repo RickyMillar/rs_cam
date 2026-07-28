@@ -29,6 +29,15 @@ pub struct ToolpathStats {
     pub move_count: usize,
     pub cutting_distance: f64,
     pub rapid_distance: f64,
+    /// Generation-time finding, not a toolpath measurement: region-interior
+    /// area (mm²) a scallop ring cascade left UNCUT because it hit its ring
+    /// cap before collapsing. `0.0` when nothing was left standing.
+    ///
+    /// Lives here because this is the per-generation statistics slot the
+    /// session already keeps, and because the diagnostics pipeline reads
+    /// it — see `crate::diagnostics::ids::GEOM_STANDING_MATERIAL`. Sourced
+    /// from [`crate::compute::execute::GenerationFindings`].
+    pub standing_material_mm2: f64,
 }
 
 /// Minimum clearance (mm) between `safe_z` and the top of the stock.

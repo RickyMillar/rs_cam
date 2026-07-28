@@ -1425,7 +1425,7 @@ impl ProjectSession {
         );
 
         match tp_result {
-            Ok(annotated) => {
+            Ok((annotated, findings)) => {
                 let mut annotated = annotated;
 
                 if !annotated.toolpath.moves.is_empty() {
@@ -1538,6 +1538,7 @@ impl ProjectSession {
                     move_count: annotated.toolpath.moves.len(),
                     cutting_distance: annotated.toolpath.total_cutting_distance(),
                     rapid_distance: annotated.toolpath.total_rapid_distance(),
+                    standing_material_mm2: findings.standing_material_mm2,
                 };
 
                 let mut debug_trace = debug_recorder.finish();
@@ -3365,6 +3366,15 @@ impl ProjectSession {
         let feeds_result = self.feeds_result_for_toolpath(tc, tool);
         let preconditions = self.precondition_context_for_toolpath(tc);
         let model_refs = self.model_ref_context_for_toolpath(tc);
+        // Generation-time findings ride on the stats of this toolpath's own
+        // generated result. Absent until it has been generated, which is
+        // exactly when there is nothing to report.
+        let stats = self
+            .toolpath_configs
+            .iter()
+            .position(|t| t.id == tc.id)
+            .and_then(|idx| self.results.get(&idx))
+            .map(|r| &r.stats);
 
         let inputs = crate::diagnostics::ToolpathDiagnoseInputs {
             toolpath_id: tc.id,
@@ -3376,6 +3386,7 @@ impl ProjectSession {
             stale_defaults: &stale_defaults,
             preconditions: Some(&preconditions),
             model_refs: Some(&model_refs),
+            stats,
         };
         Ok(crate::diagnostics::diagnose_toolpath_inputs(&inputs))
     }
@@ -5146,6 +5157,7 @@ mod tests {
                 move_count: 0,
                 cutting_distance: 0.0,
                 rapid_distance: 0.0,
+                standing_material_mm2: 0.0,
             },
             debug_trace: None,
             semantic_trace: None,
