@@ -1831,17 +1831,30 @@ fn v3_cascade_ab_ball3() {
 /// This answers the question that actually matters: does the cascade now
 /// beat the all-over-tip pass on time at equal COLUMNS quality — the §0.a
 /// contract the campaign has been chasing since it opened.
-#[test]
-#[ignore = "two full scaled-wanaka chains + 0.25mm measurement sims (long); run with --ignored --nocapture"]
-fn v3_process_proof_ab() {
+/// Install a stderr tracing subscriber for a probe run.
+///
+/// Default filter carries `warn` for the whole crate on top of the
+/// unified_finish info stream, because the campaign's most expensive
+/// defect — scallop silently truncating its ring cascade and leaving a
+/// 28 mm block of standing material — was invisible for weeks purely
+/// because no harness run had a subscriber installed to show its
+/// warning. A warning nobody sees is not a warning.
+fn init_probe_tracing() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("rs_cam_core::unified_finish=info")),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                tracing_subscriber::EnvFilter::new("warn,rs_cam_core::unified_finish=info")
+            }),
         )
         .with_writer(std::io::stderr)
         .without_time()
         .try_init();
+}
+
+#[test]
+#[ignore = "two full scaled-wanaka chains + 0.25mm measurement sims (long); run with --ignored --nocapture"]
+fn v3_process_proof_ab() {
+    init_probe_tracing();
 
     let (which, dials) = dials_from_env("both");
     eprintln!("== PROCESS PROOF at dials: {which} => {dials:?} ==");
@@ -1874,6 +1887,7 @@ fn v3_process_proof_ab() {
 #[test]
 #[ignore = "one cascade chain + measurement sim; set V3_DIALS=shipped|bridges|links|both"]
 fn v3_cascade_dial_isolation() {
+    init_probe_tracing();
     let (which, dials) = dials_from_env("both");
     eprintln!("== DIAL ISOLATION: {which} => {dials:?} ==");
     let path = write_fixture_project(3.0);
@@ -1913,6 +1927,7 @@ fn v3_cascade_dial_isolation() {
 #[test]
 #[ignore = "one partial chain + measurement sim; set V3_STAGE=rough|opa|opb|d"]
 fn v3_shallow_deficit_localize() {
+    init_probe_tracing();
     let stage = std::env::var("V3_STAGE").unwrap_or_else(|_| "opa".to_owned());
     let (enable, disable, ref_name): (&[&str], &[&str], &str) = match stage.as_str() {
         "rough" => (
@@ -1977,6 +1992,7 @@ fn v3_shallow_deficit_localize() {
 #[test]
 #[ignore = "one cascade chain, no measurement sim; set V3_SITE=x,y and V3_SITE_R"]
 fn v3_gouge_site_probe() {
+    init_probe_tracing();
     use rs_cam_core::toolpath::MoveType;
 
     let site = std::env::var("V3_SITE").unwrap_or_else(|_| "198.75,52.75".to_owned());
@@ -2403,6 +2419,7 @@ fn v3_flank_gouge_probe() {
 #[test]
 #[ignore = "one cascade chain + measurement sim; set V3_SITES=x,y;x,y;..."]
 fn v3_column_ladder_probe() {
+    init_probe_tracing();
     let sites_raw = std::env::var("V3_SITES")
         .unwrap_or_else(|_| "198.75,52.75;35.50,149.75;51.25,123.75;99.00,129.75".to_owned());
     let sites: Vec<(f64, f64)> = sites_raw
@@ -2835,6 +2852,7 @@ fn v3_move_attribution_probe() {
 #[test]
 #[ignore = "one cascade chain; pure toolpath analysis, no simulation"]
 fn v3_arc_direction_sanity() {
+    init_probe_tracing();
     use rs_cam_core::toolpath::MoveType;
     /// Beyond this, an arc between close endpoints is a direction error.
     const MAX_PLAUSIBLE_SWEEP_DEG: f64 = 200.0;
