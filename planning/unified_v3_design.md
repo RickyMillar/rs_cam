@@ -1783,3 +1783,93 @@ values through the real project file's round-trip.
    `category: geometry`, sourced from the same `uncut_core_mm2` the
    warning already computes.
 3. **Settle the `Rivers` arc DOC spike** — one `get_cut_trace` call.
+
+### §14d — WHY the node spans are dropped: the remap is fine, the FILTER fires
+
+`RUST_LOG=rs_cam_core::tsp=debug` on the ×1 fixture names all 878 drops:
+865 `Ring N`, 8 `plunge entry`, and **5 routing nodes**. Their old and new
+ranges are the whole story:
+
+| dropped node | old range | new bounds | dilation |
+|---|---|---|---|
+| MidSteep band | `0..200924` | `0..200959` | +35 |
+| Shallow band | `204401..230041` | `204412..230141` | +100 |
+| Shallow band | `230130..234235` | `230143..234326` | +91 |
+| Shallow band | `237333..280484` | `237351..280675` | +191 |
+| MidSteep band | `284500..284820` | `284523..284875` | +55 |
+
+**The remap is CORRECT.** A span of 200 924 moves comes back as 200 959 —
+a dilation of 0.02%, consistent with a handful of re-approach moves
+inserted inside it. These spans were not scattered by the reorder. They
+were computed accurately and then **thrown away by the foreign-intrusion
+post-filter** (`tsp.rs::remap_spans`), which drops any non-Operation span
+if *some* old move from outside it lands inside its new bounds.
+
+That reframes the fix completely: this is not "TSP scrambles the region
+nodes", it is "the intrusion guard is firing on spans whose bounds are
+fine".
+
+**Leading hypothesis for the intruder — the node ranges do not TILE.**
+The same log shows gaps between consecutive dropped nodes:
+`200924→204401` (3 477 moves), `230041→230130` (89),
+`234235→237333` (3 098), `280484→284500` (4 016). Those moves belong to no
+region node at all.
+
+`unified_finish.rs` Step 6 explains where they come from: an incoming
+surface link is emitted *before* `offset` is taken —
+
+```rust
+if let (Some(link), Some(entry)) = (incoming_surface, rp.entry) {
+    for p in &link.pts { stitched.feed_to_with_intent(*p, …, Linking); }
+    stitched.feed_to_with_intent(entry, …, Linking);
+}
+let offset = stitched.moves.len();   // ← node range starts AFTER the link
+```
+
+…so link moves sit outside every `move_range`, while
+`region_node_barriers` puts the barrier at `move_range.start` — *after*
+them. Orphaned link moves therefore share a barrier group with the
+**preceding** node, where the reorder is free to move them into that
+node's range, tripping the guard.
+
+**Not yet proven.** The log gives ranges, not the identity of the
+intruding move. Cheap decisive test, not yet run: log the first intruding
+old index alongside the drop, and check whether it falls in the gap and
+carries `MoveIntent::Linking`. Do that before writing any fix — this
+campaign has three times built the obvious fix for a confirmed mechanism
+and had it measure worse.
+
+**Two candidate fixes, once the intruder is named:**
+
+1. Make the ranges tile — start each node's `move_range` (and its
+   barrier) at the incoming link rather than after it. The link *is* that
+   region's approach, so this is the more truthful model, and it leaves
+   no move outside a node.
+2. Narrow the guard — a span whose own moves all remain contiguous and
+   in-order is trustworthy regardless of what else landed in its bounds.
+   More general, and riskier: it changes semantics for every span kind.
+
+Prefer (1) unless the intruder turns out not to be a link move.
+
+### §14e — item 2 (standing-material diagnostic) is a plumb, not a one-liner
+
+The number exists (`uncut_core_mm2`, already computed for the warning) but
+there is no path from `scallop::generate_scallop_rings_with_cancel` — a
+pure geometry function returning `Result<Vec<Vec<(P3, bool)>>, Cancelled>`
+— to `diagnostics::ToolpathDiagnoseInputs`. Carrying it needs:
+
+1. the ring generator to RETURN the uncut area, not just log it
+   (3 call sites in `scallop.rs`);
+2. the scallop op to carry it out alongside `(Toolpath, Vec<ScallopRuntime
+   Annotation>)` — and `unified_finish` calls the same generator for its
+   MidSteep band, so both paths need it;
+3. a carrier on the result. `AnnotatedToolpath` is the wrong one — 54
+   construction sites and no `Default`, and dressups destructure it
+   field-by-field. **`ToolpathStats` is the right seam: 5 construction
+   sites**, and it is already the generation-statistics slot;
+4. a new `geom.standing_material` ID plus an adapter reading
+   `ToolpathStats`, which today is not among `ToolpathDiagnoseInputs`.
+
+Nothing here is hard; it is simply wider than "the number already exists"
+implied, and it should be done as one deliberate change rather than
+squeezed alongside §14d.
