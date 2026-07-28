@@ -2285,3 +2285,61 @@ guess. And the campaign's most expensive lesson applies squarely here:
 the mechanism has been confirmed for weeks, and the one obvious fix
 attempted so far — raising the cap — made everything 34× worse. Whatever
 is built must be measured on the cascade, not on scallop alone.
+
+### §14l — live verification: check 1 PASSES, and §14c conflated two systems
+
+Re-run on the real wanaka project against the rebuilt binary, full F.4
+ladder, 7 toolpaths generated.
+
+**Check 1 — region spans: PASSES.** `Unified Finish 6 (live v2)`,
+127 253 moves, `spans_valid: true`:
+
+| routing node | before fix | after fix |
+|---|---|---|
+| `MidSteep band` | **DROPPED** | `[0, 56 666)` |
+| `Shallow band` | `[56 717, 74 178)` | `[56 669, 74 180)` |
+| `Shallow band` | `[74 178, 127 251)` | `[74 180, 127 253)` |
+| nodes surviving | **2 of 3** | **3 of 3** |
+| coverage | last 55% | **the whole toolpath** |
+
+The op has only 3 routing nodes on this project (3 `RapidOrderBarrier`
+spans confirm it — one per node), not the fixture's 24, so "2 survivors"
+was one drop, not five. The dropped one was the `MidSteep band` carrying
+the first 44.6%. It is back, and note the two shallow nodes now start
+48 and 0 moves EARLIER than before — that is the fix itself, the ranges
+opening at their incoming link so they tile.
+
+**Correction to §14c.** That section claimed the span destruction was why
+`narrate_toolpath` reported `regions 0`. **That was wrong — they are two
+different telemetry systems.** The narration reads the SEMANTIC trace:
+
+```
+Semantic trace: 183 items (183 move-linked); depth levels 0, regions 0, rings 178.
+```
+
+`unified_finish`'s adapter annotates through `annotate_scallop`, which
+emits ring items and no region items, so the semantic trace never had
+regions to report — before or after the span fix. Structural spans
+(`inspect_spans`) and the semantic trace are independent, and I read one
+symptom as evidence about the other.
+
+So `narrate_toolpath` still says `regions 0` after a fix that fully worked,
+and the honest verdict is: **the span defect is fixed and verified; the
+narration gap is a SEPARATE, still-open defect** — `unified_finish` needs
+its own semantic annotation instead of borrowing scallop's. The
+"raw-move fallback / 76 invented Z levels" is likewise its own thing: a
+surface finish genuinely has no `DepthPass` spans, so the narration is
+falling back as designed and the fallback is simply unhelpful for this op
+family.
+
+**Check 2 — standing material: INCONCLUSIVE.** No `geom.standing_material`
+appears on the unified finish. That is consistent with BOTH "the wiring
+works and no cascade truncated on this geometry" and "the wiring does not
+reach this path", and nothing observed here separates them. The adapter
+itself is unit-proven (§14h sentries), and the ×1 fixture truncates
+readily (837 mm² / 4 461 mm²), but this project may simply not.
+
+**Decisive test, not run:** generate on geometry known to truncate and
+assert the diagnostic appears through the session — an integration test
+rather than a live poke, since it needs a fixture that truncates by
+construction. Do not record check 2 as passing until then.
