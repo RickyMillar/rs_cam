@@ -4129,3 +4129,719 @@ fn v3_recoverable_air_probe() {
     let d_idx = toolpath_index_by_name(&d, "D All-Over Tip");
     recoverable_air("D all-over tip", &d, d_idx);
 }
+
+// ── STEP 1: rest anatomy — does the merge premise even hold? ────────────
+//
+// The reframed question (2026-07-28) is NOT "does staging beat one
+// all-over pass" (closed: not provable on this fixture). It is the one
+// `unified_finish` was actually built for and which no run has ever
+// isolated:
+//
+//   the rest may need contour on the steeps, pencil in the valleys and
+//   rings in between; if each is SPARSE, is merging them into ONE linked
+//   op better than running them as separate sequential ops?
+//
+// Op B already implements exactly that mix — `VerySteep -> waterline`,
+// `MidSteep -> scallop rings`, `Shallow -> raster`, `Crease -> pencil
+// claims` (`unified_finish.rs` step 4). What has never been measured is
+// whether the MERGE pays.
+//
+// The premise has a precondition, and this probe tests it before any A/B
+// is built: merging can only pay if the strategies are sparse AND
+// spatially interleaved, so that running them as separate ops would
+// re-traverse the same ground once per strategy. If they are segregated,
+// N sweeps cost about the same as one and the merge is worth nothing.
+//
+// Crucially, the merged and unfused arms would share the decomposition,
+// the per-region strategy, the parameters and the tool — so the ONLY
+// thing that differs is the order regions are visited in (plus a couple
+// of op-level approaches). That makes the prize exactly:
+//
+//   (hop cost of a strategy-GROUPED tour) - (hop cost of a MIXED tour)
+//
+// computable offline from the emitted region geometry, with no second
+// chain to generate and no measurement sim. Both tours are costed with
+// `machine_kinematics::retract_link_time` — the same integrator the
+// router itself uses — so the model's absolute accuracy cancels and only
+// the delta is load-bearing.
+
+/// The four strategies `unified_finish` dispatches, named by what they
+/// actually emit rather than by band, because the band names are an
+/// implementation detail and the user's question is about strategies.
+///
+/// `None` for anything else — critically, for the scallop emitter's own
+/// `Ring N` annotations. Those are NOT routing units: `unified_finish_
+/// spans` builds the annotation spans with `spans_from_labeled_events`
+/// (each runs to the NEXT annotation) and then SPLICES the region-node
+/// spans in as SIBLINGS, so the two families interleave instead of
+/// nesting and `outer_region_spans` returns both. The router's nodes are
+/// the `region_table`-derived ones alone; a `Ring` is sub-structure
+/// inside one of them, and counting rings as regions inflates the region
+/// count ~100× (measured: 620 outer spans, 615 of them rings).
+fn strategy_of_span(label: &str) -> Option<&'static str> {
+    match label {
+        "VerySteep band" => Some("waterline"),
+        "MidSteep band" => Some("scallop"),
+        "Shallow band" => Some("raster"),
+        "Pencil claims" => Some("pencil"),
+        _ => None,
+    }
+}
+
+/// Strategy visiting order for the UNFUSED stack: steep first, shallow
+/// last, detail last of all — the order a human would sequence three
+/// separate finishing ops in.
+const UNFUSED_ORDER: [&str; 5] = ["waterline", "scallop", "raster", "pencil", "other"];
+
+/// One of Op B's outer Region spans, reduced to what the merge question
+/// needs: which strategy, how much cutting, where it starts and ends, and
+/// which 1 mm footprint cells it touches.
+struct RestRegion {
+    strategy: &'static str,
+    label: String,
+    moves: usize,
+    cutting_mm: f64,
+    entry: rs_cam_core::geo::P3,
+    exit: rs_cam_core::geo::P3,
+    cells: std::collections::HashSet<(i32, i32)>,
+}
+
+/// Stamp a segment's 1 mm footprint cells, walking at 0.5 mm so no cell
+/// is skipped. Footprint, not swept volume — this measures where the op
+/// GOES, which is what decides whether two strategies share ground.
+fn stamp_cells(
+    cells: &mut std::collections::HashSet<(i32, i32)>,
+    a: rs_cam_core::geo::P3,
+    b: rs_cam_core::geo::P3,
+) {
+    let dx = b.x - a.x;
+    let dy = b.y - a.y;
+    let len = (dx * dx + dy * dy).sqrt();
+    let steps = ((len / 0.5).ceil() as usize).max(1);
+    for i in 0..=steps {
+        let t = i as f64 / steps as f64;
+        let x = a.x + dx * t;
+        let y = a.y + dy * t;
+        cells.insert((x.floor() as i32, y.floor() as i32));
+    }
+}
+
+/// Every 1 mm footprint cell an op's cutting moves touch.
+fn op_footprint_cells(
+    s: &ProjectSession,
+    op_index: usize,
+) -> std::collections::HashSet<(i32, i32)> {
+    let mut cells = std::collections::HashSet::new();
+    let Some(result) = s.get_result(op_index) else {
+        return cells;
+    };
+    let moves = &result.annotated().toolpath.moves;
+    for i in 1..moves.len() {
+        if moves[i].move_type.is_cutting() {
+            stamp_cells(&mut cells, moves[i - 1].target, moves[i].target);
+        }
+    }
+    cells
+}
+
+/// Split Op B's toolpath into the ROUTER'S region nodes — the
+/// `region_table`-derived spans only (see `strategy_of_span`), in move
+/// order. Returns the nodes plus the count of emitter sub-structure spans
+/// that were correctly excluded, so the caller can report the difference
+/// rather than silently hide it.
+fn rest_regions(s: &ProjectSession, op_b_idx: usize) -> (Vec<RestRegion>, usize) {
+    use rs_cam_core::toolpath_spans::SpanKind;
+    let result = s
+        .get_result(op_b_idx)
+        .unwrap_or_else(|| panic!("Op B (index {op_b_idx}) not generated"));
+    let ann = result.annotated();
+    let moves = &ann.toolpath.moves;
+    let mut out = Vec::new();
+    let mut sub_structure = 0usize;
+    let mut nodes: Vec<&rs_cam_core::toolpath_spans::Span> = ann
+        .spans
+        .iter()
+        .filter(|sp| sp.kind == SpanKind::Region)
+        .filter(|sp| {
+            if strategy_of_span(&sp.label).is_some() {
+                true
+            } else {
+                sub_structure += 1;
+                false
+            }
+        })
+        .collect();
+    nodes.sort_by_key(|sp| sp.start_move);
+    for span in nodes {
+        let Some(strategy) = strategy_of_span(&span.label) else {
+            continue;
+        };
+        let start = span.start_move.max(1);
+        let end = span.end_move.min(moves.len());
+        let mut cells = std::collections::HashSet::new();
+        let mut entry = None;
+        let mut exit = None;
+        for i in start..end {
+            if !moves[i].move_type.is_cutting() {
+                continue;
+            }
+            stamp_cells(&mut cells, moves[i - 1].target, moves[i].target);
+            if entry.is_none() {
+                entry = Some(moves[i - 1].target);
+            }
+            exit = Some(moves[i].target);
+        }
+        let (Some(entry), Some(exit)) = (entry, exit) else {
+            continue; // a span with no cutting move has no place in a tour
+        };
+        out.push(RestRegion {
+            strategy,
+            label: span.label.to_string(),
+            moves: span.end_move.saturating_sub(span.start_move),
+            cutting_mm: segment_cutting_length_mm(moves, span.start_move, span.end_move),
+            entry,
+            exit,
+            cells,
+        });
+    }
+    (out, sub_structure)
+}
+
+/// Count and time an op's RAPID runs (contiguous `MoveType::Rapid`
+/// sequences = one retract round trip each), split by whether the run
+/// starts inside a routing node or between two of them.
+///
+/// §8's lesson was that this air is COUNT-bound, not distance-bound — a
+/// hop pays two ~`safe_z` Z legs whatever its XY length — so the counts
+/// here are the actionable number, not the millimetres.
+fn rapid_round_trips(
+    s: &ProjectSession,
+    op_index: usize,
+    nodes: &[(usize, usize)],
+) -> (usize, f64, usize, f64) {
+    use rs_cam_core::toolpath::MoveType;
+    let Some(result) = s.get_result(op_index) else {
+        return (0, 0.0, 0, 0.0);
+    };
+    let ann = result.annotated();
+    let moves = &ann.toolpath.moves;
+    let inside = |mi: usize| nodes.iter().any(|&(a, b)| mi >= a && mi < b);
+
+    let (mut in_n, mut in_mm, mut out_n, mut out_mm) = (0usize, 0.0f64, 0usize, 0.0f64);
+    let mut run_start: Option<usize> = None;
+    for i in 0..moves.len() {
+        let is_rapid = matches!(moves[i].move_type, MoveType::Rapid);
+        if is_rapid && run_start.is_none() {
+            run_start = Some(i);
+        }
+        let ends = is_rapid
+            && moves
+                .get(i + 1)
+                .is_none_or(|n| !matches!(n.move_type, MoveType::Rapid));
+        if !ends {
+            continue;
+        }
+        let Some(start) = run_start.take() else {
+            continue;
+        };
+        let mut mm = 0.0;
+        for j in start.max(1)..=i {
+            let (a, b) = (moves[j - 1].target, moves[j].target);
+            mm += ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt();
+        }
+        if inside(start) {
+            in_n += 1;
+            in_mm += mm;
+        } else {
+            out_n += 1;
+            out_mm += mm;
+        }
+    }
+    (in_n, in_mm, out_n, out_mm)
+}
+
+/// Greedy nearest-neighbour tour over `candidates` (indices into
+/// `regions`), starting from `from` and hopping exit -> entry. Returns
+/// the visiting order and the final exit point. Weak as a heuristic, but
+/// applied IDENTICALLY to both the mixed and grouped tours, so it cannot
+/// favour either.
+fn greedy_tour(
+    regions: &[RestRegion],
+    candidates: &[usize],
+    from: rs_cam_core::geo::P3,
+) -> (Vec<usize>, rs_cam_core::geo::P3) {
+    let mut remaining: Vec<usize> = candidates.to_vec();
+    let mut order = Vec::with_capacity(remaining.len());
+    let mut here = from;
+    while !remaining.is_empty() {
+        let mut best = 0usize;
+        let mut best_d = f64::INFINITY;
+        for (slot, &ri) in remaining.iter().enumerate() {
+            let e = regions[ri].entry;
+            let d = (e.x - here.x).powi(2) + (e.y - here.y).powi(2);
+            if d < best_d {
+                best_d = d;
+                best = slot;
+            }
+        }
+        let ri = remaining.remove(best);
+        here = regions[ri].exit;
+        order.push(ri);
+    }
+    (order, here)
+}
+
+/// Kinematics-integrated cost of a whole visiting order's hops, using the
+/// same retract-rapid-replunge model the router costs its own junctions
+/// with.
+#[allow(clippy::too_many_arguments)]
+fn tour_hop_seconds(
+    regions: &[RestRegion],
+    order: &[usize],
+    safe_z: f64,
+    plunge_rate: f64,
+    kin: &rs_cam_core::machine_kinematics::MachineKinematics,
+    max_feed: f64,
+    rapid_feed: f64,
+) -> (f64, f64) {
+    let mut secs = 0.0;
+    let mut mm = 0.0;
+    for pair in order.windows(2) {
+        let from = regions[pair[0]].exit;
+        let to = regions[pair[1]].entry;
+        secs += rs_cam_core::machine_kinematics::retract_link_time(
+            from, to, safe_z, None, plunge_rate, kin, max_feed, rapid_feed,
+        );
+        mm += (to.x - from.x).hypot(to.y - from.y);
+    }
+    (secs, mm)
+}
+
+/// Does the Region-span table actually ACCOUNT for the operation?
+///
+/// The design doc (§2.4) makes "Region spans proving the mix" a MUST, and
+/// every strategy-mix claim this campaign has made reads that table. But
+/// nothing has ever checked that the routing nodes COVER the toolpath. If
+/// they do not, the mix table describes a fraction of the op and every
+/// conclusion drawn from it is scoped to that fraction.
+///
+/// Prints, for both span families: how many moves and how much cutting
+/// length fall inside them, against the operation's own totals.
+fn span_coverage_audit(label: &str, s: &ProjectSession, op_index: usize) {
+    use rs_cam_core::toolpath::MoveIntent;
+    use rs_cam_core::toolpath_spans::SpanKind;
+
+    let result = s
+        .get_result(op_index)
+        .unwrap_or_else(|| panic!("[{label}] op {op_index} not generated"));
+    let ann = result.annotated();
+    let moves = &ann.toolpath.moves;
+    let seg = |i: usize| -> f64 {
+        let (a, b) = (moves[i - 1].target, moves[i].target);
+        ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt()
+    };
+
+    let mut total_cut_mm = 0.0;
+    let mut total_finish_mm = 0.0;
+    for (i, mv) in moves.iter().enumerate().skip(1) {
+        if mv.move_type.is_cutting() {
+            total_cut_mm += seg(i);
+        }
+        if mv.intent == MoveIntent::FinishingCut {
+            total_finish_mm += seg(i);
+        }
+    }
+
+    let mut covered_node = vec![false; moves.len()];
+    let mut covered_sub = vec![false; moves.len()];
+    for sp in ann.spans.iter().filter(|sp| sp.kind == SpanKind::Region) {
+        let target = if strategy_of_span(&sp.label).is_some() {
+            &mut covered_node
+        } else {
+            &mut covered_sub
+        };
+        for flag in target
+            .iter_mut()
+            .take(sp.end_move.min(moves.len()))
+            .skip(sp.start_move)
+        {
+            *flag = true;
+        }
+    }
+
+    let tally = |cov: &[bool]| -> (usize, f64) {
+        let mut n = 0usize;
+        let mut mm = 0.0;
+        for i in 1..moves.len() {
+            if cov[i] && moves[i].move_type.is_cutting() {
+                n += 1;
+                mm += seg(i);
+            }
+        }
+        (n, mm)
+    };
+    let (node_n, node_mm) = tally(&covered_node);
+    let (sub_n, sub_mm) = tally(&covered_sub);
+    let cut_moves = (1..moves.len())
+        .filter(|&i| moves[i].move_type.is_cutting())
+        .count();
+
+    eprintln!("== [{label}] SPAN COVERAGE AUDIT ==");
+    eprintln!(
+        "moves {} | cutting moves {cut_moves} | cutting {total_cut_mm:.0} mm \
+         (of which FinishingCut-tagged {total_finish_mm:.0} mm)",
+        moves.len()
+    );
+    // `spans_valid == false` means a dressup rewrote the move list and
+    // passed the OLD spans through unchanged rather than dropping them
+    // (`dressup.rs`: `let new_spans = if spans_valid { remap } else
+    // { spans }`). Stale ranges then read as nonsense against the new
+    // toolpath — which is exactly what a node "covering" 20 135 moves and
+    // 54 mm of cutting looks like.
+    let node_extent = ann
+        .spans
+        .iter()
+        .filter(|sp| sp.kind == SpanKind::Region && strategy_of_span(&sp.label).is_some())
+        .fold((usize::MAX, 0usize), |(lo, hi), sp| {
+            (lo.min(sp.start_move), hi.max(sp.end_move))
+        });
+    eprintln!(
+        "spans_valid = {} | routing-node spans span moves [{}, {}) of {}",
+        ann.spans_valid,
+        node_extent.0,
+        node_extent.1,
+        moves.len()
+    );
+    eprintln!(
+        "routing NODE spans cover      {node_n:>8} cutting moves ({:.1}%), {node_mm:>10.0} mm ({:.1}%)",
+        100.0 * node_n as f64 / cut_moves.max(1) as f64,
+        100.0 * node_mm / total_cut_mm.max(1e-9)
+    );
+    eprintln!(
+        "emitter SUB-STRUCTURE spans   {sub_n:>8} cutting moves ({:.1}%), {sub_mm:>10.0} mm ({:.1}%)",
+        100.0 * sub_n as f64 / cut_moves.max(1) as f64,
+        100.0 * sub_mm / total_cut_mm.max(1e-9)
+    );
+}
+
+/// STEP 1 of the reframed campaign — characterise the rest before
+/// building anything. Prints the region/strategy mix, how sparse the rest
+/// is against the pass that produced it, whether the strategies are
+/// spatially interleaved, and the ceiling on what merging can be worth.
+///
+/// No measurement sim: this asks a question about the TOOLPATH, not the
+/// surface, so it costs one cascade chain.
+#[test]
+#[ignore = "one cascade chain, no measurement sim; run with --ignored --nocapture"]
+fn v3_rest_anatomy() {
+    init_probe_tracing();
+    let (which, dials) = dials_from_env("shipped");
+    eprintln!("== REST ANATOMY at dials: {which} => {dials:?} ==");
+
+    let path = write_fixture_project(3.0);
+    let mut s = ProjectSession::load(&path)
+        .unwrap_or_else(|e: SessionError| panic!("failed to load {}: {e}", path.display()));
+    apply_branch(&mut s, Branch::Cascade);
+    let op_b_idx = toolpath_index_by_name(&s, "Op B Unified Rest");
+    s.set_toolpath_operation(
+        op_b_idx,
+        OperationConfig::UnifiedFinish(op_b_config(
+            dials.intra_region_hookup_mm,
+            dials.pencil_claims,
+            dials.crease_hookup_mm,
+        )),
+    )
+    .expect("swap Op B config");
+    for i in 0..s.toolpath_count() {
+        let Some(tc) = s.get_toolpath_config(i) else {
+            continue;
+        };
+        let mut d = tc.dressups.clone();
+        d.air_bridge_policy = dials.air_bridge_policy;
+        if let Some(af) = dials.arc_fitting {
+            d.arc_fitting = af;
+        }
+        if let Some(ro) = dials.optimize_rapid_order {
+            d.optimize_rapid_order = ro;
+        }
+        s.set_dressup_config(i, d).expect("set dressups");
+    }
+
+    let outcome = run_chain("rest anatomy", &mut s);
+    let op_a_idx = toolpath_index_by_name(&s, "Op A Ball Finish");
+    let op_b_s = outcome
+        .per_op_s
+        .iter()
+        .find(|(n, _)| n == "Op B Unified Rest")
+        .map(|(_, v)| *v)
+        .unwrap_or(0.0);
+    let op_a_s = outcome
+        .per_op_s
+        .iter()
+        .find(|(n, _)| n == "Op A Ball Finish")
+        .map(|(_, v)| *v)
+        .unwrap_or(0.0);
+
+    let (regions, sub_structure) = rest_regions(&s, op_b_idx);
+    assert!(!regions.is_empty(), "Op B emitted no routing Region nodes");
+    eprintln!(
+        "\nOp B Region spans: {} routing NODES + {sub_structure} emitter sub-structure spans \
+         (scallop `Ring N` etc., siblings not children — see `strategy_of_span`)",
+        regions.len()
+    );
+    span_coverage_audit("Op B", &s, op_b_idx);
+
+    // ── 1. strategy rollup ─────────────────────────────────────────────
+    let mut by_strategy: std::collections::BTreeMap<&'static str, (usize, f64, usize, usize)> =
+        std::collections::BTreeMap::new();
+    let mut all_cells: std::collections::HashSet<(i32, i32)> = std::collections::HashSet::new();
+    for r in &regions {
+        let e = by_strategy.entry(r.strategy).or_insert((0, 0.0, 0, 0));
+        e.0 += 1;
+        e.1 += r.cutting_mm;
+        e.2 += r.moves;
+        e.3 += r.cells.len();
+        all_cells.extend(r.cells.iter().copied());
+    }
+    let total_cut_mm: f64 = regions.iter().map(|r| r.cutting_mm).sum();
+
+    eprintln!("\n== OP B STRATEGY MIX ==");
+    eprintln!(
+        "{:<12} {:>8} {:>14} {:>8} {:>12} {:>9}",
+        "strategy", "regions", "cutting_mm", "%cut", "footprint_mm2", "%area"
+    );
+    let area_total = all_cells.len() as f64;
+    for (strat, (n, mm, _moves, cells)) in &by_strategy {
+        eprintln!(
+            "{:<12} {:>8} {:>14.0} {:>7.1}% {:>12} {:>8.1}%",
+            strat,
+            n,
+            mm,
+            100.0 * mm / total_cut_mm.max(1e-9),
+            cells,
+            100.0 * *cells as f64 / area_total.max(1.0),
+        );
+    }
+    eprintln!(
+        "{:<12} {:>8} {:>14.0} {:>7.1}% {:>12} {:>8.1}%   (footprint sums > distinct: overlap)",
+        "TOTAL",
+        regions.len(),
+        total_cut_mm,
+        100.0,
+        all_cells.len(),
+        100.0
+    );
+
+    // ── 2. sparsity: how much of Op A's ground does Op B revisit? ───────
+    let op_a_cells = op_footprint_cells(&s, op_a_idx);
+    let shared = all_cells.intersection(&op_a_cells).count();
+    eprintln!("\n== SPARSITY (1 mm footprint cells) ==");
+    eprintln!(
+        "Op A (ball all-over) {:>9} cells | Op B (rest) {:>9} cells = {:.1}% of Op A",
+        op_a_cells.len(),
+        all_cells.len(),
+        100.0 * all_cells.len() as f64 / op_a_cells.len().max(1) as f64
+    );
+    eprintln!(
+        "Op B cells also touched by Op A: {shared} ({:.1}% of Op B)",
+        100.0 * shared as f64 / all_cells.len().max(1) as f64
+    );
+
+    // ── 2b. EFFICIENCY WITH BOUNDS — area finished per second ──────────
+    //
+    // The user's metric, and the one raw time cannot be argued out of:
+    // material removed is the wrong yardstick for a finishing pass (Op B
+    // removes almost nothing by design), and total seconds depends on
+    // every free dial. Surface AREA COVERED per second is invariant to
+    // the tool and to the part's size, and it is what a finishing pass is
+    // actually buying.
+    let node_ranges: Vec<(usize, usize)> = {
+        let ann = s.get_result(op_b_idx).expect("Op B result");
+        let ann = ann.annotated();
+        ann.spans
+            .iter()
+            .filter(|sp| sp.kind == rs_cam_core::toolpath_spans::SpanKind::Region)
+            .filter(|sp| strategy_of_span(&sp.label).is_some())
+            .map(|sp| (sp.start_move, sp.end_move))
+            .collect()
+    };
+    let (in_n, in_mm, out_n, out_mm) = rapid_round_trips(&s, op_b_idx, &node_ranges);
+    let (a_in_n, a_in_mm, a_out_n, a_out_mm) = rapid_round_trips(&s, op_a_idx, &[]);
+
+    let mut d_sess = ProjectSession::load(&path)
+        .unwrap_or_else(|e: SessionError| panic!("failed to load {}: {e}", path.display()));
+    apply_branch(&mut d_sess, Branch::AllOverTip);
+    let d_outcome = run_chain("rest anatomy D", &mut d_sess);
+    let d_idx = toolpath_index_by_name(&d_sess, "D All-Over Tip");
+    let d_cells = op_footprint_cells(&d_sess, d_idx);
+    let d_s = d_outcome
+        .per_op_s
+        .iter()
+        .find(|(n, _)| n == "D All-Over Tip")
+        .map(|(_, v)| *v)
+        .unwrap_or(0.0);
+    let (d_in_n, _, _, _) = rapid_round_trips(&d_sess, d_idx, &[(0, usize::MAX)]);
+
+    eprintln!("\n== EFFICIENCY WITH BOUNDS (area finished per second) ==");
+    eprintln!(
+        "{:<26} {:>10} {:>12} {:>12} {:>12}",
+        "pass", "seconds", "area_mm2", "mm2/s", "rapid_trips"
+    );
+    let row = |name: &str, secs: f64, area: usize, trips: usize| {
+        eprintln!(
+            "{name:<26} {secs:>10.0} {area:>12} {:>12.3} {trips:>12}",
+            area as f64 / secs.max(1e-9)
+        );
+    };
+    row("Op A ball all-over", op_a_s, op_a_cells.len(), a_in_n + a_out_n);
+    row("Op B unified rest", op_b_s, all_cells.len(), in_n + out_n);
+    row(
+        "cascade (A+B)",
+        op_a_s + op_b_s,
+        op_a_cells.union(&all_cells).count(),
+        a_in_n + a_out_n + in_n + out_n,
+    );
+    row("D all-over tip", d_s, d_cells.len(), d_in_n);
+    eprintln!(
+        "\nOp B rapid round trips: {in_n} inside a routing node ({in_mm:.0} mm), \
+         {out_n} between nodes ({out_mm:.0} mm)"
+    );
+    eprintln!(
+        "Op A rapid round trips: {} ({:.0} mm)",
+        a_in_n + a_out_n,
+        a_in_mm + a_out_mm
+    );
+
+    // ── 3. interleaving: would N sweeps re-traverse the same ground? ────
+    const TILE: i32 = 10;
+    let mut tiles: std::collections::HashMap<(i32, i32), std::collections::BTreeSet<&'static str>> =
+        std::collections::HashMap::new();
+    for r in &regions {
+        for c in &r.cells {
+            tiles
+                .entry((c.0.div_euclid(TILE), c.1.div_euclid(TILE)))
+                .or_default()
+                .insert(r.strategy);
+        }
+    }
+    let mut by_count = [0usize; 5];
+    for set in tiles.values() {
+        by_count[set.len().min(4)] += 1;
+    }
+    let multi: usize = by_count[2..].iter().sum();
+    eprintln!("\n== INTERLEAVING ({TILE} mm tiles) ==");
+    eprintln!(
+        "tiles touched by Op B: {} | 1 strategy {} | 2 {} | 3 {} | 4 {}",
+        tiles.len(),
+        by_count[1],
+        by_count[2],
+        by_count[3],
+        by_count[4]
+    );
+    eprintln!(
+        "tiles hosting >1 strategy: {multi} ({:.1}%)  <- the ground an unfused stack re-traverses",
+        100.0 * multi as f64 / tiles.len().max(1) as f64
+    );
+
+    // ── 4. the prize ceiling: mixed tour vs strategy-grouped tour ───────
+    let machine = s.machine();
+    let kin = machine.effective_kinematics();
+    let max_feed = machine.cutting_feed_ceiling_mm_min().max(1.0);
+    let rapid_feed = machine.max_feed_mm_min.max(1.0);
+    let plunge_rate = 150.0; // `op_b_config`
+    let safe_z = s
+        .get_result(op_b_idx)
+        .expect("Op B result")
+        .annotated()
+        .toolpath
+        .moves
+        .iter()
+        .filter(|m| matches!(m.move_type, rs_cam_core::toolpath::MoveType::Rapid))
+        .map(|m| m.target.z)
+        .fold(f64::NEG_INFINITY, f64::max);
+
+    let emitted: Vec<usize> = (0..regions.len()).collect();
+    let start = regions[0].entry;
+    let (mixed_order, _) = greedy_tour(&regions, &emitted, start);
+    let mut grouped_order: Vec<usize> = Vec::with_capacity(regions.len());
+    let mut here = start;
+    for strat in UNFUSED_ORDER {
+        let group: Vec<usize> = (0..regions.len())
+            .filter(|&i| regions[i].strategy == strat)
+            .collect();
+        if group.is_empty() {
+            continue;
+        }
+        let (ord, end) = greedy_tour(&regions, &group, here);
+        here = end;
+        grouped_order.extend(ord);
+    }
+
+    let cost = |order: &[usize]| {
+        tour_hop_seconds(
+            &regions,
+            order,
+            safe_z,
+            plunge_rate,
+            &kin,
+            max_feed,
+            rapid_feed,
+        )
+    };
+    let (emit_s, emit_mm) = cost(&emitted);
+    let (mixed_s, mixed_mm) = cost(&mixed_order);
+    let (grouped_s, grouped_mm) = cost(&grouped_order);
+
+    eprintln!("\n== THE PRIZE: what merging can be worth ==");
+    eprintln!("safe_z {safe_z:.1} mm, rapid {rapid_feed:.0} mm/min, {} hops", regions.len().saturating_sub(1));
+    eprintln!(
+        "{:<34} {:>12} {:>12}",
+        "inter-region tour", "hop_seconds", "hop_mm"
+    );
+    eprintln!("{:<34} {:>12.1} {:>12.0}", "as emitted (router's order)", emit_s, emit_mm);
+    eprintln!("{:<34} {:>12.1} {:>12.0}", "greedy NN, mixed  = MERGED", mixed_s, mixed_mm);
+    eprintln!("{:<34} {:>12.1} {:>12.0}", "greedy NN, grouped = UNFUSED", grouped_s, grouped_mm);
+    let prize_s = grouped_s - mixed_s;
+    eprintln!(
+        "\nPRIZE (unfused - merged) = {prize_s:+.1}s = {:+.2}% of Op B ({op_b_s:.0}s), \
+         {:+.2}% of the finish stack ({:.0}s)",
+        100.0 * prize_s / op_b_s.max(1e-9),
+        100.0 * prize_s / (op_a_s + op_b_s).max(1e-9),
+        op_a_s + op_b_s
+    );
+    eprintln!(
+        "Both arms share the decomposition, strategies, params and tool, so this hop \
+         delta IS the merge's whole mechanism (plus ~{} op-level approaches the \
+         unfused stack pays and the merged op does not).",
+        by_strategy.len().saturating_sub(1)
+    );
+
+    // ── 5. the region table (largest first, tail summarised) ───────────
+    let mut idx: Vec<usize> = (0..regions.len()).collect();
+    idx.sort_by(|&a, &b| regions[b].cutting_mm.total_cmp(&regions[a].cutting_mm));
+    eprintln!("\n== REGION TABLE (top 25 by cutting length) ==");
+    eprintln!(
+        "{:<6} {:<22} {:<11} {:>8} {:>12} {:>10}",
+        "rank", "span label", "strategy", "moves", "cutting_mm", "cells"
+    );
+    for (rank, &i) in idx.iter().take(25).enumerate() {
+        let r = &regions[i];
+        eprintln!(
+            "{:<6} {:<22} {:<11} {:>8} {:>12.1} {:>10}",
+            rank + 1,
+            r.label,
+            r.strategy,
+            r.moves,
+            r.cutting_mm,
+            r.cells.len()
+        );
+    }
+    if idx.len() > 25 {
+        let tail_mm: f64 = idx[25..].iter().map(|&i| regions[i].cutting_mm).sum();
+        eprintln!(
+            "... {} more regions, {tail_mm:.0} mm ({:.1}% of cutting)",
+            idx.len() - 25,
+            100.0 * tail_mm / total_cut_mm.max(1e-9)
+        );
+    }
+}
