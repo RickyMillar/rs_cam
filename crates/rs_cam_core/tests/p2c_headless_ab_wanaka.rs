@@ -975,7 +975,7 @@ fn p2c_unified_phase_probe() {
             safe_z: 15.0,
             stock_to_leave: 0.0,
         };
-        let (tp, _anns) = scallop_toolpath_structured_annotated_with_cancel(
+        let (tp, _anns, _report) = scallop_toolpath_structured_annotated_with_cancel(
             &mesh,
             &index,
             &cutter,
@@ -1090,7 +1090,7 @@ fn p2c_scallop_height_cost_curve() {
             stock_to_leave: 0.0,
         };
         let t = Instant::now();
-        let (tp, _anns) = scallop_toolpath_structured_annotated_with_cancel(
+        let (tp, _anns, _report) = scallop_toolpath_structured_annotated_with_cancel(
             &mesh,
             &index,
             &cutter,
@@ -1197,7 +1197,7 @@ fn p2g_ring_dump() {
     };
 
     let t = Instant::now();
-    let (tp_b, _) = scallop_toolpath_structured_annotated_with_cancel(
+    let (tp_b, _, _) = scallop_toolpath_structured_annotated_with_cancel(
         &mesh,
         &index,
         &cutter,
@@ -1211,7 +1211,7 @@ fn p2g_ring_dump() {
     dump("b75_mid", &tp_b);
 
     let t = Instant::now();
-    let (tp_d, _) = scallop_toolpath_structured_annotated_with_cancel(
+    let (tp_d, _, _) = scallop_toolpath_structured_annotated_with_cancel(
         &mesh, &index, &cutter, &sp, None, None, &cancel,
     )
     .expect("D all-over scallop");

@@ -465,6 +465,11 @@ pub struct UnifiedFinishReport {
     /// (`UnifiedFinishParams::intra_region_hookup_mm`). All zero when the
     /// pass is disabled.
     pub relink: RelinkTotals,
+    /// Region-interior area (mm²) left UNCUT by a mid-steep scallop ring
+    /// cascade that hit `max_rings` before collapsing, summed over every
+    /// mid-steep region. `0.0` when every cascade collapsed normally.
+    /// See [`crate::scallop::ScallopReport::uncut_core_mm2`].
+    pub uncut_core_mm2: f64,
 }
 
 /// Summed [`crate::surface_link::RelinkReport`] counters across regions.
@@ -927,6 +932,7 @@ pub fn unified_finish_toolpath_with_cancel(
     let mut region_paths: Vec<RegionPath> = Vec::new();
     let mut shallow_grid: Option<DropCutterGrid> = None;
 
+    let mut uncut_core_mm2 = 0.0_f64;
     for (region_index, region) in planned.regions.iter().enumerate() {
         check_cancel(cancel)?;
         let region_set = RegionSet::new(vec![region.polygon.clone()]);
@@ -992,15 +998,20 @@ pub fn unified_finish_toolpath_with_cancel(
                 // classification (step 1, above) reads the true surface.
                 // This is the P2.b "classify true, generate offset" split
                 // from the design doc, not an inconsistency.
-                scallop_toolpath_structured_annotated_with_cancel(
-                    mesh,
-                    index,
-                    cutter,
-                    &sp,
-                    debug,
-                    Some(&region_set),
-                    cancel,
-                )?
+                let (tp, anns, scallop_report) =
+                    scallop_toolpath_structured_annotated_with_cancel(
+                        mesh,
+                        index,
+                        cutter,
+                        &sp,
+                        debug,
+                        Some(&region_set),
+                        cancel,
+                    )?;
+                // Summed across every mid-steep region, so a truncated
+                // cascade in ANY of them reaches the op's report.
+                uncut_core_mm2 += scallop_report.uncut_core_mm2;
+                (tp, anns)
             }
             FinishBand::Shallow => {
                 let grid = match shallow_grid.as_ref() {
@@ -1337,6 +1348,7 @@ pub fn unified_finish_toolpath_with_cancel(
     }
     report.claims = claims_report;
     report.region_table = region_table;
+    report.uncut_core_mm2 = uncut_core_mm2;
 
     Ok((stitched, annotations, report))
 }

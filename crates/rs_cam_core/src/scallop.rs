@@ -415,7 +415,7 @@ fn generate_scallop_rings(
     min_z: f64,
     max_rings: usize,
     chord_tolerance: f64,
-) -> Vec<Vec<(P3, bool)>> {
+) -> RingCascade {
     let never_cancel = || false;
     generate_scallop_rings_with_cancel(
         boundary,
@@ -453,7 +453,7 @@ fn generate_scallop_rings_with_cancel(
     max_rings: usize,
     chord_tolerance: f64,
     cancel: &dyn CancelCheck,
-) -> Result<Vec<Vec<(P3, bool)>>, Cancelled> {
+) -> Result<RingCascade, Cancelled> {
     let lift_ctx = RingLiftCtx {
         mesh,
         index,
@@ -469,7 +469,9 @@ fn generate_scallop_rings_with_cancel(
     // First ring: the boundary itself, lifted to 3D
     let first_ring = ring_to_3d(&boundary.exterior, &lift_ctx);
     if first_ring.len() < 3 {
-        return Ok(rings_3d);
+        // Degenerate boundary — nothing was cut, but nothing was LEFT
+        // uncut either: there is no region interior to report.
+        return Ok((rings_3d, 0.0));
     }
     rings_3d.push(first_ring);
 
@@ -547,11 +549,13 @@ fn generate_scallop_rings_with_cancel(
         current_polys = next_polys;
     }
 
+    let mut uncut_core_mm2 = 0.0;
     if exhausted {
         let remaining: f64 = current_polys
             .iter()
             .map(|p| crate::polygon::shoelace_area(&p.exterior).abs())
             .sum();
+        uncut_core_mm2 = remaining;
         tracing::warn!(
             max_rings,
             rings_emitted = rings_3d.len(),
@@ -564,7 +568,7 @@ fn generate_scallop_rings_with_cancel(
         );
     }
 
-    Ok(rings_3d)
+    Ok((rings_3d, uncut_core_mm2))
 }
 
 /// Index of the point on `ring` closest to `target` among points that
@@ -605,6 +609,30 @@ fn rotate_ring(ring: &[(P3, bool)], start_idx: usize) -> Vec<(P3, bool)> {
     result
 }
 
+/// One boundary region's lifted rings, paired with the interior area the
+/// cascade failed to reach. `bool` per point is `ring_to_3d`'s keep flag.
+type RingCascade = (Vec<Vec<(P3, bool)>>, f64);
+
+/// What the ring cascade found out about the geometry it just cut.
+///
+/// Exists so a generation-time finding can reach the diagnostics pipeline
+/// instead of dying in a `tracing::warn!`. The campaign lost weeks to a
+/// 28 mm block of standing material that was warned about on every run and
+/// visible to nobody — see `planning/unified_v3_design.md` §13/§14c.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct ScallopReport {
+    /// Region-interior area (mm²) the ring cascade LEFT UNCUT because it
+    /// hit `max_rings` before the offsets collapsed, summed over every
+    /// boundary region. `0.0` when every cascade collapsed normally.
+    ///
+    /// Known defect (`planning/v3_workplan.md`): the cap is budgeted from
+    /// the FLAT-ground (widest) stepover while the loop selects a smaller
+    /// one on every slope. Raising the cap alone measured far worse
+    /// (Op B +92% time, deep over-cut 34×), so this reports the symptom
+    /// until `ring_stepover`'s min-across-ring collapse is fixed.
+    pub uncut_core_mm2: f64,
+}
+
 /// Generate a scallop finishing toolpath.
 ///
 /// Produces concentric offset contours with variable stepover that maintains
@@ -617,7 +645,7 @@ pub fn scallop_toolpath(
     cutter: &dyn MillingCutter,
     params: &ScallopParams,
 ) -> Toolpath {
-    let (tp, _) = scallop_toolpath_structured_annotated(mesh, index, cutter, params, None);
+    let (tp, _, _) = scallop_toolpath_structured_annotated(mesh, index, cutter, params, None);
     tp
 }
 
@@ -636,7 +664,7 @@ pub fn scallop_toolpath_structured_annotated(
     cutter: &dyn MillingCutter,
     params: &ScallopParams,
     debug: Option<&ToolpathDebugContext>,
-) -> (Toolpath, Vec<ScallopRuntimeAnnotation>) {
+) -> (Toolpath, Vec<ScallopRuntimeAnnotation>, ScallopReport) {
     let never_cancel = || false;
     scallop_toolpath_structured_annotated_with_cancel(
         mesh,
@@ -671,8 +699,9 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
     debug: Option<&ToolpathDebugContext>,
     boundary_regions: Option<&RegionSet<'_>>,
     cancel: &dyn CancelCheck,
-) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>), Cancelled> {
+) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>, ScallopReport), Cancelled> {
     check_cancel(cancel)?;
+    let mut uncut_core_mm2 = 0.0_f64;
     // Physical extent (heightmap padding / grid coverage) keeps the FULL
     // tool radius; all cusp/stepover math uses the cusp-forming radius
     // (tip sphere for tapered tools — see `cusp_radius`).
@@ -801,7 +830,7 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
     let mut rings: Vec<Vec<(P3, bool)>> = Vec::new();
     for region_boundary in &region_boundaries {
         check_cancel(cancel)?;
-        let region_rings = generate_scallop_rings_with_cancel(
+        let (region_rings, region_uncut) = generate_scallop_rings_with_cancel(
             region_boundary,
             mesh,
             index,
@@ -817,12 +846,17 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
             cancel,
         )?;
         rings.extend(region_rings);
+        uncut_core_mm2 += region_uncut;
     }
 
     info!(rings = rings.len(), "Scallop rings generated");
 
     if rings.is_empty() {
-        return Ok((Toolpath::new(), Vec::new()));
+        return Ok((
+            Toolpath::new(),
+            Vec::new(),
+            ScallopReport { uncut_core_mm2 },
+        ));
     }
 
     // Apply direction
@@ -1048,7 +1082,7 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
         }
     }
 
-    Ok((tp, annotations))
+    Ok((tp, annotations, ScallopReport { uncut_core_mm2 }))
 }
 
 pub fn scallop_toolpath_annotated(
@@ -1058,7 +1092,7 @@ pub fn scallop_toolpath_annotated(
     params: &ScallopParams,
     debug: Option<&ToolpathDebugContext>,
 ) -> (Toolpath, Vec<(usize, String)>) {
-    let (tp, annotations) =
+    let (tp, annotations, _report) =
         scallop_toolpath_structured_annotated(mesh, index, cutter, params, debug);
     (tp, runtime_annotations_to_labels(&annotations))
 }
@@ -1184,6 +1218,70 @@ mod tests {
         );
     }
 
+    /// Regression sentry: a ring cascade that hits `max_rings` before the
+    /// offsets collapse must REPORT the interior area it left standing.
+    ///
+    /// The value was previously computed only to build a `tracing::warn!`,
+    /// which meant nobody saw it: the campaign shipped a 28 mm block of
+    /// unmachined material for weeks because no harness run installed a
+    /// subscriber, and the live GUI has no diagnostic channel for it at all
+    /// (`planning/unified_v3_design.md` §13/§14c). Returning it is what lets
+    /// it reach one.
+    ///
+    /// Paired with `test_scallop_rings_converge`, which asserts the same
+    /// fixture reports 0.0 when its cap is adequate — so this cannot pass by
+    /// reporting a non-zero area unconditionally.
+    #[test]
+    fn ring_cascade_reports_uncut_core_when_capped() {
+        let (mesh, si) = make_flat_mesh();
+        let cutter = ball_cutter();
+        let tool_radius = cutter.radius();
+
+        let bbox = &mesh.bbox;
+        let boundary = Polygon2::new(vec![
+            P2::new(bbox.min.x, bbox.min.y),
+            P2::new(bbox.max.x, bbox.min.y),
+            P2::new(bbox.max.x, bbox.max.y),
+            P2::new(bbox.min.x, bbox.max.y),
+        ]);
+
+        let never_cancel = || false;
+        let surface = crate::finish_setup::build_finish_surface_with_cell_size_and_cancel(
+            &mesh, &si, &cutter, 1.0, &never_cancel,
+        )
+        .unwrap();
+
+        // Three rings on a 50 mm square cannot reach the middle.
+        let (rings, uncut_core_mm2) = generate_scallop_rings(
+            &boundary,
+            &mesh,
+            &si,
+            &cutter,
+            &surface.slope_map,
+            &surface.heightmap,
+            tool_radius,
+            0.1,
+            0.0,
+            mesh.bbox.min.z,
+            3,
+            0.5,
+        );
+
+        // `max_rings` bounds the OFFSET LOOP; the boundary itself is pushed
+        // before it, so a bound cap emits `max_rings + 1` rings. The field
+        // logs say the same thing (`max_rings=504 rings_emitted=505`).
+        assert_eq!(
+            rings.len(),
+            4,
+            "boundary ring + max_rings offset iterations"
+        );
+        assert!(
+            uncut_core_mm2 > 100.0,
+            "a 50 mm square capped at 3 rings leaves a large uncut core, \
+             got {uncut_core_mm2} mm²"
+        );
+    }
+
     #[test]
     fn test_scallop_rings_converge() {
         // Rings should progressively shrink until the polygon collapses
@@ -1213,7 +1311,7 @@ mod tests {
         let surface_hm = surface.heightmap;
         let slope_map = surface.slope_map;
 
-        let rings = generate_scallop_rings(
+        let (rings, uncut_core_mm2) = generate_scallop_rings(
             &boundary,
             &mesh,
             &si,
@@ -1232,6 +1330,14 @@ mod tests {
             rings.len() >= 3,
             "Should produce multiple rings on 50mm flat, got {}",
             rings.len()
+        );
+
+        // The cascade collapsed on its own, so nothing was left standing.
+        // This is the control for `ring_cascade_reports_uncut_core_when_capped`
+        // below: same fixture, adequate cap, zero standing material.
+        assert_eq!(
+            uncut_core_mm2, 0.0,
+            "a cascade that collapses within its cap leaves no uncut core"
         );
 
         // Ring count should be bounded (polygon eventually collapses)
@@ -1618,7 +1724,7 @@ mod tests {
         };
         let never_cancel = || false;
 
-        let (tp, _) = scallop_toolpath_structured_annotated_with_cancel(
+        let (tp, _, _) = scallop_toolpath_structured_annotated_with_cancel(
             &mesh,
             &si,
             &cutter,
@@ -1659,7 +1765,7 @@ mod tests {
 
         let left_half_regions = std::slice::from_ref(&left_half);
         let region_set = RegionSet::from_slice(left_half_regions);
-        let (tp, _) = scallop_toolpath_structured_annotated_with_cancel(
+        let (tp, _, _) = scallop_toolpath_structured_annotated_with_cancel(
             &mesh,
             &si,
             &cutter,
@@ -1716,7 +1822,7 @@ mod tests {
         };
         let never_cancel = || false;
 
-        let (tp, _) = scallop_toolpath_structured_annotated_with_cancel(
+        let (tp, _, _) = scallop_toolpath_structured_annotated_with_cancel(
             &mesh,
             &si,
             &cutter,

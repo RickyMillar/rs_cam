@@ -2022,3 +2022,53 @@ evidence, the GUI's region panel, and `narrate_toolpath`'s strategy mix —
 which reported `regions 0` on the live project. Every strategy-mix claim
 made at shipped dials before this fix was measured through a vector
 missing 87% of its regions.
+
+### §14h — standing material: the number now ESCAPES, the channel is a decision
+
+§14e scoped item 2 as a four-step plumb. Steps 1–2 are done; step 3 turned
+out to be an architectural choice rather than a mechanical one, so it is
+written down here instead of guessed at.
+
+**Done (`ScallopReport`).** `generate_scallop_rings_with_cancel` now
+returns `(rings, uncut_core_mm2)` instead of computing that area purely to
+build a `tracing::warn!` and throwing it away. It surfaces through
+`scallop_toolpath_structured_annotated{,_with_cancel}` as a third tuple
+element — matching `unified_finish`'s existing `(tp, anns, report)` idiom —
+and `UnifiedFinishReport` gained `uncut_core_mm2`, summed across every
+mid-steep region so a truncated cascade in any of them is visible.
+
+Two sentries, deliberately paired so neither can pass vacuously:
+
+- `scallop::tests::ring_cascade_reports_uncut_core_when_capped` — a 50 mm
+  square capped at 3 offset iterations reports > 100 mm² standing;
+- `test_scallop_rings_converge` — the SAME fixture with an adequate cap
+  reports exactly `0.0`.
+
+The first also pins a real off-by-one worth knowing: `max_rings` bounds
+the OFFSET LOOP, and the boundary ring is pushed before it, so a bound cap
+emits `max_rings + 1` rings. The field logs said so all along
+(`max_rings=504 rings_emitted=505`) and nobody had read it as a fact.
+
+**The remaining step, and why it stopped here.** The value now reaches the
+op adapter in `compute/execute.rs`. It cannot reach
+`diagnostics::ToolpathDiagnoseInputs` because **`GeneratedToolpath` is a
+type alias for `AnnotatedToolpath`** — the adapters return the toolpath and
+nothing else, so there is no per-op findings channel at all. Three options,
+none obviously right:
+
+| option | cost | objection |
+|---|---|---|
+| field on `AnnotatedToolpath` | **54 construction sites**, no `Default`; every dressup destructures field-by-field | a *diagnostic* finding does not need to survive dressups, and every carrier that must be threaded through them is a `generate_via_core`-class bug waiting to happen |
+| make `GeneratedToolpath` a real struct (`{ annotated, findings }`) | ~20 adapter signatures | the honest model — findings are generation output, not toolpath geometry — but it touches every operation family |
+| return findings beside the toolpath from `execute_operation_annotated*` | 2 signatures + their callers | narrowest, but adds a second return channel next to an existing one |
+
+`ToolpathStats` (5 construction sites, derives `Default`, not serde) is
+still the right *destination* once a channel exists — it is already the
+generation-statistics slot, and `ToolpathDiagnoseInputs` would gain one
+optional field plus a `geom.standing_material` adapter.
+
+**Recommendation: option 2.** `GeneratedToolpath` being an alias for the
+toolpath is exactly why this finding had nowhere to go, and the same gap
+will block the next generation-time finding. That is a "consolidate, don't
+patch" change and it wants to be its own commit with its own gate run —
+not tacked onto this one.
