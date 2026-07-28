@@ -1906,3 +1906,52 @@ The lesson is the campaign's own, arriving from a new direction: this one
 was not a bad instrument or a subtle frame bug. It was reading a table of
 filtered rows as if it were a table of consecutive ones. **Before drawing
 a structural conclusion from a list, check that the list is not filtered.**
+
+### §14f — the Rivers DOC spike is NOT arc-fit (2026-07-28)
+
+Item 1 from §14c, settled by isolation on the live project.
+
+`Rivers (back)` is a `project_curve` op, 20° V-bit, **commanded depth
+0.4 mm**, and the simulation reported **peak axial DOC 6.07 mm** — 15×
+commanded — on an `ArcCCW` move. Since `project_curve` follows a sampled
+polyline, every arc in it comes from arc fitting, and arc fitting
+interpolates Z linearly across the chord it replaced. That is the §12
+family and it looked like a strong lead.
+
+`arc_fitting = false`, regenerate (3 244 moves vs 2 043 arc-fitted, so the
+arcs really are gone — 0 arcs at every Z level), re-simulate:
+
+| | arc_fitting ON | arc_fitting OFF |
+|---|---|---|
+| peak axial DOC | **6.07 mm** | **6.07 mm** |
+| position | (111.7, 39.6) | **(111.7, 39.6)** |
+| z | 3.884 | 3.885 |
+| move | 174, `ArcCCW` | 325, **`Linear`** |
+| moves / cutting | 2 043 / 2 498 mm | 3 244 / 2 531 mm |
+
+**Identical value, identical position.** The move that dives is the same
+move; only its representation changed. Arc fitting is not the cause, and
+the `a6841e1` invariant is not implicated. Cleared.
+
+The spike is still real — 6.07 mm on a 0.4 mm carve — so it belongs to one
+of the narration's other two candidates. The likelier is the one the op's
+own config points at: `Rivers (back)` runs on **remaining stock**
+(`stock_source` rest — it is one of the ops that fails F.4 from fresh
+state), and a curve crossing an un-roughed step would engage exactly like
+this. That would make it a *planning* condition, not an engine defect.
+Distinguishing it from "lift-function bridging" needs the stock height at
+(111.7, 39.6) against the projected curve height there — not run.
+
+**This is the fourth time this campaign has confirmed a plausible
+mechanism and had the isolation say it was not the cause** (§9's linker,
+§11's chord fix, the ring cap, now this). The pattern is stable enough to
+plan around: an explanation that fits the evidence is a hypothesis, and
+the isolation is cheap compared to the fix.
+
+Worth noting separately, seen while chasing this: `Rivers (back)` spends
+**510 s of its 787 s in entry moves** (`runtime_by_intent.entry_s`) against
+81 s of cutting. The 6-view render shows why — ~150 tall vertical plunges,
+one per curve segment, at `plunge_rate` 150 mm/min. That is 65% of the
+operation, and it is not a defect, just an un-tuned linking cost on an op
+with 151 separate curve fragments. Same COUNT-bound shape as §14's finding
+about the rest pass.
