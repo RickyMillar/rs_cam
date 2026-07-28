@@ -211,7 +211,7 @@ pub fn optimize_rapid_order(annotated: AnnotatedToolpath, safe_z: f64) -> Annota
     let remap = MoveRemap { old_to_new };
 
     let (new_spans, new_valid) = if input_valid {
-        (remap_spans(&spans, &remap, new_n), true)
+        (remap_spans(&spans, &remap, new_n, &toolpath.moves), true)
     } else {
         (spans, false)
     };
@@ -469,7 +469,7 @@ fn fill_group_rapids(
 /// per-move `MoveIntent` union in the metrics stamper
 /// (`compute/simulate.rs`).
 #[allow(clippy::indexing_slicing)]
-fn remap_spans(spans: &[Span], remap: &MoveRemap, new_n: usize) -> Vec<Span> {
+fn remap_spans(spans: &[Span], remap: &MoveRemap, new_n: usize, moves: &[Move]) -> Vec<Span> {
     spans
         .iter()
         .filter_map(|s| {
@@ -486,12 +486,19 @@ fn remap_spans(spans: &[Span], remap: &MoveRemap, new_n: usize) -> Vec<Span> {
                 // Any old move *outside* the span that non-trivially
                 // overlaps `bounds` means the span's contents got
                 // interleaved with foreign moves by the reorder.
+                // `find` rather than `any` so the log can NAME the intruder.
+                // Which move intrudes is the whole diagnosis: a span whose
+                // own remapped bounds are near-exact (measured on wanaka: a
+                // 200 924-move region node came back as 200 959, a 0.02%
+                // dilation) is not "scattered by the reorder" — it is being
+                // discarded by this guard because some unrelated move landed
+                // in its range. See `planning/unified_v3_design.md` §14d.
                 let foreign_intrusion = remap
                     .old_to_new
                     .iter()
                     .enumerate()
                     .filter(|(i, _)| *i < s.start_move || *i >= s.end_move)
-                    .any(|(_, slot)| {
+                    .find(|(_, slot)| {
                         slot.as_ref().is_some_and(|r| {
                             // Non-trivial overlap: the slot covers an actual
                             // new-move index (start < end) AND that index is
@@ -500,12 +507,18 @@ fn remap_spans(spans: &[Span], remap: &MoveRemap, new_n: usize) -> Vec<Span> {
                         })
                     });
 
-                if foreign_intrusion {
+                if let Some((intruder_old_idx, intruder_new)) = foreign_intrusion {
+                    let intruder_intent = moves.get(intruder_old_idx).map(|m| m.intent);
+                    let before_span = intruder_old_idx < s.start_move;
                     tracing::debug!(
                         span_kind = ?s.kind,
                         span_label = %s.label,
                         old_range = ?(s.start_move..s.end_move),
                         new_bounds = ?bounds,
+                        intruder_old_idx,
+                        intruder_new = ?intruder_new,
+                        ?intruder_intent,
+                        before_span,
                         "TSP rapid-order optimization split a non-Operation span; \
                          dropping it (remaining spans stay valid; per-move intents \
                          keep transit classification for its moves)"
