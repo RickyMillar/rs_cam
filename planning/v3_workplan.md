@@ -261,3 +261,80 @@ Listed so they are not rediscovered, not scheduled here.
   Contradiction moved to the shared stamping path. Item 2 unblocked (its
   bail condition no longer applies — the over-cut instrument is
   trustworthy). Item 3 proceeds via the move bisect.
+
+---
+
+# VERDICT (2026-07-28): **NOT PROVABLE ON THIS FIXTURE**
+
+The campaign-level bail written at the top of this file has triggered, as
+pre-committed. This is the second of the two defined outcomes, not a
+failure.
+
+## The numbers, honestly
+
+At SHIPPED dials, one run, both branches, collisions 0/0:
+
+| | D (all-over Ø1 tip) | cascade (Ø3 ball + Ø1 rest) |
+|---|---|---|
+| finish stack | **39 904 s** | 49 966 s (**+25%**) |
+| shallow on-size | 19.2% | 15.5% |
+| deep over-cut columns | 78 | 937 |
+| standing material (`>+.5`, shallow) | 2 964 | **1 301** |
+
+The cascade reaches −2.0% only with `AirBridgePolicy`, which item 2
+declined because it costs 8× the shallow gouging. So **the cascade never
+wins on a configuration we are willing to ship.**
+
+## Why the quality gate cannot adjudicate it
+
+The ±10 µm on-size bin is not a usable acceptance criterion here:
+
+- it is **below machine repeatability** ($11 junction deviation is
+  0.020 mm);
+- it is **aliased** — the 0.25 mm measurement grid undersamples both
+  branches' stepovers (0.21 and 0.363 mm) and aliases them DIFFERENTLY,
+  so the comparison is not like-for-like;
+- it is **blind to real defects** — it moved 0.3 pp when 5 123 gouged
+  columns up to 5.5 mm deep were removed, and it ranked a branch with a
+  28 mm UNCUT BLOCK above one without.
+
+## Why the fixture cannot support the claim
+
+The model is a coarse TIN: median triangle edge 0.46 mm, and **1.8% of
+triangles carry 40.8% of the surface area**, with 1 749 facets larger than
+the Ø3 ball itself. You cannot demonstrate a 10 µm surface difference on
+geometry whose own resolution is 460 µm. Op B's crease detector reads the
+faceting as creases and scribes over-cut lines along triangle edges.
+
+## Known defects left standing (both branches)
+
+1. **Scallop truncates its ring cascade** and leaves ~837 mm² uncut
+   (`max_rings` budgeted from the flat-ground stepover). Raising the cap
+   is WORSE — Op B +92% time, deep over-cut 34× — because it unmasks
+   `ring_stepover`'s min-across-ring collapse. Now WARNED on every run
+   with the uncut area.
+2. **`ring_stepover` takes the min across a ring**, so one steep sample
+   sets the advance for the whole ring. This is the root cause of (1).
+3. **`filter_air_cuts` classifies air from endpoints only** — deletes
+   cuts whose middle crosses material. Biases toward leftover, scales with
+   fragment count, so it penalises the cascade ~12×.
+
+## What would have to change to revisit this
+
+- a model whose facets are finer than the cutter, or a coarser quality
+  bar honestly derived from machine repeatability;
+- (2) and (3) fixed, since both distort the comparison in the cascade's
+  disfavour;
+- an acceptance panel — defects, coverage, texture — instead of one bin.
+
+## What the campaign produced that stands
+
+- **`arcfit` reflex-arc fix** (a6841e1) — a crash-class G-code defect on a
+  default-ON dressup: 356° commanded where 3.6° was intended. Found here,
+  not specific to this campaign.
+- Ring truncation made **visible** rather than silent.
+- Seven instruments, all reusable: surface + deviation renders on every
+  scored branch, stage attribution, gouge-site move dump, chord-gouge,
+  flank-gouge, per-op column ladder, re-stamp, per-move attribution, arc
+  direction sanity.
+- The reorder capability work (shipped, quality byte-identical).
