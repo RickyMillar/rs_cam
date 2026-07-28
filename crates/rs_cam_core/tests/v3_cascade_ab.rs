@@ -1350,14 +1350,14 @@ fn band_shares(
 /// say whether it is scattered (a systematic depth error) or clustered (a
 /// handful of bad entries). Prints the per-band count, the worst columns'
 /// world XY, and a coarse occupancy map so the two read apart at a glance.
-fn deep_overcut_locator(tag: &str, s: &ProjectSession, bm: &BandMap, group: usize) {
+fn deep_overcut_locator(tag: &str, s: &ProjectSession, bm: &BandMap, group: usize) -> usize {
     const DEEP: f32 = -0.5;
     const MAP: usize = 24;
     let Some(sim) = s.simulation_result() else {
-        return;
+        return 0;
     };
     let Some(cols) = sim.column_deviations.as_ref() else {
-        return;
+        return 0;
     };
     let deep: Vec<&rs_cam_core::compute::simulate::ColumnDeviation> = cols
         .iter()
@@ -1365,7 +1365,7 @@ fn deep_overcut_locator(tag: &str, s: &ProjectSession, bm: &BandMap, group: usiz
         .collect();
     if deep.is_empty() {
         eprintln!("== [{tag}] DEEP OVER-CUT: none below {DEEP}mm ==");
-        return;
+        return 0;
     }
     let mut by_band = [0usize; 4];
     for cd in &deep {
@@ -1460,6 +1460,7 @@ fn deep_overcut_locator(tag: &str, s: &ProjectSession, bm: &BandMap, group: usiz
             .collect();
         eprintln!("   |{row}|");
     }
+    deep.len()
 }
 
 /// Region spans on `spans` that are NOT strictly nested inside another
@@ -1524,6 +1525,9 @@ struct BranchScore {
     on_size_by_band: [f64; 4],
     plus05_by_band: [f64; 4],
     tail_by_band: [usize; 4],
+    /// Columns below −0.5 mm across all bands — the DEFECT count, which
+    /// the verdict established matters more than the ±10 µm bin.
+    deep_overcut_total: usize,
 }
 
 /// Load the fixture fresh, apply `branch`, (for `Cascade`) swap Op B to the
@@ -1691,9 +1695,27 @@ fn score_stage(
     ref_name: &str,
     dials: Dials,
 ) -> BranchScore {
+    score_stage_tweaked(label, project_path, enable, disable, ref_name, dials, &|_| {})
+}
+
+/// `score_stage` with a hook applied to the freshly-loaded session, after
+/// enable/disable and before the Op B config swap. Exists because
+/// `score_stage` LOADS the project itself, so a caller cannot configure a
+/// session and pass it in — any per-run parameter change has to happen
+/// inside.
+fn score_stage_tweaked(
+    label: &str,
+    project_path: &std::path::Path,
+    enable: &[&str],
+    disable: &[&str],
+    ref_name: &str,
+    dials: Dials,
+    tweak: &dyn Fn(&mut ProjectSession),
+) -> BranchScore {
     let mut s = ProjectSession::load(project_path)
         .unwrap_or_else(|e| panic!("[{label}] failed to load {}: {e}", project_path.display()));
     set_enabled_by_name(&mut s, enable, disable);
+    tweak(&mut s);
     let has_op_b = enable.contains(&"Op B Unified Rest");
 
     if has_op_b {
@@ -1772,7 +1794,7 @@ fn score_stage(
         tail_by_band[3],
     );
 
-    deep_overcut_locator(label, &s, &bm, group);
+    let deep_overcut_total = deep_overcut_locator(label, &s, &bm, group);
     write_surface_renders(label, &s, group);
 
     if has_op_b {
@@ -1808,6 +1830,7 @@ fn score_stage(
         on_size_by_band,
         plus05_by_band,
         tail_by_band,
+        deep_overcut_total,
     }
 }
 
@@ -3063,6 +3086,111 @@ fn write_surface_renders(tag: &str, s: &ProjectSession, group: usize) {
             .expect("save render");
         eprintln!("render: {}", p.display());
     }
+}
+
+/// What does the CUSP DIAL cost? — the lever the campaign never touched.
+///
+/// Both branches have targeted `scallop_height = 0.011` throughout, a
+/// number inherited from `p2c_headless_ab_wanaka.rs` rather than chosen
+/// for this part. It sets essentially the whole runtime: stepover goes as
+/// √cusp, so pass count — and therefore time — goes as 1/√cusp. Two
+/// sessions of strategy work moved ±2%; this dial moves the answer by
+/// integer factors.
+///
+/// On hardwood an 11 µm cusp is far below what survives grain, moisture
+/// or one pass of sandpaper, so the interesting question is not "is 11 µm
+/// achievable" but "what do we actually need". This measures the D branch
+/// (Rough + all-over tip — the simplest complete process) across cusp
+/// targets and reports time against the DEFECT metrics, not against the
+/// ±10 µm bin the verdict established is unusable here.
+///
+/// A surface render lands per setting (`write_surface_renders`), which is
+/// the part a machinist should judge — the numbers cannot say what finish
+/// is acceptable, only what each one costs.
+#[test]
+#[ignore = "one full D chain + measurement sim PER cusp value; set V3_CUSPS"]
+fn v3_cusp_sweep() {
+    init_probe_tracing();
+    let raw = std::env::var("V3_CUSPS").unwrap_or_else(|_| "0.011,0.025,0.05".to_owned());
+    let cusps: Vec<f64> = raw
+        .split(',')
+        .filter_map(|v| v.trim().parse().ok())
+        .collect();
+    assert!(!cusps.is_empty(), "V3_CUSPS parsed empty from {raw:?}");
+    eprintln!("== CUSP SWEEP (D branch: Rough + all-over Ø1 tip) cusps={cusps:?} ==");
+
+    let path = write_fixture_project(3.0);
+    let (enable, disable) = branch_ops(Branch::AllOverTip);
+    /// One sweep row: what a cusp target cost and what it left behind.
+    struct CuspRow {
+        cusp: f64,
+        stepover: f64,
+        finish_s: f64,
+        collisions: usize,
+        tail: [usize; 4],
+        deep: usize,
+    }
+    let mut rows: Vec<CuspRow> = Vec::new();
+
+    for &cusp in &cusps {
+        let tag = format!("v3_cusp_{cusp:.4}");
+        // Theoretical flat stepover for the Ø1 tip, for the table.
+        let stepover = 2.0 * (2.0 * 0.5 * cusp - cusp * cusp).max(0.0).sqrt();
+        let c = score_stage_tweaked(
+            &tag,
+            &path,
+            enable,
+            disable,
+            "D All-Over Tip",
+            Dials::SHIPPED,
+            &|s: &mut ProjectSession| {
+                let d_idx = toolpath_index_by_name(s, "D All-Over Tip");
+                s.set_toolpath_param(d_idx, "scallop_height", serde_json::json!(cusp))
+                    .expect("set scallop_height");
+            },
+        );
+        let finish_s: f64 = c
+            .outcome
+            .per_op_s
+            .iter()
+            .filter(|(n, _)| n == "D All-Over Tip")
+            .map(|(_, v)| *v)
+            .sum();
+        rows.push(CuspRow {
+            cusp,
+            stepover,
+            finish_s,
+            collisions: c.outcome.collisions,
+            tail: c.tail_by_band,
+            deep: c.deep_overcut_total,
+        });
+    }
+
+    eprintln!("\n== CUSP SWEEP RESULT (D branch) ==");
+    eprintln!(
+        "{:>8} {:>10} {:>11} {:>7} {:>11} {:>22}",
+        "cusp mm", "stepover", "D time s", "collis", "vs 0.011", "standing (shallow/mid/steep)"
+    );
+    let base = rows.first().map_or(1.0, |r| r.finish_s);
+    for r in &rows {
+        eprintln!(
+            "{:>8.4} {:>10.3} {:>11.1} {:>7} {:>10.1}% {:>7}/{:>6}/{:>6}  deep={}",
+            r.cusp,
+            r.stepover,
+            r.finish_s,
+            r.collisions,
+            100.0 * (r.finish_s - base) / base.max(1e-9),
+            r.tail[1],
+            r.tail[2],
+            r.tail[3],
+            r.deep,
+        );
+    }
+    eprintln!(
+        "\nNOTE: on-size (±10µm) is deliberately NOT the verdict here — a bigger\n\
+         cusp is SUPPOSED to miss that bin. Judge defects (collisions, standing\n\
+         material) and the per-setting surface renders."
+    );
 }
 
 /// Shared verdict printer + quality gate for the branch comparison.
