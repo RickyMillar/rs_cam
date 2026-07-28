@@ -56,6 +56,9 @@ pub const GEOM_FEED_Z_BELOW_TOP_Z: &str = "geom.feed_z_below_top_z";
 pub const GEOM_RETRACT_Z_BELOW_FEED_Z: &str = "geom.retract_z_below_feed_z";
 pub const GEOM_CLEARANCE_Z_BELOW_RETRACT_Z: &str = "geom.clearance_z_below_retract_z";
 pub const GEOM_PLUNGE_EXCEEDS_FEED: &str = "geom.plunge_exceeds_feed";
+/// A ring cascade hit its cap and left the middle of a region uncut.
+/// Sim-independent: measured during generation, not from a dexel run.
+pub const GEOM_STANDING_MATERIAL: &str = "geom.standing_material";
 
 // ── Tool / operation compatibility ───────────────────────────────────
 pub const COMPAT_END_MILL_SCALLOP_PENCIL: &str = "compat.end_mill_on_scallop_pencil";
@@ -145,6 +148,7 @@ pub const ALL: &[&str] = &[
     GEOM_RETRACT_Z_BELOW_FEED_Z,
     GEOM_CLEARANCE_Z_BELOW_RETRACT_Z,
     GEOM_PLUNGE_EXCEEDS_FEED,
+    GEOM_STANDING_MATERIAL,
     COMPAT_END_MILL_SCALLOP_PENCIL,
     COMPAT_BALL_NOSE_FLAT_CLEARING,
     QUALITY_STEPOVER_OVER_80_PCT,

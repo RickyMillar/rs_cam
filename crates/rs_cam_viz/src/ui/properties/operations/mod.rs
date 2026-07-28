@@ -1949,6 +1949,7 @@ pub fn collect_diagnostics(
         // `validate_geometry_selection` already covers this case
         // inline. MCP routes through `diagnose_toolpath_with_trace`.
         model_refs: None,
+        stats: None,
     };
     rs_cam_core::diagnostics::diagnose_toolpath_inputs(&inputs)
 }
@@ -2202,6 +2203,7 @@ mod tests {
             stale_defaults: &stale_defaults,
             preconditions: Some(&preconditions),
             model_refs: Some(&model_refs),
+            stats: None,
         };
         let gui_diags = rs_cam_core::diagnostics::diagnose_toolpath_inputs(&inputs);
 

@@ -38,6 +38,33 @@ pub enum OperationError {
 
 pub type GeneratedToolpath = AnnotatedToolpath;
 
+/// Facts an operation learned about the geometry while generating, which
+/// are NOT properties of the emitted toolpath.
+///
+/// `GeneratedToolpath` is an alias for [`AnnotatedToolpath`], so an adapter
+/// has historically had exactly one way to say anything: put it in the
+/// toolpath. A finding like "the ring cascade could not reach the middle of
+/// this region" has no home there — it is not geometry the machine will
+/// execute — so it lived and died in a `tracing::warn!`. That is why a
+/// 28 mm block of standing material shipped for weeks, and why the GUI's
+/// diagnostics list has nothing to say about it (design doc §13/§14c/§14h).
+///
+/// Carried on [`ExecutionContext::findings`] as a [`Cell`] so adapters can
+/// record without any signature change, and returned alongside the toolpath
+/// by [`execute_operation_annotated_with_regions`]. Deliberately NOT part of
+/// `AnnotatedToolpath`: a diagnostic finding must not have to survive the
+/// dressup pipeline, where every carrier is one missed field-copy away from
+/// silently vanishing.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct GenerationFindings {
+    /// Region-interior area (mm²) a scallop ring cascade left UNCUT because
+    /// it hit `max_rings` before collapsing — summed over every region, and
+    /// over the mid-steep bands of a `UnifiedFinish`. `0.0` when every
+    /// cascade collapsed normally. See
+    /// [`crate::scallop::ScallopReport::uncut_core_mm2`].
+    pub standing_material_mm2: f64,
+}
+
 /// F2 (defect class C3): every generation funnel appends the
 /// [`crate::toolpath::MoveIntent`]-derived transit spans
 /// ([`crate::compute::spans::spans_from_move_intents`]) after the
@@ -205,6 +232,11 @@ impl From<String> for OperationError {
 /// another family means adding it to that sentry's case list too, or the
 /// coverage claim here silently goes stale.
 pub struct ExecutionContext<'a> {
+    /// Write-only sink for generation-time findings (see
+    /// [`GenerationFindings`]). A `Cell` rather than a return value so an
+    /// adapter can report one without changing the `GenerateFn` signature
+    /// every family shares.
+    pub findings: &'a std::cell::Cell<GenerationFindings>,
     pub mesh: Option<&'a TriangleMesh>,
     pub index: Option<&'a SpatialIndex>,
     pub polygons: Option<&'a [Polygon2]>,
@@ -1229,7 +1261,7 @@ pub(crate) fn generate_scallop(
         safe_z: ctx.heights.retract_z,
         stock_to_leave: cfg.stock_to_leave,
     };
-    let (tp, annotations, _scallop_report) =
+    let (tp, annotations, scallop_report) =
         crate::scallop::scallop_toolpath_structured_annotated_with_cancel(
         m,
         idx,
@@ -1240,6 +1272,10 @@ pub(crate) fn generate_scallop(
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
     .map_err(|_e| OperationError::Cancelled)?;
+    ctx.findings.set(GenerationFindings {
+        standing_material_mm2: ctx.findings.get().standing_material_mm2
+            + scallop_report.uncut_core_mm2,
+    });
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_scallop(&annotations, &tp, sem);
     }
@@ -1384,6 +1420,10 @@ pub(crate) fn generate_unified_finish(
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
     .map_err(|_e| OperationError::Cancelled)?;
+    ctx.findings.set(GenerationFindings {
+        standing_material_mm2: ctx.findings.get().standing_material_mm2
+            + report.uncut_core_mm2,
+    });
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_scallop(&annotations, &tp, sem);
     }
@@ -1835,6 +1875,9 @@ pub fn execute_operation_annotated(
     // material with full-depth axial DOC.
     boundary: Option<&Polygon2>,
 ) -> Result<GeneratedToolpath, OperationError> {
+    // Thin wrapper: callers on this path have no diagnostics pipeline to
+    // feed, so the findings are dropped here rather than rippling a tuple
+    // through every test and CLI call site.
     execute_operation_annotated_with_regions(
         op,
         mesh,
@@ -1856,6 +1899,7 @@ pub fn execute_operation_annotated(
         None,
         None,
     )
+    .map(|(generated, _findings)| generated)
 }
 
 /// [`execute_operation_annotated`] plus `boundary_regions` (P2.3): the
@@ -1905,7 +1949,7 @@ pub fn execute_operation_annotated_with_regions(
     // candidates against. `None` is a byte-identical no-op — the
     // legacy distance-only hookup decision.
     link_kinematics: Option<crate::machine_kinematics::LinkKinematics>,
-) -> Result<GeneratedToolpath, OperationError> {
+) -> Result<(GeneratedToolpath, GenerationFindings), OperationError> {
     // Phase-5 (T11) family adapters: when the registry carries a
     // GenerateFn for this op's family, dispatch through it. The
     // exhaustive match below remains the fallback for unmigrated
@@ -1922,7 +1966,9 @@ pub fn execute_operation_annotated_with_regions(
     // sites for no benefit. The borrow into `RegionSet` happens right here,
     // where it's used.
     let region_set = boundary_regions.map(RegionSet::from_slice);
+    let findings = std::cell::Cell::new(GenerationFindings::default());
     let ctx = ExecutionContext {
+        findings: &findings,
         mesh,
         index,
         polygons,
@@ -2031,7 +2077,7 @@ pub fn execute_operation_annotated_with_regions(
         );
     }
 
-    Ok(generated)
+    Ok((generated, findings.get()))
 }
 
 /// P2.5: shared rest-analysis attach for any operation family. Runs the same
@@ -3972,7 +4018,7 @@ mod tests {
             region_margin_mm: 0.5,
         };
 
-        let result = execute_operation_annotated_with_regions(
+        let (result, _findings) = execute_operation_annotated_with_regions(
             &op,
             Some(&mesh),
             Some(&index),
@@ -4019,7 +4065,7 @@ mod tests {
         let levels = op.cutting_levels(heights.top_z);
         let rest_analysis = crate::compute::config::RestAnalysisConfig::default(); // disabled
 
-        let result = execute_operation_annotated_with_regions(
+        let (result, _findings) = execute_operation_annotated_with_regions(
             &op,
             Some(&mesh),
             Some(&index),
@@ -4046,7 +4092,7 @@ mod tests {
         assert!(result.rest_regions.is_none());
 
         // `None` for the whole param is the same no-op.
-        let result_none = execute_operation_annotated_with_regions(
+        let (result_none, _findings_none) = execute_operation_annotated_with_regions(
             &op,
             Some(&mesh),
             Some(&index),
@@ -4104,7 +4150,7 @@ mod tests {
             region_margin_mm: 0.5,
         };
 
-        let result = execute_operation_annotated_with_regions(
+        let (result, _findings) = execute_operation_annotated_with_regions(
             &op,
             Some(&mesh),
             Some(&index),

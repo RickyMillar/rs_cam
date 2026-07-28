@@ -2072,3 +2072,64 @@ toolpath is exactly why this finding had nowhere to go, and the same gap
 will block the next generation-time finding. That is a "consolidate, don't
 patch" change and it wants to be its own commit with its own gate run —
 not tacked onto this one.
+
+### §14h CONTINUED — DONE, via a fourth option §14h did not list
+
+§14h recommended making `GeneratedToolpath` a real struct. On contact that
+was wider than estimated — **32 return sites in `execute.rs` alone**, plus
+the viz worker and CLI — and all of it churn in service of one `f64`.
+
+The seam that actually fits was already there: **every adapter receives
+`&ExecutionContext`, and the context has exactly one construction site.**
+So findings ride on the context as a `Cell`, and no adapter signature moves
+at all.
+
+```rust
+pub struct GenerationFindings { pub standing_material_mm2: f64 }
+
+pub struct ExecutionContext<'a> {
+    pub findings: &'a std::cell::Cell<GenerationFindings>,
+    …
+}
+```
+
+`execute_operation_annotated_with_regions` builds the cell, hands out a
+borrow, and returns `(GeneratedToolpath, GenerationFindings)`. The thin
+`execute_operation_annotated` wrapper drops findings, which confines the
+tuple to the two callers that have a diagnostics pipeline to feed.
+
+**Deliberately NOT on `AnnotatedToolpath`.** A diagnostic finding should
+not have to survive the dressup pipeline; every carrier that must be
+threaded through it is one missed field-copy from vanishing silently —
+which is precisely the `generate_via_core` class of bug this repo has
+already paid for once.
+
+**The chain, end to end:**
+
+```
+scallop ring cascade  →  ScallopReport.uncut_core_mm2
+   → (scallop adapter | unified_finish adapter) → ctx.findings
+   → GenerationFindings → ToolpathStats.standing_material_mm2
+   → ToolpathDiagnoseInputs.stats
+   → from_generation → `geom.standing_material` (Caution / Geometry / Verified)
+```
+
+Wired on **both** production paths — the core session (`session/compute.rs`)
+and the GUI worker (`rs_cam_viz`'s `generate_via_core` → `compute_stats`).
+Wiring only the core path would have put the diagnostic everywhere except
+the GUI, which is where §14c found it missing.
+
+`Confidence::Verified`, not `Static`: the area is measured from the
+cascade's own residual polygons. And it is not superseded by a simulation —
+**a sim cannot see material the toolpath never attempted to cut**, which is
+exactly why this defect survived so long.
+
+**Sentries** (`from_generation::tests`): silent at 0.0, silent below the
+1 mm² floor, silent on NaN (unmeasured ≠ defect), and reports the wanaka
+837 mm² case with the area in the message.
+
+Gates: clippy clean workspace-wide, 56/56 param sweeps, rs_cam_viz 216/216,
+`--lib` at the 3 documented adaptive3d reds.
+
+**Item 2 is closed.** The number that shipped a 28 mm uncut block now
+reaches the list the user actually reads.

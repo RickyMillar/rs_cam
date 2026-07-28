@@ -42,7 +42,13 @@ fn generate_via_core(
     debug_ctx: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
     semantic_root: Option<&rs_cam_core::semantic_trace::ToolpathSemanticContext>,
     core_debug_span_id: Option<u64>,
-) -> Result<rs_cam_core::toolpath_spans::AnnotatedToolpath, ComputeError> {
+) -> Result<
+    (
+        rs_cam_core::toolpath_spans::AnnotatedToolpath,
+        rs_cam_core::compute::execute::GenerationFindings,
+    ),
+    ComputeError,
+> {
     let tool_def = build_cutter(&req.tool);
     let mesh_ref = req.mesh.as_deref();
     let index = mesh_ref.map(rs_cam_core::mesh::SpatialIndex::build_auto);
@@ -203,6 +209,7 @@ fn generate_via_core(
         req.link_kinematics.clone(),
     )
     .map_err(ComputeError::from)?;
+    let (result, findings) = result;
 
     if let Some(scope) = op_scope.as_ref()
         && !result.toolpath.moves.is_empty()
@@ -213,8 +220,10 @@ fn generate_via_core(
     // Return the FULL annotated toolpath: narrowing to (toolpath, spans) here
     // used to drop rest_grid / rest_regions / planner_engagement on the GUI
     // worker path, so the heatmap overlay and DerivedRestRegions boundaries
-    // never saw the rest data core attached.
-    Ok(result)
+    // never saw the rest data core attached. `findings` rides alongside for
+    // the same reason — a generation-time finding dropped here would never
+    // reach the GUI's diagnostics list, which is the whole point of it.
+    Ok((result, findings))
 }
 
 /// Convert viz `SimulationRequest` into a core `SimulationRequest` so the
@@ -500,6 +509,10 @@ fn run_compute_with_phase_tracker(
     let semantic_root = semantic_recorder
         .as_ref()
         .map(|recorder| recorder.root_context());
+    // Filled by the core generate below; stays default on paths that never
+    // reach it (cached / non-core branches), which report no findings.
+    let mut generation_findings =
+        rs_cam_core::compute::execute::GenerationFindings::default();
 
     let result = (|| -> Result<ToolpathResult, ComputeError> {
         let tp = {
@@ -510,13 +523,14 @@ fn run_compute_with_phase_tracker(
                 .map(|ctx| ctx.start_span("core_generate", req.operation.label()));
             let core_ctx = core_scope.as_ref().map(|scope| scope.context());
             let core_debug_span_id = core_scope.as_ref().map(|scope| scope.id());
-            let generated = generate_via_core(
+            let (generated, core_findings) = generate_via_core(
                 req,
                 cancel,
                 core_ctx.as_ref(),
                 semantic_root.as_ref(),
                 core_debug_span_id,
             )?;
+            generation_findings = core_findings;
             if let Some(scope) = core_scope.as_ref()
                 && !generated.toolpath.moves.is_empty()
             {
@@ -740,7 +754,11 @@ fn run_compute_with_phase_tracker(
             let _stats_scope = debug_root
                 .as_ref()
                 .map(|ctx| ctx.start_span("final_stats", "Compute stats"));
-            compute_stats(&current.toolpath)
+            let mut stats = compute_stats(&current.toolpath);
+            // `compute_stats` only sees moves; generation-time findings come
+            // from the core call above.
+            stats.standing_material_mm2 = generation_findings.standing_material_mm2;
+            stats
         };
 
         // §6.E build the drill-op view atomically with the annotated
@@ -918,6 +936,7 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let tp = generate_via_core(&req, &cancel, None, None, None)
             .unwrap()
+            .0
             .toolpath;
 
         let final_z = -cfg.depth;
@@ -983,6 +1002,7 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let tp = generate_via_core(&req, &cancel, None, None, None)
             .unwrap()
+            .0
             .toolpath;
 
         // Verify the operation produces cutting moves
@@ -1009,6 +1029,7 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let tp = generate_via_core(&req, &cancel, None, None, None)
             .unwrap()
+            .0
             .toolpath;
 
         let mut cut_directions = Vec::new();
@@ -1049,6 +1070,7 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let tp = generate_via_core(&req, &cancel, None, None, None)
             .unwrap()
+            .0
             .toolpath;
 
         assert_eq!(
@@ -1074,6 +1096,7 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let tp = generate_via_core(&req, &cancel, None, None, None)
             .unwrap()
+            .0
             .toolpath;
 
         assert_eq!(
@@ -1095,6 +1118,7 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let tp = generate_via_core(&req, &cancel, None, None, None)
             .unwrap()
+            .0
             .toolpath;
 
         assert!(!tp.moves.is_empty(), "Inlay should produce moves");
