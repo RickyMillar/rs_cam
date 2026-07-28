@@ -183,3 +183,41 @@ each one found something its own hypothesis had not predicted. Twice now
 the campaign has built the obvious fix for a CONFIRMED mechanism and had
 the gate reject it (§9's linker, §11's chord fix). Confirming a mechanism
 is not the same as confirming that fixing it helps.
+
+---
+
+# REFRAMED 2026-07-28 — and Step 1 answered
+
+The user rejected the framing above: the time margin is not the concern,
+because "we arent comparing to a good thing right now" and there are too
+many free levers for any raw-time comparison to mean much. The metric is
+**efficiency with bounds**. The question is whether a staggered finish
+(one big ball, then smaller focused passes) beats an equivalent scallop —
+and specifically whether a rest pass made of SPARSE mixed strategies is
+better MERGED AND LINKED than run as separate sequential ops.
+
+That is **Q2**, and it is not what GATE 1/GATE 2 above measured (**Q1**).
+See `unified_v3_design.md` §14. Step 1 — characterise the rest before
+building anything — is done, via `v3_rest_anatomy` (200 s, no measurement
+sim). Three findings:
+
+1. **The instrument was broken.** `optimize_rapid_order` (default ON)
+   makes TSP drop 5 of 24 routing-node spans — the 5 carrying 87% of the
+   cutting. The shipped Region-span mix table reports pencil at 74% when
+   it is 5.8%, and scallop at 0.6% when it is 80.9%. `spans_valid` stays
+   `true`. Telemetry defect, not a safety one. **§7's H1 refutation was
+   computed on this vector** and needed re-earning; §14 re-earns it.
+2. **The merge premise does not hold on this fixture.** With valid spans:
+   scallop 80.9%, raster 13.3%, pencil 5.8%, **waterline 0%**. No contour
+   work exists here. The prize — grouped tour minus mixed tour over the
+   same nodes — is **+0.9 s on 40 767 s (0.002%)**. Per the plan's own
+   instruction: the premise fails, say so, do not build Step 2.
+3. **The real cost is round-trip COUNT.** Op B finishes 0.476 mm²/s
+   against D's 0.938 — the rest pass is half as efficient as just doing
+   the whole part with the small tool. 15 311 of its 15 363 retract round
+   trips are INSIDE a single routing node. Op B pays 0.79 round trips per
+   mm²; D pays 0.028.
+
+**The board now has one lever worth pulling: intra-node round trips.**
+Worth ~−30% on the finish stack if closed to Op A's ratio, against 0.002%
+for every routing/merging question chased so far.
