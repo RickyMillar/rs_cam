@@ -1955,3 +1955,70 @@ one per curve segment, at `plunge_rate` 150 mm/min. That is 65% of the
 operation, and it is not a defect, just an un-tuned linking cost on an op
 with 151 separate curve fragments. Same COUNT-bound shape as §14's finding
 about the rest pass.
+
+### §14g — FIXED: the intruder is the outgoing link, and the ranges now tile
+
+`5fb377f`'s instrumentation named it on the first run, and all five drops
+agree exactly:
+
+| dropped node | intruder idx | == span end? | intent | relocated to |
+|---|---|---|---|---|
+| MidSteep `0..200924` | 200 924 | **yes** | `Linking` | 70 263 |
+| Shallow `204401..230041` | 230 041 | **yes** | `Linking` | 215 049 |
+| Shallow `230130..234235` | 234 235 | **yes** | `Linking` | 234 052 |
+| Shallow `237333..280484` | 280 484 | **yes** | `Linking` | 239 932 |
+| MidSteep `284500..284820` | 284 820 | **yes** | `Linking` | 284 773 |
+
+Every intruder is the **single `MoveIntent::Linking` move immediately
+after the node**, pulled deep inside it by the reorder. One move, five
+times, no exceptions.
+
+**Mechanism.** A surface link is a *feed* move, and
+`tsp::split_into_segments` only ever splits on `MoveType::Rapid`. A link
+left outside every node range is therefore glued into a cutting segment
+that straddles the node boundary. Reordering relocates that segment —
+carrying the link — into the region it just left, and the
+foreign-intrusion guard drops the region span for containing a move from
+outside itself. The guard is behaving as designed; what was wrong is that
+a move belonging to the transition sat outside both nodes.
+
+Note this vindicates the *substance* of the retracted §14d hypothesis
+while confirming its arithmetic was wrong. The idea "orphaned link moves
+sit in the preceding barrier group" was right; "the ranges have
+4 016-move gaps" was a misread of a filtered table. Being right for the
+wrong reason is still wrong — the measurement is what settled it.
+
+**Fix** (`unified_finish.rs` Step 6): open the node's `move_range` at
+`node_start`, taken *before* the incoming surface link, instead of at
+`offset` after it. The link is that region's approach, so this is also the
+truthful model. `offset` is retained unchanged for annotation rebasing,
+which is expressed in the region toolpath's local frame and must not shift.
+
+**Measured, ×1 fixture, at the SHIPPED default (reorder ON):**
+
+| | before | **after** | reorder-OFF reference |
+|---|---|---|---|
+| node-span coverage of cutting | 12.6% | **100.0%** | 99.6% |
+| routing nodes surviving | 19 | **24** | 24 |
+| scallop share | 0.6% | **80.9%** | 80.9% |
+| raster share | 25.2% | 13.3% | 13.3% |
+| pencil share | 74.2% | **5.8%** | 5.8% |
+| region-node spans dropped | 5 | **0** | — |
+
+The mix at the default dials now matches the reorder-off reference
+exactly, and coverage is 100.0% — better than reorder-off's 99.6%, because
+the ranges now include their own link moves.
+
+**Sentry:** `unified_finish::tests::region_node_ranges_tile_the_stitched_
+toolpath` asserts consecutive `region_table` entries are contiguous and
+the last reaches the end of the toolpath. It fails on any future change
+that orphans a move between nodes, which is the whole precondition.
+
+Gates: clippy clean workspace-wide, 56/56 param sweeps, unified_finish
+19/19, `--lib` at the 3 documented adaptive3d reds.
+
+**What this restores.** The design doc's §2.4 "Region spans are a MUST"
+evidence, the GUI's region panel, and `narrate_toolpath`'s strategy mix —
+which reported `regions 0` on the live project. Every strategy-mix claim
+made at shipped dials before this fix was measured through a vector
+missing 87% of its regions.

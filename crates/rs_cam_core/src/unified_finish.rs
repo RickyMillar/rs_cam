@@ -1238,6 +1238,25 @@ pub fn unified_finish_toolpath_with_cancel(
         };
         let tail = if outgoing_surface { rp.tail_strip } else { 0 };
 
+        // The node's range OPENS here, before its incoming surface link —
+        // not after it. The link is this region's approach, so including it
+        // is the truthful model, and it is also what keeps the region-node
+        // ranges TILING.
+        //
+        // That tiling is load-bearing. A surface link is a *feed* move, and
+        // `tsp::split_into_segments` only ever splits on `MoveType::Rapid`,
+        // so a link left outside every node range still gets glued into a
+        // cutting segment that straddles the node boundary. The reorder then
+        // relocates that segment — carrying the link — into the middle of the
+        // region it just left, and `tsp::remap_spans`'s foreign-intrusion
+        // guard drops the region span for containing a move from outside
+        // itself. Measured on wanaka ×2 before this fix: all five dropped
+        // region nodes were tripped by exactly one intruder, in every case
+        // the single `MoveIntent::Linking` move at `span.end_move` (design
+        // doc §14d/§14g). The five carried 87% of the operation's cutting
+        // length, so their loss left `narrate_toolpath` reporting
+        // `regions 0`.
+        let node_start = stitched.moves.len();
         if let (Some(link), Some(entry)) = (incoming_surface, rp.entry) {
             for p in &link.pts {
                 stitched.feed_to_with_intent(*p, params.feed_rate, MoveIntent::Linking);
@@ -1245,6 +1264,9 @@ pub fn unified_finish_toolpath_with_cancel(
             stitched.feed_to_with_intent(entry, params.feed_rate, MoveIntent::Linking);
         }
 
+        // `offset` stays the region's OWN first move — annotation rebasing
+        // below is expressed in the region toolpath's local frame and must
+        // not be shifted by the link.
         let offset = stitched.moves.len();
         let kept = rp.tp.moves.len().saturating_sub(head + tail);
         stitched
@@ -1253,7 +1275,7 @@ pub fn unified_finish_toolpath_with_cancel(
         let end = stitched.moves.len();
         region_table.push(RegionTableEntry {
             kind: RegionKind::Band(rp.band),
-            move_range: offset..end,
+            move_range: node_start..end,
             area_mm2: planned
                 .regions
                 .get(rp.region_index)
@@ -2287,6 +2309,74 @@ mod tests {
         };
         let planner = FinishPlannerParams::for_tool(cutter.radius());
         (mesh, index, cutter, params, planner)
+    }
+
+    /// Regression sentry: the region-node ranges must TILE the stitched
+    /// toolpath, leaving no move between two nodes.
+    ///
+    /// A move outside every node range is not a cosmetic gap. Surface links
+    /// are *feed* moves and `tsp::split_into_segments` only splits on
+    /// `MoveType::Rapid`, so an orphaned link is glued into a cutting
+    /// segment straddling the node boundary; the reorder relocates that
+    /// segment into the region it just left, and
+    /// `tsp::remap_spans`'s foreign-intrusion guard then DROPS the region
+    /// span for containing a foreign move.
+    ///
+    /// Measured on wanaka ×2 before the fix: five region nodes dropped,
+    /// each tripped by exactly one intruder — in every case the single
+    /// `MoveIntent::Linking` move sitting at `span.end_move`. Those five
+    /// carried 87% of the operation's cutting length, so the survivors
+    /// described 12.6% of the op while `spans_valid` still read `true`,
+    /// and `narrate_toolpath` reported `regions 0` on the live GUI.
+    /// See `planning/unified_v3_design.md` §14c/§14d/§14g.
+    #[test]
+    fn region_node_ranges_tile_the_stitched_toolpath() {
+        let (mesh, index, cutter, params, planner) = trench_claims_fixture();
+        let never_cancel = || false;
+
+        let (tp, _anns, report) = unified_finish_toolpath_with_cancel(
+            &mesh,
+            &index,
+            &cutter,
+            5.0,
+            -5.0,
+            &params,
+            &planner,
+            None,
+            None,
+            None,
+            None,
+            &never_cancel,
+        )
+        .unwrap();
+
+        assert!(
+            !report.region_table.is_empty(),
+            "fixture must route at least one region"
+        );
+        for pair in report.region_table.windows(2) {
+            let (a, b) = (&pair[0], &pair[1]);
+            assert_eq!(
+                a.move_range.end, b.move_range.start,
+                "region nodes must be contiguous — {:?} ends at {} but {:?} \
+                 starts at {}, orphaning {} move(s) that the rapid reorder \
+                 can relocate into the previous node and so trip the \
+                 foreign-intrusion guard",
+                a.kind,
+                a.move_range.end,
+                b.kind,
+                b.move_range.start,
+                b.move_range.start.saturating_sub(a.move_range.end),
+            );
+        }
+        if let Some(last) = report.region_table.last() {
+            assert_eq!(
+                last.move_range.end,
+                tp.moves.len(),
+                "the last region node must reach the end of the stitched \
+                 toolpath"
+            );
+        }
     }
 
     #[test]
