@@ -1612,3 +1612,86 @@ board with a prize worth the trouble.
 
 **Step 2 (the unfused-stack A/B) is NOT built.** The premise it tests is
 absent from this fixture, and building it would measure a 0.9 s effect.
+
+### §14a — steepen the terrain and the mix DOES rebalance (2026-07-28)
+
+The user's read of §14: "if its mostly scalloping then that makes sense.
+in areas there its mostly pencil and contour (steep mountains with a fine
+tip) i wonder if it inverts? this map has some large flat areas."
+
+Testable for one run. `V3_ZEXAG` scales Z only, so the XY footprint, the
+triangle count and the facet topology are untouched and the strategy mix
+is the sole variable. A slope θ becomes `atan(k·tanθ)`.
+
+**Reach caps the dial.** At k = 4 the terrain carries 47.8 mm of relief
+against a Ø1 tapered ball with 25 mm of cutting length — that run measures
+tool reach, not strategy. k = 2 (23.9 mm relief) stays inside it and still
+pushes everything originally above 61.8° past the 75° waterline threshold.
+
+| strategy | z ×1 | **z ×2** |
+|---|---|---|
+| scallop | 80.9% | **55.4%** |
+| pencil | 5.8% | **21.3%** |
+| raster | 13.3% | 23.3% |
+| waterline | 0.0% | **0.0%** |
+| routing nodes | 24 | 37 |
+| tiles hosting >1 strategy | 94.5% | 59.3% |
+
+**The mix rebalances as predicted** — pencil nearly quadruples, scallop
+falls from four fifths to just over half, and the rest starts to look like
+the three-way split `unified_finish` was designed for.
+
+**But waterline is still 0.0%.** The very-steep band does not fire even at
+k = 2. Either this terrain has genuinely nothing above 61.8°, or the band
+is being suppressed. **The "contour on the steeps" leg of the idea remains
+untested**, and it is the leg with no substitute — pencil and scallop both
+have alternatives, a Z-level ladder on a near-vertical face does not.
+
+**And the merge prize does not move.** With a genuine three-way mix and
+59% of tiles hosting more than one strategy, grouped-vs-mixed is **+1.4 s
+on 33 225 s**. The reason is structural and now confirmed across two
+terrains: 36 inter-node hops against **10 931 intra-node round trips**.
+Merging optimises the 36. The cost is the 10 931.
+
+### §14b — the staggering thesis gets BETTER as the ground steepens
+
+The result that was not predicted, and it is the strongest signal this
+campaign has produced:
+
+| finish stack | z ×1 | z ×2 | change |
+|---|---|---|---|
+| **D** (all-over Ø1 tip) | 39 904 s | 50 568 s | **+26.7%** |
+| **cascade** (Ø3 ball + Ø1 rest) | 49 967 s | 50 664 s | **+1.4%** |
+| cascade vs D | **+25.2%** | **+0.2%** | |
+
+**D scales with slope; the cascade is nearly invariant to it.** Steepening
+the terrain closed a 25% gap to nothing — because an all-over pass with a
+fine tip pays for every extra millimetre of slope-lengthened surface,
+while the ball absorbs the bulk and only the residue reaches the tip. That
+is precisely the staggering argument, and this is the first measurement in
+the campaign that supports it.
+
+Note the area comparison is NOT the evidence here. The cascade covers
+37 837 mm² against D's 36 102, but D's own `max_rings` warning reports
+2 144 mm² of uncut core at k = 2 — which accounts for essentially the
+whole difference. **The time comparison is clean; the area one is
+contaminated by a known defect in D.** Reported on mm²/s the cascade leads
+0.747 to 0.714, and that lead should not be quoted until the truncation is
+fixed.
+
+**The caveat that blocks calling this a win: the cascade logs 60 rapid
+collisions at k = 2, D logs 0.** Unattributed. On terrain this steep a
+tapered tool has real collision exposure, and a 0.2% time margin is not
+worth anything next to 60 collisions. Attribute before going further.
+
+### What §14a/b change about the plan
+
+1. **The fixture objection now has a fix, not just a complaint.** Slope
+   was the missing variable, and it is one line of environment.
+2. **Get a very-steep band.** Without waterline the mixed-strategy claim
+   is two-thirds tested. Find out whether this terrain simply lacks the
+   slope or whether the band is being suppressed.
+3. **Attribute the 60 collisions** (Op A or Op B, and whether they are
+   descents through the uncut slivers already known from S1).
+4. **Intra-node round trips remain the lever**, unchanged by any of this:
+   10 931 of 11 030 at k = 2, 15 311 of 15 363 at k = 1.
