@@ -1229,7 +1229,8 @@ pub(crate) fn generate_scallop(
         safe_z: ctx.heights.retract_z,
         stock_to_leave: cfg.stock_to_leave,
     };
-    let (tp, annotations) = crate::scallop::scallop_toolpath_structured_annotated_with_cancel(
+    let (tp, annotations, _scallop_report) =
+        crate::scallop::scallop_toolpath_structured_annotated_with_cancel(
         m,
         idx,
         ctx.tool_def,
