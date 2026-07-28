@@ -557,8 +557,10 @@ fn generate_scallop_rings_with_cancel(
             rings_emitted = rings_3d.len(),
             uncut_core_mm2 = remaining,
             "scallop: ring cascade hit max_rings without collapsing — the \
-             INTERIOR of the region is left uncut. `max_rings` is a runaway \
-             guard, not a design limit; if this fires the cap is too low."
+             INTERIOR of the region is LEFT UNCUT. Known defect: the cap is \
+             budgeted from the flat-ground (widest) stepover, and raising it \
+             is worse until `ring_stepover`'s min-across-ring collapse and \
+             chord refinement are fixed — see the cap's derivation comment."
         );
     }
 
@@ -743,31 +745,42 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
         Polygon2::new(pts)
     };
 
-    // Max rings: a RUNAWAY GUARD, not a design limit. The cascade's real
-    // terminator is collapsing to nothing, and if this cap binds first the
-    // region's interior is silently left uncut.
+    // Max rings, budgeted from the FLAT-ground stepover — which is the
+    // WIDEST spacing the cusp target allows, so this under-counts whenever
+    // the terrain has slope. That is a known, deliberate compromise, and
+    // the warning at the end of the ring loop reports when it bites.
     //
-    // It must therefore be budgeted from the SMALLEST stepover the ring
-    // loop can select, which is its own `cusp_r * 0.05` clamp floor — not
-    // from `stepover_from_scallop_flat`, which is the stepover for FLAT
-    // ground and hence the WIDEST spacing the cusp target ever allows.
-    // Budgeting from the widest one under-counts on every slope, and on
-    // terrain that is everywhere: measured on wanaka ×2, D's cap of 504
-    // rings ran out ~160 short of the centre and left a ~28 mm block of
-    // standing material in the middle of the part, which no aggregate in
-    // the A/B harness flagged (2026-07-28).
+    // Why it is not simply raised (measured, wanaka ×2, 2026-07-28):
+    // budgeting instead from the loop's own `cusp_r * 0.05` clamp floor —
+    // the smallest stepover it can select — is correct in principle and
+    // does fill the ~28 mm block of standing material this cap was leaving
+    // in the middle of the part. But it is far WORSE overall, because the
+    // cap was masking a deeper flaw rather than causing one:
     //
-    // Raising it costs nothing when the cascade collapses normally — the
-    // loop breaks on `next_polys.is_empty()` long before the cap — and the
-    // per-ring cost is bounded by `decimate_ring_polygon`, which is what
-    // made the offset cascade linear in the first place.
-    let floor_stepover = (cusp_r * 0.05).max(1.0e-3);
+    //   * `ring_stepover` takes the MIN across samples on a ring, so a
+    //     single steep sample sets the advance for the WHOLE ring. On
+    //     terrain every large ring touches steep ground, so the cascade
+    //     crawls at the worst-case rate.
+    //   * Uncapped, that produced thousands of rings at ~25 µm spacing.
+    //     Op B went 38 896 s -> 74 731 s (+92%) while removing LESS
+    //     material, and deep over-cut columns went 937 -> 32 221 (34x)
+    //     because dense rings mean short chords, and `refine_chord` never
+    //     probes a chord shorter than `2 * probe_step`.
+    //
+    // So the real fix is in `ring_stepover` (per-segment advance instead
+    // of min-across-ring, or a physically sensible floor) plus chord
+    // refinement — not here. Until then this cap stays, and the loop warns
+    // loudly when it truncates so the standing material is a KNOWN defect
+    // rather than a silent one.
+    let min_stepover =
+        crate::scallop_math::stepover_from_scallop_flat(cusp_r, params.scallop_height)
+            .max(cusp_r * 0.05);
     let max_extent = (extent_x - origin_x).max(extent_y - origin_y);
-    let max_rings = ((max_extent / floor_stepover) * 0.5).ceil() as usize + 10;
+    let max_rings = ((max_extent / min_stepover) * 0.5).ceil() as usize + 10;
 
     info!(
         max_rings = max_rings,
-        floor_stepover = format!("{:.4}", floor_stepover),
+        min_stepover = format!("{:.3}", min_stepover),
         "Generating scallop rings"
     );
 
