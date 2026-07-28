@@ -1453,3 +1453,162 @@ defects — reflex arcs, an uncut core, facet-edge scribing — were all
 invisible to a ±10 µm bin count and all obvious in one render. The gate
 should be a PANEL (defects, coverage, texture), and texture cannot be
 claimed at all while the measurement grid undersamples the stepover.
+
+## 14. The reframed question, and Step 1's answer (2026-07-28)
+
+The user reframed the goal after §13:
+
+> "the time margin is not too much of a concern to me right now, because I
+> think that it depends what we are comparing to, and we arent comparing
+> to a good thing right now. Id say 'efficiency' is a good metric, with
+> bounds. But we have too many levers to pull... So the metrics are what
+> have hurt us in the past. What I want to know is 'is there a way that we
+> can stagger the finish from one big ball end, to smaller more focused
+> passes, and be better than an equivalent scallop in efficiency'... The
+> unified finish was to see if we could optimise a rest machining pass to
+> do the 2nd part. Because there might be steeps that need contour,
+> valleys that need pencil and similar... if there is a sparse amount of
+> each, it makes sense to merge them and link together rather than run
+> them in sequence. Due to linking."
+
+That is **not** the experiment §0.a–§13 ran. Two questions were conflated:
+
+- **Q1 — staging**: does big-tool bulk + small-tool detail beat one
+  all-over small-tool pass? Cascade vs D. This is what was measured, and
+  §13/the workplan closed it as not provable on this fixture.
+- **Q2 — merging**: given the second stage exists, does folding its
+  heterogeneous strategies into ONE linked op beat running them as
+  SEPARATE sequential ops? **This is what `unified_finish` was built for,
+  and it had never been isolated.**
+
+Q2 has a property Q1 never had: a baseline with **no free levers**. Both
+arms share the decomposition, the per-region strategy, the parameters and
+the tool, so the only difference is the order regions are visited in.
+Material removed is identical and the cut geometry is identical; the delta
+is purely travel. That makes the prize exactly
+
+```
+(hop cost of a strategy-GROUPED tour) − (hop cost of a MIXED tour)
+```
+
+computable offline from the emitted region geometry — no second chain, no
+measurement sim. `v3_rest_anatomy` (200 s) does it, costing both tours
+with `machine_kinematics::retract_link_time`, the same integrator the
+router uses, so the model cancels and only the delta is load-bearing.
+
+### First, the instrument was reading the wrong thing — twice
+
+**Rings are not regions.** `unified_finish_spans` builds the scallop
+annotation spans with `spans_from_labeled_events` (each runs to the NEXT
+annotation) and then SPLICES the region-node spans in as **siblings**. The
+two families interleave instead of nesting, so `outer_region_spans`
+returns both: 620 outer spans, **615 of them `Ring N`**. Every mix table
+this campaign printed was mostly scallop sub-structure.
+
+**And the routing nodes do not account for the operation.** With
+`optimize_rapid_order` at its shipped default, the surviving node spans
+cover **12.6% of Op B's cutting length** and sit entirely in
+`[206237, 335063)` — the last 38% of the toolpath. `spans_valid` stays
+`true`, so every consumer trusts them.
+
+`RUST_LOG=rs_cam_core::tsp=debug` names the culprit exactly. TSP's
+foreign-intrusion post-filter drops 878 spans: 865 `Ring N`, 8
+`plunge entry`, and **5 routing nodes — 2 `MidSteep band` + 3
+`Shallow band`**. Only five, but they are the big ones: the MidSteep
+scallop node alone is 206 213 moves and 108 461 mm, 81% of the cutting.
+
+| Op B, shipped fixture | reorder ON (default) | reorder OFF |
+|---|---|---|
+| node-span coverage of cutting | **12.6%** | **99.6%** |
+| routing nodes surviving | 19 | 24 |
+| reported scallop share | 0.6% | **80.9%** |
+| reported raster share | 25.2% | 13.3% |
+| reported pencil share | **74.2%** | **5.8%** |
+
+The shipped mix table is not merely incomplete, it is **inverted**: it
+reports pencil as three quarters of the work when pencil is 5.8%, and
+scallop as a rounding error when scallop is four fifths.
+
+This is a **telemetry** defect, not a safety one — the dropped nodes are
+`depth_ordered: false` (scallop rings and raster rows are single-pass over
+a height field), so interleaving them is materially harmless to the cut.
+But it destroys the design doc's §2.4 "Region spans are a MUST" evidence,
+and §7's H1 refutation ("100% of Op B's rapid travel is INSIDE regions")
+was computed on this vector — on the ring-span form, which tiles from the
+first annotation to `n_moves`, so *everything* reads as inside a region
+by construction. That refutation needs re-earning; the number below does
+re-earn it, on a valid vector.
+
+### The answer: the merge premise does not hold here
+
+Measured with valid spans (`V3_REORDER=off`), wanaka ×2, ball Ø3:
+
+```
+strategy      regions     cutting_mm     %cut   footprint_mm2
+scallop             3         108588    80.9%          15211
+raster             20          17842    13.3%           4109
+pencil              1           7790     5.8%           6669
+waterline           0              0     0.0%              0
+```
+
+**There is no contour work at all** — the fixture has no very-steep band —
+and 81% of the rest is a single strategy. There is no "sparse amount of
+each" to merge; there is one strategy plus trim.
+
+The prize confirms it. 24 nodes, 23 hops:
+
+| inter-region tour | hop seconds |
+|---|---|
+| as emitted (router's order) | 190.8 |
+| greedy NN, mixed = **MERGED** | 189.9 |
+| greedy NN, grouped = **UNFUSED** | 190.9 |
+
+**PRIZE = +0.9 s on a 40 767 s operation — 0.002%.** Merging heterogeneous
+strategies into one linked op is worth nothing measurable on this part,
+and it is worth nothing for a reason that has nothing to do with the idea:
+the part does not present the case the idea is for.
+
+### What the measurement DID find: the cost is round-trip COUNT
+
+`EFFICIENCY WITH BOUNDS` — area finished per second, which unlike seconds
+is invariant to tool and stepover, and unlike mm³ is meaningful for a
+finishing pass:
+
+| pass | seconds | area mm² | **mm²/s** | rapid round trips |
+|---|---|---|---|---|
+| Op A ball all-over | 11 070 | 34 829 | **3.146** | 862 |
+| Op B unified rest | 40 767 | 19 385 | **0.476** | **15 363** |
+| cascade (A+B) | 51 837 | 39 197 | 0.756 | 16 225 |
+| D all-over tip | 39 904 | 37 433 | **0.938** | 1 046 |
+
+**The rest pass finishes ground at half the rate of just doing the whole
+part with the small tool.** That single line explains every cascade result
+in §7–§13 without reference to quality at all.
+
+And the mechanism is not strategy, not ordering, not the merge:
+
+```
+Op B rapid round trips: 15 311 INSIDE a routing node, 52 BETWEEN nodes
+```
+
+Op B pays **0.79 retract round trips per mm² finished; D pays 0.028** — a
+28× fragmentation gap. Each round trip costs two ~19 mm Z legs whatever
+its XY length (§8's lesson, re-confirmed: the emitted tour covers 30 102
+hop-mm against greedy NN's 2 023 for only 8% more time). At shipped dials
+Op B is 44% rapid and 12% entry — **55% of the rest pass is not cutting.**
+
+### What this redirects the work to
+
+Eliminating intra-node round trips is worth 30×–1000× more than every
+routing question this campaign has chased. If Op B's 15 311 internal
+round trips came down toward Op A's ratio, Op B would approach its 17 042 s
+of cutting time and the cascade would land near 28 000 s against D's
+39 904 — **−30%**, on the metric the user named, with no quality argument
+required.
+
+The §9 intra-region linker was aimed at exactly this and returned −3.9%.
+That is the under-delivery to explain, and it is now the only lever on the
+board with a prize worth the trouble.
+
+**Step 2 (the unfused-stack A/B) is NOT built.** The premise it tests is
+absent from this fixture, and building it would measure a 0.9 s effect.
