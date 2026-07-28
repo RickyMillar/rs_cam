@@ -2232,3 +2232,56 @@ The sweeps not moving is worth stating plainly: the fixture geometry never
 exercised the defect, which is why 56 fingerprint tests and a full sentry
 suite sat green over it for the whole campaign. It took a stock built
 specifically to have a middle.
+
+### §14k — P1 (`ring_stepover`) analysed, NOT fixed
+
+The last standing defect, and the one worth understanding before touching.
+
+```rust
+fn ring_stepover(ring, slope_map, cusp_r, scallop_height) -> f64 {
+    let sample_step = 1.max(ring.len() / 20);
+    let mut min_so = f64::INFINITY;
+    for pt in ring.iter().step_by(sample_step) {
+        …
+        if so > 0.01 { min_so = min_so.min(so); }
+    }
+    …
+}
+```
+
+**One scalar per ring, taken as the MINIMUM over the samples.** The
+steepest point anywhere on a ring sets the advance for the whole ring,
+including the stretches that are flat and could take many times the step.
+
+Two consequences, and they are the two open defects:
+
+1. **Ring-count blow-up → truncation.** Far more rings are consumed than
+   the flat-ground budget `max_rings` assumes, so the cascade runs out
+   before collapsing and leaves the region interior standing — now
+   reported by `geom.standing_material` (§14h) instead of only warned.
+2. **Over-dense rings on flat ground.** This is why simply raising the cap
+   measured *catastrophically* worse (Op B +92% time while removing LESS
+   material, deep over-cut 34×): the cap was the only thing bounding an
+   over-dense cascade, and lifting it let the density run.
+
+A second, independent weakness in the same nine lines: `ring.len() / 20`
+means a 2 000-point ring is judged on **20 samples**. The minimum is
+therefore a minimum over a sparse sample — it can both miss the true
+steepest point and be dominated by a single outlier. Whatever replaces
+this should not inherit that sampling.
+
+**Three candidate fixes, none free:**
+
+| | idea | cost / risk |
+|---|---|---|
+| a | **True variable offset** — advance each ring point by its OWN local stepover | correct, and a real algorithm project: `offset_polygon` takes a scalar, so this needs per-vertex distances plus self-intersection handling |
+| b | **Bound the ratio** — clamp `min_so` against the ring's median so one sample cannot collapse the whole ring | cheap and partial; deliberately under-resolves the genuinely steep stretch, so cusp height there exceeds target — a localised QUALITY regression traded for time |
+| c | **Split rings by slope band** so each ring is homogeneous | `unified_finish` already does this at REGION level, but its mid-steep band spans 45–75°, which is still wide enough to trigger the same collapse |
+
+**Not started deliberately.** (a) is the honest fix and is too large to
+begin with a verification run in flight; (b) trades a measurable quality
+regression for time and needs the COLUMNS instrument to adjudicate, not a
+guess. And the campaign's most expensive lesson applies squarely here:
+the mechanism has been confirmed for weeks, and the one obvious fix
+attempted so far — raising the cap — made everything 34× worse. Whatever
+is built must be measured on the cascade, not on scallop alone.
