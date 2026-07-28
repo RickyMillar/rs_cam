@@ -2343,3 +2343,78 @@ readily (837 mm² / 4 461 mm²), but this project may simply not.
 assert the diagnostic appears through the session — an integration test
 rather than a live poke, since it needs a fixture that truncates by
 construction. Do not record check 2 as passing until then.
+
+### §14m — the unified finish is not doing rest machining (live, 2026-07-29)
+
+User observation: *"it seems to be covering the whole area, which makes me
+think its not covering rest material. the other ball end should have got
+that."* Measured on the real wanaka project, and it is worse than that.
+
+`3D Finish 6` — a plain all-over 3D finish with the **same Ø1 tapered
+ball** — was enabled and generated, so the entire surface is finished
+before the "rest" pass runs. Op 8 was then regenerated against that stock.
+
+| configuration | cutting | rapid | moves |
+|---|---|---|---|
+| `3D Finish 6` (all-over, same tool) | **33 027 mm** | 10 146 mm | 112 540 |
+| Unified, no 3D Finish ahead of it | 51 480 mm | 15 106 mm | 127 253 |
+| Unified, after 3D Finish, clip inert | 43 583 mm | **150 264 mm** | 132 392 |
+| Unified, after 3D Finish, `territory_clip` ON | 47 793 mm | **179 373 mm** | 142 986 |
+
+**Three conclusions, none of which needed a fixture.**
+
+1. **It ignores the rest.** A full finish with the identical tool ran
+   immediately before it, leaving essentially nothing, and the rest pass
+   still cut **43.6 km**. It barely noticed — −15% against its own
+   no-predecessor baseline.
+2. **`territory_clip` does not confine it.** Turning it on made things
+   NET WORSE (cutting +10%, rapid +19%), because it is gated behind
+   `pencil_claims`, which adds the crease node's work. Whatever the clip
+   removed was smaller than what its gating dial added. Prime suspect:
+   `ClaimsReport` documents the clip as inert when no `territory_stock`
+   is supplied — so this may be a wiring gap, not a tuning one. Not yet
+   confirmed.
+3. **The air machinery then multiplies the mistake.** Rapid travel goes
+   15 km → 150–179 km, i.e. **3.7× the op's own cutting distance**. With
+   the material already gone, most planned cuts are in air, and
+   `AirBridgePolicy::Always` converts each air run into a ~35 mm
+   retract-traverse-descend. Thousands of them.
+
+Net: **the "rest" pass does ~45% more cutting and ~17× more rapid than
+simply finishing the whole part from scratch with the same tool.**
+
+Caveat on the rapid figures: this ran on a binary predating the
+swept-path air fix (§14j), so air classification was the old endpoint-only
+rule. That rule over-deletes, so a rebuilt binary would likely show
+*higher* cutting, not lower. The territory conclusion is independent of
+it — the filter only converts planned cuts, it does not decide what gets
+planned.
+
+**What this implies for the design.** The user's proposal — scope unified
+to contour + pencil + rest and let a ball handle the bulk — is supported,
+but the ordering matters: **territory is the prior defect.** Until an op
+called "rest clear" actually confines itself to rest, which strategies it
+dispatches is a second-order question. And §14k's `ring_stepover`
+collapse compounds it: scallop at 0.011 cusp is denser than the 0.30 mm
+raster `3D Finish` uses, so even over identical ground it does more work.
+
+### §14n — two live-workflow defects found on the way
+
+**1. A disabled op has no prior-stock snapshot, and the error does not
+say so.** `3D Finish 6` failed with *"no prior simulated stock is
+available — run a simulation of the preceding operations first"* after the
+user had run one. Enabling it was not enough either: prior stock is
+recorded **per operation during a simulation**, so an op that was disabled
+when the sim ran has no snapshot at its position in the chain. The
+sequence must be enable → simulate → generate. The message sends the user
+to do the one thing they have already done.
+
+**2. Param changes start a GUI auto-regen that fights an explicit
+`generate_toolpath`.** Every explicit generate immediately after a
+`set_toolpath_param` returned `"Generation was cancelled"`, repeatedly,
+while `list_toolpaths` showed `Pending` and nothing appeared to run.
+`cancel_generation` reported `was_busy: true` — it *was* running; the
+GUI's auto-queued regen and the explicit request were superseding each
+other. Workaround: after changing a param, wait and poll for `Done`
+rather than calling generate. Left as-is for now, but "cancelled" is a
+misleading way to report "something else won the lane".
