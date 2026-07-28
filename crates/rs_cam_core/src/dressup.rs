@@ -1454,14 +1454,73 @@ fn is_in_air(stock: &TriDexelStock, x: f64, y: f64, z: f64, tolerance: f64) -> b
     }
 }
 
+/// Is EVERY point the tool passes through on this move in air?
+///
+/// Sampled along the swept path at the stock grid's own cell size, NOT at
+/// the two endpoints.
+///
+/// Endpoint-only classification was a real defect: a cut whose ends are
+/// both over cleared ground but whose middle ploughs through standing
+/// material read as "air", and the filter then deleted it or bridged over
+/// it — leaving an island and flying the tool across the gap. The bias is
+/// one-directional (always toward leaving material) and it scales with
+/// fragment count, so it fell hardest on exactly the fragmented rest passes
+/// this repo was trying to measure (`planning/v3_workplan.md` defect P2).
+/// The old doc comment claimed "moves that partially contact material are
+/// preserved", which is the invariant this restores.
+///
+/// Arcs are walked with [`crate::arc_util::linearize_arc_into`] at the same
+/// resolution the dexel simulator itself uses, so classification and
+/// stamping agree about where the tool went. The previous code sampled the
+/// arc's CENTRE — a point the tool never visits.
+///
+/// Cost: sampling is at grid resolution, so a finishing move shorter than
+/// one cell costs the same two lookups it always did; only long roughing
+/// moves sample more, and those are the ones that can hide an island.
+fn swept_path_is_all_air(
+    stock: &TriDexelStock,
+    prev: P3,
+    m: &Move,
+    tolerance: f64,
+    arc_buf: &mut Vec<P3>,
+) -> bool {
+    let step = stock.z_grid.cell_size.max(1.0e-6);
+    let air_at = |p: &P3| is_in_air(stock, p.x, p.y, p.z, tolerance);
+
+    match m.move_type {
+        MoveType::ArcCW { i, j, .. } | MoveType::ArcCCW { i, j, .. } => {
+            let clockwise = matches!(m.move_type, MoveType::ArcCW { .. });
+            crate::arc_util::linearize_arc_into(arc_buf, prev, m.target, i, j, clockwise, step);
+            // `linearize_arc_into` yields the endpoints too, so this covers
+            // the whole move.
+            arc_buf.iter().all(air_at)
+        }
+        _ => {
+            if !air_at(&prev) || !air_at(&m.target) {
+                return false;
+            }
+            let (dx, dy, dz) = (
+                m.target.x - prev.x,
+                m.target.y - prev.y,
+                m.target.z - prev.z,
+            );
+            let len = (dx * dx + dy * dy + dz * dz).sqrt();
+            let steps = (len / step).ceil() as usize;
+            // 0 or 1 steps: the endpoints already are the whole segment.
+            (1..steps).all(|k| {
+                let t = k as f64 / steps as f64;
+                air_at(&P3::new(prev.x + dx * t, prev.y + dy * t, prev.z + dz * t))
+            })
+        }
+    }
+}
+
 /// Remove cutting moves that pass through empty stock (no remaining material).
 ///
-/// For each cutting move, checks if material exists at the move's position in
-/// the prior stock. Moves where both endpoints are in air (no material above
-/// the cutting Z) are converted to rapids. This is conservative — moves that
-/// partially contact material are preserved.
-///
-/// Arc moves additionally check the arc center point for extra conservatism.
+/// For each cutting move, checks whether material exists anywhere along the
+/// swept path in the prior stock — see [`swept_path_is_all_air`]. Only moves
+/// that are in air for their WHOLE length become rapids, so a move that
+/// contacts material at any point is preserved.
 ///
 /// `tool_radius` is currently reserved for future per-cell radius checks.
 ///
@@ -1532,36 +1591,32 @@ pub fn filter_air_cuts(
     // Phase 1: classify each move as "in air" or not.
     let mut air_flags: Vec<bool> = Vec::with_capacity(moves.len());
 
+    let mut arc_buf: Vec<P3> = Vec::new();
     for (i, m) in moves.iter().enumerate() {
         if m.move_type == MoveType::Rapid {
             air_flags.push(false);
             continue;
         }
 
-        let target_air = is_in_air(prior_stock, m.target.x, m.target.y, m.target.z, tolerance);
-
-        let source_air = if i > 0 {
-            let prev = &moves[i - 1].target;
-            is_in_air(prior_stock, prev.x, prev.y, prev.z, tolerance)
-        } else {
-            true
+        let Some(prev) = i.checked_sub(1).and_then(|k| moves.get(k)).map(|p| p.target) else {
+            // No predecessor: only the target is knowable.
+            air_flags.push(is_in_air(
+                prior_stock,
+                m.target.x,
+                m.target.y,
+                m.target.z,
+                tolerance,
+            ));
+            continue;
         };
 
-        let center_air = match m.move_type {
-            MoveType::ArcCW { i: io, j: jo, .. } | MoveType::ArcCCW { i: io, j: jo, .. } => {
-                if i > 0 {
-                    let prev = &moves[i - 1].target;
-                    let cx = prev.x + io;
-                    let cy = prev.y + jo;
-                    is_in_air(prior_stock, cx, cy, m.target.z, tolerance)
-                } else {
-                    true
-                }
-            }
-            _ => true,
-        };
-
-        air_flags.push(source_air && target_air && center_air);
+        air_flags.push(swept_path_is_all_air(
+            prior_stock,
+            prev,
+            m,
+            tolerance,
+            &mut arc_buf,
+        ));
     }
 
     // Phase 1b: under `ShorterThanAirPath`, veto the bridges that cost more
@@ -2543,6 +2598,74 @@ mod tests {
             }
         }
         cleared
+    }
+
+    /// Build a stock cleared at BOTH ends with a band of material left
+    /// standing in the middle (45 <= x < 55). Stock spans x/y 0..100,
+    /// z -10..5, 5 mm cells.
+    fn island_stock() -> TriDexelStock {
+        use crate::dexel::ray_subtract_above;
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, -10.0, 5.0, 5.0);
+        let rows = stock.z_grid.rows;
+        let cols = stock.z_grid.cols;
+        for row in 0..rows {
+            for col in 0..cols {
+                let world_x = stock.z_grid.origin_u + col as f64 * stock.z_grid.cell_size;
+                if !(45.0..55.0).contains(&world_x) {
+                    ray_subtract_above(stock.z_grid.ray_mut(row, col), -10.0);
+                }
+            }
+        }
+        stock
+    }
+
+    /// Regression sentry: a cut whose ENDPOINTS are both in air but whose
+    /// MIDDLE crosses standing material must NOT be classified as air.
+    ///
+    /// `filter_air_cuts` samples only `source_air` and `target_air`, and its
+    /// own doc comment claims "moves that partially contact material are
+    /// preserved" — which is exactly the invariant the endpoint-only test
+    /// breaks. Deleting such a move (or bridging over it) silently leaves an
+    /// island standing, and the bias scales with fragment count, so it hits
+    /// a fragmented rest pass hardest of all
+    /// (`planning/v3_workplan.md` defect P2).
+    #[test]
+    fn air_cut_spanning_an_island_is_not_air() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(10.0, 50.0, 10.0));
+        tp.feed_to(P3::new(10.0, 50.0, 2.0), 500.0);
+        // x=10 is cleared, x=90 is cleared, but the tool ploughs straight
+        // through the material standing at x≈50 on the way.
+        tp.feed_to(P3::new(90.0, 50.0, 2.0), 1000.0);
+        tp.rapid_to(P3::new(90.0, 50.0, 10.0));
+
+        let stock = island_stock();
+        let result = filter_air_cuts(
+            AnnotatedToolpath::new(tp.clone()),
+            &stock,
+            3.0,
+            10.0,
+            0.1,
+            AirBridgePolicy::Always,
+        )
+        .toolpath;
+
+        let crossing_survives = result.moves.iter().any(|m| {
+            matches!(m.move_type, MoveType::Linear { .. })
+                && (m.target.x - 90.0).abs() < 1e-9
+                && (m.target.z - 2.0).abs() < 1e-9
+        });
+        assert!(
+            crossing_survives,
+            "the x=10→90 cut passes through material at x≈50 and must be kept; \
+             endpoint-only air classification dropped it, leaving the island \
+             standing. moves: {:?}",
+            result
+                .moves
+                .iter()
+                .map(|m| (m.move_type, m.target.x, m.target.z))
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]

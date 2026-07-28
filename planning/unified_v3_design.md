@@ -2183,3 +2183,52 @@ axial DOC of 6.07 mm against a commanded 0.4 mm. Arc-fit is exonerated
 (§14f); the remaining candidates are an uncleared-stock step (the op runs
 on remaining stock) or lift-function bridging. Settling it needs the stock
 height at (111.7, 39.6) against the projected curve height there.
+
+### §14j — P2 fixed: air was classified from the endpoints only
+
+The third standing defect from `planning/v3_workplan.md`.
+`dressup::filter_air_cuts` decided whether a cutting move was "in air" by
+testing `source_air && target_air` — the two endpoints — plus, for arcs,
+the arc **CENTRE**, a point the tool never visits. Its own doc comment
+claimed "moves that partially contact material are preserved", which is
+precisely the invariant endpoint sampling breaks.
+
+**Reproduced before fixing.** `air_cut_spanning_an_island_is_not_air`
+builds a stock cleared at both ends with material standing at 45 ≤ x < 55,
+and cuts straight through it from x = 10 to x = 90 at z = 2. Both endpoints
+are over cleared ground, so the whole cut was classified as air. Result
+before the fix:
+
+```
+moves: [(Rapid, 10.0, 10.0), (Rapid, 90.0, 10.0)]
+```
+
+The cut is **gone**. The tool retracts, flies over the island and descends
+on the far side, leaving it standing — and nothing anywhere reports it.
+
+**Why it mattered to this campaign specifically.** The bias is
+one-directional (always toward leaving material) and it scales with
+fragment count, so it fell hardest on exactly the fragmented rest passes
+§7–§14 were trying to measure — Op B carried 12 780 fragments against D's
+1 045, roughly a 12× exposure. Every cascade-vs-all-over comparison in this
+document ran with that thumb on the scale.
+
+**Fix.** `swept_path_is_all_air` samples the whole swept path at the stock
+grid's own `cell_size`. Arcs are walked with
+`arc_util::linearize_arc_into` — the same helper and the same resolution
+the dexel simulator uses to stamp them — so classification and stamping
+now agree about where the tool went, instead of one consulting the arc
+centre.
+
+Cost is proportional to resolution, not to move count: a finishing move
+shorter than one cell still costs the two lookups it always did. Only long
+roughing moves sample more, and those are the ones that can hide an island.
+
+Gates: clippy clean workspace-wide, 56/56 param sweeps **unchanged**,
+`capability_link_moves_safety` 17/17, `dressup_span_invariants` 4/4,
+rs_cam_viz 216/216, `--lib` at the 3 documented adaptive3d reds.
+
+The sweeps not moving is worth stating plainly: the fixture geometry never
+exercised the defect, which is why 56 fingerprint tests and a full sentry
+suite sat green over it for the whole campaign. It took a stock built
+specifically to have a middle.
