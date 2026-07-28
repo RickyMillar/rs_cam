@@ -2133,3 +2133,53 @@ Gates: clippy clean workspace-wide, 56/56 param sweeps, rs_cam_viz 216/216,
 
 **Item 2 is closed.** The number that shipped a 28 mm uncut block now
 reaches the list the user actually reads.
+
+### §14i — live re-verification recipe (for the next GUI session)
+
+Two fixes shipped this session are verified headless but NOT yet confirmed
+live: the region-span fix (`77f2b7a`) and the standing-material diagnostic
+(`0d1f307`). Both need a FRESH generate against the rebuilt binary — the
+session that found the defects ran the pre-fix build, so its results are
+the wrong thing to keep. Nothing was saved; the recipe is the artifact.
+
+**Setup.** Launch with `--mcp`, then `load_project` on
+`planning/airrun_2026-06-01/wanaka.toml`. **Read-only — never
+`save_project` on it.** Run the F.4 ladder to completion (rest ops fail
+hard from fresh state by design):
+
+```
+generate_all → run_simulation(0.5) → generate_all → run_simulation(0.5) → generate_all
+```
+
+Roughly 50 min, dominated by the two sims (675 s and 1 756 s measured).
+
+**Check 1 — region spans (`77f2b7a`).** `inspect_spans(8)` and
+`narrate_toolpath(8)` on `Unified Finish 6 (live v2)`.
+
+| | measured BEFORE the fix | expected AFTER |
+|---|---|---|
+| Region spans total | 174 | similar |
+| of which ROUTING NODES | **2** (both `Shallow band`) | **most of them** |
+| node span extent | `[56 717, 127 251)` — last 55% | ~the whole toolpath |
+| `narrate_toolpath` | **`regions 0`**, `raw-move fallback`, a fabricated 73-level Z ladder | a real region count and a strategy mix |
+
+The headless equivalent went 12.6% → 100.0% node coverage and 5 → 0
+dropped spans, so anything short of "most nodes survive" means the live
+path differs from the core path and is a new finding.
+
+**Check 2 — standing material (`0d1f307`).** `get_toolpath_diagnostics` on
+any scallop-family op whose cascade truncates. Before: five entries, all
+feeds/tool-load, nothing about geometry. After: a `geom.standing_material`
+Caution carrying the area in mm². The ×1 fixture's D op reports 837 mm²
+and Op A 4 461 mm², so this fires readily on real terrain.
+
+Note it must appear on the **GUI worker** path, not just via MCP — that
+path is wired separately (`generate_via_core` → `compute_stats`), and
+core-only wiring would have shown the diagnostic everywhere except where
+§14c found it missing.
+
+**Still open, unrelated to either fix:** `Rivers (back)` cuts to a peak
+axial DOC of 6.07 mm against a commanded 0.4 mm. Arc-fit is exonerated
+(§14f); the remaining candidates are an uncleared-stock step (the op runs
+on remaining stock) or lift-function bridging. Settling it needs the stock
+height at (111.7, 39.6) against the projected curve height there.
