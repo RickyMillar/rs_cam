@@ -1,2 +1,6 @@
+# `target/` stays unanchored: cargo build output can appear under any
+# nested crate here, and no source directory is ever called `target`.
 target/
-Cargo.lock
+# This standalone validation crate's own lock file — anchored so a future
+# nested crate's lock is not ignored by accident (C10 anchoring policy).
+/Cargo.lock
