@@ -47,6 +47,32 @@ pub enum FinishResolutionMode {
     /// moved onto it one at a time (H3 fix-sequence step 4) without touching
     /// the shared builder or its siblings.
     CuspQuarter,
+    /// `sqrt((envelope_radius/4) · (cusp_radius/4)).max(tolerance)` — the
+    /// geometric mean of the two named tool scales above (0.306 mm for a Ø1
+    /// tip on a Ø6 shank, against 0.750 and 0.125).
+    ///
+    /// **Named by its formula, not by a judgement.** It is a compromise and
+    /// the name says so; calling it `Intermediate` or `Balanced` would hide
+    /// which two numbers it sits between and how. The geometric mean (not the
+    /// arithmetic one) because the quantity being traded is a RATIO: the two
+    /// endpoints differ by the shaft/tip ratio, so the honest midpoint is the
+    /// one that is the same factor from each (2.45× here), not the one that
+    /// is the same millimetres from each.
+    ///
+    /// Selected by `ramp_finish` since H3/PR-8a under the approved
+    /// Checkpoint B. `CHECKPOINT_B_EVIDENCE.md` §3.2 measured the whole
+    /// safety win landing HERE and nothing further at `CuspQuarter`: the
+    /// legacy cell drove a 2.39 mm gouge on the narrow-valley fixture and a
+    /// 0.16 mm gouge on the narrow ridge, both eliminated outright at this
+    /// cell for 1.3–2.6× generation time, where `CuspQuarter` buys no
+    /// additional quality for 3.1–11.7×.
+    ///
+    /// On any cutter whose cusp radius IS its envelope radius (every plain
+    /// ball, every flat/bull end mill) the geometric mean of two equal
+    /// numbers is that number, so this mode resolves to exactly the legacy
+    /// cell and moves nothing — asserted by
+    /// `finish_resolution_policy_pr3::ball_resolves_the_geo_mean_to_the_legacy_cell`.
+    GeoMeanEnvelopeCusp,
     /// Caller-pinned cell size: harness fixtures, resolution A/B experiments,
     /// and any dial that is not derived from the tool at all.
     Explicit,
@@ -59,6 +85,7 @@ impl FinishResolutionMode {
         match self {
             Self::LegacyEnvelopeQuarter => "legacy envelope/4",
             Self::CuspQuarter => "cusp/4",
+            Self::GeoMeanEnvelopeCusp => "geo-mean(envelope/4, cusp/4)",
             Self::Explicit => "caller-pinned",
         }
     }
@@ -75,6 +102,7 @@ impl FinishResolutionMode {
         match self {
             Self::LegacyEnvelopeQuarter => CellSource::EnvelopeRadius,
             Self::CuspQuarter => CellSource::CuspRadius,
+            Self::GeoMeanEnvelopeCusp => CellSource::GeoMeanEnvelopeCuspRadius,
             Self::Explicit => CellSource::Explicit,
         }
     }
@@ -117,6 +145,25 @@ impl FinishResolutionPolicy {
         Self::from_formula(
             FinishResolutionMode::CuspQuarter,
             cutter.cusp_radius_mm() / 4.0,
+            tolerance,
+        )
+    }
+
+    /// `sqrt((envelope_radius/4) · (cusp_radius/4)).max(tolerance)` —
+    /// [`FinishResolutionMode::GeoMeanEnvelopeCusp`].
+    ///
+    /// Computed from the two SIBLING formulas rather than from a fresh
+    /// expression, so the geometric-mean claim cannot drift from what the two
+    /// named modes actually resolve to. The tolerance floor is applied ONCE,
+    /// to the mean — applying it to each factor first would let a bound floor
+    /// leak into the mean as a tool scale and hide itself.
+    #[must_use]
+    pub fn geo_mean_envelope_cusp(cutter: &dyn MillingCutter, tolerance: f64) -> Self {
+        let envelope_quarter = cutter.envelope_radius_mm() / 4.0;
+        let cusp_quarter = cutter.cusp_radius_mm() / 4.0;
+        Self::from_formula(
+            FinishResolutionMode::GeoMeanEnvelopeCusp,
+            (envelope_quarter * cusp_quarter).sqrt(),
             tolerance,
         )
     }

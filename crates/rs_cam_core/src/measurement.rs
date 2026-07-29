@@ -165,6 +165,22 @@ pub enum CellSource {
     CuspRadius,
     /// `cutter.radius() / 4` — the generation grid.
     EnvelopeRadius,
+    /// `sqrt((envelope_radius/4) · (cusp_radius/4))` — the geometric mean of
+    /// the two tool-scaled cells above, i.e. `FinishResolutionMode::
+    /// GeoMeanEnvelopeCusp` (H3 / PR-8a).
+    ///
+    /// Its own variant rather than either neighbour's, per the PR-3 rule that
+    /// a new variant is cheaper than a mislabelled one: a geo-mean cell is
+    /// **not** an envelope-derived cell and **not** a cusp-derived cell, and
+    /// on a tapered tool it is 2.4× off each of them. Tagging it as either
+    /// would make [`MeasurementProvenance::comparable_to`] accept a
+    /// comparison between two different grids — the exact failure
+    /// [`Self::ToleranceFloor`] was added to prevent in the other direction.
+    ///
+    /// It DOES claim a tool scale (both of them), which is why it is not
+    /// [`Self::Explicit`]: the number moves with the cutter, so a report can
+    /// say what sized it.
+    GeoMeanEnvelopeCuspRadius,
     /// `SimulationRequest::resolution`, after any grid-cap clamp.
     SimResolution,
     /// The `.max(tolerance)` FLOOR sized the cell, not the tool scale —
@@ -196,6 +212,9 @@ impl CellSource {
         match self {
             Self::CuspRadius => "classification grid (cusp_radius/4)",
             Self::EnvelopeRadius => "generation grid (radius/4)",
+            Self::GeoMeanEnvelopeCuspRadius => {
+                "generation grid (geo-mean of envelope/4 and cusp/4)"
+            }
             Self::SimResolution => "simulation dexel grid",
             Self::ToleranceFloor => "tolerance floor (tool scale did not set the cell)",
             Self::Explicit => "caller-pinned grid",
