@@ -219,17 +219,18 @@ fn draw_status_header(ui: &mut egui::Ui, sim: &SimulationState, gui: &GuiState) 
     let collision_count = sim.checks.total_collision_count();
     // Roadmap C.6 — verdict mirrors the rule the MCP `run_simulation` response
     // uses: collisions → ERROR; air cut > 20% → WARNING; otherwise SUCCESS.
+    // LH-1: this banner's 20% rule is on the TOTAL-runtime measure (cutting +
+    // rapids) and always has been - the named accessor keeps it there, and the
+    // banner text says which denominator it is showing. The cutting-time
+    // reading of the same seconds is larger and is what the MCP narration
+    // prints; see `MEASUREMENT_DOMAINS.md` LH-1.
     let air_cut_pct = sim
         .results
         .as_ref()
         .and_then(|r| r.cut_trace.as_ref())
         .map(|ct| {
-            let s = &ct.summary;
-            if s.total_runtime_s > 0.0 {
-                s.air_cut_time_s / s.total_runtime_s * 100.0
-            } else {
-                0.0
-            }
+            use rs_cam_core::simulation_cut::AirCutRatios;
+            ct.summary.air_cut_pct_of_total_runtime()
         })
         .unwrap_or(0.0);
     let (banner_text, banner_color) = if collision_count > 0 {
@@ -243,7 +244,8 @@ fn draw_status_header(ui: &mut egui::Ui, sim: &SimulationState, gui: &GuiState) 
     } else if air_cut_pct > 20.0 {
         (
             format!(
-                "⚠ High air cutting ({air_cut_pct:.0}%) — toolpath may be sweeping over uncut stock"
+                "⚠ High air cutting ({air_cut_pct:.0}% of total runtime) — toolpath may \
+                 be sweeping over uncut stock"
             ),
             theme::WARNING,
         )
@@ -626,22 +628,33 @@ fn draw_project_section(
             // counts ("Air cut 12031" is an expert numerator with no
             // denominator; "Air cut 12% of runtime" is a judgment a standard
             // user can act on). Raw sample counts stay reachable on hover.
+            //
+            // LH-1: "% of runtime" is ambiguous - these are shares of TOTAL
+            // runtime (cutting + rapids), the same measure the banner and the
+            // per-operation thresholds use. The air-cut row also carries the
+            // cutting-time reading on hover, because that is the number the
+            // MCP narration reports for the same seconds.
             let time_pcts = sim
                 .results
                 .as_ref()
                 .and_then(|r| r.cut_trace.as_ref())
                 .map(|trace| {
+                    use rs_cam_core::simulation_cut::AirCutRatios;
                     let s = &trace.summary;
-                    let pct = |t: f64| {
+                    let pct_of_total = |t: f64| {
                         if s.total_runtime_s > 0.0 {
                             t / s.total_runtime_s * 100.0
                         } else {
                             0.0
                         }
                     };
-                    (pct(s.air_cut_time_s), pct(s.low_engagement_time_s))
+                    (
+                        pct_of_total(s.air_cut_time_s),
+                        pct_of_total(s.low_engagement_time_s),
+                        s.air_cut_pct_of_cutting_time(),
+                    )
                 });
-            if let Some((air_pct, low_eng_pct)) = time_pcts {
+            if let Some((air_pct, low_eng_pct, air_pct_of_cutting)) = time_pcts {
                 ui.add_space(2.0);
                 ui.label(
                     egui::RichText::new("Informational")
@@ -659,32 +672,42 @@ fn draw_project_section(
                                 .map(|(_, c)| *c)
                                 .unwrap_or(0)
                         };
+                        let air_denominator_note = format!(
+                            "\nDenominator: TOTAL runtime (cutting + rapids) - the measure \
+                             the banner and the per-operation thresholds use. Over CUTTING \
+                             time alone the same seconds read {air_pct_of_cutting:.0}%, \
+                             which is what the MCP narration reports."
+                        );
                         let rows = [
                             (
                                 SimulationIssueKind::AirCut,
                                 air_pct,
                                 "Time the tool spends moving at cutting feed without \
                                  removing material.",
+                                air_denominator_note.as_str(),
                             ),
                             (
                                 SimulationIssueKind::LowEngagement,
                                 low_eng_pct,
                                 "Time spent cutting at very light radial engagement \
                                  (< 2% of diameter).",
+                                "",
                             ),
                         ];
-                        for (kind, pct, what) in rows {
+                        for (kind, pct, what, denominator_note) in rows {
                             ui.label(
                                 egui::RichText::new(issue_kind_label(kind))
                                     .small()
                                     .color(theme::TEXT_MUTED),
                             );
-                            ui.label(egui::RichText::new(format!("{pct:.0}% of runtime")).small())
-                                .on_hover_text(format!(
-                                    "{what}\n{} flagged samples — a per-sample emission \
-                                     tally, not a defect count.",
-                                    count_for(kind)
-                                ));
+                            ui.label(
+                                egui::RichText::new(format!("{pct:.0}% of total runtime")).small(),
+                            )
+                            .on_hover_text(format!(
+                                "{what}\n{} flagged samples — a per-sample emission \
+                                 tally, not a defect count.{denominator_note}",
+                                count_for(kind)
+                            ));
                             ui.end_row();
                         }
                     });

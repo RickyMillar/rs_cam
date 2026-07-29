@@ -142,12 +142,21 @@ fn wanaka_decomposes_to_order_ten_regions() {
         surface.cell_size()
     );
     eprintln!("measurement: {}", planned.stats.provenance.describe());
+    // M1 4.3 / LH-3: the area column is XY-PROJECTED mm^2 and says so on every
+    // row. The only 3D-surface area in this file is the ground-truth block in
+    // `wanaka_band_mix_vs_cusp_radius`, and the two are different TYPES.
     eprintln!(
-        "Shallow   : {n_shallow:3} regions, {:10.0} mm^2",
+        "Shallow   : {n_shallow:3} regions, {:10.0} mm^2 XY-proj",
         a_shallow.mm2()
     );
-    eprintln!("MidSteep  : {n_mid:3} regions, {:10.0} mm^2", a_mid.mm2());
-    eprintln!("VerySteep : {n_very:3} regions, {:10.0} mm^2", a_very.mm2());
+    eprintln!(
+        "MidSteep  : {n_mid:3} regions, {:10.0} mm^2 XY-proj",
+        a_mid.mm2()
+    );
+    eprintln!(
+        "VerySteep : {n_very:3} regions, {:10.0} mm^2 XY-proj",
+        a_very.mm2()
+    );
     eprintln!(
         "raw islands pre-conditioning: steep {}, very-steep {}",
         planned.stats.raw_steep_islands, planned.stats.raw_very_steep_islands
@@ -292,14 +301,21 @@ fn wanaka_slope_distribution_diagnostic() {
         mesh.bbox.max.z,
         mesh.bbox.max.z - mesh.bbox.min.z
     );
-    eprintln!("band    | true surface (area%) | offset surface (cell%)");
+    // LH-3: two DIFFERENT denominators printed side by side - column A is a
+    // share of 3D mesh face area, column B a share of covered classification
+    // cells on the Ø6 offset surface. They are not a ratio pair and this
+    // table never divides one by the other; the header says which is which.
+    eprintln!(
+        "band    | 3D-surface area% (of {total_up_area:.0} mm^2 upward faces) | \
+         grid cell% (of {covered_cells} covered cells)"
+    );
     for (b, &(_, _, name)) in BANDS.iter().enumerate() {
         let a_pct = 100.0 * face_area.get(b).copied().unwrap_or(0.0) / total_up_area.max(1e-9);
         let c_pct = 100.0 * cell_count.get(b).copied().unwrap_or(0) as f64
             / (covered_cells as f64).max(1.0);
-        eprintln!("{name}  | {a_pct:19.1}% | {c_pct:20.1}%");
+        eprintln!("{name}  | {a_pct:19.1}% 3D-surf | {c_pct:20.1}% cells");
     }
-    eprintln!("max     | {max_face_deg:19.1}° | {max_cell_deg:20.1}°");
+    eprintln!("max     | {max_face_deg:19.1}° face | {max_cell_deg:20.1}° cell");
     assert!(total_up_area > 0.0);
     assert!(covered_cells > 0);
 }
@@ -384,9 +400,18 @@ fn p2e_conditioning_dial_sweep() {
     }
 
     eprintln!("── P2.e Tier-1: conditioning dial sweep (wanaka, decompose-only) ──");
+    // LH-3: every `mm2` column below is XY-PROJECTED area at polygon
+    // extraction on the classification grid. Never a share of a 3D face area.
+    eprintln!("area columns: XY-projected mm^2 at polygon extraction");
     eprintln!(
         "{:<16} | {:>7} | {:>13} | {:>13} | {:>13} | {:>8} | {:>9}",
-        "row", "regions", "shallow n/mm2", "mid n/mm2", "very n/mm2", "absorbed", "raw s/vs"
+        "row",
+        "regions",
+        "shallow n/xy-mm2",
+        "mid n/xy-mm2",
+        "very n/xy-mm2",
+        "absorbed",
+        "raw s/vs"
     );
     for (label, params) in &rows {
         let planned = decompose_surface(&surface, &[], tool_radius, params);
@@ -477,9 +502,20 @@ fn wanaka_band_mix_vs_cusp_radius() {
     let cancel = || false;
 
     eprintln!("── wanaka band mix vs cusp radius (§14q) ──");
+    // LH-3: the three band columns are `n regions / XY-PROJECTED mm^2`. The
+    // ground-truth block below prints TRUE 3D face area in its own column,
+    // typed `SurfaceAreaMm2` - dividing one by the other does not compile.
+    eprintln!("band columns: regions / XY-projected mm^2 (NOT 3D surface area)");
     eprintln!(
         "{:>7} {:>9} {:>8} {:>11} {:>8}  {:>13} {:>13} {:>13}",
-        "cusp_r", "min_area", "close_r", "grid", "sample_s", "Shallow", "MidSteep", "VerySteep"
+        "cusp_r",
+        "min_area",
+        "close_r",
+        "grid",
+        "sample_s",
+        "Shallow",
+        "MidSteep",
+        "VerySteep"
     );
 
     // 3.0 = Ø6 ball (radius == cusp radius, unaffected by the fix).

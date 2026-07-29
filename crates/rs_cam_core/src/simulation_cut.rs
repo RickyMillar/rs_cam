@@ -368,6 +368,10 @@ pub struct SimulationToolpathCutSummary {
     /// downstream consumers MUST suppress it via the flag; it does not
     /// indicate an actual problem. Per-kinematics breakdown is on
     /// `per_kinematics` for callers that need an axis-aware reading.
+    ///
+    /// To express this as a percentage use [`AirCutRatios`] and name the
+    /// denominator — `total_runtime_s` and `cutting_runtime_s` give two
+    /// different numbers and both have shipped under the name "air cut %".
     pub air_cut_time_s: f64,
     /// Time spent cutting with `0.02 ≤ engagement.radial_woc_fraction < 0.10`.
     /// Same axis + caveats as `air_cut_time_s`.
@@ -514,6 +518,93 @@ pub struct SimulationCutSummary {
     #[serde(default)]
     pub runtime_by_intent: Option<crate::machine_kinematics::CycleTimeBreakdown>,
 }
+
+// ── LH-1: air cut has TWO denominators; both must be named ──────────────
+
+/// Air-cut time expressed as a percentage — under the **name of its
+/// denominator**, because there are two and they are not the same number.
+///
+/// `air_cut_time_s` is a duration. Turning it into a "%" requires choosing
+/// what it is a percentage *of*, and this codebase historically chose both:
+///
+/// | surface | denominator |
+/// |---|---|
+/// | `ProjectDiagnostics::air_cut_percentage`, the GUI banner + "% of total runtime" chips, the `>20%` verdict rule, `OperationType::air_cut_high_threshold_pct` | **total runtime** (cutting + rapids) |
+/// | the MCP `narrate_toolpath` air-cut line, and `CLAUDE.md`'s metric caveats | **cutting runtime** (rapids excluded) |
+///
+/// On a retract-heavy op the two differ by a large factor: total runtime is
+/// always ≥ cutting runtime, so the total-runtime reading is always the
+/// smaller (and never fires a threshold the cutting-time reading would).
+/// Neither is wrong; publishing either as a bare "air cut %" is
+/// (`MEASUREMENT_DOMAINS.md` LH-1 / X-3).
+///
+/// **Thresholds follow the total-runtime measure.** Every shipped threshold
+/// — the GUI's 20%, the CLI's 40%, and every per-operation value in
+/// [`crate::compute::catalog::OperationType::air_cut_high_threshold_pct`] —
+/// was tuned against [`Self::air_cut_pct_of_total_runtime`] and keeps using
+/// it. This trait changed no number; it named them.
+///
+/// Both readings share the same caveat as the numerator: `air_cut_time_s` is
+/// triggered on the radial-WOC axis only, so consumers MUST suppress it when
+/// [`SimulationToolpathCutSummary::metrics_not_applicable`] is set.
+pub trait AirCutRatios {
+    /// Time at `radial_woc_fraction < 0.02` (seconds).
+    fn air_cut_seconds(&self) -> f64;
+    /// Total integrator runtime including rapids (seconds).
+    fn total_runtime_seconds(&self) -> f64;
+    /// Cutting-feed runtime, rapids excluded (seconds).
+    fn cutting_runtime_seconds(&self) -> f64;
+
+    /// Air-cut time as a percentage of **total runtime (cutting + rapids)** —
+    /// the measure every shipped threshold is tuned against. `0.0` when the
+    /// toolpath has no runtime.
+    #[must_use]
+    fn air_cut_pct_of_total_runtime(&self) -> f64 {
+        let total = self.total_runtime_seconds();
+        if total > 0.0 {
+            self.air_cut_seconds() / total * 100.0
+        } else {
+            0.0
+        }
+    }
+
+    /// Air-cut time as a percentage of **cutting time (rapids excluded)** —
+    /// always ≥ [`Self::air_cut_pct_of_total_runtime`], and the measure the
+    /// MCP narration reports. `0.0` when the toolpath has no cutting time.
+    #[must_use]
+    fn air_cut_pct_of_cutting_time(&self) -> f64 {
+        let cutting = self.cutting_runtime_seconds();
+        if cutting > 0.0 {
+            self.air_cut_seconds() / cutting * 100.0
+        } else {
+            0.0
+        }
+    }
+}
+
+macro_rules! impl_air_cut_ratios {
+    ($($ty:ty),+ $(,)?) => {
+        $(impl AirCutRatios for $ty {
+            fn air_cut_seconds(&self) -> f64 {
+                self.air_cut_time_s
+            }
+            fn total_runtime_seconds(&self) -> f64 {
+                self.total_runtime_s
+            }
+            fn cutting_runtime_seconds(&self) -> f64 {
+                self.cutting_runtime_s
+            }
+        })+
+    };
+}
+
+impl_air_cut_ratios!(
+    SimulationCutSummary,
+    SimulationToolpathCutSummary,
+    SimulationSemanticCutSummary,
+    SimulationCutHotspot,
+    SummaryAccumulator,
+);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SimulationCutTrace {

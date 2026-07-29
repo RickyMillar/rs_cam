@@ -1299,7 +1299,13 @@ fn append_air_cut_anomaly(
     }
     // Milling-side path: pull the per-toolpath cutting / air-cut / engagement
     // numbers; bail out cleanly if no summary exists (e.g. zero cutting time).
-    let Some((air_cut_time_s, cutting_time_s, average_engagement)) =
+    //
+    // LH-1: air cut has two denominators and both ship. This line reports the
+    // CUTTING-time reading (what it has always reported, and what CLAUDE.md's
+    // metric caveats describe) and now prints the TOTAL-runtime reading beside
+    // it - the one the GUI banner and every `air_cut_high_threshold_pct` band
+    // are tuned against. Naming them is the whole fix: neither number moved.
+    let Some((air_pct_of_cutting, air_pct_of_total, cutting_time_s, average_engagement)) =
         cut_summary_metrics(trace, context)
     else {
         return;
@@ -1307,8 +1313,7 @@ fn append_air_cut_anomaly(
     if cutting_time_s <= 0.0 {
         return;
     }
-    let air_pct = air_cut_time_s / cutting_time_s * 100.0;
-    let marker = if air_pct > AIR_CUT_WARNING_PERCENT {
+    let marker = if air_pct_of_cutting > AIR_CUT_WARNING_PERCENT {
         "⚠"
     } else {
         "ℹ"
@@ -1342,15 +1347,22 @@ fn append_air_cut_anomaly(
         }
     };
     anomalies.push(format!(
-        "{marker} {:.1}% of cutting time is air-cut; average engagement {:.3}.{}",
-        air_pct, average_engagement, hint
+        "{marker} {:.1}% of CUTTING time is air-cut ({:.1}% of TOTAL runtime, the measure \
+         the GUI banner and the per-operation thresholds use); average engagement {:.3}.{}",
+        air_pct_of_cutting, air_pct_of_total, average_engagement, hint
     ));
 }
 
+/// `(air-cut % of CUTTING time, air-cut % of TOTAL runtime, cutting seconds,
+/// average engagement)` for the narrated toolpath, or the whole trace when no
+/// toolpath is pinned. Both percentages are returned because both ship under
+/// the name "air cut %" (`MEASUREMENT_DOMAINS.md` LH-1); a caller that takes
+/// only one must say which in its output.
 fn cut_summary_metrics(
     trace: &SimulationCutTrace,
     context: &ToolpathNarrationContext<'_>,
-) -> Option<(f64, f64, f64)> {
+) -> Option<(f64, f64, f64, f64)> {
+    use crate::simulation_cut::AirCutRatios;
     if let Some(id) = context.toolpath_id {
         return trace
             .toolpath_summaries
@@ -1358,14 +1370,16 @@ fn cut_summary_metrics(
             .find(|summary| summary.toolpath_id == id)
             .map(|summary| {
                 (
-                    summary.air_cut_time_s,
+                    summary.air_cut_pct_of_cutting_time(),
+                    summary.air_cut_pct_of_total_runtime(),
                     summary.cutting_runtime_s,
                     summary.average_engagement,
                 )
             });
     }
     Some((
-        trace.summary.air_cut_time_s,
+        trace.summary.air_cut_pct_of_cutting_time(),
+        trace.summary.air_cut_pct_of_total_runtime(),
         trace.summary.cutting_runtime_s,
         trace.summary.average_engagement,
     ))

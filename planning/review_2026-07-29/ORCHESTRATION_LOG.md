@@ -208,10 +208,128 @@ production toolpaths:
   → intermediate cell; Scallop gated behind Checkpoint C (max_rings/M4);
   SteepShallow needs a discriminating fixture; §open questions.
 
+## CHECKPOINT DECISIONS (2026-07-29, user-approved)
+
+**Checkpoint A: APPROVED. Checkpoint B: APPROVED.** User rulings:
+- **Ball tools MIGRATE** to the winning reach model (the matrix is the plan's
+  "separately justified correction"; 0/0/100% vs 11-gouge/35-miss/74%).
+- Architecture defaults locked in by delegation ("best architecture wins"):
+  per-sample local depth in paths_from_sampled; retire route_width_factor for
+  the coverage criterion X_reach ≤ cap × stepover (old dial deserialized with
+  deprecation finding); wall angle = finite difference off RestGrid::surface_z
+  (CLR+θ model); per-side reach + asymmetric fan; gate on GOUGE, report
+  wasted-time; max_rings budget derived from SELECTED stepover as an H3-scoped
+  EXPERIMENT first (adopt only if standing→0 with no over-cut regression;
+  remember v3: naive cap raise was 34× worse); RampFinish gets a NAMED
+  intermediate policy variant (geo-mean), not op-owned Explicit; scallop
+  acceptance gate = achieved-cusp-vs-dial; SteepShallow deferred WITH written
+  reason + discriminating-fixture task; global cusp grid retired; wanaka
+  characterisation per behavioral PR, after direction.
+- **Wave D first** (safe report-only/plumbing defect fixes), then behavioral
+  waves — instruments before behavior, the programme's own lesson.
+
+Wave D roster: D1 loud findings (Auto-heights VerySteep drop + tip-float
+channel); D2 = task #13 LH-1..LH-4 (air-cut% published under BOTH honest names
+with no numeric behavior change; part_area_fraction footprint denominator;
+harness newtyping); D3 plumbing (SpanKind node/ring discriminator, stale
+semantic bbox post-clip, CLI ToolpathDiagnostic field, ScallopReport ring
+count, ToleranceFloor CellSource variant).
+
+Behavioral waves after D: H2 routing PR-4..7 (incl. #12 SelfReferenced + ball
+migration + cone-gouge reach clamp), RampFinish intermediate mode, max_rings
+experiment, SteepShallow fixture investigation, 0.9 µm segment gate.
+
+- impl-10 DONE → **Wave D1 COMMITTED `cbe8503`**. Dropped-band finding (48.5mm²
+  85° groove now loud: was 706.8mm of cutting silently gone with default
+  heights) + tip-float channel (closed-form-verified 2.3748mm float on Ø3
+  ball/1.2mm groove; hooks in paths_from_sampled with 5 preservation notes for
+  H2's rewrite — floor = SECOND drop with Ø0.1 probe ball, centreline only,
+  stock_to_leave backed out, NaN = examined-not-floating, threshold ==
+  reach_gap_threshold MOVE TOGETHER). FNV fingerprints unchanged; all gates
+  green. Fixed in passing: from_generation adapter early-return would have
+  silently gated all future findings on the ring cascade. NEW ledger items:
+  partial height clipping unreported (only total collapse); ComputeMessage
+  enum at its 280-byte clippy ceiling — next ToolpathStats field needs
+  ComputeMessage::Toolpath boxed (~16 sites); top_z-only clip attribution
+  untested.
+
+- impl-11 DONE -> **Wave D2 COMMITTED `<hash>`** (task #13, LH-1..LH-4).
+
+  **LH-1 air-cut denominator — NO numeric behaviour change.** New
+  `simulation_cut::AirCutRatios` trait (impl'd for the 4 summary types +
+  `SummaryAccumulator`) publishes `air_cut_pct_of_total_runtime()` and
+  `air_cut_pct_of_cutting_time()`; every surface now calls one BY NAME and
+  says which in its label. **LEDGER NOTE — threshold semantics: every shipped
+  air-cut threshold follows the TOTAL-RUNTIME measure** (GUI banner 20%, CLI
+  verdict 40%, and every `OperationType::air_cut_high_threshold_pct` band).
+  Nothing was retuned; the cutting-time reading (what `narrate_toolpath`
+  reports, and what CLAUDE.md's metric-caveats block describes) now ships
+  BESIDE it everywhere rather than under the same word. **CLAUDE.md still
+  says air-cut is "calibrated against cutting-time, not wall-clock" — true
+  only of the narration path; correcting that line is deliberately left to
+  the L1 docs sweep / plan slice 7** so this wave stayed code-only.
+  Serialization: `ProjectDiagnostics` keeps `air_cut_percentage` (same
+  total-runtime value) and gains two named keys -> `serialize_struct` arity
+  8 -> 10; the CLI `ProjectSummary` JSON likewise keeps its legacy key and
+  gains both named ones; `OptimizeCandidate::air_cut_pct` was renamed in code
+  to `air_cut_fraction_of_total_runtime` with `#[serde(rename =
+  "air_cut_pct")]` so persisted optimizer results still load. Its doc-comment
+  claimed "fraction of cutting time" while dividing by total runtime — an
+  unlisted fifth instance of LH-1, corrected (doc, not value).
+
+  **LH-2 `part_area_fraction` -> `part_footprint_fraction`; denominator is
+  now the covered footprint.** RED-FIRST EVIDENCE (probe run at the old
+  denominator, then deleted): a diagonal part on a 40x40 @ 0.5 mm rest grid
+  covers 205.0 mm2 of its 400.0 mm2 bbox (51%); a single 110 mm2 rest region
+  is 53.7% of the real footprint but only 27.5% of the bbox, so the >=0.5
+  warning stayed SILENT — `expected the giant-region warning to fire, got
+  None`. Fix: `RestGrid::covered_cell_count` / `covered_footprint_area_mm2`
+  (cells with finite `surface_z` x cell2) + `footprint_provenance()`; the GUI
+  now passes each toolpath's OWN rest-grid footprint (and the boundary-source
+  picker carries the SOURCE toolpath's, added as a 5th tuple field), and the
+  mesh-XY-bbox computation is deleted. No grid -> 0.0 -> silence, never a
+  guess. `RestRegionPathology` is not serde, so no alias was needed.
+  **This CHANGES when the warning fires — it now fires on parts it used to
+  miss, which is the point.** Sentries:
+  `giant_region_denominator_is_the_covered_footprint_not_the_bbox` (keeps the
+  bbox reading as recorded evidence) + `covered_footprint_ignores_uncovered_cells`.
+
+  **LH-3** was already newtyped by PR-0; swept the rest of the harness and
+  its sibling — every remaining bare `mm^2` / `%` column in
+  `finish_planner_wanaka_decompose.rs` now carries its domain in the header
+  or the row (`XY-proj`, `3D-surf`, `cells`), including the slope-distribution
+  table that prints a 3D-area% and a cell% side by side.
+  `tapered_cusp_radius_sentry.rs` was already clean.
+
+  **LH-4** `v3_cascade_ab.rs` `BAND COVERAGE` no longer prints a cell count
+  and overlap-dilated mm2 on one line: covered cells (with their mm2
+  equivalent) and per-band extracted areas are separate lines, each carrying
+  `MeasurementProvenance::describe()`, and the only ratio left is cells/cells
+  on one grid. The **"~17% of covered area reclaimed" docstring is RETRACTED**
+  in place (void, not falsified — wrong domain AND a numerator that
+  double-counts the 2 mm dilation ring). `build_band_map` gained a doc block
+  stating the overlap double-count and the established rule that verdicts
+  must attribute by `Region` spans, not by a dilated band map. Extraction
+  redesign deliberately NOT attempted (H4).
+
+  Gates: new `tests/air_cut_denominators_lh1.rs` 4/4 (incl. a grep-style
+  sentry over the 5 viz/CLI surfaces — retarget it, never delete it, if a
+  file moves); standing_material_channel_am9 4/4; unified_finish_tapered_
+  end_to_end_m21 9/9; finish_resolution_policy_pr3 8/8 (fingerprints
+  unchanged); dropped_band_finding_d1 3/3; pencil_tip_float_channel_d1 3/3;
+  `-p rs_cam_core --lib` 2171 passed / exactly the 3 known adaptive3d reds;
+  `-p rs_cam_viz` 227/227; `-p rs_cam_cli` 14/14; clippy workspace clean.
+  ADJACENT DEFECTS SEEN, NOT FIXED: `v3_cascade_ab` `OP B STRATEGY MIX`
+  `%area` shares still sum past 100% on overlapping centreline footprints
+  (X-15) and `EFFICIENCY WITH BOUNDS` still divides a tool-CENTRELINE
+  footprint by time while claiming tool invariance (X-14) — both are A/M7
+  scope; `SimulationSemanticCutSummary`/`SimulationCutHotspot` carry
+  `wasted_runtime_s` with no denominator of their own.
+
 Remaining programme work (post-checkpoint): H2 routing slices (PR-4..7),
 A/M6 claims_reference (PR-3a), PR-8..9 resolution consumers, M3 classifier,
 M4 scallop (Checkpoint C), M5 offset_polygon (Checkpoint D), A/M7 retract
 trips + A/M10 descent/resolution, H4 re-measurement ledger (Checkpoint E),
 L1 docs sweep. Deferred defect tasks: #12 tapered-pencil SelfReferenced,
-#13 LH-1..LH-4 measurement hazards, #15 Auto-heights VerySteep drop (+ new:
+#15 Auto-heights VerySteep drop (+ new:
 RampFinish cone gouge, tip-float silent residual, 0.9 µm segments).

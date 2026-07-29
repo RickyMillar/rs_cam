@@ -844,7 +844,22 @@ pub struct Verdict {
 #[derive(Debug, Clone)]
 pub struct ProjectDiagnostics {
     pub total_runtime_s: f64,
+    /// Legacy name, unchanged value: identical to
+    /// [`Self::air_cut_pct_of_total_runtime`]. Kept so the MCP wire key
+    /// `air_cut_percentage` and its consumers keep working; new code should
+    /// read one of the two named fields below so the denominator is visible
+    /// at the call site (`MEASUREMENT_DOMAINS.md` LH-1).
     pub air_cut_percentage: f64,
+    /// Air-cut time ÷ **total runtime (cutting + rapids)** × 100.
+    /// The measure every shipped threshold is tuned against — the GUI's 20%
+    /// banner, the CLI's 40% verdict, and
+    /// [`crate::compute::catalog::OperationType::air_cut_high_threshold_pct`].
+    pub air_cut_pct_of_total_runtime: f64,
+    /// Air-cut time ÷ **cutting runtime (rapids excluded)** × 100 — always
+    /// ≥ [`Self::air_cut_pct_of_total_runtime`]. This is what the MCP
+    /// `narrate_toolpath` air-cut line reports and what `CLAUDE.md`'s metric
+    /// caveats describe. No threshold is applied to it.
+    pub air_cut_pct_of_cutting_time: f64,
     pub average_engagement: f64,
     pub collision_count: usize,
     pub rapid_collision_count: usize,
@@ -1461,9 +1476,20 @@ impl serde::Serialize for Verdict {
 impl serde::Serialize for ProjectDiagnostics {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("ProjectDiagnostics", 8)?;
+        let mut s = serializer.serialize_struct("ProjectDiagnostics", 10)?;
         s.serialize_field("total_runtime_s", &self.total_runtime_s)?;
+        // LH-1: the legacy key keeps its (total-runtime) value for wire
+        // compatibility; the two named keys beside it say which denominator
+        // each number used, so an agent never has to guess.
         s.serialize_field("air_cut_percentage", &self.air_cut_percentage)?;
+        s.serialize_field(
+            "air_cut_pct_of_total_runtime",
+            &self.air_cut_pct_of_total_runtime,
+        )?;
+        s.serialize_field(
+            "air_cut_pct_of_cutting_time",
+            &self.air_cut_pct_of_cutting_time,
+        )?;
         s.serialize_field("average_engagement", &self.average_engagement)?;
         s.serialize_field("collision_count", &self.collision_count)?;
         s.serialize_field("rapid_collision_count", &self.rapid_collision_count)?;

@@ -454,8 +454,14 @@ impl OperationType {
     /// — dexel can't measure Z-only moves; see `planning/P1_AIR_CUT_THRESHOLDS_RCA.md`).
     ///
     /// Calibrated from `WANAKA_ASSESSMENT_2026-05-19.md` expectation bands.
-    /// Returning `Some(threshold)` means: a TP whose `air_cut_time_s /
-    /// total_runtime_s` exceeds `threshold/100` is a real signal.
+    /// Returning `Some(threshold)` means: a TP whose
+    /// [`crate::simulation_cut::AirCutRatios::air_cut_pct_of_total_runtime`]
+    /// exceeds `threshold` is a real signal.
+    ///
+    /// **The denominator is TOTAL runtime (cutting + rapids)** — these bands
+    /// were tuned against that measure and must not be compared against
+    /// `air_cut_pct_of_cutting_time`, which is always larger and would fire
+    /// these thresholds spuriously (`MEASUREMENT_DOMAINS.md` LH-1).
     pub fn air_cut_high_threshold_pct(self) -> Option<f64> {
         use OperationType::{
             Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,

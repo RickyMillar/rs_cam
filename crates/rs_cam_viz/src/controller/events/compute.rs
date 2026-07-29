@@ -1361,27 +1361,35 @@ impl<B: ComputeBackend> AppController<B> {
             }
         }
 
-        let (total_runtime_s, air_cut_pct, avg_engagement) = if let Some(ref sim_results) =
-            self.state.simulation.results
-            && let Some(ref ct) = sim_results.cut_trace
-        {
-            let s = &ct.summary;
-            let air = if s.total_runtime_s > 0.0 {
-                s.air_cut_time_s / s.total_runtime_s * 100.0
+        // LH-1: publish BOTH air-cut denominators under names that say which
+        // is which. The legacy `air_cut_percentage` key keeps its
+        // total-runtime value (the verdict rule below and every
+        // `air_cut_high_threshold_pct` band are tuned against it); the
+        // cutting-time reading - what `narrate_toolpath` prints for the same
+        // seconds - ships beside it instead of contradicting it under one
+        // name. See `MEASUREMENT_DOMAINS.md` LH-1.
+        let (total_runtime_s, air_cut_pct, air_cut_pct_of_cutting, avg_engagement) =
+            if let Some(ref sim_results) = self.state.simulation.results
+                && let Some(ref ct) = sim_results.cut_trace
+            {
+                use rs_cam_core::simulation_cut::AirCutRatios;
+                let s = &ct.summary;
+                (
+                    s.total_runtime_s,
+                    s.air_cut_pct_of_total_runtime(),
+                    s.air_cut_pct_of_cutting_time(),
+                    s.average_engagement,
+                )
             } else {
-                0.0
+                (0.0, 0.0, 0.0, 0.0)
             };
-            (s.total_runtime_s, air, s.average_engagement)
-        } else {
-            (0.0, 0.0, 0.0)
-        };
 
         let rapid_collision_count = self.state.simulation.checks.rapid_collisions.len();
 
         let verdict = if rapid_collision_count > 0 {
             "WARNING: rapid collisions detected"
         } else if air_cut_pct > 20.0 {
-            "WARNING: high air cutting"
+            "WARNING: high air cutting (>20% of total runtime)"
         } else {
             "OK"
         };
@@ -1389,6 +1397,8 @@ impl<B: ComputeBackend> AppController<B> {
         let mut resp = serde_json::json!({
             "total_runtime_s": total_runtime_s,
             "air_cut_percentage": air_cut_pct,
+            "air_cut_pct_of_total_runtime": air_cut_pct,
+            "air_cut_pct_of_cutting_time": air_cut_pct_of_cutting,
             "average_engagement": avg_engagement,
             "collision_count": 0,
             "rapid_collision_count": rapid_collision_count,

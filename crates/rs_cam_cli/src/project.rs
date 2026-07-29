@@ -49,7 +49,15 @@ struct ProjectSummary {
     total_cutting_distance_mm: f64,
     total_rapid_distance_mm: f64,
     total_runtime_s: f64,
+    /// Legacy key, unchanged value: identical to
+    /// `air_cut_pct_of_total_runtime`. Kept so existing scripts reading this
+    /// report keep working.
     air_cut_percentage: f64,
+    /// LH-1: air cut over TOTAL runtime (cutting + rapids) - the measure
+    /// every threshold in the codebase uses. The cutting-time reading of the
+    /// same seconds ships beside it so neither travels unnamed.
+    air_cut_pct_of_total_runtime: f64,
+    air_cut_pct_of_cutting_time: f64,
     average_engagement: f64,
     collision_count: usize,
     rapid_collision_count: usize,
@@ -322,8 +330,13 @@ pub fn run_project_command(
             "WARNING: {} rapid-through-stock collisions",
             diag.rapid_collision_count
         )
-    } else if diag.air_cut_percentage > 40.0 {
-        format!("WARNING: {:.1}% air cutting", diag.air_cut_percentage)
+    } else if diag.air_cut_pct_of_total_runtime > 40.0 {
+        // LH-1: the 40% band is on the TOTAL-runtime measure; the verdict
+        // string says so rather than shipping a bare "air cutting %".
+        format!(
+            "WARNING: {:.1}% air cutting of total runtime",
+            diag.air_cut_pct_of_total_runtime
+        )
     } else {
         "OK".to_owned()
     };
@@ -336,6 +349,8 @@ pub fn run_project_command(
         total_rapid_distance_mm: total_rapid,
         total_runtime_s: diag.total_runtime_s,
         air_cut_percentage: diag.air_cut_percentage,
+        air_cut_pct_of_total_runtime: diag.air_cut_pct_of_total_runtime,
+        air_cut_pct_of_cutting_time: diag.air_cut_pct_of_cutting_time,
         average_engagement: diag.average_engagement,
         collision_count: total_collision_count,
         rapid_collision_count: diag.rapid_collision_count,
@@ -388,8 +403,9 @@ pub fn run_project_command(
             && let Some(trace) = &sim_result.cut_trace
         {
             eprintln!(
-                "Air cutting: {:.1}%  |  Avg engagement: {:.2}  |  Peak chipload: {:.3} mm/tooth",
-                diag.air_cut_percentage,
+                "Air cutting: {:.1}% of total runtime  |  Avg engagement: {:.2}  |  \
+                 Peak chipload: {:.3} mm/tooth",
+                diag.air_cut_pct_of_total_runtime,
                 diag.average_engagement,
                 trace.summary.peak_chipload_mm_per_tooth,
             );

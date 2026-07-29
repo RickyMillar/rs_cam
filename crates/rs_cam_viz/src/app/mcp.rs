@@ -1321,6 +1321,7 @@ impl super::RsCamApp {
         // P0 unified-finishing probe — compact per-toolpath runtime block.
         // `runtime_by_intent` is the F-034 integrator time bucketed by
         // MoveIntent class (None when the sim ran without kinematics).
+        use rs_cam_core::simulation_cut::AirCutRatios;
         let toolpath_summaries_val: Vec<serde_json::Value> = ct
             .toolpath_summaries
             .iter()
@@ -1332,6 +1333,11 @@ impl super::RsCamApp {
                     "cutting_runtime_s": s.cutting_runtime_s,
                     "rapid_runtime_s": s.rapid_runtime_s,
                     "air_cut_time_s": s.air_cut_time_s,
+                    // LH-1: both denominators, both named. Thresholds follow
+                    // the total-runtime reading; the MCP narration line
+                    // reports the cutting-time one.
+                    "air_cut_pct_of_total_runtime": s.air_cut_pct_of_total_runtime(),
+                    "air_cut_pct_of_cutting_time": s.air_cut_pct_of_cutting_time(),
                     "low_engagement_time_s": s.low_engagement_time_s,
                     "metrics_not_applicable": s.metrics_not_applicable,
                     "runtime_by_intent": s.runtime_by_intent,
@@ -4504,6 +4510,7 @@ fn build_span_cut_summaries(
                 }
             }
 
+            use rs_cam_core::simulation_cut::AirCutRatios;
             let mut acc = rs_cam_core::simulation_cut::SummaryAccumulator::default();
             for sample in trace
                 .samples
@@ -4539,6 +4546,9 @@ fn build_span_cut_summaries(
                 "cutting_runtime_s": acc.cutting_runtime_s,
                 "rapid_runtime_s": acc.rapid_runtime_s,
                 "air_cut_time_s": acc.air_cut_time_s,
+                // LH-1: span-scope air cut, both denominators named.
+                "air_cut_pct_of_total_runtime": acc.air_cut_pct_of_total_runtime(),
+                "air_cut_pct_of_cutting_time": acc.air_cut_pct_of_cutting_time(),
                 "low_engagement_time_s": acc.low_engagement_time_s,
                 "wasted_runtime_s": acc.air_cut_time_s + acc.low_engagement_time_s,
                 "average_engagement": acc.average_engagement(),

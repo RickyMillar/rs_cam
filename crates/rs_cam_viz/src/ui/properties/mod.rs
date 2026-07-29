@@ -39,12 +39,25 @@ use crate::ui::components::{
 /// [`rs_cam_core::rest_field::classify_rest_regions`] against the SOURCE's
 /// regions (sliver-storm / giant-region warning, 2026-07-06 incident)
 /// without new session/runtime plumbing.
+/// The trailing `f64` is the SOURCE toolpath's covered XY footprint (mm²),
+/// read off its own rest grid — the honest denominator for the giant-region
+/// share (`MEASUREMENT_DOMAINS.md` LH-2). `0.0` when that toolpath carries no
+/// rest grid, which classifies as "no usable footprint estimate" (silence).
 type BoundaryRestCandidate = (
     ToolpathId,
     String,
     bool,
     Option<std::sync::Arc<Vec<rs_cam_core::polygon::Polygon2>>>,
+    f64,
 );
+
+/// The part's covered XY footprint (mm²) measured on a rest grid — the
+/// denominator [`rs_cam_core::rest_field::classify_rest_regions`] requires.
+/// `0.0` (silence) when there is no grid to measure.
+fn rest_grid_footprint_area(grid: Option<&rs_cam_core::rest_field::RestGrid>) -> f64 {
+    grid.map(rs_cam_core::rest_field::RestGrid::covered_footprint_area_mm2)
+        .unwrap_or(0.0)
+}
 
 /// Paint a brief blue glow behind a UI region when an MCP parameter was recently changed.
 /// Call this right after allocating the widget/row so the highlight paints behind it.
@@ -437,16 +450,23 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .iter()
                 .filter(|tc| tc.id != id)
                 .map(|tc| {
-                    let cached_regions = state
+                    let cached = state
                         .gui
                         .toolpath_rt
                         .get(&tc.id)
-                        .and_then(|rt| rt.result.as_ref())
-                        .and_then(|r| r.annotated.rest_regions.clone());
+                        .and_then(|rt| rt.result.as_ref());
+                    let cached_regions =
+                        cached.and_then(|r| r.annotated.rest_regions.clone());
+                    // LH-2: the source's OWN rest-grid footprint travels with
+                    // its regions, so the pathology share has an honest
+                    // denominator without new session plumbing.
+                    let footprint_area = rest_grid_footprint_area(
+                        cached.and_then(|r| r.annotated.rest_grid.as_deref()),
+                    );
                     let ready = cached_regions
                         .as_ref()
                         .is_some_and(|regions| !regions.is_empty());
-                    (tc.id, tc.name.clone(), ready, cached_regions)
+                    (tc.id, tc.name.clone(), ready, cached_regions, footprint_area)
                 })
                 .collect();
 
@@ -490,22 +510,14 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 })
                 .unwrap_or(false);
 
-            // Part footprint area (mm^2) for the rest-region pathology
-            // caption (`classify_rest_regions`, sliver-storm / giant-region
-            // warning): the model's mesh XY bbox extent when there is one
-            // (3D ops), else the stock XY footprint — a reasonable
-            // approximation the panel already has on hand without a new
-            // per-model area computation.
-            let model_footprint_area = model_for_panel
-                .and_then(|m| m.mesh.as_ref())
-                .map(|mesh| {
-                    let bbox = mesh.bbox;
-                    (bbox.max.x - bbox.min.x) * (bbox.max.y - bbox.min.y)
-                })
-                .unwrap_or_else(|| {
-                    let stock = state.session.stock_config();
-                    stock.x * stock.y
-                });
+            // (Removed 2026-07-29, LH-2.) The rest-region pathology caption
+            // used to divide a rest-region area by the model's mesh XY
+            // BOUNDING RECTANGLE — a mask mismatch that under-reads every
+            // non-rectangular part by roughly its bbox fill ratio, so the
+            // "single giant region" warning fired late or never. The
+            // denominator is now each toolpath's own covered rest-grid
+            // footprint (`rest_grid_footprint_area`), measured on the same
+            // grid the regions came from. See `MEASUREMENT_DOMAINS.md` X-4.
 
             // Snapshot the toolpath model's drill targets + layers (DXF point /
             // circle-centre picking) for the drill-op panels.
@@ -618,7 +630,6 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     state.session.post_config().spindle_speed,
                     model_has_enriched,
                     model_is_step_missing_brep,
-                    model_footprint_area,
                     height_ctx.as_ref(),
                     &stale_default_defects,
                     load_verdict_for_tp.as_ref(),
@@ -3213,12 +3224,17 @@ fn rest_region_pathology_caption(
             "⚠ {count} rest regions — threshold likely below the prior pass's cusp height; \
              raise min_valley_depth."
         ),
-        rs_cam_core::rest_field::RestRegionPathology::SingleGiantRegion { part_area_fraction } => {
+        rs_cam_core::rest_field::RestRegionPathology::SingleGiantRegion {
+            part_footprint_fraction,
+        } => {
+            // LH-2: the percentage is of the part's COVERED XY FOOTPRINT (the
+            // rest grid's solved cells), not of its bounding rectangle — say
+            // so, because the two differ by ~2x on any non-rectangular part.
             format!(
-                "⚠ Rest region covers {:.0}% of the part — regions barely restrict the fine \
-                 pass; raise min_valley_depth, or use the machined-stock reference (Use \
-                 remaining stock) for an honest rest picture.",
-                part_area_fraction * 100.0
+                "⚠ Rest region covers {:.0}% of the part footprint — regions barely restrict \
+                 the fine pass; raise min_valley_depth, or use the machined-stock reference \
+                 (Use remaining stock) for an honest rest picture.",
+                part_footprint_fraction * 100.0
             )
         }
     }
@@ -3244,10 +3260,6 @@ fn draw_toolpath_panel(
     project_default_rpm: u32,
     model_has_enriched: bool,
     model_is_step_missing_brep: bool,
-    // Part footprint area (mm^2) for the rest-region pathology caption —
-    // see the `draw_toolpath_panel` call site above for how it's derived
-    // (model bbox XY extent, else stock XY footprint).
-    model_footprint_area: f64,
     height_ctx: Option<&HeightContext>,
     stale_default_defects: &[rs_cam_core::compute::validate::StaleDefault],
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
@@ -3861,7 +3873,7 @@ fn draw_toolpath_panel(
                                 {
                                     let default_source = boundary_source_candidates
                                         .first()
-                                        .map(|(candidate_id, _, _, _)| *candidate_id)
+                                        .map(|(candidate_id, _, _, _, _)| *candidate_id)
                                         .unwrap_or(entry.id);
                                     entry.boundary.source = BoundarySource::DerivedRestRegions {
                                         source_toolpath_id: default_source,
@@ -3885,8 +3897,10 @@ fn draw_toolpath_panel(
                             ui.label("Rest source:");
                             let current_label = boundary_source_candidates
                                 .iter()
-                                .find(|(candidate_id, _, _, _)| candidate_id == source_toolpath_id)
-                                .map(|(_, name, ready, _)| {
+                                .find(|(candidate_id, _, _, _, _)| {
+                                    candidate_id == source_toolpath_id
+                                })
+                                .map(|(_, name, ready, _, _)| {
                                     if *ready {
                                         format!("{name} (regions ready)")
                                     } else {
@@ -3895,11 +3909,11 @@ fn draw_toolpath_panel(
                                 })
                                 .unwrap_or_else(|| "(toolpath not found)".to_owned());
                             let mut sorted = boundary_source_candidates.to_vec();
-                            sorted.sort_by_key(|(_, _, ready, _)| !*ready);
+                            sorted.sort_by_key(|(_, _, ready, _, _)| !*ready);
                             egui::ComboBox::from_id_salt("boundary_rest_source")
                                 .selected_text(current_label)
                                 .show_ui(ui, |ui| {
-                                    for (candidate_id, name, ready, _) in &sorted {
+                                    for (candidate_id, name, ready, _, _) in &sorted {
                                         let label = if *ready {
                                             format!("{name} (regions ready)")
                                         } else {
@@ -3926,14 +3940,21 @@ fn draw_toolpath_panel(
                         // `boundary_source_candidates` alongside `ready`),
                         // not this consumer's own (this toolpath has none —
                         // it's the one consuming the boundary).
-                        let selected_regions = boundary_source_candidates
+                        //
+                        // LH-2: the denominator is the SOURCE toolpath's own
+                        // rest-grid footprint (captured alongside its
+                        // regions), not this model's bounding rectangle.
+                        let selected = boundary_source_candidates
                             .iter()
-                            .find(|(candidate_id, _, _, _)| candidate_id == source_toolpath_id)
-                            .and_then(|(_, _, _, regions)| regions.as_ref());
+                            .find(|(candidate_id, _, _, _, _)| candidate_id == source_toolpath_id);
+                        let selected_regions =
+                            selected.and_then(|(_, _, _, regions, _)| regions.as_ref());
+                        let source_footprint_area =
+                            selected.map(|(_, _, _, _, area)| *area).unwrap_or(0.0);
                         if let Some(regions) = selected_regions
                             && let Some(pathology) = rs_cam_core::rest_field::classify_rest_regions(
                                 regions,
-                                model_footprint_area,
+                                source_footprint_area,
                             )
                         {
                             ui.label(
@@ -4144,10 +4165,19 @@ fn draw_toolpath_panel(
             // rest_depth pencil) the detector it always runs. Deliberately
             // outside the `is_rest_depth_pencil` branch so both cases show
             // it.
+            //
+            // LH-2: the giant-region denominator is THIS result's own rest
+            // grid — covered cells × cell², the same grid the regions were
+            // extracted from. It used to be the model's XY bounding
+            // rectangle, which overstates a non-rectangular part's footprint
+            // and made the warning fire late (`MEASUREMENT_DOMAINS.md` X-4).
+            // No grid ⇒ 0.0 ⇒ silence, never a guess.
             if let Some(result) = &entry.result
                 && let Some(regions) = result.annotated.rest_regions.as_ref()
-                && let Some(pathology) =
-                    rs_cam_core::rest_field::classify_rest_regions(regions, model_footprint_area)
+                && let Some(pathology) = rs_cam_core::rest_field::classify_rest_regions(
+                    regions,
+                    rest_grid_footprint_area(result.annotated.rest_grid.as_deref()),
+                )
             {
                 ui.label(
                     egui::RichText::new(rest_region_pathology_caption(pathology))

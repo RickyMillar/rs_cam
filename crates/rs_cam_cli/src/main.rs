@@ -18,7 +18,9 @@ use rs_cam_core::{
         get_post_definition,
     },
     geo::BoundingBox3,
-    simulation_cut::{SimulationCutArtifact, SimulationCutIssueKind, SimulationCutTrace},
+    simulation_cut::{
+        AirCutRatios as _, SimulationCutArtifact, SimulationCutIssueKind, SimulationCutTrace,
+    },
     tool::MillingCutter as _,
     toolpath::Toolpath,
 };
@@ -297,11 +299,10 @@ fn print_diagnostics_report(trace: &SimulationCutTrace, toolpath_labels: &[Strin
             .map(|s| s.as_str())
             .unwrap_or("unknown");
         let air_runtime = trace.summary.total_runtime_s - ts.cutting_runtime_s - ts.rapid_runtime_s;
-        let air_pct = if ts.total_runtime_s > 1e-9 {
-            ts.air_cut_time_s / ts.total_runtime_s * 100.0
-        } else {
-            0.0
-        };
+        // LH-1: name the denominator. This is air cut over TOTAL runtime
+        // (cutting + rapids) - the measure every threshold in the codebase
+        // uses; the cutting-time reading of the same seconds is larger.
+        let air_pct_of_total = ts.air_cut_pct_of_total_runtime();
 
         eprintln!("Toolpath: {}", label);
         eprintln!(
@@ -311,7 +312,11 @@ fn print_diagnostics_report(trace: &SimulationCutTrace, toolpath_labels: &[Strin
             ts.rapid_runtime_s,
             air_runtime.max(0.0),
         );
-        eprintln!("  Air cut: {:.1}% of runtime", air_pct);
+        eprintln!(
+            "  Air cut: {:.1}% of total runtime ({:.1}% of cutting time)",
+            air_pct_of_total,
+            ts.air_cut_pct_of_cutting_time()
+        );
         eprintln!("  Avg engagement: {:.2}", ts.average_engagement);
         eprintln!(
             "  Peak chipload: {:.3} mm/tooth",

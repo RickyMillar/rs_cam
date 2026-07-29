@@ -1104,10 +1104,35 @@ impl BandMap {
 /// against the same map — the comparison question is "what did each
 /// strategy's territory look like", so the territory definition must be
 /// identical across branches.
+///
+/// # Measurement caveats (M1 / LH-4) — read before quoting anything from here
+///
+/// 1. **The bands OVERLAP.** `planner.overlap_mm = 2.0` dilates every band
+///    polygon at extraction, so the band polygons mutually overlap by a 2 mm
+///    ring. Summing `polygon.area()` across bands DOUBLE-COUNTS that ring;
+///    the sum is not a total area and is not a share of anything. (The
+///    rasterised `codes` grid does not double-count — a cell takes the
+///    steeper band on overlap — but the polygon areas do.)
+/// 2. **Cells and mm² are different domains.** The covered-cell count and
+///    the band polygon areas below are printed separately, each with its
+///    domain, and no ratio is formed between them. The retracted
+///    "~17% of covered area reclaimed" claim was exactly that division
+///    (`MEASUREMENT_DOMAINS.md` LH-4 / X-2).
+/// 3. **A dilated band map is not an attribution channel.** Over-dilation
+///    mislabels raster-owned flats as mid-steep. Verdicts must attribute by
+///    `Region` spans, not by this map — the established rule after the span
+///    fix in `77f2b7a`. This map is kept only because both branches are
+///    scored against the *same* definition; it does not make either
+///    labelling correct.
+///
+/// Redesigning the extraction is H4 territory and deliberately NOT done here.
 fn build_band_map(s: &ProjectSession) -> BandMap {
     use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose};
     use rs_cam_core::finish_setup::build_classification_surface_with_cancel;
     use rs_cam_core::geo::P2;
+    use rs_cam_core::measurement::{
+        CellSource, MeasurementDomain, MeasurementProvenance, MeasurementStage,
+    };
     use rs_cam_core::mesh::SpatialIndex;
     use rs_cam_core::region_set::RegionSet;
     use rs_cam_core::tool::BallEndmill;
@@ -1170,11 +1195,38 @@ fn build_band_map(s: &ProjectSession) -> BandMap {
         counts[0], counts[1], counts[2], counts[3]
     );
 
-    // Coverage accounting (the 25%-coverage anomaly, 2026-07-13): how much
-    // of the classification grid is covered at all, vs how much the
-    // conditioned polygons reclaim of it.
-    let covered_n = hm.covered.iter().filter(|&&c| c).count();
-    let mut band_stats = String::new();
+    // Coverage accounting (the 25%-coverage anomaly, 2026-07-13).
+    //
+    // LH-4: this block used to print a boolean CELL COUNT and overlap-dilated
+    // mm² on one line, and a docstring then quoted a ratio between them
+    // ("~17% of covered area reclaimed"). Cells are not mm² and the dilated
+    // band areas double-count their mutual overlap, so that ratio was wrong
+    // twice over. Both quantities are still printed — each on its own line,
+    // each naming its domain, stage and grid — and NO ratio crosses them.
+    let covered_cells = hm.covered.iter().filter(|&&c| c).count();
+    let grid_cells = rows * cols;
+    let covered_projected_xy_area_mm2 = covered_cells as f64 * cell * cell;
+    let coverage_prov = MeasurementProvenance::new(
+        MeasurementDomain::GridCellCount,
+        MeasurementStage::RawThreshold,
+    )
+    .with_cell(cell, CellSource::CuspRadius);
+    let band_prov = MeasurementProvenance::new(
+        MeasurementDomain::ProjectedXyArea,
+        MeasurementStage::PolygonExtraction,
+    )
+    .with_cell(cell, CellSource::CuspRadius)
+    .with_extraction_dilation_mm(planner.overlap_mm);
+
+    // Same-domain ratio (cells over cells on one grid) — legal.
+    eprintln!(
+        "BAND COVERAGE / covered mask [{}]: {covered_cells} of {grid_cells} cells ({:.1}% of \
+         grid cells) = {covered_projected_xy_area_mm2:.0} mm2 XY-projected",
+        coverage_prov.describe(),
+        100.0 * covered_cells as f64 / grid_cells as f64,
+    );
+    // Different stage AND dilated — printed alone, never divided by the line
+    // above. Per-band, because the across-band sum is not a meaningful total.
     for band in [
         FinishBand::Shallow,
         FinishBand::MidSteep,
@@ -1185,14 +1237,12 @@ fn build_band_map(s: &ProjectSession) -> BandMap {
             .iter()
             .filter(|r| r.band == band)
             .fold((0, 0.0), |(n, a), r| (n + 1, a + r.polygon.area()));
-        band_stats.push_str(&format!(" {band:?}: {n} regions {area:.0}mm2;"));
+        eprintln!(
+            "BAND COVERAGE / {band:?}: {n} regions, {area:.0} mm2 XY-projected [{}]",
+            band_prov.describe()
+        );
     }
-    eprintln!(
-        "BAND COVERAGE: covered={covered_n}/{} ({:.1}%) | planned:{band_stats} decompose stats: {:?}",
-        rows * cols,
-        100.0 * covered_n as f64 / (rows * cols) as f64,
-        planned.stats
-    );
+    eprintln!("BAND COVERAGE / decompose stats: {:?}", planned.stats);
 
     BandMap {
         origin_x: hm.origin_x,
@@ -3668,13 +3718,19 @@ fn v3_tail_probe() {
     }
 }
 
-/// Classification-only probe (no generation, ~3 min): the band-map
-/// coverage accounting for the ×2 fixture. Answers "how much of the
-/// classification grid is covered, and how much do the conditioned band
-/// polygons actually reclaim of it" — the measurement that showed
-/// decompose's extraction reclaiming only ~17% of covered area at Ø1-tip
-/// dials (min-area absorption at tool scale), independent of any
-/// territory logic.
+/// Classification-only probe (no generation, ~3 min): the band-map coverage
+/// accounting for the ×2 fixture.
+///
+/// **The "~17% of covered area reclaimed" conclusion this docstring used to
+/// state is RETRACTED** (M1 / LH-4, 2026-07-29). It divided an overlap-
+/// dilated XY-projected mm² sum by a boolean grid-cell count: two different
+/// domains, and a numerator that double-counts the 2 mm dilation ring across
+/// bands. Both errors push the figure in unknown directions, so the number is
+/// void — not falsified. What the probe now reports is what it can honestly
+/// measure: covered cells (and their mm² equivalent) on one line, per-band
+/// extracted polygon area on another, and no ratio between them. Sizing how
+/// much min-area absorption actually costs needs a same-domain, same-stage,
+/// undilated comparison and is H4 work.
 #[test]
 #[ignore = "classification only (~3 min); run with --ignored --nocapture"]
 fn v3_band_coverage_probe() {

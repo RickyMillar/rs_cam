@@ -219,6 +219,56 @@ pub struct RestGrid {
     pub threshold: f64,
 }
 
+impl RestGrid {
+    /// Cells that carry a surface solution — the part's XY footprint measured
+    /// **on this grid**, in cells.
+    ///
+    /// A cell is `NaN` in [`Self::surface_z`] when the drop found no contact
+    /// (outside the part) or the cell lies inside the eroded boundary band, so
+    /// this count is the trusted footprint the rest mask itself was drawn on.
+    #[must_use]
+    pub fn covered_cell_count(&self) -> usize {
+        self.surface_z.iter().filter(|z| z.is_finite()).count()
+    }
+
+    /// The part's XY footprint (mm²) as `covered cells × cell²`.
+    ///
+    /// This is the honest denominator for "what fraction of the part is one
+    /// rest region" ([`classify_rest_regions`]). The previous denominator was
+    /// the model's XY **bounding rectangle**, which overstates the footprint of
+    /// every non-rectangular part — an L-shape or a diagonal reads ~50% of its
+    /// bbox, so the giant-region warning fired at an effective ~100% coverage
+    /// instead of 50% (`MEASUREMENT_DOMAINS.md` LH-2 / X-4).
+    ///
+    /// `0.0` when nothing is covered; [`classify_rest_regions`] treats a
+    /// non-positive footprint as "no usable estimate" and stays silent rather
+    /// than reporting a false pathology.
+    #[must_use]
+    pub fn covered_footprint_area_mm2(&self) -> f64 {
+        self.covered_cell_count() as f64 * self.cell_mm * self.cell_mm
+    }
+
+    /// What [`Self::covered_footprint_area_mm2`] means (M1 §4.3): an
+    /// XY-projected area on the rest grid, measured on the mask before any
+    /// polygon extraction.
+    ///
+    /// The numerator it partners — a region polygon from
+    /// [`RestFieldResult::region_polygons`] — is extracted from the *same*
+    /// grid but at [`crate::measurement::MeasurementStage::PolygonExtraction`]
+    /// and dilated by `pencil_radius + region_margin_mm`, so the fraction is a
+    /// same-domain, same-grid, **later-stage** ratio: it can exceed 1.0 on a
+    /// region that fills the part. That is intended — the pathology it feeds
+    /// only asks "is one region most of the part".
+    #[must_use]
+    pub fn footprint_provenance(&self) -> crate::measurement::MeasurementProvenance {
+        crate::measurement::MeasurementProvenance::new(
+            crate::measurement::MeasurementDomain::ProjectedXyArea,
+            crate::measurement::MeasurementStage::RestFieldMask,
+        )
+        .with_cell(self.cell_mm, crate::measurement::CellSource::Explicit)
+    }
+}
+
 /// One pencil-routed ridge polyline plus its measured local half-width.
 ///
 /// `half_width_mm` is the median chamfer-distance-transform value of the
@@ -688,8 +738,15 @@ pub enum RestRegionPathology {
     /// `min_valley_depth`, or use the machined-stock reference ("Use
     /// remaining stock") for an honest rest picture.
     SingleGiantRegion {
-        /// Region area as a fraction of `part_footprint_area` (≥ 0.5).
-        part_area_fraction: f64,
+        /// Region area as a fraction of the part's **covered XY footprint**
+        /// ([`RestGrid::covered_footprint_area_mm2`]) — not of its bounding
+        /// rectangle. Named for its denominator (`MEASUREMENT_DOMAINS.md`
+        /// LH-2): the old `part_area_fraction` claimed a denominator the code
+        /// did not compute, and the bbox it did use under-read every
+        /// non-rectangular part. `≥ 0.5`, and may exceed 1.0 because the
+        /// numerator is dilated at extraction while the denominator is the
+        /// undilated mask footprint.
+        part_footprint_fraction: f64,
     },
 }
 
@@ -700,23 +757,34 @@ pub enum RestRegionPathology {
 /// (33+) — approaching the hard cap is already pathological, well before
 /// `region_polygons_from_mask` actually has to truncate anything.
 /// `SingleGiantRegion` fires when there is exactly one outer region and its
-/// area is at least half of `part_footprint_area`. A non-positive
-/// `part_footprint_area` (no usable footprint estimate) always yields `None`
-/// for that check rather than a false positive.
+/// area is at least half of `part_footprint_area_mm2`. A non-positive
+/// `part_footprint_area_mm2` (no usable footprint estimate) always yields
+/// `None` for that check rather than a false positive.
+///
+/// # The denominator
+///
+/// `part_footprint_area_mm2` MUST be the part's actual covered XY footprint —
+/// [`RestGrid::covered_footprint_area_mm2`], measured on the same grid the
+/// regions were extracted from. It must NOT be a bounding rectangle: a bbox
+/// overstates the footprint of every non-rectangular part (a diagonal or an
+/// L-shape covers ~50% of its own bbox), which halves the fraction and makes
+/// the warning fire late or never. That was the shipped behaviour until
+/// 2026-07-29 — see `MEASUREMENT_DOMAINS.md` LH-2 / X-4 and the sentry
+/// `giant_region_denominator_is_the_covered_footprint_not_the_bbox`.
 pub fn classify_rest_regions(
     regions: &[Polygon2],
-    part_footprint_area: f64,
+    part_footprint_area_mm2: f64,
 ) -> Option<RestRegionPathology> {
     if regions.len() > MAX_REST_REGIONS / 2 {
         return Some(RestRegionPathology::TooManyIslands {
             count: regions.len(),
         });
     }
-    if regions.len() == 1 && part_footprint_area > 0.0 {
-        let fraction = regions.first().map(Polygon2::area)? / part_footprint_area;
+    if regions.len() == 1 && part_footprint_area_mm2 > 0.0 {
+        let fraction = regions.first().map(Polygon2::area)? / part_footprint_area_mm2;
         if fraction >= 0.5 {
             return Some(RestRegionPathology::SingleGiantRegion {
-                part_area_fraction: fraction,
+                part_footprint_fraction: fraction,
             });
         }
     }
@@ -1698,8 +1766,10 @@ mod tests {
         // Part footprint 100x100 = 10_000 mm^2; a single 80x80 region covers 64%.
         let regions = vec![Polygon2::rectangle(0.0, 0.0, 80.0, 80.0)];
         match classify_rest_regions(&regions, 10_000.0) {
-            Some(RestRegionPathology::SingleGiantRegion { part_area_fraction }) => {
-                assert!((part_area_fraction - 0.64).abs() < 1e-9);
+            Some(RestRegionPathology::SingleGiantRegion {
+                part_footprint_fraction,
+            }) => {
+                assert!((part_footprint_fraction - 0.64).abs() < 1e-9);
             }
             other => panic!("expected SingleGiantRegion, got {other:?}"),
         }
@@ -1710,6 +1780,107 @@ mod tests {
         let regions = vec![Polygon2::rectangle(0.0, 0.0, 80.0, 80.0)];
         assert_eq!(classify_rest_regions(&regions, 0.0), None);
         assert_eq!(classify_rest_regions(&regions, -5.0), None);
+    }
+
+    /// A diagonal (non-rectangular) part whose real XY footprint is ~51% of
+    /// its bounding rectangle: 40x40 cells at 0.5 mm, covered where
+    /// `row + col < 40`.
+    fn diagonal_half_rest_grid() -> RestGrid {
+        let (nx, ny, cell) = (40usize, 40usize, 0.5);
+        let mut surface_z = vec![f32::NAN; nx * ny];
+        for r in 0..ny {
+            for c in 0..nx {
+                if r + c < nx {
+                    surface_z[r * nx + c] = 0.0;
+                }
+            }
+        }
+        RestGrid {
+            nx,
+            ny,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            cell_mm: cell,
+            rest: vec![f32::NAN; nx * ny],
+            surface_z,
+            threshold: 0.05,
+        }
+    }
+
+    /// LH-2 sentry (`MEASUREMENT_DOMAINS.md` §0, X-4).
+    ///
+    /// The giant-region warning's denominator used to be the model's XY
+    /// **bounding rectangle**, which overstates the footprint of any
+    /// non-rectangular part — so the warning fired late, or not at all.
+    ///
+    /// Red-first evidence (2026-07-29, before this fix): on the fixture
+    /// below the bbox denominator reads the region as 27% of "the part" and
+    /// stays silent, while the region actually covers 54% of the material
+    /// that exists. Asserting the warning fires under the bbox denominator
+    /// failed with `expected the giant-region warning to fire, got None`.
+    #[test]
+    fn giant_region_denominator_is_the_covered_footprint_not_the_bbox() {
+        let grid = diagonal_half_rest_grid();
+
+        // The honest denominator: cells that carry a surface solution, times
+        // cell² — same grid, same stage as the regions extracted from it.
+        let footprint = grid.covered_footprint_area_mm2();
+        let bbox = (grid.nx as f64 * grid.cell_mm) * (grid.ny as f64 * grid.cell_mm);
+        assert!((bbox - 400.0).abs() < 1e-9, "bbox rectangle is 20x20 mm");
+        assert!(
+            (footprint - 205.0).abs() < 1e-9,
+            "diagonal half of a 20x20 bbox, cell-quantised: got {footprint}"
+        );
+        assert!(
+            footprint / bbox < 0.55,
+            "the fixture must be materially smaller than its bbox or it proves nothing"
+        );
+
+        // One region covering 110 mm²: 54% of the real footprint, 27% of the
+        // bounding rectangle.
+        let side = 110.0_f64.sqrt();
+        let regions = vec![Polygon2::rectangle(0.0, 0.0, side, side)];
+
+        assert_eq!(
+            classify_rest_regions(&regions, bbox),
+            None,
+            "the bbox denominator under-reads a non-rectangular part — this is \
+             the defect, kept as evidence, not as sanctioned behaviour"
+        );
+        match classify_rest_regions(&regions, footprint) {
+            Some(RestRegionPathology::SingleGiantRegion {
+                part_footprint_fraction,
+            }) => {
+                assert!(
+                    (part_footprint_fraction - 110.0 / 205.0).abs() < 1e-9,
+                    "fraction must be over the covered footprint, got \
+                     {part_footprint_fraction}"
+                );
+            }
+            other => panic!("expected SingleGiantRegion, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn covered_footprint_ignores_uncovered_cells() {
+        let grid = diagonal_half_rest_grid();
+        assert_eq!(grid.covered_cell_count(), 820);
+        let prov = grid.footprint_provenance();
+        assert_eq!(prov.domain, crate::measurement::MeasurementDomain::ProjectedXyArea);
+        assert_eq!(prov.cell_mm, Some(0.5));
+
+        // No covered cells at all → no footprint, so no false pathology.
+        let empty = RestGrid {
+            surface_z: vec![f32::NAN; grid.nx * grid.ny],
+            ..grid
+        };
+        assert_eq!(empty.covered_cell_count(), 0);
+        assert!(empty.covered_footprint_area_mm2() <= 0.0);
+        let regions = vec![Polygon2::rectangle(0.0, 0.0, 80.0, 80.0)];
+        assert_eq!(
+            classify_rest_regions(&regions, empty.covered_footprint_area_mm2()),
+            None
+        );
     }
 
     #[test]
