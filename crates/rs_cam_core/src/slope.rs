@@ -111,10 +111,30 @@ impl SurfaceHeightmap {
         #[cfg(not(target_arch = "wasm32"))]
         let (z_values, covered) = {
             use rayon::prelude::*;
-            let results: Vec<(f64, bool)> = (0..total).into_par_iter().map(compute_cell).collect();
-            // Check cancel after parallel work completes
-            crate::interrupt::check_cancel(cancel)?;
-            results.into_iter().unzip::<f64, bool, Vec<_>, Vec<_>>()
+            // Poll cancellation BETWEEN batches, not once after the whole
+            // grid. A single `(0..total).into_par_iter()` is uninterruptible
+            // for its full duration, and the classification grid is no longer
+            // small: the §14q cusp-radius fix took wanaka's grid from 143² to
+            // 849², where one batch runs ~47 s and cancel reads as dead for
+            // all of it. The batch is large enough that rayon still has real
+            // work to spread (8192 drop-cutter samples), so the split costs
+            // scheduling overhead only.
+            const CANCEL_BATCH_CELLS: usize = 8192;
+            let mut z_values = Vec::with_capacity(total);
+            let mut covered = Vec::with_capacity(total);
+            let mut start = 0usize;
+            while start < total {
+                crate::interrupt::check_cancel(cancel)?;
+                let end = (start + CANCEL_BATCH_CELLS).min(total);
+                let batch: Vec<(f64, bool)> =
+                    (start..end).into_par_iter().map(compute_cell).collect();
+                for (z, c) in batch {
+                    z_values.push(z);
+                    covered.push(c);
+                }
+                start = end;
+            }
+            (z_values, covered)
         };
         #[cfg(target_arch = "wasm32")]
         let (z_values, covered) = {

@@ -1354,10 +1354,16 @@ fn dihedral_arm(
         })
         .collect();
     // Tool contact radius: the ball/corner radius that nestles into the
-    // corner (falls back to nominal radius for a flat end mill).
+    // corner. `corner_radius_mm()` is only overridden by flat and bullnose
+    // cutters, so ball-family tools fall through — and for a TAPERED ball
+    // that fallback used to land on `radius()`, the SHAFT radius (3.0 mm for
+    // a Ø1 tip). The bisector then positioned as if a 3 mm ball nestled into
+    // the corner, six times wider than the tip that actually touches it.
+    // `cusp_radius()` is the tip sphere for tapered balls and identical to
+    // `radius()` for every other cutter, so this is a no-op off the taper.
     let contact_radius = {
         let cr = cutter.corner_radius_mm();
-        if cr > 1e-6 { cr } else { cutter.radius() }
+        if cr > 1e-6 { cr } else { cutter.cusp_radius() }
     };
 
     if chains.is_empty() {

@@ -396,9 +396,16 @@ fn p2e_conditioning_dial_sweep() {
 /// relief, so its steep faces are RIBBONS a few millimetres wide — exactly
 /// the scale a 1.5 mm close merges away and a 144 mm² floor absorbs.
 ///
-/// This holds the classification surface FIXED and varies only the dials,
-/// so it isolates the decomposition's response from any sampling change.
-/// Diagnostic, not a gate: it prints the band mix per cusp radius.
+/// **This does NOT isolate the dials.** Each row rebuilds the surface,
+/// because the classification cell size follows the cusp radius too
+/// (§14q) — so every row varies resolution AND dials together, and the
+/// rows cannot attribute a change to either. The docstring claimed
+/// isolation for a while after `32c5e48` made it false; the independent
+/// audit caught it (§14t). The isolating experiment is the second table
+/// below, which pins ONE grid and varies only the dials on it — and it
+/// shows the dials barely matter at this resolution.
+///
+/// Diagnostic, not a gate: it prints band mixes and asserts nothing.
 #[test]
 #[ignore = "full-mesh sampling; run with --ignored --nocapture"]
 fn wanaka_band_mix_vs_cusp_radius() {
@@ -452,6 +459,82 @@ fn wanaka_band_mix_vs_cusp_radius() {
             params.close_radius_mm,
             format!("{rows}x{cols}"),
             sample_s,
+            ns,
+            as_,
+            nm,
+            am,
+            nv,
+            av
+        );
+    }
+
+    // ── Ground truth, in BOTH measures ──────────────────────────────────
+    //
+    // `PlannedRegion::polygon.area()` is XY-PROJECTED. Mesh face area is
+    // 3D. On near-vertical ribbons those differ by ~10×, so comparing an
+    // emitted region area against a 3D face area is meaningless — §14r did
+    // exactly that ("313 of 482 mm² recovered") and the audit killed it.
+    // Print both so the mistake cannot be repeated silently.
+    let mut truth: Vec<(f64, f64, f64)> = Vec::new();
+    for threshold_deg in [45.0_f64, 65.0, 75.0] {
+        let cos_min = threshold_deg.to_radians().cos();
+        let (mut area_3d, mut area_xy) = (0.0f64, 0.0f64);
+        for f in &mesh.faces {
+            // `Triangle::normal` is unit-length, so |n.z| IS cos(slope).
+            let cos_slope = f.normal.z.abs();
+            if cos_slope > cos_min {
+                continue; // shallower than the threshold
+            }
+            let (a, b, c) = (f.v[0], f.v[1], f.v[2]);
+            let a3 = 0.5 * (b - a).cross(&(c - a)).norm();
+            area_3d += a3;
+            // The projection onto XY shrinks by exactly cos(slope).
+            area_xy += a3 * cos_slope;
+        }
+        truth.push((threshold_deg, area_3d, area_xy));
+    }
+    eprintln!("── ground truth from the mesh (§14t) ──");
+    eprintln!("{:>10} {:>14} {:>16}", "threshold", "true 3D area", "PROJECTED area");
+    for (deg, a3, axy) in &truth {
+        eprintln!("{deg:>9.0}° {a3:>13.1} {axy:>15.1}");
+    }
+    eprintln!(
+        "Compare emitted VerySteep polygon area against the PROJECTED column, \
+         and against the ≥65° row — 10° hysteresis grows the band down to there."
+    );
+
+    // ── The isolating experiment: ONE grid, dials varied ────────────────
+    //
+    // The table above cannot separate resolution from dials. This can: it
+    // pins the surface at the real Ø1 tip and varies only
+    // `FinishPlannerParams`. If the rows barely move, the residual is NOT
+    // "legitimate conditioning by the dials" — that was §14r's claim.
+    let probe = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+    let surface = build_classification_surface_with_cancel(&mesh, &index, &probe, 0.05, &cancel)
+        .expect("classification surface sampling");
+    eprintln!("── dials varied on ONE fixed 0.5mm-cusp grid (§14t) ──");
+    eprintln!(
+        "{:>7} {:>9} {:>8}  {:>13} {:>13} {:>13}",
+        "dial_r", "min_area", "close_r", "Shallow", "MidSteep", "VerySteep"
+    );
+    for dial_r in [3.0_f64, 1.0, 0.5, 0.25] {
+        let params = FinishPlannerParams::for_tool(dial_r);
+        let planned = decompose_surface(&surface, &[], dial_r, &params);
+        let stats = |band: FinishBand| -> (usize, f64) {
+            let (mut n, mut area) = (0usize, 0.0f64);
+            for r in planned.regions.iter().filter(|r| r.band == band) {
+                n += 1;
+                area += r.polygon.area();
+            }
+            (n, area)
+        };
+        let (ns, as_) = stats(FinishBand::Shallow);
+        let (nm, am) = stats(FinishBand::MidSteep);
+        let (nv, av) = stats(FinishBand::VerySteep);
+        eprintln!(
+            "{dial_r:>7.2} {:>9.1} {:>8.2}  {:>5}/{:>7.0} {:>5}/{:>7.0} {:>5}/{:>7.0}",
+            params.min_region_area_mm2,
+            params.close_radius_mm,
             ns,
             as_,
             nm,

@@ -157,9 +157,21 @@ pub trait MillingCutter: Send + Sync {
     /// [`Self::radius`] is the swept/collision radius, and for a tapered
     /// ball `diameter()` deliberately reports the SHAFT ("effective
     /// cutting diameter at widest point"). That is right for clearance and
-    /// wrong for every question of the form "how small a feature can this
-    /// cutter see or cut" — cusp height, minimum region area, morphological
-    /// close radius, pencil claim floor.
+    /// wrong for the question "how fine a feature does the CUTTING TIP
+    /// resolve" — cusp height, minimum region area, morphological close
+    /// radius, pencil claim floor, classification cell size.
+    ///
+    /// **This is not the same as "can the tool reach into that feature."**
+    /// A tapered cutter's usable width grows with depth, so reach, fit and
+    /// routing questions ("does an offset pass fit down this valley", "is
+    /// this crease clearable") belong to a THIRD class that is neither the
+    /// tip sphere nor the shaft envelope — the cone can foul a wall long
+    /// before the tip bottoms out. Use [`Self::engagement_radius`] with the
+    /// depth in hand for those; reaching for `cusp_radius()` there reports
+    /// a cutter far more capable than it is. `Adaptive3dParams` already
+    /// carries engagement and envelope radii separately for this reason.
+    /// The finishing path still uses `radius()` at several such sites; they
+    /// are inventoried in `planning/unified_v3_design.md` §14u.
     ///
     /// Getting this wrong is not academic: a Ø1 tip on a 6 mm shank reports
     /// `radius() = 3.0`, so decomposition dials derived from it came out

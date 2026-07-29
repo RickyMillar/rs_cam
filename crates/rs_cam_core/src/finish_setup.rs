@@ -114,11 +114,17 @@ pub const CLASSIFICATION_PROBE_DIAMETER_MM: f64 = 0.05;
 /// true 89°. The pre-existing `steep_shallow` op classifies on the offset
 /// surface and shares this blind spot.
 ///
-/// Grid origin, extent, and resolution mirror [`build_finish_surface_with_cancel`]
-/// for the same `cutter`, so classification cells align 1:1 with the
-/// generation surface's cells. Cells beyond the mesh footprint are simply
-/// uncovered (the probe contacts nothing there), which also guarantees the
-/// non-contact margin ring the mask→polygon extractor needs.
+/// Grid origin and extent mirror [`build_finish_surface_with_cancel`] for the
+/// same `cutter`. **Resolution no longer does**: classification follows the
+/// cusp radius while generation still follows `radius()`, so on a tapered ball
+/// the two grids differ by the shaft/tip ratio (0.125 mm vs 0.75 mm for a Ø1
+/// tip on a 6 mm shank) and cells do NOT align 1:1. Whether generation should
+/// follow classification is an open question with real cost on both sides —
+/// see `planning/unified_v3_design.md` §14u.
+///
+/// Cells beyond the mesh footprint are simply uncovered (the probe contacts
+/// nothing there), which also guarantees the non-contact margin ring the
+/// mask→polygon extractor needs.
 pub fn build_classification_surface_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -131,9 +137,12 @@ pub fn build_classification_surface_with_cancel(
     // the finest feature this grid can represent, so it follows the
     // cusp-forming (tip) radius. On a tapered ball `radius()` is the SHAFT
     // — 3.0 mm for a Ø1 tip — which made the classification cell 0.75 mm
-    // and left wanaka's ~0.5 mm steep ribbons literally unrepresentable, so
-    // 482 mm² of >75° surface classified as something else entirely
-    // (design doc §14q).
+    // and left wanaka's steep ribbons unrepresentable: the decomposition
+    // emitted ZERO VerySteep regions on terrain whose true faces reach 89°
+    // (design doc §14q). Do NOT restate the recovered area as a fraction of
+    // the mesh's ≥75° face area — region polygons are XY-PROJECTED and mesh
+    // faces are 3D, a ~10× difference on near-vertical ribbons; the audit
+    // that caught that is §14t.
     let tool_radius = cutter.radius();
     let cell_size = (cutter.cusp_radius() / 4.0).max(tolerance);
     let bbox = &mesh.bbox;
