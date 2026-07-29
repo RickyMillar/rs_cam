@@ -1192,7 +1192,7 @@ fn depth_pass_chip_label(span: &Span, sid: usize) -> String {
 
 fn region_chip_label(span: &Span, sid: usize) -> String {
     match &span.payload {
-        Some(SpanPayload::Region { region_id }) => format!("Region {region_id}"),
+        Some(SpanPayload::Region { region_id, .. }) => format!("Region {region_id}"),
         _ => format!("Region [{sid}]"),
     }
 }

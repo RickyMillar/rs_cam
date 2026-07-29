@@ -48,7 +48,7 @@ use rs_cam_core::narrate::narrate_toolpath;
 use rs_cam_core::semantic_trace::{
     ToolpathSemanticItem, ToolpathSemanticKind, ToolpathSemanticRecorder, ToolpathSemanticTrace,
 };
-use rs_cam_core::toolpath_spans::{AnnotatedToolpath, SpanKind};
+use rs_cam_core::toolpath_spans::{AnnotatedToolpath, RegionSpanRole, SpanKind};
 use std::sync::atomic::AtomicBool;
 
 // ── Fixture ──────────────────────────────────────────────────────────────
@@ -167,15 +167,20 @@ fn region_items(trace: &ToolpathSemanticTrace) -> Vec<&ToolpathSemanticItem> {
 }
 
 /// The structural region-node spans: `SpanKind::Region` spans whose
-/// `region_id` indexes `UnifiedFinishReport::region_table`. The ring spans
-/// that `spans_from_labeled_events` also emits share the kind, so they are
-/// separated by the semantic trace's own move ranges — see the reconcile
-/// test, which compares against the node table directly.
+/// `region_id` indexes `UnifiedFinishReport::region_table`.
+///
+/// The ring spans that `spans_from_labeled_events` also emits share the
+/// kind, so nodes are picked out by `RegionSpanRole::Node` — the payload
+/// discriminator (Wave D3). This used to filter on the LABEL STRING
+/// (`label.ends_with(" band")`), which made a free-text field load-bearing:
+/// a producer renaming a band would have silently emptied this list and the
+/// reconcile assertion below would have passed vacuously.
 fn structural_region_spans(annotated: &AnnotatedToolpath) -> Vec<(usize, usize, String)> {
     annotated
         .spans
         .iter()
         .filter(|span| span.kind == SpanKind::Region && !span.is_boundary())
+        .filter(|span| span.region_role() == Some(RegionSpanRole::Node))
         .map(|span| {
             (
                 span.start_move,
@@ -303,18 +308,12 @@ fn assert_semantic_and_structural_regions_agree(tool_cfg: &ToolConfig, tool_labe
         })
         .collect();
 
-    let structural = structural_region_spans(&generated.annotated);
-    // The node spans are the ones whose ranges match a semantic item; any
-    // semantic item without a structural twin (or the reverse, restricted
-    // to node-labelled spans) is drift.
-    let node_spans: Vec<(usize, usize)> = structural
+    // Wave D3: `structural_region_spans` already restricts to
+    // `RegionSpanRole::Node`, so the label-string filter that used to live
+    // here is gone. Any semantic item without a structural node twin (or the
+    // reverse) is drift.
+    let node_spans: Vec<(usize, usize)> = structural_region_spans(&generated.annotated)
         .iter()
-        .filter(|(_, _, label)| {
-            // Node spans are labelled `"<Band> band"` / `"Pencil claims"`;
-            // the ring spans `spans_from_labeled_events` also emits share
-            // the kind but are labelled `"Ring i/n"`.
-            label.ends_with(" band") || label == "Pencil claims"
-        })
         .map(|(start, end, _)| (*start, *end))
         .collect();
 

@@ -627,6 +627,22 @@ pub struct ScallopReport {
     /// (Op B +92% time, deep over-cut 34×), so this reports the symptom
     /// until `ring_stepover`'s min-across-ring collapse is fixed.
     pub uncut_core_mm2: f64,
+    /// Rings the offset cascade PRODUCED, summed over every boundary region
+    /// — before the coverage / slope / boundary keep-predicate has had a say.
+    ///
+    /// Read with [`Self::ring_count`]: `cascade_ring_count` is how far the
+    /// cascade got (and so how close it ran to `max_rings`), while
+    /// `ring_count` is what actually reached the toolpath. A large gap means
+    /// the rings were generated and then filtered away, which is a different
+    /// story from a cascade that stopped early.
+    pub cascade_ring_count: usize,
+    /// Ring (or partial-ring run) spans actually EMITTED into the toolpath —
+    /// exactly one per [`ScallopRuntimeAnnotation`].
+    ///
+    /// Wave D3: the Checkpoint-B harness had to count runtime annotations to
+    /// report this, which made a report-only number depend on a side channel
+    /// the report already knew. Report-only: nothing gates on it.
+    pub ring_count: usize,
 }
 
 impl ScallopReport {
@@ -932,7 +948,11 @@ pub fn scallop_toolpath_structured_annotated_with_resolution(
         return Ok((
             Toolpath::new(),
             Vec::new(),
-            ScallopReport { uncut_core_mm2 },
+            ScallopReport {
+                uncut_core_mm2,
+                cascade_ring_count: 0,
+                ring_count: 0,
+            },
         ));
     }
 
@@ -1159,7 +1179,15 @@ pub fn scallop_toolpath_structured_annotated_with_resolution(
         }
     }
 
-    Ok((tp, annotations, ScallopReport { uncut_core_mm2 }))
+    let report = ScallopReport {
+        uncut_core_mm2,
+        cascade_ring_count: rings.len(),
+        // One annotation per emitted ring / kept run, in both the continuous
+        // and the discrete branch — so this IS the emitted count, not a
+        // proxy for it.
+        ring_count: annotations.len(),
+    };
+    Ok((tp, annotations, report))
 }
 
 pub fn scallop_toolpath_annotated(

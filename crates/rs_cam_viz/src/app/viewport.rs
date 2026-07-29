@@ -838,7 +838,7 @@ fn span_path_tooltip(
             ) => {
                 format!("DepthPass {} (z={:.2})", pass_index, z_level)
             }
-            (SpanKind::Region, Some(SpanPayload::Region { region_id })) => {
+            (SpanKind::Region, Some(SpanPayload::Region { region_id, .. })) => {
                 format!("Region {}", region_id)
             }
             _ if !span.label.is_empty() => format!("{:?} {}", span.kind, span.label),

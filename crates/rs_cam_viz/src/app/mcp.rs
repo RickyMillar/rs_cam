@@ -4762,26 +4762,40 @@ fn render_per_kinematics_json(
 /// structural `SpanKind`. When the input is itself a generation-debug kind
 /// (e.g. "adaptive_pass"), the synonym set is just `{input}` so the filter
 /// keeps backward compatibility with the existing string vocabulary.
+///
+/// Wave D3: the structural half of this used to be a list of string
+/// literals with a catch-all fallback, so a NEW `SpanKind` variant silently
+/// fell through to "treat as a literal debug-trace kind" and matched
+/// nothing, with no compile error and no runtime complaint. It now parses
+/// the input into the enum first and matches that EXHAUSTIVELY — adding a
+/// variant to `SpanKind` breaks this build until someone says what it
+/// expands to. Only genuinely unparseable input (a real debug-trace kind)
+/// takes the literal path.
 fn expand_span_kind_synonyms(span_kind: &str) -> Vec<String> {
-    match span_kind {
+    use rs_cam_core::toolpath_spans::SpanKind;
+    let Ok(kind) = parse_span_kind_filter(span_kind) else {
+        // Not a structural kind at all — a literal debug-trace kind.
+        return vec![span_kind.to_owned()];
+    };
+    match kind {
         // Structural SpanKind synonyms expand to the matching debug kinds.
-        "depth_pass" => vec![
+        SpanKind::DepthPass => vec![
             "z_level_clear".to_owned(),
             "adaptive_pass".to_owned(),
             "z_level".to_owned(),
         ],
-        "entry" => vec!["entry_search".to_owned()],
-        // Other SpanKind names have no debug-trace generators yet — return
-        // an empty set so the filter matches nothing rather than falsely
+        SpanKind::Entry => vec!["entry_search".to_owned()],
+        // These structural kinds have no debug-trace generators yet — an
+        // empty set so the filter matches nothing rather than falsely
         // matching by string.
-        "operation"
-        | "region"
-        | "lead_out"
-        | "link_bridge"
-        | "dressup_artifact"
-        | "rapid_order_barrier" => Vec::new(),
-        // Fallback: treat as a literal debug-trace kind.
-        other => vec![other.to_owned()],
+        SpanKind::Operation
+        | SpanKind::Region
+        | SpanKind::LeadOut
+        | SpanKind::LinkBridge
+        | SpanKind::DressupArtifact
+        | SpanKind::WaterlineCleanup
+        | SpanKind::RapidOrderBarrier
+        | SpanKind::SemanticLink => Vec::new(),
     }
 }
 
@@ -4843,20 +4857,17 @@ fn map_debug_kind_to_span_kind(debug_kind: &str) -> Option<&'static str> {
 }
 
 /// Map an MCP `span_kind` string (snake_case) to the `SpanKind` enum.
+///
+/// Wave D3: the string table lives in core
+/// ([`rs_cam_core::toolpath_spans::SpanKind::as_key`], exhaustive) rather
+/// than being transcribed here, so a new variant cannot be silently absent
+/// from the agent vocabulary.
 fn parse_span_kind_filter(s: &str) -> Result<rs_cam_core::toolpath_spans::SpanKind, String> {
     use rs_cam_core::toolpath_spans::SpanKind;
-    match s {
-        "operation" => Ok(SpanKind::Operation),
-        "depth_pass" => Ok(SpanKind::DepthPass),
-        "region" => Ok(SpanKind::Region),
-        "entry" => Ok(SpanKind::Entry),
-        "lead_out" => Ok(SpanKind::LeadOut),
-        "link_bridge" => Ok(SpanKind::LinkBridge),
-        "dressup_artifact" => Ok(SpanKind::DressupArtifact),
-        "waterline_cleanup" => Ok(SpanKind::WaterlineCleanup),
-        "rapid_order_barrier" => Ok(SpanKind::RapidOrderBarrier),
-        other => Err(format!("unknown span_kind {other:?}")),
-    }
+    SpanKind::from_key(s).ok_or_else(|| {
+        let known: Vec<&str> = SpanKind::ALL.iter().map(|k| k.as_key()).collect();
+        format!("unknown span_kind {s:?} — known kinds: {}", known.join(", "))
+    })
 }
 
 fn span_kind_label(k: rs_cam_core::toolpath_spans::SpanKind) -> &'static str {
@@ -4886,6 +4897,12 @@ fn span_to_json(id: usize, s: &rs_cam_core::toolpath_spans::Span) -> serde_json:
         "is_boundary": s.is_boundary(),
         "label": &*s.label,
         "payload": s.payload.as_ref().map(|p| format!("{p:?}")),
+        // Wave D3: a `region` span is either a planner territory NODE or one
+        // GENERATOR pass, and their `region_id`s index different tables.
+        // Published as its own key so an agent never has to parse the label
+        // (or the Debug-formatted payload) to tell them apart. `null` on
+        // every non-region span.
+        "region_role": s.region_role().map(|role| role.label()),
     })
 }
 
@@ -5015,7 +5032,7 @@ fn build_inspect_spans_response(
             }
             if let Some(want_rid) = region_id {
                 match &s.payload {
-                    Some(SpanPayload::Region { region_id: rid }) if *rid == want_rid => {}
+                    Some(SpanPayload::Region { region_id: rid, .. }) if *rid == want_rid => {}
                     _ => return false,
                 }
             }
@@ -5050,7 +5067,7 @@ fn build_inspect_spans_response(
 )]
 mod tests {
     use super::*;
-    use rs_cam_core::toolpath_spans::{Span, SpanKind, SpanPayload};
+    use rs_cam_core::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
 
     /// Build a representative span tree:
     /// - Operation 0..30
@@ -5067,14 +5084,26 @@ mod tests {
                 z_level: -2.0,
                 pass_index: 0,
             }),
-            Span::new(0, 7, SpanKind::Region).with_payload(SpanPayload::Region { region_id: 0 }),
-            Span::new(7, 15, SpanKind::Region).with_payload(SpanPayload::Region { region_id: 1 }),
+            Span::new(0, 7, SpanKind::Region).with_payload(SpanPayload::Region {
+                region_id: 0,
+                role: RegionSpanRole::GeneratorPass,
+            }),
+            Span::new(7, 15, SpanKind::Region).with_payload(SpanPayload::Region {
+                region_id: 1,
+                role: RegionSpanRole::GeneratorPass,
+            }),
             Span::new(15, 30, SpanKind::DepthPass).with_payload(SpanPayload::DepthPass {
                 z_level: -4.0,
                 pass_index: 1,
             }),
-            Span::new(15, 22, SpanKind::Region).with_payload(SpanPayload::Region { region_id: 2 }),
-            Span::new(22, 30, SpanKind::Region).with_payload(SpanPayload::Region { region_id: 3 }),
+            Span::new(15, 22, SpanKind::Region).with_payload(SpanPayload::Region {
+                region_id: 2,
+                role: RegionSpanRole::GeneratorPass,
+            }),
+            Span::new(22, 30, SpanKind::Region).with_payload(SpanPayload::Region {
+                region_id: 3,
+                role: RegionSpanRole::GeneratorPass,
+            }),
         ]
     }
 
@@ -5210,6 +5239,7 @@ mod tests {
             spans.push(
                 Span::new(i, i + 1, SpanKind::Region).with_payload(SpanPayload::Region {
                     region_id: i as u32,
+                    role: RegionSpanRole::GeneratorPass,
                 }),
             );
         }

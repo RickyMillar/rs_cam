@@ -706,12 +706,20 @@ fn run_scallop(fixture: &Fixture, cutter: &dyn MillingCutter, policy: FinishReso
     .expect("scallop");
     let seconds = t0.elapsed().as_secs_f64();
     let cusp = measured_cusp(&tp, &anns, cutter.cusp_radius_mm());
+    // Wave D3: the ring count is the REPORT's, not a count of the runtime
+    // annotations this harness happened to also receive. The equality below
+    // is what keeps the report honest now that it is the source.
+    assert_eq!(
+        report.ring_count,
+        anns.len(),
+        "ScallopReport::ring_count must equal the emitted ring annotations"
+    );
     OpRun {
         fingerprint: fingerprint(&tp),
         toolpath: tp,
         seconds,
         uncut_core_mm2: Some(report.uncut_core_mm2),
-        rings: Some(anns.len()),
+        rings: Some(report.ring_count),
         cusp,
     }
 }

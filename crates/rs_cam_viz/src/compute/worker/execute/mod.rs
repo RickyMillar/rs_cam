@@ -702,7 +702,7 @@ fn run_compute_with_phase_tracker(
                     // too — same map, same moment, and before the clip's
                     // own (already post-clip) item is recorded below.
                     if let Some(recorder) = semantic_recorder.as_ref() {
-                        recorder.remap_move_links(&mapping, current.toolpath.moves.len());
+                        recorder.remap_move_links(&mapping, &current.toolpath);
                     }
                     if let Some(root) = semantic_root.as_ref() {
                         let scope =
@@ -763,7 +763,7 @@ fn run_compute_with_phase_tracker(
                 current.spans = current.spans.iter().map(|s| s.remap(&mapping)).collect();
                 // Task #14: same map for the semantic trace's move links.
                 if let Some(recorder) = semantic_recorder.as_ref() {
-                    recorder.remap_move_links(&mapping, current.toolpath.moves.len());
+                    recorder.remap_move_links(&mapping, &current.toolpath);
                 }
             }
         }

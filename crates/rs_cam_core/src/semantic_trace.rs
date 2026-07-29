@@ -100,8 +100,20 @@ pub struct ToolpathSemanticItem {
     /// `ToolpathSemanticSummary::move_linked_item_count` counts the
     /// survivors.
     pub move_end: Option<usize>,
+    /// XY extent of the linked moves.
+    ///
+    /// Follows the SAME post-transform contract as [`Self::move_end`]
+    /// (Wave D3): re-derived from the surviving moves when the item stays
+    /// linked, `None` when it is unlinked. Coordinates never outlive the
+    /// moves they describe — an item that reports a bbox is reporting the
+    /// bbox of the moves it currently points at, not of the moves it pointed
+    /// at when it was generated.
     pub xy_bbox: Option<ToolpathDebugBounds2>,
+    /// Lowest Z of the linked moves. Same post-transform contract as
+    /// [`Self::xy_bbox`].
     pub z_min: Option<f64>,
+    /// Highest Z of the linked moves. Same post-transform contract as
+    /// [`Self::xy_bbox`].
     pub z_max: Option<f64>,
     pub params: ToolpathSemanticParams,
     pub debug_span_id: Option<u64>,
@@ -269,11 +281,14 @@ impl ToolpathSemanticRecorder {
             .collect()
     }
 
-    /// Write back a batch of move links. `None` unlinks the item — see the
-    /// deleted-move policy on [`ToolpathSemanticItem::move_end`].
+    /// Write back a batch of move links, then bring each touched item's
+    /// recorded GEOMETRY back into agreement with the moves it now points at.
+    ///
+    /// `toolpath` is the post-transform toolpath — the one the new indices
+    /// index. See [`Self::rederive_geometry_for`] for the geometry policy.
     // SAFETY: Mutex::lock only fails if poisoned (panic in another thread)
     #[allow(clippy::expect_used)]
-    fn apply_links(&self, links: &[(u64, Option<(usize, usize)>)]) {
+    fn apply_links(&self, links: &[(u64, Option<(usize, usize)>)], toolpath: &Toolpath) {
         let mut state = self.inner.lock().expect("semantic recorder poisoned");
         for (id, link) in links {
             if let Some(item) = state.items.get_mut(id) {
@@ -287,6 +302,51 @@ impl ToolpathSemanticRecorder {
                         item.move_end = None;
                     }
                 }
+                Self::rederive_geometry_for(item, toolpath);
+            }
+        }
+    }
+
+    /// Bring one item's `xy_bbox` / `z_min` / `z_max` back into agreement
+    /// with its (just-remapped) move link.
+    ///
+    /// # The policy (task #14 follow-up, Wave D3)
+    ///
+    /// `ae10cb2` remapped the move INDICES through every post-generation
+    /// transform but left the coordinates exactly as generation recorded
+    /// them — so after a boundary clip deleted moves, an item's bbox could
+    /// describe geometry that is no longer in the toolpath. Same class of
+    /// defect as a stale index, same remedy, stated the same way:
+    ///
+    /// * **Still linked** → RE-DERIVE from the surviving moves. The moves are
+    ///   right there and the derivation is the one
+    ///   [`ToolpathSemanticScope::bind_to_toolpath`] used at generation time,
+    ///   so this is a recomputation, not an estimate.
+    /// * **Unlinked** → `None` out all three. Its moves can no longer be
+    ///   identified, so neither can their extent. Never keep the old numbers:
+    ///   that is the fabrication the UNLINK policy exists to prevent.
+    /// * **Never had geometry** → leave it alone. An item that made no
+    ///   geometric claim at generation does not acquire one here.
+    fn rederive_geometry_for(item: &mut ToolpathSemanticItem, toolpath: &Toolpath) {
+        let had_geometry = item.xy_bbox.is_some() || item.z_min.is_some() || item.z_max.is_some();
+        if !had_geometry {
+            return;
+        }
+        let derived = item
+            .move_start
+            .zip(item.move_end)
+            // Stored end is INCLUSIVE; the deriver takes a half-open range.
+            .and_then(|(start, end)| range_geometry(toolpath, start, end.saturating_add(1)));
+        match derived {
+            Some((bbox, z_min, z_max)) => {
+                item.xy_bbox = bbox;
+                item.z_min = Some(z_min);
+                item.z_max = Some(z_max);
+            }
+            None => {
+                item.xy_bbox = None;
+                item.z_min = None;
+                item.z_max = None;
             }
         }
     }
@@ -301,7 +361,14 @@ impl ToolpathSemanticRecorder {
     /// that only expose their remap through the span vector use
     /// [`SemanticLinkCarrier`] instead. Both apply the same deleted-move
     /// policy: an item whose moves are all gone is unlinked.
-    pub fn remap_move_links(&self, mapping: &[usize], new_move_count: usize) {
+    ///
+    /// `toolpath` is the POST-transform toolpath (the one the remapped
+    /// indices index). It is taken rather than a bare move count because the
+    /// recorded geometry is re-derived from it — an index that moved and a
+    /// bbox that did not is exactly the stale-coordinate defect Wave D3
+    /// closed. See [`Self::rederive_geometry_for`].
+    pub fn remap_move_links(&self, mapping: &[usize], toolpath: &Toolpath) {
+        let new_move_count = toolpath.moves.len();
         let updates: Vec<(u64, Option<(usize, usize)>)> = self
             .move_links()
             .into_iter()
@@ -313,8 +380,53 @@ impl ToolpathSemanticRecorder {
                 )
             })
             .collect();
-        self.apply_links(&updates);
+        self.apply_links(&updates, toolpath);
     }
+}
+
+/// The XY bounds and Z range of `toolpath.moves[start..end_exclusive)`,
+/// including the *previous* move's target when there is one (that point is
+/// where the range's first segment starts, so the swept extent covers it).
+///
+/// The single derivation shared by [`ToolpathSemanticScope::bind_to_toolpath`]
+/// (generation time) and [`ToolpathSemanticRecorder::rederive_geometry_for`]
+/// (after a transform) — so a re-derived bbox is the same function of the
+/// same moves, and an item that survives a transform untouched keeps
+/// byte-identical geometry.
+///
+/// `None` when the range is empty or out of bounds.
+#[allow(clippy::indexing_slicing)] // bounds checked on the line above each index
+fn range_geometry(
+    toolpath: &Toolpath,
+    start: usize,
+    end_exclusive: usize,
+) -> Option<(Option<ToolpathDebugBounds2>, f64, f64)> {
+    if end_exclusive <= start || end_exclusive > toolpath.moves.len() {
+        return None;
+    }
+    let moves = &toolpath.moves[start..end_exclusive];
+    if moves.is_empty() {
+        return None;
+    }
+    let mut z_min = f64::INFINITY;
+    let mut z_max = f64::NEG_INFINITY;
+    let mut xy_points = Vec::with_capacity(moves.len() + 1);
+    if start > 0 {
+        let prev = &toolpath.moves[start - 1].target;
+        xy_points.push((prev.x, prev.y));
+        z_min = z_min.min(prev.z);
+        z_max = z_max.max(prev.z);
+    }
+    for mv in moves {
+        xy_points.push((mv.target.x, mv.target.y));
+        z_min = z_min.min(mv.target.z);
+        z_max = z_max.max(mv.target.z);
+    }
+    Some((
+        ToolpathDebugBounds2::from_points(xy_points.iter()),
+        z_min,
+        z_max,
+    ))
 }
 
 /// Convert a half-open remapped range into the stored inclusive link,
@@ -356,6 +468,11 @@ fn linked_range(
 /// declines to remap (e.g. one that passes spans through untouched because
 /// `spans_valid` was already false) can leave a stale link but never an
 /// out-of-bounds one.
+///
+/// Geometry: [`Self::detach`] also re-derives each item's `xy_bbox` /
+/// `z_min` / `z_max` from the post-transform moves, so the coordinates
+/// cannot outlive the moves they describe (Wave D3 — see
+/// [`ToolpathSemanticRecorder::rederive_geometry_for`]).
 pub struct SemanticLinkCarrier {
     entries: Vec<CarrierEntry>,
 }
@@ -414,7 +531,9 @@ impl SemanticLinkCarrier {
                 updates.push((id, link));
             }
         }
-        recorder.apply_links(&updates);
+        // Post-transform toolpath: the remapped indices index THIS one, and
+        // the recorded geometry is re-derived from it (Wave D3).
+        recorder.apply_links(&updates, &annotated.toolpath);
     }
 }
 
@@ -479,36 +598,25 @@ impl ToolpathSemanticScope {
         self.update_item(|item| item.debug_span_id = Some(debug_span_id));
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    /// Link this item to `toolpath.moves[move_start..move_end_exclusive)` and
+    /// record that range's geometry.
+    ///
+    /// The geometry is derived by [`range_geometry`], the SAME function the
+    /// post-transform re-derivation uses — so a bbox recomputed after a clip
+    /// is comparable with the one recorded here, and an untouched item keeps
+    /// byte-identical numbers.
     pub fn bind_to_toolpath(
         &self,
         toolpath: &Toolpath,
         move_start: usize,
         move_end_exclusive: usize,
     ) {
-        if move_end_exclusive <= move_start || move_end_exclusive > toolpath.moves.len() {
+        let Some((bounds, z_min, z_max)) = range_geometry(toolpath, move_start, move_end_exclusive)
+        else {
             return;
-        }
-        let moves = &toolpath.moves[move_start..move_end_exclusive];
-        if moves.is_empty() {
-            return;
-        }
-        let mut z_min = f64::INFINITY;
-        let mut z_max = f64::NEG_INFINITY;
-        let mut xy_points = Vec::new();
-        if move_start > 0 {
-            let prev = &toolpath.moves[move_start - 1].target;
-            xy_points.push((prev.x, prev.y));
-            z_min = z_min.min(prev.z);
-            z_max = z_max.max(prev.z);
-        }
-        for mv in moves {
-            xy_points.push((mv.target.x, mv.target.y));
-            z_min = z_min.min(mv.target.z);
-            z_max = z_max.max(mv.target.z);
-        }
+        };
         self.set_move_range(move_start, move_end_exclusive - 1);
-        if let Some(bounds) = ToolpathDebugBounds2::from_points(xy_points.iter()) {
+        if let Some(bounds) = bounds {
             self.set_xy_bbox(bounds);
         }
         self.set_z_range(z_min, z_max);
@@ -956,6 +1064,116 @@ mod tests {
         assert_eq!(trace.summary.move_linked_item_count, 1);
     }
 
+    /// Wave D3 — the coordinates follow the indices.
+    ///
+    /// `ae10cb2` remapped move INDICES through every transform and
+    /// deliberately left `xy_bbox` / `z_min` / `z_max` at their
+    /// generation-time values. That made a surviving item describe an extent
+    /// that no longer existed: here the clip deletes the far half of a
+    /// 6-move path, and pre-fix the "Kept" item still reported
+    /// `max_x = 5, z_min = -6` — the bbox of moves that are gone.
+    ///
+    /// The RED, recorded: with the re-derivation removed this asserts
+    /// `max_x` 2.0 and reads 5.0, and `z_min` -3.0 and reads -6.0.
+    #[test]
+    fn clip_re_derives_geometry_it_cannot_leave_describing_deleted_moves() {
+        use crate::toolpath_spans::MoveRemap;
+
+        // A staircase: move i sits at x = i, z = -(i + 1), so the XY bbox
+        // and the Z range both grow monotonically along the path — a
+        // deleted tail is visible in BOTH.
+        let staircase = |n: usize| {
+            let mut tp = Toolpath::new();
+            for i in 0..n {
+                tp.feed_to(P3::new(i as f64, 0.0, -(i as f64 + 1.0)), 100.0);
+            }
+            tp
+        };
+        let full = staircase(6);
+
+        let recorder = ToolpathSemanticRecorder::new("Pocket 1", "Pocket");
+        let ctx = recorder.root_context();
+        let kept = ctx.start_item(ToolpathSemanticKind::Pass, "Kept");
+        // Generation-time bind over the WHOLE path: x 0..5, z -6..-1.
+        kept.bind_to_toolpath(&full, 0, full.moves.len());
+        let gone = ctx.start_item(ToolpathSemanticKind::Pass, "Gone");
+        gone.bind_to_toolpath(&full, 3, 6);
+
+        let mut annotated = AnnotatedToolpath::new(full);
+        let carrier = SemanticLinkCarrier::attach(&recorder, &mut annotated);
+
+        // The clip keeps moves 0..3 and deletes 3..6.
+        let remap = MoveRemap {
+            old_to_new: vec![Some(0..1), Some(1..2), Some(2..3), None, None, None],
+        };
+        annotated.spans = remap.remap_spans(&annotated.spans, 3);
+        annotated.toolpath = staircase(3);
+        carrier.detach(&recorder, &mut annotated);
+
+        let trace = recorder.finish();
+        let by_label = |label: &str| {
+            trace
+                .items
+                .iter()
+                .find(|i| i.label == label)
+                .expect("item recorded")
+                .clone()
+        };
+
+        let kept_item = by_label("Kept");
+        assert_eq!(
+            (kept_item.move_start, kept_item.move_end),
+            (Some(0), Some(2))
+        );
+        let bbox = kept_item.xy_bbox.expect("a linked item keeps its bbox");
+        assert!(
+            (bbox.max_x - 2.0).abs() < 1e-12,
+            "bbox must describe the SURVIVING moves (x max 2.0), got {}",
+            bbox.max_x
+        );
+        assert!((bbox.min_x - 0.0).abs() < 1e-12);
+        assert!(
+            kept_item.z_min.is_some_and(|z| (z + 3.0).abs() < 1e-12),
+            "z_min must describe the surviving moves (-3.0), got {:?}",
+            kept_item.z_min
+        );
+        assert!(kept_item.z_max.is_some_and(|z| (z + 1.0).abs() < 1e-12));
+
+        // An UNLINKED item drops its coordinates too — keeping them would be
+        // the same fabrication the unlink policy exists to prevent.
+        let gone_item = by_label("Gone");
+        assert_eq!((gone_item.move_start, gone_item.move_end), (None, None));
+        assert_eq!(gone_item.xy_bbox, None, "unlinked ⇒ no extent");
+        assert_eq!(gone_item.z_min, None);
+        assert_eq!(gone_item.z_max, None);
+    }
+
+    /// A transform that changes nothing must leave the geometry
+    /// byte-identical — re-derivation is a recomputation of the same
+    /// function over the same moves, not a second opinion.
+    #[test]
+    fn identity_remap_leaves_geometry_byte_identical() {
+        let tp = {
+            let mut tp = Toolpath::new();
+            tp.rapid_to(P3::new(0.0, 0.0, 5.0));
+            tp.feed_to(P3::new(0.0, 0.0, -1.0), 100.0);
+            tp.feed_to(P3::new(10.0, 4.0, -1.0), 200.0);
+            tp
+        };
+        let recorder = ToolpathSemanticRecorder::new("Pocket 1", "Pocket");
+        let ctx = recorder.root_context();
+        let item = ctx.start_item(ToolpathSemanticKind::Pass, "Pass");
+        item.bind_to_toolpath(&tp, 0, tp.moves.len());
+        let before = recorder.clone().finish().items[0].clone();
+
+        recorder.remap_move_links(&[0, 1, 2, 3], &tp);
+
+        let after = recorder.finish().items[0].clone();
+        assert_eq!(before.xy_bbox, after.xy_bbox);
+        assert_eq!(before.z_min, after.z_min);
+        assert_eq!(before.z_max, after.z_max);
+    }
+
     /// The provenance-map form (boundary clip, entry-descent splitter): an
     /// item covering the whole toolpath must still cover the whole toolpath
     /// after the transform inserted moves inside its range.
@@ -968,7 +1186,7 @@ mod tests {
 
         // Each input move produced two output moves: mapping[i] = 2i, with
         // the total-count sentinel last.
-        recorder.remap_move_links(&[0, 2, 4, 6], 6);
+        recorder.remap_move_links(&[0, 2, 4, 6], &toolpath_with_moves(6));
 
         let trace = recorder.finish();
         let item = &trace.items[0];
@@ -987,7 +1205,7 @@ mod tests {
         outside.set_move_range(8, 9);
 
         // Identity mapping over 10 input moves, but only 4 moves survive.
-        recorder.remap_move_links(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 4);
+        recorder.remap_move_links(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], &toolpath_with_moves(4));
 
         let trace = recorder.finish();
         let by_label = |label: &str| {

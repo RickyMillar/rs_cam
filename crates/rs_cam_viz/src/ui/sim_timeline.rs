@@ -1545,7 +1545,7 @@ fn paint_span_subband(
         let x_end = global_x(span.end_move);
         let primary_idx = match &span.payload {
             Some(SpanPayload::DepthPass { pass_index, .. }) => *pass_index,
-            Some(SpanPayload::Region { region_id }) if !has_depth_passes => *region_id,
+            Some(SpanPayload::Region { region_id, .. }) if !has_depth_passes => *region_id,
             _ => {
                 let n = primary_index_seq;
                 primary_index_seq += 1;
@@ -1638,7 +1638,7 @@ fn paint_span_subband(
                 })
             {
                 let region_id = match &span.payload {
-                    Some(SpanPayload::Region { region_id }) => *region_id,
+                    Some(SpanPayload::Region { region_id, .. }) => *region_id,
                     _ => sid_u32,
                 };
                 hover_label = Some(format!(
@@ -1694,7 +1694,7 @@ fn ribbon_span_label(span: &rs_cam_core::toolpath_spans::Span, fallback_index: u
                 pass_index,
             }),
         ) => format!("DepthPass {pass_index} · z={z_level:.2}"),
-        (SpanKind::Region, Some(SpanPayload::Region { region_id })) => {
+        (SpanKind::Region, Some(SpanPayload::Region { region_id, .. })) => {
             format!("Region {region_id}")
         }
         (SpanKind::DepthPass, _) => format!("DepthPass {fallback_index}"),

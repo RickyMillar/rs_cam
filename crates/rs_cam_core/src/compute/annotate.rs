@@ -124,7 +124,7 @@ fn annotate_one_region_span(
         span.label.clone().into_owned()
     };
     let scope = context.start_item(kind.clone(), label);
-    if let Some(SpanPayload::Region { region_id }) = &span.payload {
+    if let Some(SpanPayload::Region { region_id, .. }) = &span.payload {
         scope.set_param("region_id", *region_id);
     }
     bind_span_scope(&scope, toolpath, span);
@@ -145,7 +145,7 @@ pub(super) fn annotate_drill_spans(
             && !span.label.contains("plunge")
     }) {
         let scope = op_context.start_item(ToolpathSemanticKind::Hole, hole_span.label.clone());
-        if let Some(SpanPayload::Region { region_id }) = &hole_span.payload {
+        if let Some(SpanPayload::Region { region_id, .. }) = &hole_span.payload {
             scope.set_param("hole_index", *region_id);
         }
         bind_span_scope(&scope, toolpath, hole_span);
@@ -159,7 +159,7 @@ pub(super) fn annotate_drill_spans(
         }) {
             let cycle =
                 child_ctx.start_item(ToolpathSemanticKind::Cycle, plunge_span.label.clone());
-            if let Some(SpanPayload::Region { region_id }) = &plunge_span.payload {
+            if let Some(SpanPayload::Region { region_id, .. }) = &plunge_span.payload {
                 cycle.set_param("cycle_index", *region_id);
             }
             bind_span_scope(&cycle, toolpath, plunge_span);

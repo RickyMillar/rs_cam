@@ -35,7 +35,9 @@ use rs_cam_core::finish_setup::{
     build_finish_surface_with_cell_size_and_cancel, build_finish_surface_with_policy_and_cancel,
 };
 use rs_cam_core::geo::P3;
-use rs_cam_core::measurement::CellSource;
+use rs_cam_core::measurement::{
+    CellSource, MeasurementDomain, MeasurementProvenance, MeasurementStage,
+};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::ramp_finish::{
     RampFinishParams, ramp_finish_generation_resolution, ramp_finish_toolpath,
@@ -170,10 +172,18 @@ fn assert_policy(
         "{label}: cell {} mm, expected {cell_mm} mm",
         policy.cell_mm()
     );
+    // Wave D3: the provenance is the mode's own UNLESS the tolerance floor
+    // set the cell, in which case the tool scale had no say and the tag says
+    // so instead of naming a radius that did not decide anything.
+    let expected_source = if floor {
+        CellSource::ToleranceFloor
+    } else {
+        mode.cell_source()
+    };
     assert_eq!(
         policy.cell_source(),
-        mode.cell_source(),
-        "{label}: provenance must be the mode's own"
+        expected_source,
+        "{label}: provenance must be the mode's own unless the floor bound"
     );
     assert_eq!(
         policy.tolerance_floor_applied(),
@@ -265,17 +275,51 @@ fn ball_resolves_both_modes_to_the_same_cell() {
 fn tolerance_floor_is_recorded_not_hidden() {
     let t = taper();
     // 2 mm tolerance dwarfs both envelope/4 (0.75) and cusp/4 (0.125).
-    for policy in [
+    let floored = [
         FinishResolutionPolicy::legacy_envelope_quarter(&t, 2.0),
         FinishResolutionPolicy::cusp_quarter(&t, 2.0),
-    ] {
+    ];
+    for policy in floored {
         assert!((policy.cell_mm() - 2.0).abs() < 1e-12);
         assert!(
             policy.tolerance_floor_applied(),
             "{:?}: the floor set the cell, the tool scale did not",
             policy.mode()
         );
+        // Wave D3: and the provenance tag says so, instead of naming a
+        // radius that did not decide the number.
+        assert_eq!(
+            policy.cell_source(),
+            CellSource::ToleranceFloor,
+            "{:?}: a floor-bound cell must not claim a tool scale",
+            policy.mode()
+        );
     }
+    // Wave D3 — the point of the variant: two DIFFERENT modes that both
+    // bottom out on the same floor describe the same grid, so measurements
+    // taken on them are comparable. Pre-D3 the family tags (EnvelopeRadius
+    // vs CuspRadius) made `comparable_to` refuse this.
+    let provenance = |policy: FinishResolutionPolicy| {
+        MeasurementProvenance::new(
+            MeasurementDomain::ProjectedXyArea,
+            MeasurementStage::RawThreshold,
+        )
+        .with_cell(policy.cell_mm(), policy.cell_source())
+    };
+    let [env_floor, cusp_floor] = floored;
+    assert_ne!(env_floor.mode(), cusp_floor.mode());
+    assert!(
+        provenance(env_floor).comparable_to(&provenance(cusp_floor)),
+        "two floor-bound policies resolve to the SAME grid — they must compare"
+    );
+    // And a floor-bound cell is still NOT comparable with a tool-scaled cell
+    // of the same size: same number, different reason.
+    let tool_scaled = FinishResolutionPolicy::legacy_envelope_quarter(&t, 0.75);
+    assert!(
+        (tool_scaled.cell_mm() - env_floor.cell_mm()).abs() > 1e-12
+            || !provenance(tool_scaled).comparable_to(&provenance(env_floor)),
+        "a tool-scaled cell must not silently compare with a floor-bound one"
+    );
     // Exactly at the boundary the tool scale still wins (`.max`, not `>`).
     let boundary = FinishResolutionPolicy::legacy_envelope_quarter(&t, 0.75);
     assert!(!boundary.tolerance_floor_applied());

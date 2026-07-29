@@ -96,7 +96,7 @@ use rs_cam_core::semantic_trace::{ToolpathSemanticItem, ToolpathSemanticKind};
 use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
 use rs_cam_core::toolpath::MoveIntent;
-use rs_cam_core::toolpath_spans::SpanKind;
+use rs_cam_core::toolpath_spans::{RegionSpanRole, SpanKind};
 
 // ── Tool geometry ───────────────────────────────────────────────────────
 
@@ -339,8 +339,11 @@ fn node_from_item(item: &ToolpathSemanticItem) -> SemanticNode {
 /// — i.e. after every session-level transform (boundary clip, TSP reorder,
 /// arc fit, feed optimisation) has had its chance to remap or invalidate
 /// them. The ring spans `spans_from_labeled_events` also emits share
-/// `SpanKind::Region`, so nodes are picked by their pinned labels, exactly
-/// as `unified_finish_semantic_regions.rs` does.
+/// `SpanKind::Region`, so nodes are picked by their `RegionSpanRole::Node`
+/// payload discriminator (Wave D3), exactly as
+/// `unified_finish_semantic_regions.rs` does. Both used to filter on the
+/// LABEL STRING; a label is free text and no producer was obliged to keep
+/// it, so a rename would have emptied this list silently.
 fn structural_nodes(session: &ProjectSession) -> Vec<(usize, usize, String)> {
     let result = session.get_result(0).expect("generated result");
     let mut nodes: Vec<(usize, usize, String)> = result
@@ -348,7 +351,7 @@ fn structural_nodes(session: &ProjectSession) -> Vec<(usize, usize, String)> {
         .spans
         .iter()
         .filter(|span| span.kind == SpanKind::Region && !span.is_boundary())
-        .filter(|span| span.label.ends_with(" band") || span.label == "Pencil claims")
+        .filter(|span| span.region_role() == Some(RegionSpanRole::Node))
         .map(|span| {
             (
                 span.start_move,
