@@ -227,7 +227,6 @@ fn generate_through_session(tool: ToolConfig) -> ProjectSession {
     session
 }
 
-
 // ── Gate 1: the make-it-live sentry ─────────────────────────────────────
 
 /// A straight centreline along `y = 30.0`, `x` in `[10, 50)`, on a flat
@@ -262,7 +261,10 @@ fn the_crease_threshold_decides_own_region_ownership() {
     let t = taper();
     let params = FinishPlannerParams::for_tool(t.cusp_radius());
     let threshold = params.crease_own_region_half_width_mm;
-    println!("PR-6b taper threshold: {threshold:.4} mm (cusp {:.4})", t.cusp_radius());
+    println!(
+        "PR-6b taper threshold: {threshold:.4} mm (cusp {:.4})",
+        t.cusp_radius()
+    );
     assert!(
         threshold > 0.0,
         "a zero threshold makes every crease a canyon and decides nothing"
@@ -280,7 +282,11 @@ fn the_crease_threshold_decides_own_region_ownership() {
 
     // Non-vacuity: both arms must have produced a live, rasterized crease.
     for (label, planned) in [("below", &below), ("above", &above)] {
-        assert_eq!(planned.creases.len(), 1, "{label}: the crease slice must be live");
+        assert_eq!(
+            planned.creases.len(),
+            1,
+            "{label}: the crease slice must be live"
+        );
         assert!(
             planned.creases[0].corridor.is_some(),
             "{label}: every crease claims a corridor — if this is None the \
@@ -328,7 +334,10 @@ fn the_threshold_is_cusp_scale_not_envelope_scale() {
         "PR-6b scales: cusp-scaled {cusp_scaled:.3} mm vs envelope-scaled {envelope_scaled:.3} mm"
     );
     assert!((cusp_scaled - 1.0).abs() < 1e-12, "2 × the Ø1 tip radius");
-    assert!((envelope_scaled - 6.0).abs() < 1e-12, "2 × the Ø6 shank radius");
+    assert!(
+        (envelope_scaled - 6.0).abs() < 1e-12,
+        "2 × the Ø6 shank radius"
+    );
 
     // A 1.5 mm-half-width valley: real work for a Ø1 tip, six times below
     // the envelope bar. It must be a canyon now, and provably was not.
@@ -387,14 +396,21 @@ fn production_unified_finish_output_is_byte_identical() {
 
     // Captured at `b8e3a0d` (PR-6a, pre-H2.4) with a throwaway probe.
     for (label, tool, expect) in [
-        ("taper", tapered_ball_tool(), (1855usize, 0xe031_2509_7b20_8fb1u64)),
+        (
+            "taper",
+            tapered_ball_tool(),
+            (1855usize, 0xe031_2509_7b20_8fb1u64),
+        ),
         ("ball", ball_tool(), (1301usize, 0xcfab_a674_0efc_aeceu64)),
     ] {
         let session = generate_through_session(tool);
         let result = session.get_result(0).expect("a generated result");
         let got = fingerprint(result.toolpath());
         println!("PR-6b FP {label}: moves {} hash 0x{:016x}", got.0, got.1);
-        assert!(got.0 > 0, "{label}: an empty toolpath fingerprints vacuously");
+        assert!(
+            got.0 > 0,
+            "{label}: an empty toolpath fingerprints vacuously"
+        );
         assert_eq!(
             got, expect,
             "{label}: H2.4 must not move a single emitted move"

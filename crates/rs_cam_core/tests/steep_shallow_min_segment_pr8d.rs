@@ -242,7 +242,11 @@ fn a_closed_loop_drops_a_vertex_that_would_close_degenerately() {
         P3::new(0.0000004, 0.0, 0.0), // 0.4 µm from the start
     ];
     let open = drop_sub_minimum_segments(&square, MIN_EMITTED_SEGMENT_MM, false);
-    assert_eq!(open.len(), 5, "as an OPEN path the last point is legitimate");
+    assert_eq!(
+        open.len(),
+        5,
+        "as an OPEN path the last point is legitimate"
+    );
     let closed = drop_sub_minimum_segments(&square, MIN_EMITTED_SEGMENT_MM, true);
     assert_eq!(closed.len(), 4, "as a CLOSED loop it is the closing move");
 }

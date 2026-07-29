@@ -225,11 +225,11 @@ fn mixed_slope_ribbon() -> TriangleMesh {
     // Profile knots: (x, z). tan(6°)=0.105, tan(60°)=1.732, tan(85°)=11.43.
     const KNOTS: [(f64, f64); 6] = [
         (-8.0, 0.0),
-        (-3.0, 0.526),      // 5 mm of ~6°
-        (-1.0, 4.0),        // 2 mm of 60°
-        (-0.65, 8.0),       // 0.35 mm of 85°
-        (0.65, 8.0),        // flat crest
-        (8.0, 8.0 - 0.79),  // long ~6° fall-off
+        (-3.0, 0.526),     // 5 mm of ~6°
+        (-1.0, 4.0),       // 2 mm of 60°
+        (-0.65, 8.0),      // 0.35 mm of 85°
+        (0.65, 8.0),       // flat crest
+        (8.0, 8.0 - 0.79), // long ~6° fall-off
     ];
     height_field(|x, _y| {
         if x <= KNOTS[0].0 {
@@ -651,9 +651,7 @@ fn topology(arm: &FinishSurface, reference: &FinishSurface) -> Topology {
                 continue;
             }
             compared += 1;
-            if class_of(arm.slope_map.angles[aidx])
-                != class_of(reference.slope_map.angles[idx])
-            {
+            if class_of(arm.slope_map.angles[aidx]) != class_of(reference.slope_map.angles[idx]) {
                 disagree += 1;
             }
         }
@@ -676,7 +674,11 @@ fn topology(arm: &FinishSurface, reference: &FinishSurface) -> Topology {
 
 // ── Runners ─────────────────────────────────────────────────────────────
 
-fn build(fixture: &Fixture, cutter: &dyn MillingCutter, policy: FinishResolutionPolicy) -> (FinishSurface, f64) {
+fn build(
+    fixture: &Fixture,
+    cutter: &dyn MillingCutter,
+    policy: FinishResolutionPolicy,
+) -> (FinishSurface, f64) {
     let cancel = || false;
     let t0 = Instant::now();
     let s = build_finish_surface_with_policy_and_cancel(
@@ -699,7 +701,11 @@ struct OpRun {
     cusp: Option<(f64, f64)>,
 }
 
-fn run_scallop(fixture: &Fixture, cutter: &dyn MillingCutter, policy: FinishResolutionPolicy) -> OpRun {
+fn run_scallop(
+    fixture: &Fixture,
+    cutter: &dyn MillingCutter,
+    policy: FinishResolutionPolicy,
+) -> OpRun {
     let cancel = || false;
     let params = scallop_params();
     let t0 = Instant::now();
@@ -734,7 +740,11 @@ fn run_scallop(fixture: &Fixture, cutter: &dyn MillingCutter, policy: FinishReso
     }
 }
 
-fn run_ramp_finish(fixture: &Fixture, cutter: &dyn MillingCutter, policy: FinishResolutionPolicy) -> OpRun {
+fn run_ramp_finish(
+    fixture: &Fixture,
+    cutter: &dyn MillingCutter,
+    policy: FinishResolutionPolicy,
+) -> OpRun {
     let cancel = || false;
     let params = ramp_finish_params();
     let t0 = Instant::now();
@@ -760,7 +770,11 @@ fn run_ramp_finish(fixture: &Fixture, cutter: &dyn MillingCutter, policy: Finish
     }
 }
 
-fn run_steep_shallow(fixture: &Fixture, cutter: &dyn MillingCutter, policy: FinishResolutionPolicy) -> OpRun {
+fn run_steep_shallow(
+    fixture: &Fixture,
+    cutter: &dyn MillingCutter,
+    policy: FinishResolutionPolicy,
+) -> OpRun {
     let cancel = || false;
     let params = steep_shallow_params();
     let t0 = Instant::now();
@@ -790,7 +804,10 @@ fn run_steep_shallow(fixture: &Fixture, cutter: &dyn MillingCutter, policy: Fini
 
 /// The three generation-surface consumers, as (label, runner) pairs.
 #[allow(clippy::type_complexity)]
-const OPS: [(&str, fn(&Fixture, &dyn MillingCutter, FinishResolutionPolicy) -> OpRun); 3] = [
+const OPS: [(
+    &str,
+    fn(&Fixture, &dyn MillingCutter, FinishResolutionPolicy) -> OpRun,
+); 3] = [
     ("Scallop", run_scallop),
     ("RampFinish", run_ramp_finish),
     ("SteepShallow", run_steep_shallow),
@@ -806,8 +823,14 @@ fn arms_are_distinct_grids_with_honest_provenance() {
     let t = taper();
     let a = arms(&t);
     assert_eq!(a.len(), 4);
-    assert_eq!(a[0].policy.mode(), FinishResolutionMode::LegacyEnvelopeQuarter);
-    assert_eq!(a[1].policy.mode(), FinishResolutionMode::GeoMeanEnvelopeCusp);
+    assert_eq!(
+        a[0].policy.mode(),
+        FinishResolutionMode::LegacyEnvelopeQuarter
+    );
+    assert_eq!(
+        a[1].policy.mode(),
+        FinishResolutionMode::GeoMeanEnvelopeCusp
+    );
     assert_eq!(a[2].policy.mode(), FinishResolutionMode::CuspQuarter);
     assert!((a[0].policy.cell_mm() - 0.75).abs() < 1e-12);
     assert!((a[1].policy.cell_mm() - (0.75_f64 * 0.125).sqrt()).abs() < 1e-12);
@@ -974,9 +997,7 @@ fn coarse_and_fine_arms_differ_on_the_narrow_ridge() {
     // §A.0: state the difference as TOPOLOGY, not area.
     let coarse_very = region_count(&coarse_s, Class::VerySteep);
     let fine_very = region_count(&fine_s, Class::VerySteep);
-    println!(
-        "narrow ridge VerySteep regions: envelope/4 {coarse_very}, cusp/4 {fine_very}"
-    );
+    println!("narrow ridge VerySteep regions: envelope/4 {coarse_very}, cusp/4 {fine_very}");
     assert!(
         fine_very != coarse_very || fine_s.cols() != coarse_s.cols(),
         "the two grids must differ somewhere observable"
@@ -1104,7 +1125,11 @@ fn full_resolution_ab_grid() {
 
     for fixture in fixtures() {
         println!("\n# Fixture: {}\n", fixture.name);
-        let (reference, ref_secs) = build(&fixture, &t, FinishResolutionPolicy::explicit(REFERENCE_CELL_MM));
+        let (reference, ref_secs) = build(
+            &fixture,
+            &t,
+            FinishResolutionPolicy::explicit(REFERENCE_CELL_MM),
+        );
         println!(
             "reference grid {}×{} = {} cells, built in {:.2} s\n",
             reference.rows(),
@@ -1188,7 +1213,10 @@ fn full_resolution_ab_grid() {
             }
         }
     }
-    println!("\n(commanded scallop cusp height: {} mm)", scallop_params().scallop_height);
+    println!(
+        "\n(commanded scallop cusp height: {} mm)",
+        scallop_params().scallop_height
+    );
 }
 
 /// **PR-8b's gate**, on the fixture `CHECKPOINT_B_EVIDENCE.md` §8.2 logged
@@ -1251,7 +1279,11 @@ fn ramp_finish_reach_clamp_removes_the_cone_fixture_gouge() {
         FinishResolutionPolicy::explicit(REFERENCE_CELL_MM),
     );
     let m = path_metrics(&tp, Some(&reference));
-    assert!(m.residual_samples > 50, "non-vacuity: {} scored", m.residual_samples);
+    assert!(
+        m.residual_samples > 50,
+        "non-vacuity: {} scored",
+        m.residual_samples
+    );
     assert!(
         m.deepest_gouge_mm > -0.05,
         "deepest gouge {:.4} mm — §8.2's 4.2 mm defect is not fixed",
@@ -1270,7 +1302,6 @@ fn ramp_finish_reach_clamp_removes_the_cone_fixture_gouge() {
         m.residual_samples,
     );
 }
-
 
 // ── PR-8c: the max_rings experiment (EVIDENCE ONLY) ─────────────────────
 
@@ -1329,9 +1360,15 @@ fn max_rings_budget_experiment() {
             FinishResolutionPolicy::explicit(REFERENCE_CELL_MM),
         );
         for (label, budget) in [
-            ("flat-ground (shipped)", ScallopRingBudget::FlatGroundStepover),
+            (
+                "flat-ground (shipped)",
+                ScallopRingBudget::FlatGroundStepover,
+            ),
             ("reach policy", ScallopRingBudget::ReachPolicyStepover),
-            ("loop clamp floor (v3 control)", ScallopRingBudget::LoopClampFloor),
+            (
+                "loop clamp floor (v3 control)",
+                ScallopRingBudget::LoopClampFloor,
+            ),
         ] {
             let t0 = Instant::now();
             let (tp, _anns, report) =
@@ -1388,10 +1425,12 @@ fn the_three_ring_budgets_are_three_different_numbers() {
     );
     // And the shipped budget must still be the flat-ground one: the seam is
     // additive, so the default cannot have moved.
-    assert!((flat - 0.2800).abs() < 0.001, "flat-ground stepover {flat:.4}");
+    assert!(
+        (flat - 0.2800).abs() < 0.001,
+        "flat-ground stepover {flat:.4}"
+    );
     println!(
         "ring-budget stepovers: flat-ground {flat:.4} mm (shipped), reach \
          policy {reach:.4} mm, loop clamp floor {clamp_floor:.4} mm"
     );
 }
-

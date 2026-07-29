@@ -409,9 +409,8 @@ struct Prediction {
 
 fn predict(model: Model, cutter: &dyn MillingCutter, v: &Valley, delta: f64) -> Prediction {
     let w = v.measured_half_width();
-    let count_from_radius = |r: f64| -> usize {
-        (((w - r) / STEPOVER).round().max(0.0) as usize).min(CAP)
-    };
+    let count_from_radius =
+        |r: f64| -> usize { (((w - r) / STEPOVER).round().max(0.0) as usize).min(CAP) };
     match model {
         Model::Envelope => {
             let r = cutter.envelope_radius_mm();
@@ -868,7 +867,10 @@ fn closed_form_matches_profile_erosion_sampler() {
 
 fn tools() -> Vec<(&'static str, Box<dyn MillingCutter>)> {
     vec![
-        ("taper Ø1/7°/Ø6", Box::new(wanaka_taper()) as Box<dyn MillingCutter>),
+        (
+            "taper Ø1/7°/Ø6",
+            Box::new(wanaka_taper()) as Box<dyn MillingCutter>,
+        ),
         ("taper Ø1/15°/Ø6", Box::new(steep_taper())),
         ("ball Ø3", Box::new(ball_control())),
     ]
@@ -994,13 +996,12 @@ fn depth_aware_fit_equations_recover_detail_the_envelope_baseline_suppresses() {
         // control `cusp_radius() == envelope_radius()` by definition, so it
         // must tie, not improve (pinned separately by
         // `ball_control_envelope_and_cusp_agree_on_every_cell`).
-        let candidates: &[usize] = if (cutter.envelope_radius_mm() - cutter.cusp_radius_mm()).abs()
-            < 1e-12
-        {
-            &[2, 4]
-        } else {
-            &[1, 2, 3, 4]
-        };
+        let candidates: &[usize] =
+            if (cutter.envelope_radius_mm() - cutter.cusp_radius_mm()).abs() < 1e-12 {
+                &[2, 4]
+            } else {
+                &[1, 2, 3, 4]
+            };
         for &mi in candidates {
             let m = run.total[mi].fit_coverage();
             assert!(
@@ -1314,8 +1315,8 @@ fn checkpoint_a_matrix_report() {
 /// production.
 fn predict_production(cutter: &dyn MillingCutter, v: &Valley, delta: f64) -> Prediction {
     use rs_cam_core::reach::{
-        LocalValley, RoutingVerdict, ValleySide, coverage_cap_passes, offset_passes_per_side, route,
-        solve_reach,
+        LocalValley, RoutingVerdict, ValleySide, coverage_cap_passes, offset_passes_per_side,
+        route, solve_reach,
     };
     let local = LocalValley {
         rest_depth_mm: delta,
@@ -1387,12 +1388,28 @@ fn production_reach_policy_reproduces_the_approved_matrix_column() {
             env.float_blind,
             100.0 * env.coverage()
         );
-        assert!(prod.cells >= 176, "{name}: matrix did not run ({} cells)", prod.cells);
+        assert!(
+            prod.cells >= 176,
+            "{name}: matrix did not run ({} cells)",
+            prod.cells
+        );
         assert_eq!(prod.gouge, 0, "{name}: production policy over-claimed");
-        assert_eq!(prod.miss, 0, "{name}: production policy suppressed reachable detail");
-        assert_eq!(prod.route_over, 0, "{name}: routed pencil where truth says clearing");
-        assert_eq!(prod.route_under, 0, "{name}: routed clearing where truth says pencil");
-        assert_eq!(prod.float_blind, 0, "{name}: routed a centreline the tool cannot hold");
+        assert_eq!(
+            prod.miss, 0,
+            "{name}: production policy suppressed reachable detail"
+        );
+        assert_eq!(
+            prod.route_over, 0,
+            "{name}: routed pencil where truth says clearing"
+        );
+        assert_eq!(
+            prod.route_under, 0,
+            "{name}: routed clearing where truth says pencil"
+        );
+        assert_eq!(
+            prod.float_blind, 0,
+            "{name}: routed a centreline the tool cannot hold"
+        );
         assert!(
             prod.coverage() > 0.999,
             "{name}: coverage {:.3} below the approved 100%",
@@ -1575,7 +1592,9 @@ fn probe_reach_policy_emits_the_fan_the_envelope_baseline_suppressed() {
     // valley narrower than 6 mm, so the fan was dead code.
     let w_meas = 1.5f64;
     let delta = 1.2f64;
-    let n_env = ((w_meas - cutter.envelope_radius_mm()) / STEPOVER).round().max(0.0) as usize;
+    let n_env = ((w_meas - cutter.envelope_radius_mm()) / STEPOVER)
+        .round()
+        .max(0.0) as usize;
     let n_eng = ((w_meas - cutter.engagement_radius_mm(delta)) / STEPOVER)
         .round()
         .max(0.0) as usize;
@@ -1586,7 +1605,10 @@ fn probe_reach_policy_emits_the_fan_the_envelope_baseline_suppressed() {
         cutter.engagement_radius_mm(delta),
         n_eng
     );
-    assert_eq!(n_env, 0, "the envelope baseline moved — re-derive this probe");
+    assert_eq!(
+        n_env, 0,
+        "the envelope baseline moved — re-derive this probe"
+    );
     assert!(n_eng >= 1, "depth-aware model also predicted zero passes");
     assert!(
         max_offset_total > 1,

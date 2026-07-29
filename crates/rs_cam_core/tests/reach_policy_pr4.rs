@@ -200,8 +200,8 @@ fn envelope_cusp_and_reach_give_three_different_answers_on_measured_geometry() {
     let s = cl.samples[cl.samples.len() / 2];
     let stepover = 0.5;
 
-    let n_env = (((cl.half_width_mm - cutter.envelope_radius_mm()) / stepover).round())
-        .max(0.0) as usize;
+    let n_env =
+        (((cl.half_width_mm - cutter.envelope_radius_mm()) / stepover).round()).max(0.0) as usize;
     let n_cusp =
         (((cl.half_width_mm - cutter.cusp_radius_mm()) / stepover).round()).max(0.0) as usize;
     let (nl, nr) = offset_passes_per_side(&s.reach, stepover, 4);
@@ -246,7 +246,10 @@ fn reach_recovers_offset_passes_the_envelope_baseline_suppressed() {
     let (nl, nr) = offset_passes_per_side(&reach, 0.5, 4);
     let n_env = ((2.5 - cutter.envelope_radius_mm()) / 0.5).round().max(0.0) as usize;
     println!("envelope n={n_env}, reach n=({nl},{nr}), reach={reach:?}");
-    assert_eq!(n_env, 0, "envelope baseline changed — re-derive this fixture");
+    assert_eq!(
+        n_env, 0,
+        "envelope baseline changed — re-derive this fixture"
+    );
     assert!(
         nl >= 1 && nr >= 1,
         "reach policy also suppressed the fan the physics supports: {reach:?}"
@@ -407,9 +410,7 @@ fn ball_characterisation_what_the_new_model_changes() {
         let (nl, nr) = offset_passes_per_side(&r, stepover, 4);
         let cap = coverage_cap_passes(&ball, depth, stepover, 4);
         let verdict = route(&r, stepover, cap);
-        println!(
-            "| {w:.1} | {theta_deg:.0}° | {depth:.2} | {n_old} | ({nl},{nr}) | {verdict:?} |"
-        );
+        println!("| {w:.1} | {theta_deg:.0}° | {depth:.2} | {n_old} | ({nl},{nr}) | {verdict:?} |");
         if nl != n_old || nr != n_old {
             moved += 1;
         }

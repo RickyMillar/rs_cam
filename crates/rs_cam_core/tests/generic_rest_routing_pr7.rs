@@ -136,7 +136,6 @@ fn grooved_block(rim_half_width: f64, wall_deg: f64, depth: f64, skew: f64) -> T
     TriangleMesh::from_raw(verts, tris)
 }
 
-
 // ── Session wiring ──────────────────────────────────────────────────────
 
 fn tapered_ball_tool(id: usize) -> ToolConfig {
@@ -297,7 +296,11 @@ fn the_generic_pass_routes_on_the_policy_stepover_and_reports_it() {
         .find(|d| d.id.as_str() == rs_cam_core::diagnostics::ids::CONFIG_DERIVED_STEPOVER)
         .expect("the derived value differs from the envelope rule, so it must report");
     assert_eq!(d.severity, rs_cam_core::diagnostics::Severity::Info);
-    assert!(d.message.contains("generic rest analysis routing"), "{}", d.message);
+    assert!(
+        d.message.contains("generic rest analysis routing"),
+        "{}",
+        d.message
+    );
 }
 
 /// An operator who PINS the stepover owns that number: the policy is not
@@ -309,7 +312,11 @@ fn an_explicitly_pinned_stepover_is_honoured_and_silent() {
         ..routing_rest_analysis()
     };
     let session = generate_with_rest_analysis(tapered_ball_tool(0), cfg);
-    let stats = session.get_result(0).expect("a generated result").stats.clone();
+    let stats = session
+        .get_result(0)
+        .expect("a generated result")
+        .stats
+        .clone();
     assert!(
         stats.derived_stepover.is_none(),
         "the policy did not size this run, so nothing was derived: {:?}",
@@ -444,7 +451,10 @@ fn the_attached_artifacts_do_not_move_with_the_routing_verdict() {
     let retired_arm = polygons_for(Some(RETIRED_DETECTOR_STEPOVER_MM));
     println!("PR-7 artifacts: policy {policy_arm:?} vs retired {retired_arm:?}");
 
-    assert!(policy_arm.0 > 0, "non-vacuity: the pass must attach regions");
+    assert!(
+        policy_arm.0 > 0,
+        "non-vacuity: the pass must attach regions"
+    );
     assert!(policy_arm.2 > 0, "non-vacuity: the pass must attach a grid");
     assert_eq!(
         policy_arm.0, retired_arm.0,
@@ -505,7 +515,11 @@ fn the_new_dials_are_serde_additive() {
 #[test]
 fn the_ball_control_derives_the_same_number_and_reports_nothing() {
     let session = generate_with_rest_analysis(ball_tool(0, 3.0), routing_rest_analysis());
-    let stats = session.get_result(0).expect("a generated result").stats.clone();
+    let stats = session
+        .get_result(0)
+        .expect("a generated result")
+        .stats
+        .clone();
     let finding = stats
         .derived_stepover
         .as_deref()

@@ -13,8 +13,8 @@
 
 use super::Diagnostic;
 use super::adapters::{
-    from_feeds, from_model_refs, from_preconditions, from_project_diagnostics, from_stale_default,
-    from_generation, from_static_checks, from_tool_load,
+    from_feeds, from_generation, from_model_refs, from_preconditions, from_project_diagnostics,
+    from_stale_default, from_static_checks, from_tool_load,
 };
 use super::supersession::apply_supersession;
 use crate::compute::catalog::OperationConfig;

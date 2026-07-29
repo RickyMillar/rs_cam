@@ -528,7 +528,8 @@ fn assert_link_moves_neutral(
     let applied = with_links.moves.len() != baseline.moves.len()
         || (rapid_distance(&with_links) - rapid_distance(&baseline)).abs() > 1e-6;
     assert_eq!(
-        applied, expect_links_applied,
+        applied,
+        expect_links_applied,
         "{op:?}: expected links_applied={expect_links_applied}, observed \
          {applied} (moves {} -> {}, rapid {:.1} -> {:.1}). Either the fixture \
          stopped presenting linkable geometry or apply_link_moves changed \
@@ -660,7 +661,8 @@ fn chamfer_link_moves_preserves_material_state() {
         0.05,
         0.02,
         // One closed contour: nothing to collapse. Pins the gate, not links.
-        /* expect_links_applied */ false,
+        /* expect_links_applied */
+        false,
     );
 }
 
@@ -1721,7 +1723,11 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
     // block comment above), so read the remapped node spans and assert the
     // level sequence still descends.
     let mut checked = 0usize;
-    for span in optimized.spans.iter().filter(|s| s.kind == SpanKind::Region) {
+    for span in optimized
+        .spans
+        .iter()
+        .filter(|s| s.kind == SpanKind::Region)
+    {
         if !span.label.starts_with("VerySteep") {
             continue;
         }
@@ -1902,7 +1908,11 @@ fn steep_shallow_split_barriers_allow_intra_half_reorder_and_pin_depth() {
 /// Raster drop-cutter path over the hemisphere, built the way
 /// `compute/execute.rs::generate_drop_cutter` builds it (batch grid →
 /// `raster_toolpath_from_grid`).
-fn drop_cutter_raster(mesh: &TriangleMesh, index: &SpatialIndex, cutter: &dyn MillingCutter) -> Toolpath {
+fn drop_cutter_raster(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+) -> Toolpath {
     let never_cancel = || false;
     let floor = mesh.bbox.min.z - 0.1;
     let grid = rs_cam_core::dropcutter::batch_drop_cutter_with_cancel(
@@ -1948,7 +1958,12 @@ fn drop_cutter_capability_reorder_is_material_neutral() {
     );
 
     // Hold link_moves OFF on both branches; vary only the reorder.
-    let baseline = dressup(raw.clone(), &dressup_no_links(), OperationType::DropCutter, 3.0);
+    let baseline = dressup(
+        raw.clone(),
+        &dressup_no_links(),
+        OperationType::DropCutter,
+        3.0,
+    );
     let optimized = dressup(
         raw,
         &DressupConfig {
@@ -1998,7 +2013,8 @@ fn drop_cutter_link_moves_preserves_material_state() {
         // apply_link_moves only bridges a matching-Z pair, so no candidate
         // survives. Recorded rather than papered over: DropCutter permits
         // links but does not, in practice, take them on 3D terrain.
-        /* expect_links_applied */ false,
+        /* expect_links_applied */
+        false,
     );
 }
 

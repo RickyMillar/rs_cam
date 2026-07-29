@@ -1598,7 +1598,11 @@ pub fn filter_air_cuts(
             continue;
         }
 
-        let Some(prev) = i.checked_sub(1).and_then(|k| moves.get(k)).map(|p| p.target) else {
+        let Some(prev) = i
+            .checked_sub(1)
+            .and_then(|k| moves.get(k))
+            .map(|p| p.target)
+        else {
             // No predecessor: only the target is knowable.
             air_flags.push(is_in_air(
                 prior_stock,
@@ -1624,9 +1628,8 @@ pub fn filter_air_cuts(
     // phase 2 emits them verbatim — the tool simply cuts through the sliver
     // of air rather than climbing to `safe_z` and back for it.
     if policy == AirBridgePolicy::ShorterThanAirPath {
-        let dist = |a: P3, b: P3| {
-            ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt()
-        };
+        let dist =
+            |a: P3, b: P3| ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt();
         let mut i = 0usize;
         while i < air_flags.len() {
             if !air_flags.get(i).copied().unwrap_or(false) {
@@ -1665,11 +1668,10 @@ pub fn filter_air_cuts(
                 }
             }
             // The bridge phase 2 would emit: up to safe_z, across, back down.
-            let bridge_len =
-                (safe_z - from.z).max(0.0) + (safe_z - to.z).max(0.0) + {
-                    let (dx, dy) = (to.x - from.x, to.y - from.y);
-                    (dx * dx + dy * dy).sqrt()
-                };
+            let bridge_len = (safe_z - from.z).max(0.0) + (safe_z - to.z).max(0.0) + {
+                let (dx, dy) = (to.x - from.x, to.y - from.y);
+                (dx * dx + dy * dy).sqrt()
+            };
 
             if bridge_len >= air_len {
                 for k in run_start..run_end {
@@ -2680,8 +2682,15 @@ mod tests {
         tp.rapid_to(P3::new(90.0, 50.0, 10.0)); // retract
 
         let stock = half_cleared_stock();
-        let result =
-            filter_air_cuts(AnnotatedToolpath::new(tp.clone()), &stock, 3.0, 10.0, 0.1, AirBridgePolicy::Always).toolpath;
+        let result = filter_air_cuts(
+            AnnotatedToolpath::new(tp.clone()),
+            &stock,
+            3.0,
+            10.0,
+            0.1,
+            AirBridgePolicy::Always,
+        )
+        .toolpath;
 
         // The moves at x=60 and x=90 should have been removed (both endpoints in air).
         // Specifically, the move from x=60 to x=90 is fully in air (source and target).
@@ -2726,8 +2735,15 @@ mod tests {
         tp.rapid_to(P3::new(30.0, 50.0, 10.0));
 
         let stock = half_cleared_stock();
-        let result =
-            filter_air_cuts(AnnotatedToolpath::new(tp.clone()), &stock, 3.0, 10.0, 0.1, AirBridgePolicy::Always).toolpath;
+        let result = filter_air_cuts(
+            AnnotatedToolpath::new(tp.clone()),
+            &stock,
+            3.0,
+            10.0,
+            0.1,
+            AirBridgePolicy::Always,
+        )
+        .toolpath;
 
         // All cutting moves are in the left half (x < 50) where material exists
         // at top_z=5.0 and tool is at z=2.0 (below stock top). No air cuts.
@@ -2811,8 +2827,15 @@ mod tests {
         tp.rapid_to(P3::new(30.0, 50.0, 10.0));
 
         let stock = half_cleared_stock();
-        let result =
-            filter_air_cuts(AnnotatedToolpath::new(tp.clone()), &stock, 3.0, 10.0, 0.1, AirBridgePolicy::Always).toolpath;
+        let result = filter_air_cuts(
+            AnnotatedToolpath::new(tp.clone()),
+            &stock,
+            3.0,
+            10.0,
+            0.1,
+            AirBridgePolicy::Always,
+        )
+        .toolpath;
 
         // The move from x=70 to x=30 has source in air but target in material.
         // Conservative rule: it should be preserved because the target has material.
@@ -3046,7 +3069,11 @@ mod tests {
         cut.rapid_to(P3::new(29.0, 10.0, 10.0));
         cut.feed_to(P3::new(29.0, 10.0, -5.0), 500.0);
         cut.feed_to(P3::new(31.0, 10.0, -5.0), 500.0);
-        carved.simulate_toolpath(&cut, &FlatEndmill::new(3.0, 25.0), StockCutDirection::FromTop);
+        carved.simulate_toolpath(
+            &cut,
+            &FlatEndmill::new(3.0, 25.0),
+            StockCutDirection::FromTop,
+        );
 
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(5.0, 10.0, 10.0));

@@ -4891,7 +4891,10 @@ fn parse_span_kind_filter(s: &str) -> Result<rs_cam_core::toolpath_spans::SpanKi
     use rs_cam_core::toolpath_spans::SpanKind;
     SpanKind::from_key(s).ok_or_else(|| {
         let known: Vec<&str> = SpanKind::ALL.iter().map(|k| k.as_key()).collect();
-        format!("unknown span_kind {s:?} — known kinds: {}", known.join(", "))
+        format!(
+            "unknown span_kind {s:?} — known kinds: {}",
+            known.join(", ")
+        )
     })
 }
 

@@ -39,8 +39,8 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::dressup::AirBridgePolicy;
 use rs_cam_core::compute::operation_configs::{CreaseReference, UnifiedFinishConfig};
+use rs_cam_core::dressup::AirBridgePolicy;
 use rs_cam_core::session::{ProjectSession, SessionError, SimulationOptions};
 
 /// Linear scale factor applied to the wanaka terrain STL and its stock
@@ -242,7 +242,11 @@ fn write_fixture_project(ball_diameter_mm: f64) -> PathBuf {
         let (base_min_z, base_max_z) = (model_min_z / z_exag, model_max_z / z_exag);
         let origin_z = model_min_z + (BASE_ORIGIN_Z - base_min_z);
         let top_z = model_max_z + (BASE_ORIGIN_Z + BASE_STOCK_Z - base_max_z);
-        (origin_z, top_z - origin_z, model_max_z + (BASE_SAFE_Z - base_max_z))
+        (
+            origin_z,
+            top_z - origin_z,
+            model_max_z + (BASE_SAFE_Z - base_max_z),
+        )
     };
     eprintln!(
         "v3 fixture: z_exag={z_exag} → stock origin_z={stock_origin_z:.3} z={stock_z:.3}, \
@@ -1153,7 +1157,8 @@ fn build_band_map(s: &ProjectSession) -> BandMap {
         &surface.slope_map,
         &surface.heightmap.covered,
         &[],
-        &planner,);
+        &planner,
+    );
 
     let hm = &surface.heightmap;
     let (rows, cols, cell) = (hm.rows, hm.cols, hm.cell_size);
@@ -1828,7 +1833,15 @@ fn score_stage(
     ref_name: &str,
     dials: Dials,
 ) -> BranchScore {
-    score_stage_tweaked(label, project_path, enable, disable, ref_name, dials, &|_| {})
+    score_stage_tweaked(
+        label,
+        project_path,
+        enable,
+        disable,
+        ref_name,
+        dials,
+        &|_| {},
+    )
 }
 
 /// `score_stage` with a hook applied to the freshly-loaded session, after
@@ -2021,7 +2034,12 @@ fn v3_process_proof_ab() {
         Branch::AllOverTip,
         dials,
     );
-    let c = score_branch_with(&format!("v3_cascade_b3_{which}"), &path, Branch::Cascade, dials);
+    let c = score_branch_with(
+        &format!("v3_cascade_b3_{which}"),
+        &path,
+        Branch::Cascade,
+        dials,
+    );
     verdict(&format!("ball Ø3, wanaka x2, dials={which}"), &d, &c);
 }
 
@@ -2047,7 +2065,12 @@ fn v3_cascade_dial_isolation() {
     let (which, dials) = dials_from_env("both");
     eprintln!("== DIAL ISOLATION: {which} => {dials:?} ==");
     let path = write_fixture_project(3.0);
-    let c = score_branch_with(&format!("v3_cascade_b3_{which}"), &path, Branch::Cascade, dials);
+    let c = score_branch_with(
+        &format!("v3_cascade_b3_{which}"),
+        &path,
+        Branch::Cascade,
+        dials,
+    );
     const BAND_LABEL: [&str; 4] = ["off-region", "shallow", "mid-steep", "very-steep"];
     for (code, band_label) in BAND_LABEL.iter().enumerate().skip(1) {
         eprintln!(
@@ -2062,7 +2085,10 @@ fn v3_cascade_dial_isolation() {
         .filter(|(n, _)| n == "Op A Ball Finish" || n == "Op B Unified Rest")
         .map(|(_, s)| *s)
         .sum();
-    eprintln!("[{which}] finish_stack={finish_s:.1}s collisions={}", c.outcome.collisions);
+    eprintln!(
+        "[{which}] finish_stack={finish_s:.1}s collisions={}",
+        c.outcome.collisions
+    );
 }
 
 /// Localize the cascade's SHALLOW deficit by scoring a PARTIAL chain.
@@ -2241,8 +2267,12 @@ fn v3_gouge_site_probe() {
         // whatever the emission order happened to put there, and the
         // question is what reached furthest down.
         near.sort_by(|a, b| {
-            let za = moves.get(a.0).map_or(f64::INFINITY, |m| m.target.z.min(a.1.z));
-            let zb = moves.get(b.0).map_or(f64::INFINITY, |m| m.target.z.min(b.1.z));
+            let za = moves
+                .get(a.0)
+                .map_or(f64::INFINITY, |m| m.target.z.min(a.1.z));
+            let zb = moves
+                .get(b.0)
+                .map_or(f64::INFINITY, |m| m.target.z.min(b.1.z));
             za.total_cmp(&zb)
         });
         for &(k, from) in near.iter().take(30) {
@@ -2522,7 +2552,8 @@ fn v3_flank_gouge_probe() {
                     };
                     for p in tri.v {
                         let r = ((p.x - tx).powi(2) + (p.y - ty).powi(2)).sqrt();
-                        let Some(h) = rs_cam_core::tool::MillingCutter::height_at_radius(&cutter, r)
+                        let Some(h) =
+                            rs_cam_core::tool::MillingCutter::height_at_radius(&cutter, r)
                         else {
                             continue; // outside the cutter's profile
                         };
@@ -2585,7 +2616,10 @@ fn v3_column_ladder_probe() {
             Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
         })
         .collect();
-    assert!(!sites.is_empty(), "V3_SITES parsed empty from {sites_raw:?}");
+    assert!(
+        !sites.is_empty(),
+        "V3_SITES parsed empty from {sites_raw:?}"
+    );
     let (dial_label, dials) = dials_from_env("shipped");
     eprintln!("== COLUMN LADDER dials={dial_label} sites={sites:?} ==");
 
@@ -2652,21 +2686,20 @@ fn v3_column_ladder_probe() {
                 None => eprintln!("   before {name:<20} top=<none>"),
             }
         }
-        let final_top = sim
-            .column_deviations
-            .as_ref()
-            .and_then(|cols| {
-                cols.iter()
-                    .filter(|cd| (cd.x - x).abs() < 0.2 && (cd.y - y).abs() < 0.2)
-                    .min_by(|p, q| {
-                        let dp = (p.x - x).powi(2) + (p.y - y).powi(2);
-                        let dq = (q.x - x).powi(2) + (q.y - y).powi(2);
-                        dp.total_cmp(&dq)
-                    })
-                    .map(|cd| (cd.top_z, cd.dev))
-            });
+        let final_top = sim.column_deviations.as_ref().and_then(|cols| {
+            cols.iter()
+                .filter(|cd| (cd.x - x).abs() < 0.2 && (cd.y - y).abs() < 0.2)
+                .min_by(|p, q| {
+                    let dp = (p.x - x).powi(2) + (p.y - y).powi(2);
+                    let dq = (q.x - x).powi(2) + (q.y - y).powi(2);
+                    dp.total_cmp(&dq)
+                })
+                .map(|cd| (cd.top_z, cd.dev))
+        });
         match final_top {
-            Some((t, dev)) => eprintln!("   FINAL (columns)          top={t:8.3}  (dev {dev:+7.3})"),
+            Some((t, dev)) => {
+                eprintln!("   FINAL (columns)          top={t:8.3}  (dev {dev:+7.3})");
+            }
             None => eprintln!("   FINAL (columns)          <no column within 0.2mm>"),
         }
     }
@@ -2982,7 +3015,10 @@ fn v3_move_attribution_probe() {
             prev = now;
         }
     }
-    eprintln!("   {drops} moves changed this column; final {prev:?} (sim {:.3})", cd.top_z);
+    eprintln!(
+        "   {drops} moves changed this column; final {prev:?} (sim {:.3})",
+        cd.top_z
+    );
 }
 
 /// Do any emitted arcs sweep the LONG way round? — arc direction sanity.
@@ -3106,7 +3142,9 @@ fn v3_arc_direction_sanity() {
         }
         grand_total += arcs;
         grand_bad += bad;
-        eprintln!("== [{name}] arcs={arcs} sweeping>{MAX_PLAUSIBLE_SWEEP_DEG}°={bad} worst={worst:.2}° ==");
+        eprintln!(
+            "== [{name}] arcs={arcs} sweeping>{MAX_PLAUSIBLE_SWEEP_DEG}°={bad} worst={worst:.2}° =="
+        );
     }
     eprintln!("== TOTAL arcs={grand_total} reflex/mis-directed={grand_bad} ==");
 }
@@ -3328,7 +3366,6 @@ fn v3_cusp_sweep() {
 
 /// Shared verdict printer + quality gate for the branch comparison.
 fn verdict(what: &str, d: &BranchScore, c: &BranchScore) {
-
     let cascade_finish_s: f64 = c
         .outcome
         .per_op_s
@@ -4048,8 +4085,9 @@ fn recoverable_air(label: &str, s: &ProjectSession, op_index: usize) {
 fn v3_air_bridge_probe() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("rs_cam_core::unified_finish=info")),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                tracing_subscriber::EnvFilter::new("rs_cam_core::unified_finish=info")
+            }),
         )
         .with_writer(std::io::stderr)
         .without_time()
@@ -4057,9 +4095,17 @@ fn v3_air_bridge_probe() {
 
     let project_path = write_fixture_project(3.0);
     let cases: [(&str, AirBridgePolicy, f64); 4] = [
-        ("shipped (bridge always, no links)", AirBridgePolicy::Always, 0.0),
+        (
+            "shipped (bridge always, no links)",
+            AirBridgePolicy::Always,
+            0.0,
+        ),
         ("links only", AirBridgePolicy::Always, 6.0),
-        ("cost-aware bridges only", AirBridgePolicy::ShorterThanAirPath, 0.0),
+        (
+            "cost-aware bridges only",
+            AirBridgePolicy::ShorterThanAirPath,
+            0.0,
+        ),
         ("both", AirBridgePolicy::ShorterThanAirPath, 6.0),
     ];
     let mut rows: Vec<(&str, f64, f64, usize)> = Vec::new();
@@ -4191,8 +4237,9 @@ fn v3_intra_region_link_probe() {
     // a junction that was never a candidate look identical there).
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("rs_cam_core::unified_finish=info")),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                tracing_subscriber::EnvFilter::new("rs_cam_core::unified_finish=info")
+            }),
         )
         .with_writer(std::io::stderr)
         .without_time()
@@ -4549,7 +4596,14 @@ fn tour_hop_seconds(
         let from = regions[pair[0]].exit;
         let to = regions[pair[1]].entry;
         secs += rs_cam_core::machine_kinematics::retract_link_time(
-            from, to, safe_z, None, plunge_rate, kin, max_feed, rapid_feed,
+            from,
+            to,
+            safe_z,
+            None,
+            plunge_rate,
+            kin,
+            max_feed,
+            rapid_feed,
         );
         mm += (to.x - from.x).hypot(to.y - from.y);
     }
@@ -4832,7 +4886,12 @@ fn v3_rest_anatomy() {
             area as f64 / secs.max(1e-9)
         );
     };
-    row("Op A ball all-over", op_a_s, op_a_cells.len(), a_in_n + a_out_n);
+    row(
+        "Op A ball all-over",
+        op_a_s,
+        op_a_cells.len(),
+        a_in_n + a_out_n,
+    );
     row("Op B unified rest", op_b_s, all_cells.len(), in_n + out_n);
     row(
         "cascade (A+B)",
@@ -4932,14 +4991,26 @@ fn v3_rest_anatomy() {
     let (grouped_s, grouped_mm) = cost(&grouped_order);
 
     eprintln!("\n== THE PRIZE: what merging can be worth ==");
-    eprintln!("safe_z {safe_z:.1} mm, rapid {rapid_feed:.0} mm/min, {} hops", regions.len().saturating_sub(1));
+    eprintln!(
+        "safe_z {safe_z:.1} mm, rapid {rapid_feed:.0} mm/min, {} hops",
+        regions.len().saturating_sub(1)
+    );
     eprintln!(
         "{:<34} {:>12} {:>12}",
         "inter-region tour", "hop_seconds", "hop_mm"
     );
-    eprintln!("{:<34} {:>12.1} {:>12.0}", "as emitted (router's order)", emit_s, emit_mm);
-    eprintln!("{:<34} {:>12.1} {:>12.0}", "greedy NN, mixed  = MERGED", mixed_s, mixed_mm);
-    eprintln!("{:<34} {:>12.1} {:>12.0}", "greedy NN, grouped = UNFUSED", grouped_s, grouped_mm);
+    eprintln!(
+        "{:<34} {:>12.1} {:>12.0}",
+        "as emitted (router's order)", emit_s, emit_mm
+    );
+    eprintln!(
+        "{:<34} {:>12.1} {:>12.0}",
+        "greedy NN, mixed  = MERGED", mixed_s, mixed_mm
+    );
+    eprintln!(
+        "{:<34} {:>12.1} {:>12.0}",
+        "greedy NN, grouped = UNFUSED", grouped_s, grouped_mm
+    );
     let prize_s = grouped_s - mixed_s;
     eprintln!(
         "\nPRIZE (unfused - merged) = {prize_s:+.1}s = {:+.2}% of Op B ({op_b_s:.0}s), \

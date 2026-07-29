@@ -1426,15 +1426,15 @@ pub(crate) fn generate_scallop(
     };
     let (tp, annotations, scallop_report) =
         crate::scallop::scallop_toolpath_structured_annotated_with_cancel(
-        m,
-        idx,
-        ctx.tool_def,
-        &params,
-        ctx.debug_ctx,
-        ctx.boundary_regions,
-        &(|| ctx.cancel.load(Ordering::SeqCst)),
-    )
-    .map_err(|_e| OperationError::Cancelled)?;
+            m,
+            idx,
+            ctx.tool_def,
+            &params,
+            ctx.debug_ctx,
+            ctx.boundary_regions,
+            &(|| ctx.cancel.load(Ordering::SeqCst)),
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
     record_standing_material(ctx.findings, scallop_report.uncut_core_mm2);
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_scallop(&annotations, &tp, sem);
@@ -2375,8 +2375,7 @@ fn attach_generic_rest_analysis(
 
 /// Why [`attach_generic_rest_analysis`] sizes the reach policy at
 /// `min_valley_depth`. Shipped in the operator-facing diagnostic.
-const GENERIC_REST_STEPOVER_DEPTH_BASIS: &str =
-    "the configured min_valley_depth — the shallowest rest this pass will \
+const GENERIC_REST_STEPOVER_DEPTH_BASIS: &str = "the configured min_valley_depth — the shallowest rest this pass will \
      report, where the cutter's engaged width is narrowest";
 
 /// Resolve the rest-depth reference (P2.5 chain): the actual machined

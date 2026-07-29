@@ -512,7 +512,8 @@ mod restore_guard_tests {
     #[test]
     fn air_cut_fraction_divides_air_by_total_runtime() {
         let trace = trace_with_summary(ToolpathId(7), 100.0, 42.0);
-        let pct = air_cut_fraction_of_total_runtime_from_trace(&trace, ToolpathId(7)).expect("summary present");
+        let pct = air_cut_fraction_of_total_runtime_from_trace(&trace, ToolpathId(7))
+            .expect("summary present");
         assert!((pct - 0.42).abs() < 1e-9, "{pct}");
     }
 

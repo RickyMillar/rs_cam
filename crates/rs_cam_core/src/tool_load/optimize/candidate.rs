@@ -24,7 +24,8 @@ use crate::tool_load::{ToolpathLoadContext, evaluate_toolpath};
 use super::axes::SearchAxis;
 use super::bounds;
 use super::context::{
-    BaselineRestoreGuard, EvaluationContext, air_cut_fraction_of_total_runtime_from_trace, cycle_time_from_trace,
+    BaselineRestoreGuard, EvaluationContext, air_cut_fraction_of_total_runtime_from_trace,
+    cycle_time_from_trace,
 };
 use super::delta::{GateDeltas, ParamDelta};
 use super::policy::{self, SearchPolicy};

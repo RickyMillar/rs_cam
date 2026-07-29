@@ -23,24 +23,24 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use rs_cam_core::compute::config::{DeprecatedDialFinding, ToolpathStats};
-use rs_cam_core::compute::operation_configs::PencilConfig;
-use rs_cam_core::geo::P3;
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::pencil::{
-    PencilDetector, PencilParams, PencilRuntimeEvent, pencil_toolpath_structured_annotated,
-};
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
     BoundaryConfig, DressupConfig, HeightMode, HeightsConfig, StockSource,
 };
+use rs_cam_core::compute::config::{DeprecatedDialFinding, ToolpathStats};
+use rs_cam_core::compute::operation_configs::PencilConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
+use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::pencil::{
+    PencilDetector, PencilParams, PencilRuntimeEvent, pencil_toolpath_structured_annotated,
+};
 use rs_cam_core::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
+use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
 
 fn wanaka_taper() -> TaperedBallEndmill {
@@ -131,7 +131,14 @@ fn run_pencil(mesh: &TriangleMesh, params: &PencilParams) -> (usize, usize, Vec<
     let mut grid = None;
     let mut regions = None;
     let (_tp, ann) = pencil_toolpath_structured_annotated(
-        mesh, &index, &cutter, params, None, None, &mut grid, &mut regions,
+        mesh,
+        &index,
+        &cutter,
+        params,
+        None,
+        None,
+        &mut grid,
+        &mut regions,
     );
     let mut chains: std::collections::BTreeSet<usize> = Default::default();
     let mut offsets: std::collections::BTreeSet<i64> = Default::default();
@@ -166,7 +173,10 @@ fn routing_counts_track_the_dial_and_the_physics() {
     let mut totals = Vec::new();
     for cap in [0usize, 1, 2, 4] {
         let (chains, max_total, offsets) = run_pencil(&mesh, &pencil_params(cap));
-        let pretty: Vec<String> = offsets.iter().map(|o| format!("{:.1}", *o as f64 / 1000.0)).collect();
+        let pretty: Vec<String> = offsets
+            .iter()
+            .map(|o| format!("{:.1}", *o as f64 / 1000.0))
+            .collect();
         println!("| {cap} | {chains} | {max_total} | {} |", pretty.join(", "));
         totals.push((cap, chains, max_total));
     }
@@ -225,7 +235,10 @@ fn offset_passes_never_exceed_the_physical_count() {
             region_margin_mm: 0.5,
         },
     );
-    assert!(!rf.centerlines.is_empty(), "fixture produced no centrelines");
+    assert!(
+        !rf.centerlines.is_empty(),
+        "fixture produced no centrelines"
+    );
     // A generous cap (8) so the CAP is not what is limiting the count — the
     // physics has to be.
     let (_chains, max_total, offsets) = run_pencil(&mesh, &pencil_params(8));
@@ -410,7 +423,9 @@ fn a_pass_is_truncated_where_the_valley_pinches_not_dropped_wholesale() {
         } = a.event;
         declared.insert(chain_index, offset_total);
         if !is_centerline {
-            *runs_per_pass.entry((chain_index, offset_index)).or_insert(0) += 1;
+            *runs_per_pass
+                .entry((chain_index, offset_index))
+                .or_insert(0) += 1;
         }
     }
     // Two truncation signatures, both real:

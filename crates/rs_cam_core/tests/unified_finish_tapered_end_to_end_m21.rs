@@ -853,7 +853,8 @@ fn would_have_been_red_the_prefix_dials_erase_every_steep_region() {
     let live = decompose_surface(
         &live_surface,
         &[],
-        &FinishPlannerParams::for_tool(taper.cusp_radius()),);
+        &FinishPlannerParams::for_tool(taper.cusp_radius()),
+    );
 
     // Pre-fix: `cell = radius()/4 = 0.75`, `pad = radius() = 3.0`. A Ø6
     // BALL reproduces that grid bit-for-bit today, because its cusp radius
@@ -871,7 +872,8 @@ fn would_have_been_red_the_prefix_dials_erase_every_steep_region() {
     let prefix = decompose_surface(
         &prefix_surface,
         &[],
-        &FinishPlannerParams::for_tool(taper.radius()),);
+        &FinishPlannerParams::for_tool(taper.radius()),
+    );
 
     let count_non_shallow = |planned: &rs_cam_core::finish_planner::PlannedRegions| {
         planned
@@ -922,11 +924,9 @@ fn ball_control_is_unaffected_by_both_radius_fixes() {
     let by_cusp = decompose_surface(
         &surface,
         &[],
-        &FinishPlannerParams::for_tool(ball.cusp_radius()),);
-    let by_radius = decompose_surface(
-        &surface,
-        &[],
-        &FinishPlannerParams::for_tool(ball.radius()),);
+        &FinishPlannerParams::for_tool(ball.cusp_radius()),
+    );
+    let by_radius = decompose_surface(&surface, &[], &FinishPlannerParams::for_tool(ball.radius()));
     assert!(
         by_cusp
             .regions

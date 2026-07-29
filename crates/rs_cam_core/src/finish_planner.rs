@@ -456,8 +456,7 @@ pub fn decompose(
     let planned_creases: Vec<PlannedCrease> = creases
         .iter()
         .map(|c| {
-            let (crease, cells) =
-                apply_crease_corridor(c, &mut labels, slope_map, params);
+            let (crease, cells) = apply_crease_corridor(c, &mut labels, slope_map, params);
             if crease.corridor.is_some() {
                 claimed_creases += 1;
             }
@@ -1333,7 +1332,8 @@ mod tests {
             &slope_map,
             &covered,
             &[],
-            &FinishPlannerParams::for_tool(3.0),);
+            &FinishPlannerParams::for_tool(3.0),
+        );
         let mid_conditioned = conditioned
             .regions
             .iter()
@@ -1375,7 +1375,8 @@ mod tests {
             &slope_map,
             &covered,
             &[],
-            &FinishPlannerParams::for_tool(3.0),);
+            &FinishPlannerParams::for_tool(3.0),
+        );
         let mid = planned
             .regions
             .iter()
@@ -1404,7 +1405,8 @@ mod tests {
             &slope_map,
             &covered,
             &[],
-            &FinishPlannerParams::for_tool(3.0),);
+            &FinishPlannerParams::for_tool(3.0),
+        );
 
         let shallow: Vec<_> = planned
             .regions
@@ -1457,7 +1459,8 @@ mod tests {
             &slope_map,
             &covered,
             &[],
-            &FinishPlannerParams::for_tool(3.0),);
+            &FinishPlannerParams::for_tool(3.0),
+        );
 
         let mid = planned
             .regions
@@ -1507,7 +1510,8 @@ mod tests {
             &slope_map,
             &covered,
             &creases,
-            &FinishPlannerParams::for_tool(3.0),);
+            &FinishPlannerParams::for_tool(3.0),
+        );
 
         assert!(
             planned.creases[0].own_region.is_none(),
@@ -1553,7 +1557,8 @@ mod tests {
             &slope_map,
             &covered,
             &creases,
-            &FinishPlannerParams::for_tool(3.0),);
+            &FinishPlannerParams::for_tool(3.0),
+        );
 
         assert!(planned.creases[0].own_region.is_some());
         assert!(planned.creases[0].corridor.is_some());
@@ -1667,7 +1672,8 @@ mod tests {
             &FinishPlannerParams {
                 overlap_mm: 0.0,
                 ..FinishPlannerParams::for_tool(3.0)
-            },);
+            },
+        );
         let dilated = decompose(
             &slope_map,
             &covered,
@@ -1675,7 +1681,8 @@ mod tests {
             &FinishPlannerParams {
                 overlap_mm: 2.0,
                 ..FinishPlannerParams::for_tool(3.0)
-            },);
+            },
+        );
 
         assert_eq!(base.regions.len(), 1);
         assert_eq!(dilated.regions.len(), 1);
@@ -1728,7 +1735,8 @@ mod tests {
             &slope_map,
             &mismatched_covered,
             &[],
-            &FinishPlannerParams::default(),);
+            &FinishPlannerParams::default(),
+        );
         assert!(out2.regions.is_empty());
 
         let all_uncovered = vec![false; 100];
@@ -1736,7 +1744,8 @@ mod tests {
             &slope_map,
             &all_uncovered,
             &[],
-            &FinishPlannerParams::default(),);
+            &FinishPlannerParams::default(),
+        );
         assert!(out3.regions.is_empty());
     }
 
@@ -1786,7 +1795,8 @@ mod tests {
             &slope_map,
             &covered,
             &[],
-            &FinishPlannerParams::for_tool(3.0),);
+            &FinishPlannerParams::for_tool(3.0),
+        );
 
         let svg = planned_regions_to_svg(&planned, 800.0, 800.0);
         assert!(svg.contains("svg"));
