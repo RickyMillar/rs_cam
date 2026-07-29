@@ -153,16 +153,23 @@ impl FinishPlannerParams {
     /// on the 65–75° slopes, while 65→55 EXPLODED +27%. Every ±1-step
     /// neighbour of every dial stays conditioned (no cliffs); hysteresis
     /// is load-bearing (0 → the raw masks storm to O(100) islands).
-    pub fn for_tool(tool_radius: f64) -> Self {
+    /// `cusp_radius` MUST be the tool's cusp-forming (tip) radius —
+    /// [`crate::tool::MillingCutter::cusp_radius`] — not `radius()`. Every
+    /// dial below is a FEATURE SCALE, and on a tapered tool `radius()`
+    /// reports the shank: a Ø1 tip on a 6 mm shank made
+    /// `min_region_area_mm2` 144 mm² instead of 4, which closed and
+    /// absorbed every steep ribbon on terrain that is 25% steeper than 55°
+    /// (design doc §14q).
+    pub fn for_tool(cusp_radius: f64) -> Self {
         Self {
             steep_threshold_deg: 45.0,
             waterline_threshold_deg: 75.0,
             hysteresis_deg: 10.0,
             overlap_mm: 0.0,
             corridor_k: 2.0,
-            pencil_claim_floor: tool_radius * 0.25,
-            close_radius_mm: tool_radius * 0.5,
-            min_region_area_mm2: (2.0 * tool_radius).powi(2) * 4.0,
+            pencil_claim_floor: cusp_radius * 0.25,
+            close_radius_mm: cusp_radius * 0.5,
+            min_region_area_mm2: (2.0 * cusp_radius).powi(2) * 4.0,
         }
     }
 }

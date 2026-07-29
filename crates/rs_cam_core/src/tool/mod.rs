@@ -151,6 +151,27 @@ pub trait MillingCutter: Send + Sync {
     fn radius(&self) -> f64 {
         self.diameter() / 2.0
     }
+    /// The radius that sets the FEATURE SCALE this tool can resolve — the
+    /// tip sphere, not the widest point.
+    ///
+    /// [`Self::radius`] is the swept/collision radius, and for a tapered
+    /// ball `diameter()` deliberately reports the SHAFT ("effective
+    /// cutting diameter at widest point"). That is right for clearance and
+    /// wrong for every question of the form "how small a feature can this
+    /// cutter see or cut" — cusp height, minimum region area, morphological
+    /// close radius, pencil claim floor.
+    ///
+    /// Getting this wrong is not academic: a Ø1 tip on a 6 mm shank reports
+    /// `radius() = 3.0`, so decomposition dials derived from it came out
+    /// 6× (lengths) and 36× (areas) too large, closing and absorbing every
+    /// steep ribbon on a terrain that is 25% steeper than 55°. See
+    /// `planning/unified_v3_design.md` §14q.
+    fn cusp_radius(&self) -> f64 {
+        match self.geometry_hint() {
+            crate::feeds::ToolGeometryHint::TaperedBall { tip_radius, .. } => tip_radius,
+            _ => self.radius(),
+        }
+    }
     fn length(&self) -> f64;
     fn helix_deg(&self) -> f64 {
         30.0

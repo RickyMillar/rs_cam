@@ -1328,16 +1328,20 @@ pub(crate) fn generate_unified_finish(
         safe_z: ctx.heights.retract_z,
         intra_region_hookup_mm: cfg.intra_region_hookup_mm,
     };
-    let mut planner = crate::finish_planner::FinishPlannerParams::for_tool(ctx.tool_def.radius());
+    // `cusp_radius()`, NOT `radius()`: on a tapered ball the latter is the
+    // SHAFT radius, and every dial `for_tool` derives is a feature scale.
+    // This previously passed `radius()` — 3.0 mm for a Ø1 tip on a 6 mm
+    // shank — making `min_region_area_mm2` 144 mm² instead of 4 and
+    // `close_radius_mm` 1.5 mm instead of 0.25, which closed and absorbed
+    // every steep ribbon on terrain measured at 25% steeper than 55°
+    // (design doc §14q). The claim-floor line below used to "correct" this
+    // with the same wrong radius — a no-op that read as a fix — and is now
+    // redundant because `for_tool` gets the right value.
+    let mut planner =
+        crate::finish_planner::FinishPlannerParams::for_tool(ctx.tool_def.cusp_radius());
     planner.steep_threshold_deg = cfg.steep_threshold_deg;
     planner.waterline_threshold_deg = cfg.waterline_threshold_deg;
     planner.overlap_mm = cfg.overlap_mm;
-    // v3 S1 claims pipeline (design doc §2.1): the tip cutter IS the
-    // pencil — UnifiedFinish is single-tool, ball-tip-only — so the claim
-    // floor must reflect the REAL tip radius rather than
-    // `FinishPlannerParams::for_tool`'s placeholder guess (see that
-    // field's doc comment).
-    planner.pencil_claim_floor = ctx.tool_def.radius() * 0.25;
 
     let claims_cfg = cfg.pencil_claims.then(|| {
         // The stock always feeds the TERRITORY mask; it ALSO feeds crease

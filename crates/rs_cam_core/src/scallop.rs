@@ -117,13 +117,6 @@ impl Default for ScallopParams {
 /// (`cutter_constraints`'s TaperedBall arm); this brings generation in
 /// line with it. Drop-cutter Z lifts always used the full tool profile —
 /// only this scalar spacing dial was wrong.
-fn cusp_radius(cutter: &dyn MillingCutter) -> f64 {
-    match cutter.geometry_hint() {
-        crate::feeds::ToolGeometryHint::TaperedBall { tip_radius, .. } => tip_radius,
-        _ => cutter.radius(),
-    }
-}
-
 /// Compute the ring's stepover from the slope map and scallop math —
 /// the MINIMUM over the sampled points, so the scallop-height guarantee
 /// holds at the ring's most demanding (steepest / most convex) stretch.
@@ -706,7 +699,7 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
     // tool radius; all cusp/stepover math uses the cusp-forming radius
     // (tip sphere for tapered tools — see `cusp_radius`).
     let tool_radius = cutter.radius();
-    let cusp_r = cusp_radius(cutter);
+    let cusp_r = cutter.cusp_radius();
     let bbox = &mesh.bbox;
 
     // Build surface heightmap and slope map (shared setup, see finish_setup.rs)

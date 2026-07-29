@@ -1724,7 +1724,7 @@ mod tests {
         let index = SpatialIndex::build(&mesh, 10.0);
         let cutter = ball(6.0); // radius 3.0
         let params = UnifiedFinishParams::default();
-        let planner = FinishPlannerParams::for_tool(cutter.radius());
+        let planner = FinishPlannerParams::for_tool(cutter.cusp_radius());
         let never_cancel = || false;
 
         let (tp, anns, report) = unified_finish_toolpath_with_cancel(
@@ -1771,7 +1771,7 @@ mod tests {
         let mesh = make_test_hemisphere(30.0, 24);
         let index = SpatialIndex::build(&mesh, 10.0);
         let cutter = ball(6.0); // radius 3.0
-        let planner = FinishPlannerParams::for_tool(cutter.radius());
+        let planner = FinishPlannerParams::for_tool(cutter.cusp_radius());
         (mesh, index, cutter, planner)
     }
 
@@ -1938,7 +1938,7 @@ mod tests {
         let index = SpatialIndex::build(&mesh, 10.0);
         let cutter = ball(6.0);
         let params = UnifiedFinishParams::default();
-        let planner = FinishPlannerParams::for_tool(cutter.radius());
+        let planner = FinishPlannerParams::for_tool(cutter.cusp_radius());
 
         // False on the very first check, true on every check after —
         // guarantees at least one check succeeds (so classification can
@@ -2181,7 +2181,7 @@ mod tests {
         let index = SpatialIndex::build(&mesh, 10.0);
         let cutter = ball(6.0);
         let params = UnifiedFinishParams::default();
-        let planner = FinishPlannerParams::for_tool(cutter.radius());
+        let planner = FinishPlannerParams::for_tool(cutter.cusp_radius());
         let never_cancel = || false;
 
         let (unrestricted, _anns, _report) = unified_finish_toolpath_with_cancel(
@@ -2319,7 +2319,7 @@ mod tests {
             tolerance: 0.5,
             ..UnifiedFinishParams::default()
         };
-        let planner = FinishPlannerParams::for_tool(cutter.radius());
+        let planner = FinishPlannerParams::for_tool(cutter.cusp_radius());
         (mesh, index, cutter, params, planner)
     }
 

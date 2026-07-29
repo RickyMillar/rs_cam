@@ -380,3 +380,70 @@ fn p2e_conditioning_dial_sweep() {
     assert_eq!(a.stats.region_count, b.stats.region_count);
     assert_eq!(a.regions.len(), b.regions.len());
 }
+
+/// §14q — how much steep territory does the min-area floor absorb, as a
+/// function of the tool's CUSP radius?
+///
+/// `FinishPlannerParams::for_tool` derives every feature-scale dial from
+/// the cusp-forming radius: `min_region_area_mm2 = (2r)²·4`,
+/// `close_radius_mm = r/2`. Before the §14q fix the callers passed
+/// `MillingCutter::radius()`, which on a TAPERED ball is the SHAFT radius
+/// — 3.0 mm for a Ø1 tip on a 6 mm shank. That made the area floor
+/// 144 mm² instead of 4 mm² (36×) and the close radius 1.5 mm instead of
+/// 0.25 mm (6×).
+///
+/// Wanaka is 38.5% steeper than 45° by true area but has only ~6 mm of
+/// relief, so its steep faces are RIBBONS a few millimetres wide — exactly
+/// the scale a 1.5 mm close merges away and a 144 mm² floor absorbs.
+///
+/// This holds the classification surface FIXED and varies only the dials,
+/// so it isolates the decomposition's response from any sampling change.
+/// Diagnostic, not a gate: it prints the band mix per cusp radius.
+#[test]
+#[ignore = "full-mesh sampling; run with --ignored --nocapture"]
+fn wanaka_band_mix_vs_cusp_radius() {
+    let path = wanaka_project_path();
+    let session = ProjectSession::load(&path).expect("load wanaka project");
+    let mesh = session
+        .models()
+        .iter()
+        .find_map(|m| m.mesh.clone())
+        .expect("wanaka project must contain a mesh model");
+    let index = SpatialIndex::build(&mesh, 10.0);
+    let cutter = BallEndmill::new(6.0, 25.0);
+    let cancel = || false;
+
+    // ONE surface for every row — the true-surface tiny-probe sampling the
+    // classifier uses, so only the dials differ between rows.
+    let surface = build_classification_surface_with_cancel(&mesh, &index, &cutter, 0.05, &cancel)
+        .expect("classification surface sampling");
+
+    eprintln!("── wanaka band mix vs cusp radius (§14q) ──");
+    eprintln!(
+        "{:>10} {:>10} {:>10}  {:>22} {:>22} {:>22}",
+        "cusp_r", "min_area", "close_r", "Shallow n/mm2", "MidSteep n/mm2", "VerySteep n/mm2"
+    );
+
+    // 3.0 = Ø6 ball (radius == cusp radius, unaffected by the fix).
+    // 0.5 = the Ø1 tapered ball this project actually finishes with —
+    //       what `radius()` used to report as 3.0.
+    for cusp_r in [3.0_f64, 1.0, 0.5, 0.25] {
+        let params = FinishPlannerParams::for_tool(cusp_r);
+        let planned = decompose_surface(&surface, &[], cusp_r, &params);
+        let stats = |band: FinishBand| -> (usize, f64) {
+            let (mut n, mut area) = (0usize, 0.0f64);
+            for r in planned.regions.iter().filter(|r| r.band == band) {
+                n += 1;
+                area += r.polygon.area();
+            }
+            (n, area)
+        };
+        let (ns, as_) = stats(FinishBand::Shallow);
+        let (nm, am) = stats(FinishBand::MidSteep);
+        let (nv, av) = stats(FinishBand::VerySteep);
+        eprintln!(
+            "{cusp_r:>10.2} {:>10.1} {:>10.2}  {:>10} {:>11.0} {:>10} {:>11.0} {:>10} {:>11.0}",
+            params.min_region_area_mm2, params.close_radius_mm, ns, as_, nm, am, nv, av
+        );
+    }
+}
