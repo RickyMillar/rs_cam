@@ -172,6 +172,17 @@ pub struct RestFieldReport {
     /// Grid dimensions actually evaluated.
     pub grid_nx: usize,
     pub grid_ny: usize,
+    /// What this report's numbers mean (M1): a rest-depth field on the
+    /// detector's own grid, before any polygon extraction.
+    ///
+    /// The report previously carried `grid_nx`/`grid_ny` but **not the cell
+    /// size**, so [`Self::total_rest_volume_mm3`] — a `Σ rest × cell²` — was
+    /// quantised by a number no consumer could see and could not be compared
+    /// across runs at different `cell_mm` (`MEASUREMENT_DOMAINS.md` X-10).
+    /// The domain tag names the volume; the length fields
+    /// ([`Self::skeleton_length_mm`], [`Self::traced_length_mm`], and the
+    /// [`Self::coverage`] ratio over them) are path lengths on the same grid.
+    pub provenance: crate::measurement::MeasurementProvenance,
 }
 
 impl RestFieldReport {
@@ -623,6 +634,11 @@ pub fn detect_rest_valleys(
         region_peak_rest_mm: region_peaks,
         grid_nx: nx,
         grid_ny: ny,
+        provenance: crate::measurement::MeasurementProvenance::new(
+            crate::measurement::MeasurementDomain::StockVolume,
+            crate::measurement::MeasurementStage::RestFieldMask,
+        )
+        .with_cell(cell, crate::measurement::CellSource::Explicit),
     };
 
     info!(
@@ -632,6 +648,9 @@ pub fn detect_rest_valleys(
         clearing_regions = report.clearing_region_count,
         centerlines = centerlines.len(),
         coverage = format!("{:.2}", report.coverage()),
+        // M1 §4.3: the volume above is `Σ rest × cell²`; without the cell it
+        // is not comparable across runs (X-10).
+        measurement = %report.provenance,
         "Rest-field detector complete"
     );
 

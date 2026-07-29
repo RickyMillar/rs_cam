@@ -4576,6 +4576,7 @@ mod tests {
             rapid_collision_move_indices: vec![2],
             cut_trace: None,
             resolution_clamped: false,
+            column_grid_cell_mm: 0.5,
             prior_stocks: std::collections::HashMap::new(),
         });
 
@@ -4653,6 +4654,7 @@ mod tests {
             rapid_collision_move_indices: vec![1, 7],
             cut_trace: None,
             resolution_clamped: false,
+            column_grid_cell_mm: 0.5,
             prior_stocks: std::collections::HashMap::new(),
         });
 

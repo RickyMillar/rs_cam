@@ -70,6 +70,7 @@ pub mod machine_kinematics;
 pub mod machine_library;
 pub mod marching_squares;
 pub mod material;
+pub mod measurement;
 pub mod mesh;
 pub mod narrate;
 pub mod pencil;

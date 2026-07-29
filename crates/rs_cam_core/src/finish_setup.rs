@@ -23,6 +23,14 @@ use crate::tool::MillingCutter;
 pub struct FinishSurface {
     pub heightmap: SurfaceHeightmap,
     pub slope_map: SlopeMap,
+    /// Which tool scale sized [`Self::cell_size`] (M1 provenance, §14q/X-6).
+    ///
+    /// The generation and classification builders below choose *different*
+    /// radii, so on a tapered tool two surfaces of the same mesh have cells
+    /// that differ by the shaft/tip ratio and do NOT align 1:1. Areas
+    /// measured on one are not comparable with areas measured on the other,
+    /// and this field is what lets a report say so.
+    pub cell_source: crate::measurement::CellSource,
 }
 
 impl FinishSurface {
@@ -74,6 +82,10 @@ pub fn build_finish_surface_with_cell_size_and_cancel(
     Ok(FinishSurface {
         heightmap,
         slope_map,
+        // The CALLER chose `cell_size` here, so this entry point cannot claim
+        // a tool scale. `build_finish_surface_with_cancel` — which applies
+        // the `radius/4` formula itself — upgrades this to `EnvelopeRadius`.
+        cell_source: crate::measurement::CellSource::Explicit,
     })
 }
 
@@ -93,7 +105,10 @@ pub fn build_finish_surface_with_cancel(
     cancel: &dyn CancelCheck,
 ) -> Result<FinishSurface, Cancelled> {
     let cell_size = (cutter.radius() / 4.0).max(tolerance);
-    build_finish_surface_with_cell_size_and_cancel(mesh, index, cutter, cell_size, cancel)
+    let mut surface =
+        build_finish_surface_with_cell_size_and_cancel(mesh, index, cutter, cell_size, cancel)?;
+    surface.cell_source = crate::measurement::CellSource::EnvelopeRadius;
+    Ok(surface)
 }
 
 /// Diameter of the bare-surface probe used by
@@ -166,6 +181,8 @@ pub fn build_classification_surface_with_cancel(
     Ok(FinishSurface {
         heightmap,
         slope_map,
+        // `cell_size` above is `cusp_radius/4` — the TIP scale.
+        cell_source: crate::measurement::CellSource::CuspRadius,
     })
 }
 

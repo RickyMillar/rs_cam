@@ -26,6 +26,7 @@ use rs_cam_core::finish_planner::{
 use rs_cam_core::finish_setup::{
     build_classification_surface_with_cancel, build_finish_surface_with_cancel,
 };
+use rs_cam_core::measurement::{ProjectedXyAreaMm2, SurfaceAreaMm2};
 use rs_cam_core::mesh::SpatialIndex;
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::tool::{BallEndmill, TaperedBallEndmill};
@@ -37,6 +38,51 @@ fn wanaka_project_path() -> PathBuf {
         .join("planning")
         .join("airrun_2026-06-01")
         .join("wanaka.toml")
+}
+
+/// M1 gate at the crime scene (plan §M1 acceptance 1; `MEASUREMENT_DOMAINS.md`
+/// LH-3 / §5).
+///
+/// This file prints an XY-projected band-area column and a 3D mesh-face-area
+/// column ~30 lines apart. §14r divided one by the other and published "313 of
+/// 482 mm² recovered (65%)"; the claim was retracted in `63d5e8b` and, until
+/// now, the only thing stopping the next reader was a comment.
+///
+/// Both columns are now newtypes with **no `Div` between them**, so the
+/// division is a compile error. That is proven by a `compile_fail` doctest on
+/// [`rs_cam_core::measurement::ProjectedXyAreaMm2`] (run by
+/// `cargo test -p rs_cam_core --doc`); the arithmetic reason lives in
+/// `measurement.rs`'s `projected_area_is_not_a_share_of_surface_area`.
+///
+/// This test is fast, synthetic, and NOT `#[ignore]`d — it is the runnable
+/// reminder in the file where the mistake was made. It asserts the two
+/// measures of ONE 84° ribbon differ by ~10×, which is the magnitude that
+/// made the retracted ratio wrong.
+#[test]
+fn projected_and_surface_areas_are_not_interchangeable_here() {
+    // One near-vertical ribbon, exactly the wanaka feature class: 84° from
+    // horizontal, so |normal.z| = cos(84°) ≈ 0.105.
+    let cos_slope = 84.0_f64.to_radians().cos();
+    let face_3d = SurfaceAreaMm2::new(482.0);
+    let face_xy = face_3d.project_onto_xy(cos_slope);
+
+    assert!(
+        face_3d.mm2() / face_xy.mm2() > 9.0,
+        "an 84° ribbon must project ~10× smaller ({:.1} vs {:.1} mm²) — that \
+         factor is why a projected numerator over a 3D denominator reads as \
+         'a third recovered' on a fully recovered surface",
+        face_3d.mm2(),
+        face_xy.mm2()
+    );
+
+    // The legal comparison — projected against projected — is available and
+    // needs no escape hatch.
+    let recovered = ProjectedXyAreaMm2::new(313.0);
+    let share = recovered / face_xy;
+    assert!(share.is_finite());
+
+    // `recovered / face_3d` would be the retracted ratio. It does not
+    // compile: see the `compile_fail` doctest cited above.
 }
 
 #[test]
@@ -72,12 +118,15 @@ fn wanaka_decomposes_to_order_ten_regions() {
     let params = FinishPlannerParams::for_tool(tool_radius);
     let planned = decompose_surface(&surface, &[], tool_radius, &params);
 
-    let band_stats = |band: FinishBand| -> (usize, f64) {
+    // M1: these are `ProjectedXyAreaMm2`, not bare `f64`. The ground-truth
+    // block below prints `SurfaceAreaMm2`, and the compiler will not let the
+    // two be divided — that division is the retracted §14r "313 of 482".
+    let band_stats = |band: FinishBand| -> (usize, ProjectedXyAreaMm2) {
         let regions = planned.regions.iter().filter(|r| r.band == band);
-        let (mut n, mut area) = (0usize, 0.0f64);
+        let (mut n, mut area) = (0usize, ProjectedXyAreaMm2::default());
         for r in regions {
             n += 1;
-            area += r.polygon.area();
+            area += r.projected_xy_area_mm2();
         }
         (n, area)
     };
@@ -92,9 +141,13 @@ fn wanaka_decomposes_to_order_ten_regions() {
         surface.cols(),
         surface.cell_size()
     );
-    eprintln!("Shallow   : {n_shallow:3} regions, {a_shallow:10.0} mm^2");
-    eprintln!("MidSteep  : {n_mid:3} regions, {a_mid:10.0} mm^2");
-    eprintln!("VerySteep : {n_very:3} regions, {a_very:10.0} mm^2");
+    eprintln!("measurement: {}", planned.stats.provenance.describe());
+    eprintln!(
+        "Shallow   : {n_shallow:3} regions, {:10.0} mm^2",
+        a_shallow.mm2()
+    );
+    eprintln!("MidSteep  : {n_mid:3} regions, {:10.0} mm^2", a_mid.mm2());
+    eprintln!("VerySteep : {n_very:3} regions, {:10.0} mm^2", a_very.mm2());
     eprintln!(
         "raw islands pre-conditioning: steep {}, very-steep {}",
         planned.stats.raw_steep_islands, planned.stats.raw_very_steep_islands
@@ -337,16 +390,19 @@ fn p2e_conditioning_dial_sweep() {
     );
     for (label, params) in &rows {
         let planned = decompose_surface(&surface, &[], tool_radius, params);
-        let stat = |band: FinishBand| -> (usize, f64) {
+        let stat = |band: FinishBand| -> (usize, ProjectedXyAreaMm2) {
             planned
                 .regions
                 .iter()
                 .filter(|r| r.band == band)
-                .fold((0usize, 0.0f64), |(n, a), r| (n + 1, a + r.polygon.area()))
+                .fold((0usize, ProjectedXyAreaMm2::default()), |(n, a), r| {
+                    (n + 1, a + r.projected_xy_area_mm2())
+                })
         };
         let (sn, sa) = stat(FinishBand::Shallow);
         let (mn, ma) = stat(FinishBand::MidSteep);
         let (vn, va) = stat(FinishBand::VerySteep);
+        let (sa, ma, va) = (sa.mm2(), ma.mm2(), va.mm2());
         eprintln!(
             "{label:<16} | {:>7} | {sn:>3}/{sa:>9.0} | {mn:>3}/{ma:>9.0} | {vn:>3}/{va:>9.0} | {:>8} | {:>4}/{:>4}{}",
             planned.stats.region_count,
@@ -442,11 +498,14 @@ fn wanaka_band_mix_vs_cusp_radius() {
         let (rows, cols) = (surface.heightmap.rows, surface.heightmap.cols);
         let params = FinishPlannerParams::for_tool(cusp_r);
         let planned = decompose_surface(&surface, &[], cusp_r, &params);
-        let stats = |band: FinishBand| -> (usize, f64) {
-            let (mut n, mut area) = (0usize, 0.0f64);
+        // M1 slice 2: `ProjectedXyAreaMm2`, so this column cannot be divided
+        // by the 3D `SurfaceAreaMm2` column printed ~30 lines below — the
+        // exact pair §14r divided ("313 of 482").
+        let stats = |band: FinishBand| -> (usize, ProjectedXyAreaMm2) {
+            let (mut n, mut area) = (0usize, ProjectedXyAreaMm2::default());
             for r in planned.regions.iter().filter(|r| r.band == band) {
                 n += 1;
-                area += r.polygon.area();
+                area += r.projected_xy_area_mm2();
             }
             (n, area)
         };
@@ -460,11 +519,11 @@ fn wanaka_band_mix_vs_cusp_radius() {
             format!("{rows}x{cols}"),
             sample_s,
             ns,
-            as_,
+            as_.mm2(),
             nm,
-            am,
+            am.mm2(),
             nv,
-            av
+            av.mm2()
         );
     }
 
@@ -475,10 +534,17 @@ fn wanaka_band_mix_vs_cusp_radius() {
     // emitted region area against a 3D face area is meaningless — §14r did
     // exactly that ("313 of 482 mm² recovered") and the audit killed it.
     // Print both so the mistake cannot be repeated silently.
-    let mut truth: Vec<(f64, f64, f64)> = Vec::new();
+    //
+    // M1 (PR-0 slice 2): the prose above is no longer the only guard. The
+    // two columns are now DIFFERENT TYPES — `SurfaceAreaMm2` and
+    // `ProjectedXyAreaMm2` — with no `Div` between them, so `a3 / a_very`
+    // does not compile. The only sanctioned crossing is
+    // `SurfaceAreaMm2::project_onto_xy`, applied PER FACE below (never to an
+    // aggregate over mixed slopes) and never in reverse.
+    let mut truth: Vec<(f64, SurfaceAreaMm2, ProjectedXyAreaMm2)> = Vec::new();
     for threshold_deg in [45.0_f64, 65.0, 75.0] {
         let cos_min = threshold_deg.to_radians().cos();
-        let (mut area_3d, mut area_xy) = (0.0f64, 0.0f64);
+        let (mut area_3d, mut area_xy) = (SurfaceAreaMm2::default(), ProjectedXyAreaMm2::default());
         for f in &mesh.faces {
             // `Triangle::normal` is unit-length, so |n.z| IS cos(slope).
             let cos_slope = f.normal.z.abs();
@@ -486,17 +552,17 @@ fn wanaka_band_mix_vs_cusp_radius() {
                 continue; // shallower than the threshold
             }
             let (a, b, c) = (f.v[0], f.v[1], f.v[2]);
-            let a3 = 0.5 * (b - a).cross(&(c - a)).norm();
+            let a3 = SurfaceAreaMm2::new(0.5 * (b - a).cross(&(c - a)).norm());
             area_3d += a3;
             // The projection onto XY shrinks by exactly cos(slope).
-            area_xy += a3 * cos_slope;
+            area_xy += a3.project_onto_xy(cos_slope);
         }
         truth.push((threshold_deg, area_3d, area_xy));
     }
     eprintln!("── ground truth from the mesh (§14t) ──");
     eprintln!("{:>10} {:>14} {:>16}", "threshold", "true 3D area", "PROJECTED area");
     for (deg, a3, axy) in &truth {
-        eprintln!("{deg:>9.0}° {a3:>13.1} {axy:>15.1}");
+        eprintln!("{deg:>9.0}° {:>13.1} {:>15.1}", a3.mm2(), axy.mm2());
     }
     eprintln!(
         "Compare emitted VerySteep polygon area against the PROJECTED column, \
@@ -520,11 +586,11 @@ fn wanaka_band_mix_vs_cusp_radius() {
     for dial_r in [3.0_f64, 1.0, 0.5, 0.25] {
         let params = FinishPlannerParams::for_tool(dial_r);
         let planned = decompose_surface(&surface, &[], dial_r, &params);
-        let stats = |band: FinishBand| -> (usize, f64) {
-            let (mut n, mut area) = (0usize, 0.0f64);
+        let stats = |band: FinishBand| -> (usize, ProjectedXyAreaMm2) {
+            let (mut n, mut area) = (0usize, ProjectedXyAreaMm2::default());
             for r in planned.regions.iter().filter(|r| r.band == band) {
                 n += 1;
-                area += r.polygon.area();
+                area += r.projected_xy_area_mm2();
             }
             (n, area)
         };
@@ -536,11 +602,11 @@ fn wanaka_band_mix_vs_cusp_radius() {
             params.min_region_area_mm2,
             params.close_radius_mm,
             ns,
-            as_,
+            as_.mm2(),
             nm,
-            am,
+            am.mm2(),
             nv,
-            av
+            av.mm2()
         );
     }
 }

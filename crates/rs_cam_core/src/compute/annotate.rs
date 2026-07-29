@@ -543,6 +543,21 @@ pub(super) fn annotate_unified_finish_regions(
         scope.set_param("band", region.kind.band_label());
         scope.set_param("strategy", region.kind.strategy().label());
         if let Some(area) = region.area_mm2 {
+            // M1 serde decision (PR-0): this stays a RAW JSON NUMBER. The
+            // semantic-trace wire is read by string key (narration, the MCP
+            // `narrate_toolpath` path, the GUI item list), so promoting it to
+            // a tagged `{value, domain, stage}` object would break every
+            // consumer for provenance that is CONSTANT for this key — the
+            // value is always a `ProjectedXyAreaMm2` from the band
+            // decomposition. The domain therefore lives in the key's
+            // documentation and in
+            // `UnifiedFinishReport::provenance`, which the same generation
+            // carries, rather than being restated per item.
+            //
+            // Documented loss: a consumer holding ONLY this JSON cannot tell
+            // which grid the area was measured on (X-6). If that ever matters
+            // on the wire, add a sibling `area_provenance` string param —
+            // additive, no key rename.
             scope.set_param("area_mm2", area);
         }
         // Same guard `bind_span_scope` applies to structural spans: an
