@@ -17,6 +17,7 @@
 
 use crate::debug_trace::ToolpathDebugContext;
 use crate::dropcutter::point_drop_cutter;
+use crate::finish_setup::FinishResolutionPolicy;
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
@@ -654,6 +655,27 @@ impl ScallopReport {
     }
 }
 
+/// The resolution policy scallop generates on (H3 step 2).
+///
+/// Scallop selects `FinishResolutionMode::LegacyEnvelopeQuarter` — the same
+/// `(envelope_radius/4).max(tolerance)` cell it has always used, now stated
+/// here rather than inherited from a shared builder. Because the choice is
+/// local, moving scallop onto `FinishResolutionMode::CuspQuarter` (H3 step 4
+/// starts with scallop: it has the strongest fidelity instrument) is an edit
+/// to this one function and does not move `ramp_finish` or `steep_shallow`.
+///
+/// NOTE the asymmetry this function makes visible: scallop's STEPOVER is
+/// cusp-scaled (`cusp_radius_mm()` below) while its GRID is envelope-scaled,
+/// so on a tapered ball the rings are ~6× finer than the surface they are
+/// sampled from. That is the H3 question, not a bug fixed here.
+#[must_use]
+pub fn scallop_generation_resolution(
+    cutter: &dyn MillingCutter,
+    tolerance: f64,
+) -> FinishResolutionPolicy {
+    FinishResolutionPolicy::legacy_envelope_quarter(cutter, tolerance)
+}
+
 /// Generate a scallop finishing toolpath.
 ///
 /// Produces concentric offset contours with variable stepover that maintains
@@ -730,12 +752,14 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
     let cusp_r = cutter.cusp_radius_mm();
     let bbox = &mesh.bbox;
 
-    // Build surface heightmap and slope map (shared setup, see finish_setup.rs)
-    let surface = crate::finish_setup::build_finish_surface_with_cancel(
+    // Build surface heightmap and slope map (shared setup, see finish_setup.rs).
+    // The RESOLUTION is scallop's own choice (H3 step 2) — see
+    // `scallop_generation_resolution`.
+    let surface = crate::finish_setup::build_finish_surface_with_policy_and_cancel(
         mesh,
         index,
         cutter,
-        params.tolerance,
+        scallop_generation_resolution(cutter, params.tolerance),
         cancel,
     )?;
     let surface_hm = surface.heightmap;

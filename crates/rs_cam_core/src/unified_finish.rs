@@ -98,8 +98,8 @@ use crate::debug_trace::ToolpathDebugContext;
 use crate::dropcutter::{DropCutterGrid, batch_drop_cutter_with_cancel};
 use crate::finish_planner::{FinishBand, FinishPlannerParams, decompose};
 use crate::finish_setup::{
-    FinishSurface, SLOPE_FILTER_MAX_DEG, SLOPE_FILTER_MIN_DEG,
-    build_classification_surface_with_cancel,
+    FinishResolutionPolicy, FinishSurface, SLOPE_FILTER_MAX_DEG, SLOPE_FILTER_MIN_DEG,
+    build_classification_surface_with_policy_and_cancel,
 };
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
@@ -703,6 +703,47 @@ pub fn unified_finish_spans(
     spans
 }
 
+// ── Resolution policy selection (H3 step 2) ──────────────────────────────
+
+/// The resolution policy UnifiedFinish CLASSIFIES on.
+///
+/// UnifiedFinish selects `FinishResolutionMode::CuspQuarter` —
+/// `(cusp_radius/4).max(tolerance)`, the tip scale — which is what
+/// `finish_setup::build_classification_surface_with_cancel` computed
+/// internally before H3 step 1. Do not coarsen this to the envelope: §14q
+/// measured the tapered case, where a shank-derived classification cell made
+/// wanaka's steep ribbons unrepresentable and the decomposition emitted ZERO
+/// VerySteep regions.
+#[must_use]
+pub fn unified_finish_classification_resolution(
+    cutter: &dyn MillingCutter,
+    tolerance: f64,
+) -> FinishResolutionPolicy {
+    FinishResolutionPolicy::cusp_quarter(cutter, tolerance)
+}
+
+/// The resolution policy UnifiedFinish's MidSteep band GENERATES on.
+///
+/// UnifiedFinish does not build a generation grid itself: each band delegates
+/// to an existing strategy generator, and only the MidSteep band's scallop
+/// generator builds one. So UnifiedFinish's generation resolution IS
+/// [`crate::scallop::scallop_generation_resolution`] — this function names
+/// that inheritance rather than re-deriving it, so moving scallop's policy
+/// (H3 step 4) moves UnifiedFinish's MidSteep band with it, by construction.
+///
+/// The other bands have no finish grid: VerySteep runs waterline (contours
+/// straight off the mesh), Shallow runs a drop-cutter grid at its own raster
+/// stepover, and pencil/crease paths come from the rest field. H3 step 5
+/// ("re-run UnifiedFinish only after standalone strategy behavior is
+/// understood") therefore reduces to: understand scallop.
+#[must_use]
+pub fn unified_finish_mid_steep_generation_resolution(
+    cutter: &dyn MillingCutter,
+    tolerance: f64,
+) -> FinishResolutionPolicy {
+    crate::scallop::scallop_generation_resolution(cutter, tolerance)
+}
+
 // ── Orchestrator ─────────────────────────────────────────────────────────
 
 /// Decompose the surface into bands, generate each REGION's toolpath with
@@ -735,8 +776,15 @@ pub fn unified_finish_toolpath_with_cancel(
     // MUST read the true surface or band assignment collapses to
     // all-shallow on relief at that scale — never swap this for
     // `build_finish_surface_with_cancel`.
-    let surface =
-        build_classification_surface_with_cancel(mesh, index, cutter, params.tolerance, cancel)?;
+    // The RESOLUTION is UnifiedFinish's own choice (H3 step 2) — see
+    // `unified_finish_classification_resolution`.
+    let surface = build_classification_surface_with_policy_and_cancel(
+        mesh,
+        index,
+        cutter,
+        unified_finish_classification_resolution(cutter, params.tolerance),
+        cancel,
+    )?;
     check_cancel(cancel)?;
 
     // ── Step 2: coverage ∧ machining boundary ───────────────────────────
@@ -1144,8 +1192,9 @@ pub fn unified_finish_toolpath_with_cancel(
                 };
                 // Generation intentionally uses the ball-center OFFSET
                 // surface here (`scallop_toolpath_structured_annotated_
-                // with_cancel` builds its own via `finish_setup::
-                // build_finish_surface_with_cancel` internally) — only
+                // with_cancel` builds its own under
+                // `scallop::scallop_generation_resolution`, mirrored by
+                // `unified_finish_mid_steep_generation_resolution`) — only
                 // classification (step 1, above) reads the true surface.
                 // This is the P2.b "classify true, generate offset" split
                 // from the design doc, not an inconsistency.

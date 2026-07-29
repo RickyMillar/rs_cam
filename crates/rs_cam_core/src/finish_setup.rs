@@ -11,9 +11,164 @@
 //! pass — noted for a follow-up.
 
 use crate::interrupt::{CancelCheck, Cancelled};
+use crate::measurement::CellSource;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::slope::{SlopeMap, SurfaceHeightmap};
 use crate::tool::MillingCutter;
+
+// ── Resolution policy (H3 steps 1-2) ────────────────────────────────────
+
+/// Which formula resolved a finish grid's cell size.
+///
+/// H3 step 1 (`planning/review_2026-07-29/TECH_DEBT_RESEARCH_AND_FIX_PLAN.md`)
+/// takes the cell-size derivation OUT of the shared grid builder and makes it
+/// a value the caller selects. Before this, `build_finish_surface_with_cancel`
+/// applied `(envelope_radius / 4).max(tolerance)` internally and every finish
+/// op inherited it silently — so a resolution experiment on ONE op was
+/// impossible without moving all three. The formula is now
+/// [`Self::LegacyEnvelopeQuarter`]: one named variant among several, not a
+/// hidden default.
+///
+/// PR-3 changes NO cell size. All three standalone consumers (Scallop,
+/// RampFinish, SteepShallow) select `LegacyEnvelopeQuarter` and the
+/// classification builder selects [`Self::CuspQuarter`], which is exactly
+/// what each computed before.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FinishResolutionMode {
+    /// `(envelope_radius / 4).max(tolerance)` — the pre-H3 generation-grid
+    /// formula, shared verbatim by `scallop.rs`, `ramp_finish.rs` and
+    /// `steep_shallow.rs`. On a tapered ball the envelope is the SHAFT, so
+    /// this is the coarse end of the split (0.75 mm for a Ø1 tip on a Ø6
+    /// shank) — the open question H3 exists to answer.
+    LegacyEnvelopeQuarter,
+    /// `(cusp_radius / 4).max(tolerance)` — the tip scale, i.e. the finest
+    /// feature the cutter can actually leave. Used today by the
+    /// classification grid; offered here so a *generation* consumer can be
+    /// moved onto it one at a time (H3 fix-sequence step 4) without touching
+    /// the shared builder or its siblings.
+    CuspQuarter,
+    /// Caller-pinned cell size: harness fixtures, resolution A/B experiments,
+    /// and any dial that is not derived from the tool at all.
+    Explicit,
+}
+
+impl FinishResolutionMode {
+    /// Human-readable label for reports and failure messages.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::LegacyEnvelopeQuarter => "legacy envelope/4",
+            Self::CuspQuarter => "cusp/4",
+            Self::Explicit => "caller-pinned",
+        }
+    }
+
+    /// The [`CellSource`] a surface built under this mode carries.
+    ///
+    /// This is the one place the mode↔provenance mapping lives, so a new
+    /// mode cannot be added without deciding what it claims about scale.
+    #[must_use]
+    pub const fn cell_source(self) -> CellSource {
+        match self {
+            Self::LegacyEnvelopeQuarter => CellSource::EnvelopeRadius,
+            Self::CuspQuarter => CellSource::CuspRadius,
+            Self::Explicit => CellSource::Explicit,
+        }
+    }
+}
+
+/// A resolved finish-grid resolution: the formula that was selected, the
+/// millimetre value it produced, and whether the tolerance floor bound.
+///
+/// Constructed at the CALL SITE (see `scallop::scallop_generation_resolution`
+/// and its siblings) and handed to
+/// [`build_finish_surface_with_policy_and_cancel`]. Carrying the resolved
+/// value alongside the mode is what lets PR-8's A/B swap ONE consumer's
+/// policy — and lets a sentry assert which policy that consumer selected —
+/// without reaching into the shared builder.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FinishResolutionPolicy {
+    mode: FinishResolutionMode,
+    cell_mm: f64,
+    tolerance_floor_applied: bool,
+}
+
+impl FinishResolutionPolicy {
+    /// `(envelope_radius / 4).max(tolerance)` — [`FinishResolutionMode::LegacyEnvelopeQuarter`].
+    #[must_use]
+    pub fn legacy_envelope_quarter(cutter: &dyn MillingCutter, tolerance: f64) -> Self {
+        // The envelope on a tapered tool is the SHAFT. Kept deliberately
+        // spelled `envelope_radius_mm()` (PR-2 named accessor) rather than
+        // `radius()`: the scale is no longer implicit, it is the name of the
+        // variant. Whether it is the RIGHT scale is H3 step 3+.
+        Self::from_formula(
+            FinishResolutionMode::LegacyEnvelopeQuarter,
+            cutter.envelope_radius_mm() / 4.0,
+            tolerance,
+        )
+    }
+
+    /// `(cusp_radius / 4).max(tolerance)` — [`FinishResolutionMode::CuspQuarter`].
+    #[must_use]
+    pub fn cusp_quarter(cutter: &dyn MillingCutter, tolerance: f64) -> Self {
+        Self::from_formula(
+            FinishResolutionMode::CuspQuarter,
+            cutter.cusp_radius_mm() / 4.0,
+            tolerance,
+        )
+    }
+
+    /// A caller-pinned cell size — [`FinishResolutionMode::Explicit`].
+    #[must_use]
+    pub const fn explicit(cell_mm: f64) -> Self {
+        Self {
+            mode: FinishResolutionMode::Explicit,
+            cell_mm,
+            tolerance_floor_applied: false,
+        }
+    }
+
+    fn from_formula(mode: FinishResolutionMode, derived_mm: f64, tolerance: f64) -> Self {
+        Self {
+            mode,
+            cell_mm: derived_mm.max(tolerance),
+            tolerance_floor_applied: tolerance > derived_mm,
+        }
+    }
+
+    /// Which formula was selected.
+    #[must_use]
+    pub const fn mode(self) -> FinishResolutionMode {
+        self.mode
+    }
+
+    /// The resolved grid cell size (mm).
+    #[must_use]
+    pub const fn cell_mm(self) -> f64 {
+        self.cell_mm
+    }
+
+    /// The provenance tag a surface built under this policy carries.
+    #[must_use]
+    pub const fn cell_source(self) -> CellSource {
+        self.mode.cell_source()
+    }
+
+    /// True when the `.max(tolerance)` floor — not the tool scale — set
+    /// [`Self::cell_mm`].
+    ///
+    /// [`Self::cell_source`] still names the FORMULA FAMILY in that case
+    /// (unchanged from pre-PR-3 behavior, which the PR-2 tripwire pins), so
+    /// this flag is how a report says "the tool scale did not actually decide
+    /// this grid". Two policies with different modes but a bound tolerance
+    /// floor produce the same cell yet compare as different sources — a
+    /// conservative false negative in `MeasurementProvenance::comparable_to`,
+    /// logged as an adjacent defect rather than silently repaired here.
+    #[must_use]
+    pub const fn tolerance_floor_applied(self) -> bool {
+        self.tolerance_floor_applied
+    }
+}
 
 // ── Heightmap + slope map setup ─────────────────────────────────────────
 
@@ -30,7 +185,15 @@ pub struct FinishSurface {
     /// that differ by the shaft/tip ratio and do NOT align 1:1. Areas
     /// measured on one are not comparable with areas measured on the other,
     /// and this field is what lets a report say so.
-    pub cell_source: crate::measurement::CellSource,
+    ///
+    /// Always equal to `resolution.cell_source()` — kept as its own field
+    /// because it is the M1 provenance tag consumers read; the invariant is
+    /// pinned by `tests/finish_resolution_policy_pr3.rs`.
+    pub cell_source: CellSource,
+    /// The resolution policy that sized this grid (H3 step 1). Says which
+    /// FORMULA was selected, not just what it produced, so a sentry can
+    /// assert a consumer's choice and a report can name it.
+    pub resolution: FinishResolutionPolicy,
 }
 
 impl FinishSurface {
@@ -50,24 +213,25 @@ impl FinishSurface {
 
 /// Build a [`FinishSurface`] over `mesh`'s own bounding box, expanded by one
 /// cutter radius on every side (so the cutter's full extent has heightmap
-/// coverage right up to the model boundary), at an explicit grid resolution
-/// of `cell_size`.
+/// coverage right up to the model boundary), at the resolution `resolution`
+/// resolved to.
 ///
-/// This is the resolution-explicit entry point. Production call sites derive
-/// `cell_size` from tool radius and tolerance instead — see
-/// [`build_finish_surface_with_cancel`]. Some pre-existing tests pin a fixed
-/// `cell_size` directly (e.g. `1.0`, independent of tool radius/tolerance);
-/// those keep calling this variant so migrating them onto the shared helper
-/// doesn't silently change their sampling resolution.
-pub fn build_finish_surface_with_cell_size_and_cancel(
+/// **The single generation-grid builder** (H3 step 1). It applies no formula
+/// of its own: the caller selects a [`FinishResolutionPolicy`] and this
+/// function honours it, tagging the surface with the policy's provenance. The
+/// two older entry points below are thin adapters that select a policy on the
+/// caller's behalf.
+pub fn build_finish_surface_with_policy_and_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
-    cell_size: f64,
+    resolution: FinishResolutionPolicy,
     cancel: &dyn CancelCheck,
 ) -> Result<FinishSurface, Cancelled> {
+    let cell_size = resolution.cell_mm();
     // Grid PADDING is physical sweep, so it is ENVELOPE by contract
-    // (`TOOL_SCALE_SEMANTICS.md` §8 row 2 — must stay envelope).
+    // (`TOOL_SCALE_SEMANTICS.md` §8 row 2 — must stay envelope), regardless
+    // of which scale the RESOLUTION policy picked.
     let tool_radius = cutter.envelope_radius_mm();
     let bbox = &mesh.bbox;
     let origin_x = bbox.min.x - tool_radius;
@@ -84,21 +248,45 @@ pub fn build_finish_surface_with_cell_size_and_cancel(
     Ok(FinishSurface {
         heightmap,
         slope_map,
-        // The CALLER chose `cell_size` here, so this entry point cannot claim
-        // a tool scale. `build_finish_surface_with_cancel` — which applies
-        // the `radius/4` formula itself — upgrades this to `EnvelopeRadius`.
-        cell_source: crate::measurement::CellSource::Explicit,
+        cell_source: resolution.cell_source(),
+        resolution,
     })
 }
 
-/// Build a [`FinishSurface`] using the standard finish-op cell-size formula:
-/// `(tool_radius / 4).max(tolerance)`.
+/// Build a [`FinishSurface`] at an explicit grid resolution of `cell_size`.
 ///
-/// As of 2026-07 this formula is shared verbatim by the production call
-/// sites in `scallop.rs`, `ramp_finish.rs`, and `steep_shallow.rs` (each
-/// passes its own `params.tolerance`). If a future op needs a different
-/// formula, add a new entry point rather than bending this one — don't
-/// silently change another op's resolution to fit a new caller.
+/// Adapter over [`build_finish_surface_with_policy_and_cancel`] selecting
+/// [`FinishResolutionPolicy::explicit`]. Some pre-existing tests pin a fixed
+/// `cell_size` directly (e.g. `1.0`, independent of tool radius/tolerance);
+/// those keep calling this variant so migrating them onto the shared helper
+/// doesn't silently change their sampling resolution. It is also the entry
+/// point H3's resolution A/B harness drives.
+pub fn build_finish_surface_with_cell_size_and_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    cell_size: f64,
+    cancel: &dyn CancelCheck,
+) -> Result<FinishSurface, Cancelled> {
+    build_finish_surface_with_policy_and_cancel(
+        mesh,
+        index,
+        cutter,
+        FinishResolutionPolicy::explicit(cell_size),
+        cancel,
+    )
+}
+
+/// Build a [`FinishSurface`] under [`FinishResolutionMode::LegacyEnvelopeQuarter`]:
+/// `(envelope_radius / 4).max(tolerance)`.
+///
+/// Adapter kept for callers (and sentries) that want the legacy formula
+/// without naming a policy. **Production ops do not call this**: since H3
+/// step 2, `scallop.rs`, `ramp_finish.rs` and `steep_shallow.rs` each select
+/// their own policy at their own call site and go through
+/// [`build_finish_surface_with_policy_and_cancel`], so one op's resolution
+/// can be changed without touching the others. Changing the formula HERE
+/// would no longer move production — which is the point.
 pub fn build_finish_surface_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -106,20 +294,18 @@ pub fn build_finish_surface_with_cancel(
     tolerance: f64,
     cancel: &dyn CancelCheck,
 ) -> Result<FinishSurface, Cancelled> {
-    // NOT migrated to `envelope_radius_mm()` on purpose. This is the ONE
-    // finish-grid site whose semantic class is still open: the generation
-    // cell follows the ENVELOPE while classification follows the CUSP, so
-    // on a tapered ball the two grids differ by the shaft/tip ratio.
-    // `TOOL_SCALE_SEMANTICS.md` §6.B row B1 routes the decision to H3
-    // (`FinishSurfaceSpec`/`FinishResolutionPolicy`), and the PR-2
-    // migration table (§9.1 row 7) deliberately omits this line — renaming
-    // it would read as an endorsement of the current scale. Leave
-    // `radius()` here until H3 decides.
-    let cell_size = (cutter.radius() / 4.0).max(tolerance);
-    let mut surface =
-        build_finish_surface_with_cell_size_and_cancel(mesh, index, cutter, cell_size, cancel)?;
-    surface.cell_source = crate::measurement::CellSource::EnvelopeRadius;
-    Ok(surface)
+    // The scale question `TOOL_SCALE_SEMANTICS.md` §6.B row B1 routed to H3
+    // is now ANSWERED-BY-NAME rather than hidden: `LegacyEnvelopeQuarter`
+    // says which radius sizes the cell and admits, in its own name, that it
+    // is the inherited choice rather than a justified one. H3 steps 3+ decide
+    // whether any consumer should move off it.
+    build_finish_surface_with_policy_and_cancel(
+        mesh,
+        index,
+        cutter,
+        FinishResolutionPolicy::legacy_envelope_quarter(cutter, tolerance),
+        cancel,
+    )
 }
 
 /// Diameter of the bare-surface probe used by
@@ -141,8 +327,9 @@ pub const CLASSIFICATION_PROBE_DIAMETER_MM: f64 = 0.05;
 /// surface and shares this blind spot.
 ///
 /// Grid origin and extent mirror [`build_finish_surface_with_cancel`] for the
-/// same `cutter`. **Resolution no longer does**: classification follows the
-/// cusp radius while generation still follows `radius()`, so on a tapered ball
+/// same `cutter`. **Resolution no longer does**: classification selects
+/// [`FinishResolutionMode::CuspQuarter`] while the generation consumers select
+/// [`FinishResolutionMode::LegacyEnvelopeQuarter`], so on a tapered ball
 /// the two grids differ by the shaft/tip ratio (0.125 mm vs 0.75 mm for a Ø1
 /// tip on a 6 mm shank) and cells do NOT align 1:1. Whether generation should
 /// follow classification is an open question with real cost on both sides —
@@ -158,6 +345,30 @@ pub fn build_classification_surface_with_cancel(
     tolerance: f64,
     cancel: &dyn CancelCheck,
 ) -> Result<FinishSurface, Cancelled> {
+    build_classification_surface_with_policy_and_cancel(
+        mesh,
+        index,
+        cutter,
+        FinishResolutionPolicy::cusp_quarter(cutter, tolerance),
+        cancel,
+    )
+}
+
+/// Resolution-explicit variant of [`build_classification_surface_with_cancel`]
+/// (H3 step 1).
+///
+/// Same probe and same sharp slope stencil — only the grid resolution comes
+/// from the caller. `UnifiedFinish` selects
+/// [`FinishResolutionMode::CuspQuarter`] here (see
+/// `unified_finish::unified_finish_classification_resolution`), which is what
+/// the builder computed internally before.
+pub fn build_classification_surface_with_policy_and_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    resolution: FinishResolutionPolicy,
+    cancel: &dyn CancelCheck,
+) -> Result<FinishSurface, Cancelled> {
     // Physical extent below (padding, grid coverage) keeps the FULL radius —
     // the tool really does sweep that far. The CELL SIZE does not: it sets
     // the finest feature this grid can represent, so it follows the
@@ -170,7 +381,7 @@ pub fn build_classification_surface_with_cancel(
     // faces are 3D, a ~10× difference on near-vertical ribbons; the audit
     // that caught that is §14t.
     let tool_radius = cutter.envelope_radius_mm();
-    let cell_size = (cutter.cusp_radius_mm() / 4.0).max(tolerance);
+    let cell_size = resolution.cell_mm();
     let bbox = &mesh.bbox;
     let origin_x = bbox.min.x - tool_radius;
     let origin_y = bbox.min.y - tool_radius;
@@ -192,8 +403,9 @@ pub fn build_classification_surface_with_cancel(
     Ok(FinishSurface {
         heightmap,
         slope_map,
-        // `cell_size` above is `cusp_radius/4` — the TIP scale.
-        cell_source: crate::measurement::CellSource::CuspRadius,
+        // Production callers select `CuspQuarter` here — the TIP scale.
+        cell_source: resolution.cell_source(),
+        resolution,
     })
 }
 
