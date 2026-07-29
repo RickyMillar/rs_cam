@@ -863,7 +863,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_rest_analysis_config",
-        description = "Enable/configure op-agnostic rest analysis on a toolpath: runs the rest-depth detector against THIS toolpath's own tool after generation, attaching a heatmap grid + derived machining regions (usable as a 'derived_rest_regions' boundary source on another toolpath) without emitting a pencil centerline toolpath. reference_tool_id (optional) names a real library tool for the rest reference; unset prefers the machined stock, else a self-referenced probe. cell_mm/min_valley_depth/region_margin_mm default to 0.5/0.05/0.5mm. Invalidates cached result."
+        description = "Enable/configure op-agnostic rest analysis on a toolpath: runs the rest-depth detector against THIS toolpath's own tool after generation, attaching a heatmap grid + derived machining regions (usable as a 'derived_rest_regions' boundary source on another toolpath) without emitting a pencil centerline toolpath. reference_tool_id (optional) names a real library tool for the rest reference; unset prefers the machined stock, else a self-referenced probe. cell_mm/min_valley_depth/region_margin_mm default to 0.5/0.05/0.5mm. offset_stepover_mm/num_offset_passes tune the fan the ROUTING criterion assumes a downstream pencil pass would emit; leave both unset and the stepover is sized by the canonical reach policy for this toolpath's own cutter (correct unless you are modelling a specific pinned downstream operation). Invalidates cached result."
     )]
     async fn set_rest_analysis_config(
         &self,
@@ -874,6 +874,8 @@ impl EmbeddedCamServer {
             cell_mm,
             min_valley_depth,
             region_margin_mm,
+            offset_stepover_mm,
+            num_offset_passes,
         }): Parameters<SetRestAnalysisConfigParam>,
     ) -> String {
         Self::format_result(
@@ -884,6 +886,8 @@ impl EmbeddedCamServer {
                 cell_mm,
                 min_valley_depth,
                 region_margin_mm,
+                offset_stepover_mm,
+                num_offset_passes,
             })
             .await,
         )

@@ -444,6 +444,15 @@ pub struct SetRestAnalysisConfigParam {
     /// Extra clearance (mm) added around detected rest regions beyond this
     /// toolpath's own tool radius.
     pub region_margin_mm: Option<f64>,
+    /// PR-7: offset stepover (mm) the ROUTING criterion assumes a downstream
+    /// pencil fan would emit (`pencil` iff `reach <= cap * stepover`). Leave
+    /// unset to size it from the canonical reach policy for this toolpath's
+    /// own cutter — the correct choice unless you are modelling a specific
+    /// downstream operation whose stepover is pinned.
+    pub offset_stepover_mm: Option<f64>,
+    /// PR-7: offset passes per side that fan is permitted (the `cap`).
+    /// Unset = the detector's own default (0, centreline only).
+    pub num_offset_passes: Option<usize>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]

@@ -608,3 +608,172 @@ RampFinish cone gouge, tip-float silent residual, 0.9 µm segments).
   still dormant and still needs its make-it-live sentry first; H2.5 wants a
   real fan on `RestAnalysisConfig`; the sampled-cross-section generalisation
   above; and the wanaka before/after this wave could not run.
+
+- impl-14 DONE -> **H2 ROUTING WAVE B COMMITTED: PR-6a `b8e3a0d`, PR-6b
+  `be218fe`, PR-7 `c769f43`** (behavioural, under the approved
+  Checkpoint A). Wave A's parting note — "UnifiedFinish's derived stepover
+  is the LAST envelope-scaled routing/fit number in the finishing stack" —
+  is now false, which was the point.
+
+  **PR-6a / H2.3 — the derived pencil stepover.** `unified_finish.rs` sized
+  the crease/pencil fan at `cutter.envelope_radius_mm() * 0.5` (1.5 mm on
+  the shipped Ø1-tip / 7° / Ø6-shank taper: half the SHANK, 3× the whole
+  tip) and fed that ONE scalar to both the coverage routing criterion and
+  the emission, overstating both sides of the coverage question at once.
+  New `reach::suggested_offset_stepover_mm(cutter, depth)` = 50% of
+  `working_half_width_mm` — `engagement_radius_mm(δ)` floored at the cusp
+  radius, which is the SAME expression `coverage_cap_passes` already used
+  for the centreline pass's own band, now factored out so there is one
+  copy. Two properties are ASSERTED, not assumed: it is never coarser than
+  the retired rule (`width_at_height` saturates at the envelope radius) and
+  finer is the conservative direction (`offset_passes_per_side` FLOORS
+  `reach/stepover`); and at this stepover the coverage cap FLOOR is exactly
+  2 for every tool at every depth, so routing and emission agree by
+  construction. Reference depth is `min_valley_depth` — the shallowest rest
+  the detector reports, hence the narrowest band any emitted pass works,
+  and the only depth in scope before the detector has run.
+  **MEASURED: stepover 1.500 -> 0.250 mm; through the shipped pencil
+  emitter over the same valley with the same tool the envelope spacing
+  resolves ONE distinct lateral pass position (the fan was DEAD CODE —
+  Checkpoint A probe 1's symptom, reproduced end to end) against SEVEN
+  over a 1.5 mm band at 0.24 mm minimum gap.** RED-FIRST CONFIRMED by
+  reverting the derivation in place: 3 of 4 new gates fail. Ball control
+  0.750 vs 0.750, unchanged — a plain ball's cusp radius IS its envelope
+  radius, so this migration moves TAPERED TOOLS ONLY, the same shape as
+  wave A's task #12 fix.
+  Telemetry took wave A's channel: `ClaimsReport` ->
+  `GenerationFindings::derived_stepover` -> `ToolpathStats::derived_stepover`
+  (boxed, `large_enum_variant`) -> `ids::CONFIG_DERIVED_STEPOVER`, `Info`,
+  report-only; it carries the value, the depth, WHY that depth, and what
+  the envelope rule would have given, and is SILENT when they agree.
+  PR-2's finding is recorded in place: the retired comment justified the
+  envelope value as parity with `PencilParams::default().offset_stepover`;
+  that parity was FALSE (the default is the literal 0.5 mm), so nothing was
+  owed to it.
+
+  **PR-6b / H2.4 — the crease-own-region threshold.** `decompose` took a
+  bare positional `tool_radius: f64` used for exactly one decision, and the
+  only production caller passed `cutter.radius()` (ENVELOPE) while building
+  the very `FinishPlannerParams` beside it from `cusp_radius()`: one
+  struct, two tool scales, 6.0 mm vs 1.0 mm apart on the taper.
+  MADE LIVE FIRST as required — the crease slice is dormant (`&[]`, always),
+  so the new sentry drives `decompose` with a NON-EMPTY slice and straddles
+  the threshold by ±1%, with the corridor asserted present on both arms so
+  a degenerate fixture cannot pass it.
+  **THE SCALE IS CUSP, and the field's doc comment says why: this is a
+  planner-TERRITORY question** — asked in the same vocabulary as
+  `pencil_claim_floor` / `close_radius_mm` / `min_region_area_mm2`, all
+  cusp-derived — **and the FIT question was already answered upstream by
+  `reach`**: a crease only reaches `decompose` when the detector's coverage
+  criterion routed it to Pencil. Re-deriving reach there would be a second
+  routing decision on a struct with no cross-section to derive it from.
+  Consolidated rather than patched: `corridor_k` (unitless, no consumer
+  outside the module) plus the positional scalar become ONE named value,
+  `FinishPlannerParams::crease_own_region_half_width_mm` =
+  `CREASE_OWN_REGION_K * cusp_radius`; `decompose`/`decompose_surface` lose
+  the argument; 32 call sites updated.
+  **PRODUCTION OUTPUT BYTE-IDENTICAL, PROVEN**: the gate-3 fingerprints
+  were captured on the pre-H2.4 tree (`b8e3a0d`) with a throwaway probe and
+  re-asserted after — taper 1855 moves / `0xe031_2509_7b20_8fb1`, ball 1301
+  / `0xcfab_a674_0efc_aece`.
+
+  **PR-7 / H2.5 — the generic rest analysis.**
+  `attach_generic_rest_analysis` built its `RestFieldParams` with
+  `..Default::default()`, so the coverage criterion ran against a LITERAL
+  0.5 mm stepover and a 0-pass cap. `RestAnalysisConfig` gains
+  `offset_stepover_mm: Option<f64>` and `num_offset_passes: Option<usize>`
+  (serde `default` + `skip_serializing_if`, so pre-PR-7 projects load
+  unchanged and unset dials are never written out); `None` is an
+  INSTRUCTION — "ask the reach policy" — not an absent value, and the MCP
+  path passes the `Option`s straight through for exactly that reason (only
+  the generation path knows the cutter). No parallel formula remains in
+  `execute.rs`. Same derived-stepover telemetry, site
+  `"generic rest analysis routing"`; suppressed when the operator PINS the
+  stepover, because that number is theirs. `record_derived_stepover` is
+  FIRST-WRITER-WINS: one toolpath can derive twice (the op's own site, then
+  this post-pass) and the op's own is the load-bearing one.
+  **RED-FIRST DIFFERENTIAL**: on `grooved_block(8.0, 50.0, 5.0)` with a Ø12
+  ball reference and a 4-pass cap, the median branch reach is 1.479 mm —
+  between the policy threshold (4 × 0.25 = 1.0) and the retired one
+  (4 × 0.5 = 2.0). The verdict FLIPS: retired -> 2 centrelines / 2 pencil
+  components / 37.0 mm traced; policy -> 0 centrelines / 2 clearing
+  components / 0.0 mm traced. The retired literal over-claimed the fan by
+  2× and handed those branches to a pencil pass that cannot clear them.
+  **HONEST LIMIT, ASSERTED AS A GATE (not buried in prose): the artifacts
+  this pass ATTACHES do not move.** `region_polygons` is extracted from the
+  cleaned rest mask BEFORE any branch is routed (`rest_field.rs` step 2b)
+  and the pass discards `centerlines`/`clearing_regions` entirely, so the
+  routing flip above changes nothing an operator sees today. Gate 3 pins
+  that equality — region count, region area and grid cell count identical
+  across the two arms — so the day this pass consumes the verdict or emits
+  paths, the pin trips and the difference becomes real output. The
+  operator-visible change PR-7 ships is the diagnostic and the two dials.
+
+  Surfaces touched: `rs_cam_mcp::server::SetRestAnalysisConfigParam` (+2
+  optional fields, additive), `mcp_bridge::McpRequestKind::
+  SetRestAnalysisConfig`, `mcp_server`'s tool description, and
+  `app::mcp::mcp_set_rest_analysis_config` (its five optional dials are now
+  a named `RestAnalysisDials` struct — the argument-count lint, and every
+  one of them means "I did not say", not "zero"). `viz::io::project`'s
+  round-trip test now also covers the new fields staying `None`.
+
+  **RG PROOF — ONE POLICY IMPLEMENTATION.** Across `pencil.rs`,
+  `unified_finish.rs`, `compute/execute.rs`, `crease_paths.rs` and
+  `rest_field.rs` there is no production envelope-scaled routing/fit scalar
+  left. `pencil.rs`: zero hits at all. Everything that remains is one of:
+  a DOC comment naming the retired rule (`unified_finish` 283/584/948/1050,
+  `crease_paths` 34, `unified_finish` 1146); TELEMETRY recording the
+  retired baseline so the diagnostic can quote it (`unified_finish`
+  1075/1090, `execute` 2342); a Rule-4 padding / erosion / polygon
+  reach-back, explicitly out of scope (`rest_field` 574 grid margin, 656
+  erosion, 776 region dilation, 80 reference erosion radius); a TEST
+  (`unified_finish` 2638 raster-edge tolerance, `rest_field` 2580); or one
+  of the census's 63 locked non-finishing sites (`execute` 237/548/702/
+  752/799/862/928/965/1110/1256 — 2D and clearing op params).
+
+  Gates (all three commits): derived_stepover_pr6a 4/4 (new);
+  crease_own_region_pr6b 3/3 (new); generic_rest_routing_pr7 6/6 (new);
+  unified_finish_tapered_end_to_end_m21 9/9; unified_finish_semantic_regions
+  4/4; standing_material_channel_am9 4/4;
+  unified_finish_dropped_band_finding_d1 3/3; pencil_tip_float_channel_d1
+  4/4; reach_policy_pr4 6/6; coverage_routing_pr5 6/6;
+  checkpoint_a_valley_matrix 14/14; finish_resolution_policy_pr3 8/8 (FNV
+  fingerprints UNCHANGED); tool_scale_semantics_pr2 8/8;
+  tapered_cusp_radius_sentry 4/4; finish_planner_wanaka_decompose 1/1 (+4
+  ignored); air_cut_denominators_lh1 4/4; `-p rs_cam_core --lib` 2183
+  passed / exactly the 3 known adaptive3d reds; viz 227/227; cli 14/14;
+  mcp 4/4; clippy --workspace --all-targets -D warnings exit 0.
+
+  **WANAKA: DEFERRED TO LIVE VALIDATION, stated honestly.** Same reason as
+  wave A: the only harness that reaches these paths is the `#[ignore]`d
+  full-project ladder over the user-modified read-only `wanaka.toml`. No
+  before/after was run and none is claimed. PR-6a is the highest-risk of
+  the three on real relief — a 6× finer crease fan is 6× more passes
+  wherever the claims pipeline is enabled (it is default-OFF), and the
+  tighter coverage threshold routes more branches to clearing.
+
+  ADJACENT DEFECTS SEEN, NOT FIXED: (1) **the generic rest pass throws its
+  own routing away** — it runs a detector that produces `centerlines`,
+  `clearing_regions` and a per-branch verdict and attaches only the mask
+  grid and mask polygons, so `BoundarySource::DerivedRestRegions`
+  boundaries cannot distinguish a band a pencil can cover from one it
+  cannot; that is the change that would make PR-7 visible, and it is a
+  behavioural decision nobody has taken. (2) The claims stepover is ONE
+  scalar sized at `min_valley_depth`, while `reach` is per-point — the same
+  generalisation `reach`'s module doc records for the cross-section, and it
+  needs `centerline_cut_paths` to stop taking a scalar fan. (3)
+  `GenerationFindings` now has ONE derived-stepover slot for what can be
+  two derivations; first-writer-wins is a choice, not a representation.
+  (4) `ToolpathStats` grew one more boxed `Option` — the `ComputeMessage`
+  280-byte ceiling is closer again (it did not trip; clippy is clean).
+
+  Notes for WAVE H3: `RampFinish` intermediate mode should take the named
+  geo-mean policy variant (Checkpoint B ruling) — `reach` now has
+  `working_half_width_mm` as the natural place for a second named scale,
+  so add it there rather than in the op. The cone-gouge clamp wants
+  `solve_reach`'s refusal, not a new inequality: the refused case IS "the
+  cutter cannot hold this depth here". The `max_rings` experiment should
+  derive its budget from `suggested_offset_stepover_mm` for consistency
+  with this wave, and remember v3's lesson that a naive cap raise measured
+  34× worse. Also still open from wave A: the sampled-cross-section
+  generalisation that would retire the wall-angle V model entirely.

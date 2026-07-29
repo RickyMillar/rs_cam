@@ -161,10 +161,20 @@ fn record_deprecated_dial(
 /// decides. The diagnostic adapter is what stays quiet when the policy and
 /// the retired envelope rule agree (every plain ball), so a test can still
 /// assert the derivation ran on a tool it did not move.
+///
+/// FIRST WRITER WINS. One toolpath can derive a stepover twice — the
+/// operation's own routing/fit site during generation, then PR-7's generic
+/// rest-analysis POST-pass. The op's own is the load-bearing one (it steers
+/// emitted cutting; the post-pass steers a report), and it always runs
+/// first, so a later call must not silently replace it. The slot holds one
+/// finding; when both fire, this is which one.
 fn record_derived_stepover(
     cell: &std::cell::Cell<GenerationFindings>,
     finding: crate::compute::config::DerivedStepoverFinding,
 ) {
+    if cell.get().derived_stepover.is_some() {
+        return;
+    }
     cell.set(GenerationFindings {
         derived_stepover: Some(finding),
         ..cell.get()
@@ -2247,6 +2257,7 @@ pub fn execute_operation_annotated_with_regions(
             ctx.reference_tool_cfg.as_ref(),
             initial_stock,
             ra,
+            &findings,
         );
     }
 
@@ -2264,6 +2275,9 @@ pub fn execute_operation_annotated_with_regions(
 /// `RestAnalysisConfig::reference_tool_id` the same way pencil's own
 /// `reference_tool_id` is resolved), else a self-referenced bare-surface
 /// probe.
+#[allow(clippy::too_many_arguments)] // post-generation attach point; every
+// argument is a distinct upstream source (geometry, tool, reference, stock,
+// dials, findings sink)
 fn attach_generic_rest_analysis(
     generated: &mut GeneratedToolpath,
     mesh: &TriangleMesh,
@@ -2272,6 +2286,7 @@ fn attach_generic_rest_analysis(
     reference_tool_cfg: Option<&ToolConfig>,
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
     cfg: &crate::compute::config::RestAnalysisConfig,
+    findings: &std::cell::Cell<GenerationFindings>,
 ) {
     let reference_tool = reference_tool_cfg.map(build_cutter);
     let probe_ball = crate::tool::BallEndmill::new(
@@ -2284,21 +2299,60 @@ fn attach_generic_rest_analysis(
         initial_stock,
         &probe_ball,
     );
+    let defaults = crate::rest_field::RestFieldParams::default();
+    // PR-7 (H2.5): the fan this pass ROUTES against is now a real one.
+    //
+    // Wave A left this taking `RestFieldParams::default()` — a literal
+    // 0.5 mm stepover and a 0-pass cap — with the note that it is "fine for
+    // a report-only pass, wrong the moment it emits paths". It was already
+    // wrong before that: the regions this pass attaches are consumed as a
+    // `derived_rest_regions` BOUNDARY by other operations, so a routing
+    // verdict taken against a fan nobody would emit decides where a real
+    // toolpath is allowed to cut. On the shipped Ø1-tip taper the literal
+    // 0.5 quantises the coverage threshold `ceil(own_width/stepover) ×
+    // stepover` a full third coarser than the policy value does.
+    //
+    // `None` on either dial = ask the policy / take the detector default;
+    // no parallel formula lives here.
+    let offset_stepover_mm = cfg.offset_stepover_mm.unwrap_or_else(|| {
+        crate::reach::suggested_offset_stepover_mm(tool_def, cfg.min_valley_depth)
+    });
     let rf_params = crate::rest_field::RestFieldParams {
         cell_mm: cfg.cell_mm,
         min_valley_depth: cfg.min_valley_depth,
         region_margin_mm: cfg.region_margin_mm,
-        // H2.5: the generic rest analysis routes through the SAME canonical
-        // reach policy as Pencil, so it takes the detector's default fan
-        // (`RestFieldParams::default`) rather than a parallel formula. It is
-        // a report-only pass — it attaches a grid and region polygons, it
-        // emits no cut paths — so the fan it routes against is nominal.
-        ..Default::default()
+        offset_stepover_mm,
+        num_offset_passes_cap: cfg
+            .num_offset_passes
+            .unwrap_or(defaults.num_offset_passes_cap),
+        min_cut_length: defaults.min_cut_length,
     };
+    // Same audit trail as the `UnifiedFinish` claims pipeline (PR-6a): the
+    // number steers a routing decision and appears in no dial the operator
+    // set. Only when the policy sized it — an explicitly pinned stepover is
+    // the operator's own number and needs no notice.
+    if cfg.offset_stepover_mm.is_none() {
+        record_derived_stepover(
+            findings,
+            crate::compute::config::DerivedStepoverFinding {
+                site: "generic rest analysis routing",
+                stepover_mm: offset_stepover_mm,
+                reference_depth_mm: cfg.min_valley_depth,
+                reference_depth_basis: GENERIC_REST_STEPOVER_DEPTH_BASIS,
+                envelope_rule_mm: tool_def.envelope_radius_mm() * 0.5,
+            },
+        );
+    }
     let rf = crate::rest_field::detect_rest_valleys(mesh, index, tool_def, reference, &rf_params);
     generated.rest_grid = Some(std::sync::Arc::new(rf.rest_grid));
     generated.rest_regions = Some(std::sync::Arc::new(rf.region_polygons));
 }
+
+/// Why [`attach_generic_rest_analysis`] sizes the reach policy at
+/// `min_valley_depth`. Shipped in the operator-facing diagnostic.
+const GENERIC_REST_STEPOVER_DEPTH_BASIS: &str =
+    "the configured min_valley_depth — the shallowest rest this pass will \
+     report, where the cutter's engaged width is narrowest";
 
 /// Resolve the rest-depth reference (P2.5 chain): the actual machined
 /// stock (when present and its XY bbox overlaps `mesh`) → a configured
@@ -4231,6 +4285,7 @@ mod tests {
             cell_mm: 1.0,
             min_valley_depth: 0.05,
             region_margin_mm: 0.5,
+            ..Default::default()
         };
 
         let (result, _findings) = execute_operation_annotated_with_regions(
@@ -4363,6 +4418,7 @@ mod tests {
             cell_mm: generic_cell_mm,
             min_valley_depth: 0.05,
             region_margin_mm: 0.5,
+            ..Default::default()
         };
 
         let (result, _findings) = execute_operation_annotated_with_regions(
