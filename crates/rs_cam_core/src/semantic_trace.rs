@@ -2,7 +2,6 @@ use crate::debug_trace::{TOOLPATH_DEBUG_SCHEMA_VERSION, ToolpathDebugBounds2, To
 use crate::geo::{BoundingBox3, P3};
 use crate::ids::ToolpathId;
 use crate::toolpath::{Move, Toolpath};
-use crate::toolpath_spans::{AnnotatedToolpath, Span, SpanKind, SpanPayload};
 use serde::Serialize;
 use serde::{Deserialize, Serialize as DeriveSerialize};
 use serde_json::Value;
@@ -81,13 +80,14 @@ pub struct ToolpathSemanticItem {
     /// # Post-transform contract (deleted-move policy)
     ///
     /// Move links are remapped through every post-generation transform
-    /// (dressups, boundary clip, entry-descent splitting) by
-    /// [`SemanticLinkCarrier`] / [`ToolpathSemanticRecorder::remap_move_links`],
-    /// using the same provenance maps that remap
-    /// `AnnotatedToolpath::spans`. When a transform deletes every move an
-    /// item covered — or scatters them so the remapped bounds would be a
-    /// lie (TSP's foreign-intrusion drop) — the item is **UNLINKED**:
-    /// `move_start` and `move_end` both become `None`.
+    /// (dressups, boundary clip, entry-descent splitting) because this
+    /// channel is registered in
+    /// [`crate::transform_provenance::ReconcileSet`] and no transform can
+    /// hand its result back without reconciling (C1). When a transform
+    /// deletes every move an item covered — or scatters them so the
+    /// remapped bounds would be a lie (the reorder's foreign-intrusion
+    /// drop) — the item is **UNLINKED**: `move_start` and `move_end` both
+    /// become `None`.
     ///
     /// Unlink, not drop and not clamp:
     /// * dropping the item would lose the planner intent it records (label,
@@ -351,33 +351,41 @@ impl ToolpathSemanticRecorder {
         }
     }
 
-    /// Remap every recorded move link through a per-input-move provenance
-    /// map — the same `mapping` contract [`Span::remap`] takes
-    /// (`mapping[i]` = first output index produced from input move `i`,
-    /// last entry = total output move count).
+    /// Rewrite every recorded move link through one transform's provenance
+    /// report — the [`crate::transform_provenance::RemapConsumer`] body for
+    /// this channel, kept here because it needs the private link accessors.
     ///
-    /// Used by the transforms that hand out a provenance map directly (the
-    /// boundary clip, `optimize_entry_descents_with_provenance`). Transforms
-    /// that only expose their remap through the span vector use
-    /// [`SemanticLinkCarrier`] instead. Both apply the same deleted-move
-    /// policy: an item whose moves are all gone is unlinked.
+    /// Replaces ae10cb2's two entry points (`remap_move_links` for
+    /// transforms that handed out a mapping directly, `SemanticLinkCarrier`
+    /// for transforms that only exposed their remap through the span
+    /// vector). One route now, because the transform is obliged to report
+    /// its provenance either way.
+    ///
+    /// The rules are unchanged, and they live in
+    /// [`crate::transform_provenance::MoveProvenance::remap_range`]:
+    /// insertion mappings clamp exactly as [`Span::remap`] does, deletions
+    /// unlink, and a reorder that scattered an item's moves unlinks it via
+    /// the same foreign-intrusion predicate the span filter uses.
     ///
     /// `toolpath` is the POST-transform toolpath (the one the remapped
     /// indices index). It is taken rather than a bare move count because the
     /// recorded geometry is re-derived from it — an index that moved and a
     /// bbox that did not is exactly the stale-coordinate defect Wave D3
     /// closed. See [`Self::rederive_geometry_for`].
-    pub fn remap_move_links(&self, mapping: &[usize], toolpath: &Toolpath) {
+    pub(crate) fn consume_provenance(
+        &self,
+        provenance: &crate::transform_provenance::MoveProvenance,
+        toolpath: &Toolpath,
+    ) {
         let new_move_count = toolpath.moves.len();
         let updates: Vec<(u64, Option<(usize, usize)>)> = self
             .move_links()
             .into_iter()
             .map(|(id, start, end)| {
-                let remapped = Span::new(start, end, SpanKind::SemanticLink).remap(mapping);
-                (
-                    id,
-                    linked_range(remapped.start_move, remapped.end_move, new_move_count),
-                )
+                let link = provenance
+                    .remap_range(start, end, new_move_count)
+                    .and_then(|r| linked_range(r.start, r.end, new_move_count));
+                (id, link)
             })
             .collect();
         self.apply_links(&updates, toolpath);
@@ -440,103 +448,10 @@ fn linked_range(start: usize, end_exclusive: usize, n_moves: usize) -> Option<(u
     Some((start, end_exclusive.min(n_moves) - 1))
 }
 
-// ── SemanticLinkCarrier ─────────────────────────────────────────────────
-
-/// Carries semantic move links through a transform that remaps
-/// `AnnotatedToolpath::spans` but has no other way to report its
-/// provenance map (every dressup, arc-fit, segment merge, air-cut filter
-/// and TSP reorder in [`crate::compute::execute::apply_dressups`]).
-///
-/// [`Self::attach`] appends one [`SpanKind::SemanticLink`] span per
-/// DISTINCT linked range; the transform remaps it exactly as it remaps the
-/// real spans; [`Self::detach`] strips the carrier spans back out and
-/// writes the new ranges into the recorder. Because a carrier span is a
-/// byte-identical copy of the item's range, an item survives a transform
-/// **iff a structural span over the same moves would have** — which is what
-/// keeps the semantic and structural region systems in agreement after the
-/// pipeline, not only at generation time.
-///
-/// Deleted moves: a carrier span that fully collapses (air-cut filter,
-/// clip) or that TSP drops for foreign intrusion comes back missing, and
-/// the item is UNLINKED (`move_start`/`move_end` = `None`) — see
-/// [`ToolpathSemanticItem::move_end`]. Ranges that survive are also
-/// bound-checked against the post-transform move count, so a transform that
-/// declines to remap (e.g. one that passes spans through untouched because
-/// `spans_valid` was already false) can leave a stale link but never an
-/// out-of-bounds one.
-///
-/// Geometry: [`Self::detach`] also re-derives each item's `xy_bbox` /
-/// `z_min` / `z_max` from the post-transform moves, so the coordinates
-/// cannot outlive the moves they describe (Wave D3 — see
-/// [`ToolpathSemanticRecorder::rederive_geometry_for`]).
-pub struct SemanticLinkCarrier {
-    entries: Vec<CarrierEntry>,
-}
-
-/// One distinct move range, plus every item that shares it. `probe_id` is
-/// the id written into the carrier span's payload.
-struct CarrierEntry {
-    probe_id: u64,
-    item_ids: Vec<u64>,
-}
-
-impl SemanticLinkCarrier {
-    /// Append the carrier spans. No-op (empty carrier) when nothing is
-    /// linked yet.
-    pub fn attach(recorder: &ToolpathSemanticRecorder, annotated: &mut AnnotatedToolpath) -> Self {
-        let mut by_range: BTreeMap<(usize, usize), Vec<u64>> = BTreeMap::new();
-        for (id, start, end) in recorder.move_links() {
-            by_range.entry((start, end)).or_default().push(id);
-        }
-        let mut entries = Vec::with_capacity(by_range.len());
-        for ((start, end), item_ids) in by_range {
-            let Some(&probe_id) = item_ids.first() else {
-                continue;
-            };
-            annotated.spans.push(
-                Span::new(start, end, SpanKind::SemanticLink)
-                    .with_payload(SpanPayload::SemanticLink { item_id: probe_id }),
-            );
-            entries.push(CarrierEntry { probe_id, item_ids });
-        }
-        Self { entries }
-    }
-
-    /// Strip every carrier span back out of `annotated` and write the
-    /// remapped ranges into `recorder`. Always removes ALL
-    /// [`SpanKind::SemanticLink`] spans, so a carrier can never leak into a
-    /// stored toolpath even if a transform duplicated one.
-    pub fn detach(self, recorder: &ToolpathSemanticRecorder, annotated: &mut AnnotatedToolpath) {
-        let mut remapped: BTreeMap<u64, (usize, usize)> = BTreeMap::new();
-        annotated.spans.retain(|span| {
-            if span.kind != SpanKind::SemanticLink {
-                return true;
-            }
-            if let Some(SpanPayload::SemanticLink { item_id }) = span.payload {
-                remapped.insert(item_id, (span.start_move, span.end_move));
-            }
-            false
-        });
-        let n_moves = annotated.toolpath.moves.len();
-        let mut updates: Vec<(u64, Option<(usize, usize)>)> = Vec::new();
-        for entry in self.entries {
-            let link = remapped
-                .get(&entry.probe_id)
-                .and_then(|&(start, end)| linked_range(start, end, n_moves));
-            for id in entry.item_ids {
-                updates.push((id, link));
-            }
-        }
-        // Post-transform toolpath: the remapped indices index THIS one, and
-        // the recorded geometry is re-derived from it (Wave D3).
-        recorder.apply_links(&updates, &annotated.toolpath);
-    }
-}
-
 impl ToolpathSemanticContext {
-    /// The recorder this context writes into — the handle a transform needs
-    /// to remap already-recorded move links
-    /// ([`ToolpathSemanticRecorder::remap_move_links`]) while it is being
+    /// The recorder this context writes into — the handle a call site needs
+    /// to register this channel in a
+    /// [`crate::transform_provenance::ReconcileSet`] while it is being
     /// handed a context to record its OWN item.
     pub fn recorder(&self) -> &ToolpathSemanticRecorder {
         &self.recorder
@@ -968,6 +883,8 @@ fn sanitize_filename_component(input: &str) -> String {
 mod tests {
     use super::*;
     use crate::geo::P3;
+    use crate::toolpath_spans::AnnotatedToolpath;
+    use crate::transform_provenance::{MoveProvenance, ReconcileSet, Transformed};
 
     #[test]
     fn semantic_recorder_serializes_items() {
@@ -1000,10 +917,18 @@ mod tests {
 
     /// The deleted-move policy, stated on the smallest possible transform:
     /// an item whose moves all survive is remapped, an item whose moves the
-    /// transform dropped is UNLINKED (not clamped, not deleted), and no
-    /// carrier span is left behind on the toolpath.
+    /// transform dropped is UNLINKED (not clamped, not deleted).
+    ///
+    /// C1: was `carrier_remaps_survivors_and_unlinks_deleted_items`, driven
+    /// through `SemanticLinkCarrier::attach`/`detach`. Same remap, same
+    /// assertions on the outcome; the carrier's own bookkeeping assertions
+    /// (one carrier span per distinct range, all of them stripped again)
+    /// are gone because there are no carrier spans to count or strip — the
+    /// transform reports its provenance instead of smuggling the link
+    /// through the span vector. What replaces them is the assertion below
+    /// that the span vector is untouched by the reconcile.
     #[test]
-    fn carrier_remaps_survivors_and_unlinks_deleted_items() {
+    fn provenance_remaps_survivors_and_unlinks_deleted_items() {
         use crate::toolpath_spans::MoveRemap;
 
         let recorder = ToolpathSemanticRecorder::new("Pocket 1", "Pocket");
@@ -1013,30 +938,22 @@ mod tests {
         keep.set_move_range(0, 2); // inclusive → half-open 0..3
         lose.set_move_range(3, 5); // inclusive → half-open 3..6
 
-        let mut annotated = AnnotatedToolpath::new(toolpath_with_moves(6));
-        let carrier = SemanticLinkCarrier::attach(&recorder, &mut annotated);
-        assert_eq!(
-            annotated
-                .spans
-                .iter()
-                .filter(|s| s.kind == SpanKind::SemanticLink)
-                .count(),
-            2,
-            "one carrier span per distinct linked range"
-        );
-
         // Transform: moves 0..3 shift up by one (something was inserted in
         // front of them), moves 3..6 are deleted outright.
         let remap = MoveRemap {
             old_to_new: vec![Some(1..2), Some(2..3), Some(3..4), None, None, None],
         };
-        annotated.spans = remap.remap_spans(&annotated.spans, 4);
-        annotated.toolpath = toolpath_with_moves(4);
-        carrier.detach(&recorder, &mut annotated);
+        let transformed = Transformed::new(
+            AnnotatedToolpath::new(toolpath_with_moves(4)),
+            MoveProvenance::Remap(remap),
+        );
+        let shipped = transformed
+            .reconcile(&mut ReconcileSet::new(Some(&recorder)))
+            .into_inner();
 
         assert!(
-            annotated.spans.is_empty(),
-            "detach must strip every carrier span — they must never ship"
+            shipped.spans.is_empty(),
+            "reconciling a channel must not add spans to the shipped toolpath"
         );
 
         let trace = recorder.finish();
@@ -1098,16 +1015,16 @@ mod tests {
         let gone = ctx.start_item(ToolpathSemanticKind::Pass, "Gone");
         gone.bind_to_toolpath(&full, 3, 6);
 
-        let mut annotated = AnnotatedToolpath::new(full);
-        let carrier = SemanticLinkCarrier::attach(&recorder, &mut annotated);
-
         // The clip keeps moves 0..3 and deletes 3..6.
         let remap = MoveRemap {
             old_to_new: vec![Some(0..1), Some(1..2), Some(2..3), None, None, None],
         };
-        annotated.spans = remap.remap_spans(&annotated.spans, 3);
-        annotated.toolpath = staircase(3);
-        carrier.detach(&recorder, &mut annotated);
+        let _shipped = Transformed::new(
+            AnnotatedToolpath::new(staircase(3)),
+            MoveProvenance::Remap(remap),
+        )
+        .reconcile(&mut ReconcileSet::new(Some(&recorder)))
+        .into_inner();
 
         let trace = recorder.finish();
         let by_label = |label: &str| {
@@ -1165,7 +1082,7 @@ mod tests {
         item.bind_to_toolpath(&tp, 0, tp.moves.len());
         let before = recorder.clone().finish().items[0].clone();
 
-        recorder.remap_move_links(&[0, 1, 2, 3], &tp);
+        recorder.consume_provenance(&MoveProvenance::Mapping(vec![0, 1, 2, 3]), &tp);
 
         let after = recorder.finish().items[0].clone();
         assert_eq!(before.xy_bbox, after.xy_bbox);
@@ -1177,7 +1094,7 @@ mod tests {
     /// item covering the whole toolpath must still cover the whole toolpath
     /// after the transform inserted moves inside its range.
     #[test]
-    fn remap_move_links_follows_inserted_moves() {
+    fn mapping_provenance_follows_inserted_moves() {
         let recorder = ToolpathSemanticRecorder::new("Pocket 1", "Pocket");
         let ctx = recorder.root_context();
         let op = ctx.start_item(ToolpathSemanticKind::Operation, "Pocket");
@@ -1185,7 +1102,10 @@ mod tests {
 
         // Each input move produced two output moves: mapping[i] = 2i, with
         // the total-count sentinel last.
-        recorder.remap_move_links(&[0, 2, 4, 6], &toolpath_with_moves(6));
+        recorder.consume_provenance(
+            &MoveProvenance::Mapping(vec![0, 2, 4, 6]),
+            &toolpath_with_moves(6),
+        );
 
         let trace = recorder.finish();
         let item = &trace.items[0];
@@ -1195,7 +1115,7 @@ mod tests {
     /// A stale link (transform declined to remap because spans were already
     /// invalid) must never come back out of bounds.
     #[test]
-    fn remap_move_links_never_returns_an_out_of_bounds_link() {
+    fn mapping_provenance_never_returns_an_out_of_bounds_link() {
         let recorder = ToolpathSemanticRecorder::new("Pocket 1", "Pocket");
         let ctx = recorder.root_context();
         let inside = ctx.start_item(ToolpathSemanticKind::Pass, "Overhang");
@@ -1204,7 +1124,10 @@ mod tests {
         outside.set_move_range(8, 9);
 
         // Identity mapping over 10 input moves, but only 4 moves survive.
-        recorder.remap_move_links(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], &toolpath_with_moves(4));
+        recorder.consume_provenance(
+            &MoveProvenance::Mapping(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
+            &toolpath_with_moves(4),
+        );
 
         let trace = recorder.finish();
         let by_label = |label: &str| {

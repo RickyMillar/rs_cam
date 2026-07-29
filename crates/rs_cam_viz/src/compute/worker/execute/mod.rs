@@ -540,6 +540,16 @@ fn run_compute_with_phase_tracker(
 
         let mut current = tp;
 
+        // C1 item 4b: built UNCONDITIONALLY, not under `debug_options.enabled`.
+        // The recorder is still debug-gated (recording every item on every
+        // generation is not free), but the reconcile path is not: every
+        // transform below hands back a `Transformed` and every one of them is
+        // reconciled through this set, in the default configuration as much as
+        // in the debug one. Pre-C1 the remap calls were themselves inside
+        // `if let Some(recorder)`, so the shipping product never ran them.
+        let mut channels =
+            rs_cam_core::transform_provenance::ReconcileSet::new(semantic_recorder.as_ref());
+
         {
             let _phase_scope = phase_tracker.map(|tracker| tracker.start_phase("Apply dressups"));
             let dressup_scope = debug_root
@@ -551,10 +561,7 @@ fn run_compute_with_phase_tracker(
                 req,
                 dressup_ctx.as_ref(),
                 semantic_root.as_ref(),
-                // Task #14: keeps every already-recorded item's move link
-                // pointing at the moves it names as the dressups insert,
-                // delete and reorder them.
-                semantic_recorder.as_ref(),
+                &mut channels,
             );
         }
 
@@ -567,7 +574,7 @@ fn run_compute_with_phase_tracker(
                 .map(|ctx| ctx.start_span("boundary_clip", "Clip to boundary"));
             let boundary_span_id = boundary_scope.as_ref().map(|scope| scope.id());
             use rs_cam_core::boundary::{
-                ToolContainment, clip_toolpath_to_boundary_with_provenance, effective_boundary,
+                ToolContainment, clip_annotated_to_boundary_set, effective_boundary,
                 model_silhouette, subtract_keepouts,
             };
             use rs_cam_core::compute::config::BoundarySource;
@@ -621,6 +628,7 @@ fn run_compute_with_phase_tracker(
                     req.tool.envelope_diameter(),
                     effective_safe_z(req),
                     &semantic_ctx,
+                    &mut channels,
                 );
                 if let Some(scope) = boundary_scope.as_ref()
                     && !current.toolpath.moves.is_empty()
@@ -687,22 +695,17 @@ fn run_compute_with_phase_tracker(
                     req.tool.envelope_diameter() / 2.0,
                 );
                 if let Some(boundary) = boundaries.first() {
-                    let (clipped, mapping) = clip_toolpath_to_boundary_with_provenance(
-                        &current.toolpath,
-                        boundary,
+                    // C1: one implementation of "clip, then bring every
+                    // index-carrying channel along" — spans included. This
+                    // used to be three hand-rolled lines here, and the same
+                    // three in each session clip.
+                    current = clip_annotated_to_boundary_set(
+                        current,
+                        std::slice::from_ref(boundary),
                         effective_safe_z(req),
-                    );
-                    current.toolpath = clipped;
-                    // Precise span remap (S83): the clipper never drops input
-                    // moves so each input span's [start, end) range maps to
-                    // [mapping[start], mapping[end]) in the output.
-                    current.spans = current.spans.iter().map(|s| s.remap(&mapping)).collect();
-                    // Task #14: the semantic trace's links are index-based
-                    // too — same map, same moment, and before the clip's
-                    // own (already post-clip) item is recorded below.
-                    if let Some(recorder) = semantic_recorder.as_ref() {
-                        recorder.remap_move_links(&mapping, &current.toolpath);
-                    }
+                    )
+                    .reconcile(&mut channels)
+                    .into_inner();
                     if let Some(root) = semantic_root.as_ref() {
                         let scope =
                             root.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
@@ -751,20 +754,14 @@ fn run_compute_with_phase_tracker(
         // through the same provenance-map contract the boundary clip uses
         // above, rather than invalidated.
         {
-            let (split_count, mapping) =
-                rs_cam_core::dressup::optimize_entry_descents_with_provenance(
-                    &mut current.toolpath,
+            let (transformed, _split_count) =
+                rs_cam_core::dressup::optimize_entry_descents_annotated(
+                    current,
                     req.prior_stock.as_ref(),
                     req.heights.top_z,
                     req.tool.envelope_diameter() / 2.0,
                 );
-            if split_count > 0 {
-                current.spans = current.spans.iter().map(|s| s.remap(&mapping)).collect();
-                // Task #14: same map for the semantic trace's move links.
-                if let Some(recorder) = semantic_recorder.as_ref() {
-                    recorder.remap_move_links(&mapping, &current.toolpath);
-                }
-            }
+            current = transformed.reconcile(&mut channels).into_inner();
         }
 
         let stats = {

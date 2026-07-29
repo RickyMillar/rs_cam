@@ -14,13 +14,11 @@ use crate::geo::BoundingBox3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 use crate::region_set::RegionSet;
-use crate::semantic_trace::{
-    SemanticLinkCarrier, ToolpathSemanticContext, ToolpathSemanticKind, ToolpathSemanticRecorder,
-    ToolpathSemanticScope,
-};
+use crate::semantic_trace::{ToolpathSemanticContext, ToolpathSemanticKind, ToolpathSemanticScope};
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
 use crate::toolpath_spans::AnnotatedToolpath;
+use crate::transform_provenance::{ReconcileSet, Transformed};
 
 // ── Error type ────────────────────────────────────────────────────────
 
@@ -2421,33 +2419,33 @@ struct DressupTraceInfo<'a> {
 
 /// Run one dressup step with optional debug + semantic tracing scopes.
 ///
-/// Both contexts are optional — when both are `None` (CLI / session paths)
-/// the helper is just `transform(annotated)` with no overhead. When the
-/// GUI passes them through, each step appears as its own item in the
-/// semantic trace tree (consumed by `sim_op_list` etc.) and as a span in
-/// the debug trace.
+/// The `transform` closure must return a [`Transformed`] — that signature
+/// IS the C1 contract at this boundary. A new dressup step cannot be added
+/// to the pipeline without reporting how it moved the move indices, and
+/// this helper is the only thing that can turn that report back into a
+/// usable toolpath, which it does by reconciling `channels`.
 ///
-/// `link_recorder` is independent of `semantic_ctx`: it does not record
-/// anything, it carries the move links of items recorded EARLIER (at
-/// generation time, or by a previous dressup step) through this step's
-/// move-index changes via [`SemanticLinkCarrier`]. The session path passes
-/// a recorder here while passing `None` for `semantic_ctx` — it wants the
-/// links kept honest without adding per-dressup items to the trace.
+/// `channels` is independent of `semantic_ctx`: it records nothing, it
+/// carries the move links of items recorded EARLIER (at generation time, or
+/// by a previous dressup step) through this step's move-index changes. The
+/// session path registers its generation recorder there while passing
+/// `None` for `semantic_ctx` — it wants the links kept honest without
+/// adding per-dressup items to the trace.
 fn apply_dressup_traced(
-    mut annotated: AnnotatedToolpath,
+    annotated: AnnotatedToolpath,
     debug_ctx: Option<&ToolpathDebugContext>,
     semantic_ctx: Option<&ToolpathSemanticContext>,
-    link_recorder: Option<&ToolpathSemanticRecorder>,
+    channels: &mut ReconcileSet<'_>,
     info: DressupTraceInfo<'_>,
     set_params: impl FnOnce(&ToolpathSemanticScope),
-    transform: impl FnOnce(AnnotatedToolpath) -> AnnotatedToolpath,
+    transform: impl FnOnce(AnnotatedToolpath) -> Transformed,
 ) -> AnnotatedToolpath {
     let debug_scope = debug_ctx.map(|ctx| ctx.start_span(info.debug_key, info.debug_label));
     let debug_span_id = debug_scope.as_ref().map(|s| s.id());
     // Started BEFORE the transform (so its params are recorded even if the
     // transform is the last thing this scope sees) but bound to a move
-    // range only AFTER the carrier is detached — an item with no link yet
-    // is not picked up by `attach`, so it is never double-remapped.
+    // range only AFTER the reconcile — an item with no link yet carries no
+    // move indices, so it is never double-remapped.
     let semantic_scope = semantic_ctx.map(|ctx| {
         let scope = ctx.start_item(info.kind, info.semantic_label);
         if let Some(span_id) = debug_span_id {
@@ -2456,18 +2454,17 @@ fn apply_dressup_traced(
         set_params(&scope);
         scope
     });
-    let carrier = link_recorder.map(|rec| SemanticLinkCarrier::attach(rec, &mut annotated));
-    let mut result = transform(annotated);
-    if let (Some(carrier), Some(rec)) = (carrier, link_recorder) {
-        carrier.detach(rec, &mut result);
-    }
+
+    let result = transform(annotated).reconcile(channels).into_inner();
+    let n = result.toolpath.moves.len();
+
     if let Some(scope) = semantic_scope.as_ref() {
-        scope.bind_to_toolpath(&result.toolpath, 0, result.toolpath.moves.len());
+        scope.bind_to_toolpath(&result.toolpath, 0, n);
     }
     if let Some(scope) = debug_scope.as_ref()
-        && !result.toolpath.moves.is_empty()
+        && n > 0
     {
-        scope.set_move_range(0, result.toolpath.moves.len() - 1);
+        scope.set_move_range(0, n - 1);
     }
     result
 }
@@ -2490,13 +2487,13 @@ fn apply_dressup_traced(
 /// All dressups in this pipeline are span-aware (Phase 3 sub-tasks
 /// #50–#58); spans on the input are remapped through each step.
 ///
-/// `link_recorder` (task #14) carries the semantic trace's move links
-/// through those same remaps — pass the generation recorder whenever the
-/// result's `ToolpathSemanticTrace` will be shipped, or the item ranges
-/// drift away from the moves they name (and can end up past the end of the
-/// move list, which is a consumer-panic class). It is orthogonal to
-/// `semantic_ctx`, which only controls whether each step records an item
-/// of its own.
+/// `channels` (C1) is the registry of index-carrying channels the CALLER
+/// owns — today the semantic trace's move links. Every step reconciles
+/// against it, so the item ranges cannot drift away from the moves they
+/// name (and cannot end up past the end of the move list, which is a
+/// consumer-panic class). It is orthogonal to `semantic_ctx`, which only
+/// controls whether each step records an item of its own; a caller with no
+/// channels passes [`ReconcileSet::empty`] and says so.
 #[allow(clippy::too_many_arguments)]
 pub fn apply_dressups(
     annotated: AnnotatedToolpath,
@@ -2511,10 +2508,11 @@ pub fn apply_dressups(
     transform_capabilities: OperationTransformCapabilities,
     debug_ctx: Option<&ToolpathDebugContext>,
     semantic_ctx: Option<&ToolpathSemanticContext>,
-    link_recorder: Option<&ToolpathSemanticRecorder>,
+    channels: &mut ReconcileSet<'_>,
 ) -> AnnotatedToolpath {
     use crate::dressup::{
-        EntryStyle, LinkMoveParams, apply_dogbones, apply_entry, apply_link_moves,
+        EntryStyle, LinkMoveParams, apply_dogbones_with_provenance, apply_entry_with_provenance,
+        apply_link_moves_with_provenance,
     };
 
     // Capability gate: barriered TSP only fires when the input has barriers.
@@ -2533,7 +2531,7 @@ pub fn apply_dressups(
             current,
             debug_ctx,
             semantic_ctx,
-            link_recorder,
+            channels,
             DressupTraceInfo {
                 debug_key: "rapid_order",
                 debug_label: "Optimize rapid order",
@@ -2544,7 +2542,7 @@ pub fn apply_dressups(
                 scope.set_param("safe_z", safe_z);
                 scope.set_param("barrier_count", barrier_count);
             },
-            |at| crate::tsp::optimize_rapid_order(at, safe_z),
+            |at| crate::tsp::optimize_rapid_order_with_provenance(at, safe_z),
         );
     }
 
@@ -2566,7 +2564,7 @@ pub fn apply_dressups(
                 current,
                 debug_ctx,
                 semantic_ctx,
-                link_recorder,
+                channels,
                 DressupTraceInfo {
                     debug_key: "entry_style",
                     debug_label: "Ramp entry",
@@ -2578,7 +2576,7 @@ pub fn apply_dressups(
                     scope.set_param("max_angle_deg", ramp_angle);
                 },
                 |at| {
-                    apply_entry(
+                    apply_entry_with_provenance(
                         at,
                         EntryStyle::Ramp {
                             max_angle_deg: ramp_angle,
@@ -2596,7 +2594,7 @@ pub fn apply_dressups(
                 current,
                 debug_ctx,
                 semantic_ctx,
-                link_recorder,
+                channels,
                 DressupTraceInfo {
                     debug_key: "entry_style",
                     debug_label: "Helix entry",
@@ -2609,7 +2607,7 @@ pub fn apply_dressups(
                     scope.set_param("pitch", helix_pitch);
                 },
                 |at| {
-                    apply_entry(
+                    apply_entry_with_provenance(
                         at,
                         EntryStyle::Helix {
                             radius: helix_radius,
@@ -2631,7 +2629,7 @@ pub fn apply_dressups(
             current,
             debug_ctx,
             semantic_ctx,
-            link_recorder,
+            channels,
             DressupTraceInfo {
                 debug_key: "dogbones",
                 debug_label: "Apply dogbones",
@@ -2641,7 +2639,7 @@ pub fn apply_dressups(
             |scope| {
                 scope.set_param("angle_deg", angle);
             },
-            |at| apply_dogbones(at, tool_radius, angle),
+            |at| apply_dogbones_with_provenance(at, tool_radius, angle),
         );
     }
 
@@ -2654,7 +2652,7 @@ pub fn apply_dressups(
             current,
             debug_ctx,
             semantic_ctx,
-            link_recorder,
+            channels,
             DressupTraceInfo {
                 debug_key: "lead_in_out",
                 debug_label: "Apply lead in/out",
@@ -2670,7 +2668,7 @@ pub fn apply_dressups(
                     scope.set_param("lead_out_feed_rate", f);
                 }
             },
-            |at| crate::dressup::apply_lead_in_out_with_feeds(at, radius, li_feed, lo_feed),
+            |at| crate::dressup::apply_lead_in_out_with_provenance(at, radius, li_feed, lo_feed),
         );
     }
 
@@ -2682,7 +2680,7 @@ pub fn apply_dressups(
             current,
             debug_ctx,
             semantic_ctx,
-            link_recorder,
+            channels,
             DressupTraceInfo {
                 debug_key: "link_moves",
                 debug_label: "Apply link moves",
@@ -2694,7 +2692,7 @@ pub fn apply_dressups(
                 scope.set_param("link_feed_rate", link_feed);
             },
             |at| {
-                apply_link_moves(
+                apply_link_moves_with_provenance(
                     at,
                     &LinkMoveParams {
                         max_link_distance: max_dist,
@@ -2714,7 +2712,7 @@ pub fn apply_dressups(
             current,
             debug_ctx,
             semantic_ctx,
-            link_recorder,
+            channels,
             DressupTraceInfo {
                 debug_key: "arc_fit",
                 debug_label: "Fit arcs",
@@ -2724,7 +2722,7 @@ pub fn apply_dressups(
             |scope| {
                 scope.set_param("tolerance", tolerance);
             },
-            |at| crate::arcfit::fit_arcs(at, tolerance, tool_radius),
+            |at| crate::arcfit::fit_arcs_with_provenance(at, tolerance, tool_radius),
         );
     }
 
@@ -2737,7 +2735,7 @@ pub fn apply_dressups(
             current,
             debug_ctx,
             semantic_ctx,
-            link_recorder,
+            channels,
             DressupTraceInfo {
                 debug_key: "segment_merge",
                 debug_label: "Merge short segments",
@@ -2747,7 +2745,7 @@ pub fn apply_dressups(
             |scope| {
                 scope.set_param("tolerance", merge_tol);
             },
-            |at| crate::condition::merge_linear_runs(at, merge_tol),
+            |at| crate::condition::merge_linear_runs_with_provenance(at, merge_tol),
         );
     }
 
@@ -2760,7 +2758,7 @@ pub fn apply_dressups(
             current,
             debug_ctx,
             semantic_ctx,
-            link_recorder,
+            channels,
             DressupTraceInfo {
                 debug_key: "rapid_order",
                 debug_label: "Optimize rapid order",
@@ -2770,7 +2768,7 @@ pub fn apply_dressups(
             |scope| {
                 scope.set_param("safe_z", safe_z);
             },
-            |at| crate::tsp::optimize_rapid_order(at, safe_z),
+            |at| crate::tsp::optimize_rapid_order_with_provenance(at, safe_z),
         );
     }
 
@@ -2780,7 +2778,7 @@ pub fn apply_dressups(
             current,
             debug_ctx,
             semantic_ctx,
-            link_recorder,
+            channels,
             DressupTraceInfo {
                 debug_key: "air_cut_filter",
                 debug_label: "Filter air cuts",
@@ -2792,7 +2790,7 @@ pub fn apply_dressups(
                 scope.set_param("safe_z", safe_z);
             },
             |at| {
-                crate::dressup::filter_air_cuts(
+                crate::dressup::filter_air_cuts_with_provenance(
                     at,
                     stock,
                     tool_radius,
@@ -2823,7 +2821,7 @@ pub fn apply_dressups(
             current,
             debug_ctx,
             semantic_ctx,
-            link_recorder,
+            channels,
             DressupTraceInfo {
                 debug_key: "feed_optimization",
                 debug_label: "Optimize feeds",
@@ -2835,7 +2833,14 @@ pub fn apply_dressups(
                 scope.set_param("max_feed_rate", max_rate);
                 scope.set_param("ramp_rate", ramp_rate);
             },
-            |at| crate::feedopt::optimize_feed_rates(at, cut, stock, &params),
+            // Feed optimisation rewrites feed rates only — move count, order and
+            // spans pass through untouched. The claim is made explicitly rather
+            // than by omission.
+            |at| {
+                Transformed::index_preserving(crate::feedopt::optimize_feed_rates(
+                    at, cut, stock, &params,
+                ))
+            },
         );
     }
 
@@ -4239,7 +4244,7 @@ mod tests {
             OperationType::Pocket.transform_capabilities(),
             None,
             Some(&semantic_root),
-            None,
+            &mut ReconcileSet::empty(),
         );
         let semantic = recorder.finish();
         let nominal = semantic
@@ -4279,7 +4284,7 @@ mod tests {
             OperationType::DropCutter.transform_capabilities(),
             None,
             None,
-            None,
+            &mut ReconcileSet::empty(),
         );
 
         assert!(

@@ -1210,7 +1210,6 @@ fn span_kind_label(kind: SpanKind) -> &'static str {
         SpanKind::RapidOrderBarrier => "RapidOrderBarrier",
         // Transport-only carrier (task #14) — never present on a stored
         // toolpath; labelled rather than hidden so a leak is visible.
-        SpanKind::SemanticLink => "SemanticLink",
     }
 }
 

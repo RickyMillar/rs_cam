@@ -26,7 +26,7 @@ pub(super) fn apply_dressups(
     req: &ComputeRequest,
     debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
     semantic: Option<&rs_cam_core::semantic_trace::ToolpathSemanticContext>,
-    link_recorder: Option<&rs_cam_core::semantic_trace::ToolpathSemanticRecorder>,
+    channels: &mut rs_cam_core::transform_provenance::ReconcileSet<'_>,
 ) -> rs_cam_core::toolpath_spans::AnnotatedToolpath {
     let cfg = &req.dressups;
     let tool = &req.tool;
@@ -67,7 +67,7 @@ pub(super) fn apply_dressups(
         transform_capabilities,
         debug,
         semantic,
-        link_recorder,
+        channels,
     )
 }
 

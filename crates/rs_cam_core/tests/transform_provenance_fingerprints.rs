@@ -37,16 +37,17 @@
 )]
 
 use rs_cam_core::{
-    boundary::clip_toolpath_to_boundary_with_provenance,
+    boundary::clip_annotated_to_boundary_set,
     compute::catalog::OperationType,
     compute::config::{DressupConfig, DressupEntryStyle},
     compute::execute::apply_dressups,
-    dressup::optimize_entry_descents_with_provenance,
+    dressup::optimize_entry_descents_annotated,
     geo::P3,
     polygon::Polygon2,
     semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder, ToolpathSemanticTrace},
     toolpath::Toolpath,
     toolpath_spans::{AnnotatedToolpath, Span, SpanKind},
+    transform_provenance::ReconcileSet,
 };
 
 // ── Fingerprints ─────────────────────────────────────────────────────────
@@ -247,7 +248,7 @@ fn three_pass_full_dressups_fingerprint() {
         OperationType::Adaptive3d.transform_capabilities(),
         None,
         None,
-        Some(&recorder),
+        &mut ReconcileSet::new(Some(&recorder)),
     );
 
     assert_eq!(
@@ -288,7 +289,7 @@ fn arc_raster_full_dressups_fingerprint() {
         OperationType::Adaptive3d.transform_capabilities(),
         None,
         None,
-        Some(&recorder),
+        &mut ReconcileSet::new(Some(&recorder)),
     );
 
     assert_eq!(
@@ -330,7 +331,7 @@ fn face_full_chain_fingerprint() {
         OperationType::Face.transform_capabilities(),
         None,
         None,
-        Some(&recorder),
+        &mut ReconcileSet::new(Some(&recorder)),
     );
     assert_eq!(
         fingerprint(&current.toolpath),
@@ -341,11 +342,9 @@ fn face_full_chain_fingerprint() {
     // Stage 2 — boundary clip against a rectangle that actually cuts the
     // path (inset from the faced area, so moves leave and re-enter).
     let boundary = Polygon2::rectangle(2.0, 2.0, 34.0, 26.0);
-    let (clipped, mapping) =
-        clip_toolpath_to_boundary_with_provenance(&current.toolpath, &boundary, 30.0);
-    current.toolpath = clipped;
-    current.spans = current.spans.iter().map(|s| s.remap(&mapping)).collect();
-    recorder.remap_move_links(&mapping, &current.toolpath);
+    current = clip_annotated_to_boundary_set(current, &[boundary], 30.0)
+        .reconcile(&mut ReconcileSet::new(Some(&recorder)))
+        .into_inner();
     assert_eq!(
         fingerprint(&current.toolpath),
         (97, 3_258_911_278_473_560_309),
@@ -354,12 +353,10 @@ fn face_full_chain_fingerprint() {
 
     // Stage 3 — entry-descent split (no dexel stock: the fresh-stock top is
     // the ceiling, which is what the session passes for a first op).
-    let (split_count, mapping) =
-        optimize_entry_descents_with_provenance(&mut current.toolpath, None, 0.0, 3.0);
-    if split_count > 0 {
-        current.spans = current.spans.iter().map(|s| s.remap(&mapping)).collect();
-        recorder.remap_move_links(&mapping, &current.toolpath);
-    }
+    let (transformed, split_count) = optimize_entry_descents_annotated(current, None, 0.0, 3.0);
+    current = transformed
+        .reconcile(&mut ReconcileSet::new(Some(&recorder)))
+        .into_inner();
     assert_eq!(
         (split_count, fingerprint(&current.toolpath)),
         (6, (103, 2_154_614_841_165_484_301)),

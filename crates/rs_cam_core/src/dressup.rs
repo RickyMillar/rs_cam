@@ -10,6 +10,7 @@ use crate::dexel_stock::TriDexelStock;
 use crate::geo::P3;
 use crate::toolpath::{Move, MoveType, Toolpath};
 use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
+use crate::transform_provenance::{ReconcileSet, Transformed};
 
 /// Two Z heights within this many mm are treated as "the same cutting
 /// depth" — used to recognize a run of cutting moves at one Z level
@@ -50,13 +51,26 @@ pub enum EntryStyle {
 /// `Rapid` that passes below the stock surface — without this guard a
 /// fresh contour's "rapid to ramp_start_z" would punch through uncut
 /// material when `ramp_start_z < stock_top` (UX-dial-in B1).
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn apply_entry(
     annotated: AnnotatedToolpath,
     style: EntryStyle,
     plunge_rate: f64,
     stock_top: f64,
 ) -> AnnotatedToolpath {
+    apply_entry_with_provenance(annotated, style, plunge_rate, stock_top)
+        .reconcile(&mut ReconcileSet::empty())
+        .into_inner()
+}
+
+/// [`apply_entry`] under the C1 provenance contract — hands back the 1→K
+/// plunge expansion so channels other than the spans can follow it.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub fn apply_entry_with_provenance(
+    annotated: AnnotatedToolpath,
+    style: EntryStyle,
+    plunge_rate: f64,
+    stock_top: f64,
+) -> Transformed {
     let AnnotatedToolpath {
         toolpath,
         spans,
@@ -126,8 +140,8 @@ pub fn apply_entry(
     }
 
     let new_n_moves = result.moves.len();
+    let remap = MoveRemap { old_to_new };
     let new_spans = if spans_valid {
-        let remap = MoveRemap { old_to_new };
         let mut remapped = remap.remap_spans(&spans, new_n_moves);
         for r in entry_ranges {
             remapped.push(Span::new(r.start, r.end, SpanKind::Entry));
@@ -137,14 +151,17 @@ pub fn apply_entry(
         spans
     };
 
-    AnnotatedToolpath {
-        toolpath: result,
-        spans: new_spans,
-        spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-    }
+    Transformed::from_remap(
+        AnnotatedToolpath {
+            toolpath: result,
+            spans: new_spans,
+            spans_valid,
+            planner_engagement,
+            rest_grid,
+            rest_regions,
+        },
+        remap,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -189,14 +206,71 @@ pub fn optimize_entry_descents(
     optimize_entry_descents_with_provenance(tp, stock, fresh_stock_top_z, tool_radius).0
 }
 
+/// [`optimize_entry_descents`] at the [`AnnotatedToolpath`] level, under the
+/// C1 provenance contract: remaps the spans and hands the mapping to every
+/// registered channel through [`Transformed::reconcile`].
+///
+/// This is the shape the pipeline should call. Three call sites used to
+/// hand-roll the same three lines — clip/split, `spans.iter().map(remap)`,
+/// then remember to poke the semantic trace — and "remember to" is exactly
+/// the convention C1 exists to delete. Returns the split count alongside,
+/// because callers log it.
+///
+/// The `if split_count > 0` guard the call sites used to apply is folded in:
+/// a zero-split run reports an identity mapping, which is a no-op for every
+/// channel and cheaper to state than to branch on.
+pub fn optimize_entry_descents_annotated(
+    annotated: AnnotatedToolpath,
+    stock: Option<&TriDexelStock>,
+    fresh_stock_top_z: f64,
+    tool_radius: f64,
+) -> (Transformed, usize) {
+    let AnnotatedToolpath {
+        mut toolpath,
+        spans,
+        spans_valid,
+        planner_engagement,
+        rest_grid,
+        rest_regions,
+    } = annotated;
+
+    let (split_count, mapping) = optimize_entry_descents_with_provenance(
+        &mut toolpath,
+        stock,
+        fresh_stock_top_z,
+        tool_radius,
+    );
+
+    let spans = if split_count > 0 {
+        spans.iter().map(|s| s.remap(&mapping)).collect()
+    } else {
+        spans
+    };
+
+    (
+        Transformed::from_mapping(
+            AnnotatedToolpath {
+                toolpath,
+                spans,
+                spans_valid,
+                planner_engagement,
+                rest_grid,
+                rest_regions,
+            },
+            mapping,
+        ),
+        split_count,
+    )
+}
+
 /// Same as [`optimize_entry_descents`] but also returns the per-input-move
 /// provenance mapping — same shape as
 /// [`crate::boundary::clip_toolpath_to_boundary_with_provenance`]'s second
 /// return value (`mapping[i]` is the first output move index produced from
-/// input move `i`; `mapping[tp.moves.len()]` is the output move count) — so
-/// callers downstream of span construction can precisely remap
-/// `AnnotatedToolpath::spans` via [`Span::remap`] instead of invalidating
-/// them.
+/// input move `i`; `mapping[tp.moves.len()]` is the output move count).
+///
+/// Prefer [`optimize_entry_descents_annotated`] when spans exist: it applies
+/// the mapping to them and to every other registered channel for you.
 pub fn optimize_entry_descents_with_provenance(
     tp: &mut Toolpath,
     stock: Option<&TriDexelStock>,
@@ -686,13 +760,27 @@ pub fn apply_lead_in_out(annotated: AnnotatedToolpath, radius: f64) -> Annotated
 /// Lead-in moves are tagged [`MoveIntent::LeadIn`] and lead-out moves
 /// [`MoveIntent::LeadOut`] so the F-039 modulator (and future analyses)
 /// can treat them as user-tuned rather than modulating them.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn apply_lead_in_out_with_feeds(
     annotated: AnnotatedToolpath,
     radius: f64,
     lead_in_feed_rate: Option<f64>,
     lead_out_feed_rate: Option<f64>,
 ) -> AnnotatedToolpath {
+    apply_lead_in_out_with_provenance(annotated, radius, lead_in_feed_rate, lead_out_feed_rate)
+        .reconcile(&mut ReconcileSet::empty())
+        .into_inner()
+}
+
+/// [`apply_lead_in_out_with_feeds`] under the C1 provenance contract —
+/// hands back the arc insertions so channels other than the spans can
+/// follow them.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub fn apply_lead_in_out_with_provenance(
+    annotated: AnnotatedToolpath,
+    radius: f64,
+    lead_in_feed_rate: Option<f64>,
+    lead_out_feed_rate: Option<f64>,
+) -> Transformed {
     let AnnotatedToolpath {
         toolpath,
         spans,
@@ -704,14 +792,14 @@ pub fn apply_lead_in_out_with_feeds(
     let mut result = Toolpath::new();
     let moves = &toolpath.moves;
     if moves.is_empty() {
-        return AnnotatedToolpath {
+        return Transformed::index_preserving(AnnotatedToolpath {
             toolpath: result,
             spans,
             spans_valid,
             planner_engagement,
             rest_grid,
             rest_regions,
-        };
+        });
     }
 
     let mut old_to_new: Vec<Option<std::ops::Range<usize>>> = Vec::with_capacity(moves.len());
@@ -883,8 +971,8 @@ pub fn apply_lead_in_out_with_feeds(
     }
 
     let new_n_moves = result.moves.len();
+    let remap = MoveRemap { old_to_new };
     let new_spans = if spans_valid {
-        let remap = MoveRemap { old_to_new };
         let mut remapped = remap.remap_spans(&spans, new_n_moves);
         for r in entry_ranges {
             remapped.push(Span::new(r.start, r.end, SpanKind::Entry));
@@ -897,14 +985,17 @@ pub fn apply_lead_in_out_with_feeds(
         spans
     };
 
-    AnnotatedToolpath {
-        toolpath: result,
-        spans: new_spans,
-        spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-    }
+    Transformed::from_remap(
+        AnnotatedToolpath {
+            toolpath: result,
+            spans: new_spans,
+            spans_valid,
+            planner_engagement,
+            rest_grid,
+            rest_regions,
+        },
+        remap,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -923,12 +1014,24 @@ pub fn apply_lead_in_out_with_feeds(
 /// The corner move at old index `i` remaps to the union of itself plus the
 /// (overcut, return) pair appended after it. Each inserted overcut+return
 /// pair is tagged with [`SpanKind::DressupArtifact`] (label `"dogbone"`).
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn apply_dogbones(
     annotated: AnnotatedToolpath,
     tool_radius: f64,
     max_angle_deg: f64,
 ) -> AnnotatedToolpath {
+    apply_dogbones_with_provenance(annotated, tool_radius, max_angle_deg)
+        .reconcile(&mut ReconcileSet::empty())
+        .into_inner()
+}
+
+/// [`apply_dogbones`] under the C1 provenance contract — hands back the
+/// overcut insertions so channels other than the spans can follow them.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub fn apply_dogbones_with_provenance(
+    annotated: AnnotatedToolpath,
+    tool_radius: f64,
+    max_angle_deg: f64,
+) -> Transformed {
     let AnnotatedToolpath {
         toolpath,
         spans,
@@ -943,14 +1046,14 @@ pub fn apply_dogbones(
     let moves = &toolpath.moves;
     if moves.len() < 3 {
         // Pass-through with whatever spans were provided.
-        return AnnotatedToolpath {
+        return Transformed::index_preserving(AnnotatedToolpath {
             toolpath,
             spans,
             spans_valid,
             planner_engagement,
             rest_grid,
             rest_regions,
-        };
+        });
     }
 
     let mut old_to_new: Vec<Option<std::ops::Range<usize>>> = Vec::with_capacity(moves.len());
@@ -1037,8 +1140,8 @@ pub fn apply_dogbones(
     old_to_new.push(Some(last_new..last_new + 1));
 
     let new_n_moves = result.moves.len();
+    let remap = MoveRemap { old_to_new };
     let new_spans = if spans_valid {
-        let remap = MoveRemap { old_to_new };
         let mut remapped = remap.remap_spans(&spans, new_n_moves);
         for r in dogbone_ranges {
             remapped
@@ -1049,14 +1152,17 @@ pub fn apply_dogbones(
         spans
     };
 
-    AnnotatedToolpath {
-        toolpath: result,
-        spans: new_spans,
-        spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-    }
+    Transformed::from_remap(
+        AnnotatedToolpath {
+            toolpath: result,
+            spans: new_spans,
+            spans_valid,
+            planner_engagement,
+            rest_grid,
+            rest_regions,
+        },
+        remap,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1269,11 +1375,23 @@ fn bridge_corridor_is_swept(
 ///
 /// Spans on the input are remapped through the transform, and a `LinkBridge`
 /// span is appended for each inserted bridge. `spans_valid` is preserved.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn apply_link_moves(
     annotated: AnnotatedToolpath,
     params: &LinkMoveParams,
 ) -> AnnotatedToolpath {
+    apply_link_moves_with_provenance(annotated, params)
+        .reconcile(&mut ReconcileSet::empty())
+        .into_inner()
+}
+
+/// [`apply_link_moves`] under the C1 provenance contract — hands back the
+/// retract-triple → bridge collapse so channels other than the spans can
+/// follow it.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub fn apply_link_moves_with_provenance(
+    annotated: AnnotatedToolpath,
+    params: &LinkMoveParams,
+) -> Transformed {
     // Barriers we must not collapse across. A barrier at index `b` sits before
     // moves[b]; collapsing the window (i, i+1, i+2) into one bridge erases the
     // gap between i and i+3 — so any barrier at i+1 or i+2 must block the link.
@@ -1294,14 +1412,14 @@ pub fn apply_link_moves(
     } = annotated;
     let moves = &toolpath.moves;
     if moves.len() < 4 {
-        return AnnotatedToolpath {
+        return Transformed::index_preserving(AnnotatedToolpath {
             toolpath,
             spans,
             spans_valid,
             planner_engagement,
             rest_grid,
             rest_regions,
-        };
+        });
     }
 
     let mut result = Toolpath::new();
@@ -1406,8 +1524,8 @@ pub fn apply_link_moves(
     }
 
     let new_n_moves = result.moves.len();
+    let remap = MoveRemap { old_to_new };
     let new_spans = if spans_valid {
-        let remap = MoveRemap { old_to_new };
         let mut remapped = remap.remap_spans(&spans, new_n_moves);
         for pos in bridge_positions {
             remapped.push(Span::new(pos, pos + 1, SpanKind::LinkBridge));
@@ -1417,14 +1535,17 @@ pub fn apply_link_moves(
         spans
     };
 
-    AnnotatedToolpath {
-        toolpath: result,
-        spans: new_spans,
-        spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-    }
+    Transformed::from_remap(
+        AnnotatedToolpath {
+            toolpath: result,
+            spans: new_spans,
+            spans_valid,
+            planner_engagement,
+            rest_grid,
+            rest_regions,
+        },
+        remap,
+    )
 }
 
 /// Generate evenly-spaced tabs around a perimeter.
@@ -1559,15 +1680,40 @@ pub enum AirBridgePolicy {
     ShorterThanAirPath,
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn filter_air_cuts(
+    annotated: AnnotatedToolpath,
+    prior_stock: &TriDexelStock,
+    tool_radius: f64,
+    safe_z: f64,
+    tolerance: f64,
+    policy: AirBridgePolicy,
+) -> AnnotatedToolpath {
+    filter_air_cuts_with_provenance(
+        annotated,
+        prior_stock,
+        tool_radius,
+        safe_z,
+        tolerance,
+        policy,
+    )
+    .reconcile(&mut ReconcileSet::empty())
+    .into_inner()
+}
+
+/// [`filter_air_cuts`] under the C1 provenance contract.
+///
+/// This is the one dressup that DELETES moves, so its provenance is the one
+/// that makes channels unlink — see
+/// [`crate::semantic_trace::ToolpathSemanticItem::move_end`].
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub fn filter_air_cuts_with_provenance(
     annotated: AnnotatedToolpath,
     prior_stock: &TriDexelStock,
     _tool_radius: f64,
     safe_z: f64,
     tolerance: f64,
     policy: AirBridgePolicy,
-) -> AnnotatedToolpath {
+) -> Transformed {
     let AnnotatedToolpath {
         toolpath,
         spans,
@@ -1578,14 +1724,14 @@ pub fn filter_air_cuts(
     } = annotated;
     let moves = &toolpath.moves;
     if moves.is_empty() {
-        return AnnotatedToolpath {
+        return Transformed::index_preserving(AnnotatedToolpath {
             toolpath,
             spans,
             spans_valid,
             planner_engagement,
             rest_grid,
             rest_regions,
-        };
+        });
     }
 
     // Phase 1: classify each move as "in air" or not.
@@ -1735,8 +1881,8 @@ pub fn filter_air_cuts(
     }
 
     let new_n_moves = result.moves.len();
+    let remap = MoveRemap { old_to_new };
     let new_spans = if spans_valid {
-        let remap = MoveRemap { old_to_new };
         let mut remapped = remap.remap_spans(&spans, new_n_moves);
         for r in bridge_ranges {
             remapped.push(Span::new(r.start, r.end, SpanKind::LinkBridge));
@@ -1746,14 +1892,17 @@ pub fn filter_air_cuts(
         spans
     };
 
-    AnnotatedToolpath {
-        toolpath: result,
-        spans: new_spans,
-        spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-    }
+    Transformed::from_remap(
+        AnnotatedToolpath {
+            toolpath: result,
+            spans: new_spans,
+            spans_valid,
+            planner_engagement,
+            rest_grid,
+            rest_regions,
+        },
+        remap,
+    )
 }
 
 #[cfg(test)]

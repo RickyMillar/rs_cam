@@ -174,20 +174,6 @@ pub enum SpanKind {
     /// `WaterlineCleanup` ancestor the same way they filter
     /// [`SpanKind::Entry`] transients (Roadmap F.3).
     WaterlineCleanup,
-    /// TRANSPORT ONLY — a [`crate::semantic_trace::ToolpathSemanticItem`]'s
-    /// move link, riding the span vector so that it is remapped by exactly
-    /// the same provenance map the real spans go through.
-    ///
-    /// Carrier spans are attached immediately before a transform and
-    /// detached immediately after by
-    /// [`crate::semantic_trace::SemanticLinkCarrier`]; they must never
-    /// reach a stored `AnnotatedToolpath`, the simulator, or the UI. A
-    /// `SemanticLink` span observed anywhere downstream is a leak (a
-    /// transform that swallowed the detach), not a span to render — that
-    /// is why it has its own kind rather than borrowing an existing one.
-    ///
-    /// The item id travels in [`SpanPayload::SemanticLink`].
-    SemanticLink,
 }
 
 impl SpanKind {
@@ -197,7 +183,7 @@ impl SpanKind {
     /// `as_key`'s match is exhaustive, so the compiler will stop you there
     /// first, and [`Self::from_key`] is derived from this list so that the
     /// agent-facing vocabulary cannot drift from the enum.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 9] = [
         Self::Operation,
         Self::DepthPass,
         Self::Region,
@@ -207,7 +193,6 @@ impl SpanKind {
         Self::DressupArtifact,
         Self::RapidOrderBarrier,
         Self::WaterlineCleanup,
-        Self::SemanticLink,
     ];
 
     /// The stable snake_case key for this kind — the agent-facing vocabulary
@@ -230,7 +215,6 @@ impl SpanKind {
             Self::DressupArtifact => "dressup_artifact",
             Self::RapidOrderBarrier => "rapid_order_barrier",
             Self::WaterlineCleanup => "waterline_cleanup",
-            Self::SemanticLink => "semantic_link",
         }
     }
 
@@ -262,15 +246,6 @@ pub enum SpanPayload {
     Region {
         region_id: u32,
         role: RegionSpanRole,
-    },
-    /// Transport payload for [`SpanKind::SemanticLink`] — the
-    /// `ToolpathSemanticItem::id` whose move link this carrier span stands
-    /// in for. Several items can share one carrier span when their ranges
-    /// are identical, so the carrier keeps its own id list; this payload
-    /// only has to survive the remap so the span can be recognised on the
-    /// way out.
-    SemanticLink {
-        item_id: u64,
     },
 }
 
@@ -759,6 +734,38 @@ impl MoveRemap {
     /// Returns `None` if every old move in the span's range was dropped by
     /// the transform (the span fully collapsed). `kind` is preserved
     /// unchanged; `label` and `payload` are cloned onto the output span.
+    /// Did a move from OUTSIDE the old range `[old_start, old_end)` land
+    /// inside `bounds` (that range's new bounding range)?
+    ///
+    /// `Some((old_index, new_range))` names the intruder — which move it is
+    /// is the whole diagnosis, so the caller can log it rather than reporting
+    /// "scattered" for a range that came back near-exact.
+    ///
+    /// A bounding remap cannot see this on its own: only a REORDER can
+    /// interleave strangers into a contiguous claim, so this is the extra
+    /// rule [`crate::tsp`] applies to spans and
+    /// [`crate::transform_provenance::MoveProvenance::Permutation`] applies
+    /// to every other index-carrying channel. One predicate, so the two can
+    /// never disagree about what "scattered" means.
+    pub fn foreign_intrusion(
+        &self,
+        old_start: usize,
+        old_end: usize,
+        bounds: &Range<usize>,
+    ) -> Option<(usize, Range<usize>)> {
+        self.old_to_new
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i < old_start || *i >= old_end)
+            .find_map(|(i, slot)| {
+                let r = slot.as_ref()?;
+                // Non-trivial overlap: the slot covers an actual new-move
+                // index (start < end) AND that index is inside `bounds`.
+                (r.start < r.end && r.start < bounds.end && r.end > bounds.start)
+                    .then(|| (i, r.clone()))
+            })
+    }
+
     pub fn remap_span(&self, span: &Span, new_n_moves: usize) -> Option<Span> {
         let mut new_span = if span.is_boundary() {
             let new_pos = self.remap_boundary(span.start_move, new_n_moves);

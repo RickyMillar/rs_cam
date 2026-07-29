@@ -4819,8 +4819,7 @@ fn expand_span_kind_synonyms(span_kind: &str) -> Vec<String> {
         | SpanKind::LinkBridge
         | SpanKind::DressupArtifact
         | SpanKind::WaterlineCleanup
-        | SpanKind::RapidOrderBarrier
-        | SpanKind::SemanticLink => Vec::new(),
+        | SpanKind::RapidOrderBarrier => Vec::new(),
     }
 }
 
@@ -4912,7 +4911,6 @@ fn span_kind_label(k: rs_cam_core::toolpath_spans::SpanKind) -> &'static str {
         SpanKind::RapidOrderBarrier => "RapidOrderBarrier",
         // Transport-only carrier (task #14) — stripped before a toolpath
         // is stored, so this name only ever surfaces if one leaked.
-        SpanKind::SemanticLink => "SemanticLink",
     }
 }
 
