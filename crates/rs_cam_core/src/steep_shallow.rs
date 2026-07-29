@@ -281,10 +281,49 @@ fn generate_steep_passes_with_cancel(
                 if run.len() < 2 {
                     continue;
                 }
-                let path: Vec<P3> = run
-                    .iter()
-                    .map(|pt| P3::new(pt.x, pt.y, z_adjusted))
-                    .collect();
+                // ── Minimum-segment floor (PR-8d) ──────────────────────────
+                //
+                // `CHECKPOINT_B_EVIDENCE.md` §8.1: this op emits 0.9 µm
+                // cutting segments on the mixed-slope ribbon at EVERY
+                // resolution. Measured here: `min seg 0.000891 mm`, exactly
+                // two of them, both in THIS (steep/waterline) half, bit
+                // identical across all four A/B arms — so the cell is not
+                // the cause and a finer grid is not the cure.
+                //
+                // SOURCE: `contour_extract::weave_contours`. Marching squares
+                // places each cell-edge vertex at an EXACT fiber interval
+                // boundary (`find_interval_boundary_x`/`_y` return the
+                // interval endpoint that falls inside the edge span, not the
+                // edge midpoint), so two adjacent cells whose boundaries
+                // resolve to the same crossing produce two chained vertices
+                // that are coincident to floating-point noise.
+                //
+                // WHY IT IS FIXED HERE and not there: of the three consumers
+                // of `weave_contours`, `ramp_finish` already RDP-simplifies
+                // its contour points, and this op and `waterline.rs` both
+                // emit them RAW — this op carries a `tolerance` field
+                // documented as "Path tolerance for simplification" and has
+                // never used it for anything but the resolution policy. The
+                // missing filter/merge decision is at the emission site, and
+                // that is the decision being added. `waterline.rs` has the
+                // same defect from the same source and is deliberately left
+                // alone to keep this commit's blast radius one operation
+                // wide (logged as an adjacent defect).
+                //
+                // `closed` matches the emitter chosen below: a whole-contour
+                // survivor chords back to its start, so a trailing vertex
+                // within the floor of the first would make THAT move the
+                // degenerate one.
+                let path: Vec<P3> = crate::toolpath::drop_sub_minimum_segments(
+                    &run.iter()
+                        .map(|pt| P3::new(pt.x, pt.y, z_adjusted))
+                        .collect::<Vec<P3>>(),
+                    crate::toolpath::MIN_EMITTED_SEGMENT_MM,
+                    whole_contour_kept,
+                );
+                if path.len() < 2 {
+                    continue;
+                }
 
                 // Whole-contour survivors are a genuine closed loop — use
                 // the shared closed-contour emitter (rapid/plunge/feed/

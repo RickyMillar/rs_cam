@@ -397,6 +397,78 @@ impl Toolpath {
     }
 }
 
+/// Shortest cutting segment worth emitting (mm) — the DEGENERACY floor.
+///
+/// Not a number anyone chose: it is the coordinate quantum of the coarsest
+/// shipped post. `posts/grbl.toml` and `posts/grblhal.toml` both emit XYZ at
+/// **3 decimal places** (`linuxcnc.toml` and `mach3.toml` use 4), so a move
+/// shorter than 0.001 mm rounds to the SAME coordinate words as the move
+/// before it and leaves a literally zero-length `G1` in the program.
+/// `steep_shallow_min_segment_pr8d::the_floor_is_the_coarsest_shipped_post_quantum`
+/// derives the bound from the shipped post TOMLs rather than restating it, so
+/// adding a coarser post is a red test and not a silent regression.
+///
+/// # What this is NOT
+///
+/// It is not an accel-friendliness floor. A move must be `F²/(2A)` long for
+/// the planner to reach feed `F` — metres, not microns, on a real machine —
+/// and that is [`crate::condition::merge_linear_runs`]'s job: an RDP pass at
+/// a caller-chosen conditioning tolerance, run after arc fitting, which
+/// collapses whole runs rather than dropping individual points. The two do
+/// not overlap and must not be conflated: this one removes output that no
+/// controller can express, at a magnitude far below any geometric tolerance;
+/// that one trades geometry for speed at a magnitude the caller picks.
+pub const MIN_EMITTED_SEGMENT_MM: f64 = 0.001;
+
+/// Drop points that sit closer than `min_segment_mm` to the previously
+/// RETAINED point.
+///
+/// Greedy against the retained point, not the raw predecessor: a run of ten
+/// 0.4 µm steps must collapse to one segment, not survive as ten
+/// pairwise-close points that each cleared the floor against a moving
+/// reference.
+///
+/// The last point is retained when it clears the floor and dropped when it
+/// does not — the path ends up to `min_segment_mm` short of where it would
+/// have, which at this magnitude is below the coordinate resolution of every
+/// shipped post. `closed` additionally drops a trailing point within the
+/// floor of the FIRST, because a closed-contour emitter chords back to the
+/// start and that closing move would be the degenerate one.
+///
+/// Deliberately NOT [`simplify_path_3d`]: RDP drops points by their
+/// DEVIATION from a chord, so it removes near-collinear geometry the caller
+/// may want and keeps a 0.9 µm step that happens to turn a corner. This
+/// removes points by their LENGTH, which is the property a controller
+/// cannot express.
+#[must_use]
+pub fn drop_sub_minimum_segments(points: &[P3], min_segment_mm: f64, closed: bool) -> Vec<P3> {
+    if points.len() < 2 || min_segment_mm <= 0.0 {
+        return points.to_vec();
+    }
+    let far_enough = |a: &P3, b: &P3| -> bool {
+        let (dx, dy, dz) = (b.x - a.x, b.y - a.y, b.z - a.z);
+        (dx * dx + dy * dy + dz * dz).sqrt() >= min_segment_mm
+    };
+    let mut out: Vec<P3> = Vec::with_capacity(points.len());
+    for p in points {
+        match out.last() {
+            None => out.push(*p),
+            Some(kept) if far_enough(kept, p) => out.push(*p),
+            Some(_) => {}
+        }
+    }
+    if closed && out.len() > 2 {
+        let closes_degenerately = match (out.first(), out.last()) {
+            (Some(first), Some(last)) => !far_enough(last, first),
+            _ => false,
+        };
+        if closes_degenerately {
+            out.pop();
+        }
+    }
+    out
+}
+
 /// Simplify a 3D path using Douglas-Peucker with cross-product distance.
 ///
 /// Removes points that deviate less than `tolerance` from the line between
