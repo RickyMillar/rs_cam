@@ -2418,3 +2418,73 @@ GUI's auto-queued regen and the explicit request were superseding each
 other. Workaround: after changing a param, wait and poll for `Done`
 rather than calling generate. Left as-is for now, but "cancelled" is a
 misleading way to report "something else won the lane".
+
+### §14m CORRECTION — measured through an instrument coarser than the feature
+
+The user: *"are you using sim results? because the sim is set at 0.5 and
+that will mask the tiny bit we are using to some degree."*
+
+Correct, and it invalidates part of §14m. The chain was simulated at
+**0.5 mm** dexel resolution. The tool is a Ø1 tapered ball — **0.5 mm tip
+radius** — and `min_rest_depth_mm` is **0.02**. The grid cell is the size
+of the whole cutting tip, and the rest being decided about is ~20 µm deep
+and sub-millimetre wide. The instrument cannot represent the feature it is
+being used to judge.
+
+Worse, **the failure mode runs toward the result I reported.** A dexel
+keeps a per-cell top-Z, so after a fine finishing pass a coarse grid
+retains cell-scale quantisation residue. That reads as phantom rest spread
+over the entire surface. If the rest field says "rest everywhere", then
+`territory_clip` clipping nothing and the op planning everywhere are both
+CORRECT behaviour, and the numbers in §14m follow with no engine defect at
+all.
+
+**Retracted from §14m:**
+
+- "It ignores the rest."
+- "`territory_clip` does not confine it."
+
+Both are statements about rest detection, and rest detection was being fed
+a stock that cannot hold rest at this tool's scale.
+
+**What survives**, because it does not depend on stock fidelity:
+
+- Unified plans **denser** than a plain all-over finish with the same tool
+  — 51 480 mm against `3D Finish 6`'s 33 027 mm over the same ground. That
+  is a stepover/strategy statement (scallop at 0.011 cusp vs raster at
+  0.30 mm), not a rest statement, and §14k already explains it.
+- The §14n workflow defects, which are independent of any of this.
+
+**Partially suspect:** the air-bridge explosion (`LinkBridge` 215 →
+16 516, rapid 15 km → 179 km). Cuts landing in air is exactly what phantom
+rest would produce, so the magnitude cannot be trusted even though the
+mechanism is real.
+
+This is the campaign's own rule arriving from a new direction, and the
+trap was already written down: the collision RCA (`4f590f3`) concluded
+**never compare across mismatched resolutions**, after the GUI's 0.1 mm
+auto-sim disagreed with a 0.5 mm headless default. I applied that lesson
+to collisions and not to territory.
+
+**Standing instruction: any measurement about REST must be made on a stock
+whose cell size is well below the finishing tool's tip radius.** For a Ø1
+tip that means 0.1 mm or finer. Coarser grids are fine for collisions,
+volumes and travel; they are not evidence about what a finish pass left.
+
+### §14o — a new simulation does not invalidate toolpaths built on the old one
+
+Found while re-testing: after the user re-simulated at fine resolution,
+every toolpath still reported `stale: false, status: Done` — including the
+rest op whose entire territory decision was made against the previous
+0.5 mm stock. The displayed toolpath looks current and is not.
+
+`invalidate_result_chain` (`7f5db12`) covers chain EDITS — enabling,
+disabling, reparameterising. It does not cover "the stock these ops were
+planned against has been replaced by a different simulation". For any
+`stock_source: rest` op that is a correctness-relevant input, so a
+re-simulation should mark its consumers stale exactly the way a config
+edit does.
+
+Until then the manual rule is: **re-simulating is not enough — regenerate
+every rest op afterwards, or you are looking at a toolpath planned against
+stock that no longer exists.**
