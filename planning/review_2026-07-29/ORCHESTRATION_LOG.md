@@ -1126,3 +1126,305 @@ another session while this wave was running. Not this wave's to commit.
 **Note for the next C item**: C5's ceiling is now enforced by a test rather
 than by discipline, so C8's "single slots → collections" work is free to
 grow `ToolpathStats` — the reason it was previously constrained is gone.
+
+---
+
+## LIVE VALIDATION 2026-07-30 — behavioral waves on wanaka
+
+Report-only run. **Nothing was fixed**; every defect below is a report
+line. Driven over the rs-cam MCP against the live GUI.
+
+**Under validation:** `df41169..81e0012` (11 commits — PR-4, PR-5, PR-6a,
+PR-6b, PR-7, PR-8a, PR-8b, PR-8c, PR-8d + 2 log commits), at HEAD
+`b3b1d39`. Build reported `git_desc: b3b1d39-dirty`, core 0.1.0 — matches.
+
+**HEAD moved during this run.** The measured binary was built at
+`b3b1d39`. By the time this section was written the branch had advanced to
+`61bd97c` (C1 harness + structural-safety work) with ~21 source files
+modified in the working tree. **Everything below describes the `b3b1d39`
+build and nothing later.** Any wave landed after `b3b1d39` is outside this
+report, and re-validating against current HEAD needs a fresh binary — per
+plan B.4, built and confirmed complete BEFORE reconnecting.
+
+**Fixture:** `planning/airrun_2026-06-01/wanaka.toml`, `wanaka_full_tuned`,
+2 setups / 9 toolpaths, stock 140 x 150 x 25. **Loaded read-only; never
+saved.** Standing rule honoured.
+
+### Method, and the one config change
+
+Only the sanctioned keeper was applied: toolpath 8 `claims_reference`
+`self_probe` -> `machined_stock` (§14p). Everything else left exactly as
+loaded — notably `territory_clip: false`, `pencil_claims: false`,
+`min_rest_depth_mm: 0.02`, `waterline_threshold_deg: 75`,
+`raster_stepover: 0.3`, `scallop_height: 0.011`, `z_step: 0.3`, and
+`rest_analysis.enabled: false`.
+
+The brief named `set_rest_analysis_config` as the vehicle for
+`claims_reference`. It is not — `claims_reference` is a UnifiedFinish
+operation param (`set_toolpath_param`); `rest_analysis` is a separate,
+disabled sub-config on the same op. The op param was set.
+
+Sequence actually required (five steps, see A/M11 below):
+
+| # | action | outcome |
+|---|---|---|
+| 1 | `run_simulation` @0.1 (only ops 0,1,2 generated) | OK |
+| 2 | `generate_all` | 5 generated, **2 failed** (Lakes id 6, Unified id 15) |
+| 3 | `run_simulation` @0.1 | OK; `semantic_summary_count` 0 -> 247 |
+| 4 | `generate_all` | >40 min; all 7 enabled ops Done |
+| 5 | `run_simulation` @0.1 | final measurement |
+
+All sims at **0.1 mm** (tip-matched) as required. No cross-resolution
+comparison was made.
+
+### Per-op measurement (final sim, 0.1 mm)
+
+Project: `collision_count` **0**, `rapid_collision_count` **0**,
+verdict **OK**, `total_runtime_s` 14 660.5 (4.07 h),
+`air_cut_pct_of_total_runtime` 15.459, `air_cut_pct_of_cutting_time`
+61.827, `average_engagement` 0.19435, `hotspot_count` 467,
+`issue_count` 85 745, `semantic_summary_count` **467**.
+
+| idx | name | op | cutting mm | rapid mm | moves |
+|---|---|---|---|---|---|
+| 0 | Pin Drill | PinDrill | 74.0 | 912.1 | 68 |
+| 1 | Back Rough | Adaptive3d | 12 602.0 | 2 623.9 | 3 345 |
+| 2 | Holes | Drill | 744.0 | 950.2 | 216 |
+| 3 | Rivers (copy) | ProjectCurve | — DISABLED | | |
+| 4 | Rivers (back) | ProjectCurve | 2 479.0 | 7 617.8 | 2 043 |
+| 5 | Lakes (back, inside) | ProjectCurve | 1 585.1 | 2 413.7 | 1 802 |
+| 6 | 3D Rough 6 | Adaptive3d | 4 896.9 | 1 712.0 | 2 217 |
+| 7 | 3D Finish 6 | DropCutter | — DISABLED | | |
+| 8 | Unified Finish 6 (live v2) | UnifiedFinish | 62 703.4 | 38 244.4 | 148 429 |
+
+**Do not compare op 8's 62 703 mm against §14p's 5 259 mm.** That
+measurement had `territory_clip: true` and `pencil_claims: true`; this run
+has both `false`. With `territory_clip: false` the op is effectively
+all-over, not a rest pass. Different configuration, **not** a regression.
+Stated explicitly because forming exactly this ratio is the error the
+radius audit caught.
+
+### PASS — the new report-only channels all populate
+
+`narrate_toolpath(8)`, verbatim:
+
+- `"Semantic trace: 202 items (189 move-linked); depth levels 0, regions
+  12, rings 185."`
+- `"Region mix: VerySteep band (waterline) x8 (7374 moves), MidSteep band
+  (scallop) x1 (57627 moves), Shallow band (raster) x3 (83418 moves)."`
+- `"Standing material: none — 0 mm² measured, the ring cascade collapsed
+  normally. XY-projected area (mm²); measured at generation (ring cascade
+  residual)."`
+- `"Unmachined band: none — every planned finish band still cut after
+  height resolution."`
+- `"Tip float: not measured — this operation emits no valley centrelines,
+  so no reach residual exists to report. Absence of a number is not a
+  zero."`
+
+| channel | verdict |
+|---|---|
+| A/M8 semantic annotation | **PASS** — `regions 12` where the defect was `regions 0`; full strategy mix; `rings 185` |
+| A/M9 standing material | **PASS** — populated at 0 mm², and it **declares domain + stage**, satisfying M1 provenance |
+| D1 dropped-band | **PASS** — populated, correctly silent |
+| D1 tip-float | **PASS** — and the wording is exemplary: *"Absence of a number is not a zero"* distinguishes not-measured from zero |
+
+**The radius fix is visible live.** The VerySteep band carries **8 regions
+/ 7 374 moves**. §14q measured **zero** VerySteep regions pre-fix on this
+terrain. This is an **existence result, not a measured delta** — no live
+A/B was run, and none is claimed.
+
+### NOT EXERCISED — this fixture cannot validate three of the four waves
+
+The project's op inventory is PinDrill, Adaptive3d x2, Drill,
+ProjectCurve x3, DropCutter (disabled), UnifiedFinish. Therefore:
+
+| wave | why unexercised |
+|---|---|
+| PR-8a RampFinish geo-mean resolution | **no RampFinish op exists in this project** |
+| PR-8b cone-gouge reach clamp (`GEOM_RAMP_REACH_CLAMP`) | same — the finding whose headline is *"fires on essentially every ramp-finish toolpath"* has nothing here to fire on |
+| PR-8d SteepShallow segment floor | **no Steep/Shallow op** |
+| PR-6a derived pencil stepover | `pencil_claims: false`; narration independently confirms *"emits no valley centrelines"*, so no fan is built and no stepover is derived. `CONFIG_DERIVED_STEPOVER` correctly **ABSENT** |
+| PR-7 `route_width_factor` deprecation | `rest_analysis.enabled: false`, so the retired dial is never deserialized |
+| PR-4/5 routing counts (centerlines, offset fans, refusals) | no standalone Pencil op and no claims path active — **zero routing decisions occurred** |
+
+These are **fixture gaps, not fix failures**. Recorded as NOT EXERCISED,
+deliberately not as PASS. Declaring a pass on an unexercised path is the
+precise failure mode the radius audit was commissioned to catch.
+
+**Action required:** the behavioral waves need a fixture with a RampFinish
+op, a SteepShallow op, and a Pencil op with claims enabled. Checkpoint B's
+own synthetic fixtures (narrow valley / narrow ridge / 17° plane) are the
+natural home for the ramp clamp; they are already written and already
+measured, and they — not wanaka — are that wave's evidence.
+
+### CONCERN 1 — `load.chipload.within` contradicts its own evidence
+
+`get_toolpath_diagnostics(8)`, verbatim:
+`"Chipload within band (0.0007 mm/tooth)"`, severity `info`, with attached
+evidence `min 0.004579474936024669 / max 0.009158949872049339 /
+observed 0.0007371346137784619`, `row_id vendor_lut`,
+`extrapolated: true`.
+
+Observed is **~6x below the stated band minimum** and the verdict is
+`Within`. Meanwhile ops 4 and 10, with observed 0.012877 against
+min 0.032, both return `Exceeds { side: low }`. The same relationship
+(observed < min) yields opposite verdicts.
+
+The distinguishing feature is visible in `get_tool_load_report`: op 15's
+bounds are `vendor_lut_extrapolated` with `confidence: approximate`
+(*"extrapolated from row amana-tapered-hardwood-scallop-3175-2f
+(calibrated d=3.175mm): diameter scale x0.42, hardness scale x1.00"*),
+while 4 and 10 are `vendor_lut` / `validated`. **HYPOTHESIS, not a
+conclusion:** the gate declines to fail on extrapolated bounds. If that is
+the design it is defensible — but the surfaced message says "within band"
+and discloses none of it, and op 15's Within arm simultaneously carries a
+`burn_advisory` at the same 0.000737 value.
+
+Four chipload numbers appear for this one operation and no two agree:
+
+| source | mm/tooth |
+|---|---|
+| narration nominal | 0.0714 |
+| `feeds.chipload_clamped_to_floor` pre -> post | 0.0044 -> 0.0250 |
+| gate observed | 0.0007 |
+| gate band | 0.00458 .. 0.00916 |
+
+No mechanism is asserted. This subsystem has now had **five** confidently
+named mechanisms turn out not to be the cause.
+
+### CONCERN 2 — feed is throttled 87% by machine kinematics, not by load
+
+`modulation_summary` for op 15: `median_feed_delta_pct` **-87.18**,
+`moves_touched` 112 747 / 124 697, `strategy: constrained_max`,
+`binding_constraint_distribution`: **`kinematic_reach` 0.904**,
+`machine_max_feed` 0.096. Both roughing ops show the same shape
+(-66.47%, `kinematic_reach` 0.988 and 0.966).
+
+So the 4.07-hour project runtime is dominated by the machine being unable
+to accelerate to commanded feed across 148 429 short moves — not by
+cutting load, which is comfortably within every gate (peak power
+0.00035 kW of 0.6; peak deflection 8 µm of 200 µm). This is the
+accel-friendly-toolpaths thesis measured on a live finishing path, and it
+is a stronger lever here than anything in the load model.
+
+### CONCERN 3 — peak axial DOC exceeds the commanded step
+
+- op 8: `"peak axial DOC 1.86mm at sample 132236 (move 4821, Linear,
+  z=20.076, position (101.9, 108.4)). commanded depth_per_pass is
+  unknown."` — `z_step` is 0.3 mm, so ~6x.
+- op 10 (`3D Rough 6`), `per_depth_pass` pass 2 at z 19.8:
+  `peak_axial_doc_mm` **5.200000762939453** against a 2.6 mm Z step —
+  **exactly 2x**, in both `helix` and `linear` kinematics. Pass 1 at the
+  same Z step reads exactly 2.6.
+- op 4 (`Back Rough`) by contrast reads **exactly 3.0** on all five
+  passes against a 3.0 mm step — clean.
+
+The exact-2x on one pass of one op, beside exact-1x everywhere on another,
+is a concrete lead. Related in KIND to the open A/L2 Rivers 6.07 mm spike.
+**No mechanism named** — narration offers arc-fit overshoot / lift
+bridging / uncleared stock, and arc-fit was already exonerated for the
+Rivers case.
+
+### CONCERN 4 — air-cut and engagement are structurally unmeasurable here
+
+Narration reports `"71.0% of CUTTING time is air-cut"` and
+`average engagement 0.079`, with the in-cut distribution
+(n = 1 221 857): air 64.9%, thin 27.2%, light 5.2%, heavy 2.7%.
+
+**These are instrument artifacts, not findings about the toolpath.**
+`scallop_height` is **0.011 mm**; the sim cell is **0.100 mm**. The cusps
+this operation removes are ~9x smaller than the dexel cell, so the grid
+cannot represent the material being taken and the samples read as air.
+
+The brief's rule — cell below the tool TIP radius — was followed (0.1 vs
+0.5 mm). It is not sufficient: the cell must also be below the **cut
+depth**. Resolving an 0.011 mm scallop needs ~0.005 mm cells, i.e. 28 000
+cells per axis on a 140 mm stock. Infeasible. **Conclusion: for finish
+passes at fine scallop heights, dexel air-cut% and engagement are
+unmeasurable at any feasible resolution.** This does NOT affect
+`rapid_collision_count`, which is geometric rather than volumetric — and
+which is the signal the standing rules already designate as primary.
+
+### Rendered surfaces — required, and they change nothing
+
+- `planning/review_2026-07-29/liveval_2026-07-30/op8_toolpath_norapids.png`
+  (6-view, `include_rapids: false`, 1600x1100)
+- `planning/review_2026-07-29/liveval_2026-07-30/final_stock.png`
+  (6-view machined stock, checkpoint 6 = after op 8)
+
+Gross-defect checks **pass**: the machined area is continuous, there is no
+standing block of the kind the v3 gate once ranked above a clean op, drill
+holes are present, and the smooth/textured division in the stock matches
+the toolpath render exactly. The toolpath view shows dense all-over
+coverage — consistent with `territory_clip: false` — and a striking
+density of short vertical excursions across the textured region, which is
+the **A/M7 intra-node retract round-trip finding made visible**.
+
+**Limits of this visual check, stated:** the tool documents only
+`green = cutting, orange = rapid`, but both renders use blue and red as
+well, so some features cannot be attributed with confidence. And a 6-view
+composite cannot adjudicate fine surface quality — the trustworthy
+pointwise instrument is `SimulationResult::column_deviations` (FIDELITY-
+COLUMNS), which is a test-harness capability **not exposed over MCP**.
+That is a gap for every live validation, this one included.
+
+### Gate summary (`get_tool_load_report`)
+
+7 toolpaths: **within 5, exceeds 2**, `fully_unmodeled` 0,
+`not_applicable` 0. Both exceedances are `chipload / side: low` on the
+roughing ops (`Back Rough` id 4, `3D Rough 6` id 10) at 0.012877 against
+a 0.032 minimum — pre-existing, unrelated to these waves. Drill gates on
+ops 14 and 7 all Within. Deflection Within on every modelled op
+(8–25 µm against 200 µm), consistent with the audit's H1 note that the
+deflection gate only bites for long/thin tools.
+
+### New defects filed to the plan from this run
+
+Two were significant enough to become plan items rather than report lines
+(`TECH_DEBT_RESEARCH_AND_FIX_PLAN.md`, Addendum C):
+
+- **A/M11 — `generate_all` is not a fixpoint over the rest-stock chain.**
+  A chain of `k` dependent rest ops needs `k` sim->generate rounds and
+  nothing tells you `k`. Sharpest evidence: `Rivers` (4) generated fine in
+  round 2 while `Lakes` (5) failed **in the same pass**, because prior
+  stock comes from a *simulation* and ops generated earlier in the pass are
+  invisible. Plus: disabled ops keep live-looking error text (the user
+  independently read `3D Finish 6` as "errored" when it is merely off);
+  the message names no blocking op; and re-simulating raises no staleness
+  signal.
+- **A/M12 — MCP serializes every call behind generation, including its own
+  escape hatches.** During the >40 min round-4 generate: `list_toolpaths`
+  blocked and was **aborted after 1800 s**; `cancel_generation` —
+  documented *"Instant response"* — blocked, and was serviced only after
+  the job had already ended, returning `was_busy: false`. `generate_all`'s
+  own timeout message recommends both of those calls as the remedy. The
+  only working diagnosis was `/proc` thread accounting.
+  Also observed: `narrate_toolpath` took ~12 min on 148 429 moves, and it
+  is the workflow's documented *first* diagnostic.
+
+Correction recorded for honesty: mid-run I read the CPU drop from ~720% to
+~136% as "the cancel landed". It did not — the generation had completed on
+its own. A `was_busy: false` from a queued cancel reports the state when it
+was finally serviced, not when it was issued.
+
+### VERDICT by subsystem
+
+| subsystem | verdict |
+|---|---|
+| Routing (PR-4/5/6a/6b/7) | **NOT EXERCISED** — no Pencil op, `pencil_claims: false`, `rest_analysis` disabled. Zero routing decisions occurred |
+| Ramp reach clamp (PR-8b) + geo-mean resolution (PR-8a) | **NOT EXERCISED** — no RampFinish op in this project |
+| Segment floor (PR-8d) | **NOT EXERCISED** — no SteepShallow op |
+| Diagnostics channels (A/M8, A/M9, D1 x2) | **PASS** — all four populate, with declared provenance |
+| Radius fix live (§14q/§14r) | **PASS (existence)** — VerySteep 8 regions / 7 374 moves vs zero pre-fix; no A/B, so no delta claimed |
+| Safety at 0.1 mm | **PASS** — 0 collisions, 0 rapid collisions, verdict OK on a freshly generated chain |
+| Tool load | **CONCERN** — 2 pre-existing chipload-low exceedances; one apparent gate/message contradiction on op 8 |
+| Runtime economy | **CONCERN** — feed throttled 87% median by `kinematic_reach`, not load |
+| MCP workflow | **FAIL** — filed as A/M11 + A/M12 |
+
+**What this run does and does not establish.** It establishes that the
+report-only instrumentation waves work on a real project, that the chain
+generates and simulates clean at tip-matched resolution with zero
+collisions, and that steep territory now exists where it previously did
+not. It establishes **nothing** about the routing or ramp waves, which this
+fixture cannot reach. No strategy-value conclusion is drawn, and none
+should be read into the op 8 numbers.
