@@ -380,7 +380,7 @@ pub fn ramp_finish_toolpath_structured_annotated(
 /// slope band (when active) AND inside a machining-boundary region (when
 /// given). The split always runs when either filter is active; `None`
 /// reproduces today's slope-only (or unfiltered) output byte-for-byte.
-#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 pub fn ramp_finish_toolpath_structured_annotated_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -390,18 +390,46 @@ pub fn ramp_finish_toolpath_structured_annotated_with_cancel(
     boundary_regions: Option<&RegionSet<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<RampFinishRuntimeAnnotation>), Cancelled> {
+    ramp_finish_toolpath_structured_annotated_with_resolution(
+        mesh,
+        index,
+        cutter,
+        params,
+        debug,
+        boundary_regions,
+        ramp_finish_generation_resolution(cutter, params.tolerance),
+        cancel,
+    )
+}
+
+/// [`ramp_finish_toolpath_structured_annotated_with_cancel`] with the
+/// generation grid resolution supplied by the caller.
+///
+/// **Research seam, not a production entry point** — see
+/// [`crate::scallop::scallop_toolpath_structured_annotated_with_resolution`]
+/// for why H3's Checkpoint B harness needs one. Passing
+/// `ramp_finish_generation_resolution(cutter, params.tolerance)` reproduces
+/// the shipped path exactly.
+#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &RampFinishParams,
+    debug: Option<&ToolpathDebugContext>,
+    boundary_regions: Option<&RegionSet<'_>>,
+    resolution: FinishResolutionPolicy,
+    cancel: &dyn CancelCheck,
+) -> Result<(Toolpath, Vec<RampFinishRuntimeAnnotation>), Cancelled> {
     check_cancel(cancel)?;
     let bbox = &mesh.bbox;
 
     // Build surface heightmap and slope map (shared setup, see finish_setup.rs).
     // The RESOLUTION is ramp_finish's own choice (H3 step 2) — see
-    // `ramp_finish_generation_resolution`.
+    // `ramp_finish_generation_resolution`, which the shipped wrapper above
+    // passes in.
     let surface = crate::finish_setup::build_finish_surface_with_policy_and_cancel(
-        mesh,
-        index,
-        cutter,
-        ramp_finish_generation_resolution(cutter, params.tolerance),
-        cancel,
+        mesh, index, cutter, resolution, cancel,
     )?;
     let surface_hm = surface.heightmap;
     let slope_map = surface.slope_map;

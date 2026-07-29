@@ -602,18 +602,46 @@ pub fn steep_shallow_toolpath_split_with_cancel(
     boundary_regions: Option<&RegionSet<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, SteepShallowSplit), Cancelled> {
+    steep_shallow_toolpath_split_with_resolution(
+        mesh,
+        index,
+        cutter,
+        params,
+        boundary_regions,
+        steep_shallow_generation_resolution(cutter, params.tolerance),
+        cancel,
+    )
+}
+
+/// [`steep_shallow_toolpath_split_with_cancel`] with the generation grid
+/// resolution supplied by the caller.
+///
+/// **Research seam, not a production entry point** — see
+/// [`crate::scallop::scallop_toolpath_structured_annotated_with_resolution`]
+/// for why H3's Checkpoint B harness needs one. This op is the one where the
+/// cell also decides CLASSIFICATION (steep vs shallow is read off this same
+/// grid), so it is the sharpest of the three arms. Passing
+/// `steep_shallow_generation_resolution(cutter, params.tolerance)` reproduces
+/// the shipped path exactly.
+#[allow(clippy::too_many_arguments)]
+pub fn steep_shallow_toolpath_split_with_resolution(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &SteepShallowParams,
+    boundary_regions: Option<&RegionSet<'_>>,
+    resolution: FinishResolutionPolicy,
+    cancel: &dyn CancelCheck,
+) -> Result<(Toolpath, SteepShallowSplit), Cancelled> {
     check_cancel(cancel)?;
     let bbox = &mesh.bbox;
 
     // Build surface heightmap and slope map (shared setup, see finish_setup.rs).
     // The RESOLUTION is steep/shallow's own choice (H3 step 2) — see
-    // `steep_shallow_generation_resolution`.
+    // `steep_shallow_generation_resolution`, which the shipped wrapper above
+    // passes in.
     let surface = crate::finish_setup::build_finish_surface_with_policy_and_cancel(
-        mesh,
-        index,
-        cutter,
-        steep_shallow_generation_resolution(cutter, params.tolerance),
-        cancel,
+        mesh, index, cutter, resolution, cancel,
     )?;
     let surface_hm = surface.heightmap;
     let slope_map = surface.slope_map;
