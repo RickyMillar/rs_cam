@@ -432,7 +432,7 @@ L1 docs sweep. Deferred defect tasks: #12 tapered-pencil SelfReferenced,
 #15 Auto-heights VerySteep drop (+ new:
 RampFinish cone gouge, tip-float silent residual, 0.9 µm segments).
 
-- impl-13 DONE -> **H2 ROUTING WAVE A COMMITTED: PR-4 `df41169`, PR-5 `<PR5>`**
+- impl-13 DONE -> **H2 ROUTING WAVE A COMMITTED: PR-4 `df41169`, PR-5 `5a2c39a`**
   (the programme's FIRST behavioural slice, under the user-approved
   Checkpoint A).
 
