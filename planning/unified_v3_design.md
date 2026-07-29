@@ -2714,18 +2714,30 @@ surface rebuilt per row):
 | **0.50** (Ø1 tip) | **849²** | **19.2** | 19 / 5725 | 4 / 3937 | **10 / 313** |
 | 0.25 | 1697² | 77.0 | 64 / 5975 | 26 / 3663 | 48 / 337 |
 
-**Contour territory 0 → 313 mm²** against 482 mm² of true >75° area from
-the STL — **65% recovered**, up from 15% with the dial fix alone, and 10
-regions instead of 2.
+**Contour territory 0 → 313 mm²**, and 10 regions instead of 2.
+
+> ⚠️ **RETRACTED — see §14t.** The original text here read "against
+> 482 mm² of true >75° area from the STL — **65% recovered**". That
+> comparison is invalid: 313 mm² is XY-PROJECTED polygon area measured
+> AFTER 10° hysteresis, and 482 mm² is 3D triangle area measured BEFORE
+> it. On near-vertical ribbons those differ by ~10×. The projected ≥75°
+> area is 48 mm²; the projected ≥65° area — the band hysteresis actually
+> grows into — is 344 mm². The 0 → 313 mm² change is real. The
+> percentage was meaningless.
 
 **The cost, stated plainly: 19.2 s of classification sampling against
 0.7 s — 27×.** One-off per generate, on an op that already runs for
 minutes. It is a real cost and it is not hidden.
 
-The recovery asymptotes near 70% (337 mm² at cusp 0.25 for 4× the time),
-so the residual is legitimate conditioning — hysteresis, the
-morphological close, the min-area floor — rather than more of the same
-defect. That is the natural stopping point.
+> ⚠️ **RETRACTED — see §14t.** The original text argued the recovery
+> "asymptotes near 70% (337 mm² at cusp 0.25)", so "the residual is
+> legitimate conditioning ... the natural stopping point". Two errors.
+> First, the table's rows vary grid AND dials together, so nothing in it
+> can attribute the residual to conditioning. Second, the isolating
+> experiment falsifies the claim outright: on ONE fixed grid, halving
+> every radius-derived dial moves VerySteep from 313.3 to 313.6 mm². The
+> dials are not what is holding it back, and no stopping point has been
+> established.
 
 **Not changed, and the next thing an audit should decide:**
 `build_finish_surface_with_cancel` (finish_setup.rs:95) derives the
@@ -2773,3 +2785,177 @@ last full sim was the user's at **0.1 mm**. Re-simulating does NOT mark
 toolpaths stale (§14o), so a fresh sim must be followed by regenerating
 every rest op or the displayed path was planned against stock that no
 longer exists.
+
+### §14t — independent audit of the radius fixes: three claims falsified (2026-07-29)
+
+The `radius()`/`cusp_radius()` work (§14q, §14r) went out for independent
+audit. Brief: `planning/review_2026-07-29/RADIUS_AUDIT_PROMPT.md`.
+Result: `planning/review_2026-07-29/RADIUS_AUDIT.md`.
+
+**The fixes themselves stand.** Nothing in the audit says the shaft radius
+was the right dial for feature scale. What it kills is three claims I made
+*about* the fixes, plus the instrument I made them with.
+
+**1. "313 of 482 mm² recovered — 65%" is not a measurement.** It compares
+XY-projected polygon area (after 10° hysteresis) with 3D triangle area
+(before it). Direct measurement of the same mesh:
+
+| threshold | true 3D face area | PROJECTED face area |
+|---|---:|---:|
+| ≥45° | 5003.4 mm² | 2433.9 mm² |
+| ≥65° | 1302.5 mm² | 343.8 mm² |
+| ≥75° | 482.1 mm² | 48.2 mm² |
+
+(Reproduced independently rather than taken on trust; matches the audit's
+own figures to the decimal.)
+
+Emitted VerySteep is 313.3 mm² projected. Against the ≥75° projected area
+(48.1) that is 6.5×; against the ≥65° projected area (343.8) — where
+hysteresis deliberately grows the band — it is 91%. Three defensible
+numbers, and the one I published was none of them. **Region polygons are
+projected; mesh faces are 3D. On near-vertical ribbons that is a ~10×
+difference.** Both measures now print side by side in
+`wanaka_band_mix_vs_cusp_radius`, so the confusion cannot recur silently.
+
+**2. "The residual is legitimate conditioning" is falsified.** I inferred
+it from the recovery flattening at 337 mm² when the cusp halved. But that
+table varies grid and dials together, so it cannot attribute anything. The
+isolating run — one fixed grid, dials varied — gives:
+
+The audit's conditioning breakdown (its own harness, since removed):
+
+| row | VerySteep regions / XY area |
+|---|---:|
+| default | 10 / 313.3 mm² |
+| no min-area absorption | 64 / 348.7 mm² |
+| no close | 7 / 202.6 mm² |
+| no hysteresis | 4 / 60.6 mm² |
+| no conditioning | 64 / 64.5 mm² |
+
+And the dial sweep on ONE pinned 0.5 mm-cusp grid, now a permanent second
+table in `wanaka_band_mix_vs_cusp_radius` (my run):
+
+| dial_r | Shallow n/mm² | MidSteep n/mm² | VerySteep n/mm² |
+|---|---|---|---|
+| 3.00 (`radius()`) | 2 / 4639 | 1 / 4913 | **1 / 423** |
+| 1.00 | 10 / 5370 | 3 / 4288 | 2 / 316 |
+| 0.50 (tip) | 19 / 5725 | 4 / 3937 | **10 / 313** |
+| 0.25 | 64 / 5923 | 22 / 3733 | 36 / 314 |
+
+Across a 12× dial range the VerySteep AREA sits between 313 and 314 mm²
+for every row but the coarsest. The 313 → 337 shift I read as an asymptote
+is **sampling convergence**. The morphological close *increases* VerySteep
+area (202.6 → 313.3), the opposite of the "conditioning erodes it" story.
+**No stopping point has been established.**
+
+**4. A fourth thing this table falsifies, which the audit did not
+claim.** At the shaft dial on a FINE grid the result is 1 region /
+**423 mm²** — *more* VerySteep area than the tip dials produce, not less.
+So the dials never "erased" the steep terrain at all: the 1.5 mm close
+MERGED it into a single blob, and the 144 mm² floor kept that blob because
+it was now big enough. Attribution, stated properly:
+
+| | VerySteep |
+|---|---|
+| coarse grid + shaft dials (the real "before") | 0 regions / 0 mm² |
+| fine grid + shaft dials | 1 region / 423 mm² |
+| fine grid + tip dials (the "after") | 10 regions / 313 mm² |
+
+**The cell size (§14r) did essentially all of the existence recovery; the
+dials (§14q) bought STRUCTURE — 1 blob to 10 regions — not area.** §14q's
+"15% recovered with the dial fix alone" therefore attributed to the dials
+an effect that belonged to the grid. Two fixes shipped together, credited
+to the wrong one, because no run ever crossed them. That is the same
+error as #2 and #3 — three symptoms of one missing habit: *vary one thing*.
+
+This also corrects the sentry: region COUNT, not area, is the invariant
+that survives both fixtures, since the direction of the area change flips
+between the synthetic ribbon (floor swallows it) and wanaka (close merges
+it).
+
+**3. The diagnostic's own docstring was false.** It said it "holds the
+classification surface FIXED and varies only the dials". True when written
+under `5732f57`; `32c5e48` made the cell size follow the cusp radius, so
+every row silently began rebuilding the surface. I updated the code and
+left the docstring asserting the opposite — and then read conclusions off
+it. Fixed: the docstring now states plainly that the first table cannot
+isolate, and a second table does the isolating experiment on one pinned
+grid.
+
+**Fixed in this pass (all mechanically confirmed before changing):**
+
+| site | defect | fix |
+|---|---|---|
+| `pencil.rs:1360` | `corner_radius_mm()` is only overridden by flat/bullnose, so a tapered ball fell through to the 3 mm SHAFT as its "contact radius" — the bisector positioned as if a 3 mm ball nestled into the corner | fall through to `cusp_radius()` (no-op off the taper) |
+| `slope.rs:115` | cancellation polled once after the whole Rayon batch; at the new 849² grid that is ~47 s of dead cancel | poll between 8192-cell batches |
+| `finish_setup.rs:117` | doc claimed classification and generation grids "align 1:1"; they have differed by the shaft/tip ratio since `32c5e48` | corrected, with the open question named |
+| `tool/mod.rs` `cusp_radius` doc | claimed it answers "how small a feature can this cutter cut" — overstated | scoped to cusp/resolution questions; reach/fit sent to `engagement_radius` |
+| gates | zero coverage: all 56 sweeps and all 5 changed call sites use BALL cutters, where the fix is behaviourally inert | new `tests/tapered_cusp_radius_sentry.rs`, 4 tests, 0.25 s |
+
+The sentry carries a **differential** assertion — shaft-derived dials must
+lose steep area against tip-derived ones on the same surface — so it fails
+on a revert rather than passing vacuously, which is exactly how the 56
+sweeps missed this.
+
+### §14u — what the audit left open
+
+**1. The generation grid (audit Q3) — still `radius()`.**
+`build_finish_surface_with_cancel` (finish_setup.rs:95) derives the
+GENERATION cell size from the shaft. The audit's judgement: the behaviour
+does need correcting, but **do not blindly substitute `cusp_radius()` in
+the shared helper.** That helper is shared verbatim by standalone Scallop,
+RampFinish and SteepShallow, and a fine tapered drop-cutter grid is far
+more expensive there than on the tiny classification probe.
+
+Crucially it also corrects my P2.f story: chord refinement repairs Z error
+*along chords already chosen*. It does **not** recover ring placement in
+XY, missed slope/curvature samples, or a stepover that `ring_stepover`
+selected from a coarse field. The workaround is narrower than I claimed.
+
+Evidence gate before touching it: hold classification and planner inputs
+fixed; compare shaft-grid vs cusp-grid generation on a synthetic sub-shank
+ribbon and on wanaka; measure max/P95 surface residual, standing material,
+collisions, move count and generation time, per op and per band. Option if
+the fine grid wins but costs too much: split coverage resolution from
+feature resolution rather than raising both.
+
+**2. A third radius class exists and the finishing path ignores it.**
+The two-way rule (physical extent → `radius()`, feature scale →
+`cusp_radius()`) is incomplete. A tapered cutter's usable width grows with
+depth, so **reach/fit/routing** is neither the tip sphere nor the shaft
+envelope: the cone can foul a wall long before the tip bottoms out.
+`MillingCutter::engagement_radius(depth)` already models it, and
+`Adaptive3dParams` already carries engagement and envelope radii
+separately. Sites still taking the shaft radius for a reach question:
+
+- `pencil.rs:1224`, `unified_finish.rs:646` — rest-field routing yardstick
+- `pencil.rs:1279`, `unified_finish.rs:717` — width-capped offset-pass count
+- `unified_finish.rs:721` — pencil offset stepover
+- `unified_finish.rs:868` — crease-own-region threshold (dormant: creases
+  are empty at this call today)
+- `compute/execute.rs:2122` — generic rest analysis routing yardstick
+- `narrate.rs:840` — "suspiciously large arc" threshold; **ambiguous, not
+  wrong**: correct if "large" means relative to the tool envelope, wrong if
+  relative to path-feature scale. The diagnostic's contract has to say
+  which before this can be called either way.
+
+These are deliberately NOT changed here. They are live routing behaviour,
+each needs its own before/after, and picking `cusp_radius()` for them would
+report a cutter far more capable than it is — the opposite error, same
+class.
+
+**This further undercuts the §14 strategy conclusions.** Every "pencil
+finds nothing" measurement ran with `pencil_radius = 3.0 mm` — the shaft.
+The valley detector was asked where a 3 mm-radius tool cannot reach while
+the tool that would cut it has a 0.5 mm tip. "Contour and pencil have
+nothing to do on this part" and "scallop wins every time" were already
+untested after §14q/§14r; this is a second, independent reason.
+
+**3. Classification cost is accepted but optimisable (audit Q5).** The
+audit's local timings were 1.0 / 9.6 / 47.3 / 102.2 s across the four rows
+— so production's row is ~47× the old one, not the 27× I reported from my
+machine. Ranked opportunities: rasterize triangles into cells directly
+instead of a drop-cutter sample per cell; refine adaptively near slope
+thresholds; cache the field by (mesh, tolerance, resolution); share one
+high-resolution true-surface field across planner consumers. The
+per-batch cancel poll is already done.
