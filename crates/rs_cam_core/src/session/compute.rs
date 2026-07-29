@@ -1548,6 +1548,10 @@ impl ProjectSession {
                     cutting_distance: annotated.toolpath.total_cutting_distance(),
                     rapid_distance: annotated.toolpath.total_rapid_distance(),
                     standing_material_mm2: findings.standing_material_mm2,
+                    // Wave D1: same channel, same rule — `None` is "not
+                    // measured", never "nothing wrong".
+                    dropped_band: findings.dropped_band.map(Box::new),
+                    tip_float: findings.tip_float,
                 };
 
                 let mut debug_trace = debug_recorder.finish();
@@ -2882,6 +2886,10 @@ impl ProjectSession {
             // stats. `None` here is "not measured", which narration says out
             // loud rather than rendering as a zero.
             standing_material_mm2: result.stats.standing_material_mm2,
+            // Wave D1: same rule. `None` reads as "not measured" and
+            // narration says so rather than staying silent.
+            dropped_band: result.stats.dropped_band.as_deref().copied(),
+            tip_float: result.stats.tip_float,
         };
 
         Ok(crate::narrate::narrate_toolpath_with_context(
@@ -3093,6 +3101,14 @@ impl ProjectSession {
                     collision_count: holder_collision_count,
                     rapid_collision_count: rapid_count,
                     standing_material_mm2: result.stats.standing_material_mm2,
+                    // Wave D1 — the MCP wire. `None` serialises null.
+                    unmachined_band_area_mm2: result
+                        .stats
+                        .dropped_band
+                        .as_deref()
+                        .map(|f| f.area_mm2),
+                    tip_float_points: result.stats.tip_float.map(|f| f.floating_points),
+                    max_tip_float_mm: result.stats.tip_float.map(|f| f.max_float_mm),
                 });
             }
         }
@@ -5187,8 +5203,11 @@ mod tests {
                 move_count: 0,
                 cutting_distance: 0.0,
                 rapid_distance: 0.0,
-                // Not measured: this fake never ran a cascade.
+                // Not measured: this fake never ran a cascade, planned no
+                // bands and emitted no centrelines.
                 standing_material_mm2: None,
+                dropped_band: None,
+                tip_float: None,
             },
             debug_trace: None,
             semantic_trace: None,

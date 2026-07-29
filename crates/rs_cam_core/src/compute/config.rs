@@ -59,7 +59,185 @@ pub struct ToolpathStats {
     ///
     /// Report-only: no gate consumes it and no verdict changes on it.
     pub standing_material_mm2: Option<f64>,
+    /// Wave D1: a planned finish BAND whose cutting was entirely erased by
+    /// height resolution — an unmachined feature.
+    ///
+    /// Three-valued for the same reason as [`Self::standing_material_mm2`]:
+    /// `None` = **not measured** (this operation plans no bands at all —
+    /// anything that is not a `UnifiedFinish`), `Some(f)` = a banded
+    /// decomposition ran AND at least one band was dropped. A banded op that
+    /// dropped nothing also reports `None`, because "no dropped band" and
+    /// "nothing to drop" are the same statement about the part: the honest
+    /// distinction narration draws is *measured-clean* vs *not measured*, and
+    /// it draws it from the operation kind, not from this field.
+    ///
+    /// Report-only: generation still succeeds, the diagnostic severity is
+    /// `Caution`, and no verdict reads it.
+    ///
+    /// **Boxed on purpose.** `ToolpathStats` travels inside the GUI's
+    /// `ComputeMessage` channel enum, which the workspace lints under
+    /// `clippy::large_enum_variant`; the finding carries a whole
+    /// [`crate::measurement::MeasurementProvenance`] and is `None` on almost
+    /// every toolpath, so paying 8 bytes here instead of ~120 keeps the
+    /// channel enum balanced without weakening the measurement contract.
+    pub dropped_band: Option<Box<DroppedBandFinding>>,
+    /// Wave D1: the tip-float residual on a pencil/rest centreline — points
+    /// where the cutter physically cannot reach the valley floor it is being
+    /// driven along, and the depth it floats above it.
+    ///
+    /// `None` = **not measured**: the operation emits no valley centrelines
+    /// (Checkpoint A evidence §9.4). `Some` with `floating_points == 0` is a
+    /// measured clean pass. Never read a missing value as zero float.
+    ///
+    /// Report-only: no gate consumes it.
+    pub tip_float: Option<TipFloatFinding>,
 }
+
+/// A finish band whose planned cutting was entirely removed by height
+/// resolution (Wave D1, ledger task #15).
+///
+/// The mechanism this exists to make audible: `UnifiedFinishConfig`'s
+/// `depth_semantics()` is `DepthSemantics::None`, so an Auto `bottom_z`
+/// resolves to `top_z - 0.0` — the stock top — and the very-steep band's
+/// waterline ladder (`final_z = band_min_z.max(bottom_z)`) collapses onto
+/// the rim. The band planned real levels over real area and emitted no
+/// cutting at all; before this finding the only trace was a
+/// `region_count += 1` on a struct nothing printed.
+///
+/// Deliberately NOT the fix. Changing the depth semantics is a behavioural
+/// change; this is the instrument that must exist first.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DroppedBandFinding {
+    /// Stable band token (`"VerySteep"`, `"MidSteep"`, `"Shallow"`) —
+    /// `crate::unified_finish::RegionKind::band_label`. Names the band of the
+    /// LARGEST dropped region when several were dropped.
+    pub band_label: &'static str,
+    /// How many planned regions were dropped, across every band.
+    pub region_count: usize,
+    /// Summed XY-projected area (mm²) of the dropped regions' band polygons.
+    /// Read the domain off [`Self::provenance`] before comparing it to
+    /// anything.
+    pub area_mm2: f64,
+    /// The resolved height (mm, operation frame) that clipped the largest
+    /// dropped region.
+    pub clip_z_mm: f64,
+    /// Which resolved height it was: `"bottom_z"` or `"top_z"`.
+    pub clip_label: &'static str,
+    /// What [`Self::area_mm2`] means. Carried per-instance rather than as a
+    /// module constant because the band polygons are quantised by the
+    /// classification grid, whose cell size is derived from the TOOL
+    /// (`cusp_radius/4`) — one constant could not describe two tools.
+    pub provenance: crate::measurement::MeasurementProvenance,
+}
+
+impl DroppedBandFinding {
+    /// [`Self::area_mm2`] in the newtype that refuses cross-domain division
+    /// (M1 slice 2), together with its contract.
+    #[must_use]
+    pub fn area(
+        &self,
+    ) -> (
+        crate::measurement::ProjectedXyAreaMm2,
+        crate::measurement::MeasurementProvenance,
+    ) {
+        (
+            crate::measurement::ProjectedXyAreaMm2::new(self.area_mm2),
+            self.provenance,
+        )
+    }
+}
+
+/// Tip float on a pencil/rest centreline: the cutter is driven along a
+/// valley it physically cannot bottom out in, so it rides the walls and
+/// leaves residual material below the emitted line (Wave D1; Checkpoint A
+/// evidence §5 measured up to 5.248 mm on 24 of 176 taper cells, with no
+/// channel of any kind reporting it).
+///
+/// The measurement is the one routing already solves: at each emitted
+/// centreline point, the drop-cutter's resting Z minus the valley-floor Z
+/// the detector traced at the same XY — the same quantity
+/// `pencil::reach_gap_at_point` computes for the rest-depth gate, sampled
+/// on every point instead of eight.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct TipFloatFinding {
+    /// Emitted centreline points examined (offset passes excluded — they are
+    /// *meant* to ride the walls).
+    pub centreline_points: usize,
+    /// Of those, how many float more than [`TIP_FLOAT_THRESHOLD_MM`] above
+    /// the traced valley floor.
+    pub floating_points: usize,
+    /// Largest float residual (mm) seen. `0.0` when nothing floated.
+    pub max_float_mm: f64,
+}
+
+impl TipFloatFinding {
+    /// Record one centreline point's float.
+    ///
+    /// NaN floats (a point whose lift found no contact, or a detector line
+    /// with no surface Z) count as examined and nothing else — an unmeasured
+    /// point is not a clean one, and it is certainly not a defect claim.
+    pub fn record(&mut self, float_mm: f64) {
+        self.centreline_points += 1;
+        if float_mm > TIP_FLOAT_THRESHOLD_MM {
+            self.floating_points += 1;
+            if float_mm > self.max_float_mm {
+                self.max_float_mm = float_mm;
+            }
+        }
+    }
+
+    /// Fold another tally in (one per chain / per detector arm).
+    pub fn merge(&mut self, other: Self) {
+        self.centreline_points += other.centreline_points;
+        self.floating_points += other.floating_points;
+        if other.max_float_mm > self.max_float_mm {
+            self.max_float_mm = other.max_float_mm;
+        }
+    }
+
+    /// Fraction of examined centreline points that float. `None` when
+    /// nothing was examined — never a fabricated zero.
+    #[must_use]
+    pub fn floating_fraction(&self) -> Option<f64> {
+        (self.centreline_points > 0)
+            .then(|| self.floating_points as f64 / self.centreline_points as f64)
+    }
+}
+
+/// Float (mm) above the traced valley floor at which a centreline point
+/// counts as FLOATING.
+///
+/// Deliberately the same absolute number as
+/// `crate::pencil::reach_gap_threshold` — 0.05 mm — because it is the same
+/// physical question the pencil's own rest gate asks ("is the tool actually
+/// off the surface here, or is this triangulation noise?"), and two
+/// thresholds for one question is how instruments start disagreeing with
+/// the code they measure.
+pub const TIP_FLOAT_THRESHOLD_MM: f64 = 0.05;
+
+/// The measurement contract of [`TipFloatFinding::max_float_mm`].
+///
+/// A vertical residual at a point, measured at generation from the
+/// centreline drop solve. Not an area, not a length along the path, and not
+/// comparable to either.
+pub const TIP_FLOAT_PROVENANCE: crate::measurement::MeasurementProvenance =
+    crate::measurement::MeasurementProvenance::new(
+        crate::measurement::MeasurementDomain::VerticalResidualMm,
+        crate::measurement::MeasurementStage::CentrelineDropSolve,
+    )
+    .with_resolution_note(
+        "one sample per emitted centreline point (path sampling spacing); float = \
+         drop-cutter rest Z minus the detector's traced valley-floor Z at the same XY",
+    );
+
+/// Measurement domain of [`TipFloatFinding::max_float_mm`].
+pub const TIP_FLOAT_DOMAIN: &str = TIP_FLOAT_PROVENANCE.domain.label();
+
+/// Pipeline stage [`TipFloatFinding`] is measured at.
+pub const TIP_FLOAT_STAGE: &str = TIP_FLOAT_PROVENANCE.stage.label();
+
+/// Resolution note of [`TipFloatFinding`].
+pub const TIP_FLOAT_RESOLUTION: &str = TIP_FLOAT_PROVENANCE.resolution_note;
 
 impl ToolpathStats {
     /// [`Self::standing_material_mm2`] with its measurement contract attached,
@@ -81,6 +259,16 @@ impl ToolpathStats {
                 STANDING_MATERIAL_PROVENANCE,
             )
         })
+    }
+
+    /// [`Self::tip_float`] with its measurement contract attached, or `None`
+    /// when nothing measured it. Same rule as [`Self::standing_material`]:
+    /// the value and its provenance travel together or not at all.
+    #[must_use]
+    pub fn tip_float_measured(
+        &self,
+    ) -> Option<(TipFloatFinding, crate::measurement::MeasurementProvenance)> {
+        self.tip_float.map(|f| (f, TIP_FLOAT_PROVENANCE))
     }
 }
 

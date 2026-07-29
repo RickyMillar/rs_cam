@@ -22,6 +22,7 @@ use std::collections::HashMap;
 
 use tracing::{info, warn};
 
+use crate::compute::config::TipFloatFinding;
 use crate::debug_trace::ToolpathDebugContext;
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P3, V3, polyline_length};
@@ -668,6 +669,22 @@ pub(crate) fn resample_polyline(points: &[P3], spacing: f64) -> Vec<P3> {
 /// `&PencilParams`) so non-pencil callers — currently
 /// [`crate::crease_paths::centerline_cut_paths`] — don't need a full
 /// `PencilParams` just to emit cut paths. `pub(crate)` for that same reason.
+///
+/// # Tip float (Wave D1)
+///
+/// `float` accumulates the per-point TIP-FLOAT tally for the centreline this
+/// call emits — see [`TipFloatFinding`]. It is measured here, and only here,
+/// because this is the one place that both solves the cutter's resting Z and
+/// still has the valley in hand; every detector arm and the unified-finish
+/// crease node funnel through it, so one measurement covers all of them.
+///
+/// The valley floor is NOT `sampled[i].z`. The rest-depth arm's centrelines
+/// already carry "Z from the pencil drop" (`RestCenterline::points`), so
+/// differencing against them would measure zero by construction. The floor
+/// is re-solved with the Ø0.1 mm surface probe ball the rest-depth reference
+/// chain already uses for exactly this question, at the same XY. That probe
+/// has its own (tiny) float in a sharp V, so the reported residual is a
+/// slight UNDER-estimate — never an over-claim.
 #[allow(clippy::too_many_arguments)] // cohesive per-chain emit; splitting hurts clarity
 pub(crate) fn paths_from_sampled(
     sampled: &[P3],
@@ -680,6 +697,7 @@ pub(crate) fn paths_from_sampled(
     offset_stepover: f64,
     offset_passes: usize,
     all_paths: &mut Vec<PencilPath>,
+    float: &mut TipFloatFinding,
 ) {
     if sampled.len() < 2 {
         return;
@@ -690,6 +708,18 @@ pub(crate) fn paths_from_sampled(
     let offset_total = 1 + offset_passes * 2;
 
     let centerline = lift_to_surface(&sampled, mesh, index, cutter, stock_to_leave);
+    // Wave D1 instrument. Offset passes are deliberately excluded: they are
+    // MEANT to ride up the walls, so "float" is not a defect there.
+    let probe = crate::tool::BallEndmill::new(
+        SURFACE_PROBE_BALL_DIAMETER_MM,
+        SURFACE_PROBE_BALL_LENGTH_MM,
+    );
+    let valley_floor = lift_to_surface(&sampled, mesh, index, &probe, 0.0);
+    for (tool_pt, floor_pt) in centerline.iter().zip(valley_floor.iter()) {
+        // `stock_to_leave` is a commanded offset, not float — back it out so
+        // a finishing allowance never reads as unreachable material.
+        float.record((tool_pt.z - stock_to_leave) - floor_pt.z);
+    }
     all_paths.push(PencilPath {
         points: centerline,
         chain_index,
@@ -988,6 +1018,10 @@ pub fn pencil_toolpath_structured_annotated(
         debug,
         rest_grid_out,
         rest_regions_out,
+        // Wave D1: this legacy entry point predates the tip-float channel
+        // and has no slot to return it through. Callers that need the
+        // finding (the op adapter does) call the cancellable form.
+        &mut None,
         &never_cancel,
     )
     .expect("non-cancellable pencil toolpath should never be cancelled")
@@ -1073,6 +1107,7 @@ fn curvature_arm(
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &PencilParams,
+    float: &mut TipFloatFinding,
     cancel: &dyn CancelCheck,
 ) -> Result<Vec<PencilPath>, Cancelled> {
     let mut all_paths: Vec<PencilPath> = Vec::new();
@@ -1120,6 +1155,7 @@ fn curvature_arm(
             params.offset_stepover,
             params.num_offset_passes,
             &mut all_paths,
+            float,
         );
     }
     Ok(all_paths)
@@ -1154,6 +1190,7 @@ fn rest_depth_arm(
     debug: Option<&ToolpathDebugContext>,
     rest_grid_out: &mut Option<crate::rest_field::RestGrid>,
     rest_regions_out: &mut Option<Vec<Polygon2>>,
+    float: &mut TipFloatFinding,
     cancel: &dyn CancelCheck,
 ) -> Result<Vec<PencilPath>, Cancelled> {
     let stock_ref = initial_stock.filter(|stock| {
@@ -1281,6 +1318,7 @@ fn rest_depth_arm(
         params.num_offset_passes,
         params.min_cut_length,
         params.stock_to_leave,
+        float,
         cancel,
     )?;
     if all_paths.is_empty() {
@@ -1299,6 +1337,7 @@ fn dihedral_arm(
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &PencilParams,
+    float: &mut TipFloatFinding,
     cancel: &dyn CancelCheck,
 ) -> Result<Vec<PencilPath>, Cancelled> {
     let mut all_paths: Vec<PencilPath> = Vec::new();
@@ -1406,6 +1445,7 @@ fn dihedral_arm(
             params.offset_stepover,
             params.num_offset_passes,
             &mut all_paths,
+            float,
         );
     }
     Ok(all_paths)
@@ -1429,14 +1469,20 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
     debug: Option<&ToolpathDebugContext>,
     rest_grid_out: &mut Option<crate::rest_field::RestGrid>,
     rest_regions_out: &mut Option<Vec<Polygon2>>,
+    // Wave D1 out: the centreline TIP-FLOAT tally (see [`TipFloatFinding`]).
+    // Always set — a detector that emitted no centreline still measured
+    // zero points, which is a different statement from "not measured", and
+    // the op adapter is what turns the distinction into a report.
+    tip_float_out: &mut Option<TipFloatFinding>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<PencilRuntimeAnnotation>), Cancelled> {
     check_cancel(cancel)?;
     let tp = Toolpath::new();
     let annotations = Vec::new();
+    let mut float = TipFloatFinding::default();
 
     let mut all_paths: Vec<PencilPath> = match params.detector {
-        PencilDetector::Curvature => curvature_arm(mesh, index, cutter, params, cancel)?,
+        PencilDetector::Curvature => curvature_arm(mesh, index, cutter, params, &mut float, cancel)?,
         PencilDetector::RestDepth => rest_depth_arm(
             mesh,
             index,
@@ -1446,10 +1492,12 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
             debug,
             rest_grid_out,
             rest_regions_out,
+            &mut float,
             cancel,
         )?,
-        PencilDetector::Dihedral => dihedral_arm(mesh, index, cutter, params, cancel)?,
+        PencilDetector::Dihedral => dihedral_arm(mesh, index, cutter, params, &mut float, cancel)?,
     };
+    *tip_float_out = Some(float);
 
     if all_paths.is_empty() {
         return Ok((tp, annotations));
@@ -2239,6 +2287,7 @@ mod tests {
                 params.offset_stepover,
                 params.num_offset_passes,
                 &mut all_paths,
+                &mut TipFloatFinding::default(),
             );
             assert_eq!(all_paths.len(), 1, "centerline only, no offset passes");
 

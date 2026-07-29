@@ -1058,6 +1058,11 @@ impl super::RsCamApp {
             // core generation findings; carrying it here is what puts the
             // figure in front of an agent narrating a live GUI toolpath.
             standing_material_mm2: result.stats.standing_material_mm2,
+            // Wave D1: an unmachined band and an unreachable valley floor
+            // are exactly the kind of finding an agent narrating a LIVE GUI
+            // toolpath has no other way to see.
+            dropped_band: result.stats.dropped_band.as_deref().copied(),
+            tip_float: result.stats.tip_float,
         };
 
         rs_cam_core::narrate::narrate_toolpath_with_context(

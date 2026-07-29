@@ -118,7 +118,7 @@ use crate::scallop::{
 use crate::surface_link::build_surface_link;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveIntent, Toolpath, raster_toolpath_from_grid};
-use crate::waterline::{WaterlineParams, waterline_toolpath_with_cancel};
+use crate::waterline::{WaterlineParams, waterline_toolpath_with_cancel, waterline_z_levels};
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -559,6 +559,75 @@ pub struct ClaimsReport {
     pub post_territory_region_count: usize,
 }
 
+/// Which resolved height clipped a band's Z range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeightClip {
+    /// `ResolvedHeights::bottom_z` raised the ladder's floor.
+    BottomZ,
+    /// `ResolvedHeights::top_z` lowered the ladder's ceiling.
+    TopZ,
+}
+
+impl HeightClip {
+    /// Stable token used in findings, narration and diagnostics.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::BottomZ => "bottom_z",
+            Self::TopZ => "top_z",
+        }
+    }
+}
+
+/// One planned band region whose cutting was entirely erased by height
+/// resolution (Wave D1, ledger task #15).
+///
+/// Recorded ONLY when the region emitted no cutting at all AND the resolved
+/// heights are what took the levels away — a partially clipped band that
+/// still cuts is not reported here, and a band that plans nothing on its own
+/// (no covered cells) is a decomposition outcome, not a height one.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DroppedBand {
+    pub band: FinishBand,
+    /// Index into the decomposition's `planned.regions`.
+    pub region_index: usize,
+    /// XY-projected area (mm²) of the planned band polygon —
+    /// [`UnifiedFinishReport::provenance`] describes it.
+    pub area_mm2: f64,
+    /// Z levels the band's OWN surface span would have laddered.
+    pub planned_levels: usize,
+    /// Z levels that survived height resolution.
+    pub resolved_levels: usize,
+    /// The resolved height (mm) that clipped it.
+    pub clip_z_mm: f64,
+    /// Which height that was.
+    pub clip: HeightClip,
+}
+
+/// Fold [`UnifiedFinishReport::dropped_bands`] into the single Copy finding
+/// [`crate::compute::config::ToolpathStats`] carries. `None` when nothing
+/// was dropped.
+///
+/// Area and region count aggregate over EVERY dropped region; the band token
+/// and the clipping height name the largest-area one, so the message points
+/// at the feature an operator will actually go looking for.
+#[must_use]
+pub fn dropped_band_finding(
+    report: &UnifiedFinishReport,
+) -> Option<crate::compute::config::DroppedBandFinding> {
+    let worst = report.dropped_bands.iter().copied().reduce(|a, b| {
+        if b.area_mm2 > a.area_mm2 { b } else { a }
+    })?;
+    Some(crate::compute::config::DroppedBandFinding {
+        band_label: RegionKind::Band(worst.band).band_label(),
+        region_count: report.dropped_bands.len(),
+        area_mm2: report.dropped_bands.iter().map(|d| d.area_mm2).sum(),
+        clip_z_mm: worst.clip_z_mm,
+        clip_label: worst.clip.label(),
+        provenance: report.provenance,
+    })
+}
+
 /// Orchestration report: decomposition stats + what each band generated +
 /// the P2.d route.
 #[derive(Debug, Clone, Default)]
@@ -602,6 +671,14 @@ pub struct UnifiedFinishReport {
     /// residual, not a grid-quantised band area. The two must never be
     /// summed or ratio'd against each other.
     pub uncut_core_mm2: f64,
+    /// Wave D1: planned band regions whose cutting was entirely erased by
+    /// height resolution (see [`DroppedBand`]). Empty on a healthy run.
+    /// Folded into the per-toolpath finding by [`dropped_band_finding`].
+    pub dropped_bands: Vec<DroppedBand>,
+    /// Wave D1: tip float measured on the crease node's centrelines.
+    /// `None` when the claims pipeline never ran, so no centrelines existed
+    /// to measure — never read as "nothing floated".
+    pub tip_float: Option<crate::compute::config::TipFloatFinding>,
     /// What the AREA fields of [`Self::region_table`] mean (M1) — copied from
     /// the decomposition that produced them, so a consumer never has to guess
     /// which grid or which conditioning stage an `area_mm2` came from.
@@ -822,6 +899,10 @@ pub fn unified_finish_toolpath_with_cancel(
     // byte-identical to the pre-v3 op (module doc).
     let mut claimed_creases = 0usize;
     let mut claims_paths: Vec<crate::pencil::PencilPath> = Vec::new();
+    // Wave D1: `None` until the claims pipeline actually emits a centreline,
+    // so "the claims pass never ran" stays distinguishable from "it ran and
+    // nothing floated".
+    let mut claims_tip_float: Option<crate::compute::config::TipFloatFinding> = None;
     let mut claims_report: Option<ClaimsReport> = None;
     let mut claims_rest_grid: Option<std::sync::Arc<crate::rest_field::RestGrid>> = None;
     let mut claims_rest_regions: Option<std::sync::Arc<Vec<Polygon2>>> = None;
@@ -897,6 +978,7 @@ pub fn unified_finish_toolpath_with_cancel(
         // only carve-and-abandon-proof contract.
         let detected = rf.centerlines.len();
         let mut emitted_paths: Vec<crate::pencil::PencilPath> = Vec::new();
+        let mut float = crate::compute::config::TipFloatFinding::default();
         for centerline in rf.centerlines {
             check_cancel(cancel)?;
             let paths = centerline_cut_paths(
@@ -918,6 +1000,7 @@ pub fn unified_finish_toolpath_with_cancel(
                 4,
                 cfg.rest_field_params.min_cut_length,
                 params.stock_to_leave,
+                &mut float,
                 cancel,
             )?;
             if !paths.is_empty() {
@@ -926,6 +1009,7 @@ pub fn unified_finish_toolpath_with_cancel(
             }
         }
         claims_paths = emitted_paths;
+        claims_tip_float = Some(float);
         tracing::debug!(
             detected,
             claimed = claimed_creases,
@@ -1126,6 +1210,7 @@ pub fn unified_finish_toolpath_with_cancel(
         provenance: planned.stats.provenance,
         rest_grid: claims_rest_grid,
         rest_regions: claims_rest_regions,
+        tip_float: claims_tip_float,
         ..UnifiedFinishReport::default()
     };
     let mut region_paths: Vec<RegionPath> = Vec::new();
@@ -1135,6 +1220,10 @@ pub fn unified_finish_toolpath_with_cancel(
     for (region_index, region) in planned.regions.iter().enumerate() {
         check_cancel(cancel)?;
         let region_set = RegionSet::new(vec![region.polygon.clone()]);
+        // Wave D1: set by any band arm whose Z range the resolved heights
+        // narrowed. Consulted AFTER generation, because a narrowed range is
+        // only a FINDING when nothing came out of it.
+        let mut height_clip: Option<(HeightClip, f64, usize, usize)> = None;
         let (tp, anns) = match region.band {
             FinishBand::VerySteep => {
                 let Some((band_min_z, band_max_z)) = band_z_range(&surface, &covered, &region_set)
@@ -1147,6 +1236,30 @@ pub fn unified_finish_toolpath_with_cancel(
                 };
                 let start_z = band_max_z.min(top_z);
                 let final_z = band_min_z.max(bottom_z);
+                // Wave D1 instrument (ledger task #15). `UnifiedFinishConfig`
+                // declares `DepthSemantics::None`, so an Auto `bottom_z`
+                // resolves to `top_z - 0.0` — the STOCK TOP — and the two
+                // `.max`/`.min` clamps above then pin this ladder to the rim
+                // of a groove that may be centimetres deep. Compare the
+                // levels the band's own surface span asks for against the
+                // ones the heights allow; if the difference turns out to
+                // have cost the whole region its cutting, say so out loud
+                // instead of leaving an unmachined feature with a
+                // `region_count += 1` for a headstone.
+                let planned_levels =
+                    waterline_z_levels(band_max_z, band_min_z, params.z_step).len();
+                let resolved_levels = waterline_z_levels(start_z, final_z, params.z_step).len();
+                if resolved_levels < planned_levels {
+                    // Attribute to whichever clamp actually bit. When both
+                    // did, the floor is the one an operator can act on
+                    // (a raised `bottom_z` removes the DEEP levels).
+                    let clip = if final_z > band_min_z {
+                        (HeightClip::BottomZ, bottom_z)
+                    } else {
+                        (HeightClip::TopZ, top_z)
+                    };
+                    height_clip = Some((clip.0, clip.1, planned_levels, resolved_levels));
+                }
                 let wp = WaterlineParams {
                     sampling: params.sampling,
                     feed_rate: params.feed_rate,
@@ -1337,6 +1450,36 @@ pub fn unified_finish_toolpath_with_cancel(
         } else {
             (tp, anns)
         };
+
+        // Wave D1: a narrowed Z range is only a FINDING once it has cost the
+        // region every one of its cutting moves. A band that still cuts —
+        // even a shortened ladder — is a different (and much quieter)
+        // problem, and reporting it here would bury the one that leaves a
+        // feature untouched.
+        if let Some((clip, clip_z_mm, planned_levels, resolved_levels)) = height_clip
+            && tp.total_cutting_distance() <= 0.0
+        {
+            tracing::warn!(
+                region_index,
+                band = ?region.band,
+                area_mm2 = region.polygon.area(),
+                planned_levels,
+                resolved_levels,
+                clip = clip.label(),
+                clip_z_mm,
+                "unified_finish: band dropped entirely by height resolution — \
+                 this feature will be UNMACHINED"
+            );
+            report.dropped_bands.push(DroppedBand {
+                band: region.band,
+                region_index,
+                area_mm2: region.polygon.area(),
+                planned_levels,
+                resolved_levels,
+                clip_z_mm,
+                clip,
+            });
+        }
 
         let stats = match region.band {
             FinishBand::VerySteep => &mut report.very_steep,
