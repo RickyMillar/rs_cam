@@ -58,8 +58,10 @@
 //! `corridor` answers "what did this crease claim"; a separate, narrower
 //! question — "does this crease become its own clearing zone instead of
 //! staying folded into the pencil pass" — is still gated by the original
-//! canyon rule: a crease at/above `half_width_mm >= corridor_k *
-//! tool_radius` is promoted to its own [`PlannedRegion`]-shaped output via
+//! canyon rule: a crease at/above
+//! [`FinishPlannerParams::crease_own_region_half_width_mm`] (CUSP-scaled —
+//! see that field for which tool scale and why) is promoted to its own
+//! [`PlannedRegion`]-shaped output via
 //! [`PlannedCrease::own_region`]. Since `pencil_claim_floor` is normally far
 //! below the canyon threshold, a canyon's `own_region` and `corridor`
 //! polygons coincide; a hairline crease gets `corridor: Some(..)`,
@@ -117,9 +119,35 @@ pub struct FinishPlannerParams {
     /// bands overlap (like steep_shallow's `overlap_distance`). Caller
     /// derives this from stepover in P2.c. Default 0.0 (no overlap).
     pub overlap_mm: f64,
-    /// Corridor rule: a crease becomes its own region when
-    /// `half_width_mm >= corridor_k * tool_radius`. Default 2.0.
-    pub corridor_k: f64,
+    /// Crease-own-region threshold (mm): a crease becomes its own
+    /// [`PlannedRegion`] once its MEASURED `half_width_mm` reaches this.
+    /// Below it the crease still claims a corridor, it just stays folded
+    /// into the pencil pass. `for_tool` derives it as
+    /// [`CREASE_OWN_REGION_K`] × the tool's CUSP radius.
+    ///
+    /// # Which tool scale, and why (PR-6b, H2.4)
+    ///
+    /// This used to be a unitless `corridor_k` multiplied by a `tool_radius`
+    /// scalar passed positionally into [`decompose`], and the only production
+    /// caller — `unified_finish` — passed `cutter.radius()`, the ENVELOPE.
+    /// On the shipped Ø1-tip / 7° / Ø6-shank taper that put the bar at 6.0 mm
+    /// while every other dial in this struct was sized off the 0.5 mm cusp:
+    /// one struct, two tool scales, and a canyon rule no valley a Ø1 tip
+    /// works could ever clear.
+    ///
+    /// The answer is CUSP scale, and the reason is that this is a
+    /// **planner-territory** question, not a fit question. "Is this valley
+    /// wide enough to plan as a zone in its own right" is asked in the same
+    /// vocabulary as `pencil_claim_floor`, `close_radius_mm` and
+    /// `min_region_area_mm2` — feature scales, all cusp-derived. The FIT
+    /// question ("can the cutter stand off the centreline, and how far") was
+    /// already answered upstream by [`crate::reach`]: a crease only reaches
+    /// this function at all when the detector's coverage criterion routed it
+    /// to Pencil, i.e. when the fan the operation can emit already covers its
+    /// reachable band. Re-deriving reach here would be a second routing
+    /// decision on a struct that has no cross-section to derive it from —
+    /// [`decompose`] sees a [`SlopeMap`], not a rest field.
+    pub crease_own_region_half_width_mm: f64,
     /// Claim floor (mm): every crease's claimed corridor half-width is
     /// `max(half_width_mm, pencil_claim_floor)`, so the claim can never be
     /// thinner than the tip-tool pencil pass that will actually clean the
@@ -136,6 +164,13 @@ pub struct FinishPlannerParams {
     /// [`FinishPlannerParams::for_tool`].
     pub min_region_area_mm2: f64,
 }
+
+/// Cusp radii of valley half-width at which a crease is planned as its own
+/// region rather than folded into the pencil pass — the multiplier
+/// [`FinishPlannerParams::for_tool`] applies. 2.0 = "wider than the tool's
+/// own cutting footprint", the value the rule shipped with (as the retired
+/// `corridor_k`).
+pub const CREASE_OWN_REGION_K: f64 = 2.0;
 
 impl FinishPlannerParams {
     /// Dials derived from a tool radius, per the design doc's default
@@ -167,7 +202,7 @@ impl FinishPlannerParams {
             waterline_threshold_deg: 75.0,
             hysteresis_deg: 10.0,
             overlap_mm: 0.0,
-            corridor_k: 2.0,
+            crease_own_region_half_width_mm: CREASE_OWN_REGION_K * cusp_radius,
             pencil_claim_floor: cusp_radius * 0.25,
             close_radius_mm: cusp_radius * 0.5,
             min_region_area_mm2: (2.0 * cusp_radius).powi(2) * 4.0,
@@ -214,8 +249,9 @@ impl PlannedRegion {
 pub struct PlannedCrease {
     /// The detector centerline (world points + measured half-width).
     pub centerline: RestCenterline,
-    /// `Some` — this crease is a canyon (`half_width_mm >= corridor_k *
-    /// tool_radius`) promoted to its own clearing region, routed like a
+    /// `Some` — this crease is a canyon (`half_width_mm >=
+    /// `[`FinishPlannerParams::crease_own_region_half_width_mm`]) promoted
+    /// to its own clearing region, routed like a
     /// band rather than folded into the pencil pass. `None` for every
     /// narrower crease — it still claims a corridor (see [`Self::corridor`]),
     /// it just isn't its own zone.
@@ -305,7 +341,6 @@ pub fn decompose(
     slope_map: &SlopeMap,
     covered: &[bool],
     creases: &[RestCenterline],
-    tool_radius: f64,
     params: &FinishPlannerParams,
 ) -> PlannedRegions {
     let rows = slope_map.rows;
@@ -422,7 +457,7 @@ pub fn decompose(
         .iter()
         .map(|c| {
             let (crease, cells) =
-                apply_crease_corridor(c, &mut labels, slope_map, tool_radius, params);
+                apply_crease_corridor(c, &mut labels, slope_map, params);
             if crease.corridor.is_some() {
                 claimed_creases += 1;
             }
@@ -504,14 +539,12 @@ pub(crate) fn decompose_provenance(
 pub fn decompose_surface(
     surface: &FinishSurface,
     creases: &[RestCenterline],
-    tool_radius: f64,
     params: &FinishPlannerParams,
 ) -> PlannedRegions {
     let mut planned = decompose(
         &surface.slope_map,
         &surface.heightmap.covered,
         creases,
-        tool_radius,
         params,
     );
     // The surface knows which tool scale sized its grid; `decompose` does not.
@@ -780,7 +813,7 @@ fn absorb_small_regions(
 /// out of `labels` so band polygons exclude the claimed territory —
 /// overlap dilation at extraction may reach back over it, which is the
 /// intended overlap semantics (design doc, "Crease corridors"). Canyons
-/// (`half_width_mm >= corridor_k * tool_radius`) additionally get promoted
+/// (`half_width_mm >= params.crease_own_region_half_width_mm`) additionally get promoted
 /// to their own clearing region (`own_region`), using the same corridor
 /// polygon.
 ///
@@ -790,7 +823,6 @@ fn apply_crease_corridor(
     centerline: &RestCenterline,
     labels: &mut [Option<FinishBand>],
     slope_map: &SlopeMap,
-    tool_radius: f64,
     params: &FinishPlannerParams,
 ) -> (PlannedCrease, usize) {
     let degenerate = || {
@@ -857,7 +889,7 @@ fn apply_crease_corridor(
         }
     }
 
-    let is_canyon = centerline.half_width_mm >= params.corridor_k * tool_radius;
+    let is_canyon = centerline.half_width_mm >= params.crease_own_region_half_width_mm;
     let own_region = is_canyon.then(|| corridor.clone());
 
     (
@@ -1256,7 +1288,7 @@ mod tests {
             overlap_mm: 1.5,
             ..FinishPlannerParams::for_tool(3.0)
         };
-        let planned = decompose(&slope_map, &covered, &[], 3.0, &params);
+        let planned = decompose(&slope_map, &covered, &[], &params);
         let prov = planned.stats.provenance;
 
         assert_eq!(prov.domain, MeasurementDomain::ProjectedXyArea);
@@ -1301,9 +1333,7 @@ mod tests {
             &slope_map,
             &covered,
             &[],
-            3.0,
-            &FinishPlannerParams::for_tool(3.0),
-        );
+            &FinishPlannerParams::for_tool(3.0),);
         let mid_conditioned = conditioned
             .regions
             .iter()
@@ -1320,7 +1350,7 @@ mod tests {
             min_region_area_mm2: 0.0,
             ..FinishPlannerParams::for_tool(3.0)
         };
-        let raw = decompose(&slope_map, &covered, &[], 3.0, &raw_params);
+        let raw = decompose(&slope_map, &covered, &[], &raw_params);
         let mid_raw = raw
             .regions
             .iter()
@@ -1345,9 +1375,7 @@ mod tests {
             &slope_map,
             &covered,
             &[],
-            3.0,
-            &FinishPlannerParams::for_tool(3.0),
-        );
+            &FinishPlannerParams::for_tool(3.0),);
         let mid = planned
             .regions
             .iter()
@@ -1376,9 +1404,7 @@ mod tests {
             &slope_map,
             &covered,
             &[],
-            3.0,
-            &FinishPlannerParams::for_tool(3.0),
-        );
+            &FinishPlannerParams::for_tool(3.0),);
 
         let shallow: Vec<_> = planned
             .regions
@@ -1431,9 +1457,7 @@ mod tests {
             &slope_map,
             &covered,
             &[],
-            3.0,
-            &FinishPlannerParams::for_tool(3.0),
-        );
+            &FinishPlannerParams::for_tool(3.0),);
 
         let mid = planned
             .regions
@@ -1474,8 +1498,8 @@ mod tests {
         let slope_map = SlopeMap::from_z_grid(&z, rows, cols, 0.0, 0.0, cell);
         let covered = margin_covered(rows, cols);
 
-        // half_width_mm (1.0) is below the corridor_k*tool_radius canyon
-        // threshold (6.0 at tool_radius 3.0), so this stays a non-canyon
+        // half_width_mm (1.0) is below the crease-own-region canyon
+        // threshold (6.0 at cusp radius 3.0), so this stays a non-canyon
         // crease, but it must still claim a corridor.
         let creases = vec![straight_crease(1.0)];
 
@@ -1483,9 +1507,7 @@ mod tests {
             &slope_map,
             &covered,
             &creases,
-            3.0,
-            &FinishPlannerParams::for_tool(3.0),
-        );
+            &FinishPlannerParams::for_tool(3.0),);
 
         assert!(
             planned.creases[0].own_region.is_none(),
@@ -1531,9 +1553,7 @@ mod tests {
             &slope_map,
             &covered,
             &creases,
-            3.0,
-            &FinishPlannerParams::for_tool(3.0),
-        );
+            &FinishPlannerParams::for_tool(3.0),);
 
         assert!(planned.creases[0].own_region.is_some());
         assert!(planned.creases[0].corridor.is_some());
@@ -1567,9 +1587,9 @@ mod tests {
         let covered = margin_covered(rows, cols);
         let params = FinishPlannerParams::for_tool(3.0);
 
-        let baseline = decompose(&slope_map, &covered, &[], 3.0, &params);
+        let baseline = decompose(&slope_map, &covered, &[], &params);
         let creases = vec![straight_crease(1.0)];
-        let claimed = decompose(&slope_map, &covered, &creases, 3.0, &params);
+        let claimed = decompose(&slope_map, &covered, &creases, &params);
 
         assert_eq!(baseline.stats.claimed_cells, 0);
         assert!(claimed.stats.claimed_cells > 0);
@@ -1603,7 +1623,7 @@ mod tests {
         let covered = margin_covered(rows, cols);
         let params = FinishPlannerParams::for_tool(3.0);
 
-        let planned = decompose(&slope_map, &covered, &[], 3.0, &params);
+        let planned = decompose(&slope_map, &covered, &[], &params);
 
         assert!(planned.creases.is_empty());
         assert_eq!(planned.stats.claimed_creases, 0);
@@ -1644,22 +1664,18 @@ mod tests {
             &slope_map,
             &covered,
             &[],
-            3.0,
             &FinishPlannerParams {
                 overlap_mm: 0.0,
                 ..FinishPlannerParams::for_tool(3.0)
-            },
-        );
+            },);
         let dilated = decompose(
             &slope_map,
             &covered,
             &[],
-            3.0,
             &FinishPlannerParams {
                 overlap_mm: 2.0,
                 ..FinishPlannerParams::for_tool(3.0)
-            },
-        );
+            },);
 
         assert_eq!(base.regions.len(), 1);
         assert_eq!(dilated.regions.len(), 1);
@@ -1684,8 +1700,8 @@ mod tests {
         let covered = margin_covered(rows, cols);
         let params = FinishPlannerParams::for_tool(3.0);
 
-        let a = decompose(&slope_map, &covered, &[], 3.0, &params);
-        let b = decompose(&slope_map, &covered, &[], 3.0, &params);
+        let a = decompose(&slope_map, &covered, &[], &params);
+        let b = decompose(&slope_map, &covered, &[], &params);
 
         assert_eq!(a.regions.len(), b.regions.len());
         assert_eq!(a.stats.region_count, b.stats.region_count);
@@ -1700,7 +1716,7 @@ mod tests {
     #[test]
     fn degenerate_inputs_never_panic() {
         let empty_slope = SlopeMap::from_z_grid(&[], 0, 0, 0.0, 0.0, 1.0);
-        let out = decompose(&empty_slope, &[], &[], 3.0, &FinishPlannerParams::default());
+        let out = decompose(&empty_slope, &[], &[], &FinishPlannerParams::default());
         assert!(out.regions.is_empty());
         assert!(out.creases.is_empty());
 
@@ -1712,9 +1728,7 @@ mod tests {
             &slope_map,
             &mismatched_covered,
             &[],
-            3.0,
-            &FinishPlannerParams::default(),
-        );
+            &FinishPlannerParams::default(),);
         assert!(out2.regions.is_empty());
 
         let all_uncovered = vec![false; 100];
@@ -1722,9 +1736,7 @@ mod tests {
             &slope_map,
             &all_uncovered,
             &[],
-            3.0,
-            &FinishPlannerParams::default(),
-        );
+            &FinishPlannerParams::default(),);
         assert!(out3.regions.is_empty());
     }
 
@@ -1774,9 +1786,7 @@ mod tests {
             &slope_map,
             &covered,
             &[],
-            3.0,
-            &FinishPlannerParams::for_tool(3.0),
-        );
+            &FinishPlannerParams::for_tool(3.0),);
 
         let svg = planned_regions_to_svg(&planned, 800.0, 800.0);
         assert!(svg.contains("svg"));

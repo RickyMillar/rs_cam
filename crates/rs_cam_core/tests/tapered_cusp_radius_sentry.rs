@@ -163,7 +163,7 @@ fn steep_ribbon_survives_decomposition_under_a_tapered_tool() {
 
     let cusp = t.cusp_radius();
     let params = FinishPlannerParams::for_tool(cusp);
-    let planned = decompose_surface(&surface, &[], cusp, &params);
+    let planned = decompose_surface(&surface, &[], &params);
 
     // M1 slice 2: XY-PROJECTED area, and typed as such. The 76° walls of this
     // groove have ~4× more 3D surface than they project onto XY, so a bare
@@ -198,7 +198,7 @@ fn steep_ribbon_survives_decomposition_under_a_tapered_tool() {
     // blob rather than erasing them (§14t). Region COUNT is the invariant
     // that holds in both directions: coarse dials always destroy structure.
     let shaft_params = FinishPlannerParams::for_tool(t.radius());
-    let shaft_planned = decompose_surface(&surface, &[], t.radius(), &shaft_params);
+    let shaft_planned = decompose_surface(&surface, &[], &shaft_params);
     let shaft_regions = shaft_planned
         .regions
         .iter()

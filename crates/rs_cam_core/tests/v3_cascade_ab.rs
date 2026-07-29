@@ -1153,9 +1153,7 @@ fn build_band_map(s: &ProjectSession) -> BandMap {
         &surface.slope_map,
         &surface.heightmap.covered,
         &[],
-        0.5,
-        &planner,
-    );
+        &planner,);
 
     let hm = &surface.heightmap;
     let (rows, cols, cell) = (hm.rows, hm.cols, hm.cell_size);
