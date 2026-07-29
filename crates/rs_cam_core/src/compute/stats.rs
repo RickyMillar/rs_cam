@@ -27,5 +27,10 @@ pub fn compute_stats(tp: &Toolpath) -> ToolpathStats {
         // keep reading `None` so no ratio is built on a fabricated zero
         // (`MEASUREMENT_DOMAINS.md` X-19).
         standing_material_mm2: None,
+        // Same rule (Wave D1): a band drop and a centreline float are
+        // generation-time findings. This helper only sees moves, so it can
+        // only honestly say "not measured".
+        dropped_band: None,
+        tip_float: None,
     }
 }

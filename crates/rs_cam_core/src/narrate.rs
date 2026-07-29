@@ -80,6 +80,17 @@ pub struct ToolpathNarrationContext<'a> {
     /// which — an agent reading this report must never have to guess
     /// whether a silent zero means "clean" or "unknown".
     pub standing_material_mm2: Option<f64>,
+    /// Wave D1: a planned finish band whose cutting was entirely erased by
+    /// height resolution, straight off
+    /// [`crate::compute::config::ToolpathStats::dropped_band`]. `None` =
+    /// nothing dropped or nothing measured; narration says which, using
+    /// [`Self::operation_kind`] to tell those two apart.
+    pub dropped_band: Option<crate::compute::config::DroppedBandFinding>,
+    /// Wave D1: the centreline TIP-FLOAT tally, off
+    /// [`crate::compute::config::ToolpathStats::tip_float`]. `None` = the
+    /// operation emits no valley centrelines, so nothing was measured — NOT
+    /// "the tool reached everywhere".
+    pub tip_float: Option<crate::compute::config::TipFloatFinding>,
 }
 
 #[derive(Debug, Clone)]
@@ -268,6 +279,8 @@ pub fn narrate_toolpath_with_context(
         output.push_str("Semantic trace: not available.\n");
     }
     append_standing_material(&mut output, context.standing_material_mm2);
+    append_dropped_band(&mut output, context);
+    append_tip_float(&mut output, context.tip_float);
     output.push_str("Z-level source: ");
     output.push_str(z_level_source_label(annotated));
     output.push_str(".\n");
@@ -690,6 +703,98 @@ fn append_standing_material(output: &mut String, measured: Option<f64>) {
                 "Standing material: not measured — no ring cascade ran for this toolpath \
                  (or the caller supplied no generation stats), so no XY-projected \
                  generation-time residual exists. Absence of a number is not a zero.\n",
+            );
+        }
+    }
+}
+
+/// Wave D1: one line, always, about bands that height resolution erased.
+///
+/// The three states are deliberately distinct. `Some` is a defect report.
+/// `None` on a banded operation is a measured-clean statement. `None` on
+/// anything else is "this question does not apply here" — and saying so is
+/// the point: a reader must never infer "clean" from a line that is absent
+/// because nothing looked.
+fn append_dropped_band(output: &mut String, context: &ToolpathNarrationContext<'_>) {
+    use crate::compute::catalog::OperationType;
+    let plans_bands = matches!(context.operation_kind, Some(OperationType::UnifiedFinish));
+    match context.dropped_band {
+        Some(f) => {
+            output.push_str(&format!(
+                "Unmachined band: {area:.1} mm² across {count} planned \
+                 region(s) — the {band} band emitted NO cutting because the \
+                 resolved {clip} = {clip_z:.3} mm clipped its Z range away. \
+                 That feature will be left standing at full stock. Pin \
+                 {clip} to the real depth of the feature. [{provenance}. \
+                 Report-only — no gate consumes this.]\n",
+                area = f.area_mm2,
+                count = f.region_count,
+                band = f.band_label,
+                clip = f.clip_label,
+                clip_z = f.clip_z_mm,
+                provenance = f.provenance.describe(),
+            ));
+        }
+        None if plans_bands => {
+            output.push_str(
+                "Unmachined band: none — every planned finish band still cut \
+                 after height resolution.\n",
+            );
+        }
+        None => {
+            output.push_str(
+                "Unmachined band: not measured — this operation plans no \
+                 finish bands, so no band could be dropped by height \
+                 resolution. Absence of a number is not a zero.\n",
+            );
+        }
+    }
+}
+
+/// Wave D1: one line, always, about material the cutter physically could not
+/// reach on a valley centreline.
+fn append_tip_float(output: &mut String, measured: Option<crate::compute::config::TipFloatFinding>) {
+    use crate::compute::config::{
+        TIP_FLOAT_DOMAIN, TIP_FLOAT_RESOLUTION, TIP_FLOAT_STAGE, TIP_FLOAT_THRESHOLD_MM,
+    };
+    match measured {
+        Some(f) if f.floating_points > 0 => {
+            let pct = 100.0 * f.floating_fraction().unwrap_or(0.0);
+            output.push_str(&format!(
+                "Tip float: {floating} of {total} centreline points ({pct:.0}%) \
+                 sit over material the tool CANNOT reach — it wedges on the \
+                 valley walls and rides above the floor. Worst residual \
+                 {max:.3} mm left uncut beneath the emitted line (float > \
+                 {threshold} mm counts). A smaller tip, or handing these \
+                 valleys to a finer tool, is the only fix — the pass as \
+                 emitted cannot remove it. {TIP_FLOAT_DOMAIN}; \
+                 {TIP_FLOAT_STAGE}; {TIP_FLOAT_RESOLUTION}. Report-only — no \
+                 gate consumes this.\n",
+                floating = f.floating_points,
+                total = f.centreline_points,
+                max = f.max_float_mm,
+                threshold = TIP_FLOAT_THRESHOLD_MM,
+            ));
+        }
+        Some(f) if f.centreline_points > 0 => {
+            output.push_str(&format!(
+                "Tip float: none — {total} centreline points measured and the \
+                 tool reached the traced valley floor on every one. \
+                 {TIP_FLOAT_DOMAIN}; {TIP_FLOAT_STAGE}.\n",
+                total = f.centreline_points,
+            ));
+        }
+        Some(_) => {
+            output.push_str(
+                "Tip float: nothing to measure — the detector emitted no \
+                 centreline points at all.\n",
+            );
+        }
+        None => {
+            output.push_str(
+                "Tip float: not measured — this operation emits no valley \
+                 centrelines, so no reach residual exists to report. Absence \
+                 of a number is not a zero.\n",
             );
         }
     }
@@ -1352,6 +1457,9 @@ mod tests {
             material: None,
             // Adaptive3d runs no ring cascade: not measured.
             standing_material_mm2: None,
+            // Nor bands, nor centrelines (Wave D1): not measured either.
+            dropped_band: None,
+            tip_float: None,
         };
 
         let report = narrate_toolpath_with_context(

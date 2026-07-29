@@ -71,6 +71,15 @@ pub struct GenerationFindings {
     /// (A/M9 / `MEASUREMENT_DOMAINS.md` X-19). See
     /// [`crate::scallop::ScallopReport::uncut_core_mm2`].
     pub standing_material_mm2: Option<f64>,
+    /// Wave D1: a planned finish band whose cutting was entirely erased by
+    /// height resolution — an unmachined feature. `None` = no banded
+    /// decomposition ran, or every band it planned survived.
+    /// See [`crate::compute::config::DroppedBandFinding`].
+    pub dropped_band: Option<crate::compute::config::DroppedBandFinding>,
+    /// Wave D1: tip float on the emitted valley centrelines. `None` = the
+    /// operation emits no centrelines, so nothing was measured.
+    /// See [`crate::compute::config::TipFloatFinding`].
+    pub tip_float: Option<crate::compute::config::TipFloatFinding>,
 }
 
 /// Record one cascade's residual on the context's findings cell,
@@ -84,6 +93,37 @@ fn record_standing_material(cell: &std::cell::Cell<GenerationFindings>, area_mm2
     let prev = cell.get().standing_material_mm2.unwrap_or(0.0);
     cell.set(GenerationFindings {
         standing_material_mm2: Some(prev + area_mm2),
+        ..cell.get()
+    });
+}
+
+/// Record a dropped-band finding (Wave D1). `None` is a no-op — an adapter
+/// that planned bands and dropped none must not overwrite an earlier
+/// finding with an absence.
+fn record_dropped_band(
+    cell: &std::cell::Cell<GenerationFindings>,
+    finding: Option<crate::compute::config::DroppedBandFinding>,
+) {
+    let Some(finding) = finding else { return };
+    cell.set(GenerationFindings {
+        dropped_band: Some(finding),
+        ..cell.get()
+    });
+}
+
+/// Record the centreline tip-float tally (Wave D1). Unlike the two above
+/// this one records a MEASUREMENT, not a defect: `Some` with zero floating
+/// points is the honest "a centreline pass ran and nothing floated", and it
+/// is exactly what stops a later reader from reading silence as clean.
+fn record_tip_float(
+    cell: &std::cell::Cell<GenerationFindings>,
+    finding: crate::compute::config::TipFloatFinding,
+) {
+    let mut merged = cell.get().tip_float.unwrap_or_default();
+    merged.merge(finding);
+    cell.set(GenerationFindings {
+        tip_float: Some(merged),
+        ..cell.get()
     });
 }
 
@@ -1219,6 +1259,7 @@ pub(crate) fn generate_pencil(
     };
     let mut rest_grid_out: Option<crate::rest_field::RestGrid> = None;
     let mut rest_regions_out: Option<Vec<Polygon2>> = None;
+    let mut tip_float_out: Option<crate::compute::config::TipFloatFinding> = None;
     let (tp, annotations) = crate::pencil::pencil_toolpath_structured_annotated_with_cancel(
         m,
         idx,
@@ -1230,9 +1271,16 @@ pub(crate) fn generate_pencil(
         ctx.debug_ctx,
         &mut rest_grid_out,
         &mut rest_regions_out,
+        &mut tip_float_out,
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
     .map_err(|_e| OperationError::Cancelled)?;
+    // Wave D1: pencil is a centreline op, so it always MEASURES float — even
+    // when the answer is zero. That is the whole point: a silent pass and a
+    // pass that proved the tool reached the floor must not look alike.
+    if let Some(float) = tip_float_out {
+        record_tip_float(ctx.findings, float);
+    }
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_pencil(&annotations, &tp, sem);
     }
@@ -1447,6 +1495,17 @@ pub(crate) fn generate_unified_finish(
     )
     .map_err(|_e| OperationError::Cancelled)?;
     record_standing_material(ctx.findings, report.uncut_core_mm2);
+    // Wave D1: an unmachined band is a generation-time finding with no home
+    // on the toolpath — the whole reason `GenerationFindings` exists.
+    record_dropped_band(
+        ctx.findings,
+        crate::unified_finish::dropped_band_finding(&report),
+    );
+    // Wave D1: the crease node's centrelines are pencil centrelines and
+    // float for the same reasons. `None` when claims never ran.
+    if let Some(float) = report.tip_float {
+        record_tip_float(ctx.findings, float);
+    }
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_scallop(&annotations, &tp, sem);
         // A/M8: the SEMANTIC region trace `narrate_toolpath` reads, built

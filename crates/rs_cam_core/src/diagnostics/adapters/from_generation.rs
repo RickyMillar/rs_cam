@@ -35,18 +35,31 @@ pub fn diagnostics_from_generation(
     stats: &ToolpathStats,
 ) -> Vec<Diagnostic> {
     let mut out = Vec::new();
+    out.extend(standing_material(toolpath_id, stats));
+    out.extend(unmachined_band(toolpath_id, stats));
+    out.extend(tip_float(toolpath_id, stats));
+    out
+}
+
+/// The A/M9 finding: a ring cascade that hit its cap and left the interior
+/// of a region uncut.
+///
+/// Split out of [`diagnostics_from_generation`] by Wave D1 — it used to
+/// early-`return` the whole adapter when nothing measured a cascade, which
+/// would have made every later finding conditional on this one.
+fn standing_material(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
     // `None` = not measured (no ring cascade ran). An absent measurement is
     // not a defect claim, and it is NOT the same as a measured zero — see
     // `ToolpathStats::standing_material_mm2` (A/M9).
     let Some(area) = stats.standing_material_mm2 else {
-        return out;
+        return Vec::new();
     };
     // NaN never reports either, for the same reason.
     if area.partial_cmp(&STANDING_MATERIAL_FLOOR_MM2) != Some(std::cmp::Ordering::Greater) {
-        return out;
+        return Vec::new();
     }
 
-    out.push(Diagnostic {
+    vec![Diagnostic {
         id: DiagnosticId::from(ids::GEOM_STANDING_MATERIAL),
         scope: Scope::Toolpath { id: toolpath_id },
         category: Category::Geometry,
@@ -72,8 +85,97 @@ pub fn diagnostics_from_generation(
         fix: None,
         supersedes: vec![],
         suppressed_diagnostics: vec![],
-    });
-    out
+    }]
+}
+
+/// Wave D1: a planned finish band that emitted no cutting because height
+/// resolution clipped its Z range away.
+///
+/// Reported at `Caution` like the standing-material finding: report-only is
+/// the plan's gate, and no verdict may move on it. The message names the
+/// band, the area, and the height that did it, because those three are what
+/// an operator needs to go and pin the height.
+fn unmachined_band(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    // `None` = nothing dropped, or nothing that plans bands ran. Neither is
+    // a defect claim (A/M9's rule, `MEASUREMENT_DOMAINS.md` X-19).
+    let Some(f) = stats.dropped_band.as_deref() else {
+        return Vec::new();
+    };
+    // A dropped band with no area is a decomposition artefact, not a
+    // feature; NaN never reports either.
+    if f.area_mm2.partial_cmp(&STANDING_MATERIAL_FLOOR_MM2) != Some(std::cmp::Ordering::Greater) {
+        return Vec::new();
+    }
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::GEOM_UNMACHINED_BAND),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Geometry,
+        severity: Severity::Caution,
+        // Measured at generation from the planner's own band polygons and
+        // the resolved heights. A simulation cannot find it: the toolpath
+        // never attempted the cut, so there is nothing in a cut record.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: format!(
+            "{area:.1} mm² of the {band} band across {count} planned \
+             region(s) emitted NO cutting: the resolved {clip} = \
+             {clip_z:.3} mm clipped its Z range away, so the feature will be \
+             left at full stock. Pin {clip} to the real depth of the \
+             feature. [{provenance}. Report-only — no gate.]",
+            area = f.area_mm2,
+            band = f.band_label,
+            count = f.region_count,
+            clip = f.clip_label,
+            clip_z = f.clip_z_mm,
+            provenance = f.provenance.describe(),
+        ),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
+}
+
+/// Wave D1: a valley centreline driven over material the cutter cannot
+/// physically reach (Checkpoint A evidence §5 / §9.4).
+fn tip_float(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    use crate::compute::config::{TIP_FLOAT_PROVENANCE, TIP_FLOAT_THRESHOLD_MM};
+    // `None` = this operation emits no centrelines. `Some` with zero
+    // floating points is a measured-clean pass — also not a diagnostic.
+    let Some(f) = stats.tip_float else {
+        return Vec::new();
+    };
+    if f.floating_points == 0 {
+        return Vec::new();
+    }
+    let pct = 100.0 * f.floating_fraction().unwrap_or(0.0);
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::GEOM_TIP_FLOAT),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Geometry,
+        severity: Severity::Caution,
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: format!(
+            "{floating} of {total} centreline points ({pct:.0}%) run over \
+             material this tool cannot reach — it wedges between the valley \
+             walls and floats above the floor. Worst residual {max:.3} mm is \
+             left uncut BENEATH the emitted line (float > \
+             {TIP_FLOAT_THRESHOLD_MM} mm counts). The pass as emitted cannot \
+             remove it: use a smaller tip, or route these valleys to a finer \
+             tool. [{provenance}. Report-only — no gate.]",
+            floating = f.floating_points,
+            total = f.centreline_points,
+            max = f.max_float_mm,
+            provenance = TIP_FLOAT_PROVENANCE.describe(),
+        ),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
 }
 
 #[cfg(test)]

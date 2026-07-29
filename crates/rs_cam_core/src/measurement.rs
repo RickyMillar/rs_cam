@@ -59,6 +59,11 @@ pub enum MeasurementDomain {
     PathLength,
     /// Wall or integrator time (s).
     Runtime,
+    /// A VERTICAL distance (mm) between two Z solutions at the same XY —
+    /// e.g. how far a cutter's resting height floats above the surface it
+    /// was asked to reach. Not an area, not a path length, and not
+    /// comparable to either: it is a depth residual at a point.
+    VerticalResidualMm,
 }
 
 impl MeasurementDomain {
@@ -75,6 +80,7 @@ impl MeasurementDomain {
             Self::StockVolume => "stock volume (mm³)",
             Self::PathLength => "path length (mm)",
             Self::Runtime => "runtime (s)",
+            Self::VerticalResidualMm => "vertical residual depth (mm)",
         }
     }
 }
@@ -109,6 +115,12 @@ pub enum MeasurementStage {
     /// cascade's own geometry (a simulation cannot see material the toolpath
     /// never attempted to cut).
     RingCascadeResidual,
+    /// Measured at generation from the centreline drop-cutter solve: the
+    /// cutter's resting Z at an emitted centreline point, against the
+    /// valley-floor Z the detector traced at the same XY. Like
+    /// [`Self::RingCascadeResidual`] a simulation cannot reproduce it — the
+    /// toolpath never attempts to cut the material in question.
+    CentrelineDropSolve,
     /// Measured by the stock simulation.
     Simulation,
     /// Measured on the emitted toolpath, with no reference to stock.
@@ -129,6 +141,7 @@ impl MeasurementStage {
             Self::PolygonExtraction => "measured at polygon extraction",
             Self::RestFieldMask => "measured on the rest-depth mask",
             Self::RingCascadeResidual => "measured at generation (ring cascade residual)",
+            Self::CentrelineDropSolve => "measured at generation (centreline drop-cutter solve)",
             Self::Simulation => "measured in simulation",
             Self::Emission => "measured on the emitted toolpath",
         }

@@ -693,6 +693,21 @@ pub struct ToolpathDiagnostic {
     /// [`crate::compute::config::ToolpathStats::standing_material_mm2`].
     /// Report-only: no verdict reads it.
     pub standing_material_mm2: Option<f64>,
+    /// Wave D1: XY-projected mm² of finish band that emitted no cutting
+    /// because height resolution clipped its Z range away. `None`
+    /// serialises as `null` and means **nothing dropped or nothing that
+    /// plans bands ran** — never 0.0. The band name and the clipping height
+    /// travel with the `geom.unmachined_band` diagnostic message.
+    /// Report-only: no verdict reads it.
+    pub unmachined_band_area_mm2: Option<f64>,
+    /// Wave D1: emitted centreline points over material the tool cannot
+    /// physically reach. `None` = the operation emits no centrelines
+    /// (**not measured**); `Some(0)` = measured and clean.
+    pub tip_float_points: Option<usize>,
+    /// Wave D1: worst tip-float residual (mm) left beneath the emitted
+    /// centreline. `None` under exactly the same condition as
+    /// [`Self::tip_float_points`]. Report-only.
+    pub max_tip_float_mm: Option<f64>,
 }
 
 /// Severity bucket for a [`Verdict`]. Ordered: `Critical < Important < Polish`
@@ -1379,7 +1394,7 @@ impl ProjectSession {
 impl serde::Serialize for ToolpathDiagnostic {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("ToolpathDiagnostic", 11)?;
+        let mut s = serializer.serialize_struct("ToolpathDiagnostic", 14)?;
         s.serialize_field("toolpath_id", &self.toolpath_id)?;
         s.serialize_field("name", &self.name)?;
         s.serialize_field("operation_type", &self.operation_type)?;
@@ -1392,6 +1407,11 @@ impl serde::Serialize for ToolpathDiagnostic {
         s.serialize_field("rapid_collision_count", &self.rapid_collision_count)?;
         // `null` = not measured (A/M9). Consumers must not coerce it to 0.
         s.serialize_field("standing_material_mm2", &self.standing_material_mm2)?;
+        // Wave D1. Same contract: `null` = not measured / nothing found.
+        // Consumers must not coerce any of these three to 0.
+        s.serialize_field("unmachined_band_area_mm2", &self.unmachined_band_area_mm2)?;
+        s.serialize_field("tip_float_points", &self.tip_float_points)?;
+        s.serialize_field("max_tip_float_mm", &self.max_tip_float_mm)?;
         s.end()
     }
 }

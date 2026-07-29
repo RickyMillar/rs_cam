@@ -59,6 +59,16 @@ pub const GEOM_PLUNGE_EXCEEDS_FEED: &str = "geom.plunge_exceeds_feed";
 /// A ring cascade hit its cap and left the middle of a region uncut.
 /// Sim-independent: measured during generation, not from a dexel run.
 pub const GEOM_STANDING_MATERIAL: &str = "geom.standing_material";
+/// A planned finish band emitted no cutting because height resolution
+/// clipped its Z range away — an unmachined feature. Sim-independent:
+/// measured at generation, and invisible to a dexel run because the
+/// toolpath never attempted the cut.
+pub const GEOM_UNMACHINED_BAND: &str = "geom.unmachined_band";
+/// A valley centreline runs over material the cutter cannot physically
+/// reach: it wedges on the walls and floats above the floor. Also
+/// sim-independent — the emitted path is exactly what a simulation would
+/// execute; the residual is what nothing ever asked for.
+pub const GEOM_TIP_FLOAT: &str = "geom.tip_float";
 
 // ── Tool / operation compatibility ───────────────────────────────────
 pub const COMPAT_END_MILL_SCALLOP_PENCIL: &str = "compat.end_mill_on_scallop_pencil";
@@ -149,6 +159,8 @@ pub const ALL: &[&str] = &[
     GEOM_CLEARANCE_Z_BELOW_RETRACT_Z,
     GEOM_PLUNGE_EXCEEDS_FEED,
     GEOM_STANDING_MATERIAL,
+    GEOM_UNMACHINED_BAND,
+    GEOM_TIP_FLOAT,
     COMPAT_END_MILL_SCALLOP_PENCIL,
     COMPAT_BALL_NOSE_FLAT_CLEARING,
     QUALITY_STEPOVER_OVER_80_PCT,

@@ -777,6 +777,11 @@ fn run_compute_with_phase_tracker(
             // `compute_stats` only sees moves; generation-time findings come
             // from the core call above.
             stats.standing_material_mm2 = generation_findings.standing_material_mm2;
+            // Wave D1: the GUI worker is a parallel copy of the session
+            // path, so a finding that only lands on one of them is invisible
+            // in exactly the product the operator uses.
+            stats.dropped_band = generation_findings.dropped_band.map(Box::new);
+            stats.tip_float = generation_findings.tip_float;
             stats
         };
 
