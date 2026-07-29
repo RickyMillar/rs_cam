@@ -610,7 +610,7 @@ RampFinish cone gouge, tip-float silent residual, 0.9 µm segments).
   above; and the wanaka before/after this wave could not run.
 
 - impl-14 DONE -> **H2 ROUTING WAVE B COMMITTED: PR-6a `b8e3a0d`, PR-6b
-  `be218fe`, PR-7 `c769f43`** (behavioural, under the approved
+  `be218fe`, PR-7 `e922931`** (behavioural, under the approved
   Checkpoint A). Wave A's parting note — "UnifiedFinish's derived stepover
   is the LAST envelope-scaled routing/fit number in the finishing stack" —
   is now false, which was the point.
