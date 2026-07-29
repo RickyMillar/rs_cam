@@ -158,7 +158,7 @@ pub struct PencilParams {
     /// = finer regions and more drops. Default 0.5 (see [`rest_cell_default`]).
     pub rest_cell_mm: f64,
     /// `RestDepth` routing threshold: a rest region routes to a pencil centreline
-    /// when its half-width `≤ route_width_factor × pencil_radius`, else to
+    /// when its half-width `≤ route_width_factor × routing_radius_mm`, else to
     /// clearing. Default 2.0 (see [`route_width_factor_default`]).
     pub route_width_factor: f64,
     /// R1: a real reference tool (from the library) whose *true* cutter geometry
@@ -455,7 +455,7 @@ pub(crate) fn rest_cell_default() -> f64 {
 }
 
 /// Default rest-region routing threshold: a region whose half-width exceeds
-/// `2.0 × pencil_radius` (one pencil diameter) routes to clearing rather than a
+/// `2.0 × routing radius` (one pencil diameter) routes to clearing rather than a
 /// single pencil centreline.
 pub(crate) fn route_width_factor_default() -> f64 {
     2.0
@@ -1082,11 +1082,34 @@ impl ResolvedReference<'_> {
 }
 
 /// Resolve the rest-depth reference tool (see [`ResolvedReference`]).
-fn resolve_reference_cutter(params: &PencilParams, pencil_diameter: f64) -> ResolvedReference<'_> {
+///
+/// # The scale the comparison is against (task #12, H2.1)
+///
+/// "Is the nominal reference bigger than the pencil tool?" is a question
+/// about the scale the pencil actually CUTS with — its tip sphere — not
+/// about the widest point of its body. It used to be asked against
+/// `cutter.diameter()`, which for a tapered ball deliberately reports the
+/// SHANK (`TOOL_SCALE_SEMANTICS.md` §4.1). On the shipped Ø1-tip / Ø6-shank
+/// taper that made the comparison `6.0 > 6.0 + 1e-6` — false at the shipped
+/// `reference_tool_diameter` default of 6.0 — so **every tapered pencil
+/// operation silently fell through to the self-referenced surface probe**,
+/// and no rest measurement on a tapered tool meant what it said. Confirmed
+/// live before the fix by `CHECKPOINT_A_EVIDENCE.md` probe 3: 1 chain at the
+/// default reference versus 2 at a reference above the shank, same tool and
+/// same fixture.
+///
+/// The comparison is now against `cusp_radius_mm() * 2` — the tip diameter,
+/// which is `diameter()` for every non-tapered shape, so nothing but the
+/// tapered path moves.
+fn resolve_reference_cutter<'a>(
+    params: &'a PencilParams,
+    pencil: &dyn MillingCutter,
+) -> ResolvedReference<'a> {
     if let Some(rc) = params.reference_cutter.as_ref() {
         return ResolvedReference::Real(rc);
     }
-    if params.reference_tool_diameter > pencil_diameter + 1e-6 {
+    let pencil_cutting_diameter = pencil.cusp_radius_mm() * 2.0;
+    if params.reference_tool_diameter > pencil_cutting_diameter + 1e-6 {
         return ResolvedReference::Nominal(crate::tool::BallEndmill::new(
             params.reference_tool_diameter,
             NOMINAL_REFERENCE_BALL_LENGTH_MM,
@@ -1112,7 +1135,7 @@ fn curvature_arm(
 ) -> Result<Vec<PencilPath>, Cancelled> {
     let mut all_paths: Vec<PencilPath> = Vec::new();
     let gap_threshold = params.min_valley_depth;
-    let resolved = resolve_reference_cutter(params, cutter.diameter());
+    let resolved = resolve_reference_cutter(params, cutter);
     let reference_ref = resolved.as_dyn();
 
     let cp = crate::crest_lines::CrestParams {
@@ -1217,7 +1240,7 @@ fn rest_depth_arm(
     });
     let probe_ball =
         crate::tool::BallEndmill::new(SURFACE_PROBE_BALL_DIAMETER_MM, SURFACE_PROBE_BALL_LENGTH_MM);
-    let resolved = resolve_reference_cutter(params, cutter.diameter());
+    let resolved = resolve_reference_cutter(params, cutter);
     // reference-mode counter: 0 = nominal ball / probe, 1 = real tool,
     // 2 = machined stock.
     let (reference, probe_mode, rest_reference_mode): (
@@ -1258,7 +1281,7 @@ fn rest_depth_arm(
         cell_mm: params.rest_cell_mm,
         min_valley_depth: params.min_valley_depth,
         route_width_factor: params.route_width_factor,
-        pencil_radius: cutter.radius(),
+        routing_radius_mm: cutter.radius(),
         min_cut_length: params.min_cut_length,
         // No dedicated PencilParams dial yet — the default margin (P2.1
         // scope: derive region_polygons, not expose a new user-facing knob).
@@ -1342,7 +1365,7 @@ fn dihedral_arm(
 ) -> Result<Vec<PencilPath>, Cancelled> {
     let mut all_paths: Vec<PencilPath> = Vec::new();
     let gap_threshold = params.min_valley_depth;
-    let resolved = resolve_reference_cutter(params, cutter.diameter());
+    let resolved = resolve_reference_cutter(params, cutter);
     let reference_ref = resolved.as_dyn();
 
     // Step 1: edge adjacency. Step 2: shared edges + dihedral angles.
@@ -1724,7 +1747,7 @@ mod tests {
             .filter(|e| e.is_concave && e.dihedral_angle > (std::f64::consts::PI - threshold_rad))
             .collect();
         let chains_all = chain_concave_edges(&concave, mesh, params.min_cut_length);
-        let resolved = resolve_reference_cutter(params, tool.diameter());
+        let resolved = resolve_reference_cutter(params, tool);
         let reference_ref = resolved.as_dyn();
         gate_chains_by_depth(
             chains_all,

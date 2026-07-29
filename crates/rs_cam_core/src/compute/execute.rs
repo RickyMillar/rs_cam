@@ -1431,7 +1431,7 @@ pub(crate) fn generate_unified_finish(
         // the detector's own defaults. `route_width_factor`/
         // `min_cut_length` have no `RestAnalysisConfig` equivalent yet, so
         // they always fall back to `RestFieldParams::default()`.
-        // `pencil_radius` is set by `unified_finish_toolpath_with_cancel`
+        // `routing_radius_mm` is set by `unified_finish_toolpath_with_cancel`
         // itself (the op's own cutter), so leaving the default here is a
         // no-op either way.
         let mut rest_field_params =
@@ -2213,7 +2213,7 @@ fn attach_generic_rest_analysis(
         cell_mm: cfg.cell_mm,
         min_valley_depth: cfg.min_valley_depth,
         region_margin_mm: cfg.region_margin_mm,
-        pencil_radius: tool_def.radius(),
+        routing_radius_mm: tool_def.radius(),
         ..Default::default()
     };
     let rf = crate::rest_field::detect_rest_valleys(mesh, index, tool_def, reference, &rf_params);
