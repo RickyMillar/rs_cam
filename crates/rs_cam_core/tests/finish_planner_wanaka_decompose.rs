@@ -116,7 +116,7 @@ fn wanaka_decomposes_to_order_ten_regions() {
         .expect("classification surface sampling");
 
     let params = FinishPlannerParams::for_tool(tool_radius);
-    let planned = decompose_surface(&surface, &[], tool_radius, &params);
+    let planned = decompose_surface(&surface, &[], &params);
 
     // M1: these are `ProjectedXyAreaMm2`, not bare `f64`. The ground-truth
     // block below prints `SurfaceAreaMm2`, and the compiler will not let the
@@ -185,7 +185,7 @@ fn wanaka_decomposes_to_order_ten_regions() {
         min_region_area_mm2: 1.0,
         ..FinishPlannerParams::for_tool(tool_radius)
     };
-    let raw = decompose_surface(&surface, &[], tool_radius, &raw_params);
+    let raw = decompose_surface(&surface, &[], &raw_params);
     let raw_mid = raw
         .regions
         .iter()
@@ -414,7 +414,7 @@ fn p2e_conditioning_dial_sweep() {
         "raw s/vs"
     );
     for (label, params) in &rows {
-        let planned = decompose_surface(&surface, &[], tool_radius, params);
+        let planned = decompose_surface(&surface, &[], params);
         let stat = |band: FinishBand| -> (usize, ProjectedXyAreaMm2) {
             planned
                 .regions
@@ -456,8 +456,8 @@ fn p2e_conditioning_dial_sweep() {
     }
 
     // Determinism at the default row (the sweep's anchor).
-    let a = decompose_surface(&surface, &[], tool_radius, &base);
-    let b = decompose_surface(&surface, &[], tool_radius, &base);
+    let a = decompose_surface(&surface, &[], &base);
+    let b = decompose_surface(&surface, &[], &base);
     assert_eq!(a.stats.region_count, b.stats.region_count);
     assert_eq!(a.regions.len(), b.regions.len());
 }
@@ -533,7 +533,7 @@ fn wanaka_band_mix_vs_cusp_radius() {
         let sample_s = t0.elapsed().as_secs_f64();
         let (rows, cols) = (surface.heightmap.rows, surface.heightmap.cols);
         let params = FinishPlannerParams::for_tool(cusp_r);
-        let planned = decompose_surface(&surface, &[], cusp_r, &params);
+        let planned = decompose_surface(&surface, &[], &params);
         // M1 slice 2: `ProjectedXyAreaMm2`, so this column cannot be divided
         // by the 3D `SurfaceAreaMm2` column printed ~30 lines below — the
         // exact pair §14r divided ("313 of 482").
@@ -621,7 +621,7 @@ fn wanaka_band_mix_vs_cusp_radius() {
     );
     for dial_r in [3.0_f64, 1.0, 0.5, 0.25] {
         let params = FinishPlannerParams::for_tool(dial_r);
-        let planned = decompose_surface(&surface, &[], dial_r, &params);
+        let planned = decompose_surface(&surface, &[], &params);
         let stats = |band: FinishBand| -> (usize, ProjectedXyAreaMm2) {
             let (mut n, mut area) = (0usize, ProjectedXyAreaMm2::default());
             for r in planned.regions.iter().filter(|r| r.band == band) {

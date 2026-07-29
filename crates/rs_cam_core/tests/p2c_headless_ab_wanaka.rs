@@ -315,9 +315,7 @@ fn build_band_map(s: &ProjectSession) -> BandMap {
         &surface.slope_map,
         &surface.heightmap.covered,
         &[],
-        3.0,
-        &planner,
-    );
+        &planner,);
 
     let hm = &surface.heightmap;
     let (rows, cols, cell) = (hm.rows, hm.cols, hm.cell_size);
@@ -910,9 +908,7 @@ fn p2c_unified_phase_probe() {
         &surface.slope_map,
         &surface.heightmap.covered,
         &[],
-        3.0,
-        &planner,
-    );
+        &planner,);
     eprintln!(
         "[{:8.1}s] decompose: {} regions",
         t.elapsed().as_secs_f64(),
@@ -1064,9 +1060,7 @@ fn p2c_scallop_height_cost_curve() {
         &surface.slope_map,
         &surface.heightmap.covered,
         &[],
-        3.0,
-        &planner,
-    );
+        &planner,);
     let mid: Vec<_> = planned
         .regions
         .iter()
@@ -1155,9 +1149,7 @@ fn p2g_ring_dump() {
         &surface.slope_map,
         &surface.heightmap.covered,
         &[],
-        3.0,
-        &planner,
-    );
+        &planner,);
     let mid: Vec<_> = planned
         .regions
         .iter()
@@ -2913,9 +2905,7 @@ fn p2c_offset_cascade_probe() {
         &surface.slope_map,
         &surface.heightmap.covered,
         &[],
-        3.0,
-        &planner,
-    );
+        &planner,);
     let mid: Vec<Polygon2> = planned
         .regions
         .iter()

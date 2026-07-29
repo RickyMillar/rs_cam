@@ -1206,7 +1206,7 @@ pub fn unified_finish_toolpath_with_cancel(
     // scope; until then bands overlap the crease cut, which costs a
     // little double-cutting along centerlines and can never abandon
     // territory.
-    let mut planned = decompose(&surface.slope_map, &covered, &[], cutter.radius(), planner);
+    let mut planned = decompose(&surface.slope_map, &covered, &[], planner);
     // `decompose` is handed a bare `SlopeMap` and stamps `Explicit`; this
     // caller knows the grid came from the CLASSIFICATION surface (M1).
     planned.stats.provenance.cell_source = surface.cell_source;
