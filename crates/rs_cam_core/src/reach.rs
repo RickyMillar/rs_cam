@@ -320,6 +320,66 @@ pub fn solve_reach(cutter: &dyn MillingCutter, valley: &LocalValley) -> Reach {
     }
 }
 
+/// The half-band ONE pass works at `depth_mm`: the cutter's own engaged
+/// half-width there, floored at the cusp radius.
+///
+/// The floor is not cosmetic — every ball-tipped shape reports zero engaged
+/// width at zero depth, and a zero here collapses both consumers below
+/// ([`coverage_cap_passes`] to a zero cap, [`suggested_offset_stepover_mm`]
+/// to a zero stepover). This is the ONE expression of "how wide is this
+/// cutter, here"; both consumers call it rather than restating it.
+#[must_use]
+pub fn working_half_width_mm(cutter: &dyn MillingCutter, depth_mm: f64) -> f64 {
+    cutter
+        .engagement_radius_mm(depth_mm.max(0.0))
+        .max(cutter.cusp_radius_mm())
+}
+
+/// Fraction of [`working_half_width_mm`] the policy sizes an offset stepover
+/// at — 50 % of the band one pass works, i.e. a half-width overlap between
+/// neighbouring passes in the fan.
+pub const SUGGESTED_STEPOVER_OVERLAP: f64 = 0.5;
+
+/// The offset stepover (mm) this policy sizes for a fan working at
+/// `depth_mm`.
+///
+/// # Why the policy owns this number
+///
+/// Before PR-6a the one remaining routing/fit scalar in the finishing stack
+/// was `UnifiedFinish`'s `cutter.envelope_radius_mm() * 0.5` — 1.5 mm on the
+/// shipped Ø1-tip / 7° / Ø6-shank taper, i.e. half the SHANK, three times
+/// wider than the whole tip. A fan spaced on the shank cannot describe passes
+/// a Ø1 tip cuts, and it fed the routing criterion (`cap × stepover`) as well
+/// as the emission, so it overstated both sides of the coverage question at
+/// once.
+///
+/// The replacement is deliberately the same SHAPE — a fixed fraction of a
+/// radius — with the envelope radius swapped for the radius the tool actually
+/// works with at this depth. It is therefore consistent with
+/// [`coverage_cap_passes`] by construction: at this stepover the cap floor is
+/// exactly `ceil(1 / SUGGESTED_STEPOVER_OVERLAP) = 2` passes, so the
+/// centreline plus one offset per side covers the band the centreline pass
+/// itself works, and no more.
+///
+/// # Conservatism
+///
+/// `width_at_height` is monotone non-decreasing and saturates at the envelope
+/// radius, so `working_half_width_mm ≤ envelope_radius_mm` for every cutter at
+/// every depth: this value is never COARSER than the number it replaces, only
+/// equal or finer. Finer is the safe direction — [`offset_passes_per_side`]
+/// FLOORS `reach / stepover`, so a finer stepover can only place passes the
+/// reach solve already said the cutter can hold, and the routing threshold
+/// `cap × stepover` quantises the reachable band more tightly instead of
+/// rounding it up. `suggested_stepover_is_never_coarser_than_the_envelope_rule`
+/// asserts the bound rather than assuming it.
+///
+/// For a plain ball the two are numerically IDENTICAL (its cusp radius is its
+/// envelope radius), so the migration moves tapered tools only.
+#[must_use]
+pub fn suggested_offset_stepover_mm(cutter: &dyn MillingCutter, depth_mm: f64) -> f64 {
+    working_half_width_mm(cutter, depth_mm) * SUGGESTED_STEPOVER_OVERLAP
+}
+
 /// The `cap` in `X_reach ≤ cap × offset_stepover`.
 ///
 /// # Derivation
@@ -358,9 +418,7 @@ pub fn coverage_cap_passes(
     num_offset_passes: usize,
 ) -> usize {
     let stepover = offset_stepover_mm.max(1e-6);
-    let own_width = cutter
-        .engagement_radius_mm(depth_mm.max(0.0))
-        .max(cutter.cusp_radius_mm());
+    let own_width = working_half_width_mm(cutter, depth_mm);
     let floor = ((own_width / stepover).ceil().max(1.0) as usize).max(1);
     num_offset_passes.max(floor)
 }
@@ -547,5 +605,74 @@ mod tests {
         // Ball control: the floor is the ball radius over the stepover.
         let ball = BallEndmill::new(3.0, 25.0);
         assert_eq!(coverage_cap_passes(&ball, 2.0, 0.5, 0), 3);
+    }
+
+    /// PR-6a (H2.3): the derived stepover is never COARSER than the envelope
+    /// rule it replaces — `width_at_height` saturates at the envelope radius,
+    /// so the bound holds at every depth, and finer is the conservative
+    /// direction (see [`suggested_offset_stepover_mm`]).
+    #[test]
+    fn suggested_stepover_is_never_coarser_than_the_envelope_rule() {
+        let t = taper();
+        let ball = BallEndmill::new(6.0, 25.0);
+        for depth in [0.0, 0.01, 0.05, 0.2, 0.6, 1.2, 3.0, 8.0, 40.0] {
+            for cutter in [&t as &dyn MillingCutter, &ball as &dyn MillingCutter] {
+                let derived = suggested_offset_stepover_mm(cutter, depth);
+                let envelope_rule = cutter.envelope_radius_mm() * 0.5;
+                assert!(
+                    derived > 0.0,
+                    "a zero stepover collapses the fan (depth {depth})"
+                );
+                assert!(
+                    derived <= envelope_rule + 1e-12,
+                    "depth {depth}: derived {derived} coarser than the retired \
+                     envelope rule {envelope_rule}"
+                );
+            }
+        }
+    }
+
+    /// The shipped taper is the discriminating case: the envelope rule sizes
+    /// the fan off the Ø6 SHANK (1.5 mm), the policy off the Ø1 tip.
+    #[test]
+    fn the_derived_stepover_moves_the_taper_and_leaves_the_ball_alone() {
+        let t = taper();
+        // Shallow rest — the cusp floor binds: half the Ø1 tip radius.
+        assert!((suggested_offset_stepover_mm(&t, 0.05) - 0.25).abs() < 1e-12);
+        assert!((t.envelope_radius_mm() * 0.5 - 1.5).abs() < 1e-12);
+        // Deeper rest engages more of the cone, so the stepover grows —
+        // monotonically, and never past the envelope rule.
+        let deep = suggested_offset_stepover_mm(&t, 2.0);
+        assert!(deep > 0.25 && deep < 1.5, "got {deep}");
+
+        // A plain ball's cusp radius IS its envelope radius: identity.
+        let ball = BallEndmill::new(6.0, 25.0);
+        for depth in [0.0, 0.3, 3.0, 12.0] {
+            assert!(
+                (suggested_offset_stepover_mm(&ball, depth) - ball.envelope_radius_mm() * 0.5).abs()
+                    < 1e-12,
+                "the ball must not move at depth {depth}"
+            );
+        }
+    }
+
+    /// Routing and emission agree by construction at the derived stepover:
+    /// the coverage cap floor is exactly 2 passes, whatever the tool or the
+    /// depth. If [`SUGGESTED_STEPOVER_OVERLAP`] and the floor in
+    /// [`coverage_cap_passes`] ever drift apart, this fails.
+    #[test]
+    fn the_derived_stepover_puts_the_coverage_cap_floor_at_two() {
+        let t = taper();
+        let ball = BallEndmill::new(3.0, 25.0);
+        for cutter in [&t as &dyn MillingCutter, &ball as &dyn MillingCutter] {
+            for depth in [0.0, 0.05, 0.6, 2.0, 5.0] {
+                let s = suggested_offset_stepover_mm(cutter, depth);
+                assert_eq!(
+                    coverage_cap_passes(cutter, depth, s, 0),
+                    2,
+                    "depth {depth}, stepover {s}"
+                );
+            }
+        }
     }
 }

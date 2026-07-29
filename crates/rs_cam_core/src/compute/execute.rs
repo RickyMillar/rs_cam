@@ -84,6 +84,10 @@ pub struct GenerationFindings {
     /// project. `None` = nothing retired is set.
     /// See [`crate::compute::config::DeprecatedDialFinding`].
     pub deprecated_dial: Option<crate::compute::config::DeprecatedDialFinding>,
+    /// PR-6a: an offset stepover this operation derived from the canonical
+    /// reach policy. `None` = the operation derives none.
+    /// See [`crate::compute::config::DerivedStepoverFinding`].
+    pub derived_stepover: Option<crate::compute::config::DerivedStepoverFinding>,
 }
 
 /// Record one cascade's residual on the context's findings cell,
@@ -145,6 +149,24 @@ fn record_deprecated_dial(
     }
     cell.set(GenerationFindings {
         deprecated_dial: Some(finding),
+        ..cell.get()
+    });
+}
+
+/// Record the offset stepover an operation derived from the reach policy
+/// (PR-6a, H2.3).
+///
+/// Unlike [`record_deprecated_dial`] this is NOT suppressed at the
+/// no-change case here — the finding carries both numbers and the reader
+/// decides. The diagnostic adapter is what stays quiet when the policy and
+/// the retired envelope rule agree (every plain ball), so a test can still
+/// assert the derivation ran on a tool it did not move.
+fn record_derived_stepover(
+    cell: &std::cell::Cell<GenerationFindings>,
+    finding: crate::compute::config::DerivedStepoverFinding,
+) {
+    cell.set(GenerationFindings {
+        derived_stepover: Some(finding),
         ..cell.get()
     });
 }
@@ -1542,6 +1564,22 @@ pub(crate) fn generate_unified_finish(
     // float for the same reasons. `None` when claims never ran.
     if let Some(float) = report.tip_float {
         record_tip_float(ctx.findings, float);
+    }
+    // PR-6a (H2.3): the crease/pencil fan's stepover is derived from the
+    // canonical reach policy, not from any dial the operator can see. `None`
+    // when the claims pipeline never ran, so "not derived" stays distinct
+    // from "derived and unchanged".
+    if let Some(claims) = report.claims {
+        record_derived_stepover(
+            ctx.findings,
+            crate::compute::config::DerivedStepoverFinding {
+                site: "UnifiedFinish crease/pencil claims",
+                stepover_mm: claims.offset_stepover_mm,
+                reference_depth_mm: claims.offset_stepover_reference_depth_mm,
+                reference_depth_basis: crate::unified_finish::CLAIMS_STEPOVER_DEPTH_BASIS,
+                envelope_rule_mm: claims.envelope_rule_stepover_mm,
+            },
+        );
     }
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_scallop(&annotations, &tp, sem);

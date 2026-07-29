@@ -786,6 +786,8 @@ fn run_compute_with_phase_tracker(
             // finding that lands only on the session path is invisible in
             // exactly the product the operator uses.
             stats.deprecated_dial = generation_findings.deprecated_dial.map(Box::new);
+            // PR-6a: the reach-policy stepover, same parallel-copy rule.
+            stats.derived_stepover = generation_findings.derived_stepover.map(Box::new);
             stats
         };
 

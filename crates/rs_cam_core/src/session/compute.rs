@@ -1553,6 +1553,8 @@ impl ProjectSession {
                     tip_float: findings.tip_float,
                     // PR-5: a retired dial still set in the loaded project.
                     deprecated_dial: findings.deprecated_dial.map(Box::new),
+                    // PR-6a: the reach-policy stepover this op derived.
+                    derived_stepover: findings.derived_stepover.map(Box::new),
                 };
 
                 let mut debug_trace = debug_recorder.finish();
@@ -5227,6 +5229,7 @@ mod tests {
                 dropped_band: None,
                 tip_float: None,
                 deprecated_dial: None,
+                derived_stepover: None,
             },
             debug_trace: None,
             semantic_trace: None,

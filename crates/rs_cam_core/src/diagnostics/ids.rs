@@ -73,6 +73,11 @@ pub const GEOM_TIP_FLOAT: &str = "geom.tip_float";
 /// field is deserialized so the project loads unchanged, but nothing reads
 /// it any more, so the number the operator tuned is not steering anything.
 pub const CONFIG_DEPRECATED_DIAL: &str = "config.deprecated_dial";
+/// An operation sized an offset stepover from the canonical reach policy
+/// rather than from any dial, and the value differs from the envelope-scaled
+/// number that used to be used there. Report-only: it says which number is
+/// steering a fan the operator cannot otherwise see.
+pub const CONFIG_DERIVED_STEPOVER: &str = "config.derived_stepover";
 
 // ── Tool / operation compatibility ───────────────────────────────────
 pub const COMPAT_END_MILL_SCALLOP_PENCIL: &str = "compat.end_mill_on_scallop_pencil";
