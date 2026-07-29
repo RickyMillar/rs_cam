@@ -40,21 +40,25 @@ pub(crate) fn cycle_time_from_trace(
         .map(|s| s.total_runtime_s)
 }
 
-/// Roadmap F.12 — per-toolpath air-cut fraction (range 0.0..=1.0).
-/// Defined as `air_cut_time_s / total_runtime_s` from the trace's
-/// per-toolpath summary. Returns `None` when the toolpath has no
-/// summary entry (failed sim) or `total_runtime_s` is non-positive.
-pub(crate) fn air_cut_pct_from_trace(
+/// Roadmap F.12 — per-toolpath air-cut fraction of **total runtime**
+/// (cutting + rapids), range 0.0..=1.0. Returns `None` when the toolpath has
+/// no summary entry (failed sim) or `total_runtime_s` is non-positive.
+///
+/// LH-1: the denominator is in the name because the other one
+/// ([`crate::simulation_cut::AirCutRatios::air_cut_pct_of_cutting_time`])
+/// also ships, reads larger, and used to travel under the same word.
+pub(crate) fn air_cut_fraction_of_total_runtime_from_trace(
     trace: &SimulationCutTrace,
     toolpath_id: ToolpathId,
 ) -> Option<f64> {
+    use crate::simulation_cut::AirCutRatios;
     trace
         .toolpath_summaries
         .iter()
         .find(|s| s.toolpath_id == toolpath_id)
         .and_then(|s| {
             if s.total_runtime_s > 0.0 {
-                Some(s.air_cut_time_s / s.total_runtime_s)
+                Some(s.air_cut_pct_of_total_runtime() / 100.0)
             } else {
                 None
             }
@@ -506,21 +510,21 @@ mod restore_guard_tests {
     }
 
     #[test]
-    fn air_cut_pct_from_trace_divides_air_by_total() {
+    fn air_cut_fraction_divides_air_by_total_runtime() {
         let trace = trace_with_summary(ToolpathId(7), 100.0, 42.0);
-        let pct = air_cut_pct_from_trace(&trace, ToolpathId(7)).expect("summary present");
+        let pct = air_cut_fraction_of_total_runtime_from_trace(&trace, ToolpathId(7)).expect("summary present");
         assert!((pct - 0.42).abs() < 1e-9, "{pct}");
     }
 
     #[test]
-    fn air_cut_pct_from_trace_missing_toolpath_returns_none() {
+    fn air_cut_fraction_missing_toolpath_returns_none() {
         let trace = trace_with_summary(ToolpathId(7), 100.0, 42.0);
-        assert!(air_cut_pct_from_trace(&trace, ToolpathId(99)).is_none());
+        assert!(air_cut_fraction_of_total_runtime_from_trace(&trace, ToolpathId(99)).is_none());
     }
 
     #[test]
-    fn air_cut_pct_from_trace_zero_runtime_returns_none() {
+    fn air_cut_fraction_zero_runtime_returns_none() {
         let trace = trace_with_summary(ToolpathId(7), 0.0, 0.0);
-        assert!(air_cut_pct_from_trace(&trace, ToolpathId(7)).is_none());
+        assert!(air_cut_fraction_of_total_runtime_from_trace(&trace, ToolpathId(7)).is_none());
     }
 }

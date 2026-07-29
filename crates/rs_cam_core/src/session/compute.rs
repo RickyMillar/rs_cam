@@ -3113,19 +3113,30 @@ impl ProjectSession {
             }
         }
 
-        // Extract simulation metrics if available
-        let (total_runtime_s, air_cut_percentage, average_engagement) =
-            if let Some(trace) = evidence.cut_trace {
-                let summary = &trace.summary;
-                let air_pct = if summary.total_runtime_s > 0.0 {
-                    summary.air_cut_time_s / summary.total_runtime_s * 100.0
-                } else {
-                    0.0
-                };
-                (summary.total_runtime_s, air_pct, summary.average_engagement)
-            } else {
-                (0.0, 0.0, 0.0)
-            };
+        // Extract simulation metrics if available.
+        //
+        // LH-1: air cut is published under BOTH denominators, each named.
+        // The legacy `air_cut_percentage` keeps its total-runtime value —
+        // every threshold in this file and in the GUI was tuned against it —
+        // and the cutting-time reading (what the MCP narration reports)
+        // travels beside it instead of contradicting it under the same name.
+        let (
+            total_runtime_s,
+            air_cut_pct_of_total_runtime,
+            air_cut_pct_of_cutting_time,
+            average_engagement,
+        ) = if let Some(trace) = evidence.cut_trace {
+            use crate::simulation_cut::AirCutRatios;
+            let summary = &trace.summary;
+            (
+                summary.total_runtime_s,
+                summary.air_cut_pct_of_total_runtime(),
+                summary.air_cut_pct_of_cutting_time(),
+                summary.average_engagement,
+            )
+        } else {
+            (0.0, 0.0, 0.0, 0.0)
+        };
 
         // Per-TP op-kind-aware air-cut warnings. A blanket project-wide
         // threshold (the old `>40%`) fires falsely on projects that contain
@@ -3252,7 +3263,9 @@ impl ProjectSession {
         if !air_cut_offenders.is_empty() {
             let names: Vec<String> = air_cut_offenders
                 .iter()
-                .map(|(n, pct)| format!("'{n}' is {pct:.0}% air-cut"))
+                // LH-1: the threshold is on the TOTAL-RUNTIME measure; the
+                // headline says so rather than leaving "air-cut" ambiguous.
+                .map(|(n, pct)| format!("'{n}' is {pct:.0}% air-cut of total runtime"))
                 .collect();
             let offender_ids: Vec<ToolpathId> = air_cut_offenders
                 .iter()
@@ -3293,7 +3306,9 @@ impl ProjectSession {
 
         ProjectDiagnostics {
             total_runtime_s,
-            air_cut_percentage,
+            air_cut_percentage: air_cut_pct_of_total_runtime,
+            air_cut_pct_of_total_runtime,
+            air_cut_pct_of_cutting_time,
             average_engagement,
             collision_count: total_collision_count,
             rapid_collision_count: total_rapid_collision_count,
@@ -3631,6 +3646,8 @@ fn air_cut_offenders_for_toolpaths(
     toolpath_summaries: &[crate::simulation_cut::SimulationToolpathCutSummary],
     toolpath_configs: &[super::ToolpathConfig],
 ) -> Vec<(String, f64)> {
+    use crate::simulation_cut::AirCutRatios;
+
     let mut offenders = Vec::new();
     for tp_summary in toolpath_summaries {
         if tp_summary.total_runtime_s <= 0.0 {
@@ -3645,7 +3662,11 @@ fn air_cut_offenders_for_toolpaths(
         let Some(threshold) = tc.operation.op_type().air_cut_high_threshold_pct() else {
             continue;
         };
-        let air_pct = tp_summary.air_cut_time_s / tp_summary.total_runtime_s * 100.0;
+        // LH-1: `air_cut_high_threshold_pct` is defined against TOTAL runtime
+        // (cutting + rapids). Named accessor, not a bare division, so the
+        // choice is visible here and cannot silently drift to the
+        // cutting-time reading the MCP narration prints.
+        let air_pct = tp_summary.air_cut_pct_of_total_runtime();
         if air_pct > threshold {
             offenders.push((tc.name.clone(), air_pct));
         }
