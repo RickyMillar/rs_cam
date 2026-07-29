@@ -566,3 +566,168 @@ instrument.
    (PR-3 already noted this): §2 quantifies the consequence — on the narrow
    ridge and valley it decides "there is no very-steep territory here" when the
    truth has 8 and 4 regions.
+
+---
+
+# ADDENDUM — 2026-07-30 — `max_rings` experiment + SteepShallow deferral
+
+Added by the H3 wave (PR-8c), under the approved Checkpoint B. **Evidence
+only: no production scallop behaviour changed in this wave, whatever the
+numbers below say.** Adopting a scallop ring budget is its own decision and
+belongs with Checkpoint C context (M4).
+
+HEAD at time of run: `074789e` (post PR-8a / PR-8b).
+Instrument: `checkpoint_b_resolution_ab::max_rings_budget_experiment`
+(`#[ignore]`, 238 s DEBUG) plus its fast non-vacuity guard
+`the_three_ring_budgets_are_three_different_numbers`.
+
+Reproduce:
+`cargo test -p rs_cam_core --test checkpoint_b_resolution_ab max_rings_budget_experiment -- --ignored --nocapture`
+
+## A.1 What was asked
+
+Checkpoint B's ruling: *"`max_rings` budget derived from SELECTED stepover
+as an H3-scoped EXPERIMENT first (adopt only if standing → 0 with no
+over-cut regression; remember v3: naive cap raise was 34× worse)."*
+
+§3.1 finding 3 is the target: at `cusp/4` scallop leaves **19.32 mm²**
+standing on the narrow ridge and **33.24 mm²** on the mixed ribbon where
+`envelope/4` leaves none, because `max_rings` is budgeted from the
+FLAT-GROUND (widest) stepover while the ring loop selects a smaller one per
+ring on sloped terrain.
+
+## A.2 The three budgets
+
+New research seam `ScallopRingBudget` (additive; every production entry point
+resolves to `FlatGroundStepover`, so no default moved). On the shipped
+Ø1-tip / 7° / Ø6-shank taper at a 0.020 mm commanded cusp:
+
+| budget | stepover the cap is sized from | vs shipped |
+|---|---|---|
+| `FlatGroundStepover` — **shipped** | 0.2800 mm | 1.00× |
+| `ReachPolicyStepover` — the ruling's candidate | 0.2500 mm | **1.12×** more rings |
+| `LoopClampFloor` — v3's naive raise, as CONTROL | 0.0250 mm | 11.2× more rings |
+
+`ReachPolicyStepover` reads "the SELECTED stepover" through
+`reach::suggested_offset_stepover_mm` — PR-6a's canonical answer to "how far
+apart may two passes of this cutter sit" — rather than as the loop's
+`cusp_r * 0.05` clamp FLOOR, which is exactly the naive raise v3 measured.
+The control is included so the v3 result is *reproduced on these fixtures*
+rather than cited.
+
+## A.3 Results — cusp/4 arm, all four fixtures
+
+| fixture | budget | gen s | rings | moves | **uncut core mm²** | deepest gouge | gouge>50µm |
+|---|---|---|---|---|---|---|---|
+| narrow ridge | flat-ground (shipped) | 15.66 | 51 | 8042 | **19.32** | −0.0846 | 202 |
+| | reach policy | 16.14 | 55 | 8330 | **12.79** | −0.0846 | 218 |
+| | loop clamp floor (v3 control) | 17.41 | 70 | 8908 | **0.00** | −0.0846 | 276 |
+| narrow valley | flat-ground (shipped) | 12.66 | 48 | 6041 | 0.00 | −0.0783 | 9 |
+| | reach policy | 12.78 | 48 | 6041 | 0.00 | −0.0783 | 9 |
+| | loop clamp floor | 12.65 | 48 | 6041 | 0.00 | −0.0783 | 9 |
+| mixed-slope ribbon | flat-ground (shipped) | 17.56 | 51 | 8107 | **33.24** | −0.0248 | 0 |
+| | reach policy | 18.29 | 55 | 8458 | **25.78** | −0.0255 | 0 |
+| | loop clamp floor (v3 control) | 21.00 | 79 | 9651 | **0.00** | −0.0731 | 1 |
+| patches + hole | flat-ground (shipped) | 10.59 | 40 | 4755 | 0.00 | −0.0217 | 0 |
+| | reach policy | 10.20 | 40 | 4755 | 0.00 | −0.0217 | 0 |
+| | loop clamp floor | 10.29 | 40 | 4755 | 0.00 | −0.0217 | 0 |
+
+`ring_count == cascade_ring_count` on **every** row (wave D3's two counters):
+the cascade is being TRUNCATED by the cap, not producing rings that a keep
+predicate then discards. On the two fixtures where nothing stands, all three
+budgets emit identical output — the cap never binds there, so those rows are
+controls, not results.
+
+**Over-cut caveat, load-bearing here.** §5.1 applies: scallop's ring Z is an
+exact per-point drop-cutter query, so the residual column is dominated by the
+0.05 mm REFERENCE field's own interpolation error at whatever points the path
+visits, and a denser path visits more sharp-feature cells. It is usable to
+detect a LARGE regression (v3's 34×) and must not be read as an absolute
+over-cut count. Ring count, move count and generation time carry the rest.
+
+## A.4 Verdict — **REJECT `ReachPolicyStepover`**
+
+The ruling's adopt condition was *standing → 0*. It is not met, and not
+nearly:
+
+* narrow ridge 19.32 → 12.79 mm² (−34%), mixed ribbon 33.24 → 25.78 mm²
+  (−22%). Material still stands on both.
+* Cost is small (+3% time, +4% moves, gouge>50µm 202 → 218 on the ridge) —
+  but a 34% reduction in a defect the ruling wanted eliminated is not worth
+  a production behaviour change that has to be re-validated on wanaka.
+
+**The arithmetic says why it could never have worked.** The cap sizes as
+`(max_extent / stepover) · 0.5 + 10`. `ReachPolicyStepover` is 0.25 mm
+against the flat-ground 0.28 mm — a **12%** wider budget, 51 → 55 rings. The
+control shows the cascade *collapses naturally at 70 rings* on the ridge and
+79 on the ribbon, i.e. the requirement is **1.4–1.6×** the shipped budget.
+No tool-scaled stepover lands there, because the shortfall is not a tool
+scale: it is `ring_stepover` taking the MIN across a whole ring, so one steep
+sample sets the advance for every ring that touches slope. A budget derived
+from any *nominal* stepover is describing a spacing the loop does not use.
+
+**The control cannot be adjudicated on these fixtures, and that is itself a
+finding.** `LoopClampFloor` drives standing to 0.00 everywhere for +11–20%
+time and +11–19% moves, and the ribbon's deepest gouge grows 3× (−0.0248 →
+−0.0731 mm) with gouge>50µm on the ridge +37% (202 → 276). That is a
+*directional* match to v3's regression but nowhere near its magnitude (+92%
+time, 34× over-cut on wanaka ×2). The reason is fixture scale: these are
+16 × 16 mm height fields where the cascade collapses at ~70 rings, while
+v3's uncapped run produced *thousands* of rings at ~25 µm spacing on real
+relief. **These fixtures do not have the power to test the naive raise**, so
+nothing here weakens v3's measured result and nothing here should be used to
+argue for it.
+
+**Recommendation, unchanged from §6 and now with numbers behind it: the fix
+is in `ring_stepover`, not in the budget.** Per-segment advance instead of
+min-across-ring (plus the chord refinement v3 identified) removes the reason
+the cascade crawls; the cap then stops binding on its own. `scallop.rs`
+already documents this in place. A budget change is a workaround for a
+mechanism nobody has fixed, and the best of the two candidates tested here
+recovers a third of the defect.
+
+**No production change was made.** `ScallopRingBudget::FlatGroundStepover`
+remains the only value any production caller passes, and PR-3's scallop
+fingerprint is unchanged.
+
+## A.5 SteepShallow — the written deferral (Open question §7.4)
+
+§7.4 asked: *"SteepShallow's labels are 10.6–13.3% wrong yet its output is
+unchanged. Fixture limitation or genuine insensitivity? Should H3 explicitly
+defer this consumer with a written reason rather than silently leaving it on
+legacy?"*
+
+**Deferred, with the reason written into the code** — see the doc comment on
+`steep_shallow::steep_shallow_generation_resolution`, which is where a
+future reader looks and where prose in a planning file would not be found.
+It states: the measured zero delta (§3.3 — every residual quantile
+bit-identical on all four arms, output converging above 0.3 mm, 2.9–7.6×
+cost to move); the measured label error that does NOT absolve it (§2.2 —
+10.6–13.3% wrong, VerySteep absent on two fixtures where the truth has 8 and
+4 regions); and the two readings that fit the dissociation.
+
+### Investigation note: what a discriminating fixture must do
+
+All four Checkpoint B fixtures share a property that makes them unable to
+answer §7.4: **contiguous steep territory far wider than a 0.75 mm cell**.
+The op dilates the steep region by `overlap_distance` (2.0 mm default, ~2.7
+legacy cells) and erodes the shallow region by `wall_clearance` (1.0 mm),
+so a mislabelled boundary cell is absorbed before it can reach an emitted
+move. The label error is real and lands where the morphology hides it.
+
+A fixture that would discriminate:
+
+* **Interdigitated steep fingers narrower than `overlap_distance`** — e.g.
+  alternating 45°/85° ribs at ~1.0–1.5 mm pitch. A cell that mislabels one
+  rib cannot be dilated away, because the dilation reaches its neighbour.
+* **Isolated very-steep islands smaller than one legacy cell**, so the class
+  either exists or does not (§2.1 already shows envelope/4 finding ZERO
+  VerySteep regions where the truth has 8 — but on fixtures where the
+  waterline half of the op has plenty of other territory to cut).
+* Scored on **which half emitted the moves**, not only on residuals: the
+  `SteepShallowSplit` move ranges are the op's own topology report and are
+  the signal §3.3's residual column cannot carry.
+
+Until that fixture exists and is run, moving this consumer would be changing
+a default on the strength of an experiment that could not have detected the
+change. Filed as an H4 ledger item.

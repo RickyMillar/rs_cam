@@ -468,11 +468,42 @@ fn generate_shallow_passes_with_cancel(
 /// same `(envelope_radius/4).max(tolerance)` cell it has always used, now
 /// stated at its own call site instead of inherited from a shared builder.
 ///
-/// This op is the one where the choice bites hardest: it CLASSIFIES steep vs
-/// shallow on this same grid (via its own offset surface, not the true-surface
-/// classification builder), so the cell size decides which slopes are even
-/// representable. `finish_setup::build_classification_surface_with_cancel`'s
-/// doc records the measured blind spot. Changing it is H3 step 4+, not here.
+/// # Why this op STAYS on the legacy cell (PR-8c, written deferral)
+///
+/// H3's wave moved `ramp_finish` off this mode
+/// (`ramp_finish::ramp_finish_generation_resolution`) and deliberately left
+/// this one on it. Checkpoint B approved a **deferral with a written reason**
+/// rather than a silent hold, and this is it.
+///
+/// `CHECKPOINT_B_EVIDENCE.md` §3.3 ran the same four-arm A/B over this op on
+/// four fixtures and measured **zero quality delta**: every residual quantile
+/// is bit-identical across `envelope/4`, the geo-mean cell, `cusp/4` and the
+/// tolerance floor, on every fixture. Move counts move 1–5%. The emitted
+/// output CONVERGES well above `cusp/4` — fingerprints are byte-identical
+/// between the intermediate and finer arms on the narrow valley, and between
+/// `cusp/4` and the tolerance arm on two more. Going to `cusp/4` costs
+/// **2.9–7.6× generation time** for nothing measurable, which fails the
+/// repository's performance policy outright.
+///
+/// **That is not a clean bill of health, and must not be read as one.** This
+/// op CLASSIFIES steep vs shallow on this same grid (its own offset surface,
+/// not the true-surface classification builder), and §2.2 measured that
+/// classification **10.6–13.3% wrong at `envelope/4`** on these fixtures,
+/// with the VerySteep class entirely ABSENT on the two narrow ones where the
+/// truth has 8 and 4 disconnected regions. Labels that wrong with output that
+/// unchanged is a dissociation, not an absolution. The two readings that fit:
+/// these fixtures all carry contiguous steep territory far wider than a
+/// 0.75 mm cell, so the label error lands on boundaries the op's
+/// `overlap_distance` dilation and `wall_clearance` erosion then swamp; or
+/// the op is genuinely insensitive. Nothing here distinguishes them.
+///
+/// **What would**: a fixture whose steep/shallow BOUNDARY has structure at
+/// the 0.5–1.5 mm scale — interdigitated steep fingers narrower than the
+/// overlap distance, so a mislabelled cell cannot be absorbed by dilation.
+/// Until such a fixture exists and is run, moving this op would be changing
+/// a default on the strength of an experiment that could not have detected
+/// the change. `finish_setup::build_classification_surface_with_cancel`'s
+/// doc records the measured blind spot this shares.
 #[must_use]
 pub fn steep_shallow_generation_resolution(
     cutter: &dyn MillingCutter,
