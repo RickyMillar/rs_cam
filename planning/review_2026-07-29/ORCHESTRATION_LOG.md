@@ -253,7 +253,7 @@ experiment, SteepShallow fixture investigation, 0.9 µm segment gate.
   ComputeMessage::Toolpath boxed (~16 sites); top_z-only clip attribution
   untested.
 
-- impl-11 DONE -> **Wave D2 COMMITTED `<hash>`** (task #13, LH-1..LH-4).
+- impl-11 DONE -> **Wave D2 COMMITTED `f525fe9`** (task #13, LH-1..LH-4).
 
   **LH-1 air-cut denominator — NO numeric behaviour change.** New
   `simulation_cut::AirCutRatios` trait (impl'd for the 4 summary types +
