@@ -997,3 +997,132 @@ RampFinish cone gouge, tip-float silent residual, 0.9 µm segments).
   **The SteepShallow discriminating fixture is specified but not built**
   (addendum §A.5). The `ramp_finish` correspondence rewrite is now the
   biggest single defect in the finishing stack by measured magnitude.
+
+---
+
+## C-SEQUENCE WAVE 1 (C5+C10), 2026-07-30
+
+Addendum C's first sequencing step: "C5 + C10 — one mechanical wave, zero
+risk, ends two recurring taxes." Three commits, deliberately not squashed,
+so the formatting churn can never hide a semantic change.
+
+**Commits**
+
+| # | Hash | Item | Diffstat |
+|---|------|------|----------|
+| 1 | `288b19b` | C10a whole-repo `cargo fmt` | 35 files, +542 / -264 |
+| 2 | `88ea12f` | C5 box `ComputeMessage::Toolpath` | 5 files, +211 / -131 |
+| 3 | `9e43b78` | C10b `.gitignore` anchoring audit | 4 files, +197 / -7 |
+
+### Commit 1 — C10a, formatting only
+
+35 `.rs` files, all pre-existing drift (the tree was clean before the run).
+Verified formatting-only mechanically, not by eye: each file's content was
+hashed with all whitespace stripped, then again with whitespace, commas and
+brackets stripped. The four files that still differed under the second
+normalisation were read in full — `diagnose.rs` and two test files are
+`use`-statement reordering, `v3_cascade_ab.rs` is line wrapping. No
+semantic change.
+
+ONE non-fmt edit rode along, and it had to: rustfmt turned a match arm's
+tail expression into a block, which then tripped
+`clippy::semicolon_if_nothing_returned` (denied) at
+`v3_cascade_ab.rs:2701`. A one-character `;`. Stated here rather than
+quietly folded in, because the whole point of an isolated fmt commit is
+that its diff is auditable as pure formatting.
+
+### Commit 2 — C5, box the variant
+
+`ComputeMessage::Toolpath` carried a whole `ComputeResult` inline.
+`ToolpathStats` rides inside it, so every wave that added a generation
+finding pushed the enum toward the denied `large_enum_variant` ceiling —
+and three waves each paid by boxing one more rarely-`Some` finding
+(`dropped_band`, `deprecated_dial`, `derived_stepover`, `ramp_reach_clamp`).
+The tax was being paid in the wrong place: the constraint is a property of
+the channel enum, not of the measurement record.
+
+Boxed the variant. 16 sites: 1 definition, 2 producers in `worker.rs`, 8
+constructions in `controller/tests.rs`, 4 patterns in
+`compute/worker/tests.rs`, 1 consumer (`controller/events/compute.rs`)
+which needed NO edit — partial moves out of a `Box` field are allowed.
+The four `matches!`/`match` patterns could not stay as struct patterns
+(box patterns are unstable) and became binding-plus-guard forms.
+
+Added `compute::size_tests::compute_message_stays_small`, asserting
+`size_of::<ComputeMessage>() <= 128`. Without it this is a fix that decays;
+with it, re-inlining a large payload is a red test that names the remedy.
+Checked that no OTHER variant inherits the ceiling: after boxing, the
+largest is `Collision` at ~64 bytes (two `Vec`s and an `f64`).
+
+The four inner `Box`es were LEFT boxed — unboxing them is ~96 lines across
+20 files for no simplification, which is the perfection the brief said not
+to chase. But their doc comments each justified the boxing by citing
+`clippy::large_enum_variant` on `ComputeMessage`, and that reason is now
+dead. Rewrote all four to state the reason that survives (`ToolpathStats`
+is cloned per toolpath into session results and GUI state) and to say
+explicitly that the enum is no longer why. A stale rationale is a lie a
+later wave would have cited.
+
+### Commit 3 — C10b, .gitignore audit
+
+Two `.gitignore` files in the repo. Audited every entry against real and
+hypothetical source paths with `git check-ignore -v --no-index` (the
+`--no-index` matters: without it, git reports TRACKED files as "not
+ignored", which hides exactly the shadowing this audit is looking for —
+`fixtures/debug_adaptive/wanaka_diag.json` and the tracked `.claude` files
+both read as clean until the flag went on).
+
+Anchored: `demos/` → `/demos/`, `reference/` → `/reference/`,
+`profile.json.gz`, `EEPROM.DAT`,
+`fixtures/debug_adaptive/wanaka_diag.json` (already effectively anchored by
+its embedded slash; leading slash added for uniformity), and
+`tests/step_validation`'s `Cargo.lock`. `reference/` is the sharp one —
+`src/.../reference/` is a plausible module name and would have vanished.
+
+Left global, with reasons in the file: `/target` (already anchored),
+`target/` in the nested crate (build output, never a source-directory
+name), `/diagnostics/` (already fixed by the original incident).
+
+**The audit found a LIVE second instance.** `.claude/` is the documented
+home of this project's checked-in agents and skills — CLAUDE.md has a table
+of them — and the unanchored entry had already eaten
+`.claude/agents/sim-diagnostics.md` and `.claude/skills/sim-analysis/`.
+Both documented in CLAUDE.md, both referenced in the agent-team notes,
+neither in the repo. Identical to `from_generation.rs`: written, documented,
+committed against, never landed. A blanket `.claude/` cannot be negated
+(git will not re-include a file whose parent directory is excluded), so the
+fix ignores the CONTENTS — `**/.claude/*` — and re-includes
+`!**/.claude/agents/` and `!**/.claude/skills/`. Local state
+(`settings*.json`, `worktrees/`) stays ignored, at every depth. The two
+rescued files were added in the same commit; that is scope creep over a
+pure anchoring brief, and it is deliberate, because an anchoring fix whose
+recovered files are left untracked fixes nothing.
+
+Verified: `git ls-files` 1181 before, 1181 after the ignore edit (nothing
+tracked became ignored), 1183 after adding the two rescued files;
+`git status --ignored --short` lists the same ignored set as before plus
+nothing.
+
+**Gates**
+
+- `cargo fmt --check`: exit 0 (commits 1 and 2).
+- `cargo clippy --workspace --all-targets -- -D warnings`: exit 0 before
+  each of commits 1 and 2. Commit 3 touches no code.
+- `cargo test -p rs_cam_viz -q`: 217 + 11 passed, 0 failed.
+- `cargo test -p rs_cam_core -q --lib`: 2183 passed, 3 failed — exactly the
+  three known adaptive3d reds
+  (`peck_plunge_progresses_when_depth_per_pass_equals_retract_clearance`,
+  `rapid_segment_lifts_to_safe_z_before_traverse`,
+  `planner_sim_dexel_parity_agent_search`). No new red.
+- One cargo job at a time throughout; `free -g` and `pgrep -af "carg[o]"`
+  polled before each heavy invocation.
+
+**Untouched, as instructed**: `planning/airrun_2026-06-01/wanaka.toml`
+(user-modified) and `planning/review_2026-07-27/`. Also left unstaged:
+`TECH_DEBT_RESEARCH_AND_FIX_PLAN.md`, which acquired a second, unrelated
+"Addendum C" (the `generate_all` rest-stock fixpoint defect, A/M11) from
+another session while this wave was running. Not this wave's to commit.
+
+**Note for the next C item**: C5's ceiling is now enforced by a test rather
+than by discipline, so C8's "single slots → collections" work is free to
+grow `ToolpathStats` — the reason it was previously constrained is gone.
