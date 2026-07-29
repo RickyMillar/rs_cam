@@ -743,6 +743,41 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
     boundary_regions: Option<&RegionSet<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>, ScallopReport), Cancelled> {
+    scallop_toolpath_structured_annotated_with_resolution(
+        mesh,
+        index,
+        cutter,
+        params,
+        debug,
+        boundary_regions,
+        scallop_generation_resolution(cutter, params.tolerance),
+        cancel,
+    )
+}
+
+/// [`scallop_toolpath_structured_annotated_with_cancel`] with the generation
+/// grid resolution supplied by the caller instead of selected by
+/// [`scallop_generation_resolution`].
+///
+/// **Research seam, not a production entry point.** H3's Checkpoint B harness
+/// (`tests/checkpoint_b_resolution_ab.rs`) has to hold tool, params, boundary
+/// and tolerance fixed while varying ONLY the generation cell — the shared
+/// builder's own `..._with_cell_size_...` adapter cannot do that from outside,
+/// because scallop resolves its policy internally. Passing
+/// `scallop_generation_resolution(cutter, params.tolerance)` reproduces the
+/// shipped path exactly (that is literally what the wrapper above does), so
+/// this adds no behavior and changes no default.
+#[allow(clippy::too_many_arguments)]
+pub fn scallop_toolpath_structured_annotated_with_resolution(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &ScallopParams,
+    debug: Option<&ToolpathDebugContext>,
+    boundary_regions: Option<&RegionSet<'_>>,
+    resolution: FinishResolutionPolicy,
+    cancel: &dyn CancelCheck,
+) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>, ScallopReport), Cancelled> {
     check_cancel(cancel)?;
     let mut uncut_core_mm2 = 0.0_f64;
     // Physical extent (heightmap padding / grid coverage) keeps the FULL
@@ -754,13 +789,10 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
 
     // Build surface heightmap and slope map (shared setup, see finish_setup.rs).
     // The RESOLUTION is scallop's own choice (H3 step 2) — see
-    // `scallop_generation_resolution`.
+    // `scallop_generation_resolution`, which the shipped wrapper above passes
+    // in.
     let surface = crate::finish_setup::build_finish_surface_with_policy_and_cancel(
-        mesh,
-        index,
-        cutter,
-        scallop_generation_resolution(cutter, params.tolerance),
-        cancel,
+        mesh, index, cutter, resolution, cancel,
     )?;
     let surface_hm = surface.heightmap;
     let slope_map = surface.slope_map;
