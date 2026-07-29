@@ -1460,6 +1460,11 @@ impl ProjectSession {
                     tc.operation.transform_capabilities(),
                     None,
                     None,
+                    // Task #14: no per-dressup ITEMS on this path (that is
+                    // the GUI worker's trace), but the items recorded at
+                    // generation time must still follow the moves through
+                    // every step.
+                    Some(&semantic_recorder),
                 );
                 annotated = dressed;
 
@@ -1531,6 +1536,10 @@ impl ProjectSession {
                     if split_count > 0 {
                         annotated.spans =
                             annotated.spans.iter().map(|s| s.remap(&mapping)).collect();
+                        // Task #14: same map, same moment — the semantic
+                        // trace's links are as index-based as the spans.
+                        semantic_recorder
+                            .remap_move_links(&mapping, annotated.toolpath.moves.len());
                     }
                 }
 
@@ -1780,6 +1789,13 @@ impl ProjectSession {
                 let (clipped, mapping) =
                     clip_toolpath_to_boundary_with_provenance(&toolpath, boundary, safe_z);
 
+                // Task #14: the semantic trace's move links go through the
+                // SAME provenance map the spans do, below — before the clip
+                // scope below records its own (already post-clip) link.
+                semantic_ctx
+                    .recorder()
+                    .remap_move_links(&mapping, clipped.moves.len());
+
                 // Record semantic trace for boundary clip
                 let clip_scope =
                     semantic_ctx.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
@@ -1899,6 +1915,13 @@ impl ProjectSession {
         } else {
             let (clipped, mapping) =
                 clip_toolpath_to_boundary_set_with_provenance(&toolpath, &boundaries, safe_z);
+
+            // Task #14: semantic move links go through the SAME provenance
+            // map the spans do, below — before the clip scope records its
+            // own (already post-clip) link.
+            semantic_ctx
+                .recorder()
+                .remap_move_links(&mapping, clipped.moves.len());
 
             // Record semantic trace for boundary clip
             let clip_scope =

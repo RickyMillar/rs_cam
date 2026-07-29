@@ -36,19 +36,24 @@
 //! toolpath, an all-shallow decomposition, or a node that only retracts
 //! all fail.
 //!
-//! ## Known gap this file DOCUMENTS but does not gate on
+//! ## Formerly-known gap, now GATED (task #14)
 //!
-//! The semantic trace's move links are not remapped by the post-span
-//! transforms in `session::compute` (`apply_dressups`, the boundary clip,
-//! and `optimize_entry_descents_with_provenance` all remap
-//! `AnnotatedToolpath::spans` through a provenance map; none of them touch
-//! `ToolpathSemanticTrace`). On this fixture the semantic ranges therefore
-//! tile `0..1357` while the shipped toolpath has 1437 moves, so A/M8's
-//! range-equality invariant — pinned pre-transform by
-//! `unified_finish_semantic_regions.rs` — does not survive to the shipped
-//! result. Every move-level assertion here consequently uses the
-//! STRUCTURAL ranges. Gating on the equality would make this file red at
-//! HEAD, which is a behavior PR's job, not a coverage PR's.
+//! Until `fix(diagnostics): remap semantic-trace move links through
+//! post-generation transforms`, the semantic trace's move links were not
+//! remapped by the post-span transforms in `session::compute`
+//! (`apply_dressups`, the boundary clip and
+//! `optimize_entry_descents_with_provenance` all remapped
+//! `AnnotatedToolpath::spans` through a provenance map; none of them
+//! touched `ToolpathSemanticTrace`). On this fixture the semantic ranges
+//! tiled `0..1357` while the shipped toolpath had 1437 moves — A/M8's
+//! range-equality invariant, pinned pre-transform by
+//! `unified_finish_semantic_regions.rs`, did not survive to the shipped
+//! result, and a semantic range could point PAST the end of the move list
+//! (a consumer-panic class for anything that slices moves by region).
+//!
+//! Gate 4 now pins the post-transform form of that invariant, and Gate 2
+//! states the semantic/structural agreement as exact range EQUALITY rather
+//! than count-and-order.
 //!
 //! ## Why it would have been red before the fixes
 //!
@@ -281,14 +286,11 @@ fn generate_through_session(tool: ToolConfig) -> ProjectSession {
 /// converted here to the half-open convention the structural spans use
 /// (semantic `move_end` is INCLUSIVE).
 ///
-/// **`range` indexes the OPERATION's own output, not the final toolpath.**
-/// The post-span transforms in `session::compute` remap
-/// `AnnotatedToolpath::spans` through their provenance maps but leave the
-/// semantic trace's move links untouched, so on this fixture the semantic
-/// ranges tile `0..1357` while the shipped toolpath has 1437 moves. Every
-/// move-level assertion in this file therefore uses the STRUCTURAL span
-/// ranges; the semantic items supply band / strategy / area only. See the
-/// module-level "known gap" note.
+/// **`range` indexes the SHIPPED toolpath.** Since task #14 the post-span
+/// transforms in `session::compute` carry the semantic trace's move links
+/// through the same provenance maps they remap `AnnotatedToolpath::spans`
+/// with, so a semantic range and its structural twin are the same range on
+/// the same move list — Gate 2 asserts exactly that.
 #[derive(Debug, Clone, PartialEq)]
 struct SemanticNode {
     band: String,
@@ -601,20 +603,33 @@ fn assert_spans_and_annotations_stay_valid(session: &ProjectSession, label: &str
         );
     }
 
-    // A/M8: the two region systems must not drift in COUNT or ORDER.
-    // Their move ranges are asserted equal by
-    // `unified_finish_semantic_regions.rs` on the pre-transform result;
-    // see `SemanticNode::range` for why that equality cannot be restated
-    // here as things currently stand.
+    // A/M8: the two region systems must not drift in COUNT, ORDER — or
+    // RANGE. `unified_finish_semantic_regions.rs` pins the equality on the
+    // generator's own output; task #14 made it survive the post-span
+    // transforms, so it is restated here on the SHIPPED toolpath. (Before
+    // that fix the semantic ranges tiled 0..1357 against 1437 shipped
+    // moves and this loop was a lenient "tiles from 0, fits inside".)
     let paired = paired_nodes(session);
-    // The semantic ranges must at least be a contiguous tiling from 0 that
-    // fits inside the toolpath. This holds whether or not they are ever
-    // remapped through the post-span transforms, so it is safe to gate on.
     let mut expected_start = 0usize;
-    for (sem, _) in &paired {
+    for (sem, (start, end, node_label)) in &paired {
         assert_eq!(
-            sem.range.0, expected_start,
-            "[{label}] semantic region ranges must tile from 0: {sem:?}"
+            sem.range,
+            (*start, *end),
+            "[{label}] the semantic range for {sem:?} must equal its \
+             structural twin {node_label:?} {start}..{end} on the shipped \
+             toolpath — the two systems read one region table, so any \
+             difference is a transform that remapped one and not the other"
+        );
+        // Ordered and non-overlapping, NOT contiguous: the ranges inherit
+        // the structural spans' gaps, which are the orphaned rapids the
+        // entry-descent splitter inserts between nodes (budgeted and
+        // asserted non-cutting above). Before task #14 this loop could
+        // assert exact contiguity precisely BECAUSE the semantic links
+        // still described the pre-splitter toolpath.
+        assert!(
+            sem.range.0 >= expected_start,
+            "[{label}] semantic region ranges must not overlap: {sem:?} \
+             starts before {expected_start}"
         );
         assert!(
             sem.range.1 > sem.range.0,
@@ -622,10 +637,12 @@ fn assert_spans_and_annotations_stay_valid(session: &ProjectSession, label: &str
         );
         expected_start = sem.range.1;
     }
-    assert!(
-        expected_start <= move_count,
-        "[{label}] semantic ranges run past the end of the toolpath \
-         ({expected_start} > {move_count})"
+    assert_eq!(
+        expected_start, move_count,
+        "[{label}] the last semantic region must reach the end of the \
+         SHIPPED toolpath ({expected_start} vs {move_count} moves) — a \
+         short tiling is the signature of links left in pre-transform \
+         coordinates"
     );
 
     // Narration is the agent-facing end of the same channel.
@@ -646,6 +663,109 @@ fn tapered_unified_finish_spans_and_annotations_stay_valid() {
 fn ball_unified_finish_spans_and_annotations_stay_valid() {
     let session = generate_through_session(ball_tool());
     assert_spans_and_annotations_stay_valid(&session, "ball");
+}
+
+// ── Gate 4: semantic move links survive the transforms (task #14) ───────
+
+/// EVERY item in the shipped semantic trace — not just the region nodes —
+/// must name moves that exist.
+///
+/// `apply_dressups` (entry ramps, dogbones, leads, link moves, arc fit,
+/// segment merge, the barriered and unbarriered TSP reorders, the air-cut
+/// filter), the boundary clip and `optimize_entry_descents_with_provenance`
+/// all insert, delete or permute moves AFTER the semantic items were bound
+/// to their ranges. Every one of them remaps `AnnotatedToolpath::spans`
+/// through a provenance map; until task #14 none of them touched the
+/// semantic trace, so its links silently described a toolpath that no
+/// longer existed — including ranges that ran past the end of the move
+/// list, which panics any consumer that slices moves by semantic range
+/// (GUI highlight, narration-by-region, per-region attribution).
+///
+/// Non-vacuity: the trace must contain linked items at all, and the
+/// operation-level link must reach the LAST move of the shipped toolpath.
+/// That last clause is the direct pin — pre-fix it read 1357 against 1437
+/// shipped moves on this fixture.
+fn assert_semantic_links_survive_transforms(session: &ProjectSession, label: &str) {
+    let result = session.get_result(0).expect("generated result");
+    let move_count = result.toolpath().moves.len();
+    assert!(move_count > 0, "[{label}] non-vacuity");
+    let trace = result
+        .semantic_trace
+        .as_ref()
+        .expect("session must attach a semantic trace");
+
+    let mut linked = 0usize;
+    for item in &trace.items {
+        match (item.move_start, item.move_end) {
+            (Some(start), Some(end)) => {
+                linked += 1;
+                assert!(
+                    end >= start,
+                    "[{label}] semantic item {} ({:?} {:?}) has an inverted \
+                     link {start}..={end}",
+                    item.id,
+                    item.kind,
+                    item.label
+                );
+                assert!(
+                    end < move_count,
+                    "[{label}] semantic item {} ({:?} {:?}) is linked to \
+                     moves {start}..={end} but the shipped toolpath has only \
+                     {move_count} moves — slicing by this range reads out of \
+                     bounds",
+                    item.id,
+                    item.kind,
+                    item.label
+                );
+            }
+            // The deleted-move policy: an item whose moves a transform
+            // removed is UNLINKED, never half-linked and never clamped.
+            (None, None) => {}
+            half => panic!(
+                "[{label}] semantic item {} ({:?} {:?}) is half-linked \
+                 {half:?} — a link is both ends or neither",
+                item.id, item.kind, item.label
+            ),
+        }
+    }
+
+    assert!(
+        linked > 0,
+        "[{label}] the shipped trace must still carry move-linked items — \
+         unlinking everything would satisfy the bounds check vacuously"
+    );
+    assert_eq!(
+        linked, trace.summary.move_linked_item_count,
+        "[{label}] the summary must count the links the items actually carry"
+    );
+
+    let max_end = trace
+        .items
+        .iter()
+        .filter_map(|item| item.move_end)
+        .max()
+        .expect("linked > 0 was just asserted");
+    assert_eq!(
+        max_end + 1,
+        move_count,
+        "[{label}] the outermost semantic item must still reach the last \
+         move of the SHIPPED toolpath: links stop at {} of {move_count} \
+         moves, so the transforms that inserted the remaining moves did not \
+         carry the trace with them",
+        max_end + 1
+    );
+}
+
+#[test]
+fn tapered_unified_finish_semantic_links_survive_transforms() {
+    let session = generate_through_session(tapered_ball_tool());
+    assert_semantic_links_survive_transforms(&session, "tapered-ball");
+}
+
+#[test]
+fn ball_unified_finish_semantic_links_survive_transforms() {
+    let session = generate_through_session(ball_tool());
+    assert_semantic_links_survive_transforms(&session, "ball");
 }
 
 // ── Gate 3: the differential (M2.4 spirit) ──────────────────────────────

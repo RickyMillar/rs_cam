@@ -156,6 +156,20 @@ pub enum SpanKind {
     /// `WaterlineCleanup` ancestor the same way they filter
     /// [`SpanKind::Entry`] transients (Roadmap F.3).
     WaterlineCleanup,
+    /// TRANSPORT ONLY — a [`crate::semantic_trace::ToolpathSemanticItem`]'s
+    /// move link, riding the span vector so that it is remapped by exactly
+    /// the same provenance map the real spans go through.
+    ///
+    /// Carrier spans are attached immediately before a transform and
+    /// detached immediately after by
+    /// [`crate::semantic_trace::SemanticLinkCarrier`]; they must never
+    /// reach a stored `AnnotatedToolpath`, the simulator, or the UI. A
+    /// `SemanticLink` span observed anywhere downstream is a leak (a
+    /// transform that swallowed the detach), not a span to render — that
+    /// is why it has its own kind rather than borrowing an existing one.
+    ///
+    /// The item id travels in [`SpanPayload::SemanticLink`].
+    SemanticLink,
 }
 
 // ── SpanPayload ─────────────────────────────────────────────────────────
@@ -168,6 +182,13 @@ pub enum SpanKind {
 pub enum SpanPayload {
     DepthPass { z_level: f64, pass_index: u32 },
     Region { region_id: u32 },
+    /// Transport payload for [`SpanKind::SemanticLink`] — the
+    /// `ToolpathSemanticItem::id` whose move link this carrier span stands
+    /// in for. Several items can share one carrier span when their ranges
+    /// are identical, so the carrier keeps its own id list; this payload
+    /// only has to survive the remap so the span can be recognised on the
+    /// way out.
+    SemanticLink { item_id: u64 },
 }
 
 // ── AnnotatedToolpath ───────────────────────────────────────────────────
