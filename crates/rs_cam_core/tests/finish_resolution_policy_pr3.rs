@@ -11,12 +11,18 @@
 //!    RampFinish, SteepShallow, UnifiedFinish) reports the mode, the resolved
 //!    `cell_mm` and the `CellSource` it is supposed to select, on a TAPERED
 //!    tool where envelope and cusp differ 6×. A consumer silently moving to
-//!    another scale fails here. (Today no policy *forbids* the envelope
-//!    scale — every generation consumer selects it. When H3 step 4 moves one,
-//!    that op's expectation below changes and the other three must not.)
+//!    another scale fails here.
 //! 2. **Byte-identical output** — three toolpath fingerprints captured at
 //!    HEAD `606b8d5` (i.e. *before* the refactor) on a shared ridge fixture.
-//!    They are unchanged by the refactor and would change if any grid moved.
+//!
+//! **PR-8a moved exactly one of them, on purpose** (H3 wave, approved
+//! Checkpoint B): `ramp_finish` now selects
+//! [`FinishResolutionMode::GeoMeanEnvelopeCusp`], so its expectation in (1)
+//! and its fingerprint in (2) both changed in that commit, with the
+//! pre-PR-8a value recorded in place. Scallop's and steep/shallow's are
+//! untouched — the per-consumer property this file exists to hold is that
+//! one op can move without dragging the others, and this is the first time
+//! that has been exercised rather than merely asserted.
 //!
 //! The classification/generation split itself is pinned by the PR-2 tripwire
 //! `tool_scale_semantics_pr2::finish_surface_cell_source_names_the_radius_that_sized_the_grid`,
@@ -41,6 +47,7 @@ use rs_cam_core::measurement::{
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::ramp_finish::{
     RampFinishParams, ramp_finish_generation_resolution, ramp_finish_toolpath,
+    ramp_finish_toolpath_structured_annotated_with_resolution,
 };
 use rs_cam_core::scallop::{ScallopParams, scallop_generation_resolution, scallop_toolpath};
 use rs_cam_core::steep_shallow::{
@@ -130,11 +137,120 @@ fn ramp_finish_fingerprint() {
         ..Default::default()
     };
     let tp = ramp_finish_toolpath(&mesh, &index, &t, &params);
+    // MOVED BY PR-8a, deliberately. RampFinish now selects
+    // `GeoMeanEnvelopeCusp` (0.306 mm on this taper, against 0.750), so its
+    // ramp sampling step `cell_size * 2` halves and the emitted chords get
+    // shorter. The pre-PR-8a value on this fixture was
+    // `(164, 596513364120972287)`, captured at HEAD 606b8d5; it is recorded
+    // here rather than deleted because it is the number the Checkpoint B
+    // evidence was measured against.
+    //
+    // The QUALITY justification is not this fingerprint — it is
+    // `checkpoint_b_resolution_ab::ramp_finish_shipped_policy_removes_the_
+    // legacy_gouges`, which asserts the residuals directly against the
+    // pinned 0.05 mm reference field on the evidence's own fixtures.
     assert_eq!(
         fingerprint(&tp),
-        (164, 596513364120972287),
-        "ramp_finish output moved; captured at HEAD 606b8d5 before the H3 policy refactor"
+        RAMP_FINISH_GEO_MEAN_FINGERPRINT,
+        "ramp_finish output moved AGAIN; PR-8a's value is the geo-mean cell's"
     );
+}
+
+/// PR-8a's ramp-finish fingerprint on `ridge_mesh()` with the taper.
+/// Named so the value has one home and the two assertions that read it
+/// cannot drift apart.
+const RAMP_FINISH_GEO_MEAN_FINGERPRINT: (usize, u64) = (236, 13_853_886_592_394_416_024);
+
+/// PR-8a control: the geo-mean of two EQUAL numbers is that number, so a
+/// cutter whose cusp radius is its envelope radius must not move at all.
+///
+/// Stated as a byte-identical toolpath equality, not as a cell-size
+/// equality: the cell is the mechanism, the emitted path is the claim.
+#[test]
+fn ball_ramp_finish_is_unmoved_by_the_geo_mean_policy() {
+    let mesh = ridge_mesh();
+    let index = SpatialIndex::build(&mesh, 10.0);
+    let ball = BallEndmill::new(6.0, 25.0);
+    let tol = 0.01;
+    let legacy = FinishResolutionPolicy::legacy_envelope_quarter(&ball, tol);
+    let geo_mean = FinishResolutionPolicy::geo_mean_envelope_cusp(&ball, tol);
+    assert!(
+        (legacy.cell_mm() - geo_mean.cell_mm()).abs() < 1e-12,
+        "ball: envelope/4 = {} but geo-mean = {}",
+        legacy.cell_mm(),
+        geo_mean.cell_mm()
+    );
+    // The MODE and the provenance still differ — a scale-degenerate cutter
+    // must not make two policies interchangeable (same rule as
+    // `ball_resolves_both_modes_to_the_same_cell`).
+    assert_ne!(legacy.mode(), geo_mean.mode());
+    assert_ne!(legacy.cell_source(), geo_mean.cell_source());
+
+    let params = RampFinishParams {
+        max_stepdown: 0.5,
+        tolerance: tol,
+        ..Default::default()
+    };
+    let cancel = || false;
+    let shipped = ramp_finish_toolpath(&mesh, &index, &ball, &params);
+    let (legacy_arm, _) = ramp_finish_toolpath_structured_annotated_with_resolution(
+        &mesh, &index, &ball, &params, None, None, legacy, &cancel,
+    )
+    .expect("legacy arm");
+    assert!(!shipped.moves.is_empty(), "non-vacuity");
+    assert_eq!(
+        fingerprint(&shipped),
+        fingerprint(&legacy_arm),
+        "a plain ball's geo-mean cell IS its legacy cell, so PR-8a must not \
+         have moved one emitted move"
+    );
+}
+
+/// The taper is the discriminating case, and PR-8a's whole premise is that
+/// the three cells are three different grids. If a future tool-model change
+/// collapses them, every §3.2 number stops meaning anything.
+#[test]
+fn the_geo_mean_sits_strictly_between_its_two_factors_on_a_taper() {
+    let t = taper();
+    let tol = 0.01;
+    let envelope = FinishResolutionPolicy::legacy_envelope_quarter(&t, tol);
+    let cusp = FinishResolutionPolicy::cusp_quarter(&t, tol);
+    let geo = FinishResolutionPolicy::geo_mean_envelope_cusp(&t, tol);
+    assert!((envelope.cell_mm() - 0.75).abs() < 1e-12);
+    assert!((cusp.cell_mm() - 0.125).abs() < 1e-12);
+    assert!(
+        (geo.cell_mm() - (0.75_f64 * 0.125).sqrt()).abs() < 1e-12,
+        "geo-mean cell {} is not sqrt(0.75 · 0.125)",
+        geo.cell_mm()
+    );
+    // The defining property of the GEOMETRIC mean: equal RATIO to each end,
+    // which is what makes it the honest midpoint of a shaft/tip ratio.
+    let up = envelope.cell_mm() / geo.cell_mm();
+    let down = geo.cell_mm() / cusp.cell_mm();
+    assert!(
+        (up - down).abs() < 1e-12,
+        "geo-mean must be the same FACTOR from each end: {up} vs {down}"
+    );
+    assert!(cusp.cell_mm() < geo.cell_mm() && geo.cell_mm() < envelope.cell_mm());
+    assert_eq!(geo.mode(), FinishResolutionMode::GeoMeanEnvelopeCusp);
+    assert_eq!(geo.cell_source(), CellSource::GeoMeanEnvelopeCuspRadius);
+    // A geo-mean cell is its OWN grid: it must not compare with either
+    // factor's (PR-0 `comparable_to`), or a report could put a 0.306 mm
+    // measurement beside a 0.750 mm one under one heading.
+    let provenance = |p: FinishResolutionPolicy| {
+        MeasurementProvenance::new(
+            MeasurementDomain::ProjectedXyArea,
+            MeasurementStage::RawThreshold,
+        )
+        .with_cell(p.cell_mm(), p.cell_source())
+    };
+    assert!(!provenance(geo).comparable_to(&provenance(envelope)));
+    assert!(!provenance(geo).comparable_to(&provenance(cusp)));
+    // And the tolerance floor still overrides the family tag when it binds.
+    let floored = FinishResolutionPolicy::geo_mean_envelope_cusp(&t, 2.0);
+    assert!(floored.tolerance_floor_applied());
+    assert_eq!(floored.cell_source(), CellSource::ToleranceFloor);
+    assert!((floored.cell_mm() - 2.0).abs() < 1e-12);
 }
 
 #[test]
@@ -216,11 +332,15 @@ fn each_consumer_selects_its_own_policy() {
         envelope_quarter,
         false,
     );
+    // PR-8a, under the approved Checkpoint B: RampFinish is the ONE
+    // generation consumer that moved off the legacy cell. Its expectation
+    // changed here and the other three did not — which is exactly the
+    // per-consumer property this file was built to hold.
     assert_policy(
         "ramp_finish",
         ramp_finish_generation_resolution(&t, tol),
-        FinishResolutionMode::LegacyEnvelopeQuarter,
-        envelope_quarter,
+        FinishResolutionMode::GeoMeanEnvelopeCusp,
+        (envelope_quarter * cusp_quarter).sqrt(),
         false,
     );
     assert_policy(

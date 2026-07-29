@@ -292,19 +292,45 @@ fn ramp_between_contours(
     path
 }
 
-/// The resolution policy ramp-finish generates on (H3 step 2).
+/// The resolution policy ramp-finish generates on (H3 step 2; moved by PR-8a).
 ///
-/// RampFinish selects `FinishResolutionMode::LegacyEnvelopeQuarter` — the same
-/// `(envelope_radius/4).max(tolerance)` cell it has always used, now stated at
-/// its own call site instead of inherited from a shared builder. Scallop and
-/// steep/shallow select independently, so a resolution experiment on either
-/// leaves this op alone.
+/// RampFinish selects [`crate::finish_setup::FinishResolutionMode::GeoMeanEnvelopeCusp`] — the
+/// geometric mean of `envelope/4` and `cusp/4`. It selected
+/// `LegacyEnvelopeQuarter` until PR-8a, under the approved Checkpoint B.
+///
+/// # Why this op moved and its two siblings did not
+///
+/// The generation cell reaches ramp-finish's emitted geometry through
+/// `step_len = cell_size * 2`, the spacing at which
+/// [`ramp_between_contours`] samples the descent. A ramp point is a straight
+/// chord between two contour samples, so a coarse cell means long chords
+/// across curved walls, and the chord cuts inside the surface it spans.
+/// `CHECKPOINT_B_EVIDENCE.md` §3.2 measured that directly: at
+/// `envelope/4` (0.750 mm on the shipped Ø1-tip / Ø6-shank taper, i.e. the
+/// SHANK) the narrow-valley fixture gouged **2.39 mm** and the narrow ridge
+/// **0.16 mm**, and every arm finer than it eliminated both outright —
+/// deepest gouge exactly 0.0000 mm, zero samples past 50 µm.
+///
+/// The win arrives HERE and not deeper. At this cell the two fixtures are
+/// already gouge-free for 1.3–2.6× generation time and +11–43% moves;
+/// `CuspQuarter` buys nothing further and costs 3.1–11.7×. That is the whole
+/// case for a named intermediate mode rather than following the
+/// classification grid.
+///
+/// Scallop and steep/shallow select independently and were NOT moved:
+/// scallop's cusp-scaled arm creates 19–33 mm² of standing material the
+/// legacy cell does not (gated behind Checkpoint C), and steep/shallow's
+/// output is bit-identical across every arm (deferred pending a
+/// discriminating fixture — see `steep_shallow_generation_resolution`).
+///
+/// On a plain ball the geometric mean of two equal cells is that cell, so
+/// ball output is byte-identical to pre-PR-8a; only tapered tools move.
 #[must_use]
 pub fn ramp_finish_generation_resolution(
     cutter: &dyn MillingCutter,
     tolerance: f64,
 ) -> FinishResolutionPolicy {
-    FinishResolutionPolicy::legacy_envelope_quarter(cutter, tolerance)
+    FinishResolutionPolicy::geo_mean_envelope_cusp(cutter, tolerance)
 }
 
 /// Generate a ramp finishing toolpath.

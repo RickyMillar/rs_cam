@@ -21,14 +21,16 @@
 //!
 //! | arm | policy | cell |
 //! |---|---|---|
-//! | `envelope/4` | `LegacyEnvelopeQuarter` — today's shipped default | 0.750 mm |
-//! | `intermediate` | `Explicit(geo-mean)` | 0.306 mm |
+//! | `envelope/4` | `LegacyEnvelopeQuarter` — scallop's + steep/shallow's shipped default | 0.750 mm |
+//! | `geo-mean` | `GeoMeanEnvelopeCusp` — ramp-finish's shipped default since PR-8a | 0.306 mm |
 //! | `cusp/4` | `CuspQuarter` | 0.125 mm |
 //! | `tolerance` | `Explicit(tolerance)` | 0.100 mm |
 //!
-//! The two `Explicit` arms are explicit HONESTLY: neither has a tool scale
-//! behind it — the intermediate is a bisection probe and the tolerance arm is
-//! "what the `.max(tolerance)` floor would give if it bound".
+//! The one `Explicit` arm is explicit HONESTLY: it has no tool scale behind
+//! it — it is "what the `.max(tolerance)` floor would give if it bound".
+//! (Until PR-8a the geo-mean arm was `Explicit` too, a bisection probe; the
+//! Checkpoint B decision turned that probe into a named mode, so the arm now
+//! carries the provenance of a policy a production op selects.)
 //!
 //! ## §A.0 compliance — topology, not area
 //!
@@ -82,7 +84,8 @@ use rs_cam_core::finish_setup::{
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::ramp_finish::{
-    RampFinishParams, ramp_finish_toolpath_structured_annotated_with_resolution,
+    RampFinishParams, ramp_finish_generation_resolution,
+    ramp_finish_toolpath_structured_annotated_with_resolution,
 };
 use rs_cam_core::scallop::{
     ScallopParams, ScallopRuntimeAnnotation, scallop_generation_resolution,
@@ -134,18 +137,24 @@ struct Arm {
 }
 
 /// The four arms, in coarse→fine order. Only `cell_mm` differs.
+///
+/// PR-8a: the intermediate arm is no longer an `Explicit` bisection probe —
+/// it is the NAMED [`FinishResolutionMode::GeoMeanEnvelopeCusp`] policy that
+/// `ramp_finish` now ships, so the arm carries its own provenance and the
+/// evidence tables describe a mode a production op selects rather than a
+/// number this harness invented. The cell value is identical (the mode's
+/// formula IS the geometric mean this arm always used).
 fn arms(cutter: &dyn MillingCutter) -> Vec<Arm> {
     let envelope_quarter = FinishResolutionPolicy::legacy_envelope_quarter(cutter, TOLERANCE_MM);
     let cusp_quarter = FinishResolutionPolicy::cusp_quarter(cutter, TOLERANCE_MM);
-    let intermediate = (envelope_quarter.cell_mm() * cusp_quarter.cell_mm()).sqrt();
     vec![
         Arm {
             name: "envelope/4 (legacy)",
             policy: envelope_quarter,
         },
         Arm {
-            name: "intermediate",
-            policy: FinishResolutionPolicy::explicit(intermediate),
+            name: "geo-mean (intermediate)",
+            policy: FinishResolutionPolicy::geo_mean_envelope_cusp(cutter, TOLERANCE_MM),
         },
         Arm {
             name: "cusp/4",
@@ -797,8 +806,10 @@ fn arms_are_distinct_grids_with_honest_provenance() {
     let a = arms(&t);
     assert_eq!(a.len(), 4);
     assert_eq!(a[0].policy.mode(), FinishResolutionMode::LegacyEnvelopeQuarter);
+    assert_eq!(a[1].policy.mode(), FinishResolutionMode::GeoMeanEnvelopeCusp);
     assert_eq!(a[2].policy.mode(), FinishResolutionMode::CuspQuarter);
     assert!((a[0].policy.cell_mm() - 0.75).abs() < 1e-12);
+    assert!((a[1].policy.cell_mm() - (0.75_f64 * 0.125).sqrt()).abs() < 1e-12);
     assert!((a[2].policy.cell_mm() - 0.125).abs() < 1e-12);
     assert!((a[3].policy.cell_mm() - TOLERANCE_MM).abs() < 1e-12);
     for arm in &a {
@@ -827,6 +838,121 @@ fn arms_are_distinct_grids_with_honest_provenance() {
         a[0].policy,
         "the legacy arm must BE what scallop ships today"
     );
+    // PR-8a: and ramp-finish's SHIPPED choice is arm 1. The evidence arm and
+    // the production selector are now the same value by identity, so the
+    // §3.2 table cannot drift away from what the op does.
+    assert_eq!(
+        ramp_finish_generation_resolution(&t, TOLERANCE_MM),
+        a[1].policy,
+        "the intermediate arm must BE what ramp_finish ships since PR-8a"
+    );
+}
+
+/// **PR-8a's quality gate**, on the evidence's own fixtures and against the
+/// evidence's own 0.05 mm reference ruler.
+///
+/// `CHECKPOINT_B_EVIDENCE.md` §3.2 recorded two gouges driven purely by the
+/// legacy generation cell — 2.39 mm on the narrow valley, 0.16 mm on the
+/// narrow ridge — and recorded every finer arm eliminating both. This asserts
+/// BOTH halves on the SHIPPED entry point:
+///
+/// * the legacy arm still reproduces the gouges (red evidence, kept live, so
+///   the gate can never pass by the fixture going flat), and
+/// * the shipped policy leaves zero samples past 50 µm and a deepest gouge of
+///   exactly 0.0.
+///
+/// Residual, not fingerprint: a fingerprint says "something changed", this
+/// says "the thing that changed is the defect". §5.1's caveat about the
+/// residual column does NOT apply here — it applies to scallop, whose ring Z
+/// is an exact per-point drop-cutter query; ramp-finish reads its Z off the
+/// generation grid, which is precisely why the column is load-bearing for it.
+#[test]
+fn ramp_finish_shipped_policy_removes_the_legacy_gouges() {
+    let t = taper();
+    let legacy = FinishResolutionPolicy::legacy_envelope_quarter(&t, TOLERANCE_MM);
+    let shipped = ramp_finish_generation_resolution(&t, TOLERANCE_MM);
+    assert_ne!(legacy, shipped, "the two arms must be different grids");
+
+    // (fixture, the gouge §3.2 measured on the legacy arm)
+    let cases: [(&str, TriangleMesh, f64); 2] = [
+        ("narrow valley", narrow_valley(), 2.3939),
+        ("narrow ridge", narrow_ridge(), 0.1621),
+    ];
+    for (name, mesh, recorded_legacy_gouge) in cases {
+        let fixture = Fixture::new("fixture", mesh);
+        let (reference, _) = build(
+            &fixture,
+            &t,
+            FinishResolutionPolicy::explicit(REFERENCE_CELL_MM),
+        );
+
+        let before = run_ramp_finish(&fixture, &t, legacy);
+        let before_m = path_metrics(&before.toolpath, Some(&reference));
+        let after = run_ramp_finish(&fixture, &t, shipped);
+        let after_m = path_metrics(&after.toolpath, Some(&reference));
+
+        // NON-VACUITY, stated as the thing that could actually go wrong: a
+        // finer arm must not pass by having FEWER points scored. Most ramp
+        // points land outside the reference grid's covered footprint (the
+        // deep ladder levels trace the outer silhouette, out in the 3 mm
+        // envelope padding where the reference probe contacts nothing), so
+        // the absolute sample count is small on both arms — what matters is
+        // that the winning arm is scored on at least as much as the loser.
+        assert!(
+            before_m.residual_samples > 0 && after_m.residual_samples > 0,
+            "{name}: nothing was scored on one of the arms"
+        );
+        assert!(
+            after_m.residual_samples >= before_m.residual_samples,
+            "{name}: the shipped arm scored FEWER points ({}) than the legacy \
+             arm ({}) — a gouge-free verdict on a smaller population is not a \
+             comparison",
+            after_m.residual_samples,
+            before_m.residual_samples
+        );
+        // RED EVIDENCE, live: the legacy cell still drives the recorded
+        // gouge. Loose band (±25%) because this pins a DEFECT, not a
+        // contract — the point is that it is still of that magnitude.
+        assert!(
+            before_m.deepest_gouge_mm <= -0.75 * recorded_legacy_gouge,
+            "{name}: the legacy arm no longer reproduces the §3.2 gouge \
+             ({recorded_legacy_gouge} mm) — got {:.4} mm, so this gate is \
+             measuring nothing",
+            before_m.deepest_gouge_mm
+        );
+        assert!(before_m.gouge_over_50um > 0, "{name}: legacy red evidence");
+
+        // THE GATE.
+        assert_eq!(
+            after_m.deepest_gouge_mm, 0.0,
+            "{name}: the shipped policy must leave NO cutting point below the \
+             reference tool-centre surface; deepest {:.4} mm",
+            after_m.deepest_gouge_mm
+        );
+        assert_eq!(
+            after_m.gouge_over_50um, 0,
+            "{name}: {} cutting samples still gouge past 50 µm",
+            after_m.gouge_over_50um
+        );
+        // Cost side of the Checkpoint B trade, asserted rather than assumed:
+        // the move count grows, but nothing like the cell ratio (6×).
+        let move_factor = after_m.moves as f64 / before_m.moves.max(1) as f64;
+        assert!(
+            (1.0..2.0).contains(&move_factor),
+            "{name}: move count factor {move_factor:.2} is outside the \
+             1.11–1.43× band §3.2 measured — the cost case moved"
+        );
+        println!(
+            "{name}: legacy deepest {:.4} mm / {} past 50 µm ({} moves) \
+             -> shipped {:.4} mm / {} past 50 µm ({} moves, {move_factor:.2}×)",
+            before_m.deepest_gouge_mm,
+            before_m.gouge_over_50um,
+            before_m.moves,
+            after_m.deepest_gouge_mm,
+            after_m.gouge_over_50um,
+            after_m.moves,
+        );
+    }
 }
 
 /// Non-vacuity for the whole experiment: on the narrow ridge, the coarse and
