@@ -1430,6 +1430,15 @@ pub(crate) fn generate_unified_finish(
     });
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_scallop(&annotations, &tp, sem);
+        // A/M8: the SEMANTIC region trace `narrate_toolpath` reads, built
+        // from the same `RegionAnnotation` table `unified_finish_spans`
+        // builds the STRUCTURAL region-node spans from. Annotation only —
+        // no move is touched.
+        crate::compute::annotate::annotate_unified_finish_regions(
+            &crate::unified_finish::unified_finish_region_annotations(&report),
+            &tp,
+            sem,
+        );
     }
     // Spans (Region attribution + the rapid-order barriers that make this
     // op's barriered TSP safe) are built by `unified_finish::

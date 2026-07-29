@@ -26,6 +26,8 @@ pub(crate) const LARGE_ARC_RADIUS_MULTIPLIER: f64 = 30.0;
 const AIR_CUT_WARNING_PERCENT: f64 = 50.0;
 const DEEP_DOC_MULTIPLIER: f64 = 1.5;
 const MAX_LEVEL_LINES: usize = 8;
+/// Distinct region LABELS listed by `append_region_mix` before it elides.
+const MAX_REGION_MIX_GROUPS: usize = 8;
 const MAX_ANOMALY_LINES: usize = 8;
 
 /// Optional metadata that lets narration tie raw traces back to the project.
@@ -240,6 +242,7 @@ pub fn narrate_toolpath_with_context(
             region_items,
             ring_items
         ));
+        append_region_mix(&mut output, trace);
     } else {
         output.push_str("Semantic trace: not available.\n");
     }
@@ -575,6 +578,53 @@ fn find_or_create_level_accumulator(
     // SAFETY: we just pushed one element, so the last element exists.
     #[allow(clippy::indexing_slicing)]
     &mut levels[last_index]
+}
+
+/// One line naming the semantic `Region` items by label, grouped, in
+/// first-appearance (cut) order.
+///
+/// Plan A/M8: the region COUNT alone cannot say which strategy earned its
+/// time. `UnifiedFinish` labels its regions with band and strategy
+/// (`"MidSteep band (scallop)"`), so this line is the mix table H4 needs;
+/// for operations whose regions are plain ordinals it degrades to a short
+/// enumeration and is capped at [`MAX_REGION_MIX_GROUPS`].
+fn append_region_mix(output: &mut String, trace: &ToolpathSemanticTrace) {
+    let mut groups: Vec<(&str, usize, usize)> = Vec::new();
+    for item in trace
+        .items
+        .iter()
+        .filter(|item| item.kind == ToolpathSemanticKind::Region)
+    {
+        let moves = match (item.move_start, item.move_end) {
+            (Some(start), Some(end)) if end >= start => end - start + 1,
+            _ => 0,
+        };
+        if let Some(group) = groups
+            .iter_mut()
+            .find(|(label, _, _)| *label == item.label.as_str())
+        {
+            group.1 += 1;
+            group.2 += moves;
+        } else {
+            groups.push((item.label.as_str(), 1, moves));
+        }
+    }
+    if groups.is_empty() {
+        return;
+    }
+
+    let hidden = groups.len().saturating_sub(MAX_REGION_MIX_GROUPS);
+    let shown: Vec<String> = groups
+        .iter()
+        .take(MAX_REGION_MIX_GROUPS)
+        .map(|(label, count, moves)| format!("{label} x{count} ({moves} moves)"))
+        .collect();
+    output.push_str("Region mix: ");
+    output.push_str(&shown.join(", "));
+    if hidden > 0 {
+        output.push_str(&format!(", and {hidden} more label(s)"));
+    }
+    output.push_str(".\n");
 }
 
 fn apply_semantic_level_metrics(level: &mut ZLevelSummary, trace: &ToolpathSemanticTrace) {
