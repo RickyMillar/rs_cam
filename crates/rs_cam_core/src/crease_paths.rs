@@ -144,15 +144,15 @@ mod tests {
         let mesh = make_v_valley(20.0, 6.0, 0.5, 20, 24);
         let index = SpatialIndex::build(&mesh, 5.0);
         let tool = BallEndmill::new(2.0, 25.0);
-        let centerlines = vec![RestCenterline {
-            points: vec![
+        let centerlines = vec![RestCenterline::without_samples(
+            vec![
                 P3::new(2.0, 0.0, 0.0),
                 P3::new(8.0, 0.0, 0.0),
                 P3::new(14.0, 0.0, 0.0),
                 P3::new(18.0, 0.0, 0.0),
             ],
-            half_width_mm: 3.0,
-        }];
+            3.0,
+        )];
 
         let never_cancel = || false;
         let paths = centerline_cut_paths(
@@ -179,10 +179,10 @@ mod tests {
         );
 
         // Below the length gate: no paths at all.
-        let short = vec![RestCenterline {
-            points: vec![P3::new(2.0, 0.0, 0.0), P3::new(2.5, 0.0, 0.0)],
-            half_width_mm: 3.0,
-        }];
+        let short = vec![RestCenterline::without_samples(
+            vec![P3::new(2.0, 0.0, 0.0), P3::new(2.5, 0.0, 0.0)],
+            3.0,
+        )];
         let filtered = centerline_cut_paths(
             &short,
             &mesh,

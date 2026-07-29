@@ -1296,6 +1296,142 @@ fn checkpoint_a_matrix_report() {
     }
 }
 
+// ── PR-4 gate: the SHIPPED policy against the same truth ─────────────────
+//
+// Everything above is the historical Checkpoint A evidence and is kept as
+// written (the tables in `CHECKPOINT_A_EVIDENCE.md` were transcribed from it).
+// What follows drives `rs_cam_core::reach` — the production module PR-4
+// landed — against the SAME analytic truth, so the approved column is pinned
+// to shipped code rather than to a model reimplemented in a test.
+
+/// The shipped policy's answer for one matrix cell, in the same `Prediction`
+/// shape the candidate models above produce.
+///
+/// The mapping is the whole point of the gate, so it is explicit: each side of
+/// the analytic V is handed to the policy as its apex-to-rim horizontal
+/// distance (`depth / tan θ`) and its wall angle, which is exactly what
+/// `rest_field::measure_cross_section` measures off `RestGrid::surface_z` in
+/// production.
+fn predict_production(cutter: &dyn MillingCutter, v: &Valley, delta: f64) -> Prediction {
+    use rs_cam_core::reach::{
+        LocalValley, RoutingVerdict, ValleySide, coverage_cap_passes, offset_passes_per_side, route,
+        solve_reach,
+    };
+    let local = LocalValley {
+        rest_depth_mm: delta,
+        left: ValleySide::from_wall_angle(v.depth / v.tan_l, v.tan_l.atan()),
+        right: ValleySide::from_wall_angle(v.depth / v.tan_r, v.tan_r.atan()),
+    };
+    let reach = solve_reach(cutter, &local);
+    let cap = coverage_cap_passes(cutter, delta, STEPOVER, CAP);
+    let verdict = route(&reach, STEPOVER, cap);
+    let (nl, nr) = offset_passes_per_side(&reach, STEPOVER, CAP);
+    Prediction {
+        // The matrix scores one scalar per cell; the narrow side is what
+        // `CLR+θ` scored (`x = min(l, r)`), so the per-side fan is collapsed
+        // the same way here. The asymmetric fan is exercised separately in
+        // `reach_policy_pr4.rs`.
+        n: nl.min(nr),
+        // Same convention the `ClearTheta` column used: a REFUSED cell is not
+        // a clearing verdict, it is "this operation cannot do it".
+        pencil: verdict != RoutingVerdict::Clearing,
+        refuse: verdict == RoutingVerdict::Refused,
+    }
+}
+
+/// **PR-4 acceptance gate.** The production reach policy, scored by the same
+/// truth that produced `CHECKPOINT_A_EVIDENCE.md`, must reproduce the
+/// approved CLR+θ column on every tool: zero gouge, zero miss, zero routing
+/// over/under-claims, zero float-blind cells, 100 % reachable-detail
+/// coverage. The envelope baseline it replaces is asserted alongside so the
+/// comparison cannot silently become a comparison of nothing to nothing.
+#[test]
+fn production_reach_policy_reproduces_the_approved_matrix_column() {
+    println!();
+    println!("== PR-4 — shipped `reach` policy vs the Checkpoint A truth ==");
+    for (name, cutter) in tools() {
+        let cutter = cutter.as_ref();
+        let prof = Profile::build(cutter);
+        let mut prod = Score::default();
+        let mut env = Score::default();
+        for &theta in ANGLES.iter() {
+            for &w in WIDTHS.iter() {
+                let v = Valley::sym(w, theta);
+                for &delta in DEPTHS.iter() {
+                    if delta > v.depth - DEPTH_TOL {
+                        continue;
+                    }
+                    let t = truth(&prof, &v, delta);
+                    prod.add(predict_production(cutter, &v, delta), t);
+                    env.add(predict(Model::Envelope, cutter, &v, delta), t);
+                }
+            }
+        }
+        println!(
+            "  {name:16} PROD cells={} fan={} gouge={} miss={} route_over={} \
+             route_under={} float_blind={} coverage={:.0}%",
+            prod.cells,
+            prod.fan_cells,
+            prod.gouge,
+            prod.miss,
+            prod.route_over,
+            prod.route_under,
+            prod.float_blind,
+            100.0 * prod.coverage()
+        );
+        println!(
+            "  {name:16} ENV  gouge={} miss={} route_over={} float_blind={} coverage={:.0}%",
+            env.gouge,
+            env.miss,
+            env.route_over,
+            env.float_blind,
+            100.0 * env.coverage()
+        );
+        assert!(prod.cells >= 176, "{name}: matrix did not run ({} cells)", prod.cells);
+        assert_eq!(prod.gouge, 0, "{name}: production policy over-claimed");
+        assert_eq!(prod.miss, 0, "{name}: production policy suppressed reachable detail");
+        assert_eq!(prod.route_over, 0, "{name}: routed pencil where truth says clearing");
+        assert_eq!(prod.route_under, 0, "{name}: routed clearing where truth says pencil");
+        assert_eq!(prod.float_blind, 0, "{name}: routed a centreline the tool cannot hold");
+        assert!(
+            prod.coverage() > 0.999,
+            "{name}: coverage {:.3} below the approved 100%",
+            prod.coverage()
+        );
+        // Non-vacuity + the plan's "coverage increases over the envelope
+        // baseline" gate, on the same run.
+        assert!(
+            prod.coverage() > env.coverage(),
+            "{name}: production coverage {:.3} did not beat the envelope baseline {:.3}",
+            prod.coverage(),
+            env.coverage()
+        );
+    }
+}
+
+/// The coverage cap's floors (`reach::coverage_cap_passes`) exist so the
+/// criterion cannot collapse to zero at the shipped `num_offset_passes = 0`
+/// default. They must not bind anywhere on the matrix, or the routing column
+/// asserted above would be reproducing a DIFFERENT rule than the evidence
+/// scored. Asserted, not assumed.
+#[test]
+fn coverage_cap_floor_never_binds_on_the_matrix() {
+    use rs_cam_core::reach::coverage_cap_passes;
+    for (name, cutter) in tools() {
+        let mut worst = 0usize;
+        for &delta in DEPTHS.iter() {
+            let cap = coverage_cap_passes(cutter.as_ref(), delta, STEPOVER, CAP);
+            worst = worst.max(coverage_cap_passes(cutter.as_ref(), delta, STEPOVER, 0));
+            assert_eq!(
+                cap, CAP,
+                "{name}: cap floor bound at δ={delta} (got {cap}, matrix scored {CAP})"
+            );
+        }
+        println!("  {name:16} cap floor at num_offset_passes=0 is {worst} pass(es)");
+        assert!(worst >= 1, "{name}: cap floor collapsed to zero");
+    }
+}
+
 // ── End-to-end confirmation probes ───────────────────────────────────────
 //
 // Not the matrix — three cheap probes through the REAL routing path, to show
@@ -1465,7 +1601,7 @@ fn probe_ball_control_routing_is_invariant_to_the_swap() {
             cell_mm: 0.3,
             min_valley_depth: 0.05,
             route_width_factor: ROUTE_WIDTH_FACTOR,
-            pencil_radius: cutter.envelope_radius_mm(),
+            routing_radius_mm: cutter.envelope_radius_mm(),
             min_cut_length: 2.0,
             region_margin_mm: 0.5,
         },
@@ -1483,14 +1619,23 @@ fn probe_ball_control_routing_is_invariant_to_the_swap() {
     );
 }
 
-/// PROBE 3 — the A8 defect (`TOOL_SCALE_SEMANTICS.md` §7.1), live.
-/// `resolve_reference_cutter` compares the nominal reference against
-/// `diameter()` — the SHANK — so the default 6 mm reference is not "bigger
-/// than" the Ø6-shank taper and every tapered pencil op silently falls to the
-/// self-referenced surface probe. Same tool, same fixture, reference 6.0 vs
-/// 12.0: the routing outcome must differ, and it does.
+/// PROBE 3 — the A8 defect (`TOOL_SCALE_SEMANTICS.md` §7.1), **now fixed**
+/// (task #12, PR-4).
+///
+/// As originally written this probe asserted the DEFECT: at the shipped
+/// `reference_tool_diameter = 6.0` a Ø1-tip / Ø6-shank taper compared the
+/// reference against `diameter()` (the shank), `6.0 > 6.0` was false, and
+/// every tapered pencil operation silently fell through to the
+/// self-referenced surface probe. `CHECKPOINT_A_EVIDENCE.md` §7 records that
+/// run (1 chain at the default versus 2 above the shank) and stays as the
+/// historical evidence.
+///
+/// The comparison is now against the tip diameter (`cusp_radius_mm() * 2`),
+/// so this probe pins the FIX: at the default the taper resolves a real Ø6
+/// nominal reference, which is a different measurement from the
+/// self-referenced probe it used to silently become.
 #[test]
-fn probe_tapered_pencil_falls_through_to_self_referenced_at_the_default() {
+fn probe_tapered_pencil_resolves_a_real_reference_at_the_default() {
     let mesh = grooved_block(1.5, 70.0, 1.2);
     let index = SpatialIndex::build(&mesh, 4.0);
     let cutter = wanaka_taper();
@@ -1517,19 +1662,26 @@ fn probe_tapered_pencil_falls_through_to_self_referenced_at_the_default() {
         chains.len()
     };
 
-    let at_default = count(6.0); // == cutter.diameter(), so SelfReferenced
-    let above_shank = count(12.0); // strictly > diameter(), so Nominal
+    // Below the TIP diameter (1.0), so still genuinely self-referenced — the
+    // control the default used to silently collapse onto.
+    let self_referenced = count(0.5);
+    let at_default = count(6.0); // the shipped default: now a Ø6 nominal ball
+    let above_shank = count(12.0);
     println!(
-        "PROBE 3: reference_tool_diameter 6.0 (the default) ⇒ {at_default} chains; \
+        "PROBE 3 (fixed): reference 0.5 (below the tip ⇒ self-referenced) ⇒ \
+         {self_referenced} chains; 6.0 (the default) ⇒ {at_default} chains; \
          12.0 ⇒ {above_shank} chains"
     );
     assert!(
-        cutter.diameter() >= 6.0,
-        "fixture no longer exercises the shank comparison"
+        cutter.diameter() >= 6.0 && cutter.cusp_radius_mm() * 2.0 <= 1.0,
+        "fixture no longer exercises the shank-vs-tip comparison \
+         (shank {:.2}, tip {:.2})",
+        cutter.diameter(),
+        cutter.cusp_radius_mm() * 2.0
     );
-    assert!(
-        above_shank > at_default,
-        "the reference-tool guard showed no effect; §7.1's analysis would need \
-         revisiting (default={at_default}, above-shank={above_shank})"
+    assert_ne!(
+        at_default, self_referenced,
+        "the shipped default still behaves exactly like the self-referenced \
+         probe — the §7.1 fall-through is back"
     );
 }

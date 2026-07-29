@@ -110,19 +110,36 @@ pub struct RestFieldParams {
     /// user dial are the same quantity by construction.
     pub min_valley_depth: f64,
     /// A skeleton polyline routes to pencil when its region half-width
-    /// `≤ route_width_factor × pencil_radius`; wider routes to clearing.
+    /// `≤ route_width_factor × routing_radius_mm`; wider routes to clearing.
     pub route_width_factor: f64,
-    /// Pencil-tool radius (mm) — the routing yardstick.
-    pub pencil_radius: f64,
+    /// The ROUTING yardstick (mm) only — never a padding, erosion or
+    /// reach-back radius.
+    ///
+    /// Renamed from `pencil_radius` in PR-4 (H2.1) because that name invited
+    /// exactly the confusion the field caused: it defaulted to `0.5`
+    /// (tip-scale, the correct intent) and all three production callers
+    /// overwrote it with `radius()` (shank-scale, 6× larger on the shipped
+    /// taper). The physical margins in this module — the grid margin, the
+    /// trust erosion, and the `region_polygons` dilation — never read this
+    /// field: they take the cutter's own envelope directly, and PR-4 left
+    /// every one of them untouched (plan H2.1 rule 4, "keep envelope-derived
+    /// grid padding, erosion, and polygon reach-back unchanged").
+    ///
+    /// PR-5 retires this field together with [`Self::route_width_factor`] in
+    /// favour of the coverage criterion; the two are fed by the same scalar
+    /// and must move together (`CHECKPOINT_A_EVIDENCE.md` §8.3).
+    pub routing_radius_mm: f64,
     /// Minimum kept-cut length (mm) — used only for the coverage report; the
     /// caller applies the real `min_cut_length` filter downstream.
     pub min_cut_length: f64,
     /// Extra clearance (mm) added around detected rest regions, beyond the
     /// fine (pencil) tool radius, when dilating the mask into
-    /// [`RestFieldResult::region_polygons`]. Dilation radius is
-    /// `pencil_radius + region_margin_mm` — enough that a boundary-clipped
-    /// fine-tool op can actually reach the true region edge rather than
-    /// stopping exactly at the pencil-radius-eroded mask boundary.
+    /// [`RestFieldResult::region_polygons`]. Dilation radius is the fine
+    /// (pencil) cutter's own ENVELOPE radius plus this margin — enough that a
+    /// boundary-clipped fine-tool op can actually reach the true region edge
+    /// rather than stopping exactly at the pencil-radius-eroded mask
+    /// boundary. Read off the cutter, never off
+    /// [`Self::routing_radius_mm`] (plan H2.1 rule 4).
     pub region_margin_mm: f64,
 }
 
@@ -132,7 +149,7 @@ impl Default for RestFieldParams {
             cell_mm: 0.5,
             min_valley_depth: 0.05,
             route_width_factor: 2.0,
-            pencil_radius: 0.5,
+            routing_radius_mm: 0.5,
             min_cut_length: 2.0,
             region_margin_mm: 0.5,
         }
@@ -255,7 +272,7 @@ impl RestGrid {
     /// The numerator it partners — a region polygon from
     /// [`RestFieldResult::region_polygons`] — is extracted from the *same*
     /// grid but at [`crate::measurement::MeasurementStage::PolygonExtraction`]
-    /// and dilated by `pencil_radius + region_margin_mm`, so the fraction is a
+    /// and dilated by the cutter envelope + `region_margin_mm`, so the fraction is a
     /// same-domain, same-grid, **later-stage** ratio: it can exceed 1.0 on a
     /// region that fills the part. That is intended — the pathology it feeds
     /// only asks "is one region most of the part".
@@ -287,6 +304,55 @@ pub struct RestCenterline {
     pub points: Vec<P3>,
     /// Local region half-width (mm) — see struct doc.
     pub half_width_mm: f64,
+    /// PER-POINT local valley cross-section and the reach it resolves to, one
+    /// entry per [`Self::points`] entry (or EMPTY when the centreline was not
+    /// produced by the detector — see [`Self::without_samples`]).
+    ///
+    /// The depth statistic the routing and fit decisions read is **per
+    /// sample**, by Checkpoint A ruling: `engagement_radius` is monotone in
+    /// depth, so any single per-branch scalar is either optimistic (median —
+    /// the matrix shows that direction produces gouge cells) or suppresses
+    /// reachable detail (peak) on a branch that runs 0.2 mm deep at one end
+    /// and 2 mm at the other. `CHECKPOINT_A_EVIDENCE.md` §8.5.
+    ///
+    /// Not serialized: `RestCenterline` has no `serde` derive and reaches no
+    /// project file or wire format. It is consumed in-process by
+    /// [`crate::crease_paths::centerline_cut_paths`] and
+    /// [`crate::finish_planner`] and is rebuilt on every generate. Audited at
+    /// PR-4 — if that ever changes, this vector is the field that has to
+    /// carry a schema note.
+    pub samples: Vec<CenterlineSample>,
+}
+
+impl RestCenterline {
+    /// A centreline with no measured cross-section — the shape non-detector
+    /// callers (tests, the finish planner's synthetic creases) construct.
+    ///
+    /// Consumers must treat an empty [`Self::samples`] as "not measured" and
+    /// fall back to the branch scalar, never as "measured and flat".
+    #[must_use]
+    pub fn without_samples(points: Vec<P3>, half_width_mm: f64) -> Self {
+        Self {
+            points,
+            half_width_mm,
+            samples: Vec::new(),
+        }
+    }
+}
+
+/// The local valley cross-section measured at one centreline point, plus the
+/// reach the canonical policy ([`crate::reach`]) resolves from it.
+///
+/// Both halves are kept: the measurement is what a future model would be
+/// re-solved from, and the resolved reach is what the fit and routing
+/// decisions actually consume. Storing only the latter would make the
+/// detector's reading unauditable.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CenterlineSample {
+    /// What was measured off the grid at this point.
+    pub valley: crate::reach::LocalValley,
+    /// What [`crate::reach::solve_reach`] made of it.
+    pub reach: crate::reach::Reach,
 }
 
 /// Output of [`detect_rest_valleys`].
@@ -304,7 +370,7 @@ pub struct RestFieldResult {
     /// The continuous rest-depth grid, for visualisation (heatmap overlay).
     pub rest_grid: RestGrid,
     /// Machining-region polygons derived from the (thresholded + component-
-    /// cleaned) rest mask, dilated by `pencil_radius + region_margin_mm` so a
+    /// cleaned) rest mask, dilated by the cutter envelope + `region_margin_mm` so a
     /// boundary-clipped fine-tool op can actually reach the region edge. This
     /// is the derived-boundary source for selective finishing (P2.2's
     /// `BoundarySource::DerivedRestRegions`) — grouped into outer/hole rings
@@ -317,6 +383,123 @@ pub struct RestFieldResult {
 #[inline]
 fn mask_at(mask: &Grid2<bool>, r: isize, c: isize) -> bool {
     mask.get_signed_or(r, c, false)
+}
+
+/// How many cells the perpendicular cross-section walk travels before giving
+/// up on finding a rim.
+///
+/// At the shipped 0.5 mm rest cell that is 32 mm to each side — far past any
+/// fan a pencil operation can emit, which is all the routing decision needs
+/// to distinguish. A walk that runs out reports the distance it covered, so
+/// the branch reads as "at least this wide" and routes to clearing on width,
+/// which is the honest outcome for a band nobody is going to pencil.
+const CROSS_SECTION_WALK_CELLS: usize = 64;
+
+/// Unit perpendicular `(d_col, d_row)` to the ridge polyline at index `k`,
+/// in CELL units. Central difference where possible, one-sided at the ends;
+/// `(1, 0)` for a degenerate (single-point or zero-length) neighbourhood, so
+/// the cross-section walk always has a direction to travel.
+fn ridge_perpendicular(poly: &[usize], k: usize, nx: usize) -> (f64, f64) {
+    let n = poly.len();
+    if n < 2 {
+        return (1.0, 0.0);
+    }
+    let lo = k.saturating_sub(1);
+    let hi = (k + 1).min(n - 1);
+    let (Some(&a), Some(&b)) = (poly.get(lo), poly.get(hi)) else {
+        return (1.0, 0.0);
+    };
+    let (ra, ca) = crate::grid2::row_major_rc(a, nx);
+    let (rb, cb) = crate::grid2::row_major_rc(b, nx);
+    let (tx, ty) = (cb as f64 - ca as f64, rb as f64 - ra as f64);
+    let len = (tx * tx + ty * ty).sqrt();
+    if len < 1e-9 {
+        return (1.0, 0.0);
+    }
+    // Rotate the tangent a quarter turn: perpendicular in (col, row).
+    (-ty / len, tx / len)
+}
+
+/// Measure the local valley cross-section at one ridge cell: how far the
+/// surface runs to the rim on each side, and how steeply it rises getting
+/// there.
+///
+/// This is the "finite difference off `RestGrid::surface_z`" the Checkpoint A
+/// ruling approved as the CLR+θ input, made concrete:
+///
+/// * **rim distance** — walk the perpendicular until the rest depth falls to
+///   the mask threshold (the rim is exactly where the reference tool touches
+///   the surface again), the surface leaves the trusted region, or the walk
+///   budget runs out.
+/// * **wall rise** — the STEEPEST single-cell gradient met on the way out,
+///   restricted to the height band the cutter's profile actually occupies
+///   (`surface_z` within `rest_depth` of the ridge). The steepest local
+///   gradient rather than the apex-to-rim secant because a trapezoidal
+///   groove — flat floor, steep walls — reads as an almost-flat wall through
+///   a secant, and an almost-flat wall is the one reading that refuses
+///   everything. The cost of the choice is recorded in [`crate::reach`]'s
+///   known-limitation note: on a trapezoid this is optimistic on width while
+///   staying conservative on refusal.
+///
+/// A side whose surface does not rise at all inside the band reports a
+/// vertical wall, which is the "the rim does not constrain the tool" reading
+/// — never "refuse".
+#[allow(clippy::too_many_arguments)] // one cohesive measurement off five grids
+fn measure_cross_section(
+    ridge: usize,
+    perp: (f64, f64),
+    rest: &Grid2<f64>,
+    surface_z: &Grid2<f64>,
+    contact: &Grid2<bool>,
+    nx: usize,
+    cell: f64,
+    threshold: f64,
+) -> crate::reach::LocalValley {
+    let (r0, c0) = crate::grid2::row_major_rc(ridge, nx);
+    let depth = rest.at_index_or(ridge, 0.0).max(0.0);
+    let z0 = surface_z.at_index_or(ridge, f64::NAN);
+
+    let side = |dir: f64| -> crate::reach::ValleySide {
+        let mut rim_cells = 0.0f64;
+        let mut max_slope = 0.0f64;
+        let mut z_prev = z0;
+        for j in 1..=CROSS_SECTION_WALK_CELLS {
+            let step = dir * j as f64;
+            let col = (c0 as f64 + perp.0 * step).round();
+            let row = (r0 as f64 + perp.1 * step).round();
+            let Some(idx) = contact.index_of_signed(row as isize, col as isize) else {
+                break;
+            };
+            if !contact.at_index_or(idx, false) {
+                break;
+            }
+            rim_cells = j as f64;
+            let zj = surface_z.at_index_or(idx, f64::NAN);
+            if z_prev.is_finite() && zj.is_finite() {
+                let rise = zj - z_prev;
+                // Only the band the profile scan integrates over can foul the
+                // cutter; a wall segment above the tip's own reach is not a
+                // constraint on this pass.
+                if rise > 0.0 && zj - z0 <= depth + 1e-9 {
+                    max_slope = max_slope.max(rise / cell);
+                }
+            }
+            if zj.is_finite() {
+                z_prev = zj;
+            }
+            if rest.at_index_or(idx, 0.0) <= threshold {
+                break; // past the rim: the reference tool touches down here
+            }
+        }
+        let dist = rim_cells * cell;
+        crate::reach::ValleySide::new(dist, dist * max_slope)
+    };
+
+    crate::reach::LocalValley {
+        rest_depth_mm: depth,
+        left: side(-1.0),
+        right: side(1.0),
+    }
 }
 
 /// Build the rest field and extract routed valley centrelines + clearing regions.
@@ -336,8 +519,8 @@ pub fn detect_rest_valleys(
     // Grid margin must exceed the pencil radius so the outer ring of cells is
     // genuinely non-contact — the boundary distance-transform (below) erodes the
     // false-high rest band inward from there. `contact` is limited by the SMALLER
-    // (pencil) tool through the AND, so it extends only ~pencil_radius past the
-    // true surface; a margin > pencil_radius guarantees a non-contact ring.
+    // (pencil) tool through the AND, so it extends only ~one pencil radius past
+    // the true surface; a margin > that radius guarantees a non-contact ring.
     let margin_cells = (pencil.radius() / cell).ceil() as usize + 1;
     let margin = margin_cells as f64 * cell;
     let origin_x = bbox.min.x - margin;
@@ -581,7 +764,7 @@ pub fn detect_rest_valleys(
     let mut clearing_comps: std::collections::BTreeSet<usize> = Default::default();
     let mut skeleton_length = 0.0f64;
     let mut traced_length = 0.0f64;
-    let width_limit = params.route_width_factor * params.pencil_radius;
+    let width_limit = params.route_width_factor * params.routing_radius_mm;
 
     for poly in &poly_cells {
         if poly.len() < 2 {
@@ -625,6 +808,22 @@ pub fn detect_rest_valleys(
                 )
             })
             .collect();
+        // PER-POINT local cross-section + reach (PR-4, H2.1). Measured on the
+        // same grid the routing decision is made from, so a consumer never
+        // has to re-derive geometry the detector already had in hand.
+        let samples: Vec<CenterlineSample> = (0..poly.len())
+            .map(|k| {
+                let perp = ridge_perpendicular(poly, k, nx);
+                let ridge = poly.get(k).copied().unwrap_or(0);
+                let valley = measure_cross_section(
+                    ridge, perp, &rest, &pencil_z, &contact, nx, cell, threshold,
+                );
+                CenterlineSample {
+                    reach: crate::reach::solve_reach(pencil, &valley),
+                    valley,
+                }
+            })
+            .collect();
         let len = polyline_length(&pts);
         skeleton_length += len;
 
@@ -647,6 +846,7 @@ pub fn detect_rest_valleys(
             centerlines.push(RestCenterline {
                 points: pts,
                 half_width_mm,
+                samples,
             });
         } else if comp != usize::MAX {
             clearing_comps.insert(comp);
@@ -1720,7 +1920,7 @@ mod tests {
             cell_mm: 0.5,
             min_valley_depth: 0.05,
             route_width_factor: 2.0,
-            pencil_radius: pencil_r,
+            routing_radius_mm: pencil_r,
             min_cut_length: 2.0,
             region_margin_mm: 0.5,
         }
@@ -2307,7 +2507,7 @@ mod tests {
             cell_mm: cell,
             min_valley_depth: mvd,
             route_width_factor: routew,
-            pencil_radius: pencil.radius(),
+            routing_radius_mm: pencil.radius(),
             min_cut_length: 2.0,
             region_margin_mm: 0.5,
         };

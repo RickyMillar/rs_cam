@@ -279,7 +279,7 @@ pub struct ClaimsConfig<'a> {
     /// Crease-detector reference (see [`CreaseReference`]). Defaults to
     /// `CreaseReference::SelfProbe` — the S1/S2 behavior, byte-identical.
     pub crease_reference: CreaseReference,
-    /// Detector params. `pencil_radius` is overwritten with the op's own
+    /// Detector params. `routing_radius_mm` is overwritten with the op's own
     /// `cutter.radius()` before use — the finishing tool IS the pencil in
     /// this op (UnifiedFinish is single-tool, ball-tip-only), unlike the
     /// standalone pencil op's separate reference/pencil tool pair.
@@ -920,7 +920,7 @@ pub fn unified_finish_toolpath_with_cancel(
             route_width_factor: cfg.rest_field_params.route_width_factor,
             // The tip cutter IS the pencil in this op — see `ClaimsConfig`
             // doc — regardless of what the caller set here.
-            pencil_radius: cutter.radius(),
+            routing_radius_mm: cutter.radius(),
             min_cut_length: cfg.rest_field_params.min_cut_length,
             region_margin_mm: cfg.rest_field_params.region_margin_mm,
         };

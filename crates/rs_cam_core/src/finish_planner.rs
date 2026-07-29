@@ -1462,10 +1462,7 @@ mod tests {
     /// the claim tests below.
     fn straight_crease(half_width_mm: f64) -> RestCenterline {
         let points: Vec<P3> = (10..50).map(|x| P3::new(x as f64, 30.0, 0.0)).collect();
-        RestCenterline {
-            points,
-            half_width_mm,
-        }
+        RestCenterline::without_samples(points, half_width_mm)
     }
 
     #[test]
