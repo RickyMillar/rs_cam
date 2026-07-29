@@ -1538,7 +1538,11 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
         tolerance: 0.5,
         ..UnifiedFinishParams::default()
     };
-    let planner = FinishPlannerParams::for_tool(cutter.radius());
+    // `for_tool`'s parameter is a CUSP radius (finish_planner.rs doc). Inert
+    // on this ball fixture, where the two coincide — but it would become a
+    // wrong oracle the moment the fixture is tapered (M2.4's "same shaft,
+    // different tip" control). `TOOL_SCALE_SEMANTICS.md` §7.6.
+    let planner = FinishPlannerParams::for_tool(cutter.cusp_radius_mm());
     let never_cancel = || false;
 
     let (raw, anns, report) = unified_finish_toolpath_with_cancel(

@@ -1004,10 +1004,13 @@ pub(crate) fn generate_adaptive3d(
     // the depth-of-cut, not the envelope radius — for tapered tools
     // these differ a lot. Floor at 0.01mm to keep stepover math safe
     // for degenerate (zero-tip) geometry.
-    let engagement_radius = ctx.tool_def.engagement_radius(cfg.depth_per_pass).max(0.01);
+    let engagement_radius = ctx
+        .tool_def
+        .engagement_radius_mm(cfg.depth_per_pass)
+        .max(0.01);
     let params = crate::adaptive3d::Adaptive3dParams {
         tool_radius: engagement_radius,
-        envelope_radius: ctx.tool_def.radius(),
+        envelope_radius: ctx.tool_def.envelope_radius_mm(),
         stepover: cfg.stepover,
         depth_per_pass: cfg.depth_per_pass,
         stock_to_leave: adaptive3d_effective_stock_to_leave(cfg),
@@ -1354,7 +1357,7 @@ pub(crate) fn generate_unified_finish(
     // with the same wrong radius — a no-op that read as a fix — and is now
     // redundant because `for_tool` gets the right value.
     let mut planner =
-        crate::finish_planner::FinishPlannerParams::for_tool(ctx.tool_def.cusp_radius());
+        crate::finish_planner::FinishPlannerParams::for_tool(ctx.tool_def.cusp_radius_mm());
     planner.steep_threshold_deg = cfg.steep_threshold_deg;
     planner.waterline_threshold_deg = cfg.waterline_threshold_deg;
     planner.overlap_mm = cfg.overlap_mm;

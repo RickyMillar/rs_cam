@@ -66,7 +66,9 @@ pub fn build_finish_surface_with_cell_size_and_cancel(
     cell_size: f64,
     cancel: &dyn CancelCheck,
 ) -> Result<FinishSurface, Cancelled> {
-    let tool_radius = cutter.radius();
+    // Grid PADDING is physical sweep, so it is ENVELOPE by contract
+    // (`TOOL_SCALE_SEMANTICS.md` §8 row 2 — must stay envelope).
+    let tool_radius = cutter.envelope_radius_mm();
     let bbox = &mesh.bbox;
     let origin_x = bbox.min.x - tool_radius;
     let origin_y = bbox.min.y - tool_radius;
@@ -104,6 +106,15 @@ pub fn build_finish_surface_with_cancel(
     tolerance: f64,
     cancel: &dyn CancelCheck,
 ) -> Result<FinishSurface, Cancelled> {
+    // NOT migrated to `envelope_radius_mm()` on purpose. This is the ONE
+    // finish-grid site whose semantic class is still open: the generation
+    // cell follows the ENVELOPE while classification follows the CUSP, so
+    // on a tapered ball the two grids differ by the shaft/tip ratio.
+    // `TOOL_SCALE_SEMANTICS.md` §6.B row B1 routes the decision to H3
+    // (`FinishSurfaceSpec`/`FinishResolutionPolicy`), and the PR-2
+    // migration table (§9.1 row 7) deliberately omits this line — renaming
+    // it would read as an endorsement of the current scale. Leave
+    // `radius()` here until H3 decides.
     let cell_size = (cutter.radius() / 4.0).max(tolerance);
     let mut surface =
         build_finish_surface_with_cell_size_and_cancel(mesh, index, cutter, cell_size, cancel)?;
@@ -158,8 +169,8 @@ pub fn build_classification_surface_with_cancel(
     // the mesh's ≥75° face area — region polygons are XY-PROJECTED and mesh
     // faces are 3D, a ~10× difference on near-vertical ribbons; the audit
     // that caught that is §14t.
-    let tool_radius = cutter.radius();
-    let cell_size = (cutter.cusp_radius() / 4.0).max(tolerance);
+    let tool_radius = cutter.envelope_radius_mm();
+    let cell_size = (cutter.cusp_radius_mm() / 4.0).max(tolerance);
     let bbox = &mesh.bbox;
     let origin_x = bbox.min.x - tool_radius;
     let origin_y = bbox.min.y - tool_radius;

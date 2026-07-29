@@ -27,13 +27,23 @@ use crate::tool::MillingCutter;
 /// at 0 (centreline-only) and capped at `num_offset_passes_cap`. Returns
 /// `Err(Cancelled)` if `cancel` fires mid-loop (checked once per centreline,
 /// same granularity as the original inline loop).
+///
+/// The cutter radius used by that fit is read from `cutter` itself. It used
+/// to arrive as a redundant `cutter_radius: f64` parameter that every caller
+/// filled with `cutter.radius()` for the same cutter; PR-2 deleted the
+/// scalar so the one place the semantic class is chosen is inside this
+/// function (`TOOL_SCALE_SEMANTICS.md` §9.1 row 18). It is the ENVELOPE
+/// today — which is exactly the A2/A4 defect (on a Ø1-tip/Ø6-shank taper
+/// `half_width_mm − 3.0` is negative for every valley narrower than 6 mm, so
+/// `n` is always 0 and the width-aware pass count is dead code). Fixing that
+/// is PR-4's job and is now a one-line change here rather than a signature
+/// change at three call sites.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn centerline_cut_paths(
     centerlines: &[RestCenterline],
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
-    cutter_radius: f64,
     sampling: f64,
     offset_stepover: f64,
     num_offset_passes_cap: usize,
@@ -50,6 +60,9 @@ pub(crate) fn centerline_cut_paths(
         return Ok(all_paths);
     }
     let chain_total = kept.len();
+    // Bit-identical to the deleted `cutter_radius` argument: every caller
+    // passed `cutter.radius()` for this same cutter (§9.1 row 18).
+    let cutter_radius = cutter.envelope_radius_mm();
     for (ci, cl) in kept.iter().enumerate() {
         check_cancel(cancel)?;
         let sampled = resample_polyline(&cl.points, sampling);
@@ -141,7 +154,6 @@ mod tests {
             &mesh,
             &index,
             &tool,
-            tool.radius(),
             1.0,
             1.0,
             2,
@@ -169,7 +181,6 @@ mod tests {
             &mesh,
             &index,
             &tool,
-            tool.radius(),
             1.0,
             1.0,
             2,

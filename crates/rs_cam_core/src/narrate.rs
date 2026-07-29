@@ -22,6 +22,18 @@ const Z_EPSILON_MM: f64 = 0.05;
 /// relative to the tool radius. Also used by `arcfit::try_fit_arc` to
 /// reject implausible Kåsa-bias fits before they reach narration — see
 /// Roadmap F.10 RCA at `planning/F10_RCA.md`.
+///
+/// **ENVELOPE-relative, deliberately** (H2.6, resolved in
+/// `planning/review_2026-07-29/TOOL_SCALE_SEMANTICS.md` §5). This is a
+/// post-condition on `arcfit::try_fit_arc`'s OWN radius cap — a detector
+/// for a defect in our arc fitter — not a feature-scale machining
+/// judgement. Both sides MUST resolve to the same radius: the fitter's
+/// bound arrives as `tool_diameter / 2.0` (`compute/execute.rs`) and
+/// narration reads `envelope_radius_mm()` off the same `ToolDefinition`.
+/// Moving either side to `cusp_radius_mm()` would drop that side's
+/// threshold 6× on a tapered tool and make narration fire on every arc
+/// the fitter legitimately accepted. Pinned by
+/// `tests/tool_scale_semantics_pr2.rs`.
 pub(crate) const LARGE_ARC_RADIUS_MULTIPLIER: f64 = 30.0;
 const AIR_CUT_WARNING_PERCENT: f64 = 50.0;
 const DEEP_DOC_MULTIPLIER: f64 = 1.5;
@@ -943,7 +955,8 @@ fn append_large_arc_anomalies(
     toolpath: &Toolpath,
     tool: &ToolDefinition,
 ) {
-    let threshold = (tool.radius() * LARGE_ARC_RADIUS_MULTIPLIER).max(0.001);
+    // ENVELOPE, matching `arcfit`'s cap exactly — see the multiplier's doc.
+    let threshold = (tool.envelope_radius_mm() * LARGE_ARC_RADIUS_MULTIPLIER).max(0.001);
     let large_arcs: Vec<_> = arc_observations(toolpath)
         .into_iter()
         .filter(|arc| arc.radius_mm > threshold)
@@ -963,7 +976,7 @@ fn append_large_arc_anomalies(
     if let Some(first) = large_arcs.first() {
         let direction = if first.clockwise { "CW" } else { "CCW" };
         anomalies.push(format!(
-            "⚠ {} perimeter sweep arc(s) with R > tool_radius × {:.0} (smallest {:.1}mm, largest {:.1}mm). First: move {}, {direction}, z={:.3}, center=({:.1}, {:.1}), target=({:.1}, {:.1}). Suspiciously large arcs can indicate circumscribing-circle arc-fit after path simplification.",
+            "⚠ {} perimeter sweep arc(s) with R > envelope_radius × {:.0} (smallest {:.1}mm, largest {:.1}mm). First: move {}, {direction}, z={:.3}, center=({:.1}, {:.1}), target=({:.1}, {:.1}). Suspiciously large arcs can indicate circumscribing-circle arc-fit after path simplification.",
             large_arcs.len(),
             LARGE_ARC_RADIUS_MULTIPLIER,
             min_radius,
@@ -1353,7 +1366,10 @@ mod tests {
         assert!(report.contains("perimeter sweep"));
         assert!(report.contains("axial DOC"));
         assert!(report.contains("Anomalies"));
-        assert!(report.contains("tool_radius"));
+        // PR-2 (H1) renamed the printed label: "tool_radius" was ambiguous
+        // between the envelope and the cutting-tip scale. The threshold is
+        // and stays ENVELOPE-relative (§5 / H2.6).
+        assert!(report.contains("envelope_radius"));
         assert!(report.contains("Operation context"));
         assert!(report.contains("Engagement distribution"));
         // A/M9: an op with no cascade still gets a line — silence would be
