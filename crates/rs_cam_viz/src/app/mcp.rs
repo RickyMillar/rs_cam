@@ -4856,6 +4856,9 @@ fn span_kind_label(k: rs_cam_core::toolpath_spans::SpanKind) -> &'static str {
         SpanKind::DressupArtifact => "DressupArtifact",
         SpanKind::WaterlineCleanup => "WaterlineCleanup",
         SpanKind::RapidOrderBarrier => "RapidOrderBarrier",
+        // Transport-only carrier (task #14) — stripped before a toolpath
+        // is stored, so this name only ever surfaces if one leaked.
+        SpanKind::SemanticLink => "SemanticLink",
     }
 }
 

@@ -547,7 +547,16 @@ fn run_compute_with_phase_tracker(
                 .as_ref()
                 .map(|ctx| ctx.start_span("dressups", "Apply dressups"));
             let dressup_ctx = dressup_scope.as_ref().map(|scope| scope.context());
-            current = apply_dressups(current, req, dressup_ctx.as_ref(), semantic_root.as_ref());
+            current = apply_dressups(
+                current,
+                req,
+                dressup_ctx.as_ref(),
+                semantic_root.as_ref(),
+                // Task #14: keeps every already-recorded item's move link
+                // pointing at the moves it names as the dressups insert,
+                // delete and reorder them.
+                semantic_recorder.as_ref(),
+            );
         }
 
         if req.boundary.enabled
@@ -689,6 +698,12 @@ fn run_compute_with_phase_tracker(
                     // moves so each input span's [start, end) range maps to
                     // [mapping[start], mapping[end]) in the output.
                     current.spans = current.spans.iter().map(|s| s.remap(&mapping)).collect();
+                    // Task #14: the semantic trace's links are index-based
+                    // too — same map, same moment, and before the clip's
+                    // own (already post-clip) item is recorded below.
+                    if let Some(recorder) = semantic_recorder.as_ref() {
+                        recorder.remap_move_links(&mapping, current.toolpath.moves.len());
+                    }
                     if let Some(root) = semantic_root.as_ref() {
                         let scope =
                             root.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
@@ -746,6 +761,10 @@ fn run_compute_with_phase_tracker(
                 );
             if split_count > 0 {
                 current.spans = current.spans.iter().map(|s| s.remap(&mapping)).collect();
+                // Task #14: same map for the semantic trace's move links.
+                if let Some(recorder) = semantic_recorder.as_ref() {
+                    recorder.remap_move_links(&mapping, current.toolpath.moves.len());
+                }
             }
         }
 
