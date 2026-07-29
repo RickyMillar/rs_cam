@@ -703,6 +703,29 @@ pub struct RestAnalysisConfig {
     /// generating toolpath's own tool radius, when dilating the mask into
     /// region polygons.
     pub region_margin_mm: f64,
+    /// PR-7 (H2.5): offset stepover (mm) the ROUTING criterion assumes a
+    /// downstream pencil fan would emit — `pencil ⟺ X_reach ≤ cap ×
+    /// stepover` ([`crate::reach`]).
+    ///
+    /// `None` (the default, and what every project written before PR-7
+    /// deserializes to) means **size it from the canonical reach policy**
+    /// for THIS toolpath's own cutter, at [`Self::min_valley_depth`] — the
+    /// same [`crate::reach::suggested_offset_stepover_mm`] call
+    /// `UnifiedFinish`'s claims pipeline makes. Before PR-7 this pass took
+    /// the detector's literal 0.5 mm default, which on a tapered tool
+    /// describes no fan anything would emit.
+    ///
+    /// Set it explicitly only to model a SPECIFIC downstream fan — e.g. a
+    /// pencil operation whose `offset_stepover` the operator has pinned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset_stepover_mm: Option<f64>,
+    /// PR-7 (H2.5): offset passes per side that fan is permitted, the `cap`
+    /// in the same criterion. `None` = the detector's own default (0 —
+    /// centreline only, which the coverage cap FLOOR still widens to the
+    /// band one pass actually works, see
+    /// [`crate::reach::coverage_cap_passes`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub num_offset_passes: Option<usize>,
 }
 
 impl Default for RestAnalysisConfig {
@@ -713,6 +736,10 @@ impl Default for RestAnalysisConfig {
             cell_mm: 0.5,
             min_valley_depth: 0.05,
             region_margin_mm: 0.5,
+            // Not a value: an instruction to ask the reach policy. See the
+            // field docs.
+            offset_stepover_mm: None,
+            num_offset_passes: None,
         }
     }
 }

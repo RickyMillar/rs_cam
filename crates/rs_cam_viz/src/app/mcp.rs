@@ -23,6 +23,21 @@ use crate::ui::AppEvent;
 
 use rs_cam_mcp::server::{json_str, no_project_error, parse_operation_type, parse_tool_type, text};
 
+/// The optional numeric dials `set_rest_analysis_config` accepts, grouped so
+/// the handler stays under the argument-count lint after PR-7 added the two
+/// routing-fan fields. Every one is `Option` with the SAME meaning: `None` =
+/// "I did not say", not "zero".
+pub(crate) struct RestAnalysisDials {
+    pub cell_mm: Option<f64>,
+    pub min_valley_depth: Option<f64>,
+    pub region_margin_mm: Option<f64>,
+    /// PR-7 (H2.5): `None` here reaches the config as `None` and means "size
+    /// it from the canonical reach policy", which is a real instruction, not
+    /// an absent value — see `RestAnalysisConfig::offset_stepover_mm`.
+    pub offset_stepover_mm: Option<f64>,
+    pub num_offset_passes: Option<usize>,
+}
+
 impl super::RsCamApp {
     /// Non-blocking drain of MCP requests from the channel.
     /// Called once per frame from `update()`.
@@ -478,14 +493,20 @@ impl super::RsCamApp {
                 cell_mm,
                 min_valley_depth,
                 region_margin_mm,
+                offset_stepover_mm,
+                num_offset_passes,
             } => {
                 let resp = self.mcp_set_rest_analysis_config(
                     index,
                     enabled,
                     reference_tool_id,
-                    cell_mm,
-                    min_valley_depth,
-                    region_margin_mm,
+                    &RestAnalysisDials {
+                        cell_mm,
+                        min_valley_depth,
+                        region_margin_mm,
+                        offset_stepover_mm,
+                        num_offset_passes,
+                    },
                 );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
@@ -3450,9 +3471,7 @@ impl super::RsCamApp {
         index: usize,
         enabled: bool,
         reference_tool_id: Option<usize>,
-        cell_mm: Option<f64>,
-        min_valley_depth: Option<f64>,
-        region_margin_mm: Option<f64>,
+        dials: &RestAnalysisDials,
     ) -> String {
         let before = self.mcp_diagnostic_snapshot();
         let resolved_reference_tool_id = match reference_tool_id {
@@ -3483,9 +3502,15 @@ impl super::RsCamApp {
         let rest_analysis = rs_cam_core::compute::config::RestAnalysisConfig {
             enabled,
             reference_tool_id: resolved_reference_tool_id,
-            cell_mm: cell_mm.unwrap_or(defaults.cell_mm),
-            min_valley_depth: min_valley_depth.unwrap_or(defaults.min_valley_depth),
-            region_margin_mm: region_margin_mm.unwrap_or(defaults.region_margin_mm),
+            cell_mm: dials.cell_mm.unwrap_or(defaults.cell_mm),
+            min_valley_depth: dials.min_valley_depth.unwrap_or(defaults.min_valley_depth),
+            region_margin_mm: dials.region_margin_mm.unwrap_or(defaults.region_margin_mm),
+            // PR-7 (H2.5): pass the `Option`s STRAIGHT through. Unset is not
+            // a missing value to be filled in with a default here — it is
+            // the instruction "size this from the reach policy", and only
+            // the generation path knows the cutter to size it against.
+            offset_stepover_mm: dials.offset_stepover_mm,
+            num_offset_passes: dials.num_offset_passes,
         };
 
         match self

@@ -240,6 +240,11 @@ pub enum McpRequestKind {
         cell_mm: Option<f64>,
         min_valley_depth: Option<f64>,
         region_margin_mm: Option<f64>,
+        /// PR-7 (H2.5): `None` = size the routing fan from the canonical
+        /// reach policy, which is what an operator who does not name a
+        /// downstream operation wants.
+        offset_stepover_mm: Option<f64>,
+        num_offset_passes: Option<usize>,
     },
     SetDressupConfig {
         index: usize,

@@ -1779,6 +1779,10 @@ mod tests {
             cell_mm: 0.75,
             min_valley_depth: 0.12,
             region_margin_mm: 1.5,
+            // PR-7: routing dials left at their `None` (ask-the-policy)
+            // defaults, so this round-trip also proves the new optional
+            // fields survive a save/load without being written out.
+            ..Default::default()
         };
         job.push_toolpath(toolpath);
 
@@ -1795,6 +1799,7 @@ mod tests {
                 cell_mm: 0.75,
                 min_valley_depth: 0.12,
                 region_margin_mm: 1.5,
+                ..Default::default()
             }
         );
 

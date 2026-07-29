@@ -1215,6 +1215,7 @@ fn non_pencil_rest_analysis_source_feeds_a_downstream_boundary() {
         cell_mm: 1.0,
         min_valley_depth: 0.05,
         region_margin_mm: 0.5,
+        ..Default::default()
     };
     let source_result = super::execute::run_compute(&source_request, &cancel)
         .result
