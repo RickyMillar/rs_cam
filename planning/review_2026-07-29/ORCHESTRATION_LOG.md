@@ -1428,3 +1428,176 @@ collisions, and that steep territory now exists where it previously did
 not. It establishes **nothing** about the routing or ramp waves, which this
 fixture cannot reach. No strategy-value conclusion is drawn, and none
 should be read into the op 8 numbers.
+
+## C-SEQUENCE WAVE 2 (C1), 2026-07-30
+
+Addendum C's second sequencing step: "C1 provenance contract — before any
+motion/link work." Three commits, split on the line that matters for
+review: **what provably changes nothing**, and **what deliberately
+changes**.
+
+**Commits**
+
+| # | Hash | Scope | Diffstat |
+|---|------|-------|----------|
+| 1 | `61bd97c` | Refactor-invariance harness, captured at HEAD `5d32150` | 1 file, +377 |
+| 2 | `77267ce` | Typestate contract + all transforms and call sites + carrier retirement | 22 files, +1074 / -430 |
+| 3 | `60e2c0f` | Items 4a/4b — per-dressup attribution, unconditional reconcile path | 3 files, +126 / -8 |
+
+### Research pass — the inventory
+
+**Post-generation transforms that move indices** (everything else runs
+BEFORE annotation, as ae10cb2 also found; `dressup::apply_tabs` inserts
+moves but does so inside generation, before spans exist):
+
+| Transform | What it does to indices |
+|---|---|
+| `dressup::apply_entry` | 1→K fan-out (plunge becomes ramp/helix) |
+| `dressup::apply_dogbones` | insertion (overcut + return per corner) |
+| `dressup::apply_lead_in_out_with_feeds` | insertion (lead arcs) |
+| `dressup::apply_link_moves` | 3→1 collapse (retract triple → bridge) |
+| `dressup::filter_air_cuts` | DELETION — the only one |
+| `arcfit::fit_arcs` | N→1 collapse |
+| `condition::merge_linear_runs` | N→M collapse |
+| `tsp::optimize_rapid_order` | PERMUTATION (its own drop rule) |
+| `feedopt::optimize_feed_rates` | none — content only |
+| `boundary::clip_toolpath_to_boundary[_set]_with_provenance` | insertion (retract/rapid pairs) |
+| `dressup::optimize_entry_descents_with_provenance` | insertion (split plunges) |
+
+**Index-carrying channels**: `AnnotatedToolpath::spans` (region-node spans
+among them) and `ToolpathSemanticTrace`'s per-item move links. Checked and
+ruled out: `planner_engagement` (point-keyed, survives reshaping by
+construction), `rest_grid` / `rest_regions` (coordinate-keyed).
+**Found and NOT wired, deliberately**: `ToolpathDebugTrace`'s spans carry
+`move_start`/`move_end` too, and `core_generate`'s is stale by
+construction (set pre-dressups). It is debug-artifact-only and wiring it
+would be a second unrequested diagnostics diff; recorded here so the next
+wave can add it as one `RemapConsumer` impl plus one constructor argument.
+
+**Call sites accepting a transformed toolpath back**: 5, as scoped —
+`ProjectSession::generate_toolpath`'s dressups / boundary clip / entry-
+descent split, and the viz worker's three equivalents.
+
+### The contract, and why spans are not in the `ReconcileSet`
+
+`Transformed<Unreconciled>` has no accessor for its payload;
+`.reconcile(&mut ReconcileSet)` is the only door, and `into_inner` exists
+only on `Transformed<Reconciled>`. `ReconcileSet::new` takes one argument
+per registered channel — the arity IS the registry — and `RemapConsumer`
+is sealed so a new channel must be declared next to the constructor it
+breaks.
+
+Spans deliberately ride INSIDE the payload rather than in the set. Not a
+loophole: a transform does not merely translate span indices, it *emits*
+spans (`Entry`, `DressupArtifact`, `LinkBridge`), and the reorder has to
+drop spans a permutation interleaved with foreign moves. No generic
+consumer can do either. Spans are therefore unforgettable for a different
+structural reason — they are inside the value you cannot obtain without
+reconciling everything else. Stated in the module doc so the next reader
+does not have to re-derive it.
+
+The reorder's foreign-intrusion rule was private to `tsp::remap_spans`; it
+is now `MoveRemap::foreign_intrusion`, shared with the channels, so the
+spans and the trace cannot disagree about what "scattered" means.
+
+### The oracle
+
+`transform_provenance_fingerprints` was written and run FIRST, on a clean
+tree (the in-progress source edits were stashed for the capture), so its
+constants cannot have been back-fitted. It pins two things per fixture:
+the FNV-1a hash of the `Debug`-rendered move list, and where every
+semantic item landed.
+
+| Fixture | Geometry | Link landing sites |
+|---|---|---|
+| `three_pass` (barriered TSP + ramp + dogbones + leads + links + arc fit + merge) | `(23, 14756822782673573601)` | head (0,4) body (5,13) tail (14,22) whole (0,22) |
+| `arc_raster` (same pipeline, 192 moves in, arc fit + merge actually collapse) | `(40, 9877459821106430315)` | head (0,16) body (16,27) tail (27,39) whole (0,39) |
+| `face_full_chain` stage 1 dressups | `(74, 9692869450022244402)` | — |
+| … stage 2 boundary clip | `(97, 3258911278473560309)` | — |
+| … stage 3 descent split (6 splits) | `(103, 2154614841165484301)` | head (0,32) body (33,74) tail (75,102) whole (0,102) |
+
+**All fifteen values identical before and after.** The carrier and the
+contract agree index for index — which is the whole claim of commit 2.
+
+### The deliberate diff (commit 3, isolated)
+
+- **4a**: eleven per-dressup items each bound `0..len`, so per-step
+  attribution could not distinguish the arc fitter from the ramp entry.
+  They now bind the provenance's touched range, and BOTH cases declare
+  themselves in a new `move_scope` param (`touched_moves` / `whole_path`).
+  Visible: narrower `move_start`/`move_end` and re-derived bboxes on
+  dressup items in a debug semantic trace. Nothing else.
+- **4b**: the worker's remap calls were inside `if let Some(recorder)`,
+  and the recorder was debug-gated — so the code keeping channels in step
+  never ran in the shipping configuration. The `ReconcileSet` is now built
+  unconditionally (the recorder stays debug-gated); new sentry
+  `worker_reconciles_semantic_links_with_debug_options_disabled` drives
+  the default configuration with index-moving dressups and asserts every
+  link is in bounds, that not everything unlinked, and that each dressup
+  item declares its scope.
+
+### Retired
+
+`SemanticLinkCarrier`, `ToolpathSemanticRecorder::remap_move_links`,
+`SpanKind::SemanticLink`, `SpanPayload::SemanticLink` — the carrier's
+transport vocabulary, which existed only to smuggle links through the span
+vector. `SpanKind::ALL` is 9. ae10cb2's two carrier unit tests were ported
+with their OUTCOME assertions unchanged; the two assertions about the
+carrier's own bookkeeping (one carrier span per distinct range, all
+stripped again) are gone because there are no carrier spans, replaced by
+"reconciling adds no spans to the shipped toolpath". Its four integration
+sentries are unchanged apart from the mechanical last-argument swap
+(`None` → `&mut ReconcileSet::empty()`).
+
+### Gates
+
+- `cargo fmt --check`: exit 0 before each commit.
+- `cargo clippy --workspace --all-targets -- -D warnings`: zero warnings
+  before each commit.
+- Doctests 5/5, including **four `compile_fail`** proofs: `into_inner` on
+  an unreconciled value, dropping a `#[must_use]` `Transformed`,
+  `ReconcileSet::new()` with a channel omitted, and an out-of-module
+  `RemapConsumer` impl.
+- `cargo test -p rs_cam_core --tests --no-fail-fast`: 2191 pass in the lib
+  plus every integration target, with **four** reds — the three known
+  adaptive3d ones
+  (`peck_plunge_progresses_when_depth_per_pass_equals_retract_clearance`,
+  `rapid_segment_lifts_to_safe_z_before_traverse`,
+  `planner_sim_dexel_parity_agent_search`) and
+  `wanaka_suggest_integration::wanaka_suggest_baseline`, which fails with
+  "Toolpath id 11 missing from suggest cases — wanaka.toml shape
+  changed?". That is the standing user-modified-wanaka trap, not this
+  wave: the working-tree `wanaka.toml` has flipped `enabled` flags and an
+  added toolpath 15 relative to HEAD, and no code change can remove a
+  toolpath from a TOML. Nothing in this wave was staged from that file.
+- Sentries: m21 9/9, unified_finish_semantic_regions 4/4,
+  standing_material_channel_am9 4/4, finish_resolution_policy_pr3 10/10,
+  tool_scale_semantics_pr2 8/8, capability_link_moves_safety 17/17,
+  dressup_span_invariants 4/4, boundary_clip_invalidates_spans 2/2,
+  adaptive3d_post_tsp_z_monotonicity 2/2,
+  `region_node_ranges_tile_the_stitched_toolpath` ok.
+- viz 218 + 11 (was 217 + 11; +1 is 4b's sentry), cli 14, mcp 4.
+- One cargo job at a time throughout. The session opened with a foreign
+  `sysml-spec-tests` run holding the slot and under 20 GB free; all work
+  up to the baseline capture was done without cargo and the capture waited
+  for the slot — the same collision P10 records.
+
+**Deviation from the suggested slicing**: the brief proposed four commits
+(harness / typestate core / migration / item 4). Commits 2 and 3 of that
+plan were merged, because a commit introducing `Transformed` with nothing
+migrated is dead code with no gate to pass, and the migration is what
+makes it compile-enforced. The split that was kept is the one a reviewer
+needs: everything provably identical in `77267ce`, everything deliberately
+different in `60e2c0f`. Commit 2's state was gated with the sentry set,
+fingerprints, doctests, clippy and fmt; the full core suite was run on the
+final tree.
+
+**Untouched, as instructed**: `planning/airrun_2026-06-01/wanaka.toml`
+(user-modified) and `planning/review_2026-07-27/`. This wave's log entry
+was appended on top of the LIVE VALIDATION section that landed from the
+other session mid-wave (`9e5a65b`); none of its text was altered.
+
+**Note for C2**: A/M7 is now unblocked in the sense C1 was gating it — a
+motion-economy wave that adds or changes link transforms will be born
+under the contract, and cannot ship a transform that does not report where
+the moves went.
