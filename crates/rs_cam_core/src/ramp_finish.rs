@@ -16,6 +16,7 @@
 //! 5. Apply slope confinement to restrict to steep regions
 
 use crate::debug_trace::ToolpathDebugContext;
+use crate::finish_setup::FinishResolutionPolicy;
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
@@ -291,6 +292,21 @@ fn ramp_between_contours(
     path
 }
 
+/// The resolution policy ramp-finish generates on (H3 step 2).
+///
+/// RampFinish selects `FinishResolutionMode::LegacyEnvelopeQuarter` — the same
+/// `(envelope_radius/4).max(tolerance)` cell it has always used, now stated at
+/// its own call site instead of inherited from a shared builder. Scallop and
+/// steep/shallow select independently, so a resolution experiment on either
+/// leaves this op alone.
+#[must_use]
+pub fn ramp_finish_generation_resolution(
+    cutter: &dyn MillingCutter,
+    tolerance: f64,
+) -> FinishResolutionPolicy {
+    FinishResolutionPolicy::legacy_envelope_quarter(cutter, tolerance)
+}
+
 /// Generate a ramp finishing toolpath.
 ///
 /// Produces continuous helical descent along steep walls instead of discrete
@@ -377,12 +393,14 @@ pub fn ramp_finish_toolpath_structured_annotated_with_cancel(
     check_cancel(cancel)?;
     let bbox = &mesh.bbox;
 
-    // Build surface heightmap and slope map (shared setup, see finish_setup.rs)
-    let surface = crate::finish_setup::build_finish_surface_with_cancel(
+    // Build surface heightmap and slope map (shared setup, see finish_setup.rs).
+    // The RESOLUTION is ramp_finish's own choice (H3 step 2) — see
+    // `ramp_finish_generation_resolution`.
+    let surface = crate::finish_setup::build_finish_surface_with_policy_and_cancel(
         mesh,
         index,
         cutter,
-        params.tolerance,
+        ramp_finish_generation_resolution(cutter, params.tolerance),
         cancel,
     )?;
     let surface_hm = surface.heightmap;

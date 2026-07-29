@@ -17,6 +17,7 @@
 use std::ops::Range;
 
 use crate::dropcutter::batch_drop_cutter;
+use crate::finish_setup::FinishResolutionPolicy;
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
@@ -461,6 +462,25 @@ fn generate_shallow_passes_with_cancel(
     Ok(tp)
 }
 
+/// The resolution policy steep/shallow generates on (H3 step 2).
+///
+/// SteepShallow selects `FinishResolutionMode::LegacyEnvelopeQuarter` — the
+/// same `(envelope_radius/4).max(tolerance)` cell it has always used, now
+/// stated at its own call site instead of inherited from a shared builder.
+///
+/// This op is the one where the choice bites hardest: it CLASSIFIES steep vs
+/// shallow on this same grid (via its own offset surface, not the true-surface
+/// classification builder), so the cell size decides which slopes are even
+/// representable. `finish_setup::build_classification_surface_with_cancel`'s
+/// doc records the measured blind spot. Changing it is H3 step 4+, not here.
+#[must_use]
+pub fn steep_shallow_generation_resolution(
+    cutter: &dyn MillingCutter,
+    tolerance: f64,
+) -> FinishResolutionPolicy {
+    FinishResolutionPolicy::legacy_envelope_quarter(cutter, tolerance)
+}
+
 /// Generate a steep-and-shallow finishing toolpath.
 ///
 /// Splits the surface into steep and shallow regions based on slope angle,
@@ -585,12 +605,14 @@ pub fn steep_shallow_toolpath_split_with_cancel(
     check_cancel(cancel)?;
     let bbox = &mesh.bbox;
 
-    // Build surface heightmap and slope map (shared setup, see finish_setup.rs)
-    let surface = crate::finish_setup::build_finish_surface_with_cancel(
+    // Build surface heightmap and slope map (shared setup, see finish_setup.rs).
+    // The RESOLUTION is steep/shallow's own choice (H3 step 2) — see
+    // `steep_shallow_generation_resolution`.
+    let surface = crate::finish_setup::build_finish_surface_with_policy_and_cancel(
         mesh,
         index,
         cutter,
-        params.tolerance,
+        steep_shallow_generation_resolution(cutter, params.tolerance),
         cancel,
     )?;
     let surface_hm = surface.heightmap;
