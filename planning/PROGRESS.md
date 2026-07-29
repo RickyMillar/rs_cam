@@ -22,6 +22,40 @@
 - unified service layer: `ProjectSession` API in core, shared `execute_operation()` dispatch for all 23 ops
 - MCP server (`rs_cam_mcp`) exposing `ProjectSession` tools for AI agent integration
 
+## Recent work (2026-07-29)
+
+### Radius-audit tech-debt programme — pre-checkpoint waves landed
+
+Executed the front half of `planning/review_2026-07-29/TECH_DEBT_RESEARCH_AND_FIX_PLAN.md`
+(9 commits `93b43e8`..`4bc8f92`, all no-behavior-change, gates green throughout;
+full trail in `review_2026-07-29/ORCHESTRATION_LOG.md`):
+
+- **Diagnostics**: UnifiedFinish now emits semantic band/strategy regions
+  (narration `Region mix:` line); standing material is user-visible on
+  ToolpathStats/GUI/MCP (Option-typed, report-only); semantic-trace move links
+  now remap through all post-generation transforms (out-of-bounds panic class
+  fixed).
+- **Measurement contract (M1)**: `MeasurementProvenance` on all major reports;
+  `ProjectedXyAreaMm2`/`SurfaceAreaMm2` newtypes make the invalid 313/482-style
+  cross-domain ratio a compile error.
+- **Tool-scale semantics (H1)**: 76-site radius() census
+  (`TOOL_SCALE_SEMANTICS.md`), named accessors, ToolDefinition delegation trap
+  fixed, arcfit/narration large-arc parity pinned.
+- **Resolution policy (H3 steps 1-2)**: explicit `FinishResolutionPolicy` per
+  consumer, cell sizes fingerprint-proven unchanged.
+- **Sentries**: end-to-end tapered UnifiedFinish sentry with reconstructed
+  historical red; 40+ new tests total.
+- **Checkpoint evidence packs ready for human review**:
+  `CHECKPOINT_A_EVIDENCE.md` (reach model: profile-clearance + local wall angle
+  wins 0-gouge/0-miss/100%; routing criterion coupled to the radius choice) and
+  `CHECKPOINT_B_EVIDENCE.md` (per-consumer resolution; RampFinish → intermediate
+  cell; scallop gated behind Checkpoint C). No behavioral change made past the
+  checkpoints.
+- Notable defect finds: `.gitignore` was eating `src/diagnostics/` (HEAD didn't
+  compile from clean clone — fixed); tapered pencil silently SelfReferenced
+  (5th instrument defect, ledgered); UnifiedFinish Auto heights drop the
+  VerySteep band; RampFinish 4.2 mm cone gouge at every resolution (ledgered).
+
 ## Recent work (2026-06-08)
 
 ### UI/IA cleanup — audit complete, execution committed
