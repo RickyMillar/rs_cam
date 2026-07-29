@@ -326,7 +326,7 @@ experiment, SteepShallow fixture investigation, 0.9 µm segment gate.
   scope; `SimulationSemanticCutSummary`/`SimulationCutHotspot` carry
   `wasted_runtime_s` with no denominator of their own.
 
-- impl-12 DONE -> **Wave D3 COMMITTED `PENDING`** (five diagnostics-plumbing
+- impl-12 DONE -> **Wave D3 COMMITTED `68f65b3`** (five diagnostics-plumbing
   fixes, NO toolpath geometry change — FNV-pinned suites byte-identical).
 
   **D3.1 SpanKind node-vs-ring discriminator.** New
