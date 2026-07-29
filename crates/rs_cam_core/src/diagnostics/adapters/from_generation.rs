@@ -40,7 +40,68 @@ pub fn diagnostics_from_generation(
     out.extend(tip_float(toolpath_id, stats));
     out.extend(deprecated_dial(toolpath_id, stats));
     out.extend(derived_stepover(toolpath_id, stats));
+    out.extend(ramp_reach_clamp(toolpath_id, stats));
     out
+}
+
+/// PR-8b: a ramp descent the reach clamp had to raise.
+///
+/// `Caution` and worded as UNCUT MATERIAL, not as a averted collision: the
+/// emitted path is now safe, which is exactly why nothing else will ever
+/// mention it. A dexel simulation replays the clamped path and finds a clean
+/// pass; the operator's only clue that the feature is not finished would be
+/// the part.
+///
+/// Silent on an inert clamp — the ladder bottom was already holdable and no
+/// point moved. Not silent on a measured zero-lift descent with a moved
+/// ladder bottom: that IS the finding (two terraces of commanded depth
+/// removed before any point was generated).
+fn ramp_reach_clamp(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    // `None` = no ramp descent ran. Not a claim of any kind (A/M9's rule).
+    let Some(f) = stats.ramp_reach_clamp.as_deref() else {
+        return Vec::new();
+    };
+    if f.is_inert() {
+        return Vec::new();
+    }
+    let ladder_lift = f.holdable_bottom_z_mm - f.requested_bottom_z_mm;
+    let pct = if f.ramp_points > 0 {
+        100.0 * f.clamped_points as f64 / f.ramp_points as f64
+    } else {
+        0.0
+    };
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::GEOM_RAMP_REACH_CLAMP),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Geometry,
+        severity: Severity::Caution,
+        // Measured during generation against the operation's own drop-cutter
+        // tool-centre surface — the deepest this cutter's reference point can
+        // descend at each XY. Not a heuristic and not superseded by a sim.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: format!(
+            "Ramp descent TRUNCATED by cutter reach: {clamped} of {total} \
+             ramp points ({pct:.0}%) were raised, by up to {lift:.3} mm, \
+             because this cutter cannot hold the commanded depth there; and \
+             the descent's bottom was lifted {ladder_lift:.3} mm (from \
+             {requested:.3} to {holdable:.3} mm) because nothing below that \
+             is reachable at all. The pass is safe as emitted — that material \
+             is simply LEFT, and no simulation can tell you so. Use a smaller \
+             or longer-reach tool for these features, or follow with an \
+             operation that can. [Report-only — no gate.]",
+            clamped = f.clamped_points,
+            total = f.ramp_points,
+            lift = f.max_lift_mm,
+            requested = f.requested_bottom_z_mm,
+            holdable = f.holdable_bottom_z_mm,
+        ),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
 }
 
 /// PR-6a (H2.3): an offset stepover the reach policy sized, where the

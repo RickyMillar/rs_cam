@@ -88,6 +88,10 @@ pub struct GenerationFindings {
     /// reach policy. `None` = the operation derives none.
     /// See [`crate::compute::config::DerivedStepoverFinding`].
     pub derived_stepover: Option<crate::compute::config::DerivedStepoverFinding>,
+    /// PR-8b: what the ramp-finish reach clamp did. `None` = no ramp descent
+    /// ran, so nothing was measured; `Some` with an inert clamp is a
+    /// measured-clean descent. See [`crate::ramp_finish::RampReachClamp`].
+    pub ramp_reach_clamp: Option<crate::ramp_finish::RampReachClamp>,
 }
 
 /// Record one cascade's residual on the context's findings cell,
@@ -168,6 +172,23 @@ fn record_deprecated_dial(
 /// emitted cutting; the post-pass steers a report), and it always runs
 /// first, so a later call must not silently replace it. The slot holds one
 /// finding; when both fire, this is which one.
+/// Record what the ramp-finish reach clamp did (PR-8b).
+///
+/// Like [`record_tip_float`] and unlike [`record_deprecated_dial`], this
+/// records a MEASUREMENT, not only a defect: an inert clamp is the honest
+/// "a descent ran and every commanded depth was holdable", and it is what
+/// stops a later reader from reading silence as clean. The diagnostic
+/// adapter is what stays quiet when nothing moved.
+fn record_ramp_reach_clamp(
+    cell: &std::cell::Cell<GenerationFindings>,
+    finding: crate::ramp_finish::RampReachClamp,
+) {
+    cell.set(GenerationFindings {
+        ramp_reach_clamp: Some(finding),
+        ..cell.get()
+    });
+}
+
 fn record_derived_stepover(
     cell: &std::cell::Cell<GenerationFindings>,
     finding: crate::compute::config::DerivedStepoverFinding,
@@ -1686,7 +1707,7 @@ pub(crate) fn generate_ramp_finish(
         stock_to_leave: cfg.stock_to_leave,
         tolerance: cfg.tolerance,
     };
-    let (tp, annotations) =
+    let (tp, annotations, reach_clamp) =
         crate::ramp_finish::ramp_finish_toolpath_structured_annotated_with_cancel(
             m,
             idx,
@@ -1697,6 +1718,10 @@ pub(crate) fn generate_ramp_finish(
             &(|| ctx.cancel.load(Ordering::SeqCst)),
         )
         .map_err(|_e| OperationError::Cancelled)?;
+    // PR-8b: unconditional, including when the clamp was inert — this is the
+    // only adapter that runs a ramp descent, so `None` downstream means "no
+    // descent ran" and never "a descent ran and I did not look".
+    record_ramp_reach_clamp(ctx.findings, reach_clamp);
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_ramp_finish(&annotations, &tp, sem);
     }

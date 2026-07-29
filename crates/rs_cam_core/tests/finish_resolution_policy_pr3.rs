@@ -145,21 +145,28 @@ fn ramp_finish_fingerprint() {
     // here rather than deleted because it is the number the Checkpoint B
     // evidence was measured against.
     //
+    // MOVED AGAIN BY PR-8b: the reach clamp raises every ramp point that was
+    // commanded below the depth this cutter can hold at its XY. The
+    // intermediate PR-8a value on this fixture was
+    // `(236, 13853886592394416024)`.
+    //
     // The QUALITY justification is not this fingerprint — it is
-    // `checkpoint_b_resolution_ab::ramp_finish_shipped_policy_removes_the_
-    // legacy_gouges`, which asserts the residuals directly against the
-    // pinned 0.05 mm reference field on the evidence's own fixtures.
+    // `checkpoint_b_resolution_ab::ramp_finish_geo_mean_policy_halves_the_
+    // descent_chords` (PR-8a's mechanism) and
+    // `..._reach_clamp_removes_the_cone_fixture_gouge` +
+    // `tests/ramp_reach_clamp_pr8b.rs` (PR-8b's), which assert chord length
+    // and residuals directly against the pinned 0.05 mm reference field.
     assert_eq!(
         fingerprint(&tp),
         RAMP_FINISH_GEO_MEAN_FINGERPRINT,
-        "ramp_finish output moved AGAIN; PR-8a's value is the geo-mean cell's"
+        "ramp_finish output moved AGAIN; PR-8b's value is the clamped one"
     );
 }
 
-/// PR-8a's ramp-finish fingerprint on `ridge_mesh()` with the taper.
+/// PR-8a + PR-8b's ramp-finish fingerprint on `ridge_mesh()` with the taper.
 /// Named so the value has one home and the two assertions that read it
 /// cannot drift apart.
-const RAMP_FINISH_GEO_MEAN_FINGERPRINT: (usize, u64) = (236, 13_853_886_592_394_416_024);
+const RAMP_FINISH_GEO_MEAN_FINGERPRINT: (usize, u64) = (277, 18_231_352_062_362_901_444);
 
 /// PR-8a control: the geo-mean of two EQUAL numbers is that number, so a
 /// cutter whose cusp radius is its envelope radius must not move at all.
@@ -193,7 +200,7 @@ fn ball_ramp_finish_is_unmoved_by_the_geo_mean_policy() {
     };
     let cancel = || false;
     let shipped = ramp_finish_toolpath(&mesh, &index, &ball, &params);
-    let (legacy_arm, _) = ramp_finish_toolpath_structured_annotated_with_resolution(
+    let (legacy_arm, _, _) = ramp_finish_toolpath_structured_annotated_with_resolution(
         &mesh, &index, &ball, &params, None, None, legacy, &cancel,
     )
     .expect("legacy arm");
@@ -204,6 +211,9 @@ fn ball_ramp_finish_is_unmoved_by_the_geo_mean_policy() {
         "a plain ball's geo-mean cell IS its legacy cell, so PR-8a must not \
          have moved one emitted move"
     );
+    // NOTE: this is a policy-vs-policy equality, so it stays true through
+    // PR-8b — the reach clamp is resolution-independent and applies equally
+    // to both arms. It pins PR-8a's claim, not PR-8b's.
 }
 
 /// The taper is the discriminating case, and PR-8a's whole premise is that

@@ -194,6 +194,35 @@ impl SurfaceHeightmap {
         self.z_values.iter().copied().fold(f64::INFINITY, f64::min)
     }
 
+    /// Minimum Z across cells the cutter's ray actually reaches — i.e. the
+    /// deepest this cutter's reference point can descend anywhere on this
+    /// surface. `None` when no cell is covered.
+    ///
+    /// The counterpart [`Self::min_z`] warns about, made available instead of
+    /// left to each caller to re-derive. The distinction is not cosmetic: on
+    /// a 22 mm grid padded by one envelope radius there are ALWAYS uncovered
+    /// cells carrying the `min_z` clamp, so `min_z()` is the MESH bbox floor
+    /// on essentially every finish surface — a depth nothing has checked the
+    /// cutter can hold. Measured on the Checkpoint B `patches + hole`
+    /// fixture (62° conical pit, Ø1-tip / 7° / Ø6-shank taper):
+    /// `min_z()` = −3.000 (the pit apex, unreachable), `min_covered_z()` =
+    /// −2.407 (where the profile actually wedges). The closed-form contact
+    /// solution for that cone and that taper is −2.439, so the grid answer
+    /// is the same number to a third of a cell.
+    ///
+    /// A clearing op that must take stock BESIDE the model down to a floor
+    /// still wants [`Self::min_z`] — that is why both exist and why neither
+    /// is the other's default.
+    pub fn min_covered_z(&self) -> Option<f64> {
+        self.z_values
+            .iter()
+            .zip(self.covered.iter())
+            .filter_map(|(z, covered)| covered.then_some(*z))
+            .fold(None, |acc: Option<f64>, z| {
+                Some(acc.map_or(z, |a| a.min(z)))
+            })
+    }
+
     /// Whether the cell's vertical ray actually passes through the mesh.
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     #[inline]

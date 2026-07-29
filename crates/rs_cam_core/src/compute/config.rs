@@ -122,6 +122,22 @@ pub struct ToolpathStats {
     ///
     /// Report-only: no gate consumes it.
     pub derived_stepover: Option<Box<DerivedStepoverFinding>>,
+    /// PR-8b (H3): how far a ramp-finish descent had to be RAISED because the
+    /// cutter could not hold the commanded depth there.
+    ///
+    /// `None` = **no ramp descent ran**, so nothing was measured. `Some` with
+    /// `clamped_points == 0` and an unmoved ladder bottom is the honest
+    /// "a ramp ran and every commanded depth was holdable" — the A/M9
+    /// distinction, applied to a second measure (X-19).
+    ///
+    /// **Boxed** for the same reason as [`Self::dropped_band`]: `ToolpathStats`
+    /// rides the GUI's `ComputeMessage` channel enum, which the workspace
+    /// lints under `clippy::large_enum_variant`.
+    ///
+    /// Report-only: no gate consumes it. The clamp itself is not report-only
+    /// — it changes emitted geometry — but nothing downstream branches on
+    /// this record.
+    pub ramp_reach_clamp: Option<Box<crate::ramp_finish::RampReachClamp>>,
 }
 
 /// A user-facing dial that a project still sets but the code no longer
