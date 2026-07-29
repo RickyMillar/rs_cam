@@ -856,11 +856,16 @@ pub fn unified_finish_toolpath_with_cancel(
                 mesh,
                 index,
                 cutter,
-                cutter.radius(),
                 params.sampling,
-                // Offset stepover mirrors `PencilParams`'s own default
-                // (`tool_radius * 0.5`) — no dedicated dial in S1.
-                cutter.radius() * 0.5,
+                // Offset stepover: ENVELOPE radius × 0.5 (1.5 mm on the
+                // wanaka taper). The comment that used to sit here claimed
+                // this "mirrors `PencilParams`'s own default
+                // (`tool_radius * 0.5`)" — it does not: that default is the
+                // literal 0.5 mm, so the two differ 3× even on a Ø6 ball
+                // (`TOOL_SCALE_SEMANTICS.md` §7.2). There is no parity to
+                // preserve here; sizing this from WIDTH(d) or from the cusp
+                // target is H2.3's decision, not PR-2's.
+                cutter.envelope_radius_mm() * 0.5,
                 // Offset-pass cap (design doc §2.1 item 5).
                 4,
                 cfg.rest_field_params.min_cut_length,

@@ -146,10 +146,46 @@ pub(crate) fn flat_chip_geometry_for_radius(
     })
 }
 
+/// Tool-scale accessors answer SIX different geometric questions, and a
+/// bare `f64` cannot tell them apart. The taxonomy, the full production
+/// census, and the per-site verdicts live in
+/// `planning/review_2026-07-29/TOOL_SCALE_SEMANTICS.md`:
+///
+/// | code | question | accessor |
+/// |---|---|---|
+/// | ENV | maximum swept envelope | [`MillingCutter::envelope_radius_mm`] (= [`MillingCutter::radius`]) |
+/// | CUSP | tip-sphere feature scale | [`MillingCutter::cusp_radius_mm`] (= [`MillingCutter::cusp_radius`]) |
+/// | WIDTH(d) | cutter width at axial engagement `d` | [`MillingCutter::engagement_radius_mm`] (= [`MillingCutter::engagement_radius`]) |
+/// | CLEAR(r) | vertical clearance available at lateral radius `r` | [`MillingCutter::height_at_radius`] |
+/// | VALLEY | two-wall / profile fit in a valley | no API today (H2) |
+/// | HEURISTIC | path scale only, no physical contract | `radius()` by convention — say so at the site |
+///
+/// The `_mm`-suffixed names are documented aliases of the historical ones,
+/// added by PR-2 (H1) with **no behavior change**: they exist so a reader
+/// can see the semantic class at the call site, which is the exact defect
+/// the audit found. Both spellings must always return the same number —
+/// `tests/tool_scale_semantics_pr2.rs` pins that for every shape and for
+/// the `ToolDefinition` wrapper.
+///
+/// There is deliberately **no** `feature_radius` and **no** fourth name for
+/// `height_at_radius` (ADR, `TOOL_SCALE_SEMANTICS.md` §9).
 pub trait MillingCutter: Send + Sync {
     fn diameter(&self) -> f64;
     fn radius(&self) -> f64 {
         self.diameter() / 2.0
+    }
+    /// ENVELOPE radius (mm) — the maximum lateral extent any part of the
+    /// cutter sweeps, at any height. Documented alias of
+    /// [`Self::radius`]; identical value, no new math.
+    ///
+    /// This is the correct and conservative answer for collision, bounding
+    /// box padding, grid extent, spatial-query radii, swept-volume
+    /// stamping, and coverage margins — and **only** for those. For a
+    /// tapered ball it is the SHAFT radius (`diameter()` deliberately
+    /// reports the widest point), so it overstates the cutter's reach at
+    /// finishing depth by up to 14× — see [`Self::engagement_radius_mm`].
+    fn envelope_radius_mm(&self) -> f64 {
+        self.radius()
     }
     /// The radius that sets the FEATURE SCALE this tool can resolve — the
     /// tip sphere, not the widest point.
@@ -184,6 +220,19 @@ pub trait MillingCutter: Send + Sync {
             _ => self.radius(),
         }
     }
+    /// CUSP radius (mm) — the tip-sphere radius that sets the finest
+    /// feature this cutter can form. Documented alias of
+    /// [`Self::cusp_radius`]; identical value, no new math.
+    ///
+    /// Use for cusp/scallop equations, minimum region area, morphological
+    /// close radius, claim floors and classification cell size. **Not** an
+    /// answer to "does the tool fit / reach in there" — see
+    /// [`Self::cusp_radius`]'s doc for why, and
+    /// [`Self::engagement_radius_mm`] / [`Self::height_at_radius`] for the
+    /// queries that are.
+    fn cusp_radius_mm(&self) -> f64 {
+        self.cusp_radius()
+    }
     fn length(&self) -> f64;
     fn helix_deg(&self) -> f64 {
         30.0
@@ -203,6 +252,25 @@ pub trait MillingCutter: Send + Sync {
 
     /// Profile height at radial distance r from tool axis.
     /// Returns the Z offset from the tool tip to the cutter surface at radius r.
+    ///
+    /// **This IS the profile-clearance query (CLEAR(r)).** It is the
+    /// one-sided inverse of [`Self::width_at_height`]: for a
+    /// vertical-walled slot of half-width `r`, the returned value is
+    /// exactly how far the tip can descend below the rim before the
+    /// profile touches a wall. `None` means `r` exceeds the whole
+    /// envelope — the feature is wider than the cutter, which is a
+    /// clearing job, not a fit question.
+    ///
+    /// Do **not** add a fourth accessor (`profile_height_mm`, …) as a
+    /// synonym: this method already answers that question and is
+    /// implemented by every shape (ADR, `TOOL_SCALE_SEMANTICS.md` §3.1/§9).
+    ///
+    /// The inverse is exact only where the profile is strictly widening.
+    /// Where it is flat (a flat endmill's whole bottom, a bullnose inside
+    /// its corner radius) many radii share height 0, so the round trip
+    /// `width_at_height(height_at_radius(r))` returns the widest radius at
+    /// that height and the guaranteed relation is `>= r`, not `== r`.
+    /// `tests/tool_scale_semantics_pr2.rs` pins both forms.
     fn height_at_radius(&self, r: f64) -> Option<f64>;
 
     /// Profile radius at height h above tool tip.
@@ -225,6 +293,20 @@ pub trait MillingCutter: Send + Sync {
     /// callers that need a non-zero floor should clamp.
     fn engagement_radius(&self, depth_of_cut: f64) -> f64 {
         self.width_at_height(depth_of_cut)
+    }
+
+    /// ENGAGED radius (mm) at axial engagement `depth_mm` — how wide the
+    /// cutter actually is where it is cutting. Documented alias of
+    /// [`Self::engagement_radius`]; identical value, no new math.
+    ///
+    /// This is the answer for stepover sizing and any "how much of the cut
+    /// does the body occupy" question. Returns 0 at `depth_mm == 0` for
+    /// every ball-tipped shape (only the tip touches), so callers that
+    /// divide by it must floor — the established floors are
+    /// `.max(0.01)` (`compute/execute.rs`), `.max(1.0e-6)`
+    /// (`feeds/cutter_constraints.rs`) and `.max(cusp_radius_mm())`.
+    fn engagement_radius_mm(&self, depth_mm: f64) -> f64 {
+        self.engagement_radius(depth_mm)
     }
 
     fn lookup_diameter_at(&self, axial_doc_mm: f64) -> f64 {
@@ -514,6 +596,29 @@ impl ToolDefinition {
 impl MillingCutter for ToolDefinition {
     fn diameter(&self) -> f64 {
         self.cutter.diameter()
+    }
+    // EXPLICIT delegation for every tool-scale accessor, including the ones
+    // that used to work only by inherited default over delegated primitives
+    // (`radius` via `diameter()`, `cusp_radius` via `geometry_hint()`).
+    // That was a latent trap: the first shape to override `cusp_radius()`
+    // directly rather than through `geometry_hint()` would have seen
+    // `ToolDefinition` — the only wrapper the production path actually
+    // holds — silently revert to the trait default. `TOOL_SCALE_SEMANTICS.md`
+    // §2.1/§7.4; pinned by `tests/tool_scale_semantics_pr2.rs`.
+    fn radius(&self) -> f64 {
+        self.cutter.radius()
+    }
+    fn envelope_radius_mm(&self) -> f64 {
+        self.cutter.envelope_radius_mm()
+    }
+    fn cusp_radius(&self) -> f64 {
+        self.cutter.cusp_radius()
+    }
+    fn cusp_radius_mm(&self) -> f64 {
+        self.cutter.cusp_radius_mm()
+    }
+    fn engagement_radius_mm(&self, depth_mm: f64) -> f64 {
+        self.cutter.engagement_radius_mm(depth_mm)
     }
     fn length(&self) -> f64 {
         self.cutter.length()

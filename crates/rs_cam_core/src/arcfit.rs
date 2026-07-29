@@ -10,6 +10,15 @@
 //! adaptive3d occasionally emits arcs of R = 257mm on parts whose largest
 //! feature is ~72mm. Pass `f64::INFINITY` to disable the cap (e.g. in tests
 //! that don't model a specific tool).
+//!
+//! The cap is **ENVELOPE-relative**: production supplies `tool_diameter / 2.0`
+//! (`compute/execute.rs`), i.e. `MillingCutter::envelope_radius_mm()`. It must
+//! track `narrate::append_large_arc_anomalies`, which applies the same
+//! multiplier to the same radius so narration stays a post-condition on this
+//! cap rather than an independent quality hint. Do not switch either side to
+//! `cusp_radius_mm()` — on a tapered tool that drops one side 6× and floods
+//! narration with false positives (H2.6, `TOOL_SCALE_SEMANTICS.md` §5;
+//! pinned by `tests/tool_scale_semantics_pr2.rs`).
 
 use crate::condition::FEED_EPS;
 use crate::geo::P3;
@@ -243,7 +252,8 @@ struct ArcParams {
 ///
 /// `tool_radius` caps the fitted radius at
 /// `tool_radius * LARGE_ARC_RADIUS_MULTIPLIER` (Roadmap F.10). Pass
-/// `f64::INFINITY` to disable the cap.
+/// `f64::INFINITY` to disable the cap. The bound is the ENVELOPE radius and
+/// must stay in lockstep with narration's threshold — see the module doc.
 fn try_fit_arc(points: &[&P3], tolerance: f64, tool_radius: f64) -> Option<ArcParams> {
     if points.len() < 3 {
         return None;
@@ -318,11 +328,12 @@ fn try_fit_arc(points: &[&P3], tolerance: f64, tool_radius: f64) -> Option<ArcPa
     }
 
     // Roadmap F.10: cap fitted radius at LARGE_ARC_RADIUS_MULTIPLIER × tool
-    // radius. Kåsa's algebraic least-squares is biased toward huge circles on
-    // barely-curving inputs; without this cap, adaptive3d output occasionally
-    // collapses a slightly-bowed polyline into an arc whose radius dwarfs any
-    // feature on the part. The narration warns on these via the same
-    // multiplier — keeping the fitter and narrator in sync.
+    // ENVELOPE radius. Kåsa's algebraic least-squares is biased toward huge
+    // circles on barely-curving inputs; without this cap, adaptive3d output
+    // occasionally collapses a slightly-bowed polyline into an arc whose
+    // radius dwarfs any feature on the part. The narration warns on these via
+    // the same multiplier applied to the same radius — keeping the fitter and
+    // narrator in sync is the contract, not a coincidence (§5 / H2.6).
     if radius > tool_radius * LARGE_ARC_RADIUS_MULTIPLIER {
         return None;
     }

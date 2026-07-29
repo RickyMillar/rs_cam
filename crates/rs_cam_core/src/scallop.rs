@@ -726,8 +726,8 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
     // Physical extent (heightmap padding / grid coverage) keeps the FULL
     // tool radius; all cusp/stepover math uses the cusp-forming radius
     // (tip sphere for tapered tools — see `cusp_radius`).
-    let tool_radius = cutter.radius();
-    let cusp_r = cutter.cusp_radius();
+    let tool_radius = cutter.envelope_radius_mm();
+    let cusp_r = cutter.cusp_radius_mm();
     let bbox = &mesh.bbox;
 
     // Build surface heightmap and slope map (shared setup, see finish_setup.rs)
