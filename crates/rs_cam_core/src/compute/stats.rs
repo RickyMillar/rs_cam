@@ -32,5 +32,6 @@ pub fn compute_stats(tp: &Toolpath) -> ToolpathStats {
         // only honestly say "not measured".
         dropped_band: None,
         tip_float: None,
+        deprecated_dial: None,
     }
 }

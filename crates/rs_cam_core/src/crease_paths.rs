@@ -21,23 +21,35 @@ use crate::tool::MillingCutter;
 /// [`crate::pencil::paths_from_sampled`] — exactly the loop
 /// `crate::pencil::rest_depth_arm` used to run inline.
 ///
-/// `num_offset_passes_cap` is a CAP, not a fixed count: each centreline's own
-/// `half_width_mm` (see [`RestCenterline`]) sizes how many stepovers actually
-/// fit between the cutter's radius and the local valley half-width, floored
-/// at 0 (centreline-only) and capped at `num_offset_passes_cap`. Returns
-/// `Err(Cancelled)` if `cancel` fires mid-loop (checked once per centreline,
-/// same granularity as the original inline loop).
+/// `num_offset_passes_cap` is a CAP, not a fixed count.
 ///
-/// The cutter radius used by that fit is read from `cutter` itself. It used
-/// to arrive as a redundant `cutter_radius: f64` parameter that every caller
-/// filled with `cutter.radius()` for the same cutter; PR-2 deleted the
-/// scalar so the one place the semantic class is chosen is inside this
-/// function (`TOOL_SCALE_SEMANTICS.md` §9.1 row 18). It is the ENVELOPE
-/// today — which is exactly the A2/A4 defect (on a Ø1-tip/Ø6-shank taper
+/// # How many passes fit (PR-5, H2.2)
+///
+/// The fit question is answered by the canonical reach policy
+/// ([`crate::reach`]), per side and per sampled point, from the
+/// cross-section the detector measured
+/// ([`RestCenterline::samples`]) — not by a tool scalar.
+///
+/// The equation this replaces was
+/// `n = round((half_width_mm − cutter.envelope_radius_mm()) / stepover)`.
+/// PR-2 deleted the redundant `cutter_radius: f64` argument so the semantic
+/// class was chosen in exactly one place (`TOOL_SCALE_SEMANTICS.md` §9.1
+/// row 18), and that place read the ENVELOPE: on a Ø1-tip / Ø6-shank taper
 /// `half_width_mm − 3.0` is negative for every valley narrower than 6 mm, so
-/// `n` is always 0 and the width-aware pass count is dead code). Fixing that
-/// is PR-4's job and is now a one-line change here rather than a signature
-/// change at three call sites.
+/// `n` was always 0 and the whole width-aware pass count was dead code —
+/// 0 of 107 sub-shank matrix cells got a pass though 48 of them physically
+/// support one (`CHECKPOINT_A_EVIDENCE.md` §2). Swapping the scalar alone
+/// was not an option: the same number fed the pencil/clearing routing rule,
+/// and shrinking it collapsed routing instead (§8.3), which is why the fit
+/// and the routing criterion landed in the same PR.
+///
+/// A centreline with no samples (`without_samples` — the finish planner's
+/// synthetic creases, tests) falls back to the branch's own
+/// `half_width_mm` read through the same policy at zero wall angle. Not
+/// measured is not the same as measured flat.
+///
+/// Returns `Err(Cancelled)` if `cancel` fires mid-loop (checked once per
+/// centreline, same granularity as the original inline loop).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn centerline_cut_paths(
     centerlines: &[RestCenterline],
@@ -65,23 +77,23 @@ pub(crate) fn centerline_cut_paths(
         return Ok(all_paths);
     }
     let chain_total = kept.len();
-    // Bit-identical to the deleted `cutter_radius` argument: every caller
-    // passed `cutter.radius()` for this same cutter (§9.1 row 18).
-    let cutter_radius = cutter.envelope_radius_mm();
     for (ci, cl) in kept.iter().enumerate() {
         check_cancel(cancel)?;
-        let sampled = resample_polyline(&cl.points, sampling);
-        // Width-aware pass count (P2.4-adjacent judgement call, see the
-        // `paths_from_sampled` doc): `num_offset_passes_cap` is a user dial
-        // that acts as a CAP, not a fixed count — a valley narrower than the
-        // cutter-plus-a-few-stepovers only gets the centreline. `n` is how
-        // many stepovers fit between the cutter's own radius and the
-        // measured local half-width; floor at 0 (a valley narrower than the
-        // cutter itself gets centreline-only, same as before).
-        let n = ((cl.half_width_mm - cutter_radius) / offset_stepover)
-            .round()
-            .max(0.0) as usize;
-        let offset_passes = n.min(num_offset_passes_cap);
+        let (sampled, reach) = resample_with_reach(cl, cutter, sampling);
+        // Per-side counts, floored at 0 (a valley narrower than the cutter
+        // gets centreline-only) and capped by the user's dial. The reach
+        // vector rides along so each pass is additionally truncated to the
+        // points that actually support it.
+        let widest = reach.iter().fold(
+            crate::reach::Reach::default(),
+            |acc, r| crate::reach::Reach {
+                left_mm: acc.left_mm.max(r.left_mm),
+                right_mm: acc.right_mm.max(r.right_mm),
+                refused: acc.refused,
+            },
+        );
+        let (left, right) =
+            crate::reach::offset_passes_per_side(&widest, offset_stepover, num_offset_passes_cap);
         paths_from_sampled(
             &sampled,
             ci + 1,
@@ -91,12 +103,91 @@ pub(crate) fn centerline_cut_paths(
             cutter,
             stock_to_leave,
             offset_stepover,
-            offset_passes,
+            crate::pencil::OffsetFan {
+                left,
+                right,
+                reach: &reach,
+            },
             &mut all_paths,
             float,
         );
     }
     Ok(all_paths)
+}
+
+/// Resample one centreline to cut spacing and carry its per-point reach with
+/// it, so the two stay aligned 1:1.
+///
+/// `resample_polyline` moves the points, so the detector's per-cell samples
+/// cannot simply be zipped onto the result. Each output point is placed by
+/// its ARC LENGTH along the source polyline — the same quantity the
+/// resampler walks — and takes the reach of the source vertex it fell in.
+/// Nearest-vertex rather than interpolated because reach is a geometric
+/// solve, not a field: averaging two solves produces a number neither of
+/// them supports.
+///
+/// A centreline with no samples returns an EMPTY reach vector, which every
+/// consumer reads as "not measured": the fan then falls back to the branch's
+/// own `half_width_mm` through the same policy at zero wall angle.
+fn resample_with_reach(
+    cl: &RestCenterline,
+    cutter: &dyn MillingCutter,
+    sampling: f64,
+) -> (Vec<crate::geo::P3>, Vec<crate::reach::Reach>) {
+    let sampled = resample_polyline(&cl.points, sampling);
+    if cl.samples.len() != cl.points.len() || cl.points.len() < 2 {
+        // Not measured. Solve the branch scalar once through the SAME policy
+        // so there is still only one fit implementation, and hand it to every
+        // point so per-point truncation is a no-op rather than a refusal.
+        let valley = crate::reach::LocalValley {
+            rest_depth_mm: 0.0,
+            left: crate::reach::ValleySide::vertical(cl.half_width_mm),
+            right: crate::reach::ValleySide::vertical(cl.half_width_mm),
+        };
+        let r = crate::reach::solve_reach(cutter, &valley);
+        return (sampled.clone(), vec![r; sampled.len()]);
+    }
+    // Cumulative arc length of the source polyline.
+    let mut cum = Vec::with_capacity(cl.points.len());
+    let mut acc = 0.0f64;
+    cum.push(0.0);
+    for w in cl.points.windows(2) {
+        let (a, b) = (w.first(), w.get(1));
+        if let (Some(a), Some(b)) = (a, b) {
+            acc += ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt();
+        }
+        cum.push(acc);
+    }
+    let mut reach = Vec::with_capacity(sampled.len());
+    let mut walked = 0.0f64;
+    for (i, p) in sampled.iter().enumerate() {
+        if i > 0
+            && let Some(prev) = sampled.get(i - 1)
+        {
+            walked += ((p.x - prev.x).powi(2) + (p.y - prev.y).powi(2) + (p.z - prev.z).powi(2))
+                .sqrt();
+        }
+        // First source vertex at or past this arc length; take the nearer of
+        // it and its predecessor.
+        let j = cum.partition_point(|&c| c < walked);
+        let j = j.min(cl.samples.len().saturating_sub(1));
+        let k = if j > 0 {
+            let (before, after) = (cum.get(j - 1).copied(), cum.get(j).copied());
+            match (before, after) {
+                (Some(b), Some(a)) if (walked - b) <= (a - walked) => j - 1,
+                _ => j,
+            }
+        } else {
+            0
+        };
+        reach.push(
+            cl.samples
+                .get(k)
+                .map(|s| s.reach)
+                .unwrap_or_default(),
+        );
+    }
+    (sampled, reach)
 }
 
 #[cfg(test)]

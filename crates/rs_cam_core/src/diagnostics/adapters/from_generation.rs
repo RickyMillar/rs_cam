@@ -38,7 +38,46 @@ pub fn diagnostics_from_generation(
     out.extend(standing_material(toolpath_id, stats));
     out.extend(unmachined_band(toolpath_id, stats));
     out.extend(tip_float(toolpath_id, stats));
+    out.extend(deprecated_dial(toolpath_id, stats));
     out
+}
+
+/// PR-5: a retired dial the loaded project still sets.
+///
+/// `Caution`, not `Warning`: nothing is wrong with the geometry, and the
+/// operation is doing the right thing — but the operator's setting has
+/// stopped having an effect and only this says so. Silence here is the
+/// failure mode the programme keeps re-learning ("a warning nobody sees is
+/// not a warning"); refusing to load the project would be worse.
+fn deprecated_dial(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    // `None` = the project sets nothing retired. Not a claim of any kind.
+    let Some(f) = stats.deprecated_dial.as_deref() else {
+        return Vec::new();
+    };
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::CONFIG_DEPRECATED_DIAL),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Geometry,
+        severity: Severity::Caution,
+        // Read straight off the loaded config — nothing inferred.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: format!(
+            "`{dial}` is set to {value} (default {default}) but is NO LONGER \
+             READ: it was replaced by {replaced_by}. The value still loads and \
+             saves so this project is unchanged, but it is not steering the \
+             operation. [Report-only — no gate.]",
+            dial = f.dial,
+            value = f.value,
+            default = f.default_value,
+            replaced_by = f.replaced_by,
+        ),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
 }
 
 /// The A/M9 finding: a ring cascade that hit its cap and left the interior

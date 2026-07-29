@@ -423,9 +423,15 @@ pub(in crate::ui::properties) fn draw_pencil_params(
                     0.05,
                     0.1..=2.0,
                 );
+                // PR-5: RETIRED. The pencil/clearing decision is now the
+                // coverage criterion (reachable band vs the fan the op can
+                // emit), so nothing reads this. Still shown, still saved, so
+                // an operator who set it can see the value they set and the
+                // notice that explains it — hiding the widget would leave a
+                // live number in the project file with no way to see it.
                 dv(
                     ui,
-                    "Route Width ×:",
+                    "Route Width × (retired):",
                     &mut cfg.route_width_factor,
                     "",
                     0.1,

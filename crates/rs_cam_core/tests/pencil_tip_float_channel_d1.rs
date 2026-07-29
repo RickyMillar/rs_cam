@@ -192,6 +192,36 @@ fn pencil_op() -> OperationConfig {
     })
 }
 
+/// The DIHEDRAL arm on the same geometry.
+///
+/// PR-5 (H2.2) gave the rest-depth arm a routing verdict: a branch the cutter
+/// physically cannot enter is now REFUSED and handed to a clearing strategy
+/// instead of being cut as a floating centreline. That is the right fix and
+/// Gate 1a pins it — but it would also make this channel vacuous on the one
+/// fixture that exercises it, because there would be no centreline left to
+/// measure. The dihedral arm does not route (it has no rest field and no
+/// pencil/clearing decision at all), so it still drives a centreline into the
+/// unreachable groove, and Gate 1b measures the float there. The instrument
+/// keeps a live subject; the operation keeps the fix.
+fn dihedral_pencil_op() -> OperationConfig {
+    OperationConfig::Pencil(PencilConfig {
+        detector: "dihedral".to_owned(),
+        // The bisector shift is `radius * (n1+n2)/(1+n1.n2)`, which on a Ø3
+        // ball at a floor/wall junction walks the trace ~1.5 mm sideways —
+        // clean out of a 1.2 mm-wide groove and onto the flat top, where
+        // both the cutter and the probe rest on the same surface and the
+        // float reads a (perfectly true, entirely useless) zero. Zero here
+        // keeps the trace on the crease this gate is about.
+        bisector_strength: 0.0,
+        min_valley_depth: 0.05,
+        min_cut_length: 2.0,
+        num_offset_passes: 0,
+        sampling: 0.5,
+        reference_tool_diameter: 12.0,
+        ..PencilConfig::default()
+    })
+}
+
 fn toolpath(op: OperationConfig, tool_id: usize, model_id: usize) -> ToolpathConfig {
     let op_type = op.op_type();
     ToolpathConfig {
@@ -251,10 +281,49 @@ fn float_diagnostic(diags: &[Diagnostic]) -> Option<&Diagnostic> {
 
 // ── Gates ────────────────────────────────────────────────────────────────
 
-/// GATE 1 — the tool cannot enter the groove, and every surface says so.
+/// GATE 1a — **PR-5: the rest-depth arm no longer cuts what it cannot reach.**
+///
+/// This is the same fixture Gate 1b measures: a 1.2 mm-wide, 2.5 mm-deep
+/// groove in which the Ø3 ball wedges 2.37 mm above the floor. Wave D1
+/// recorded the pre-PR-5 reading — the operation drove a centreline straight
+/// down it, emitted real cutting, and only the float instrument said
+/// anything. The coverage routing criterion now REFUSES the branch (two-wall
+/// fouling on a majority of its samples) and hands the component to a
+/// clearing strategy, so the wasted cutting is not emitted at all.
+///
+/// Report-only stays report-only: nothing fails, the operation still
+/// generates, and Gate 1b keeps the measurement honest on an arm that does
+/// not route.
+#[test]
+fn the_rest_depth_arm_refuses_a_valley_the_cutter_cannot_enter() {
+    let session = session_with(unreachable_groove(), "unreachable", pencil_op());
+    let result = session.get_result(0).expect("generated result");
+    println!(
+        "D1/PR-5: rest-depth arm on the unreachable groove emitted {:.1} mm of \
+         cutting (pre-PR-5: a full floating centreline)",
+        result.stats.cutting_distance
+    );
+    assert_eq!(
+        result.stats.cutting_distance, 0.0,
+        "the rest-depth arm still cut a groove the Ø3 ball wedges 2.37 mm \
+         above the floor of — the coverage routing refusal is not firing"
+    );
+    // ...and the channel stays three-valued: nothing was cut, so nothing was
+    // measured. A fabricated zero here would be exactly the silent-zero trap
+    // A/M9 exists to prevent.
+    assert!(
+        result
+            .stats
+            .tip_float_measured()
+            .is_none_or(|(f, _)| f.centreline_points == 0),
+        "float reported points on a pass that emitted no cutting"
+    );
+}
+
+/// GATE 1b — the tool cannot enter the groove, and every surface says so.
 #[test]
 fn an_unreachable_valley_reports_its_float_on_every_surface() {
-    let session = session_with(unreachable_groove(), "unreachable", pencil_op());
+    let session = session_with(unreachable_groove(), "unreachable", dihedral_pencil_op());
     let result = session.get_result(0).expect("generated result");
 
     // Non-vacuity: the pass must actually have emitted cutting, or "float"

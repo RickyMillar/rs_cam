@@ -782,6 +782,10 @@ fn run_compute_with_phase_tracker(
             // in exactly the product the operator uses.
             stats.dropped_band = generation_findings.dropped_band.map(Box::new);
             stats.tip_float = generation_findings.tip_float;
+            // PR-5: same rule — the GUI worker is a parallel copy, so a
+            // finding that lands only on the session path is invisible in
+            // exactly the product the operator uses.
+            stats.deprecated_dial = generation_findings.deprecated_dial.map(Box::new);
             stats
         };
 

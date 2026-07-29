@@ -95,12 +95,12 @@ fn grooved_block(rim_half_width: f64, wall_deg: f64, depth: f64) -> TriangleMesh
     TriangleMesh::from_raw(verts, tris)
 }
 
-fn params(cutter: &dyn MillingCutter) -> RestFieldParams {
+fn params(_cutter: &dyn MillingCutter) -> RestFieldParams {
     RestFieldParams {
         cell_mm: 0.2,
         min_valley_depth: 0.05,
-        route_width_factor: 2.0,
-        routing_radius_mm: cutter.radius(),
+        offset_stepover_mm: 0.5,
+        num_offset_passes_cap: 4,
         min_cut_length: 2.0,
         region_margin_mm: 0.5,
     }
@@ -253,17 +253,18 @@ fn reach_recovers_offset_passes_the_envelope_baseline_suppressed() {
     );
 }
 
-/// `routing_radius_mm` is the ROUTING yardstick and nothing else. Padding,
-/// erosion and the region-polygon reach-back all read the cutter's own
-/// envelope, and plan H2.1 rule 4 says they must stay that way — so changing
-/// this field must not move a single region polygon or grid dimension.
+/// The routing dials steer ROUTING and nothing else. Padding, erosion and
+/// the region-polygon reach-back all read the cutter's own envelope, and
+/// plan H2.1 rule 4 says they must stay that way — so changing the fan the
+/// detector routes against must not move a single region polygon or grid
+/// dimension.
 #[test]
-fn routing_radius_does_not_move_the_envelope_derived_geometry() {
+fn routing_dials_do_not_move_the_envelope_derived_geometry() {
     let mesh = grooved_block(2.5, 70.0, 1.2);
     let index = SpatialIndex::build(&mesh, 4.0);
     let cutter = wanaka_taper();
     let refc = reference();
-    let run = |routing_radius_mm: f64| {
+    let run = |num_offset_passes_cap: usize| {
         detect_rest_valleys(
             &mesh,
             &index,
@@ -273,28 +274,28 @@ fn routing_radius_does_not_move_the_envelope_derived_geometry() {
                 is_surface_probe: false,
             },
             &RestFieldParams {
-                routing_radius_mm,
+                num_offset_passes_cap,
                 ..params(&cutter)
             },
         )
     };
-    let a = run(cutter.envelope_radius_mm());
-    let b = run(cutter.cusp_radius_mm());
+    let a = run(0);
+    let b = run(64);
     assert_eq!(
         (a.rest_grid.nx, a.rest_grid.ny),
         (b.rest_grid.nx, b.rest_grid.ny),
-        "grid extent moved with the routing yardstick"
+        "grid extent moved with the routing dials"
     );
     assert_eq!(
         a.region_polygons.len(),
         b.region_polygons.len(),
-        "region-polygon reach-back moved with the routing yardstick"
+        "region-polygon reach-back moved with the routing dials"
     );
     for (pa, pb) in a.region_polygons.iter().zip(b.region_polygons.iter()) {
         assert_eq!(
             pa.exterior.len(),
             pb.exterior.len(),
-            "region polygon changed shape with the routing yardstick"
+            "region polygon changed shape with the routing dials"
         );
     }
     assert!(

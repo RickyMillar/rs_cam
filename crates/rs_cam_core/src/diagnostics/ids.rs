@@ -69,6 +69,10 @@ pub const GEOM_UNMACHINED_BAND: &str = "geom.unmachined_band";
 /// sim-independent — the emitted path is exactly what a simulation would
 /// execute; the residual is what nothing ever asked for.
 pub const GEOM_TIP_FLOAT: &str = "geom.tip_float";
+/// A loaded project still sets a RETIRED dial at a non-default value: the
+/// field is deserialized so the project loads unchanged, but nothing reads
+/// it any more, so the number the operator tuned is not steering anything.
+pub const CONFIG_DEPRECATED_DIAL: &str = "config.deprecated_dial";
 
 // ── Tool / operation compatibility ───────────────────────────────────
 pub const COMPAT_END_MILL_SCALLOP_PENCIL: &str = "compat.end_mill_on_scallop_pencil";
