@@ -1311,9 +1311,17 @@ One deliberate whole-repo `cargo fmt` commit (nothing else in it);
 After the wanaka live validation report lands:
 
 1. **C5 + C10** — one mechanical wave, zero risk, ends two recurring taxes.
+   ✅ DONE 2026-07-30: 288b19b (fmt) / 88ea12f (C5 box) / 9e43b78
+   (.gitignore — found and fixed a SECOND live instance: unanchored
+   `.claude/` had eaten `sim-diagnostics.md` + `sim-analysis/SKILL.md`).
 2. **C1 provenance contract** — before any motion/link work.
 3. **C2 sentinel sweep** — before M3 (classifier reads grids) and to close
    the live steep_shallow exposure.
+3a. **A/M12 → A/M11** (Addendum D, WP8 lane) — MCP non-blocking
+   cancel/status first, then the `generate_all` fixpoint (D's own ordering
+   rule: never ship an unobservable, unabortable loop). Slotted here
+   because every later wave that needs live wanaka validation pays their
+   tax until they land; no dependency on C1/C2.
 4. **C6 fixture library** — before M4's fixture-heavy work.
 5. **A/M6** `claims_reference` (base plan, unchanged position).
 6. **M3 classifier** (uses C2+C6).
@@ -1397,3 +1405,208 @@ Any MCP/GUI characterisation run must first:
     tracing-only;
 15. collision count is stable across simulation resolutions on a fixed
     toolpath.
+
+---
+
+# Addendum D — live-validation workflow defects (added 2026-07-30)
+
+(Originally written by the live-validation session under a colliding
+"Addendum C" heading; renamed D by the orchestrator — the structural-safety
+addendum above keeps the C name and its item numbering.)
+
+Found while running the live validation of the behavioral waves. This is a
+workflow/API defect, not a toolpath defect: no cut is wrong, but getting a
+project with rest-machining ops into a generated state costs an
+undiscoverable number of manual rounds, and nothing tells the user how many
+or why.
+
+## A/M11. `generate_all` is not a fixpoint over the rest-stock chain
+
+### Problem
+
+An op with `FromRemainingStock` needs the **simulated** stock of the ops
+before it. That snapshot is recorded **during a simulation**. So within a
+single `generate_all` pass, a rest op can only ever see the stock from the
+LAST simulation — never from an op generated earlier in the *same* pass.
+
+Measured on wanaka this session (9 ops, 4 of them rest-dependent):
+
+| round | action | result |
+|---|---|---|
+| 1 | `run_simulation` (only ops 0,1,2 generated) | ok |
+| 2 | `generate_all` | 5 generated, **2 failed** (`Lakes` id 6, `Unified Finish` id 15) |
+| 3 | `run_simulation` | ok, 247 semantic summaries |
+| 4 | `generate_all` | (needed purely to clear round 2's failures) |
+
+`Rivers` (index 4) generated fine in round 2 while `Lakes` (index 5)
+failed — even though Lakes' predecessor is Rivers and Rivers had just
+succeeded **in that same pass**. That is the defect in one line: a chain of
+`k` dependent rest ops needs `k` sim→generate rounds, and the tool offers
+no way to know `k` in advance.
+
+### Secondary defects observed in the same run
+
+1. **The error text under-specifies the remedy.** *"run a simulation of the
+   preceding operations first, then regenerate"* is true but incomplete: it
+   does not say the cycle may need repeating, and it does not name **which**
+   upstream op the snapshot is missing for. The user cannot tell a
+   one-round wait from a four-round one.
+2. **Disabled ops keep stale error text.** `Rivers (back) (copy)` and
+   `3D Finish 6` are `enabled: false` and still report the rest-stock error
+   in `list_toolpaths` and in `run_simulation`'s `runtime_errors`. They read
+   as broken when they are merely off, and they inflate the error list an
+   agent or user has to triage. A disabled op should report *disabled*, not
+   the last error it had while enabled.
+3. **No staleness signal after a simulation.** Re-simulating does not mark
+   toolpaths stale (§14o), so after the sim that finally makes stock
+   available there is no indication that regeneration is now *possible*.
+   The user must know to try again. This is the same root as the §14o trap
+   but its user-facing half.
+4. **`runtime_errors` mixes "cannot yet" with "cannot ever".** A missing
+   upstream snapshot is a *sequencing* state; a genuine generation failure
+   is an *error*. They are the same shape in the API today.
+
+### Fix shape
+
+Ordered cheapest-first; 1 and 2 are worth doing even if 3 is declined.
+
+1. **Make `generate_all` iterate to a fixpoint.** Loop
+   `generate → simulate → generate` while (a) at least one op is blocked
+   *only* on missing prior stock and (b) the previous round generated at
+   least one new op. Bound it by the number of rest ops (the chain cannot be
+   longer) and report the round count. Simulation resolution must be an
+   explicit parameter — silently choosing one would re-create the
+   resolution-mismatch trap (A/M10), so the caller states it or the call
+   refuses.
+2. **Distinguish blocked-on-sequencing from failed.** Add a distinct status
+   (e.g. `AwaitingPriorStock { blocking_toolpath_id }`) separate from
+   `Error`, and exclude disabled ops from both. `list_toolpaths`,
+   `run_simulation.runtime_errors`, and the GUI badge all read from it.
+3. **Name the blocker in the message.** "waiting on simulated stock after
+   *`3D Rough 6`* (index 6)" is actionable; the current text is not.
+4. **Clear stale error text when an op is disabled**, so `enabled: false`
+   never carries a live-looking error.
+
+### Acceptance gates
+
+- A synthetic project with a 3-deep rest chain reaches fully-generated from
+  cold in ONE `generate_all` call, and the call reports how many internal
+  rounds it took.
+- The fixpoint loop terminates on a genuinely-failing op instead of
+  spinning — assert a bounded round count and a clear final error.
+- A disabled rest op reports disabled, never a rest-stock error.
+- Blocked ops name their blocking upstream op; a sentry pins the message.
+- Simulation resolution inside the loop is caller-specified; no default is
+  silently applied (A/M10's rule).
+- MCP and GUI both consume the new status — no parallel error taxonomy.
+
+### Scope and risk
+
+- Primary files: `generate_all` / compute orchestration in `rs_cam_viz`
+  worker + `rs_cam_mcp`, `ProjectSession` toolpath status model,
+  `session/compute.rs` prior-stock resolution.
+- Size: M. Risk: low-to-medium — it changes an API status enum consumed by
+  GUI, MCP and CLI, so it wants one commit and a consumer sweep.
+- Dependency: none. Independent of the radius programme; it blocks nothing
+  but taxes every live validation, including this one.
+
+### Orchestration
+
+Add to the WP8 (diagnostics plumbing) lane — same consumers, same kind of
+status/telemetry surface. Slot as **PR-1c**, alongside A/M8 and A/M9: it is
+report/plumbing-shaped, has no toolpath-geometry risk, and every subsequent
+live characterisation run gets cheaper once it lands.
+
+Definition of done, item 16: bringing a cold project with rest-machining
+ops to fully-generated is a single call, and any op that cannot generate
+says whether it is disabled, waiting on an upstream op (named), or failed.
+
+## A/M12. MCP serializes every call behind toolpath generation — including its own escape hatches
+
+### Problem
+
+Measured live on wanaka, 2026-07-30, during the behavioral-wave validation.
+A `generate_all` on this project ran **>40 minutes**. While it was in
+flight, every other MCP call blocked behind it:
+
+| call | documented behaviour | observed |
+|---|---|---|
+| `list_toolpaths` | read-only status query | blocked; **aborted after 1800 s** of silence by the client idle timeout |
+| `cancel_generation` | *"Instant response reporting whether a job was actually cancelled"* | blocked >120 s, moved to background; **serviced only after the generation had already ended, returning `was_busy: false`** |
+| `generate_all` (on timeout) | *"Check progress with `list_toolpaths`, or abort with `cancel_generation`"* | **both suggested remedies are themselves blocked** |
+
+So the two documented escape hatches from a long generation are
+unreachable *for exactly as long as you need them*. An agent driving the
+GUI over MCP has, in this state, no way to observe progress, no way to
+attribute the cost to an operation, and no way to abort. That last row is the defect in its purest form: the abort arrived too late
+to abort anything. Note also what this means for diagnosis — a `was_busy:
+false` from a queued cancel is NOT evidence that the lane was idle when you
+asked; it only reports the state at the moment it was finally serviced. In
+this run the CPU drop from ~720% to ~136% was the generation completing
+naturally, and reading it as "the cancel worked" was wrong.
+
+The only
+diagnosis available was out-of-band: `/proc` thread accounting showed all
+rayon workers burning ~440 s CPU each evenly, which is how the run was
+established to be a genuine parallel grind rather than a deadlock. That
+should not require reading `/proc`.
+
+This is independent of A/M11. A/M11 is "the ladder needs N rounds";
+this is "you cannot see or stop any one round".
+
+### Research questions
+
+1. Where is the serialization? Candidates: a single mutex over
+   `ProjectSession` held for the whole generation; the MCP request handler
+   being single-threaded; or the compute lane and the request lane sharing
+   one lock.
+2. Which calls are genuinely read-only and can be served from a snapshot
+   or a read guard while a generation holds the write side
+   (`list_toolpaths`, `project_summary`, `get_toolpath_params`,
+   `inspect_*`)?
+3. Can `cancel_generation` be routed to the cancel flag directly —
+   it only needs to set an `AtomicBool` the compute loop already polls —
+   without acquiring whatever lock the generation holds?
+4. Is there a progress channel already (the GUI shows *something* during
+   generation) that MCP could expose as `generation_status`?
+
+### Fix shape
+
+1. **`cancel_generation` must never block.** It sets the existing cancel
+   flag; give it a path that takes no lock the generation can hold. This
+   is the highest-value fix and probably the smallest.
+2. **Serve read-only calls concurrently** — `RwLock` (or a cheap status
+   snapshot updated by the compute loop) so status/params/inspection
+   answer during generation.
+3. **Add a `generation_status` call** reporting which toolpath index is
+   in flight, which stage, and elapsed time. Without it, per-op cost
+   attribution is impossible and every long generation is unfalsifiable.
+   The `#[cfg]`-gated per-stage timings the compute path already logs are
+   the natural source.
+4. **Correct the two docstrings** either way: `cancel_generation` should
+   not promise instant response, and `generate_all`'s timeout message
+   should not recommend calls that cannot answer, until 1 and 2 land.
+
+### Acceptance gates
+
+- With a long generation in flight: `list_toolpaths` returns in < 1 s;
+  `cancel_generation` returns in < 1 s and actually stops the job.
+- `generation_status` names the in-flight toolpath index and stage, and a
+  sentry asserts it changes as generation advances.
+- No regression in generation throughput from added locking/snapshotting
+  (measure; a status snapshot per op is not a hot path, but prove it).
+- An integration test drives generate → status → cancel over the MCP
+  surface, not just the library API.
+
+### Scope and risk
+
+- Primary files: `rs_cam_mcp` request dispatch, `rs_cam_viz` compute
+  worker + session locking, `ProjectSession` accessors.
+- Size: M. Risk: medium — touches the locking model; worth doing as its
+  own commit with the concurrency test above.
+- Dependency: none. **Do it before A/M11's fixpoint loop** — a loop that
+  can run for tens of minutes with no observability and no abort is worse
+  than the manual ladder it replaces.
+
+Definition of done, item 17: with a generation in flight, status calls
+answer and `cancel_generation` stops it, both within a second.
