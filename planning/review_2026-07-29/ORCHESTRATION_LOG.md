@@ -777,3 +777,223 @@ RampFinish cone gouge, tip-float silent residual, 0.9 µm segments).
   with this wave, and remember v3's lesson that a naive cap raise measured
   34× worse. Also still open from wave A: the sampled-cross-section
   generalisation that would retire the wall-angle V model entirely.
+
+- impl-15 DONE -> **H3 WAVE COMMITTED: PR-8a `18faaf9`, PR-8b `074789e`,
+  PR-8c `22a6a22`, PR-8d = THIS COMMIT** (behavioural, under the approved
+  Checkpoint B). Two of the four slices ended somewhere other than where
+  the evidence pointed, and both are recorded that way.
+
+  **PR-8a / RampFinish -> a NAMED intermediate mode.**
+  `FinishResolutionMode::GeoMeanEnvelopeCusp` =
+  `sqrt((envelope/4)·(cusp/4)).max(tolerance)` — 0.306 mm on the shipped
+  Ø1-tip / 7° / Ø6-shank taper against 0.750. Named by its FORMULA, not by
+  a judgement: `Intermediate` would hide which two numbers it sits between.
+  GEOMETRIC because the quantity traded is a RATIO, and the gate asserts
+  that equal-factor property (2.449× each way) rather than the value.
+  Computed from the two SIBLING formulas so the claim cannot drift from
+  what the modes resolve to; tolerance floor applied ONCE, to the mean.
+  `CellSource::GeoMeanEnvelopeCuspRadius` per the PR-3 rule (a new variant
+  is cheaper than a mislabelled one — wave D3's `ToleranceFloor` pattern):
+  asserted to compare with NEITHER factor, so a report cannot put a
+  0.306 mm measurement beside a 0.750 mm one under one heading.
+  **Measured (§3.2's own fixtures + its 0.05 mm reference ruler):** narrow
+  valley deepest gouge −2.3939 -> **0.0000** mm, 2 -> 0 samples past 50 µm,
+  137 -> 181 moves (1.32×); narrow ridge −0.1621 -> **0.0000**, 2 -> 0,
+  64 -> 85 (1.33×). Both legacy numbers are §3.2's to four decimals.
+  Ball control is a BYTE-IDENTICAL toolpath equality (the geo-mean of two
+  equal cells is that cell), not a cell-size equality. **The PR-2 tripwire
+  needed no update and was not touched — 8/8, zero edits: checked, not
+  assumed, it pins `build_finish_surface_with_cancel`, the shared legacy
+  ADAPTER, which since PR-3 no production op calls.**
+
+  **PR-8b / the cone-gouge clamp — and §8.2's hypothesis was WRONG.**
+  §8.2 read the 4.2 mm gouge as "the ramp descends into a 62° cone the tool
+  profile cannot enter". Two separate errors produce it and only one is
+  about the cone. (1) `z_bottom` came from `SurfaceHeightmap::min_z()`, the
+  minimum over ALL cells — and a finish grid is padded by one envelope
+  radius per side, so the ladder bottom was the MESH BBOX FLOOR on
+  essentially every ramp-finish run ever generated (−3.000 requested
+  against −2.407 holdable). (2) `match_contours` pairs loops by nearest
+  centroid and `ramp_between_contours` interpolates them by arc-length
+  fraction; neither correspondence is geometric.
+  **(2) is what produces the 4.2 mm, and it is NOT in the cone**: the
+  deepest gouge sits at (3.981, 4.113) on the flank of a convex 50° DOME,
+  path Z −1.757 against a reachable surface at +2.472. Clamping only the
+  ladder bottom leaves it at −4.229 unchanged (probed, then reverted). A
+  dome flank has no valley, no rim and no walls — **fifth time this
+  programme has had a confidently-named mechanism turn out not to be the
+  cause.**
+  So the clamp is PER POINT against `dropcutter::point_drop_cutter`, the
+  same query that builds the generation surface, asked at the ramp point's
+  own XY. **DEVIATION FROM THE BRIEF, stated plainly:** the brief asked for
+  `solve_reach`'s refusal to do the clamping. It does not, and the reason
+  is PR-6b's own precedent — the fit question is already answered upstream,
+  exactly, against the real mesh, and `reach`'s module doc already records
+  solving directly against the sampled cross-section as the strict
+  generalisation of the V model. Re-deriving a coarser model beside an
+  exact one is what PR-6b declined to do in `decompose`. `solve_reach` IS
+  load-bearing for the LADDER half, as the independent oracle: it REFUSES
+  3 mm in this 61.9° cone for this taper and does not refuse 0.3 mm, so
+  "the cutter cannot hold this depth here" is the canonical policy's own
+  verdict on the number `min_z()` was handing the ladder.
+  Per-point and not grid-read because the defect is resolution-INDEPENDENT:
+  a nearest-cell lookup at the shipped 0.306 mm cell lands the worst gouge
+  at −0.225 mm (half a cell across a 50° flank), the exact query at
+  **−0.020 mm**, which is the 0.05 mm REFERENCE field's own bilinear error.
+  **4.2293 -> 0.0199 mm; 486 of 653 ramp points (74%) were commanded below
+  reach.**
+  **THE BIGGER FINDING: the clamp fires on a FLAT PLANE.** On a single 17°
+  plane, with no pit and a ladder needing no lifting, **567 of 1182 ramp
+  points sit below the reachable surface by up to 4.71 mm on a 4.8 mm-tall
+  plane.** The blend defect is GENERIC. Every ramp-finish operation on
+  every model has been doing this; the new diagnostic will fire on
+  essentially every ramp-finish toolpath; fixing the correspondence is a
+  rewrite of the op's core and was NOT attempted.
+  Channel: `RampReachClamp` -> `GenerationFindings` -> `ToolpathStats`
+  (boxed) -> `ids::GEOM_RAMP_REACH_CLAMP`, `Caution`, report-only, on BOTH
+  the session path and the GUI worker's parallel copy; worded as UNCUT
+  MATERIAL because the emitted path is now safe and a dexel run replays a
+  clean pass. **A/M9 standing-material: RampFinish has NO wiring and this
+  adds none** — it runs no ring cascade, so `standing_material_mm2` stays
+  `None` ("not measured"), correct under A/M9's own rule. The material the
+  clamp leaves is reported as a lift magnitude, never as an area. Gap
+  recorded.
+  **PR-8a's residual claim is SUBSUMED by this commit and was RESTATED, not
+  hidden**: the clamp is resolution-independent, so it removes §3.2's
+  gouges on the LEGACY arm too and PR-8a's red evidence stopped being
+  reproducible. The gate became
+  `ramp_finish_geo_mean_policy_halves_the_descent_chords` and asserts what
+  PR-8b does NOT subsume — the cell IS the sampling step and the clamp
+  constrains only ENDPOINTS: shortest cutting chord 1.2953 -> 0.5916 mm
+  (2.19×) on the valley and 1.1909 -> 0.4656 (2.56×) on the ridge, against
+  a 2.45× cell. A mean-chord gate was tried first and was the WRONG
+  instrument (1.25× — `simplify_path_3d` collapses the collinear
+  stretches); recorded in the test. Honest note: the clamp record does NOT
+  show the finer cell reducing truncation (38% / 36% / 45% of points
+  clamped at envelope/4 / geo-mean / cusp/4), so PR-8a's remaining
+  justification is chord fidelity between the scored endpoints, which the
+  endpoint-based residual instrument cannot see.
+
+  **PR-8c / max_rings experiment — REJECT, with the arithmetic.** New
+  additive `ScallopRingBudget` seam (production passes `FlatGroundStepover`
+  only; PR-3's scallop fingerprint unchanged). At the cusp/4 arm:
+
+  | fixture | budget | rings | uncut core mm² |
+  |---|---|---|---|
+  | narrow ridge | flat-ground (shipped) | 51 | **19.32** |
+  | | reach policy | 55 | **12.79** |
+  | | clamp floor (v3 control) | 70 | **0.00** |
+  | mixed ribbon | flat-ground (shipped) | 51 | **33.24** |
+  | | reach policy | 55 | **25.78** |
+  | | clamp floor (v3 control) | 79 | **0.00** |
+
+  The ruling's adopt condition was standing -> 0. Ridge −34%, ribbon −22%;
+  not met. **It could never have worked:** the reach stepover is 0.250 mm
+  against the flat-ground 0.280, a 12% wider budget, while the control
+  shows the cascade collapsing NATURALLY at 70/79 rings — the requirement
+  is 1.4–1.6×. No tool-scaled stepover lands there because the shortfall is
+  not a tool scale: `ring_stepover` takes the MIN across a whole ring, so a
+  budget from any NOMINAL stepover describes a spacing the loop never uses.
+  **The v3 control cannot be adjudicated on these fixtures, and that is
+  itself the finding**: it drives standing to 0.00 everywhere for +11–20%
+  time with the ribbon's deepest gouge 3× worse — directionally v3's
+  regression, nowhere near its magnitude (+92%, 34×), because these are
+  16×16 mm fixtures where the cascade collapses at ~70 rings against v3's
+  THOUSANDS at ~25 µm on real relief. Nothing here weakens v3's result and
+  nothing here may be used to argue for it. Evidence: dated addendum
+  §A.1–A.5 in `CHECKPOINT_B_EVIDENCE.md`.
+  **SteepShallow deferral written into the CODE** (doc comment on
+  `steep_shallow_generation_resolution`, where someone about to change the
+  selector looks), with the measured zero delta, the measured 10.6–13.3%
+  label error that does NOT absolve it, and the two readings that fit. The
+  addendum names what would discriminate: all four fixtures carry
+  contiguous steep territory far wider than a 0.75 mm cell while the op
+  dilates steep by 2.0 mm and erodes shallow by 1.0 mm, so a mislabelled
+  boundary cell is absorbed before it reaches an emitted move — a
+  discriminating fixture needs interdigitated steep fingers NARROWER than
+  the overlap distance and must score on `SteepShallowSplit`'s move ranges,
+  not on residuals.
+
+  **PR-8d / the 0.9 µm segment floor.** ROOT-CAUSED before fixing: probed
+  over 4 fixtures × 4 arms, the offender is **exactly two segments of
+  0.000891 mm, both inside `SteepShallowSplit::steep`** (the waterline
+  half), bit-identical on every arm — so the cell is not the cause and a
+  finer grid is not the cure. SOURCE is
+  `contour_extract::weave_contours`: marching squares places each cell-edge
+  vertex at an EXACT fiber interval boundary
+  (`find_interval_boundary_x`/`_y` return the interval ENDPOINT inside the
+  edge span, not the edge midpoint), so two adjacent cells whose boundaries
+  resolve to the same crossing chain two coincident-to-noise vertices.
+  Of the three consumers of `weave_contours`, `ramp_finish` already
+  RDP-simplifies; this op and `waterline.rs` emit raw, and this op carries
+  a `tolerance` field documented as "Path tolerance for simplification"
+  that it has never used for that. **The missing filter/merge decision is
+  at the emission site**, and that is what was added.
+  The floor is NOT invented: `MIN_EMITTED_SEGMENT_MM = 0.001` is the
+  coordinate quantum of the COARSEST shipped post (`grbl.toml` and
+  `grblhal.toml` emit XYZ at 3 dp; `linuxcnc`/`mach3` at 4), below which a
+  move rounds to the same coordinate words as its predecessor and leaves a
+  literally zero-length G1. `the_floor_is_the_coarsest_shipped_post_quantum`
+  DERIVES the bound from the shipped TOMLs, so adding a coarser post is a
+  red test. Explicitly NOT an accel floor — that is
+  `condition::merge_linear_runs`' job at a caller-chosen tolerance, and the
+  doc says so in both places.
+  **Distribution after, on §8.1's fixture:** shortest cutting segment
+  0.000891 -> **0.078616 mm**, 2723 -> 2721 segments, total cutting length
+  4757.9 -> **4757.9284 mm** (four parts in ten million). The two fixtures
+  that never exhibited it are asserted byte-unchanged (0.122003 / 0.500000
+  mm minima, totals within 0.5 mm).
+  **PR-3's SteepShallow fingerprint did NOT move and was not touched.**
+  Checked, not assumed: `ridge_mesh()` has no degenerate segments, so the
+  floor drops nothing there. The behaviour change is real but is confined
+  to paths that contained sub-quantum output.
+
+  Gates (all four commits): finish_resolution_policy_pr3 10/10 (8 -> 10);
+  checkpoint_b_resolution_ab 8/8 fast (5 -> 8, +2 ignored);
+  ramp_reach_clamp_pr8b 6/6 (new); steep_shallow_min_segment_pr8d 5/5
+  (new); tool_scale_semantics_pr2 8/8 ZERO EDITS;
+  unified_finish_tapered_end_to_end_m21 9/9; unified_finish_semantic_regions
+  4/4; standing_material_channel_am9 4/4;
+  unified_finish_dropped_band_finding_d1 3/3; pencil_tip_float_channel_d1
+  4/4; reach_policy_pr4 6/6; coverage_routing_pr5 6/6;
+  checkpoint_a_valley_matrix 14/14; derived_stepover_pr6a 4/4;
+  crease_own_region_pr6b 3/3; generic_rest_routing_pr7 6/6;
+  air_cut_denominators_lh1 4/4; capability_link_moves_safety 17/17;
+  `--lib scallop::` 17/17, `--lib steep_shallow::` 13/13, `--lib
+  ramp_finish::` 14/14; `-p rs_cam_core --lib` 2183 passed / exactly the 3
+  known adaptive3d reds; viz 227/227; cli 14/14; mcp 4/4; clippy
+  --workspace --all-targets -D warnings exit 0. `ComputeMessage` gained one
+  boxed `Option` (PR-8b) and did NOT trip its 280-byte ceiling.
+
+  **WANAKA: DEFERRED, stated honestly.** Same reason as waves A and B — the
+  only harness that reaches these paths is the `#[ignore]`d full-project
+  ladder over the user-modified read-only `wanaka.toml`. No before/after
+  was run and none is claimed. PR-8b is the highest-risk of the four on
+  real relief: the clamp fires on a plane, so it will fire everywhere, and
+  every ramp-finish toolpath in every saved project will change.
+
+  ADJACENT DEFECTS SEEN, NOT FIXED: (1) **`ramp_finish`'s contour
+  correspondence is broken generically** — nearest-centroid loop matching +
+  arc-length blending produce points unrelated to either loop, measured on
+  a FLAT PLANE; the clamp makes this safe, not correct, and the real fix is
+  a rewrite of `match_contours`/`ramp_between_contours`. (2)
+  **`waterline.rs` has PR-8d's defect from the same source** — it emits
+  `weave_contours` vertices raw with no floor, deliberately left alone to
+  keep the commit one operation wide. (3) **RampFinish has no
+  standing-material channel**, so the area the clamp leaves is reported
+  only as a lift magnitude. (4) `SurfaceHeightmap::min_z()`'s
+  uncovered-clamp trap is now documented and has a `min_covered_z()`
+  counterpart, but **every other consumer of `min_z()` was left
+  unaudited** — `steep_shallow` uses it for its own Z ladder bottom, and
+  whether that is the intended reading there was not checked. (5) A
+  scripted splice truncated five tests off the Checkpoint B harness
+  mid-implementation; caught by the test COUNT and restored from `18faaf9`,
+  which is an argument for reading the count on every run.
+
+  Notes for whoever picks up H3's remainder: **scallop resolution adoption
+  is still open and still gated behind Checkpoint C** — §3.1's cusp/4 arm
+  buys an on-dial cusp and costs 19–33 mm² of standing material, and PR-8c
+  showed no budget candidate closes that without becoming v3's regression.
+  **The SteepShallow discriminating fixture is specified but not built**
+  (addendum §A.5). The `ramp_finish` correspondence rewrite is now the
+  biggest single defect in the finishing stack by measured magnitude.
