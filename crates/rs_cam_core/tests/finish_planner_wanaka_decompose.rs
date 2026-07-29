@@ -28,7 +28,7 @@ use rs_cam_core::finish_setup::{
 };
 use rs_cam_core::mesh::SpatialIndex;
 use rs_cam_core::session::ProjectSession;
-use rs_cam_core::tool::BallEndmill;
+use rs_cam_core::tool::{BallEndmill, TaperedBallEndmill};
 
 fn wanaka_project_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -410,24 +410,29 @@ fn wanaka_band_mix_vs_cusp_radius() {
         .find_map(|m| m.mesh.clone())
         .expect("wanaka project must contain a mesh model");
     let index = SpatialIndex::build(&mesh, 10.0);
-    let cutter = BallEndmill::new(6.0, 25.0);
+    // Each row builds its own probe below; this fixture keeps no shared cutter.
     let cancel = || false;
-
-    // ONE surface for every row — the true-surface tiny-probe sampling the
-    // classifier uses, so only the dials differ between rows.
-    let surface = build_classification_surface_with_cancel(&mesh, &index, &cutter, 0.05, &cancel)
-        .expect("classification surface sampling");
 
     eprintln!("── wanaka band mix vs cusp radius (§14q) ──");
     eprintln!(
-        "{:>10} {:>10} {:>10}  {:>22} {:>22} {:>22}",
-        "cusp_r", "min_area", "close_r", "Shallow n/mm2", "MidSteep n/mm2", "VerySteep n/mm2"
+        "{:>7} {:>9} {:>8} {:>11} {:>8}  {:>13} {:>13} {:>13}",
+        "cusp_r", "min_area", "close_r", "grid", "sample_s", "Shallow", "MidSteep", "VerySteep"
     );
 
     // 3.0 = Ø6 ball (radius == cusp radius, unaffected by the fix).
     // 0.5 = the Ø1 tapered ball this project actually finishes with —
     //       what `radius()` used to report as 3.0.
     for cusp_r in [3.0_f64, 1.0, 0.5, 0.25] {
+        // Surface rebuilt per row: the classification CELL SIZE follows the
+        // cusp radius too (§14q), so the grid must track the dial or the
+        // finer dials measure a grid that cannot represent their features.
+        let probe = TaperedBallEndmill::new(cusp_r * 2.0, 7.0, 6.0, 25.0);
+        let t0 = std::time::Instant::now();
+        let surface =
+            build_classification_surface_with_cancel(&mesh, &index, &probe, 0.05, &cancel)
+                .expect("classification surface sampling");
+        let sample_s = t0.elapsed().as_secs_f64();
+        let (rows, cols) = (surface.heightmap.rows, surface.heightmap.cols);
         let params = FinishPlannerParams::for_tool(cusp_r);
         let planned = decompose_surface(&surface, &[], cusp_r, &params);
         let stats = |band: FinishBand| -> (usize, f64) {
@@ -442,8 +447,17 @@ fn wanaka_band_mix_vs_cusp_radius() {
         let (nm, am) = stats(FinishBand::MidSteep);
         let (nv, av) = stats(FinishBand::VerySteep);
         eprintln!(
-            "{cusp_r:>10.2} {:>10.1} {:>10.2}  {:>10} {:>11.0} {:>10} {:>11.0} {:>10} {:>11.0}",
-            params.min_region_area_mm2, params.close_radius_mm, ns, as_, nm, am, nv, av
+            "{cusp_r:>7.2} {:>9.1} {:>8.2} {:>11} {:>8.1}  {:>5}/{:>7.0} {:>5}/{:>7.0} {:>5}/{:>7.0}",
+            params.min_region_area_mm2,
+            params.close_radius_mm,
+            format!("{rows}x{cols}"),
+            sample_s,
+            ns,
+            as_,
+            nm,
+            am,
+            nv,
+            av
         );
     }
 }

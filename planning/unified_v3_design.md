@@ -2689,3 +2689,52 @@ finishing path against that split. Three sites found so far —
 
 Gates: clippy clean workspace-wide, 56/56 param sweeps, rs_cam_viz
 216/216, `--lib` at the 3 documented adaptive3d reds.
+
+### §14r — classification cell size follows the cusp radius too
+
+User: *"if we need to kill performance to get a real result. then either we
+need to optimise or just live with it. the worse option is to lie."*
+
+Agreed, and §14q's decision to leave this alone for performance was the
+wrong call to make silently. Fixed.
+
+```rust
+// finish_setup.rs — physical extent keeps radius(), CELL SIZE does not
+let tool_radius = cutter.radius();                    // padding: correct
+let cell_size = (cutter.cusp_radius() / 4.0).max(tolerance);
+```
+
+**Measured on wanaka, grid tracking the dial** (`wanaka_band_mix_vs_cusp_radius`,
+surface rebuilt per row):
+
+| cusp_r | grid | sample_s | Shallow n/mm² | MidSteep n/mm² | VerySteep n/mm² |
+|---|---|---|---|---|---|
+| 3.00 (`radius()`, before) | 143² | **0.7** | 2 / 5585 | 1 / 4215 | **0 / 0** |
+| 1.00 | 425² | 5.2 | 8 / 5448 | 3 / 4215 | 2 / 286 |
+| **0.50** (Ø1 tip) | **849²** | **19.2** | 19 / 5725 | 4 / 3937 | **10 / 313** |
+| 0.25 | 1697² | 77.0 | 64 / 5975 | 26 / 3663 | 48 / 337 |
+
+**Contour territory 0 → 313 mm²** against 482 mm² of true >75° area from
+the STL — **65% recovered**, up from 15% with the dial fix alone, and 10
+regions instead of 2.
+
+**The cost, stated plainly: 19.2 s of classification sampling against
+0.7 s — 27×.** One-off per generate, on an op that already runs for
+minutes. It is a real cost and it is not hidden.
+
+The recovery asymptotes near 70% (337 mm² at cusp 0.25 for 4× the time),
+so the residual is legitimate conditioning — hysteresis, the
+morphological close, the min-area floor — rather than more of the same
+defect. That is the natural stopping point.
+
+**Not changed, and the next thing an audit should decide:**
+`build_finish_surface_with_cancel` (finish_setup.rs:95) derives the
+GENERATION surface cell size the same way — `(cutter.radius()/4.0)`. That
+is P2.f's "smooshed band" defect by its original name ("scallop/waterline
+resample at shank-r/4 cells"), which was worked around via scallop chord
+refinement rather than fixed at the source. Changing it would move every
+tapered-tool finish toolpath, so it needs its own evidence and its own
+gate run — not a rider on this commit.
+
+Gates: clippy clean workspace-wide, 56/56 param sweeps, rs_cam_viz
+216/216, `--lib` at the 3 documented adaptive3d reds.
