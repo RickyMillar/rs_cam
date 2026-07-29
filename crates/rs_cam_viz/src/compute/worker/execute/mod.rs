@@ -496,7 +496,10 @@ pub(super) fn run_compute_with_phase(
     )
 }
 
-fn run_compute_with_phase_tracker(
+/// `pub(super)` so the worker's tests can drive it with a semantic recorder
+/// while `debug_options.enabled` is FALSE — the configuration the product
+/// actually ships in, and the one C1 item 4b makes exercisable.
+pub(super) fn run_compute_with_phase_tracker(
     req: &ComputeRequest,
     cancel: &AtomicBool,
     phase_tracker: Option<&ToolpathPhaseTracker>,
