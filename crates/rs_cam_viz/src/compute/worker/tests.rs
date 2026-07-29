@@ -964,11 +964,15 @@ fn cancelled_toolpath_returns_partial_debug_trace() {
     let cancelled = wait_for(&mut backend, Duration::from_secs(5), |message| {
         matches!(
             message,
-            ComputeMessage::Toolpath(ComputeResult {
-                toolpath_id: ToolpathId(88),
-                result: Err(ComputeError::Cancelled),
-                ..
-            })
+            ComputeMessage::Toolpath(result)
+                if matches!(
+                    **result,
+                    ComputeResult {
+                        toolpath_id: ToolpathId(88),
+                        result: Err(ComputeError::Cancelled),
+                        ..
+                    }
+                )
         )
     });
     let cancelled = match cancelled {
@@ -1631,11 +1635,15 @@ fn toolpath_and_analysis_lanes_run_independently() {
     let result = wait_for(&mut backend, Duration::from_secs(5), |message| {
         matches!(
             message,
-            ComputeMessage::Toolpath(ComputeResult {
-                toolpath_id: ToolpathId(7),
-                result: Ok(_),
-                ..
-            })
+            ComputeMessage::Toolpath(result)
+                if matches!(
+                    **result,
+                    ComputeResult {
+                        toolpath_id: ToolpathId(7),
+                        result: Ok(_),
+                        ..
+                    }
+                )
         )
     });
     assert!(
@@ -1685,18 +1693,28 @@ fn resubmitting_active_toolpath_cancels_and_replaces_it() {
     while start.elapsed() < Duration::from_secs(5) && !(saw_cancelled && saw_replacement) {
         for message in backend.drain_results() {
             match message {
-                ComputeMessage::Toolpath(ComputeResult {
-                    toolpath_id: ToolpathId(3),
-                    result: Err(ComputeError::Cancelled),
-                    ..
-                }) => {
+                ComputeMessage::Toolpath(result)
+                    if matches!(
+                        *result,
+                        ComputeResult {
+                            toolpath_id: ToolpathId(3),
+                            result: Err(ComputeError::Cancelled),
+                            ..
+                        }
+                    ) =>
+                {
                     saw_cancelled = true;
                 }
-                ComputeMessage::Toolpath(ComputeResult {
-                    toolpath_id: ToolpathId(3),
-                    result: Ok(_),
-                    ..
-                }) => {
+                ComputeMessage::Toolpath(result)
+                    if matches!(
+                        *result,
+                        ComputeResult {
+                            toolpath_id: ToolpathId(3),
+                            result: Ok(_),
+                            ..
+                        }
+                    ) =>
+                {
                     saw_replacement = true;
                 }
                 _ => {}
