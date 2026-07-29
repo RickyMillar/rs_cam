@@ -100,6 +100,47 @@ impl RampFinishRuntimeEvent {
     }
 }
 
+/// What the reach clamp did to one ramp-finish run (PR-8b).
+///
+/// Report-only. It is the channel `CHECKPOINT_B_EVIDENCE.md` §8.2 says did
+/// not exist: "a genuine reach failure with **no diagnostic channel**; a user
+/// would ship it."
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct RampReachClamp {
+    /// Ramp points whose Z was raised because the cutter could not hold the
+    /// commanded depth at that XY.
+    pub clamped_points: usize,
+    /// Ramp points examined. `clamped_points == 0` with a non-zero total is a
+    /// measured-clean run; both zero means no ramp path was built at all.
+    pub ramp_points: usize,
+    /// Largest single lift (mm). This is material the ramp intended to remove
+    /// and did not.
+    pub max_lift_mm: f64,
+    /// The Z ladder's bottom before the clamp — `SurfaceHeightmap::min_z`,
+    /// which on a padded finish grid is the MESH bbox floor.
+    pub requested_bottom_z_mm: f64,
+    /// The Z ladder's bottom after the clamp — the deepest tool-centre Z the
+    /// surface says this cutter can hold anywhere on this model.
+    pub holdable_bottom_z_mm: f64,
+}
+
+impl RampReachClamp {
+    /// True when the clamp changed nothing: the ladder bottom was already
+    /// holdable and no ramp point was lifted.
+    #[must_use]
+    pub fn is_inert(&self) -> bool {
+        self.clamped_points == 0
+            && (self.requested_bottom_z_mm - self.holdable_bottom_z_mm).abs() <= 1e-9
+    }
+
+    fn record_lift(&mut self, lift_mm: f64) {
+        self.clamped_points += 1;
+        if lift_mm > self.max_lift_mm {
+            self.max_lift_mm = lift_mm;
+        }
+    }
+}
+
 struct RampSegmentRecord {
     path: Vec<P3>,
     terrace_index: usize,
@@ -344,7 +385,7 @@ pub fn ramp_finish_toolpath(
     cutter: &dyn MillingCutter,
     params: &RampFinishParams,
 ) -> Toolpath {
-    let (tp, _) =
+    let (tp, _, _) =
         ramp_finish_toolpath_structured_annotated(mesh, index, cutter, params, None, None);
     tp
 }
@@ -358,7 +399,7 @@ pub fn ramp_finish_toolpath_with_cancel(
     params: &RampFinishParams,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
-    let (tp, _) = ramp_finish_toolpath_structured_annotated_with_cancel(
+    let (tp, _, _) = ramp_finish_toolpath_structured_annotated_with_cancel(
         mesh, index, cutter, params, None, None, cancel,
     )?;
     Ok(tp)
@@ -382,7 +423,7 @@ pub fn ramp_finish_toolpath_structured_annotated(
     params: &RampFinishParams,
     debug: Option<&ToolpathDebugContext>,
     boundary_regions: Option<&RegionSet<'_>>,
-) -> (Toolpath, Vec<RampFinishRuntimeAnnotation>) {
+) -> (Toolpath, Vec<RampFinishRuntimeAnnotation>, RampReachClamp) {
     let never_cancel = || false;
     ramp_finish_toolpath_structured_annotated_with_cancel(
         mesh,
@@ -415,7 +456,7 @@ pub fn ramp_finish_toolpath_structured_annotated_with_cancel(
     debug: Option<&ToolpathDebugContext>,
     boundary_regions: Option<&RegionSet<'_>>,
     cancel: &dyn CancelCheck,
-) -> Result<(Toolpath, Vec<RampFinishRuntimeAnnotation>), Cancelled> {
+) -> Result<(Toolpath, Vec<RampFinishRuntimeAnnotation>, RampReachClamp), Cancelled> {
     ramp_finish_toolpath_structured_annotated_with_resolution(
         mesh,
         index,
@@ -446,7 +487,7 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
     boundary_regions: Option<&RegionSet<'_>>,
     resolution: FinishResolutionPolicy,
     cancel: &dyn CancelCheck,
-) -> Result<(Toolpath, Vec<RampFinishRuntimeAnnotation>), Cancelled> {
+) -> Result<(Toolpath, Vec<RampFinishRuntimeAnnotation>, RampReachClamp), Cancelled> {
     check_cancel(cancel)?;
     let bbox = &mesh.bbox;
 
@@ -461,9 +502,37 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
     let slope_map = surface.slope_map;
     let cell_size = surface_hm.cell_size;
 
-    // Compute Z range
+    // ── Compute Z range, reach-clamped (PR-8b) ───────────────────────────
+    //
+    // `CHECKPOINT_B_EVIDENCE.md` §8.2: this op gouged 4.2 mm on the
+    // `patches + hole` fixture at EVERY resolution, with no diagnostic. Two
+    // separate commanded-below-reach errors produce it, and the policy below
+    // is ONE rule stated at two scales: **the cutter is never commanded below
+    // the depth it can hold there.**
+    //
+    // GLOBAL form — the ladder bottom. `min_z()` is the minimum over ALL
+    // cells, and a finish grid is padded by one envelope radius per side, so
+    // uncovered cells carrying the `min_z` clamp are always present: the
+    // ladder bottom was therefore the MESH BBOX FLOOR on essentially every
+    // ramp-finish run. Measured on that fixture: −3.000 requested against
+    // −2.407 holdable, i.e. two whole terraces below anything the profile can
+    // reach. `min_covered_z()` is the deepest the tool's reference point can
+    // descend anywhere on this surface.
+    //
+    // LOCAL form — the per-point clamp further down, which is what actually
+    // removes the 4.2 mm gouge; see the comment at that site for the measured
+    // reason the global form alone does not.
     let z_top = bbox.max.z + params.stock_to_leave;
-    let z_bottom = surface_hm.min_z() + params.stock_to_leave;
+    let requested_bottom = surface_hm.min_z() + params.stock_to_leave;
+    let holdable_bottom = surface_hm
+        .min_covered_z()
+        .map_or(requested_bottom, |z| z + params.stock_to_leave);
+    let z_bottom = requested_bottom.max(holdable_bottom);
+    let mut reach_clamp = RampReachClamp {
+        requested_bottom_z_mm: requested_bottom,
+        holdable_bottom_z_mm: z_bottom,
+        ..RampReachClamp::default()
+    };
     let z_step = params.max_stepdown;
 
     // Generate Z levels. `snap_to_bottom = true` guarantees the ladder ends
@@ -474,7 +543,7 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
 
     if z_levels.len() < 2 {
         info!("Ramp finish: insufficient Z range for ramping");
-        return Ok((Toolpath::new(), Vec::new()));
+        return Ok((Toolpath::new(), Vec::new(), reach_clamp));
     }
 
     info!(
@@ -536,7 +605,7 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
         let mut terrace_segments = Vec::new();
 
         for &(ui, li) in &matches {
-            let ramp_path = ramp_between_contours(
+            let mut ramp_path = ramp_between_contours(
                 &upper_contours[ui],
                 &lower_contours[li],
                 params.max_stepdown,
@@ -545,6 +614,57 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
             if ramp_path.len() < 2 {
                 continue;
             }
+
+            // ── The LOCAL form of the reach clamp (PR-8b) ────────────────
+            //
+            // Every point on this path is a BLEND: `ramp_between_contours`
+            // pairs the upper and lower contours by arc-length parameter and
+            // interpolates XY between them, after `match_contours` paired the
+            // two loops by nearest centroid. Neither correspondence is
+            // geometric, so a blended point can land anywhere between the two
+            // loops — including on ground that has nothing to do with either.
+            //
+            // MEASURED, and it refuted the §8.2 hypothesis: on the
+            // `patches + hole` fixture the deepest gouge (−4.229 mm) is NOT
+            // in the 62° pit at all. It sits at (3.981, 4.113) — the flank of
+            // a convex 50° DOME — with the path at z = −1.757 and the
+            // reachable tool-centre surface at z = +2.472. Clamping only the
+            // ladder bottom leaves it unchanged at −4.229 (probed, then
+            // reverted); it is a blend artefact, not a ladder-depth artefact,
+            // and no valley-reach model has anything to say about a point on
+            // a dome. So the clamp has to be per point.
+            //
+            // The floor is the drop-cutter contact answer AT THIS POINT —
+            // `point_drop_cutter`, the same query that builds the generation
+            // surface, but asked at the ramp point's own XY instead of read
+            // off a grid node. Deliberately NOT a grid lookup: the defect is
+            // RESOLUTION-INDEPENDENT (§8.2 measured it identical at all four
+            // arms), so a resolution-dependent clamp would leave a
+            // resolution-dependent residue. Measured on `patches + hole` with
+            // the shipped 0.306 mm cell: the nearest-cell grid lookup lands
+            // the worst gouge at −0.225 mm (half a cell across a 50° flank —
+            // pure discretisation), the exact query at −0.000. Cost is one
+            // drop-cutter query per ramp point against the ~5 000 the surface
+            // build already runs.
+            //
+            // Off the model footprint the query contacts nothing and reads
+            // the same `bbox.min.z` floor the heightmap uses, so it declines
+            // to clamp — which is right: there is nothing there to gouge.
+            //
+            // Raise, never drop: a lifted point is a real cut of the surface
+            // it now rides, and dropping it would replace a conservative pass
+            // with a retract/replunge the operator never asked for. What is
+            // NOT removed is the material below it — that is the finding.
+            for pt in &mut ramp_path {
+                let contact =
+                    crate::dropcutter::point_drop_cutter(pt.x, pt.y, mesh, index, cutter).z;
+                let floor = contact.max(bbox.min.z) + params.stock_to_leave;
+                if pt.z < floor {
+                    reach_clamp.record_lift(floor - pt.z);
+                    pt.z = floor;
+                }
+            }
+            reach_clamp.ramp_points += ramp_path.len();
 
             // Apply slope confinement and/or the machining-boundary regions
             // if either is configured; a plain unfiltered push otherwise
@@ -655,7 +775,7 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
         }
     }
 
-    Ok((tp, annotations))
+    Ok((tp, annotations, reach_clamp))
 }
 
 pub fn ramp_finish_toolpath_annotated(
@@ -665,7 +785,7 @@ pub fn ramp_finish_toolpath_annotated(
     params: &RampFinishParams,
     debug: Option<&ToolpathDebugContext>,
 ) -> (Toolpath, Vec<(usize, String)>) {
-    let (tp, annotations) =
+    let (tp, annotations, _clamp) =
         ramp_finish_toolpath_structured_annotated(mesh, index, cutter, params, debug, None);
     (tp, runtime_annotations_to_labels(&annotations))
 }
@@ -1047,7 +1167,7 @@ mod tests {
         let never_cancel = || false;
 
         let tp_default = ramp_finish_toolpath(&mesh, &si, &cutter, &params);
-        let (tp_none, _) = ramp_finish_toolpath_structured_annotated_with_cancel(
+        let (tp_none, _, _) = ramp_finish_toolpath_structured_annotated_with_cancel(
             &mesh,
             &si,
             &cutter,
@@ -1088,7 +1208,7 @@ mod tests {
 
         let left_half_regions = std::slice::from_ref(&left_half);
         let region_set = RegionSet::from_slice(left_half_regions);
-        let (tp, _) = ramp_finish_toolpath_structured_annotated_with_cancel(
+        let (tp, _, _) = ramp_finish_toolpath_structured_annotated_with_cancel(
             &mesh,
             &si,
             &cutter,

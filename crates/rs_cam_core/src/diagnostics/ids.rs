@@ -72,6 +72,12 @@ pub const GEOM_TIP_FLOAT: &str = "geom.tip_float";
 /// A loaded project still sets a RETIRED dial at a non-default value: the
 /// field is deserialized so the project loads unchanged, but nothing reads
 /// it any more, so the number the operator tuned is not steering anything.
+/// A ramp-finish descent was RAISED because the cutter could not hold the
+/// commanded depth there — material the pass intended to remove and did not.
+/// Sim-independent: the emitted path is exactly what a simulation would
+/// execute, so a dexel run sees a clean pass and nothing else records that
+/// the descent was truncated.
+pub const GEOM_RAMP_REACH_CLAMP: &str = "geom.ramp_reach_clamp";
 pub const CONFIG_DEPRECATED_DIAL: &str = "config.deprecated_dial";
 /// An operation sized an offset stepover from the canonical reach policy
 /// rather than from any dial, and the value differs from the envelope-scaled

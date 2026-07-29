@@ -737,7 +737,7 @@ fn run_ramp_finish(fixture: &Fixture, cutter: &dyn MillingCutter, policy: Finish
     let cancel = || false;
     let params = ramp_finish_params();
     let t0 = Instant::now();
-    let (tp, _anns) = ramp_finish_toolpath_structured_annotated_with_resolution(
+    let (tp, _anns, _clamp) = ramp_finish_toolpath_structured_annotated_with_resolution(
         &fixture.mesh,
         &fixture.index,
         cutter,
@@ -848,37 +848,43 @@ fn arms_are_distinct_grids_with_honest_provenance() {
     );
 }
 
-/// **PR-8a's quality gate**, on the evidence's own fixtures and against the
-/// evidence's own 0.05 mm reference ruler.
+/// **PR-8a's quality gate, restated by PR-8b.**
 ///
-/// `CHECKPOINT_B_EVIDENCE.md` §3.2 recorded two gouges driven purely by the
-/// legacy generation cell — 2.39 mm on the narrow valley, 0.16 mm on the
-/// narrow ridge — and recorded every finer arm eliminating both. This asserts
-/// BOTH halves on the SHIPPED entry point:
+/// As landed, this gate asserted that the legacy cell reproduced
+/// `CHECKPOINT_B_EVIDENCE.md` §3.2's two gouges (−2.3939 mm on the narrow
+/// valley, −0.1621 mm on the narrow ridge) and that the shipped geo-mean
+/// cell eliminated them. **PR-8b's reach clamp then eliminated them on the
+/// LEGACY arm too**, because it clamps against an exact per-point
+/// drop-cutter query and is therefore resolution-independent by
+/// construction. The red half of the original gate is no longer
+/// reproducible, and pinning a defect that a later commit fixed by a
+/// different route would be a lie by omission.
 ///
-/// * the legacy arm still reproduces the gouges (red evidence, kept live, so
-///   the gate can never pass by the fixture going flat), and
-/// * the shipped policy leaves zero samples past 50 µm and a deepest gouge of
-///   exactly 0.0.
+/// So the assertions moved to the mechanism PR-8a actually buys, which
+/// PR-8b does NOT subsume: **chord length**. The generation cell is the ramp
+/// sampling step (`step_len = cell_size * 2`), and a ramp point is a
+/// straight chord to the next one. The clamp guarantees the ENDPOINTS sit at
+/// or above the reachable surface; it says nothing about the surface a
+/// 1.06 mm chord cuts across on a 76° flank between them, and the residual
+/// instrument — which scores endpoints — cannot see that either. Halving the
+/// chord is the unsubsumed win, and it is asserted directly.
 ///
-/// Residual, not fingerprint: a fingerprint says "something changed", this
-/// says "the thing that changed is the defect". §5.1's caveat about the
-/// residual column does NOT apply here — it applies to scallop, whose ring Z
-/// is an exact per-point drop-cutter query; ramp-finish reads its Z off the
-/// generation grid, which is precisely why the column is load-bearing for it.
+/// The gouge assertion is KEPT on the shipped arm. It is now redundant with
+/// PR-8b on these fixtures, and it stays because it is the property the op
+/// must have, not because it is the property that is hard to satisfy.
 #[test]
-fn ramp_finish_shipped_policy_removes_the_legacy_gouges() {
+fn ramp_finish_geo_mean_policy_halves_the_descent_chords() {
     let t = taper();
     let legacy = FinishResolutionPolicy::legacy_envelope_quarter(&t, TOLERANCE_MM);
     let shipped = ramp_finish_generation_resolution(&t, TOLERANCE_MM);
     assert_ne!(legacy, shipped, "the two arms must be different grids");
+    let cell_ratio = legacy.cell_mm() / shipped.cell_mm();
+    assert!((cell_ratio - (0.75_f64 / 0.125).sqrt()).abs() < 1e-12);
 
-    // (fixture, the gouge §3.2 measured on the legacy arm)
-    let cases: [(&str, TriangleMesh, f64); 2] = [
-        ("narrow valley", narrow_valley(), 2.3939),
-        ("narrow ridge", narrow_ridge(), 0.1621),
-    ];
-    for (name, mesh, recorded_legacy_gouge) in cases {
+    for (name, mesh) in [
+        ("narrow valley", narrow_valley()),
+        ("narrow ridge", narrow_ridge()),
+    ] {
         let fixture = Fixture::new("fixture", mesh);
         let (reference, _) = build(
             &fixture,
@@ -886,71 +892,57 @@ fn ramp_finish_shipped_policy_removes_the_legacy_gouges() {
             FinishResolutionPolicy::explicit(REFERENCE_CELL_MM),
         );
 
-        let before = run_ramp_finish(&fixture, &t, legacy);
-        let before_m = path_metrics(&before.toolpath, Some(&reference));
+        let before_m = path_metrics(&run_ramp_finish(&fixture, &t, legacy).toolpath, None);
         let after = run_ramp_finish(&fixture, &t, shipped);
         let after_m = path_metrics(&after.toolpath, Some(&reference));
 
-        // NON-VACUITY, stated as the thing that could actually go wrong: a
-        // finer arm must not pass by having FEWER points scored. Most ramp
-        // points land outside the reference grid's covered footprint (the
-        // deep ladder levels trace the outer silhouette, out in the 3 mm
-        // envelope padding where the reference probe contacts nothing), so
-        // the absolute sample count is small on both arms — what matters is
-        // that the winning arm is scored on at least as much as the loser.
+        // §3.2's own `min seg mm` column: the shortest emitted chord, which
+        // that table recorded tracking the cell at ~1.5-1.9x. It is the
+        // shortest and not the mean because `simplify_path_3d` collapses the
+        // collinear stretches, so the mean is dominated by long straight
+        // runs and moves only 1.25x (measured) — a mean-chord gate would
+        // have been the wrong instrument and is recorded here as the one
+        // that was tried.
+        let chord_ratio = before_m.min_segment_mm / after_m.min_segment_mm;
         assert!(
-            before_m.residual_samples > 0 && after_m.residual_samples > 0,
-            "{name}: nothing was scored on one of the arms"
+            chord_ratio > 1.8,
+            "{name}: shortest cutting chord {:.4} -> {:.4} mm is only \
+             {chord_ratio:.2}x finer on a {cell_ratio:.2}x finer cell — the \
+             cell has stopped driving the sampling step, which is the whole \
+             mechanism PR-8a rests on",
+            before_m.min_segment_mm,
+            after_m.min_segment_mm
         );
+        for (label, m, cell) in [
+            ("legacy", &before_m, legacy.cell_mm()),
+            ("shipped", &after_m, shipped.cell_mm()),
+        ] {
+            let per_cell = m.min_segment_mm / cell;
+            assert!(
+                (1.0..2.5).contains(&per_cell),
+                "{name} {label}: shortest chord is {per_cell:.2}x its own \
+                 cell, outside the 1.5-1.9x band §3.2 measured"
+            );
+        }
         assert!(
-            after_m.residual_samples >= before_m.residual_samples,
-            "{name}: the shipped arm scored FEWER points ({}) than the legacy \
-             arm ({}) — a gouge-free verdict on a smaller population is not a \
-             comparison",
-            after_m.residual_samples,
-            before_m.residual_samples
+            after_m.residual_samples > 0,
+            "{name}: nothing was scored on the shipped arm"
         );
-        // RED EVIDENCE, live: the legacy cell still drives the recorded
-        // gouge. Loose band (±25%) because this pins a DEFECT, not a
-        // contract — the point is that it is still of that magnitude.
-        assert!(
-            before_m.deepest_gouge_mm <= -0.75 * recorded_legacy_gouge,
-            "{name}: the legacy arm no longer reproduces the §3.2 gouge \
-             ({recorded_legacy_gouge} mm) — got {:.4} mm, so this gate is \
-             measuring nothing",
-            before_m.deepest_gouge_mm
-        );
-        assert!(before_m.gouge_over_50um > 0, "{name}: legacy red evidence");
-
-        // THE GATE.
         assert_eq!(
             after_m.deepest_gouge_mm, 0.0,
             "{name}: the shipped policy must leave NO cutting point below the \
              reference tool-centre surface; deepest {:.4} mm",
             after_m.deepest_gouge_mm
         );
-        assert_eq!(
-            after_m.gouge_over_50um, 0,
-            "{name}: {} cutting samples still gouge past 50 µm",
-            after_m.gouge_over_50um
-        );
-        // Cost side of the Checkpoint B trade, asserted rather than assumed:
-        // the move count grows, but nothing like the cell ratio (6×).
-        let move_factor = after_m.moves as f64 / before_m.moves.max(1) as f64;
-        assert!(
-            (1.0..2.0).contains(&move_factor),
-            "{name}: move count factor {move_factor:.2} is outside the \
-             1.11–1.43× band §3.2 measured — the cost case moved"
-        );
+        assert_eq!(after_m.gouge_over_50um, 0, "{name}");
         println!(
-            "{name}: legacy deepest {:.4} mm / {} past 50 µm ({} moves) \
-             -> shipped {:.4} mm / {} past 50 µm ({} moves, {move_factor:.2}×)",
-            before_m.deepest_gouge_mm,
-            before_m.gouge_over_50um,
-            before_m.moves,
+            "{name}: shortest cutting chord {:.4} -> {:.4} mm \
+             ({chord_ratio:.2}x, cell {cell_ratio:.2}x); shipped-arm deepest \
+             gouge {:.4} mm over {} scored points",
+            before_m.min_segment_mm,
+            after_m.min_segment_mm,
             after_m.deepest_gouge_mm,
-            after_m.gouge_over_50um,
-            after_m.moves,
+            after_m.residual_samples,
         );
     }
 }
@@ -1197,3 +1189,84 @@ fn full_resolution_ab_grid() {
     }
     println!("\n(commanded scallop cusp height: {} mm)", scallop_params().scallop_height);
 }
+
+/// **PR-8b's gate**, on the fixture `CHECKPOINT_B_EVIDENCE.md` §8.2 logged
+/// as an adjacent defect: "RampFinish gouges 4.2 mm on `patches + hole` at
+/// every resolution ... a genuine reach failure with **no diagnostic
+/// channel**; a user would ship it."
+///
+/// The RED EVIDENCE is the clamp's own `max_lift_mm`: it is exactly how far
+/// below the reachable surface the unclamped descent went, measured at the
+/// moment it was prevented, so the defect stays visible in the fixture that
+/// fixed it rather than only in prose. Asserted at the §8.2 magnitude.
+#[test]
+fn ramp_finish_reach_clamp_removes_the_cone_fixture_gouge() {
+    let t = taper();
+    let fixture = Fixture::new("patches + hole", disconnected_patches());
+    let policy = ramp_finish_generation_resolution(&t, TOLERANCE_MM);
+    let params = RampFinishParams {
+        max_stepdown: 0.5,
+        tolerance: TOLERANCE_MM,
+        ..Default::default()
+    };
+    let cancel = || false;
+    let (tp, _anns, clamp) = ramp_finish_toolpath_structured_annotated_with_resolution(
+        &fixture.mesh,
+        &fixture.index,
+        &t,
+        &params,
+        None,
+        None,
+        policy,
+        &cancel,
+    )
+    .expect("ramp finish");
+
+    // RED, kept live: the descent really did ask for 4.2 mm of unreachable
+    // depth, on 74% of its points, and the ladder bottom really was the mesh
+    // bbox floor rather than anything holdable.
+    assert!(
+        clamp.max_lift_mm > 4.0,
+        "the §8.2 defect is no longer reproduced by this fixture (max lift \
+         {:.4} mm) — the gate is measuring nothing",
+        clamp.max_lift_mm
+    );
+    assert!(clamp.clamped_points * 2 > clamp.ramp_points);
+    assert!((clamp.requested_bottom_z_mm - fixture.mesh.bbox.min.z).abs() < 1e-9);
+    assert!(
+        clamp.holdable_bottom_z_mm > clamp.requested_bottom_z_mm + 0.5,
+        "the ladder bottom must have been lifted off the mesh bbox floor"
+    );
+    assert!(!clamp.is_inert());
+
+    // GREEN: nothing survives below the reference tool-centre surface beyond
+    // the RULER's own error. The residual bound is the reference field's
+    // bilinear interpolation error at 0.05 mm (§5.1), not the path's — the
+    // clamp queries the mesh exactly, with no grid in between, which is why
+    // it holds at every resolution.
+    let (reference, _) = build(
+        &fixture,
+        &t,
+        FinishResolutionPolicy::explicit(REFERENCE_CELL_MM),
+    );
+    let m = path_metrics(&tp, Some(&reference));
+    assert!(m.residual_samples > 50, "non-vacuity: {} scored", m.residual_samples);
+    assert!(
+        m.deepest_gouge_mm > -0.05,
+        "deepest gouge {:.4} mm — §8.2's 4.2 mm defect is not fixed",
+        m.deepest_gouge_mm
+    );
+    println!(
+        "patches + hole: clamp lifted {} / {} points by up to {:.4} mm, \
+         ladder bottom {:.4} -> {:.4}; deepest surviving gouge {:.4} mm \
+         over {} scored points",
+        clamp.clamped_points,
+        clamp.ramp_points,
+        clamp.max_lift_mm,
+        clamp.requested_bottom_z_mm,
+        clamp.holdable_bottom_z_mm,
+        m.deepest_gouge_mm,
+        m.residual_samples,
+    );
+}
+

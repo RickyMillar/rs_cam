@@ -1555,6 +1555,8 @@ impl ProjectSession {
                     deprecated_dial: findings.deprecated_dial.map(Box::new),
                     // PR-6a: the reach-policy stepover this op derived.
                     derived_stepover: findings.derived_stepover.map(Box::new),
+                    // PR-8b: what the ramp-finish reach clamp did.
+                    ramp_reach_clamp: findings.ramp_reach_clamp.map(Box::new),
                 };
 
                 let mut debug_trace = debug_recorder.finish();
@@ -5230,6 +5232,7 @@ mod tests {
                 tip_float: None,
                 deprecated_dial: None,
                 derived_stepover: None,
+                ramp_reach_clamp: None,
             },
             debug_trace: None,
             semantic_trace: None,

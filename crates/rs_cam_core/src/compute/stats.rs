@@ -34,5 +34,8 @@ pub fn compute_stats(tp: &Toolpath) -> ToolpathStats {
         tip_float: None,
         deprecated_dial: None,
         derived_stepover: None,
+        // PR-8b: same rule again — no ramp descent is visible from a move
+        // list, so this helper can only honestly say "not measured".
+        ramp_reach_clamp: None,
     }
 }
