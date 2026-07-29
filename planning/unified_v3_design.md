@@ -2738,3 +2738,38 @@ gate run — not a rider on this commit.
 
 Gates: clippy clean workspace-wide, 56/56 param sweeps, rs_cam_viz
 216/216, `--lib` at the 3 documented adaptive3d reds.
+
+### §14s — live session state, 2026-07-29 (NOT on disk)
+
+The GUI holds parameter overrides applied during §14m–§14r. **None are
+saved** — `wanaka.toml` was loaded read-only all session and never written,
+so a reload discards every row below. Recorded because a measurement taken
+against this state without knowing it would be misread.
+
+| toolpath | field | project file | live session |
+|---|---|---|---|
+| 7 `3D Finish 6` | `enabled` | `false` | **`true`** |
+| 8 `Unified Finish 6` | `claims_reference` | `self_probe` | **`machined_stock`** |
+| 8 | `territory_clip` | `false` | **`true`** |
+| 8 | `pencil_claims` | `false` | **`true`** |
+| 8 | `min_rest_depth_mm` | `0.02` | **`0.05`** |
+| 8 | `waterline_threshold_deg` | `75.0` | **`55.0`** |
+
+Only `claims_reference: machined_stock` is a keeper — it is the §14p fix
+(−88.7% cutting). The others were experiment values; `min_rest_depth_mm`
+and `waterline_threshold_deg` in particular were shown NOT to be the lever
+and should go back.
+
+**The running binary predates all three of today's fixes** (`5732f57`,
+`32c5e48`, and the swept-path air fix `c9f6910`). Nothing measured in the
+GUI this session reflects them. A rebuild
+(`cargo build --release -p rs_cam_viz --bin rs_cam_gui`, ~3 min) is
+required before the live project shows any of it — and per
+`feedback_prebuild_release_before_mcp`, that build must complete BEFORE
+reconnecting, or the 30 s MCP timeout kills the launch.
+
+**Sim resolution matters and is not visible in the toolpath state:** the
+last full sim was the user's at **0.1 mm**. Re-simulating does NOT mark
+toolpaths stale (§14o), so a fresh sim must be followed by regenerating
+every rest op or the displayed path was planned against stock that no
+longer exists.
