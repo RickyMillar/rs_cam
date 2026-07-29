@@ -39,7 +39,60 @@ pub fn diagnostics_from_generation(
     out.extend(unmachined_band(toolpath_id, stats));
     out.extend(tip_float(toolpath_id, stats));
     out.extend(deprecated_dial(toolpath_id, stats));
+    out.extend(derived_stepover(toolpath_id, stats));
     out
+}
+
+/// PR-6a (H2.3): an offset stepover the reach policy sized, where the
+/// retired envelope-scaled rule would have given something else.
+///
+/// `Info`, not `Caution`: nothing is wrong. The operation is using the
+/// number the policy says is right, and this is the only surface on which
+/// that number appears at all — it is neither a config field nor derivable
+/// from the emitted moves.
+///
+/// Silent when the two agree (every plain ball, at every depth). A notice on
+/// every toolpath is a notice nobody reads — the same rule
+/// `record_deprecated_dial` follows.
+fn derived_stepover(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    // `None` = this operation derives no stepover. Not a claim of any kind.
+    let Some(f) = stats.derived_stepover.as_deref() else {
+        return Vec::new();
+    };
+    if f.matches_the_envelope_rule() {
+        return Vec::new();
+    }
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::CONFIG_DERIVED_STEPOVER),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Geometry,
+        severity: Severity::Info,
+        // Read straight off the policy call that steered the fan.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: format!(
+            "{site}: offset stepover {stepover:.3} mm, sized by the reach \
+             policy at {depth:.3} mm rest depth ({basis}). The retired \
+             envelope rule (half the cutter's widest radius) would have used \
+             {envelope:.3} mm — {ratio:.1}× wider — which on a tapered tool \
+             is the SHANK, not anything the tip cuts. [Report-only — no gate.]",
+            site = f.site,
+            stepover = f.stepover_mm,
+            depth = f.reference_depth_mm,
+            basis = f.reference_depth_basis,
+            envelope = f.envelope_rule_mm,
+            ratio = if f.stepover_mm > 0.0 {
+                f.envelope_rule_mm / f.stepover_mm
+            } else {
+                f64::NAN
+            },
+        ),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
 }
 
 /// PR-5: a retired dial the loaded project still sets.

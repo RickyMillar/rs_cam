@@ -107,6 +107,21 @@ pub struct ToolpathStats {
     ///
     /// Report-only: no gate consumes it, and generation is unaffected.
     pub deprecated_dial: Option<Box<DeprecatedDialFinding>>,
+    /// PR-6a (H2.3): an offset stepover this operation DERIVED from the
+    /// canonical reach policy instead of taking from a dial, together with
+    /// the envelope-scaled number that used to be used there.
+    ///
+    /// `None` = **this operation derives no stepover** (anything that is not
+    /// a `UnifiedFinish` running its crease/pencil claims pipeline). It is
+    /// not a measurement of the part and not a defect claim; it is the
+    /// audit trail for a number the operator cannot see in any dial.
+    ///
+    /// **Boxed** for the same reason as [`Self::dropped_band`]: `ToolpathStats`
+    /// rides the GUI's `ComputeMessage` channel enum, which the workspace
+    /// lints under `clippy::large_enum_variant`.
+    ///
+    /// Report-only: no gate consumes it.
+    pub derived_stepover: Option<Box<DerivedStepoverFinding>>,
 }
 
 /// A user-facing dial that a project still sets but the code no longer
@@ -128,6 +143,43 @@ pub struct DeprecatedDialFinding {
     pub default_value: f64,
     /// One sentence naming what replaced it.
     pub replaced_by: &'static str,
+}
+
+/// An offset stepover an operation sized from [`crate::reach`] rather than
+/// from a user dial (PR-6a, H2.3).
+///
+/// The number this records is invisible to the operator: it is not a field
+/// in any config, it steers both the routing criterion and the emitted fan,
+/// and until PR-6a it was `cutter.envelope_radius_mm() * 0.5` — half the
+/// SHANK of a tapered ball, three times the whole tip. Reporting the derived
+/// value AND the retired one is what makes the migration checkable on a real
+/// job instead of only on a fixture.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DerivedStepoverFinding {
+    /// Which routing/fit site this sized, e.g.
+    /// `"UnifiedFinish crease/pencil claims"`.
+    pub site: &'static str,
+    /// The stepover (mm) actually used, from
+    /// [`crate::reach::suggested_offset_stepover_mm`].
+    pub stepover_mm: f64,
+    /// Depth (mm) the reach policy was evaluated at. The policy is
+    /// depth-aware; a single scalar stepover has to name ITS depth.
+    pub reference_depth_mm: f64,
+    /// One phrase saying why that depth was the honest one to size at.
+    pub reference_depth_basis: &'static str,
+    /// What the retired `envelope_radius_mm() * 0.5` rule would have
+    /// produced on this tool. Equal to `stepover_mm` on any plain ball.
+    pub envelope_rule_mm: f64,
+}
+
+impl DerivedStepoverFinding {
+    /// `true` when the policy value and the retired envelope rule coincide —
+    /// every plain ball, at every depth. Nothing moved, so nothing is worth
+    /// telling the operator.
+    #[must_use]
+    pub fn matches_the_envelope_rule(&self) -> bool {
+        (self.stepover_mm - self.envelope_rule_mm).abs() <= 1e-9
+    }
 }
 
 /// A finish band whose planned cutting was entirely removed by height

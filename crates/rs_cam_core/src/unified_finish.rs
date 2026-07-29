@@ -529,6 +529,22 @@ pub fn unified_finish_region_annotations(report: &UnifiedFinishReport) -> Vec<Re
         .collect()
 }
 
+/// Offset passes per side the claims pipeline is permitted to emit
+/// (`planning/unified_v3_design.md` §2.1 item 5).
+///
+/// Named because the coverage routing criterion (`X_reach ≤ cap × stepover`)
+/// and the emission fan must use the SAME cap — a literal repeated at two
+/// call sites is exactly how PR-5 found the detector routing against a fan
+/// nobody emitted.
+pub const CLAIMS_OFFSET_PASS_CAP: usize = 4;
+
+/// One phrase naming why [`ClaimsReport::offset_stepover_reference_depth_mm`]
+/// is the depth the policy was sized at. Shipped in the operator-facing
+/// diagnostic, so it lives next to the value.
+pub const CLAIMS_STEPOVER_DEPTH_BASIS: &str =
+    "the detector's min_valley_depth — the shallowest rest it will report, \
+     where the cutter's engaged width is narrowest";
+
 /// Claims-pipeline telemetry (design doc §2.1, R2 "pencil over-claiming").
 /// `None` on [`UnifiedFinishReport::claims`] when the claims pipeline never
 /// ran (`claims: None` at the call site).
@@ -557,6 +573,18 @@ pub struct ClaimsReport {
     /// loop — `planned.regions.len()` after decompose (over the possibly
     /// mask-ANDed coverage).
     pub post_territory_region_count: usize,
+    /// PR-6a (H2.3): the offset stepover (mm) the claims pipeline DERIVED
+    /// from [`crate::reach::suggested_offset_stepover_mm`] and used for both
+    /// the routing criterion and the emitted fan. Not a dial — this is the
+    /// only place the number is visible.
+    pub offset_stepover_mm: f64,
+    /// Depth (mm) the reach policy was evaluated at to produce
+    /// [`Self::offset_stepover_mm`]. See [`CLAIMS_STEPOVER_DEPTH_BASIS`].
+    pub offset_stepover_reference_depth_mm: f64,
+    /// What the RETIRED envelope rule (`envelope_radius_mm() * 0.5`) would
+    /// have produced on this cutter. Equal to [`Self::offset_stepover_mm`]
+    /// on any plain ball — the migration moves tapered tools only.
+    pub envelope_rule_stepover_mm: f64,
 }
 
 /// Which resolved height clipped a band's Z range.
@@ -914,17 +942,34 @@ pub fn unified_finish_toolpath_with_cancel(
     let mut claims_rest_regions: Option<std::sync::Arc<Vec<Polygon2>>> = None;
     if let Some(cfg) = claims {
         check_cancel(cancel)?;
+        // PR-6a (H2.3): the crease/pencil fan's stepover comes from the
+        // CANONICAL REACH POLICY, not from the cutter envelope. See
+        // `crate::reach::suggested_offset_stepover_mm` for the derivation and
+        // why the shank-scaled predecessor (`envelope_radius_mm() * 0.5` —
+        // 1.5 mm on the shipped Ø1-tip taper) could not describe passes the
+        // tip cuts.
+        //
+        // REFERENCE DEPTH: `min_valley_depth`, the SHALLOWEST rest the
+        // detector will report. `working_half_width_mm` is monotone
+        // non-decreasing in depth, so this is the narrowest band any emitted
+        // pass works — the conservative end, and the only depth in scope
+        // before the detector has run. (A per-point stepover would be
+        // strictly better and is the same generalisation `reach`'s module doc
+        // records for the cross-section; it needs the fan to stop being one
+        // scalar, which `centerline_cut_paths` still is.)
+        let claims_offset_stepover_mm = crate::reach::suggested_offset_stepover_mm(
+            cutter,
+            cfg.rest_field_params.min_valley_depth,
+        );
         let rf_params = RestFieldParams {
             cell_mm: cfg.rest_field_params.cell_mm,
             min_valley_depth: cfg.rest_field_params.min_valley_depth,
             // Coverage routing (PR-5): the same fan the crease emission
-            // below actually uses — `cutter.envelope_radius_mm() * 0.5`
-            // stepover and the 4-pass cap of design doc §2.1 item 5. Sizing
-            // that stepover is H2.3's decision, deliberately untouched here;
-            // this only stops the detector routing against a fan nobody
-            // emits.
-            offset_stepover_mm: cutter.envelope_radius_mm() * 0.5,
-            num_offset_passes_cap: 4,
+            // below actually uses — the policy stepover derived above and the
+            // 4-pass cap of design doc §2.1 item 5. Routing and emission must
+            // see one fan, so both read these two bindings and nothing else.
+            offset_stepover_mm: claims_offset_stepover_mm,
+            num_offset_passes_cap: CLAIMS_OFFSET_PASS_CAP,
             min_cut_length: cfg.rest_field_params.min_cut_length,
             region_margin_mm: cfg.rest_field_params.region_margin_mm,
         };
@@ -997,17 +1042,19 @@ pub fn unified_finish_toolpath_with_cancel(
                 index,
                 cutter,
                 params.sampling,
-                // Offset stepover: ENVELOPE radius × 0.5 (1.5 mm on the
-                // wanaka taper). The comment that used to sit here claimed
-                // this "mirrors `PencilParams`'s own default
-                // (`tool_radius * 0.5`)" — it does not: that default is the
-                // literal 0.5 mm, so the two differ 3× even on a Ø6 ball
-                // (`TOOL_SCALE_SEMANTICS.md` §7.2). There is no parity to
-                // preserve here; sizing this from WIDTH(d) or from the cusp
-                // target is H2.3's decision, not PR-2's.
-                cutter.envelope_radius_mm() * 0.5,
+                // PR-6a: the reach-policy stepover computed above — the SAME
+                // binding the detector routed against, so the fan the routing
+                // criterion assumed is the fan that gets emitted.
+                //
+                // Historical note kept deliberately: the retired value here
+                // was `cutter.envelope_radius_mm() * 0.5` (1.5 mm on the
+                // wanaka taper), justified by a comment claiming parity with
+                // `PencilParams`'s own default. PR-2 established that parity
+                // was FALSE — the default is the literal 0.5 mm — so nothing
+                // was owed to it (`TOOL_SCALE_SEMANTICS.md` §7.2).
+                claims_offset_stepover_mm,
                 // Offset-pass cap (design doc §2.1 item 5).
-                4,
+                CLAIMS_OFFSET_PASS_CAP,
                 cfg.rest_field_params.min_cut_length,
                 params.stock_to_leave,
                 &mut float,
@@ -1024,6 +1071,8 @@ pub fn unified_finish_toolpath_with_cancel(
             detected,
             claimed = claimed_creases,
             paths = claims_paths.len(),
+            offset_stepover_mm = claims_offset_stepover_mm,
+            envelope_rule_stepover_mm = cutter.envelope_radius_mm() * 0.5,
             "unified_finish claims: centerlines whose cut paths materialized"
         );
 
@@ -1036,6 +1085,9 @@ pub fn unified_finish_toolpath_with_cancel(
             territory_masked_cells: 0,
             territory_masked_area_mm2: 0.0,
             post_territory_region_count: 0,
+            offset_stepover_mm: claims_offset_stepover_mm,
+            offset_stepover_reference_depth_mm: cfg.rest_field_params.min_valley_depth,
+            envelope_rule_stepover_mm: cutter.envelope_radius_mm() * 0.5,
         });
         // §2.4 carry-through: the detector's field + region polygons ride
         // the report so the adapter can attach them to the generated

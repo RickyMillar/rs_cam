@@ -33,5 +33,6 @@ pub fn compute_stats(tp: &Toolpath) -> ToolpathStats {
         dropped_band: None,
         tip_float: None,
         deprecated_dial: None,
+        derived_stepover: None,
     }
 }
