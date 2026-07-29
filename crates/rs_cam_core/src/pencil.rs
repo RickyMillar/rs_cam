@@ -157,9 +157,13 @@ pub struct PencilParams {
     /// XY grid cell size (mm) for the `RestDepth` detector's rest field. Smaller
     /// = finer regions and more drops. Default 0.5 (see [`rest_cell_default`]).
     pub rest_cell_mm: f64,
-    /// `RestDepth` routing threshold: a rest region routes to a pencil centreline
-    /// when its half-width `≤ route_width_factor × routing_radius_mm`, else to
-    /// clearing. Default 2.0 (see [`route_width_factor_default`]).
+    /// **RETIRED (PR-5, H2.2) — carried, reported, and NOT READ.**
+    ///
+    /// The `RestDepth` pencil/clearing decision is now the coverage criterion
+    /// in [`crate::reach`]. See
+    /// [`crate::compute::operation_configs::PencilConfig::route_width_factor`]
+    /// for why the field still exists and how a non-default value is
+    /// surfaced. Default 2.0 (see [`route_width_factor_default`]).
     pub route_width_factor: f64,
     /// R1: a real reference tool (from the library) whose *true* cutter geometry
     /// defines the rest reference, shared by all three detectors. `Some`
@@ -656,14 +660,28 @@ pub(crate) fn resample_polyline(points: &[P3], spacing: f64) -> Vec<P3> {
 
 /// Build the centreline + offset `PencilPath`s for one already-sampled valley
 /// polyline. Shared by all three detector arms: it fairs the XY line, lifts
-/// it to the surface with the real cutter, and emits the centreline plus
-/// symmetric offset passes. `chain_index` is 1-based. `offset_passes` is the
-/// actual number of offset passes to emit on each side — the
-/// Dihedral/Curvature arms pass `params.num_offset_passes` straight through
-/// (unchanged behaviour); the RestDepth arm (factored into
-/// [`crate::crease_paths::centerline_cut_paths`]) caps it to the local valley
-/// width so narrow creases don't get offset passes wider than the valley
-/// itself.
+/// it to the surface with the real cutter, and emits the centreline plus its
+/// offset fan. `chain_index` is 1-based.
+///
+/// # The fan is ASYMMETRIC (PR-5, H2.2)
+///
+/// `fan` carries a count PER SIDE, not one count applied to both. The
+/// Checkpoint A matrix measured left/right reach differing by up to 22×
+/// (2.982 mm versus 0.136 mm on one asymmetric fixture, `§6`), and a single
+/// scalar is forced to the narrow side, so the wide side was under-covered
+/// BY CONSTRUCTION. The Dihedral/Curvature arms pass
+/// `params.num_offset_passes` on both sides (unchanged behaviour); the
+/// RestDepth arm (via [`crate::crease_paths::centerline_cut_paths`]) passes
+/// what the reach policy resolved.
+///
+/// `fan.reach` additionally truncates each pass POINT BY POINT: a pass runs
+/// only where the local reach supports its offset, and elsewhere its Z is
+/// marked non-contact so [`contact_runs`] splits it into the runs that are
+/// real. Truncating instead of dropping is what lets a branch that is
+/// reachable at one end and pinched at the other keep the reachable part —
+/// the per-sample depth statistic Checkpoint A ruled for (§8.5). An empty
+/// `reach` means "not measured": every pass runs full length, exactly as
+/// before.
 ///
 /// Takes `stock_to_leave`/`offset_stepover` as plain scalars (rather than a
 /// `&PencilParams`) so non-pencil callers — currently
@@ -695,7 +713,7 @@ pub(crate) fn paths_from_sampled(
     cutter: &dyn MillingCutter,
     stock_to_leave: f64,
     offset_stepover: f64,
-    offset_passes: usize,
+    fan: OffsetFan<'_>,
     all_paths: &mut Vec<PencilPath>,
     float: &mut TipFloatFinding,
 ) {
@@ -705,7 +723,16 @@ pub(crate) fn paths_from_sampled(
     // De-jag the facet-scale zig-zag before lifting; offsets derive from the
     // faired centreline so they inherit it.
     let sampled = fair_polyline_xy(sampled, FAIRING_PASSES, FAIRING_STRENGTH);
-    let offset_total = 1 + offset_passes * 2;
+    // Per-point reach only applies when it lines up with the points it is
+    // describing; fairing preserves the count, but a caller mismatch must
+    // degrade to "not measured" rather than mis-attribute one point's reach
+    // to another.
+    let reach: &[crate::reach::Reach] = if fan.reach.len() == sampled.len() {
+        fan.reach
+    } else {
+        &[]
+    };
+    let offset_total = 1 + fan.left + fan.right;
 
     let centerline = lift_to_surface(&sampled, mesh, index, cutter, stock_to_leave);
     // Wave D1 instrument. Offset passes are deliberately excluded: they are
@@ -730,32 +757,65 @@ pub(crate) fn paths_from_sampled(
         is_centerline: true,
     });
 
-    for pass_num in 1..=offset_passes {
-        let offset = pass_num as f64 * offset_stepover;
+    // Left fan, then right fan. Indices run sequentially rather than
+    // even/odd because the two sides no longer have equal counts.
+    let mut offset_index = 1usize;
+    for (sign, passes) in [(1.0_f64, fan.left), (-1.0_f64, fan.right)] {
+        for pass_num in 1..=passes {
+            let offset = sign * pass_num as f64 * offset_stepover;
+            let pts = offset_polyline(&sampled, offset);
+            let mut lifted = lift_to_surface(&pts, mesh, index, cutter, stock_to_leave);
+            if !reach.is_empty() {
+                let want = pass_num as f64 * offset_stepover;
+                for (i, p) in lifted.iter_mut().enumerate() {
+                    let supported = reach.get(i).is_some_and(|r| {
+                        !r.refused && (if sign > 0.0 { r.left_mm } else { r.right_mm }) >= want
+                    });
+                    if !supported {
+                        // Same marker `lift_to_surface` uses for "no contact
+                        // here"; `contact_runs` splits the pass on it.
+                        p.z = f64::NAN;
+                    }
+                }
+            }
+            offset_index += 1;
+            all_paths.push(PencilPath {
+                points: lifted,
+                chain_index,
+                chain_total,
+                offset_index,
+                offset_total,
+                offset_mm: offset,
+                is_centerline: false,
+            });
+        }
+    }
+}
 
-        let left = offset_polyline(&sampled, offset);
-        let left_lifted = lift_to_surface(&left, mesh, index, cutter, stock_to_leave);
-        all_paths.push(PencilPath {
-            points: left_lifted,
-            chain_index,
-            chain_total,
-            offset_index: pass_num * 2,
-            offset_total,
-            offset_mm: offset,
-            is_centerline: false,
-        });
+/// The offset fan one call to [`paths_from_sampled`] should emit.
+///
+/// Per-side counts plus the optional per-point reach that truncates them —
+/// see [`paths_from_sampled`]'s doc for why both halves exist.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct OffsetFan<'a> {
+    /// Passes to emit on the `+offset` side.
+    pub left: usize,
+    /// Passes to emit on the `-offset` side.
+    pub right: usize,
+    /// Per-point reach, aligned 1:1 with the polyline handed to
+    /// [`paths_from_sampled`]. Empty = not measured; no truncation.
+    pub reach: &'a [crate::reach::Reach],
+}
 
-        let right = offset_polyline(&sampled, -offset);
-        let right_lifted = lift_to_surface(&right, mesh, index, cutter, stock_to_leave);
-        all_paths.push(PencilPath {
-            points: right_lifted,
-            chain_index,
-            chain_total,
-            offset_index: pass_num * 2 + 1,
-            offset_total,
-            offset_mm: -offset,
-            is_centerline: false,
-        });
+impl OffsetFan<'_> {
+    /// The legacy symmetric fan with no per-point truncation — what the
+    /// Dihedral and Curvature detector arms emit, unchanged.
+    pub(crate) fn symmetric(passes: usize) -> Self {
+        Self {
+            left: passes,
+            right: passes,
+            reach: &[],
+        }
     }
 }
 
@@ -1176,7 +1236,7 @@ fn curvature_arm(
             cutter,
             params.stock_to_leave,
             params.offset_stepover,
-            params.num_offset_passes,
+            OffsetFan::symmetric(params.num_offset_passes),
             &mut all_paths,
             float,
         );
@@ -1280,8 +1340,13 @@ fn rest_depth_arm(
     let rf_params = crate::rest_field::RestFieldParams {
         cell_mm: params.rest_cell_mm,
         min_valley_depth: params.min_valley_depth,
-        route_width_factor: params.route_width_factor,
-        routing_radius_mm: cutter.radius(),
+        // Coverage routing (PR-5): the detector routes against the fan this
+        // arm is about to emit, so it is handed the SAME two numbers
+        // `centerline_cut_paths` gets below. `route_width_factor` is no
+        // longer read — it is deprecated and reported, see
+        // `PencilParams::route_width_factor`.
+        offset_stepover_mm: params.offset_stepover,
+        num_offset_passes_cap: params.num_offset_passes,
         min_cut_length: params.min_cut_length,
         // No dedicated PencilParams dial yet — the default margin (P2.1
         // scope: derive region_polygons, not expose a new user-facing knob).
@@ -1466,7 +1531,7 @@ fn dihedral_arm(
             cutter,
             params.stock_to_leave,
             params.offset_stepover,
-            params.num_offset_passes,
+            OffsetFan::symmetric(params.num_offset_passes),
             &mut all_paths,
             float,
         );
@@ -2308,7 +2373,7 @@ mod tests {
                 &tool,
                 params.stock_to_leave,
                 params.offset_stepover,
-                params.num_offset_passes,
+                OffsetFan::symmetric(params.num_offset_passes),
                 &mut all_paths,
                 &mut TipFloatFinding::default(),
             );

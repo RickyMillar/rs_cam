@@ -1517,10 +1517,20 @@ fn probe_params(reference_diameter: f64) -> PencilParams {
     }
 }
 
-/// PROBE 1 — the shipped envelope model emits ZERO offset passes on a 3 mm
-/// valley the tip could ladder, through the real pencil path.
+/// PROBE 1 — **the headline gate, now inverted.**
+///
+/// As originally written this probe asserted the DEFECT the plan asked for
+/// verbatim: *offset passes emitted = 0 under envelope on a 3 mm valley the
+/// tip could ladder*. `CHECKPOINT_A_EVIDENCE.md` §7 records that run
+/// (`offset_total = 1` on every chain — a bare centreline) and stays as the
+/// historical record.
+///
+/// PR-5 replaced the envelope fit equation with the reach policy, so the same
+/// fixture, through the same real pencil path, now emits a fan. This probe
+/// pins that: `offset_total > 1`, i.e. reachable detail the shipped model
+/// suppressed for the whole life of the operation is now cut.
 #[test]
-fn probe_envelope_emits_no_offset_passes_on_a_tip_ladderable_valley() {
+fn probe_reach_policy_emits_the_fan_the_envelope_baseline_suppressed() {
     let mesh = grooved_block(1.5, 70.0, 1.2);
     let index = SpatialIndex::build(&mesh, 4.0);
     let cutter = wanaka_taper();
@@ -1549,7 +1559,8 @@ fn probe_envelope_emits_no_offset_passes_on_a_tip_ladderable_valley() {
         max_offset_total = max_offset_total.max(offset_total);
     }
     println!(
-        "PROBE 1: chains={} max offset_total={} (1 ⇒ centreline only)",
+        "PROBE 1 (fixed): chains={} max offset_total={} (1 ⇒ centreline only, \
+         the pre-PR-5 reading)",
         chains.len(),
         max_offset_total
     );
@@ -1558,12 +1569,10 @@ fn probe_envelope_emits_no_offset_passes_on_a_tip_ladderable_valley() {
         "probe fixture produced no rest centrelines — fixture is not exercising \
          the RestDepth arm"
     );
-    assert_eq!(
-        max_offset_total, 1,
-        "envelope model unexpectedly emitted offset passes"
-    );
 
-    // What the depth-aware models would have predicted for the same branch.
+    // The equation that used to run here, kept as the baseline it is measured
+    // against: on a Ø6-shank taper `half_width − 3.0` is negative for every
+    // valley narrower than 6 mm, so the fan was dead code.
     let w_meas = 1.5f64;
     let delta = 1.2f64;
     let n_env = ((w_meas - cutter.envelope_radius_mm()) / STEPOVER).round().max(0.0) as usize;
@@ -1577,8 +1586,13 @@ fn probe_envelope_emits_no_offset_passes_on_a_tip_ladderable_valley() {
         cutter.engagement_radius_mm(delta),
         n_eng
     );
-    assert_eq!(n_env, 0);
+    assert_eq!(n_env, 0, "the envelope baseline moved — re-derive this probe");
     assert!(n_eng >= 1, "depth-aware model also predicted zero passes");
+    assert!(
+        max_offset_total > 1,
+        "the reach policy emitted a bare centreline where the envelope \
+         baseline did too — the A2/A4 fit defect is back (offset_total={max_offset_total})"
+    );
 }
 
 /// PROBE 2 — the ball control on the same fixture. A Ø3 ball's envelope IS its
@@ -1600,8 +1614,8 @@ fn probe_ball_control_routing_is_invariant_to_the_swap() {
         &RestFieldParams {
             cell_mm: 0.3,
             min_valley_depth: 0.05,
-            route_width_factor: ROUTE_WIDTH_FACTOR,
-            routing_radius_mm: cutter.envelope_radius_mm(),
+            offset_stepover_mm: STEPOVER,
+            num_offset_passes_cap: CAP,
             min_cut_length: 2.0,
             region_margin_mm: 0.5,
         },

@@ -431,3 +431,180 @@ trips + A/M10 descent/resolution, H4 re-measurement ledger (Checkpoint E),
 L1 docs sweep. Deferred defect tasks: #12 tapered-pencil SelfReferenced,
 #15 Auto-heights VerySteep drop (+ new:
 RampFinish cone gouge, tip-float silent residual, 0.9 µm segments).
+
+- impl-13 DONE -> **H2 ROUTING WAVE A COMMITTED: PR-4 `df41169`, PR-5 `<PR5>`**
+  (the programme's FIRST behavioural slice, under the user-approved
+  Checkpoint A).
+
+  **New module `rs_cam_core::reach` — ONE canonical policy.** CLR+θ as
+  approved, per side: `X = rim_distance - G(delta, cot θ)` with
+  `G = max over u in [0,delta] of [width_at_height(u) + (delta-u)*cot θ]`,
+  and two-wall fouling (`X_left + X_right < 0`) as the refusal. Two
+  structural properties, not conveniences: a VERTICAL wall (`cot θ = 0`)
+  reduces `G` EXACTLY to `engagement_radius_mm(delta)`, so the "no wall
+  angle" fallback is the same function called with a zero rather than a
+  second model; and the `height_at_radius(w) == None` reading the oracle
+  proposed is not used at all (it cost the ball control 95 points of fit
+  coverage, §10). `G` is scanned and the one-sided sampling error
+  `cot θ * Δ` is ADDED, so reach is never overstated and refusal never
+  under-fires — conservative in the direction the plan's bar asks for.
+  API: `solve_reach` / `route` / `offset_passes_per_side` /
+  `coverage_cap_passes` over `LocalValley { rest_depth_mm, left, right }`
+  and `ValleySide { rim_distance_mm, wall_rise_mm }`.
+
+  **Coverage cap derivation.** `cap` in `X_reach <= cap x offset_stepover`
+  is the op's own `num_offset_passes` (the matrix's ground truth calls a
+  cell clearing iff `X_true > cap*s` with `cap = num_offset_passes`, so
+  anything else would reproduce a different rule than the evidence scored),
+  floored UPWARD by `ceil(engagement_radius(delta).max(cusp_radius)/stepover)`
+  and by 1. The floor is load-bearing: the shipped `num_offset_passes`
+  default is **ZERO**, at which `cap x stepover` is literally 0 and EVERY
+  branch routes to clearing — the pencil op would stop cutting. Asserted
+  never to bind on the matrix (`coverage_cap_floor_never_binds_on_the_matrix`:
+  2/2/3 passes vs the matrix's 4), so the approved routing column is
+  reproduced, not approximated.
+
+  **THE GATE, on production code.** `production_reach_policy_reproduces_the_
+  approved_matrix_column` drives `rs_cam_core::reach` — not a
+  reimplementation — against the same erosion-sampler truth that produced
+  `CHECKPOINT_A_EVIDENCE.md`, and lands the approved column exactly,
+  fan-cell counts included:
+
+  | tool | PROD | ENV (baseline, same run) |
+  |---|---|---|
+  | taper Ø1/7°/Ø6 | fan=89 gouge 0 / miss 0 / route_over 0 / route_under 0 / float_blind 0 / **coverage 100%** | 1 / 82 / 63 / 0 / 24 / **2%** |
+  | taper Ø1/15°/Ø6 | fan=88, same zeros, 100% | 1 / 81 / 63 / 0 / 25 / 2% |
+  | ball Ø3 | fan=71, same zeros, 100% | 11 / 35 / 15 / 1 / 56 / 74% |
+
+  89 / 88 / 71 are the CLR+θ fan-cell counts §2/§3/§4 record. Ball migrates
+  too, per the user ruling.
+
+  **ROUTING-COUNT DELTAS (tapered Ø1/7°/Ø6, 5 mm-wide 70° groove 1.2 mm
+  deep, real pencil path).** Under the retired envelope equation every row
+  read `offset_total = 1` — `half_width - 3.0` is negative for every valley
+  narrower than the Ø6 shank, so the width-aware fan was DEAD CODE:
+
+  | num_offset_passes | chains | max offset_total | offsets emitted (mm) |
+  |---:|---:|---:|---|
+  | 0 | 2 | 1 | 0.0 |
+  | 1 | 2 | 2 | -0.5, 0.0, 0.5 |
+  | 2 | 2 | 3 | -1.0 .. 1.0 |
+  | 4 | 2 | 5 | -2.0 .. 2.0 |
+
+  Checkpoint A probe 1 — the plan's verbatim headline, *"offset passes
+  emitted = 0 under envelope on a 3 mm valley the tip could ladder"* — now
+  reads `offset_total = 3` on the same fixture through the same call. BALL
+  characterisation (`ball_characterisation_what_the_new_model_changes`,
+  Ø3, 6 fixtures): 3 of 6 fan counts changed, and a 3 mm-half-width 60° V at
+  4.39 mm rest depth is now REFUSED instead of getting a 3-pass fan (the
+  ball wedges and floats there). Nothing asserts the ball did not move —
+  the approved delta is recorded row by row.
+
+  **Task #12 (tapered `SelfReferenced`) FIXED.** `resolve_reference_cutter`
+  takes `&dyn MillingCutter` and compares against `cusp_radius_mm() * 2` —
+  the scale the pencil CUTS with — not `diameter()`, which for a tapered
+  ball deliberately reports the SHANK. The old comparison was `6.0 > 6.0`
+  at the shipped default, so every tapered pencil op silently fell to the
+  self-referenced probe. Tip diameter IS `diameter()` for every non-tapered
+  shape, so only the tapered path moves. Probe 3 now asserts the FIX
+  (default 6.0 -> 2 chains; a genuinely self-referenced 0.5 -> 1); field
+  level, 46.21 mm3 vs 13.57 mm3 of measured rest on one fixture.
+
+  **PER-SAMPLE / PER-SIDE machinery.** `RestCenterline::samples` carries the
+  measured cross-section and its resolved reach ONE PER POINT (ruling: a
+  per-branch scalar is optimistic as a median and detail-suppressing as a
+  peak, §8.5). Serde AUDITED: `RestCenterline` has no derive, reaches no
+  project file or wire format, is rebuilt every generate — noted on the
+  field. `measure_cross_section` is the approved finite difference off
+  `RestGrid::surface_z`: walk the ridge perpendicular to the rim (where rest
+  falls back to the mask threshold) and take the STEEPEST single-cell
+  gradient inside the depth band. `paths_from_sampled` takes an `OffsetFan
+  { left, right, reach }`: per-side counts (the matrix measured left/right
+  reach differing 22x, §6) and per-point truncation via the existing
+  non-contact marker, so `contact_runs` splits a pass into the runs that are
+  real. Observed on a groove tapering 5x along its length: 12 offset passes
+  emitted, 2 truncated away entirely — a branch scalar can produce neither
+  that nor a split.
+
+  **Deprecation, not deletion.** `route_width_factor` still deserializes,
+  still saves, and is no longer read; a project carrying a NON-DEFAULT value
+  raises `DeprecatedDialFinding` -> `ids::CONFIG_DEPRECATED_DIAL` on both
+  the session and GUI-worker stats paths, and the GUI widget is relabelled
+  "(retired)". Default value -> silence. `RestFieldParams` swapped
+  `route_width_factor` + `pencil_radius`(->`routing_radius_mm` in PR-4) for
+  `offset_stepover_mm` + `num_offset_passes_cap`, so the detector routes
+  against the fan the caller actually emits.
+
+  **Rule 4 held.** Grid padding, trust erosion and polygon reach-back still
+  read the cutter envelope; `routing_dials_do_not_move_the_envelope_derived_
+  geometry` runs the detector at cap 0 and cap 64 and asserts identical grid
+  extent and identical region polygons.
+
+  **UnifiedFinish inherited the fit AUTOMATICALLY** — its crease node calls
+  `centerline_cut_paths`, so the per-side reach fan applies with no edit to
+  `unified_finish.rs`'s emission. Its derived stepover
+  (`cutter.envelope_radius_mm() * 0.5`) is H2.3 / wave B and was NOT
+  touched; its claims-pipeline `RestFieldParams` now names that same
+  stepover and the design-doc 4-pass cap so routing and emission agree.
+
+  **D1 TIP-FLOAT MOVED, with justification.** Gate 1's fixture (Ø3 ball,
+  1.2 mm-wide 2.5 mm-deep groove) is exactly the float-blind case the new
+  routing REFUSES, so the rest-depth arm now emits 0 mm of cutting there and
+  the instrument has nothing to measure. Split rather than weakened:
+  **Gate 1a** pins the new behaviour (0 cutting; float channel stays
+  `None`/zero-points, never a fabricated zero) and **Gate 1b** re-targets the
+  original measurement to the DIHEDRAL arm, which has no routing at all, on
+  the SAME geometry — 98/98 points floating, worst 2.196 mm against the
+  2.375 mm closed form (the dihedral trace sits on the crease at x=+-0.159
+  rather than the trough centre, inside the test's own 0.9x band). Gate 1b
+  also needed `bisector_strength: 0.0`: the default 1.0 walks a Ø3 ball's
+  trace ~1.5 mm sideways, clean out of a 1.2 mm groove and onto the flat
+  top, where the float reads a true and useless zero. `TIP_FLOAT_THRESHOLD_MM
+  == reach_gap_threshold()` was NOT touched — the reach model does not change
+  what "floating" means, only who gets driven there. 4/4.
+
+  Gates (both commits): reach_policy_pr4 6/6; coverage_routing_pr5 6/6;
+  checkpoint_a_valley_matrix 14/14 (12 pre-existing undisturbed);
+  unified_finish_tapered_end_to_end_m21 9/9; unified_finish_semantic_regions
+  4/4; standing_material_channel_am9 4/4; pencil_tip_float_channel_d1 4/4
+  (3 -> 4, split above); unified_finish_dropped_band_finding_d1 3/3;
+  finish_resolution_policy_pr3 8/8 FNV fingerprints UNCHANGED;
+  tool_scale_semantics_pr2 8/8 (tripwire zero edits); air_cut_denominators_lh1
+  4/4; capability_link_moves_safety 17/17; param_sweep 56 ignored (unchanged);
+  `-p rs_cam_core --lib` 2180 passed / exactly the 3 known adaptive3d reds;
+  viz 227/227; cli 14/14; mcp 4/4; clippy --workspace --all-targets
+  -D warnings exit 0.
+
+  **WANAKA: DEFERRED TO LIVE VALIDATION, stated honestly.** The only harness
+  that reaches rest routing is `p2c_headless_ab_wanaka.rs`, a set of
+  `#[ignore]`d full-project dexel ladders needing release-mode minutes, and
+  its project file is the user-modified read-only `wanaka.toml`. No
+  before/after was run, and none is claimed. **This is the highest-risk item
+  in the wave**: the refusal verdict and the coverage criterion both change
+  which branches get cut on real relief, and only a live run can size that.
+
+  ADJACENT DEFECTS SEEN, NOT FIXED: **the V is a MODEL** — a trapezoidal
+  groove is not a V, and a single wall angle either understates the wall
+  (apex-to-rim secant) or ignores the floor (steepest local gradient, what
+  ships); eroding directly against the sampled `surface_z` cross-section
+  needs no wall angle at all, handles trapezoids/curvature/asymmetry
+  natively, and is a strict generalisation of what landed (recorded in
+  `reach`'s module doc as the wave-B follow-up). The ridge sits off the
+  trough centre on symmetric grooves (Checkpoint A §6's "the apex is not the
+  mask centre"), which is why a symmetric fixture can emit a one-sided fan —
+  real, measured, not fixed here. `attach_generic_rest_analysis` (H2.5) now
+  routes through the canonical policy but takes the DETECTOR DEFAULT fan
+  because `RestAnalysisConfig` carries no stepover — fine for a report-only
+  pass, wrong the moment it emits paths. `ComputeMessage` grew one boxed
+  `Option` closer to its 280-byte clippy ceiling. `RestCenterline::samples`
+  is measured on the rest-grid cell (0.5 mm shipped) while the taper's tip is
+  Ø1 — the H3 resolution question applies to the cross-section too.
+
+  Notes for WAVE B: H2.3 UnifiedFinish derived stepover
+  (`envelope_radius * 0.5`) is now the only remaining envelope-scaled
+  routing/fit number in the finishing stack and the reach policy can size it
+  (`engagement_radius(delta)` or the cusp target) — untouched by design;
+  H2.4 crease-own-region `tool_radius` in `finish_planner::decompose` is
+  still dormant and still needs its make-it-live sentry first; H2.5 wants a
+  real fan on `RestAnalysisConfig`; the sampled-cross-section generalisation
+  above; and the wanaka before/after this wave could not run.

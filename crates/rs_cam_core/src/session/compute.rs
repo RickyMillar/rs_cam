@@ -1551,6 +1551,8 @@ impl ProjectSession {
                     // measured", never "nothing wrong".
                     dropped_band: findings.dropped_band.map(Box::new),
                     tip_float: findings.tip_float,
+                    // PR-5: a retired dial still set in the loaded project.
+                    deprecated_dial: findings.deprecated_dial.map(Box::new),
                 };
 
                 let mut debug_trace = debug_recorder.finish();
@@ -5224,6 +5226,7 @@ mod tests {
                 standing_material_mm2: None,
                 dropped_band: None,
                 tip_float: None,
+                deprecated_dial: None,
             },
             debug_trace: None,
             semantic_trace: None,

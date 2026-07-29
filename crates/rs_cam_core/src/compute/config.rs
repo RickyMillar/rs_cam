@@ -91,6 +91,43 @@ pub struct ToolpathStats {
     ///
     /// Report-only: no gate consumes it.
     pub tip_float: Option<TipFloatFinding>,
+    /// PR-5: a loaded project carries a RETIRED dial at a non-default value,
+    /// so the number the operator set is no longer the one steering the
+    /// operation.
+    ///
+    /// `None` = **nothing retired is set** (the overwhelming majority of
+    /// toolpaths, and every project that never touched the dial). It is not
+    /// a measurement, it is a compatibility notice: the field is still
+    /// deserialized so old projects load unchanged, and this is what stops
+    /// that from being silent.
+    ///
+    /// **Boxed** for the same reason as [`Self::dropped_band`]: `ToolpathStats`
+    /// rides the GUI's `ComputeMessage` channel enum, which the workspace
+    /// lints under `clippy::large_enum_variant`.
+    ///
+    /// Report-only: no gate consumes it, and generation is unaffected.
+    pub deprecated_dial: Option<Box<DeprecatedDialFinding>>,
+}
+
+/// A user-facing dial that a project still sets but the code no longer
+/// reads (PR-5, H2.2).
+///
+/// The alternative to reporting is one of the two failure modes this
+/// programme keeps finding: silently ignore the value (the operator's
+/// setting stops doing anything, with no way to tell), or refuse to load
+/// the project (breaks every saved job for a dial that was never
+/// load-bearing). Deserialize it, ignore it, and SAY SO.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DeprecatedDialFinding {
+    /// The dial's name as it appears in the project file and the GUI.
+    pub dial: &'static str,
+    /// The value the project carries.
+    pub value: f64,
+    /// The value that used to be the default — anything else means the
+    /// operator deliberately tuned it.
+    pub default_value: f64,
+    /// One sentence naming what replaced it.
+    pub replaced_by: &'static str,
 }
 
 /// A finish band whose planned cutting was entirely removed by height

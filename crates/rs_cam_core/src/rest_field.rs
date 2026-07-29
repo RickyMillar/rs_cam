@@ -109,26 +109,28 @@ pub struct RestFieldParams {
     /// This IS the pencil op's `min_valley_depth` — the field threshold and the
     /// user dial are the same quantity by construction.
     pub min_valley_depth: f64,
-    /// A skeleton polyline routes to pencil when its region half-width
-    /// `≤ route_width_factor × routing_radius_mm`; wider routes to clearing.
-    pub route_width_factor: f64,
-    /// The ROUTING yardstick (mm) only — never a padding, erosion or
-    /// reach-back radius.
+    /// Lateral spacing (mm) between the offset passes the CALLER will emit
+    /// around each centreline.
     ///
-    /// Renamed from `pencil_radius` in PR-4 (H2.1) because that name invited
-    /// exactly the confusion the field caused: it defaulted to `0.5`
-    /// (tip-scale, the correct intent) and all three production callers
-    /// overwrote it with `radius()` (shank-scale, 6× larger on the shipped
-    /// taper). The physical margins in this module — the grid margin, the
-    /// trust erosion, and the `region_polygons` dilation — never read this
-    /// field: they take the cutter's own envelope directly, and PR-4 left
-    /// every one of them untouched (plan H2.1 rule 4, "keep envelope-derived
-    /// grid padding, erosion, and polygon reach-back unchanged").
+    /// Routing input, not a detector dial: the pencil/clearing decision is
+    /// the COVERAGE question "can a centreline plus the offsets this
+    /// operation is permitted to emit actually cover the reachable band?",
+    /// so the detector has to know how wide that fan is. Together with
+    /// [`Self::num_offset_passes_cap`] it replaces the `route_width_factor ×
+    /// pencil_radius` rule PR-4 documented and PR-5 retired.
     ///
-    /// PR-5 retires this field together with [`Self::route_width_factor`] in
-    /// favour of the coverage criterion; the two are fed by the same scalar
-    /// and must move together (`CHECKPOINT_A_EVIDENCE.md` §8.3).
-    pub routing_radius_mm: f64,
+    /// Pass the same value the caller hands
+    /// [`crate::crease_paths::centerline_cut_paths`]; a mismatch means the
+    /// detector routes against a fan nobody emits.
+    pub offset_stepover_mm: f64,
+    /// Offset passes per side the caller is permitted to emit — the CAP, not
+    /// a fixed count.
+    ///
+    /// Zero is meaningful and is the shipped `PencilParams` default
+    /// ("centreline only"). It does NOT collapse routing: see
+    /// [`crate::reach::coverage_cap_passes`] for the floor that stops
+    /// `cap × stepover == 0` from sending every branch to clearing.
+    pub num_offset_passes_cap: usize,
     /// Minimum kept-cut length (mm) — used only for the coverage report; the
     /// caller applies the real `min_cut_length` filter downstream.
     pub min_cut_length: f64,
@@ -139,7 +141,7 @@ pub struct RestFieldParams {
     /// boundary-clipped fine-tool op can actually reach the true region edge
     /// rather than stopping exactly at the pencil-radius-eroded mask
     /// boundary. Read off the cutter, never off
-    /// [`Self::routing_radius_mm`] (plan H2.1 rule 4).
+    /// any routing dial (plan H2.1 rule 4).
     pub region_margin_mm: f64,
 }
 
@@ -148,8 +150,8 @@ impl Default for RestFieldParams {
         Self {
             cell_mm: 0.5,
             min_valley_depth: 0.05,
-            route_width_factor: 2.0,
-            routing_radius_mm: 0.5,
+            offset_stepover_mm: 0.5,
+            num_offset_passes_cap: 0,
             min_cut_length: 2.0,
             region_margin_mm: 0.5,
         }
@@ -394,6 +396,54 @@ fn mask_at(mask: &Grid2<bool>, r: isize, c: isize) -> bool {
 /// the branch reads as "at least this wide" and routes to clearing on width,
 /// which is the honest outcome for a band nobody is going to pencil.
 const CROSS_SECTION_WALK_CELLS: usize = 64;
+
+/// Route one branch by the coverage criterion, aggregating its per-point
+/// samples to a branch verdict by MEDIAN.
+///
+/// Median, not peak or mean, on the same reasoning the branch saliency gate
+/// and `half_width_mm` already use: a ridge traced through a discrete grid
+/// picks up individual cells whose perpendicular walk hit a neighbouring
+/// feature, and one such cell must not decide the strategy for a whole
+/// branch. Refusal is a straight majority for the same reason — a branch is
+/// unreachable when most of it is, not when one cell is.
+fn branch_verdict(
+    pencil: &dyn MillingCutter,
+    samples: &[CenterlineSample],
+    offset_stepover: f64,
+    params: &RestFieldParams,
+) -> crate::reach::RoutingVerdict {
+    if samples.is_empty() {
+        // No measurement: the honest verdict is the permissive one — this is
+        // the pre-PR-5 behaviour for a branch nothing could be measured on,
+        // not a licence to refuse it.
+        return crate::reach::RoutingVerdict::Pencil;
+    }
+    let refused = samples.iter().filter(|s| s.reach.refused).count();
+    if refused * 2 > samples.len() {
+        return crate::reach::RoutingVerdict::Refused;
+    }
+    let median_of = |mut v: Vec<f64>| -> f64 {
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        median_sorted(&v)
+    };
+    let reach_mm = median_of(samples.iter().map(|s| s.reach.min_mm()).collect());
+    let depth_mm = median_of(samples.iter().map(|s| s.valley.rest_depth_mm).collect());
+    let cap = crate::reach::coverage_cap_passes(
+        pencil,
+        depth_mm,
+        offset_stepover,
+        params.num_offset_passes_cap,
+    );
+    crate::reach::route(
+        &crate::reach::Reach {
+            left_mm: reach_mm,
+            right_mm: reach_mm,
+            refused: false,
+        },
+        offset_stepover,
+        cap,
+    )
+}
 
 /// Unit perpendicular `(d_col, d_row)` to the ridge polyline at index `k`,
 /// in CELL units. Central difference where possible, one-sided at the ends;
@@ -758,13 +808,13 @@ pub fn detect_rest_valleys(
     let min_cut_length_cells = params.min_cut_length.max(0.0) / cell;
     let poly_cells = cleanup_ridge_graph(raw_polys, nx, min_cut_length_cells);
 
-    // --- 6. Route each polyline by width. ---
+    // --- 6. Route each polyline by COVERAGE (PR-5, H2.2). ---
     let mut centerlines: Vec<RestCenterline> = Vec::new();
     let mut pencil_comps: std::collections::BTreeSet<usize> = Default::default();
     let mut clearing_comps: std::collections::BTreeSet<usize> = Default::default();
     let mut skeleton_length = 0.0f64;
     let mut traced_length = 0.0f64;
-    let width_limit = params.route_width_factor * params.routing_radius_mm;
+    let offset_stepover = params.offset_stepover_mm.max(1e-6);
 
     for poly in &poly_cells {
         if poly.len() < 2 {
@@ -836,7 +886,15 @@ pub fn detect_rest_valleys(
             .find(|&&i| mask.at_index_or(i, false))
             .map(|&i| comp_id.at_index_or(i, usize::MAX))
             .unwrap_or(usize::MAX);
-        if half_width_mm <= width_limit {
+        // COVERAGE routing (PR-5, `CHECKPOINT_A_EVIDENCE.md` §8.3): compare
+        // the REACHABLE band against the fan this operation can emit, not the
+        // measured half-width against an unrelated tool scalar. Aggregated to
+        // the branch by MEDIAN — the routing decision is per-branch by
+        // construction, and the median-of-samples convention is the one the
+        // saliency gate and `half_width_mm` already use, so a single noisy
+        // ridge cell cannot flip a whole branch.
+        let verdict = branch_verdict(pencil, &samples, offset_stepover, params);
+        if verdict == crate::reach::RoutingVerdict::Pencil {
             if comp != usize::MAX {
                 pencil_comps.insert(comp);
             }
@@ -849,6 +907,13 @@ pub fn detect_rest_valleys(
                 samples,
             });
         } else if comp != usize::MAX {
+            // Clearing AND Refused both land here. `Refused` means the cutter
+            // wedges before reaching the local rest depth, so a pencil
+            // centreline would be driven along material it floats above (the
+            // 24-of-176 float-blind cells the envelope model routed straight
+            // into). Handing the component to a clearing strategy is the
+            // honest "this operation cannot do it"; silently emitting the
+            // centreline is what the model was approved to stop.
             clearing_comps.insert(comp);
         }
     }
@@ -1919,8 +1984,12 @@ mod tests {
         RestFieldParams {
             cell_mm: 0.5,
             min_valley_depth: 0.05,
-            route_width_factor: 2.0,
-            routing_radius_mm: pencil_r,
+            // Coverage routing: a fan wide enough that these unit fixtures
+            // route on reach, not on the fan budget. `pencil_r` is no longer
+            // a routing input at all (PR-5), so it only sizes the cutter the
+            // caller builds.
+            offset_stepover_mm: (pencil_r * 0.5).max(0.1),
+            num_offset_passes_cap: 8,
             min_cut_length: 2.0,
             region_margin_mm: 0.5,
         }
@@ -2097,7 +2166,7 @@ mod tests {
         let pencil = BallEndmill::new(1.0, 25.0);
         let reference = BallEndmill::new(6.0, 25.0);
         let mut p = default_params(0.5);
-        p.route_width_factor = 10.0;
+        p.num_offset_passes_cap = 64;
         let res = detect_rest_valleys(
             &mesh,
             &index,
@@ -2147,7 +2216,7 @@ mod tests {
         let pencil = BallEndmill::new(1.0, 25.0);
         let reference = BallEndmill::new(6.0, 25.0);
         let mut p = default_params(0.5);
-        p.route_width_factor = 10.0; // force pencil routing so we can inspect the centerline
+        p.num_offset_passes_cap = 64; // force pencil routing so we can inspect the centerline
         let res = detect_rest_valleys(
             &mesh,
             &index,
@@ -2487,7 +2556,9 @@ mod tests {
         let cell = envf("RS_CAM_REST_CELL", 0.5);
         let mvd = envf("RS_CAM_REST_MVD", 0.2);
         let refd = envf("RS_CAM_REST_REFD", 6.0);
-        let routew = envf("RS_CAM_REST_ROUTEW", 2.0);
+        // PR-5: now the offset-pass CAP the coverage criterion routes
+        // against, not the retired width factor. Same env knob, new meaning.
+        let routew = envf("RS_CAM_REST_ROUTEW", 8.0);
         let pencild = envf("RS_CAM_REST_PENCILD", 2.0);
 
         let mesh = TriangleMesh::from_stl(std::path::Path::new(&path)).unwrap();
@@ -2506,8 +2577,8 @@ mod tests {
         let params = RestFieldParams {
             cell_mm: cell,
             min_valley_depth: mvd,
-            route_width_factor: routew,
-            routing_radius_mm: pencil.radius(),
+            offset_stepover_mm: (pencil.radius() * 0.5).max(0.1),
+            num_offset_passes_cap: routew.round().max(0.0) as usize,
             min_cut_length: 2.0,
             region_margin_mm: 0.5,
         };

@@ -80,6 +80,10 @@ pub struct GenerationFindings {
     /// operation emits no centrelines, so nothing was measured.
     /// See [`crate::compute::config::TipFloatFinding`].
     pub tip_float: Option<crate::compute::config::TipFloatFinding>,
+    /// PR-5: a retired dial still set to a non-default value in the loaded
+    /// project. `None` = nothing retired is set.
+    /// See [`crate::compute::config::DeprecatedDialFinding`].
+    pub deprecated_dial: Option<crate::compute::config::DeprecatedDialFinding>,
 }
 
 /// Record one cascade's residual on the context's findings cell,
@@ -123,6 +127,24 @@ fn record_tip_float(
     merged.merge(finding);
     cell.set(GenerationFindings {
         tip_float: Some(merged),
+        ..cell.get()
+    });
+}
+
+/// Record that a loaded project still sets a RETIRED dial (PR-5).
+///
+/// A no-op at the default: an operator who never touched the dial has
+/// nothing to be told, and a notice on every toolpath is a notice nobody
+/// reads.
+fn record_deprecated_dial(
+    cell: &std::cell::Cell<GenerationFindings>,
+    finding: crate::compute::config::DeprecatedDialFinding,
+) {
+    if (finding.value - finding.default_value).abs() <= 1e-9 {
+        return;
+    }
+    cell.set(GenerationFindings {
+        deprecated_dial: Some(finding),
         ..cell.get()
     });
 }
@@ -1257,6 +1279,21 @@ pub(crate) fn generate_pencil(
         // the real machine envelope when one is in scope.
         link_kinematics: ctx.link_kinematics.clone(),
     };
+    // PR-5: `route_width_factor` is still deserialized so every saved
+    // project loads unchanged, but the pencil/clearing decision is now the
+    // coverage criterion and nothing reads it. An operator who tuned it is
+    // told once, here, rather than left with a dial that quietly does
+    // nothing.
+    record_deprecated_dial(
+        ctx.findings,
+        crate::compute::config::DeprecatedDialFinding {
+            dial: "route_width_factor",
+            value: cfg.route_width_factor,
+            default_value: crate::pencil::route_width_factor_default(),
+            replaced_by: "the coverage criterion (reachable band vs \
+                          num_offset_passes x offset_stepover)",
+        },
+    );
     let mut rest_grid_out: Option<crate::rest_field::RestGrid> = None;
     let mut rest_regions_out: Option<Vec<Polygon2>> = None;
     let mut tip_float_out: Option<crate::compute::config::TipFloatFinding> = None;
@@ -2213,7 +2250,11 @@ fn attach_generic_rest_analysis(
         cell_mm: cfg.cell_mm,
         min_valley_depth: cfg.min_valley_depth,
         region_margin_mm: cfg.region_margin_mm,
-        routing_radius_mm: tool_def.radius(),
+        // H2.5: the generic rest analysis routes through the SAME canonical
+        // reach policy as Pencil, so it takes the detector's default fan
+        // (`RestFieldParams::default`) rather than a parallel formula. It is
+        // a report-only pass — it attaches a grid and region polygons, it
+        // emits no cut paths — so the fan it routes against is nominal.
         ..Default::default()
     };
     let rf = crate::rest_field::detect_rest_valleys(mesh, index, tool_def, reference, &rf_params);

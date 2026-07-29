@@ -917,10 +917,14 @@ pub fn unified_finish_toolpath_with_cancel(
         let rf_params = RestFieldParams {
             cell_mm: cfg.rest_field_params.cell_mm,
             min_valley_depth: cfg.rest_field_params.min_valley_depth,
-            route_width_factor: cfg.rest_field_params.route_width_factor,
-            // The tip cutter IS the pencil in this op — see `ClaimsConfig`
-            // doc — regardless of what the caller set here.
-            routing_radius_mm: cutter.radius(),
+            // Coverage routing (PR-5): the same fan the crease emission
+            // below actually uses — `cutter.envelope_radius_mm() * 0.5`
+            // stepover and the 4-pass cap of design doc §2.1 item 5. Sizing
+            // that stepover is H2.3's decision, deliberately untouched here;
+            // this only stops the detector routing against a fan nobody
+            // emits.
+            offset_stepover_mm: cutter.envelope_radius_mm() * 0.5,
+            num_offset_passes_cap: 4,
             min_cut_length: cfg.rest_field_params.min_cut_length,
             region_margin_mm: cfg.rest_field_params.region_margin_mm,
         };
@@ -2799,7 +2803,7 @@ mod tests {
                 // Force pencil routing over clearing (mirrors
                 // `rest_field::tests::v_valley_yields_one_centerline`) so
                 // the detected ridge survives as a centerline to claim.
-                route_width_factor: 10.0,
+                num_offset_passes_cap: 64,
                 ..RestFieldParams::default()
             },
             min_rest_depth_mm: 0.02,
@@ -2875,7 +2879,7 @@ mod tests {
                 // Force pencil routing over clearing (mirrors
                 // `rest_field::tests::v_valley_yields_one_centerline`) so
                 // the detected ridge survives as a centerline to claim.
-                route_width_factor: 10.0,
+                num_offset_passes_cap: 64,
                 ..RestFieldParams::default()
             },
             min_rest_depth_mm: 0.02,
@@ -2958,7 +2962,7 @@ mod tests {
             min_valley_depth: 0.05,
             // Force pencil routing over clearing, same as the other claims
             // tests, so the detected ridge survives as a centerline.
-            route_width_factor: 10.0,
+            num_offset_passes_cap: 64,
             ..RestFieldParams::default()
         };
 
@@ -3128,7 +3132,7 @@ mod tests {
             rest_field_params: RestFieldParams {
                 cell_mm: 0.5,
                 min_valley_depth: 0.05,
-                route_width_factor: 10.0,
+                num_offset_passes_cap: 64,
                 ..RestFieldParams::default()
             },
             min_rest_depth_mm: 1.0e6,
@@ -3178,7 +3182,7 @@ mod tests {
             rest_field_params: RestFieldParams {
                 cell_mm: 0.5,
                 min_valley_depth: 0.05,
-                route_width_factor: 10.0,
+                num_offset_passes_cap: 64,
                 ..RestFieldParams::default()
             },
             min_rest_depth_mm: 0.02,
@@ -3226,7 +3230,7 @@ mod tests {
         let rf_params = || RestFieldParams {
             cell_mm: 0.5,
             min_valley_depth: 0.05,
-            route_width_factor: 10.0,
+            num_offset_passes_cap: 64,
             ..RestFieldParams::default()
         };
 

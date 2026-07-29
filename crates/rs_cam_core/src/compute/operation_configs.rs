@@ -770,9 +770,22 @@ pub struct PencilConfig {
     /// = finer regions, more drops. `#[serde(default)]` so older files load.
     #[serde(default = "crate::pencil::rest_cell_default")]
     pub rest_cell_mm: f64,
-    /// `rest_depth` routing threshold: a rest region routes to a pencil centreline
-    /// when its half-width `≤ route_width_factor × pencil_radius`, else to
-    /// clearing. `#[serde(default)]` so older files load.
+    /// **RETIRED (PR-5, H2.2) — deserialized, saved, and NOT READ.**
+    ///
+    /// It used to be the `rest_depth` routing threshold: a rest region routed
+    /// to a pencil centreline when its half-width was
+    /// `≤ route_width_factor × pencil_radius`. The pencil/clearing decision
+    /// is now the COVERAGE criterion — the reachable band against the fan the
+    /// operation can actually emit — because the old rule was fed the SAME
+    /// scalar as the offset-pass fit equation, so fixing one broke the other
+    /// (`CHECKPOINT_A_EVIDENCE.md` §8.3).
+    ///
+    /// Kept as a field on purpose: removing it would break every saved
+    /// project for a dial that was never load-bearing. A project that carries
+    /// a NON-DEFAULT value raises
+    /// [`crate::compute::config::DeprecatedDialFinding`] →
+    /// `diagnostics::ids::CONFIG_DEPRECATED_DIAL`, so the operator is told
+    /// once rather than left with a dial that quietly does nothing.
     #[serde(default = "crate::pencil::route_width_factor_default")]
     pub route_width_factor: f64,
     /// R1: optional library tool id whose *real* cutter geometry defines the
