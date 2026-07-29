@@ -1949,7 +1949,13 @@ pub fn collect_diagnostics(
         // `validate_geometry_selection` already covers this case
         // inline. MCP routes through `diagnose_toolpath_with_trace`.
         model_refs: None,
-        stats: None,
+        // A/M9: generation-time findings (standing material) ride on the
+        // entry's own result. Passing `None` here was why the GUI's
+        // diagnostics ribbon — the surface a router operator actually
+        // reads — stayed silent about a raised island the core diagnostic
+        // pipeline already knew about. `None` before generation is honest:
+        // nothing has been measured yet.
+        stats: entry.result.as_ref().map(|result| &result.stats),
     };
     rs_cam_core::diagnostics::diagnose_toolpath_inputs(&inputs)
 }

@@ -30,15 +30,56 @@ pub struct ToolpathStats {
     pub cutting_distance: f64,
     pub rapid_distance: f64,
     /// Generation-time finding, not a toolpath measurement: region-interior
-    /// area (mm²) a scallop ring cascade left UNCUT because it hit its ring
-    /// cap before collapsing. `0.0` when nothing was left standing.
+    /// area a scallop ring cascade left UNCUT because it hit its ring cap
+    /// before collapsing.
     ///
-    /// Lives here because this is the per-generation statistics slot the
-    /// session already keeps, and because the diagnostics pipeline reads
-    /// it — see `crate::diagnostics::ids::GEOM_STANDING_MATERIAL`. Sourced
-    /// from [`crate::compute::execute::GenerationFindings`].
-    pub standing_material_mm2: f64,
+    /// **Three-valued on purpose** (A/M9, `MEASUREMENT_DOMAINS.md` X-19):
+    ///
+    /// * `None` — **not measured**. The operation runs no ring cascade
+    ///   (any 2.5D family, drop-cutter, waterline, drill …), or the result
+    ///   came from a path that carries no [`GenerationFindings`]. Do NOT
+    ///   read this as "nothing standing"; it supports no ratio at all.
+    /// * `Some(0.0)` — **measured zero**: a cascade ran and collapsed, so
+    ///   nothing was left standing.
+    /// * `Some(a)` — `a` mm² was left standing.
+    ///
+    /// The pre-A/M9 `f64` conflated the first two, which is the silent-zero
+    /// trap the audit logged: a reader building "% left standing" over a
+    /// pocket would have divided a real area by an unmeasured zero.
+    ///
+    /// Domain / stage / resolution are fixed and declared by
+    /// [`STANDING_MATERIAL_DOMAIN`], [`STANDING_MATERIAL_STAGE`] and
+    /// [`STANDING_MATERIAL_RESOLUTION`] — every user-visible rendering of
+    /// this number must state them (M1). Sourced from
+    /// [`crate::compute::execute::GenerationFindings`]; read by the
+    /// diagnostics pipeline as `crate::diagnostics::ids::GEOM_STANDING_MATERIAL`.
+    ///
+    /// Report-only: no gate consumes it and no verdict changes on it.
+    pub standing_material_mm2: Option<f64>,
 }
+
+/// Measurement domain of [`ToolpathStats::standing_material_mm2`].
+///
+/// It is a **projected** area — the shoelace area of the ring cascade's
+/// residual polygons in XY — and therefore NOT comparable with 3D surface
+/// area, dexel-top area or removed volume (non-negotiable rule 3).
+pub const STANDING_MATERIAL_DOMAIN: &str = "XY-projected area (mm²)";
+
+/// Pipeline stage [`ToolpathStats::standing_material_mm2`] is measured at.
+///
+/// Generation, from the cascade's own geometry. A simulation cannot
+/// reproduce it: material the toolpath never attempted to cut leaves no
+/// trace in a cut record, which is exactly why the defect survived.
+pub const STANDING_MATERIAL_STAGE: &str = "measured at generation (ring cascade residual)";
+
+/// Resolution of [`ToolpathStats::standing_material_mm2`].
+///
+/// Not a grid measure: the residual is the ring polygons themselves, whose
+/// vertices are decimated to `0.75 ×` the finish heightmap cell during the
+/// cascade (`scallop.rs`). Exterior-shoelace: holes are not subtracted
+/// (`MEASUREMENT_DOMAINS.md` X-5), so treat it as an upper bound.
+pub const STANDING_MATERIAL_RESOLUTION: &str =
+    "ring polygons decimated at 0.75x the finish heightmap cell (exterior shoelace)";
 
 /// Minimum clearance (mm) between `safe_z` and the top of the stock.
 ///

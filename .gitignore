@@ -5,4 +5,9 @@ demos/
 reference/
 fixtures/debug_adaptive/wanaka_diag.json
 EEPROM.DAT
-diagnostics/
+# Root-level diagnostics DUMP dir only (`rs_cam_cli`'s JSON export).
+# Unanchored, this also swallowed `crates/rs_cam_core/src/diagnostics/`,
+# which is how `adapters/from_generation.rs` was written, committed
+# against (mod.rs declares it) and yet never landed in the repo — HEAD
+# did not compile from a clean clone. Keep the leading slash.
+/diagnostics/

@@ -59,6 +59,15 @@ pub struct ToolpathNarrationContext<'a> {
     /// evaluate the plunge-feed envelope (material-aware mm/min per mm
     /// of cutter diameter). `None` falls back to envelope-free reporting.
     pub material: Option<&'a crate::material::Material>,
+    /// A/M9: the generation-time standing-material finding for this
+    /// toolpath, straight off
+    /// [`crate::compute::config::ToolpathStats::standing_material_mm2`].
+    ///
+    /// `None` = not measured (no ring cascade ran, or the caller has no
+    /// stats), `Some(0.0)` = a cascade measured zero. Narration states
+    /// which — an agent reading this report must never have to guess
+    /// whether a silent zero means "clean" or "unknown".
+    pub standing_material_mm2: Option<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -246,6 +255,7 @@ pub fn narrate_toolpath_with_context(
     } else {
         output.push_str("Semantic trace: not available.\n");
     }
+    append_standing_material(&mut output, context.standing_material_mm2);
     output.push_str("Z-level source: ");
     output.push_str(z_level_source_label(annotated));
     output.push_str(".\n");
@@ -625,6 +635,52 @@ fn append_region_mix(output: &mut String, trace: &ToolpathSemanticTrace) {
         output.push_str(&format!(", and {hidden} more label(s)"));
     }
     output.push_str(".\n");
+}
+
+/// Area (mm²) below which standing material is worth reporting as a
+/// number but not as a defect. Mirrors the diagnostics adapter's floor
+/// (`diagnostics::adapters::from_generation`) so the two surfaces cannot
+/// disagree about what counts as an island.
+const STANDING_MATERIAL_NARRATION_FLOOR_MM2: f64 = 1.0;
+
+/// A/M9: one line, always, saying whether material was left standing —
+/// **including when the answer is "nobody measured"**.
+///
+/// The channel exists because the figure previously lived only in a
+/// `tracing::warn!`: a 28 mm block of unmachined material shipped for weeks
+/// because no harness installed a subscriber. Narration is the agent-facing
+/// surface, so silence here is the same failure mode. Every phrasing states
+/// the measurement's domain, stage and resolution (M1) — an unlabelled mm²
+/// invites exactly the cross-domain comparison the audit found.
+fn append_standing_material(output: &mut String, measured: Option<f64>) {
+    use crate::compute::config::{
+        STANDING_MATERIAL_DOMAIN, STANDING_MATERIAL_RESOLUTION, STANDING_MATERIAL_STAGE,
+    };
+    match measured {
+        // NaN falls in here too: an unmeasured cascade is not a claim.
+        Some(area) if area > STANDING_MATERIAL_NARRATION_FLOOR_MM2 => {
+            output.push_str(&format!(
+                "Standing material: {area:.0} mm² left UNCUT inside the machining region — \
+                 the ring cascade hit its ring cap before the offsets collapsed, so the \
+                 part will carry a raised island. {STANDING_MATERIAL_DOMAIN}; \
+                 {STANDING_MATERIAL_STAGE}; {STANDING_MATERIAL_RESOLUTION}. \
+                 Report-only — no gate consumes this.\n"
+            ));
+        }
+        Some(area) if area.is_finite() => {
+            output.push_str(&format!(
+                "Standing material: none — {area:.0} mm² measured, the ring cascade collapsed \
+                 normally. {STANDING_MATERIAL_DOMAIN}; {STANDING_MATERIAL_STAGE}.\n"
+            ));
+        }
+        _ => {
+            output.push_str(
+                "Standing material: not measured — no ring cascade ran for this toolpath \
+                 (or the caller supplied no generation stats), so no XY-projected \
+                 generation-time residual exists. Absence of a number is not a zero.\n",
+            );
+        }
+    }
 }
 
 fn apply_semantic_level_metrics(level: &mut ZLevelSummary, trace: &ToolpathSemanticTrace) {
@@ -1281,6 +1337,8 @@ mod tests {
             flute_count: Some(2),
             is_drill_cycle: false,
             material: None,
+            // Adaptive3d runs no ring cascade: not measured.
+            standing_material_mm2: None,
         };
 
         let report = narrate_toolpath_with_context(
@@ -1298,6 +1356,47 @@ mod tests {
         assert!(report.contains("tool_radius"));
         assert!(report.contains("Operation context"));
         assert!(report.contains("Engagement distribution"));
+        // A/M9: an op with no cascade still gets a line — silence would be
+        // indistinguishable from a measured zero.
+        assert!(report.contains("Standing material: not measured"));
+    }
+
+    /// A/M9: the three standing-material states must READ differently.
+    /// A number, a measured none, and an absent measurement are three
+    /// different facts, and the one that used to be missing entirely
+    /// (`Some(a)`) is the one that shipped a raised island.
+    #[test]
+    fn standing_material_line_distinguishes_all_three_states() {
+        let mut standing = String::new();
+        append_standing_material(&mut standing, Some(837.0));
+        assert!(standing.contains("837 mm² left UNCUT"), "{standing}");
+        assert!(standing.contains("Report-only"), "{standing}");
+        assert!(
+            standing.contains(crate::compute::config::STANDING_MATERIAL_DOMAIN),
+            "the number must declare its domain: {standing}"
+        );
+
+        let mut clean = String::new();
+        append_standing_material(&mut clean, Some(0.0));
+        assert!(clean.contains("Standing material: none"), "{clean}");
+        assert!(clean.contains("measured"), "{clean}");
+
+        let mut unknown = String::new();
+        append_standing_material(&mut unknown, None);
+        assert!(
+            unknown.contains("Standing material: not measured"),
+            "{unknown}"
+        );
+        assert!(
+            unknown.contains("Absence of a number is not a zero"),
+            "the silent-zero trap must be named where a reader will hit it: {unknown}"
+        );
+
+        // A sliver below the floor is not an island — same floor as the
+        // diagnostics adapter, so the two surfaces cannot disagree.
+        let mut sliver = String::new();
+        append_standing_material(&mut sliver, Some(0.5));
+        assert!(sliver.contains("Standing material: none"), "{sliver}");
     }
 
     #[test]

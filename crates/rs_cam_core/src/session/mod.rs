@@ -687,6 +687,12 @@ pub struct ToolpathDiagnostic {
     pub rapid_distance_mm: f64,
     pub collision_count: usize,
     pub rapid_collision_count: usize,
+    /// A/M9: generation-time standing material, XY-projected mm². `None`
+    /// serialises as `null` and means **not measured** (this operation runs
+    /// no ring cascade) — never "nothing standing". See
+    /// [`crate::compute::config::ToolpathStats::standing_material_mm2`].
+    /// Report-only: no verdict reads it.
+    pub standing_material_mm2: Option<f64>,
 }
 
 /// Severity bucket for a [`Verdict`]. Ordered: `Critical < Important < Polish`
@@ -1373,7 +1379,7 @@ impl ProjectSession {
 impl serde::Serialize for ToolpathDiagnostic {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("ToolpathDiagnostic", 10)?;
+        let mut s = serializer.serialize_struct("ToolpathDiagnostic", 11)?;
         s.serialize_field("toolpath_id", &self.toolpath_id)?;
         s.serialize_field("name", &self.name)?;
         s.serialize_field("operation_type", &self.operation_type)?;
@@ -1384,6 +1390,8 @@ impl serde::Serialize for ToolpathDiagnostic {
         s.serialize_field("rapid_distance_mm", &self.rapid_distance_mm)?;
         s.serialize_field("collision_count", &self.collision_count)?;
         s.serialize_field("rapid_collision_count", &self.rapid_collision_count)?;
+        // `null` = not measured (A/M9). Consumers must not coerce it to 0.
+        s.serialize_field("standing_material_mm2", &self.standing_material_mm2)?;
         s.end()
     }
 }
