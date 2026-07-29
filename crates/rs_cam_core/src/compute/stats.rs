@@ -21,8 +21,11 @@ pub fn compute_stats(tp: &Toolpath) -> ToolpathStats {
         move_count: tp.moves.len(),
         cutting_distance: cutting,
         rapid_distance: rapid,
-        // Not derivable from a toolpath — this helper only sees moves.
-        // The generation path fills it from `GenerationFindings`.
-        standing_material_mm2: 0.0,
+        // NOT MEASURED, not zero: this helper only sees moves, and a
+        // cascade residual is not derivable from them. The generation path
+        // overwrites it from `GenerationFindings`; every other caller must
+        // keep reading `None` so no ratio is built on a fabricated zero
+        // (`MEASUREMENT_DOMAINS.md` X-19).
+        standing_material_mm2: None,
     }
 }

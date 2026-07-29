@@ -1054,6 +1054,10 @@ impl super::RsCamApp {
                         | rs_cam_core::compute::catalog::OperationType::AlignmentPinDrill
                 ),
             material: Some(&state.session.stock_config().material),
+            // A/M9: the GUI worker filled this on `result.stats` from the
+            // core generation findings; carrying it here is what puts the
+            // figure in front of an agent narrating a live GUI toolpath.
+            standing_material_mm2: result.stats.standing_material_mm2,
         };
 
         rs_cam_core::narrate::narrate_toolpath_with_context(

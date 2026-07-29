@@ -57,12 +57,31 @@ pub type GeneratedToolpath = AnnotatedToolpath;
 /// silently vanishing.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct GenerationFindings {
-    /// Region-interior area (mm²) a scallop ring cascade left UNCUT because
-    /// it hit `max_rings` before collapsing — summed over every region, and
-    /// over the mid-steep bands of a `UnifiedFinish`. `0.0` when every
-    /// cascade collapsed normally. See
+    /// Region-interior area (mm², XY-projected) a scallop ring cascade left
+    /// UNCUT because it hit `max_rings` before collapsing — summed over
+    /// every region, and over the mid-steep bands of a `UnifiedFinish`.
+    ///
+    /// `None` means **no cascade ran**, so nothing was measured; `Some(0.0)`
+    /// means a cascade ran and collapsed. Only the adapters that actually
+    /// run one write here, which is what keeps the two apart all the way to
+    /// [`crate::compute::config::ToolpathStats::standing_material_mm2`]
+    /// (A/M9 / `MEASUREMENT_DOMAINS.md` X-19). See
     /// [`crate::scallop::ScallopReport::uncut_core_mm2`].
-    pub standing_material_mm2: f64,
+    pub standing_material_mm2: Option<f64>,
+}
+
+/// Record one cascade's residual on the context's findings cell,
+/// accumulating over the several cascades a single operation can run (one
+/// per region; one per mid-steep band in a `UnifiedFinish`).
+///
+/// The first call is what turns "not measured" into "measured" — including
+/// when the measurement is zero, which is the distinction A/M9 exists to
+/// preserve. Only call it from an adapter that actually ran a cascade.
+fn record_standing_material(cell: &std::cell::Cell<GenerationFindings>, area_mm2: f64) {
+    let prev = cell.get().standing_material_mm2.unwrap_or(0.0);
+    cell.set(GenerationFindings {
+        standing_material_mm2: Some(prev + area_mm2),
+    });
 }
 
 /// F2 (defect class C3): every generation funnel appends the
@@ -1272,10 +1291,7 @@ pub(crate) fn generate_scallop(
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
     .map_err(|_e| OperationError::Cancelled)?;
-    ctx.findings.set(GenerationFindings {
-        standing_material_mm2: ctx.findings.get().standing_material_mm2
-            + scallop_report.uncut_core_mm2,
-    });
+    record_standing_material(ctx.findings, scallop_report.uncut_core_mm2);
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_scallop(&annotations, &tp, sem);
     }
@@ -1424,10 +1440,7 @@ pub(crate) fn generate_unified_finish(
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
     .map_err(|_e| OperationError::Cancelled)?;
-    ctx.findings.set(GenerationFindings {
-        standing_material_mm2: ctx.findings.get().standing_material_mm2
-            + report.uncut_core_mm2,
-    });
+    record_standing_material(ctx.findings, report.uncut_core_mm2);
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_scallop(&annotations, &tp, sem);
         // A/M8: the SEMANTIC region trace `narrate_toolpath` reads, built
@@ -1891,6 +1904,13 @@ pub fn execute_operation_annotated(
     // Thin wrapper: callers on this path have no diagnostics pipeline to
     // feed, so the findings are dropped here rather than rippling a tuple
     // through every test and CLI call site.
+    //
+    // A/M9: dropping them is now HONEST rather than lossy-silent. Stats
+    // built off this path leave `standing_material_mm2` at `None` — "not
+    // measured" — instead of the `0.0` that used to read as "nothing
+    // standing". A caller that needs the finding must use
+    // `execute_operation_annotated_with_regions`, which both production
+    // drivers (the core session and the GUI worker) already do.
     execute_operation_annotated_with_regions(
         op,
         mesh,

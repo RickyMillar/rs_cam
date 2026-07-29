@@ -2855,6 +2855,10 @@ impl ProjectSession {
             flute_count: Some(tool.flute_count),
             is_drill_cycle: tc.operation.op_type().is_drill_kinematics(),
             material: Some(&self.stock.material),
+            // A/M9: the generation-time finding rides on this toolpath's own
+            // stats. `None` here is "not measured", which narration says out
+            // loud rather than rendering as a zero.
+            standing_material_mm2: result.stats.standing_material_mm2,
         };
 
         Ok(crate::narrate::narrate_toolpath_with_context(
@@ -3065,6 +3069,7 @@ impl ProjectSession {
                     rapid_distance_mm: result.stats.rapid_distance,
                     collision_count: holder_collision_count,
                     rapid_collision_count: rapid_count,
+                    standing_material_mm2: result.stats.standing_material_mm2,
                 });
             }
         }
@@ -5157,7 +5162,8 @@ mod tests {
                 move_count: 0,
                 cutting_distance: 0.0,
                 rapid_distance: 0.0,
-                standing_material_mm2: 0.0,
+                // Not measured: this fake never ran a cascade.
+                standing_material_mm2: None,
             },
             debug_trace: None,
             semantic_trace: None,
