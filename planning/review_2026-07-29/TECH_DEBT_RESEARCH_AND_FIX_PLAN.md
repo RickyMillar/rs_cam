@@ -1192,6 +1192,140 @@ close it as noise without evidence.
 
 ---
 
+# Addendum C — structural safety work promoted from session observations
+
+Added 2026-07-30 at the operator's direction. Raw observations:
+`ANTIPATTERNS_BACKLOG.md` (same dir). These are now scheduled work items.
+Theme: **use the type system to make the defect classes unrepresentable**,
+not to patch instances. Rulings: the operator explicitly wants safety and
+reliability built into the structure; prefer compile-time enforcement over
+convention wherever Rust allows it.
+
+## C1. Transform provenance contract (HIGH — blocks A/M7)
+
+Problem: post-generation transforms (dressups, clip, descent optimizer) each
+build and consume their `MoveRemap` privately; index-carrying channels
+(spans, semantic trace) are remapped only because ae10cb2's
+`SemanticLinkCarrier` piggybacks — the next channel or transform silently
+breaks again.
+
+Fix shape (typestate): transforms return `Transformed<Unreconciled>`
+(`#[must_use]`); the only way to the inner `Toolpath` is
+`.reconcile(channels: &mut ReconcileSet) -> Transformed<Reconciled>` where
+`ReconcileSet` borrows every registered index-carrying channel (spans,
+semantic trace, future ones implement a sealed `RemapConsumer` trait).
+Forgetting a channel or skipping reconcile = compile error. Retire
+`SemanticLinkCarrier` once migrated; keep its sentries green as the oracle.
+Per-dressup semantic items claiming `0..len` and the debug-only viz recorder
+path are cleaned up in passing.
+
+Gates: ae10cb2's sentries unchanged; a doc-test or trybuild compile_fail
+proving an unreconciled toolpath cannot be extracted; all transforms
+migrated in one wave (small blast radius per transform, ~5 call sites known).
+**Must land BEFORE A/M7** (motion economy adds/changes link transforms — it
+must be born under the contract).
+
+## C2. Retire silent sentinels (HIGH — blocks M3, protects steep_shallow NOW)
+
+Problem: `0.0`/bbox-floor meaning "not measured / not covered" keeps causing
+real defects — `min_z()` returning the padded grid's mesh-bbox floor on
+uncovered cells is why PR-8b's clamp fires on a flat plane, and every other
+`min_z()` consumer is unaudited (steep_shallow ladder bottom included).
+`axial_doc_fraction == 0.0` = unknown; footprint fraction 0.0 = silence.
+
+Fix shape (sum types): grid reads return `enum GridZ { Covered(f64),
+Uncovered }` (or `Option<f64>` where the enum is overkill) so consumers must
+decide uncovered-ness at the call site; sweep every f64 field where zero is
+semantically "missing" → Option or a documented, tested contract. Follow the
+A/M9 precedent (standing material) which already proved the pattern.
+
+Gates: red-first on a steep_shallow ladder-bottom uncovered-cell fixture;
+clamp behavior on covered cells byte-identical; the sweep list itself
+recorded in the commit body (which fields converted, which documented).
+
+## C3. One implementation per concept (parity sentries first)
+
+- Tapered width models: unify on `MillingCutter::width_at_height`;
+  `feeds/geometry.rs::tapered_ball_effective_diameter` (straight cone, ~5%
+  off) gets a parity sentry FIRST, then either fixes or documents its
+  deliberate approximation. Must precede M4 touching width math.
+- CLI's parallel `ToolpathDiagnostic`: derive from the core struct (serde
+  view), keep wire keys stable.
+- `waterline.rs` / `compute/execute.rs` private copies of finish_setup
+  pieces (Z-ladder, slope-window sentinel): extract to the shared module;
+  waterline inherits PR-8d's segment floor in the same move.
+
+## C4. Typed vocabularies (feeds H4)
+
+Third `RegionSpanRole` for drill hole-vs-peck (kill label parsing); migrate
+the two harness `"Pencil claims"` label keys to role queries; give
+`ToolpathSemanticParams` a typed key layer (`enum SemanticKey` with
+`as_str()`, constructors take the enum — JSON wire unchanged). H4's mix
+tables must be built on roles, never labels.
+
+## C5. Box `ComputeMessage::Toolpath` (mechanical, do first)
+
+Three waves each paid the 280-byte `large_enum_variant` tax. One commit,
+~16 sites, ends it.
+
+## C6. Shared test-fixture library (blocks M4 comfortably, helps M3)
+
+`tests/common/`: mixed-slope/groove/plateau mesh generators, tool builders,
+ProjectSession + 17-field ToolpathConfig builders, FNV fingerprint helper —
+extracted from `standing_material_channel_am9.rs` / M2.1 / the checkpoint
+harnesses, which all copied each other. New tests import; existing tests
+migrate opportunistically, never in bulk.
+
+## C7. Mega-harness policy
+
+`v3_cascade_ab.rs` / `p2c_headless_ab_wanaka.rs`: split reusable wanaka
+loaders into a support module; the campaign-analysis bodies either get a
+scheduled characterisation cadence or are archived as docs with their prose
+claims marked historical. Also: §A.0-style topology gates need a
+minimum-component/annulus-aware reading (Checkpoint B found a 45° annulus
+fragmenting into 39 components at fine reference resolution).
+
+## C8. Findings representation
+
+`GenerationFindings` single slots → collections (two derivations must not
+first-writer-win); partial height clipping reported (not just total
+collapse); `regions 0` closed for Trace/Scallop/SpiralFinish (A/M8 pattern);
+RampFinish standing-material area channel.
+
+## C9. Model debt (evidence-gated, post-live-validation)
+
+- Sampled-cross-section reach: erode against the real `surface_z`
+  cross-section (no wall-angle model) — strictly generalises CLR+θ; recorded
+  in `reach.rs` module doc. Needs the same matrix gates as Checkpoint A.
+- Per-point claims fan (`centerline_cut_paths` scalar retirement).
+- Interval index for `tsp::remap_spans` (O(spans×moves) today).
+- Rest-grid resolution vs Ø1 tip (H3's question applied to the rest field).
+
+## C10. Hygiene one-offs (mechanical, do first)
+
+One deliberate whole-repo `cargo fmt` commit (nothing else in it);
+`.gitignore` unanchored-entry audit (the `diagnostics/` incident class).
+
+## C-sequencing (integrated with the remaining base plan)
+
+After the wanaka live validation report lands:
+
+1. **C5 + C10** — one mechanical wave, zero risk, ends two recurring taxes.
+2. **C1 provenance contract** — before any motion/link work.
+3. **C2 sentinel sweep** — before M3 (classifier reads grids) and to close
+   the live steep_shallow exposure.
+4. **C6 fixture library** — before M4's fixture-heavy work.
+5. **A/M6** `claims_reference` (base plan, unchanged position).
+6. **M3 classifier** (uses C2+C6).
+7. **C3 + C4 + C8** — consolidation/diagnostics wave (feeds H4's oracles).
+8. **M4 scallop** (Checkpoint C; uses C3 width parity + C6).
+9. **C9** reach generalisation (own evidence pack, matrix-gated).
+10. **A/M7 + A/M10** motion economy (after C1, per its gate).
+11. **M5 offset_polygon** (Checkpoint D). 12. **H4** (Checkpoint E, last).
+13. **L1** final docs sweep (absorbs the backlog doc).
+
+---
+
 # Addendum B — orchestration updates
 
 ## B.1 Additional work packages
