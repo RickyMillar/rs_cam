@@ -2470,3 +2470,107 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
         first_pass_axials.len()
     );
 }
+
+// ── C1 item 4b: the reconcile path runs in the DEFAULT configuration ─────
+
+/// Pre-C1 the worker's remap calls were each wrapped in
+/// `if let Some(recorder) = semantic_recorder.as_ref()`, and the recorder was
+/// only ever constructed when `debug_options.enabled`. So the code that keeps
+/// index-carrying channels in step with the transforms never ran in the
+/// product the operator uses, and every test of it ran a different branch
+/// than production does.
+///
+/// Under C1 the `ReconcileSet` is built unconditionally and every transform
+/// reconciles through it; only the RECORDER stays debug-gated (recording an
+/// item per planner decision on every generation is not free). This test
+/// drives that exact shape: a request with `debug_options.enabled == false`,
+/// but a recorder handed in, so the remap path is measured on the default
+/// configuration rather than on the debug one.
+///
+/// It also pins C1 item 4a: each per-dressup item now declares whether its
+/// move range is the moves the step actually restructured or an explicit
+/// whole-path claim, instead of every item silently binding `0..len`.
+#[test]
+fn worker_reconciles_semantic_links_with_debug_options_disabled() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut req = quick_pocket_request(77);
+    // Transforms that actually move indices: reorder, arc collapse, link
+    // bridges, ramp entries. Without these the reconcile is vacuous.
+    req.dressups.optimize_rapid_order = true;
+    req.dressups.link_moves = true;
+    req.dressups.link_max_distance = 50.0;
+    req.dressups.arc_fitting = true;
+    req.dressups.arc_tolerance = 0.05;
+    req.dressups.entry_style = crate::state::toolpath::DressupEntryStyle::Ramp;
+    assert!(
+        !req.debug_options.enabled,
+        "this test is about the DEFAULT configuration"
+    );
+
+    let recorder =
+        rs_cam_core::semantic_trace::ToolpathSemanticRecorder::new("Pocket 77", "Pocket");
+    let outcome = super::execute::run_compute_with_phase_tracker(
+        &req,
+        &cancel,
+        None,
+        None,
+        Some(recorder.clone()),
+    );
+    let result = outcome.result.expect("compute should succeed");
+    let move_count = result.toolpath().moves.len();
+    assert!(
+        move_count > 0,
+        "non-vacuity: the fixture must cut something"
+    );
+
+    let trace = recorder.finish();
+    assert!(
+        trace.summary.move_linked_item_count > 0,
+        "non-vacuity: unlinking everything would satisfy the bounds check below trivially"
+    );
+
+    for item in &trace.items {
+        match (item.move_start, item.move_end) {
+            (Some(start), Some(end)) => {
+                assert!(end >= start, "item {} has an inverted link", item.id);
+                assert!(
+                    end < move_count,
+                    "item {} ({:?} {:?}) is linked to moves {start}..={end} but the shipped \
+                     toolpath has only {move_count} moves — slicing by this range reads out of \
+                     bounds. With debug options OFF, this is the path the product runs.",
+                    item.id,
+                    item.kind,
+                    item.label
+                );
+            }
+            // Deleted-move policy: unlinked, never half-linked.
+            (None, None) => {}
+            half => panic!("item {} is half-linked {half:?}", item.id),
+        }
+    }
+
+    // Item 4a: per-dressup items declare the scope of their claim.
+    let dressup_items: Vec<_> = trace
+        .items
+        .iter()
+        .filter(|i| i.params.values.contains_key("move_scope"))
+        .collect();
+    assert!(
+        !dressup_items.is_empty(),
+        "the dressup steps should each record a scoped item"
+    );
+    for item in dressup_items {
+        let scope = item
+            .params
+            .values
+            .get("move_scope")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert!(
+            scope == "touched_moves" || scope == "whole_path",
+            "item {} ({}) has an unexpected move_scope {scope:?}",
+            item.id,
+            item.label
+        );
+    }
+}

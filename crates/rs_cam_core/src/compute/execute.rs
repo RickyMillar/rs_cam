@@ -2455,11 +2455,27 @@ fn apply_dressup_traced(
         scope
     });
 
-    let result = transform(annotated).reconcile(channels).into_inner();
+    let (result, provenance) = transform(annotated).reconcile(channels).into_parts();
     let n = result.toolpath.moves.len();
 
     if let Some(scope) = semantic_scope.as_ref() {
-        scope.bind_to_toolpath(&result.toolpath, 0, n);
+        // C1 item 4a: every per-dressup item used to bind `0..len`, so each
+        // one claimed the whole toolpath and per-step attribution said
+        // nothing. The provenance knows which moves the step actually
+        // restructured; where it does not (a step that rewrote move CONTENT
+        // without moving an index, i.e. feed optimisation), the whole-path
+        // claim is still made but is now LABELLED as such instead of being
+        // indistinguishable from a precise one.
+        match provenance.touched_new_range(n) {
+            Some(range) => {
+                scope.set_param("move_scope", "touched_moves");
+                scope.bind_to_toolpath(&result.toolpath, range.start, range.end);
+            }
+            None => {
+                scope.set_param("move_scope", "whole_path");
+                scope.bind_to_toolpath(&result.toolpath, 0, n);
+            }
+        }
     }
     if let Some(scope) = debug_scope.as_ref()
         && n > 0
