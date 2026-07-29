@@ -2488,3 +2488,72 @@ edit does.
 Until then the manual rule is: **re-simulating is not enough — regenerate
 every rest op afterwards, or you are looking at a toolpath planned against
 stock that no longer exists.**
+
+### §14p — ROOT CAUSE: `claims_reference: self_probe` (2026-07-29)
+
+The user's observation — *"it seems to be covering the whole area, which
+makes me think its not covering rest material"* — is correct, and after
+three wrong diagnoses the cause is a single dial.
+
+`3D Finish 6` (plain all-over finish, same Ø1 tapered ball) ran first, so
+the surface was fully finished. Stock simulated at **0.1 mm** — 5× finer
+than the tool tip, so rest is genuinely resolvable. Op 8 regenerated
+against it, changing ONE parameter:
+
+| | `self_probe` | `machined_stock` |
+|---|---|---|
+| cutting | 46 366 mm | **5 259 mm** (−88.7%) |
+| rapid | 182 843 mm | **25 231 mm** (−86%) |
+| moves | 140 477 | **26 220** |
+
+For scale, the all-over `3D Finish 6` is 33 027 mm; a correctly-referenced
+rest pass after it is **16% of that**.
+
+**Why.** `self_probe` derives the rest field analytically: *where can my
+own cutter not reach the model surface?* For a single-tool op — and op 8
+uses the SAME cutter as the finish before it — that is self-defeating by
+construction: it names exactly the places this tool cannot get into, which
+is precisely what it cannot fix. And it never consults the machined stock,
+so it cannot know a full finish already ran. `machined_stock` measures
+against the simulated stock, which is what "rest machining" means.
+
+This was already known and written down: R2 validation measured the
+analytic reference overestimating by **~14×** when the finish uses the same
+tool, with the note *prefer machined-stock reference in cascades*. The
+project was configured with the analytic one, and nothing warned.
+
+**Three wrong diagnoses first — worth recording, because each was
+disproved by a cheap measurement rather than by argument:**
+
+1. *"territory_clip does not confine it"* (§14m) — measured at 0.5 mm
+   with a 0.5 mm tool tip. Retracted for the right reason.
+2. *"phantom rest from coarse quantisation"* (§14m CORRECTION) — refuted
+   by the 0.1 mm re-run coming out within 2.5% of the 0.5 mm one.
+3. *"`min_rest_depth_mm` sits below the 22.5 µm cusp the upstream raster
+   leaves"* — arithmetically true (0.30²/(8×0.5) = 22.5 µm > 20 µm) and
+   causally irrelevant: raising the dial to 50 µm moved cutting by 0.5%.
+   A correct calculation about the wrong mechanism.
+
+The tell that broke it open was the engagement histogram: **99.4% of
+cutting samples in air, average engagement 0.002.** Not "cutting too
+deep" or "cutting too much" — cutting where there is nothing at all,
+which points at the field that decides WHERE rather than any dial that
+decides HOW MUCH.
+
+**What this does NOT excuse.** With the reference corrected the op still
+emits 25 km of rapid against 5 km of cutting — 4.8:1 — so the air-bridge
+and fragmentation findings (§14, §14j) stand on their own. And the
+`self_probe` default remains a trap: it is the default value, it is
+silently wrong for any same-tool cascade, and the failure mode is a
+toolpath that looks plausible and re-cuts the entire part.
+
+**Actions:**
+
+1. `claims_reference` should default to `machined_stock` when a prior
+   simulated stock exists, or the op should warn when `self_probe` is
+   used with a same-tool predecessor.
+2. Re-simulate to refresh engagement/collision metrics — the histogram
+   above is stale (same `n = 848 643` as the previous toolpath's sim).
+3. The user's "scope unified to contour + pencil + rest" proposal is now
+   a second-order question: at 5 259 mm the op is doing rest-shaped work.
+   Revisit scallop density (§14k) against that, not against 46 km.
