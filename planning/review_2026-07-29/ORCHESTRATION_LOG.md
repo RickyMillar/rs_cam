@@ -326,6 +326,104 @@ experiment, SteepShallow fixture investigation, 0.9 µm segment gate.
   scope; `SimulationSemanticCutSummary`/`SimulationCutHotspot` carry
   `wasted_runtime_s` with no denominator of their own.
 
+- impl-12 DONE -> **Wave D3 COMMITTED `PENDING`** (five diagnostics-plumbing
+  fixes, NO toolpath geometry change — FNV-pinned suites byte-identical).
+
+  **D3.1 SpanKind node-vs-ring discriminator.** New
+  `toolpath_spans::RegionSpanRole { Node, GeneratorPass }`, carried as a
+  FIELD on `SpanPayload::Region` (not a new `SpanKind`) so every existing
+  pattern was a compile error until audited — 12 match sites in core + viz,
+  6 construction sites. `Node` = planner territory (UnifiedFinish
+  `region_table`, the partition); `GeneratorPass` = one ring / drill hole /
+  peck / adaptive region / cutting run (nested, NOT a partition, own id
+  space). Read it via `Span::region_role()` / `is_region_node()`.
+  **A/M8's and M2.1's label-string filters (`label.ends_with(" band")`) are
+  GONE** — the doc comment now records why: a free-text label was
+  load-bearing, and a producer renaming a band would have emptied the node
+  list and made the reconcile assertion pass VACUOUSLY. Also consolidated
+  the span-kind string vocabulary into core (`SpanKind::as_key` exhaustive +
+  `ALL` + `from_key`); viz's `parse_span_kind_filter` now delegates and
+  `expand_span_kind_synonyms` parses to the enum and matches EXHAUSTIVELY
+  (it had a silent `other => literal` fallback, so `waterline_cleanup` and
+  any future variant fell through un-noticed). MCP `inspect_spans` gains a
+  `region_role` key (additive) so agents never parse the label either.
+
+  **D3.2 stale semantic geometry after clip — the coords now follow the
+  indices.** `ae10cb2` fixed the INDICES and explicitly left `xy_bbox` /
+  `z_min` / `z_max` at generation-time values, so a surviving item could
+  describe moves that no longer exist. Same policy as the index fix, stated
+  the same way: still linked -> RE-DERIVE from the surviving moves;
+  unlinked -> `None` all three (keeping them is the fabrication UNLINK
+  exists to prevent); never had geometry -> untouched (an item acquires no
+  claim it did not make). `bind_to_toolpath` and the re-derivation now share
+  ONE deriver (`range_geometry`), so a re-derived bbox is the same function
+  of the same moves and an untouched item is byte-identical.
+  `remap_move_links` now takes the post-transform `&Toolpath` instead of a
+  bare move count — the geometry cannot be re-derived from a number, and
+  taking the toolpath is what makes forgetting impossible at the 5 call
+  sites. `SemanticLinkCarrier::detach` re-derives from `annotated.toolpath`.
+  **RED-FIRST EVIDENCE** (probe run with the re-derivation stubbed out, then
+  reverted): 6-move staircase (move i at x=i, z=-(i+1)), clip keeps 0..3 —
+  `bbox must describe the SURVIVING moves (x max 2.0), got 5`; z_min read
+  -6.0 for a path whose deepest surviving move is -3.0.
+
+  **D3.3 CLI ToolpathDiagnostic parity.** Kept as its own struct (it carries
+  the full debug + semantic traces and `min_safe_stickout`, which the core
+  summary does not, and its key names are what scripts read) but the five
+  fields both have are now COPIED OFF the core diagnostic — `op_kind`,
+  `standing_material_mm2`, `unmachined_band_area_mm2`, `tip_float_points`,
+  `max_tip_float_mm`. One derivation, so a CLI batch and the same session's
+  GUI cannot report different numbers. Purely additive: no key renamed or
+  removed.
+
+  **D3.4 ScallopReport ring count.** `ring_count` (rings/runs EMITTED — one
+  per `ScallopRuntimeAnnotation`) plus `cascade_ring_count` (rings the
+  offset cascade PRODUCED, pre keep-predicate). The gap between them is the
+  signal: "cascade stopped early" and "rings generated then filtered away"
+  are different stories and used to be indistinguishable. Checkpoint-B
+  harness migrated off `anns.len()` and now asserts the two agree.
+
+  **D3.5 `CellSource::ToleranceFloor`.** `FinishResolutionPolicy::
+  cell_source()` returns it when `tolerance_floor_applied` — when `.max
+  (tolerance)` binds, the formula family had no say in the number, so the
+  tag must not claim a radius. Two floor-bound policies of DIFFERENT modes
+  now compare (`comparable_to` needed no special case: plain source
+  equality does it once both tag `ToleranceFloor`), while a floor-bound cell
+  still does not compare with a tool-scaled cell of the same size.
+  `FinishResolutionMode::cell_source()` keeps the family mapping.
+  **The PR-2 tripwire (`finish_surface_cell_source_names_the_radius…`) did
+  NOT need updating and was not touched: 8/8 unchanged.** Its tapered
+  fixture uses tolerance 0.01 against envelope/4 = 0.75 and cusp/4 = 0.125,
+  so the floor does not bind there — verified, not assumed. PR-3's
+  `assert_policy` helper was made honest (expects `ToleranceFloor` when
+  `floor`), all four production consumers still pass `floor = false`.
+  `p2c_headless_ab_wanaka.rs` compile-checked via `clippy --all-targets`,
+  not run, as instructed.
+
+  Gates: semantic_trace unit 10/10 (2 new); toolpath_spans unit 45/45 (1
+  new); unified_finish_semantic_regions 4/4; unified_finish_tapered_
+  end_to_end_m21 9/9; finish_resolution_policy_pr3 8/8; tool_scale_
+  semantics_pr2 8/8 (tripwire zero edits); standing_material_channel_am9
+  4/4; air_cut_denominators_lh1 8/8; dropped_band_finding_d1 3/3;
+  pencil_tip_float_channel_d1 3/3; boundary_clip_invalidates_spans 3/3;
+  dressup_span_invariants 3/3; checkpoint_b_resolution_ab 5/5 (+1 ignored);
+  `--lib scallop::` 17/17; `-p rs_cam_core --lib` 2174 passed / exactly the
+  3 known adaptive3d reds; `-p rs_cam_viz` 227/227; `-p rs_cam_cli` 14/14;
+  `-p rs_cam_mcp` 4/4; clippy workspace `--all-targets -D warnings` clean.
+  `ComputeMessage` was NOT touched (no `ToolpathStats` field added), so its
+  280-byte ceiling is untested by this wave and still one field from
+  needing `ComputeMessage::Toolpath` boxed.
+  ADJACENT DEFECTS SEEN, NOT FIXED: `p2c_headless_ab_wanaka.rs:3754` and
+  `v3_cascade_ab.rs:4327` still key off the `"Pencil claims"` LABEL — same
+  class D3.1 just closed, left alone to keep the blast radius honest;
+  `unified_finish` does NOT aggregate the new scallop ring counts into
+  `UnifiedFinishReport` (per-band ring totals are still uncounted);
+  `RegionSpanRole` has no third role for the drill hole-vs-peck nesting,
+  which is still label-distinguished (`"Hole N"` vs `"Hole N plunge M"`);
+  `semantic_trace` re-derivation deliberately does NOT give geometry to
+  items that never had any (e.g. the whole-path dressup items), so those
+  remain geometry-blind by choice, not by accident.
+
 Remaining programme work (post-checkpoint): H2 routing slices (PR-4..7),
 A/M6 claims_reference (PR-3a), PR-8..9 resolution consumers, M3 classifier,
 M4 scallop (Checkpoint C), M5 offset_polygon (Checkpoint D), A/M7 retract

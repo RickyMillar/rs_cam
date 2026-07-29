@@ -167,6 +167,21 @@ pub enum CellSource {
     EnvelopeRadius,
     /// `SimulationRequest::resolution`, after any grid-cap clamp.
     SimResolution,
+    /// The `.max(tolerance)` FLOOR sized the cell, not the tool scale —
+    /// `crate::finish_setup::FinishResolutionPolicy::tolerance_floor_applied`
+    /// is true.
+    ///
+    /// This is a source in its own right because it is the honest answer: on
+    /// a tool whose derived cell falls below the tolerance, the formula
+    /// family (envelope/4 vs cusp/4) had no say in the number. Two policies
+    /// of *different* modes that both bottom out on the same tolerance
+    /// produce the SAME grid, and tagging them `EnvelopeRadius` and
+    /// `CuspRadius` made [`MeasurementProvenance::comparable_to`] refuse a
+    /// comparison that is perfectly valid (PR-3 adjacent defect, Wave D3).
+    /// The formula family is still recoverable from
+    /// `FinishResolutionPolicy::mode()`; it is just no longer *claimed* as
+    /// the thing that set the cell.
+    ToleranceFloor,
     /// Caller-pinned (harness fixtures, explicit dials).
     Explicit,
     /// Not grid-quantised at all (polygon-exact, mesh-analytic).
@@ -182,6 +197,7 @@ impl CellSource {
             Self::CuspRadius => "classification grid (cusp_radius/4)",
             Self::EnvelopeRadius => "generation grid (radius/4)",
             Self::SimResolution => "simulation dexel grid",
+            Self::ToleranceFloor => "tolerance floor (tool scale did not set the cell)",
             Self::Explicit => "caller-pinned grid",
             Self::NotGridded => "not grid-quantised",
         }
@@ -325,6 +341,13 @@ impl MeasurementProvenance {
     /// Deliberately strict — dilation and erosion are *not* checked here
     /// because a same-report ratio (e.g. one band over the band total) shares
     /// them; cross-report ratios must compare the full provenance.
+    ///
+    /// The one case this used to get *wrong* was the tolerance floor: when
+    /// `.max(tolerance)` binds, an envelope/4 policy and a cusp/4 policy
+    /// resolve to the identical grid, and tagging them by formula family made
+    /// this function refuse a valid comparison. Both now tag
+    /// [`CellSource::ToleranceFloor`] (Wave D3), so equal cells compare —
+    /// through the same plain source equality, with no special case here.
     #[must_use]
     pub fn comparable_to(&self, other: &Self) -> bool {
         self.domain == other.domain

@@ -723,7 +723,9 @@ impl RelinkTotals {
 ///    `region_id` = index into `report.region_table`. Spliced in right
 ///    after `Operation` so `span_path_at` lists coarse ancestors first.
 ///    These are a SEPARATE `region_id` space from the scallop-event spans
-///    — consumers disambiguate by nesting depth, not by assuming one table.
+///    — consumers disambiguate with
+///    [`crate::toolpath_spans::RegionSpanRole`] (`Node` here,
+///    `GeneratorPass` for the ring spans), never by parsing the label.
 /// 3. `RapidOrderBarrier`s at each node start, plus per-Z barriers inside
 ///    waterline (VerySteep) nodes. See
 ///    [`crate::compute::spans::region_node_barriers`].
@@ -733,7 +735,7 @@ pub fn unified_finish_spans(
     report: &UnifiedFinishReport,
 ) -> Vec<crate::toolpath_spans::Span> {
     use crate::compute::spans::{RegionNode, region_node_barriers, spans_from_labeled_events};
-    use crate::toolpath_spans::{Span, SpanKind, SpanPayload};
+    use crate::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
 
     let mut spans = spans_from_labeled_events(
         toolpath.moves.len(),
@@ -757,6 +759,10 @@ pub fn unified_finish_spans(
             .with_label(label)
             .with_payload(SpanPayload::Region {
                 region_id: region.region_id,
+                // Wave D3: the discriminator. `region_id` here indexes
+                // `report.region_table`, NOT the scallop-ring id space the
+                // event spans above use.
+                role: RegionSpanRole::Node,
             })
         })
         .collect();

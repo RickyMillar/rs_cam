@@ -67,6 +67,9 @@ impl FinishResolutionMode {
     ///
     /// This is the one place the mode↔provenance mapping lives, so a new
     /// mode cannot be added without deciding what it claims about scale.
+    /// A *resolved* policy can still override it with
+    /// [`CellSource::ToleranceFloor`] when the floor bound — see
+    /// [`FinishResolutionPolicy::cell_source`].
     #[must_use]
     pub const fn cell_source(self) -> CellSource {
         match self {
@@ -149,21 +152,31 @@ impl FinishResolutionPolicy {
     }
 
     /// The provenance tag a surface built under this policy carries.
+    ///
+    /// This is the mode's own [`CellSource`] **except** when the tolerance
+    /// floor bound, in which case it is [`CellSource::ToleranceFloor`] — the
+    /// tool scale did not set this cell, so the tag must not claim it did
+    /// (Wave D3; see [`Self::tolerance_floor_applied`]). The formula family
+    /// is still readable from [`Self::mode`].
     #[must_use]
     pub const fn cell_source(self) -> CellSource {
-        self.mode.cell_source()
+        if self.tolerance_floor_applied {
+            CellSource::ToleranceFloor
+        } else {
+            self.mode.cell_source()
+        }
     }
 
     /// True when the `.max(tolerance)` floor — not the tool scale — set
     /// [`Self::cell_mm`].
     ///
-    /// [`Self::cell_source`] still names the FORMULA FAMILY in that case
-    /// (unchanged from pre-PR-3 behavior, which the PR-2 tripwire pins), so
-    /// this flag is how a report says "the tool scale did not actually decide
-    /// this grid". Two policies with different modes but a bound tolerance
-    /// floor produce the same cell yet compare as different sources — a
-    /// conservative false negative in `MeasurementProvenance::comparable_to`,
-    /// logged as an adjacent defect rather than silently repaired here.
+    /// When this is true, [`Self::cell_source`] reports
+    /// [`CellSource::ToleranceFloor`] rather than the formula family. That
+    /// closes the PR-3 adjacent defect: two policies with different modes but
+    /// a bound floor produce the SAME cell, and tagging them by family made
+    /// [`crate::measurement::MeasurementProvenance::comparable_to`] refuse a
+    /// valid comparison. [`Self::mode`] still says which formula was
+    /// selected — only the *claim about what sized the grid* changed.
     #[must_use]
     pub const fn tolerance_floor_applied(self) -> bool {
         self.tolerance_floor_applied

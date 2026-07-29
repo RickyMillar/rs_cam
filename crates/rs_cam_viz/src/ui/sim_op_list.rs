@@ -713,7 +713,7 @@ pub fn draw(
             ) => {
                 format!("Pass {} @ Z {:.3}", pass_index + 1, z_level)
             }
-            (SpanKind::Region, Some(SpanPayload::Region { region_id })) => {
+            (SpanKind::Region, Some(SpanPayload::Region { region_id, .. })) => {
                 format!("Region {region_id}")
             }
             _ => span_kind_label(span.kind).to_owned(),

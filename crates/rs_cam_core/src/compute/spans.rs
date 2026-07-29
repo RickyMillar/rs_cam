@@ -9,7 +9,7 @@
 use std::ops::Range;
 
 use crate::toolpath::{MoveIntent, MoveType, Toolpath};
-use crate::toolpath_spans::{Span, SpanKind, SpanPayload};
+use crate::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
 
 /// Build the default span vector for an operation's freshly-generated toolpath.
 ///
@@ -50,6 +50,7 @@ where
                 .with_label(label.clone())
                 .with_payload(SpanPayload::Region {
                     region_id: event_index as u32,
+                    role: RegionSpanRole::GeneratorPass,
                 }),
         );
     }
@@ -224,6 +225,7 @@ pub fn spans_from_drill_holes(toolpath: &Toolpath) -> Vec<Span> {
                 .with_label(format!("Hole {}", hole_index + 1))
                 .with_payload(SpanPayload::Region {
                     region_id: hole_index as u32,
+                    role: RegionSpanRole::GeneratorPass,
                 }),
         );
 
@@ -233,6 +235,7 @@ pub fn spans_from_drill_holes(toolpath: &Toolpath) -> Vec<Span> {
                     .with_label(format!("Hole {} plunge {}", hole_index + 1, peck_index + 1))
                     .with_payload(SpanPayload::Region {
                         region_id: plunge_region_id,
+                        role: RegionSpanRole::GeneratorPass,
                     }),
             );
             plunge_region_id = plunge_region_id.saturating_add(1);
@@ -337,6 +340,7 @@ fn push_run_region_spans(spans: &mut Vec<Span>, runs: &[CutRun], label_prefix: &
                 .with_label(format!("{label_prefix} {}", run_index + 1))
                 .with_payload(SpanPayload::Region {
                     region_id: run_index as u32,
+                    role: RegionSpanRole::GeneratorPass,
                 }),
         );
     }
@@ -549,6 +553,7 @@ fn push_adaptive3d_spans(
                 .with_label(format!("Adaptive region {}", region_id + 1))
                 .with_payload(SpanPayload::Region {
                     region_id: *region_id,
+                    role: RegionSpanRole::GeneratorPass,
                 }),
         );
     }

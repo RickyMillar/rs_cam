@@ -1538,8 +1538,7 @@ impl ProjectSession {
                             annotated.spans.iter().map(|s| s.remap(&mapping)).collect();
                         // Task #14: same map, same moment — the semantic
                         // trace's links are as index-based as the spans.
-                        semantic_recorder
-                            .remap_move_links(&mapping, annotated.toolpath.moves.len());
+                        semantic_recorder.remap_move_links(&mapping, &annotated.toolpath);
                     }
                 }
 
@@ -1796,9 +1795,7 @@ impl ProjectSession {
                 // Task #14: the semantic trace's move links go through the
                 // SAME provenance map the spans do, below — before the clip
                 // scope below records its own (already post-clip) link.
-                semantic_ctx
-                    .recorder()
-                    .remap_move_links(&mapping, clipped.moves.len());
+                semantic_ctx.recorder().remap_move_links(&mapping, &clipped);
 
                 // Record semantic trace for boundary clip
                 let clip_scope =
@@ -1923,9 +1920,7 @@ impl ProjectSession {
             // Task #14: semantic move links go through the SAME provenance
             // map the spans do, below — before the clip scope records its
             // own (already post-clip) link.
-            semantic_ctx
-                .recorder()
-                .remap_move_links(&mapping, clipped.moves.len());
+            semantic_ctx.recorder().remap_move_links(&mapping, &clipped);
 
             // Record semantic trace for boundary clip
             let clip_scope =

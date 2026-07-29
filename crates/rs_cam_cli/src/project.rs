@@ -15,11 +15,28 @@ use rs_cam_core::simulation_cut::SimulationCutArtifact;
 
 // ── JSON output types ───────────────────────────────────────────────────
 
+/// The CLI's per-toolpath JSON record.
+///
+/// Deliberately NOT [`rs_cam_core::session::ToolpathDiagnostic`]: this record
+/// carries the full debug + semantic traces and the collision-check stickout,
+/// which the core diagnostic (a GUI/MCP summary) does not, and it uses this
+/// file's own key names (`toolpath_name`, `tool`), which existing scripts read.
+///
+/// What it must NOT do is *diverge on the fields both have*. Wave D3: the
+/// A/M9 standing-material and Wave-D1 dropped-band / tip-float channels were
+/// published to the GUI and MCP but silently missing here, so a CLI batch run
+/// could not see a finding the same session's GUI would show. Those four
+/// fields (plus `op_kind`) are now copied straight off the core diagnostic —
+/// one derivation, no second opinion. All additive: no key was renamed or
+/// removed.
 #[derive(Serialize)]
 struct ToolpathDiagnostic {
     toolpath_id: rs_cam_core::ToolpathId,
     toolpath_name: String,
     operation_type: String,
+    /// Stable op-kind tag, mirroring
+    /// [`rs_cam_core::session::ToolpathDiagnostic::op_kind`].
+    op_kind: Option<String>,
     tool: String,
     move_count: usize,
     cutting_distance_mm: f64,
@@ -29,6 +46,17 @@ struct ToolpathDiagnostic {
     collision_count: usize,
     rapid_collision_count: usize,
     min_safe_stickout: Option<f64>,
+    /// A/M9. `null` = **not measured** (this operation runs no ring
+    /// cascade), never "nothing standing".
+    standing_material_mm2: Option<f64>,
+    /// Wave D1. `null` = nothing dropped, or nothing that plans bands ran.
+    unmachined_band_area_mm2: Option<f64>,
+    /// Wave D1. `null` = the operation emits no centrelines (not measured);
+    /// `0` = measured and clean.
+    tip_float_points: Option<usize>,
+    /// Wave D1. `null` under exactly the same condition as
+    /// [`Self::tip_float_points`].
+    max_tip_float_mm: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -224,16 +252,18 @@ pub fn run_project_command(
         let collision_count = col_report.map(|r| r.collisions.len()).unwrap_or(0);
         let min_safe = col_report.map(|r| r.min_safe_stickout);
 
-        let rapid_count = diag
-            .per_toolpath
-            .iter()
-            .find(|d| d.toolpath_id == tc.id)
-            .map_or(0, |d| d.rapid_collision_count);
+        // The core per-toolpath diagnostic for this id, if the session
+        // produced one. Every field below that comes from it is DERIVED
+        // THERE, so the CLI and the GUI/MCP cannot report different numbers
+        // for the same run (Wave D3).
+        let core_diag = diag.per_toolpath.iter().find(|d| d.toolpath_id == tc.id);
+        let rapid_count = core_diag.map_or(0, |d| d.rapid_collision_count);
 
         let diagnostic = ToolpathDiagnostic {
             toolpath_id: tc.id,
             toolpath_name: tc.name.clone(),
             operation_type: tc.operation.label().to_owned(),
+            op_kind: core_diag.map(|d| d.op_kind.clone()),
             tool: tool_name,
             move_count: result.stats.move_count,
             cutting_distance_mm: result.stats.cutting_distance,
@@ -243,6 +273,10 @@ pub fn run_project_command(
             collision_count,
             rapid_collision_count: rapid_count,
             min_safe_stickout: min_safe,
+            standing_material_mm2: core_diag.and_then(|d| d.standing_material_mm2),
+            unmachined_band_area_mm2: core_diag.and_then(|d| d.unmachined_band_area_mm2),
+            tip_float_points: core_diag.and_then(|d| d.tip_float_points),
+            max_tip_float_mm: core_diag.and_then(|d| d.max_tip_float_mm),
         };
 
         let file_name = format!(

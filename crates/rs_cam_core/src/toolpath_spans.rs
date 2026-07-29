@@ -73,6 +73,24 @@ impl Span {
         self
     }
 
+    /// This span's [`RegionSpanRole`], or `None` when it is not a
+    /// region span (or carries no payload).
+    ///
+    /// The supported way to tell a planner region NODE from a generator
+    /// pass — never parse the label (Wave D3).
+    pub fn region_role(&self) -> Option<RegionSpanRole> {
+        match self.payload {
+            Some(SpanPayload::Region { role, .. }) => Some(role),
+            _ => None,
+        }
+    }
+
+    /// True when this is a planner territory node span
+    /// ([`RegionSpanRole::Node`]).
+    pub fn is_region_node(&self) -> bool {
+        self.region_role() == Some(RegionSpanRole::Node)
+    }
+
     /// Number of moves covered. 0 for boundary spans.
     pub fn move_count(&self) -> usize {
         self.end_move.saturating_sub(self.start_move)
@@ -172,6 +190,59 @@ pub enum SpanKind {
     SemanticLink,
 }
 
+impl SpanKind {
+    /// Every variant, in declaration order.
+    ///
+    /// A new variant MUST be added here as well as to [`Self::as_key`] —
+    /// `as_key`'s match is exhaustive, so the compiler will stop you there
+    /// first, and [`Self::from_key`] is derived from this list so that the
+    /// agent-facing vocabulary cannot drift from the enum.
+    pub const ALL: [Self; 10] = [
+        Self::Operation,
+        Self::DepthPass,
+        Self::Region,
+        Self::Entry,
+        Self::LeadOut,
+        Self::LinkBridge,
+        Self::DressupArtifact,
+        Self::RapidOrderBarrier,
+        Self::WaterlineCleanup,
+        Self::SemanticLink,
+    ];
+
+    /// The stable snake_case key for this kind — the agent-facing vocabulary
+    /// (MCP `span_kind` filters) and the single source that vocabulary is
+    /// derived from.
+    ///
+    /// Wave D3: this used to be a string table transcribed by hand in
+    /// `rs_cam_viz::app::mcp` (three times), so a new variant was invisible
+    /// to the MCP surface with no compile error. The match here is
+    /// exhaustive: adding a variant now breaks the build until it is named.
+    #[must_use]
+    pub const fn as_key(self) -> &'static str {
+        match self {
+            Self::Operation => "operation",
+            Self::DepthPass => "depth_pass",
+            Self::Region => "region",
+            Self::Entry => "entry",
+            Self::LeadOut => "lead_out",
+            Self::LinkBridge => "link_bridge",
+            Self::DressupArtifact => "dressup_artifact",
+            Self::RapidOrderBarrier => "rapid_order_barrier",
+            Self::WaterlineCleanup => "waterline_cleanup",
+            Self::SemanticLink => "semantic_link",
+        }
+    }
+
+    /// Inverse of [`Self::as_key`]. `None` for anything that is not a
+    /// structural span kind — callers should treat that as a loud error, not
+    /// as a silent no-match.
+    #[must_use]
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.as_key() == key)
+    }
+}
+
 // ── SpanPayload ─────────────────────────────────────────────────────────
 
 /// Optional structured payload for span-specific data.
@@ -180,15 +251,69 @@ pub enum SpanKind {
 /// require them — keep this set minimal until phase-3 dressups demand more.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SpanPayload {
-    DepthPass { z_level: f64, pass_index: u32 },
-    Region { region_id: u32 },
+    DepthPass {
+        z_level: f64,
+        pass_index: u32,
+    },
+    /// A [`SpanKind::Region`] span. `role` says what kind of region it is —
+    /// see [`RegionSpanRole`], which exists because `region_id` alone is
+    /// ambiguous: a planner NODE and a generator RING both land here with
+    /// their own independent id spaces.
+    Region {
+        region_id: u32,
+        role: RegionSpanRole,
+    },
     /// Transport payload for [`SpanKind::SemanticLink`] — the
     /// `ToolpathSemanticItem::id` whose move link this carrier span stands
     /// in for. Several items can share one carrier span when their ranges
     /// are identical, so the carrier keeps its own id list; this payload
     /// only has to survive the remap so the span can be recognised on the
     /// way out.
-    SemanticLink { item_id: u64 },
+    SemanticLink {
+        item_id: u64,
+    },
+}
+
+/// What a [`SpanKind::Region`] span is a region OF.
+///
+/// Wave D3. [`SpanKind::Region`] is emitted by two structurally different
+/// systems that share the kind AND the payload:
+///
+/// * the PLANNER, which partitions the part into territory nodes
+///   (`UnifiedFinishReport::region_table` — one node per band / crease
+///   group, each with its own strategy), and
+/// * the GENERATOR, which reports the passes it laid down inside whatever
+///   territory it was given (scallop rings, drill holes and their pecks,
+///   adaptive regions, contiguous cutting runs).
+///
+/// Their `region_id`s index different tables, they nest (a node contains
+/// many passes), and only the node set is a partition. Before this role
+/// existed the only discriminator was the LABEL STRING — consumers filtered
+/// on `label.ends_with(" band")`, which is a contract no producer was
+/// obliged to keep. Read this instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RegionSpanRole {
+    /// A planner territory node. `region_id` indexes the planner's own
+    /// region table (e.g. `UnifiedFinishReport::region_table`). The node set
+    /// tiles the operation's moves; a semantic `Region` item exists per node
+    /// and their ranges must agree (A/M8).
+    Node,
+    /// One pass the generator emitted — a scallop ring, a drill hole or
+    /// peck, an adaptive region, a contiguous cutting run. `region_id` is
+    /// the generator's own sequence number, NOT a node id. These nest inside
+    /// nodes and are not a partition of anything.
+    GeneratorPass,
+}
+
+impl RegionSpanRole {
+    /// Human-readable label for reports and MCP payloads.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Node => "node",
+            Self::GeneratorPass => "generator_pass",
+        }
+    }
 }
 
 // ── AnnotatedToolpath ───────────────────────────────────────────────────
@@ -751,9 +876,50 @@ mod tests {
     fn span_with_label_and_payload_round_trip() {
         let s = Span::new(10, 20, SpanKind::Region)
             .with_label("region-3")
-            .with_payload(SpanPayload::Region { region_id: 3 });
+            .with_payload(SpanPayload::Region {
+                region_id: 3,
+                role: RegionSpanRole::GeneratorPass,
+            });
         assert_eq!(s.label, "region-3");
-        assert_eq!(s.payload, Some(SpanPayload::Region { region_id: 3 }));
+        assert_eq!(
+            s.payload,
+            Some(SpanPayload::Region {
+                region_id: 3,
+                role: RegionSpanRole::GeneratorPass,
+            })
+        );
+    }
+
+    /// Wave D3: the node/pass discriminator is a payload field, readable
+    /// without touching the label — the label is free text and nothing keeps
+    /// it stable.
+    #[test]
+    fn region_role_discriminates_node_from_generator_pass() {
+        let node = Span::new(0, 10, SpanKind::Region)
+            .with_label("MidSteep band")
+            .with_payload(SpanPayload::Region {
+                region_id: 0,
+                role: RegionSpanRole::Node,
+            });
+        // Same kind, same region_id, DIFFERENT id space.
+        let ring = Span::new(0, 4, SpanKind::Region)
+            .with_label("Ring 1/9")
+            .with_payload(SpanPayload::Region {
+                region_id: 0,
+                role: RegionSpanRole::GeneratorPass,
+            });
+        assert!(node.is_region_node());
+        assert!(!ring.is_region_node());
+        assert_eq!(node.region_role(), Some(RegionSpanRole::Node));
+        assert_eq!(ring.region_role(), Some(RegionSpanRole::GeneratorPass));
+        // A non-region span has no role at all.
+        assert_eq!(Span::new(0, 3, SpanKind::Entry).region_role(), None);
+        // And the roles survive a remap (payload is cloned through).
+        let mapping: Vec<usize> = (0..=10).map(|i| i * 2).collect();
+        assert_eq!(
+            node.remap(&mapping).region_role(),
+            Some(RegionSpanRole::Node)
+        );
     }
 
     #[test]
