@@ -2557,3 +2557,78 @@ toolpath that looks plausible and re-cuts the entire part.
 3. The user's "scope unified to contour + pencil + rest" proposal is now
    a second-order question: at 5 259 mm the op is doing rest-shaped work.
    Revisit scallop density (§14k) against that, not against 46 km.
+
+### §14q — the steep terrain is real; three planner dials erase it (2026-07-29)
+
+User: *"we have mountains with 50 degree faces and cliffs here. Maybe they
+are just scaled too small and smooth out?"* Right on both counts, and the
+smoothing is administrative rather than physical.
+
+**The terrain, measured straight off the STL** (area-weighted face slope,
+219 944 triangles, `terrain.stl`, 100 × 100 mm, relief **5.98 mm**):
+
+| slope | area share |
+|---|---|
+| 0–30° | 51.6% |
+| 30–45° | 9.8% |
+| **45–55°** | **13.2%** |
+| **55–65°** | **15.3%** |
+| **65–75°** | **6.3%** |
+| **75–90°** | **3.7%** (482 mm²) |
+
+**25.4% of the surface is steeper than 55°**, and 482 mm² is past the
+default 75° waterline threshold. The earlier claim (§14a and in
+conversation) that "this terrain has no steep faces" was WRONG — it was
+inferred from bulk relief, which says nothing about local slope.
+
+**Yet the planner finds no steep territory:** 0 VerySteep regions at 75°,
+and 1 region / 68 moves at 55°.
+
+**Mechanism.** `TaperedBallNose::diameter()` returns the SHAFT diameter
+("effective cutting diameter at widest point"), so for a Ø1 tip on a 6 mm
+shank `radius()` is **3.0 mm, not 0.5 mm**. `compute/execute.rs` derives
+the decomposition dials from it:
+
+```rust
+let mut planner = FinishPlannerParams::for_tool(ctx.tool_def.radius()); // 3.0
+```
+
+| dial | formula | actual | tip-correct | error |
+|---|---|---|---|---|
+| `min_region_area_mm2` | (2r)²·4 | **144 mm²** | 4 mm² | **36×** |
+| `close_radius_mm` | r·0.5 | **1.5 mm** | 0.25 mm | 6× |
+| `pencil_claim_floor` | r·0.25 | **0.75 mm** | 0.125 mm | 6× |
+
+Only `steep_threshold_deg`, `waterline_threshold_deg` and `overlap_mm` are
+overridden afterwards; the other three keep their 3.0-derived values.
+
+With 5.98 mm of relief an 85° face is ~0.5 mm wide and a 55° face ~4 mm.
+A **1.5 mm** morphological close merges or erases ribbons at that scale
+before regions are extracted, and a **144 mm²** area floor absorbs
+whatever survives — a 2 mm-wide ribbon would have to be **72 mm long** to
+clear it. The steep band is closed and absorbed into its shallower
+neighbours, and the classifier honestly reports what is left.
+
+**The tell that this is a known confusion, half-fixed.** The adapter
+carries a comment saying the claim floor *"must reflect the REAL tip
+radius rather than `FinishPlannerParams::for_tool`'s placeholder guess"* —
+and then writes `ctx.tool_def.radius() * 0.25`, which IS the placeholder.
+The override is a no-op that believes it is the fix. `scallop.rs` already
+has the correct helper — `cusp_radius()`, matching
+`geometry_hint()` → `TaperedBall { tip_radius }` — and
+`finish_planner` does not use it.
+
+**Consequences for everything measured so far.** Every band-mix number in
+§14, §14a and §14m–§14p was produced by a decomposition whose region
+floor was 36× too large for the tool. The conclusion "contour and pencil
+have nothing to do on this part" is NOT established — it is what a
+36×-too-coarse floor produces on ribbon terrain. This also plausibly feeds
+§14k: ground that should have been VerySteep (a Z-level ladder) is
+absorbed into MidSteep, where `ring_stepover`'s min-across-ring collapse
+then takes the steepest sample in the merged region and applies it to the
+whole ring.
+
+**Fix:** derive `FinishPlannerParams::for_tool` from the cusp-forming
+radius (`cusp_radius`/`geometry_hint`) rather than `radius()`, at every
+call site, and delete the no-op override. Then re-run the band mix before
+drawing any further conclusion about strategy value.
