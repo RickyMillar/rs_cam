@@ -84,14 +84,13 @@ pub(crate) fn centerline_cut_paths(
         // gets centreline-only) and capped by the user's dial. The reach
         // vector rides along so each pass is additionally truncated to the
         // points that actually support it.
-        let widest = reach.iter().fold(
-            crate::reach::Reach::default(),
-            |acc, r| crate::reach::Reach {
+        let widest = reach.iter().fold(crate::reach::Reach::default(), |acc, r| {
+            crate::reach::Reach {
                 left_mm: acc.left_mm.max(r.left_mm),
                 right_mm: acc.right_mm.max(r.right_mm),
                 refused: acc.refused,
-            },
-        );
+            }
+        });
         let (left, right) =
             crate::reach::offset_passes_per_side(&widest, offset_stepover, num_offset_passes_cap);
         paths_from_sampled(
@@ -164,8 +163,8 @@ fn resample_with_reach(
         if i > 0
             && let Some(prev) = sampled.get(i - 1)
         {
-            walked += ((p.x - prev.x).powi(2) + (p.y - prev.y).powi(2) + (p.z - prev.z).powi(2))
-                .sqrt();
+            walked +=
+                ((p.x - prev.x).powi(2) + (p.y - prev.y).powi(2) + (p.z - prev.z).powi(2)).sqrt();
         }
         // First source vertex at or past this arc length; take the nearer of
         // it and its predecessor.
@@ -180,12 +179,7 @@ fn resample_with_reach(
         } else {
             0
         };
-        reach.push(
-            cl.samples
-                .get(k)
-                .map(|s| s.reach)
-                .unwrap_or_default(),
-        );
+        reach.push(cl.samples.get(k).map(|s| s.reach).unwrap_or_default());
     }
     (sampled, reach)
 }

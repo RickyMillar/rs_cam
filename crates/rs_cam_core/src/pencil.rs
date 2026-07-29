@@ -737,10 +737,8 @@ pub(crate) fn paths_from_sampled(
     let centerline = lift_to_surface(&sampled, mesh, index, cutter, stock_to_leave);
     // Wave D1 instrument. Offset passes are deliberately excluded: they are
     // MEANT to ride up the walls, so "float" is not a defect there.
-    let probe = crate::tool::BallEndmill::new(
-        SURFACE_PROBE_BALL_DIAMETER_MM,
-        SURFACE_PROBE_BALL_LENGTH_MM,
-    );
+    let probe =
+        crate::tool::BallEndmill::new(SURFACE_PROBE_BALL_DIAMETER_MM, SURFACE_PROBE_BALL_LENGTH_MM);
     let valley_floor = lift_to_surface(&sampled, mesh, index, &probe, 0.0);
     for (tool_pt, floor_pt) in centerline.iter().zip(valley_floor.iter()) {
         // `stock_to_leave` is a commanded offset, not float — back it out so
@@ -1570,7 +1568,9 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
     let mut float = TipFloatFinding::default();
 
     let mut all_paths: Vec<PencilPath> = match params.detector {
-        PencilDetector::Curvature => curvature_arm(mesh, index, cutter, params, &mut float, cancel)?,
+        PencilDetector::Curvature => {
+            curvature_arm(mesh, index, cutter, params, &mut float, cancel)?
+        }
         PencilDetector::RestDepth => rest_depth_arm(
             mesh,
             index,

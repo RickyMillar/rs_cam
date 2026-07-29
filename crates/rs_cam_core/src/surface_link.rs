@@ -181,9 +181,7 @@ pub fn relink_fragments(
         });
     }
 
-    let entry_of = |f: &Fragment| -> P3 {
-        f.moves.first().map_or(P3::origin(), |(_, m)| m.target)
-    };
+    let entry_of = |f: &Fragment| -> P3 { f.moves.first().map_or(P3::origin(), |(_, m)| m.target) };
     let exit_of = |f: &Fragment| -> P3 { f.moves.last().map_or(P3::origin(), |(_, m)| m.target) };
     let xy_gap = |a: P3, b: P3| ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
 
@@ -315,7 +313,10 @@ pub fn relink_fragments(
             }
             (_, Some(from)) => {
                 report.retract_links += 1;
-                out.rapid_to_with_intent(P3::new(from.x, from.y, params.safe_z), MoveIntent::Retract);
+                out.rapid_to_with_intent(
+                    P3::new(from.x, from.y, params.safe_z),
+                    MoveIntent::Retract,
+                );
                 out.rapid_to_with_intent(
                     P3::new(entry.x, entry.y, params.safe_z),
                     MoveIntent::Linking,
@@ -406,7 +407,12 @@ mod tests {
     /// Build a toolpath of `n` short cut runs along the valley floor,
     /// each separated by the retract → traverse → plunge triple
     /// `relink_fragments` is meant to remove.
-    fn fragmented_valley_path(n: usize, run_len: f64, gap: f64, safe_z: f64) -> crate::toolpath::Toolpath {
+    fn fragmented_valley_path(
+        n: usize,
+        run_len: f64,
+        gap: f64,
+        safe_z: f64,
+    ) -> crate::toolpath::Toolpath {
         use crate::toolpath::{MoveIntent, Toolpath};
         let mut tp = Toolpath::new();
         let mut x = 1.0;
@@ -485,7 +491,9 @@ mod tests {
         );
         // Every link point rides the surface, never safe Z.
         for m in &out.moves {
-            if m.intent == crate::toolpath::MoveIntent::Linking && !matches!(m.move_type, MoveType::Rapid) {
+            if m.intent == crate::toolpath::MoveIntent::Linking
+                && !matches!(m.move_type, MoveType::Rapid)
+            {
                 assert!(
                     m.target.z < safe_z - 1.0,
                     "a surface link must stay down, got z={}",
@@ -527,8 +535,14 @@ mod tests {
                 .filter(|w| w[1].intent == crate::toolpath::MoveIntent::FinishingCut)
                 .map(|w| {
                     (
-                        format!("{:.3},{:.3},{:.3}", w[0].target.x, w[0].target.y, w[0].target.z),
-                        format!("{:.3},{:.3},{:.3}", w[1].target.x, w[1].target.y, w[1].target.z),
+                        format!(
+                            "{:.3},{:.3},{:.3}",
+                            w[0].target.x, w[0].target.y, w[0].target.z
+                        ),
+                        format!(
+                            "{:.3},{:.3},{:.3}",
+                            w[1].target.x, w[1].target.y, w[1].target.z
+                        ),
                     )
                 })
                 .collect()

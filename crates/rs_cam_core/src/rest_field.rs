@@ -2135,7 +2135,10 @@ mod tests {
         let grid = diagonal_half_rest_grid();
         assert_eq!(grid.covered_cell_count(), 820);
         let prov = grid.footprint_provenance();
-        assert_eq!(prov.domain, crate::measurement::MeasurementDomain::ProjectedXyArea);
+        assert_eq!(
+            prov.domain,
+            crate::measurement::MeasurementDomain::ProjectedXyArea
+        );
         assert_eq!(prov.cell_mm, Some(0.5));
 
         // No covered cells at all → no footprint, so no false pathology.

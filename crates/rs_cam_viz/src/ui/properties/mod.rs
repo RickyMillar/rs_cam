@@ -455,8 +455,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                         .toolpath_rt
                         .get(&tc.id)
                         .and_then(|rt| rt.result.as_ref());
-                    let cached_regions =
-                        cached.and_then(|r| r.annotated.rest_regions.clone());
+                    let cached_regions = cached.and_then(|r| r.annotated.rest_regions.clone());
                     // LH-2: the source's OWN rest-grid footprint travels with
                     // its regions, so the pathology share has an honest
                     // denominator without new session plumbing.
@@ -466,7 +465,13 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     let ready = cached_regions
                         .as_ref()
                         .is_some_and(|regions| !regions.is_empty());
-                    (tc.id, tc.name.clone(), ready, cached_regions, footprint_area)
+                    (
+                        tc.id,
+                        tc.name.clone(),
+                        ready,
+                        cached_regions,
+                        footprint_area,
+                    )
                 })
                 .collect();
 

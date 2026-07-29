@@ -511,8 +511,7 @@ fn run_compute_with_phase_tracker(
         .map(|recorder| recorder.root_context());
     // Filled by the core generate below; stays default on paths that never
     // reach it (cached / non-core branches), which report no findings.
-    let mut generation_findings =
-        rs_cam_core::compute::execute::GenerationFindings::default();
+    let mut generation_findings = rs_cam_core::compute::execute::GenerationFindings::default();
 
     let result = (|| -> Result<ToolpathResult, ComputeError> {
         let tp = {

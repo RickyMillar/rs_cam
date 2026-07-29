@@ -1434,7 +1434,11 @@ mod tests {
 
         let never_cancel = || false;
         let surface = crate::finish_setup::build_finish_surface_with_cell_size_and_cancel(
-            &mesh, &si, &cutter, 1.0, &never_cancel,
+            &mesh,
+            &si,
+            &cutter,
+            1.0,
+            &never_cancel,
         )
         .unwrap();
 

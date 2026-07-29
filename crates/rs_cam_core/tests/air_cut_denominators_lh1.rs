@@ -242,11 +242,17 @@ fn no_surface_divides_air_cut_by_a_runtime_without_naming_it() {
         ),
         (
             "crates/rs_cam_viz/src/controller/events/compute.rs",
-            &["air_cut_pct_of_total_runtime", "air_cut_pct_of_cutting_time"],
+            &[
+                "air_cut_pct_of_total_runtime",
+                "air_cut_pct_of_cutting_time",
+            ],
         ),
         (
             "crates/rs_cam_viz/src/app/mcp.rs",
-            &["air_cut_pct_of_total_runtime", "air_cut_pct_of_cutting_time"],
+            &[
+                "air_cut_pct_of_total_runtime",
+                "air_cut_pct_of_cutting_time",
+            ],
         ),
         (
             "crates/rs_cam_cli/src/main.rs",

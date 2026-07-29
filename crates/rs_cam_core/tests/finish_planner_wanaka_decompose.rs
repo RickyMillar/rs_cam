@@ -508,14 +508,7 @@ fn wanaka_band_mix_vs_cusp_radius() {
     eprintln!("band columns: regions / XY-projected mm^2 (NOT 3D surface area)");
     eprintln!(
         "{:>7} {:>9} {:>8} {:>11} {:>8}  {:>13} {:>13} {:>13}",
-        "cusp_r",
-        "min_area",
-        "close_r",
-        "grid",
-        "sample_s",
-        "Shallow",
-        "MidSteep",
-        "VerySteep"
+        "cusp_r", "min_area", "close_r", "grid", "sample_s", "Shallow", "MidSteep", "VerySteep"
     );
 
     // 3.0 = Ø6 ball (radius == cusp radius, unaffected by the fix).
@@ -596,7 +589,10 @@ fn wanaka_band_mix_vs_cusp_radius() {
         truth.push((threshold_deg, area_3d, area_xy));
     }
     eprintln!("── ground truth from the mesh (§14t) ──");
-    eprintln!("{:>10} {:>14} {:>16}", "threshold", "true 3D area", "PROJECTED area");
+    eprintln!(
+        "{:>10} {:>14} {:>16}",
+        "threshold", "true 3D area", "PROJECTED area"
+    );
     for (deg, a3, axy) in &truth {
         eprintln!("{deg:>9.0}° {:>13.1} {:>15.1}", a3.mm2(), axy.mm2());
     }

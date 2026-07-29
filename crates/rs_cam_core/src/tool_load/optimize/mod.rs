@@ -69,8 +69,8 @@ pub(crate) use outcome::build_outcome;
 pub use outcome::{OptimizeOutcome, OutcomeKind, ProjectOptimizeReport};
 
 use context::{
-    BaselineRestoreGuard, EvaluationContext, air_cut_fraction_of_total_runtime_from_trace, baseline_rpm_from_trace,
-    cycle_time_from_trace, find_matched_lut_row,
+    BaselineRestoreGuard, EvaluationContext, air_cut_fraction_of_total_runtime_from_trace,
+    baseline_rpm_from_trace, cycle_time_from_trace, find_matched_lut_row,
 };
 use policy::SearchPolicy;
 
@@ -218,7 +218,8 @@ fn optimize_toolpath_inner(
             return OptimizeOutcome::skipped(RefuseReason::SteadyStateSamplesNotPresent);
         }
     };
-    let baseline_air_cut = air_cut_fraction_of_total_runtime_from_trace(baseline_trace, ctx.toolpath_id);
+    let baseline_air_cut =
+        air_cut_fraction_of_total_runtime_from_trace(baseline_trace, ctx.toolpath_id);
     let baseline_candidate = OptimizeCandidate {
         params: baseline_op.clone(),
         delta: ParamDelta::default(),

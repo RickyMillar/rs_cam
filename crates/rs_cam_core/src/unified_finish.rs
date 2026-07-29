@@ -541,8 +541,7 @@ pub const CLAIMS_OFFSET_PASS_CAP: usize = 4;
 /// One phrase naming why [`ClaimsReport::offset_stepover_reference_depth_mm`]
 /// is the depth the policy was sized at. Shipped in the operator-facing
 /// diagnostic, so it lives next to the value.
-pub const CLAIMS_STEPOVER_DEPTH_BASIS: &str =
-    "the detector's min_valley_depth — the shallowest rest it will report, \
+pub const CLAIMS_STEPOVER_DEPTH_BASIS: &str = "the detector's min_valley_depth — the shallowest rest it will report, \
      where the cutter's engaged width is narrowest";
 
 /// Claims-pipeline telemetry (design doc §2.1, R2 "pencil over-claiming").
@@ -643,9 +642,11 @@ pub struct DroppedBand {
 pub fn dropped_band_finding(
     report: &UnifiedFinishReport,
 ) -> Option<crate::compute::config::DroppedBandFinding> {
-    let worst = report.dropped_bands.iter().copied().reduce(|a, b| {
-        if b.area_mm2 > a.area_mm2 { b } else { a }
-    })?;
+    let worst = report
+        .dropped_bands
+        .iter()
+        .copied()
+        .reduce(|a, b| if b.area_mm2 > a.area_mm2 { b } else { a })?;
     Some(crate::compute::config::DroppedBandFinding {
         band_label: RegionKind::Band(worst.band).band_label(),
         region_count: report.dropped_bands.len(),
@@ -1373,16 +1374,15 @@ pub fn unified_finish_toolpath_with_cancel(
                 // classification (step 1, above) reads the true surface.
                 // This is the P2.b "classify true, generate offset" split
                 // from the design doc, not an inconsistency.
-                let (tp, anns, scallop_report) =
-                    scallop_toolpath_structured_annotated_with_cancel(
-                        mesh,
-                        index,
-                        cutter,
-                        &sp,
-                        debug,
-                        Some(&region_set),
-                        cancel,
-                    )?;
+                let (tp, anns, scallop_report) = scallop_toolpath_structured_annotated_with_cancel(
+                    mesh,
+                    index,
+                    cutter,
+                    &sp,
+                    debug,
+                    Some(&region_set),
+                    cancel,
+                )?;
                 // Summed across every mid-steep region, so a truncated
                 // cascade in ANY of them reaches the op's report.
                 uncut_core_mm2 += scallop_report.uncut_core_mm2;
@@ -2774,7 +2774,8 @@ mod tests {
         for pair in report.region_table.windows(2) {
             let (a, b) = (&pair[0], &pair[1]);
             assert_eq!(
-                a.move_range.end, b.move_range.start,
+                a.move_range.end,
+                b.move_range.start,
                 "region nodes must be contiguous — {:?} ends at {} but {:?} \
                  starts at {}, orphaning {} move(s) that the rapid reorder \
                  can relocate into the previous node and so trip the \

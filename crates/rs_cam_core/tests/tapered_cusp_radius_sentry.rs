@@ -21,12 +21,12 @@
     clippy::indexing_slicing
 )]
 
+use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose_surface};
 use rs_cam_core::finish_setup::build_classification_surface_with_cancel;
 use rs_cam_core::geo::P3;
 use rs_cam_core::measurement::ProjectedXyAreaMm2;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill, ToolDefinition};
 
 /// The tool this project actually finishes with: Ø1 tip, Ø6 shaft.
@@ -54,7 +54,15 @@ fn tapered_ball_reports_shaft_radius_and_tip_cusp_radius() {
     // `ToolDefinition` delegates `diameter()`/`geometry_hint()`; if that
     // delegation ever breaks, the default trait impl silently falls back to
     // `radius()` and the whole fix evaporates at the only layer that ships.
-    let def = ToolDefinition::new(Box::new(taper()), 6.0, 30.0, 25.0, 40.0, 2, ToolMaterial::Carbide);
+    let def = ToolDefinition::new(
+        Box::new(taper()),
+        6.0,
+        30.0,
+        25.0,
+        40.0,
+        2,
+        ToolMaterial::Carbide,
+    );
     assert!((def.radius() - 3.0).abs() < 1e-9);
     assert!(
         (def.cusp_radius() - 0.5).abs() < 1e-9,

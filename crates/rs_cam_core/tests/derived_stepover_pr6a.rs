@@ -427,11 +427,10 @@ fn the_ball_control_does_not_move_and_reports_nothing() {
         .expect("a generated result")
         .stats
         .clone();
-    let finding = stats
-        .derived_stepover
-        .as_deref()
-        .copied()
-        .expect("the claims pipeline ran on the ball too — 'not measured' would hide a regression");
+    let finding =
+        stats.derived_stepover.as_deref().copied().expect(
+            "the claims pipeline ran on the ball too — 'not measured' would hide a regression",
+        );
     println!(
         "PR-6a ball: derived {:.4} mm, envelope rule {:.4} mm",
         finding.stepover_mm, finding.envelope_rule_mm

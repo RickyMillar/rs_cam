@@ -444,7 +444,11 @@ pub fn route(reach: &Reach, offset_stepover_mm: f64, cap_passes: usize) -> Routi
 /// gouge class the whole model exists to eliminate, and rounding up half a
 /// stepover is exactly how the shipped equation produced them.
 #[must_use]
-pub fn offset_passes_per_side(reach: &Reach, offset_stepover_mm: f64, cap: usize) -> (usize, usize) {
+pub fn offset_passes_per_side(
+    reach: &Reach,
+    offset_stepover_mm: f64,
+    cap: usize,
+) -> (usize, usize) {
     if reach.refused {
         return (0, 0);
     }
@@ -649,7 +653,8 @@ mod tests {
         let ball = BallEndmill::new(6.0, 25.0);
         for depth in [0.0, 0.3, 3.0, 12.0] {
             assert!(
-                (suggested_offset_stepover_mm(&ball, depth) - ball.envelope_radius_mm() * 0.5).abs()
+                (suggested_offset_stepover_mm(&ball, depth) - ball.envelope_radius_mm() * 0.5)
+                    .abs()
                     < 1e-12,
                 "the ball must not move at depth {depth}"
             );

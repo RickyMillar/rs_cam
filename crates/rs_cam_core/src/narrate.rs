@@ -753,7 +753,10 @@ fn append_dropped_band(output: &mut String, context: &ToolpathNarrationContext<'
 
 /// Wave D1: one line, always, about material the cutter physically could not
 /// reach on a valley centreline.
-fn append_tip_float(output: &mut String, measured: Option<crate::compute::config::TipFloatFinding>) {
+fn append_tip_float(
+    output: &mut String,
+    measured: Option<crate::compute::config::TipFloatFinding>,
+) {
     use crate::compute::config::{
         TIP_FLOAT_DOMAIN, TIP_FLOAT_RESOLUTION, TIP_FLOAT_STAGE, TIP_FLOAT_THRESHOLD_MM,
     };

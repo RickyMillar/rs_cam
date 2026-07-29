@@ -433,11 +433,7 @@ fn range_geometry(
 /// applying the deleted-move policy: an empty range, or one that starts
 /// past the end of the toolpath, unlinks the item; an over-long end is
 /// clamped to the last move so a linked range is always sliceable.
-fn linked_range(
-    start: usize,
-    end_exclusive: usize,
-    n_moves: usize,
-) -> Option<(usize, usize)> {
+fn linked_range(start: usize, end_exclusive: usize, n_moves: usize) -> Option<(usize, usize)> {
     if end_exclusive <= start || start >= n_moves {
         return None;
     }
@@ -1053,7 +1049,10 @@ mod tests {
                 .clone()
         };
         let keep_item = by_label("Keep");
-        assert_eq!((keep_item.move_start, keep_item.move_end), (Some(1), Some(3)));
+        assert_eq!(
+            (keep_item.move_start, keep_item.move_end),
+            (Some(1), Some(3))
+        );
         let lose_item = by_label("Lose");
         assert_eq!(
             (lose_item.move_start, lose_item.move_end),
