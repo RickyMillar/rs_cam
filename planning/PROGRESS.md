@@ -22,6 +22,40 @@
 - unified service layer: `ProjectSession` API in core, shared `execute_operation()` dispatch for all 23 ops
 - MCP server (`rs_cam_mcp`) exposing `ProjectSession` tools for AI agent integration
 
+## Recent work (2026-07-30)
+
+### Radius-audit programme — Checkpoints A/B approved, behavioral waves landed
+
+User approved Checkpoints A and B (rulings in
+`review_2026-07-29/ORCHESTRATION_LOG.md` §"CHECKPOINT DECISIONS"). Twelve more
+commits (`cbe8503`..`81e0012`), every wave gated green:
+
+- **Wave D** (instruments before behavior): dropped-band + tip-float findings;
+  LH-1..LH-4 measurement hazards fixed (air-cut% named denominators, footprint
+  fraction); span node/ring discriminator, post-clip geometry, CLI parity,
+  ring counts, ToleranceFloor provenance.
+- **H2 routing (PR-4..7)**: canonical CLR+θ reach policy in `reach.rs` —
+  production reproduces the Checkpoint A matrix exactly (0 gouge / 0 miss /
+  100% coverage, all three tools); coverage criterion retires
+  `route_width_factor` (deprecation-compat); per-side asymmetric offset fans
+  (the 3 mm-valley 0-pass symptom now ladders); tapered-pencil SelfReferenced
+  fixed; UnifiedFinish stepover 1.5 → 0.25 mm (1 → 7 real pass positions);
+  crease threshold now a named cusp-scale param; generic rest analysis on the
+  same policy. Ball migrated per ruling.
+- **H3 (PR-8a..d)**: RampFinish on the named geo-mean intermediate cell —
+  both Checkpoint B gouges (2.39/0.16 mm) eliminated at 1.32× time; ramp
+  descents clamped by reach (4.23 mm cone gouge → 0.02 mm) with a truncation
+  finding; max_rings-from-stepover experiment → **REJECT** (real culprit is
+  ring_stepover min-across-ring, M4); SteepShallow deferral written into code;
+  0.9 µm segment floor (post-resolution-derived).
+- **Major new defect (ledgered)**: `ramp_finish` contour correspondence is
+  broken generically — the reach clamp fires on a flat 17° plane (4.71 mm
+  lift) — now the largest measured defect in the finishing stack; needs a
+  `match_contours`/`ramp_between_contours` rewrite.
+- **Top open risk**: wanaka live validation deferred by all three behavioral
+  waves — every ramp-finish toolpath in saved projects will change (clamp) and
+  routing verdicts moved; needs a GUI/MCP session per B.4 prerequisites.
+
 ## Recent work (2026-07-29)
 
 ### Radius-audit tech-debt programme — pre-checkpoint waves landed
