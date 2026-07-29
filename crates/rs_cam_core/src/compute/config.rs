@@ -48,9 +48,12 @@ pub struct ToolpathStats {
     /// pocket would have divided a real area by an unmeasured zero.
     ///
     /// Domain / stage / resolution are fixed and declared by
+    /// [`STANDING_MATERIAL_PROVENANCE`], from which
     /// [`STANDING_MATERIAL_DOMAIN`], [`STANDING_MATERIAL_STAGE`] and
-    /// [`STANDING_MATERIAL_RESOLUTION`] — every user-visible rendering of
-    /// this number must state them (M1). Sourced from
+    /// [`STANDING_MATERIAL_RESOLUTION`] are derived — every user-visible
+    /// rendering of this number must state them (M1). Read the typed value
+    /// through [`ToolpathStats::standing_material`], which returns the area
+    /// and its provenance together or `None`. Sourced from
     /// [`crate::compute::execute::GenerationFindings`]; read by the
     /// diagnostics pipeline as `crate::diagnostics::ids::GEOM_STANDING_MATERIAL`.
     ///
@@ -58,19 +61,53 @@ pub struct ToolpathStats {
     pub standing_material_mm2: Option<f64>,
 }
 
+impl ToolpathStats {
+    /// [`Self::standing_material_mm2`] with its measurement contract attached,
+    /// or `None` when nothing measured it (M1 slice 1).
+    ///
+    /// The provenance cannot be set independently of the value — the two
+    /// travel together or not at all — so a stats struct can never claim a
+    /// domain it did not measure in.
+    #[must_use]
+    pub fn standing_material(
+        &self,
+    ) -> Option<(
+        crate::measurement::ProjectedXyAreaMm2,
+        crate::measurement::MeasurementProvenance,
+    )> {
+        self.standing_material_mm2.map(|mm2| {
+            (
+                crate::measurement::ProjectedXyAreaMm2::new(mm2),
+                STANDING_MATERIAL_PROVENANCE,
+            )
+        })
+    }
+}
+
+/// The measurement contract of [`ToolpathStats::standing_material_mm2`] — the
+/// SINGLE source of truth the three prose constants below are derived from
+/// (M1 slice 1; before it they were three independent strings that narration
+/// and diagnostics concatenated, with nothing tying them to the code that
+/// produced the number).
+///
+/// It is exactly the scallop ring cascade's residual, because that is where
+/// the number comes from: [`crate::scallop::ScallopReport::PROVENANCE`].
+pub const STANDING_MATERIAL_PROVENANCE: crate::measurement::MeasurementProvenance =
+    crate::scallop::ScallopReport::PROVENANCE;
+
 /// Measurement domain of [`ToolpathStats::standing_material_mm2`].
 ///
 /// It is a **projected** area — the shoelace area of the ring cascade's
 /// residual polygons in XY — and therefore NOT comparable with 3D surface
 /// area, dexel-top area or removed volume (non-negotiable rule 3).
-pub const STANDING_MATERIAL_DOMAIN: &str = "XY-projected area (mm²)";
+pub const STANDING_MATERIAL_DOMAIN: &str = STANDING_MATERIAL_PROVENANCE.domain.label();
 
 /// Pipeline stage [`ToolpathStats::standing_material_mm2`] is measured at.
 ///
 /// Generation, from the cascade's own geometry. A simulation cannot
 /// reproduce it: material the toolpath never attempted to cut leaves no
 /// trace in a cut record, which is exactly why the defect survived.
-pub const STANDING_MATERIAL_STAGE: &str = "measured at generation (ring cascade residual)";
+pub const STANDING_MATERIAL_STAGE: &str = STANDING_MATERIAL_PROVENANCE.stage.label();
 
 /// Resolution of [`ToolpathStats::standing_material_mm2`].
 ///
@@ -78,8 +115,7 @@ pub const STANDING_MATERIAL_STAGE: &str = "measured at generation (ring cascade 
 /// vertices are decimated to `0.75 ×` the finish heightmap cell during the
 /// cascade (`scallop.rs`). Exterior-shoelace: holes are not subtracted
 /// (`MEASUREMENT_DOMAINS.md` X-5), so treat it as an upper bound.
-pub const STANDING_MATERIAL_RESOLUTION: &str =
-    "ring polygons decimated at 0.75x the finish heightmap cell (exterior shoelace)";
+pub const STANDING_MATERIAL_RESOLUTION: &str = STANDING_MATERIAL_PROVENANCE.resolution_note;
 
 /// Minimum clearance (mm) between `safe_z` and the top of the stock.
 ///

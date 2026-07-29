@@ -314,6 +314,19 @@ impl DexelGrid {
         }
     }
 
+    /// The cell size a grid over this extent will ACTUALLY use: the request
+    /// after the minimum-size floor and the grid-cap coarsening.
+    ///
+    /// Same arithmetic as [`Self::clamp_cell_size`] but silent, so a caller
+    /// can record the effective resolution as measurement provenance without
+    /// emitting a second coarsening warning (M1: `SimulationResult::
+    /// column_grid_cell_mm` — before it, `resolution_clamped` said *that* the
+    /// cell changed and no field said *to what*).
+    pub fn effective_cell_size(cell_size: f64, extent_u: f64, extent_v: f64) -> f64 {
+        Self::would_exceed_grid(cell_size, extent_u, extent_v)
+            .unwrap_or_else(|| cell_size.max(Self::MIN_CELL_SIZE))
+    }
+
     /// Adjust cell_size upward if `rows * cols` would exceed [`Self::MAX_GRID_CELLS`].
     fn clamp_cell_size(mut cell_size: f64, extent_u: f64, extent_v: f64) -> f64 {
         if cell_size < Self::MIN_CELL_SIZE {

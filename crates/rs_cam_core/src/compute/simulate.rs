@@ -300,6 +300,21 @@ pub struct SimulationResult {
     pub cut_trace: Option<Arc<SimulationCutTrace>>,
     /// True when the requested resolution was coarsened to fit within grid limits.
     pub resolution_clamped: bool,
+    /// The cell size (mm) the dexel columns were ACTUALLY sampled at — the
+    /// request after the minimum floor and any grid-cap coarsening.
+    ///
+    /// M1 provenance for [`Self::column_deviations`] and every count derived
+    /// from them. `resolution_clamped` says *that* the grid was coarsened;
+    /// this says *to what*, which is what a consumer needs, because a column
+    /// population scales with cell⁻² — comparing on-size percentages or
+    /// collision counts across two different effective cells compares two
+    /// different populations (`MEASUREMENT_DOMAINS.md` X-9; the live 0/15/20
+    /// collision sweep was exactly this).
+    ///
+    /// Computed from `request.stock_bbox`, the same extent
+    /// `resolution_clamped` is derived from. Per-setup grids over a smaller
+    /// local bbox can be finer; this is the whole-stock figure.
+    pub column_grid_cell_mm: f64,
     /// Per-toolpath snapshots of the material stock *before* that toolpath
     /// carves. Keyed by toolpath id. Used by the dressup air-cut filter and
     /// rest-machining-aware generators.
@@ -500,11 +515,18 @@ where
 {
     set_phase("Initialize stock");
 
-    // Detect whether the grid will be coarsened beyond the requested resolution.
-    let resolution_clamped = {
+    // Detect whether the grid will be coarsened beyond the requested
+    // resolution — and record what the cell size actually ends up being, so
+    // deviation populations carry their own resolution (M1 / X-9: column
+    // counts scale with cell⁻², and `resolution_clamped` alone never said
+    // what the effective cell was).
+    let (resolution_clamped, column_grid_cell_mm) = {
         let sx = request.stock_bbox.max.x - request.stock_bbox.min.x;
         let sy = request.stock_bbox.max.y - request.stock_bbox.min.y;
-        crate::dexel::DexelGrid::would_exceed_grid(request.resolution, sx, sy).is_some()
+        (
+            crate::dexel::DexelGrid::would_exceed_grid(request.resolution, sx, sy).is_some(),
+            crate::dexel::DexelGrid::effective_cell_size(request.resolution, sx, sy),
+        )
     };
     let sample_step_mm = request.resolution.max(0.25);
 
@@ -907,6 +929,7 @@ where
         rapid_collision_move_indices,
         cut_trace,
         resolution_clamped,
+        column_grid_cell_mm,
         prior_stocks,
     })
 }

@@ -1971,6 +1971,7 @@ mod tests {
             rapid_collision_move_indices: Vec::new(),
             cut_trace: None,
             resolution_clamped: false,
+            column_grid_cell_mm: 0.5,
             prior_stocks: std::collections::HashMap::new(),
         });
         assert!(

@@ -596,7 +596,20 @@ pub struct UnifiedFinishReport {
     /// cascade that hit `max_rings` before collapsing, summed over every
     /// mid-steep region. `0.0` when every cascade collapsed normally.
     /// See [`crate::scallop::ScallopReport::uncut_core_mm2`].
+    ///
+    /// **Different provenance from [`Self::provenance`]**: this one is
+    /// [`crate::scallop::ScallopReport::PROVENANCE`] — a ring-cascade
+    /// residual, not a grid-quantised band area. The two must never be
+    /// summed or ratio'd against each other.
     pub uncut_core_mm2: f64,
+    /// What the AREA fields of [`Self::region_table`] mean (M1) — copied from
+    /// the decomposition that produced them, so a consumer never has to guess
+    /// which grid or which conditioning stage an `area_mm2` came from.
+    ///
+    /// Scope: `region_table[..].area_mm2` and anything derived from the band
+    /// polygons. It does NOT describe [`Self::uncut_core_mm2`] (see there) or
+    /// the length/count fields, which carry their own units.
+    pub provenance: crate::measurement::MeasurementProvenance,
 }
 
 /// Summed [`crate::surface_link::RelinkReport`] counters across regions.
@@ -994,7 +1007,10 @@ pub fn unified_finish_toolpath_with_cancel(
     // scope; until then bands overlap the crease cut, which costs a
     // little double-cutting along centerlines and can never abandon
     // territory.
-    let planned = decompose(&surface.slope_map, &covered, &[], cutter.radius(), planner);
+    let mut planned = decompose(&surface.slope_map, &covered, &[], cutter.radius(), planner);
+    // `decompose` is handed a bare `SlopeMap` and stamps `Explicit`; this
+    // caller knows the grid came from the CLASSIFICATION surface (M1).
+    planned.stats.provenance.cell_source = surface.cell_source;
     check_cancel(cancel)?;
 
     // ── Step 3.4: S4 territory-clip bookkeeping (design doc §2.1 step 4 /
@@ -1054,6 +1070,7 @@ pub fn unified_finish_toolpath_with_cancel(
     // conditioned region counts ever grow.
     let mut report = UnifiedFinishReport {
         decompose: planned.stats,
+        provenance: planned.stats.provenance,
         rest_grid: claims_rest_grid,
         rest_regions: claims_rest_regions,
         ..UnifiedFinishReport::default()

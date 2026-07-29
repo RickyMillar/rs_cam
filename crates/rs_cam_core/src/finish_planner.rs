@@ -81,6 +81,7 @@ use crate::finish_setup::FinishSurface;
 use crate::geo::P2;
 use crate::grid_field::distance_transform_2d;
 use crate::grid2::Grid2;
+use crate::measurement::{CellSource, MeasurementDomain, MeasurementProvenance, MeasurementStage};
 use crate::polygon::Polygon2;
 use crate::region_mask::region_polygons_from_mask;
 use crate::rest_field::RestCenterline;
@@ -189,6 +190,24 @@ pub struct PlannedRegion {
     pub polygon: Polygon2,
 }
 
+impl PlannedRegion {
+    /// This region's area, tagged with its domain: **XY-projected**, never a
+    /// 3D surface area (M1, `MEASUREMENT_DOMAINS.md` X-1). Holes are
+    /// subtracted; when the decomposition ran with `overlap_mm > 0` the
+    /// polygons of neighbouring bands OVERLAP and these areas must not be
+    /// summed across bands — [`DecomposeStats::provenance`] records both
+    /// facts.
+    ///
+    /// Additive accessor: `polygon.area()` still exists and still returns a
+    /// bare `f64`; this is the call new code should reach for, because
+    /// [`crate::measurement::ProjectedXyAreaMm2`] cannot be divided by a
+    /// [`crate::measurement::SurfaceAreaMm2`].
+    #[must_use]
+    pub fn projected_xy_area_mm2(&self) -> crate::measurement::ProjectedXyAreaMm2 {
+        crate::measurement::ProjectedXyAreaMm2::new(self.polygon.area())
+    }
+}
+
 /// A crease routed through the claims pipeline (design doc §2.1: "pencil
 /// claims creases first").
 #[derive(Debug, Clone)]
@@ -227,6 +246,16 @@ pub struct DecomposeStats {
     /// against whichever crease claimed it first — later claims over
     /// already-`None` cells aren't recounted).
     pub claimed_cells: usize,
+    /// What the region areas in this decomposition MEAN (M1): XY-projected,
+    /// captured at polygon extraction, on the grid `decompose` was handed,
+    /// dilated by `params.overlap_mm`, on a coverage mask eroded by one cell.
+    ///
+    /// [`crate::measurement::CellSource`] is `Explicit` when `decompose` was
+    /// called directly — that entry point sees a [`SlopeMap`] and cannot know
+    /// which tool scale sized it. [`decompose_surface`] overwrites it with the
+    /// surface's own source, so the classification/generation distinction
+    /// (§14q, X-6) survives into the report.
+    pub provenance: crate::measurement::MeasurementProvenance,
 }
 
 /// Output of [`decompose`].
@@ -422,18 +451,52 @@ pub fn decompose(
             .filter(|c| c.own_region.is_some())
             .count();
 
+    let stats = DecomposeStats {
+        raw_steep_islands,
+        raw_very_steep_islands,
+        absorbed_regions,
+        region_count,
+        claimed_creases,
+        claimed_cells,
+        provenance: decompose_provenance(cell, CellSource::Explicit, params),
+    };
+    // M1 §4.3: the diagnostic line that carries region counts also carries
+    // what those regions' areas MEAN, so a log a reader finds later cannot be
+    // mistaken for a measurement on a different grid or stage.
+    tracing::info!(
+        region_count = stats.region_count,
+        raw_steep_islands = stats.raw_steep_islands,
+        raw_very_steep_islands = stats.raw_very_steep_islands,
+        absorbed_regions = stats.absorbed_regions,
+        claimed_creases = stats.claimed_creases,
+        claimed_cells = stats.claimed_cells,
+        measurement = %stats.provenance,
+        "finish_planner::decompose complete"
+    );
+
     PlannedRegions {
         regions,
         creases: planned_creases,
-        stats: DecomposeStats {
-            raw_steep_islands,
-            raw_very_steep_islands,
-            absorbed_regions,
-            region_count,
-            claimed_creases,
-            claimed_cells,
-        },
+        stats,
     }
+}
+
+/// The measurement contract every [`decompose`] area obeys (M1).
+///
+/// One place, so the entry points cannot disagree about what they produced.
+pub(crate) fn decompose_provenance(
+    cell_mm: f64,
+    cell_source: CellSource,
+    params: &FinishPlannerParams,
+) -> MeasurementProvenance {
+    MeasurementProvenance::new(
+        MeasurementDomain::ProjectedXyArea,
+        MeasurementStage::PolygonExtraction,
+    )
+    .with_cell(cell_mm, cell_source)
+    .with_extraction_dilation_mm(params.overlap_mm)
+    // Step 0 erodes coverage by one cell, unconditionally.
+    .with_coverage_eroded(true)
 }
 
 /// Convenience wrapper delegating to [`decompose`] with the surface's own
@@ -444,13 +507,16 @@ pub fn decompose_surface(
     tool_radius: f64,
     params: &FinishPlannerParams,
 ) -> PlannedRegions {
-    decompose(
+    let mut planned = decompose(
         &surface.slope_map,
         &surface.heightmap.covered,
         creases,
         tool_radius,
         params,
-    )
+    );
+    // The surface knows which tool scale sized its grid; `decompose` does not.
+    planned.stats.provenance.cell_source = surface.cell_source;
+    planned
 }
 
 // ── Step 1: hysteresis ──────────────────────────────────────────────────
@@ -1168,6 +1234,56 @@ mod tests {
             xs.fold(f64::NEG_INFINITY, f64::max),
             ys.fold(f64::NEG_INFINITY, f64::max),
         )
+    }
+
+    // ── decompose: measurement provenance (M1 slice 1) ──────────────────
+
+    /// Every region area this function returns is XY-projected, extracted on
+    /// the grid it was handed, dilated by `overlap_mm`, on a mask eroded by
+    /// one cell. The stats must SAY so — a reader who has only the numbers
+    /// cannot tell a 0.125 mm classification grid from a 0.75 mm generation
+    /// grid, and that difference is the entire §14q/X-6 correction.
+    #[test]
+    fn decompose_stamps_the_grid_and_dilation_it_measured_on() {
+        let rows = 60;
+        let cols = 60;
+        let cell = 0.25;
+        let z = stripe_ramp_z_grid(rows, cols, cell, 43.0, 47.0);
+        let slope_map = SlopeMap::from_z_grid(&z, rows, cols, 0.0, 0.0, cell);
+        let covered = margin_covered(rows, cols);
+
+        let params = FinishPlannerParams {
+            overlap_mm: 1.5,
+            ..FinishPlannerParams::for_tool(3.0)
+        };
+        let planned = decompose(&slope_map, &covered, &[], 3.0, &params);
+        let prov = planned.stats.provenance;
+
+        assert_eq!(prov.domain, MeasurementDomain::ProjectedXyArea);
+        assert_eq!(prov.stage, MeasurementStage::PolygonExtraction);
+        assert_eq!(
+            prov.cell_mm,
+            Some(slope_map.cell_size),
+            "provenance must carry the grid the value was measured on"
+        );
+        assert!(
+            (prov.extraction_dilation_mm - params.overlap_mm).abs() < 1e-12,
+            "non-zero dilation means band polygons OVERLAP; the report must say so"
+        );
+        assert!(
+            prov.coverage_eroded,
+            "step 0 erodes coverage by one cell, unconditionally"
+        );
+        // `decompose` sees a bare SlopeMap — it cannot claim a tool scale.
+        assert_eq!(prov.cell_source, CellSource::Explicit);
+
+        // A rendered line carries all of it, so a diagnostic table can print
+        // the contract beside the number (§4.3).
+        let described = prov.describe();
+        assert!(described.contains("XY-projected"), "{described}");
+        assert!(described.contains("polygon extraction"), "{described}");
+        assert!(described.contains("0.250 mm cell"), "{described}");
+        assert!(described.contains("OVERLAP"), "{described}");
     }
 
     // ── decompose: hysteresis / R1 ──────────────────────────────────────

@@ -24,6 +24,7 @@
 use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose_surface};
 use rs_cam_core::finish_setup::build_classification_surface_with_cancel;
 use rs_cam_core::geo::P3;
+use rs_cam_core::measurement::ProjectedXyAreaMm2;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill, ToolDefinition};
@@ -164,17 +165,24 @@ fn steep_ribbon_survives_decomposition_under_a_tapered_tool() {
     let params = FinishPlannerParams::for_tool(cusp);
     let planned = decompose_surface(&surface, &[], cusp, &params);
 
-    let non_shallow: f64 = planned
+    // M1 slice 2: XY-PROJECTED area, and typed as such. The 76° walls of this
+    // groove have ~4× more 3D surface than they project onto XY, so a bare
+    // `f64` here is one careless division away from the retracted §14r ratio.
+    // `ProjectedXyAreaMm2` has no `Div<SurfaceAreaMm2>`, so that division no
+    // longer compiles.
+    let non_shallow: ProjectedXyAreaMm2 = planned
         .regions
         .iter()
         .filter(|r| r.band != FinishBand::Shallow)
-        .map(|r| r.polygon.area())
+        .map(rs_cam_core::finish_planner::PlannedRegion::projected_xy_area_mm2)
         .sum();
     assert!(
-        non_shallow > 1.0,
-        "a 76° groove must produce SOME non-shallow region; got {non_shallow:.3} mm² \
-         across {} regions",
-        planned.regions.len()
+        non_shallow.mm2() > 1.0,
+        "a 76° groove must produce SOME non-shallow region; got {:.3} mm² \
+         across {} regions ({})",
+        non_shallow.mm2(),
+        planned.regions.len(),
+        planned.stats.provenance.describe()
     );
 
     // The shaft-scale dials must demonstrably fail on the SAME surface, or

@@ -553,6 +553,8 @@ fn generate_scallop_rings_with_cancel(
             max_rings,
             rings_emitted = rings_3d.len(),
             uncut_core_mm2 = remaining,
+            // M1 §4.3: state the domain on the line that carries the number.
+            measurement = %ScallopReport::PROVENANCE,
             "scallop: ring cascade hit max_rings without collapsing — the \
              INTERIOR of the region is LEFT UNCUT. Known defect: the cap is \
              budgeted from the flat-ground (widest) stepover, and raising it \
@@ -624,6 +626,32 @@ pub struct ScallopReport {
     /// (Op B +92% time, deep over-cut 34×), so this reports the symptom
     /// until `ring_stepover`'s min-across-ring collapse is fixed.
     pub uncut_core_mm2: f64,
+}
+
+impl ScallopReport {
+    /// What [`Self::uncut_core_mm2`] means (M1). Fixed for this measure, so it
+    /// is a constant rather than a settable field — a field could drift from
+    /// the code that fills it, and this number's whole failure mode is being
+    /// read as something it is not.
+    ///
+    /// This is the single source the user-visible standing-material strings
+    /// are derived from
+    /// ([`crate::compute::config::STANDING_MATERIAL_DOMAIN`] and friends).
+    pub const PROVENANCE: crate::measurement::MeasurementProvenance =
+        crate::measurement::MeasurementProvenance::new(
+            crate::measurement::MeasurementDomain::ProjectedXyArea,
+            crate::measurement::MeasurementStage::RingCascadeResidual,
+        )
+        .with_resolution_note(
+            "ring polygons decimated at 0.75x the finish heightmap cell (exterior shoelace)",
+        );
+
+    /// [`Self::uncut_core_mm2`] tagged with its domain — XY-projected, never
+    /// a 3D surface area and never a share of one.
+    #[must_use]
+    pub const fn uncut_core(&self) -> crate::measurement::ProjectedXyAreaMm2 {
+        crate::measurement::ProjectedXyAreaMm2::new(self.uncut_core_mm2)
+    }
 }
 
 /// Generate a scallop finishing toolpath.
