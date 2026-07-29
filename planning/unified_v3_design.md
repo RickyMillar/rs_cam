@@ -2632,3 +2632,60 @@ whole ring.
 radius (`cusp_radius`/`geometry_hint`) rather than `radius()`, at every
 call site, and delete the no-op override. Then re-run the band mix before
 drawing any further conclusion about strategy value.
+
+### §14q FIX — measured, and the next constraint identified
+
+`MillingCutter::cusp_radius()` added beside `radius()` (tip sphere via
+`geometry_hint()`, falling through to `radius()` for everything else), and
+every `FinishPlannerParams::for_tool` call site switched to it — 1 in
+`compute/execute.rs`, 5 in `unified_finish.rs`. The no-op claim-floor
+override that claimed to fix this with the same wrong radius is deleted.
+`scallop.rs`'s private duplicate of the helper is consolidated onto the
+trait method.
+
+**Measured on wanaka**, classification surface held FIXED so only the
+dials vary (`wanaka_band_mix_vs_cusp_radius`):
+
+| cusp_r | min_area | close_r | Shallow n/mm² | MidSteep n/mm² | VerySteep n/mm² |
+|---|---|---|---|---|---|
+| **3.00** (`radius()`, before) | 144.0 | 1.50 | 2 / 5585 | 1 / 4215 | **0 / 0** |
+| 1.00 | 16.0 | 0.50 | 6 / 6250 | 5 / 3502 | 2 / 74 |
+| **0.50** (Ø1 tip, correct) | 4.0 | 0.25 | 30 / 6361 | 12 / 3417 | **2 / 74** |
+| 0.25 | 1.0 | 0.12 | 64 / 6439 | 15 / 3297 | 2 / 70 |
+
+**Contour territory 0 → 2 regions; total regions 3 → 44.** The sparse,
+scattered, genuinely mixed-strategy structure the unified op was designed
+for has existed on this part all along and was being absorbed away.
+
+Ball-nose tools are unaffected — `diameter()` is honest for them, so
+`cusp_radius() == radius()`. This only ever bit tapered tools, where the
+shank is 6× the tip.
+
+**But VerySteep SATURATES at 74 mm²** from cusp 1.0 downward, while the
+STL carries **482 mm²** past 75°. Only 15% is recovered, and the next
+constraint is the same confusion one layer up:
+
+```rust
+// finish_setup.rs — classification grid
+let tool_radius = cutter.radius();                  // 3.0 for a Ø1 tip
+let cell_size = (tool_radius / 4.0).max(tolerance); // → 0.75 mm
+```
+
+Wanaka's >75° faces are ~0.5 mm ribbons (6 mm relief). **They cannot be
+represented on a 0.75 mm grid at all.** With the cusp radius the cell
+would be 0.125 mm.
+
+Deliberately NOT changed here: that is 32× the cells (143² → ~800²) for
+every tapered-tool finish op — a performance decision, not a mechanical
+fix. Note the split scallop.rs already articulates and finish_setup does
+not: *physical extent (padding, grid coverage) keeps the FULL radius; every
+feature-scale quantity uses the cusp radius.* `origin_x = bbox.min.x -
+tool_radius` is correctly `radius()`; `cell_size` is not.
+
+**Head of the review this area needs:** audit every `radius()` use in the
+finishing path against that split. Three sites found so far —
+`min_region_area_mm2`, `close_radius_mm`, and the classification
+`cell_size` — and only the first two are fixed.
+
+Gates: clippy clean workspace-wide, 56/56 param sweeps, rs_cam_viz
+216/216, `--lib` at the 3 documented adaptive3d reds.
