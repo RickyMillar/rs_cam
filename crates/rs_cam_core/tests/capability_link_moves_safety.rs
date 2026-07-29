@@ -90,6 +90,7 @@ use rs_cam_core::{
     scallop::{ScallopDirection, ScallopParams, scallop_toolpath},
     tool::{BallEndmill, FlatEndmill, MillingCutter},
     toolpath::{MoveIntent, MoveType, Toolpath},
+    transform_provenance::ReconcileSet,
 };
 
 // ── Common helpers ───────────────────────────────────────────────────────
@@ -193,7 +194,7 @@ fn dressup(tp: Toolpath, cfg: &DressupConfig, op: OperationType, tool_diameter: 
         op.transform_capabilities(),
         None,
         None,
-        None,
+        &mut ReconcileSet::empty(),
     )
     .toolpath
 }
@@ -224,7 +225,7 @@ fn dressup_with_caps(
         caps,
         None,
         None,
-        None,
+        &mut ReconcileSet::empty(),
     )
     .toolpath
 }
@@ -1642,7 +1643,7 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
             caps,
             None,
             None,
-            None,
+            &mut ReconcileSet::empty(),
         )
     };
     let baseline = dressed(&dressup_no_links());
@@ -1856,7 +1857,7 @@ fn steep_shallow_split_barriers_allow_intra_half_reorder_and_pin_depth() {
             caps,
             None,
             None,
-            None,
+            &mut ReconcileSet::empty(),
         )
     };
     let baseline = dressed(&dressup_no_links());

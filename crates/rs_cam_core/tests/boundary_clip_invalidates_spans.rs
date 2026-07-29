@@ -14,6 +14,7 @@ use rs_cam_core::semantic_trace::ToolpathSemanticRecorder;
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
+use rs_cam_core::transform_provenance::ReconcileSet;
 
 #[test]
 fn boundary_clip_preserves_spans_when_all_moves_inside() {
@@ -57,6 +58,7 @@ fn boundary_clip_preserves_spans_when_all_moves_inside() {
         2.0,
         20.0,
         &semantic_ctx,
+        &mut ReconcileSet::new(Some(&recorder)),
     );
 
     assert!(
@@ -105,6 +107,7 @@ fn boundary_clip_with_no_input_spans_emits_no_spans() {
         2.0,
         20.0,
         &semantic_ctx,
+        &mut ReconcileSet::new(Some(&recorder)),
     );
 
     assert!(clipped.spans_valid);

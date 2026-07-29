@@ -20,6 +20,7 @@
 use crate::geo::P3;
 use crate::toolpath::{MoveType, Toolpath, simplify_path_3d_keep_mask};
 use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap};
+use crate::transform_provenance::{ReconcileSet, Transformed};
 use std::collections::BTreeSet;
 use std::ops::Range;
 
@@ -33,8 +34,19 @@ pub(crate) const FEED_EPS: f64 = 1e-6;
 /// removal keeps the path within `tolerance` (mm) of the retained chord.
 ///
 /// `tolerance <= 0` (or a degenerate toolpath) is a no-op passthrough.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> AnnotatedToolpath {
+    merge_linear_runs_with_provenance(annotated, tolerance)
+        .reconcile(&mut ReconcileSet::empty())
+        .into_inner()
+}
+
+/// [`merge_linear_runs`] under the C1 provenance contract — hands back the
+/// N-to-M collapse so channels other than the spans can follow it.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub fn merge_linear_runs_with_provenance(
+    annotated: AnnotatedToolpath,
+    tolerance: f64,
+) -> Transformed {
     // Barriers we must not merge across — same set arc-fit honours. A barrier
     // at index `b` sits before `moves[b]`; a run that included `b` would erase
     // the boundary between `b-1` and `b`.
@@ -54,14 +66,14 @@ pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Annota
     } = annotated;
 
     if toolpath.moves.len() < 2 || tolerance <= 0.0 {
-        return AnnotatedToolpath {
+        return Transformed::index_preserving(AnnotatedToolpath {
             toolpath,
             spans,
             spans_valid,
             planner_engagement,
             rest_grid,
             rest_regions,
-        };
+        });
     }
 
     let moves = &toolpath.moves;
@@ -146,21 +158,24 @@ pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Annota
     }
 
     let new_n_moves = result.moves.len();
+    let remap = MoveRemap { old_to_new };
     let new_spans = if spans_valid {
-        let remap = MoveRemap { old_to_new };
         remap.remap_spans(&spans, new_n_moves)
     } else {
         spans
     };
 
-    AnnotatedToolpath {
-        toolpath: result,
-        spans: new_spans,
-        spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-    }
+    Transformed::from_remap(
+        AnnotatedToolpath {
+            toolpath: result,
+            spans: new_spans,
+            spans_valid,
+            planner_engagement,
+            rest_grid,
+            rest_regions,
+        },
+        remap,
+    )
 }
 
 #[cfg(test)]

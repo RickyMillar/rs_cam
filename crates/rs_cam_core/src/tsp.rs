@@ -8,6 +8,7 @@ use std::ops::Range;
 use crate::geo::P3;
 use crate::toolpath::{Move, MoveType, Toolpath};
 use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
+use crate::transform_provenance::{ReconcileSet, Transformed};
 
 /// A continuous sequence of cutting moves between rapids.
 struct Segment {
@@ -135,8 +136,28 @@ fn total_rapid_distance(order: &[usize], segments: &[Segment]) -> f64 {
 ///    span that fragmented across barriers / segments (F2.2).
 // SAFETY: all indexing in this function is bounded by `n` (segment count)
 // and group_bounds, both built locally.
-#[allow(clippy::indexing_slicing)]
 pub fn optimize_rapid_order(annotated: AnnotatedToolpath, safe_z: f64) -> AnnotatedToolpath {
+    optimize_rapid_order_with_provenance(annotated, safe_z)
+        .reconcile(&mut ReconcileSet::empty())
+        .into_inner()
+}
+
+/// [`optimize_rapid_order`] under the C1 provenance contract: hands back the
+/// permutation so every index-carrying channel beside the spans can follow
+/// the moves.
+///
+/// The provenance is [`MoveProvenance::Permutation`], not `Remap` — the
+/// difference is not bookkeeping. A reorder can interleave foreign moves
+/// into a claim's new bounding range, and a channel that only knew the
+/// bounding remap would widen the claim to cover strangers instead of
+/// dropping it. Same rule the span filter below applies, same predicate.
+// SAFETY: all indexing in this function is bounded by `n` (segment count)
+// and group_bounds, both built locally.
+#[allow(clippy::indexing_slicing)]
+pub fn optimize_rapid_order_with_provenance(
+    annotated: AnnotatedToolpath,
+    safe_z: f64,
+) -> Transformed {
     let barriers = annotated.rapid_order_barriers();
     let AnnotatedToolpath {
         toolpath,
@@ -148,14 +169,14 @@ pub fn optimize_rapid_order(annotated: AnnotatedToolpath, safe_z: f64) -> Annota
     } = annotated;
 
     if toolpath.moves.is_empty() {
-        return AnnotatedToolpath {
+        return Transformed::index_preserving(AnnotatedToolpath {
             toolpath,
             spans,
             spans_valid: input_valid,
             planner_engagement,
             rest_grid,
             rest_regions,
-        };
+        });
     }
 
     // Build the per-group bounds in input-move coordinates. With no barriers
@@ -216,14 +237,17 @@ pub fn optimize_rapid_order(annotated: AnnotatedToolpath, safe_z: f64) -> Annota
         (spans, false)
     };
 
-    AnnotatedToolpath {
-        toolpath: result,
-        spans: new_spans,
-        spans_valid: new_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-    }
+    Transformed::from_permutation(
+        AnnotatedToolpath {
+            toolpath: result,
+            spans: new_spans,
+            spans_valid: new_valid,
+            planner_engagement,
+            rest_grid,
+            rest_regions,
+        },
+        remap,
+    )
 }
 
 /// Run the single-group nearest-neighbor + 2-opt over `[group_start..group_end)`
@@ -485,27 +509,18 @@ fn remap_spans(spans: &[Span], remap: &MoveRemap, new_n: usize, moves: &[Move]) 
 
                 // Any old move *outside* the span that non-trivially
                 // overlaps `bounds` means the span's contents got
-                // interleaved with foreign moves by the reorder.
-                // `find` rather than `any` so the log can NAME the intruder.
-                // Which move intrudes is the whole diagnosis: a span whose
-                // own remapped bounds are near-exact (measured on wanaka: a
-                // 200 924-move region node came back as 200 959, a 0.02%
-                // dilation) is not "scattered by the reorder" — it is being
-                // discarded by this guard because some unrelated move landed
-                // in its range. See `planning/unified_v3_design.md` §14d.
-                let foreign_intrusion = remap
-                    .old_to_new
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, _)| *i < s.start_move || *i >= s.end_move)
-                    .find(|(_, slot)| {
-                        slot.as_ref().is_some_and(|r| {
-                            // Non-trivial overlap: the slot covers an actual
-                            // new-move index (start < end) AND that index is
-                            // inside `bounds`.
-                            r.start < r.end && r.start < bounds.end && r.end > bounds.start
-                        })
-                    });
+                // interleaved with foreign moves by the reorder. The
+                // predicate lives on `MoveRemap` so the semantic-trace
+                // channel applies the SAME rule through
+                // `MoveProvenance::Permutation` (C1) — it NAMES the intruder
+                // rather than just answering yes/no, because which move
+                // intrudes is the whole diagnosis: a span whose own remapped
+                // bounds are near-exact (measured on wanaka: a 200 924-move
+                // region node came back as 200 959, a 0.02% dilation) is not
+                // "scattered by the reorder" — it is being discarded by this
+                // guard because some unrelated move landed in its range. See
+                // `planning/unified_v3_design.md` §14d.
+                let foreign_intrusion = remap.foreign_intrusion(s.start_move, s.end_move, &bounds);
 
                 if let Some((intruder_old_idx, intruder_new)) = foreign_intrusion {
                     let intruder_intent = moves.get(intruder_old_idx).map(|m| m.intent);

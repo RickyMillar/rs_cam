@@ -111,6 +111,7 @@ pub mod tool_load;
 pub mod toolpath;
 pub mod toolpath_spans;
 pub mod trace;
+pub mod transform_provenance;
 pub mod tsp;
 pub mod unified_finish;
 pub mod vcarve;

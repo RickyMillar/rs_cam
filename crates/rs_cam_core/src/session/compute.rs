@@ -1441,6 +1441,13 @@ impl ProjectSession {
                 // Apply dressups. Reuse the `prior_stock` snapshot hoisted above
                 // (enables air-cut filter + rest-machining-aware dressups).
                 let prior_stock_ref = prior_stock_arc.as_deref();
+                // C1: the index-carrying channels this call site owns. The
+                // session produces a semantic trace, so its recorder is
+                // registered here once and every transform below reconciles
+                // against it — dressups, the boundary clip and the
+                // entry-descent split alike.
+                let mut channels =
+                    crate::transform_provenance::ReconcileSet::new(Some(&semantic_recorder));
                 let dressed = crate::compute::execute::apply_dressups(
                     annotated,
                     &tc.dressups,
@@ -1460,11 +1467,10 @@ impl ProjectSession {
                     tc.operation.transform_capabilities(),
                     None,
                     None,
-                    // Task #14: no per-dressup ITEMS on this path (that is
-                    // the GUI worker's trace), but the items recorded at
-                    // generation time must still follow the moves through
-                    // every step.
-                    Some(&semantic_recorder),
+                    // No per-dressup ITEMS on this path (that is the GUI
+                    // worker's trace), but the items recorded at generation
+                    // time must still follow the moves through every step.
+                    &mut channels,
                 );
                 annotated = dressed;
 
@@ -1494,6 +1500,7 @@ impl ProjectSession {
                                 tool_def.diameter(),
                                 heights.retract_z,
                                 &semantic_root,
+                                &mut channels,
                             )
                         } else {
                             Self::apply_boundary_clip(
@@ -1505,6 +1512,7 @@ impl ProjectSession {
                                 tool_def.diameter(),
                                 heights.retract_z,
                                 &semantic_root,
+                                &mut channels,
                             )
                         };
                 }
@@ -1526,20 +1534,14 @@ impl ProjectSession {
                 // boundary clip uses (`Span::remap`), rather than
                 // invalidating them.
                 {
-                    let (split_count, mapping) =
-                        crate::dressup::optimize_entry_descents_with_provenance(
-                            &mut annotated.toolpath,
+                    let (transformed, _split_count) =
+                        crate::dressup::optimize_entry_descents_annotated(
+                            annotated,
                             gen_initial_stock,
                             heights.top_z,
                             tool_def.radius(),
                         );
-                    if split_count > 0 {
-                        annotated.spans =
-                            annotated.spans.iter().map(|s| s.remap(&mapping)).collect();
-                        // Task #14: same map, same moment — the semantic
-                        // trace's links are as index-based as the spans.
-                        semantic_recorder.remap_move_links(&mapping, &annotated.toolpath);
-                    }
+                    annotated = transformed.reconcile(&mut channels).into_inner();
                 }
 
                 let stats = ToolpathStats {
@@ -1746,19 +1748,11 @@ impl ProjectSession {
         tool_diameter: f64,
         safe_z: f64,
         semantic_ctx: &crate::semantic_trace::ToolpathSemanticContext,
+        channels: &mut crate::transform_provenance::ReconcileSet<'_>,
     ) -> crate::toolpath_spans::AnnotatedToolpath {
         use crate::boundary::{
-            ToolContainment, clip_toolpath_to_boundary_with_provenance, effective_boundary,
+            ToolContainment, clip_annotated_to_boundary_set, effective_boundary,
         };
-
-        let crate::toolpath_spans::AnnotatedToolpath {
-            toolpath,
-            spans,
-            spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-        } = annotated;
 
         // Resolve the source polygon for the boundary (ModelSilhouette /
         // FaceSelection fall back to the stock rectangle when the required
@@ -1793,54 +1787,38 @@ impl ProjectSession {
 
         let tool_radius = tool_diameter / 2.0;
         let boundaries = effective_boundary(&stock_poly, containment, tool_radius);
-        let (clipped, mapping) = match boundaries.first() {
-            Some(boundary) => {
-                let (clipped, mapping) =
-                    clip_toolpath_to_boundary_with_provenance(&toolpath, boundary, safe_z);
+        // An empty `boundaries` means the boundary collapsed (e.g. the tool
+        // is larger than the stock): the set clipper passes the toolpath
+        // through with an identity mapping, so the collapsed and the clipped
+        // path leave the channels in provably the same state.
+        let clipped = clip_annotated_to_boundary_set(
+            annotated,
+            boundaries.first().map(std::slice::from_ref).unwrap_or(&[]),
+            safe_z,
+        )
+        .reconcile(channels)
+        .into_inner();
 
-                // Task #14: the semantic trace's move links go through the
-                // SAME provenance map the spans do, below — before the clip
-                // scope below records its own (already post-clip) link.
-                semantic_ctx.recorder().remap_move_links(&mapping, &clipped);
-
-                // Record semantic trace for boundary clip
-                let clip_scope =
-                    semantic_ctx.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
-                clip_scope.set_param(
-                    "containment",
-                    match boundary_config.containment {
-                        crate::compute::config::BoundaryContainment::Center => "center",
-                        crate::compute::config::BoundaryContainment::Inside => "inside",
-                        crate::compute::config::BoundaryContainment::Outside => "outside",
-                    },
-                );
-                clip_scope.set_param("keep_out_count", keep_out_footprints.len());
-                if !clipped.moves.is_empty() {
-                    clip_scope.bind_to_toolpath(&clipped, 0, clipped.moves.len());
-                }
-
-                (clipped, mapping)
+        // Recorded AFTER the reconcile so this item's own link is bound to
+        // post-clip indices and is not then remapped a second time.
+        if !boundaries.is_empty() {
+            let clip_scope =
+                semantic_ctx.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
+            clip_scope.set_param(
+                "containment",
+                match boundary_config.containment {
+                    crate::compute::config::BoundaryContainment::Center => "center",
+                    crate::compute::config::BoundaryContainment::Inside => "inside",
+                    crate::compute::config::BoundaryContainment::Outside => "outside",
+                },
+            );
+            clip_scope.set_param("keep_out_count", keep_out_footprints.len());
+            if !clipped.toolpath.moves.is_empty() {
+                clip_scope.bind_to_toolpath(&clipped.toolpath, 0, clipped.toolpath.moves.len());
             }
-            None => {
-                // Boundary collapsed (e.g. tool too large for stock) — return
-                // original toolpath with an identity mapping so spans pass
-                // through unchanged.
-                let n = toolpath.moves.len();
-                (toolpath, (0..=n).collect())
-            }
-        };
-
-        let remapped: Vec<crate::toolpath_spans::Span> =
-            spans.iter().map(|s| s.remap(&mapping)).collect();
-
-        crate::toolpath_spans::AnnotatedToolpath {
-            toolpath: clipped,
-            spans: remapped,
-            spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
         }
+
+        clipped
     }
 
     /// Multi-region variant of [`Self::apply_boundary_clip`] for
@@ -1870,19 +1848,11 @@ impl ProjectSession {
         tool_diameter: f64,
         safe_z: f64,
         semantic_ctx: &crate::semantic_trace::ToolpathSemanticContext,
+        channels: &mut crate::transform_provenance::ReconcileSet<'_>,
     ) -> crate::toolpath_spans::AnnotatedToolpath {
         use crate::boundary::{
-            ToolContainment, clip_toolpath_to_boundary_set_with_provenance, effective_boundary,
+            ToolContainment, clip_annotated_to_boundary_set, effective_boundary,
         };
-
-        let crate::toolpath_spans::AnnotatedToolpath {
-            toolpath,
-            spans,
-            spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-        } = annotated;
 
         // Per-region keep-out subtraction + user offset (regions that
         // collapse under the offset are dropped), mirroring what
@@ -1907,28 +1877,26 @@ impl ProjectSession {
             .flat_map(|region| effective_boundary(region, containment, tool_radius))
             .collect();
 
-        let (clipped, mapping) = if boundaries.is_empty() {
+        if boundaries.is_empty() {
             // Every region collapsed (offset/inset ate them all) — same
             // "boundary collapsed" semantics as the single-polygon path:
-            // return the original toolpath unchanged with an identity
-            // mapping so spans pass through untouched.
+            // the toolpath passes through with an identity mapping, which is
+            // still reconciled so the collapsed and clipped paths leave the
+            // channels in provably the same state.
             tracing::warn!(
                 region_count = regions.len(),
                 "DerivedRestRegions boundary collapsed (all regions vanished under \
                  offset/containment inset) — leaving toolpath unclipped"
             );
-            let n = toolpath.moves.len();
-            (toolpath, (0..=n).collect())
-        } else {
-            let (clipped, mapping) =
-                clip_toolpath_to_boundary_set_with_provenance(&toolpath, &boundaries, safe_z);
+        }
 
-            // Task #14: semantic move links go through the SAME provenance
-            // map the spans do, below — before the clip scope records its
-            // own (already post-clip) link.
-            semantic_ctx.recorder().remap_move_links(&mapping, &clipped);
+        let clipped = clip_annotated_to_boundary_set(annotated, &boundaries, safe_z)
+            .reconcile(channels)
+            .into_inner();
 
-            // Record semantic trace for boundary clip
+        // Recorded AFTER the reconcile so this item's own link is bound to
+        // post-clip indices and is not then remapped a second time.
+        if !boundaries.is_empty() {
             let clip_scope =
                 semantic_ctx.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
             clip_scope.set_param(
@@ -1941,24 +1909,12 @@ impl ProjectSession {
             );
             clip_scope.set_param("keep_out_count", keep_out_footprints.len());
             clip_scope.set_param("region_count", boundaries.len());
-            if !clipped.moves.is_empty() {
-                clip_scope.bind_to_toolpath(&clipped, 0, clipped.moves.len());
+            if !clipped.toolpath.moves.is_empty() {
+                clip_scope.bind_to_toolpath(&clipped.toolpath, 0, clipped.toolpath.moves.len());
             }
-
-            (clipped, mapping)
-        };
-
-        let remapped: Vec<crate::toolpath_spans::Span> =
-            spans.iter().map(|s| s.remap(&mapping)).collect();
-
-        crate::toolpath_spans::AnnotatedToolpath {
-            toolpath: clipped,
-            spans: remapped,
-            spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
         }
+
+        clipped
     }
 
     /// Generate all enabled toolpaths, skipping those whose IDs are in `skip`.
@@ -5395,6 +5351,7 @@ mod tests {
             2.0,
             safe_z,
             &semantic_ctx,
+            &mut crate::transform_provenance::ReconcileSet::new(Some(&recorder)),
         );
 
         assert!(clipped.spans_valid, "spans stay valid through the set clip");
@@ -5457,6 +5414,7 @@ mod tests {
             2.0,
             20.0,
             &semantic_ctx,
+            &mut crate::transform_provenance::ReconcileSet::new(Some(&recorder)),
         );
 
         assert_eq!(

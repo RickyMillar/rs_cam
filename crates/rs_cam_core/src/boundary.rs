@@ -66,6 +66,64 @@ pub fn clip_toolpath_to_boundary(tp: &Toolpath, boundary: &Polygon2, safe_z: f64
     clip_toolpath_to_boundary_with_provenance(tp, boundary, safe_z).0
 }
 
+/// Clip an [`AnnotatedToolpath`] to the union of a boundary SET, under the
+/// C1 provenance contract.
+///
+/// The single implementation of "clip, then bring the indices along": it
+/// remaps the spans through the clip's mapping and hands that same mapping
+/// to every registered channel via [`Transformed::reconcile`]. Three call
+/// sites (`ProjectSession::apply_boundary_clip`, `..._multi`, and the viz
+/// worker's inline single-polygon clip) each carried their own copy of the
+/// remap-then-poke-the-trace sequence; a fourth would have forgotten it.
+///
+/// An EMPTY `boundaries` slice means the boundary collapsed (tool larger
+/// than the stock, every rest region eaten by the inset). That is not an
+/// error and not a clip: the toolpath passes through with an identity
+/// mapping, which still has to be reconciled — so the collapsed path and
+/// the clipped path leave the channels in provably the same state.
+pub fn clip_annotated_to_boundary_set(
+    annotated: crate::toolpath_spans::AnnotatedToolpath,
+    boundaries: &[Polygon2],
+    safe_z: f64,
+) -> crate::transform_provenance::Transformed {
+    use crate::toolpath_spans::AnnotatedToolpath;
+    use crate::transform_provenance::Transformed;
+
+    let AnnotatedToolpath {
+        toolpath,
+        spans,
+        spans_valid,
+        planner_engagement,
+        rest_grid,
+        rest_regions,
+    } = annotated;
+
+    let (clipped, mapping) = if boundaries.is_empty() {
+        let n = toolpath.moves.len();
+        (toolpath, (0..=n).collect::<Vec<usize>>())
+    } else {
+        clip_toolpath_to_boundary_set_with_provenance(&toolpath, boundaries, safe_z)
+    };
+
+    // The clipper never DROPS an input move — it only inserts retract/rapid
+    // pairs between them — so a span that covered "the moves cutting region
+    // X" still covers them, plus any retract inserted into the middle.
+    // `spans_valid` therefore survives the clip.
+    let spans: Vec<crate::toolpath_spans::Span> = spans.iter().map(|s| s.remap(&mapping)).collect();
+
+    Transformed::from_mapping(
+        AnnotatedToolpath {
+            toolpath: clipped,
+            spans,
+            spans_valid,
+            planner_engagement,
+            rest_grid,
+            rest_regions,
+        },
+        mapping,
+    )
+}
+
 /// Clip a toolpath to stay within a boundary polygon and return a per-input
 /// move provenance map for span remapping.
 ///

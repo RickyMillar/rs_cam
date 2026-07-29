@@ -25,6 +25,7 @@ use crate::geo::P3;
 use crate::narrate::LARGE_ARC_RADIUS_MULTIPLIER;
 use crate::toolpath::{Move, MoveType, Toolpath};
 use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
+use crate::transform_provenance::{ReconcileSet, Transformed};
 
 /// Fit arcs to a toolpath, replacing linear segments with G2/G3 where possible.
 ///
@@ -40,12 +41,24 @@ use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
 /// - Input spans are remapped through the N-to-1 collapse via `MoveRemap`.
 /// - When `spans_valid` is `false`, the legacy unconditional collapse runs and
 ///   spans pass through untouched.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn fit_arcs(
     annotated: AnnotatedToolpath,
     tolerance: f64,
     tool_radius: f64,
 ) -> AnnotatedToolpath {
+    fit_arcs_with_provenance(annotated, tolerance, tool_radius)
+        .reconcile(&mut ReconcileSet::empty())
+        .into_inner()
+}
+
+/// [`fit_arcs`] under the C1 provenance contract — hands back the N-to-1
+/// collapse so channels other than the spans can follow it.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub fn fit_arcs_with_provenance(
+    annotated: AnnotatedToolpath,
+    tolerance: f64,
+    tool_radius: f64,
+) -> Transformed {
     // Barriers we must not collapse across. A barrier at index `b` sits before
     // moves[b]; we treat it as cutting the arc-eligible run so any candidate
     // window [start, end) must satisfy: no barrier in (start, end) — i.e. a
@@ -67,14 +80,14 @@ pub fn fit_arcs(
     let moves = &toolpath.moves;
 
     if moves.is_empty() {
-        return AnnotatedToolpath {
+        return Transformed::index_preserving(AnnotatedToolpath {
             toolpath: Toolpath::new(),
             spans,
             spans_valid,
             planner_engagement,
             rest_grid,
             rest_regions,
-        };
+        });
     }
 
     let mut result = Toolpath::new();
@@ -219,8 +232,8 @@ pub fn fit_arcs(
     }
 
     let new_n_moves = result.moves.len();
+    let remap = MoveRemap { old_to_new };
     let new_spans = if spans_valid {
-        let remap = MoveRemap { old_to_new };
         let mut remapped = remap.remap_spans(&spans, new_n_moves);
         for pos in arc_positions {
             remapped.push(Span::new(pos, pos + 1, SpanKind::DressupArtifact).with_label("arc-fit"));
@@ -230,14 +243,17 @@ pub fn fit_arcs(
         spans
     };
 
-    AnnotatedToolpath {
-        toolpath: result,
-        spans: new_spans,
-        spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-    }
+    Transformed::from_remap(
+        AnnotatedToolpath {
+            toolpath: result,
+            spans: new_spans,
+            spans_valid,
+            planner_engagement,
+            rest_grid,
+            rest_regions,
+        },
+        remap,
+    )
 }
 
 struct ArcParams {
