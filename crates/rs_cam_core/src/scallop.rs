@@ -794,6 +794,71 @@ pub fn scallop_toolpath_structured_annotated_with_resolution(
     resolution: FinishResolutionPolicy,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>, ScallopReport), Cancelled> {
+    scallop_toolpath_structured_annotated_with_resolution_and_ring_budget(
+        mesh,
+        index,
+        cutter,
+        params,
+        debug,
+        boundary_regions,
+        resolution,
+        ScallopRingBudget::FlatGroundStepover,
+        cancel,
+    )
+}
+
+/// Which stepover the ring cascade's `max_rings` safety cap is budgeted from.
+///
+/// PR-8c research seam (H3). The shipped budget is
+/// [`Self::FlatGroundStepover`] and no production caller passes anything
+/// else — every entry point above resolves to it, so this enum adds no
+/// behaviour and changes no default. It exists because Checkpoint B's ruling
+/// asked for the alternative to be MEASURED before anyone argues about it,
+/// and the alternative cannot be measured without a way to select it.
+///
+/// See `CHECKPOINT_B_EVIDENCE.md` §3.1 finding 3 and the dated
+/// "max_rings experiment" addendum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScallopRingBudget {
+    /// **Shipped.** `stepover_from_scallop_flat(cusp_r, height)`, floored at
+    /// `cusp_r * 0.05` — the WIDEST spacing the cusp target allows, so the
+    /// budget under-counts on any sloped ground. The cap then truncates the
+    /// cascade and the loop warns.
+    FlatGroundStepover,
+    /// Budget from [`crate::reach::suggested_offset_stepover_mm`] at the
+    /// cutter's own shallow-rest working half-width — the number PR-6a made
+    /// canonical for "how far apart may two passes of this cutter sit".
+    ///
+    /// This is Checkpoint B's "derive the budget from the SELECTED stepover"
+    /// read consistently with the reach policy rather than as the loop's
+    /// `cusp_r * 0.05` clamp FLOOR, which is the naive cap raise v3 measured
+    /// at +92% time and 34× over-cut.
+    ReachPolicyStepover,
+    /// The naive raise, kept as the CONTROL: budget from the loop's own
+    /// clamp floor, the smallest stepover it can ever select. This is what
+    /// v3 measured; it is here so the experiment reproduces that result on
+    /// the Checkpoint B fixtures instead of citing it.
+    LoopClampFloor,
+}
+
+/// [`scallop_toolpath_structured_annotated_with_resolution`] with the ring
+/// budget selected by the caller.
+///
+/// **Research seam, not a production entry point** (PR-8c). Passing
+/// [`ScallopRingBudget::FlatGroundStepover`] reproduces the shipped path
+/// exactly — that is what the wrapper above does.
+#[allow(clippy::too_many_arguments)]
+pub fn scallop_toolpath_structured_annotated_with_resolution_and_ring_budget(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &ScallopParams,
+    debug: Option<&ToolpathDebugContext>,
+    boundary_regions: Option<&RegionSet<'_>>,
+    resolution: FinishResolutionPolicy,
+    ring_budget: ScallopRingBudget,
+    cancel: &dyn CancelCheck,
+) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>, ScallopReport), Cancelled> {
     check_cancel(cancel)?;
     let mut uncut_core_mm2 = 0.0_f64;
     // Physical extent (heightmap padding / grid coverage) keeps the FULL
@@ -894,9 +959,26 @@ pub fn scallop_toolpath_structured_annotated_with_resolution(
     // refinement — not here. Until then this cap stays, and the loop warns
     // loudly when it truncates so the standing material is a KNOWN defect
     // rather than a silent one.
-    let min_stepover =
-        crate::scallop_math::stepover_from_scallop_flat(cusp_r, params.scallop_height)
-            .max(cusp_r * 0.05);
+    //
+    // PR-8c: which stepover this is budgeted from is now selectable so the
+    // Checkpoint B ruling's alternative can be MEASURED. Production passes
+    // `FlatGroundStepover` and the arithmetic below is byte-identical to what
+    // it always was.
+    let clamp_floor = cusp_r * 0.05;
+    let min_stepover = match ring_budget {
+        ScallopRingBudget::FlatGroundStepover => {
+            crate::scallop_math::stepover_from_scallop_flat(cusp_r, params.scallop_height)
+                .max(clamp_floor)
+        }
+        // The reach policy's own answer for "how far apart may two passes of
+        // this cutter sit", evaluated at the shallow-rest depth where its
+        // cusp floor binds — the same reference PR-6a uses for a fan it has
+        // not measured a depth for yet.
+        ScallopRingBudget::ReachPolicyStepover => {
+            crate::reach::suggested_offset_stepover_mm(cutter, 0.0).max(clamp_floor)
+        }
+        ScallopRingBudget::LoopClampFloor => clamp_floor,
+    };
     let max_extent = (extent_x - origin_x).max(extent_y - origin_y);
     let max_rings = ((max_extent / min_stepover) * 0.5).ceil() as usize + 10;
 

@@ -88,8 +88,9 @@ use rs_cam_core::ramp_finish::{
     ramp_finish_toolpath_structured_annotated_with_resolution,
 };
 use rs_cam_core::scallop::{
-    ScallopParams, ScallopRuntimeAnnotation, scallop_generation_resolution,
+    ScallopParams, ScallopRingBudget, ScallopRuntimeAnnotation, scallop_generation_resolution,
     scallop_toolpath_structured_annotated_with_resolution,
+    scallop_toolpath_structured_annotated_with_resolution_and_ring_budget,
 };
 use rs_cam_core::steep_shallow::{
     SteepShallowParams, steep_shallow_toolpath_split_with_resolution,
@@ -1270,3 +1271,126 @@ fn ramp_finish_reach_clamp_removes_the_cone_fixture_gouge() {
     );
 }
 
+
+// ── PR-8c: the max_rings experiment (EVIDENCE ONLY) ─────────────────────
+
+/// **Research, not a gate.** Checkpoint B's ruling: "`max_rings` budget
+/// derived from SELECTED stepover as an H3-scoped EXPERIMENT first (adopt
+/// only if standing -> 0 with no over-cut regression; remember v3: naive cap
+/// raise was 34× worse)."
+///
+/// §3.1 finding 3 is what this answers: at `cusp/4` scallop leaves 19.32 mm²
+/// standing on the narrow ridge and 33.24 mm² on the mixed ribbon where
+/// `envelope/4` leaves none, because `max_rings` is budgeted from the
+/// FLAT-GROUND (widest) stepover while the loop selects a smaller one per
+/// ring on sloped terrain.
+///
+/// Three budgets are run at the cusp/4 arm — the one that exhibits the
+/// truncation — on all four fixtures:
+///
+/// * `FlatGroundStepover` — shipped baseline.
+/// * `ReachPolicyStepover` — the ruling's "selected stepover", read through
+///   `reach::suggested_offset_stepover_mm` for consistency with PR-6a.
+/// * `LoopClampFloor` — the NAIVE raise, as the control. v3 measured this at
+///   +92% time and 34× deep over-cut on wanaka ×2 and the `scallop.rs`
+///   comment records it; reproducing it here on these fixtures is what makes
+///   the other two rows interpretable instead of merely reported.
+///
+/// **Both halves of the ruling's adopt condition are measured.** Standing
+/// material comes from `ScallopReport::uncut_core_mm2`. Over-cut is scored
+/// against the pinned 0.05 mm reference field — and it is reported with §5.1's
+/// caveat attached, which is load-bearing here: scallop's ring Z is an exact
+/// per-point drop-cutter query, so its residual column is dominated by the
+/// REFERENCE grid's own interpolation error at whatever points the path
+/// happens to visit, and a denser path visits more sharp-feature cells. The
+/// column is therefore usable to detect a LARGE regression (v3's 34×) and
+/// must not be read as an absolute over-cut count. Ring count and generation
+/// time carry the rest of the cost story.
+///
+/// Prints markdown for the evidence addendum. `#[ignore]`: minutes.
+#[test]
+#[ignore = "PR-8c max_rings experiment — minutes; evidence only, adopts nothing"]
+fn max_rings_budget_experiment() {
+    let t = taper();
+    let cusp_arm = FinishResolutionPolicy::cusp_quarter(&t, TOLERANCE_MM);
+    let params = scallop_params();
+    let cancel = || false;
+
+    println!("\n## max_rings experiment — cusp/4 arm, tapered Ø1/7°/Ø6\n");
+    println!(
+        "| fixture | budget | gen s | rings emitted | cascade rings | moves | \
+         uncut core mm² | deepest gouge | gouge>50µm | min seg mm |"
+    );
+    println!("|---|---|---|---|---|---|---|---|---|---|");
+    for fixture in fixtures() {
+        let (reference, _) = build(
+            &fixture,
+            &t,
+            FinishResolutionPolicy::explicit(REFERENCE_CELL_MM),
+        );
+        for (label, budget) in [
+            ("flat-ground (shipped)", ScallopRingBudget::FlatGroundStepover),
+            ("reach policy", ScallopRingBudget::ReachPolicyStepover),
+            ("loop clamp floor (v3 control)", ScallopRingBudget::LoopClampFloor),
+        ] {
+            let t0 = Instant::now();
+            let (tp, _anns, report) =
+                scallop_toolpath_structured_annotated_with_resolution_and_ring_budget(
+                    &fixture.mesh,
+                    &fixture.index,
+                    &t,
+                    &params,
+                    None,
+                    None,
+                    cusp_arm,
+                    budget,
+                    &cancel,
+                )
+                .expect("scallop");
+            let secs = t0.elapsed().as_secs_f64();
+            let m = path_metrics(&tp, Some(&reference));
+            println!(
+                "| {} | {label} | {secs:.2} | {} | {} | {} | {:.2} | {:.4} | {} | {:.4} |",
+                fixture.name,
+                report.ring_count,
+                report.cascade_ring_count,
+                m.moves,
+                report.uncut_core_mm2,
+                m.deepest_gouge_mm,
+                m.gouge_over_50um,
+                m.min_segment_mm,
+            );
+        }
+    }
+    println!(
+        "\n(commanded cusp height {} mm; reference cell {REFERENCE_CELL_MM} mm; \
+         residual column carries §5.1's scallop caveat)",
+        params.scallop_height
+    );
+}
+
+/// The experiment's own non-vacuity guard, FAST and not ignored: the three
+/// budgets must be three different ring caps on the shipped tool, or every
+/// row of the table above is the same run three times.
+#[test]
+fn the_three_ring_budgets_are_three_different_numbers() {
+    let t = taper();
+    let params = scallop_params();
+    let cusp_r = t.cusp_radius_mm();
+    let clamp_floor = cusp_r * 0.05;
+    let flat = rs_cam_core::scallop_math::stepover_from_scallop_flat(cusp_r, params.scallop_height)
+        .max(clamp_floor);
+    let reach = rs_cam_core::reach::suggested_offset_stepover_mm(&t, 0.0).max(clamp_floor);
+    assert!(
+        clamp_floor < reach && reach < flat,
+        "the budgets must ORDER floor < reach < flat for the experiment to be \
+         a ladder: {clamp_floor:.4} / {reach:.4} / {flat:.4}"
+    );
+    // And the shipped budget must still be the flat-ground one: the seam is
+    // additive, so the default cannot have moved.
+    assert!((flat - 0.2800).abs() < 0.001, "flat-ground stepover {flat:.4}");
+    println!(
+        "ring-budget stepovers: flat-ground {flat:.4} mm (shipped), reach \
+         policy {reach:.4} mm, loop clamp floor {clamp_floor:.4} mm"
+    );
+}
