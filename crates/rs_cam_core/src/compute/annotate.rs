@@ -516,6 +516,47 @@ pub(super) fn annotate_scallop(
     }
 }
 
+// ── UnifiedFinish ───────────────────────────────────────────────────
+
+/// Semantic trace for UnifiedFinish: one `Region` item per routed region
+/// node, labelled with its BAND and the STRATEGY that generated it.
+///
+/// Plan A/M8. UnifiedFinish already emitted STRUCTURAL region-node spans
+/// (`unified_finish::unified_finish_spans`), but the semantic trace
+/// `narrate_toolpath` reads is a separate system that the op never
+/// populated — so the agent-facing diagnostic reported `regions 0` for the
+/// one operation whose entire premise is mixing strategies.
+///
+/// Both systems are built from the same
+/// [`crate::unified_finish::RegionAnnotation`] table, and
+/// `tests/unified_finish_semantic_regions.rs` asserts they agree on count
+/// and move range. This is annotation only: no move is added, removed, or
+/// moved.
+pub(super) fn annotate_unified_finish_regions(
+    regions: &[crate::unified_finish::RegionAnnotation],
+    toolpath: &Toolpath,
+    op_context: &ToolpathSemanticContext,
+) {
+    for region in regions {
+        let scope = op_context.start_item(ToolpathSemanticKind::Region, region.semantic_label());
+        scope.set_param("region_id", region.region_id);
+        scope.set_param("band", region.kind.band_label());
+        scope.set_param("strategy", region.kind.strategy().label());
+        if let Some(area) = region.area_mm2 {
+            scope.set_param("area_mm2", area);
+        }
+        // Same guard `bind_span_scope` applies to structural spans: an
+        // empty or out-of-range node contributes an unlinked item rather
+        // than a bogus range.
+        if region.move_range.end > region.move_range.start
+            && region.move_range.end <= toolpath.moves.len()
+        {
+            scope.bind_to_toolpath(toolpath, region.move_range.start, region.move_range.end);
+        }
+        scope.finish();
+    }
+}
+
 // ── RampFinish ──────────────────────────────────────────────────────
 
 pub(super) fn annotate_ramp_finish(

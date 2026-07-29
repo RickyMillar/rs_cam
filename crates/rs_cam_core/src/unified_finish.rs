@@ -402,6 +402,133 @@ pub struct RegionTableEntry {
     pub area_mm2: Option<f64>,
 }
 
+/// Which existing strategy generator produced a routed node's moves.
+///
+/// This is the STRATEGY half of the region label (plan A/M8): the whole
+/// premise of the unified op is mixing strategies, so a diagnostic that
+/// names only the band cannot say which generator earned its time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegionStrategy {
+    /// Shallow band — parallel raster rows.
+    Raster,
+    /// Mid-steep band — scallop-continuous rings.
+    Scallop,
+    /// Very-steep band — waterline Z-level contours.
+    Waterline,
+    /// Crease node — claimed pencil corridors.
+    Pencil,
+}
+
+impl RegionStrategy {
+    /// Stable lowercase token used in labels, semantic params, and gates.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Raster => "raster",
+            Self::Scallop => "scallop",
+            Self::Waterline => "waterline",
+            Self::Pencil => "pencil",
+        }
+    }
+}
+
+impl RegionKind {
+    /// The band this node belongs to, or `None` for the crease node.
+    pub fn band(self) -> Option<FinishBand> {
+        match self {
+            Self::Band(band) => Some(band),
+            Self::Crease => None,
+        }
+    }
+
+    /// Stable band token. Matches `FinishBand`'s `Debug` spelling for the
+    /// three bands so existing labels and log lines read the same;
+    /// `"Crease"` for the trailing claims node, which has no band.
+    pub fn band_label(self) -> &'static str {
+        match self {
+            Self::Band(FinishBand::Shallow) => "Shallow",
+            Self::Band(FinishBand::MidSteep) => "MidSteep",
+            Self::Band(FinishBand::VerySteep) => "VerySteep",
+            Self::Crease => "Crease",
+        }
+    }
+
+    /// Which generator emitted this node's moves.
+    pub fn strategy(self) -> RegionStrategy {
+        match self {
+            Self::Band(FinishBand::Shallow) => RegionStrategy::Raster,
+            Self::Band(FinishBand::MidSteep) => RegionStrategy::Scallop,
+            Self::Band(FinishBand::VerySteep) => RegionStrategy::Waterline,
+            Self::Crease => RegionStrategy::Pencil,
+        }
+    }
+
+    /// Label carried on the STRUCTURAL `SpanKind::Region` span. Pinned
+    /// verbatim to the pre-A/M8 text — spans feed the TSP's span remap and
+    /// the GUI span list, so this string is a compatibility surface.
+    pub fn span_label(self) -> String {
+        match self {
+            Self::Band(_) => format!("{} band", self.band_label()),
+            Self::Crease => "Pencil claims".to_owned(),
+        }
+    }
+}
+
+/// One routed region node's identity — the SINGLE source both the
+/// structural `SpanKind::Region` spans ([`unified_finish_spans`]) and the
+/// SEMANTIC `Region` trace items (`compute::annotate::
+/// annotate_unified_finish_regions`) are built from.
+///
+/// Plan A/M8: those two systems were independent and only the structural
+/// one was implemented, so `narrate_toolpath` reported `regions 0` for the
+/// one operation whose entire premise is mixing strategies. Both now read
+/// this table, and `tests/unified_finish_semantic_regions.rs` asserts they
+/// agree on count and move range so they cannot drift apart again.
+#[derive(Debug, Clone)]
+pub struct RegionAnnotation {
+    /// Index into [`UnifiedFinishReport::region_table`] — the same value
+    /// carried on `SpanPayload::Region`.
+    pub region_id: u32,
+    pub kind: RegionKind,
+    pub move_range: Range<usize>,
+    pub area_mm2: Option<f64>,
+}
+
+impl RegionAnnotation {
+    /// See [`RegionKind::span_label`].
+    pub fn span_label(&self) -> String {
+        self.kind.span_label()
+    }
+
+    /// Label carried on the SEMANTIC trace item: band AND strategy, which
+    /// is what the A/M8 acceptance gate and H4's mix table need.
+    pub fn semantic_label(&self) -> String {
+        match self.kind {
+            RegionKind::Band(_) => format!(
+                "{} band ({})",
+                self.kind.band_label(),
+                self.kind.strategy().label()
+            ),
+            RegionKind::Crease => format!("Crease claims ({})", self.kind.strategy().label()),
+        }
+    }
+}
+
+/// Project [`UnifiedFinishReport::region_table`] into the shared region
+/// annotations both the structural spans and the semantic trace consume.
+pub fn unified_finish_region_annotations(report: &UnifiedFinishReport) -> Vec<RegionAnnotation> {
+    report
+        .region_table
+        .iter()
+        .enumerate()
+        .map(|(region_id, entry)| RegionAnnotation {
+            region_id: region_id as u32,
+            kind: entry.kind,
+            move_range: entry.move_range.clone(),
+            area_mm2: entry.area_mm2,
+        })
+        .collect()
+}
+
 /// Claims-pipeline telemetry (design doc §2.1, R2 "pencil over-claiming").
 /// `None` on [`UnifiedFinishReport::claims`] when the claims pipeline never
 /// ran (`claims: None` at the call site).
@@ -525,20 +652,22 @@ pub fn unified_finish_spans(
             .map(|ann| (ann.move_index, ann.event.label())),
     );
 
-    let node_spans: Vec<Span> = report
-        .region_table
-        .iter()
-        .enumerate()
-        .map(|(region_id, entry)| {
-            let label = match entry.kind {
-                RegionKind::Band(band) => format!("{band:?} band"),
-                RegionKind::Crease => "Pencil claims".to_owned(),
-            };
-            Span::new(entry.move_range.start, entry.move_range.end, SpanKind::Region)
-                .with_label(label)
-                .with_payload(SpanPayload::Region {
-                    region_id: region_id as u32,
-                })
+    // A/M8: labels and ranges come from the shared region-annotation table
+    // the SEMANTIC trace also reads, so the structural and semantic region
+    // systems cannot drift apart.
+    let node_spans: Vec<Span> = unified_finish_region_annotations(report)
+        .into_iter()
+        .map(|region| {
+            let label = region.span_label();
+            Span::new(
+                region.move_range.start,
+                region.move_range.end,
+                SpanKind::Region,
+            )
+            .with_label(label)
+            .with_payload(SpanPayload::Region {
+                region_id: region.region_id,
+            })
         })
         .collect();
     let insert_at = 1.min(spans.len());
