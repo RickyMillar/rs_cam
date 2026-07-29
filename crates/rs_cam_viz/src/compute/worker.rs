@@ -723,13 +723,13 @@ fn spawn_toolpath_lane(
                     }
                 }
 
-                let _ = result_tx.send(ComputeMessage::Toolpath(ComputeResult {
+                let _ = result_tx.send(ComputeMessage::Toolpath(Box::new(ComputeResult {
                     toolpath_id: request.toolpath_id,
                     result: outcome.result,
                     debug_trace: outcome.debug_trace,
                     semantic_trace: outcome.semantic_trace,
                     debug_trace_path: outcome.debug_trace_path,
-                }));
+                })));
             }));
 
             if let Err(panic_payload) = caught {
@@ -750,7 +750,7 @@ fn spawn_toolpath_lane(
                 }
                 drop(inner);
 
-                let _ = result_tx.send(ComputeMessage::Toolpath(ComputeResult {
+                let _ = result_tx.send(ComputeMessage::Toolpath(Box::new(ComputeResult {
                     toolpath_id,
                     result: Err(ComputeError::Message(format!(
                         "Crashed due to internal error: {msg}"
@@ -758,7 +758,7 @@ fn spawn_toolpath_lane(
                     debug_trace: None,
                     semantic_trace: None,
                     debug_trace_path: None,
-                }));
+                })));
             }
         }
     })

@@ -716,22 +716,25 @@ fn toolpath_results_persist_debug_trace_metadata() {
     let semantic_trace = Arc::new(semantic_recorder.finish());
     let debug_path = temp_path("toolpath_trace_metadata", "json");
 
-    controller.compute.drained.push(ComputeMessage::Toolpath(
-        crate::compute::worker::ComputeResult {
-            toolpath_id: ToolpathId(0),
-            result: Ok(ToolpathResult {
-                annotated: Arc::clone(&annotated),
-                stats: Default::default(),
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::worker::ComputeResult {
+                toolpath_id: ToolpathId(0),
+                result: Ok(ToolpathResult {
+                    annotated: Arc::clone(&annotated),
+                    stats: Default::default(),
+                    debug_trace: Some(Arc::clone(&trace)),
+                    semantic_trace: Some(Arc::clone(&semantic_trace)),
+                    debug_trace_path: Some(debug_path.clone()),
+                    drill_op: None,
+                }),
                 debug_trace: Some(Arc::clone(&trace)),
                 semantic_trace: Some(Arc::clone(&semantic_trace)),
                 debug_trace_path: Some(debug_path.clone()),
-                drill_op: None,
-            }),
-            debug_trace: Some(Arc::clone(&trace)),
-            semantic_trace: Some(Arc::clone(&semantic_trace)),
-            debug_trace_path: Some(debug_path.clone()),
-        },
-    ));
+            },
+        )));
 
     controller.drain_compute_results();
 
@@ -790,15 +793,18 @@ fn cancelled_toolpath_preserves_debug_trace_metadata() {
     let semantic_trace = Arc::new(semantic_recorder.finish());
     let debug_path = temp_path("cancelled_toolpath_trace_metadata", "json");
 
-    controller.compute.drained.push(ComputeMessage::Toolpath(
-        crate::compute::worker::ComputeResult {
-            toolpath_id: ToolpathId(0),
-            result: Err(crate::compute::ComputeError::Cancelled),
-            debug_trace: Some(Arc::clone(&trace)),
-            semantic_trace: Some(Arc::clone(&semantic_trace)),
-            debug_trace_path: Some(debug_path.clone()),
-        },
-    ));
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::worker::ComputeResult {
+                toolpath_id: ToolpathId(0),
+                result: Err(crate::compute::ComputeError::Cancelled),
+                debug_trace: Some(Arc::clone(&trace)),
+                semantic_trace: Some(Arc::clone(&semantic_trace)),
+                debug_trace_path: Some(debug_path.clone()),
+            },
+        )));
 
     controller.drain_compute_results();
 
@@ -889,15 +895,18 @@ fn cancelled_drain_resolves_pending_mcp_generate_toolpath_waiter() {
         .toolpath
         .insert(tp_id, tx);
 
-    controller.compute.drained.push(ComputeMessage::Toolpath(
-        crate::compute::worker::ComputeResult {
-            toolpath_id: tp_id,
-            result: Err(crate::compute::ComputeError::Cancelled),
-            debug_trace: None,
-            semantic_trace: None,
-            debug_trace_path: None,
-        },
-    ));
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::worker::ComputeResult {
+                toolpath_id: tp_id,
+                result: Err(crate::compute::ComputeError::Cancelled),
+                debug_trace: None,
+                semantic_trace: None,
+                debug_trace_path: None,
+            },
+        )));
 
     controller.drain_compute_results();
 
@@ -957,22 +966,25 @@ fn drain_compute_results_repopulates_session_results() {
         Toolpath::new(),
     ));
 
-    controller.compute.drained.push(ComputeMessage::Toolpath(
-        crate::compute::worker::ComputeResult {
-            toolpath_id: ToolpathId(0),
-            result: Ok(ToolpathResult {
-                annotated: Arc::clone(&annotated),
-                stats: Default::default(),
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::worker::ComputeResult {
+                toolpath_id: ToolpathId(0),
+                result: Ok(ToolpathResult {
+                    annotated: Arc::clone(&annotated),
+                    stats: Default::default(),
+                    debug_trace: None,
+                    semantic_trace: None,
+                    debug_trace_path: None,
+                    drill_op: None,
+                }),
                 debug_trace: None,
                 semantic_trace: None,
                 debug_trace_path: None,
-                drill_op: None,
-            }),
-            debug_trace: None,
-            semantic_trace: None,
-            debug_trace_path: None,
-        },
-    ));
+            },
+        )));
 
     controller.drain_compute_results();
 
@@ -999,22 +1011,25 @@ fn drain_compute_results_clears_pending_apply_resim_on_success() {
     let annotated = Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
         Toolpath::new(),
     ));
-    controller.compute.drained.push(ComputeMessage::Toolpath(
-        crate::compute::worker::ComputeResult {
-            toolpath_id: ToolpathId(0),
-            result: Ok(ToolpathResult {
-                annotated,
-                stats: Default::default(),
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::worker::ComputeResult {
+                toolpath_id: ToolpathId(0),
+                result: Ok(ToolpathResult {
+                    annotated,
+                    stats: Default::default(),
+                    debug_trace: None,
+                    semantic_trace: None,
+                    debug_trace_path: None,
+                    drill_op: None,
+                }),
                 debug_trace: None,
                 semantic_trace: None,
                 debug_trace_path: None,
-                drill_op: None,
-            }),
-            debug_trace: None,
-            semantic_trace: None,
-            debug_trace_path: None,
-        },
-    ));
+            },
+        )));
 
     controller.drain_compute_results();
 
@@ -1034,22 +1049,25 @@ fn drain_compute_results_keeps_pending_apply_resim_for_other_toolpath() {
     let annotated = Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
         Toolpath::new(),
     ));
-    controller.compute.drained.push(ComputeMessage::Toolpath(
-        crate::compute::worker::ComputeResult {
-            toolpath_id: ToolpathId(0),
-            result: Ok(ToolpathResult {
-                annotated,
-                stats: Default::default(),
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::worker::ComputeResult {
+                toolpath_id: ToolpathId(0),
+                result: Ok(ToolpathResult {
+                    annotated,
+                    stats: Default::default(),
+                    debug_trace: None,
+                    semantic_trace: None,
+                    debug_trace_path: None,
+                    drill_op: None,
+                }),
                 debug_trace: None,
                 semantic_trace: None,
                 debug_trace_path: None,
-                drill_op: None,
-            }),
-            debug_trace: None,
-            semantic_trace: None,
-            debug_trace_path: None,
-        },
-    ));
+            },
+        )));
 
     controller.drain_compute_results();
 
@@ -1063,15 +1081,18 @@ fn drain_compute_results_keeps_pending_apply_resim_for_other_toolpath() {
 #[test]
 fn drain_compute_results_skips_session_write_on_error() {
     let mut controller = sample_controller();
-    controller.compute.drained.push(ComputeMessage::Toolpath(
-        crate::compute::worker::ComputeResult {
-            toolpath_id: ToolpathId(0),
-            result: Err(crate::compute::ComputeError::Message("boom".into())),
-            debug_trace: None,
-            semantic_trace: None,
-            debug_trace_path: None,
-        },
-    ));
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::worker::ComputeResult {
+                toolpath_id: ToolpathId(0),
+                result: Err(crate::compute::ComputeError::Message("boom".into())),
+                debug_trace: None,
+                semantic_trace: None,
+                debug_trace_path: None,
+            },
+        )));
 
     controller.drain_compute_results();
 
@@ -1156,22 +1177,25 @@ fn drain_compute_results_marks_derived_rest_dependents_stale() {
     annotated.rest_regions = Some(Arc::new(vec![rs_cam_core::polygon::Polygon2::rectangle(
         -5.0, -5.0, 5.0, 5.0,
     )]));
-    controller.compute.drained.push(ComputeMessage::Toolpath(
-        crate::compute::worker::ComputeResult {
-            toolpath_id: source_id,
-            result: Ok(ToolpathResult {
-                annotated: Arc::new(annotated),
-                stats: Default::default(),
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::worker::ComputeResult {
+                toolpath_id: source_id,
+                result: Ok(ToolpathResult {
+                    annotated: Arc::new(annotated),
+                    stats: Default::default(),
+                    debug_trace: None,
+                    semantic_trace: None,
+                    debug_trace_path: None,
+                    drill_op: None,
+                }),
                 debug_trace: None,
                 semantic_trace: None,
                 debug_trace_path: None,
-                drill_op: None,
-            }),
-            debug_trace: None,
-            semantic_trace: None,
-            debug_trace_path: None,
-        },
-    ));
+            },
+        )));
 
     controller.drain_compute_results();
 

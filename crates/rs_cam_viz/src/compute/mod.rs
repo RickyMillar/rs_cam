@@ -95,7 +95,17 @@ impl From<OperationError> for ComputeError {
 }
 
 pub enum ComputeMessage {
-    Toolpath(ComputeResult),
+    /// Toolpath lane completion.
+    ///
+    /// **Boxed on purpose (C5).** `ComputeResult` carries a
+    /// `ToolpathResult` (and through it a whole `ToolpathStats`), which is
+    /// far larger than any other variant's payload. Three separate waves
+    /// each paid the `clippy::large_enum_variant` tax by boxing one more
+    /// rarely-`Some` finding inside `ToolpathStats` just to keep this enum
+    /// balanced. Boxing the variant itself ends that tax permanently: the
+    /// payload's size no longer constrains what may be added to a
+    /// generation finding.
+    Toolpath(Box<ComputeResult>),
     Simulation(Result<Box<SimulationResult>, ComputeError>),
     Collision(Result<CollisionResult, ComputeError>),
     /// Optimize lane completion. Always carries a session for the main
@@ -129,5 +139,28 @@ pub trait ComputeBackend: Send {
             self.lane_snapshot(ComputeLane::Analysis),
             self.lane_snapshot(ComputeLane::Optimize),
         ]
+    }
+}
+
+#[cfg(test)]
+mod size_tests {
+    use super::*;
+
+    /// C5 sentry. Every variant of the compute channel enum must stay
+    /// pointer-sized-ish. Before C5, `Toolpath` carried a whole
+    /// `ComputeResult` inline, so `clippy::large_enum_variant` (denied
+    /// workspace-wide) fired every time a new generation finding was added
+    /// to `ToolpathStats` — three waves each "fixed" that by boxing one more
+    /// inner `Option`. Boxing the variant ends the tax; this test is what
+    /// stops it coming back.
+    #[test]
+    fn compute_message_stays_small() {
+        let size = std::mem::size_of::<ComputeMessage>();
+        assert!(
+            size <= 128,
+            "ComputeMessage grew to {size} bytes — a variant is carrying a \
+             large payload inline again; box it rather than shrinking the \
+             payload (C5)"
+        );
     }
 }

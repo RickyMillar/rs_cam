@@ -74,12 +74,17 @@ pub struct ToolpathStats {
     /// Report-only: generation still succeeds, the diagnostic severity is
     /// `Caution`, and no verdict reads it.
     ///
-    /// **Boxed on purpose.** `ToolpathStats` travels inside the GUI's
-    /// `ComputeMessage` channel enum, which the workspace lints under
-    /// `clippy::large_enum_variant`; the finding carries a whole
+    /// **Boxed on purpose.** The finding carries a whole
     /// [`crate::measurement::MeasurementProvenance`] and is `None` on almost
-    /// every toolpath, so paying 8 bytes here instead of ~120 keeps the
-    /// channel enum balanced without weakening the measurement contract.
+    /// every toolpath, so paying 8 bytes here instead of ~120 keeps
+    /// `ToolpathStats` — cloned once per toolpath into the session results
+    /// and again into GUI state — small, without weakening the measurement
+    /// contract.
+    ///
+    /// This used to be justified by `clippy::large_enum_variant` firing on
+    /// the GUI's `ComputeMessage` channel enum. That is no longer the
+    /// reason: C5 boxed `ComputeMessage::Toolpath` itself, so nothing added
+    /// here can push that enum over the threshold again.
     pub dropped_band: Option<Box<DroppedBandFinding>>,
     /// Wave D1: the tip-float residual on a pencil/rest centreline — points
     /// where the cutter physically cannot reach the valley floor it is being
@@ -101,9 +106,9 @@ pub struct ToolpathStats {
     /// deserialized so old projects load unchanged, and this is what stops
     /// that from being silent.
     ///
-    /// **Boxed** for the same reason as [`Self::dropped_band`]: `ToolpathStats`
-    /// rides the GUI's `ComputeMessage` channel enum, which the workspace
-    /// lints under `clippy::large_enum_variant`.
+    /// **Boxed** for the same reason as [`Self::dropped_band`]: keeping
+    /// `ToolpathStats` small for the clones it takes per toolpath. Not,
+    /// since C5, because of `clippy::large_enum_variant`.
     ///
     /// Report-only: no gate consumes it, and generation is unaffected.
     pub deprecated_dial: Option<Box<DeprecatedDialFinding>>,
@@ -116,9 +121,9 @@ pub struct ToolpathStats {
     /// not a measurement of the part and not a defect claim; it is the
     /// audit trail for a number the operator cannot see in any dial.
     ///
-    /// **Boxed** for the same reason as [`Self::dropped_band`]: `ToolpathStats`
-    /// rides the GUI's `ComputeMessage` channel enum, which the workspace
-    /// lints under `clippy::large_enum_variant`.
+    /// **Boxed** for the same reason as [`Self::dropped_band`]: keeping
+    /// `ToolpathStats` small for the clones it takes per toolpath. Not,
+    /// since C5, because of `clippy::large_enum_variant`.
     ///
     /// Report-only: no gate consumes it.
     pub derived_stepover: Option<Box<DerivedStepoverFinding>>,
@@ -130,9 +135,9 @@ pub struct ToolpathStats {
     /// "a ramp ran and every commanded depth was holdable" — the A/M9
     /// distinction, applied to a second measure (X-19).
     ///
-    /// **Boxed** for the same reason as [`Self::dropped_band`]: `ToolpathStats`
-    /// rides the GUI's `ComputeMessage` channel enum, which the workspace
-    /// lints under `clippy::large_enum_variant`.
+    /// **Boxed** for the same reason as [`Self::dropped_band`]: keeping
+    /// `ToolpathStats` small for the clones it takes per toolpath. Not,
+    /// since C5, because of `clippy::large_enum_variant`.
     ///
     /// Report-only: no gate consumes it. The clamp itself is not report-only
     /// — it changes emitted geometry — but nothing downstream branches on
