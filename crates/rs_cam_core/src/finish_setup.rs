@@ -126,8 +126,16 @@ pub fn build_classification_surface_with_cancel(
     tolerance: f64,
     cancel: &dyn CancelCheck,
 ) -> Result<FinishSurface, Cancelled> {
+    // Physical extent below (padding, grid coverage) keeps the FULL radius —
+    // the tool really does sweep that far. The CELL SIZE does not: it sets
+    // the finest feature this grid can represent, so it follows the
+    // cusp-forming (tip) radius. On a tapered ball `radius()` is the SHAFT
+    // — 3.0 mm for a Ø1 tip — which made the classification cell 0.75 mm
+    // and left wanaka's ~0.5 mm steep ribbons literally unrepresentable, so
+    // 482 mm² of >75° surface classified as something else entirely
+    // (design doc §14q).
     let tool_radius = cutter.radius();
-    let cell_size = (tool_radius / 4.0).max(tolerance);
+    let cell_size = (cutter.cusp_radius() / 4.0).max(tolerance);
     let bbox = &mesh.bbox;
     let origin_x = bbox.min.x - tool_radius;
     let origin_y = bbox.min.y - tool_radius;
