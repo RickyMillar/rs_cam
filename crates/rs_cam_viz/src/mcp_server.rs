@@ -14,7 +14,7 @@ use rmcp::{Peer, RoleServer, ServerHandler, tool, tool_router};
 use crate::compute::GenerationControl;
 use crate::mcp_bridge::{
     McpReadCache, McpReadKind, McpRequest, McpRequestKind, ProgressUpdate,
-    build_cancel_generation_response,
+    build_cancel_generation_response, build_generation_status_response,
 };
 
 // Re-use parameter structs from the standalone MCP crate.
@@ -277,12 +277,15 @@ impl EmbeddedCamServer {
             "status": "running",
             "summary": format!(
                 "Still running after the {waited}s wait budget. Generation was NOT \
-                 cancelled and continues in the background. Check progress with \
-                 list_toolpaths, or abort it with cancel_generation. Avoid re-issuing \
-                 the same generate_toolpath (same index) or generate_all call while \
-                 this one is still in flight — resubmitting a toolpath that's already \
-                 being generated cancels and restarts its in-flight job instead of \
-                 checking on it."
+                 cancelled and continues in the background. Use generation_status for \
+                 the in-flight toolpath index, stage and elapsed time; list_toolpaths \
+                 for the per-op picture (served from a snapshot while the GUI is \
+                 busy); cancel_generation to abort. All three answer within a second \
+                 whatever the generation is doing. Avoid re-issuing the same \
+                 generate_toolpath (same index) or generate_all call while this one is \
+                 still in flight — resubmitting a toolpath that's already being \
+                 generated cancels and restarts its in-flight job instead of checking \
+                 on it."
             ),
         }))
     }
@@ -401,7 +404,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "narrate_toolpath",
-        description = "Return a concise prose narration of one generated toolpath: Z-level structure, perimeter-sweep estimates, suspicious large arcs, peak axial DOC, and air-cut percentage. Prefer this first for agent debugging before raw traces/screenshots. Run generate_toolpath first; run_simulation first for DOC/air-cut metrics."
+        description = "Return a concise prose narration of one generated toolpath: Z-level structure, perimeter-sweep estimates, suspicious large arcs, peak axial DOC, and air-cut percentage. Prefer this first for agent debugging before raw traces/screenshots. Run generate_toolpath first; run_simulation first for DOC/air-cut metrics. COST: this runs on the GUI thread and scales with move count — ~12 min was measured on a 148k-move finishing op, during which other GUI-served calls queue behind it. `generation_status` and `cancel_generation` are unaffected."
     )]
     async fn narrate_toolpath(
         &self,
@@ -1104,7 +1107,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "generate_toolpath",
-        description = "Generate a single toolpath by index. Returns move count and distances. By default waits indefinitely for generation to finish; pass `timeout_s` to bound the wait — on timeout the call returns a `status: \"running\"` response instead of blocking (the generate is NOT cancelled, it keeps running in the background). Poll `list_toolpaths` for completion, or abort a runaway generate with `cancel_generation`."
+        description = "Generate a single toolpath by index. Returns move count and distances. By default waits indefinitely for generation to finish; pass `timeout_s` to bound the wait — on timeout the call returns a `status: \"running\"` response instead of blocking (the generate is NOT cancelled, it keeps running in the background). While it runs, `generation_status` reports the stage and elapsed time live, `list_toolpaths` answers from a snapshot, and `cancel_generation` aborts it — all three are served off the GUI frame loop and answer within a second."
     )]
     async fn generate_toolpath(
         &self,
@@ -1128,7 +1131,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "generate_all",
-        description = "Generate all enabled toolpaths. Returns count of newly generated toolpaths. By default waits indefinitely; pass `timeout_s` to bound the wait — on timeout the call returns a `status: \"running\"` response instead of blocking (nothing is cancelled, generation continues in the background). Poll `list_toolpaths` for completion, or abort with `cancel_generation`."
+        description = "Generate all enabled toolpaths. Returns count of newly generated toolpaths. By default waits indefinitely; pass `timeout_s` to bound the wait — on timeout the call returns a `status: \"running\"` response instead of blocking (nothing is cancelled, generation continues in the background). While it runs, `generation_status` reports which toolpath index is in flight and its stage, `list_toolpaths` answers from a snapshot, and `cancel_generation` aborts it — all three are served off the GUI frame loop and answer within a second."
     )]
     async fn generate_all(
         &self,
@@ -1171,6 +1174,14 @@ impl EmbeddedCamServer {
     )]
     pub async fn cancel_generation(&self) -> String {
         build_cancel_generation_response(&self.generation.request_cancel())
+    }
+
+    #[tool(
+        name = "generation_status",
+        description = "What the toolpath compute lane is doing RIGHT NOW: lane state, the in-flight toolpath index and id, the planner stage, seconds elapsed, and how many jobs are queued behind it. Read live off the lane on the MCP server thread — it answers whatever the GUI is doing, so it is the call to reach for when a generate_toolpath/generate_all is taking longer than expected and you need to attribute the cost to an operation before deciding whether to cancel_generation. A null `stage` means the operation publishes no stages, not that the lane is stalled; watch `elapsed_s` and `stage` across two calls to see progress."
+    )]
+    pub async fn generation_status(&self) -> String {
+        build_generation_status_response(&self.generation.snapshot())
     }
 
     #[tool(

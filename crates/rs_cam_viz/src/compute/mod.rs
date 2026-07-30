@@ -11,9 +11,6 @@ pub use worker::{
     SimulationRequest, SimulationResult, ThreadedComputeBackend,
 };
 
-/// Wall-clock the phase tracker uses as "this stage has not reported yet".
-pub const UNKNOWN_PHASE: &str = "(no stage reported yet)";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ComputeLane {
     Toolpath,

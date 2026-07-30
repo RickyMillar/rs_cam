@@ -68,8 +68,10 @@ pub struct GenerateToolpathParam {
     /// then, the call returns a `status: "running"` response instead of
     /// blocking — the generate is NOT cancelled, it keeps running in the
     /// background. Omit (or pass `None`) to wait indefinitely, matching
-    /// prior behavior. Poll `list_toolpaths` for completion, or abort with
-    /// `cancel_generation`.
+    /// prior behavior. While it runs, `generation_status` reports the
+    /// in-flight index / stage / elapsed live, `list_toolpaths` answers from
+    /// a snapshot, and `cancel_generation` aborts it — all three are served
+    /// off the GUI frame loop and answer within a second (A/M12).
     pub timeout_s: Option<u64>,
 }
 
