@@ -134,7 +134,9 @@ impl<B: ComputeBackend> AppController<B> {
             }
 
             // --- Simulation events ---
-            AppEvent::RunSimulation => self.run_simulation_with_all(),
+            AppEvent::RunSimulation => {
+                let _submitted = self.run_simulation_with_all();
+            }
             AppEvent::RunSimulationWith(ids) => self.run_simulation_with_ids(&ids),
             AppEvent::ToggleSimPlayback => {
                 self.state.simulation.playback.playing = !self.state.simulation.playback.playing;

@@ -364,7 +364,17 @@ pub enum McpRequestKind {
     GenerateToolpath {
         index: usize,
     },
-    GenerateAll,
+    /// A/M11: generate every enabled toolpath, iterating to a fixpoint over
+    /// the rest-stock chain when `fixpoint` is set. See [`FixpointPlan`].
+    GenerateAll {
+        /// `None` = fixpoint on (the default). `Some(false)` = the
+        /// pre-A/M11 single pass.
+        fixpoint: Option<bool>,
+        /// Cell size in mm for the loop's own simulations. Required whenever
+        /// the loop is on AND the project has rest-machining ops; never
+        /// defaulted (A/M10).
+        simulation_resolution_mm: Option<f64>,
+    },
     // A/M12: `CancelGeneration` used to live here, which is exactly why it
     // could not do its job — it queued behind the generation it was meant to
     // abort. It is now served on the MCP server thread through
@@ -633,9 +643,77 @@ pub struct PendingGenerateAll {
     /// "cannot yet" and "cannot ever" are different states, and only the
     /// former is worth retrying.
     pub blocked: Vec<(ToolpathId, String)>,
+    /// A/M11 — the fixpoint loop's own state.
+    pub fixpoint: FixpointPlan,
+    /// Set when the loop itself failed (e.g. its simulation errored), as
+    /// distinct from any individual toolpath failing.
+    pub loop_error: Option<String>,
     pub response_tx: tokio::sync::oneshot::Sender<McpResponse>,
     /// Optional channel for streaming per-toolpath progress back to the MCP client.
     pub progress_tx: Option<tokio::sync::mpsc::Sender<ProgressUpdate>>,
+}
+
+/// A/M11 — `generate_all` iterating to a fixpoint over the rest-stock chain.
+///
+/// The ladder: generate everything, simulate, regenerate whatever was blocked
+/// only on missing upstream stock, repeat. Before this, a chain of `k`
+/// dependent rest ops needed `k` manual sim->generate rounds and nothing told
+/// the operator what `k` was.
+///
+/// **Termination.** A round only continues when (a) at least one op is
+/// blocked *purely* on sequencing and (b) the previous round generated at
+/// least one new op. Genuine failures record `Error` and are never retried,
+/// so they cannot keep (a) true. An op reaches `Done` at most once per call,
+/// so (b) can hold at most `enabled_count` times. On top of that the loop is
+/// hard-bounded by [`Self::max_rounds`] = the number of rest-dependent ops
+/// plus one, because a stock chain cannot be longer than that.
+pub struct FixpointPlan {
+    /// `false` = the pre-A/M11 single pass. The caller can always opt out.
+    pub enabled: bool,
+    /// Simulation cell size for the loop's own simulations, in mm.
+    ///
+    /// **Caller-specified, never defaulted** (A/M10). A silently chosen
+    /// resolution is the resolution-mismatch trap: collision counts and
+    /// engagement change with cell size, so a loop that picked its own would
+    /// hand back verdicts nobody asked for. `None` is only legal alongside
+    /// `enabled: false`; otherwise the call refuses at request time.
+    pub resolution_mm: Option<f64>,
+    /// 1-based; the first generate pass is round 1.
+    pub round: usize,
+    pub max_rounds: usize,
+    /// Ops that reached `Done` in the current round — condition (b).
+    pub completed_this_round: usize,
+    /// How many simulations the loop ran.
+    pub simulations: usize,
+    /// True between submitting the loop's simulation and its completion.
+    pub awaiting_simulation: bool,
+}
+
+impl FixpointPlan {
+    /// A plan that does exactly what `generate_all` did before A/M11.
+    pub fn single_pass() -> Self {
+        Self {
+            enabled: false,
+            resolution_mm: None,
+            round: 1,
+            max_rounds: 1,
+            completed_this_round: 0,
+            simulations: 0,
+            awaiting_simulation: false,
+        }
+    }
+
+    pub fn looping(resolution_mm: f64, rest_dependent_ops: usize) -> Self {
+        Self {
+            enabled: true,
+            resolution_mm: Some(resolution_mm),
+            round: 1,
+            max_rounds: rest_dependent_ops.saturating_add(1),
+            completed_this_round: 0,
+            simulations: 0,
+            awaiting_simulation: false,
+        }
+    }
 }
 
 impl PendingGenerateAll {
@@ -650,6 +728,9 @@ impl PendingGenerateAll {
                 .iter()
                 .map(|(id, msg)| (id.0, msg.clone()))
                 .collect(),
+            rounds: self.fixpoint.round,
+            simulations: self.fixpoint.simulations,
+            loop_error: self.loop_error.clone(),
         }
     }
 }
@@ -664,6 +745,12 @@ pub struct GenerateAllSummary {
     /// simulated stock. Separate from `errors` on purpose: an agent must be
     /// able to tell "cannot yet" from "cannot ever" without parsing prose.
     pub blocked: Vec<(usize, String)>,
+    /// How many internal generate rounds it took. 1 = no ladder was needed.
+    pub rounds: usize,
+    /// How many simulations the loop ran on the caller's behalf.
+    pub simulations: usize,
+    /// The loop itself failed (not an individual toolpath).
+    pub loop_error: Option<String>,
 }
 
 /// Render the `generate_all` reply.
@@ -680,6 +767,16 @@ pub fn build_generate_all_response(summary: &GenerateAllSummary) -> String {
             summary.blocked.len()
         ));
     }
+    headline.push_str(&format!(
+        " (in {} generate round{}, {} simulation{})",
+        summary.rounds,
+        if summary.rounds == 1 { "" } else { "s" },
+        summary.simulations,
+        if summary.simulations == 1 { "" } else { "s" },
+    ));
+    if let Some(err) = &summary.loop_error {
+        headline.push_str(&format!(". The fixpoint loop stopped early: {err}"));
+    }
 
     let render = |rows: &[(usize, String)]| -> Vec<serde_json::Value> {
         rows.iter()
@@ -688,12 +785,15 @@ pub fn build_generate_all_response(summary: &GenerateAllSummary) -> String {
     };
 
     rs_cam_mcp::server::json_str(serde_json::json!({
-        "ok": summary.failed == 0,
+        "ok": summary.failed == 0 && summary.loop_error.is_none(),
         "summary": headline,
         "generated": summary.generated,
         "failed": summary.failed,
         "errors": render(&summary.errors),
         "awaiting_prior_stock": render(&summary.blocked),
+        "rounds": summary.rounds,
+        "simulations": summary.simulations,
+        "loop_error": summary.loop_error,
     }))
 }
 

@@ -277,7 +277,11 @@ impl<B: ComputeBackend> AppController<B> {
         });
     }
 
-    pub(crate) fn run_simulation_with_all(&mut self) {
+    /// Simulate every enabled toolpath. Returns `false` when there was
+    /// nothing to simulate and no request was submitted — A/M11's fixpoint
+    /// loop must know that, or it would wait forever for a completion that
+    /// will never drain.
+    pub(crate) fn run_simulation_with_all(&mut self) -> bool {
         let Some((groups, all_toolpaths_flat, stock_bbox)) =
             self.build_simulation_groups(|_setup_idx, tc| tc.enabled, |_setup_idx| false)
         else {
@@ -286,9 +290,10 @@ impl<B: ComputeBackend> AppController<B> {
                 "No computed toolpaths to simulate".into(),
                 super::super::Severity::Warning,
             );
-            return;
+            return false;
         };
         self.submit_simulation_for_groups(groups, &all_toolpaths_flat, stock_bbox, Some(0));
+        true
     }
 
     pub(crate) fn run_simulation_with_ids(&mut self, ids: &[ToolpathId]) {

@@ -332,8 +332,12 @@ async fn generate_then_status_then_cancel_over_the_mcp_surface() {
     // 1. generate_all with a 1 s wait budget. The stalled GUI never resolves
     //    the oneshot, so this is the live "timed out, moved to background"
     //    condition.
-    let generate: serde_json::Value =
-        serde_json::from_str(&server.generate_all_without_peer(Some(1)).await).unwrap();
+    let generate: serde_json::Value = serde_json::from_str(
+        &server
+            .generate_all_without_peer(Some(1), Some(false), None)
+            .await,
+    )
+    .unwrap();
     assert_eq!(generate["status"], "running");
 
     // 2. Observe it. This is the call that did not exist on 2026-07-30, when

@@ -80,6 +80,30 @@ pub struct GenerateAllParam {
     /// Optional wait budget in seconds — see
     /// `GenerateToolpathParam::timeout_s`.
     pub timeout_s: Option<u64>,
+    /// A/M11 — iterate to a fixpoint over the rest-machining chain: generate,
+    /// simulate, regenerate whatever was blocked only on missing upstream
+    /// stock, repeat until nothing new generates. Defaults to `true`.
+    ///
+    /// An operation whose stock source is "remaining stock" needs the
+    /// *simulated* stock of the operations before it, and that snapshot only
+    /// exists after a simulation — so it can never see stock produced earlier
+    /// in the same pass. Without the loop, a chain of `k` such operations
+    /// needs `k` manual sim/generate rounds and nothing tells you `k`. The
+    /// reply reports how many rounds it actually took.
+    ///
+    /// Pass `false` for the old single-pass behaviour.
+    pub fixpoint: Option<bool>,
+    /// Cell size in mm for the simulations the fixpoint loop runs on your
+    /// behalf.
+    ///
+    /// **Required** when the loop is on and the project contains any enabled
+    /// rest-machining operation; the call refuses rather than guessing. A
+    /// resolution is never a neutral default: collision counts and engagement
+    /// both move with cell size, so a silently chosen one produces verdicts
+    /// nobody asked for. Use the same value you intend for your verification
+    /// simulation — well below the finishing tool's TIP radius (e.g. 0.1 for
+    /// a 1 mm ball).
+    pub simulation_resolution_mm: Option<f64>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
