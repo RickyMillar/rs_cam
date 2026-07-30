@@ -527,7 +527,10 @@ fn legacy_entry_points_are_policy_adapters() {
     )
     .expect("policy path");
     assert_eq!(adapter.resolution, policy.resolution);
-    assert_eq!(adapter.heightmap.z_values, policy.heightmap.z_values);
+    assert_eq!(
+        adapter.heightmap.z_or_bbox_floor_values(),
+        policy.heightmap.z_or_bbox_floor_values()
+    );
 
     let pinned = build_finish_surface_with_cell_size_and_cancel(&mesh, &index, &t, 0.4, &cancel)
         .expect("pinned adapter");
@@ -548,7 +551,7 @@ fn legacy_entry_points_are_policy_adapters() {
         "the classification adapter must select CuspQuarter"
     );
     assert_eq!(
-        classification.heightmap.z_values,
-        classification_policy.heightmap.z_values
+        classification.heightmap.z_or_bbox_floor_values(),
+        classification_policy.heightmap.z_or_bbox_floor_values()
     );
 }

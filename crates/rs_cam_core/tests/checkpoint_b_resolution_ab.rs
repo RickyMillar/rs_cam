@@ -347,8 +347,8 @@ fn sample(surface: &FinishSurface, x: f64, y: f64) -> Option<f64> {
     let (tx, ty) = (fx - c0 as f64, fy - r0 as f64);
     let at = |r: usize, c: usize| -> Option<f64> {
         let idx = r * hm.cols + c;
-        if hm.covered[idx] {
-            Some(hm.z_values[idx])
+        if hm.covered_flags()[idx] {
+            Some(hm.z_or_bbox_floor_values()[idx])
         } else {
             None
         }
@@ -554,7 +554,7 @@ fn region_count(surface: &FinishSurface, class: Class) -> usize {
     let (rows, cols) = (surface.rows(), surface.cols());
     let hm = &surface.heightmap;
     let member: Vec<bool> = (0..rows * cols)
-        .map(|i| hm.covered[i] && class_of(surface.slope_map.angles[i]) == class)
+        .map(|i| hm.covered_flags()[i] && class_of(surface.slope_map.angles[i]) == class)
         .collect();
     let mut seen = vec![false; rows * cols];
     let mut count = 0usize;
@@ -613,7 +613,7 @@ fn topology(arm: &FinishSurface, reference: &FinishSurface) -> Topology {
     let mut counts = [0usize; 3];
     let mut covered_cells = 0usize;
     for i in 0..hm.rows * hm.cols {
-        if !hm.covered[i] {
+        if !hm.covered_flags()[i] {
             continue;
         }
         covered_cells += 1;
@@ -632,7 +632,7 @@ fn topology(arm: &FinishSurface, reference: &FinishSurface) -> Topology {
     for r in 0..rhm.rows {
         for c in 0..rhm.cols {
             let idx = r * rhm.cols + c;
-            if !rhm.covered[idx] {
+            if !rhm.covered_flags()[idx] {
                 continue;
             }
             let x = rhm.origin_x + c as f64 * rhm.cell_size;
@@ -647,7 +647,7 @@ fn topology(arm: &FinishSurface, reference: &FinishSurface) -> Topology {
                 continue;
             }
             let aidx = ar * hm.cols + ac;
-            if !hm.covered[aidx] {
+            if !hm.covered_flags()[aidx] {
                 continue;
             }
             compared += 1;

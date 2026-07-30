@@ -1155,7 +1155,7 @@ fn build_band_map(s: &ProjectSession) -> BandMap {
     planner.overlap_mm = 2.0;
     let planned = decompose(
         &surface.slope_map,
-        &surface.heightmap.covered,
+        surface.heightmap.covered_flags(),
         &[],
         &planner,
     );
@@ -1206,7 +1206,7 @@ fn build_band_map(s: &ProjectSession) -> BandMap {
     // band areas double-count their mutual overlap, so that ratio was wrong
     // twice over. Both quantities are still printed — each on its own line,
     // each naming its domain, stage and grid — and NO ratio crosses them.
-    let covered_cells = hm.covered.iter().filter(|&&c| c).count();
+    let covered_cells = hm.covered_flags().iter().filter(|&&c| c).count();
     let grid_cells = rows * cols;
     let covered_projected_xy_area_mm2 = covered_cells as f64 * cell * cell;
     let coverage_prov = MeasurementProvenance::new(

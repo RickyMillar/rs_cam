@@ -684,7 +684,7 @@ mod tests {
         let mut interior_count = 0;
         for row in 1..shm.rows - 1 {
             for col in 1..shm.cols - 1 {
-                let z = shm.surface_z_at(row, col);
+                let z = shm.z_or_bbox_floor_at(row, col);
                 assert!(
                     (-1.0..=1.0).contains(&z),
                     "Interior flat mesh Z should be near 0, got {:.2} at ({}, {})",
@@ -718,8 +718,8 @@ mod tests {
         // Center should be higher than edges
         let center_row = shm.rows / 2;
         let center_col = shm.cols / 2;
-        let center_z = shm.surface_z_at(center_row, center_col);
-        let edge_z = shm.surface_z_at(0, 0);
+        let center_z = shm.z_or_bbox_floor_at(center_row, center_col);
+        let edge_z = shm.z_or_bbox_floor_at(0, 0);
         assert!(
             center_z > edge_z,
             "Hemisphere center ({:.1}) should be higher than edge ({:.1})",
@@ -1128,27 +1128,20 @@ mod tests {
             }
         }
 
-        let shm = SurfaceHeightmap {
-            covered: vec![true; z_values.len()],
-            z_values,
-            rows,
-            cols,
-            origin_x: 0.0,
-            origin_y: 0.0,
-            cell_size,
-        };
+        let covered = vec![true; z_values.len()];
+        let shm = SurfaceHeightmap::from_parts(z_values, covered, rows, cols, 0.0, 0.0, cell_size);
 
         // Histogram detection logic (same as in adaptive_3d_segments)
         let tolerance: f64 = 0.1;
         let stock_to_leave: f64 = 0.5;
         let stock_top: f64 = 25.0;
-        let total_cells = shm.z_values.len();
+        let total_cells = shm.z_or_bbox_floor_values().len();
         let bin_size = tolerance.max(0.05);
         let z_min_surf = 0.0;
         let z_max_surf = stock_top;
         let n_bins = ((z_max_surf - z_min_surf) / bin_size).ceil() as usize + 1;
         let mut histogram = vec![0u32; n_bins];
-        for &sz in &shm.z_values {
+        for &sz in shm.z_or_bbox_floor_values() {
             let bin = ((sz - z_min_surf) / bin_size).floor() as usize;
             if bin < n_bins {
                 histogram[bin] += 1;
@@ -1221,15 +1214,15 @@ mod tests {
         let cols = material_stock.z_grid.cols;
 
         // Surface at z=0 everywhere
-        let surface_hm = SurfaceHeightmap {
-            z_values: vec![0.0; rows * cols],
-            covered: vec![true; rows * cols],
+        let surface_hm = SurfaceHeightmap::from_parts(
+            vec![0.0; rows * cols],
+            vec![true; rows * cols],
             rows,
             cols,
-            origin_x: material_stock.z_grid.origin_u,
-            origin_y: material_stock.z_grid.origin_v,
+            material_stock.z_grid.origin_u,
+            material_stock.z_grid.origin_v,
             cell_size,
-        };
+        );
 
         // Create two islands by clearing a gap in the middle
         let mut hm = material_stock;
@@ -1270,15 +1263,15 @@ mod tests {
         }
 
         let hm = make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &mat_cells);
-        let surface_hm = SurfaceHeightmap {
-            z_values: vec![0.0; rows * cols],
-            covered: vec![true; rows * cols],
+        let surface_hm = SurfaceHeightmap::from_parts(
+            vec![0.0; rows * cols],
+            vec![true; rows * cols],
             rows,
             cols,
-            origin_x: 0.0,
-            origin_y: 0.0,
+            0.0,
+            0.0,
             cell_size,
-        };
+        );
 
         let regions = detect_material_regions(&hm, &surface_hm, 0.5, 3.175);
         assert_eq!(
@@ -1302,15 +1295,15 @@ mod tests {
         mat_cells[1] = 20.0;
 
         let hm = make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &mat_cells);
-        let surface_hm = SurfaceHeightmap {
-            z_values: vec![0.0; rows * cols],
-            covered: vec![true; rows * cols],
+        let surface_hm = SurfaceHeightmap::from_parts(
+            vec![0.0; rows * cols],
+            vec![true; rows * cols],
             rows,
             cols,
-            origin_x: 0.0,
-            origin_y: 0.0,
+            0.0,
+            0.0,
             cell_size,
-        };
+        );
 
         let regions = detect_material_regions(&hm, &surface_hm, 0.5, 3.175);
         assert!(
@@ -1485,7 +1478,7 @@ mod tests {
                 for &sign in &[1.0f64, -1.0] {
                     let px = curr.x + sign * mult * stepover * nx;
                     let py = curr.y + sign * mult * stepover * ny;
-                    let sz = surface_hm.surface_z_at_world(px, py);
+                    let sz = surface_hm.z_or_bbox_floor_at_world(px, py);
                     if sz != f64::NEG_INFINITY {
                         let pz = (sz + 0.5).max(z_level);
                         material_stock.stamp_tool_at(
@@ -2185,7 +2178,7 @@ mod tests {
                         // otherwise.
                         if violations.len() < 20 {
                             let i = row * grid.cols + col;
-                            let surf = surface_hm.z_values[i];
+                            let surf = surface_hm.z_or_bbox_floor_values()[i];
                             violations.push((row, col, p, s, surf, dz));
                         }
                     }

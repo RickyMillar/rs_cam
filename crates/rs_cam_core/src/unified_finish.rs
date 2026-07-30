@@ -909,7 +909,7 @@ pub fn unified_finish_toolpath_with_cancel(
     // `ClaimsConfig::territory_clip` doc.
     let mut covered: Vec<bool> = surface
         .heightmap
-        .covered
+        .covered_flags()
         .iter()
         .enumerate()
         .map(|(i, &cov)| {
@@ -2030,7 +2030,12 @@ fn band_z_range(
 
     let mut min_z = f64::INFINITY;
     let mut max_z = f64::NEG_INFINITY;
-    for (i, &z) in surface.heightmap.z_values.iter().enumerate() {
+    for (i, &z) in surface
+        .heightmap
+        .z_or_bbox_floor_values()
+        .iter()
+        .enumerate()
+    {
         if !covered.get(i).copied().unwrap_or(false) {
             continue;
         }

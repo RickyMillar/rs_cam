@@ -523,7 +523,7 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
     // removes the 4.2 mm gouge; see the comment at that site for the measured
     // reason the global form alone does not.
     let z_top = bbox.max.z + params.stock_to_leave;
-    let requested_bottom = surface_hm.min_z() + params.stock_to_leave;
+    let requested_bottom = surface_hm.min_z_or_bbox_floor() + params.stock_to_leave;
     let holdable_bottom = surface_hm
         .min_covered_z()
         .map_or(requested_bottom, |z| z + params.stock_to_leave);

@@ -11,10 +11,81 @@ use crate::tool::MillingCutter;
 
 // ── Surface heightmap ─────────────────────────────────────────────────
 
+/// One cell's Z reading off a [`SurfaceHeightmap`], with its coverage state
+/// carried in the type (C2, 2026-07-30).
+///
+/// The grid stores a plain `f64` per cell, but that number means two
+/// different things depending on whether the cell's vertical ray actually
+/// passes through the mesh. Reading it as a bare `f64` is the silent-sentinel
+/// class that produced PR-8b's plane-wide clamp: uncovered cells carry the
+/// `min_z` clamp (the mesh bbox floor) and every consumer that treated that
+/// as "the surface is down there" was wrong.
+///
+/// A consumer that genuinely wants the clamped number — clearing strategies
+/// that must rough stock *beside* the model down to a floor — says so by
+/// name: [`GridZ::z_or_bbox_floor`], or the whole-grid escape hatches
+/// [`SurfaceHeightmap::z_or_bbox_floor_at`] /
+/// [`SurfaceHeightmap::z_or_bbox_floor_at_world`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GridZ {
+    /// The cell's vertical ray passes through the mesh: this is a real
+    /// drop-cutter contact height for the sampling cutter.
+    Covered(f64),
+    /// The ray misses every triangle. The stored number is whatever
+    /// `point_drop_cutter` returned clamped up from the `min_z` floor —
+    /// i.e. the **mesh bbox floor** for cells further than a tool radius
+    /// from the model, and a **rim contact** height for cells just outside
+    /// the footprint (the cutter has radius, so it still touches the edge).
+    /// Either way nothing has verified there is material here.
+    Uncovered {
+        /// The stored, clamped value. Named for what it usually is.
+        z_or_bbox_floor: f64,
+    },
+    /// The query point lies outside the grid entirely.
+    OutOfBounds,
+}
+
+impl GridZ {
+    /// The Z of a cell whose ray hits the mesh; `None` for uncovered cells
+    /// and out-of-bounds queries.
+    #[must_use]
+    #[inline]
+    pub fn covered(self) -> Option<f64> {
+        match self {
+            Self::Covered(z) => Some(z),
+            Self::Uncovered { .. } | Self::OutOfBounds => None,
+        }
+    }
+
+    /// The stored number regardless of coverage — the explicit escape hatch.
+    /// `None` only for [`GridZ::OutOfBounds`], which has no stored number at
+    /// all (the pre-C2 API spelled that `f64::NEG_INFINITY`).
+    #[must_use]
+    #[inline]
+    pub fn z_or_bbox_floor(self) -> Option<f64> {
+        match self {
+            Self::Covered(z) | Self::Uncovered { z_or_bbox_floor: z } => Some(z),
+            Self::OutOfBounds => None,
+        }
+    }
+
+    /// Whether this reading is backed by mesh under the cell.
+    #[must_use]
+    #[inline]
+    pub fn is_covered(self) -> bool {
+        matches!(self, Self::Covered(_))
+    }
+}
+
 /// Precomputed mesh surface Z heights at grid resolution.
 /// One parallel batch of drop-cutter queries at init, then O(1) lookups.
+///
+/// `z_values` and `covered` are private and always the same length: a Z
+/// without its coverage flag is the defect this type exists to prevent.
+/// Read cells through [`Self::z_at`] / [`Self::z_at_world`] (typed) or the
+/// honestly-named [`Self::z_or_bbox_floor_at`] family (untyped escape hatch).
 pub struct SurfaceHeightmap {
-    pub z_values: Vec<f64>,
+    z_values: Vec<f64>,
     /// True when the vertical ray at the cell center passes through at
     /// least one triangle footprint — false for holes in open meshes and
     /// for cells outside the mesh XY extent. `point_drop_cutter` happily
@@ -27,7 +98,7 @@ pub struct SurfaceHeightmap {
     /// The mask lets consumers tell the two cases apart — e.g. full-ray
     /// border clears, or future enclosed-hole handling (heights audit
     /// 2026-06-12, finding 3).
-    pub covered: Vec<bool>,
+    covered: Vec<bool>,
     pub rows: usize,
     pub cols: usize,
     pub origin_x: f64,
@@ -162,35 +233,159 @@ impl SurfaceHeightmap {
         })
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-    /// O(1) surface Z lookup by cell indices.
-    #[inline]
-    pub fn surface_z_at(&self, row: usize, col: usize) -> f64 {
-        self.z_values[row * self.cols + col]
+    /// Assemble a heightmap from already-computed cells — the constructor
+    /// for fixtures and for callers that sample the grid themselves.
+    ///
+    /// # Panics
+    /// When `z_values.len() != covered.len()` or either differs from
+    /// `rows * cols`: the pairing is this type's whole invariant.
+    #[allow(clippy::too_many_arguments, clippy::panic)]
+    #[must_use]
+    pub fn from_parts(
+        z_values: Vec<f64>,
+        covered: Vec<bool>,
+        rows: usize,
+        cols: usize,
+        origin_x: f64,
+        origin_y: f64,
+        cell_size: f64,
+    ) -> Self {
+        if z_values.len() != covered.len() || z_values.len() != rows * cols {
+            panic!(
+                "SurfaceHeightmap::from_parts: {} z values / {} coverage flags for a {rows}x{cols} grid",
+                z_values.len(),
+                covered.len(),
+            );
+        }
+        Self {
+            z_values,
+            covered,
+            rows,
+            cols,
+            origin_x,
+            origin_y,
+            cell_size,
+        }
     }
 
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-    /// Surface Z at world coordinates. Returns NEG_INFINITY for out-of-bounds.
-    pub fn surface_z_at_world(&self, x: f64, y: f64) -> f64 {
+    /// O(1) typed cell read: the Z **and** whether mesh backs it.
+    ///
+    /// # Panics
+    /// On out-of-range `row`/`col` (bounded-index contract, same as the
+    /// pre-C2 `surface_z_at`). Use [`Self::z_at_world`] for unvalidated
+    /// coordinates — that one reports [`GridZ::OutOfBounds`].
+    #[inline]
+    #[must_use]
+    pub fn z_at(&self, row: usize, col: usize) -> GridZ {
+        let i = row * self.cols + col;
+        if self.covered[i] {
+            GridZ::Covered(self.z_values[i])
+        } else {
+            GridZ::Uncovered {
+                z_or_bbox_floor: self.z_values[i],
+            }
+        }
+    }
+
+    /// Typed cell read by flat row-major index — for the loops that walk a
+    /// parallel grid (the dexel stock's `z_grid`) and index both by the same
+    /// `row * cols + col`. [`GridZ::OutOfBounds`] past the end.
+    #[allow(clippy::indexing_slicing)] // bounds checked on the line above
+    #[inline]
+    #[must_use]
+    pub fn z_at_index(&self, i: usize) -> GridZ {
+        if i >= self.z_values.len() {
+            return GridZ::OutOfBounds;
+        }
+        if self.covered[i] {
+            GridZ::Covered(self.z_values[i])
+        } else {
+            GridZ::Uncovered {
+                z_or_bbox_floor: self.z_values[i],
+            }
+        }
+    }
+
+    /// Typed cell read at world coordinates; [`GridZ::OutOfBounds`] off-grid.
+    #[must_use]
+    pub fn z_at_world(&self, x: f64, y: f64) -> GridZ {
+        match self.world_cell(x, y) {
+            Some((row, col)) => self.z_at(row, col),
+            None => GridZ::OutOfBounds,
+        }
+    }
+
+    /// Nearest cell to a world XY, or `None` when the point is off-grid.
+    #[inline]
+    fn world_cell(&self, x: f64, y: f64) -> Option<(usize, usize)> {
         let col_f = (x - self.origin_x) / self.cell_size;
         let row_f = (y - self.origin_y) / self.cell_size;
         if col_f < -0.5 || row_f < -0.5 {
-            return f64::NEG_INFINITY;
+            return None;
         }
         let col = col_f.round() as isize;
         let row = row_f.round() as isize;
         if col < 0 || row < 0 || col >= self.cols as isize || row >= self.rows as isize {
-            return f64::NEG_INFINITY;
+            return None;
         }
-        self.z_values[row as usize * self.cols + col as usize]
+        Some((row as usize, col as usize))
     }
 
-    /// Minimum Z across all cells. Uncovered cells contribute the `min_z`
-    /// clamp floor by design: adaptive clearing plans its deepest level
-    /// from this value, and stock beside/around the model (uncovered)
-    /// must be cleared down to the floor (see the hemisphere clearing
-    /// tests). Use `covered` to reason about real-surface-only minima.
-    pub fn min_z(&self) -> f64 {
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    /// O(1) **untyped** Z lookup: the stored number whether or not mesh backs
+    /// the cell. The escape hatch, named so the choice is visible at the call
+    /// site — clearing strategies that must take stock beside the model down
+    /// to the bbox floor want exactly this. Everyone else wants [`Self::z_at`].
+    #[inline]
+    #[must_use]
+    pub fn z_or_bbox_floor_at(&self, row: usize, col: usize) -> f64 {
+        self.z_values[row * self.cols + col]
+    }
+
+    /// Untyped Z at world coordinates. Returns `NEG_INFINITY` off-grid —
+    /// itself a sentinel, kept only for the call sites that already branch on
+    /// it; [`Self::z_at_world`] is the typed replacement.
+    #[must_use]
+    pub fn z_or_bbox_floor_at_world(&self, x: f64, y: f64) -> f64 {
+        self.z_at_world(x, y)
+            .z_or_bbox_floor()
+            .unwrap_or(f64::NEG_INFINITY)
+    }
+
+    /// The raw Z storage, uncovered cells included (see [`GridZ`]). Named for
+    /// what it holds; pair it with [`Self::covered_flags`], which is always
+    /// the same length.
+    #[must_use]
+    #[inline]
+    pub fn z_or_bbox_floor_values(&self) -> &[f64] {
+        &self.z_values
+    }
+
+    /// Per-cell mesh-coverage mask, row-major, same length as
+    /// [`Self::z_or_bbox_floor_values`].
+    #[must_use]
+    #[inline]
+    pub fn covered_flags(&self) -> &[bool] {
+        &self.covered
+    }
+
+    /// Minimum Z across all cells, uncovered ones **included** — so on any
+    /// padded grid (every finish surface: the grid runs one envelope radius
+    /// beyond the mesh bbox in XY, and those corner cells never hit the mesh)
+    /// this is the mesh bbox floor, a depth nothing has checked the cutter can
+    /// hold. That is by design for clearing: adaptive plans its deepest level
+    /// from this value and stock beside/around the model must come down to the
+    /// floor (see the hemisphere clearing tests), and waterline ladders need
+    /// the full mesh height because vertical walls live below every
+    /// drop-cutter-reachable Z.
+    ///
+    /// For "the deepest this cutter can actually descend on this surface" use
+    /// [`Self::min_covered_z`]. Renamed from `min_z()` in C2 (2026-07-30):
+    /// the old name read like the latter and was audited as the former at
+    /// every consumer.
+    #[must_use]
+    pub fn min_z_or_bbox_floor(&self) -> f64 {
         self.z_values.iter().copied().fold(f64::INFINITY, f64::min)
     }
 
@@ -198,21 +393,24 @@ impl SurfaceHeightmap {
     /// deepest this cutter's reference point can descend anywhere on this
     /// surface. `None` when no cell is covered.
     ///
-    /// The counterpart [`Self::min_z`] warns about, made available instead of
-    /// left to each caller to re-derive. The distinction is not cosmetic: on
-    /// a 22 mm grid padded by one envelope radius there are ALWAYS uncovered
-    /// cells carrying the `min_z` clamp, so `min_z()` is the MESH bbox floor
+    /// The counterpart [`Self::min_z_or_bbox_floor`] warns about, made
+    /// available instead of left to each caller to re-derive. The distinction
+    /// is not cosmetic: on a 22 mm grid padded by one envelope radius there
+    /// are ALWAYS uncovered cells carrying the `min_z` clamp, so
+    /// `min_z_or_bbox_floor()` is the MESH bbox floor
     /// on essentially every finish surface — a depth nothing has checked the
     /// cutter can hold. Measured on the Checkpoint B `patches + hole`
     /// fixture (62° conical pit, Ø1-tip / 7° / Ø6-shank taper):
-    /// `min_z()` = −3.000 (the pit apex, unreachable), `min_covered_z()` =
+    /// `min_z_or_bbox_floor()` = −3.000 (the pit apex, unreachable),
+    /// `min_covered_z()` =
     /// −2.407 (where the profile actually wedges). The closed-form contact
     /// solution for that cone and that taper is −2.439, so the grid answer
     /// is the same number to a third of a cell.
     ///
     /// A clearing op that must take stock BESIDE the model down to a floor
-    /// still wants [`Self::min_z`] — that is why both exist and why neither
-    /// is the other's default.
+    /// still wants [`Self::min_z_or_bbox_floor`] — that is why both exist and
+    /// why neither is the other's default.
+    #[must_use]
     pub fn min_covered_z(&self) -> Option<f64> {
         self.z_values
             .iter()
@@ -649,9 +847,9 @@ mod tests {
             origin_y: 0.0,
             cell_size: 1.0,
         };
-        assert_eq!(shm.surface_z_at(0, 0), 1.0);
-        assert_eq!(shm.surface_z_at(0, 2), 3.0);
-        assert_eq!(shm.surface_z_at(1, 1), 5.0);
+        assert_eq!(shm.z_or_bbox_floor_at(0, 0), 1.0);
+        assert_eq!(shm.z_or_bbox_floor_at(0, 2), 3.0);
+        assert_eq!(shm.z_or_bbox_floor_at(1, 1), 5.0);
     }
 
     #[test]
@@ -666,9 +864,9 @@ mod tests {
             origin_y: 10.0,
             cell_size: 2.0,
         };
-        assert_eq!(shm.surface_z_at_world(5.0, 10.0), 10.0);
-        assert_eq!(shm.surface_z_at_world(7.0, 10.0), 20.0);
-        assert_eq!(shm.surface_z_at_world(0.0, 0.0), f64::NEG_INFINITY); // out of bounds
+        assert_eq!(shm.z_or_bbox_floor_at_world(5.0, 10.0), 10.0);
+        assert_eq!(shm.z_or_bbox_floor_at_world(7.0, 10.0), 20.0);
+        assert_eq!(shm.z_or_bbox_floor_at_world(0.0, 0.0), f64::NEG_INFINITY); // out of bounds
     }
 
     #[test]
@@ -682,7 +880,7 @@ mod tests {
             origin_y: 0.0,
             cell_size: 1.0,
         };
-        assert_eq!(shm.min_z(), 1.0);
+        assert_eq!(shm.min_z_or_bbox_floor(), 1.0);
     }
 
     // ── SlopeMap tests ──────────────────────────────────────────────
@@ -1027,7 +1225,7 @@ mod tests {
         // Plate cell: covered, on the surface.
         assert!(shm.covered_at(5, 5), "plate cell should be covered");
         assert!(
-            (shm.surface_z_at(5, 5) - 5.0).abs() < 1e-6,
+            (shm.z_or_bbox_floor_at(5, 5) - 5.0).abs() < 1e-6,
             "plate cell should read the surface at 5.0"
         );
 
@@ -1041,18 +1239,18 @@ mod tests {
             "hole-center cell must be uncovered"
         );
         assert!(
-            (shm.surface_z_at(15, 15) - 0.0).abs() < 1e-6,
+            (shm.z_or_bbox_floor_at(15, 15) - 0.0).abs() < 1e-6,
             "hole cell keeps the clamp floor, got {}",
-            shm.surface_z_at(15, 15)
+            shm.z_or_bbox_floor_at(15, 15)
         );
 
         // Hole rim within cutter radius: the cutter rides the rim, so the
         // CL height is the plate height even though the ray may miss —
         // exactly why coverage can't be derived from the Z value.
         assert!(
-            (shm.surface_z_at(15, 19) - 5.0).abs() < 1e-6,
+            (shm.z_or_bbox_floor_at(15, 19) - 5.0).abs() < 1e-6,
             "rim-riding cell reads the plate height, got {}",
-            shm.surface_z_at(15, 19)
+            shm.z_or_bbox_floor_at(15, 19)
         );
     }
 }

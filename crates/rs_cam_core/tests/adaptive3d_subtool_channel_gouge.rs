@@ -12,7 +12,7 @@
 //!
 //! Mechanism: a flat end mill follows down into a sub-tool-width, deep
 //! valley. The cut Z at each path point comes from the **point** leave
-//! surface (`surface_z_at` in `build_material_bool_grid`, `surface_z_at_world`
+//! surface (`z_or_bbox_floor_at` in `build_material_bool_grid`, `z_or_bbox_floor_at_world`
 //! in the `lift` closure), with NO cutter-radius compensation. The radius-3
 //! cutter centred on the narrow floor laps its footprint onto the tall,
 //! still-uncleared valley walls and gouges them down to the floor Z — far

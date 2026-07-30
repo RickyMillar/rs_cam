@@ -542,7 +542,7 @@ pub fn decompose_surface(
 ) -> PlannedRegions {
     let mut planned = decompose(
         &surface.slope_map,
-        &surface.heightmap.covered,
+        surface.heightmap.covered_flags(),
         creases,
         params,
     );
