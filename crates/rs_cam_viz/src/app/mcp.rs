@@ -10,7 +10,6 @@ use rs_cam_core::compute::config::{
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId};
 use rs_cam_core::session::MutationKind;
 
-use crate::compute::ComputeLane;
 use crate::controller::Severity;
 use crate::mcp_bridge::{
     GuiBanner, McpRequest, McpRequestKind, McpResponse, MutationResult, MutationWarning,
@@ -66,6 +65,37 @@ impl super::RsCamApp {
         for request in requests {
             self.handle_mcp_request(ctx, request);
         }
+
+        self.publish_mcp_read_snapshot();
+    }
+
+    /// A/M12: republish the cheap, no-argument reads so the MCP server thread
+    /// can answer them while this thread is stalled behind a generation.
+    ///
+    /// Rate limited to [`MCP_READ_PUBLISH_INTERVAL`] so it cannot become a
+    /// per-frame cost: at the MCP heartbeat's 100 ms cadence that is at most
+    /// ~2 publishes/second of small-JSON rendering, on the GUI thread, and
+    /// **nothing at all on the compute lane** — no synchronisation was added
+    /// to the generation path.
+    fn publish_mcp_read_snapshot(&mut self) {
+        const MCP_READ_PUBLISH_INTERVAL: std::time::Duration =
+            std::time::Duration::from_millis(500);
+
+        if self
+            .mcp_reads_published_at
+            .is_some_and(|at| at.elapsed() < MCP_READ_PUBLISH_INTERVAL)
+        {
+            return;
+        }
+        self.mcp_reads_published_at = Some(std::time::Instant::now());
+        self.mcp_reads.publish(crate::mcp_bridge::McpReadSnapshot {
+            list_toolpaths: self.mcp_list_toolpaths(),
+            project_summary: self.mcp_project_summary(),
+            inspect_model: self.mcp_inspect_model(),
+            inspect_stock: self.mcp_inspect_stock(),
+            inspect_machine: self.mcp_inspect_machine(),
+            published_at: None,
+        });
     }
 
     fn handle_mcp_request(&mut self, ctx: &egui::Context, request: McpRequest) {
@@ -557,11 +587,6 @@ impl super::RsCamApp {
                     Severity::Info,
                 );
                 self.mcp_generate_all(response_tx, progress_tx);
-            }
-            // ── Cancel (instant — reports busy vs. no-op) ────────────
-            McpRequestKind::CancelGeneration => {
-                let resp = self.mcp_cancel_generation();
-                let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::RunSimulation { resolution } => {
                 self.controller
@@ -3833,25 +3858,6 @@ impl super::RsCamApp {
         }
     }
 
-    /// MCP `cancel_generation`: abort whatever is running on the toolpath
-    /// compute lane. Instant response — does not wait for the worker
-    /// thread to actually observe the cancel flag. Any `generate_toolpath`
-    /// / `generate_all` oneshot still pending for the cancelled toolpath
-    /// resolves separately (not from this call's response) once the
-    /// worker's `Cancelled` outcome drains: `notify_mcp_toolpath_complete`
-    /// already fires unconditionally on every drained result, cancellation
-    /// included, so that pending caller is not left hanging.
-    fn mcp_cancel_generation(&mut self) -> String {
-        let snapshot = self.controller.lane_snapshot(ComputeLane::Toolpath);
-        let was_busy = snapshot.is_active();
-        if was_busy {
-            self.controller
-                .events_mut()
-                .push(AppEvent::CancelToolpathGeneration);
-        }
-        build_cancel_generation_response(was_busy, snapshot.current_job.as_deref())
-    }
-
     fn mcp_run_simulation(
         &mut self,
         resolution: Option<f64>,
@@ -4823,29 +4829,6 @@ fn expand_span_kind_synonyms(span_kind: &str) -> Vec<String> {
     }
 }
 
-/// Pure response builder for MCP `cancel_generation`, split out from
-/// `mcp_cancel_generation` so the busy/no-op branching is unit-testable
-/// without constructing a full `RsCamApp` (which needs a live egui/wgpu
-/// context). `was_busy` is the toolpath lane's `LaneSnapshot::is_active()`
-/// read *before* the cancel event was queued; `current_job` is that same
-/// snapshot's `current_job` label, if any.
-fn build_cancel_generation_response(was_busy: bool, current_job: Option<&str>) -> String {
-    if was_busy {
-        let job = current_job.unwrap_or("(unnamed job)");
-        json_str(serde_json::json!({
-            "ok": true,
-            "summary": format!("Cancel requested for in-flight generation: {job}"),
-            "was_busy": true,
-        }))
-    } else {
-        json_str(serde_json::json!({
-            "ok": true,
-            "summary": "No toolpath generation in flight — nothing to cancel",
-            "was_busy": false,
-        }))
-    }
-}
-
 /// Parse the agent-facing workspace key used by the MCP `set_ui_view`
 /// tool into the GUI [`Workspace`] enum.
 fn parse_workspace(s: &str) -> Option<Workspace> {
@@ -5347,38 +5330,5 @@ mod tests {
         // env-var vocabulary).
         assert_eq!(parse_workspace("sim"), Some(Workspace::Simulation));
         assert_eq!(parse_workspace("not_a_workspace"), None);
-    }
-
-    /// MCP `cancel_generation` on an idle toolpath lane must report a
-    /// no-op (`was_busy: false`) rather than claiming it cancelled
-    /// something that was never running.
-    #[test]
-    fn cancel_generation_response_idle_lane_is_no_op() {
-        let resp = build_cancel_generation_response(false, None);
-        let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
-        assert_eq!(v["ok"], true);
-        assert_eq!(v["was_busy"], false);
-        assert!(
-            v["summary"].as_str().unwrap().contains("nothing to cancel"),
-            "idle-lane summary should read as a no-op, got: {resp}"
-        );
-    }
-
-    /// A busy toolpath lane must report `was_busy: true` and name the
-    /// in-flight job in the summary so the agent can confirm it cancelled
-    /// the toolpath it expected.
-    #[test]
-    fn cancel_generation_response_busy_lane_names_the_job() {
-        let resp = build_cancel_generation_response(true, Some("Adaptive Rough (adaptive3d)"));
-        let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
-        assert_eq!(v["ok"], true);
-        assert_eq!(v["was_busy"], true);
-        assert!(
-            v["summary"]
-                .as_str()
-                .unwrap()
-                .contains("Adaptive Rough (adaptive3d)"),
-            "busy-lane summary should name the in-flight job, got: {resp}"
-        );
     }
 }

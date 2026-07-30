@@ -890,6 +890,7 @@ mod tests {
         let cutting_levels = operation.cutting_levels(heights.top_z);
         ComputeRequest {
             toolpath_id: ToolpathId(1),
+            toolpath_index: 0,
             toolpath_name: "Test".to_owned(),
             polygons: Some(Arc::new(vec![Polygon2::rectangle(
                 -20.0, -20.0, 20.0, 20.0,

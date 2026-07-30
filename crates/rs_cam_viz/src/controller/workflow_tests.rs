@@ -67,6 +67,10 @@ impl ComputeBackend for ScriptedBackend {
             ComputeLane::Optimize => self.optimize_lane.clone(),
         }
     }
+
+    fn generation_control(&self) -> crate::compute::GenerationControl {
+        crate::compute::GenerationControl::detached()
+    }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────

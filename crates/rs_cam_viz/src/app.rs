@@ -36,6 +36,15 @@ pub struct RsCamApp {
     /// MCP request receiver (populated when `--mcp` is passed).
     #[cfg(feature = "mcp")]
     mcp_receiver: Option<std::sync::mpsc::Receiver<crate::mcp_bridge::McpRequest>>,
+    /// A/M12 — read payloads this thread republishes each frame so the MCP
+    /// server can answer status calls while the frame loop is stalled behind
+    /// a generation. Shared with the server thread.
+    #[cfg(feature = "mcp")]
+    mcp_reads: crate::mcp_bridge::McpReadCache,
+    /// Last time [`Self::mcp_reads`] was refreshed — the publish is rate
+    /// limited so it stays off the per-frame hot path.
+    #[cfg(feature = "mcp")]
+    mcp_reads_published_at: Option<std::time::Instant>,
 }
 
 impl RsCamApp {
@@ -58,11 +67,18 @@ impl RsCamApp {
 
         // Set up MCP channel and spawn server thread if requested.
         #[cfg(feature = "mcp")]
+        let mcp_reads = crate::mcp_bridge::McpReadCache::new();
+        #[cfg(feature = "mcp")]
         let mcp_receiver = if mcp_mode {
             controller.pending_mcp = Some(crate::mcp_bridge::PendingMcpCompute::new());
 
             let (tx, rx) = std::sync::mpsc::channel();
             let egui_ctx = cc.egui_ctx.clone();
+            // A/M12: the server's second door onto the compute lane. Taken
+            // here, on the GUI thread, because the backend lives on the
+            // controller — but usable from any thread thereafter.
+            let generation = controller.generation_control();
+            let reads = mcp_reads.clone();
 
             std::thread::Builder::new()
                 .name("mcp-server".into())
@@ -75,7 +91,9 @@ impl RsCamApp {
                         }
                     };
                     rt.block_on(async move {
-                        let server = crate::mcp_server::EmbeddedCamServer::new(tx, egui_ctx);
+                        let server = crate::mcp_server::EmbeddedCamServer::new(
+                            tx, egui_ctx, generation, reads,
+                        );
                         let tool_router = crate::mcp_server::EmbeddedCamServer::into_tool_router();
 
                         use rmcp::ServiceExt as _;
@@ -149,6 +167,10 @@ impl RsCamApp {
             last_drill_marker_key: None,
             #[cfg(feature = "mcp")]
             mcp_receiver,
+            #[cfg(feature = "mcp")]
+            mcp_reads,
+            #[cfg(feature = "mcp")]
+            mcp_reads_published_at: None,
         }
     }
 

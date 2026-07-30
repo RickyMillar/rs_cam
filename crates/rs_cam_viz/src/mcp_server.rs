@@ -11,7 +11,11 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{Meta, ProgressNotificationParam, ServerInfo};
 use rmcp::{Peer, RoleServer, ServerHandler, tool, tool_router};
 
-use crate::mcp_bridge::{McpRequest, McpRequestKind, ProgressUpdate};
+use crate::compute::GenerationControl;
+use crate::mcp_bridge::{
+    McpReadCache, McpReadKind, McpRequest, McpRequestKind, ProgressUpdate,
+    build_cancel_generation_response,
+};
 
 // Re-use parameter structs from the standalone MCP crate.
 use rs_cam_mcp::server::{
@@ -28,21 +32,51 @@ use rs_cam_mcp::server::{
     SimulationParam, json_str,
 };
 
+/// How long a cheap read waits for the GUI frame loop before falling back to
+/// the published snapshot — and only while a generation is actually in
+/// flight. When the lane is idle, reads wait as long as they always did.
+///
+/// A/M12 gate: `list_toolpaths` must answer in < 1 s during a long
+/// generation. 750 ms leaves headroom for the fallback render.
+const BUSY_READ_DEADLINE: Duration = Duration::from_millis(750);
+
 /// Embedded MCP server that forwards requests to the GUI thread.
+///
+/// **A/M12 — two doors, on purpose.** Almost everything here still goes
+/// through `request_tx`, which the egui main thread drains once per repaint in
+/// `RsCamApp::drain_mcp_requests` and handles strictly sequentially. That
+/// single-threaded, frame-driven dispatch — not any lock over
+/// `ProjectSession`, and not the rmcp transport (which spawns a task per
+/// inbound request) — is what serialized every MCP call behind a 40-minute
+/// `generate_all` on 2026-07-30. The escape hatches therefore do NOT use it:
+/// `cancel_generation` and `generation_status` are answered from
+/// [`GenerationControl`] on this thread, and the cheap no-argument reads fall
+/// back to [`McpReadCache`] when the frame loop misses [`BUSY_READ_DEADLINE`].
 #[derive(Clone)]
 pub struct EmbeddedCamServer {
     request_tx: std::sync::mpsc::Sender<McpRequest>,
     egui_ctx: egui::Context,
+    /// Cancel + observe the toolpath lane without the GUI frame loop.
+    generation: GenerationControl,
+    /// Last-published read payloads, for answering during a stalled frame loop.
+    reads: McpReadCache,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
 
 impl EmbeddedCamServer {
-    pub fn new(request_tx: std::sync::mpsc::Sender<McpRequest>, egui_ctx: egui::Context) -> Self {
+    pub fn new(
+        request_tx: std::sync::mpsc::Sender<McpRequest>,
+        egui_ctx: egui::Context,
+        generation: GenerationControl,
+        reads: McpReadCache,
+    ) -> Self {
         let tool_router = Self::tool_router();
         Self {
             request_tx,
             egui_ctx,
+            generation,
+            reads,
             tool_router,
         }
     }
@@ -69,6 +103,87 @@ impl EmbeddedCamServer {
         }
     }
 
+    /// A/M12: a cheap, no-argument read that **cannot** be trapped behind a
+    /// running generation.
+    ///
+    /// While the toolpath lane is idle this behaves exactly like
+    /// [`Self::send_request`] — same payload, same unbounded wait, no
+    /// behaviour change. While a generation is in flight the GUI round-trip
+    /// races [`BUSY_READ_DEADLINE`]; if the frame loop loses, the answer comes
+    /// from the last snapshot the GUI published, wrapped so the caller can
+    /// never mistake a snapshot for a live read.
+    async fn cheap_read(&self, kind: McpRequestKind, cached: McpReadKind) -> String {
+        if !self.generation.snapshot().is_active() {
+            return Self::format_result(self.send_request(kind).await);
+        }
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        let request = McpRequest {
+            kind,
+            response_tx,
+            progress_tx: None,
+        };
+        if let Err(e) = self.request_tx.send(request) {
+            return Self::format_result(Err(format!("Failed to send MCP request: {e}")));
+        }
+        self.egui_ctx.request_repaint();
+
+        // Dropping `response_rx` on timeout is safe and already the house
+        // pattern: every GUI-side resolution is `let _ = sender.send(..)`, and
+        // this oneshot is not shared with any other call.
+        match tokio::time::timeout(BUSY_READ_DEADLINE, response_rx).await {
+            Ok(Ok(resp)) => Self::format_result(resp.result),
+            Ok(Err(e)) => Self::format_result(Err(format!("MCP response channel closed: {e}"))),
+            Err(_elapsed) => self.snapshot_fallback(cached),
+        }
+    }
+
+    /// Render the stalled-frame-loop answer for a cheap read.
+    fn snapshot_fallback(&self, cached: McpReadKind) -> String {
+        let lane = self.generation.snapshot();
+        let in_flight = serde_json::json!({
+            "toolpath_index": lane.active_toolpath_index,
+            "toolpath_id": lane.active_toolpath_id,
+            "job": lane.current_job,
+            "stage": lane.current_phase,
+            "elapsed_s": lane.elapsed().map(|d| d.as_secs_f64()),
+        });
+        let tool = cached.tool_name();
+        match self.reads.get(cached) {
+            Some((payload, age)) => {
+                let data = serde_json::from_str::<serde_json::Value>(&payload)
+                    .unwrap_or(serde_json::Value::String(payload));
+                json_str(serde_json::json!({
+                    "ok": true,
+                    "served_from": "snapshot",
+                    "snapshot_age_s": age.as_secs_f64(),
+                    "summary": format!(
+                        "The GUI frame loop did not answer {tool} within {} ms because a \
+                         toolpath generation is in flight. This is the last snapshot it \
+                         published, {:.1} s ago — a lagging view, not a live read. \
+                         `generation_status` is always live; `cancel_generation` always \
+                         answers.",
+                        BUSY_READ_DEADLINE.as_millis(),
+                        age.as_secs_f64(),
+                    ),
+                    "generation_in_flight": in_flight,
+                    "data": data,
+                }))
+            }
+            None => json_str(serde_json::json!({
+                "ok": false,
+                "served_from": "nothing",
+                "error": format!(
+                    "{tool} could not be answered: the GUI frame loop is busy with a \
+                     generation and has never published a snapshot (no frame has \
+                     completed since startup). Use `generation_status` for live lane \
+                     state, or `cancel_generation` to stop the job."
+                ),
+                "generation_in_flight": in_flight,
+            })),
+        }
+    }
+
     /// Send a request to the GUI and forward progress notifications to the MCP
     /// client while awaiting the final response, optionally bounded by a
     /// wall-clock `timeout`.
@@ -87,7 +202,11 @@ impl EmbeddedCamServer {
         &self,
         kind: McpRequestKind,
         meta: Meta,
-        peer: Peer<RoleServer>,
+        // `None` = no client to notify. Only an integration test passes it:
+        // an rmcp `Peer` cannot be constructed outside a live service, and
+        // the A/M12 gate requires driving generate -> status -> cancel over
+        // this surface rather than the library API underneath it.
+        peer: Option<Peer<RoleServer>>,
         timeout: Option<Duration>,
     ) -> Result<String, String> {
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
@@ -120,12 +239,12 @@ impl EmbeddedCamServer {
         // caller supplied a progress token; the `if` guard keeps the
         // branch disabled (never polled) otherwise, matching the previous
         // no-token fast path.
-        let progress_token = meta.get_progress_token();
+        let progress_token = meta.get_progress_token().filter(|_| peer.is_some());
         let mut resp_rx = std::pin::pin!(response_rx);
         loop {
             tokio::select! {
                 Some(update) = progress_rx.recv(), if progress_token.is_some() => {
-                    if let Some(token) = &progress_token {
+                    if let (Some(token), Some(peer)) = (&progress_token, peer.as_ref()) {
                         let _ = peer.notify_progress(ProgressNotificationParam {
                             progress_token: token.clone(),
                             progress: update.progress,
@@ -187,18 +306,20 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "project_summary",
-        description = "Get project summary: name, stock dimensions, setup count, toolpath count, tools"
+        description = "Get project summary: name, stock dimensions, setup count, toolpath count, tools. Answers within 1s even while a generation is in flight — if the GUI is busy you get the last published snapshot under `served_from: \"snapshot\"` with its age."
     )]
-    async fn project_summary(&self) -> String {
-        Self::format_result(self.send_request(McpRequestKind::ProjectSummary).await)
+    pub async fn project_summary(&self) -> String {
+        self.cheap_read(McpRequestKind::ProjectSummary, McpReadKind::ProjectSummary)
+            .await
     }
 
     #[tool(
         name = "list_toolpaths",
-        description = "List all toolpaths with name, operation type, enabled status, and tool"
+        description = "List all toolpaths with name, operation type, enabled status, and tool. Answers within 1s even while a generation is in flight — if the GUI is busy you get the last published snapshot under `served_from: \"snapshot\"` with its age. For live in-flight detail use `generation_status`."
     )]
-    async fn list_toolpaths(&self) -> String {
-        Self::format_result(self.send_request(McpRequestKind::ListToolpaths).await)
+    pub async fn list_toolpaths(&self) -> String {
+        self.cheap_read(McpRequestKind::ListToolpaths, McpReadKind::ListToolpaths)
+            .await
     }
 
     #[tool(
@@ -381,7 +502,8 @@ impl EmbeddedCamServer {
         description = "Inspect all loaded models: mesh stats, bbox, BREP face summary, polygon summary. Returns a JSON array."
     )]
     async fn inspect_model(&self) -> String {
-        Self::format_result(self.send_request(McpRequestKind::InspectModel).await)
+        self.cheap_read(McpRequestKind::InspectModel, McpReadKind::InspectModel)
+            .await
     }
 
     #[tool(
@@ -389,7 +511,8 @@ impl EmbeddedCamServer {
         description = "Inspect stock configuration: dimensions, origin, material, padding, alignment pins, workholding rigidity."
     )]
     async fn inspect_stock(&self) -> String {
-        Self::format_result(self.send_request(McpRequestKind::InspectStock).await)
+        self.cheap_read(McpRequestKind::InspectStock, McpReadKind::InspectStock)
+            .await
     }
 
     #[tool(
@@ -397,7 +520,8 @@ impl EmbeddedCamServer {
         description = "Inspect machine profile: spindle, power, feeds limits, rigidity factors."
     )]
     async fn inspect_machine(&self) -> String {
-        Self::format_result(self.send_request(McpRequestKind::InspectMachine).await)
+        self.cheap_read(McpRequestKind::InspectMachine, McpReadKind::InspectMachine)
+            .await
     }
 
     #[tool(
@@ -995,7 +1119,7 @@ impl EmbeddedCamServer {
             self.send_with_progress(
                 McpRequestKind::GenerateToolpath { index },
                 meta,
-                peer,
+                Some(peer),
                 timeout_s.map(Duration::from_secs),
             )
             .await,
@@ -1016,7 +1140,25 @@ impl EmbeddedCamServer {
             self.send_with_progress(
                 McpRequestKind::GenerateAll,
                 meta,
-                peer,
+                Some(peer),
+                timeout_s.map(Duration::from_secs),
+            )
+            .await,
+        )
+    }
+
+    /// A/M12 test seam: the `generate_all` tool body with the rmcp `Peer`
+    /// made optional. An rmcp `Peer` cannot be constructed outside a live
+    /// service, and the acceptance gate requires driving
+    /// generate -> status -> cancel over *this* surface rather than the
+    /// library API underneath it. Behaviourally identical to the tool call
+    /// except that no progress notifications are emitted.
+    pub async fn generate_all_without_peer(&self, timeout_s: Option<u64>) -> String {
+        Self::format_result(
+            self.send_with_progress(
+                McpRequestKind::GenerateAll,
+                Meta::new(),
+                None,
                 timeout_s.map(Duration::from_secs),
             )
             .await,
@@ -1025,10 +1167,10 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "cancel_generation",
-        description = "Cancel whatever toolpath generation is currently in flight (the toolpath compute lane) — the fix for a runaway generate_toolpath/generate_all call that would otherwise hang indefinitely. Instant response reporting whether a job was actually cancelled or this was a no-op (lane was idle). The cancelled toolpath's status reverts to pending (not Done); any pending generate_toolpath/generate_all call for it resolves on its own shortly after with a cancelled outcome."
+        description = "Cancel whatever toolpath generation is currently in flight (the toolpath compute lane) — the fix for a runaway generate_toolpath/generate_all call that would otherwise hang indefinitely. Served on the MCP server thread, never queued behind the GUI frame loop, so it answers and sets the cancel flag whatever the GUI is doing. It sets a flag: the worker stops at its next cancellation checkpoint, which is not instantaneous. `was_busy` describes the lane at the moment you asked. The cancelled toolpath's status reverts to pending (not Done); any pending generate_toolpath/generate_all call for it resolves on its own shortly after with a cancelled outcome."
     )]
-    async fn cancel_generation(&self) -> String {
-        Self::format_result(self.send_request(McpRequestKind::CancelGeneration).await)
+    pub async fn cancel_generation(&self) -> String {
+        build_cancel_generation_response(&self.generation.request_cancel())
     }
 
     #[tool(
@@ -1045,7 +1187,7 @@ impl EmbeddedCamServer {
             self.send_with_progress(
                 McpRequestKind::RunSimulation { resolution },
                 meta,
-                peer,
+                Some(peer),
                 None,
             )
             .await,
@@ -1063,8 +1205,13 @@ impl EmbeddedCamServer {
         peer: Peer<RoleServer>,
     ) -> String {
         Self::format_result(
-            self.send_with_progress(McpRequestKind::CollisionCheck { index }, meta, peer, None)
-                .await,
+            self.send_with_progress(
+                McpRequestKind::CollisionCheck { index },
+                meta,
+                Some(peer),
+                None,
+            )
+            .await,
         )
     }
 

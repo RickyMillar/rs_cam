@@ -61,6 +61,10 @@ impl ComputeBackend for ScriptedBackend {
             ComputeLane::Optimize => self.optimize_lane.clone(),
         }
     }
+
+    fn generation_control(&self) -> crate::compute::GenerationControl {
+        crate::compute::GenerationControl::detached()
+    }
 }
 
 fn temp_path(name: &str, extension: &str) -> std::path::PathBuf {
@@ -331,6 +335,8 @@ fn ui_harness_records_lane_status_overlay_and_stock_to_leave() {
         current_job: Some("Adaptive 3D".to_owned()),
         current_phase: Some("Pass 12".to_owned()),
         started_at: Some(std::time::Instant::now()),
+        active_toolpath_id: None,
+        active_toolpath_index: None,
     };
     controller.compute.analysis_lane = LaneSnapshot {
         lane: ComputeLane::Analysis,
@@ -339,6 +345,8 @@ fn ui_harness_records_lane_status_overlay_and_stock_to_leave() {
         current_job: Some("Simulation".to_owned()),
         current_phase: None,
         started_at: None,
+        active_toolpath_id: None,
+        active_toolpath_index: None,
     };
 
     let snapshot = render_snapshot(&mut controller);
@@ -1993,6 +2001,9 @@ impl crate::compute::ComputeBackend for CapturingBackend {
     }
     fn lane_snapshot(&self, lane: crate::compute::ComputeLane) -> crate::compute::LaneSnapshot {
         crate::compute::LaneSnapshot::idle(lane)
+    }
+    fn generation_control(&self) -> crate::compute::GenerationControl {
+        crate::compute::GenerationControl::detached()
     }
 }
 
