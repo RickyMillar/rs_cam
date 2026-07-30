@@ -1742,3 +1742,225 @@ backed by mesh without re-deriving the mask, and cannot read the bbox-floor
 clamp by accident. The two OUT OF SCOPE rows above are the remaining holes:
 `DropCutterGrid` has no mask at all, and `SlopeMap` angles at the mesh rim
 are computed against padding.
+
+---
+
+## C-SEQUENCE WAVE 4 (A/M12 + A/M11), 2026-07-30
+
+Addendum D, in D's own binding order: the escape hatches first, the loop
+second — "never ship an unobservable, unabortable loop". Four commits plus
+this log entry.
+
+**Commits**
+
+| # | Hash | Scope | Diffstat |
+|---|------|-------|----------|
+| 1 | `3f47bcc` | A/M12a — `GenerationControl` / `LaneControl` off-GUI cancel, `McpReadCache` snapshot fallback for the five cheap reads, `LaneSnapshot` gains the in-flight index/id | 13 files, +900 / -114 |
+| 2 | `665cd1d` | A/M12b — `generation_status` tool; four corrected docstrings; the advancing sentry and the generate→status→cancel drive | 5 files, +197 / -15 |
+| 3 | `7642bf0` | A/M11a — `ComputeStatus::{AwaitingPriorStock, Disabled}` + `effective/label/error_text/blocked_on/detail/needs_generation`, eleven-site consumer sweep | 11 files, +690 / -123 |
+| 4 | `6edaaa1` | A/M11b — the fixpoint loop, moved onto `AppController`; caller-specified resolution or refusal; five acceptance gates | 9 files, +902 / -162 |
+
+### A/M12 — the serializer, named
+
+The plan listed three candidates: one mutex over `ProjectSession` held for
+the whole generation; a single-threaded MCP request handler; or the compute
+lane and request lane sharing one lock. **All three are wrong**, and saying
+so matters because the obvious fix — "relax the session lock to an RwLock" —
+would have relaxed nothing.
+
+- There is no lock over `ProjectSession` at all. The GUI thread owns it
+  outright; the worker never sees it.
+- Generation runs on its own thread (`spawn_toolpath_lane`). Its
+  `Mutex<LaneInner>` critical sections are a `VecDeque` push/pop and a
+  phase-string swap — microseconds, never the duration of a job.
+- rmcp 1.3 is not the serializer either: `service.rs` spawns a tokio task
+  per inbound request (`spawn_service_task`), so the transport reads and
+  dispatches concurrently.
+
+The serializer is **`RsCamApp::drain_mcp_requests`** — the single point
+where every MCP request is dispatched, running on the egui main thread,
+once per repaint, and handling the drained `Vec<McpRequest>` strictly in
+order. Nothing arbitrates between a cheap read and a 12-minute
+`narrate_toolpath`; they are the same queue. So any main-thread stall — a
+heavy in-band handler, a GPU re-upload of a 148k-move result, or the winit
+loop being starved while the rayon pool is saturated — takes the entire MCP
+surface with it, `cancel_generation` and `list_toolpaths` included. That is
+the whole defect: the escape hatches were behind the thing they escape.
+
+**The lock design, and why it is the smallest sound one.** Since there is no
+lock to relax, the fix is a second door rather than a wider one:
+
+- `GenerationControl` wraps the lane's existing `AtomicBool` + its
+  short-critical-section mutex behind a `Send + Sync` trait object, cloned
+  into the MCP server thread at startup. `cancel_generation` and
+  `generation_status` are answered synchronously on the caller's thread and
+  never touch the request channel. `McpRequestKind::CancelGeneration` was
+  **deleted** — being on that channel was the defect, so leaving the variant
+  behind would leave the trap.
+- `McpReadCache` is an `Arc<RwLock<_>>` of five already-rendered JSON
+  strings, republished by the GUI at ≤2 Hz. It is not a lock over state and
+  makes no claim to be live. Reads take it only after losing a 750 ms race
+  against the real GUI round-trip, and **only while the lane is active** —
+  when the lane is idle the behaviour is byte-identical to before. The
+  answer is labelled `served_from: "snapshot"` with its age and the
+  in-flight op; a cache that has never been published refuses rather than
+  handing back an empty list that reads like "this project has no
+  toolpaths".
+
+An `RwLock<ProjectSession>` would have been bigger, riskier, and — since the
+GUI thread would still hold the write side for the same stalls — no better.
+
+**A `was_busy: false` is now trustworthy.** The live run recorded reading a
+CPU drop as "the cancel landed" when the generation had simply finished; the
+queued cancel reported the lane state at service time, not at ask time. It
+is now serviced on the asking thread, so the two coincide.
+
+### A/M12 gate results
+
+| gate | result |
+|---|---|
+| `list_toolpaths` < 1 s with a generation in flight | PASS — measured in `list_toolpaths_answers_from_the_snapshot_when_the_frame_loop_stalls`; the whole 9-test file runs in **1.51 s** wall clock, and it contains four 750 ms fallbacks plus one deliberate 1.5 s timeout |
+| `cancel_generation` < 1 s **and** actually stops the job | PASS — asserts both the latency and that the lane double's cancel flag is set. No GUI thread exists in that test at all |
+| `generation_status` names index + stage, sentry asserts it advances | PASS — stage tracks the planner across calls and `elapsed_s` strictly increases; an idle lane reports idle rather than a stale last job |
+| integration test over the MCP surface, not the library API | PASS — `generate_then_status_then_cancel_over_the_mcp_surface` calls the tool methods |
+| no generation throughput regression | See below |
+
+**Throughput, and how it was checked.** Not by benchmark, because the honest
+answer is structural and a benchmark would have dressed it up: **no code was
+added to the compute lane's hot path.** `spawn_toolpath_lane`'s body is
+unchanged apart from one `Option<usize>` write inside a critical section
+that already existed (`inner.active_toolpath_index = Some(...)`, beside the
+`active_toolpath_id` write two lines up). `request_cancel` takes the same
+short `inner` mutex `submit_toolpath` already takes, and only when an MCP
+cancel arrives. Everything else is on the GUI thread at ≤2 Hz. Measured
+what is measurable: 10 000 publish+get round trips on the cache complete
+well inside 500 ms (`read_cache_publish_and_get_are_cheap`), and the 40
+worker-lane tests — which include the wall-clock cancellation assertions —
+pass at their usual timings.
+
+**The test seam, disclosed.** `send_with_progress` now takes
+`Option<Peer<RoleServer>>` and `generate_all_without_peer` exposes the tool
+body. An rmcp `Peer` cannot be constructed outside a live service, so the
+alternative was to test the layer underneath — which is exactly what the
+gate forbids. The tool method itself is unchanged and still passes
+`Some(peer)`.
+
+### A/M11 — the taxonomy, and the eleven sites
+
+`ComputeStatus` gained `AwaitingPriorStock { blocking_toolpath_id,
+blocking_toolpath_index, message }` and `Disabled`. Matches were made
+**exhaustive rather than wildcarded**, so the compiler enumerated every
+consumer instead of silently accepting the new variants:
+
+`app/mcp.rs` list_toolpaths · `app/mcp.rs` runtime_status_for_toolpath_id ·
+`app/mcp.rs` runtime_error_diagnostics · `controller/events/compute.rs`
+build_mcp_diagnostics · `controller/events/compute.rs`
+notify_mcp_toolpath_complete (single-toolpath arm) ·
+`controller/events/compute.rs` generate_all accounting ·
+`ui/toolpath_panel.rs` status chip · `ui/toolpath_panel.rs` quick-generate
+button · `ui/toolpath_panel.rs` dep-stale probe · `ui/properties/mod.rs`
+status line · `ui/workspace_bar.rs` pending badge.
+
+Two design calls worth recording:
+
+- **`Disabled` is derived, never stored.** `ComputeStatus::effective(enabled,
+  raw)` lets `enabled: false` win over whatever the op last recorded.
+  Storing it would mean deciding what to restore on re-enable; deriving it
+  makes the live defect structurally impossible — a switched-off op cannot
+  carry the error it had while it was on, because nobody reads the stored
+  value directly.
+- **A block is not an error, and the split is at the JSON boundary, not just
+  in the enum.** `runtime_errors` carries genuine failures only; blocked ops
+  get their own `awaiting_prior_stock` array; disabled ops appear in
+  neither. That is the list an agent triages, so the separation has to hold
+  where the agent reads it.
+
+The message now names the blocker (nearest enabled upstream op in the same
+setup) *and* distinguishes the two waits: blocker already generated → "ONE
+simulation is enough"; blocker not generated → "the cycle may need
+repeating". That distinction is the number the operator could not otherwise
+know, and a sentry pins both shapes.
+
+### A/M11 — the fixpoint loop
+
+Semantics: round 1 generates every enabled op. A round continues only when
+(a) at least one op is blocked *purely* on sequencing, and (b) the previous
+round generated at least one NEW op. Between rounds the loop runs one
+simulation at the caller's resolution; the next round regenerates exactly
+the blocked set.
+
+**Termination, three independent stops.** (a) genuine failures record
+`Error` and are never retried, so a broken op cannot keep (a) true — this is
+what makes a failing chain stop rather than spin. (b) an op reaches `Done`
+at most once per call, so (b) can hold at most `enabled_count` times.
+(c) a hard bound of `rest_dependent_ops + 1`, since a stock chain cannot be
+longer than the number of links in it. Plus two unwind paths that would
+otherwise hang: a simulation that fails or is cancelled disables the loop
+and reports `loop_error`, and a simulation that could not be submitted at
+all (`run_simulation_with_all` now returns whether it submitted) unwinds the
+same way instead of waiting for a completion that will never drain.
+
+Round count reporting: `{"rounds": n, "simulations": m}` on the JSON reply,
+and in the headline sentence — "Generated 4 toolpaths (in 4 generate rounds,
+3 simulations)".
+
+Resolution is caller-specified or the call refuses. The refusal names the
+ops that forced it, says why a default would be wrong (collision counts and
+engagement both move with cell size — A/M10), says what to pass, and says
+how to opt out. Nothing is submitted on that path.
+
+### A/M11 gate results
+
+| gate | result |
+|---|---|
+| 3-deep rest chain fully generated from cold in ONE call, reporting rounds | PASS — `generated: 4`, `rounds: 4`, `simulations: 3`, nothing left blocked, every op `Done` |
+| terminates on a genuinely-failing op, bounded rounds, clear final error | PASS — poisoned middle link; `ok: false`, `failed: 1`, rounds inside the 1..=4 bound, downstream ops reported as *waiting* rather than broken |
+| disabled rest op reports disabled | PASS — generated by nobody, in neither list, `effective(...)` → `"Disabled"` |
+| resolution caller-specified, no silent default | PASS — immediate refusal, nothing submitted, message contains the parameter name, the reason, and the opt-out |
+| MCP and GUI consume the same taxonomy | PASS by construction — one enum, one resolver, exhaustive matches; there is no second taxonomy to drift |
+
+The synthetic backend models the one rule that makes the ladder necessary:
+prior stock for an op appears only from a simulation that runs AFTER its
+predecessor generated. Without that rule the test would pass on a loop that
+does not loop.
+
+### Verification
+
+- `cargo fmt --check` clean; `cargo clippy --workspace --all-targets -D
+  warnings` zero, before each of the four commits.
+- `rs_cam_viz`: 187 lib + 9 `mcp_escape_hatches` + 11 `wizard_e2e`, all
+  green. `rs_cam_mcp` 4/4.
+- **The known load-flaky family bit again and was handled per the rule.**
+  During the taxonomy commit's run,
+  `compute::worker::tests::analysis_cancel_completes_quickly` (362 ms
+  against a 250 ms wall-clock assertion) and
+  `cancel_all_marks_both_lanes_cancelling` failed under a foreign
+  `sysml-runtime` / `sysml-lsp-server` load. Re-run with
+  `--test-threads=1`: **40/40 green**, twice. Not filed as a wave red — and
+  worth noting that this wave DOES touch that module, so the re-run was a
+  real check rather than a formality: `LaneControl` adds an impl beside
+  `snapshot()`, and the lane loop gains one field write.
+- `rs_cam_core --lib`: 2193 passed, 3 failed — exactly the three named
+  known reds (`peck_plunge_progresses_when_depth_per_pass_equals_retract_clearance`,
+  `rapid_segment_lifts_to_safe_z_before_traverse`,
+  `planner_sim_dexel_parity_agent_search`). Nothing new.
+- One cargo job at a time; `free -g` + bracketed `pgrep` before every heavy
+  command. A foreign sysml loop held the machine for most of the session;
+  `cargo check` was run concurrently only above the 20 GB threshold.
+
+**Untouched, as instructed**: `planning/airrun_2026-06-01/wanaka.toml` and
+`planning/review_2026-07-27/`. Every commit staged file-by-file.
+
+### What a live re-validation gets, and what it still does not
+
+The next wanaka run should cost one `generate_all` instead of five steps,
+can watch it with `generation_status`, and can stop it. Two things this wave
+deliberately did NOT fix, so nobody reads them as covered:
+
+- **`narrate_toolpath` still runs on the GUI thread** and still cost ~12 min
+  on 148 429 moves. It is now *documented* as such, and it no longer blocks
+  cancel/status — but the workflow's documented first diagnostic is still a
+  main-thread grind, and while it runs the cheap reads degrade to snapshots.
+- **`get_toolpath_params` and the other parameterised reads** are not in the
+  snapshot set. Publishing every op's params every frame is not free and the
+  gate did not ask for it; they still queue behind the frame loop.
