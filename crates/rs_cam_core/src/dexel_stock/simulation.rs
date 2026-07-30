@@ -488,7 +488,10 @@ impl TriDexelStock {
             let flute_length = cutter.length().max(1e-9);
             let engagement = crate::simulation_cut::Engagement {
                 radial_woc_fraction: radial_engagement,
-                axial_doc_fraction: (axial_engagement_mm / flute_length).clamp(0.0, 1.0),
+                // Always measured on this path: the cutter has a flute
+                // length, so the fraction is defined (C2 — `None` is reserved
+                // for emitters that have nothing to divide by).
+                axial_doc_fraction: Some((axial_engagement_mm / flute_length).clamp(0.0, 1.0)),
                 arc_radians: arc_engagement_radians,
                 mean_chip_thickness_mm: Some(chipload_mm_per_tooth),
                 peak_chip_thickness_mm: effective_chip_thickness_mm,
