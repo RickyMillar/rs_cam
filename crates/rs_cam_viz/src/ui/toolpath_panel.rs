@@ -268,7 +268,13 @@ fn draw_toolpath_card(
     let selected = state.selection == Selection::Toolpath(tp_id);
     let visible = rt.is_none_or(|r| r.visible);
     let auto_regen = rt.is_none_or(|r| r.auto_regen);
-    let status = rt.map_or(&ComputeStatus::Pending, |r| &r.status);
+    // A/M11: one taxonomy for GUI and MCP. `enabled: false` wins over
+    // whatever the op last recorded, so a switched-off toolpath shows OFF
+    // rather than the rest-stock error it had while it was on.
+    let status = ComputeStatus::effective(
+        tc.enabled,
+        rt.map_or(&ComputeStatus::Pending, |r| &r.status),
+    );
     let has_result = rt.is_some_and(|r| r.has_result);
     let stats = rt.and_then(|r| r.stats.as_ref());
     let dim = !tc.enabled || !visible;
@@ -376,6 +382,12 @@ fn draw_toolpath_card(
                     ComputeStatus::Pending => ("PEND", theme::TEXT_DIM, None),
                     ComputeStatus::Computing => ("GEN", theme::WARNING, None),
                     ComputeStatus::Done => ("OK", theme::SUCCESS_BRIGHT, None),
+                    // A/M11: WAIT is a sequencing state, not a failure — it
+                    // must not read as red. Hover names the blocking op.
+                    ComputeStatus::AwaitingPriorStock(block) => {
+                        ("WAIT", theme::WARNING, Some(block.message.as_str()))
+                    }
+                    ComputeStatus::Disabled => ("OFF", theme::TEXT_FAINT, None),
                     ComputeStatus::Error(msg) => ("ERR", theme::ERROR, Some(msg.as_str())),
                 };
                 let chip_resp = ui.label(
@@ -450,7 +462,7 @@ fn draw_toolpath_card(
                     }
 
                     // Quick generate button
-                    if matches!(status, ComputeStatus::Pending)
+                    if status.needs_generation()
                         && ui
                             .small_button("\u{25B6}")
                             .on_hover_text("Generate")
@@ -712,8 +724,9 @@ fn draw_rest_badge(
                             other.id != tp_id
                                 && other.tool_id == prev_id.0
                                 && state.gui.toolpath_rt.get(&other.id).is_none_or(|rt| {
-                                    matches!(rt.status, ComputeStatus::Pending)
-                                        || rt.stale_since.is_some()
+                                    // A/M11: a dep that is blocked on upstream
+                                    // stock is just as un-ready as a pending one.
+                                    rt.status.needs_generation() || rt.stale_since.is_some()
                                 })
                         })
                     })

@@ -3297,7 +3297,8 @@ fn draw_toolpath_panel(
         {
             events.push(AppEvent::GenerateToolpath(entry.id));
         }
-        match &entry.status {
+        // A/M11: same resolver the toolpath list and MCP use.
+        match ComputeStatus::effective(entry.enabled, &entry.status) {
             ComputeStatus::Pending => {
                 ui.label("Ready");
             }
@@ -3306,6 +3307,23 @@ fn draw_toolpath_panel(
             }
             ComputeStatus::Done => {
                 ui.label(egui::RichText::new("Done").color(egui::Color32::from_rgb(100, 180, 100)));
+            }
+            ComputeStatus::AwaitingPriorStock(block) => {
+                // Amber, not red: this operation is fine, it is waiting its
+                // turn. The hover names the operation it is waiting for.
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new("Waiting on upstream stock")
+                            .color(egui::Color32::from_rgb(220, 170, 70)),
+                    )
+                    .wrap(),
+                )
+                .on_hover_text(&block.message);
+            }
+            ComputeStatus::Disabled => {
+                ui.label(
+                    egui::RichText::new("Disabled").color(egui::Color32::from_rgb(140, 140, 150)),
+                );
             }
             ComputeStatus::Error(e) => {
                 ui.add(

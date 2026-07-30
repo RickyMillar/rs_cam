@@ -118,8 +118,12 @@ fn toolpath_badge(state: &AppState) -> Option<(String, egui::Color32)> {
         .iter()
         .filter(|tc| {
             let rt = state.gui.toolpath_rt.get(&tc.id);
-            let status = rt.map_or(&ComputeStatus::Pending, |r| &r.status);
-            tc.enabled && matches!(status, ComputeStatus::Pending | ComputeStatus::Computing)
+            let raw = rt.map_or(&ComputeStatus::Pending, |r| &r.status);
+            // A/M11: `effective` folds in `enabled`, and `needs_generation`
+            // counts a sequencing block as still-to-do (it will generate once
+            // its upstream stock exists) but not an outright failure.
+            let status = ComputeStatus::effective(tc.enabled, raw);
+            status.needs_generation() || matches!(status, ComputeStatus::Computing)
         })
         .count();
     if pending > 0 {

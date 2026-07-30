@@ -271,6 +271,41 @@ fn sample_controller() -> AppController<ScriptedBackend> {
     controller
 }
 
+/// Append another toolpath to setup 0 of a `sample_controller()` project,
+/// sharing its tool and model. Returns the new toolpath's id.
+fn push_toolpath(controller: &mut AppController<ScriptedBackend>, name: &str) -> ToolpathId {
+    let next = controller
+        .state
+        .session
+        .toolpath_configs()
+        .iter()
+        .map(|tc| tc.id.0 + 1)
+        .max()
+        .unwrap_or(0);
+    let cfg = ToolpathConfig {
+        id: ToolpathId(next),
+        name: name.to_owned(),
+        enabled: true,
+        operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+        dressups: Default::default(),
+        heights: Default::default(),
+        tool_id: 1,
+        model_id: 0,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: Default::default(),
+        boundary_inherit: true,
+        stock_source: Default::default(),
+        coolant: Default::default(),
+        face_selection: None,
+        debug_options: Default::default(),
+        feeds_provenance: Default::default(),
+        rest_analysis: Default::default(),
+    };
+    controller.state.session.add_toolpath(0, cfg).unwrap();
+    ToolpathId(next)
+}
+
 fn render_snapshot(
     controller: &mut AppController<ScriptedBackend>,
 ) -> crate::ui::automation::UiAutomationSnapshot {
@@ -2282,9 +2317,12 @@ fn submit_toolpath_compute_self_referential_boundary_resolves_mcp_waiter() {
     );
 }
 
-/// Same fail-hard family, different precondition: `FromRemainingStock`
-/// (rest machining) with no prior simulated stock available. This is the
-/// exact precondition named in the live incident report.
+/// Same waiter-resolution family, different precondition:
+/// `FromRemainingStock` (rest machining) with no prior simulated stock.
+///
+/// A/M11 reclassified this from `Error` to `AwaitingPriorStock` — it is a
+/// sequencing state, not a failure — but the MCP waiter must still be
+/// resolved immediately, which is what this test was written for.
 #[cfg(feature = "mcp")]
 #[test]
 fn submit_toolpath_compute_missing_prior_stock_resolves_mcp_waiter() {
@@ -2321,8 +2359,8 @@ fn submit_toolpath_compute_missing_prior_stock_resolves_mcp_waiter() {
         .result
         .expect("mcp response should carry an Ok(json) payload describing the error");
     assert!(
-        payload.contains("no prior") || payload.contains("remaining stock"),
-        "mcp error payload should describe the missing-prior-stock rejection, got: {payload}"
+        payload.contains("waiting on simulated stock") || payload.contains("remaining stock"),
+        "mcp payload should describe the missing-prior-stock block, got: {payload}"
     );
 
     let rt = controller
@@ -2330,10 +2368,178 @@ fn submit_toolpath_compute_missing_prior_stock_resolves_mcp_waiter() {
         .gui
         .toolpath_rt
         .get(&tp_id)
-        .expect("runtime should exist after fail-hard");
+        .expect("runtime should exist after the block");
     assert!(
-        matches!(&rt.status, crate::state::toolpath::ComputeStatus::Error(_)),
-        "toolpath runtime status should be Error, got {:?}",
+        matches!(
+            &rt.status,
+            crate::state::toolpath::ComputeStatus::AwaitingPriorStock(_)
+        ),
+        "A/M11: a missing upstream snapshot is a sequencing state, not an Error —          conflating them is what made 'cannot yet' indistinguishable from          'cannot ever'. Got {:?}",
         rt.status
+    );
+}
+
+/// A/M11 sentry — the message shape. The pre-A/M11 text ("run a simulation of
+/// the preceding operations first, then regenerate") was true and useless: it
+/// named no operation, so the operator could not tell a one-round wait from a
+/// four-round one. Both message variants must name the blocking op AND its
+/// index, and the not-yet-generated variant must warn that the cycle repeats.
+#[test]
+fn blocked_rest_op_names_its_blocking_upstream_operation() {
+    let mut controller = sample_controller();
+    // Build a two-op setup: index 0 is the blocker, index 1 is the rest op.
+    push_toolpath(&mut controller, "Rest Finish");
+    let blocker_id = controller.state.session.toolpath_configs()[0].id;
+    let blocker_name = controller.state.session.toolpath_configs()[0].name.clone();
+    let rest_id = controller.state.session.toolpath_configs()[1].id;
+    if let Some(tc) = controller
+        .state
+        .session
+        .toolpath_configs_mut()
+        .iter_mut()
+        .find(|tc| tc.id == rest_id)
+    {
+        tc.stock_source = crate::state::toolpath::StockSource::FromRemainingStock;
+    }
+
+    // Blocker not generated: the wait is at least two rounds.
+    controller.submit_toolpath_compute(rest_id);
+    let block = controller
+        .state
+        .gui
+        .toolpath_rt
+        .get(&rest_id)
+        .and_then(|rt| rt.status.blocked_on().cloned())
+        .expect("rest op with no prior stock must record AwaitingPriorStock");
+    assert_eq!(block.blocking_toolpath_id, Some(blocker_id));
+    assert_eq!(block.blocking_toolpath_index, Some(0));
+    assert!(
+        block.message.contains(&blocker_name),
+        "the message must NAME the blocking operation, got: {}",
+        block.message
+    );
+    assert!(
+        block.message.contains("index 0"),
+        "the message must give the blocker's index, got: {}",
+        block.message
+    );
+    assert!(
+        block.message.contains("may need repeating"),
+        "when the blocker has not generated, the message must say the cycle may          repeat — that is the number the operator cannot otherwise know. Got: {}",
+        block.message
+    );
+
+    // Blocker generated: exactly one simulation is enough, and the message
+    // must say so rather than repeating the vague ladder warning.
+    controller
+        .state
+        .gui
+        .toolpath_rt_or_default(blocker_id)
+        .status = crate::state::toolpath::ComputeStatus::Done;
+    controller.submit_toolpath_compute(rest_id);
+    let block = controller
+        .state
+        .gui
+        .toolpath_rt
+        .get(&rest_id)
+        .and_then(|rt| rt.status.blocked_on().cloned())
+        .expect("still blocked — no simulation has run");
+    assert!(
+        block.message.contains("ONE simulation"),
+        "with the blocker generated the wait is a single round and the message must          say so, got: {}",
+        block.message
+    );
+}
+
+/// A/M11 defect 2 — a disabled op must report `Disabled`, never the error it
+/// was carrying when it was switched off. Two ops read `3D Finish 6` and
+/// `Rivers (back) (copy)` as broken in the live run when they were merely off.
+#[test]
+fn a_disabled_op_reports_disabled_not_its_last_error() {
+    use crate::state::toolpath::ComputeStatus;
+    let stale = ComputeStatus::Error("uses remaining stock but none is available".to_owned());
+
+    let enabled = ComputeStatus::effective(true, &stale);
+    assert_eq!(enabled.label(), "Error");
+    assert!(enabled.error_text().is_some());
+
+    let disabled = ComputeStatus::effective(false, &stale);
+    assert_eq!(disabled.label(), "Disabled");
+    assert!(
+        disabled.error_text().is_none(),
+        "a disabled op must contribute nothing to any error list"
+    );
+    assert!(disabled.detail().is_none());
+    assert!(
+        !disabled.needs_generation(),
+        "a disabled op is not waiting to be generated"
+    );
+}
+
+/// A blocked op is not an error and must not appear in `runtime_errors`; a
+/// disabled one must appear in neither list. This is the channel an agent
+/// triages, so the separation has to hold at the JSON boundary, not just in
+/// the enum.
+#[cfg(feature = "mcp")]
+#[test]
+fn diagnostics_separate_blocked_from_failed_and_exclude_disabled() {
+    let mut controller = sample_controller();
+    push_toolpath(&mut controller, "Rest Finish");
+    push_toolpath(&mut controller, "Broken");
+    push_toolpath(&mut controller, "Switched Off");
+    let ids: Vec<_> = controller
+        .state
+        .session
+        .toolpath_configs()
+        .iter()
+        .map(|tc| tc.id)
+        .collect();
+
+    controller.state.gui.toolpath_rt_or_default(ids[1]).status =
+        crate::state::toolpath::ComputeStatus::AwaitingPriorStock(
+            rs_cam_core::compute::AwaitingPriorStock {
+                blocking_toolpath_id: Some(ids[0]),
+                blocking_toolpath_index: Some(0),
+                message: "waiting on simulated stock after 'Rough' (index 0)".to_owned(),
+            },
+        );
+    controller.state.gui.toolpath_rt_or_default(ids[2]).status =
+        crate::state::toolpath::ComputeStatus::Error("no 3D mesh".to_owned());
+    controller.state.gui.toolpath_rt_or_default(ids[3]).status =
+        crate::state::toolpath::ComputeStatus::Error("stale text from when it was on".to_owned());
+    if let Some(tc) = controller
+        .state
+        .session
+        .toolpath_configs_mut()
+        .iter_mut()
+        .find(|tc| tc.id == ids[3])
+    {
+        tc.enabled = false;
+    }
+
+    let diag = controller.build_mcp_diagnostics();
+    let errors = diag["runtime_errors"].as_array().expect("runtime_errors");
+    let blocked = diag["awaiting_prior_stock"]
+        .as_array()
+        .expect("awaiting_prior_stock");
+
+    assert_eq!(
+        errors.len(),
+        1,
+        "only the genuinely-failing op belongs in runtime_errors, got: {errors:?}"
+    );
+    assert_eq!(errors[0]["error"], "no 3D mesh");
+    assert_eq!(blocked.len(), 1, "got: {blocked:?}");
+    assert_eq!(blocked[0]["blocking_toolpath_index"], 0);
+
+    let rows = diag["per_toolpath"].as_array().expect("per_toolpath");
+    let off = rows
+        .iter()
+        .find(|r| r["toolpath_id"] == serde_json::json!(ids[3]))
+        .expect("disabled op should still be listed");
+    assert_eq!(off["status"], "Disabled");
+    assert!(
+        off["error"].is_null(),
+        "a disabled op must not present a live-looking error, got: {off}"
     );
 }

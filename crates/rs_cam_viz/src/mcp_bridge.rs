@@ -626,11 +626,75 @@ pub struct PendingGenerateAll {
     pub remaining: Vec<ToolpathId>,
     pub completed: usize,
     pub failed: usize,
-    /// Per-toolpath error messages for failed generations.
+    /// Per-toolpath error messages for genuinely failed generations.
     pub errors: Vec<(usize, String)>,
+    /// A/M11 — ops that could not generate *yet* because their upstream
+    /// simulated stock does not exist. Deliberately NOT counted in `failed`:
+    /// "cannot yet" and "cannot ever" are different states, and only the
+    /// former is worth retrying.
+    pub blocked: Vec<(ToolpathId, String)>,
     pub response_tx: tokio::sync::oneshot::Sender<McpResponse>,
     /// Optional channel for streaming per-toolpath progress back to the MCP client.
     pub progress_tx: Option<tokio::sync::mpsc::Sender<ProgressUpdate>>,
+}
+
+impl PendingGenerateAll {
+    /// Freeze this run into the shape the response builder consumes.
+    pub fn completed_summary(&self) -> GenerateAllSummary {
+        GenerateAllSummary {
+            generated: self.completed,
+            failed: self.failed,
+            errors: self.errors.clone(),
+            blocked: self
+                .blocked
+                .iter()
+                .map(|(id, msg)| (id.0, msg.clone()))
+                .collect(),
+        }
+    }
+}
+
+/// The outcome of one `generate_all` call, ready to render.
+pub struct GenerateAllSummary {
+    pub generated: usize,
+    pub failed: usize,
+    /// `(toolpath id, message)` for genuine failures.
+    pub errors: Vec<(usize, String)>,
+    /// A/M11 — `(toolpath id, message)` for ops still waiting on upstream
+    /// simulated stock. Separate from `errors` on purpose: an agent must be
+    /// able to tell "cannot yet" from "cannot ever" without parsing prose.
+    pub blocked: Vec<(usize, String)>,
+}
+
+/// Render the `generate_all` reply.
+///
+/// A/M11: reports blocked ops on their own channel, and never as failures.
+pub fn build_generate_all_response(summary: &GenerateAllSummary) -> String {
+    let mut headline = format!("Generated {} toolpaths", summary.generated);
+    if summary.failed > 0 {
+        headline.push_str(&format!(", {} failed", summary.failed));
+    }
+    if !summary.blocked.is_empty() {
+        headline.push_str(&format!(
+            ", {} still waiting on upstream simulated stock",
+            summary.blocked.len()
+        ));
+    }
+
+    let render = |rows: &[(usize, String)]| -> Vec<serde_json::Value> {
+        rows.iter()
+            .map(|(id, message)| serde_json::json!({"toolpath_id": id, "message": message}))
+            .collect()
+    };
+
+    rs_cam_mcp::server::json_str(serde_json::json!({
+        "ok": summary.failed == 0,
+        "summary": headline,
+        "generated": summary.generated,
+        "failed": summary.failed,
+        "errors": render(&summary.errors),
+        "awaiting_prior_stock": render(&summary.blocked),
+    }))
 }
 
 impl PendingMcpCompute {
