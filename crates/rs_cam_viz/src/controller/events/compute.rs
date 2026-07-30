@@ -545,6 +545,7 @@ impl<B: ComputeBackend> AppController<B> {
 
         self.compute.submit_toolpath(ComputeRequest {
             toolpath_id: tp_id,
+            toolpath_index: tp_idx,
             toolpath_name,
             debug_options,
             polygons,

@@ -3,10 +3,100 @@
 //! and receives responses via channels.
 
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
 use crate::state::toolpath::ToolpathId;
+
+/// The no-argument, cheap-to-render read payloads the GUI main thread
+/// republishes once per frame so the MCP server thread can answer them while
+/// the frame loop is stalled behind a long generation (A/M12).
+///
+/// This is deliberately NOT a lock over `ProjectSession`. There never was one:
+/// the pre-A/M12 serializer was the single-threaded, frame-driven
+/// `RsCamApp::drain_mcp_requests` dispatch, so relaxing a session lock would
+/// have relaxed nothing. Publishing already-rendered strings keeps the reader
+/// side lock-free-ish (an uncontended `RwLock` read of five `String`s) and
+/// keeps every field's meaning identical to the live call it mirrors — these
+/// are the *same* functions' output, captured a frame or two ago.
+#[derive(Default)]
+pub struct McpReadSnapshot {
+    pub list_toolpaths: String,
+    pub project_summary: String,
+    pub inspect_model: String,
+    pub inspect_stock: String,
+    pub inspect_machine: String,
+    /// `None` until the GUI has published at least once.
+    pub published_at: Option<Instant>,
+}
+
+/// Which cached payload a fallback read wants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpReadKind {
+    ListToolpaths,
+    ProjectSummary,
+    InspectModel,
+    InspectStock,
+    InspectMachine,
+}
+
+impl McpReadKind {
+    pub fn tool_name(self) -> &'static str {
+        match self {
+            Self::ListToolpaths => "list_toolpaths",
+            Self::ProjectSummary => "project_summary",
+            Self::InspectModel => "inspect_model",
+            Self::InspectStock => "inspect_stock",
+            Self::InspectMachine => "inspect_machine",
+        }
+    }
+
+    fn pick(self, snapshot: &McpReadSnapshot) -> &str {
+        match self {
+            Self::ListToolpaths => &snapshot.list_toolpaths,
+            Self::ProjectSummary => &snapshot.project_summary,
+            Self::InspectModel => &snapshot.inspect_model,
+            Self::InspectStock => &snapshot.inspect_stock,
+            Self::InspectMachine => &snapshot.inspect_machine,
+        }
+    }
+}
+
+/// Shared handle onto [`McpReadSnapshot`]. Cloned into the MCP server thread.
+#[derive(Clone, Default)]
+pub struct McpReadCache(Arc<RwLock<McpReadSnapshot>>);
+
+impl McpReadCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Called by the GUI main thread. Cheap: five `String` moves under a
+    /// write guard nobody holds for longer than that.
+    pub fn publish(&self, snapshot: McpReadSnapshot) {
+        let mut guard = self.0.write().unwrap_or_else(|e| e.into_inner());
+        *guard = McpReadSnapshot {
+            published_at: Some(Instant::now()),
+            ..snapshot
+        };
+    }
+
+    /// Age of the most recent publish, or `None` if the GUI never published.
+    pub fn age(&self) -> Option<Duration> {
+        let guard = self.0.read().unwrap_or_else(|e| e.into_inner());
+        guard.published_at.map(|at| at.elapsed())
+    }
+
+    /// The cached payload for `kind` plus its age, or `None` when the GUI has
+    /// not published yet.
+    pub fn get(&self, kind: McpReadKind) -> Option<(String, Duration)> {
+        let guard = self.0.read().unwrap_or_else(|e| e.into_inner());
+        let age = guard.published_at?.elapsed();
+        Some((kind.pick(&guard).to_owned(), age))
+    }
+}
 
 /// A progress update sent from GUI to MCP during long operations.
 #[derive(Debug, Clone)]
@@ -275,14 +365,10 @@ pub enum McpRequestKind {
         index: usize,
     },
     GenerateAll,
-    /// Cancel whatever toolpath generation is currently in flight (the
-    /// `ComputeLane::Toolpath` worker lane). Instant response — reports
-    /// whether the lane was actually busy or this was a no-op. Any
-    /// `GenerateToolpath` / `GenerateAll` oneshot still pending for the
-    /// cancelled toolpath resolves separately once the worker's cancelled
-    /// outcome drains (see `notify_mcp_toolpath_complete`), not from this
-    /// request's own response.
-    CancelGeneration,
+    // A/M12: `CancelGeneration` used to live here, which is exactly why it
+    // could not do its job — it queued behind the generation it was meant to
+    // abort. It is now served on the MCP server thread through
+    // `crate::compute::GenerationControl` and never reaches this channel.
     RunSimulation {
         resolution: Option<f64>,
     },
@@ -359,6 +445,42 @@ pub enum McpRequestKind {
     LoadMachineFromLibrary {
         name: String,
     },
+}
+
+/// Render the `cancel_generation` reply from what the lane actually did.
+///
+/// A/M12 moved this off the GUI thread: the cancel now runs synchronously on
+/// the MCP server thread via [`crate::compute::GenerationControl`], so
+/// `was_busy` describes the lane at the instant the caller asked rather than
+/// whenever the frame loop got round to it.
+pub fn build_cancel_generation_response(outcome: &crate::compute::CancelOutcome) -> String {
+    let snapshot = &outcome.snapshot;
+    if outcome.was_busy {
+        let job = snapshot.current_job.as_deref().unwrap_or("(unnamed job)");
+        rs_cam_mcp::server::json_str(serde_json::json!({
+            "ok": true,
+            "summary": format!("Cancel requested for in-flight generation: {job}"),
+            "was_busy": true,
+            "toolpath_index": snapshot.active_toolpath_index,
+            "toolpath_id": snapshot.active_toolpath_id,
+            "stage": snapshot.current_phase,
+            "elapsed_s": snapshot.elapsed().map(|d| d.as_secs_f64()),
+            "note": "The flag is set synchronously; the worker observes it at its \
+                     next cancellation checkpoint. The toolpath's status reverts to \
+                     pending (not Done) and any pending generate_toolpath / \
+                     generate_all call for it resolves on its own with a cancelled \
+                     outcome.",
+        }))
+    } else {
+        rs_cam_mcp::server::json_str(serde_json::json!({
+            "ok": true,
+            "summary": "No toolpath generation in flight — nothing to cancel",
+            "was_busy": false,
+            "note": "This reports the lane state at the moment you asked — the call \
+                     is serviced on the MCP server thread and never queues behind a \
+                     generation.",
+        }))
+    }
 }
 
 /// Response from the GUI thread to the MCP server.
@@ -463,9 +585,94 @@ impl PendingMcpCompute {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
+    use crate::compute::{CancelOutcome, ComputeLane, LaneSnapshot, LaneState};
+
+    fn busy_outcome() -> CancelOutcome {
+        CancelOutcome {
+            was_busy: true,
+            snapshot: LaneSnapshot {
+                lane: ComputeLane::Toolpath,
+                state: LaneState::Cancelling,
+                queue_depth: 0,
+                current_job: Some("Adaptive Rough (adaptive3d)".to_owned()),
+                current_phase: Some("clear_z_level".to_owned()),
+                started_at: Some(Instant::now()),
+                active_toolpath_id: Some(7),
+                active_toolpath_index: Some(3),
+            },
+        }
+    }
+
+    /// MCP `cancel_generation` on an idle toolpath lane must report a
+    /// no-op (`was_busy: false`) rather than claiming it cancelled
+    /// something that was never running.
+    #[test]
+    fn cancel_generation_response_idle_lane_is_no_op() {
+        let outcome = CancelOutcome {
+            was_busy: false,
+            snapshot: LaneSnapshot::idle(ComputeLane::Toolpath),
+        };
+        let resp = build_cancel_generation_response(&outcome);
+        let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
+        assert_eq!(v["ok"], true);
+        assert_eq!(v["was_busy"], false);
+        assert!(
+            v["summary"].as_str().unwrap().contains("nothing to cancel"),
+            "idle-lane summary should read as a no-op, got: {resp}"
+        );
+    }
+
+    /// A busy toolpath lane must report `was_busy: true`, name the in-flight
+    /// job, and — A/M12 — carry the index/stage the caller needs to attribute
+    /// the cost to an operation.
+    #[test]
+    fn cancel_generation_response_busy_lane_names_the_job() {
+        let resp = build_cancel_generation_response(&busy_outcome());
+        let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
+        assert_eq!(v["ok"], true);
+        assert_eq!(v["was_busy"], true);
+        assert_eq!(v["toolpath_index"], 3);
+        assert_eq!(v["stage"], "clear_z_level");
+        assert!(
+            v["summary"]
+                .as_str()
+                .unwrap()
+                .contains("Adaptive Rough (adaptive3d)"),
+            "busy-lane summary should name the in-flight job, got: {resp}"
+        );
+    }
+
+    /// The read cache answers `None` before the GUI has ever published, and
+    /// the exact payload afterwards. A caller must be able to tell "the GUI
+    /// never spoke" from "the GUI spoke a while ago".
+    #[test]
+    fn read_cache_distinguishes_never_published_from_stale() {
+        let cache = McpReadCache::new();
+        assert!(cache.age().is_none());
+        assert!(cache.get(McpReadKind::ListToolpaths).is_none());
+
+        cache.publish(McpReadSnapshot {
+            list_toolpaths: "[{\"index\":0}]".to_owned(),
+            project_summary: "{\"name\":\"p\"}".to_owned(),
+            ..Default::default()
+        });
+
+        let (payload, age) = cache.get(McpReadKind::ListToolpaths).unwrap();
+        assert_eq!(payload, "[{\"index\":0}]");
+        assert!(age.as_secs() < 5);
+        assert_eq!(
+            cache.get(McpReadKind::ProjectSummary).unwrap().0,
+            "{\"name\":\"p\"}"
+        );
+    }
 
     fn pending(
         frames: u8,

@@ -15,6 +15,7 @@ fn sample_request(operation: OperationConfig, stock_source: StockSource) -> Comp
     let cutting_levels = operation.cutting_levels(heights.top_z);
     ComputeRequest {
         toolpath_id: ToolpathId(1),
+        toolpath_index: 0,
         toolpath_name: "Sample".to_owned(),
         polygons: None,
         mesh: None,
@@ -97,6 +98,7 @@ fn quick_pocket_request(id: usize) -> ComputeRequest {
     let cutting_levels = operation.cutting_levels(heights.top_z);
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: id,
         toolpath_name: format!("Pocket {id}"),
         polygons: Some(Arc::new(vec![Polygon2::rectangle(
             -20.0, -20.0, 20.0, 20.0,
@@ -140,6 +142,7 @@ fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
     cfg.min_z = -5.0;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: id,
         toolpath_name: format!("DropCutter {id}"),
         polygons: None,
         mesh: Some(Arc::new(mesh)),
@@ -181,6 +184,7 @@ fn waterline_request(id: usize) -> ComputeRequest {
     cfg.sampling = 1.0;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Waterline {id}"),
         polygons: None,
         mesh: Some(Arc::new(mesh)),
@@ -223,6 +227,7 @@ fn adaptive3d_request(id: usize) -> ComputeRequest {
     cfg.region_ordering = crate::state::toolpath::RegionOrdering::ByArea;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Adaptive3d {id}"),
         polygons: None,
         mesh: Some(Arc::new(mesh)),
@@ -282,6 +287,7 @@ fn drill_request(id: usize) -> ComputeRequest {
     cfg.cycle = crate::state::toolpath::DrillCycleType::Peck;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Drill {id}"),
         polygons: Some(Arc::new(vec![
             Polygon2::rectangle(-10.0, -10.0, -6.0, -6.0),
@@ -319,6 +325,7 @@ fn steep_shallow_request(id: usize) -> ComputeRequest {
     let mesh = make_test_hemisphere(20.0, 16);
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("SteepShallow {id}"),
         polygons: None,
         mesh: Some(Arc::new(mesh)),
@@ -366,6 +373,7 @@ fn pencil_request(id: usize) -> ComputeRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Pencil {id}"),
         polygons: None,
         mesh: Some(Arc::new(make_v_groove_mesh(40.0, 6.0, 12.0))),
@@ -406,6 +414,7 @@ fn scallop_request(id: usize) -> ComputeRequest {
     cfg.tolerance = 0.2;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Scallop {id}"),
         polygons: None,
         mesh: Some(Arc::new(make_test_hemisphere(20.0, 16))),
@@ -447,6 +456,7 @@ fn ramp_finish_request(id: usize) -> ComputeRequest {
     cfg.tolerance = 0.2;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Ramp finish {id}"),
         polygons: None,
         mesh: Some(Arc::new(make_test_hemisphere(20.0, 16))),
@@ -486,6 +496,7 @@ fn spiral_finish_request(id: usize) -> ComputeRequest {
     cfg.stepover = 2.0;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Spiral finish {id}"),
         polygons: None,
         mesh: Some(Arc::new(make_test_hemisphere(20.0, 16))),
@@ -526,6 +537,7 @@ fn radial_finish_request(id: usize) -> ComputeRequest {
     cfg.point_spacing = 2.0;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Radial finish {id}"),
         polygons: None,
         mesh: Some(Arc::new(make_test_flat(80.0))),
@@ -565,6 +577,7 @@ fn horizontal_finish_request(id: usize) -> ComputeRequest {
     cfg.stepover = 3.0;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Horizontal finish {id}"),
         polygons: None,
         mesh: Some(Arc::new(make_test_flat(80.0))),
@@ -605,6 +618,7 @@ fn project_curve_request(id: usize) -> ComputeRequest {
     cfg.point_spacing = 1.0;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Project curve {id}"),
         polygons: Some(Arc::new(vec![
             Polygon2::rectangle(-12.0, -12.0, 12.0, 12.0),

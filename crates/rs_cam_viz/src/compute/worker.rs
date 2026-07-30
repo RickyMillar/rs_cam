@@ -27,7 +27,10 @@ use rs_cam_core::stock_mesh::StockMesh;
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 
-use super::{ComputeBackend, ComputeError, ComputeLane, ComputeMessage, LaneSnapshot, LaneState};
+use super::{
+    CancelOutcome, ComputeBackend, ComputeError, ComputeLane, ComputeMessage, GenerationControl,
+    LaneControl, LaneSnapshot, LaneState,
+};
 use crate::state::job::ToolConfig;
 #[cfg(test)]
 use crate::state::job::ToolType;
@@ -37,6 +40,11 @@ use crate::state::toolpath::{
 
 pub struct ComputeRequest {
     pub toolpath_id: ToolpathId,
+    /// A/M12: 0-based position in `ProjectSession::toolpath_configs()` at
+    /// submit time. The lane republishes it on [`LaneSnapshot`] so
+    /// `generation_status` can name the in-flight op by the same index every
+    /// other MCP call uses. The lane itself has no session access.
+    pub toolpath_index: usize,
     pub toolpath_name: String,
     pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
     pub polygons: Option<Arc<Vec<Polygon2>>>,
@@ -324,6 +332,9 @@ struct LaneInner<Request> {
     current_phase: Option<String>,
     started_at: Option<Instant>,
     active_toolpath_id: Option<ToolpathId>,
+    /// A/M12 — see [`ComputeRequest::toolpath_index`]. Only the toolpath lane
+    /// ever sets it.
+    active_toolpath_index: Option<usize>,
 }
 
 impl<Request> LaneInner<Request> {
@@ -335,6 +346,7 @@ impl<Request> LaneInner<Request> {
             current_phase: None,
             started_at: None,
             active_toolpath_id: None,
+            active_toolpath_index: None,
         }
     }
 }
@@ -367,7 +379,39 @@ impl<Request> LaneQueue<Request> {
             current_job: inner.current_job.clone(),
             current_phase: inner.current_phase.clone(),
             started_at: inner.started_at,
+            active_toolpath_id: inner.active_toolpath_id.map(|id| id.0),
+            active_toolpath_index: inner.active_toolpath_index,
         }
+    }
+}
+
+/// A/M12: the toolpath lane answers cancel + status requests on the *caller's*
+/// thread. Both operations take only `inner`, whose critical sections are a
+/// handful of instructions (queue push/pop, phase-string swap) held by the
+/// worker thread — never for the duration of a generation.
+impl LaneControl for LaneQueue<ComputeRequest> {
+    fn snapshot(&self) -> LaneSnapshot {
+        LaneQueue::snapshot(self)
+    }
+
+    fn request_cancel(&self) -> CancelOutcome {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let was_busy = inner.started_at.is_some();
+        if was_busy {
+            self.cancel.store(true, Ordering::SeqCst);
+            inner.state = LaneState::Cancelling;
+        }
+        let snapshot = LaneSnapshot {
+            lane: self.lane,
+            state: inner.state,
+            queue_depth: inner.queue.len(),
+            current_job: inner.current_job.clone(),
+            current_phase: inner.current_phase.clone(),
+            started_at: inner.started_at,
+            active_toolpath_id: inner.active_toolpath_id.map(|id| id.0),
+            active_toolpath_index: inner.active_toolpath_index,
+        };
+        CancelOutcome { was_busy, snapshot }
     }
 }
 
@@ -597,6 +641,10 @@ impl ComputeBackend for ThreadedComputeBackend {
             ComputeLane::Optimize => self.optimize_lane.snapshot(),
         }
     }
+
+    fn generation_control(&self) -> GenerationControl {
+        GenerationControl::new(Arc::clone(&self.toolpath_lane) as Arc<dyn LaneControl>)
+    }
 }
 
 impl ThreadedComputeBackend {
@@ -674,6 +722,7 @@ fn spawn_toolpath_lane(
                     inner.current_phase = None;
                     inner.started_at = None;
                     inner.active_toolpath_id = None;
+                    inner.active_toolpath_index = None;
                     inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
                 }
                 if lane.shutdown.load(Ordering::SeqCst) {
@@ -688,6 +737,7 @@ fn spawn_toolpath_lane(
                 inner.current_phase = None;
                 inner.started_at = Some(Instant::now());
                 inner.active_toolpath_id = Some(request.toolpath_id);
+                inner.active_toolpath_index = Some(request.toolpath_index);
                 request
             };
 
@@ -781,6 +831,7 @@ fn spawn_analysis_lane(
                     inner.current_phase = None;
                     inner.started_at = None;
                     inner.active_toolpath_id = None;
+                    inner.active_toolpath_index = None;
                     inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
                 }
                 if lane.shutdown.load(Ordering::SeqCst) {
@@ -898,6 +949,7 @@ fn spawn_optimize_lane(
                     inner.current_phase = None;
                     inner.started_at = None;
                     inner.active_toolpath_id = None;
+                    inner.active_toolpath_index = None;
                     inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
                 }
                 if lane.shutdown.load(Ordering::SeqCst) {

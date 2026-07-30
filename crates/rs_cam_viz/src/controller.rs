@@ -164,6 +164,13 @@ impl<B: ComputeBackend> AppController<B> {
         self.compute.lane_snapshots()
     }
 
+    /// A/M12: a `Send + Sync` handle onto the toolpath lane, for the embedded
+    /// MCP server thread. Lets `cancel_generation` / `generation_status` be
+    /// answered without the GUI frame loop.
+    pub fn generation_control(&self) -> crate::compute::GenerationControl {
+        self.compute.generation_control()
+    }
+
     pub fn load_warnings(&self) -> &[String] {
         &self.load_warnings
     }
