@@ -1330,6 +1330,12 @@ After the wanaka live validation report lands:
    rule: never ship an unobservable, unabortable loop). Slotted here
    because every later wave that needs live wanaka validation pays their
    tax until they land; no dependency on C1/C2.
+   ✅ DONE 2026-07-30: 3f47bcc (A/M12a — off-GUI cancel + read snapshot;
+   the serializer was `RsCamApp::drain_mcp_requests`, NOT a session lock) /
+   665cd1d (A/M12b — `generation_status` + four corrected docstrings) /
+   7642bf0 (A/M11a — `AwaitingPriorStock` + `Disabled` taxonomy, 11-site
+   sweep) / 6edaaa1 (A/M11b — fixpoint loop, 3-deep chain in one call
+   reporting rounds 4 / simulations 3). All nine acceptance gates green.
 4. **C6 fixture library** — before M4's fixture-heavy work.
 5. **A/M6** `claims_reference` (base plan, unchanged position).
 6. **M3 classifier** (uses C2+C6).
