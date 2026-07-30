@@ -16,12 +16,119 @@ pub enum StockSource {
 // path keeps working.
 pub use crate::ids::ToolpathId;
 
+/// Why a toolpath cannot generate *yet* — and which operation it is waiting
+/// for. A/M11.
+///
+/// This is a **sequencing** state, not a failure. An op with
+/// `StockSource::FromRemainingStock` needs the simulated stock of the ops
+/// before it, and that snapshot only exists after a *simulation*. So a rest op
+/// can never see stock produced by an op generated earlier in the same
+/// `generate_all` pass — measured on wanaka 2026-07-30, where `Rivers`
+/// generated fine and its own successor `Lakes` failed in the same pass.
+/// Reporting that as `Error` made "cannot yet" indistinguishable from "cannot
+/// ever", and left the operator with no way to tell a one-round wait from a
+/// four-round one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AwaitingPriorStock {
+    /// The upstream operation whose simulated stock is missing. `None` only
+    /// when this op is first in its setup and there is genuinely nothing
+    /// upstream to name — a real configuration error, spelled out in
+    /// `message`.
+    pub blocking_toolpath_id: Option<ToolpathId>,
+    /// That operation's 0-based index at the time the block was recorded.
+    /// Advisory: indices shift when toolpaths are added or removed, so
+    /// resolve by `blocking_toolpath_id` when it matters.
+    pub blocking_toolpath_index: Option<usize>,
+    /// The operator-facing sentence. Always names the blocker when there is
+    /// one. Shape pinned by a sentry so it cannot silently regress to the
+    /// pre-A/M11 text, which named no operation and did not say the cycle may
+    /// need repeating.
+    pub message: String,
+}
+
+/// Where a toolpath stands. Consumed identically by the GUI badge, the MCP
+/// `list_toolpaths` / diagnostics surface, and the generate_all reporter —
+/// there is deliberately no second taxonomy.
 #[derive(Debug, Clone)]
 pub enum ComputeStatus {
     Pending,
     Computing,
     Done,
+    /// A/M11 — blocked on sequencing, not failed. See [`AwaitingPriorStock`].
+    AwaitingPriorStock(AwaitingPriorStock),
+    /// The operation is switched off (`enabled: false`).
+    ///
+    /// **Never stored.** It is produced only by [`ComputeStatus::effective`],
+    /// which lets `enabled: false` win over whatever the op last recorded.
+    /// Storing it would mean deciding what to restore on re-enable; deriving
+    /// it means a disabled op can never carry a live-looking error — the
+    /// A/M11 defect where `3D Finish 6` read as broken when it was merely off.
+    Disabled,
+    /// A genuine generation failure. Something is wrong with the operation,
+    /// its inputs, or its geometry; no amount of re-running will fix it.
     Error(String),
+}
+
+impl ComputeStatus {
+    /// The status a reader should show, given whether the op is enabled.
+    /// Every surface goes through here so GUI, MCP and CLI cannot drift.
+    pub fn effective(enabled: bool, raw: &Self) -> &Self {
+        static DISABLED: ComputeStatus = ComputeStatus::Disabled;
+        if enabled { raw } else { &DISABLED }
+    }
+
+    /// Stable machine-readable label. Used by the MCP `status` field and the
+    /// GUI tooltips.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Pending => "Pending",
+            Self::Computing => "Computing",
+            Self::Done => "Done",
+            Self::AwaitingPriorStock(_) => "AwaitingPriorStock",
+            Self::Disabled => "Disabled",
+            Self::Error(_) => "Error",
+        }
+    }
+
+    /// The failure text — and ONLY for genuine failures. A blocked op is not
+    /// an error and must not inflate an error list; read it through
+    /// [`Self::blocked_on`].
+    pub fn error_text(&self) -> Option<&str> {
+        match self {
+            Self::Error(e) => Some(e.as_str()),
+            Self::Pending
+            | Self::Computing
+            | Self::Done
+            | Self::AwaitingPriorStock(_)
+            | Self::Disabled => None,
+        }
+    }
+
+    /// The sequencing block, when there is one.
+    pub fn blocked_on(&self) -> Option<&AwaitingPriorStock> {
+        match self {
+            Self::AwaitingPriorStock(b) => Some(b),
+            Self::Pending | Self::Computing | Self::Done | Self::Disabled | Self::Error(_) => None,
+        }
+    }
+
+    /// Any message worth showing the operator, failure or block.
+    pub fn detail(&self) -> Option<&str> {
+        match self {
+            Self::Error(e) => Some(e.as_str()),
+            Self::AwaitingPriorStock(b) => Some(b.message.as_str()),
+            Self::Pending | Self::Computing | Self::Done | Self::Disabled => None,
+        }
+    }
+
+    /// `true` when this op still needs a generate to reach `Done`. A blocked
+    /// op counts — it will generate once its upstream stock exists.
+    pub fn needs_generation(&self) -> bool {
+        match self {
+            Self::Pending | Self::AwaitingPriorStock(_) => true,
+            Self::Computing | Self::Done | Self::Disabled | Self::Error(_) => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]

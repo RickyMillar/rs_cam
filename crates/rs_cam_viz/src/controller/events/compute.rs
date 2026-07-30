@@ -40,6 +40,121 @@ impl<B: ComputeBackend> AppController<B> {
         self.notify_mcp_toolpath_complete(tp_id);
     }
 
+    /// A/M11 sibling of [`Self::fail_toolpath_submit`] for the one rejection
+    /// that is **not** a failure: a rest op whose upstream simulated stock
+    /// does not exist yet. It records `AwaitingPriorStock` rather than
+    /// `Error`, so `generate_all`'s fixpoint loop can retry it after a
+    /// simulation while genuine failures stay failed, and so it never inflates
+    /// the error list an operator or agent has to triage.
+    fn block_toolpath_submit(
+        &mut self,
+        tp_id: ToolpathId,
+        block: rs_cam_core::compute::AwaitingPriorStock,
+    ) {
+        let rt = self.state.gui.toolpath_rt_or_default(tp_id);
+        rt.status = ComputeStatus::AwaitingPriorStock(block);
+        rt.result = None;
+        #[cfg(feature = "mcp")]
+        self.notify_mcp_toolpath_complete(tp_id);
+    }
+
+    /// The operation whose simulated stock `tp_id` is waiting on: the nearest
+    /// ENABLED toolpath before it in the same setup.
+    ///
+    /// A/M11 defect 1 — the old message named no operation, so the user could
+    /// not tell a one-round wait from a four-round one. The distinction the
+    /// message must carry is whether that upstream op has itself generated: if
+    /// it has not, the wait is at least two rounds (generate it, simulate,
+    /// then come back); if it has, one simulation is enough.
+    fn prior_stock_blocker(
+        &self,
+        tp_id: ToolpathId,
+        toolpath_name: &str,
+    ) -> rs_cam_core::compute::AwaitingPriorStock {
+        use rs_cam_core::compute::AwaitingPriorStock;
+
+        let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id) else {
+            return AwaitingPriorStock {
+                blocking_toolpath_id: None,
+                blocking_toolpath_index: None,
+                message: format!(
+                    "'{toolpath_name}' uses remaining stock (rest machining) but is no \
+                     longer in the project."
+                ),
+            };
+        };
+
+        // Setup membership decides the stock chain: only ops in the same
+        // setup contribute to the snapshot this op reads.
+        let same_setup: Vec<usize> = self
+            .state
+            .session
+            .list_setups()
+            .iter()
+            .find(|s| s.toolpath_indices.contains(&tp_idx))
+            .map_or_else(|| (0..tp_idx).collect(), |s| s.toolpath_indices.clone());
+
+        let upstream = same_setup
+            .iter()
+            .copied()
+            .filter(|idx| *idx < tp_idx)
+            .filter_map(|idx| {
+                self.state
+                    .session
+                    .toolpath_configs()
+                    .get(idx)
+                    .filter(|tc| tc.enabled)
+                    .map(|tc| (idx, tc))
+            })
+            .next_back();
+
+        let Some((blocker_idx, blocker)) = upstream else {
+            return AwaitingPriorStock {
+                blocking_toolpath_id: None,
+                blocking_toolpath_index: None,
+                message: format!(
+                    "'{toolpath_name}' uses remaining stock (rest machining) but is the \
+                     first enabled operation in its setup — there is no prior operation \
+                     to leave any stock behind. Set its stock source to fresh stock, or \
+                     move it after the operation it is meant to follow."
+                ),
+            };
+        };
+
+        let blocker_name = blocker.name.clone();
+        let blocker_id = blocker.id;
+        let blocker_generated = self
+            .state
+            .gui
+            .toolpath_rt
+            .get(&blocker_id)
+            .is_some_and(|rt| matches!(rt.status, ComputeStatus::Done));
+
+        let message = if blocker_generated {
+            format!(
+                "'{toolpath_name}' is waiting on simulated stock after '{blocker_name}' \
+                 (index {blocker_idx}). That operation is generated, so ONE simulation \
+                 is enough: run a simulation, then regenerate. (Not falling back to \
+                 fresh stock.)"
+            )
+        } else {
+            format!(
+                "'{toolpath_name}' is waiting on simulated stock after '{blocker_name}' \
+                 (index {blocker_idx}), which has not generated yet. The cycle may need \
+                 repeating: generate '{blocker_name}', run a simulation, then regenerate \
+                 this operation — and if IT feeds a further rest op, again. \
+                 `generate_all` with a simulation resolution does the whole ladder in \
+                 one call. (Not falling back to fresh stock.)"
+            )
+        };
+
+        AwaitingPriorStock {
+            blocking_toolpath_id: Some(blocker_id),
+            blocking_toolpath_index: Some(blocker_idx),
+            message,
+        }
+    }
+
     pub(crate) fn submit_toolpath_compute(&mut self, tp_id: ToolpathId) {
         let Some((tp_idx, tc)) = self.state.session.find_toolpath_config_by_id(tp_id) else {
             self.fail_toolpath_submit(tp_id, "Toolpath config not found".to_owned());
@@ -396,21 +511,14 @@ impl<B: ComputeBackend> AppController<B> {
                 .prior_stock_for(tp_id)
                 .map(|stock| stock.as_ref().clone());
             let Some(found) = found else {
-                self.fail_toolpath_submit(
-                    tp_id,
-                    format!(
-                        "'{toolpath_name}' uses remaining stock (rest machining) but no prior \
-                         simulated stock is available — run a simulation of the preceding \
-                         operations first, then regenerate. (Not falling back to fresh stock.)"
-                    ),
-                );
-                self.push_notification(
-                    format!(
-                        "Rest machining: '{toolpath_name}' has no prior simulated stock — run a \
-                         simulation first, then regenerate. (Not falling back to fresh stock.)"
-                    ),
-                    super::super::Severity::Error,
-                );
+                // A/M11: this is a sequencing state, not a failure. It names
+                // the upstream op it is waiting for, says whether one
+                // simulation will do, and is retried (not re-failed) by
+                // `generate_all`'s fixpoint loop.
+                let block = self.prior_stock_blocker(tp_id, &toolpath_name);
+                let notice = block.message.clone();
+                self.block_toolpath_submit(tp_id, block);
+                self.push_notification(notice, super::super::Severity::Warning);
                 return;
             };
             Some(found)
@@ -1127,7 +1235,7 @@ impl<B: ComputeBackend> AppController<B> {
     // ── MCP notification helpers ─────────────────────────────────────
     #[cfg(feature = "mcp")]
     fn notify_mcp_toolpath_complete(&mut self, tp_id: crate::state::toolpath::ToolpathId) {
-        use crate::mcp_bridge::McpResponse;
+        use crate::mcp_bridge::{McpResponse, build_generate_all_response};
         use rs_cam_mcp::server::json_str;
 
         if let Some(ref mut pending) = self.pending_mcp {
@@ -1142,9 +1250,13 @@ impl<B: ComputeBackend> AppController<B> {
                         "rapid_distance_mm": result.stats.rapid_distance,
                     })),
                     None => {
-                        let status_msg = rt
-                            .map(|rt| match &rt.status {
+                        let status = rt.map(|rt| &rt.status);
+                        let status_msg = status
+                            .map(|status| match status {
                                 ComputeStatus::Error(e) => format!("Error: {e}"),
+                                // A/M11: blocked is not failed, and the reply
+                                // says which operation it is waiting for.
+                                ComputeStatus::AwaitingPriorStock(b) => b.message.clone(),
                                 // The only way a drained result reaches this
                                 // arm with `Pending` is the cancel path a few
                                 // lines above (`Err(ComputeError::Cancelled)`
@@ -1153,10 +1265,22 @@ impl<B: ComputeBackend> AppController<B> {
                                 // an MCP caller waiting on `cancel_generation`
                                 // sees an unambiguous outcome.
                                 ComputeStatus::Pending => "Generation was cancelled".to_owned(),
-                                _ => "Toolpath generation produced no result".to_owned(),
+                                ComputeStatus::Computing
+                                | ComputeStatus::Done
+                                | ComputeStatus::Disabled => {
+                                    "Toolpath generation produced no result".to_owned()
+                                }
                             })
                             .unwrap_or_else(|| "Toolpath not found".to_owned());
-                        json_str(serde_json::json!({"error": status_msg}))
+                        let blocked = status.and_then(ComputeStatus::blocked_on);
+                        json_str(serde_json::json!({
+                            "error": status_msg,
+                            "status": status.map_or("Pending", ComputeStatus::label),
+                            "awaiting_prior_stock": blocked.map(|b| serde_json::json!({
+                                "blocking_toolpath_id": b.blocking_toolpath_id,
+                                "blocking_toolpath_index": b.blocking_toolpath_index,
+                            })),
+                        }))
                     }
                 };
                 let _ = sender.send(McpResponse { result: Ok(resp) });
@@ -1170,40 +1294,60 @@ impl<B: ComputeBackend> AppController<B> {
                     if rt.and_then(|rt| rt.result.as_ref()).is_some() {
                         ga.completed += 1;
                     } else {
-                        ga.failed += 1;
-                        // Roadmap E.4 — distinguish "completed cleanly with
-                        // zero moves" (likely a config issue: depth/stock/
-                        // model) from a thrown error or an in-flight status.
                         let tp_name = self
                             .state
                             .session
                             .find_toolpath_config_by_id(tp_id)
                             .map(|(_, tc)| tc.name.clone())
                             .unwrap_or_else(|| format!("toolpath {}", tp_id.0));
-                        let error_msg = match rt.map(|rt| &rt.status) {
-                            Some(crate::state::toolpath::ComputeStatus::Error(e)) => e.clone(),
-                            Some(crate::state::toolpath::ComputeStatus::Done) => format!(
-                                "{tp_name}: completed with no moves — check depth, stock, or model assignment"
-                            ),
+                        match rt.map(|rt| &rt.status) {
+                            // A/M11: a sequencing block goes in its own bucket
+                            // and does NOT count as a failure. The fixpoint
+                            // loop retries exactly this set after a
+                            // simulation; a genuine error is never retried,
+                            // which is what makes the loop terminate.
+                            Some(ComputeStatus::AwaitingPriorStock(b)) => {
+                                ga.blocked.push((tp_id, b.message.clone()));
+                            }
+                            Some(ComputeStatus::Error(e)) => {
+                                ga.failed += 1;
+                                ga.errors.push((tp_id.0, e.clone()));
+                            }
+                            // Roadmap E.4 — "completed cleanly with zero
+                            // moves" is a config issue (depth/stock/model),
+                            // not a thrown error.
+                            Some(ComputeStatus::Done) => {
+                                ga.failed += 1;
+                                ga.errors.push((
+                                    tp_id.0,
+                                    format!(
+                                        "{tp_name}: completed with no moves — check depth, \
+                                         stock, or model assignment"
+                                    ),
+                                ));
+                            }
                             // Cancel resets status to `Pending` (see the
-                            // single-toolpath branch above) — name it
-                            // explicitly instead of falling into the
-                            // generic "status=Pending" label below.
-                            Some(crate::state::toolpath::ComputeStatus::Pending) => {
-                                format!("{tp_name}: generation cancelled")
+                            // single-toolpath branch above).
+                            Some(ComputeStatus::Pending) => {
+                                ga.failed += 1;
+                                ga.errors
+                                    .push((tp_id.0, format!("{tp_name}: generation cancelled")));
                             }
-                            Some(status) => {
-                                let label = match status {
-                                    crate::state::toolpath::ComputeStatus::Pending => "Pending",
-                                    crate::state::toolpath::ComputeStatus::Computing => "Computing",
-                                    crate::state::toolpath::ComputeStatus::Done => "Done",
-                                    crate::state::toolpath::ComputeStatus::Error(_) => "Error",
-                                };
-                                format!("{tp_name}: no result, status={label}")
+                            Some(status @ (ComputeStatus::Computing | ComputeStatus::Disabled)) => {
+                                ga.failed += 1;
+                                ga.errors.push((
+                                    tp_id.0,
+                                    format!("{tp_name}: no result, status={}", status.label()),
+                                ));
                             }
-                            None => format!("{tp_name}: toolpath runtime not found"),
-                        };
-                        ga.errors.push((tp_id.0, error_msg));
+                            None => {
+                                ga.failed += 1;
+                                ga.errors.push((
+                                    tp_id.0,
+                                    format!("{tp_name}: toolpath runtime not found"),
+                                ));
+                            }
+                        }
                     }
 
                     // Send progress update via the progress channel (non-blocking).
@@ -1231,21 +1375,7 @@ impl<B: ComputeBackend> AppController<B> {
                 if ga.remaining.is_empty()
                     && let Some(ga) = pending.generate_all.take()
                 {
-                    let resp = if ga.errors.is_empty() {
-                        rs_cam_mcp::server::text(format!("Generated {} toolpaths", ga.completed,))
-                    } else {
-                        let error_details: Vec<String> = ga
-                            .errors
-                            .iter()
-                            .map(|(id, msg)| format!("  toolpath {id}: {msg}"))
-                            .collect();
-                        rs_cam_mcp::server::text(format!(
-                            "Generated {} toolpaths ({} failed):\n{}",
-                            ga.completed,
-                            ga.failed,
-                            error_details.join("\n"),
-                        ))
-                    };
+                    let resp = build_generate_all_response(&ga.completed_summary());
                     let _ = ga.response_tx.send(McpResponse { result: Ok(resp) });
                 }
             }
@@ -1316,6 +1446,8 @@ impl<B: ComputeBackend> AppController<B> {
 
         let mut per_toolpath = Vec::new();
         let mut runtime_errors = Vec::new();
+        // A/M11 — sequencing blocks, kept apart from failures.
+        let mut awaiting_prior_stock = Vec::new();
         for (index, tc) in session.toolpath_configs().iter().enumerate() {
             let tool_name = session
                 .tools()
@@ -1324,18 +1456,28 @@ impl<B: ComputeBackend> AppController<B> {
                 .map(|t| t.name.clone())
                 .unwrap_or_default();
             if let Some(rt) = gui.toolpath_rt.get(&tc.id) {
-                let (status, error) = match &rt.status {
-                    ComputeStatus::Pending => ("Pending", None),
-                    ComputeStatus::Computing => ("Computing", None),
-                    ComputeStatus::Done => ("Done", None),
-                    ComputeStatus::Error(e) => ("Error", Some(e.clone())),
-                };
-                if let Some(error) = error.clone() {
+                // A/M11: one taxonomy, read through the canonical resolver.
+                // `runtime_errors` carries genuine failures ONLY — a disabled
+                // op reports `Disabled` and a sequencing block reports
+                // `AwaitingPriorStock` on its own channel, so an agent can
+                // tell "cannot yet" from "cannot ever" without parsing prose.
+                let status = ComputeStatus::effective(tc.enabled, &rt.status);
+                if let Some(error) = status.error_text() {
                     runtime_errors.push(serde_json::json!({
                         "toolpath_index": index,
                         "toolpath_id": tc.id,
                         "name": tc.name,
                         "error": error,
+                    }));
+                }
+                if let Some(block) = status.blocked_on() {
+                    awaiting_prior_stock.push(serde_json::json!({
+                        "toolpath_index": index,
+                        "toolpath_id": tc.id,
+                        "name": tc.name,
+                        "blocking_toolpath_id": block.blocking_toolpath_id,
+                        "blocking_toolpath_index": block.blocking_toolpath_index,
+                        "message": block.message,
                     }));
                 }
                 let mut row = serde_json::json!({
@@ -1344,8 +1486,13 @@ impl<B: ComputeBackend> AppController<B> {
                     "name": tc.name,
                     "operation_type": tc.operation.label(),
                     "tool_name": tool_name,
-                    "status": status,
-                    "error": error,
+                    "status": status.label(),
+                    "error": status.error_text(),
+                    "awaiting_prior_stock": status.blocked_on().map(|b| serde_json::json!({
+                        "blocking_toolpath_id": b.blocking_toolpath_id,
+                        "blocking_toolpath_index": b.blocking_toolpath_index,
+                        "message": b.message,
+                    })),
                     "stale": rt.stale_since.is_some(),
                 });
                 if let Some(ref result) = rt.result {
@@ -1406,6 +1553,7 @@ impl<B: ComputeBackend> AppController<B> {
             "verdict": verdict,
             "per_toolpath": per_toolpath,
             "runtime_errors": runtime_errors,
+            "awaiting_prior_stock": awaiting_prior_stock,
         });
 
         if let Some(ref sim_results) = self.state.simulation.results

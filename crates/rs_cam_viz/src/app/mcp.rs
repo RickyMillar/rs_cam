@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use rs_cam_core::compute::config::{
-    BoundaryConfig, BoundaryContainment, BoundarySource, DressupConfig,
+    BoundaryConfig, BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig,
 };
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId};
 use rs_cam_core::session::MutationKind;
@@ -784,17 +784,11 @@ impl super::RsCamApp {
             .map(|s| {
                 let rt = state.gui.toolpath_rt.get(&s.id);
                 let stale = rt.is_some_and(|r| r.stale_since.is_some());
-                let (status, error) = match rt.map(|r| &r.status) {
-                    Some(rs_cam_core::compute::config::ComputeStatus::Pending) => ("Pending", None),
-                    Some(rs_cam_core::compute::config::ComputeStatus::Computing) => {
-                        ("Computing", None)
-                    }
-                    Some(rs_cam_core::compute::config::ComputeStatus::Done) => ("Done", None),
-                    Some(rs_cam_core::compute::config::ComputeStatus::Error(e)) => {
-                        ("Error", Some(e.clone()))
-                    }
-                    None => ("Pending", None),
-                };
+                // A/M11: `enabled: false` wins over whatever the op last
+                // recorded, so a switched-off toolpath can never present the
+                // rest-stock error it had while it was on.
+                let raw = rt.map_or(&ComputeStatus::Pending, |r| &r.status);
+                let status = ComputeStatus::effective(s.enabled, raw);
                 serde_json::json!({
                     "index": s.index,
                     "id": s.id,
@@ -803,8 +797,13 @@ impl super::RsCamApp {
                     "enabled": s.enabled,
                     "tool_name": s.tool_name,
                     "stale": stale,
-                    "status": status,
-                    "error": error,
+                    "status": status.label(),
+                    "error": status.error_text(),
+                    "awaiting_prior_stock": status.blocked_on().map(|b| serde_json::json!({
+                        "blocking_toolpath_id": b.blocking_toolpath_id,
+                        "blocking_toolpath_index": b.blocking_toolpath_index,
+                        "message": b.message,
+                    })),
                 })
             })
             .collect();
@@ -1011,19 +1010,22 @@ impl super::RsCamApp {
         &self,
         toolpath_id: rs_cam_core::ToolpathId,
     ) -> serde_json::Value {
-        let rt = self.controller.state().gui.toolpath_rt.get(&toolpath_id);
-        let (status, error) = match rt.map(|r| &r.status) {
-            Some(rs_cam_core::compute::config::ComputeStatus::Pending) => ("Pending", None),
-            Some(rs_cam_core::compute::config::ComputeStatus::Computing) => ("Computing", None),
-            Some(rs_cam_core::compute::config::ComputeStatus::Done) => ("Done", None),
-            Some(rs_cam_core::compute::config::ComputeStatus::Error(e)) => {
-                ("Error", Some(e.clone()))
-            }
-            None => ("Pending", None),
-        };
+        let state = self.controller.state();
+        let rt = state.gui.toolpath_rt.get(&toolpath_id);
+        let enabled = state
+            .session
+            .find_toolpath_config_by_id(toolpath_id)
+            .is_none_or(|(_, tc)| tc.enabled);
+        let raw = rt.map_or(&ComputeStatus::Pending, |r| &r.status);
+        let status = ComputeStatus::effective(enabled, raw);
         serde_json::json!({
-            "status": status,
-            "error": error,
+            "status": status.label(),
+            "error": status.error_text(),
+            "awaiting_prior_stock": status.blocked_on().map(|b| serde_json::json!({
+                "blocking_toolpath_id": b.blocking_toolpath_id,
+                "blocking_toolpath_index": b.blocking_toolpath_index,
+                "message": b.message,
+            })),
             "stale": rt.is_some_and(|r| r.stale_since.is_some()),
         })
     }
@@ -2379,9 +2381,11 @@ impl super::RsCamApp {
             .enumerate()
             .filter_map(|(index, tc)| {
                 let rt = state.gui.toolpath_rt.get(&tc.id)?;
-                let rs_cam_core::compute::config::ComputeStatus::Error(error) = &rt.status else {
-                    return None;
-                };
+                // A/M11: only genuine failures. A disabled op reports
+                // `Disabled` (no error text) and a sequencing block reports
+                // `AwaitingPriorStock` — neither belongs in an error list an
+                // agent has to triage.
+                let error = ComputeStatus::effective(tc.enabled, &rt.status).error_text()?;
                 Some(serde_json::json!({
                     "id": format!("runtime.generate_error.{}", tc.id),
                     "scope": { "kind": "toolpath", "id": tc.id },
@@ -3848,6 +3852,7 @@ impl super::RsCamApp {
                 completed: 0,
                 failed: 0,
                 errors: Vec::new(),
+                blocked: Vec::new(),
                 response_tx,
                 progress_tx,
             });
