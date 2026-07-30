@@ -39,24 +39,24 @@ use crate::ui::components::{
 /// [`rs_cam_core::rest_field::classify_rest_regions`] against the SOURCE's
 /// regions (sliver-storm / giant-region warning, 2026-07-06 incident)
 /// without new session/runtime plumbing.
-/// The trailing `f64` is the SOURCE toolpath's covered XY footprint (mm²),
-/// read off its own rest grid — the honest denominator for the giant-region
-/// share (`MEASUREMENT_DOMAINS.md` LH-2). `0.0` when that toolpath carries no
-/// rest grid, which classifies as "no usable footprint estimate" (silence).
+/// The trailing `Option<f64>` is the SOURCE toolpath's covered XY footprint
+/// (mm²), read off its own rest grid — the honest denominator for the
+/// giant-region share (`MEASUREMENT_DOMAINS.md` LH-2). `None` when that
+/// toolpath carries no rest grid: **not measured**, which classifies as
+/// silence (C2 — it used to be spelled `0.0`).
 type BoundaryRestCandidate = (
     ToolpathId,
     String,
     bool,
     Option<std::sync::Arc<Vec<rs_cam_core::polygon::Polygon2>>>,
-    f64,
+    Option<f64>,
 );
 
 /// The part's covered XY footprint (mm²) measured on a rest grid — the
 /// denominator [`rs_cam_core::rest_field::classify_rest_regions`] requires.
-/// `0.0` (silence) when there is no grid to measure.
-fn rest_grid_footprint_area(grid: Option<&rs_cam_core::rest_field::RestGrid>) -> f64 {
+/// `None` when there is no grid to measure it on.
+fn rest_grid_footprint_area(grid: Option<&rs_cam_core::rest_field::RestGrid>) -> Option<f64> {
     grid.map(rs_cam_core::rest_field::RestGrid::covered_footprint_area_mm2)
-        .unwrap_or(0.0)
 }
 
 /// Paint a brief blue glow behind a UI region when an MCP parameter was recently changed.
@@ -3954,8 +3954,10 @@ fn draw_toolpath_panel(
                             .find(|(candidate_id, _, _, _, _)| candidate_id == source_toolpath_id);
                         let selected_regions =
                             selected.and_then(|(_, _, _, regions, _)| regions.as_ref());
-                        let source_footprint_area =
-                            selected.map(|(_, _, _, _, area)| *area).unwrap_or(0.0);
+                        // `None` twice over: no candidate selected, or the
+                        // selected one has no rest grid. Both are "not
+                        // measured", and `classify_rest_regions` stays silent.
+                        let source_footprint_area = selected.and_then(|(_, _, _, _, area)| *area);
                         if let Some(regions) = selected_regions
                             && let Some(pathology) = rs_cam_core::rest_field::classify_rest_regions(
                                 regions,

@@ -2332,7 +2332,13 @@ impl ProjectSession {
             // SAFETY: move_index < move_count checked above.
             {
                 radial_num[sample.move_index] += sample.engagement.radial_woc_fraction.max(0.0) * w;
-                axial_num[sample.move_index] += sample.engagement.axial_doc_fraction.max(0.0) * w;
+                // C2: an unmeasured axial fraction contributes nothing but
+                // still carries its time weight — byte-identical to the
+                // pre-C2 `0.0` sentinel, and now visibly a choice. The
+                // modulator's own `PerMoveEngagement` keeps a plain f64:
+                // there, `0.0` legitimately means "air" (see its doc).
+                axial_num[sample.move_index] +=
+                    sample.engagement.axial_doc_fraction.unwrap_or(0.0).max(0.0) * w;
                 weight_sum[sample.move_index] += w;
             }
         }

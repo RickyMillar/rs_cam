@@ -1022,9 +1022,20 @@ pub enum RestRegionPathology {
 /// (33+) — approaching the hard cap is already pathological, well before
 /// `region_polygons_from_mask` actually has to truncate anything.
 /// `SingleGiantRegion` fires when there is exactly one outer region and its
-/// area is at least half of `part_footprint_area_mm2`. A non-positive
-/// `part_footprint_area_mm2` (no usable footprint estimate) always yields
-/// `None` for that check rather than a false positive.
+/// area is at least half of `part_footprint_area_mm2`.
+///
+/// # `None` denominator = not measured (C2, 2026-07-30)
+///
+/// `part_footprint_area_mm2` is `Option` because "there is no rest grid to
+/// measure a footprint on" and "the footprint measured 0 mm²" are different
+/// statements, and the caller used to collapse both into `0.0` — the GUI's
+/// `rest_grid_footprint_area(None)` literally returned a number meaning
+/// silence. Both still yield `None` (no pathology): the giant-region share is
+/// unknowable without a denominator, and inventing one is how the bbox defect
+/// (LH-2 / X-4) happened. What changed is that the caller can no longer pass
+/// "nothing" by accident, and a reader of this signature can see the case
+/// exists. A `Some(x)` with `x <= 0.0` (a grid that solved no cells) is
+/// treated the same way.
 ///
 /// # The denominator
 ///
@@ -1038,15 +1049,16 @@ pub enum RestRegionPathology {
 /// `giant_region_denominator_is_the_covered_footprint_not_the_bbox`.
 pub fn classify_rest_regions(
     regions: &[Polygon2],
-    part_footprint_area_mm2: f64,
+    part_footprint_area_mm2: Option<f64>,
 ) -> Option<RestRegionPathology> {
     if regions.len() > MAX_REST_REGIONS / 2 {
         return Some(RestRegionPathology::TooManyIslands {
             count: regions.len(),
         });
     }
-    if regions.len() == 1 && part_footprint_area_mm2 > 0.0 {
-        let fraction = regions.first().map(Polygon2::area)? / part_footprint_area_mm2;
+    let measured_footprint = part_footprint_area_mm2.filter(|a| *a > 0.0);
+    if let (1, Some(footprint)) = (regions.len(), measured_footprint) {
+        let fraction = regions.first().map(Polygon2::area)? / footprint;
         if fraction >= 0.5 {
             return Some(RestRegionPathology::SingleGiantRegion {
                 part_footprint_fraction: fraction,
@@ -2016,14 +2028,14 @@ mod tests {
     #[test]
     fn classify_rest_regions_none_for_healthy_set() {
         let regions = vec![Polygon2::rectangle(0.0, 0.0, 10.0, 10.0); 5];
-        assert_eq!(classify_rest_regions(&regions, 100_000.0), None);
+        assert_eq!(classify_rest_regions(&regions, Some(100_000.0)), None);
     }
 
     #[test]
     fn classify_rest_regions_flags_too_many_islands() {
         let regions = vec![Polygon2::rectangle(0.0, 0.0, 1.0, 1.0); MAX_REST_REGIONS / 2 + 1];
         assert_eq!(
-            classify_rest_regions(&regions, 1_000_000.0),
+            classify_rest_regions(&regions, Some(1_000_000.0)),
             Some(RestRegionPathology::TooManyIslands {
                 count: MAX_REST_REGIONS / 2 + 1
             })
@@ -2034,7 +2046,7 @@ mod tests {
     fn classify_rest_regions_flags_single_giant_region() {
         // Part footprint 100x100 = 10_000 mm^2; a single 80x80 region covers 64%.
         let regions = vec![Polygon2::rectangle(0.0, 0.0, 80.0, 80.0)];
-        match classify_rest_regions(&regions, 10_000.0) {
+        match classify_rest_regions(&regions, Some(10_000.0)) {
             Some(RestRegionPathology::SingleGiantRegion {
                 part_footprint_fraction,
             }) => {
@@ -2047,8 +2059,10 @@ mod tests {
     #[test]
     fn classify_rest_regions_giant_but_zero_footprint_is_none() {
         let regions = vec![Polygon2::rectangle(0.0, 0.0, 80.0, 80.0)];
-        assert_eq!(classify_rest_regions(&regions, 0.0), None);
-        assert_eq!(classify_rest_regions(&regions, -5.0), None);
+        assert_eq!(classify_rest_regions(&regions, Some(0.0)), None);
+        assert_eq!(classify_rest_regions(&regions, Some(-5.0)), None);
+        // C2: "no grid at all" is now its own value, and still silence.
+        assert_eq!(classify_rest_regions(&regions, None), None);
     }
 
     /// A diagonal (non-rectangular) part whose real XY footprint is ~51% of
@@ -2111,12 +2125,12 @@ mod tests {
         let regions = vec![Polygon2::rectangle(0.0, 0.0, side, side)];
 
         assert_eq!(
-            classify_rest_regions(&regions, bbox),
+            classify_rest_regions(&regions, Some(bbox)),
             None,
             "the bbox denominator under-reads a non-rectangular part — this is \
              the defect, kept as evidence, not as sanctioned behaviour"
         );
-        match classify_rest_regions(&regions, footprint) {
+        match classify_rest_regions(&regions, Some(footprint)) {
             Some(RestRegionPathology::SingleGiantRegion {
                 part_footprint_fraction,
             }) => {
@@ -2150,7 +2164,7 @@ mod tests {
         assert!(empty.covered_footprint_area_mm2() <= 0.0);
         let regions = vec![Polygon2::rectangle(0.0, 0.0, 80.0, 80.0)];
         assert_eq!(
-            classify_rest_regions(&regions, empty.covered_footprint_area_mm2()),
+            classify_rest_regions(&regions, Some(empty.covered_footprint_area_mm2())),
             None
         );
     }

@@ -165,7 +165,19 @@ pub struct SuggestContext<'a> {
     /// `enforce_invariants` when the axial-envelope pass mutates DPP —
     /// the new `doc_derating_scale(new_dpp / effective_d)` must be
     /// applied to keep `chipload_bounds` consistent with the post-mutation
-    /// operating point. 0.0 when not populated (re-derivation skipped).
+    /// operating point.
+    ///
+    /// **Sentinel contract (C2, 2026-07-30) — DOCUMENTED AND TESTED, not
+    /// converted.** `0.0` means *not populated* (no calculator result fed
+    /// this context), and the single consumer,
+    /// [`recompute_chipload_bounds_for_dpp`], treats a non-positive diameter
+    /// exactly as it treats a drill op: `doc_ratio = 0.0`, which
+    /// `doc_derating_scale` maps to a scale of 1.0, i.e. the raw LUT band
+    /// passes through underated. It is left as `f64` because a cutter
+    /// diameter can never legitimately BE zero, so there is no measured-zero
+    /// case for `Option` to distinguish, and the sole consumer already
+    /// branches on it explicitly. Pinned by
+    /// `unpopulated_effective_diameter_skips_doc_derating`.
     pub effective_diameter_mm: f64,
     /// v3.0b: caller-supplied policy threading through the
     /// orchestrator. Default = `SuggestPolicy::default()` =
@@ -2186,6 +2198,55 @@ mod tests {
     use crate::compute::operation_configs::{DropCutterConfig, PocketConfig};
     use crate::compute::tool_config::{ToolId, ToolType};
     use crate::feeds::{ChiploadSource, EMBEDDED_LUT};
+
+    /// C2 sentinel contract: `SuggestContext::effective_diameter_mm == 0.0`
+    /// is "not populated", and the post-mutation chipload re-derivation must
+    /// then leave the vendor band UNDERATED — the same outcome the drill path
+    /// gets by forcing `doc_ratio = 0.0`. A populated diameter with a DPP
+    /// above it must, by contrast, actually derate.
+    #[test]
+    fn unpopulated_effective_diameter_skips_doc_derating() {
+        let row = crate::feeds::vendor_lookup::LookupResult {
+            chip_load_mm: 0.1,
+            chip_load_min_mm: Some(0.05),
+            chip_load_max_mm: Some(0.20),
+            rpm_nominal: None,
+            rpm_min: None,
+            rpm_max: None,
+            ap_min_mm: None,
+            ap_max_mm: None,
+            ap_min_factor: None,
+            ap_max_factor: None,
+            ae_min_mm: None,
+            ae_max_mm: None,
+            observation_id: "c2-sentinel".to_owned(),
+            source_vendor: crate::feeds::vendor_lut::Vendor::Amana,
+            score: 100,
+            diameter_match_score: 200,
+            row_diameter_mm: 6.0,
+            chipload_diameter_scale: 1.0,
+            chipload_hardness_scale: 1.0,
+            is_extrapolated: false,
+        };
+        let op = OperationConfig::new_default(OperationType::Pocket);
+
+        // Not populated → raw LUT band, no derating.
+        let unpopulated = recompute_chipload_bounds_for_dpp(Some(&row), 0.0, &op, 12.0)
+            .expect("a row with a full band must yield bounds");
+        assert!(
+            (unpopulated.max_mm_per_tooth - 0.20).abs() < 1e-12
+                && (unpopulated.min_mm_per_tooth - 0.05).abs() < 1e-12,
+            "unpopulated effective diameter must pass the raw band through, got {unpopulated:?}"
+        );
+
+        // Populated, DPP twice the diameter → derated below the raw band.
+        let derated = recompute_chipload_bounds_for_dpp(Some(&row), 6.0, &op, 12.0)
+            .expect("a row with a full band must yield bounds");
+        assert!(
+            derated.max_mm_per_tooth < 0.20,
+            "a 2.0 DOC ratio must derate the band; got {derated:?}"
+        );
+    }
 
     /// Ball-nose tool of the given diameter (tip radius = diameter / 2).
     fn ball_tool(diameter: f64) -> ToolConfig {

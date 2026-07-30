@@ -70,12 +70,18 @@ pub enum EngagementDirection {
 pub struct Engagement {
     /// 0..1 — cylinder-side width-of-cut as a fraction of cutter diameter.
     pub radial_woc_fraction: f64,
-    /// 0..1 — axial depth-of-cut as a fraction of flute length. `0.0` when
-    /// flute length is unavailable at the sample emitter (some test
-    /// fixtures, legacy traces); consumers should treat zero as "unknown"
-    /// rather than "no axial engagement". Use `axial_doc_mm` on the
-    /// sample for the absolute reading.
-    pub axial_doc_fraction: f64,
+    /// 0..1 — axial depth-of-cut as a fraction of flute length.
+    ///
+    /// **`None` = not measured** (C2, 2026-07-30): the emitter had no flute
+    /// length to divide by — legacy traces, drill/analytical samples, and
+    /// fixtures built from `Engagement::default()`. It used to be `0.0`, which
+    /// consumers were asked *by a doc comment* to read as "unknown" rather
+    /// than "no axial engagement"; that is exactly the silent-sentinel class
+    /// A/M9 retired for standing material, so the ask is now a type.
+    /// `Some(0.0)` is a measured zero. The dexel simulator always measures.
+    /// Use `axial_doc_mm` on the sample for the absolute reading.
+    #[serde(default)]
+    pub axial_doc_fraction: Option<f64>,
     /// Engagement arc in radians (entry → exit). `None` for plunges and
     /// other Z-only moves where the concept does not apply.
     pub arc_radians: Option<f64>,
@@ -328,11 +334,17 @@ pub struct KinematicsSummary {
     pub average_radial_woc_fraction: f64,
     /// Maximum `engagement.radial_woc_fraction` observed.
     pub peak_radial_woc_fraction: f64,
-    /// Time-weighted mean of `engagement.axial_doc_fraction`. `0.0` when
-    /// no samples carried a non-zero axial-DOC fraction.
-    pub average_axial_doc_fraction: f64,
-    /// Maximum `engagement.axial_doc_fraction` observed.
-    pub peak_axial_doc_fraction: f64,
+    /// Time-weighted mean of `engagement.axial_doc_fraction` over the
+    /// samples that carried one. `None` = **not measured**: no sample in this
+    /// class reported an axial-DOC fraction at all (C2 — same contract as
+    /// [`Self::average_arc_radians`] beside it). `Some(0.0)` means measured
+    /// and zero.
+    #[serde(default)]
+    pub average_axial_doc_fraction: Option<f64>,
+    /// Maximum `engagement.axial_doc_fraction` observed; `None` when none was
+    /// measured (see [`Self::average_axial_doc_fraction`]).
+    #[serde(default)]
+    pub peak_axial_doc_fraction: Option<f64>,
     /// Maximum lateral/arc/helix axial engagement observed (millimetres).
     pub peak_axial_doc_mm: f64,
     /// Maximum pure-vertical plunge descent observed (millimetres).
@@ -985,7 +997,11 @@ pub struct KinematicsAccumulator {
     pub radial_woc_time_weighted_sum: f64,
     pub peak_radial_woc_fraction: f64,
     pub axial_doc_fraction_time_weighted_sum: f64,
-    pub peak_axial_doc_fraction: f64,
+    /// Runtime of the samples that actually carried an axial-DOC fraction —
+    /// the denominator for the mean, and what makes "measured zero"
+    /// distinguishable from "never measured" (C2).
+    pub axial_doc_observed_runtime_s: f64,
+    pub peak_axial_doc_fraction: Option<f64>,
     pub peak_axial_doc_mm: f64,
     pub peak_plunge_descent_mm: f64,
     /// Sum of `arc_radians * segment_time_s` for samples carrying arc; paired
@@ -1024,8 +1040,12 @@ impl KinematicsAccumulator {
         let eng = &sample.engagement;
         self.radial_woc_time_weighted_sum += eng.radial_woc_fraction * dt;
         self.peak_radial_woc_fraction = self.peak_radial_woc_fraction.max(eng.radial_woc_fraction);
-        self.axial_doc_fraction_time_weighted_sum += eng.axial_doc_fraction * dt;
-        self.peak_axial_doc_fraction = self.peak_axial_doc_fraction.max(eng.axial_doc_fraction);
+        if let Some(axial) = eng.axial_doc_fraction {
+            self.axial_doc_fraction_time_weighted_sum += axial * dt;
+            self.axial_doc_observed_runtime_s += dt;
+            self.peak_axial_doc_fraction =
+                Some(self.peak_axial_doc_fraction.map_or(axial, |p| p.max(axial)));
+        }
         // P3: transit-span samples produce dexel-bridge artifacts on peak
         // DOC. Defer to the same gating the top-level accumulator uses.
         if !sample.in_transit_span {
@@ -1060,10 +1080,10 @@ impl KinematicsAccumulator {
                 0.0
             },
             peak_radial_woc_fraction: self.peak_radial_woc_fraction,
-            average_axial_doc_fraction: if self.cutting_runtime_s > 1e-9 {
-                self.axial_doc_fraction_time_weighted_sum / t
+            average_axial_doc_fraction: if self.axial_doc_observed_runtime_s > 1e-9 {
+                Some(self.axial_doc_fraction_time_weighted_sum / self.axial_doc_observed_runtime_s)
             } else {
-                0.0
+                None
             },
             peak_axial_doc_fraction: self.peak_axial_doc_fraction,
             peak_axial_doc_mm: self.peak_axial_doc_mm,
@@ -1405,6 +1425,76 @@ mod tests {
     use super::*;
     use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder};
     use crate::toolpath::Toolpath;
+
+    /// C2: an unmeasured axial-DOC fraction must not be averaged in as a
+    /// zero. The mean is taken over the samples that carried one — the same
+    /// contract `average_arc_radians` has had since Step 2 — and a class where
+    /// nothing was measured reports `None`, not `0.0`.
+    #[test]
+    fn unmeasured_axial_doc_fraction_is_none_not_a_zero_in_the_mean() {
+        let sample = |axial: Option<f64>, dt: f64, idx: usize| SimulationCutSample {
+            toolpath_id: ToolpathId(1),
+            move_index: idx,
+            sample_index: idx,
+            position: [idx as f64, 0.0, -1.0],
+            cumulative_time_s: dt * (idx as f64 + 1.0),
+            segment_time_s: dt,
+            is_cutting: true,
+            cut_kinematics: CutKinematics::Linear,
+            feed_rate_mm_min: 600.0,
+            engagement: Engagement {
+                radial_woc_fraction: 0.5,
+                axial_doc_fraction: axial,
+                ..Default::default()
+            },
+            ..SimulationCutSample::test_fixture()
+        };
+
+        // Nothing measured anywhere → None, and the radial axis is unaffected.
+        let none_trace =
+            SimulationCutTrace::from_samples(0.5, vec![sample(None, 0.4, 0), sample(None, 0.6, 1)]);
+        let lin = none_trace
+            .summary
+            .per_kinematics
+            .get(&CutKinematics::Linear)
+            .expect("linear samples were observed");
+        assert_eq!(lin.average_axial_doc_fraction, None);
+        assert_eq!(lin.peak_axial_doc_fraction, None);
+        assert!((lin.average_radial_woc_fraction - 0.5).abs() < 1e-9);
+
+        // One measured 0.8 over 0.4 s, one unmeasured over 0.6 s: the mean is
+        // 0.8 (over the observed runtime), NOT 0.32 (over all cutting time),
+        // which is what the pre-C2 zero-sentinel produced.
+        let mixed = SimulationCutTrace::from_samples(
+            0.5,
+            vec![sample(Some(0.8), 0.4, 0), sample(None, 0.6, 1)],
+        );
+        let lin = mixed
+            .summary
+            .per_kinematics
+            .get(&CutKinematics::Linear)
+            .expect("linear samples were observed");
+        assert!(
+            lin.average_axial_doc_fraction
+                .is_some_and(|a| (a - 0.8).abs() < 1e-9),
+            "mean must be over MEASURED runtime, got {:?}",
+            lin.average_axial_doc_fraction
+        );
+        assert!(
+            lin.peak_axial_doc_fraction
+                .is_some_and(|p| (p - 0.8).abs() < 1e-9)
+        );
+
+        // A measured zero is still a measurement.
+        let zero = SimulationCutTrace::from_samples(0.5, vec![sample(Some(0.0), 0.4, 0)]);
+        let lin = zero
+            .summary
+            .per_kinematics
+            .get(&CutKinematics::Linear)
+            .expect("linear samples were observed");
+        assert_eq!(lin.average_axial_doc_fraction, Some(0.0));
+        assert_eq!(lin.peak_axial_doc_fraction, Some(0.0));
+    }
 
     #[test]
     fn trace_from_samples_accumulates_summary_and_issues() {
