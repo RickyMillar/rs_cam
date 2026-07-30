@@ -810,7 +810,7 @@ impl<B: ComputeBackend> AppController<B> {
                             Some(crate::state::OptimizeProjectStatus::Reconciling(_))
                         )
                     {
-                        self.run_simulation_with_all();
+                        let _submitted = self.run_simulation_with_all();
                     }
 
                     // Roadmap F.2 — auto-verify after per-TP Apply. If
@@ -820,7 +820,7 @@ impl<B: ComputeBackend> AppController<B> {
                     // without having to click Run Simulation by hand.
                     if self.state.pending_apply_resim == Some(tp_id.0) {
                         self.state.pending_apply_resim = None;
-                        self.run_simulation_with_all();
+                        let _submitted = self.run_simulation_with_all();
                     }
 
                     // Notify pending MCP request for this toolpath
@@ -1020,11 +1020,22 @@ impl<B: ComputeBackend> AppController<B> {
 
                         // Notify pending MCP simulation request
                         #[cfg(feature = "mcp")]
-                        self.notify_mcp_simulation_complete();
+                        {
+                            self.notify_mcp_simulation_complete();
+                            // A/M11: if this simulation was the fixpoint
+                            // loop's own, the blocked rest ops can now see
+                            // their upstream stock — start the next round.
+                            self.resume_generate_all_after_simulation(None);
+                        }
                     }
                     Err(ComputeError::Cancelled) => {
                         #[cfg(feature = "mcp")]
-                        self.notify_mcp_simulation_error("Simulation cancelled");
+                        {
+                            self.notify_mcp_simulation_error("Simulation cancelled");
+                            self.resume_generate_all_after_simulation(Some(
+                                "the simulation was cancelled".to_owned(),
+                            ));
+                        }
                     }
                     Err(ComputeError::Message(error)) => {
                         tracing::error!("Simulation failed: {error}");
@@ -1033,7 +1044,10 @@ impl<B: ComputeBackend> AppController<B> {
                             super::super::Severity::Error,
                         );
                         #[cfg(feature = "mcp")]
-                        self.notify_mcp_simulation_error(&error);
+                        {
+                            self.notify_mcp_simulation_error(&error);
+                            self.resume_generate_all_after_simulation(Some(error));
+                        }
                     }
                 },
                 ComputeMessage::Collision(result) => match result {
@@ -1232,10 +1246,263 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
+    // ── A/M11: generate_all as a fixpoint over the rest-stock chain ──
+
+    /// Start a `generate_all`. When `fixpoint` is on this iterates
+    /// generate -> simulate -> generate until nothing new appears; see
+    /// [`crate::mcp_bridge::FixpointPlan`] for the termination argument.
+    ///
+    /// `simulation_resolution_mm` is refused rather than defaulted when the
+    /// project needs it (A/M10): a silently chosen cell size changes
+    /// collision counts and engagement, so the loop must not pick one.
+    #[cfg(feature = "mcp")]
+    pub(crate) fn mcp_start_generate_all(
+        &mut self,
+        fixpoint: bool,
+        simulation_resolution_mm: Option<f64>,
+        response_tx: tokio::sync::oneshot::Sender<crate::mcp_bridge::McpResponse>,
+        progress_tx: Option<tokio::sync::mpsc::Sender<crate::mcp_bridge::ProgressUpdate>>,
+    ) {
+        use crate::mcp_bridge::{FixpointPlan, McpResponse, PendingGenerateAll};
+
+        let ids: Vec<ToolpathId> = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .filter(|tc| tc.enabled)
+            .map(|tc| tc.id)
+            .collect();
+        // Rest-dependent ops bound the ladder: a stock chain cannot be longer
+        // than the number of links in it.
+        let rest_ops: Vec<usize> = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .enumerate()
+            .filter(|(_, tc)| tc.enabled && tc.stock_source == StockSource::FromRemainingStock)
+            .map(|(idx, _)| idx)
+            .collect();
+
+        if ids.is_empty() {
+            let _ = response_tx.send(McpResponse {
+                result: Ok(rs_cam_mcp::server::text("No enabled toolpaths to generate")),
+            });
+            return;
+        }
+
+        let plan = match (fixpoint, rest_ops.is_empty(), simulation_resolution_mm) {
+            (false, _, _) => FixpointPlan::single_pass(),
+            // Nothing depends on simulated stock, so no simulation will be
+            // run and no resolution is needed.
+            (true, true, _) => FixpointPlan::single_pass(),
+            (true, false, Some(res)) if res > 0.0 => FixpointPlan::looping(res, rest_ops.len()),
+            (true, false, res) => {
+                let bad = res.map_or_else(
+                    || "it was not supplied".to_owned(),
+                    |r| format!("{r} is not a positive cell size"),
+                );
+                let _ = response_tx.send(McpResponse {
+                    result: Ok(rs_cam_mcp::server::json_str(serde_json::json!({
+                        "ok": false,
+                        "error": format!(
+                            "generate_all needs `simulation_resolution_mm`, and {bad}. This \
+                             project has {} enabled rest-machining operation(s) (indices {:?}) \
+                             whose stock comes from a simulation, so reaching a fully \
+                             generated state requires running simulations between generate \
+                             rounds. The resolution is NOT guessed: collision counts and \
+                             engagement both move with cell size, so a silently chosen one \
+                             would hand you verdicts you did not ask for. Pass the same \
+                             resolution you will use for verification — well below the \
+                             finishing tool's TIP radius (e.g. 0.1 for a 1 mm ball). To skip \
+                             the ladder and get the old single-pass behaviour, pass \
+                             `fixpoint: false`.",
+                            rest_ops.len(),
+                            rest_ops,
+                        ),
+                    }))),
+                });
+                return;
+            }
+        };
+
+        for tc in self.state.session.toolpath_configs_mut() {
+            if tc.enabled {
+                tc.debug_options.enabled = true;
+            }
+        }
+
+        let total = ids.len();
+        if let Some(tx) = progress_tx.as_ref() {
+            let _ = tx.try_send(crate::mcp_bridge::ProgressUpdate {
+                message: format!("Round 1: generating {total} toolpaths..."),
+                progress: 0.0,
+                total: Some(total as f64),
+            });
+        }
+        for &id in &ids {
+            self.events.push(crate::ui::AppEvent::GenerateToolpath(id));
+        }
+
+        let Some(pending) = self.pending_mcp.as_mut() else {
+            let _ = response_tx.send(McpResponse {
+                result: Err("MCP compute tracking not initialized".to_owned()),
+            });
+            return;
+        };
+        pending.generate_all = Some(PendingGenerateAll {
+            remaining: ids,
+            completed: 0,
+            failed: 0,
+            errors: Vec::new(),
+            blocked: Vec::new(),
+            fixpoint: plan,
+            loop_error: None,
+            response_tx,
+            progress_tx,
+        });
+    }
+
+    /// Called whenever a round might have finished. Either advances the
+    /// ladder (submitting the loop's own simulation) or resolves the caller.
+    #[cfg(feature = "mcp")]
+    fn settle_generate_all_round(&mut self) {
+        use crate::mcp_bridge::{GenerateAllSummary, McpResponse, build_generate_all_response};
+
+        enum Next {
+            Wait,
+            Simulate(f64),
+            Finish(Box<GenerateAllSummary>),
+        }
+
+        let next = {
+            let Some(pending) = self.pending_mcp.as_mut() else {
+                return;
+            };
+            let Some(ga) = pending.generate_all.as_mut() else {
+                return;
+            };
+            if !ga.remaining.is_empty() || ga.fixpoint.awaiting_simulation {
+                Next::Wait
+            } else {
+                // (a) something is blocked purely on sequencing, (b) the round
+                // just finished produced at least one new op, and we are
+                // inside the hard bound. All three, or we stop.
+                let advance = ga.fixpoint.enabled
+                    && !ga.blocked.is_empty()
+                    && ga.fixpoint.completed_this_round > 0
+                    && ga.fixpoint.round < ga.fixpoint.max_rounds;
+                match (advance, ga.fixpoint.resolution_mm) {
+                    (true, Some(res)) => {
+                        ga.fixpoint.awaiting_simulation = true;
+                        ga.fixpoint.simulations += 1;
+                        Next::Simulate(res)
+                    }
+                    _ => Next::Finish(Box::new(ga.completed_summary())),
+                }
+            }
+        };
+
+        match next {
+            Next::Wait => {}
+            Next::Simulate(resolution) => {
+                self.state.simulation.resolution = resolution;
+                self.state.simulation.auto_resolution = false;
+                if self.run_simulation_with_all() {
+                    self.mcp_generate_all_progress(
+                        "Simulating so the blocked rest operations can see their stock...",
+                    );
+                } else {
+                    // Nothing to simulate — the completion we just armed will
+                    // never drain. Unwind rather than hang.
+                    self.resume_generate_all_after_simulation(Some(
+                        "there was nothing to simulate, so the blocked operations can \
+                         never see upstream stock"
+                            .to_owned(),
+                    ));
+                }
+            }
+            Next::Finish(summary) => {
+                if let Some(pending) = self.pending_mcp.as_mut()
+                    && let Some(ga) = pending.generate_all.take()
+                {
+                    let _ = ga.response_tx.send(McpResponse {
+                        result: Ok(build_generate_all_response(&summary)),
+                    });
+                }
+            }
+        }
+    }
+
+    /// Hook from the simulation drain. Advances the ladder to the next round,
+    /// or stops it when the simulation itself failed.
+    #[cfg(feature = "mcp")]
+    pub(crate) fn resume_generate_all_after_simulation(&mut self, sim_error: Option<String>) {
+        let retry: Vec<ToolpathId> = {
+            let Some(pending) = self.pending_mcp.as_mut() else {
+                return;
+            };
+            let Some(ga) = pending.generate_all.as_mut() else {
+                return;
+            };
+            if !ga.fixpoint.awaiting_simulation {
+                return;
+            }
+            ga.fixpoint.awaiting_simulation = false;
+            if let Some(err) = sim_error {
+                // Disable the loop as well as recording the error: leaving it
+                // armed with a still-populated `blocked` list would re-arm the
+                // same simulation forever.
+                ga.fixpoint.enabled = false;
+                ga.loop_error = Some(err);
+                Vec::new()
+            } else {
+                ga.fixpoint.round += 1;
+                ga.fixpoint.completed_this_round = 0;
+                let retry: Vec<ToolpathId> = ga.blocked.drain(..).map(|(id, _)| id).collect();
+                ga.remaining.clone_from(&retry);
+                retry
+            }
+        };
+
+        if retry.is_empty() {
+            self.settle_generate_all_round();
+            return;
+        }
+        let round = self
+            .pending_mcp
+            .as_ref()
+            .and_then(|p| p.generate_all.as_ref())
+            .map_or(0, |ga| ga.fixpoint.round);
+        self.mcp_generate_all_progress(&format!(
+            "Round {round}: regenerating {} operation(s) that were waiting on upstream stock...",
+            retry.len()
+        ));
+        for id in retry {
+            self.events.push(crate::ui::AppEvent::GenerateToolpath(id));
+        }
+    }
+
+    #[cfg(feature = "mcp")]
+    fn mcp_generate_all_progress(&self, message: &str) {
+        if let Some(pending) = self.pending_mcp.as_ref()
+            && let Some(ga) = pending.generate_all.as_ref()
+            && let Some(tx) = ga.progress_tx.as_ref()
+        {
+            let done = (ga.completed + ga.failed) as f64;
+            let _ = tx.try_send(crate::mcp_bridge::ProgressUpdate {
+                message: message.to_owned(),
+                progress: done,
+                total: None,
+            });
+        }
+    }
+
     // ── MCP notification helpers ─────────────────────────────────────
     #[cfg(feature = "mcp")]
     fn notify_mcp_toolpath_complete(&mut self, tp_id: crate::state::toolpath::ToolpathId) {
-        use crate::mcp_bridge::{McpResponse, build_generate_all_response};
+        use crate::mcp_bridge::McpResponse;
         use rs_cam_mcp::server::json_str;
 
         if let Some(ref mut pending) = self.pending_mcp {
@@ -1287,99 +1554,96 @@ impl<B: ComputeBackend> AppController<B> {
             }
 
             // Check generate_all tracking
-            if let Some(ref mut ga) = pending.generate_all {
-                if let Some(pos) = ga.remaining.iter().position(|id| *id == tp_id) {
-                    ga.remaining.remove(pos);
-                    let rt = self.state.gui.toolpath_rt.get(&tp_id);
-                    if rt.and_then(|rt| rt.result.as_ref()).is_some() {
-                        ga.completed += 1;
-                    } else {
-                        let tp_name = self
-                            .state
-                            .session
-                            .find_toolpath_config_by_id(tp_id)
-                            .map(|(_, tc)| tc.name.clone())
-                            .unwrap_or_else(|| format!("toolpath {}", tp_id.0));
-                        match rt.map(|rt| &rt.status) {
-                            // A/M11: a sequencing block goes in its own bucket
-                            // and does NOT count as a failure. The fixpoint
-                            // loop retries exactly this set after a
-                            // simulation; a genuine error is never retried,
-                            // which is what makes the loop terminate.
-                            Some(ComputeStatus::AwaitingPriorStock(b)) => {
-                                ga.blocked.push((tp_id, b.message.clone()));
-                            }
-                            Some(ComputeStatus::Error(e)) => {
-                                ga.failed += 1;
-                                ga.errors.push((tp_id.0, e.clone()));
-                            }
-                            // Roadmap E.4 — "completed cleanly with zero
-                            // moves" is a config issue (depth/stock/model),
-                            // not a thrown error.
-                            Some(ComputeStatus::Done) => {
-                                ga.failed += 1;
-                                ga.errors.push((
-                                    tp_id.0,
-                                    format!(
-                                        "{tp_name}: completed with no moves — check depth, \
-                                         stock, or model assignment"
-                                    ),
-                                ));
-                            }
-                            // Cancel resets status to `Pending` (see the
-                            // single-toolpath branch above).
-                            Some(ComputeStatus::Pending) => {
-                                ga.failed += 1;
-                                ga.errors
-                                    .push((tp_id.0, format!("{tp_name}: generation cancelled")));
-                            }
-                            Some(status @ (ComputeStatus::Computing | ComputeStatus::Disabled)) => {
-                                ga.failed += 1;
-                                ga.errors.push((
-                                    tp_id.0,
-                                    format!("{tp_name}: no result, status={}", status.label()),
-                                ));
-                            }
-                            None => {
-                                ga.failed += 1;
-                                ga.errors.push((
-                                    tp_id.0,
-                                    format!("{tp_name}: toolpath runtime not found"),
-                                ));
-                            }
+            if let Some(ref mut ga) = pending.generate_all
+                && let Some(pos) = ga.remaining.iter().position(|id| *id == tp_id)
+            {
+                ga.remaining.remove(pos);
+                let rt = self.state.gui.toolpath_rt.get(&tp_id);
+                if rt.and_then(|rt| rt.result.as_ref()).is_some() {
+                    ga.completed += 1;
+                    ga.fixpoint.completed_this_round += 1;
+                } else {
+                    let tp_name = self
+                        .state
+                        .session
+                        .find_toolpath_config_by_id(tp_id)
+                        .map(|(_, tc)| tc.name.clone())
+                        .unwrap_or_else(|| format!("toolpath {}", tp_id.0));
+                    match rt.map(|rt| &rt.status) {
+                        // A/M11: a sequencing block goes in its own bucket
+                        // and does NOT count as a failure. The fixpoint
+                        // loop retries exactly this set after a
+                        // simulation; a genuine error is never retried,
+                        // which is what makes the loop terminate.
+                        Some(ComputeStatus::AwaitingPriorStock(b)) => {
+                            ga.blocked.push((tp_id, b.message.clone()));
                         }
-                    }
-
-                    // Send progress update via the progress channel (non-blocking).
-                    if let Some(ref progress_tx) = ga.progress_tx {
-                        let total = (ga.completed + ga.failed + ga.remaining.len()) as f64;
-                        let current = (ga.completed + ga.failed) as f64;
-                        let tp_name = self
-                            .state
-                            .session
-                            .find_toolpath_config_by_id(tp_id)
-                            .map(|(_, tc)| tc.name.clone())
-                            .unwrap_or_else(|| format!("toolpath {}", tp_id.0));
-                        let msg = format!(
-                            "Completed {}/{}: {}",
-                            current as usize, total as usize, tp_name
-                        );
-                        let _ = progress_tx.try_send(crate::mcp_bridge::ProgressUpdate {
-                            message: msg,
-                            progress: current,
-                            total: Some(total),
-                        });
+                        Some(ComputeStatus::Error(e)) => {
+                            ga.failed += 1;
+                            ga.errors.push((tp_id.0, e.clone()));
+                        }
+                        // Roadmap E.4 — "completed cleanly with zero
+                        // moves" is a config issue (depth/stock/model),
+                        // not a thrown error.
+                        Some(ComputeStatus::Done) => {
+                            ga.failed += 1;
+                            ga.errors.push((
+                                tp_id.0,
+                                format!(
+                                    "{tp_name}: completed with no moves — check depth, \
+                                     stock, or model assignment"
+                                ),
+                            ));
+                        }
+                        // Cancel resets status to `Pending` (see the
+                        // single-toolpath branch above).
+                        Some(ComputeStatus::Pending) => {
+                            ga.failed += 1;
+                            ga.errors
+                                .push((tp_id.0, format!("{tp_name}: generation cancelled")));
+                        }
+                        Some(status @ (ComputeStatus::Computing | ComputeStatus::Disabled)) => {
+                            ga.failed += 1;
+                            ga.errors.push((
+                                tp_id.0,
+                                format!("{tp_name}: no result, status={}", status.label()),
+                            ));
+                        }
+                        None => {
+                            ga.failed += 1;
+                            ga.errors
+                                .push((tp_id.0, format!("{tp_name}: toolpath runtime not found")));
+                        }
                     }
                 }
 
-                if ga.remaining.is_empty()
-                    && let Some(ga) = pending.generate_all.take()
-                {
-                    let resp = build_generate_all_response(&ga.completed_summary());
-                    let _ = ga.response_tx.send(McpResponse { result: Ok(resp) });
+                // Send progress update via the progress channel (non-blocking).
+                if let Some(ref progress_tx) = ga.progress_tx {
+                    let total = (ga.completed + ga.failed + ga.remaining.len()) as f64;
+                    let current = (ga.completed + ga.failed) as f64;
+                    let tp_name = self
+                        .state
+                        .session
+                        .find_toolpath_config_by_id(tp_id)
+                        .map(|(_, tc)| tc.name.clone())
+                        .unwrap_or_else(|| format!("toolpath {}", tp_id.0));
+                    let msg = format!(
+                        "Completed {}/{}: {}",
+                        current as usize, total as usize, tp_name
+                    );
+                    let _ = progress_tx.try_send(crate::mcp_bridge::ProgressUpdate {
+                        message: msg,
+                        progress: current,
+                        total: Some(total),
+                    });
                 }
             }
         }
+
+        // A/M11: a finished round either advances the ladder or resolves the
+        // caller. Outside the `pending_mcp` borrow because advancing needs
+        // `&mut self` to submit a simulation.
+        self.settle_generate_all_round();
     }
 
     #[cfg(feature = "mcp")]

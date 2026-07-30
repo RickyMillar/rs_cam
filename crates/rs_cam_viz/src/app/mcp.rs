@@ -13,11 +13,10 @@ use rs_cam_core::session::MutationKind;
 use crate::controller::Severity;
 use crate::mcp_bridge::{
     GuiBanner, McpRequest, McpRequestKind, McpResponse, MutationResult, MutationWarning,
-    PendingGenerateAll, ProgressUpdate,
+    ProgressUpdate,
 };
 use crate::state::Workspace;
 use crate::state::selection::Selection;
-use crate::state::toolpath::ToolpathId;
 use crate::ui::AppEvent;
 
 use rs_cam_mcp::server::{json_str, no_project_error, parse_operation_type, parse_tool_type, text};
@@ -581,12 +580,15 @@ impl super::RsCamApp {
                 self.mcp_send_progress(&progress_tx, "Generating toolpath...", 0.0, Some(1.0));
                 self.mcp_generate_toolpath(index, response_tx);
             }
-            McpRequestKind::GenerateAll => {
+            McpRequestKind::GenerateAll {
+                fixpoint,
+                simulation_resolution_mm,
+            } => {
                 self.controller.push_notification(
                     "MCP: Generating all toolpaths...".to_owned(),
                     Severity::Info,
                 );
-                self.mcp_generate_all(response_tx, progress_tx);
+                self.mcp_generate_all(fixpoint, simulation_resolution_mm, response_tx, progress_tx);
             }
             McpRequestKind::RunSimulation { resolution } => {
                 self.controller
@@ -3805,62 +3807,20 @@ impl super::RsCamApp {
 
     fn mcp_generate_all(
         &mut self,
+        fixpoint: Option<bool>,
+        simulation_resolution_mm: Option<f64>,
         response_tx: tokio::sync::oneshot::Sender<McpResponse>,
         progress_tx: Option<tokio::sync::mpsc::Sender<ProgressUpdate>>,
     ) {
-        let ids: Vec<ToolpathId> = self
-            .controller
-            .state()
-            .session
-            .toolpath_configs()
-            .iter()
-            .filter(|tc| tc.enabled)
-            .map(|tc| tc.id)
-            .collect();
-        for tc in self.controller.state_mut().session.toolpath_configs_mut() {
-            if tc.enabled {
-                tc.debug_options.enabled = true;
-            }
-        }
-
-        if ids.is_empty() {
-            let _ = response_tx.send(McpResponse {
-                result: Ok(text("No enabled toolpaths to generate")),
-            });
-            return;
-        }
-
-        let total = ids.len();
-        self.mcp_send_progress(
-            &progress_tx,
-            &format!("Generating {total} toolpaths..."),
-            0.0,
-            Some(total as f64),
+        // A/M11: the whole ladder lives on the controller, which owns the
+        // compute lane, the simulation state and `pending_mcp` — the three
+        // things a fixpoint loop has to coordinate. This is a thin adapter.
+        self.controller.mcp_start_generate_all(
+            fixpoint.unwrap_or(true),
+            simulation_resolution_mm,
+            response_tx,
+            progress_tx,
         );
-
-        // Push generate events for each
-        for &id in &ids {
-            self.controller
-                .events_mut()
-                .push(crate::ui::AppEvent::GenerateToolpath(id));
-        }
-
-        // Store pending generate_all tracker
-        if let Some(ref mut pending) = self.controller.pending_mcp {
-            pending.generate_all = Some(PendingGenerateAll {
-                remaining: ids,
-                completed: 0,
-                failed: 0,
-                errors: Vec::new(),
-                blocked: Vec::new(),
-                response_tx,
-                progress_tx,
-            });
-        } else {
-            let _ = response_tx.send(McpResponse {
-                result: Err("MCP compute tracking not initialized".to_owned()),
-            });
-        }
     }
 
     fn mcp_run_simulation(

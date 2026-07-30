@@ -1131,17 +1131,24 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "generate_all",
-        description = "Generate all enabled toolpaths. Returns count of newly generated toolpaths. By default waits indefinitely; pass `timeout_s` to bound the wait — on timeout the call returns a `status: \"running\"` response instead of blocking (nothing is cancelled, generation continues in the background). While it runs, `generation_status` reports which toolpath index is in flight and its stage, `list_toolpaths` answers from a snapshot, and `cancel_generation` aborts it — all three are served off the GUI frame loop and answer within a second."
+        description = "Generate all enabled toolpaths, iterating to a fixpoint over the rest-machining chain: generate, simulate, regenerate whatever was blocked only on missing upstream stock, repeat. A project with a k-deep chain of \"remaining stock\" operations reaches fully generated in ONE call, and the reply reports how many internal rounds and simulations it took. `simulation_resolution_mm` is REQUIRED when the project has enabled rest-machining ops (the call refuses rather than guessing a cell size — resolution changes collision counts and engagement); pass `fixpoint: false` for the old single pass. The reply separates `errors` (genuine failures) from `awaiting_prior_stock` (ops still waiting, each naming the operation it waits for). By default waits indefinitely; pass `timeout_s` to bound the wait — on timeout the call returns a `status: \"running\"` response instead of blocking (nothing is cancelled, generation continues in the background). While it runs, `generation_status` reports which toolpath index is in flight and its stage, `list_toolpaths` answers from a snapshot, and `cancel_generation` aborts it — all three are served off the GUI frame loop and answer within a second."
     )]
     async fn generate_all(
         &self,
-        Parameters(GenerateAllParam { timeout_s }): Parameters<GenerateAllParam>,
+        #[allow(clippy::needless_pass_by_value)] Parameters(GenerateAllParam {
+            timeout_s,
+            fixpoint,
+            simulation_resolution_mm,
+        }): Parameters<GenerateAllParam>,
         meta: Meta,
         peer: Peer<RoleServer>,
     ) -> String {
         Self::format_result(
             self.send_with_progress(
-                McpRequestKind::GenerateAll,
+                McpRequestKind::GenerateAll {
+                    fixpoint,
+                    simulation_resolution_mm,
+                },
                 meta,
                 Some(peer),
                 timeout_s.map(Duration::from_secs),
@@ -1156,10 +1163,18 @@ impl EmbeddedCamServer {
     /// generate -> status -> cancel over *this* surface rather than the
     /// library API underneath it. Behaviourally identical to the tool call
     /// except that no progress notifications are emitted.
-    pub async fn generate_all_without_peer(&self, timeout_s: Option<u64>) -> String {
+    pub async fn generate_all_without_peer(
+        &self,
+        timeout_s: Option<u64>,
+        fixpoint: Option<bool>,
+        simulation_resolution_mm: Option<f64>,
+    ) -> String {
         Self::format_result(
             self.send_with_progress(
-                McpRequestKind::GenerateAll,
+                McpRequestKind::GenerateAll {
+                    fixpoint,
+                    simulation_resolution_mm,
+                },
                 Meta::new(),
                 None,
                 timeout_s.map(Duration::from_secs),
