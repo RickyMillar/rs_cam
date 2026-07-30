@@ -1601,3 +1601,144 @@ other session mid-wave (`9e5a65b`); none of its text was altered.
 motion-economy wave that adds or changes link transforms will be born
 under the contract, and cannot ship a transform that does not report where
 the moves went.
+
+## C-SEQUENCE WAVE 3 (C2), 2026-07-30
+
+Addendum C's third sequencing step: "C2 sentinel sweep — before M3 (the
+classifier reads grids) and to close the live steep_shallow exposure." Two
+commits plus this log entry, split the same way C1 was: the type and the
+audit that justifies every call site in the first, the field-by-field
+sweep in the second.
+
+**Commits**
+
+| # | Hash | Scope | Diffstat |
+|---|------|-------|----------|
+| 1 | `ce426d6` | `GridZ` + private grid storage + the `min_z()` consumer audit, incl. steep_shallow's verdict and its sentry | 17 files, +645 / -138 |
+| 2 | `96bc300` | Sentinel-field sweep: `Engagement::axial_doc_fraction`, the two `KinematicsSummary` axial fields, `classify_rest_regions`' denominator, `effective_diameter_mm`'s tested contract | 7 files, +232 / -50 |
+
+### The headline: the named suspect was NOT defective
+
+PR-8b's log entry named `steep_shallow`'s Z-ladder bottom as the live
+exposure — "every other `min_z()` consumer is unaudited (steep_shallow uses
+it for its ladder bottom)". The audit says **the bbox floor is correct
+there**, and the brief's instruction not to force a fix the audit does not
+support is what this section exists to honour.
+
+The steep half is a WATERLINE pass. It slices the MESH with
+`waterline_contours` at each Z level; the drop-cutter grid only supplies
+the steep/shallow classification. A vertical wall runs from the top face
+down to the bbox floor and no drop-cutter grid can ever see it, so on a
+plateau `min_covered_z()` IS the top face. Ladder levels below real
+material are free (the contour routine returns nothing there); a
+covered-only bottom costs every wall pass.
+
+Counterfactual, run red-then-green on a 20x20x5 plateau fixture (Ø3 ball,
+0.5 mm cell) rather than argued:
+
+- `z_bottom = min_covered_z()` -> sentry FAILS, `the plateau must produce
+  steep passes`: `z_top == z_bottom == 0.0`, the steep range is empty.
+- `z_bottom = min_z_or_bbox_floor()` (shipped) -> passes, deepest steep cut
+  is on the wall, below the covered minimum.
+
+**Instrument lesson, recorded because it nearly produced the wrong
+verdict**: the first version of that sentry measured the MERGED toolpath
+and passed under the counterfactual. The shallow raster drop-cutters the
+same padded grid, so IT reaches the bbox floor whatever the steep ladder
+does. The sentry now measures `SteepShallowSplit::steep` only. A sentry
+that cannot fail under the change it guards is not a sentry.
+
+The consumer that WAS reading the wrong number is the one PR-8b already
+fixed (`ramp_finish`, clamped to `min_covered_z()`), and one latent case
+this wave declined to change: see the audit table in commit 1's body.
+
+### What the type does
+
+`enum GridZ { Covered(f64), Uncovered { z_or_bbox_floor }, OutOfBounds }`.
+`SurfaceHeightmap::{z_values, covered}` are private (a Z without its
+coverage flag is the defect the type prevents); `from_parts` panics on a
+length mismatch. Typed reads are `z_at` / `z_at_index` / `z_at_world`; the
+escape hatch is the `z_or_bbox_floor_*` family, and `min_z()` became
+`min_z_or_bbox_floor()` because on ANY padded finish grid that is exactly
+what it returns. Nothing computes a different number.
+
+### Audit and sweep
+
+Both tables are in the commit bodies verbatim, as the brief required:
+commit 1 carries the `min_z()` / grid-read consumer audit (17 rows,
+including two recorded OUT OF SCOPE — `DropCutterGrid`, which computes no
+coverage mask at all, and `SlopeMap`'s angles, which are differentiated
+across padding cells sitting at the bbox floor); commit 2 carries the
+sentinel sweep (4 converted, 2 documented-and-tested, 8 ruled out).
+
+### Behaviour invariance
+
+- Every call site computes the same number it computed before, by
+  construction: the first commit is renames plus one `if/else` -> typed
+  `map_or` at `path.rs`'s pre-clear, and the audit table names the intent
+  of each.
+- `escape_hatch_is_byte_identical_to_the_untyped_read_everywhere` walks
+  every cell of a padded grid and asserts the new accessors return exactly
+  what the old ones did, `NEG_INFINITY` off-grid included.
+- `fully_covered_grids_make_the_two_minima_identical` is the invariance
+  half of C2's gate: on a grid with no uncovered cells nothing can observe
+  this change.
+- ONE consumer changes behaviour on partially-measured data and it is
+  deliberate: `KinematicsSummary::average_axial_doc_fraction` now averages
+  over the runtime that measured an axial fraction instead of over all
+  cutting time. Justification: it is the contract `average_arc_radians`
+  beside it has had since Step 2, the old arithmetic averaged unknowns in
+  as zeros, and on any real trace the two denominators are the same number
+  (only `is_cutting` samples reach the accumulator, and all of those come
+  from the dexel emitter, which always measures).
+
+### Gates
+
+- `cargo fmt --check`: exit 0 before each commit.
+- `cargo clippy --workspace --all-targets -- -D warnings`: zero warnings
+  before each commit (one clippy red found and fixed en route: a redundant
+  `Range::clone` in the new sentry).
+- `cargo test -p rs_cam_core --tests --no-fail-fast`: lib 2193 pass / **3 fail**, and
+  all 41 integration targets green. The three are the known adaptive3d
+  reds (`peck_plunge_progresses_when_depth_per_pass_equals_retract_clearance`,
+  `rapid_segment_lifts_to_safe_z_before_traverse`,
+  `planner_sim_dexel_parity_agent_search`). The fourth known red,
+  `wanaka_suggest_baseline`, did NOT reproduce this run — it passed, with
+  the same user-modified `wanaka.toml` still dirty in the tree. Recorded as
+  observed, not explained; nothing in this wave touches suggest's case
+  list. (2193 vs C1's 2191 = the two new sentries in this wave.)
+- viz **218 + 11 serially**; cli 14 (5 + 9), mcp 4.
+  Three consecutive PARALLEL viz runs each failed ONE
+  `compute::worker::tests` cancellation test and **a different one each
+  time** (`cancelled_toolpath_returns_partial_debug_trace`,
+  `cancel_all_marks_both_lanes_cancelling`,
+  `analysis_cancel_completes_quickly` — the last is a wall-clock assertion
+  by name). All 40 worker tests pass when the module runs alone, and the
+  whole suite is 218/218 with `--test-threads=1`. That family is
+  load-timing flaky under a busy machine (the run happened with 0.6 GB free
+  while the foreign job compiled); this wave touches no worker,
+  cancellation, or timing code — the only viz edit is the rest-footprint
+  display plumbing. Flagged rather than filed as a wave red.
+- New: `grid_z_uncovered_contract_c2.rs` 6/6.
+- Commit 1 was gated **on its own tree**, not only as part of the union:
+  after committing it the second slice was stashed by explicit path,
+  `fmt --check` + `clippy --workspace --all-targets -D warnings` re-run
+  clean, and the C2 / PR-3 / decompose sentries re-run green, then popped.
+- C1's `transform_provenance_fingerprints` harness stays green — it pins
+  the dressup/TSP pipeline, which this wave does not touch, so it is NOT
+  the oracle for the heightmap consumers; their invariance evidence is the
+  escape-hatch equality test plus the core suite's adaptive3d /
+  steep_shallow / finish sentries.
+- One cargo job at a time throughout. The session opened with the same
+  foreign `sysml-spec-tests` loop holding the slot under 20 GB free; all
+  editing was done without cargo and each gate waited for the slot.
+
+**Untouched, as instructed**: `planning/airrun_2026-06-01/wanaka.toml`
+(user-modified, still dirty in the tree) and `planning/review_2026-07-27/`.
+Every commit staged file-by-file.
+
+**Note for M3**: the classifier work can now ask a grid cell whether it is
+backed by mesh without re-deriving the mask, and cannot read the bbox-floor
+clamp by accident. The two OUT OF SCOPE rows above are the remaining holes:
+`DropCutterGrid` has no mask at all, and `SlopeMap` angles at the mesh rim
+are computed against padding.
