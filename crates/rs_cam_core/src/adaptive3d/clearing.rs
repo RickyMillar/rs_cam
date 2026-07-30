@@ -167,7 +167,7 @@ pub(super) fn detect_material_regions(
     // Mark cells that have no material
     for row in 0..rows {
         for col in 0..cols {
-            let surf_z = surface_hm.surface_z_at(row, col);
+            let surf_z = surface_hm.z_or_bbox_floor_at(row, col);
             let floor = surf_z + stock_to_leave + 0.01;
             if !stock_has_material_above(material_stock, row, col, floor) {
                 labels[row * cols + col] = usize::MAX;
@@ -204,7 +204,7 @@ pub(super) fn detect_material_regions(
                 rmax = rmax.max(r);
                 cmin = cmin.min(c);
                 cmax = cmax.max(c);
-                let sz = surface_hm.surface_z_at(r, c);
+                let sz = surface_hm.z_or_bbox_floor_at(r, c);
                 sz_min = sz_min.min(sz);
                 sz_max = sz_max.max(sz);
 
@@ -370,7 +370,7 @@ fn build_material_bool_grid(
                 }
             }
 
-            let surf_z = surface_hm.surface_z_at(row, col);
+            let surf_z = surface_hm.z_or_bbox_floor_at(row, col);
             let effective_floor = (surf_z + stock_to_leave).max(z_level);
 
             if stock_has_material_above(material_stock, row, col, effective_floor + 0.01) {
@@ -689,7 +689,7 @@ pub(super) fn clear_z_level_contour_parallel(
             // plunge on the innermost pass.
             let mut path_3d: Vec<P3> = Vec::with_capacity(loop_pts.len());
             for p in loop_pts {
-                let surf_z = surface_hm.surface_z_at_world(p.x, p.y);
+                let surf_z = surface_hm.z_or_bbox_floor_at_world(p.x, p.y);
                 let target_z = if surf_z == f64::NEG_INFINITY {
                     z_level
                 } else {
@@ -824,7 +824,7 @@ pub(super) fn clear_z_level_contour_parallel(
         let z_for_cell = |row: usize, col: usize| -> f64 {
             let wx = co_x + col as f64 * c_cs;
             let wy = co_y + row as f64 * c_cs;
-            let surf_z = surface_hm.surface_z_at_world(wx, wy);
+            let surf_z = surface_hm.z_or_bbox_floor_at_world(wx, wy);
             // Lower bound (the "leave stock above the surface" rule).
             let lower = if surf_z == f64::NEG_INFINITY {
                 z_level
@@ -1057,7 +1057,7 @@ pub(super) fn clear_z_level_adaptive(
             // Z-blended surface drape (identical to contour-parallel)
             let mut path_3d: Vec<P3> = Vec::with_capacity(loop_pts.len());
             for p in loop_pts {
-                let surf_z = surface_hm.surface_z_at_world(p.x, p.y);
+                let surf_z = surface_hm.z_or_bbox_floor_at_world(p.x, p.y);
                 let target_z = if surf_z == f64::NEG_INFINITY {
                     z_level
                 } else {
@@ -1591,7 +1591,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
 
     // 5. Lift 2D points to 3D, respecting terrain peaks above z_level.
     let lift = |p: P2| -> P3 {
-        let surf_z = surface_hm.surface_z_at_world(p.x, p.y);
+        let surf_z = surface_hm.z_or_bbox_floor_at_world(p.x, p.y);
         let z = if surf_z == f64::NEG_INFINITY {
             z_level
         } else {

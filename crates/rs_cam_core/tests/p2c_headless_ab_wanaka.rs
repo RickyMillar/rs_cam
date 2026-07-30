@@ -313,7 +313,7 @@ fn build_band_map(s: &ProjectSession) -> BandMap {
     planner.overlap_mm = 2.0;
     let planned = decompose(
         &surface.slope_map,
-        &surface.heightmap.covered,
+        surface.heightmap.covered_flags(),
         &[],
         &planner,
     );
@@ -907,7 +907,7 @@ fn p2c_unified_phase_probe() {
     planner.overlap_mm = 2.0;
     let planned = decompose(
         &surface.slope_map,
-        &surface.heightmap.covered,
+        surface.heightmap.covered_flags(),
         &[],
         &planner,
     );
@@ -1060,7 +1060,7 @@ fn p2c_scallop_height_cost_curve() {
     planner.overlap_mm = 2.0;
     let planned = decompose(
         &surface.slope_map,
-        &surface.heightmap.covered,
+        surface.heightmap.covered_flags(),
         &[],
         &planner,
     );
@@ -1150,7 +1150,7 @@ fn p2g_ring_dump() {
     planner.overlap_mm = 2.0;
     let planned = decompose(
         &surface.slope_map,
-        &surface.heightmap.covered,
+        surface.heightmap.covered_flags(),
         &[],
         &planner,
     );
@@ -2907,7 +2907,7 @@ fn p2c_offset_cascade_probe() {
     planner.overlap_mm = 2.0;
     let planned = decompose(
         &surface.slope_map,
-        &surface.heightmap.covered,
+        surface.heightmap.covered_flags(),
         &[],
         &planner,
     );
@@ -3300,7 +3300,7 @@ fn p2f_ball_rest_share_probe() {
                 if !fhm.covered_at(fr, fc) {
                     continue;
                 }
-                let leftover = fhm.surface_z_at(fr, fc) - thm.surface_z_at(r, c);
+                let leftover = fhm.z_or_bbox_floor_at(fr, fc) - thm.z_or_bbox_floor_at(r, c);
                 let band = bm.code_at(x, y) as usize;
                 counts[band][0] += 1;
                 if leftover > 0.05 {

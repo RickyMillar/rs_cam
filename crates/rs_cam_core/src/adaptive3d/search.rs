@@ -53,7 +53,10 @@ pub(super) fn material_remaining_at_level_diag(
     for row in 0..grid.rows {
         for col in 0..grid.cols {
             let i = row * grid.cols + col;
-            let surf_z = surface_hm.z_values[i];
+            // Bbox-floor by intent (C2 audit): a cell with no mesh over it is
+            // stock beside the model, and clearing must take it to the floor —
+            // `z_or_bbox_floor_values` says so at the call site.
+            let surf_z = surface_hm.z_or_bbox_floor_values()[i];
             let floor = (surf_z + stock_to_leave).max(z_level);
             diag.cells_total += 1;
             if surf_z + stock_to_leave <= z_level + 0.01 {
@@ -110,7 +113,10 @@ pub(super) fn material_remaining_at_level(
     for row in 0..grid.rows {
         for col in 0..grid.cols {
             let i = row * grid.cols + col;
-            let surf_z = surface_hm.z_values[i];
+            // Bbox-floor by intent (C2 audit): a cell with no mesh over it is
+            // stock beside the model, and clearing must take it to the floor —
+            // `z_or_bbox_floor_values` says so at the call site.
+            let surf_z = surface_hm.z_or_bbox_floor_values()[i];
             let floor = (surf_z + stock_to_leave).max(z_level);
             if surf_z + stock_to_leave <= z_level + 0.01 {
                 out.cells_at_z += 1;
@@ -138,7 +144,10 @@ pub(super) fn material_remaining_in_region(
     for row in region.row_min..=region.row_max.min(grid.rows - 1) {
         for col in region.col_min..=region.col_max.min(grid.cols - 1) {
             let i = row * grid.cols + col;
-            let surf_z = surface_hm.z_values[i];
+            // Bbox-floor by intent (C2 audit): a cell with no mesh over it is
+            // stock beside the model, and clearing must take it to the floor —
+            // `z_or_bbox_floor_values` says so at the call site.
+            let surf_z = surface_hm.z_or_bbox_floor_values()[i];
             let floor = (surf_z + stock_to_leave).max(z_level);
             if surf_z + stock_to_leave <= z_level + 0.01 {
                 out.cells_at_z += 1;
@@ -204,7 +213,7 @@ pub(super) fn is_clear_path_3d(
         let z = from.z + t * (to.z - from.z);
 
         if let Some((row, col)) = grid.world_to_cell(x, y) {
-            let surf_z = surface_hm.surface_z_at_world(x, y);
+            let surf_z = surface_hm.z_or_bbox_floor_at_world(x, y);
             if surf_z.is_finite() && surf_z + stock_to_leave > z + LINK_DEXEL_NOISE_MM {
                 return false;
             }
@@ -325,15 +334,15 @@ mod link_gate_tests {
                 stock.clear_above_at(row, col, carved_z);
             }
         }
-        let hm = SurfaceHeightmap {
-            z_values: vec![surf_z; rows * cols],
-            covered: vec![true; rows * cols],
+        let hm = SurfaceHeightmap::from_parts(
+            vec![surf_z; rows * cols],
+            vec![true; rows * cols],
             rows,
             cols,
-            origin_x: stock.z_grid.origin_u,
-            origin_y: stock.z_grid.origin_v,
-            cell_size: stock.z_grid.cell_size,
-        };
+            stock.z_grid.origin_u,
+            stock.z_grid.origin_v,
+            stock.z_grid.cell_size,
+        );
         (stock, hm)
     }
 
@@ -355,15 +364,15 @@ mod link_gate_tests {
                 }
             }
         }
-        let hm = SurfaceHeightmap {
-            z_values: vec![surf_z; rows * cols],
-            covered: vec![true; rows * cols],
+        let hm = SurfaceHeightmap::from_parts(
+            vec![surf_z; rows * cols],
+            vec![true; rows * cols],
             rows,
             cols,
-            origin_x: stock.z_grid.origin_u,
-            origin_y: stock.z_grid.origin_v,
-            cell_size: stock.z_grid.cell_size,
-        };
+            stock.z_grid.origin_u,
+            stock.z_grid.origin_v,
+            stock.z_grid.cell_size,
+        );
         (stock, hm)
     }
 

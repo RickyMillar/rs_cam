@@ -743,9 +743,24 @@ pub fn steep_shallow_toolpath_split_with_resolution(
     // Expand shallow region by overlap_distance for raster pass extension
     let shallow_expanded = dilate_grid(&shallow_eroded, rows, cols, overlap_cells);
 
-    // Z range
+    // Z range.
+    //
+    // C2 AUDIT (2026-07-30), the consumer PR-8b flagged as unaudited: the
+    // ladder bottom WANTS the bbox floor, and `min_covered_z()` would be a
+    // regression here. The steep half is a WATERLINE pass — it slices the
+    // mesh with `waterline_contours` at each level, and a vertical wall
+    // extends from the top face all the way down while the drop-cutter grid
+    // only ever sees the top face. On a plateau (a box with vertical sides)
+    // `min_covered_z()` IS the top face, so a covered-only bottom would
+    // collapse the ladder to a single level and drop every wall pass — the
+    // exact passes the operation exists to make. Levels below real material
+    // are free: `waterline_contours` returns nothing there.
+    // Sentry: `steep_ladder_bottom_is_the_bbox_floor_not_the_covered_minimum`.
+    // (This differs from `ramp_finish`, whose ladder bottom is a DEPTH THE
+    // CUTTER MUST HOLD at a sampled surface point — that one is clamped to
+    // `min_covered_z()`, PR-8b.)
     let z_top = bbox.max.z;
-    let z_bottom = surface_hm.min_z();
+    let z_bottom = surface_hm.min_z_or_bbox_floor();
 
     debug!(
         z_top = format!("{:.1}", z_top),
@@ -1017,7 +1032,7 @@ mod tests {
             &slope_map,
             &steep_expanded,
             bbox.max.z,
-            surface_hm.min_z(),
+            surface_hm.min_z_or_bbox_floor(),
             2.0,
             3.0,
             0.0,

@@ -280,7 +280,13 @@ fn wanaka_slope_distribution_diagnostic() {
     let mut covered_cells = 0usize;
     let mut max_cell_deg = 0.0f64;
     for (i, &angle) in surface.slope_map.angles.iter().enumerate() {
-        if !surface.heightmap.covered.get(i).copied().unwrap_or(false) {
+        if !surface
+            .heightmap
+            .covered_flags()
+            .get(i)
+            .copied()
+            .unwrap_or(false)
+        {
             continue;
         }
         let deg = angle.to_degrees();

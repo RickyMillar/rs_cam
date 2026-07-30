@@ -299,7 +299,7 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
                 || y > bbox.max.y + border_margin
             {
                 let i = row * base_stock.z_grid.cols + col;
-                let clear_z = surface_hm.z_values[i] as f32;
+                let clear_z = surface_hm.z_or_bbox_floor_values()[i] as f32;
                 rs_cam_core::dexel::ray_subtract_above(
                     base_stock.z_grid.ray_mut(row, col),
                     clear_z,
@@ -373,7 +373,7 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
                 {
                     continue;
                 }
-                let surf = surface_hm.surface_z_at_world(x, y);
+                let surf = surface_hm.z_or_bbox_floor_at_world(x, y);
                 if !surf.is_finite() {
                     continue;
                 }

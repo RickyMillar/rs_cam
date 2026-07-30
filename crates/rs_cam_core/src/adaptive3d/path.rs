@@ -299,7 +299,7 @@ pub(super) fn adaptive_3d_segments(
 
     // Pre-compute the shallow-area mask once (it only depends on the
     // surface geometry, not on the running stock). Indexed row-major,
-    // same layout as surface_hm.z_values / slope_map.angles. Cell is
+    // same layout as the surface heightmap / slope_map.angles. Cell is
     // `true` when its surface slope < shallow_angle_rad. We toggle
     // ctx.shallow_mask between this and None at the per-Z-level loop
     // boundary: None for the main DPP clear, Some(mask) for shallow
@@ -377,11 +377,10 @@ pub(super) fn adaptive_3d_segments(
             // floor, which made this a full-ray clear — preserve that by
             // clearing from the grid bottom for uncovered cells.
             let i = row * material_stock.z_grid.cols + col;
-            let clear_z = if surface_hm.covered[i] {
-                surface_hm.z_values[i] as f32
-            } else {
-                material_stock.stock_bbox.min.z as f32
-            };
+            let clear_z = surface_hm
+                .z_at_index(i)
+                .covered()
+                .map_or(material_stock.stock_bbox.min.z as f32, |z| z as f32);
             ray_subtract_above(material_stock.z_grid.ray_mut(row, col), clear_z);
             border_cleared += 1;
         }
@@ -419,11 +418,10 @@ pub(super) fn adaptive_3d_segments(
                     // uncovered cells outside the boundary must stay fully
                     // cleared or O5b's unstamped-cell deep bite returns.
                     let i = row * material_stock.z_grid.cols + col;
-                    let clear_z = if surface_hm.covered[i] {
-                        surface_hm.z_values[i] as f32
-                    } else {
-                        material_stock.stock_bbox.min.z as f32
-                    };
+                    let clear_z = surface_hm
+                        .z_at_index(i)
+                        .covered()
+                        .map_or(material_stock.stock_bbox.min.z as f32, |z| z as f32);
                     ray_subtract_above(material_stock.z_grid.ray_mut(row, col), clear_z);
                     boundary_cleared += 1;
                 }
@@ -443,7 +441,7 @@ pub(super) fn adaptive_3d_segments(
     // open meshes, and pre-clamp there was no lever to stop the final
     // level diving there (heights audit 2026-06-12, findings 2 + 3).
     let z_plan_scope = debug_ctx.map(|ctx| ctx.start_span("z_level_plan", "Compute Z levels"));
-    let surface_bottom = surface_hm.min_z();
+    let surface_bottom = surface_hm.min_z_or_bbox_floor();
     let z_bottom =
         (surface_bottom + params.stock_to_leave).max(params.z_floor.unwrap_or(f64::NEG_INFINITY));
     let mut z_levels = Vec::new();
@@ -458,7 +456,15 @@ pub(super) fn adaptive_3d_segments(
 
     // Fix 5: Flat area detection — histogram surface Z, insert levels at shelves
     if params.detect_flat_areas {
-        let total_cells = surface_hm.z_values.len();
+        // Uncovered padding counts in the denominator (see `GridZ`): the
+        // grid runs one envelope radius past the mesh bbox, so `total_cells`
+        // over-counts and the 2% flat-shelf threshold is correspondingly
+        // harder to clear on small models. C2 audit 2026-07-30: LEFT AS IS —
+        // every adaptive3d Z-level plan in the repo's history is calibrated
+        // against this denominator, and re-basing it on covered cells only
+        // changes flat-level insertion on every existing job. Recorded, not
+        // silently changed.
+        let total_cells = surface_hm.z_or_bbox_floor_values().len();
         if total_cells > 0 {
             // Build histogram of surface Z values binned at tolerance resolution
             let bin_size = params.tolerance.max(0.05);
@@ -466,7 +472,7 @@ pub(super) fn adaptive_3d_segments(
             let z_max_surf = params.stock_top_z;
             let n_bins = ((z_max_surf - z_min_surf) / bin_size).ceil() as usize + 1;
             let mut histogram = vec![0u32; n_bins];
-            for &sz in &surface_hm.z_values {
+            for &sz in surface_hm.z_or_bbox_floor_values() {
                 let bin = ((sz - z_min_surf) / bin_size).floor() as usize;
                 if bin < n_bins {
                     histogram[bin] += 1;
@@ -1106,7 +1112,7 @@ fn try_emit_stay_down_link(
 /// Hold the stock-to-leave along a cut path ("drape" / gouge guard).
 ///
 /// The per-Z-level lift sets each cut point's Z from a SINGLE grid-cell
-/// surface lookup (`SurfaceHeightmap::surface_z_at_world` rounds to one cell),
+/// surface lookup (`SurfaceHeightmap::z_or_bbox_floor_at_world` rounds to one cell),
 /// and straight segments are emitted between possibly-sparse points. Over a
 /// textured / high-frequency surface this leaks two ways: (1) a point that
 /// rounds to a lower neighbouring cell, and (2) a segment whose interior
