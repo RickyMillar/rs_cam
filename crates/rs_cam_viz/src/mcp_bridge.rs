@@ -483,6 +483,61 @@ pub fn build_cancel_generation_response(outcome: &crate::compute::CancelOutcome)
     }
 }
 
+/// Render the `generation_status` reply from a live toolpath-lane snapshot.
+///
+/// A/M12: without this there is no way to attribute a long generation's cost
+/// to an operation, and every "it's been 40 minutes" is unfalsifiable — the
+/// only diagnosis available on 2026-07-30 was reading `/proc` thread
+/// accounting from outside the process.
+pub fn build_generation_status_response(snapshot: &crate::compute::LaneSnapshot) -> String {
+    use crate::compute::LaneState;
+
+    let lane_state = match snapshot.state {
+        LaneState::Idle => "idle",
+        LaneState::Queued => "queued",
+        LaneState::Running => "running",
+        LaneState::Cancelling => "cancelling",
+    };
+    let elapsed_s = snapshot.elapsed().map(|d| d.as_secs_f64());
+    let summary = if snapshot.is_active() {
+        let job = snapshot.current_job.as_deref().unwrap_or("(unnamed job)");
+        let index = snapshot
+            .active_toolpath_index
+            .map_or_else(|| "?".to_owned(), |i| i.to_string());
+        let stage = snapshot.current_phase.as_deref().unwrap_or(NO_STAGE);
+        format!(
+            "{lane_state}: toolpath index {index} — {job}, stage '{stage}', {:.1}s elapsed, \
+             {} more queued",
+            elapsed_s.unwrap_or(0.0),
+            snapshot.queue_depth,
+        )
+    } else {
+        "idle: no toolpath generation in flight".to_owned()
+    };
+
+    rs_cam_mcp::server::json_str(serde_json::json!({
+        "ok": true,
+        "busy": snapshot.is_active(),
+        "lane_state": lane_state,
+        "toolpath_index": snapshot.active_toolpath_index,
+        "toolpath_id": snapshot.active_toolpath_id,
+        "job": snapshot.current_job,
+        "stage": snapshot.current_phase,
+        "elapsed_s": elapsed_s,
+        "queue_depth": snapshot.queue_depth,
+        "summary": summary,
+        "note": "Live: read straight off the compute lane on the MCP server thread, \
+                 never through the GUI frame loop. `stage` is whatever the planner \
+                 last reported — a null means the op reports no stages, NOT that it \
+                 is doing nothing.",
+    }))
+}
+
+/// What `generation_status` prints when the planner has reported no stage.
+/// Spelled out rather than left blank: a missing stage means the operation
+/// publishes none, not that the lane is stalled.
+const NO_STAGE: &str = "(none reported)";
+
 /// Response from the GUI thread to the MCP server.
 pub struct McpResponse {
     pub result: Result<String, String>,
