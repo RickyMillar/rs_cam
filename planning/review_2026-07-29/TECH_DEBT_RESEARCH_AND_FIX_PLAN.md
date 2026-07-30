@@ -1315,8 +1315,16 @@ After the wanaka live validation report lands:
    (.gitignore — found and fixed a SECOND live instance: unanchored
    `.claude/` had eaten `sim-diagnostics.md` + `sim-analysis/SKILL.md`).
 2. **C1 provenance contract** — before any motion/link work.
+   ✅ DONE 2026-07-30: 61bd97c (invariance harness) / 77267ce (typestate
+   contract, SemanticLinkCarrier retired, 15/15 fingerprints identical) /
+   60e2c0f (true-range attribution + unconditional reconcile).
 3. **C2 sentinel sweep** — before M3 (classifier reads grids) and to close
    the live steep_shallow exposure.
+   ✅ DONE 2026-07-30: ce426d6 (GridZ + private grid storage + 17-row
+   consumer audit — steep_shallow VERDICT: NOT defective, bbox floor is
+   intended for the waterline wall ladder; red-then-green proof in the
+   commit body) / 96bc300 (sentinel sweep: 4 converted, 2 documented+tested,
+   8 ruled out).
 3a. **A/M12 → A/M11** (Addendum D, WP8 lane) — MCP non-blocking
    cancel/status first, then the `generate_all` fixpoint (D's own ordering
    rule: never ship an unobservable, unabortable loop). Slotted here
