@@ -21,7 +21,7 @@ use rs_cam_core::compute::{build_cutter, compute_stats};
 use rs_cam_core::geo::P3;
 #[cfg(test)]
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::semantic_trace::ToolpathSemanticKind;
+use rs_cam_core::semantic_trace::{SemanticKey, ToolpathSemanticKind};
 #[cfg(test)]
 use rs_cam_core::toolpath::MoveType;
 
@@ -716,14 +716,14 @@ pub(super) fn run_compute_with_phase_tracker(
                             scope.set_debug_span_id(span_id);
                         }
                         scope.set_param(
-                            "containment",
+                            SemanticKey::Containment,
                             match req.boundary.containment {
                                 crate::state::toolpath::BoundaryContainment::Center => "center",
                                 crate::state::toolpath::BoundaryContainment::Inside => "inside",
                                 crate::state::toolpath::BoundaryContainment::Outside => "outside",
                             },
                         );
-                        scope.set_param("keep_out_count", req.keep_out_footprints.len());
+                        scope.set_param(SemanticKey::KeepOutCount, req.keep_out_footprints.len());
                         if !current.toolpath.moves.is_empty() {
                             scope.bind_to_toolpath(
                                 &current.toolpath,

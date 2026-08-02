@@ -1047,11 +1047,15 @@ fn semantic_trace_records_entry_params_and_boundary_clip() {
         })
         .expect("helix entry item should be present");
     assert_eq!(
-        helix.params.values.get("radius"),
+        helix
+            .params
+            .get(rs_cam_core::semantic_trace::SemanticKey::Radius),
         Some(&serde_json::json!(request.dressups.helix_radius))
     );
     assert_eq!(
-        helix.params.values.get("pitch"),
+        helix
+            .params
+            .get(rs_cam_core::semantic_trace::SemanticKey::Pitch),
         Some(&serde_json::json!(request.dressups.helix_pitch))
     );
 
@@ -1061,7 +1065,9 @@ fn semantic_trace_records_entry_params_and_boundary_clip() {
         .find(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::BoundaryClip)
         .expect("boundary clip item should be present");
     assert_eq!(
-        boundary_clip.params.values.get("containment"),
+        boundary_clip
+            .params
+            .get(rs_cam_core::semantic_trace::SemanticKey::Containment),
         Some(&serde_json::json!("center"))
     );
     assert!(
@@ -2567,7 +2573,11 @@ fn worker_reconciles_semantic_links_with_debug_options_disabled() {
     let dressup_items: Vec<_> = trace
         .items
         .iter()
-        .filter(|i| i.params.values.contains_key("move_scope"))
+        .filter(|i| {
+            i.params
+                .get(rs_cam_core::semantic_trace::SemanticKey::MoveScope)
+                .is_some()
+        })
         .collect();
     assert!(
         !dressup_items.is_empty(),
