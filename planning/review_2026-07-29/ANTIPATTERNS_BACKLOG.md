@@ -56,14 +56,24 @@ becomes Option or gets an audited doc contract.
 
 ## P4. Stringly-typed vocabularies with silent fallbacks
 
-D3 fixed `expand_span_kind_synonyms` (was silently swallowing
+~~D3 fixed `expand_span_kind_synonyms` (was silently swallowing
 `waterline_cleanup`), but the class persists: `p2c_headless_ab_wanaka.rs:~3754`
 and `v3_cascade_ab.rs:~4327` still key off the `"Pencil claims"` *label*;
 drill hole-vs-peck nesting is distinguished by label text ("Hole N" vs
 "Hole N plunge M") — wants a third `RegionSpanRole`; and
 `ToolpathSemanticParams` is a `BTreeMap<String, serde_json::Value>` bag where
 typing and provenance die at the boundary (PR-0 documented the loss; the bag
-itself is the debt).
+itself is the debt).~~ **CLOSED C4 2026-08-02.** Drill nesting got TWO roles,
+not the one asked for — naming only the child would have left "a hole is a
+`GeneratorPass` in a drill operation" as an unwritten rule. The harness keys
+go through `RegionKind::from_span_label`; a payload field was declined so
+`toolpath_spans` keeps no finishing dependency, and a round-trip sentry makes
+a label change break loudly in ONE place instead of silently at each
+consumer. `SemanticKey` closes the bag's key half: 74 keys, 110 call sites,
+zero literals left at any producer or reader, JSON wire pinned as
+hand-transcribed strings. The VALUE half stays a `serde_json::Value` on
+purpose — the values are genuinely heterogeneous. **H4's mix tables must be
+built on roles or keys, never labels**; recorded in three doc comments.
 
 ## P5. `ComputeMessage` is at its size ceiling (recurring friction)
 
@@ -95,12 +105,32 @@ any future §A.0-style gate needs a minimum-component or annulus-aware reading.
 
 ## P8. Findings/report single-slot representation
 
-`GenerationFindings` has one derived-stepover slot for what can be two
+~~`GenerationFindings` has one derived-stepover slot for what can be two
 derivations (first-writer-wins was a shrug, not a decision). Partial height
 clipping is unreported (only total band collapse produces the D1 finding).
 `narrate` still reports `regions 0` for Trace, Scallop, and SpiralFinish — the
 same structural gap A/M8 closed for UnifiedFinish, unclosed for three ops.
-RampFinish has no standing-material area channel (lift magnitude only).
+RampFinish has no standing-material area channel (lift magnitude only).~~
+**CLOSED C8 2026-08-02.**
+
+* Derived stepover → `Vec`; `GenerationFindings` drops `Copy` for `RefCell`.
+  The PR-6a rationale turned out to be ORPHANED onto the wrong function (a
+  missing blank line between two `///` blocks), which is most of how
+  first-writer-wins survived unexamined.
+* Partial clips reported: measured 185.98 mm² laddering 5 of 9 levels and
+  leaving **4.311 mm of an 8.31 mm groove wall unfinished**, previously
+  silent on every surface. `Caution` vs `Info` in disjoint collections, so
+  the loud finding still cannot be buried. *Only the `VerySteep` arm measures
+  a clip at all* — MidSteep and Shallow remain invisible, recorded on the
+  finding type.
+* `regions 0` was **three different causes wearing one symptom**: scallop had
+  a real partition dropped in transit, SpiralFinish has no partition, Trace
+  had a naming divergence and a missing chain counter. Inventing a
+  per-boundary count for the latter two would have reported a structure the
+  generator does not have.
+* RampFinish reports 370.5 mm² of ramp swath on its own fixture, with its own
+  `MeasurementStage` and a sentry asserting it is NOT the ring-cascade
+  provenance — and gained the narration line it never had.
 
 ## P9. Model debt knowingly accepted (documented, revisit-worthy)
 

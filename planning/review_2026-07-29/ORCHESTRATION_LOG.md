@@ -2499,3 +2499,251 @@ The implementation wave now has a winner, a measured 187×, a proven
 attribution for the only thing standing in its way, and eight parity gates
 to pass. What it does NOT have is permission: the classifier's answer
 changes, and §8 routes that to a human the same way Checkpoint B did.
+
+---
+
+## C-SEQUENCE WAVE 8 (C3+C4+C8), 2026-08-02
+
+Addendum C step 7 — the consolidation/diagnostics bundle that feeds H4's
+oracles. Ten commits in three clusters. Every item found something the
+backlog had not: three of the eleven entries were **wrong about the
+defect**, and saying so is most of what this wave is worth.
+
+**Commits**
+
+| # | Hash | Cluster | Scope |
+|---|------|---------|-------|
+| 1 | `f792fe9` | C3 | `feeds/geometry.rs`, `feeds/mod.rs`, `session/mod.rs`, `tests/tapered_width_model_parity_c3.rs` |
+| 2 | `92eaea1` | C3 | `waterline.rs`, `finish_setup.rs`, `steep_shallow.rs`, `tests/waterline_shared_finish_setup_c3.rs`, `ANTIPATTERNS_BACKLOG.md` |
+| 3 | `c44a2be` | C3 | `rs_cam_cli/src/project.rs` |
+| 4 | `ad445f3` | C4 | `toolpath_spans.rs`, `compute/spans.rs`, `compute/annotate.rs`, `compute/execute.rs` |
+| 5 | `b514046` | C4 | `unified_finish.rs`, `p2c_headless_ab_wanaka.rs`, `v3_cascade_ab.rs` |
+| 6 | `263ba5d` | C4 | `semantic_trace.rs` + 110 call sites across 8 files |
+| 7 | `6d134c8` | C8 | `compute/{execute,config,stats}.rs`, `session/compute.rs`, `from_generation.rs`, 2 tests, viz worker |
+| 8 | `c1db76f` | C8 | `unified_finish.rs`, `config.rs`, `narrate.rs`, `diagnostics/*`, `tests/unified_finish_partial_clip_finding_c8.rs` |
+| 9 | `f5925f8` | C8 | `compute/annotate.rs`, `scallop.rs`, `narrate.rs`, `tests/narrate_regions_closed_c8.rs` |
+| 10 | `ef9dfec` | C8 | `ramp_finish.rs`, `measurement.rs`, `narrate.rs`, `from_generation.rs`, `tests/ramp_reach_clamp_pr8b.rs` |
+
+### C3 — one implementation per concept
+
+**The tapered width models: "~5% off" was generous, and the model was dead.**
+The parity sentry was written first, as the plan required, and measured the
+straight cone against `MillingCutter::width_at_height` over four shipped
+taper geometries × seven DOCs at the binding every production call site
+produces (`tip_r == nominal_d / 2`):
+
+| | divergence | where |
+|---|---|---|
+| worst overstatement | **+290.6%** | Ø3 tip / 15° taper @ 0.05 mm DOC |
+| worst understatement | **−44.1%** | Ø0.5 tip / 3° taper @ 4.00 mm DOC |
+| missing tangency alone, clamp removed | **+8.75%** | Ø1 tip / 5.26° @ 0.5 mm |
+
+The sign flips at the tangency height, and "~5%" described only the
+neighbourhood where the two error sources cancel. Worse, the growth term was
+CLAMPED DEAD: `(nominal_d + 2·ap·tan α).clamp(0.01, nominal_d)` is the
+constant `nominal_d` for every `ap ≥ 0`, so a tapered ball was fed as if it
+engaged its full tip diameter at any depth while a plain ball of the same
+tip got the exact contact circle. The function's own unit test passed
+`nominal_d = 6.0` with `tip_r = 0.5` — a binding nothing produces — so it
+exercised the one unclamped branch and read healthy.
+
+**Verdict: UNIFY, not document.** There was no deliberate approximation to
+document. The one caller now delegates to
+`ToolGeometryHint::engaged_diameter_at_doc`, which is the same geometry as
+the cutter trait and was already sentried against it. Three models → two,
+and the two are one math on two carriers.
+
+**Behavioural delta, stated not buried.** Suggest's recommended feed for a
+Ø1-tip / 5.26° taper, GenericSoftwood, Shapeoko VFD, scallop finish at
+0.1 mm WOC: **+26.3% at 0.05 mm DOC, +25.8% at 0.10, +8.4% at 0.25, +0.2%
+at 0.50.** A feed INCREASE on shallow tapered-ball finishing. Bounded —
+reached only through the Suggest button, so no project and no generated
+toolpath moves on its own — and not a tuning override, because the old
+number was identical at every depth. **A human should look at this.**
+
+*Not fixed, stated*: below tangency the tapered tool and its ball twin still
+land on different chipload rows (1515 vs 2514 mm/min @ 0.05 mm), because
+`engaged_diameter_at_doc` selects the vendor-LUT row at the ENGAGED diameter
+for tapered/V but at NOMINAL for flat/ball/bull. Pre-existing policy,
+deliberately untouched, and now measured so the residual is attributed
+rather than assumed to be the same defect.
+
+**Waterline: two of the three claims were real, one was a year-old lie.**
+
+* The Z-ladder copy was real. `waterline_z_levels` was `finish_setup::
+  z_ladder`'s `snap_to_bottom = false` arm with its epsilon hard-coded. Now
+  an adapter naming `WATERLINE_LADDER_EPSILON` and delegating.
+* **The `execute.rs` slope-sentinel copy does not exist and has not since
+  `4b105da`** — the very commit that created `finish_setup.rs` migrated it in
+  the same diff. `finish_setup.rs`'s module header and its
+  `slope_filter_active` doc comment have both said "out of scope for this
+  pass" for a year about work that was already done, and the backlog copied
+  them. All three corrected.
+* PR-8d's floor, red-then-green on the Checkpoint B mixed-slope ribbon:
+
+  | | segments | below the 0.001 mm quantum | shortest | total |
+  |---|---|---|---|---|
+  | before | 942 | 2 | 0.000891141 mm | 1224.9001 mm |
+  | after | 940 | 0 | 0.05745541 mm | 1224.9001 mm |
+
+  **§8.1's attribution is REVERSED.** `0.000891` is Checkpoint B §8.1's
+  number bit for bit, and §8.1 attributed it to `SteepShallowSplit::steep`.
+  That is where it was OBSERVED. It is MADE in `waterline_contours`, which
+  the steep half calls — so PR-8d filtered the offenders out of the
+  steep/shallow output while every direct waterline op kept shipping them.
+
+**The CLI diagnostic.** It cannot BE the core struct (extra fields, and two
+wire keys existing scripts read), so it became a borrowing serde view whose
+only constructor EXHAUSTIVELY DESTRUCTURES the core diagnostic with no `..`.
+A new core field is now a compile error in the CLI until someone decides
+whether to publish it — the mechanism D3 lacked when it fixed five
+silently-missing fields by hand. Two derivations retired (`tool_name`
+lookup, and the name/op-type/stats reads); two stay CLI-local and say why in
+their field docs. **Wire byte-stability proven twice**: a pinned exact-JSON
+sentry, and mechanically against `HEAD` — the pre-C3 struct's field list in
+declaration order diffs EMPTY against the pinned key list, 17 keys, same
+order, same names.
+
+### C4 — typed vocabularies
+
+**Drill nesting: two variants, not the one the backlog asked for.**
+`annotate_drill_spans` rebuilt the entire hole→peck hierarchy from
+`label.starts_with("Hole ") && !label.contains("plunge")`. Naming only the
+child would have left "a hole is a `GeneratorPass` in a drill operation" as
+an unwritten rule a generic consumer cannot apply, so `DrillHole` and
+`DrillPeck` are both explicit. `RegionSpanRole` gains the `ALL`/`from_key`
+pair `SpanKind` has carried since C1; `Span::has_region_role` folds in the
+boundary-and-kind guard the label predicate did by accident. MCP wire:
+drill spans now read `drill_hole`/`drill_peck` where they read
+`generator_pass` — produced at one site, consumed nowhere.
+
+**The mega-harness keys.** Both spelled out strings that
+`RegionKind::span_label` writes. `RegionKind` gains `ALL` and
+`from_span_label`, and the two sites ask it. A payload field was declined
+deliberately: putting `RegionKind` on `SpanPayload::Region` would drag
+`FinishBand` and the finishing module into `toolpath_spans`, which has no
+finishing dependencies. So the string stays, one place knows it, and a
+round-trip sentry makes a label change break LOUDLY there instead of
+silently at each consumer. The v3 migration is proven value-preserving:
+`from_span_label(..).map(|k| k.strategy().label())` reproduces the retired
+four-arm table exactly, `None` for `Ring N` included.
+
+**`SemanticKey`.** 74 key literals across four production files, with
+`narrate.rs` carrying its own copies of six for reading. A typo on either
+side produced a silently absent parameter — and `insert` already swallows
+serialisation failures, so nothing surfaced. 110 call sites migrated; zero
+key literals remain at any producer or consumer. The wire is pinned as 74
+literal strings **transcribed by hand on purpose** — deriving the list from
+`as_str` would assert the enum equals itself.
+
+H4's constraint is recorded in three doc comments (`SemanticKey`,
+`RegionSpanRole`, `RegionKind::from_span_label`): mix tables must be built
+on roles or keys, never labels.
+
+### C8 — findings representation
+
+**The derived-stepover slot.** Two sites derive a stepover on one toolpath;
+the second was discarded without trace. Now a `Vec` on both
+`GenerationFindings` and `ToolpathStats`; `GenerationFindings` loses `Copy`
+and moves to `RefCell`, and the `Box` goes with the `Option`. The diagnostic
+adapter fans out one per NOTEWORTHY derivation, so an unremarkable first can
+no longer silence a noteworthy second. **The PR-6a rationale was orphaned**:
+its `///` block ran into the next with no blank line, so the whole
+first-writer-wins justification was attached to `record_ramp_reach_clamp`
+and `record_derived_stepover` had no doc at all. A rule nobody could find is
+most of how it survived.
+
+**Partial height clipping.** Wave D1 already MEASURED the clip on every band
+and threw it away unless the region emitted nothing, reasoning that a band
+which still cuts would bury the total collapse. That is an argument about
+SEVERITY. Measured on `two_groove_plateau` with `bottom_z = −4.0`:
+**185.98 mm² of the VerySteep band laddered 5 of its 9 levels and stopped,
+leaving 4.311 mm of an 8.31 mm groove wall unfinished** — generation
+succeeded, the toolpath cut, and every surface said nothing. `DroppedBand`
+(Caution) and `ClippedBand` (Info) now travel in separate collections,
+disjoint by construction, with a gate driving the Auto/Auto arm to prove it.
+`BandHeightClip` carries requested-vs-delivered Z BOUNDS, not only level
+counts, because bounds are what an operator can act on. *Not fixed, stated*:
+only the `VerySteep` arm measures a clip at all — MidSteep and Shallow never
+set one, so a partial clip there is still invisible. Recorded on the finding
+type itself.
+
+**`regions 0` — three different causes wearing one symptom.**
+
+| op | what it actually has | now |
+|---|---|---|
+| Scallop | a REAL partition — an independent ring cascade per boundary region (P2.3) — dropped in transit, because the event carried only a global ring index | `regions 1, rings 14` |
+| SpiralFinish | no partition: one continuous traversal that SKIPS out-of-region samples | `regions 1, rings 19` |
+| Trace | a NAMING divergence — 15 families route the same structural spans to `Region`, Trace to `Chain`, and narration's line had no chain counter, so a 40-contour engraving read as no structure at all | `regions 1, chains 2` |
+
+Inventing a per-boundary partition for the latter two would have reported a
+structure the generator does not have. `1` is a measurement; `0` was an
+absence.
+
+**Two `Region` populations, and the trap between them.** Narration counts
+semantic `Region` items with one counter, but the crate has two kinds: the
+planner's territory nodes (A/M8) and a generator's pass groupings (the
+generic families, now scallop). Scallop is BOTH depending on its caller.
+The first cut emitted its grouping unconditionally and **broke A/M8's 1:1
+reconciliation gate outright** — 4 semantic regions vs 3 structural nodes,
+with a stray `"Region 1/1 (scallop)"` among the band labels. Hence
+`ScallopRegionGrouping`: `ByBoundaryRegion` standalone, `Flat` as a
+sub-generator, with its own sentry.
+
+**RampFinish standing material.** PR-8b reported one worst-case DEPTH and a
+point count. Measured on its own fixture: **486 of 653 ramp points lifted,
+worst lift 4.231 mm, 370.5 mm² of ramp swath left standing.**
+`lifted_area_mm2` follows A/M9's three-valued contract, and `lifted_area()`
+returns the `ProjectedXyAreaMm2` newtype with its provenance or neither.
+A new `MeasurementStage::RampReachClampSwath` rather than a borrowed one,
+and the sentry asserts the provenance is NOT `ScallopReport::PROVENANCE` —
+the two sit side by side in `ToolpathStats` and must never be summed. The
+swath width is the cutter's CUSP diameter and the note says so; the envelope
+would be the SHANK on a tapered tool, three times too wide, which is the
+exact error C3 retired from the feeds path earlier in this same wave.
+RampFinish also had NO narration line at all — it has one now.
+
+### Gates
+
+- `cargo fmt --check`: exit 0 before every commit.
+- `cargo clippy --workspace --all-targets -- -D warnings`: exit 0 before
+  every commit.
+- `cargo test -p rs_cam_core --no-fail-fast` (the WHOLE crate, 113 targets):
+  **111 green, 2 red, both known and neither this wave's**:
+  - `--lib` 2207 passed / 3 failed — the adaptive3d trio
+    (`peck_plunge_progresses_when_depth_per_pass_equals_retract_clearance`,
+    `rapid_segment_lifts_to_safe_z_before_traverse`,
+    `planner_sim_dexel_parity_agent_search`), untouched here;
+  - `wanaka_suggest_integration` 2 passed / 1 failed —
+    `wanaka_suggest_baseline`, the documented environmental red. Its own
+    panic names the cause: *"Toolpath id 11 missing from suggest cases —
+    wanaka.toml shape changed?"*. It reads the WORKING-TREE
+    `planning/airrun_2026-06-01/wanaka.toml`, which carries 114 uncommitted
+    user insertions and no longer offers that toolpath. **Not the C3 feed
+    change**: the assertion that fires is a missing toolpath, not a feed
+    value, and it fires before any number is compared. The fixture is
+    untouchable by standing instruction, so this stays red.
+- `cargo test -p rs_cam_viz --no-fail-fast -- --test-threads=1`: 227 + 9 + 11
+  across five targets, 0 failed.
+- `cargo test -p rs_cam_cli --no-fail-fast`: bin 7/7 (2 new), integration
+  9/9.
+- `cargo test -p rs_cam_mcp`: 0 tests (the crate is a parameter-struct
+  library), builds clean.
+- New sentries: tapered width parity 5/5, waterline finish-setup 5/5,
+  partial clip 4/4, narrate regions 5/5, PR-8b ramp 8/8 (2 new).
+- Pre-existing sentries that had to keep passing and do: A/M8 semantic
+  regions 4/4, M2.1 tapered end-to-end 9/9, Wave D1 dropped band 3/3, PR-8d
+  min-segment 5/5, PR-6a derived stepover 4/4, PR-7 generic rest 6/6,
+  lookup parity 2/2, wanaka defaults 3/3, waterline param sweeps 4/4.
+- One cargo job at a time; `free -g` + `pgrep` before every heavy command.
+
+**Untouched, as instructed**: `planning/airrun_2026-06-01/wanaka.toml`
+(user-modified) and `planning/review_2026-07-27/`. Every commit staged file
+by file.
+
+### What a human still owns
+
+The C3 feed change. Everything else in this wave is report-only or
+behaviour-preserving; that one moves a number the operator acts on, in the
+direction that deserves eyes, and the wave states it rather than shipping it
+quietly.
