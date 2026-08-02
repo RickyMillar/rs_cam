@@ -846,27 +846,32 @@ pub struct ScallopConfig {
     pub intra_pass_hookup_mm: f64,
 }
 
-/// Default **OFF**, and the reason is a defect, not caution.
-///
-/// The A/B is as strong as any in this programme — on a corrugated all-over
-/// scallop fixture at 3.0 mm hookup, retract round trips fall 24 → 3
-/// (−87.5%), integrated cycle time 407.9 s → 166.2 s (−59.3%),
-/// swept-footprint throughput 4.68 → 11.47 mm²/s (+144.9%), with **zero**
-/// new collisions at the finest 0.1 mm grid.
-///
-/// It ships off anyway, because the same measurement found that
-/// `surface_link::relink_fragments` drops **exactly one cut position per
-/// link it makes** (21 losses across 21 converted junctions). A gap in a
-/// finished surface is not purchasable with wall clock, and 59% is exactly
-/// the size of prize that gets a defect waved through.
-///
-/// `tests/scallop_intra_pass_relink_am7.rs` pins the ratio. When the
-/// re-emit is fixed, that test's expectation goes to zero and this default
-/// goes to 3.0 — a little over one Ø3-ball diameter: far enough to catch
+/// 3.0 mm — a little over one Ø3-ball diameter: far enough to catch
 /// adjacent-ring junctions, short enough that a link never crosses a
 /// feature it did not machine.
+///
+/// **ON since wave 12**, on a measurement that took two waves to read
+/// correctly. On a corrugated all-over scallop fixture: retract round trips
+/// 24 → 3 (−87.5%), integrated cycle time 407.9 s → 166.2 s (−59.3%),
+/// swept-footprint throughput 4.68 → 11.47 mm²/s (+144.9%), **zero** new
+/// collisions at the finest 0.1 mm grid.
+///
+/// Wave 11 measured all of that and shipped the dial OFF, because a fourth
+/// gate reported that `surface_link::relink_fragments` dropped one cut
+/// position per link. It does not. The positions it removes are `LeadOut`
+/// arc endpoints, relabelled `FinishingCut` by an arc fitter that groups by
+/// feed rate rather than intent — one per link because a link deletes a
+/// fragment boundary and a lead-out is what terminates one. See
+/// `tests/scallop_intra_pass_relink_am7.rs`, which now gates on surface
+/// membership rather than on a label, and on the relinker's own
+/// position-preservation unit tests in `crate::surface_link`.
+///
+/// The value is a CAP, not a target: every candidate within it is still
+/// drop-cutter sampled for gouge, refused if it would leave the operation's
+/// boundary, and (with kinematics) kept only when it beats the retract it
+/// replaces.
 fn default_scallop_intra_pass_hookup_mm() -> f64 {
-    0.0
+    3.0
 }
 
 impl Default for ScallopConfig {

@@ -231,12 +231,22 @@ fn stock() -> StockConfig {
 }
 
 fn multi_node_session() -> ProjectSession {
+    session_with_hookup(UnifiedFinishConfig::default().intra_region_hookup_mm)
+}
+
+fn session_with_hookup(intra_region_hookup_mm: f64) -> ProjectSession {
+    let OperationConfig::UnifiedFinish(base) = unified_finish_op() else {
+        panic!("fixture builds a UnifiedFinish op")
+    };
     single_op_session_with(
         stock(),
         tapered_ball_tool(),
         mesh_model(two_groove_plateau(), "two_groove_plateau"),
         "Unified Finish",
-        unified_finish_op(),
+        OperationConfig::UnifiedFinish(UnifiedFinishConfig {
+            intra_region_hookup_mm,
+            ..base
+        }),
         |cfg| {
             // Pinned, not Auto: a surface op carries no depth dial, so
             // `bottom_z: Auto` would resolve to `top_z - 0.0` and collapse
@@ -348,5 +358,76 @@ fn multi_node_op_reports_nonzero_trips_with_a_trustworthy_split() {
     assert!(
         narration.contains(&format!("{} round trip", trips.total)),
         "narration must print the measured total itself, not just a label:\n{narration}"
+    );
+}
+
+// ── Report-only: the OTHER dial the relinker backs ────────────────────────
+
+/// `UnifiedFinishConfig::intra_region_hookup_mm` is the second consumer of
+/// `surface_link::relink_fragments`, and the second dial in this programme
+/// shipped default-off ahead of the A/B that would have judged it.
+///
+/// Wave 12 cleared the reason wave 11 gave for leaving BOTH off — the
+/// relinker does not drop cut positions — so the number is measured here and
+/// reported. It is deliberately NOT flipped: unlike scallop's ring-to-ring
+/// case, this one is a region-level decision whose value depends on how the
+/// planner's router links regions AFTERWARDS, and that trade belongs to an
+/// operator with a real part in front of them, not to a synthetic
+/// two-groove plateau.
+///
+/// Report-only by design, with one safety invariant: keeping the tool down
+/// must never ADD retract round trips.
+#[test]
+fn intra_region_hookup_is_measured_and_left_to_the_operator() {
+    let off = {
+        let mut s = session_with_hookup(0.0);
+        generate(&mut s, 0);
+        s
+    };
+    let on = {
+        let mut s = session_with_hookup(6.0);
+        generate(&mut s, 0);
+        s
+    };
+
+    let o = off.get_result(0).expect("hookup-off generated");
+    let n = on.get_result(0).expect("hookup-on generated");
+    let (o_moves, n_moves) = (&o.toolpath().moves, &n.toolpath().moves);
+
+    let o_trips = compute_retract_trips(o.toolpath(), None).total;
+    let n_trips = compute_retract_trips(n.toolpath(), None).total;
+    let kin = rs_cam_core::machine_kinematics::MachineKinematics::default();
+    let o_s =
+        rs_cam_core::machine_kinematics::compute_cycle_time(o.toolpath(), &kin, 3000.0, 6000.0);
+    let n_s =
+        rs_cam_core::machine_kinematics::compute_cycle_time(n.toolpath(), &kin, 3000.0, 6000.0);
+    let (o_area, _) = rs_cam_core::measurement::swept_footprint_area(
+        o_moves,
+        0.5,
+        rs_cam_core::measurement::DEFAULT_FOOTPRINT_CELL_MM,
+    );
+    let (n_area, _) = rs_cam_core::measurement::swept_footprint_area(
+        n_moves,
+        0.5,
+        rs_cam_core::measurement::DEFAULT_FOOTPRINT_CELL_MM,
+    );
+    let o_rate = rs_cam_core::measurement::swept_footprint_mm2_per_s(o_area, o_s);
+    let n_rate = rs_cam_core::measurement::swept_footprint_mm2_per_s(n_area, n_s);
+
+    println!(
+        "A/M7 report-only — unified_finish intra_region_hookup_mm 0.0 -> 6.0\n  \
+         moves   {} -> {}\n  \
+         trips   {o_trips} -> {n_trips}\n  \
+         seconds {o_s:.2} -> {n_s:.2}\n  \
+         area    {o_area} -> {n_area}\n  \
+         mm2/s   {o_rate:.4} -> {n_rate:.4}",
+        o_moves.len(),
+        n_moves.len(),
+    );
+
+    assert!(
+        n_trips <= o_trips,
+        "keeping the tool down must not ADD retract round trips: \
+         {o_trips} -> {n_trips}"
     );
 }

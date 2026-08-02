@@ -135,10 +135,11 @@ impl Default for ScallopParams {
             plunge_rate: 500.0,
             safe_z: 30.0,
             stock_to_leave: 0.0,
-            // A/M7: default OFF until the A/B that justifies a shipped
-            // motion change. Flip after the measurement, not before it —
-            // the same rule `unified_finish`'s `intra_region_hookup_mm`
-            // follows.
+            // A/M7: the LIBRARY default stays 0.0 — a bare `ScallopParams`
+            // has no boundary and no kinematics, so it cannot cost or
+            // confine a link. The shipped OPERATION default is 3.0 and
+            // lives on `ScallopConfig`, which the op adapter fills in
+            // alongside both (`compute::execute::generate_scallop`).
             intra_pass_hookup_mm: 0.0,
             link_kinematics: None,
         }
