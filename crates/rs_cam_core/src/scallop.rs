@@ -139,36 +139,424 @@ impl Default for ScallopParams {
 /// after the chord fix, and the visibly coarse steep stepover the user
 /// flagged. A per-ring constant is inherently a compromise (offsetting is
 /// uniform per ring); min is its conservative end.
+///
+/// M4: the cascade now calls [`ring_stepover_with_policy`] directly so the
+/// research seam can vary the reduction. This wrapper stays as the *named*
+/// statement of what shipped, and the unit tests below pin it — deleting it
+/// would leave `ScallopStepoverPolicy::SHIPPED` as the only description of
+/// the shipped behaviour, which is a worse place for it to live.
+#[cfg_attr(not(test), allow(dead_code))]
 fn ring_stepover(
     ring: &[P2],
     slope_map: &crate::slope::SlopeMap,
     cusp_r: f64,
     scallop_height: f64,
 ) -> f64 {
+    ring_stepover_with_policy(
+        ring,
+        slope_map,
+        cusp_r,
+        scallop_height,
+        ScallopStepoverPolicy::SHIPPED,
+    )
+    .selected
+}
+
+/// One ring's stepover decision, with the sample distribution it was reduced
+/// from.
+///
+/// The spread is the whole point of the M4 research: a per-ring constant taken
+/// as the MIN of its samples collapses to the tightest spot on the ring, so
+/// `selected / p50` measures directly how much the ring is being slowed by a
+/// minority of its own length.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RingStepoverDecision {
+    /// The value the cascade will offset by (pre-clamp).
+    pub selected: f64,
+    pub sample_min: f64,
+    pub sample_p50: f64,
+    pub sample_max: f64,
+    pub samples: usize,
+}
+
+/// [`ring_stepover`] with every compensation it stacks made selectable.
+///
+/// **Research seam (M4), `pub` so a harness can probe the decision without
+/// re-implementing it.** [`ScallopStepoverPolicy::SHIPPED`] reproduces the
+/// shipped path exactly, and that is what the private `ring_stepover` above
+/// passes, so this adds no behaviour.
+#[must_use]
+pub fn ring_stepover_with_policy(
+    ring: &[P2],
+    slope_map: &crate::slope::SlopeMap,
+    cusp_r: f64,
+    scallop_height: f64,
+    policy: ScallopStepoverPolicy,
+) -> RingStepoverDecision {
+    let flat = crate::scallop_math::stepover_from_scallop_flat(cusp_r, scallop_height);
+    let fallback = RingStepoverDecision {
+        selected: flat,
+        sample_min: flat,
+        sample_p50: flat,
+        sample_max: flat,
+        samples: 0,
+    };
     if ring.is_empty() {
-        return crate::scallop_math::stepover_from_scallop_flat(cusp_r, scallop_height);
+        return fallback;
     }
 
-    let sample_step = 1.max(ring.len() / 20);
-    let mut min_so = f64::INFINITY;
+    let sample_step = match policy.sampling {
+        RingSampling::Fixed20 => 1.max(ring.len() / 20),
+        RingSampling::EveryVertex => 1,
+    };
 
+    let mut samples: Vec<f64> = Vec::new();
     for pt in ring.iter().step_by(sample_step) {
         let angle = slope_map.angle_at_world(pt.x, pt.y).unwrap_or(0.0);
         // SlopeMap convention: negative = physically convex (see slope.rs doc on
         // `curvatures`). scallop_math::variable_stepover expects the opposite
         // (positive = convex), so negate at this boundary.
         let curvature = -slope_map.curvature_at_world(pt.x, pt.y).unwrap_or(0.0);
-        let so = variable_stepover(cusp_r, scallop_height, angle, curvature);
+        let curvature = policy.curvature.condition(curvature, cusp_r);
+        let so = policy
+            .geometry
+            .stepover(cusp_r, scallop_height, angle, curvature);
         if so > 0.01 {
-            min_so = min_so.min(so);
+            samples.push(so);
         }
     }
 
-    if min_so.is_finite() {
-        min_so
-    } else {
-        crate::scallop_math::stepover_from_scallop_flat(cusp_r, scallop_height)
+    if samples.is_empty() {
+        return fallback;
     }
+    let mut sorted = samples.clone();
+    sorted.sort_by(f64::total_cmp);
+    // SAFETY: `sorted` is non-empty (checked above).
+    #[allow(clippy::indexing_slicing)]
+    let (lo, hi) = (sorted[0], sorted[sorted.len() - 1]);
+    #[allow(clippy::indexing_slicing)]
+    let p50 = sorted[sorted.len() / 2];
+    let selected = policy.reducer.reduce(&sorted);
+
+    RingStepoverDecision {
+        selected,
+        sample_min: lo,
+        sample_p50: p50,
+        sample_max: hi,
+        samples: sorted.len(),
+    }
+}
+
+/// How the per-sample stepovers on one ring collapse to the single scalar an
+/// `offset_polygon` call can take.
+///
+/// M4 research seam. [`Self::Min`] is shipped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RingReducer {
+    /// **Shipped.** The tightest sample sets the advance for the whole ring.
+    /// Conservative by construction — and the mechanism `scallop.rs`'s own
+    /// `max_rings` comment fingers for the cascade crawling on terrain.
+    Min,
+    /// The 10th percentile: still conservative, but one pathological sample
+    /// on a long ring no longer owns it.
+    P10,
+    /// The plan's item 4, "median-ratio clamp" — **benchmark only**. It
+    /// knowingly violates the cusp target on the tighter half of every ring
+    /// and cannot be adopted without a quantified quality bound, which is
+    /// exactly what the oracle now supplies.
+    Median,
+    /// What shipped before P2.f (2026-07-09), kept so the regression that
+    /// motivated the change is reproducible rather than cited.
+    Mean,
+}
+
+impl RingReducer {
+    pub const ALL: [Self; 4] = [Self::Min, Self::P10, Self::Median, Self::Mean];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Min => "min",
+            Self::P10 => "p10",
+            Self::Median => "median",
+            Self::Mean => "mean",
+        }
+    }
+
+    /// `sorted` must be non-empty and ascending.
+    #[allow(clippy::indexing_slicing)] // SAFETY: caller guarantees non-empty
+    fn reduce(self, sorted: &[f64]) -> f64 {
+        let n = sorted.len();
+        match self {
+            Self::Min => sorted[0],
+            Self::P10 => sorted[((n - 1) as f64 * 0.10).round() as usize],
+            Self::Median => sorted[n / 2],
+            Self::Mean => sorted.iter().sum::<f64>() / n as f64,
+        }
+    }
+}
+
+/// How densely a ring is sampled before the reducer runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RingSampling {
+    /// **Shipped.** `step_by(len / 20)` — roughly 20 samples regardless of
+    /// how long the ring is, so a 400 mm ring and a 4 mm ring get the same
+    /// budget. The plan's fix-sequence item 1 targets this.
+    Fixed20,
+    /// Every vertex. Because ring polygons are decimated at `0.75 × cell`
+    /// before this runs, "every vertex" IS the plan's distance-bounded
+    /// sampling — the bound is the finish grid's own density, so no extremum
+    /// the grid can resolve is missed.
+    EveryVertex,
+}
+
+impl RingSampling {
+    pub const ALL: [Self; 2] = [Self::Fixed20, Self::EveryVertex];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Fixed20 => "fixed-20",
+            Self::EveryVertex => "every vertex",
+        }
+    }
+}
+
+/// Which stepover-vs-slope law the per-sample value is computed from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StepoverGeometry {
+    /// **Shipped.** [`crate::scallop_math::variable_stepover`], whose slope
+    /// term is `R_eff = R / cos θ` — it WIDENS the stepover on slope.
+    Shipped,
+    /// The measured law. Rings are offset in **XY**, so two adjacent rings on
+    /// ground at slope θ end up `d · sec θ` apart *along the surface*, and the
+    /// surface-normal cusp is `R − √(R² − (d·sec θ/2)²)`. Holding the cusp
+    /// therefore requires scaling the XY stepover by **`cos θ`**, not by
+    /// `1/√cos θ`.
+    ///
+    /// Ground truth: `scallop_oracle_validation_m4::inclined_plane_cusp_follows_the_secant_law`
+    /// measures the law to ≤4.5% at 0–60° and asserts the shipped formula
+    /// disagrees with it in the opposite direction (1.24× too wide at 30°,
+    /// 2.84× at 60°).
+    ///
+    /// The curvature correction is unchanged — it is applied to the radius,
+    /// as before, and only the slope factor is replaced.
+    CosineSlope,
+}
+
+impl StepoverGeometry {
+    pub const ALL: [Self; 2] = [Self::Shipped, Self::CosineSlope];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Shipped => "shipped R/cosθ",
+            Self::CosineSlope => "cosθ (measured law)",
+        }
+    }
+
+    fn stepover(self, cusp_r: f64, height: f64, angle: f64, curvature: f64) -> f64 {
+        match self {
+            Self::Shipped => variable_stepover(cusp_r, height, angle, curvature),
+            Self::CosineSlope => {
+                let base =
+                    crate::scallop_math::stepover_from_scallop_curved(cusp_r, height, curvature);
+                (base * angle.cos()).min(cusp_r * 4.0)
+            }
+        }
+    }
+}
+
+/// What the per-sample curvature reading is allowed to claim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CurvaturePolicy {
+    /// **Shipped.** The raw second-derivative estimate off the finish grid.
+    /// Its magnitude scales as `1/cell²`, so the same terrain reports larger
+    /// curvature on a finer grid — which is why a resolution change moves the
+    /// selected stepover at all.
+    Raw,
+    /// Clamp `|κ| ≤ 1/cusp_r`. A ball of tip radius `R` physically cannot
+    /// follow convex curvature tighter than `1/R` — it bridges it — so a
+    /// reading beyond that describes a feature the tool cannot resolve and
+    /// must not be allowed to set the ring's advance.
+    ToolLimited,
+}
+
+impl CurvaturePolicy {
+    pub const ALL: [Self; 2] = [Self::Raw, Self::ToolLimited];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Raw => "raw",
+            Self::ToolLimited => "|κ| ≤ 1/R",
+        }
+    }
+
+    fn condition(self, curvature: f64, cusp_r: f64) -> f64 {
+        match self {
+            Self::Raw => curvature,
+            Self::ToolLimited => {
+                if cusp_r <= 0.0 {
+                    return curvature;
+                }
+                let cap = 1.0 / cusp_r;
+                curvature.clamp(-cap, cap)
+            }
+        }
+    }
+}
+
+/// How the several polygons alive at one cascade iteration agree on a single
+/// offset distance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PolygonReduce {
+    /// **Shipped.** `fold(INFINITY, f64::min)` across every live polygon, so
+    /// one tight branch of a multi-polygon cascade sets the advance for all
+    /// of them — a second minimum stacked on top of the per-ring one.
+    MinAcross,
+    /// Each polygon offsets by its own ring's decision. Nothing about
+    /// `offset_polygon` requires the distances to agree; they were tied
+    /// together so "the cusp guarantee holds on every branch", which a
+    /// per-polygon distance also achieves.
+    PerPolygon,
+}
+
+impl PolygonReduce {
+    pub const ALL: [Self; 2] = [Self::MinAcross, Self::PerPolygon];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::MinAcross => "min across polygons",
+            Self::PerPolygon => "per polygon",
+        }
+    }
+}
+
+/// Where the ring polygons come from at all.
+///
+/// M4's phase B asks, in the plan's words, *"whether scallop remains an
+/// offset-ring algorithm or should become an iso-field contour extractor"*.
+/// This is the axis that question lives on. Both sources feed the SAME 3D
+/// lift, chord refinement and emission, so a comparison across it isolates
+/// ring PLACEMENT and nothing else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RingSource {
+    /// **Shipped.** Iterated `offset_polygon` from the region boundary
+    /// inward, one scalar distance per iteration, bounded by `max_rings`.
+    OffsetCascade,
+    /// [`crate::scallop_isofield`] — solve `|∇D| = 1/s(x,y)` from the
+    /// boundary and take the integer level sets. No per-ring scalar, no
+    /// repeated offsetting, and the ring count is `⌊max D⌋` rather than a cap.
+    IsoField,
+}
+
+impl RingSource {
+    pub const ALL: [Self; 2] = [Self::OffsetCascade, Self::IsoField];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::OffsetCascade => "offset cascade",
+            Self::IsoField => "iso-field level sets",
+        }
+    }
+}
+
+/// The five compensations the scallop ring cascade stacks, each selectable.
+///
+/// **M4 research seam. [`Self::SHIPPED`] is the only value any production
+/// entry point passes**, and every field of it names the shipped choice, so
+/// this enum family adds no behaviour and moves no default. It exists because
+/// M4's phase B cannot attribute a defect to one compensation without turning
+/// the others off, and `CHECKPOINT_B_EVIDENCE.md`'s `max_rings` addendum
+/// closed with exactly that recommendation: *"the fix is in `ring_stepover`,
+/// not in the budget."*
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScallopStepoverPolicy {
+    pub reducer: RingReducer,
+    pub sampling: RingSampling,
+    pub geometry: StepoverGeometry,
+    pub curvature: CurvaturePolicy,
+    pub across_polygons: PolygonReduce,
+    pub ring_source: RingSource,
+}
+
+impl ScallopStepoverPolicy {
+    /// Exactly what ships today.
+    pub const SHIPPED: Self = Self {
+        reducer: RingReducer::Min,
+        sampling: RingSampling::Fixed20,
+        geometry: StepoverGeometry::Shipped,
+        curvature: CurvaturePolicy::Raw,
+        across_polygons: PolygonReduce::MinAcross,
+        ring_source: RingSource::OffsetCascade,
+    };
+
+    #[must_use]
+    pub fn label(self) -> String {
+        format!(
+            "{} / {} / {} / {} / {} / {}",
+            self.ring_source.label(),
+            self.reducer.label(),
+            self.sampling.label(),
+            self.geometry.label(),
+            self.curvature.label(),
+            self.across_polygons.label()
+        )
+    }
+
+    #[must_use]
+    pub const fn is_shipped(self) -> bool {
+        matches!(self.reducer, RingReducer::Min)
+            && matches!(self.sampling, RingSampling::Fixed20)
+            && matches!(self.geometry, StepoverGeometry::Shipped)
+            && matches!(self.curvature, CurvaturePolicy::Raw)
+            && matches!(self.across_polygons, PolygonReduce::MinAcross)
+            && matches!(self.ring_source, RingSource::OffsetCascade)
+    }
+
+    /// The per-point stepover this policy's geometry+curvature choice yields,
+    /// exposed so [`crate::scallop_isofield`] and a harness can build the same
+    /// field the cascade would sample.
+    #[must_use]
+    pub fn point_stepover(
+        self,
+        slope_map: &crate::slope::SlopeMap,
+        cusp_r: f64,
+        scallop_height: f64,
+        x: f64,
+        y: f64,
+    ) -> f64 {
+        let angle = slope_map.angle_at_world(x, y).unwrap_or(0.0);
+        let curvature = -slope_map.curvature_at_world(x, y).unwrap_or(0.0);
+        let curvature = self.curvature.condition(curvature, cusp_r);
+        let so = self
+            .geometry
+            .stepover(cusp_r, scallop_height, angle, curvature);
+        // Same clamps the cascade applies, so the two sources are comparable.
+        so.max(cusp_r * 0.05).min(cusp_r * 3.0)
+    }
+}
+
+impl Default for ScallopStepoverPolicy {
+    fn default() -> Self {
+        Self::SHIPPED
+    }
+}
+
+/// What one cascade run decided, iteration by iteration.
+///
+/// Research output only — the shipped entry points do not build it.
+#[derive(Debug, Clone, Default)]
+pub struct ScallopStepoverTrace {
+    /// The clamped distance actually passed to `offset_polygon`, per
+    /// iteration (the MIN over polygons when that is the policy).
+    pub selected_mm: Vec<f64>,
+    /// Per iteration, `(min, p50, max)` of the per-sample stepovers the
+    /// reducer chose from, taken over every live polygon.
+    pub sample_spread: Vec<(f64, f64, f64)>,
 }
 
 /// Whether `(x, y)` lands on a [`crate::slope::SurfaceHeightmap`] cell whose
@@ -435,6 +823,8 @@ fn generate_scallop_rings(
         min_z,
         max_rings,
         chord_tolerance,
+        ScallopStepoverPolicy::SHIPPED,
+        None,
         &never_cancel,
     )
     .expect("non-cancellable scallop ring generation should never be cancelled")
@@ -457,6 +847,10 @@ fn generate_scallop_rings_with_cancel(
     min_z: f64,
     max_rings: usize,
     chord_tolerance: f64,
+    // M4 research seam; production passes `ScallopStepoverPolicy::SHIPPED`
+    // and `None`, and the loop below is byte-identical under those values.
+    policy: ScallopStepoverPolicy,
+    mut trace: Option<&mut ScallopStepoverTrace>,
     cancel: &dyn CancelCheck,
 ) -> Result<RingCascade, Cancelled> {
     let lift_ctx = RingLiftCtx {
@@ -480,6 +874,53 @@ fn generate_scallop_rings_with_cancel(
     }
     rings_3d.push(first_ring);
 
+    // M4 research candidate 3: take the rings from an iso-scallop field
+    // instead of an offset cascade. Everything downstream — the 3D lift, the
+    // chord refinement, the emission — is shared with the cascade branch, so
+    // a comparison across this switch isolates ring PLACEMENT alone.
+    if matches!(policy.ring_source, RingSource::IsoField) {
+        let field = crate::scallop_isofield::build_field(boundary, slope_map, &|x, y| {
+            policy.point_stepover(slope_map, cusp_r, scallop_height, x, y)
+        });
+        if let Some(t) = trace.as_deref_mut() {
+            // The field has one decision per CELL, not per ring; report the
+            // field's own spread so the table column means something.
+            let mut finite: Vec<f64> = field
+                .stepover_mm
+                .iter()
+                .copied()
+                .filter(|v| v.is_finite())
+                .collect();
+            finite.sort_by(f64::total_cmp);
+            if !finite.is_empty() {
+                // SAFETY: non-empty checked on the line above.
+                #[allow(clippy::indexing_slicing)]
+                let spread = (
+                    finite[0],
+                    finite[finite.len() / 2],
+                    finite[finite.len() - 1],
+                );
+                t.sample_spread.push(spread);
+                t.selected_mm.push(spread.1);
+            }
+        }
+        for ring in crate::scallop_isofield::extract_rings(&field) {
+            check_cancel(cancel)?;
+            if ring.len() < 3 {
+                continue;
+            }
+            let ring_3d = ring_to_3d(&ring, &lift_ctx);
+            if ring_3d.len() >= 3 {
+                rings_3d.push(ring_3d);
+            }
+        }
+        // The field's termination is exact — every interior cell has a finite
+        // pass index and every integer level below the maximum was extracted —
+        // so there is no truncated core to report. The oracle checks that
+        // claim independently rather than taking it.
+        return Ok((rings_3d, 0.0));
+    }
+
     // Iteratively offset inward
     let mut current_polys = vec![boundary.clone()];
 
@@ -496,20 +937,48 @@ fn generate_scallop_rings_with_cancel(
         // across polygons (matching `ring_stepover`'s min-across-samples)
         // so the cusp guarantee holds on every branch of a multi-polygon
         // cascade, not just the length-weighted average one.
-        let ring_so = current_polys
+        //
+        // M4: `policy.across_polygons` selects whether that second minimum
+        // is taken at all. `PolygonReduce::MinAcross` is shipped and this
+        // block is byte-identical to what it always was.
+        let decisions: Vec<RingStepoverDecision> = current_polys
             .iter()
-            .map(|poly| ring_stepover(&poly.exterior, slope_map, cusp_r, scallop_height))
-            .fold(f64::INFINITY, f64::min);
-        let ring_so = if ring_so.is_finite() {
-            ring_so
-        } else {
-            crate::scallop_math::stepover_from_scallop_flat(cusp_r, scallop_height)
+            .map(|poly| {
+                ring_stepover_with_policy(&poly.exterior, slope_map, cusp_r, scallop_height, policy)
+            })
+            .collect();
+        let clamp = |so: f64| {
+            let so = if so.is_finite() {
+                so
+            } else {
+                crate::scallop_math::stepover_from_scallop_flat(cusp_r, scallop_height)
+            };
+            // Clamp stepover to reasonable bounds
+            so.max(cusp_r * 0.05) // At least 5% of the cusp radius
+                .min(cusp_r * 3.0) // At most 3× the cusp radius
         };
+        let ring_so = decisions
+            .iter()
+            .map(|d| d.selected)
+            .fold(f64::INFINITY, f64::min);
+        let stepover = clamp(ring_so);
 
-        // Clamp stepover to reasonable bounds
-        let stepover = ring_so
-            .max(cusp_r * 0.05) // At least 5% of the cusp radius
-            .min(cusp_r * 3.0); // At most 3× the cusp radius
+        if let Some(t) = trace.as_deref_mut() {
+            let lo = decisions
+                .iter()
+                .map(|d| d.sample_min)
+                .fold(f64::INFINITY, f64::min);
+            let mid = decisions
+                .iter()
+                .map(|d| d.sample_p50)
+                .fold(f64::INFINITY, f64::min);
+            let hi = decisions
+                .iter()
+                .map(|d| d.sample_max)
+                .fold(f64::NEG_INFINITY, f64::max);
+            t.selected_mm.push(stepover);
+            t.sample_spread.push((lo, mid, hi));
+        }
 
         // Offset all current polygons inward, then DECIMATE each result
         // back to at most the heightmap's own sampling density.
@@ -527,8 +996,16 @@ fn generate_scallop_rings_with_cancel(
         // perimeter can't keep 3 points die here too.
         let ring_min_spacing = heightmap.cell_size * 0.75;
         let mut next_polys = Vec::new();
-        for poly in &current_polys {
-            for offset in offset_polygon(poly, stepover) {
+        for (i, poly) in current_polys.iter().enumerate() {
+            let d = match policy.across_polygons {
+                PolygonReduce::MinAcross => stepover,
+                // SAFETY: `decisions` was built by mapping over
+                // `current_polys`, so the indices are in lockstep.
+                PolygonReduce::PerPolygon => {
+                    decisions.get(i).map_or(stepover, |dec| clamp(dec.selected))
+                }
+            };
+            for offset in offset_polygon(poly, d) {
                 if let Some(decimated) = decimate_ring_polygon(&offset, ring_min_spacing) {
                     next_polys.push(decimated);
                 }
@@ -870,6 +1347,52 @@ pub fn scallop_toolpath_structured_annotated_with_resolution_and_ring_budget(
     ring_budget: ScallopRingBudget,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>, ScallopReport), Cancelled> {
+    let (tp, anns, report, _trace) = scallop_toolpath_research(
+        mesh,
+        index,
+        cutter,
+        params,
+        debug,
+        boundary_regions,
+        resolution,
+        ring_budget,
+        ScallopStepoverPolicy::SHIPPED,
+        cancel,
+    )?;
+    Ok((tp, anns, report))
+}
+
+/// The M4 research entry point: ring budget **and** stepover policy selectable,
+/// with the cascade's per-iteration decisions returned alongside the toolpath.
+///
+/// **Research seam, not a production entry point.** Passing
+/// [`ScallopRingBudget::FlatGroundStepover`] and
+/// [`ScallopStepoverPolicy::SHIPPED`] reproduces the shipped path exactly —
+/// that is what the wrapper above does, and
+/// `scallop_candidates_m4::shipped_policy_reproduces_the_shipped_fingerprint`
+/// asserts it byte for byte.
+#[allow(clippy::too_many_arguments)]
+pub fn scallop_toolpath_research(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &ScallopParams,
+    debug: Option<&ToolpathDebugContext>,
+    boundary_regions: Option<&RegionSet<'_>>,
+    resolution: FinishResolutionPolicy,
+    ring_budget: ScallopRingBudget,
+    stepover_policy: ScallopStepoverPolicy,
+    cancel: &dyn CancelCheck,
+) -> Result<
+    (
+        Toolpath,
+        Vec<ScallopRuntimeAnnotation>,
+        ScallopReport,
+        ScallopStepoverTrace,
+    ),
+    Cancelled,
+> {
+    let mut trace = ScallopStepoverTrace::default();
     check_cancel(cancel)?;
     let mut uncut_core_mm2 = 0.0_f64;
     // Physical extent (heightmap padding / grid coverage) keeps the FULL
@@ -1035,6 +1558,8 @@ pub fn scallop_toolpath_structured_annotated_with_resolution_and_ring_budget(
             bbox.min.z,
             max_rings,
             params.tolerance,
+            stepover_policy,
+            Some(&mut trace),
             cancel,
         )?;
         ring_region.extend(std::iter::repeat_n(region_index, region_rings.len()));
@@ -1053,6 +1578,7 @@ pub fn scallop_toolpath_structured_annotated_with_resolution_and_ring_budget(
                 cascade_ring_count: 0,
                 ring_count: 0,
             },
+            trace,
         ));
     }
 
@@ -1297,7 +1823,7 @@ pub fn scallop_toolpath_structured_annotated_with_resolution_and_ring_budget(
         // proxy for it.
         ring_count: annotations.len(),
     };
-    Ok((tp, annotations, report))
+    Ok((tp, annotations, report, trace))
 }
 
 pub fn scallop_toolpath_annotated(
