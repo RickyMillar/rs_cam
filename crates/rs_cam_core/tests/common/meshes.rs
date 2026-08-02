@@ -17,6 +17,7 @@
 //! | [`sawtooth_plate`] | `standing_material_channel_am9.rs` |
 //! | [`height_field`] / [`height_field_grid`] | `checkpoint_b_resolution_ab.rs` fixtures |
 //! | [`extrude_profile`] | `unified_finish_tapered_end_to_end_m21.rs` |
+//! | [`plate_with_hole`] / [`stacked_shelf`] / [`non_manifold_fin`] | `classification_strategy_m3.rs` |
 
 #![allow(dead_code)]
 #![allow(
@@ -316,4 +317,119 @@ impl GroovedBlock {
 /// Shorthand for the default symmetric groove.
 pub fn grooved_block(rim_half_width: f64, wall_deg: f64, depth: f64) -> TriangleMesh {
     GroovedBlock::new(rim_half_width, wall_deg, depth).build()
+}
+
+// ── Pathological-topology fixtures (M3) ─────────────────────────────────
+//
+// The M3 classification study needs meshes that break the "one clean
+// upward-facing surface per XY point" assumption every grid sampler is
+// implicitly written against. Each generator below isolates ONE way that
+// assumption fails, so a sampler disagreement can be attributed instead of
+// merely observed.
+
+/// A square plate at `z = top` with a square hole through it — an **open**
+/// mesh with genuinely uncovered interior cells.
+///
+/// The hole is the point: a vertical ray through it hits nothing, while a
+/// cutter with radius still rides the rim and reports a contact height. Any
+/// sampler that derives coverage from the Z value rather than from a
+/// point-in-triangle test gets this fixture wrong. Generalised from the
+/// private `ring_plate_mesh` in `slope.rs`'s coverage tests (same vertex
+/// order and winding, so the two agree cell for cell).
+pub fn plate_with_hole(size: f64, hole: f64, top: f64) -> TriangleMesh {
+    let o = size;
+    let lo = (size - hole) / 2.0;
+    let hi = lo + hole;
+    let v = vec![
+        P3::new(0.0, 0.0, top),
+        P3::new(o, 0.0, top),
+        P3::new(o, o, top),
+        P3::new(0.0, o, top),
+        P3::new(lo, lo, top),
+        P3::new(hi, lo, top),
+        P3::new(hi, hi, top),
+        P3::new(lo, hi, top),
+    ];
+    let t = vec![
+        [0u32, 1, 5],
+        [0, 5, 4],
+        [1, 2, 6],
+        [1, 6, 5],
+        [2, 3, 7],
+        [2, 7, 6],
+        [3, 0, 4],
+        [3, 4, 7],
+    ];
+    TriangleMesh::from_raw(v, t)
+}
+
+/// A ground plate at `z = 0` with a smaller shelf floating `lift` above it,
+/// wound **face down**.
+///
+/// Two surfaces project onto the same cells, and the upper one is the one an
+/// orientation test would reject. The topmost surface is still the shelf, so
+/// this fixture separates "take the highest surface" from "take the highest
+/// upward-facing surface" — the M3 plan's stacked-triangle edge case.
+pub fn stacked_shelf(size: f64, shelf: f64, lift: f64) -> TriangleMesh {
+    let h = size / 2.0;
+    let s = shelf / 2.0;
+    let v = vec![
+        P3::new(-h, -h, 0.0),
+        P3::new(h, -h, 0.0),
+        P3::new(h, h, 0.0),
+        P3::new(-h, h, 0.0),
+        P3::new(-s, -s, lift),
+        P3::new(s, -s, lift),
+        P3::new(s, s, lift),
+        P3::new(-s, s, lift),
+    ];
+    let t = vec![
+        [0u32, 1, 2],
+        [0, 2, 3],
+        // Reversed winding: normals point −Z.
+        [4, 6, 5],
+        [4, 7, 6],
+    ];
+    TriangleMesh::from_raw(v, t)
+}
+
+/// A plate at `z = 0` carrying a **non-manifold fin** plus a **detached
+/// flyer**.
+///
+/// - The plate is two triangles sharing the diagonal `v0→v2`.
+/// - The fin is a third triangle on that same diagonal, tilted up to
+///   `height` — so the edge has **three** incident faces and the fin has a
+///   free boundary.
+/// - The flyer is an unconnected triangle floating at `2 × height`, part of
+///   no shell.
+///
+/// A sampler that assumes a closed, orientable manifold (paired edges,
+/// winding numbers, inside/outside tests) is wrong on all three; one that
+/// reduces over faces is not. This is the M3 plan's non-manifold/open-mesh
+/// edge case, and the flyer additionally checks that "topmost" really means
+/// topmost rather than "topmost thing attached to the ground".
+pub fn non_manifold_fin(size: f64, height: f64) -> TriangleMesh {
+    let h = size / 2.0;
+    let v = vec![
+        P3::new(-h, -h, 0.0),
+        P3::new(h, -h, 0.0),
+        P3::new(h, h, 0.0),
+        P3::new(-h, h, 0.0),
+        // Fin apex, over the middle of the v0→v2 diagonal, offset in −X so
+        // the fin is a genuine ramp rather than a vertical sheet.
+        P3::new(-h * 0.4, h * 0.4, height),
+        // Detached flyer.
+        P3::new(-h * 0.3, -h * 0.3, height * 2.0),
+        P3::new(h * 0.3, -h * 0.3, height * 2.0),
+        P3::new(0.0, h * 0.3, height * 2.0),
+    ];
+    let t = vec![
+        [0u32, 1, 2],
+        [0, 2, 3],
+        // Third face on the v0→v2 edge.
+        [0, 2, 4],
+        // Flyer.
+        [5, 6, 7],
+    ];
+    TriangleMesh::from_raw(v, t)
 }

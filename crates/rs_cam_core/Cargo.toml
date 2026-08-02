@@ -42,6 +42,10 @@ approx = "0.5"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 criterion = { workspace = true }
 csv = "1.3"
+# Test-only: the M3 classification harness pins its own rayon thread pools so
+# it can run a candidate at 1 thread and at N and diff the label grids
+# exactly. The library already depends on rayon behind the `parallel` feature.
+rayon = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png"] }
 
 [[bench]]
