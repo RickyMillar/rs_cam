@@ -1528,6 +1528,7 @@ pub(crate) fn generate_unified_finish(
         plunge_rate: op.plunge_rate(),
         safe_z: ctx.heights.retract_z,
         intra_region_hookup_mm: cfg.intra_region_hookup_mm,
+        classification_sampler: cfg.classification_sampler,
     };
     // `cusp_radius()`, NOT `radius()`: on a tapered ball the latter is the
     // SHAFT radius, and every dial `for_tool` derives is a feature scale.
