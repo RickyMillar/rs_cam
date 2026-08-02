@@ -1559,6 +1559,7 @@ impl ProjectSession {
                     deprecated_dial: findings.deprecated_dial.map(Box::new),
                     // PR-6a: the reach-policy stepover this op derived.
                     derived_stepovers: findings.derived_stepovers.clone(),
+                    clipped_band: findings.clipped_band.map(Box::new),
                     // PR-8b: what the ramp-finish reach clamp did.
                     ramp_reach_clamp: findings.ramp_reach_clamp.map(Box::new),
                     // A/M6: which rest reference the claims pipeline resolved to.
@@ -2856,6 +2857,7 @@ impl ProjectSession {
             // Wave D1: same rule. `None` reads as "not measured" and
             // narration says so rather than staying silent.
             dropped_band: result.stats.dropped_band.as_deref().copied(),
+            clipped_band: result.stats.clipped_band.as_deref().copied(),
             tip_float: result.stats.tip_float,
         };
 
@@ -5198,6 +5200,7 @@ mod tests {
                 tip_float: None,
                 deprecated_dial: None,
                 derived_stepovers: Vec::new(),
+                clipped_band: None,
                 ramp_reach_clamp: None,
                 claims_reference: None,
             },

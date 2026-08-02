@@ -64,6 +64,13 @@ pub const GEOM_STANDING_MATERIAL: &str = "geom.standing_material";
 /// measured at generation, and invisible to a dexel run because the
 /// toolpath never attempted the cut.
 pub const GEOM_UNMACHINED_BAND: &str = "geom.unmachined_band";
+/// A planned finish band's Z ladder was SHORTENED by height resolution but
+/// it still cut — the feature is PARTLY machined (C8). The quiet sibling of
+/// [`GEOM_UNMACHINED_BAND`]; the two are disjoint by construction, so a
+/// region reports as at most one of them. Sim-independent for the same
+/// reason: the levels that were never laddered leave no trace in a cut
+/// record.
+pub const GEOM_CLIPPED_BAND: &str = "geom.clipped_band";
 /// A valley centreline runs over material the cutter cannot physically
 /// reach: it wedges on the walls and floats above the floor. Also
 /// sim-independent — the emitted path is exactly what a simulation would
