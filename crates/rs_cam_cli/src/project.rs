@@ -15,36 +15,54 @@ use rs_cam_core::simulation_cut::SimulationCutArtifact;
 
 // ── JSON output types ───────────────────────────────────────────────────
 
-/// The CLI's per-toolpath JSON record.
+/// The CLI's per-toolpath JSON record — a serde VIEW over
+/// [`rs_cam_core::session::ToolpathDiagnostic`], not a second copy of it.
 ///
-/// Deliberately NOT [`rs_cam_core::session::ToolpathDiagnostic`]: this record
-/// carries the full debug + semantic traces and the collision-check stickout,
-/// which the core diagnostic (a GUI/MCP summary) does not, and it uses this
-/// file's own key names (`toolpath_name`, `tool`), which existing scripts read.
+/// It cannot simply BE the core struct for two reasons that are not going
+/// away: it carries the full debug + semantic traces and the collision-check
+/// stickout, which the core diagnostic (a GUI/MCP summary) does not; and its
+/// key names (`toolpath_name`, `tool`) differ from the core struct's (`name`,
+/// `tool_name`) and are read by existing scripts, so `#[serde(flatten)]`
+/// would move the wire.
 ///
-/// What it must NOT do is *diverge on the fields both have*. Wave D3: the
-/// A/M9 standing-material and Wave-D1 dropped-band / tip-float channels were
-/// published to the GUI and MCP but silently missing here, so a CLI batch run
-/// could not see a finding the same session's GUI would show. Those four
-/// fields (plus `op_kind`) are now copied straight off the core diagnostic —
-/// one derivation, no second opinion. All additive: no key was renamed or
-/// removed.
+/// What it must NOT do is *diverge on the fields both have*. Wave D3 caught
+/// the first instance: the A/M9 standing-material and Wave-D1 dropped-band /
+/// tip-float channels were published to the GUI and MCP but silently missing
+/// here, so a CLI batch run could not see a finding the same session's GUI
+/// would show. D3 fixed those five fields by hand; the struct itself stayed
+/// a parallel implementation, which is what
+/// `ANTIPATTERNS_BACKLOG.md` P3 logged.
+///
+/// C3 (2026-08-02) closes it structurally. [`Self::from_core`] EXHAUSTIVELY
+/// DESTRUCTURES the core diagnostic, so adding a field there is a compile
+/// error here until the CLI decides whether to publish it. That is the
+/// mechanism — not vigilance, and not a doc comment asking for it. The wire
+/// is pinned byte-for-byte by `tests::the_per_toolpath_json_is_byte_stable`,
+/// so the derivation could be rebuilt underneath without the JSON moving.
 #[derive(Serialize)]
-struct ToolpathDiagnostic {
+struct ToolpathDiagnostic<'a> {
     toolpath_id: rs_cam_core::ToolpathId,
-    toolpath_name: String,
-    operation_type: String,
+    toolpath_name: &'a str,
+    operation_type: &'a str,
     /// Stable op-kind tag, mirroring
-    /// [`rs_cam_core::session::ToolpathDiagnostic::op_kind`].
-    op_kind: Option<String>,
-    tool: String,
+    /// [`rs_cam_core::session::ToolpathDiagnostic::op_kind`]. `Option` only
+    /// because it has always serialised as `null` when the session published
+    /// no diagnostic; see [`Self::from_core`].
+    op_kind: Option<&'a str>,
+    tool: &'a str,
     move_count: usize,
     cutting_distance_mm: f64,
     rapid_distance_mm: f64,
-    debug_trace: Option<rs_cam_core::debug_trace::ToolpathDebugTrace>,
-    semantic_trace: Option<rs_cam_core::semantic_trace::ToolpathSemanticTrace>,
+    debug_trace: Option<&'a rs_cam_core::debug_trace::ToolpathDebugTrace>,
+    semantic_trace: Option<&'a rs_cam_core::semantic_trace::ToolpathSemanticTrace>,
+    /// CLI-LOCAL, deliberately. The core diagnostic's `collision_count` is
+    /// whatever holder-collision evidence its caller supplied; the CLI runs
+    /// its own per-toolpath [`rs_cam_core::session::ProjectSession::collision_check`]
+    /// and reports that. Better data, not a second opinion on the same data.
     collision_count: usize,
     rapid_collision_count: usize,
+    /// CLI-local for the same reason: it comes off the collision report the
+    /// core diagnostic never sees.
     min_safe_stickout: Option<f64>,
     /// A/M9. `null` = **not measured** (this operation runs no ring
     /// cascade), never "nothing standing".
@@ -57,6 +75,63 @@ struct ToolpathDiagnostic {
     /// Wave D1. `null` under exactly the same condition as
     /// [`Self::tip_float_points`].
     max_tip_float_mm: Option<f64>,
+}
+
+impl<'a> ToolpathDiagnostic<'a> {
+    /// Project a core diagnostic onto the CLI wire, adding the three
+    /// CLI-only channels.
+    ///
+    /// The `let ... = core;` destructure below is load-bearing: it has no
+    /// `..`, so a new field on
+    /// [`rs_cam_core::session::ToolpathDiagnostic`] breaks this build. Bind
+    /// it to `_name_unused`-style names if the CLI genuinely should not
+    /// publish it — but make that a decision someone wrote down, which is
+    /// exactly what D3 found nobody had.
+    fn from_core(
+        core: &'a rs_cam_core::session::ToolpathDiagnostic,
+        debug_trace: Option<&'a rs_cam_core::debug_trace::ToolpathDebugTrace>,
+        semantic_trace: Option<&'a rs_cam_core::semantic_trace::ToolpathSemanticTrace>,
+        collision_count: usize,
+        min_safe_stickout: Option<f64>,
+    ) -> Self {
+        let rs_cam_core::session::ToolpathDiagnostic {
+            toolpath_id,
+            name,
+            operation_type,
+            op_kind,
+            tool_name,
+            move_count,
+            cutting_distance_mm,
+            rapid_distance_mm,
+            // Superseded by the CLI's own collision check — see the field doc.
+            collision_count: _evidence_collision_count,
+            rapid_collision_count,
+            standing_material_mm2,
+            unmachined_band_area_mm2,
+            tip_float_points,
+            max_tip_float_mm,
+        } = core;
+
+        Self {
+            toolpath_id: *toolpath_id,
+            toolpath_name: name,
+            operation_type,
+            op_kind: Some(op_kind),
+            tool: tool_name,
+            move_count: *move_count,
+            cutting_distance_mm: *cutting_distance_mm,
+            rapid_distance_mm: *rapid_distance_mm,
+            debug_trace,
+            semantic_trace,
+            collision_count,
+            rapid_collision_count: *rapid_collision_count,
+            min_safe_stickout,
+            standing_material_mm2: *standing_material_mm2,
+            unmachined_band_area_mm2: *unmachined_band_area_mm2,
+            tip_float_points: *tip_float_points,
+            max_tip_float_mm: *max_tip_float_mm,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -243,41 +318,38 @@ pub fn run_project_command(
             continue;
         };
 
-        let tool_name = session
-            .get_tool(rs_cam_core::compute::tool_config::ToolId(tc.tool_id))
-            .map(|t| t.name.clone())
-            .unwrap_or_default();
-
+        // The tool name is no longer looked up here: the core diagnostic
+        // resolves it from the same `tool_id` through the same session, so
+        // the CLI reading it off the core record is one derivation instead of
+        // two identical ones (C3).
         let col_report = collision_reports.get(&tc.id);
         let collision_count = col_report.map(|r| r.collisions.len()).unwrap_or(0);
         let min_safe = col_report.map(|r| r.min_safe_stickout);
 
-        // The core per-toolpath diagnostic for this id, if the session
-        // produced one. Every field below that comes from it is DERIVED
-        // THERE, so the CLI and the GUI/MCP cannot report different numbers
-        // for the same run (Wave D3).
-        let core_diag = diag.per_toolpath.iter().find(|d| d.toolpath_id == tc.id);
-        let rapid_count = core_diag.map_or(0, |d| d.rapid_collision_count);
-
-        let diagnostic = ToolpathDiagnostic {
-            toolpath_id: tc.id,
-            toolpath_name: tc.name.clone(),
-            operation_type: tc.operation.label().to_owned(),
-            op_kind: core_diag.map(|d| d.op_kind.clone()),
-            tool: tool_name,
-            move_count: result.stats.move_count,
-            cutting_distance_mm: result.stats.cutting_distance,
-            rapid_distance_mm: result.stats.rapid_distance,
-            debug_trace: result.debug_trace.clone(),
-            semantic_trace: result.semantic_trace.clone(),
-            collision_count,
-            rapid_collision_count: rapid_count,
-            min_safe_stickout: min_safe,
-            standing_material_mm2: core_diag.and_then(|d| d.standing_material_mm2),
-            unmachined_band_area_mm2: core_diag.and_then(|d| d.unmachined_band_area_mm2),
-            tip_float_points: core_diag.and_then(|d| d.tip_float_points),
-            max_tip_float_mm: core_diag.and_then(|d| d.max_tip_float_mm),
+        // The core per-toolpath diagnostic for this id. EVERY shared field is
+        // derived THERE, so the CLI and the GUI/MCP cannot report different
+        // numbers for the same run (Wave D3; structural since C3).
+        //
+        // Both loops are guarded by the same `results` map — the core builds
+        // a diagnostic for exactly the toolpaths that have a result, which is
+        // the condition this loop already `continue`d on — so a miss is
+        // unreachable. It is warned rather than defaulted because a silently
+        // half-populated record is the failure mode D3 was cleaning up.
+        let Some(core_diag) = diag.per_toolpath.iter().find(|d| d.toolpath_id == tc.id) else {
+            warn!(
+                toolpath = %tc.name,
+                "No core diagnostic for a toolpath that has a result — skipping its JSON record"
+            );
+            continue;
         };
+
+        let diagnostic = ToolpathDiagnostic::from_core(
+            core_diag,
+            result.debug_trace.as_ref(),
+            result.semantic_trace.as_ref(),
+            collision_count,
+            min_safe,
+        );
 
         let file_name = format!(
             "tp_{}_{}.json",
@@ -595,5 +667,98 @@ fn fmt_opt_u32(v: Option<u32>) -> String {
     match v {
         Some(x) => x.to_string(),
         None => "-".to_owned(),
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    /// A core diagnostic with every field distinguishable, so a mis-wired
+    /// field shows up as a wrong VALUE and not just a wrong key.
+    fn core_diagnostic() -> rs_cam_core::session::ToolpathDiagnostic {
+        rs_cam_core::session::ToolpathDiagnostic {
+            toolpath_id: rs_cam_core::ToolpathId(7),
+            name: "Finish pass".to_owned(),
+            operation_type: "Waterline".to_owned(),
+            op_kind: "waterline".to_owned(),
+            tool_name: "Ø1 tapered ball".to_owned(),
+            move_count: 1234,
+            cutting_distance_mm: 5678.25,
+            rapid_distance_mm: 90.5,
+            collision_count: 3,
+            rapid_collision_count: 2,
+            standing_material_mm2: Some(12.5),
+            unmachined_band_area_mm2: Some(3.25),
+            tip_float_points: Some(4),
+            max_tip_float_mm: Some(0.125),
+        }
+    }
+
+    /// C3 byte-stability sentry.
+    ///
+    /// This record's key names are a compatibility surface — the doc comment
+    /// on [`ToolpathDiagnostic`] says existing scripts read `toolpath_name`
+    /// and `tool`, which is precisely why it could not simply become the core
+    /// struct. Pinning the serialized bytes is what let the derivation be
+    /// rebuilt underneath without asking the wire to move.
+    ///
+    /// Captured from the pre-C3 struct and asserted unchanged after it became
+    /// a view. If a future field is added, add it here in the same edit — a
+    /// key appearing in output but not in this string is a wire change nobody
+    /// declared.
+    #[test]
+    fn the_per_toolpath_json_is_byte_stable() {
+        let core = core_diagnostic();
+        let record = ToolpathDiagnostic::from_core(&core, None, None, 3, Some(21.5));
+        let json = serde_json::to_string_pretty(&record).unwrap();
+        let expected = r#"{
+  "toolpath_id": 7,
+  "toolpath_name": "Finish pass",
+  "operation_type": "Waterline",
+  "op_kind": "waterline",
+  "tool": "Ø1 tapered ball",
+  "move_count": 1234,
+  "cutting_distance_mm": 5678.25,
+  "rapid_distance_mm": 90.5,
+  "debug_trace": null,
+  "semantic_trace": null,
+  "collision_count": 3,
+  "rapid_collision_count": 2,
+  "min_safe_stickout": 21.5,
+  "standing_material_mm2": 12.5,
+  "unmachined_band_area_mm2": 3.25,
+  "tip_float_points": 4,
+  "max_tip_float_mm": 0.125
+}"#;
+        assert_eq!(json, expected, "CLI per-toolpath JSON wire changed");
+    }
+
+    /// The `null`-means-not-measured contract survives the view: an operation
+    /// that measured nothing must emit `null`, never `0`.
+    #[test]
+    fn unmeasured_channels_stay_null() {
+        let core = rs_cam_core::session::ToolpathDiagnostic {
+            standing_material_mm2: None,
+            unmachined_band_area_mm2: None,
+            tip_float_points: None,
+            max_tip_float_mm: None,
+            ..core_diagnostic()
+        };
+        let record = ToolpathDiagnostic::from_core(&core, None, None, 0, None);
+        let json = serde_json::to_string(&record).unwrap();
+        for key in [
+            "standing_material_mm2",
+            "unmachined_band_area_mm2",
+            "tip_float_points",
+            "max_tip_float_mm",
+            "min_safe_stickout",
+        ] {
+            assert!(
+                json.contains(&format!("\"{key}\":null")),
+                "{key} must serialise as null, not 0:\n{json}"
+            );
+        }
     }
 }
