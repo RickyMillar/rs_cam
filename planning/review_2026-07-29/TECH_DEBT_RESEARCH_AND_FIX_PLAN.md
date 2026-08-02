@@ -1348,6 +1348,27 @@ After the wanaka live validation report lands:
    sites and three groove copies deliberately left alone, per the "never in
    bulk" rule.
 5. **A/M6** `claims_reference` (base plan, unchanged position).
+   ✅ DONE 2026-08-02: `5c24d62` (three-valued `ClaimsReference` dial
+   resolving to the two-valued `CreaseReference`, `ClaimsReferenceResolution`
+   provenance on the `CellSource` precedent, finding through
+   `GenerationFindings`/`ToolpathStats`/`config.claims_reference`;
+   **default flipped to `Auto`** with the deser-compat matrix pinned —
+   explicit `self_probe`/`machined_stock` keep their exact meanings, only the
+   ABSENT field moved) / `21edaea` (GUI "Rest Claims" block — the four claims
+   dials had NO widget at all before — plus the resolved-reference readout,
+   MCP `runtime.claims_reference`, catalog enum widened) / `486364f` (cascade
+   sentry, ball + taper: the forced-`self_probe` arm re-cuts the finish pass
+   to within 0.4 mm in 3200 — 100.0% — and the derived arm holds under 0.35×,
+   with a control arm separating *confined* from *emptied*).
+   **Root cause was narrower than "the analytic reference mis-measures":**
+   `territory_clip` is gated on the resolved reference being
+   `MachinedStock`, so a self-probe reference silently switches the operation
+   from a rest pass to an all-over pass. Also established: `claims_reference`
+   is INERT unless `pencil_claims` is on, which defaults `false` — that
+   bounds the default flip's blast radius, and it means the 2026-07-30 live
+   flip on wanaka op 8 (`pencil_claims: false`) changed nothing.
+   NOT fixed, stated: `Auto` keys on the PRESENCE of a prior stock, not its
+   QUALITY, so a rough→finish chain still needs `self_probe` pinned by hand.
 6. **M3 classifier** (uses C2+C6).
 7. **C3 + C4 + C8** — consolidation/diagnostics wave (feeds H4's oracles).
 8. **M4 scallop** (Checkpoint C; uses C3 width parity + C6).
